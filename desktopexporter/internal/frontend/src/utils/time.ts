@@ -558,25 +558,34 @@ export type RecentTimeRange = {
   usedAt: number
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function isRecentTimeRange(value: unknown): value is RecentTimeRange {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    'start' in value &&
+    'end' in value &&
+    'usedAt' in value &&
+    isFiniteNumber(value.start) &&
+    isFiniteNumber(value.end) &&
+    isFiniteNumber(value.usedAt) &&
+    value.start < value.end
+  )
+}
+
 export function loadRecentTimeRanges(): RecentTimeRange[] {
   try {
     const saved = localStorage.getItem(RECENT_STORAGE_KEY)
     if (!saved) return []
     const parsed: unknown = JSON.parse(saved)
     if (!Array.isArray(parsed)) return []
-    const parsedRows = parsed as RecentTimeRange[]
-    const rows = parsedRows.filter(
-      row =>
-        row !== null &&
-        typeof row === 'object' &&
-        Number.isFinite(row.start) &&
-        Number.isFinite(row.end) &&
-        Number.isFinite(row.usedAt) &&
-        row.start < row.end
-    )
+    const rows = parsed.filter(isRecentTimeRange)
     const sorted = [...rows].sort((a, b) => b.usedAt - a.usedAt)
     const trimmed = sorted.slice(0, MAX_RECENT_TIME_RANGES)
-    if (trimmed.length < parsedRows.length) {
+    if (trimmed.length < parsed.length) {
       localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(trimmed))
     }
     return trimmed

@@ -50,8 +50,20 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
 }
 
+type TimeSelectionFields = {
+  type?: unknown
+  presetIndex?: unknown
+  durationMs?: unknown
+  start?: unknown
+  end?: unknown
+}
+
+function isTimeSelectionFields(value: unknown): value is TimeSelectionFields {
+  return value !== null && typeof value === 'object'
+}
+
 function hasOnlyKeys(
-  value: Record<string, unknown>,
+  value: TimeSelectionFields,
   keys: readonly string[]
 ): boolean {
   const actual = Object.keys(value)
@@ -59,31 +71,29 @@ function hasOnlyKeys(
 }
 
 function isBoundedSelection(
-  value: unknown
+  value: TimeSelectionFields
 ): value is Extract<TimeSelection, { type: 'custom' | 'recent' }> {
-  if (!value || typeof value !== 'object') return false
-  const candidate = value as Record<string, unknown>
   return (
-    (candidate.type === 'custom' || candidate.type === 'recent') &&
-    hasOnlyKeys(candidate, ['type', 'start', 'end']) &&
-    isFiniteNumber(candidate.start) &&
-    isFiniteNumber(candidate.end) &&
-    candidate.start < candidate.end
+    (value.type === 'custom' || value.type === 'recent') &&
+    hasOnlyKeys(value, ['type', 'start', 'end']) &&
+    isFiniteNumber(value.start) &&
+    isFiniteNumber(value.end) &&
+    value.start < value.end
   )
 }
 
 function isTimeSelection(value: unknown): value is TimeSelection {
-  if (!value || typeof value !== 'object') return false
-  const candidate = value as Record<string, unknown>
-  if (candidate.type === 'all') return hasOnlyKeys(candidate, ['type'])
-  if (isBoundedSelection(candidate)) return true
+  if (!isTimeSelectionFields(value)) return false
+  if (value.type === 'all') return hasOnlyKeys(value, ['type'])
+  if (isBoundedSelection(value)) return true
   return (
-    candidate.type === 'preset' &&
-    hasOnlyKeys(candidate, ['type', 'presetIndex', 'durationMs']) &&
-    Number.isInteger(candidate.presetIndex) &&
-    Number(candidate.presetIndex) > 0 &&
-    isFiniteNumber(candidate.durationMs) &&
-    candidate.durationMs > 0
+    value.type === 'preset' &&
+    hasOnlyKeys(value, ['type', 'presetIndex', 'durationMs']) &&
+    isFiniteNumber(value.presetIndex) &&
+    Number.isInteger(value.presetIndex) &&
+    value.presetIndex > 0 &&
+    isFiniteNumber(value.durationMs) &&
+    value.durationMs > 0
   )
 }
 

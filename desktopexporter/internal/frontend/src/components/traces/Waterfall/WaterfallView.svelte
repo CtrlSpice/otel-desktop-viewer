@@ -434,16 +434,24 @@
   const COLUMN_RESIZE_STEP_PX = 16
   const COLUMN_RESIZE_LARGE_STEP_PX = 64
 
+  function isStoredWidthsObject(value: unknown): value is object {
+    return value !== null && typeof value === 'object'
+  }
+
+  function isFiniteWidth(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value)
+  }
+
   function loadStoredWidths(): ColumnWidths {
     if (typeof localStorage === 'undefined') return {}
     try {
       const parsed: unknown = JSON.parse(
         localStorage.getItem(COLUMN_WIDTHS_KEY) ?? 'null'
       )
-      if (parsed === null || typeof parsed !== 'object') return {}
+      if (!isStoredWidthsObject(parsed)) return {}
       const out: ColumnWidths = {}
       for (const [id, w] of Object.entries(parsed)) {
-        if (typeof w === 'number' && Number.isFinite(w)) out[id] = w
+        if (isFiniteWidth(w)) out[id] = w
       }
       return out
     } catch {
@@ -525,12 +533,13 @@
   let scrollContainerW = $state(800)
 
   $effect(() => {
-    if (!scrollContainerEl) return
+    const container = scrollContainerEl
+    if (!container) return
     untrack(() => {
       colWidths = reconcileWidths(
         wfCols,
         loadStoredWidths(),
-        scrollContainerEl!.clientWidth
+        container.clientWidth
       )
     })
     const ro = new ResizeObserver(entries => {
@@ -540,7 +549,7 @@
         colWidths = fitWidths(wfCols, colWidths, w)
       }
     })
-    ro.observe(scrollContainerEl)
+    ro.observe(container)
     return () => ro.disconnect()
   })
 

@@ -49,12 +49,31 @@ type PersistedMetricView = {
   showAllSeriesAggregate?: boolean
 }
 
-const VALID_AGGREGATION_VIEWS: ReadonlySet<AggregationView> = new Set([
-  'raw',
-  'sum',
-  'avg',
-  'rate',
-])
+type PersistedMetricViewFields = {
+  visibleKeys?: unknown
+  aggregationView?: unknown
+  showAllSeriesAggregate?: unknown
+}
+
+function isPersistedMetricViewFields(
+  value: unknown
+): value is PersistedMetricViewFields {
+  return value !== null && typeof value === 'object'
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string'
+}
+
+function isAggregationView(value: unknown): value is AggregationView {
+  return (
+    value === 'raw' || value === 'sum' || value === 'avg' || value === 'rate'
+  )
+}
+
+function isBoolean(value: unknown): value is boolean {
+  return value === true || value === false
+}
 
 /** Same identity as `metricSummaryKey` / drawer search — metric stream id. */
 /**
@@ -108,16 +127,15 @@ export function repairEmptyPersistedVisibleKeys(): void {
       } catch {
         continue
       }
-      if (!parsed || typeof parsed !== 'object') continue
-      const obj = parsed as Record<string, unknown>
-      if (!Array.isArray(obj.visibleKeys) || obj.visibleKeys.length > 0)
+      if (!isPersistedMetricViewFields(parsed)) continue
+      if (!Array.isArray(parsed.visibleKeys) || parsed.visibleKeys.length > 0)
         continue
 
-      delete obj.visibleKeys
-      if (Object.keys(obj).length === 0) {
+      delete parsed.visibleKeys
+      if (Object.keys(parsed).length === 0) {
         localStorage.removeItem(key)
       } else {
-        localStorage.setItem(key, JSON.stringify(obj))
+        localStorage.setItem(key, JSON.stringify(parsed))
       }
     }
 
@@ -138,21 +156,16 @@ function loadPersistedView(metricStreamID: string): PersistedMetricView | null {
     const raw = localStorage.getItem(metricViewStorageKey(metricStreamID))
     if (!raw) return null
     const parsed: unknown = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return null
-    const obj = parsed as Record<string, unknown>
-    const keysRaw = obj.visibleKeys
+    if (!isPersistedMetricViewFields(parsed)) return null
+    const keysRaw = parsed.visibleKeys
     if (!Array.isArray(keysRaw)) return null
-    const visibleKeys = keysRaw.filter(
-      (k): k is string => typeof k === 'string'
-    )
-    const av = obj.aggregationView
-    const aggregationView =
-      typeof av === 'string' &&
-      VALID_AGGREGATION_VIEWS.has(av as AggregationView)
-        ? (av as AggregationView)
-        : undefined
-    const sa = obj.showAllSeriesAggregate
-    const showAllSeriesAggregate = typeof sa === 'boolean' ? sa : undefined
+    const visibleKeys = keysRaw.filter(isString)
+    const aggregationView = isAggregationView(parsed.aggregationView)
+      ? parsed.aggregationView
+      : undefined
+    const showAllSeriesAggregate = isBoolean(parsed.showAllSeriesAggregate)
+      ? parsed.showAllSeriesAggregate
+      : undefined
     return {
       visibleKeys,
       aggregationView,

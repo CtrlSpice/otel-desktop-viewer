@@ -94,6 +94,55 @@ describe('time context localStorage restore', () => {
     expect(selectionPresetIndex()).toBe('2')
     expect(selectionDuration()).toBe(900_000)
   })
+
+  it('rejects saved selections with fields outside their exact variant', () => {
+    localStorage.setItem(
+      'time-selection',
+      JSON.stringify({
+        type: 'custom',
+        start: 111,
+        end: 222,
+        durationMs: 111,
+      })
+    )
+    setTestUrl('/traces')
+    renderProbe()
+    expect(selectionType()).toBe('all')
+  })
+
+  it('rejects saved selections whose fields have the wrong runtime types', () => {
+    localStorage.setItem(
+      'time-selection',
+      JSON.stringify({
+        type: 'preset',
+        presetIndex: '2',
+        durationMs: 900_000,
+      })
+    )
+    setTestUrl('/traces')
+    renderProbe()
+    expect(selectionType()).toBe('all')
+  })
+
+  it('rejects non-finite saved bounds', () => {
+    localStorage.setItem(
+      'time-selection',
+      '{"type":"recent","start":null,"end":111}'
+    )
+    setTestUrl('/traces')
+    renderProbe()
+    expect(selectionType()).toBe('all')
+  })
+
+  it('rejects reversed saved bounds', () => {
+    localStorage.setItem(
+      'time-selection',
+      JSON.stringify({ type: 'recent', start: 222, end: 111 })
+    )
+    setTestUrl('/traces')
+    renderProbe()
+    expect(selectionType()).toBe('all')
+  })
 })
 
 describe('time context URL precedence', () => {

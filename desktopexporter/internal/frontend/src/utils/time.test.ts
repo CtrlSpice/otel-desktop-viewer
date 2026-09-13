@@ -589,6 +589,38 @@ describe('loadRecentTimeRanges', () => {
       JSON.parse(localStorage.getItem('datetime-filter-recent')!)
     ).toHaveLength(MAX_RECENT_TIME_RANGES)
   })
+
+  it('salvages valid rows from a malformed list and rewrites only those rows', () => {
+    localStorage.setItem(
+      'datetime-filter-recent',
+      JSON.stringify([
+        { start: 1, end: 2, usedAt: 100 },
+        null,
+        { start: '3', end: 4, usedAt: 300 },
+        { start: 5, end: 5, usedAt: 400 },
+        { start: 7, end: 8 },
+        { start: 9, end: 10, usedAt: 200 },
+      ])
+    )
+
+    const expected = [
+      { start: 9, end: 10, usedAt: 200 },
+      { start: 1, end: 2, usedAt: 100 },
+    ]
+    expect(loadRecentTimeRanges()).toEqual(expected)
+    expect(JSON.parse(localStorage.getItem('datetime-filter-recent')!)).toEqual(
+      expected
+    )
+  })
+
+  it('returns an empty list when reading storage is blocked', () => {
+    vi.stubGlobal('localStorage', {
+      getItem() {
+        throw new Error('blocked')
+      },
+    })
+    expect(loadRecentTimeRanges()).toEqual([])
+  })
 })
 
 describe('recordRecentTimeRange', () => {
