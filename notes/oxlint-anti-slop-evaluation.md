@@ -15,16 +15,18 @@ error in standard lint.
 Previously cleared rules also promoted to the standard gate are
 `no-array-filter-map`, `no-chained-type-assertions`,
 `no-conditional-empty-object-spread`, `no-known-value-widening`, and
-`no-unknown-returns`.
+`no-unknown-returns`. The DOM, table, and typed component harness slice clears
+the final seven `no-unsafe-dictionary-type` diagnostics, so that rule is also
+enabled as an error in standard lint.
 
-The complete preset now reports **54 diagnostics**:
+The complete preset now reports **36 diagnostics**:
 
 | Rule | Remaining findings |
 | --- | ---: |
-| `require-safety-comment-for-type-assertion` | 23 |
+| `require-safety-comment-for-type-assertion` | 12 |
 | `no-known-value-widening` | 0 |
 | `no-runtime-typeof` | 17 |
-| `no-unsafe-dictionary-type` | 7 |
+| `no-unsafe-dictionary-type` | 0 |
 | `no-module-mocking` | 5 |
 | `no-unknown-parameters` | 2 |
 | `no-shape-in-symbol-names` | 0 |
@@ -51,11 +53,17 @@ the complete preset from 76 to 54 diagnostics: nine assertions, seven runtime
 `typeof` checks under the approved type-guard policy, five unsafe dictionaries,
 and the final known-value widening. `no-known-value-widening` is therefore
 promoted to the standard lint gate. Runtime `typeof`, unsafe dictionaries, and
-assertions remain evaluation-only at their nonzero counts above.
+assertions remained evaluation-only at that point.
 
-Next slices address finite lookups, inferred or named contracts, DOM narrowing,
-and typed component harnesses. Persistence parsing must preserve salvage
-semantics; trusted backend RPC assertions need precise boundary evidence.
+The DOM, table, and typed component harness slice takes the complete preset from
+54 to 36 diagnostics by resolving 11 assertions and the final seven unsafe
+dictionaries. `no-unsafe-dictionary-type` is therefore promoted to the standard
+lint gate. Runtime `typeof` and assertions remain evaluation-only at their
+nonzero counts above.
+
+Next slices address inferred or named contracts and the remaining justified
+boundary assertions. Persistence parsing must preserve salvage semantics;
+trusted backend RPC assertions need precise boundary evidence.
 
 ## Decision
 
