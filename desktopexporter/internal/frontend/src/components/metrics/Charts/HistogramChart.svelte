@@ -87,20 +87,20 @@
 
   // Hardcoded for now; the plan defers configurable quantiles to a future pass.
   // Keys must match Go's strconv.FormatFloat(q, 'f', -1, 64) output.
-  const QUANTILES = [0.5, 0.95, 0.99]
-  const QUANTILE_LABELS: { key: string; label: string }[] = [
+  const QUANTILE_LABELS = [
     { key: '0.5', label: 'p50' },
     { key: '0.95', label: 'p95' },
     { key: '0.99', label: 'p99' },
-  ]
+  ] as const
+  type QuantileKey = (typeof QUANTILE_LABELS)[number]['key']
 
   // The store's quantiles for this datapoint. Not computed here: that walked
   // the bucket list once per quantile for numbers already in the response.
-  let quantiles = $derived(
-    Object.fromEntries(
-      QUANTILES.map(q => [String(q), datapoint.quantiles?.[String(q)] ?? null])
-    ) as Record<string, number | null>
-  )
+  let quantiles = $derived({
+    '0.5': datapoint.quantiles?.['0.5'] ?? null,
+    '0.95': datapoint.quantiles?.['0.95'] ?? null,
+    '0.99': datapoint.quantiles?.['0.99'] ?? null,
+  } satisfies Record<QuantileKey, number | null>)
 
   let buckets = $derived.by((): Bucket[] => {
     if (datapoint.metricType === 'Histogram') {
@@ -254,7 +254,7 @@
   }
 
   type QuantileMark = {
-    key: string
+    key: QuantileKey
     label: string
     value: number
     bucketIndex: number
@@ -264,12 +264,11 @@
   }
 
   // Per-quantile color so p50/p95/p99 are distinguishable at a glance.
-  // Falls through to base-content for anything we didn't preassign.
-  const QUANTILE_COLORS = new Map<string, string>([
-    ['0.5', 'var(--color-info)'],
-    ['0.95', 'var(--color-warning)'],
-    ['0.99', 'var(--color-error)'],
-  ])
+  const QUANTILE_COLORS = {
+    '0.5': 'var(--color-info)',
+    '0.95': 'var(--color-warning)',
+    '0.99': 'var(--color-error)',
+  } satisfies Record<QuantileKey, string>
 
   // Locates which bucket a value lives in and where inside the bar to draw the
   // marker. Returns null if no bucket matches (shouldn't happen for valid
@@ -305,17 +304,17 @@
         value: v,
         bucketIndex: pos.index,
         fraction: pos.fraction,
-        color: QUANTILE_COLORS.get(key) ?? 'var(--color-base-content)',
+        color: QUANTILE_COLORS[key],
       })
     }
     return marks
   })
 
-  const QUANTILE_ORDER = new Map<string, number>([
-    ['0.5', 0],
-    ['0.95', 1],
-    ['0.99', 2],
-  ])
+  const QUANTILE_ORDER = {
+    '0.5': 0,
+    '0.95': 1,
+    '0.99': 2,
+  } satisfies Record<QuantileKey, number>
 
   let quantileLabelPlacements = $derived.by(() => {
     const ctx = chartContext
@@ -331,7 +330,7 @@
     const COLLIDE_PX = 88
 
     type Draft = {
-      key: string
+      key: QuantileKey
       statLabel: string
       valueText: string
       color: string
@@ -354,7 +353,7 @@
         title: `${m.label} ${valueText}`,
         left: px + plotLeft,
         top: ys(bucket.count) + plotTop,
-        sortOrder: QUANTILE_ORDER.get(m.key) ?? 0,
+        sortOrder: QUANTILE_ORDER[m.key],
       }
     })
 

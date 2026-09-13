@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { metricTypeBadgeTone, metricTypeStem } from './metric-type'
+import {
+  metricTypeBadgeTone,
+  metricTypeSeriesColor,
+  metricTypeStem,
+} from './metric-type'
 
 describe('metric type lookups', () => {
   it('returns configured stems and badge tones', () => {
@@ -11,6 +15,7 @@ describe('metric type lookups', () => {
     for (const metricType of ['Empty', 'toString', 'constructor']) {
       expect(metricTypeStem(metricType)).toBe('foam')
       expect(metricTypeBadgeTone(metricType)).toBe('badge-neutral')
+      expect(metricTypeSeriesColor(metricType)).toBe('var(--color-neutral)')
     }
   })
 })

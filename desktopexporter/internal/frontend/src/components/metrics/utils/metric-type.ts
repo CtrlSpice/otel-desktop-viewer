@@ -6,12 +6,36 @@ import { themeSignal } from '@/state/theme.svelte'
 // the badge tone (via STEM_TO_BADGE) and the chart series colour (via
 // categoricalPalette). Adding a new metric type? Add it here and everything
 // downstream picks it up.
-const METRIC_TYPE_STEM = new Map<string, CategoricalStem>([
-  ['Gauge', 'foam'],
-  ['Sum', 'pine'],
-  ['Histogram', 'rose'],
-  ['ExponentialHistogram', 'gold'],
-])
+type ConfiguredMetricType = Exclude<MetricType, 'Empty'>
+
+const METRIC_TYPE_STEM = {
+  Gauge: 'foam',
+  Sum: 'pine',
+  Histogram: 'rose',
+  ExponentialHistogram: 'gold',
+} satisfies Record<ConfiguredMetricType, CategoricalStem>
+
+function isConfiguredMetricType(
+  metricType: string
+): metricType is ConfiguredMetricType {
+  switch (metricType) {
+    case 'Gauge':
+    case 'Sum':
+    case 'Histogram':
+    case 'ExponentialHistogram':
+      return true
+    default:
+      return false
+  }
+}
+
+function configuredMetricTypeStem(
+  metricType: string
+): CategoricalStem | undefined {
+  return isConfiguredMetricType(metricType)
+    ? METRIC_TYPE_STEM[metricType]
+    : undefined
+}
 
 const STEM_TO_BADGE: Record<CategoricalStem, string> = {
   pine: 'badge-secondary',
@@ -34,11 +58,11 @@ const METRIC_TYPE_BADGE_BASE = 'badge badge-xs badge-soft'
 export function metricTypeStem(
   metricType: MetricType | string
 ): CategoricalStem {
-  return METRIC_TYPE_STEM.get(metricType) ?? 'foam'
+  return configuredMetricTypeStem(metricType) ?? 'foam'
 }
 
 export function metricTypeBadgeTone(metricType: MetricType | string): string {
-  const stem = METRIC_TYPE_STEM.get(metricType)
+  const stem = configuredMetricTypeStem(metricType)
   return stem ? STEM_TO_BADGE[stem] : 'badge-neutral'
 }
 
@@ -52,7 +76,7 @@ export function metricTypeBadgeClass(metricType: MetricType | string): string {
  *  Unknown metric types get neutral (no palette fallback) -- a single fill
  *  shouldn't lie about which type is rendering. */
 export function metricTypeSeriesColor(metricType: MetricType | string): string {
-  const stem = METRIC_TYPE_STEM.get(metricType)
+  const stem = configuredMetricTypeStem(metricType)
   if (!stem) return 'var(--color-neutral)'
   return categoricalPalette(1, stem, themeSignal.value)[0]
 }

@@ -2,16 +2,32 @@ type KeyDelta =
   | { kind: 'relative'; offset: number }
   | { kind: 'absolute'; position: 'first' | 'last' }
 
+type FixedNavigationKey = 'ArrowDown' | 'j' | 'ArrowUp' | 'k' | 'Home' | 'End'
+
 const PAGE_STEP = 10
 
-const KEY_DELTAS = new Map<string, KeyDelta>([
-  ['ArrowDown', { kind: 'relative', offset: 1 }],
-  ['j', { kind: 'relative', offset: 1 }],
-  ['ArrowUp', { kind: 'relative', offset: -1 }],
-  ['k', { kind: 'relative', offset: -1 }],
-  ['Home', { kind: 'absolute', position: 'first' }],
-  ['End', { kind: 'absolute', position: 'last' }],
-])
+const KEY_DELTAS = {
+  ArrowDown: { kind: 'relative', offset: 1 },
+  j: { kind: 'relative', offset: 1 },
+  ArrowUp: { kind: 'relative', offset: -1 },
+  k: { kind: 'relative', offset: -1 },
+  Home: { kind: 'absolute', position: 'first' },
+  End: { kind: 'absolute', position: 'last' },
+} satisfies Record<FixedNavigationKey, KeyDelta>
+
+function isFixedNavigationKey(key: string): key is FixedNavigationKey {
+  switch (key) {
+    case 'ArrowDown':
+    case 'j':
+    case 'ArrowUp':
+    case 'k':
+    case 'Home':
+    case 'End':
+      return true
+    default:
+      return false
+  }
+}
 
 export function keyDeltaFor(
   key: string,
@@ -19,7 +35,7 @@ export function keyDeltaFor(
 ): KeyDelta | undefined {
   if (key === 'PageDown') return { kind: 'relative', offset: pageStep }
   if (key === 'PageUp') return { kind: 'relative', offset: -pageStep }
-  return KEY_DELTAS.get(key)
+  return isFixedNavigationKey(key) ? KEY_DELTAS[key] : undefined
 }
 
 function resolveNextPos(

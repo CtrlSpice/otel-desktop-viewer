@@ -24,13 +24,12 @@
   } from '@/components/metrics/Charts/ChartSelectionLegend.svelte'
   import ChartTimeRangeHeader from '@/components/metrics/Charts/ChartTimeRangeHeader.svelte'
   import {
-    AGG_KEY_ALL,
-    AGG_KEY_SELECTED,
-    AGG_KEY_TOTAL,
+    aggregateLineOrder,
     buildAggregateSummaryRows,
     type AggregateLineKey,
     type AggregateSummaryRow,
     type AggregationView,
+    isAggregateLineKey,
     rateSlopeViewSymbol,
     rateSlopeBucketSegment,
     type SeriesStats,
@@ -51,19 +50,6 @@
   import { createLineChartKeyboardCursor } from '@/components/metrics/utils/chart-keyboard-state.svelte'
   import { timeSeriesChartPointSelection } from '@/components/metrics/utils/time-series-point-selection'
 
-  /** Render order inside the Totals section: checked → all. */
-  const AGG_TOTAL_ORDER = new Map<string, number>([
-    [AGG_KEY_SELECTED, 0],
-    [AGG_KEY_ALL, 1],
-    [AGG_KEY_TOTAL, 1],
-  ])
-
-  function isAggregateKey(key: string): key is AggregateLineKey {
-    return (
-      key === AGG_KEY_SELECTED || key === AGG_KEY_ALL || key === AGG_KEY_TOTAL
-    )
-  }
-
   function aggregateSummaryRowsAt(
     keys: readonly string[],
     valueAt: (key: string) => number | undefined
@@ -78,12 +64,9 @@
 
   function aggregateKeysInOrder(keys: readonly string[]): AggregateLineKey[] {
     return keys
-      .filter(isAggregateKey)
+      .filter(isAggregateLineKey)
       .slice()
-      .sort(
-        (a, b) =>
-          (AGG_TOTAL_ORDER.get(a) ?? 99) - (AGG_TOTAL_ORDER.get(b) ?? 99)
-      )
+      .sort((a, b) => aggregateLineOrder(a) - aggregateLineOrder(b))
   }
 
   /** Nearest point at `x` — layerchart's default tooltip matches exact
@@ -233,7 +216,7 @@
   } as const
 
   function seriesLineProps(key: string) {
-    if (isAggregateKey(key)) return { props: AGG_LINE_PROPS }
+    if (isAggregateLineKey(key)) return { props: AGG_LINE_PROPS }
     return {}
   }
 
@@ -429,7 +412,7 @@
     let bestKey: string | null = null
     let bestDist = Infinity
     for (const s of timeseries) {
-      if (isAggregateKey(s.key)) continue
+      if (isAggregateLineKey(s.key)) continue
       const v = nearestValueAt(s.points, date)
       if (v === undefined || !Number.isFinite(v)) continue
       const dist = Math.abs(v - clickY)
@@ -447,7 +430,7 @@
     data: LayerChartSeriesDatum<ChartPoint>,
     explicitKey?: string | null
   ): string | null {
-    if (explicitKey && !isAggregateKey(explicitKey)) {
+    if (explicitKey && !isAggregateLineKey(explicitKey)) {
       return explicitKey
     }
 
@@ -457,7 +440,7 @@
 
     if (Number.isFinite(clickedValue)) {
       for (const s of timeseries) {
-        if (isAggregateKey(s.key)) continue
+        if (isAggregateLineKey(s.key)) continue
         for (const p of s.points) {
           if (p.date.getTime() === t && p.value === clickedValue) {
             return s.key
@@ -469,7 +452,7 @@
       let valueMatchKey: string | null = null
       let bestValueDist = Infinity
       for (const s of timeseries) {
-        if (isAggregateKey(s.key)) continue
+        if (isAggregateLineKey(s.key)) continue
         for (const p of s.points) {
           if (p.date.getTime() !== t) continue
           const vd = Math.abs(p.value - clickedValue)
@@ -486,7 +469,7 @@
       let nearestValueKey: string | null = null
       let nearestValueDist = Infinity
       for (const s of timeseries) {
-        if (isAggregateKey(s.key)) continue
+        if (isAggregateLineKey(s.key)) continue
         const v = nearestValueAt(s.points, date)
         if (v === undefined || !Number.isFinite(v)) continue
         const dist = Math.abs(v - clickedValue)
@@ -502,7 +485,7 @@
     let bestKey: string | null = null
     let bestDist = Infinity
     for (const s of timeseries) {
-      if (isAggregateKey(s.key)) continue
+      if (isAggregateLineKey(s.key)) continue
       for (const p of s.points) {
         const dist = Math.abs(p.date.getTime() - t)
         if (dist < bestDist) {
@@ -558,7 +541,7 @@
     if (!key) {
       key = seriesKeyForChartPoint(data)
     }
-    if (!key || isAggregateKey(key)) return
+    if (!key || isAggregateLineKey(key)) return
     const point = sourcePointForChartPoint(key, data, date)
     if (!point?.sourceDatapointID) return
     onChartPointClick(key, point.sourceDatapointID)
@@ -571,7 +554,7 @@
     if (details.point?.seriesKey === undefined) return
     e.stopPropagation()
     const selection = timeSeriesChartPointSelection(details, timeseries)
-    if (selection === null || isAggregateKey(selection.seriesKey)) return
+    if (selection === null || isAggregateLineKey(selection.seriesKey)) return
     onChartPointClick?.(selection.seriesKey, selection.sourceDatapointID)
   }
 
@@ -706,7 +689,7 @@
   let seriesStatMarks = $derived.by((): SeriesStatMark[] => {
     if (!showStatOverlays) return []
     if (highlightDate === null) return []
-    if (!selectedSeriesKey || isAggregateKey(selectedSeriesKey)) return []
+    if (!selectedSeriesKey || isAggregateLineKey(selectedSeriesKey)) return []
 
     const series = chartSeries.find(s => s.key === selectedSeriesKey)
     if (!series || series.data.length === 0) return []
@@ -791,7 +774,7 @@
   /** Horizontal guide at the selected series value on the selection x. */
   let selectedPointValueY = $derived.by((): number | null => {
     if (!showStatOverlays || highlightDate === null) return null
-    if (!selectedSeriesKey || isAggregateKey(selectedSeriesKey)) return null
+    if (!selectedSeriesKey || isAggregateLineKey(selectedSeriesKey)) return null
     const series = chartSeries.find(s => s.key === selectedSeriesKey)
     if (!series) return null
     const value = exactSelectionPoint(series)?.value
@@ -855,7 +838,7 @@
     const dots: SelectionDot[] = []
     for (const s of chartSeries) {
       const isSelected = s.key === selectedSeriesKey
-      const isAggregate = isAggregateKey(s.key)
+      const isAggregate = isAggregateLineKey(s.key)
       if (!isSelected && !isAggregate) continue
       const v = exactSelectionPoint(s)?.value
       if (v === undefined || !Number.isFinite(v)) continue
@@ -880,7 +863,7 @@
   /** Mini-legend: selected series row plus a single aggregate summary line. */
   let selectionLegendRows = $derived.by((): SelectionLegendRow[] => {
     if (selectionDots.length === 0) return []
-    const seriesDots = selectionDots.filter(d => !isAggregateKey(d.key))
+    const seriesDots = selectionDots.filter(d => !isAggregateLineKey(d.key))
     const labelByKey = new Map(chartSeries.map(s => [s.key, s.label] as const))
     return seriesDots.map((d): SelectionLegendRow => ({
       key: d.key,
@@ -948,18 +931,16 @@
           {#snippet tooltip({ context }: { context: any })}
             {@const xDate = tooltipXDate(context)}
             {@const rawItems = chartSeries
-              .filter(s => !isAggregateKey(s.key))
+              .filter(s => !isAggregateLineKey(s.key))
               .slice()
               .sort((a, b) =>
                 String(a.label ?? a.key).localeCompare(String(b.label ?? b.key))
               )}
             {@const aggItems = chartSeries
-              .filter(s => isAggregateKey(s.key))
+              .filter(s => isAggregateLineKey(s.key))
               .slice()
               .sort(
-                (a, b) =>
-                  (AGG_TOTAL_ORDER.get(a.key) ?? 99) -
-                  (AGG_TOTAL_ORDER.get(b.key) ?? 99)
+                (a, b) => aggregateLineOrder(a.key) - aggregateLineOrder(b.key)
               )}
             {@const headerLabel =
               xDate != null
