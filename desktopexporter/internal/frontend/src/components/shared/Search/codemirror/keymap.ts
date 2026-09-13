@@ -3,7 +3,7 @@ import type { Command } from '@codemirror/view'
 import { acceptCompletion, completionStatus } from '@codemirror/autocomplete'
 
 export function createQueryKeymap(onSubmit: () => void) {
-  const submitCommand: Command = view => {
+  const submitCommand: Command = () => {
     onSubmit()
     return true
   }

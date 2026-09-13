@@ -115,7 +115,7 @@
   }
 
   $effect(() => {
-    ctx.metric?.id
+    void ctx.metric?.id
     expandedDatapointSections.clear()
   })
 

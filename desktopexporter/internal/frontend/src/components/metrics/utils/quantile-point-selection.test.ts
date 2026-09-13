@@ -138,8 +138,7 @@ describe('quantilePointSelectionAt', () => {
       columnSlices,
       [slice('merged', COLUMN_START, 50)],
       COLUMN_START,
-      null,
-      'Delta'
+      null
     )
     expect(got).not.toBeNull()
     expect(got!.series.map(s => s.seriesKey)).toEqual(['pod=a', 'pod=b'])
@@ -156,8 +155,7 @@ describe('quantilePointSelectionAt', () => {
       columnSlices,
       [slice('merged', COLUMN_START, 50)],
       COLUMN_START,
-      new Set(['pod=b']),
-      'Delta'
+      new Set(['pod=b'])
     )
     expect(got!.series.map(s => s.seriesKey)).toEqual(['pod=b'])
   })
@@ -167,8 +165,7 @@ describe('quantilePointSelectionAt', () => {
       [slice('pod=a', COLUMN_START, 42)],
       [slice('merged', COLUMN_START, 50)],
       COLUMN_START,
-      new Set(['pod=a', 'pod=gone']),
-      'Delta'
+      new Set(['pod=a', 'pod=gone'])
     )
     expect(got!.series.map(s => s.seriesKey)).toEqual(['pod=a'])
   })
@@ -178,8 +175,7 @@ describe('quantilePointSelectionAt', () => {
       [],
       [slice('merged', COLUMN_START, 50)],
       COLUMN_START,
-      null,
-      'Delta'
+      null
     )
     expect(got).toBeNull()
   })
@@ -192,15 +188,13 @@ describe('quantilePointSelectionAt', () => {
       [slice('pod=a', secondNs, 99)],
       merged,
       secondNs,
-      null,
-      'Delta'
+      null
     )
     const missing = quantilePointSelectionAt(
       [slice('pod=a', secondNs, 99)],
       merged,
       COLUMN_START + 500n,
-      null,
-      'Delta'
+      null
     )
 
     expect(exact?.merged?.quantiles['0.95']).toBe(99)

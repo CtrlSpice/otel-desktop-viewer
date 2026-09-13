@@ -5,6 +5,7 @@
     type MetricViewContext,
   } from '@/contexts/metric-view-context.svelte'
   import type { DataPoint, MetricData } from '@/types/api-types'
+  import TimeseriesPanel from '@/components/metrics/Detail/TimeseriesPanel.svelte'
 
   // createMetricViewContext() registers $effects, so it only works inside a
   // component. This probe renders the sub-view state the URL sync owns so
@@ -14,8 +15,9 @@
     metric: MetricData | undefined
     seriesDatapoints?: Readonly<Record<string, DataPoint[]>>
     oncontext?: (ctx: MetricViewContext) => void
+    showTimeseries?: boolean
   }
-  let { metric, seriesDatapoints, oncontext }: Props = $props()
+  let { metric, seriesDatapoints, oncontext, showTimeseries }: Props = $props()
 
   const metricCtx = createMetricViewContext(
     () => metric,
@@ -31,6 +33,10 @@
   // Handing the context back is a one-time setup step, not a subscription.
   untrack(() => oncontext?.(metricCtx))
 </script>
+
+{#if showTimeseries}
+  <TimeseriesPanel />
+{/if}
 
 <output data-testid="aggregation-view">{metricCtx.aggregationView}</output>
 <output data-testid="selected-datapoint-id"

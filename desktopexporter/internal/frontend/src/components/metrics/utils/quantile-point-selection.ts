@@ -79,8 +79,7 @@ export function quantilePointSelectionAt(
   columnSlices: readonly HistogramSlicePoint[],
   mergedBucketSeries: readonly HistogramSlicePoint[],
   timestampNs: bigint,
-  visibleKeys: Set<string> | null,
-  temporality: string
+  visibleKeys: Set<string> | null
 ): QuantilePointSelection | null {
   const visible =
     visibleKeys === null
@@ -105,10 +104,6 @@ export function quantilePointSelectionAt(
   return {
     timestampMs: Number(timestampNs / 1_000_000n),
     series,
-    merged: heatmapColumnSelectionAt(
-      mergedBucketSeries,
-      timestampNs,
-      temporality
-    ),
+    merged: heatmapColumnSelectionAt(mergedBucketSeries, timestampNs),
   }
 }

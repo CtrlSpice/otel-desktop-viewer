@@ -5,8 +5,6 @@ import type {
 } from '@/types/api-types'
 import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
 
-const MIN_BUCKET_NS = 1_000_000n // 1 ms
-
 /** Aggregate values of a histogram bucket, as the store reports them. */
 export type HistogramTotals = {
   count: number
@@ -60,29 +58,6 @@ export function isHistogramAggregationError(
     (value.kind === 'unspecified' || value.kind === 'boundsMismatch')
   )
 }
-
-const NS_PER_SEC = 1_000_000_000n
-const NS_PER_MIN = 60n * NS_PER_SEC
-const NS_PER_HOUR = 60n * NS_PER_MIN
-const NS_PER_DAY = 24n * NS_PER_HOUR
-
-/**
- * Bucket widths we are willing to choose, smallest first.
- *
- * Every entry divides evenly into a day, and the epoch is a whole number
- * of seconds, so flooring a timestamp against any of them lands on the
- * same wall-clock boundaries regardless of the query window. That is what
- * keeps columns still while the user pans or zooms -- an arbitrary width
- * like span/100 moves every boundary on the smallest range change, and
- * the whole heatmap reshuffles.
- *
- * Widths are also nameable: "5 minute buckets" rather than "1h41m".
- *
- * Which clock those boundaries belong to is `histogramBucketStart`'s
- * business -- it takes the view's timezone, so a day-scale bucket breaks
- * at local midnight rather than UTC midnight.
- */
-const NS_PER_MS = 1_000_000n
 
 /**
  * Offset, in nanoseconds, to add before flooring so that day- and hour-scale
