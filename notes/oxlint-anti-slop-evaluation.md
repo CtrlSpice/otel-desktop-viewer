@@ -16,17 +16,28 @@ Previously cleared rules also promoted to the standard gate are
 `no-array-filter-map`, `no-chained-type-assertions`,
 `no-conditional-empty-object-spread`, and `no-unknown-returns`.
 
-The complete preset now reports **138 diagnostics**:
+The complete preset now reports **108 diagnostics**:
 
 | Rule | Remaining findings |
 | --- | ---: |
-| `no-runtime-typeof` | 41 |
-| `require-safety-comment-for-type-assertion` | 37 |
+| `require-safety-comment-for-type-assertion` | 35 |
 | `no-known-value-widening` | 26 |
-| `no-unsafe-dictionary-type` | 13 |
-| `no-module-mocking` | 13 |
-| `no-unknown-parameters` | 8 |
+| `no-runtime-typeof` | 24 |
+| `no-unsafe-dictionary-type` | 12 |
+| `no-module-mocking` | 9 |
+| `no-unknown-parameters` | 2 |
 | `no-shape-in-symbol-names` | 0 |
+
+The service/bigint source slice resolved 18 diagnostics from the 138-count
+snapshot: nine runtime representation checks, six unknown parameters, two
+unjustified assertions, and one unsafe test dictionary. PR #485 then resolved
+four module-mocking findings, taking the source-fix total from 120 to 116.
+
+The move from 116 to 108 is policy reclassification, not eight more code fixes.
+`no-runtime-typeof` remains an evaluation error but now uses
+`allowInTypeGuards: true`, so eight `typeof` checks inside truthful TypeScript
+predicates are accepted. Non-predicate checks still report 24 errors. Do not
+promote this rule to standard lint until that count reaches zero.
 
 Next slices address finite lookups, inferred or named contracts, DOM narrowing,
 and typed component harnesses. Persistence parsing must preserve salvage
