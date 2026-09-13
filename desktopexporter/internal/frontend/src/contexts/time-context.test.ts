@@ -415,7 +415,7 @@ describe('time context own-write echo', () => {
 
     context.setSelection({
       type: 'preset',
-      presetIndex: 1,
+      presetIndex: 4,
       durationMs: 60 * 60_000,
     })
     await tick()
