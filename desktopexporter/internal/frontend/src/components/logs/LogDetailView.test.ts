@@ -1,18 +1,10 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import LogDetailView from './LogDetailView.svelte'
 import type { LogData } from '@/types/api-types'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
-import { SPAN_PARAM } from '@/route/query-params'
-
-const navigateToItem = vi.hoisted(() => vi.fn())
-
-vi.mock('@/route', async importOriginal => {
-  const actual = await importOriginal<typeof import('@/route')>()
-  return { ...actual, navigateToItem }
-})
 
 function makeLog(overrides: Partial<LogData> = {}): LogData {
   return {
@@ -49,10 +41,6 @@ function renderLog(log: LogData) {
 }
 
 describe('LogDetailView trace correlation', () => {
-  beforeEach(() => {
-    navigateToItem.mockClear()
-  })
-
   it('links trace and span ids with span in the href', () => {
     renderLog(makeLog())
     const traceLink = screen.getByRole('link', { name: 'trace-abc' })
@@ -69,10 +57,13 @@ describe('LogDetailView trace correlation', () => {
 
   it('navigates to trace detail with span patch on click', async () => {
     renderLog(makeLog())
+    const historyLength = window.history.length
+
     await userEvent.click(screen.getByRole('link', { name: 'span-xyz' }))
-    expect(navigateToItem).toHaveBeenCalledWith('traces', 'trace-abc', 'push', {
-      [SPAN_PARAM]: 'span-xyz',
-    })
+
+    expect(window.location.pathname).toBe('/traces/trace-abc')
+    expect(window.location.search).toBe('?start=0&end=1&span=span-xyz')
+    expect(window.history.length).toBe(historyLength + 1)
   })
 
   it('renders span id as plain text when trace id is missing', () => {

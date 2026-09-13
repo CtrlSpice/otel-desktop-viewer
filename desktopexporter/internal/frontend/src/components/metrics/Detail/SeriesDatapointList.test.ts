@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import { tick } from 'svelte'
@@ -7,14 +7,6 @@ import type { SumDataPoint } from '@/types/api-types'
 import type { MetricViewContext } from '@/contexts/metric-view-context.svelte'
 import SeriesDatapointListHarness from '@/test/SeriesDatapointListHarness.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
-import { SPAN_PARAM } from '@/route/query-params'
-
-const navigateToItem = vi.hoisted(() => vi.fn())
-
-vi.mock('@/route', async importOriginal => {
-  const actual = await importOriginal<typeof import('@/route')>()
-  return { ...actual, navigateToItem }
-})
 
 function makeDatapoint(overrides: Partial<SumDataPoint> = {}): SumDataPoint {
   return {
@@ -97,7 +89,6 @@ function renderList(datapoints: SumDataPoint[], unit = '1'): MetricViewContext {
 
 describe('SeriesDatapointList pagination and keyboard access', () => {
   beforeEach(() => {
-    navigateToItem.mockClear()
     setTestUrl('/metrics/m1?start=0&end=1')
   })
 
@@ -478,7 +469,6 @@ describe('SeriesDatapointList pagination and keyboard access', () => {
 
 describe('SeriesDatapointList exemplar trace correlation', () => {
   beforeEach(() => {
-    navigateToItem.mockClear()
     setTestUrl('/metrics/m1?start=0&end=1')
   })
 
@@ -525,9 +515,12 @@ describe('SeriesDatapointList exemplar trace correlation', () => {
       datapoints: [makeDatapoint()],
       expandDatapointID: 'dp-1',
     })
+    const historyLength = window.history.length
+
     await userEvent.click(screen.getByRole('link', { name: 'span: span-ex' }))
-    expect(navigateToItem).toHaveBeenCalledWith('traces', 'trace-ex', 'push', {
-      [SPAN_PARAM]: 'span-ex',
-    })
+
+    expect(window.location.pathname).toBe('/traces/trace-ex')
+    expect(window.location.search).toBe('?start=0&end=1&span=span-ex')
+    expect(window.history.length).toBe(historyLength + 1)
   })
 })

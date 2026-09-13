@@ -1,17 +1,10 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach } from 'vitest'
 import { screen } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import TraceDetailView from './TraceDetailView.svelte'
 import type { SpanData } from '@/types/api-types'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
-
-const setSpanInQuery = vi.hoisted(() => vi.fn())
-
-vi.mock('@/route', async importOriginal => {
-  const actual = await importOriginal<typeof import('@/route')>()
-  return { ...actual, setSpanInQuery }
-})
 
 function makeSpan(overrides: Partial<SpanData> = {}): SpanData {
   return {
@@ -45,14 +38,18 @@ function makeSpan(overrides: Partial<SpanData> = {}): SpanData {
 
 describe('TraceDetailView parent span link', () => {
   beforeEach(() => {
-    setSpanInQuery.mockClear()
     setTestUrl('/traces/trace-1?span=child-span&start=0&end=1')
   })
 
   it('selects the parent span in the current trace on click', async () => {
     renderWithContexts(TraceDetailView, { span: makeSpan() })
+    const historyLength = window.history.length
+
     await userEvent.click(screen.getByRole('button', { name: 'parent-span' }))
-    expect(setSpanInQuery).toHaveBeenCalledWith('parent-span', 'push')
+
+    expect(window.location.pathname).toBe('/traces/trace-1')
+    expect(window.location.search).toBe('?span=parent-span&start=0&end=1')
+    expect(window.history.length).toBe(historyLength + 1)
   })
 
   it('does not show a parent span link for the root span', () => {
