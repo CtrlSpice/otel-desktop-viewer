@@ -38,10 +38,10 @@ function makeSpan(overrides: Partial<SpanData> = {}): SpanData {
 
 describe('TraceDetailView parent span link', () => {
   beforeEach(() => {
-    setTestUrl('/traces/trace-1?span=child-span&start=0&end=1')
+    setTestUrl('/traces/trace-1?span=child-span&event=3&start=0&end=1')
   })
 
-  it('selects the parent span in the current trace on click', async () => {
+  it('selects the parent span and clears the selected event', async () => {
     renderWithContexts(TraceDetailView, { span: makeSpan() })
     const historyLength = window.history.length
 

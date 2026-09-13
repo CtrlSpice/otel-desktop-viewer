@@ -20,7 +20,7 @@ function makeLink(overrides: Partial<LinkData> = {}): LinkData {
 
 describe('LinksPanel trace correlation', () => {
   beforeEach(() => {
-    setTestUrl('/traces/trace-1?start=0&end=1')
+    setTestUrl('/traces/trace-1?start=0&end=1&span=current-span&event=3')
   })
 
   it('links trace and span ids with span in the href', () => {
@@ -35,7 +35,7 @@ describe('LinksPanel trace correlation', () => {
     )
   })
 
-  it('navigates with span patch when a span link is clicked', async () => {
+  it('drops stale trace state when navigating to a linked span', async () => {
     renderWithContexts(LinksPanel, { links: [makeLink()] })
     const historyLength = window.history.length
 
