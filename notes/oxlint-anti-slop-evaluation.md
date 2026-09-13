@@ -3,6 +3,35 @@
 Evaluated on 2026-09-08 against `d20d5dd`, after the frontend and
 OpenTelemetry dependency updates landed on `main`.
 
+## Cleanup progress (2026-09-13)
+
+The original evaluation below is retained as the adoption baseline. Standard
+lint now rejects warnings and passes with zero warnings and errors. The naming
+slice on top of `bc0ffcf` clears all 26 `no-shape-in-symbol-names` diagnostics:
+waterfall search-collapse state, metric aggregation cases, and accessibility
+control measurements now have role-specific names. The rule is enabled as an
+error in standard lint.
+
+Previously cleared rules also promoted to the standard gate are
+`no-array-filter-map`, `no-chained-type-assertions`,
+`no-conditional-empty-object-spread`, and `no-unknown-returns`.
+
+The complete preset now reports **138 diagnostics**:
+
+| Rule | Remaining findings |
+| --- | ---: |
+| `no-runtime-typeof` | 41 |
+| `require-safety-comment-for-type-assertion` | 37 |
+| `no-known-value-widening` | 26 |
+| `no-unsafe-dictionary-type` | 13 |
+| `no-module-mocking` | 13 |
+| `no-unknown-parameters` | 8 |
+| `no-shape-in-symbol-names` | 0 |
+
+Next slices address finite lookups, inferred or named contracts, DOM narrowing,
+and typed component harnesses. Persistence parsing must preserve salvage
+semantics; trusted backend RPC assertions need precise boundary evidence.
+
 ## Decision
 
 Adopt Oxlint as a fast frontend lint gate. Enable its default correctness

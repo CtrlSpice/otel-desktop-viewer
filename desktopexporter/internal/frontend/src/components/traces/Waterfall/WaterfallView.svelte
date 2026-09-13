@@ -612,7 +612,7 @@
   // match fold away -- and toggles made during the search live in an overlay
   // scoped to this response. Clearing the search puts the reader's own
   // arrangement back exactly, because it was never touched.
-  let searchShape = $derived.by((): Set<string> | null =>
+  let searchCollapsedParents = $derived.by((): Set<string> | null =>
     searchActive
       ? computeSearchCollapsedParents(
           spans,
@@ -631,8 +631,8 @@
   })
 
   let effectiveCollapsed = $derived.by((): ReadonlySet<string> => {
-    if (!searchShape) return userCollapsed
-    const out = new Set(searchShape)
+    if (!searchCollapsedParents) return userCollapsed
+    const out = new Set(searchCollapsedParents)
     for (const [id, collapsed] of searchOverrides) {
       if (collapsed) out.add(id)
       else out.delete(id)
@@ -645,7 +645,7 @@
   )
 
   function toggleCollapse(spanID: string) {
-    if (searchShape) {
+    if (searchCollapsedParents) {
       const next = new Map(searchOverrides)
       next.set(spanID, !effectiveCollapsed.has(spanID))
       searchOverrides = next
@@ -673,7 +673,7 @@
   // idempotent -- invoking it in a state it already produced writes the same
   // state again, which is a no-op worth exactly nothing to prevent.
   function setAll(collapsed: boolean) {
-    if (searchShape) {
+    if (searchCollapsedParents) {
       const next = new Map<string, boolean>()
       for (const id of collapsibleSpanIDs) next.set(id, collapsed)
       searchOverrides = next
