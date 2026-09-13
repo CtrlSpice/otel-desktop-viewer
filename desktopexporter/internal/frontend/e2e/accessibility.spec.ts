@@ -78,7 +78,7 @@ test.describe('home page accessibility', () => {
     const tracesLink = page.getByRole('link', { name: 'Traces', exact: true })
     await expect(tracesLink).toBeFocused()
 
-    const shape = await tracesLink.evaluate(element => {
+    const tracesLinkMetrics = await tracesLink.evaluate(element => {
       const styles = getComputedStyle(element)
       return {
         radius: Number.parseFloat(styles.borderTopLeftRadius),
@@ -86,8 +86,10 @@ test.describe('home page accessibility', () => {
         zIndex: Number.parseFloat(styles.zIndex),
       }
     })
-    expect(shape.radius).toBeGreaterThanOrEqual(shape.width / 2)
-    expect(shape.zIndex).toBeGreaterThan(0)
+    expect(tracesLinkMetrics.radius).toBeGreaterThanOrEqual(
+      tracesLinkMetrics.width / 2
+    )
+    expect(tracesLinkMetrics.zIndex).toBeGreaterThan(0)
   })
 
   test('keeps visible endpoint labels in their accessible names', async ({
@@ -247,7 +249,7 @@ test.describe('home page accessibility', () => {
     expect(focusTreatment.outlineStyle).toBe('none')
 
     await startCalendar.hover()
-    const triggerShape = await startCalendar.evaluate(element => {
+    const triggerMetrics = await startCalendar.evaluate(element => {
       const styles = getComputedStyle(element)
       const bounds = element.getBoundingClientRect()
       return {
@@ -256,8 +258,10 @@ test.describe('home page accessibility', () => {
         height: bounds.height,
       }
     })
-    expect(triggerShape.width).toBe(triggerShape.height)
-    expect(triggerShape.radius).toBeGreaterThanOrEqual(triggerShape.width / 2)
+    expect(triggerMetrics.width).toBe(triggerMetrics.height)
+    expect(triggerMetrics.radius).toBeGreaterThanOrEqual(
+      triggerMetrics.width / 2
+    )
 
     await startCalendar.click()
     await expect(startCalendar).toHaveAttribute('aria-expanded', 'true')
@@ -272,7 +276,7 @@ test.describe('home page accessibility', () => {
 
     for (const name of ['Previous', 'Next'] as const) {
       const navigationButton = page.getByRole('button', { name, exact: true })
-      const shape = await navigationButton.evaluate(element => {
+      const navigationMetrics = await navigationButton.evaluate(element => {
         const styles = getComputedStyle(element)
         const bounds = element.getBoundingClientRect()
         return {
@@ -281,11 +285,13 @@ test.describe('home page accessibility', () => {
           height: bounds.height,
         }
       })
-      expect(shape.width).toBe(shape.height)
-      expect(shape.radius).toBeGreaterThanOrEqual(shape.width / 2)
+      expect(navigationMetrics.width).toBe(navigationMetrics.height)
+      expect(navigationMetrics.radius).toBeGreaterThanOrEqual(
+        navigationMetrics.width / 2
+      )
     }
 
-    const dayShape = await page
+    const dayMetrics = await page
       .locator('.calendar-day')
       .first()
       .evaluate(element => {
@@ -297,8 +303,8 @@ test.describe('home page accessibility', () => {
           height: bounds.height,
         }
       })
-    expect(dayShape.width).toBe(dayShape.height)
-    expect(dayShape.radius).toBeGreaterThanOrEqual(dayShape.width / 2)
+    expect(dayMetrics.width).toBe(dayMetrics.height)
+    expect(dayMetrics.radius).toBeGreaterThanOrEqual(dayMetrics.width / 2)
 
     await startCalendar.click()
     await startDate.focus()

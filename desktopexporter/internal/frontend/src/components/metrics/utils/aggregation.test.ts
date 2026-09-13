@@ -13,7 +13,7 @@ describe('the default aggregation view agrees with the offered ones', () => {
   // offered only raw / sum / avg, so no tab rendered as active and every row
   // sparkline drew nothing -- the rate of a series' first bucket is null by
   // definition, and each of those series had exactly one bucket.
-  const shapes: {
+  const metricCases: {
     name: string
     metricType: string
     temporality: string
@@ -78,7 +78,7 @@ describe('the default aggregation view agrees with the offered ones', () => {
     },
   ]
 
-  for (const s of shapes) {
+  for (const s of metricCases) {
     it(`offers the default it picks for a ${s.name}`, () => {
       const available = availableAggregationViews(
         s.metricType,
