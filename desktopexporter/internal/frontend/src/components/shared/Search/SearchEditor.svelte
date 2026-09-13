@@ -16,13 +16,19 @@
   } from '@/constants/fields'
   import { parseSearchRequest } from './queryParser'
   import type { QueryNode } from './queryTree'
-  import { telemetryAPI, type SearchSort } from '@/services/telemetry-service'
+  import { telemetryAPI } from '@/services/telemetry-service'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
   import type { TimeContext } from '@/contexts/time-context.svelte'
   import type { SearchResultEvent } from '@/types/api-types'
+  import {
+    buildSearchEventFactory,
+    createSearchDispatch,
+    type SearchContext,
+    type SearchEventFactory,
+  } from './search-dispatch'
   import {
     beginListUpdate,
     cancelPendingListUpdates,
@@ -65,53 +71,7 @@
 
   // --- helpers ---
 
-  type SearchContext = {
-    signal: 'traces' | 'logs' | 'metrics'
-    startTime: number | null
-    endTime: number | null
-  }
-
-  type SearchFn = () => Promise<SearchResultEvent['results']>
-  type SearchFactory = (
-    ctx: SearchContext,
-    q?: QueryNode,
-    limit?: number,
-    sort?: SearchSort
-  ) => SearchFn
-
-  const searchDispatch = new Map<SearchContext['signal'], SearchFactory>([
-    [
-      'traces',
-      (ctx, q, limit, sort) => () =>
-        telemetryAPI.searchTraces(ctx.startTime, ctx.endTime, q, limit, sort),
-    ],
-    [
-      'logs',
-      (ctx, q, limit, sort) => () =>
-        telemetryAPI.searchLogs(ctx.startTime, ctx.endTime, q, limit, sort),
-    ],
-    [
-      'metrics',
-      (ctx, q, limit, sort) => () =>
-        telemetryAPI.searchMetricSummaries(
-          ctx.startTime,
-          ctx.endTime,
-          q,
-          limit,
-          sort
-        ),
-    ],
-  ])
-
-  /** Build the API call for a signal, or null if unsupported. */
-  function buildSearchFn(
-    ctx: SearchContext,
-    queryTree?: QueryNode,
-    limit?: number,
-    sort?: SearchSort
-  ): SearchFn | null {
-    return searchDispatch.get(ctx.signal)?.(ctx, queryTree, limit, sort) ?? null
-  }
+  const searchDispatch = createSearchDispatch(telemetryAPI)
 
   /**
    * Walk the query tree and convert human-readable duration values to
@@ -293,30 +253,19 @@
   /** Fetch without any search filter and deliver via onSearchResults. */
   function fetchClean(updateSeq: number) {
     const ctx = currentSearchContext()
-    const fn = buildSearchFn(ctx)
-    fn?.()
-      .then(results => {
-        emitResults(results, undefined, updateSeq)
+    executeSearch(buildSearchEventFactory(searchDispatch, ctx), updateSeq)
+  }
+
+  function executeSearch(search: SearchEventFactory | null, updateSeq: number) {
+    search?.(updateSeq)
+      .then(event => {
+        if (!alive) return
+        onSearchResults?.(event)
       })
       .catch(err => {
         if (!alive) return
         searchError = 'Search failed: ' + err.message
       })
-  }
-
-  /** Emit results with the query tree attached so consumers can reuse it. */
-  function emitResults(
-    results: any,
-    queryTree?: QueryNode,
-    updateSeq?: number
-  ) {
-    if (!alive || updateSeq === undefined) return
-    onSearchResults?.({
-      signal,
-      results,
-      queryTree,
-      updateSeq,
-    } as SearchResultEvent)
   }
 
   function onSubmit() {
@@ -352,7 +301,8 @@
 
       const searchCtx = currentSearchContext()
       const sort = { field: sortValue, direction: sortDirection }
-      const searchFn = buildSearchFn(
+      const searchFn = buildSearchEventFactory(
+        searchDispatch,
         searchCtx,
         queryTree ?? undefined,
         limit ?? undefined,
@@ -364,14 +314,7 @@
       }
 
       const updateSeq = beginListUpdate(signal)
-      searchFn()
-        .then(results => {
-          emitResults(results, queryTree ?? undefined, updateSeq)
-        })
-        .catch(err => {
-          if (!alive) return
-          searchError = 'Search failed: ' + err.message
-        })
+      executeSearch(searchFn, updateSeq)
     } catch (err) {
       searchError = err instanceof Error ? err.message : 'Parse error'
     }
