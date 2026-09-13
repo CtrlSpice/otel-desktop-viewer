@@ -47,11 +47,11 @@ export function createFieldValueCache(
       if (hit) return hit
 
       const fetched = fetchValues(signal, field, '', FETCH_LIMIT).catch(
-        (err: unknown) => {
+        error => {
           // Evicted by identity: a later fetch may already have replaced this
           // entry, and deleting unconditionally would drop that one instead.
           if (inFlight.get(field) === fetched) inFlight.delete(field)
-          throw err
+          throw error
         }
       )
       inFlight.set(field, fetched)

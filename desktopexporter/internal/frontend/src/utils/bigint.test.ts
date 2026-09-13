@@ -1,5 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import { parseBigInt, parseNullableBigInt } from './bigint'
+import { isBigIntSource, parseBigInt, parseNullableBigInt } from './bigint'
+
+describe('isBigIntSource', () => {
+  it.each(['123', 123, 123n])('accepts supported source value %s', value => {
+    expect(isBigIntSource(value)).toBe(true)
+  })
+
+  it.each([null, undefined, true, {}, Symbol('invalid')])(
+    'rejects unsupported source value %s',
+    value => {
+      expect(isBigIntSource(value)).toBe(false)
+    }
+  )
+
+  it('checks representation separately from conversion validity', () => {
+    expect(isBigIntSource('not-a-number')).toBe(true)
+    expect(() => parseBigInt('not-a-number')).toThrow()
+  })
+})
 
 describe('parseBigInt', () => {
   it('returns a bigint input unchanged', () => {
@@ -16,6 +34,10 @@ describe('parseBigInt', () => {
 
   it('throws for an invalid string', () => {
     expect(() => parseBigInt('not-a-number')).toThrow()
+  })
+
+  it('preserves BigInt number conversion failures', () => {
+    expect(() => parseBigInt(1.5)).toThrow()
   })
 
   it('throws for null', () => {

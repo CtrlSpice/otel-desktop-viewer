@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { telemetryAPI, JsonRpcError } from './telemetry-service'
+import {
+  telemetryAPI,
+  isAbortError,
+  JsonRpcError,
+  RequestAbortedError,
+} from './telemetry-service'
 import type { QueryNode } from '@/components/shared/Search/queryTree'
 import { OPERATORS } from '@/constants/operators'
 import type {
@@ -13,7 +18,14 @@ import type {
 // MetricData | null, so the service translates exactly one code -- -32003,
 // metric not found -- back to null. These tests pin that translation.
 
-function stubRpcResponse(body: unknown) {
+type StubRpcResponse<T> = {
+  jsonrpc: '2.0'
+  id: number
+  result?: T
+  error?: { code: number; message: string }
+}
+
+function stubRpcResponse<T>(body: StubRpcResponse<T>) {
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue({
@@ -59,6 +71,31 @@ function metricResult(overrides: Partial<JsonMetricData> = {}): JsonMetricData {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+})
+
+describe('request cancellation', () => {
+  it('recognizes only service and platform abort errors', () => {
+    expect(isAbortError(new RequestAbortedError())).toBe(true)
+    expect(isAbortError(new DOMException('aborted', 'AbortError'))).toBe(true)
+    expect(isAbortError(new DOMException('failed', 'NetworkError'))).toBe(false)
+    expect(isAbortError(new Error('aborted'))).toBe(false)
+  })
+
+  it('normalizes a platform abort without losing the request signal', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValue(new DOMException('aborted', 'AbortError'))
+    vi.stubGlobal('fetch', fetchMock)
+    const controller = new AbortController()
+
+    await expect(
+      telemetryAPI.searchSpans('trace-1', undefined, controller.signal)
+    ).rejects.toBeInstanceOf(RequestAbortedError)
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/rpc',
+      expect.objectContaining({ signal: controller.signal })
+    )
+  })
 })
 
 describe('telemetryAPI.getMetric', () => {
@@ -528,7 +565,7 @@ function captureRequest() {
 describe('request parameters', () => {
   // Named methods, with the exact object each one is expected to send.
   // toNanoseconds renders milliseconds as a decimal string, hence '2000000'.
-  const named: [string, () => Promise<void>, Record<string, unknown>][] = [
+  const named: [string, () => Promise<void>, Record<string, string>][] = [
     [
       'searchAttributes',
       () => telemetryAPI.searchAttributes('http').then(() => {}),
@@ -808,6 +845,24 @@ describe('request parameters', () => {
       datapointSeriesIDs: ['datapoints-1'],
       datapointSeriesLimit: 3,
     })
+  })
+
+  it('preserves omitted, empty, and null series selections', async () => {
+    const omitted = captureRequest()
+    await telemetryAPI.getMetric('stream-1', 2, 5).catch(() => {})
+    expect('seriesIDs' in omitted().params).toBe(false)
+
+    const empty = captureRequest()
+    await telemetryAPI
+      .getMetric('stream-1', 2, 5, undefined, [])
+      .catch(() => {})
+    expect(empty().params.seriesIDs).toEqual([])
+
+    const unfiltered = captureRequest()
+    await telemetryAPI
+      .getMetricAggregate('stream-1', 2, 5, 10, null, [], 0)
+      .catch(() => {})
+    expect(unfiltered().params.seriesIDs).toBeNull()
   })
 
   it('getMetricAggregate sends the final named parameter contract exactly', async () => {

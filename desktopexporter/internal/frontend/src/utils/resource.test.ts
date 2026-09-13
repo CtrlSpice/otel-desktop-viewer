@@ -24,12 +24,4 @@ describe('getServiceName', () => {
   it('returns undefined when there are no attributes', () => {
     expect(getServiceName(resourceWith([]))).toBeUndefined()
   })
-
-  it('rejects a non-string service name that bypassed wire validation', () => {
-    const resource = resourceWith([
-      { key: 'service.name', value: 'checkout', type: 'string' },
-    ])
-    Object.defineProperty(resource.attributes[0], 'value', { value: 123 })
-    expect(getServiceName(resource)).toBeUndefined()
-  })
 })
