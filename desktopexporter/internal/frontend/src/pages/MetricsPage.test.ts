@@ -351,7 +351,7 @@ describe('MetricsPage raw series fetching', () => {
       'time-selection',
       JSON.stringify({
         type: 'preset',
-        presetIndex: 1,
+        presetIndex: 2,
         durationMs: duration,
       })
     )

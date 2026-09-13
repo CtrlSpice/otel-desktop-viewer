@@ -7,12 +7,14 @@
  * "how I had this metric set up" travels together. Storage shape:
  *
  *   {
- *     visibleKeys: string[],
+ *     visibleKeys?: string[],
  *     aggregationView?: AggregationView,
  *     showAllSeriesAggregate?: boolean
  *   }
  *
- * Optional fields are omitted from disk when undefined/false-default.
+ * The one-shot empty-selection repair omits visibleKeys so normal defaults can
+ * seed the chart without discarding the other settings. Other optional fields
+ * are omitted from disk when undefined/false-default.
  */
 
 import type { AggregationView } from './aggregation'
@@ -44,17 +46,36 @@ export const DEFAULT_VISIBLE_TIMESERIES = 10
 const STORAGE_PREFIX = 'metrics:view:'
 
 type PersistedMetricView = {
-  visibleKeys: string[]
+  visibleKeys?: string[]
   aggregationView?: AggregationView
   showAllSeriesAggregate?: boolean
 }
 
-const VALID_AGGREGATION_VIEWS: ReadonlySet<AggregationView> = new Set([
-  'raw',
-  'sum',
-  'avg',
-  'rate',
-])
+type PersistedMetricViewFields = {
+  visibleKeys?: unknown
+  aggregationView?: unknown
+  showAllSeriesAggregate?: unknown
+}
+
+function isPersistedMetricViewFields(
+  value: unknown
+): value is PersistedMetricViewFields {
+  return value !== null && typeof value === 'object'
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string'
+}
+
+function isAggregationView(value: unknown): value is AggregationView {
+  return (
+    value === 'raw' || value === 'sum' || value === 'avg' || value === 'rate'
+  )
+}
+
+function isBoolean(value: unknown): value is boolean {
+  return value === true || value === false
+}
 
 /** Same identity as `metricSummaryKey` / drawer search — metric stream id. */
 /**
@@ -108,16 +129,15 @@ export function repairEmptyPersistedVisibleKeys(): void {
       } catch {
         continue
       }
-      if (!parsed || typeof parsed !== 'object') continue
-      const obj = parsed as Record<string, unknown>
-      if (!Array.isArray(obj.visibleKeys) || obj.visibleKeys.length > 0)
+      if (!isPersistedMetricViewFields(parsed)) continue
+      if (!Array.isArray(parsed.visibleKeys) || parsed.visibleKeys.length > 0)
         continue
 
-      delete obj.visibleKeys
-      if (Object.keys(obj).length === 0) {
+      delete parsed.visibleKeys
+      if (Object.keys(parsed).length === 0) {
         localStorage.removeItem(key)
       } else {
-        localStorage.setItem(key, JSON.stringify(obj))
+        localStorage.setItem(key, JSON.stringify(parsed))
       }
     }
 
@@ -138,21 +158,16 @@ function loadPersistedView(metricStreamID: string): PersistedMetricView | null {
     const raw = localStorage.getItem(metricViewStorageKey(metricStreamID))
     if (!raw) return null
     const parsed: unknown = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return null
-    const obj = parsed as Record<string, unknown>
-    const keysRaw = obj.visibleKeys
-    if (!Array.isArray(keysRaw)) return null
-    const visibleKeys = keysRaw.filter(
-      (k): k is string => typeof k === 'string'
-    )
-    const av = obj.aggregationView
-    const aggregationView =
-      typeof av === 'string' &&
-      VALID_AGGREGATION_VIEWS.has(av as AggregationView)
-        ? (av as AggregationView)
-        : undefined
-    const sa = obj.showAllSeriesAggregate
-    const showAllSeriesAggregate = typeof sa === 'boolean' ? sa : undefined
+    if (!isPersistedMetricViewFields(parsed)) return null
+    const keysRaw = parsed.visibleKeys
+    if (keysRaw !== undefined && !Array.isArray(keysRaw)) return null
+    const visibleKeys = keysRaw?.filter(isString)
+    const aggregationView = isAggregationView(parsed.aggregationView)
+      ? parsed.aggregationView
+      : undefined
+    const showAllSeriesAggregate = isBoolean(parsed.showAllSeriesAggregate)
+      ? parsed.showAllSeriesAggregate
+      : undefined
     return {
       visibleKeys,
       aggregationView,
@@ -164,7 +179,10 @@ function loadPersistedView(metricStreamID: string): PersistedMetricView | null {
 }
 
 function serializePersistedView(view: PersistedMetricView): string {
-  const payload: PersistedMetricView = { visibleKeys: view.visibleKeys }
+  const payload: PersistedMetricView = {}
+  if (view.visibleKeys !== undefined) {
+    payload.visibleKeys = view.visibleKeys
+  }
   if (view.aggregationView !== undefined) {
     payload.aggregationView = view.aggregationView
   }
@@ -187,12 +205,11 @@ function writePersistedView(
 
 function mergePersistedView(
   existing: PersistedMetricView | null,
-  patch:
-    | (Partial<PersistedMetricView> & Pick<PersistedMetricView, 'visibleKeys'>)
-    | { visibleKeys?: string[] }
+  patch: Partial<PersistedMetricView>
 ): PersistedMetricView {
   return {
-    visibleKeys: patch.visibleKeys ?? existing?.visibleKeys ?? [],
+    visibleKeys:
+      'visibleKeys' in patch ? patch.visibleKeys : existing?.visibleKeys,
     aggregationView:
       'aggregationView' in patch
         ? patch.aggregationView
@@ -233,7 +250,6 @@ export function savePersistedAggregationView(
   writePersistedView(
     metricStreamID,
     mergePersistedView(existing, {
-      visibleKeys: existing?.visibleKeys ?? [],
       aggregationView,
     })
   )
@@ -248,7 +264,6 @@ export function savePersistedShowAllSeriesAggregate(
   writePersistedView(
     metricStreamID,
     mergePersistedView(existing, {
-      visibleKeys: existing?.visibleKeys ?? [],
       showAllSeriesAggregate,
     })
   )

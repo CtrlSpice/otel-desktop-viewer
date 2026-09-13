@@ -1,6 +1,7 @@
 import { setContext, getContext } from 'svelte'
 import {
   type Timezone,
+  isDateTimestamp,
   normalizeTimezone,
   recordRecentTimeRange,
 } from '@/utils/time'
@@ -15,6 +16,17 @@ type TimeSelection =
   | { type: 'all' }
   | { type: 'preset'; presetIndex: number; durationMs: number }
   | { type: 'custom' | 'recent'; start: number; end: number }
+
+export const TIME_RANGE_PRESETS = [
+  { label: 'All', duration: undefined },
+  { label: '5m', duration: 300_000 },
+  { label: '15m', duration: 900_000 },
+  { label: '30m', duration: 1_800_000 },
+  { label: '1h', duration: 3_600_000 },
+  { label: '6h', duration: 21_600_000 },
+  { label: '24h', duration: 86_400_000 },
+  { label: '7d', duration: 604_800_000 },
+] as const
 
 export type QueryTimeRangeMs = {
   startTime: number | null
@@ -50,8 +62,20 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
 }
 
+type TimeSelectionFields = {
+  type?: unknown
+  presetIndex?: unknown
+  durationMs?: unknown
+  start?: unknown
+  end?: unknown
+}
+
+function isTimeSelectionFields(value: unknown): value is TimeSelectionFields {
+  return value !== null && typeof value === 'object'
+}
+
 function hasOnlyKeys(
-  value: Record<string, unknown>,
+  value: TimeSelectionFields,
   keys: readonly string[]
 ): boolean {
   const actual = Object.keys(value)
@@ -59,32 +83,31 @@ function hasOnlyKeys(
 }
 
 function isBoundedSelection(
-  value: unknown
+  value: TimeSelectionFields
 ): value is Extract<TimeSelection, { type: 'custom' | 'recent' }> {
-  if (!value || typeof value !== 'object') return false
-  const candidate = value as Record<string, unknown>
   return (
-    (candidate.type === 'custom' || candidate.type === 'recent') &&
-    hasOnlyKeys(candidate, ['type', 'start', 'end']) &&
-    isFiniteNumber(candidate.start) &&
-    isFiniteNumber(candidate.end) &&
-    candidate.start < candidate.end
+    (value.type === 'custom' || value.type === 'recent') &&
+    hasOnlyKeys(value, ['type', 'start', 'end']) &&
+    isDateTimestamp(value.start) &&
+    isDateTimestamp(value.end) &&
+    value.start < value.end
   )
 }
 
 function isTimeSelection(value: unknown): value is TimeSelection {
-  if (!value || typeof value !== 'object') return false
-  const candidate = value as Record<string, unknown>
-  if (candidate.type === 'all') return hasOnlyKeys(candidate, ['type'])
-  if (isBoundedSelection(candidate)) return true
-  return (
-    candidate.type === 'preset' &&
-    hasOnlyKeys(candidate, ['type', 'presetIndex', 'durationMs']) &&
-    Number.isInteger(candidate.presetIndex) &&
-    Number(candidate.presetIndex) > 0 &&
-    isFiniteNumber(candidate.durationMs) &&
-    candidate.durationMs > 0
-  )
+  if (!isTimeSelectionFields(value)) return false
+  if (value.type === 'all') return hasOnlyKeys(value, ['type'])
+  if (isBoundedSelection(value)) return true
+  if (
+    value.type !== 'preset' ||
+    !hasOnlyKeys(value, ['type', 'presetIndex', 'durationMs']) ||
+    !isFiniteNumber(value.presetIndex) ||
+    !Number.isInteger(value.presetIndex) ||
+    !isFiniteNumber(value.durationMs)
+  ) {
+    return false
+  }
+  return TIME_RANGE_PRESETS[value.presetIndex]?.duration === value.durationMs
 }
 
 /** Restore a current persisted shape, otherwise use the unbounded default. */
@@ -116,8 +139,8 @@ function parseTimeQuery(
   if (
     !query.start ||
     !query.end ||
-    !Number.isFinite(start) ||
-    !Number.isFinite(end) ||
+    !isDateTimestamp(start) ||
+    !isDateTimestamp(end) ||
     start >= end
   ) {
     return null
