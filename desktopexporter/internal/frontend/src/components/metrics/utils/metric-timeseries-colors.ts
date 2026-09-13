@@ -59,7 +59,7 @@ export function syncColorAssignments(
   visibleKeys: ReadonlySet<string>,
   legendOrder: readonly string[]
 ): void {
-  for (const key of [...assigned.keys()]) {
+  for (const key of Array.from(assigned.keys())) {
     if (!visibleKeys.has(key)) assigned.delete(key)
   }
   for (const key of legendOrder) {

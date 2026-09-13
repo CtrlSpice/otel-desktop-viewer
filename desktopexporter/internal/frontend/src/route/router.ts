@@ -143,7 +143,8 @@ export function readRoute(): Route {
 }
 
 function notifyRouteListeners(): void {
-  for (const listener of [...routeListeners]) listener()
+  // Subscription changes during notification apply to the next notification.
+  for (const listener of Array.from(routeListeners)) listener()
 }
 
 if (typeof window !== 'undefined') {

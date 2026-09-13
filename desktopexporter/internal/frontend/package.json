@@ -11,7 +11,7 @@
     "check:watch": "svelte-check --tsconfig ./tsconfig.json --watch",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "oxlint .",
+    "lint": "oxlint --deny-warnings .",
     "lint:anti-slop:evaluate": "oxlint --config oxlint.anti-slop.config.ts .",
     "test": "vitest run",
     "test:a11y": "playwright test",

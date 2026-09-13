@@ -129,8 +129,7 @@ export function quantileMergedSelectionLegendRows(
 
 export function heatmapColumnSelectionAt(
   series: readonly HistogramSlicePoint[],
-  timestampNs: bigint,
-  temporality: string
+  timestampNs: bigint
 ): HeatmapColumnSelection | null {
   const idx = series.findIndex(s => s.timestamp === timestampNs)
   if (idx < 0) return null
