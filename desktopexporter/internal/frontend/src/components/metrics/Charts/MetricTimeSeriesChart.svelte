@@ -52,11 +52,11 @@
   import { timeSeriesChartPointSelection } from '@/components/metrics/utils/time-series-point-selection'
 
   /** Render order inside the Totals section: checked → all. */
-  const AGG_TOTAL_ORDER: Record<string, number> = {
-    [AGG_KEY_SELECTED]: 0,
-    [AGG_KEY_ALL]: 1,
-    [AGG_KEY_TOTAL]: 1,
-  }
+  const AGG_TOTAL_ORDER = new Map<string, number>([
+    [AGG_KEY_SELECTED, 0],
+    [AGG_KEY_ALL, 1],
+    [AGG_KEY_TOTAL, 1],
+  ])
 
   function isAggregateKey(key: string): key is AggregateLineKey {
     return (
@@ -80,7 +80,10 @@
     return keys
       .filter(isAggregateKey)
       .slice()
-      .sort((a, b) => (AGG_TOTAL_ORDER[a] ?? 99) - (AGG_TOTAL_ORDER[b] ?? 99))
+      .sort(
+        (a, b) =>
+          (AGG_TOTAL_ORDER.get(a) ?? 99) - (AGG_TOTAL_ORDER.get(b) ?? 99)
+      )
   }
 
   /** Nearest point at `x` — layerchart's default tooltip matches exact
@@ -955,8 +958,8 @@
               .slice()
               .sort(
                 (a, b) =>
-                  (AGG_TOTAL_ORDER[a.key] ?? 99) -
-                  (AGG_TOTAL_ORDER[b.key] ?? 99)
+                  (AGG_TOTAL_ORDER.get(a.key) ?? 99) -
+                  (AGG_TOTAL_ORDER.get(b.key) ?? 99)
               )}
             {@const headerLabel =
               xDate != null

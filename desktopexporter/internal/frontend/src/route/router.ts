@@ -22,9 +22,13 @@ export type SignalName = 'traces' | 'metrics' | 'logs'
  */
 export type HistoryMode = 'push' | 'replace'
 
+export interface RouteQuery {
+  [name: string]: string
+}
+
 export type Route = {
   path: string
-  query: Record<string, string>
+  query: RouteQuery
 }
 
 function signalPath(signal: SignalName): string {
@@ -81,9 +85,9 @@ export function buildSearch(
  * @remarks Patch values of `null` or `undefined` clear those keys. A single-key patch is fine.
  */
 export function withQueryPatch(
-  query: Record<string, string>,
+  query: RouteQuery,
   patch: Record<string, string | null | undefined>
-): Record<string, string> {
+): RouteQuery {
   const next = { ...query }
   for (const [name, value] of Object.entries(patch)) {
     const v = value ?? null
@@ -103,9 +107,9 @@ export function withQueryPatch(
  * @example Used to clear item-scoped params when the selected trace or metric changes.
  */
 export function withoutParams(
-  query: Record<string, string>,
+  query: RouteQuery,
   params: readonly string[]
-): Record<string, string> {
+): RouteQuery {
   const next = { ...query }
   for (const param of params) delete next[param]
   return next
@@ -189,7 +193,7 @@ export function navigate(to: string, mode: HistoryMode = 'push'): void {
  * @remarks Reads the live route, then delegates to {@link navigate}.
  */
 export function navigateCurrentRoute(
-  query: Record<string, string>,
+  query: RouteQuery,
   mode: HistoryMode = 'push'
 ): void {
   const route = readRoute()
@@ -202,9 +206,9 @@ export function navigateCurrentRoute(
  * @remarks Used by {@link navigateToItem} and {@link itemHref}. Preserves the time window.
  */
 export function mergeItemQuery(
-  query: Record<string, string>,
+  query: RouteQuery,
   itemQuery?: ItemQueryPatch
-): Record<string, string> {
+): RouteQuery {
   let next = withoutParams(query, SIGNAL_ITEM_QUERY_PARAMS)
   if (itemQuery) next = withQueryPatch(next, itemQuery)
   return next
@@ -231,7 +235,7 @@ export function itemHref(
 /** Builds the bare list href for a signal while preserving route-wide query state. */
 export function signalHref(
   signal: SignalName,
-  query: Record<string, string> = readRoute().query
+  query: RouteQuery = readRoute().query
 ): string {
   return signalPath(signal) + buildSearch(mergeItemQuery(query))
 }

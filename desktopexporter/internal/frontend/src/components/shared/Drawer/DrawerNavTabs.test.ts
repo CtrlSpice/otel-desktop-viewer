@@ -39,8 +39,10 @@ describe('isNavItemActive', () => {
   })
 
   it('is never active for an unknown nav id', () => {
-    for (const path of ['/', '/traces', '/metrics/abc', '/anything']) {
-      expect(isNavItemActive('nope', path)).toBe(false)
+    for (const id of ['nope', 'toString', 'constructor']) {
+      for (const path of ['/', '/traces', '/metrics/abc', '/anything']) {
+        expect(isNavItemActive(id, path)).toBe(false)
+      }
     }
   })
 })

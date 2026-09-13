@@ -265,11 +265,11 @@
 
   // Per-quantile color so p50/p95/p99 are distinguishable at a glance.
   // Falls through to base-content for anything we didn't preassign.
-  const QUANTILE_COLORS: Record<string, string> = {
-    '0.5': 'var(--color-info)',
-    '0.95': 'var(--color-warning)',
-    '0.99': 'var(--color-error)',
-  }
+  const QUANTILE_COLORS = new Map<string, string>([
+    ['0.5', 'var(--color-info)'],
+    ['0.95', 'var(--color-warning)'],
+    ['0.99', 'var(--color-error)'],
+  ])
 
   // Locates which bucket a value lives in and where inside the bar to draw the
   // marker. Returns null if no bucket matches (shouldn't happen for valid
@@ -305,17 +305,17 @@
         value: v,
         bucketIndex: pos.index,
         fraction: pos.fraction,
-        color: QUANTILE_COLORS[key] ?? 'var(--color-base-content)',
+        color: QUANTILE_COLORS.get(key) ?? 'var(--color-base-content)',
       })
     }
     return marks
   })
 
-  const QUANTILE_ORDER: Record<string, number> = {
-    '0.5': 0,
-    '0.95': 1,
-    '0.99': 2,
-  }
+  const QUANTILE_ORDER = new Map<string, number>([
+    ['0.5', 0],
+    ['0.95', 1],
+    ['0.99', 2],
+  ])
 
   let quantileLabelPlacements = $derived.by(() => {
     const ctx = chartContext
@@ -354,7 +354,7 @@
         title: `${m.label} ${valueText}`,
         left: px + plotLeft,
         top: ys(bucket.count) + plotTop,
-        sortOrder: QUANTILE_ORDER[m.key] ?? 0,
+        sortOrder: QUANTILE_ORDER.get(m.key) ?? 0,
       }
     })
 

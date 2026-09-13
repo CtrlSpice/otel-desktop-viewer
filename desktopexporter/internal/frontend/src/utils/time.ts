@@ -457,16 +457,16 @@ export function traceSummaryDurationNs(
   return ns >= 0n ? ns : undefined
 }
 
-const DURATION_UNITS: Record<string, bigint> = {
-  ns: 1n,
-  us: 1_000n,
-  '\u00b5s': 1_000n, // µs
-  ms: 1_000_000n,
-  s: 1_000_000_000n,
-  m: 60_000_000_000n,
-  min: 60_000_000_000n,
-  h: 3_600_000_000_000n,
-}
+const DURATION_UNITS = new Map<string, bigint>([
+  ['ns', 1n],
+  ['us', 1_000n],
+  ['\u00b5s', 1_000n],
+  ['ms', 1_000_000n],
+  ['s', 1_000_000_000n],
+  ['m', 60_000_000_000n],
+  ['min', 60_000_000_000n],
+  ['h', 3_600_000_000_000n],
+])
 
 const DURATION_RE = /^(\d+(?:\.\d+)?)\s*(ns|us|µs|ms|s|min|m|h)$/i
 
@@ -486,7 +486,7 @@ export function parseDuration(input: string): bigint | null {
   if (!match) return null
 
   const [, numStr, unit] = match
-  const multiplier = DURATION_UNITS[unit.toLowerCase()]
+  const multiplier = DURATION_UNITS.get(unit.toLowerCase())
   if (multiplier === undefined) return null
 
   const num = parseFloat(numStr)

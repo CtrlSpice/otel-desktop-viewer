@@ -33,7 +33,9 @@ export type ColumnSpec = {
 }
 
 /** Pixel widths by column id -- the persisted shape, and the working one. */
-export type ColumnWidths = Record<string, number>
+export interface ColumnWidths {
+  [id: string]: number
+}
 
 export function fixed(id: string, width: number): ColumnSpec {
   return { id, min: width, flex: 0 }

@@ -71,28 +71,37 @@
     endTime: number | null
   }
 
-  const searchDispatch: Record<
-    string,
-    (
-      ctx: SearchContext,
-      q?: QueryNode,
-      limit?: number,
-      sort?: SearchSort
-    ) => () => Promise<any>
-  > = {
-    traces: (ctx, q, limit, sort) => () =>
-      telemetryAPI.searchTraces(ctx.startTime, ctx.endTime, q, limit, sort),
-    logs: (ctx, q, limit, sort) => () =>
-      telemetryAPI.searchLogs(ctx.startTime, ctx.endTime, q, limit, sort),
-    metrics: (ctx, q, limit, sort) => () =>
-      telemetryAPI.searchMetricSummaries(
-        ctx.startTime,
-        ctx.endTime,
-        q,
-        limit,
-        sort
-      ),
-  }
+  type SearchFn = () => Promise<SearchResultEvent['results']>
+  type SearchFactory = (
+    ctx: SearchContext,
+    q?: QueryNode,
+    limit?: number,
+    sort?: SearchSort
+  ) => SearchFn
+
+  const searchDispatch = new Map<SearchContext['signal'], SearchFactory>([
+    [
+      'traces',
+      (ctx, q, limit, sort) => () =>
+        telemetryAPI.searchTraces(ctx.startTime, ctx.endTime, q, limit, sort),
+    ],
+    [
+      'logs',
+      (ctx, q, limit, sort) => () =>
+        telemetryAPI.searchLogs(ctx.startTime, ctx.endTime, q, limit, sort),
+    ],
+    [
+      'metrics',
+      (ctx, q, limit, sort) => () =>
+        telemetryAPI.searchMetricSummaries(
+          ctx.startTime,
+          ctx.endTime,
+          q,
+          limit,
+          sort
+        ),
+    ],
+  ])
 
   /** Build the API call for a signal, or null if unsupported. */
   function buildSearchFn(
@@ -100,8 +109,8 @@
     queryTree?: QueryNode,
     limit?: number,
     sort?: SearchSort
-  ): (() => Promise<any>) | null {
-    return searchDispatch[ctx.signal]?.(ctx, queryTree, limit, sort) ?? null
+  ): SearchFn | null {
+    return searchDispatch.get(ctx.signal)?.(ctx, queryTree, limit, sort) ?? null
   }
 
   /**

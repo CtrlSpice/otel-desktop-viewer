@@ -50,15 +50,15 @@
     },
   ]
 
-  const ACTIVE_RULES: Record<string, (p: string) => boolean> = {
-    home: p => p === '/',
-    traces: p => p === '/traces' || p.startsWith('/traces/'),
-    metrics: p => p === '/metrics' || p.startsWith('/metrics/'),
-    logs: p => p === '/logs' || p.startsWith('/logs/'),
-  }
+  const ACTIVE_RULES = new Map<string, (p: string) => boolean>([
+    ['home', p => p === '/'],
+    ['traces', p => p === '/traces' || p.startsWith('/traces/')],
+    ['metrics', p => p === '/metrics' || p.startsWith('/metrics/')],
+    ['logs', p => p === '/logs' || p.startsWith('/logs/')],
+  ])
 
   export function isNavItemActive(itemID: string, path: string): boolean {
-    return (ACTIVE_RULES[itemID] ?? (() => false))(path)
+    return ACTIVE_RULES.get(itemID)?.(path) ?? false
   }
 </script>
 

@@ -6,12 +6,12 @@ import { themeSignal } from '@/state/theme.svelte'
 // the badge tone (via STEM_TO_BADGE) and the chart series colour (via
 // categoricalPalette). Adding a new metric type? Add it here and everything
 // downstream picks it up.
-const METRIC_TYPE_STEM: Record<string, CategoricalStem> = {
-  Gauge: 'foam',
-  Sum: 'pine',
-  Histogram: 'rose',
-  ExponentialHistogram: 'gold',
-}
+const METRIC_TYPE_STEM = new Map<string, CategoricalStem>([
+  ['Gauge', 'foam'],
+  ['Sum', 'pine'],
+  ['Histogram', 'rose'],
+  ['ExponentialHistogram', 'gold'],
+])
 
 const STEM_TO_BADGE: Record<CategoricalStem, string> = {
   pine: 'badge-secondary',
@@ -34,11 +34,11 @@ const METRIC_TYPE_BADGE_BASE = 'badge badge-xs badge-soft'
 export function metricTypeStem(
   metricType: MetricType | string
 ): CategoricalStem {
-  return METRIC_TYPE_STEM[metricType] ?? 'foam'
+  return METRIC_TYPE_STEM.get(metricType) ?? 'foam'
 }
 
 export function metricTypeBadgeTone(metricType: MetricType | string): string {
-  const stem = METRIC_TYPE_STEM[metricType]
+  const stem = METRIC_TYPE_STEM.get(metricType)
   return stem ? STEM_TO_BADGE[stem] : 'badge-neutral'
 }
 
@@ -52,7 +52,7 @@ export function metricTypeBadgeClass(metricType: MetricType | string): string {
  *  Unknown metric types get neutral (no palette fallback) -- a single fill
  *  shouldn't lie about which type is rendering. */
 export function metricTypeSeriesColor(metricType: MetricType | string): string {
-  const stem = METRIC_TYPE_STEM[metricType]
+  const stem = METRIC_TYPE_STEM.get(metricType)
   if (!stem) return 'var(--color-neutral)'
   return categoricalPalette(1, stem, themeSignal.value)[0]
 }

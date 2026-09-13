@@ -1018,7 +1018,7 @@ export function createMetricViewContext(
   function seriesFromViews(
     series: readonly { key: string; label: string }[],
     view: 'sum' | 'avg' | 'rate'
-  ): { series: ChartTimeseries[]; resets: ResetIndicesByKey } {
+  ): TransformedSeries {
     const m = getMetric()
     const resets: ResetIndicesByKey = new Map()
     if (!m) return { series: [], resets }

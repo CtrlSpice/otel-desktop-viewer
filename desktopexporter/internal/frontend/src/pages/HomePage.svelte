@@ -1,3 +1,16 @@
+<script module lang="ts">
+  // The kind is stored, so it survives a frontend that has not been taught
+  // about a new one: fall back to the raw token rather than showing nothing.
+  const REJECTION_LABELS = new Map<string, string>([
+    ['span_already_stored', 'duplicate span id'],
+    ['span_refused', 'rejected by the store'],
+  ])
+
+  export function rejectionLabel(kind: string): string {
+    return REJECTION_LABELS.get(kind) ?? kind
+  }
+</script>
+
 <script lang="ts">
   import { onMount, type Component } from 'svelte'
   import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/svelte'
@@ -73,17 +86,6 @@ $ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
   let rejectedTotal = $derived(
     rejections.reduce((sum, r) => sum + r.occurrences, 0)
   )
-
-  // The kind is stored, so it survives a frontend that has not been taught
-  // about a new one: fall back to the raw token rather than showing nothing.
-  const REJECTION_LABELS: Record<string, string> = {
-    span_already_stored: 'duplicate span id',
-    span_refused: 'rejected by the store',
-  }
-
-  function rejectionLabel(kind: string): string {
-    return REJECTION_LABELS[kind] ?? kind
-  }
 
   function formatRelativeTime(timestampNs: bigint | null | undefined): string {
     if (timestampNs == null) return '-'
