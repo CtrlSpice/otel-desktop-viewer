@@ -410,7 +410,10 @@
   function pointerYDataValue(e: MouseEvent): number | undefined {
     const ctx = lineChartContext
     if (!ctx?.yScale?.invert) return undefined
-    const root = (e.target as Element).closest('.lc-root-container')
+    const root =
+      e.target instanceof Element
+        ? e.target.closest('.lc-root-container')
+        : null
     if (!root) return undefined
     const rect = root.getBoundingClientRect()
     const plotY = e.clientY - rect.top - ctx.padding.top

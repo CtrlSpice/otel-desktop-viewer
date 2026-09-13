@@ -1,5 +1,5 @@
-<script lang="ts">
-  import { untrack, type Component } from 'svelte'
+<script lang="ts" generics="TComponent extends Component<any>">
+  import { untrack, type Component, type ComponentProps } from 'svelte'
   import { createRouteContext } from '@/contexts/route-context.svelte'
   import { createTimeContext } from '@/contexts/time-context.svelte'
   import {
@@ -9,8 +9,8 @@
   import type { DataPoint, MetricData } from '@/types/api-types'
 
   type Props = {
-    component: Component<any>
-    componentProps?: Record<string, unknown>
+    component: TComponent
+    componentProps: ComponentProps<TComponent>
     metric: MetricData
     seriesDatapoints?: Readonly<Record<string, DataPoint[]>>
     oncontext?: (context: MetricViewContext) => void
@@ -18,7 +18,7 @@
 
   let {
     component: TestComponent,
-    componentProps = {},
+    componentProps,
     metric,
     seriesDatapoints,
     oncontext,

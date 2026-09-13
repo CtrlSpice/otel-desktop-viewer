@@ -1,5 +1,5 @@
-<script lang="ts">
-  import type { Component } from 'svelte'
+<script lang="ts" generics="TComponent extends Component<any>">
+  import type { Component, ComponentProps } from 'svelte'
   import { createRouteContext } from '@/contexts/route-context.svelte'
   import { createTimeContext } from '@/contexts/time-context.svelte'
 
@@ -8,10 +8,10 @@
   // unwraps it, so a harness prop by that name makes every rerender silently
   // update the wrong layer -- assertions after it pass against the old props.
   type Props = {
-    component: Component<any>
-    componentProps?: Record<string, unknown>
+    component: TComponent
+    componentProps?: ComponentProps<TComponent>
   }
-  let { component: TestComponent, componentProps = {} }: Props = $props()
+  let { component: TestComponent, componentProps }: Props = $props()
 
   createRouteContext()
   createTimeContext()

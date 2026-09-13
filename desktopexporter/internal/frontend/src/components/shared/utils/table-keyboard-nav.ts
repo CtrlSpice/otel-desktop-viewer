@@ -29,8 +29,8 @@ function resolveNextPos(
   return Math.max(0, Math.min(raw, lastPos))
 }
 
-function shouldHandle(el: HTMLElement | null, root: HTMLElement): boolean {
-  if (!el || !root.contains(el)) return false
+function shouldHandle(el: EventTarget | null, root: HTMLElement): boolean {
+  if (!(el instanceof Element) || !root.contains(el)) return false
   if (el.closest('input, textarea, select, [contenteditable="true"]'))
     return false
   if (el.closest('button')) return false
@@ -93,15 +93,14 @@ export function tableNav(node: HTMLElement, opts: TableNavOptions) {
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (!shouldHandle(e.target as HTMLElement | null, node)) return
+    if (!shouldHandle(e.target, node)) return
 
     const rows = getRows()
     if (rows.length === 0) return
 
-    const focused = document.activeElement as HTMLElement | null
-    const currentIdx = focused ? rows.indexOf(focused) : -1
-    const currentID =
-      currentIdx >= 0 ? (focused!.dataset[dataKey()] ?? null) : null
+    const currentIdx = rows.findIndex(row => row === document.activeElement)
+    const focused = rows[currentIdx]
+    const currentID = focused?.dataset[dataKey()] ?? null
 
     if (current.onKey?.(e, currentID)) return
 

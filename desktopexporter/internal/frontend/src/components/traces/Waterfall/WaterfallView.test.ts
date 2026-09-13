@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { tick } from 'svelte'
+import { tick, type ComponentProps } from 'svelte'
 import { waitFor } from '@testing-library/svelte'
 import WaterfallView from './WaterfallView.svelte'
 import type { SpanNode } from '@/types/api-types'
@@ -65,13 +65,16 @@ function deepTree(): SpanNode[] {
 
 const ALL_IDS = ['a', 'b', 'c', 'd', 'e', 'f']
 
-function renderTree(overrides: Record<string, unknown> = {}) {
-  return renderWithContexts(WaterfallView, {
+function renderTree(
+  overrides: Partial<ComponentProps<typeof WaterfallView>> = {}
+) {
+  const props: ComponentProps<typeof WaterfallView> = {
     spans: deepTree(),
     selectedSpanID: null,
     onSelectSpan: vi.fn(),
     ...overrides,
-  })
+  }
+  return renderWithContexts(WaterfallView, props)
 }
 
 function rowIDs(): string[] {

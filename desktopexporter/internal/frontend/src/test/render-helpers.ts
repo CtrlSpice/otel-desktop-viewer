@@ -13,7 +13,7 @@ export function renderWithContexts<T extends Component<any>>(
   props?: ComponentProps<T>
 ) {
   return render(ContextHarness, {
-    props: { component, componentProps: props ?? {} },
+    props: { component, componentProps: props },
   })
 }
 

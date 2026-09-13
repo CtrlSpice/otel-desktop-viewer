@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeAll, describe, expect, it, vi } from 'vitest'
-import { createRawSnippet } from 'svelte'
+import { createRawSnippet, type ComponentProps } from 'svelte'
 import { screen, waitFor } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import SignalListDrawer from './SignalListDrawer.svelte'
@@ -60,8 +60,11 @@ beforeAll(() => {
 // Instantiation expression pins the drawer's generic to DrawerItem; passing
 // the bare component would collapse T to unknown and reject our snippet.
 const TypedDrawer = SignalListDrawer<DrawerItem>
+type TypedDrawerProps = ComponentProps<typeof TypedDrawer>
 
-function drawerProps(props: Record<string, unknown> = {}) {
+function drawerProps(
+  overrides: Partial<TypedDrawerProps> = {}
+): TypedDrawerProps {
   return {
     items,
     selectedID: null,
@@ -69,12 +72,12 @@ function drawerProps(props: Record<string, unknown> = {}) {
     label: 'Traces',
     itemSnippet,
     children: pageContent,
-    ...props,
+    ...overrides,
   }
 }
 
-function renderDrawer(props: Record<string, unknown> = {}) {
-  return renderWithContexts(TypedDrawer, drawerProps(props))
+function renderDrawer(overrides: Partial<TypedDrawerProps> = {}) {
+  return renderWithContexts(TypedDrawer, drawerProps(overrides))
 }
 
 function mountedRows() {

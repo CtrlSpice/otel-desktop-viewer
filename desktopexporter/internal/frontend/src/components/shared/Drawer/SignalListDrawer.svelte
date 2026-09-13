@@ -478,10 +478,11 @@
   }
 
   function drawerItemFromEvent(event: Event): HTMLElement | null {
-    const target = event.target as Element | null
-    const wrapper = target?.closest<HTMLElement>('[data-drawer-item-key]')
+    const target = event.target
+    if (!(target instanceof Element)) return null
+    const wrapper = target.closest<HTMLElement>('[data-drawer-item-key]')
     if (!wrapper || !drawerBodyEl?.contains(wrapper)) return null
-    const focusedControl = target?.closest<HTMLElement>(
+    const focusedControl = target.closest<HTMLElement>(
       'button, a[href], [tabindex]'
     )
     return focusedControl === itemControl(wrapper) ? wrapper : null

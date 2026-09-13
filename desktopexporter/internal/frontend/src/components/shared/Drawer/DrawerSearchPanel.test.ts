@@ -2,9 +2,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
+import type { ComponentProps } from 'svelte'
 import DrawerSearchPanel from './DrawerSearchPanel.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
+import type { SortOption } from '@/contexts/signal-list-page.svelte'
 
+type SortColumn = 'time' | 'duration' | 'spanCount'
 const sortOptions = [
   { value: 'time', label: 'Start time' },
   { value: 'duration', label: 'Duration' },
@@ -13,21 +16,26 @@ const sortOptions = [
     label: 'Span count',
     defaultDirection: 'desc' as const,
   },
-]
+] satisfies SortOption<SortColumn>[]
+
+const TestDrawerSearchPanel = DrawerSearchPanel<SortColumn>
 
 // The popover JS API (methods + popovertarget invokers) comes from the shared
 // polyfill in src/test/setup.ts, so these tests open the sort menu the way a
 // user would: by clicking the trigger.
 
-function renderPanel(props: Record<string, unknown> = {}) {
+function renderPanel(
+  overrides: Partial<ComponentProps<typeof TestDrawerSearchPanel>> = {}
+) {
   setTestUrl('/traces')
-  return renderWithContexts(DrawerSearchPanel, {
+  const props: ComponentProps<typeof TestDrawerSearchPanel> = {
     signal: 'traces',
     sortOptions,
     sortValue: 'duration',
     sortDirection: 'desc',
-    ...props,
-  })
+    ...overrides,
+  }
+  return renderWithContexts(TestDrawerSearchPanel, props)
 }
 
 async function openSortMenu() {

@@ -152,9 +152,10 @@
     }
 
     const menuItems = sortMenuItems()
-    const current = (
-      event.target as Element | null
-    )?.closest<HTMLButtonElement>('[role="menuitemradio"]')
+    const current =
+      event.target instanceof Element
+        ? event.target.closest<HTMLButtonElement>('[role="menuitemradio"]')
+        : null
     const currentIndex = current ? menuItems.indexOf(current) : -1
     if (currentIndex < 0 || menuItems.length === 0) return
 

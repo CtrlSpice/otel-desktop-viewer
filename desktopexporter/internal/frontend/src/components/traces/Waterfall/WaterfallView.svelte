@@ -800,8 +800,8 @@
       ?.focus()
   }
 
-  function shouldHandleGridKey(el: HTMLElement | null): boolean {
-    if (!el || !gridHostEl?.contains(el)) return false
+  function shouldHandleGridKey(el: EventTarget | null): boolean {
+    if (!(el instanceof Element) || !gridHostEl?.contains(el)) return false
     if (el.closest('input, textarea, select, [contenteditable="true"]'))
       return false
     if (el.closest('button')) return false
@@ -848,10 +848,10 @@
   }
 
   function handleGridKeydown(e: KeyboardEvent) {
-    if (!shouldHandleGridKey(e.target as HTMLElement | null)) return
+    if (!shouldHandleGridKey(e.target)) return
     if (visibleRows.length === 0) return
 
-    const focused = document.activeElement as HTMLElement | null
+    const focused = document.activeElement
     const focusedID =
       focused
         ?.closest<HTMLTableRowElement>('tr[data-span-id]')

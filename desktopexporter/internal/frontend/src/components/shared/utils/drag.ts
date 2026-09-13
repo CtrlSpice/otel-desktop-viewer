@@ -44,7 +44,7 @@ export function startDrag(e: DragStartEvent, opts: DragOptions): DragHandle {
   e.preventDefault()
 
   const start = opts.axis === 'x' ? e.clientX : e.clientY
-  const target = e.currentTarget as HTMLElement | null
+  const target = e.currentTarget instanceof HTMLElement ? e.currentTarget : null
 
   // Capture routes every later pointer event to this element, so a fast drag
   // that outruns the cursor -- or leaves the window -- keeps resizing instead

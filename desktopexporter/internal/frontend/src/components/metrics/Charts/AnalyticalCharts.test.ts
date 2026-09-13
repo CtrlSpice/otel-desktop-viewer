@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from '@testing-library/svelte'
-import { tick, type Component } from 'svelte'
+import { tick, type Component, type ComponentProps } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import HistogramChart from './HistogramChart.svelte'
 import HistogramHeatmap from './HistogramHeatmap.svelte'
@@ -154,9 +154,9 @@ function metricWithDatapoints(
   }
 }
 
-function renderChart(
-  component: Component<any>,
-  componentProps: Record<string, unknown>,
+function renderChart<TComponent extends Component<any>>(
+  component: TComponent,
+  componentProps: ComponentProps<TComponent>,
   metric: MetricData,
   oncontext?: (context: MetricViewContext) => void
 ) {

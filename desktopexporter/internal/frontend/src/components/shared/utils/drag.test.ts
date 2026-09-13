@@ -11,7 +11,7 @@ function handle() {
   return el
 }
 
-function down(el: HTMLElement, x = 100, y = 100) {
+function down(el: EventTarget, x = 100, y = 100) {
   const e = Object.assign(
     new MouseEvent('pointerdown', {
       clientX: x,
@@ -90,6 +90,18 @@ describe('startDrag', () => {
     expect(() => startDrag(down(h), { axis: 'x', onMove })).not.toThrow()
     moveTo(150)
     expect(onMove).toHaveBeenCalledWith(50)
+  })
+
+  it('uses window listeners when the pointer event has no HTML element owner', () => {
+    const onMove = vi.fn()
+    const onEnd = vi.fn()
+    startDrag(down(window), { axis: 'x', onMove, onEnd })
+
+    moveTo(125)
+    window.dispatchEvent(new MouseEvent('pointerup'))
+
+    expect(onMove).toHaveBeenCalledWith(25)
+    expect(onEnd).toHaveBeenCalledOnce()
   })
 
   it('ends once, whichever way the drag finishes', () => {
