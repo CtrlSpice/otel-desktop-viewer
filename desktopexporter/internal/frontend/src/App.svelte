@@ -1,3 +1,14 @@
+<script module lang="ts">
+  import type { Component } from 'svelte'
+
+  export type AppPages = {
+    home: Component
+    traces: Component
+    metrics: Component
+    logs: Component
+  }
+</script>
+
 <script lang="ts">
   import { tick } from 'svelte'
   import HomePage from '@/pages/HomePage.svelte'
@@ -9,6 +20,15 @@
     getRouteContext,
   } from '@/contexts/route-context.svelte'
   import { createTimeContext } from '@/contexts/time-context.svelte'
+
+  const productionPages = {
+    home: HomePage,
+    traces: TracesPage,
+    metrics: MetricsPage,
+    logs: LogsPage,
+  } satisfies AppPages
+
+  let { pages = productionPages }: { pages?: AppPages } = $props()
 
   createRouteContext()
   createTimeContext()
@@ -41,12 +61,12 @@
 
   const Page = $derived(
     under('/traces')
-      ? TracesPage
+      ? pages.traces
       : under('/metrics')
-        ? MetricsPage
+        ? pages.metrics
         : under('/logs')
-          ? LogsPage
-          : HomePage
+          ? pages.logs
+          : pages.home
   )
 </script>
 
