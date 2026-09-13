@@ -16,7 +16,7 @@ Previously cleared rules also promoted to the standard gate are
 `no-array-filter-map`, `no-chained-type-assertions`,
 `no-conditional-empty-object-spread`, and `no-unknown-returns`.
 
-The complete preset now reports **108 diagnostics**:
+The complete preset now reports **104 diagnostics**:
 
 | Rule | Remaining findings |
 | --- | ---: |
@@ -24,7 +24,7 @@ The complete preset now reports **108 diagnostics**:
 | `no-known-value-widening` | 26 |
 | `no-runtime-typeof` | 24 |
 | `no-unsafe-dictionary-type` | 12 |
-| `no-module-mocking` | 9 |
+| `no-module-mocking` | 5 |
 | `no-unknown-parameters` | 2 |
 | `no-shape-in-symbol-names` | 0 |
 
@@ -38,6 +38,10 @@ The move from 116 to 108 is policy reclassification, not eight more code fixes.
 `allowInTypeGuards: true`, so eight `typeof` checks inside truthful TypeScript
 predicates are accepted. Non-predicate checks still report 24 errors. Do not
 promote this rule to standard lint until that count reaches zero.
+
+After that policy change, PR #486 resolved four more module-mocking findings,
+taking the current total from 108 to 104. This is another source fix; it does
+not change the eight-finding policy reclassification above.
 
 Next slices address finite lookups, inferred or named contracts, DOM narrowing,
 and typed component harnesses. Persistence parsing must preserve salvage
