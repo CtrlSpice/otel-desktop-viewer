@@ -29,13 +29,14 @@ describe('field value cache', () => {
   it('evicts a failed fetch so the next call retries', async () => {
     // One unreachable moment must not disable completion for the session.
     let attempt = 0
+    const failure = new Error('store down')
     const fetch = vi.fn(async () => {
       attempt++
-      if (attempt === 1) throw new Error('store down')
+      if (attempt === 1) throw failure
       return ['recovered']
     })
     const cache = createFieldValueCache(fetch, 'traces')
-    await expect(cache.values('name')).rejects.toThrow('store down')
+    await expect(cache.values('name')).rejects.toBe(failure)
     expect(await cache.values('name')).toEqual(['recovered'])
   })
 
