@@ -28,7 +28,7 @@
     "@codemirror/view": "^6.43.11",
     "@fontsource/atkinson-hyperlegible-mono": "^5.3.0",
     "@fontsource/atkinson-hyperlegible-next": "^5.3.0",
-    "@hugeicons/core-free-icons": "^4.3.2",
+    "@hugeicons/core-free-icons": "^4.3.0",
     "@hugeicons/svelte": "^1.1.5",
     "@humanspeak/svelte-virtual-list": "^0.5.14",
     "@internationalized/date": "^3.12.4",
