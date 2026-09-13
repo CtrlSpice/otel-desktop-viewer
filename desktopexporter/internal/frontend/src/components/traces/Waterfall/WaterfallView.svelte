@@ -253,8 +253,8 @@
   import WaterfallRow from './WaterfallRow.svelte'
   import {
     escapeForSelector,
+    keyDeltaFor,
     resolveNextPos,
-    type KeyDelta,
   } from '@/components/shared/utils/table-keyboard-nav'
   import { isElementTarget } from '@/components/shared/utils/dom-target'
   import {
@@ -269,17 +269,6 @@
 
   const WATERFALL_ROW_HEIGHT_PX = 28
   const GRID_PAGE_STEP = 8
-
-  const KEY_DELTAS: Record<string, KeyDelta> = {
-    ArrowDown: { kind: 'relative', offset: 1 },
-    j: { kind: 'relative', offset: 1 },
-    ArrowUp: { kind: 'relative', offset: -1 },
-    k: { kind: 'relative', offset: -1 },
-    PageDown: { kind: 'relative', offset: GRID_PAGE_STEP },
-    PageUp: { kind: 'relative', offset: -GRID_PAGE_STEP },
-    Home: { kind: 'absolute', position: 'first' },
-    End: { kind: 'absolute', position: 'last' },
-  }
 
   // --- Visibility from collapse state (pure) ---
 
@@ -435,16 +424,28 @@
   const COLUMN_RESIZE_STEP_PX = 16
   const COLUMN_RESIZE_LARGE_STEP_PX = 64
 
+  function isStoredWidthsObject(value: unknown): value is object {
+    return value !== null && typeof value === 'object'
+  }
+
+  function isFiniteWidth(value: unknown): value is number {
+    return (
+      typeof value === 'number' &&
+      Number.isFinite(value) &&
+      Math.abs(value) <= Number.MAX_SAFE_INTEGER
+    )
+  }
+
   function loadStoredWidths(): ColumnWidths {
     if (typeof localStorage === 'undefined') return {}
     try {
       const parsed: unknown = JSON.parse(
         localStorage.getItem(COLUMN_WIDTHS_KEY) ?? 'null'
       )
-      if (parsed === null || typeof parsed !== 'object') return {}
+      if (!isStoredWidthsObject(parsed)) return {}
       const out: ColumnWidths = {}
       for (const [id, w] of Object.entries(parsed)) {
-        if (typeof w === 'number' && Number.isFinite(w)) out[id] = w
+        if (isFiniteWidth(w)) out[id] = w
       }
       return out
     } catch {
@@ -526,12 +527,13 @@
   let scrollContainerW = $state(800)
 
   $effect(() => {
-    if (!scrollContainerEl) return
+    const container = scrollContainerEl
+    if (!container) return
     untrack(() => {
       colWidths = reconcileWidths(
         wfCols,
         loadStoredWidths(),
-        scrollContainerEl!.clientWidth
+        container.clientWidth
       )
     })
     const ro = new ResizeObserver(entries => {
@@ -541,7 +543,7 @@
         colWidths = fitWidths(wfCols, colWidths, w)
       }
     })
-    ro.observe(scrollContainerEl)
+    ro.observe(container)
     return () => ro.disconnect()
   })
 
@@ -884,7 +886,7 @@
       return
     }
 
-    const delta = KEY_DELTAS[e.key]
+    const delta = keyDeltaFor(e.key, GRID_PAGE_STEP)
     if (!delta) return
 
     e.preventDefault()

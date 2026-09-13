@@ -5,14 +5,17 @@
   import ChartHistogramIcon from '@hugeicons/core-free-icons/ChartHistogramIcon'
   import Home12Icon from '@hugeicons/core-free-icons/Home12Icon'
   import { LogIcon } from '@/icons'
+  import type { SignalName } from '@/route'
 
-  type NavItemBase = {
-    id: string
+  type NavItemID = 'home' | SignalName
+
+  type NavItemBase<ID extends NavItemID> = {
+    id: ID
     label: string
     path: string
   }
 
-  export type NavItem = NavItemBase &
+  export type NavItem<ID extends NavItemID = NavItemID> = NavItemBase<ID> &
     (
       | { iconType: 'hugeicon'; icon: IconSvgElement }
       | { iconType: 'component'; icon: Component }
@@ -26,7 +29,7 @@
     icon: Home12Icon,
   }
 
-  export const NAV_ITEMS: NavItem[] = [
+  export const NAV_ITEMS: NavItem<SignalName>[] = [
     {
       id: 'traces',
       label: 'Traces',
@@ -50,25 +53,33 @@
     },
   ]
 
-  const ACTIVE_RULES: Record<string, (p: string) => boolean> = {
-    home: p => p === '/',
-    traces: p => p === '/traces' || p.startsWith('/traces/'),
-    metrics: p => p === '/metrics' || p.startsWith('/metrics/'),
-    logs: p => p === '/logs' || p.startsWith('/logs/'),
+  const ACTIVE_RULES = {
+    home: (path: string) => path === '/',
+    traces: (path: string) => path === '/traces' || path.startsWith('/traces/'),
+    metrics: (path: string) =>
+      path === '/metrics' || path.startsWith('/metrics/'),
+    logs: (path: string) => path === '/logs' || path.startsWith('/logs/'),
+  } satisfies Record<NavItemID, (path: string) => boolean>
+
+  function isNavItemID(itemID: string): itemID is NavItemID {
+    switch (itemID) {
+      case 'home':
+      case 'traces':
+      case 'metrics':
+      case 'logs':
+        return true
+      default:
+        return false
+    }
   }
 
   export function isNavItemActive(itemID: string, path: string): boolean {
-    return (ACTIVE_RULES[itemID] ?? (() => false))(path)
+    return isNavItemID(itemID) ? ACTIVE_RULES[itemID](path) : false
   }
 </script>
 
 <script lang="ts">
-  import {
-    isPlainLeftClick,
-    navigateToSignal,
-    signalHref,
-    type SignalName,
-  } from '@/route'
+  import { isPlainLeftClick, navigateToSignal, signalHref } from '@/route'
   import { getRouteContext } from '@/contexts/route-context.svelte'
 
   type Props = {
@@ -81,10 +92,10 @@
   // NAV_ITEMS are all signal tabs, so navigate through the helper to carry the
   // active time window across signals.
   // Switching signal is navigational: push so back returns to the prior signal.
-  function goto(event: MouseEvent, item: NavItem) {
+  function goto(event: MouseEvent, item: NavItem<SignalName>) {
     if (!isPlainLeftClick(event)) return
     event.preventDefault()
-    navigateToSignal(item.id as SignalName)
+    navigateToSignal(item.id)
   }
 </script>
 
@@ -93,7 +104,7 @@
     {#each NAV_ITEMS as item (item.id)}
       {@const active = isNavItemActive(item.id, routeContext.route.path)}
       <a
-        href={signalHref(item.id as SignalName, routeContext.route.query)}
+        href={signalHref(item.id, routeContext.route.query)}
         class="drawer-header-btn tooltip tooltip-right {active
           ? 'drawer-header-btn--active'
           : 'drawer-header-btn--inactive'}"
@@ -122,7 +133,7 @@
     {#each NAV_ITEMS as item (item.id)}
       {@const active = isNavItemActive(item.id, routeContext.route.path)}
       <a
-        href={signalHref(item.id as SignalName, routeContext.route.query)}
+        href={signalHref(item.id, routeContext.route.query)}
         class="drawer-tab {active
           ? 'drawer-tab--active'
           : 'drawer-tab--inactive'}"

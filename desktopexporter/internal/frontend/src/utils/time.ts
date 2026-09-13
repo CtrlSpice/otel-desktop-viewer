@@ -457,15 +457,34 @@ export function traceSummaryDurationNs(
   return ns >= 0n ? ns : undefined
 }
 
-const DURATION_UNITS: Record<string, bigint> = {
+type DurationUnit = 'ns' | 'us' | 'µs' | 'ms' | 's' | 'm' | 'min' | 'h'
+
+const DURATION_UNITS = {
   ns: 1n,
   us: 1_000n,
-  '\u00b5s': 1_000n, // µs
+  µs: 1_000n,
   ms: 1_000_000n,
   s: 1_000_000_000n,
   m: 60_000_000_000n,
   min: 60_000_000_000n,
   h: 3_600_000_000_000n,
+} satisfies Record<DurationUnit, bigint>
+
+function parseDurationUnit(unit: string): DurationUnit | null {
+  const normalized = unit.toLowerCase()
+  switch (normalized) {
+    case 'ns':
+    case 'us':
+    case 'µs':
+    case 'ms':
+    case 's':
+    case 'm':
+    case 'min':
+    case 'h':
+      return normalized
+    default:
+      return null
+  }
 }
 
 const DURATION_RE = /^(\d+(?:\.\d+)?)\s*(ns|us|µs|ms|s|min|m|h)$/i
@@ -485,9 +504,10 @@ export function parseDuration(input: string): bigint | null {
   const match = trimmed.match(DURATION_RE)
   if (!match) return null
 
-  const [, numStr, unit] = match
-  const multiplier = DURATION_UNITS[unit.toLowerCase()]
-  if (multiplier === undefined) return null
+  const [, numStr, unitText] = match
+  const unit = parseDurationUnit(unitText)
+  if (unit === null) return null
+  const multiplier = DURATION_UNITS[unit]
 
   const num = parseFloat(numStr)
   if (!isFinite(num) || num < 0) return null
@@ -558,26 +578,45 @@ export type RecentTimeRange = {
   usedAt: number
 }
 
+const MAX_DATE_TIMESTAMP = 8_640_000_000_000_000
+
+export function isDateTimestamp(value: unknown): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    Math.abs(value) <= MAX_DATE_TIMESTAMP
+  )
+}
+
+function isRecentTimeRange(value: unknown): value is RecentTimeRange {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    'start' in value &&
+    'end' in value &&
+    'usedAt' in value &&
+    isDateTimestamp(value.start) &&
+    isDateTimestamp(value.end) &&
+    isDateTimestamp(value.usedAt) &&
+    value.start < value.end
+  )
+}
+
 export function loadRecentTimeRanges(): RecentTimeRange[] {
   try {
     const saved = localStorage.getItem(RECENT_STORAGE_KEY)
     if (!saved) return []
     const parsed: unknown = JSON.parse(saved)
     if (!Array.isArray(parsed)) return []
-    const parsedRows = parsed as RecentTimeRange[]
-    const rows = parsedRows.filter(
-      row =>
-        row !== null &&
-        typeof row === 'object' &&
-        Number.isFinite(row.start) &&
-        Number.isFinite(row.end) &&
-        Number.isFinite(row.usedAt) &&
-        row.start < row.end
-    )
+    const rows = parsed.filter(isRecentTimeRange)
     const sorted = [...rows].sort((a, b) => b.usedAt - a.usedAt)
     const trimmed = sorted.slice(0, MAX_RECENT_TIME_RANGES)
-    if (trimmed.length < parsedRows.length) {
-      localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(trimmed))
+    if (trimmed.length < parsed.length) {
+      try {
+        localStorage.setItem(RECENT_STORAGE_KEY, JSON.stringify(trimmed))
+      } catch {
+        // Cleanup is opportunistic; successfully decoded rows remain usable.
+      }
     }
     return trimmed
   } catch {

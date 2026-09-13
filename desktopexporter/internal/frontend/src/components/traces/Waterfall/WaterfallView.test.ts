@@ -77,6 +77,41 @@ function renderTree(
   return renderWithContexts(WaterfallView, props)
 }
 
+type PersistedColumnWidths = {
+  span: number
+  service: number
+  timeline: number
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function isPersistedColumnWidths(
+  value: unknown
+): value is PersistedColumnWidths {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    'span' in value &&
+    'service' in value &&
+    'timeline' in value &&
+    isFiniteNumber(value.span) &&
+    isFiniteNumber(value.service) &&
+    isFiniteNumber(value.timeline)
+  )
+}
+
+function readPersistedColumnWidths(): PersistedColumnWidths {
+  const parsed: unknown = JSON.parse(
+    localStorage.getItem('waterfall-column-widths') ?? 'null'
+  )
+  if (!isPersistedColumnWidths(parsed)) {
+    throw new Error('Expected finite persisted waterfall column widths')
+  }
+  return parsed
+}
+
 function rowIDs(): string[] {
   return [...document.querySelectorAll('tr[data-span-id]')].map(r =>
     r.getAttribute('data-span-id')!
@@ -722,9 +757,7 @@ describe('WaterfallView column separators', () => {
     )
     expect(spanBar).toHaveFocus()
 
-    const afterRight = JSON.parse(
-      localStorage.getItem('waterfall-column-widths') ?? '{}'
-    ) as Record<string, number>
+    const afterRight = readPersistedColumnWidths()
     expect(afterRight.span).toBeGreaterThan(start)
 
     const left = press(spanBar, 'ArrowLeft', true)
@@ -749,13 +782,77 @@ describe('WaterfallView column separators', () => {
     await tick()
     expect(spanBar).toHaveAttribute('aria-valuenow', defaultPosition)
 
-    const stored = JSON.parse(
-      localStorage.getItem('waterfall-column-widths') ?? '{}'
-    ) as Record<string, number>
+    const stored = readPersistedColumnWidths()
     expect(stored.span + stored.service + stored.timeline).toBeCloseTo(600, 6)
     expect(stored.span).toBeGreaterThanOrEqual(140)
     expect(stored.service).toBeGreaterThanOrEqual(100)
     expect(stored.timeline).toBeGreaterThanOrEqual(240)
+  })
+
+  it('salvages finite widths while ignoring malformed entries', async () => {
+    const stored = {
+      span: 400,
+      service: 'wide',
+      timeline: null,
+      removedColumn: 123,
+    }
+    localStorage.setItem('waterfall-column-widths', JSON.stringify(stored))
+
+    renderTree()
+    await tick()
+
+    expect(Number.parseFloat(separators()[0]!.style.left)).toBeGreaterThan(300)
+    expect(
+      JSON.parse(localStorage.getItem('waterfall-column-widths')!)
+    ).toEqual(stored)
+  })
+
+  it('falls back to default widths when persisted JSON is malformed', async () => {
+    localStorage.setItem('waterfall-column-widths', '{not json')
+
+    expect(() => renderTree()).not.toThrow()
+    await tick()
+
+    expect(Number.parseFloat(separators()[0]!.style.left)).toBeCloseTo(
+      (800 * 2) / 7,
+      5
+    )
+  })
+
+  it('rejects extreme finite widths before layout arithmetic overflows', async () => {
+    localStorage.setItem(
+      'waterfall-column-widths',
+      JSON.stringify({
+        span: Number.MAX_VALUE,
+        service: Number.MAX_VALUE,
+        timeline: Number.MAX_VALUE,
+      })
+    )
+
+    renderTree()
+    await tick()
+
+    for (const separator of separators()) {
+      expect(Number.isFinite(Number.parseFloat(separator.style.left))).toBe(
+        true
+      )
+      expect(separator.getAttribute('aria-valuenow')).not.toContain('NaN')
+      expect(separator.getAttribute('aria-valuenow')).not.toContain('Infinity')
+    }
+  })
+
+  it('keeps resizing usable when width persistence is blocked', async () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    renderTree()
+    await tick()
+
+    const spanBar = separators()[0]!
+    const start = Number.parseFloat(spanBar.style.left)
+    expect(() => press(spanBar, 'ArrowRight')).not.toThrow()
+    await tick()
+    expect(Number.parseFloat(spanBar.style.left)).toBe(start + 16)
   })
 })
 

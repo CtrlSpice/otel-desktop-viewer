@@ -41,10 +41,23 @@ import type { FieldDefinition, FieldType } from '@/constants/fields'
 import { getOperatorsForFieldType } from '@/constants/operators'
 
 // JSON-RPC Client
+type JsonRpcParamValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonQueryNode
+  | SearchSort
+  | readonly string[]
+  | readonly number[]
+
+type JsonRpcNamedParams = Record<string, JsonRpcParamValue | undefined>
+type JsonRpcParams = JsonRpcNamedParams | readonly string[]
+
 interface JsonRpcRequest {
   jsonrpc: '2.0'
   method: string
-  params?: unknown
+  params?: JsonRpcParams
   id: number
 }
 
@@ -96,7 +109,11 @@ export type QueryTimeBound = number | bigint | null
 
 function boundToNanoseconds(bound: QueryTimeBound): string | null {
   if (bound === null) return null
-  return typeof bound === 'bigint' ? bound.toString() : toNanoseconds(bound)
+  return isBigIntBound(bound) ? bound.toString() : toNanoseconds(bound)
+}
+
+function isBigIntBound(bound: number | bigint): bound is bigint {
+  return typeof bound === 'bigint'
 }
 
 /** Thrown when a request is abandoned. Callers that supersede their own
@@ -110,7 +127,9 @@ export class RequestAbortedError extends Error {
 }
 
 /** True when a rejection is just an abandoned request. */
-export function isAbortError(err: unknown): boolean {
+export function isAbortError(
+  err: unknown
+): err is RequestAbortedError | DOMException {
   return (
     err instanceof RequestAbortedError ||
     (err instanceof DOMException && err.name === 'AbortError')
@@ -131,10 +150,10 @@ export function isAbortError(err: unknown): boolean {
 // `undefined` means "not supplied" while `null` and `[]` are real values a
 // caller can mean -- for seriesIDs those are three different requests: every
 // series, every series, and no series respectively.
-function named<T extends object>(params: T): Partial<T> {
+function named(params: JsonRpcNamedParams): JsonRpcNamedParams {
   return Object.fromEntries(
     Object.entries(params).filter(([, value]) => value !== undefined)
-  ) as Partial<T>
+  )
 }
 
 // Generic JSON-RPC transport. T is a compile-time assertion of the wire
@@ -149,7 +168,7 @@ function named<T extends object>(params: T): Partial<T> {
 // request.Context(), which interrupts the query.
 async function callRPC<T>(
   method: string,
-  params?: unknown,
+  params?: JsonRpcParams,
   signal?: AbortSignal
 ): Promise<T> {
   const request: JsonRpcRequest = {
@@ -184,6 +203,9 @@ async function callRPC<T>(
     throw new JsonRpcError(data.error.code, data.error.message)
   }
 
+  // SAFETY: Each successful in-process Go RPC method owns the wire type chosen
+  // by its call site; service response tests pin the transformed wire shapes.
+  // This assertion records that trusted boundary and performs no validation.
   return data.result as T
 }
 
@@ -292,7 +314,6 @@ function logDataFromJSON(json: JsonLogData): LogData {
 function exemplarDoubleFromJSON(
   value: number | 'NaN' | 'Infinity' | '-Infinity'
 ): number {
-  if (typeof value === 'number') return value
   switch (value) {
     case 'NaN':
       return Number.NaN
@@ -300,6 +321,8 @@ function exemplarDoubleFromJSON(
       return Number.POSITIVE_INFINITY
     case '-Infinity':
       return Number.NEGATIVE_INFINITY
+    default:
+      return value
   }
 }
 
@@ -477,7 +500,7 @@ export let telemetryAPI = {
       named({ term })
     )
     if (!Array.isArray(rawData)) {
-      console.warn('searchAttributes: Expected array, got:', typeof rawData)
+      console.warn('searchAttributes: Expected array, got:', rawData)
       return []
     }
     return rawData
@@ -490,11 +513,7 @@ export let telemetryAPI = {
 
     // Validate that we received an array
     if (!Array.isArray(rawData)) {
-      console.warn(
-        'getTraceAttributes: Expected array, got:',
-        typeof rawData,
-        rawData
-      )
+      console.warn('getTraceAttributes: Expected array, got:', rawData)
       return []
     }
 
@@ -511,11 +530,7 @@ export let telemetryAPI = {
       named({ traceID })
     )
     if (!Array.isArray(rawData)) {
-      console.warn(
-        'getAttributesByTraceID: Expected array, got:',
-        typeof rawData,
-        rawData
-      )
+      console.warn('getAttributesByTraceID: Expected array, got:', rawData)
       return []
     }
     return convertAttributesToFieldDefinitions(rawData)
@@ -525,11 +540,7 @@ export let telemetryAPI = {
     const rawData = await callRPC<JsonAttributeDefinition[]>('getLogAttributes')
 
     if (!Array.isArray(rawData)) {
-      console.warn(
-        'getLogAttributes: Expected array, got:',
-        typeof rawData,
-        rawData
-      )
+      console.warn('getLogAttributes: Expected array, got:', rawData)
       return []
     }
 
@@ -788,11 +799,7 @@ export let telemetryAPI = {
     )
 
     if (!Array.isArray(rawData)) {
-      console.warn(
-        'getMetricAttributes: Expected array, got:',
-        typeof rawData,
-        rawData
-      )
+      console.warn('getMetricAttributes: Expected array, got:', rawData)
       return []
     }
 

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { tableNav } from './table-keyboard-nav'
+import { keyDeltaFor, tableNav } from './table-keyboard-nav'
 
 function setupTable(ownerDocument: Document = document) {
   const table = ownerDocument.createElement('table')
@@ -83,5 +83,23 @@ describe('tableNav DOM targets', () => {
     expect(onSelect).toHaveBeenCalledWith('second')
     expect(foreignDocument.activeElement).toBe(second)
     action.destroy()
+  })
+})
+
+describe('keyDeltaFor', () => {
+  it('resolves directional and absolute navigation keys', () => {
+    expect(keyDeltaFor('ArrowDown')).toEqual({ kind: 'relative', offset: 1 })
+    expect(keyDeltaFor('Home')).toEqual({ kind: 'absolute', position: 'first' })
+  })
+
+  it('uses the caller page step', () => {
+    expect(keyDeltaFor('PageDown', 8)).toEqual({ kind: 'relative', offset: 8 })
+    expect(keyDeltaFor('PageUp', 8)).toEqual({ kind: 'relative', offset: -8 })
+  })
+
+  it('does not treat unknown or prototype keys as navigation', () => {
+    expect(keyDeltaFor('nope')).toBeUndefined()
+    expect(keyDeltaFor('toString')).toBeUndefined()
+    expect(keyDeltaFor('constructor')).toBeUndefined()
   })
 })

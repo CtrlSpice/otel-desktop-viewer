@@ -9,6 +9,11 @@
 
 import type { SpanData, SpanNode } from '@/types/api-types'
 
+export interface StructuralMaps {
+  parentBySpanID: Map<string, string | null>
+  childrenBySpanID: Map<string, string[]>
+}
+
 export function isErrorSpan(span: SpanData): boolean {
   return (
     span.statusCode === 'Error' || span.events.some(e => e.name === 'exception')
@@ -30,10 +35,7 @@ export function isErrorSpan(span: SpanData): boolean {
  */
 export function buildStructuralMaps(
   spans: readonly { spanData: { spanID: string }; depth: number }[]
-): {
-  parentBySpanID: Map<string, string | null>
-  childrenBySpanID: Map<string, string[]>
-} {
+): StructuralMaps {
   const parentBySpanID = new Map<string, string | null>()
   const childrenBySpanID = new Map<string, string[]>()
   // stack[d] holds the most recent row seen at depth d; a row's structural
