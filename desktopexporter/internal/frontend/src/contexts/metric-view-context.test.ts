@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import { tick } from 'svelte'
-import { screen } from '@testing-library/svelte'
+import { fireEvent, screen } from '@testing-library/svelte'
 import { navigateCurrentRoute, readRoute, withQueryPatch } from '@/route'
 import {
   aggregateToSlices,
@@ -17,6 +17,31 @@ import MetricViewProbe from '@/test/MetricViewProbe.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
 const BASE_TIMESTAMP_MS = 1_700_000_000_000
+
+it('resets nested datapoint expansion when the metric changes with shared series keys', async () => {
+  setTestUrl('/metrics/m1')
+  const metric = makeCumulativeSumMetric()
+  const view = renderWithContexts(MetricViewProbe, {
+    metric,
+    showTimeseries: true,
+    oncontext: ctx => ctx.expandedTimeseries.add('route=/a'),
+  })
+  await tick()
+  const datapoints = screen.getByText('Datapoints').closest('details')
+  if (!datapoints) throw new Error('Missing datapoints disclosure')
+  expect(datapoints.open).toBe(false)
+  datapoints.open = true
+  await fireEvent(datapoints, new Event('toggle'))
+  expect(datapoints.open).toBe(true)
+
+  await view.rerender({
+    componentProps: { metric: { ...metric, id: 'm2' }, showTimeseries: true },
+  })
+  await tick()
+  expect(screen.getByText('Datapoints').closest('details')).not.toHaveAttribute(
+    'open'
+  )
+})
 
 const EMPTY_RESOURCE: ResourceData = {
   attributes: [],

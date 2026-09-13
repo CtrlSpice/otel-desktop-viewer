@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { tick } from 'svelte'
 import { render, screen } from '@testing-library/svelte'
 import ExpandableValueHarness from '@/test/ExpandableValueHarness.svelte'

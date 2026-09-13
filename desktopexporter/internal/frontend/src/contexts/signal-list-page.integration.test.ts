@@ -3,7 +3,6 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { tick } from 'svelte'
 import { screen } from '@testing-library/svelte'
 import SignalListPageProbe from '@/test/SignalListPageProbe.svelte'
-import { navigateToItem } from '@/route'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 import type { LogSummary } from '@/types/api-types'
 import {

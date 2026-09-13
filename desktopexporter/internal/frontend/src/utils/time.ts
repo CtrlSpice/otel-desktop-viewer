@@ -161,7 +161,8 @@ function instantsForWallClock(wall: WallClock, timezone: Timezone): number[] {
   for (const sample of [naive - 172_800_000, naive, naive + 172_800_000]) {
     offsets.add(timezoneOffsetMilliseconds(timezone, sample))
   }
-  for (const offset of [...offsets]) {
+  // Refine only the initial candidates; this pass adds offsets to the set.
+  for (const offset of Array.from(offsets)) {
     offsets.add(timezoneOffsetMilliseconds(timezone, naive - offset))
   }
 
@@ -438,7 +439,7 @@ export function getLocalTimezoneName(): string {
       .find(part => part.type === 'timeZoneName')?.value
 
     return timeZoneName || 'Local Time'
-  } catch (error) {
+  } catch {
     return 'Local Time'
   }
 }

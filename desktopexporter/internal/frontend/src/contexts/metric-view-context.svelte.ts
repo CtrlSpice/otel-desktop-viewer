@@ -540,9 +540,6 @@ export function createMetricViewContext(
     ]),
   })
 
-  /** Histogram visibility is seeded once per stream id. */
-  let visibleSeriesSeededForStreamID: string | null = null
-
   // --- URL <-> metric sub-view sync ---------------------------------
   //
   // The selected metric lives in the path (`/metrics/<id>`, owned by
@@ -1618,11 +1615,7 @@ export function createMetricViewContext(
       if (view.selectedHistogramBucketStart === null) return null
       const series = heatmapBucketSeries
       if (!series || series.length === 0) return null
-      return heatmapColumnSelectionAt(
-        series,
-        view.selectedHistogramBucketStart,
-        temporality || 'Delta'
-      )
+      return heatmapColumnSelectionAt(series, view.selectedHistogramBucketStart)
     }
   )
 
@@ -1646,8 +1639,7 @@ export function createMetricViewContext(
         // Always the set: all-visible holds every key, none-visible is empty.
         // Returning null for "all" gave one state two encodings and put the
         // burden of telling empty from absent on every consumer.
-        view.visibleSeries,
-        temporality || 'Delta'
+        view.visibleSeries
       )
     }
   )
@@ -1857,8 +1849,6 @@ export function createMetricViewContext(
           : []
       )
       view.visibleSeries = histVisible
-      visibleSeriesSeededForStreamID =
-        histKeys.length > 0 ? (streamID ?? null) : null
       const histPool = categoricalPalette(
         Math.max(histKeys.length, 1),
         metricTypeStem(metricType),
@@ -1875,7 +1865,6 @@ export function createMetricViewContext(
           : gsKeys.slice(0, MAX_VISIBLE_TIMESERIES)
       )
       view.visibleSeries = gsVisible
-      visibleSeriesSeededForStreamID = null
       const pool = categoricalPalette(
         MAX_VISIBLE_TIMESERIES,
         metricTypeStem(metricType),
