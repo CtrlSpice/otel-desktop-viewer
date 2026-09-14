@@ -165,6 +165,49 @@ func TestSearchTracesNullableTimeRangesExecute(t *testing.T) {
 	}
 }
 
+func TestSearchTracesDurationExact(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+
+	const duration = int64(9_007_199_254_740_993)
+	const traceID = "00000000000000000000000000000042"
+	data := ptrace.NewTraces()
+	rs := data.ResourceSpans().AppendEmpty()
+	ss := rs.ScopeSpans().AppendEmpty()
+	span := ss.Spans().AppendEmpty()
+	span.SetTraceID(mustDecodeTraceID(traceID))
+	span.SetSpanID(mustDecodeSpanID("0000000000000042"))
+	span.SetName("exact-duration")
+	span.SetStartTimestamp(1)
+	span.SetEndTimestamp(pcommon.Timestamp(duration + 1))
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, data, s.FlushedIDs())
+	}))
+
+	// This is the JSON-shaped condition emitted by the frontend service.
+	query := map[string]any{
+		"id":   "duration-boundary",
+		"type": "condition",
+		"query": map[string]any{
+			"field": map[string]any{
+				"name":        "duration",
+				"type":        "int64",
+				"searchScope": "field",
+			},
+			"fieldOperator": "=",
+			"value":         "9007199254740993",
+		},
+	}
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.SearchTraces(ctx, db, store.BoundedTimeRange(0, 1<<63-1), query)
+	})
+	require.NoError(t, err)
+	var summaries []traceSummaryJSON
+	require.NoError(t, json.Unmarshal(raw, &summaries))
+	require.Len(t, summaries, 1)
+	require.Equal(t, traceID, summaries[0].TraceID)
+}
+
 type traceSummaryJSON struct {
 	TraceID     string        `json:"traceID"`
 	HasRootSpan bool          `json:"hasRootSpan"`
