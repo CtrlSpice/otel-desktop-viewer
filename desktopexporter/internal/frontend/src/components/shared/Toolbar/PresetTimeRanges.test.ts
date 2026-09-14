@@ -45,9 +45,8 @@ describe('PresetTimeRanges', () => {
     fireEvent.click(getPresetButton('5m'))
 
     const saved = JSON.parse(localStorage.getItem('time-selection')!)
-    expect(saved).toMatchObject({
+    expect(saved).toEqual({
       type: 'preset',
-      presetIndex: 1,
       durationMs: 300_000,
     })
     expect(window.location.search).toContain(`start=${Date.now() - 300_000}`)

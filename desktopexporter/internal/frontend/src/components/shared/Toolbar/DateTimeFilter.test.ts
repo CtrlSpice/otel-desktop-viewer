@@ -63,9 +63,8 @@ describe('DateTimeFilter', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Last 5m' }))
 
     const saved = JSON.parse(localStorage.getItem('time-selection')!)
-    expect(saved).toMatchObject({
+    expect(saved).toEqual({
       type: 'preset',
-      presetIndex: 1,
       durationMs: 300_000,
     })
     await waitFor(() =>

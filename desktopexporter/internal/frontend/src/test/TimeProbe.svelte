@@ -27,11 +27,6 @@
 <output data-testid="selection-end">
   {'end' in timeContext.selection ? timeContext.selection.end : ''}
 </output>
-<output data-testid="selection-preset-index">
-  {timeContext.selection.type === 'preset'
-    ? timeContext.selection.presetIndex
-    : ''}
-</output>
 <output data-testid="selection-duration">
   {timeContext.selection.type === 'preset'
     ? timeContext.selection.durationMs

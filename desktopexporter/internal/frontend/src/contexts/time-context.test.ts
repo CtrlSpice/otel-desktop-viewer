@@ -35,10 +35,6 @@ function selectionEnd(): number {
   return Number(screen.getByTestId('selection-end').textContent)
 }
 
-function selectionPresetIndex(): string {
-  return (screen.getByTestId('selection-preset-index').textContent ?? '').trim()
-}
-
 function selectionDuration(): number {
   return Number(screen.getByTestId('selection-duration').textContent)
 }
@@ -52,7 +48,6 @@ describe('time context default load', () => {
     setTestUrl('/traces')
     renderProbe()
     expect(selectionType()).toBe('all')
-    expect(selectionPresetIndex()).toBe('')
   })
 })
 
@@ -86,44 +81,40 @@ describe('time context localStorage restore', () => {
     expect(selectionType()).toBe('all')
   })
 
-  it('restores a finite preset only from the new duration shape', () => {
+  it('restores a preset from its duration', () => {
     localStorage.setItem(
       'time-selection',
-      JSON.stringify({ type: 'preset', presetIndex: 2, durationMs: 900_000 })
+      JSON.stringify({ type: 'preset', durationMs: 900_000 })
     )
     setTestUrl('/traces')
     renderProbe()
     expect(selectionType()).toBe('preset')
-    expect(selectionPresetIndex()).toBe('2')
     expect(selectionDuration()).toBe(900_000)
   })
 
-  for (const [presetIndex, preset] of TIME_RANGE_PRESETS.entries()) {
-    if (preset.duration === undefined) continue
-    it(`restores the current ${preset.label} preset pair`, () => {
+  for (const preset of TIME_RANGE_PRESETS) {
+    if (preset.durationMs === undefined) continue
+    it(`restores the current ${preset.label} preset`, () => {
       localStorage.setItem(
         'time-selection',
         JSON.stringify({
           type: 'preset',
-          presetIndex,
-          durationMs: preset.duration,
+          durationMs: preset.durationMs,
         })
       )
       setTestUrl('/traces')
       renderProbe()
       expect(selectionType()).toBe('preset')
-      expect(selectionPresetIndex()).toBe(String(presetIndex))
-      expect(selectionDuration()).toBe(preset.duration)
+      expect(selectionDuration()).toBe(preset.durationMs)
     })
   }
 
-  it('rejects a preset duration that does not match its index', () => {
+  it('rejects a duration that is not a preset', () => {
     localStorage.setItem(
       'time-selection',
       JSON.stringify({
         type: 'preset',
-        presetIndex: 2,
-        durationMs: 300_000,
+        durationMs: 123,
       })
     )
     setTestUrl('/traces')
@@ -151,8 +142,7 @@ describe('time context localStorage restore', () => {
       'time-selection',
       JSON.stringify({
         type: 'preset',
-        presetIndex: '2',
-        durationMs: 900_000,
+        durationMs: '900000',
       })
     )
     setTestUrl('/traces')
@@ -367,10 +357,9 @@ describe('time context preset anchoring on write', () => {
     const writtenAt = createdAt + 5 * 60_000
     vi.setSystemTime(writtenAt)
 
-    const oneHourMs = 60 * 60_000
+    const oneHourMs = 3_600_000
     context.setSelection({
       type: 'preset',
-      presetIndex: 2,
       durationMs: oneHourMs,
     })
 
@@ -415,8 +404,7 @@ describe('time context own-write echo', () => {
 
     context.setSelection({
       type: 'preset',
-      presetIndex: 4,
-      durationMs: 60 * 60_000,
+      durationMs: 3_600_000,
     })
     await tick()
     expect(selectionType()).toBe('preset')
@@ -478,7 +466,6 @@ describe('selectionToQueryRangeMs', () => {
   it('reanchors a finite preset every time it is converted', () => {
     const preset = {
       type: 'preset',
-      presetIndex: 1,
       durationMs: 300_000,
     } as const
     expect(selectionToQueryRangeMs(preset, 1_000_000)).toEqual({

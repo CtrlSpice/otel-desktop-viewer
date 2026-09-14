@@ -11,24 +11,22 @@
     )
   }
 
-  function applyPreset(index: number) {
-    const preset = TIME_RANGE_PRESETS[index]
-    if (!preset) return
+  function applyPreset(preset: (typeof TIME_RANGE_PRESETS)[number]) {
     ctx.setSelection(
-      preset.duration === undefined
+      preset.durationMs === undefined
         ? { type: 'all' }
-        : { type: 'preset', presetIndex: index, durationMs: preset.duration }
+        : { type: 'preset', durationMs: preset.durationMs }
     )
   }
 </script>
 
 <div class="preset-time-ranges">
-  {#each TIME_RANGE_PRESETS as preset, index (preset.label)}
+  {#each TIME_RANGE_PRESETS as preset (preset.label)}
     {@const selected =
-      index === 0
+      preset.durationMs === undefined
         ? ctx.selection.type === 'all'
         : ctx.selection.type === 'preset' &&
-          ctx.selection.presetIndex === index}
+          ctx.selection.durationMs === preset.durationMs}
     <button
       type="button"
       class="chrome-btn {selected
@@ -36,7 +34,7 @@
         : 'chrome-btn--inactive'}"
       aria-pressed={selected}
       aria-label={preset.label === 'All' ? 'All time' : `Last ${preset.label}`}
-      onclick={() => applyPreset(index)}
+      onclick={() => applyPreset(preset)}
     >
       {preset.label}
     </button>
