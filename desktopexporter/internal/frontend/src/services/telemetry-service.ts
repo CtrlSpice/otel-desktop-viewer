@@ -35,7 +35,6 @@ import type {
   JsonScalarAggregate,
   JsonScalarViewBucket,
 } from '@/types/wire-types'
-import { parseBigInt, parseNullableBigInt } from '@/utils/bigint'
 import type { QueryNode } from '@/components/shared/Search/queryTree'
 import type { FieldDefinition, FieldType } from '@/constants/fields'
 import { getOperatorsForFieldType } from '@/constants/operators'
@@ -109,11 +108,21 @@ export type QueryTimeBound = number | bigint | null
 
 function boundToNanoseconds(bound: QueryTimeBound): string | null {
   if (bound === null) return null
-  return isBigIntBound(bound) ? bound.toString() : toNanoseconds(bound)
+  return typeof bound === 'bigint' ? bound.toString() : toNanoseconds(bound)
 }
 
-function isBigIntBound(bound: number | bigint): bound is bigint {
-  return typeof bound === 'bigint'
+function bigintFromWire(value: unknown): bigint {
+  if (typeof value !== 'string') {
+    const received = value === null ? 'null' : typeof value
+    throw new Error(
+      `Invalid bigint wire value: expected string, got ${received}`
+    )
+  }
+  return BigInt(value)
+}
+
+function nullableBigintFromWire(value: unknown): bigint | null {
+  return value === null ? null : bigintFromWire(value)
 }
 
 /** Thrown when a request is abandoned. Callers that supersede their own
@@ -222,10 +231,10 @@ function traceSummaryFromJSON(json: JsonTraceSummary): TraceSummary {
           name: json.rootSpan.name,
         }
       : undefined,
-    startTime: parseBigInt(json.startTime),
+    startTime: bigintFromWire(json.startTime),
     // durationNs arrives as a varchar-encoded int64 (ns precision
     // would otherwise be clipped by JSON's float64 numbers).
-    durationNs: parseNullableBigInt(json.durationNs),
+    durationNs: nullableBigintFromWire(json.durationNs),
   }
 }
 
@@ -248,7 +257,7 @@ function traceSummariesFromJSON(json: JsonTraceSummary[]): TraceSummary[] {
 // and copying them per span would rebuild client-side exactly the duplication
 // the wire format just removed.
 function traceDataFromJSON(json: JsonTraceData): TraceData {
-  const traceStart = parseBigInt(json.traceStart)
+  const traceStart = bigintFromWire(json.traceStart)
 
   return {
     traceID: json.traceID,
@@ -269,7 +278,7 @@ function traceDataFromJSON(json: JsonTraceData): TraceData {
           endTime: startTime + BigInt(dur),
           events: spanNode.spanData.events.map(event => ({
             ...event,
-            timestamp: parseBigInt(event.timestamp),
+            timestamp: bigintFromWire(event.timestamp),
           })),
         },
         depth: spanNode.depth,
@@ -291,7 +300,7 @@ function traceDataFromJSON(json: JsonTraceData): TraceData {
 function logSummaryFromJSON(json: JsonLogSummary): LogSummary {
   return {
     ...json,
-    timestamp: parseBigInt(json.timestamp),
+    timestamp: bigintFromWire(json.timestamp),
   }
 }
 
@@ -304,8 +313,8 @@ function logSummariesFromJSON(json: JsonLogSummary[]): LogSummary[] {
 function logDataFromJSON(json: JsonLogData): LogData {
   return {
     ...json,
-    timestamp: parseBigInt(json.timestamp),
-    observedTimestamp: parseBigInt(json.observedTimestamp),
+    timestamp: bigintFromWire(json.timestamp),
+    observedTimestamp: bigintFromWire(json.observedTimestamp),
   }
 }
 
@@ -326,7 +335,7 @@ function exemplarDoubleFromJSON(
 
 function exemplarFromJSON(json: JsonExemplar): Exemplar {
   const base = {
-    timestamp: parseBigInt(json.timestamp),
+    timestamp: bigintFromWire(json.timestamp),
     traceID: json.traceID,
     spanID: json.spanID,
     filteredAttributes: json.filteredAttributes,
@@ -344,7 +353,7 @@ function exemplarFromJSON(json: JsonExemplar): Exemplar {
         ...base,
         valueType: 'Int',
         doubleValue: null,
-        intValue: parseBigInt(json.intValue),
+        intValue: bigintFromWire(json.intValue),
       }
     case 'Empty':
       return {
@@ -359,8 +368,8 @@ function exemplarFromJSON(json: JsonExemplar): Exemplar {
 function dataPointFromJSON(json: JsonDataPoint): DataPoint {
   return {
     ...json,
-    timestamp: parseBigInt(json.timestamp),
-    startTime: parseBigInt(json.startTime),
+    timestamp: bigintFromWire(json.timestamp),
+    startTime: bigintFromWire(json.startTime),
     exemplars: json.exemplars.map(exemplarFromJSON),
   }
 }
@@ -379,13 +388,13 @@ function timeseriesFromJSON(json: JsonMetricTimeseries): MetricTimeseries {
     datapoints: json.datapoints.map(dataPointFromJSON),
     stats: json.stats ?? null,
     datapointCount: json.datapointCount ?? 0,
-    lastSeenNs: parseNullableBigInt(json.lastSeenNs ?? null),
+    lastSeenNs: nullableBigintFromWire(json.lastSeenNs ?? null),
     views: json.views ? scalarViewBucketsFromJSON(json.views) : null,
     rateStats: json.rateStats ?? null,
     sparkline:
       json.sparkline?.map(p => ({
         ...p,
-        timestamp: parseBigInt(p.timestamp),
+        timestamp: bigintFromWire(p.timestamp),
       })) ?? null,
   }
 }
@@ -397,7 +406,7 @@ function timeseriesFromJSON(json: JsonMetricTimeseries): MetricTimeseries {
 function scalarViewBucketsFromJSON(
   json: JsonScalarViewBucket[]
 ): ScalarViewBucket[] {
-  return json.map(b => ({ ...b, bucketStart: parseBigInt(b.bucketStart) }))
+  return json.map(b => ({ ...b, bucketStart: bigintFromWire(b.bucketStart) }))
 }
 
 function scalarAggregateFromJSON(
@@ -415,15 +424,15 @@ function metricDataFromJSON(json: JsonMetricData): MetricData {
     ...json,
     timeseries: json.timeseries.map(timeseriesFromJSON),
     boundsMismatch: json.boundsMismatch ?? null,
-    lastSeenNs: parseNullableBigInt(json.lastSeenNs ?? null),
+    lastSeenNs: nullableBigintFromWire(json.lastSeenNs ?? null),
     window: {
       requested: {
-        startNs: parseNullableBigInt(json.window.requested.startNs),
-        endNs: parseNullableBigInt(json.window.requested.endNs),
+        startNs: nullableBigintFromWire(json.window.requested.startNs),
+        endNs: nullableBigintFromWire(json.window.requested.endNs),
       },
       effective: {
-        startNs: parseNullableBigInt(json.window.effective.startNs),
-        endNs: parseNullableBigInt(json.window.effective.endNs),
+        startNs: nullableBigintFromWire(json.window.effective.startNs),
+        endNs: nullableBigintFromWire(json.window.effective.endNs),
       },
     },
   }
@@ -433,7 +442,7 @@ function metricSummaryFromJSON(json: JsonMetricSummary): MetricSummary {
   return {
     ...json,
     description: json.description ?? '',
-    lastSeen: parseBigInt(json.lastSeen),
+    lastSeen: bigintFromWire(json.lastSeen),
   }
 }
 
@@ -445,23 +454,23 @@ function statsFromJSON(json: JsonStats): Stats {
   return {
     traces: {
       ...json.traces,
-      lastReceived: parseNullableBigInt(json.traces.lastReceived),
+      lastReceived: nullableBigintFromWire(json.traces.lastReceived),
     },
     logs: {
       ...json.logs,
-      lastReceived: parseNullableBigInt(json.logs.lastReceived),
+      lastReceived: nullableBigintFromWire(json.logs.lastReceived),
     },
     metrics: {
       ...json.metrics,
-      lastReceived: parseNullableBigInt(json.metrics.lastReceived),
+      lastReceived: nullableBigintFromWire(json.metrics.lastReceived),
     },
     // Defaulted rather than required: a store written before rejections
     // existed serves stats without the field.
     rejections: (json.rejections ?? []).map(r => ({
       ...r,
       samples: r.samples ?? [],
-      firstSeen: parseNullableBigInt(r.firstSeen),
-      lastSeen: parseNullableBigInt(r.lastSeen),
+      firstSeen: nullableBigintFromWire(r.firstSeen),
+      lastSeen: nullableBigintFromWire(r.lastSeen),
     })),
   }
 }

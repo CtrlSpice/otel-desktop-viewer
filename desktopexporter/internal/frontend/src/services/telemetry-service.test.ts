@@ -310,6 +310,52 @@ describe('telemetryAPI.searchTraces', () => {
       },
     ])
   })
+
+  it('preserves native bigint string parsing and nullable durations', async () => {
+    stubRpcResult([
+      {
+        traceID: 'trace-1',
+        hasRootSpan: false,
+        rootSpan: null,
+        startTime: '-9223372036854775808',
+        durationNs: null,
+        spanCount: 0,
+        errorCount: 0,
+      },
+      {
+        traceID: 'trace-2',
+        hasRootSpan: false,
+        rootSpan: null,
+        startTime: '0x10',
+        durationNs: '+12',
+        spanCount: 0,
+        errorCount: 0,
+      },
+    ] satisfies JsonTraceSummary[])
+
+    await expect(telemetryAPI.searchTraces(0, 1)).resolves.toMatchObject([
+      { startTime: -9_223_372_036_854_775_808n, durationNs: null },
+      { startTime: 16n, durationNs: 12n },
+    ])
+  })
+
+  it('rejects non-string bigint wire values before native coercion', async () => {
+    stubRpcResult([
+      {
+        traceID: 'trace-1',
+        hasRootSpan: false,
+        rootSpan: null,
+        startTime: true,
+        durationNs: null,
+        spanCount: 0,
+        errorCount: 0,
+      },
+    ])
+
+    await expect(telemetryAPI.searchTraces(0, 1)).rejects.toThrow(
+      'Invalid bigint wire value: expected string, got boolean'
+    )
+  })
 })
 
 // searchSpans ships a compressed wire shape -- resource and scope as
@@ -545,6 +591,48 @@ describe('telemetryAPI.searchSpans rehydration', () => {
     // The two healthy spans from the base fixture are untouched.
     expect('salvaged' in trace.spans[0]).toBe(false)
     expect('salvaged' in trace.spans[1]).toBe(false)
+  })
+})
+
+describe('telemetryAPI metric bigint boundary', () => {
+  it('keeps only the established lastSeenNs missing-field normalizations', async () => {
+    const result = metricResult({
+      timeseries: [
+        {
+          attributesKey: 'series-1',
+          attributes: [],
+          resource: { attributes: [], droppedAttributesCount: 0 },
+          datapoints: [],
+          stats: null,
+          datapointCount: 0,
+          lastSeenNs: undefined as never,
+          views: [
+            {
+              bucketStart: '9223372036854775807',
+              sampleCount: 1,
+              sum: 1,
+              avg: 1,
+              rate: 1,
+              slope: null,
+              hasReset: false,
+            },
+          ],
+          rateStats: null,
+          sparkline: [{ timestamp: '-1', value: 1 }],
+        },
+      ],
+    }) as { lastSeenNs?: unknown; timeseries: { lastSeenNs?: unknown }[] }
+    delete result.lastSeenNs
+    delete result.timeseries[0]!.lastSeenNs
+    stubRpcResult(result)
+
+    const metric = await telemetryAPI.getMetric('some-stream', 0, 1)
+    expect(metric!.lastSeenNs).toBeNull()
+    expect(metric!.timeseries[0]!.lastSeenNs).toBeNull()
+    expect(metric!.timeseries[0]!.views![0]!.bucketStart).toBe(
+      9_223_372_036_854_775_807n
+    )
+    expect(metric!.timeseries[0]!.sparkline![0]!.timestamp).toBe(-1n)
   })
 })
 
@@ -900,6 +988,18 @@ describe('request parameters', () => {
       viewBuckets: 8,
       selectedSeriesIDs: ['selected-1'],
       tzName: 'UTC',
+    })
+  })
+
+  it('serializes exact bigint bounds without converting them through number', async () => {
+    const sent = captureRequest()
+    await telemetryAPI
+      .searchTraces(9_223_372_036_854_775_807n, -9_223_372_036_854_775_808n)
+      .catch(() => {})
+
+    expect(sent().params).toEqual({
+      startTime: '9223372036854775807',
+      endTime: '-9223372036854775808',
     })
   })
 })
