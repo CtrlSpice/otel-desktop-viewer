@@ -22,12 +22,7 @@
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
   import type { SearchResultEvent } from '@/types/api-types'
-  import {
-    buildSearchEventFactory,
-    createSearchDispatch,
-    type SearchContext,
-    type SearchEventFactory,
-  } from './search-dispatch'
+  import { runSearch, type SearchContext } from './search-dispatch'
   import {
     beginListUpdate,
     cancelPendingListUpdates,
@@ -69,8 +64,6 @@
   }
 
   // --- helpers ---
-
-  const searchDispatch = createSearchDispatch(telemetryAPI)
 
   /**
    * Walk the query tree and convert human-readable duration values to
@@ -245,11 +238,11 @@
   /** Fetch without any search filter and deliver via onSearchResults. */
   function fetchClean(updateSeq: number) {
     const ctx = currentSearchContext()
-    executeSearch(buildSearchEventFactory(searchDispatch, ctx), updateSeq)
+    executeSearch(runSearch(ctx, updateSeq))
   }
 
-  function executeSearch(search: SearchEventFactory | null, updateSeq: number) {
-    search?.(updateSeq)
+  function executeSearch(search: Promise<SearchResultEvent>) {
+    search
       .then(event => {
         if (!alive) return
         onSearchResults?.(event)
@@ -293,20 +286,16 @@
 
       const searchCtx = currentSearchContext()
       const sort = { field: sortValue, direction: sortDirection }
-      const searchFn = buildSearchEventFactory(
-        searchDispatch,
-        searchCtx,
-        queryTree ?? undefined,
-        limit ?? undefined,
-        sort
-      )
-      if (!searchFn) {
-        fetchClean(beginListUpdate(signal))
-        return
-      }
-
       const updateSeq = beginListUpdate(signal)
-      executeSearch(searchFn, updateSeq)
+      executeSearch(
+        runSearch(
+          searchCtx,
+          updateSeq,
+          queryTree ?? undefined,
+          limit ?? undefined,
+          sort
+        )
+      )
     } catch (err) {
       searchError = err instanceof Error ? err.message : 'Parse error'
     }

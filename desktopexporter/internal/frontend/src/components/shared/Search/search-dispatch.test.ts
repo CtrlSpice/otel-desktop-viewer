@@ -1,10 +1,8 @@
-import { beforeEach, describe, expect, expectTypeOf, it } from 'vitest'
-import {
-  buildSearchEventFactory,
-  createSearchDispatch,
-  type SearchContext,
-} from './search-dispatch'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { runSearch, type SearchContext } from './search-dispatch'
+import { telemetryAPI } from '@/services/telemetry-service'
 import type { LogSummary, MetricSummary, TraceSummary } from '@/types/api-types'
+import type { QueryNode } from './queryTree'
 
 const traceResults = [
   {
@@ -47,90 +45,111 @@ const metricResults = [
   },
 ] satisfies MetricSummary[]
 
-const calls: string[] = []
-const api = {
-  searchTraces: async () => {
-    calls.push('traces')
-    return traceResults
-  },
-  searchLogs: async () => {
-    calls.push('logs')
-    return logResults
-  },
-  searchMetricSummaries: async () => {
-    calls.push('metrics')
-    return metricResults
-  },
-} satisfies Parameters<typeof createSearchDispatch>[0]
-
-const dispatch = createSearchDispatch(api)
-
 const traceContext = {
   signal: 'traces',
   startTime: 10,
   endTime: 20,
-} satisfies SearchContext<'traces'>
+} satisfies SearchContext
 const logContext = {
   signal: 'logs',
   startTime: 10,
   endTime: 20,
-} satisfies SearchContext<'logs'>
+} satisfies SearchContext
 const metricContext = {
   signal: 'metrics',
   startTime: 10,
   endTime: 20,
-} satisfies SearchContext<'metrics'>
+} satisfies SearchContext
 
-beforeEach(() => {
-  calls.length = 0
+const queryTree = {
+  id: 'query-1',
+  type: 'group',
+  group: { operator: 'AND', children: [] },
+} satisfies QueryNode
+const sort = { field: 'startTime', direction: 'desc' } as const
+
+afterEach(() => {
+  vi.restoreAllMocks()
 })
 
 describe('search dispatch', () => {
-  it('correlates the trace factory with trace results and events', async () => {
-    const results = await dispatch.traces(traceContext)()
-    expectTypeOf(results).toEqualTypeOf<TraceSummary[]>()
-    expect(results).toBe(traceResults)
-    expect(calls).toEqual(['traces'])
+  it('runs trace search and retains its result identity', async () => {
+    const searchTraces = vi
+      .spyOn(telemetryAPI, 'searchTraces')
+      .mockResolvedValue(traceResults)
+    const searchLogs = vi.spyOn(telemetryAPI, 'searchLogs')
+    const searchMetrics = vi.spyOn(telemetryAPI, 'searchMetricSummaries')
 
-    const eventFactory = buildSearchEventFactory(dispatch, traceContext)
-    if (!eventFactory) throw new Error('missing trace event factory')
-    await expect(eventFactory(11)).resolves.toEqual({
+    await expect(
+      runSearch(traceContext, 11, queryTree, 25, sort)
+    ).resolves.toEqual({
       signal: 'traces',
       results: traceResults,
-      queryTree: undefined,
+      queryTree,
       updateSeq: 11,
     })
+    expect(searchTraces).toHaveBeenCalledWith(10, 20, queryTree, 25, sort)
+    expect(searchLogs).not.toHaveBeenCalled()
+    expect(searchMetrics).not.toHaveBeenCalled()
   })
 
-  it('correlates the log factory with log results and events', async () => {
-    const results = await dispatch.logs(logContext)()
-    expectTypeOf(results).toEqualTypeOf<LogSummary[]>()
-    expect(results).toBe(logResults)
-    expect(calls).toEqual(['logs'])
+  it('runs log search and retains its result identity', async () => {
+    const searchTraces = vi.spyOn(telemetryAPI, 'searchTraces')
+    const searchLogs = vi
+      .spyOn(telemetryAPI, 'searchLogs')
+      .mockResolvedValue(logResults)
+    const searchMetrics = vi.spyOn(telemetryAPI, 'searchMetricSummaries')
 
-    const eventFactory = buildSearchEventFactory(dispatch, logContext)
-    if (!eventFactory) throw new Error('missing log event factory')
-    await expect(eventFactory(12)).resolves.toEqual({
+    await expect(
+      runSearch(logContext, 12, queryTree, 50, sort)
+    ).resolves.toEqual({
       signal: 'logs',
       results: logResults,
-      queryTree: undefined,
+      queryTree,
       updateSeq: 12,
     })
+    expect(searchLogs).toHaveBeenCalledWith(10, 20, queryTree, 50, sort)
+    expect(searchTraces).not.toHaveBeenCalled()
+    expect(searchMetrics).not.toHaveBeenCalled()
   })
 
-  it('correlates the metric factory with metric results and events', async () => {
-    const results = await dispatch.metrics(metricContext)()
-    expectTypeOf(results).toEqualTypeOf<MetricSummary[]>()
-    expect(results).toBe(metricResults)
-    expect(calls).toEqual(['metrics'])
+  it('runs metric search and retains its result identity', async () => {
+    const searchTraces = vi.spyOn(telemetryAPI, 'searchTraces')
+    const searchLogs = vi.spyOn(telemetryAPI, 'searchLogs')
+    const searchMetrics = vi
+      .spyOn(telemetryAPI, 'searchMetricSummaries')
+      .mockResolvedValue(metricResults)
 
-    const eventFactory = buildSearchEventFactory(dispatch, metricContext)
-    if (!eventFactory) throw new Error('missing metric event factory')
-    await expect(eventFactory(13)).resolves.toEqual({
+    await expect(
+      runSearch(metricContext, 13, queryTree, 75, sort)
+    ).resolves.toEqual({
       signal: 'metrics',
       results: metricResults,
-      queryTree: undefined,
+      queryTree,
       updateSeq: 13,
     })
+    expect(searchMetrics).toHaveBeenCalledWith(10, 20, queryTree, 75, sort)
+    expect(searchTraces).not.toHaveBeenCalled()
+    expect(searchLogs).not.toHaveBeenCalled()
+  })
+
+  it('propagates the selected search error', async () => {
+    const error = new Error('search unavailable')
+    const searchTraces = vi
+      .spyOn(telemetryAPI, 'searchTraces')
+      .mockRejectedValue(error)
+    const searchLogs = vi.spyOn(telemetryAPI, 'searchLogs')
+    const searchMetrics = vi.spyOn(telemetryAPI, 'searchMetricSummaries')
+
+    await expect(runSearch(traceContext, 14)).rejects.toBe(error)
+    expect(searchTraces).toHaveBeenCalledWith(
+      10,
+      20,
+      undefined,
+      undefined,
+      undefined
+    )
+    expect(searchLogs).not.toHaveBeenCalled()
+    expect(searchMetrics).not.toHaveBeenCalled()
   })
 })
