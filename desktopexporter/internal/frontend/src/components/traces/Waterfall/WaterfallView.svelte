@@ -1,7 +1,6 @@
 <script module lang="ts">
   import type { SpanNode, SpanData } from '@/types/api-types'
   import type { TreeConnectorMeta } from './WaterfallTreeGutter.svelte'
-  import { parseBigInt } from '@/utils/bigint'
   import { getServiceName } from '@/utils/resource'
   import { categoricalPalette } from '@/utils/chart-palette'
   import { themeSignal } from '@/state/theme.svelte'
@@ -58,12 +57,12 @@
       return { start: 0n, end: 0n, duration: 0n }
     }
     const seed = {
-      start: parseBigInt(spans[0].spanData.startTime),
-      end: parseBigInt(spans[0].spanData.endTime),
+      start: spans[0].spanData.startTime,
+      end: spans[0].spanData.endTime,
     }
     const { start, end } = spans.reduce((acc, node) => {
-      const st = parseBigInt(node.spanData.startTime)
-      const en = parseBigInt(node.spanData.endTime)
+      const st = node.spanData.startTime
+      const en = node.spanData.endTime
       return {
         start: st < acc.start ? st : acc.start,
         end: en > acc.end ? en : acc.end,
@@ -216,20 +215,15 @@
         offsetPercent: getOffsetPercent(
           bounds.start,
           bounds.duration,
-          parseBigInt(node.spanData.startTime)
+          node.spanData.startTime
         ),
         widthPercent: getWidthPercent(
           bounds.duration,
-          parseBigInt(node.spanData.endTime) -
-            parseBigInt(node.spanData.startTime)
+          node.spanData.endTime - node.spanData.startTime
         ),
         tree: treeMeta[i]!,
         eventMarkers: node.spanData.events.map((e, eventIndex) => ({
-          percent: getOffsetPercent(
-            bounds.start,
-            bounds.duration,
-            parseBigInt(e.timestamp)
-          ),
+          percent: getOffsetPercent(bounds.start, bounds.duration, e.timestamp),
           name: e.name,
           eventIndex,
         })),
