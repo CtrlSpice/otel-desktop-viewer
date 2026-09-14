@@ -23,7 +23,7 @@
  * underlying `selectedMetric` cell lives on MetricsPage.)
  */
 import type { JsonAggregateBucket } from '@/types/wire-types'
-import { setContext, getContext, untrack } from 'svelte'
+import { createContext, untrack } from 'svelte'
 import { SvelteSet } from 'svelte/reactivity'
 import type {
   MetricData,
@@ -124,7 +124,8 @@ import {
   type MetricViewQuery,
 } from '@/route'
 
-const KEY = 'metric-view'
+const [getMetricViewContext, setMetricViewContext] =
+  createContext<MetricViewContext>()
 
 // How many points per series the line chart is willing to draw.
 const CHART_POINTS_PER_SERIES = 2000
@@ -2455,12 +2456,8 @@ export function createMetricViewContext(
     setActiveQuantileOverlay,
   }
 
-  setContext(KEY, ctx)
+  setMetricViewContext(ctx)
   return ctx
-}
-
-export function getMetricViewContext(): MetricViewContext {
-  return getContext<MetricViewContext>(KEY)
 }
 
 function histogramAggregationErrorToBucketSeriesError(
@@ -2468,3 +2465,5 @@ function histogramAggregationErrorToBucketSeriesError(
 ): BucketSeriesError {
   return err
 }
+
+export { getMetricViewContext }

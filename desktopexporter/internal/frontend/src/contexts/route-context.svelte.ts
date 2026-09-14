@@ -1,7 +1,7 @@
-import { setContext, getContext } from 'svelte'
+import { createContext } from 'svelte'
 import { readRoute, subscribeToRoute, type Route } from '@/route'
 
-const KEY = 'route'
+const [getRouteContext, setRouteContext] = createContext<RouteContext>()
 
 export interface RouteContext {
   get route(): Route
@@ -22,12 +22,9 @@ export function createRouteContext(): RouteContext {
     },
   }
 
-  setContext(KEY, ctx)
+  setRouteContext(ctx)
   return ctx
 }
 
-export function getRouteContext(): RouteContext {
-  return getContext<RouteContext>(KEY)
-}
-
+export { getRouteContext }
 export type { Route }
