@@ -21,14 +21,8 @@
     getTimeContext,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
-  import type { TimeContext } from '@/contexts/time-context.svelte'
   import type { SearchResultEvent } from '@/types/api-types'
-  import {
-    buildSearchEventFactory,
-    createSearchDispatch,
-    type SearchContext,
-    type SearchEventFactory,
-  } from './search-dispatch'
+  import { runSearch, type SearchContext } from './search-dispatch'
   import {
     beginListUpdate,
     cancelPendingListUpdates,
@@ -70,8 +64,6 @@
   }
 
   // --- helpers ---
-
-  const searchDispatch = createSearchDispatch(telemetryAPI)
 
   /**
    * Walk the query tree and convert human-readable duration values to
@@ -116,12 +108,7 @@
     /Mac|iPhone|iPad/.test(navigator.userAgent)
   const modKey = isMac ? '⌘' : 'Ctrl'
 
-  let timeContext: TimeContext | null = null
-  try {
-    timeContext = getTimeContext()
-  } catch {
-    console.warn('SearchEditor: time context not available')
-  }
+  const timeContext = getTimeContext()
 
   // --- state: editor ---
   let editorContainer = $state<HTMLDivElement | null>(null)
@@ -168,13 +155,10 @@
     const base = [...staticFieldsList]
     availableFields = base
 
-    const tc = timeContext
-    if (!tc) return
-
     let cancelled = false
     const t = window.setTimeout(async () => {
       try {
-        void selectionToQueryRangeMs(tc.selection, Date.now())
+        void selectionToQueryRangeMs(timeContext.selection, Date.now())
         const dynamicAttrs = await getDynamicAttributes(signal)
         if (cancelled) return
         availableFields = [...base, ...dynamicAttrs]
@@ -243,9 +227,10 @@
 
   /** Build a SearchContext from the current component state. */
   function currentSearchContext(): SearchContext {
-    const { startTime, endTime } = timeContext
-      ? selectionToQueryRangeMs(timeContext.selection, Date.now())
-      : { startTime: null, endTime: null }
+    const { startTime, endTime } = selectionToQueryRangeMs(
+      timeContext.selection,
+      Date.now()
+    )
 
     return { signal, startTime, endTime }
   }
@@ -253,11 +238,11 @@
   /** Fetch without any search filter and deliver via onSearchResults. */
   function fetchClean(updateSeq: number) {
     const ctx = currentSearchContext()
-    executeSearch(buildSearchEventFactory(searchDispatch, ctx), updateSeq)
+    executeSearch(runSearch(ctx, updateSeq))
   }
 
-  function executeSearch(search: SearchEventFactory | null, updateSeq: number) {
-    search?.(updateSeq)
+  function executeSearch(search: Promise<SearchResultEvent>) {
+    search
       .then(event => {
         if (!alive) return
         onSearchResults?.(event)
@@ -301,20 +286,16 @@
 
       const searchCtx = currentSearchContext()
       const sort = { field: sortValue, direction: sortDirection }
-      const searchFn = buildSearchEventFactory(
-        searchDispatch,
-        searchCtx,
-        queryTree ?? undefined,
-        limit ?? undefined,
-        sort
-      )
-      if (!searchFn) {
-        fetchClean(beginListUpdate(signal))
-        return
-      }
-
       const updateSeq = beginListUpdate(signal)
-      executeSearch(searchFn, updateSeq)
+      executeSearch(
+        runSearch(
+          searchCtx,
+          updateSeq,
+          queryTree ?? undefined,
+          limit ?? undefined,
+          sort
+        )
+      )
     } catch (err) {
       searchError = err instanceof Error ? err.message : 'Parse error'
     }

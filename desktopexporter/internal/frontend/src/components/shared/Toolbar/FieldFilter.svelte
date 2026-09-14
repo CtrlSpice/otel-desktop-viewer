@@ -12,7 +12,6 @@
     getTimeContext,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
-  import type { TimeContext } from '@/contexts/time-context.svelte'
 
   type Props = {
     signal: 'traces' | 'metrics' | 'logs'
@@ -43,25 +42,17 @@
   let buttonEl = $state<HTMLButtonElement | null>(null)
   let popoverEl = $state<HTMLDivElement | null>(null)
 
-  let timeContext: TimeContext | null = null
-  try {
-    timeContext = getTimeContext()
-  } catch {
-    /* no time context available */
-  }
+  const timeContext = getTimeContext()
 
   let availableFields = $state<FieldDefinition[]>([])
 
   $effect(() => {
     const base = [...getStaticFieldsForSearch(signal)]
     availableFields = base
-    const tc = timeContext
-    if (!tc) return
-
     let cancelled = false
     const t = window.setTimeout(async () => {
       try {
-        void selectionToQueryRangeMs(tc.selection, Date.now())
+        void selectionToQueryRangeMs(timeContext.selection, Date.now())
         const dynamicAttrs = await getDynamicAttributes(signal)
         if (cancelled) return
         availableFields = [...base, ...dynamicAttrs]

@@ -4,12 +4,7 @@
     TIME_RANGE_PRESETS,
   } from '@/contexts/time-context.svelte'
 
-  let ctx = getTimeContext()
-  if (!ctx) {
-    throw new Error(
-      'Time context not found. Make sure createTimeContext() is called at the root level.'
-    )
-  }
+  const ctx = getTimeContext()
 
   function applyPreset(preset: (typeof TIME_RANGE_PRESETS)[number]) {
     ctx.setSelection(

@@ -10,12 +10,7 @@
   import PresetTimeRanges from './PresetTimeRanges.svelte'
   import TimeRangeFilterBody from './TimeRangeFilterBody.svelte'
 
-  let ctx = getTimeContext()
-  if (!ctx) {
-    throw new Error(
-      'Time context not found. Make sure createTimeContext() is called at the root level.'
-    )
-  }
+  const ctx = getTimeContext()
 
   let popoverEl = $state<HTMLDivElement | null>(null)
   let triggerEl = $state<HTMLButtonElement | null>(null)
@@ -56,7 +51,6 @@
   })
 
   let ariaLabel = $derived.by(() => {
-    if (!ctx?.selection) return 'Change time range'
     const label =
       ctx.selection.type === 'all'
         ? 'All time'

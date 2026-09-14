@@ -18,12 +18,7 @@
   import CustomTimeRange from './CustomTimeRange.svelte'
   import RecentTimeRanges from './RecentTimeRanges.svelte'
 
-  let ctx = getTimeContext()
-  if (!ctx) {
-    throw new Error(
-      'Time context not found. Ensure createTimeContext() runs at app root.'
-    )
-  }
+  const ctx = getTimeContext()
 
   function normalizeTimezoneSearch(value: string): string {
     return value
