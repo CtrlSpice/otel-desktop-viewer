@@ -2,7 +2,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { tick } from 'svelte'
 import { waitFor } from '@testing-library/svelte'
-import WaterfallView from './WaterfallView.svelte'
+import WaterfallView, {
+  buildWaterfallRows,
+  getTraceBounds,
+} from './WaterfallView.svelte'
 import type { SpanNode } from '@/types/api-types'
 import { renderWithContexts } from '@/test/render-helpers'
 import { resetCollapseStoreForTests } from './waterfall-collapse-store'
@@ -50,6 +53,35 @@ function spanNode(
     },
   }
 }
+
+describe('WaterfallView bigint domain geometry', () => {
+  it('uses domain bigint span and event times without reparsing', () => {
+    const spans = [spanNode('first', null, 0), spanNode('second', null, 0)]
+    spans[0]!.spanData.startTime = 100n
+    spans[0]!.spanData.endTime = 200n
+    spans[0]!.spanData.events = [
+      {
+        name: 'midpoint',
+        timestamp: 150n,
+        attributes: [],
+        droppedAttributesCount: 0,
+      },
+    ]
+    spans[1]!.spanData.startTime = 200n
+    spans[1]!.spanData.endTime = 300n
+
+    const bounds = getTraceBounds(spans)
+    const rows = buildWaterfallRows(spans, bounds, 'dark')
+
+    expect(bounds).toEqual({ start: 100n, end: 300n, duration: 200n })
+    expect(rows[0]).toMatchObject({
+      offsetPercent: 0,
+      widthPercent: 50,
+      eventMarkers: [{ percent: 25, eventIndex: 0 }],
+    })
+    expect(rows[1]).toMatchObject({ offsetPercent: 50, widthPercent: 50 })
+  })
+})
 
 /** a → b → c → d → e → f: deep enough that the old heuristic collapsed it. */
 function deepTree(): SpanNode[] {
