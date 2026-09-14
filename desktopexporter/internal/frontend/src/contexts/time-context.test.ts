@@ -74,7 +74,7 @@ describe('time context localStorage restore', () => {
   it('does not migrate the old preset storage shape', () => {
     localStorage.setItem(
       'time-selection',
-      JSON.stringify({ type: 'preset', presetIndex: 0, start: 0, end: 222 })
+      JSON.stringify({ type: 'preset', presetIndex: 2, durationMs: 900_000 })
     )
     setTestUrl('/traces')
     renderProbe()
