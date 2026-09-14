@@ -1,4 +1,4 @@
-import { createContext } from 'svelte'
+import { setContext, getContext } from 'svelte'
 import {
   type Timezone,
   isDateTimestamp,
@@ -62,8 +62,6 @@ interface TimeContext {
   setSelection: (selection: TimeSelection) => void
   setTz: (tz: Timezone) => void
 }
-
-const [getTimeContext, setTimeContext] = createContext<TimeContext>()
 
 type TimeSelectionFields = {
   type?: unknown
@@ -258,9 +256,13 @@ function createTimeContext(): TimeContext {
     setTz,
   }
 
-  setTimeContext(timeContext)
+  setContext('time', timeContext)
   return timeContext
 }
 
-export { createTimeContext, getTimeContext }
+export function getTimeContext(): TimeContext {
+  return getContext<TimeContext>('time')
+}
+
+export { createTimeContext }
 export type { TimeContext, TimeSelection }
