@@ -1,4 +1,4 @@
-import { setContext, getContext } from 'svelte'
+import { createContext } from 'svelte'
 import {
   type Timezone,
   isDateTimestamp,
@@ -22,6 +22,8 @@ export const TIME_RANGE_PRESETS = [
   { label: '24h', durationMs: 86_400_000 },
   { label: '7d', durationMs: 604_800_000 },
 ] as const
+
+const [getTimeContext, setTimeContext] = createContext<TimeContext>()
 
 type PresetDurationMs = Exclude<
   (typeof TIME_RANGE_PRESETS)[number]['durationMs'],
@@ -256,13 +258,9 @@ function createTimeContext(): TimeContext {
     setTz,
   }
 
-  setContext('time', timeContext)
+  setTimeContext(timeContext)
   return timeContext
 }
 
-export function getTimeContext(): TimeContext {
-  return getContext<TimeContext>('time')
-}
-
-export { createTimeContext }
+export { createTimeContext, getTimeContext }
 export type { TimeContext, TimeSelection }

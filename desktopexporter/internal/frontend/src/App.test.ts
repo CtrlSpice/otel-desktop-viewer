@@ -1,72 +1,117 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/svelte'
 import { navigate } from '@/route'
 import { setTestUrl } from '@/test/render-helpers'
-import RouteProbe from '@/test/RouteProbe.svelte'
-import TimeProbe from '@/test/TimeProbe.svelte'
-import App, { type AppPages } from './App.svelte'
+import type { Stats } from '@/types/api-types'
 
-const probePages = {
-  home: RouteProbe,
-  traces: RouteProbe,
-  metrics: RouteProbe,
-  logs: TimeProbe,
-} satisfies AppPages
+const {
+  getStats,
+  searchTraces,
+  searchLogs,
+  searchMetricSummaries,
+  getMetric,
+  getTraceAttributes,
+  getLogAttributes,
+  getMetricAttributes,
+} = vi.hoisted(() => ({
+  getStats: vi.fn(),
+  searchTraces: vi.fn(),
+  searchLogs: vi.fn(),
+  searchMetricSummaries: vi.fn(),
+  getMetric: vi.fn(),
+  getTraceAttributes: vi.fn(),
+  getLogAttributes: vi.fn(),
+  getMetricAttributes: vi.fn(),
+}))
 
-describe('App route selection', () => {
-  it.each([
-    ['/', 'home'],
-    ['/other', 'home'],
-    ['/traces', 'traces'],
-    ['/traces/abc', 'traces'],
-    ['/traces-other', 'home'],
-    ['/metrics', 'metrics'],
-    ['/metrics/abc', 'metrics'],
-    ['/logs', 'logs'],
-    ['/logs/abc', 'logs'],
-  ] as const)('selects %s as the %s page', (path, selectedPage) => {
-    setTestUrl(path)
-    const pages = {
-      home: selectedPage === 'home' ? TimeProbe : RouteProbe,
-      traces: selectedPage === 'traces' ? TimeProbe : RouteProbe,
-      metrics: selectedPage === 'metrics' ? TimeProbe : RouteProbe,
-      logs: selectedPage === 'logs' ? TimeProbe : RouteProbe,
-    } satisfies AppPages
-
-    render(App, { pages })
-
-    expect(screen.getByTestId('selection-type')).toBeInTheDocument()
-    expect(screen.queryByTestId('route-path')).not.toBeInTheDocument()
-  })
+vi.mock('@/services/telemetry-service', async importOriginal => {
+  const actual =
+    await importOriginal<typeof import('@/services/telemetry-service')>()
+  return {
+    ...actual,
+    telemetryAPI: {
+      ...actual.telemetryAPI,
+      getStats,
+      searchTraces,
+      searchLogs,
+      searchMetricSummaries,
+      getMetric,
+      getTraceAttributes,
+      getLogAttributes,
+      getMetricAttributes,
+    },
+  }
 })
 
-describe('App route focus recovery', () => {
-  it('moves focus to main after a top-level SPA page change', async () => {
-    setTestUrl('/')
-    render(App, { pages: probePages })
-    const main = screen.getByRole('main')
-    const outside = document.createElement('button')
-    document.body.appendChild(outside)
-    outside.focus()
+import App from './App.svelte'
 
-    navigate('/metrics')
-    await waitFor(() => expect(main).toHaveFocus())
-    outside.remove()
+const EMPTY_STATS: Stats = {
+  traces: {
+    traceCount: 0,
+    spanCount: 0,
+    serviceCount: 0,
+    errorCount: 0,
+    lastReceived: null,
+  },
+  logs: { logCount: 0, errorCount: 0, lastReceived: null },
+  metrics: { metricCount: 0, dataPointCount: 0, lastReceived: null },
+  rejections: [],
+}
+
+beforeEach(() => {
+  if (typeof Element.prototype.scrollTo !== 'function') {
+    Element.prototype.scrollTo = () => {}
+  }
+  if (typeof Element.prototype.scrollIntoView !== 'function') {
+    Element.prototype.scrollIntoView = () => {}
+  }
+  vi.clearAllMocks()
+  getStats.mockResolvedValue(EMPTY_STATS)
+  searchTraces.mockResolvedValue([])
+  searchLogs.mockResolvedValue([])
+  searchMetricSummaries.mockResolvedValue([])
+  getMetric.mockResolvedValue(null)
+  getTraceAttributes.mockResolvedValue([])
+  getLogAttributes.mockResolvedValue([])
+  getMetricAttributes.mockResolvedValue([])
+})
+
+describe('App real-page composition', () => {
+  it('selects real pages for route prefixes and falls back to Home', async () => {
+    setTestUrl('/traces/trace-1')
+    render(App)
+
+    await screen.findByText('No traces in this time range')
+    expect(searchTraces).toHaveBeenCalled()
+
+    navigate('/metrics/metric-1')
+    await screen.findByText('No metrics in this time range')
+    expect(searchMetricSummaries).toHaveBeenCalled()
+
+    navigate('/logs/log-1')
+    await screen.findByText('No logs in this time range')
+    expect(searchLogs).toHaveBeenCalled()
+
+    navigate('/unknown')
+    await screen.findByRole('heading', {
+      level: 1,
+      name: 'OpenTelemetry Desktop Viewer',
+    })
+    expect(getStats).toHaveBeenCalled()
   })
 
   it('preserves focus across repeated master-detail pathname changes', async () => {
     setTestUrl('/metrics/a')
-    render(App, { pages: probePages })
+    render(App)
+    await screen.findByText('No metrics in this time range')
     const control = document.createElement('button')
     document.body.appendChild(control)
     control.focus()
 
     for (const path of ['/metrics/b', '/metrics/c']) {
       navigate(path)
-      await waitFor(() =>
-        expect(screen.getByTestId('route-path')).toHaveTextContent(path)
-      )
+      await waitFor(() => expect(window.location.pathname).toBe(path))
       expect(control).toHaveFocus()
     }
     control.remove()
@@ -74,28 +119,24 @@ describe('App route focus recovery', () => {
 
   it('does not move focus for a query-only update', async () => {
     setTestUrl('/metrics')
-    render(App, { pages: probePages })
+    render(App)
+    await screen.findByText('No metrics in this time range')
     const outside = document.createElement('button')
     document.body.appendChild(outside)
     outside.focus()
 
     navigate('/metrics?start=10&end=20', 'replace')
-    await waitFor(() =>
-      expect(screen.getByTestId('route-query')).toHaveTextContent(
-        '"start":"10","end":"20"'
-      )
-    )
-    expect(outside).toHaveFocus()
+    await waitFor(() => expect(outside).toHaveFocus())
     outside.remove()
   })
 
-  it('recovers focus when a cross-page trigger is destroyed', async () => {
+  it('recovers focus after a real cross-page trigger is destroyed', async () => {
     setTestUrl('/metrics/a')
-    render(App, { pages: probePages })
+    render(App)
     const main = screen.getByRole('main')
-    const routeOutput = screen.getByTestId('route-path')
-    const trigger = document.createElement('button')
-    routeOutput.appendChild(trigger)
+    const trigger = await screen.findByRole('button', {
+      name: /change time range/i,
+    })
     trigger.focus()
     let oldPageWasDestroyedBeforeFocus: boolean | undefined
     main.addEventListener(

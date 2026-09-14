@@ -127,9 +127,7 @@ export class RequestAbortedError extends Error {
 }
 
 /** True when a rejection is just an abandoned request. */
-export function isAbortError(
-  err: unknown
-): err is RequestAbortedError | DOMException {
+export function isAbortError(err: unknown): boolean {
   return (
     err instanceof RequestAbortedError ||
     (err instanceof DOMException && err.name === 'AbortError')
