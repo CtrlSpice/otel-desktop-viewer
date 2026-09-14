@@ -20,13 +20,7 @@
     type WallClockDisambiguation,
   } from '@/utils/time'
 
-  // Get time context
-  let ctx = getTimeContext()
-  if (!ctx) {
-    throw new Error(
-      'Time context not found. Make sure createTimeContext() is called at the root level.'
-    )
-  }
+  const ctx = getTimeContext()
   type Endpoint = 'start' | 'end'
   type Choice = Exclude<WallClockDisambiguation, 'reject'>
   type Ambiguity = { earlier: number; later: number }

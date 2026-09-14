@@ -21,7 +21,6 @@
     getTimeContext,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
-  import type { TimeContext } from '@/contexts/time-context.svelte'
   import type { SearchResultEvent } from '@/types/api-types'
   import {
     buildSearchEventFactory,
@@ -116,12 +115,7 @@
     /Mac|iPhone|iPad/.test(navigator.userAgent)
   const modKey = isMac ? '⌘' : 'Ctrl'
 
-  let timeContext: TimeContext | null = null
-  try {
-    timeContext = getTimeContext()
-  } catch {
-    console.warn('SearchEditor: time context not available')
-  }
+  const timeContext = getTimeContext()
 
   // --- state: editor ---
   let editorContainer = $state<HTMLDivElement | null>(null)
@@ -168,13 +162,10 @@
     const base = [...staticFieldsList]
     availableFields = base
 
-    const tc = timeContext
-    if (!tc) return
-
     let cancelled = false
     const t = window.setTimeout(async () => {
       try {
-        void selectionToQueryRangeMs(tc.selection, Date.now())
+        void selectionToQueryRangeMs(timeContext.selection, Date.now())
         const dynamicAttrs = await getDynamicAttributes(signal)
         if (cancelled) return
         availableFields = [...base, ...dynamicAttrs]
@@ -243,9 +234,10 @@
 
   /** Build a SearchContext from the current component state. */
   function currentSearchContext(): SearchContext {
-    const { startTime, endTime } = timeContext
-      ? selectionToQueryRangeMs(timeContext.selection, Date.now())
-      : { startTime: null, endTime: null }
+    const { startTime, endTime } = selectionToQueryRangeMs(
+      timeContext.selection,
+      Date.now()
+    )
 
     return { signal, startTime, endTime }
   }

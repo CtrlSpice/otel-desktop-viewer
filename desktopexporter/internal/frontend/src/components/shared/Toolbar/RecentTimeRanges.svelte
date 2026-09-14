@@ -12,12 +12,7 @@
     type RecentTimeRange,
   } from '@/utils/time'
 
-  let ctx = getTimeContext()
-  if (!ctx) {
-    throw new Error(
-      'Time context not found. Make sure createTimeContext() is called at the root level.'
-    )
-  }
+  const ctx = getTimeContext()
 
   let recentTimeRanges = $state<RecentTimeRange[]>([])
 
