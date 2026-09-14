@@ -12,21 +12,26 @@ import {
   withQueryPatch,
 } from '@/route'
 
+export const TIME_RANGE_PRESETS = [
+  { label: 'All', durationMs: undefined },
+  { label: '5m', durationMs: 300_000 },
+  { label: '15m', durationMs: 900_000 },
+  { label: '30m', durationMs: 1_800_000 },
+  { label: '1h', durationMs: 3_600_000 },
+  { label: '6h', durationMs: 21_600_000 },
+  { label: '24h', durationMs: 86_400_000 },
+  { label: '7d', durationMs: 604_800_000 },
+] as const
+
+type PresetDurationMs = Exclude<
+  (typeof TIME_RANGE_PRESETS)[number]['durationMs'],
+  undefined
+>
+
 type TimeSelection =
   | { type: 'all' }
-  | { type: 'preset'; presetIndex: number; durationMs: number }
+  | { type: 'preset'; durationMs: PresetDurationMs }
   | { type: 'custom' | 'recent'; start: number; end: number }
-
-export const TIME_RANGE_PRESETS = [
-  { label: 'All', duration: undefined },
-  { label: '5m', duration: 300_000 },
-  { label: '15m', duration: 900_000 },
-  { label: '30m', duration: 1_800_000 },
-  { label: '1h', duration: 3_600_000 },
-  { label: '6h', duration: 21_600_000 },
-  { label: '24h', duration: 86_400_000 },
-  { label: '7d', duration: 604_800_000 },
-] as const
 
 export type QueryTimeRangeMs = {
   startTime: number | null
@@ -58,13 +63,8 @@ interface TimeContext {
   setTz: (tz: Timezone) => void
 }
 
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value)
-}
-
 type TimeSelectionFields = {
   type?: unknown
-  presetIndex?: unknown
   durationMs?: unknown
   start?: unknown
   end?: unknown
@@ -98,16 +98,13 @@ function isTimeSelection(value: unknown): value is TimeSelection {
   if (!isTimeSelectionFields(value)) return false
   if (value.type === 'all') return hasOnlyKeys(value, ['type'])
   if (isBoundedSelection(value)) return true
-  if (
-    value.type !== 'preset' ||
-    !hasOnlyKeys(value, ['type', 'presetIndex', 'durationMs']) ||
-    !isFiniteNumber(value.presetIndex) ||
-    !Number.isInteger(value.presetIndex) ||
-    !isFiniteNumber(value.durationMs)
-  ) {
+  if (value.type !== 'preset' || !hasOnlyKeys(value, ['type', 'durationMs'])) {
     return false
   }
-  return TIME_RANGE_PRESETS[value.presetIndex]?.duration === value.durationMs
+  return (
+    typeof value.durationMs === 'number' &&
+    TIME_RANGE_PRESETS.some(preset => preset.durationMs === value.durationMs)
+  )
 }
 
 /** Restore a current persisted shape, otherwise use the unbounded default. */
