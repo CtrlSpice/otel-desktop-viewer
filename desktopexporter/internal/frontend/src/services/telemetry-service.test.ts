@@ -6,12 +6,14 @@ import {
   RequestAbortedError,
 } from './telemetry-service'
 import type { QueryNode } from '@/components/shared/Search/queryTree'
+import { SPAN_FIELDS, type FieldDefinition } from '@/constants/fields'
 import { OPERATORS } from '@/constants/operators'
 import type {
   JsonMetricData,
   JsonTraceData,
   JsonTraceSummary,
 } from '@/types/wire-types'
+import { parseDuration } from '@/utils/time'
 
 // The backend signals not-found with JSON-RPC errors (one convention across
 // all signals; see internal/server/errors.go). getMetric's callers expect
@@ -757,6 +759,37 @@ describe('request parameters', () => {
       'startTime',
     ])
     expect(params.query).toMatchObject({ id: 'q1', type: 'condition' })
+  })
+
+  it('serializes an exact duration boundary query', async () => {
+    const duration = parseDuration('9007199254740993ns')
+    if (duration === null) throw new Error('Expected valid duration')
+    const field = SPAN_FIELDS.find(
+      (field): field is Exclude<FieldDefinition, { searchScope: 'global' }> =>
+        'name' in field && field.name === 'duration'
+    )
+    if (!field) throw new Error('Expected duration field')
+    const tree = {
+      id: 'duration-boundary',
+      type: 'condition',
+      query: {
+        field,
+        operator: OPERATORS.EQUALS,
+        value: duration.toString(),
+      },
+    } satisfies QueryNode
+
+    const sent = captureRequest()
+    await telemetryAPI.searchTraces(2, 5, tree).catch(() => {})
+    expect(sent().params.query).toEqual({
+      id: 'duration-boundary',
+      type: 'condition',
+      query: {
+        field: { name: 'duration', type: 'int64', searchScope: 'field' },
+        fieldOperator: '=',
+        value: '9007199254740993',
+      },
+    })
   })
 
   it('includes a trace result limit without requiring a query tree', async () => {

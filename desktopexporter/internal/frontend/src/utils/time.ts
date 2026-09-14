@@ -509,13 +509,13 @@ export function parseDuration(input: string): bigint | null {
   if (unit === null) return null
   const multiplier = DURATION_UNITS[unit]
 
-  const num = parseFloat(numStr)
-  if (!isFinite(num) || num < 0) return null
+  const [whole, fraction = ''] = numStr.split('.')
+  const denominator = 10n ** BigInt(fraction.length)
+  const numerator = BigInt(whole + fraction) * multiplier
+  const nanoseconds = numerator / denominator
+  const remainder = numerator % denominator
 
-  if (Number.isInteger(num)) {
-    return BigInt(num) * multiplier
-  }
-  return BigInt(Math.round(num * Number(multiplier)))
+  return remainder * 2n >= denominator ? nanoseconds + 1n : nanoseconds
 }
 
 export function formatDuration(nanoseconds: bigint): string {

@@ -111,6 +111,15 @@ describe('parseDuration', () => {
     expect(parseDuration('0.5ms')).toBe(500_000n)
   })
 
+  it('preserves integer precision beyond Number.MAX_SAFE_INTEGER', () => {
+    expect(parseDuration('9007199254740993ns')).toBe(9_007_199_254_740_993n)
+  })
+
+  it('rounds fractional nanoseconds half up without floating-point precision loss', () => {
+    expect(parseDuration('9007199254740992.5ns')).toBe(9_007_199_254_740_993n)
+    expect(parseDuration('0.499999999999999999ns')).toBe(0n)
+  })
+
   it('tolerates surrounding whitespace', () => {
     expect(parseDuration('  500 ms  ')).toBe(500_000_000n)
     expect(parseDuration('5\tms')).toBe(5_000_000n)
