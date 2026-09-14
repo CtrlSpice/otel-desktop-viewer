@@ -81,6 +81,14 @@ describe('request cancellation', () => {
     expect(isAbortError(new Error('aborted'))).toBe(false)
   })
 
+  it('keeps non-abort platform failures usable after classification', () => {
+    const failure = new DOMException('connection lost', 'NetworkError')
+
+    if (isAbortError(failure)) throw new Error('expected a non-abort failure')
+
+    expect(failure.message).toBe('connection lost')
+  })
+
   it('normalizes a platform abort without losing the request signal', async () => {
     const fetchMock = vi
       .fn()
