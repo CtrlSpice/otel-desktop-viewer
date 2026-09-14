@@ -573,43 +573,43 @@ function captureRequest() {
 describe('request parameters', () => {
   // Named methods, with the exact object each one is expected to send.
   // toNanoseconds renders milliseconds as a decimal string, hence '2000000'.
-  const named: [string, () => Promise<void>, Record<string, string>][] = [
+  const named = [
     [
       'searchAttributes',
-      () => telemetryAPI.searchAttributes('http').then(() => {}),
+      () => telemetryAPI.searchAttributes('http'),
       { term: 'http' },
     ],
     [
       'getAttributesByTraceID',
-      () => telemetryAPI.getAttributesByTraceID('abc').then(() => {}),
+      () => telemetryAPI.getAttributesByTraceID('abc'),
       { traceID: 'abc' },
     ],
     [
       'searchTraces',
-      () => telemetryAPI.searchTraces(2, 5).then(() => {}),
+      () => telemetryAPI.searchTraces(2, 5),
       { startTime: '2000000', endTime: '5000000' },
     ],
     [
       'searchLogs',
-      () => telemetryAPI.searchLogs(2, 5).then(() => {}),
+      () => telemetryAPI.searchLogs(2, 5),
       { startTime: '2000000', endTime: '5000000' },
     ],
     [
       'searchMetricSummaries',
-      () => telemetryAPI.searchMetricSummaries(2, 5).then(() => {}),
+      () => telemetryAPI.searchMetricSummaries(2, 5),
       { startTime: '2000000', endTime: '5000000' },
     ],
     [
       'getTraceSpanCount',
-      () => telemetryAPI.getTraceSpanCount('abc').then(() => {}),
+      () => telemetryAPI.getTraceSpanCount('abc'),
       { traceID: 'abc' },
     ],
     [
       'deleteMetricStream',
-      () => telemetryAPI.deleteMetricStream('s1').then(() => {}),
+      () => telemetryAPI.deleteMetricStream('s1'),
       { streamID: 's1' },
     ],
-  ]
+  ] as const
 
   it.each(named)(
     '%s sends exactly its named parameters',
