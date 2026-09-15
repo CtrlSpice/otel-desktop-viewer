@@ -104,8 +104,8 @@ const STORAGE_VERSION = '1'
  * aggregate toggles) is a separate choice and is kept.
  */
 export function repairEmptyPersistedVisibleKeys(): void {
-  if (typeof localStorage === 'undefined') return
   try {
+    if (typeof localStorage === 'undefined') return
     if (localStorage.getItem(STORAGE_VERSION_KEY) === STORAGE_VERSION) return
 
     // Collected first, and read through the Storage API rather than
@@ -153,8 +153,8 @@ export function metricViewStorageKey(metricStreamID: string): string {
 }
 
 function loadPersistedView(metricStreamID: string): PersistedMetricView | null {
-  if (typeof localStorage === 'undefined') return null
   try {
+    if (typeof localStorage === 'undefined') return null
     const raw = localStorage.getItem(metricViewStorageKey(metricStreamID))
     if (!raw) return null
     const parsed: unknown = JSON.parse(raw)
@@ -196,11 +196,15 @@ function writePersistedView(
   metricStreamID: string,
   view: PersistedMetricView
 ): void {
-  if (typeof localStorage === 'undefined') return
-  localStorage.setItem(
-    metricViewStorageKey(metricStreamID),
-    serializePersistedView(view)
-  )
+  try {
+    if (typeof localStorage === 'undefined') return
+    localStorage.setItem(
+      metricViewStorageKey(metricStreamID),
+      serializePersistedView(view)
+    )
+  } catch {
+    // A failed localStorage preference write must not abort the interaction.
+  }
 }
 
 function mergePersistedView(
