@@ -74,56 +74,37 @@ if (
   globalThis.ResizeObserver = ResizeObserverStub
 }
 
-// jsdom lacks the Web Animations API that Svelte transitions/animations use.
-// This stub completes instantly (onfinish fires on the next microtask) so
-// transitions resolve rather than hang or throw.
+// jsdom lacks the Web Animations API that Svelte transitions use. This only
+// supplies Svelte's observed contract, completing on the next microtask.
 if (
   typeof Element !== 'undefined' &&
   typeof Element.prototype.animate !== 'function'
 ) {
-  class AnimationStub extends EventTarget implements Animation {
-    currentTime: CSSNumberish | null = 0
-    effect: AnimationEffect | null = null
-    readonly finished: Promise<Animation>
-    id = ''
-    oncancel: Animation['oncancel'] = null
-    onfinish: Animation['onfinish'] = null
-    onremove: Animation['onremove'] = null
-    readonly overallProgress = 1
-    readonly pending = false
-    readonly playState: AnimationPlayState = 'finished'
-    playbackRate = 1
-    readonly ready: Promise<Animation>
-    readonly replaceState: AnimationReplaceState = 'active'
-    startTime: CSSNumberish | null = 0
-    timeline: AnimationTimeline | null = null
-
-    constructor() {
-      super()
-      this.finished = Promise.resolve(this)
-      this.ready = Promise.resolve(this)
-      const finishEvent: AnimationPlaybackEvent = Object.assign(
-        new Event('finish'),
-        { currentTime: 0, timelineTime: 0 }
-      )
-      queueMicrotask(() => this.onfinish?.call(this, finishEvent))
-    }
-
-    cancel() {}
-    commitStyles() {}
-    finish() {}
-    pause() {}
-    persist() {}
-    play() {}
-    reverse() {}
-    updatePlaybackRate(playbackRate: number) {
-      this.playbackRate = playbackRate
-    }
-  }
-
-  Element.prototype.animate = function (): Animation {
-    return new AnimationStub()
-  }
+  Object.defineProperty(Element.prototype, 'animate', {
+    configurable: true,
+    writable: true,
+    value: () => {
+      let cancelled = false
+      let onfinish: (() => void) | null = null
+      const animation = {
+        currentTime: 0,
+        effect: null,
+        get onfinish() {
+          return onfinish
+        },
+        set onfinish(callback: (() => void) | null) {
+          onfinish = callback
+        },
+        cancel: () => {
+          cancelled = true
+        },
+      }
+      queueMicrotask(() => {
+        if (!cancelled) animation.onfinish?.()
+      })
+      return animation
+    },
+  })
 }
 
 // jsdom ships the popover UA stylesheet but not the popover JS API. This
