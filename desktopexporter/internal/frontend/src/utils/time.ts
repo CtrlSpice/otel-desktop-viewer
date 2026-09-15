@@ -457,37 +457,18 @@ export function traceSummaryDurationNs(
   return ns >= 0n ? ns : undefined
 }
 
-type DurationUnit = 'ns' | 'us' | 'µs' | 'ms' | 's' | 'm' | 'min' | 'h'
+const DURATION_UNITS = new Map<string, bigint>([
+  ['ns', 1n],
+  ['us', 1_000n],
+  ['µs', 1_000n],
+  ['ms', 1_000_000n],
+  ['s', 1_000_000_000n],
+  ['m', 60_000_000_000n],
+  ['min', 60_000_000_000n],
+  ['h', 3_600_000_000_000n],
+])
 
-const DURATION_UNITS = {
-  ns: 1n,
-  us: 1_000n,
-  µs: 1_000n,
-  ms: 1_000_000n,
-  s: 1_000_000_000n,
-  m: 60_000_000_000n,
-  min: 60_000_000_000n,
-  h: 3_600_000_000_000n,
-} satisfies Record<DurationUnit, bigint>
-
-function parseDurationUnit(unit: string): DurationUnit | null {
-  const normalized = unit.toLowerCase()
-  switch (normalized) {
-    case 'ns':
-    case 'us':
-    case 'µs':
-    case 'ms':
-    case 's':
-    case 'm':
-    case 'min':
-    case 'h':
-      return normalized
-    default:
-      return null
-  }
-}
-
-const DURATION_RE = /^(\d+(?:\.\d+)?)\s*(ns|us|µs|ms|s|min|m|h)$/i
+const DURATION_RE = /^(\d+(?:\.\d+)?)\s*([a-zµ]+)$/i
 
 /**
  * Parse a human-readable duration string into nanoseconds.
@@ -505,9 +486,8 @@ export function parseDuration(input: string): bigint | null {
   if (!match) return null
 
   const [, numStr, unitText] = match
-  const unit = parseDurationUnit(unitText)
-  if (unit === null) return null
-  const multiplier = DURATION_UNITS[unit]
+  const multiplier = DURATION_UNITS.get(unitText.toLowerCase())
+  if (multiplier === undefined) return null
 
   const [whole, fraction = ''] = numStr.split('.')
   const denominator = 10n ** BigInt(fraction.length)
