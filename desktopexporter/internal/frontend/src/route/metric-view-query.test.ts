@@ -124,6 +124,7 @@ describe('metricViewQueriesEqual', () => {
   })
 
   it('is insensitive to property order', () => {
+    // SAFETY: This fixture lists every required timeseries variant field with valid literal values.
     const reordered = {
       dp: 'dp-1',
       series: null,

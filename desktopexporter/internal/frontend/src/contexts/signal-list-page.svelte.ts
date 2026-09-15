@@ -246,6 +246,7 @@ export function createSignalListPage<TItem, TSortColumn extends string>(
     if (event.signal !== opts.signal) return
     if (!isLatestListUpdate(event.signal, event.updateSeq)) return
     error = null
+    // SAFETY: Each page pairs its TItem with the matching signal's SearchResultEvent producer.
     items = event.results as TItem[]
     loading = false
   }

@@ -49,6 +49,7 @@ export function startDrag(e: DragStartEvent, opts: DragOptions): DragHandle {
   e.preventDefault()
 
   const start = opts.axis === 'x' ? e.clientX : e.clientY
+  // SAFETY: startDrag is called from pointer handlers bound to the HTMLElement that owns the drag.
   const target = e.currentTarget as HTMLElement | null
   const ownerDocument = target?.ownerDocument ?? document
   const ownerWindow = ownerDocument.defaultView ?? window

@@ -22,6 +22,8 @@ const EMPTY_STATS = {
 
 async function interceptRpc(page: Page): Promise<void> {
   await page.route('**/rpc', async route => {
+    // SAFETY: This page's /rpc requests come from callRPC, which supplies a
+    // numeric request-correlation id and a string method.
     const request = route.request().postDataJSON() as RpcRequest
     const response =
       request.method === 'getStats'

@@ -598,6 +598,7 @@ describe('telemetryAPI.searchSpans rehydration', () => {
 
 describe('telemetryAPI metric bigint boundary', () => {
   it('keeps only the established lastSeenNs missing-field normalizations', async () => {
+    // SAFETY: This fixture intentionally omits typed lastSeenNs fields to exercise their parser normalization.
     const result = metricResult({
       timeseries: [
         {

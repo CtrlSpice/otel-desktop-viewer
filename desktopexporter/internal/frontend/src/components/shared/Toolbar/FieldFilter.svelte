@@ -85,7 +85,8 @@
 
   function handleClickOutside(event: MouseEvent) {
     if (!popoverOpen) return
-    const target = event.target as Node
+    const target = event.target
+    if (!(target instanceof Node)) return
     if (buttonEl?.contains(target) || popoverEl?.contains(target)) return
     popoverOpen = false
   }

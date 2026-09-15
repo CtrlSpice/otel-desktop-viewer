@@ -164,11 +164,13 @@
       : ''
   )
 
-  function handleTablistKeydown(event: KeyboardEvent) {
-    const tablist = event.currentTarget as HTMLElement
-    const target = (event.target as Element | null)?.closest<HTMLButtonElement>(
-      '[role="tab"]'
-    )
+  function handleTablistKeydown(
+    event: KeyboardEvent & { currentTarget: HTMLDivElement }
+  ) {
+    const tablist = event.currentTarget
+    const eventTarget = event.target
+    if (!(eventTarget instanceof Element)) return
+    const target = eventTarget.closest<HTMLButtonElement>('[role="tab"]')
     if (!target || !tablist.contains(target)) return
 
     const tabs = Array.from(
