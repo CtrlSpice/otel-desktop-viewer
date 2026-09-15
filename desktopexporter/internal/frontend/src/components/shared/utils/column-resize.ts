@@ -253,7 +253,9 @@ export function barPositions(
 /**
  * Attach pointer-based resize to a bar. Mechanics (capture, cursor,
  * selection) come from startDrag; the geometry is resizeBar over the
- * layout captured at drag start.
+ * layout captured at drag start. A caller changing the column specs must
+ * cancel the returned handle first, rather than applying stale specs to a
+ * later pointer move.
  */
 export function startColumnResize(
   specs: ColumnSpec[],
