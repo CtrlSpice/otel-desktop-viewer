@@ -10,6 +10,7 @@ import {
   readRoute,
   subscribeToRoute,
   withQueryPatch,
+  type RouteQuery,
 } from '@/route'
 
 export const TIME_RANGE_PRESETS = [
@@ -129,9 +130,7 @@ type RouteTimeSnapshot =
   { type: 'all' } | { type: 'bounded'; start: number; end: number }
 
 /** Parse explicit All or a bounded `start`/`end` pair from the route. */
-function parseTimeQuery(
-  query: Record<string, string>
-): RouteTimeSnapshot | null {
+function parseTimeQuery(query: RouteQuery): RouteTimeSnapshot | null {
   if (query.time === 'all') return { type: 'all' }
   const start = Number(query.start)
   const end = Number(query.end)

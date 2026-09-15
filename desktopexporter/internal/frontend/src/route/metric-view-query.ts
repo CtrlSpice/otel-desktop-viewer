@@ -52,7 +52,7 @@ const HSCOPE_VALUES = ['window', 'bucket'] as const
  * than a retention window old -- which is why `series` exists alongside it.
  */
 function parseDatapointParam(
-  query: Record<string, string>,
+  query: RouteQuery,
   datapointIDs: ReadonlySet<string>
 ): string | null {
   const dp = query.dp || null
@@ -86,7 +86,7 @@ function parseDatapointParam(
  * should fall back to no selection rather than dangle.
  */
 function parseSeriesParam(
-  query: Record<string, string>,
+  query: RouteQuery,
   seriesKeys: ReadonlySet<string>
 ): string | null {
   const series = query.series || null
@@ -134,7 +134,7 @@ function parseEnumMember<T extends string>(
  * @remarks Ignores `agg`; cross-kind keys are not carried into the result.
  */
 function parseHistogramMetricViewQuery(
-  query: Record<string, string>,
+  query: RouteQuery,
   dp: string | null,
   series: string | null
 ): HistogramMetricViewQuery {
@@ -158,7 +158,7 @@ function parseHistogramMetricViewQuery(
  * @remarks Ignores `htab` and `hscope`; cross-kind keys are not carried into the result.
  */
 function parseTimeseriesMetricViewQuery(
-  query: Record<string, string>,
+  query: RouteQuery,
   allowedAggs: readonly AggregationView[],
   dp: string | null,
   series: string | null
@@ -181,7 +181,7 @@ function parseTimeseriesMetricViewQuery(
  * @remarks Branch is chosen from `ctx.isHistogramKind`, not from which keys are present.
  */
 export function parseMetricViewQuery(
-  query: Record<string, string>,
+  query: RouteQuery,
   ctx: MetricViewParseContext
 ): MetricViewQuery {
   const dp = parseDatapointParam(query, ctx.datapointIDs)
