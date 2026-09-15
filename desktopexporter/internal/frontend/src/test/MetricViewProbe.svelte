@@ -4,7 +4,11 @@
     createMetricViewContext,
     type MetricViewContext,
   } from '@/contexts/metric-view-context.svelte'
-  import type { DataPoint, MetricData } from '@/types/api-types'
+  import type {
+    DataPoint,
+    MetricData,
+    ScalarAggregate,
+  } from '@/types/api-types'
   import TimeseriesPanel from '@/components/metrics/Detail/TimeseriesPanel.svelte'
 
   // createMetricViewContext() registers $effects, so it only works inside a
@@ -14,16 +18,23 @@
   type Props = {
     metric: MetricData | undefined
     seriesDatapoints?: Readonly<Record<string, DataPoint[]>>
+    scalarAggregate?: ScalarAggregate | null
     oncontext?: (ctx: MetricViewContext) => void
     showTimeseries?: boolean
   }
-  let { metric, seriesDatapoints, oncontext, showTimeseries }: Props = $props()
+  let {
+    metric,
+    seriesDatapoints,
+    scalarAggregate,
+    oncontext,
+    showTimeseries,
+  }: Props = $props()
 
   const metricCtx = createMetricViewContext(
     () => metric,
     () => null,
     () => null,
-    () => null,
+    () => scalarAggregate ?? null,
     seriesKey => seriesDatapoints?.[seriesKey]
   )
   // The page seeds synchronously in the same statement that assigns the

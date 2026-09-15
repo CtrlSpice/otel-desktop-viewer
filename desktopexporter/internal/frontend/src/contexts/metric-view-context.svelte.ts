@@ -72,6 +72,7 @@ import {
   availableAggregationViews,
   defaultAggregationViewFor,
   availableSeriesStatBadges,
+  isAggregateLineKey,
   rateSlopeBucketSegment,
   availableRateSlopeOverlay,
   resampleSeriesToBucketCenters,
@@ -1170,7 +1171,7 @@ export function createMetricViewContext(
   })
 
   /** Aggregated mode: Selected + All cross-timeseries lines, as the store
-   *  folded them.
+   *  folded them, in their display order.
    *
    *  The collapse rules stay here because they are labelling, not arithmetic:
    *  nothing checked draws All by itself; everything checked makes Selected and
@@ -2186,13 +2187,7 @@ export function createMetricViewContext(
   }
 
   function onChartPointClick(seriesKey: string, datapointID: string) {
-    if (
-      seriesKey === AGG_KEY_SELECTED ||
-      seriesKey === AGG_KEY_ALL ||
-      seriesKey === AGG_KEY_TOTAL
-    ) {
-      return
-    }
+    if (isAggregateLineKey(seriesKey)) return
     const m = getMetric()
     if (!m) return
     const ts = m.timeseries.find(t => t.attributesKey === seriesKey)

@@ -10,6 +10,7 @@ import {
 import type {
   MetricData,
   ResourceData,
+  ScalarAggregate,
   ScopeData,
   SumDataPoint,
 } from '@/types/api-types'
@@ -214,6 +215,7 @@ function makeRateSelectionMetric() {
 type ProbeOptions = {
   metric?: MetricData
   seriesDatapoints?: Readonly<Record<string, SumDataPoint[]>>
+  scalarAggregate?: ScalarAggregate
 }
 
 function renderProbeView(url: string, options: ProbeOptions = {}) {
@@ -226,6 +228,7 @@ function renderProbeView(url: string, options: ProbeOptions = {}) {
   const view = renderWithContexts(MetricViewProbe, {
     metric,
     seriesDatapoints: options.seriesDatapoints,
+    scalarAggregate: options.scalarAggregate,
     oncontext,
   })
   if (!captured) throw new Error('probe did not report a metric view context')
@@ -414,6 +417,42 @@ describe('metric view context visibility seeding', () => {
     const ctx = renderProbe('/metrics/m1')
     expect(ctx.isHistogramKind).toBe(false)
     expect([...ctx.visibleSeries].sort()).toEqual(['route=/a', 'route=/b'])
+  })
+
+  it('keeps the aggregate producer order through the chart series', async () => {
+    const metric = makeCumulativeSumMetric()
+    metric.timeseries.push({
+      ...metric.timeseries[1]!,
+      attributesKey: 'route=/c',
+      attributes: [{ key: 'route', value: '/c', type: 'string' }],
+    })
+    const buckets = [
+      {
+        bucketStart: BigInt(BASE_TIMESTAMP_MS) * 1_000_000n,
+        sampleCount: 2,
+        sum: 14,
+        avg: 7,
+        rate: null,
+        slope: null,
+        hasReset: false,
+      },
+    ]
+    const scalarAggregate: ScalarAggregate = {
+      selected: buckets,
+      all: buckets,
+    }
+    const ctx = renderProbe('/metrics/m1?agg=sum', {
+      metric,
+      scalarAggregate,
+    })
+
+    ctx.visibleSeries.delete('route=/c')
+    ctx.setShowAllSeriesAggregate(true)
+    await tick()
+
+    expect(
+      ctx.transformedGaugeSumChartTimeseries.map(series => series.key)
+    ).toEqual(['route=/a', 'route=/b', '__agg:selected__', '__agg:all__'])
   })
 })
 
@@ -660,6 +699,20 @@ describe('metric view context datapoint URL sync', () => {
     ctx.onChartPointClick('route=/a', 'missing-datapoint')
 
     expect(reportedSelectedDatapointID()).toBe('')
+  })
+
+  it('does not change selection or URL for an aggregate chart point', async () => {
+    const ctx = renderProbe('/metrics/m1')
+
+    ctx.onChartPointClick('route=/a', 'dp-a1')
+    await tick()
+    const selectionUrl = window.location.href
+
+    ctx.onChartPointClick('__agg:selected__', 'dp-a1')
+    await tick()
+
+    expect(reportedSelectedDatapointID()).toBe('dp-a1')
+    expect(window.location.href).toBe(selectionUrl)
   })
 
   it('does not clear a raw datapoint selected from the detail pane', async () => {
