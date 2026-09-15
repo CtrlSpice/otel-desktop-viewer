@@ -23,7 +23,7 @@ export type SignalName = 'traces' | 'metrics' | 'logs'
 export type HistoryMode = 'push' | 'replace'
 
 export interface RouteQuery {
-  [name: string]: string
+  [name: string]: string | undefined
 }
 
 export type Route = {
