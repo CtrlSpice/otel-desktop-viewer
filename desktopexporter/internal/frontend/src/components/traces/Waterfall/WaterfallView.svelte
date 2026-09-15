@@ -846,6 +846,12 @@
   function handleGridKeydown(e: KeyboardEvent) {
     if (!shouldHandleGridKey(e.target as HTMLElement | null)) return
     if (visibleRows.length === 0) return
+    if (
+      e.altKey ||
+      e.metaKey ||
+      (e.ctrlKey && e.key !== 'Home' && e.key !== 'End')
+    )
+      return
 
     const focused = document.activeElement as HTMLElement | null
     const focusedID =
