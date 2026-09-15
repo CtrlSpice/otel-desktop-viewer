@@ -331,9 +331,11 @@
   $effect(() => {
     if (!activeFilterID) return
     const handleClick = (e: MouseEvent) => {
-      const target = e.target as Node
+      const target = e.target
+      if (!(target instanceof Node)) return
       if (filterPopoverEl?.contains(target)) return
-      const btn = (target as Element).closest?.('[data-filter-id]')
+      const btn =
+        target instanceof Element && target.closest('[data-filter-id]')
       if (btn) return
       activeFilterID = null
     }

@@ -49,6 +49,7 @@ describe('TraceCard', () => {
       'local',
       'milliseconds'
     )
+    // SAFETY: makeTrace constructs this test fixture with a bigint durationNs value.
     const durationParts = formatDurationParts(trace.durationNs as bigint)
     expect(screen.getByText('Duration:')).toBeInTheDocument()
     expect(screen.getByText(startParts.value)).toBeInTheDocument()

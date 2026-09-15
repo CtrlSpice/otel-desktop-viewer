@@ -208,6 +208,7 @@
   function handleSearchResults(event: SearchResultEvent) {
     page.handleSearchResults(event)
     if (event.signal === 'traces') {
+      // SAFETY: The traces search producer attaches a QueryNode queryTree to this event variant.
       activeQueryTree = event.queryTree as QueryNode | undefined
     }
   }

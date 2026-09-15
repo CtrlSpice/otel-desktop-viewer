@@ -38,6 +38,7 @@ export function normalizeTimezone(value: string): Timezone | null {
     const canonical = new Intl.DateTimeFormat('en', {
       timeZone: value,
     }).resolvedOptions().timeZone
+    // SAFETY: Intl accepted the named timezone and returned its canonical IANA spelling.
     return canonical === 'UTC' ? 'UTC' : (canonical as IANATimezone)
   } catch {
     return null

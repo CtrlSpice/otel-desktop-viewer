@@ -51,6 +51,17 @@ describe('FieldFilter', () => {
     expect(screen.getByRole('button', { name: 'name' })).toBeInTheDocument()
   })
 
+  it('closes the popover when clicking outside it', () => {
+    renderComponent()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Columns: filter columns' })
+    )
+    fireEvent.click(document.body)
+    expect(
+      screen.queryByRole('button', { name: 'Pinned column traceID' })
+    ).not.toBeInTheDocument()
+  })
+
   it('calls onToggleField when a selectable field is clicked', () => {
     const onToggleField = vi.fn()
     renderComponent({ onToggleField })

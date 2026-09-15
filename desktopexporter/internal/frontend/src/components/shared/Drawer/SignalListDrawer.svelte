@@ -89,6 +89,8 @@
     itemSnippet,
     // Default assumes items carry an `id` (logs, metrics); pages whose
     // items key differently (traces: traceID) must pass itemKey.
+    // SAFETY: Callers using the default itemKey contract provide items with an id;
+    // trace callers supply their traceID-specific itemKey instead.
     itemKey = (item: T) => (item as { id: string }).id,
     onRefresh,
     refreshPulse = false,
@@ -320,6 +322,7 @@
     const item = NAV_ITEMS.find(n => n.id === id)
     if (!item) return
     event.preventDefault()
+    // SAFETY: NAV_ITEMS is the fixed navigation data source whose ids are SignalName values.
     navigateToSignal(item.id as SignalName)
   }
 
@@ -468,10 +471,11 @@
   }
 
   function drawerItemFromEvent(event: Event): HTMLElement | null {
-    const target = event.target as Element | null
-    const wrapper = target?.closest<HTMLElement>('[data-drawer-item-key]')
+    const target = event.target
+    if (!(target instanceof Element)) return null
+    const wrapper = target.closest<HTMLElement>('[data-drawer-item-key]')
     if (!wrapper || !drawerBodyEl?.contains(wrapper)) return null
-    const focusedControl = target?.closest<HTMLElement>(
+    const focusedControl = target.closest<HTMLElement>(
       'button, a[href], [tabindex]'
     )
     return focusedControl === itemControl(wrapper) ? wrapper : null

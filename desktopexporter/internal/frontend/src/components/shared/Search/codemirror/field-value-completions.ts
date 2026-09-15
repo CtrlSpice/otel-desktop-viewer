@@ -137,6 +137,7 @@ export function createFieldValueSource(
     let typed = context.state.sliceDoc(itemFrom, context.pos)
     let openQuote: '"' | "'" | null = null
     if (typed.startsWith('"') || typed.startsWith("'")) {
+      // SAFETY: The preceding startsWith checks prove typed[0] is one of these quote literals.
       openQuote = typed[0] as '"' | "'"
       from = itemFrom + 1
       typed = typed.slice(1)

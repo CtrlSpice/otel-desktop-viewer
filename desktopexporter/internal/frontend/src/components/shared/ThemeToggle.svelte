@@ -34,6 +34,7 @@
   onMount(() => {
     const saved = localStorage.getItem('theme')
     if (saved && VALID.has(saved)) {
+      // SAFETY: VALID is initialized from the complete ThemeName literal list.
       setTheme(saved as ThemeName)
     } else {
       const prefersDark = window.matchMedia(
