@@ -3,9 +3,9 @@ import {
   AGG_KEY_ALL,
   AGG_KEY_SELECTED,
   AGG_KEY_TOTAL,
-  aggregateLineOrder,
   availableAggregationViews,
   defaultAggregationViewFor,
+  isAggregateLineKey,
   rateSlopeBucketSegment,
 } from '@/components/metrics/utils/aggregation'
 import type { ChartPoint } from '@/types/metric-chart-types'
@@ -110,17 +110,14 @@ describe('the default aggregation view agrees with the offered ones', () => {
   })
 })
 
-describe('aggregateLineOrder', () => {
-  it('orders every supported aggregate line', () => {
-    expect(aggregateLineOrder(AGG_KEY_SELECTED)).toBe(0)
-    expect(aggregateLineOrder(AGG_KEY_ALL)).toBe(1)
-    expect(aggregateLineOrder(AGG_KEY_TOTAL)).toBe(1)
-  })
-
-  it('places unknown and prototype-named lines after supported lines', () => {
-    expect(aggregateLineOrder('__agg:future__')).toBe(99)
-    expect(aggregateLineOrder('toString')).toBe(99)
-    expect(aggregateLineOrder('constructor')).toBe(99)
+describe('isAggregateLineKey', () => {
+  it('recognizes only the synthetic aggregate keys', () => {
+    expect(isAggregateLineKey(AGG_KEY_SELECTED)).toBe(true)
+    expect(isAggregateLineKey(AGG_KEY_ALL)).toBe(true)
+    expect(isAggregateLineKey(AGG_KEY_TOTAL)).toBe(true)
+    expect(isAggregateLineKey('__agg:future__')).toBe(false)
+    expect(isAggregateLineKey('toString')).toBe(false)
+    expect(isAggregateLineKey('constructor')).toBe(false)
   })
 })
 

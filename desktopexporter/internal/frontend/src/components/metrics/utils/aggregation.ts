@@ -187,12 +187,6 @@ export const AGG_KEY_TOTAL = '__agg:total__'
 export type AggregateLineKey =
   typeof AGG_KEY_SELECTED | typeof AGG_KEY_ALL | typeof AGG_KEY_TOTAL
 
-const AGGREGATE_LINE_ORDER = {
-  [AGG_KEY_SELECTED]: 0,
-  [AGG_KEY_ALL]: 1,
-  [AGG_KEY_TOTAL]: 1,
-} satisfies Record<AggregateLineKey, number>
-
 export function isAggregateLineKey(key: string): key is AggregateLineKey {
   switch (key) {
     case AGG_KEY_SELECTED:
@@ -202,10 +196,6 @@ export function isAggregateLineKey(key: string): key is AggregateLineKey {
     default:
       return false
   }
-}
-
-export function aggregateLineOrder(key: string): number {
-  return isAggregateLineKey(key) ? AGGREGATE_LINE_ORDER[key] : 99
 }
 
 /** Checkbox label for the optional all-series aggregate toggle. */

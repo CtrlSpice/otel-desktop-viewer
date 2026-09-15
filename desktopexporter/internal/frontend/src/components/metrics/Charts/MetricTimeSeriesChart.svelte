@@ -24,7 +24,6 @@
   } from '@/components/metrics/Charts/ChartSelectionLegend.svelte'
   import ChartTimeRangeHeader from '@/components/metrics/Charts/ChartTimeRangeHeader.svelte'
   import {
-    aggregateLineOrder,
     buildAggregateSummaryRows,
     type AggregateLineKey,
     type AggregateSummaryRow,
@@ -63,10 +62,7 @@
   }
 
   function aggregateKeysInOrder(keys: readonly string[]): AggregateLineKey[] {
-    return keys
-      .filter(isAggregateLineKey)
-      .slice()
-      .sort((a, b) => aggregateLineOrder(a) - aggregateLineOrder(b))
+    return keys.filter(isAggregateLineKey)
   }
 
   /** Nearest point at `x` — layerchart's default tooltip matches exact
@@ -936,12 +932,9 @@
               .sort((a, b) =>
                 String(a.label ?? a.key).localeCompare(String(b.label ?? b.key))
               )}
-            {@const aggItems = chartSeries
-              .filter(s => isAggregateLineKey(s.key))
-              .slice()
-              .sort(
-                (a, b) => aggregateLineOrder(a.key) - aggregateLineOrder(b.key)
-              )}
+            {@const aggItems = chartSeries.filter(s =>
+              isAggregateLineKey(s.key)
+            )}
             {@const headerLabel =
               xDate != null
                 ? formatDateTime(

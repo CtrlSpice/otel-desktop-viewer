@@ -10,6 +10,7 @@ import {
 import type {
   MetricData,
   ResourceData,
+  ScalarAggregate,
   ScopeData,
   SumDataPoint,
 } from '@/types/api-types'
@@ -214,6 +215,7 @@ function makeRateSelectionMetric() {
 type ProbeOptions = {
   metric?: MetricData
   seriesDatapoints?: Readonly<Record<string, SumDataPoint[]>>
+  scalarAggregate?: ScalarAggregate
 }
 
 function renderProbeView(url: string, options: ProbeOptions = {}) {
@@ -226,6 +228,7 @@ function renderProbeView(url: string, options: ProbeOptions = {}) {
   const view = renderWithContexts(MetricViewProbe, {
     metric,
     seriesDatapoints: options.seriesDatapoints,
+    scalarAggregate: options.scalarAggregate,
     oncontext,
   })
   if (!captured) throw new Error('probe did not report a metric view context')
@@ -414,6 +417,42 @@ describe('metric view context visibility seeding', () => {
     const ctx = renderProbe('/metrics/m1')
     expect(ctx.isHistogramKind).toBe(false)
     expect([...ctx.visibleSeries].sort()).toEqual(['route=/a', 'route=/b'])
+  })
+
+  it('keeps the aggregate producer order through the chart series', async () => {
+    const metric = makeCumulativeSumMetric()
+    metric.timeseries.push({
+      ...metric.timeseries[1]!,
+      attributesKey: 'route=/c',
+      attributes: [{ key: 'route', value: '/c', type: 'string' }],
+    })
+    const buckets = [
+      {
+        bucketStart: BigInt(BASE_TIMESTAMP_MS) * 1_000_000n,
+        sampleCount: 2,
+        sum: 14,
+        avg: 7,
+        rate: null,
+        slope: null,
+        hasReset: false,
+      },
+    ]
+    const scalarAggregate: ScalarAggregate = {
+      selected: buckets,
+      all: buckets,
+    }
+    const ctx = renderProbe('/metrics/m1?agg=sum', {
+      metric,
+      scalarAggregate,
+    })
+
+    ctx.visibleSeries.delete('route=/c')
+    ctx.setShowAllSeriesAggregate(true)
+    await tick()
+
+    expect(
+      ctx.transformedGaugeSumChartTimeseries.map(series => series.key)
+    ).toEqual(['route=/a', 'route=/b', '__agg:selected__', '__agg:all__'])
   })
 })
 
