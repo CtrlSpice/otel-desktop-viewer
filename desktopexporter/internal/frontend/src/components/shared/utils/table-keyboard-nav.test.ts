@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { keyDeltaFor } from './table-keyboard-nav'
+import { keyDeltaFor, resolveNextPos } from './table-keyboard-nav'
 
 describe('keyDeltaFor', () => {
   it('resolves directional and absolute navigation keys', () => {
@@ -16,5 +16,11 @@ describe('keyDeltaFor', () => {
     expect(keyDeltaFor('nope')).toBeUndefined()
     expect(keyDeltaFor('toString')).toBeUndefined()
     expect(keyDeltaFor('constructor')).toBeUndefined()
+  })
+
+  it('clamps relative and absolute navigation to the available positions', () => {
+    expect(resolveNextPos({ kind: 'relative', offset: 8 }, 3, 5)).toBe(5)
+    expect(resolveNextPos({ kind: 'relative', offset: -8 }, 3, 5)).toBe(0)
+    expect(resolveNextPos({ kind: 'absolute', position: 'last' }, 3, 5)).toBe(5)
   })
 })

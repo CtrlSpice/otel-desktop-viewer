@@ -656,6 +656,21 @@ describe('WaterfallView row keyboard navigation', () => {
     await waitFor(() => expect(spanRow(expectedFocusedID)).toHaveFocus())
   }
 
+  function keydown(
+    target: HTMLElement,
+    key: string,
+    modifiers: KeyboardEventInit = {}
+  ): KeyboardEvent {
+    const event = new KeyboardEvent('keydown', {
+      key,
+      bubbles: true,
+      cancelable: true,
+      ...modifiers,
+    })
+    target.dispatchEvent(event)
+    return event
+  }
+
   it('enters through the first span and traverses rows with Vim or arrow keys', async () => {
     const onSelectSpan = vi.fn()
     renderTree({ onSelectSpan })
@@ -686,6 +701,91 @@ describe('WaterfallView row keyboard navigation', () => {
 
     expect(spanRow('a')).toHaveAttribute('tabindex', '-1')
     expect(spanRow('c')).toHaveAttribute('tabindex', '0')
+  })
+
+  it('moves through pages and accepts Ctrl+Home and Ctrl+End treegrid navigation', async () => {
+    const onSelectSpan = vi.fn()
+    renderTree({ onSelectSpan })
+    await tick()
+
+    spanRow('a').focus()
+    expect(keydown(spanRow('a'), 'PageDown').defaultPrevented).toBe(true)
+    await waitFor(() => expect(spanRow('f')).toHaveFocus())
+
+    expect(
+      keydown(spanRow('f'), 'Home', { ctrlKey: true }).defaultPrevented
+    ).toBe(true)
+    await waitFor(() => expect(spanRow('a')).toHaveFocus())
+
+    expect(
+      keydown(spanRow('a'), 'End', { ctrlKey: true }).defaultPrevented
+    ).toBe(true)
+    await waitFor(() => expect(spanRow('f')).toHaveFocus())
+    expect(onSelectSpan).toHaveBeenLastCalledWith('f')
+  })
+
+  it('leaves selected trace-ID text available to native copy shortcuts', async () => {
+    const traceID = '0123456789abcdef0123456789abcdef'
+    const onSelectSpan = vi.fn()
+    const spans = deepTree()
+    spans[0]!.spanData.traceID = traceID
+    spans[0]!.spanData.name = traceID
+    renderTree({ spans, selectedSpanID: 'a', onSelectSpan })
+    await tick()
+
+    const first = spanRow('a')
+    first.focus()
+    const traceIDText = first.querySelector<HTMLElement>(
+      '.waterfall-row__title'
+    )
+    expect(traceIDText).toHaveTextContent(traceID)
+    const selection = window.getSelection()!
+    const range = document.createRange()
+    range.selectNodeContents(traceIDText!)
+    selection.removeAllRanges()
+    selection.addRange(range)
+
+    expect(selection.toString()).toBe(traceID)
+    for (const [key, modifiers] of [
+      ['c', { metaKey: true }],
+      ['c', { ctrlKey: true }],
+    ] as const) {
+      const event = keydown(traceIDText!, key, modifiers)
+      expect(event.defaultPrevented).toBe(false)
+      expect(selection.toString()).toBe(traceID)
+      expect(first).toHaveFocus()
+    }
+    expect(onSelectSpan).not.toHaveBeenCalled()
+  })
+
+  it('leaves browser and platform modifier shortcuts unhandled', async () => {
+    const onSelectSpan = vi.fn()
+    renderTree({ onSelectSpan })
+    await tick()
+
+    const first = spanRow('a')
+    first.focus()
+    for (const [key, modifiers] of [
+      ['j', { ctrlKey: true }],
+      ['PageDown', { ctrlKey: true }],
+      ['ArrowLeft', { ctrlKey: true }],
+      ['ArrowLeft', { altKey: true }],
+    ] as const) {
+      const event = keydown(first, key, modifiers)
+      expect(event.defaultPrevented).toBe(false)
+      expect(first).toHaveFocus()
+    }
+    expect(onSelectSpan).not.toHaveBeenCalled()
+  })
+
+  it('keeps unmodified ArrowLeft collapse navigation', async () => {
+    renderTree()
+    await tick()
+
+    const first = spanRow('a')
+    first.focus()
+    expect(keydown(first, 'ArrowLeft').defaultPrevented).toBe(true)
+    expect(spanRow('a')).toHaveFocus()
   })
 
   it('keeps the treegrid scroll viewport out of the row tab sequence', async () => {
