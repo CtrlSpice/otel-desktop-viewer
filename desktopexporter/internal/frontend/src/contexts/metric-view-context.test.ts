@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { tick } from 'svelte'
 import { fireEvent, screen } from '@testing-library/svelte'
 import { navigateCurrentRoute, readRoute, withQueryPatch } from '@/route'
@@ -375,6 +375,25 @@ describe('metric view context aggregation URL sync', () => {
 
     expect(window.location.search).toBe('?agg=sum')
     expect(reportedAggregationView()).toBe('sum')
+  })
+
+  it('updates the aggregation URL when preference storage rejects the save', async () => {
+    const ctx = renderProbe('/metrics/m1')
+    const setItem = vi
+      .spyOn(Storage.prototype, 'setItem')
+      .mockImplementation(() => {
+        throw new Error('quota exceeded')
+      })
+
+    try {
+      ctx.setAggregationView('sum')
+      await tick()
+
+      expect(window.location.search).toBe('?agg=sum')
+      expect(reportedAggregationView()).toBe('sum')
+    } finally {
+      setItem.mockRestore()
+    }
   })
 
   it('returns to the smart default when the browser goes back past its own write', async () => {

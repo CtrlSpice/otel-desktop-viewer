@@ -103,6 +103,30 @@ describe('repairEmptyPersistedVisibleKeys', () => {
     expect(localStorage.getItem('metrics:view:storage-version')).toBeNull()
   })
 
+  it('treats a throwing storage getter as unavailable', () => {
+    vi.spyOn(globalThis, 'localStorage', 'get').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+
+    expect(() => repairEmptyPersistedVisibleKeys()).not.toThrow()
+    expect(() => savePersistedTimeseriesVisible('m1', ['a'])).not.toThrow()
+    expect(() => savePersistedAggregationView('m1', 'sum')).not.toThrow()
+    expect(() => savePersistedShowAllSeriesAggregate('m1', true)).not.toThrow()
+    expect(persistedVisibleKeys('m1')).toBeNull()
+    expect(loadPersistedAggregationView('m1', ['sum'])).toBeNull()
+    expect(loadPersistedShowAllSeriesAggregate('m1')).toBe(false)
+  })
+
+  it('keeps saves non-fatal when writing storage fails', () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('quota exceeded')
+    })
+
+    expect(() => savePersistedTimeseriesVisible('m1', ['a'])).not.toThrow()
+    expect(() => savePersistedAggregationView('m1', 'sum')).not.toThrow()
+    expect(() => savePersistedShowAllSeriesAggregate('m1', true)).not.toThrow()
+  })
+
   it('does not recreate an empty selection when settings change after repair', () => {
     localStorage.setItem(
       metricViewStorageKey('m5'),
