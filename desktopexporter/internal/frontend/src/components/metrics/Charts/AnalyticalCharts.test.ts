@@ -370,6 +370,60 @@ describe('MetricTimeSeriesChart keyboard model', () => {
     expect(onChartPointClick).not.toHaveBeenCalled()
   })
 
+  it('keeps selected and all aggregate summaries in chart-series order', () => {
+    const metric = metricWithDatapoints('Gauge', [
+      gaugeDatapoint('source', BASE_NS, 10),
+    ])
+    renderChart(
+      MetricTimeSeriesChart,
+      {
+        timeseries: [
+          {
+            key: 'series-a',
+            label: 'series A',
+            points: [
+              {
+                date: new Date(BASE_MS),
+                value: 10,
+                timestampNs: BASE_NS,
+                sourceDatapointID: 'source',
+              },
+            ],
+          },
+          {
+            key: '__agg:all__',
+            label: 'All',
+            points: [
+              { date: new Date(BASE_MS), value: 14, timestampNs: BASE_NS },
+            ],
+          },
+          {
+            key: '__agg:selected__',
+            label: 'Selected',
+            points: [
+              { date: new Date(BASE_MS), value: 12, timestampNs: BASE_NS },
+            ],
+          },
+        ],
+        colorByKey: new Map([
+          ['series-a', '#123456'],
+          ['__agg:selected__', '#234567'],
+          ['__agg:all__', '#345678'],
+        ]),
+        highlightedTimestamp: BASE_NS,
+        highlightedPointID: 'source',
+        selectedSeriesKey: 'series-a',
+      },
+      metric
+    )
+
+    expect(
+      [...document.querySelectorAll('.chart-aggregate-summary__label')].map(
+        label => label.textContent
+      )
+    ).toEqual(['all series:', 'selected series:'])
+  })
+
   it('omits a persistent dot when a raw-only selection is absent from the chart projection', () => {
     const rawOnlyTimestamp = BASE_NS + 900n
     const metric = metricWithDatapoints('Gauge', [

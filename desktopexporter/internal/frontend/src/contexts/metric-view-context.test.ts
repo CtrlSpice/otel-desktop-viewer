@@ -701,6 +701,20 @@ describe('metric view context datapoint URL sync', () => {
     expect(reportedSelectedDatapointID()).toBe('')
   })
 
+  it('does not change selection or URL for an aggregate chart point', async () => {
+    const ctx = renderProbe('/metrics/m1')
+
+    ctx.onChartPointClick('route=/a', 'dp-a1')
+    await tick()
+    const selectionUrl = window.location.href
+
+    ctx.onChartPointClick('__agg:selected__', 'dp-a1')
+    await tick()
+
+    expect(reportedSelectedDatapointID()).toBe('dp-a1')
+    expect(window.location.href).toBe(selectionUrl)
+  })
+
   it('does not clear a raw datapoint selected from the detail pane', async () => {
     const datapoint = makeSumDatapoint('dp-raw-b', 30_000, 7)
     const ctx = renderProbe('/metrics/m1', {
