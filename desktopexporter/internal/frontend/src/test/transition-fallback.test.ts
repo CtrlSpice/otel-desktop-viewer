@@ -38,6 +38,7 @@ describe('Svelte transition fallback', () => {
   it('keeps main durations finite when reversing a keyed fade', async () => {
     const calls: Array<{ options: KeyframeAnimationOptions }> = []
     Element.prototype.animate = function (_keyframes, options) {
+      // SAFETY: ThemeToggle's locked Svelte 5.57.0 fade runtime passes options objects at both animate call sites.
       calls.push({ options: options as KeyframeAnimationOptions })
       return animate.call(this, _keyframes, options)
     }

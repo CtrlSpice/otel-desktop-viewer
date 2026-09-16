@@ -46,6 +46,7 @@
 </script>
 
 <script lang="ts">
+  import { onDestroy } from 'svelte'
   import { telemetryAPI, isAbortError } from '@/services/telemetry-service'
   import {
     getTimeContext,
@@ -218,6 +219,8 @@
   // server-side holding the store's read lock for a result we have already
   // thrown away.
   let detailFetch: AbortController | null = null
+
+  onDestroy(() => detailFetch?.abort())
 
   async function fetchTraceDetail(traceID: string, queryTree?: QueryNode) {
     detailFetch?.abort()

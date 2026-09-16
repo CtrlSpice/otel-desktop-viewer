@@ -436,6 +436,7 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
       NATIVE_INTEGER_FIELDS.has(field.name.toLowerCase()) &&
       valueNode.name === 'Array'
     ) {
+      // SAFETY: The Array branch JSON-stringified its flat string list after rejecting nulls and nested arrays; value is unchanged.
       const values = JSON.parse(value) as string[]
       const invalid = values.find(item => !isExactInt64(item))
       if (invalid !== undefined) {

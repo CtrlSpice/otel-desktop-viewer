@@ -8,6 +8,7 @@ import type {
   Stats,
   SpanNode,
 } from '@/types/api-types'
+import type { QueryNode } from '@/components/shared/Search/queryTree'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
 // TracesPage is the only place the unplaced-span warning banner is rendered
@@ -173,5 +174,71 @@ describe('TracesPage unplaced spans banner', () => {
       '3 spans are missing from this trace'
     )
     expect(normalizedText(alert)).not.toContain('3 span is')
+  })
+})
+
+describe('TracesPage trace detail lifecycle', () => {
+  it('silently aborts an outstanding detail request when unmounted', async () => {
+    searchTraces.mockResolvedValue([makeTraceSummary()])
+    getStats.mockResolvedValue(makeStats())
+
+    let detailSignal: AbortSignal | undefined
+    let resolveAbortHandled!: () => void
+    const abortHandled = new Promise<void>(resolve => {
+      resolveAbortHandled = resolve
+    })
+    const abortError = new DOMException('', 'AbortError')
+    Object.defineProperty(abortError, 'name', {
+      get() {
+        // isAbortError reads this only from fetchTraceDetail's catch branch.
+        resolveAbortHandled()
+        return 'AbortError'
+      },
+    })
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    searchSpans.mockImplementation(
+      (
+        _traceID: string,
+        _queryTree: QueryNode | undefined,
+        signal: AbortSignal
+      ) =>
+        new Promise((_resolve, reject) => {
+          detailSignal = signal
+          signal.addEventListener('abort', () => reject(abortError))
+        })
+    )
+
+    setTestUrl('/traces/trace-1?span=span-1')
+    const page = renderWithContexts(TracesPage)
+    await waitFor(() => expect(detailSignal).toBeDefined())
+    expect(window.location.search).toBe('?span=span-1')
+
+    page.unmount()
+
+    await abortHandled
+    expect(detailSignal?.aborted).toBe(true)
+    expect(consoleError).not.toHaveBeenCalled()
+    expect(window.location.search).toBe('?span=span-1')
+    consoleError.mockRestore()
+  })
+
+  it('reports ordinary detail request failures', async () => {
+    searchTraces.mockResolvedValue([makeTraceSummary()])
+    getStats.mockResolvedValue(makeStats())
+    const error = new Error('detail failed')
+    searchSpans.mockRejectedValue(error)
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    setTestUrl('/traces/trace-1?span=span-1')
+    renderWithContexts(TracesPage)
+
+    await waitFor(() =>
+      expect(consoleError).toHaveBeenCalledWith(
+        'Failed to fetch trace detail:',
+        error
+      )
+    )
+    expect(window.location.search).toBe('')
+    consoleError.mockRestore()
   })
 })
