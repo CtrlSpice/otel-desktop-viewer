@@ -483,7 +483,7 @@ func handleArrayOperator(expression string, query *Query, params *[]NamedParam) 
 
 // ParseArrayValue parses the JSON string array sent over the query wire format.
 func ParseArrayValue(value string) ([]any, error) {
-	var decoded []string
+	var decoded []*string
 	if err := json.Unmarshal([]byte(value), &decoded); err != nil {
 		return nil, fmt.Errorf("array value must be a JSON string array: %w", ErrInvalidQuery)
 	}
@@ -493,7 +493,10 @@ func ParseArrayValue(value string) ([]any, error) {
 
 	result := make([]any, len(decoded))
 	for i, v := range decoded {
-		result[i] = v
+		if v == nil {
+			return nil, fmt.Errorf("array value must be a JSON string array: %w", ErrInvalidQuery)
+		}
+		result[i] = *v
 	}
 	return result, nil
 }
