@@ -16,6 +16,7 @@ import type {
 } from '@/types/api-types'
 import MetricViewProbe from '@/test/MetricViewProbe.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
+import { metricViewStorageKey } from '@/components/metrics/utils/metric-timeseries-visible'
 
 const BASE_TIMESTAMP_MS = 1_700_000_000_000
 
@@ -472,6 +473,47 @@ describe('metric view context visibility seeding', () => {
     expect(
       ctx.transformedGaugeSumChartTimeseries.map(series => series.key)
     ).toEqual(['route=/a', 'route=/b', '__agg:selected__', '__agg:all__'])
+  })
+
+  it('replaces the last full scalar selection for a linked series without saving it', async () => {
+    const metric = makeCumulativeSumMetric()
+    const template = metric.timeseries[0]!
+    metric.timeseries = Array.from({ length: 23 }, (_, index) => ({
+      ...template,
+      attributesKey: `series-${String(index).padStart(3, '0')}`,
+    }))
+    const persistedKeys = metric.timeseries
+      .slice(0, 22)
+      .map(series => series.attributesKey)
+    const storageKey = metricViewStorageKey(metric.id)
+    const persisted = JSON.stringify({ visibleKeys: persistedKeys })
+    localStorage.setItem(storageKey, persisted)
+
+    try {
+      const ctx = renderProbe('/metrics/m1?agg=raw', { metric })
+      const colorsBeforeReveal = new Map(ctx.timeseriesColorByKey)
+      externalNavigationTo('/metrics/m1?agg=raw&series=series-022')
+      await tick()
+
+      const visible = [...ctx.visibleSeries]
+      expect(visible).toEqual([...persistedKeys.slice(0, -1), 'series-022'])
+      expect(visible).toHaveLength(22)
+      expect(ctx.timeseriesColorByKey.get('series-021')).toBeUndefined()
+      expect(ctx.timeseriesColorByKey.get('series-022')).toBe(
+        colorsBeforeReveal.get('series-021')
+      )
+      for (const key of persistedKeys.slice(0, -1)) {
+        expect(ctx.timeseriesColorByKey.get(key)).toBe(
+          colorsBeforeReveal.get(key)
+        )
+      }
+      expect(
+        ctx.transformedGaugeSumChartTimeseries.map(series => series.key)
+      ).toContain('series-022')
+      expect(localStorage.getItem(storageKey)).toBe(persisted)
+    } finally {
+      localStorage.removeItem(storageKey)
+    }
   })
 })
 
