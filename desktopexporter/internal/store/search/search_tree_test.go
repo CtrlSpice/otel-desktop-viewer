@@ -236,6 +236,13 @@ func TestBuildOperatorCondition(t *testing.T) {
 			wantErr:    true,
 		},
 		{
+			name:       "IN rejects null elements",
+			expression: "Name",
+			operator:   "IN",
+			value:      `["value",null]`,
+			wantErr:    true,
+		},
+		{
 			name:       "unsupported operator",
 			expression: "Name",
 			operator:   "UNSUPPORTED",
@@ -444,6 +451,14 @@ func TestBuildOperatorCondition_ArrayTypes(t *testing.T) {
 			value:      "[one,two]",
 			wantErr:    true,
 		},
+		{
+			name:       "array IN rejects null elements",
+			expression: "a.Value",
+			fieldType:  "string[]",
+			operator:   "IN",
+			value:      `["value",null]`,
+			wantErr:    true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -510,6 +525,16 @@ func TestParseArrayValue(t *testing.T) {
 			expected: []any{"value1", "", "value3"},
 		},
 		{
+			name:     "array preserves a single empty value",
+			input:    `[""]`,
+			expected: []any{""},
+		},
+		{
+			name:     "array preserves the quoted string NULL",
+			input:    `["NULL"]`,
+			expected: []any{"NULL"},
+		},
+		{
 			name:     "array preserves embedded commas",
 			input:    `["value1,value2","value3"]`,
 			expected: []any{"value1,value2", "value3"},
@@ -527,6 +552,16 @@ func TestParseArrayValue(t *testing.T) {
 		{
 			name:    "rejects null",
 			input:   "null",
+			wantErr: true,
+		},
+		{
+			name:    "rejects a null element",
+			input:   "[null]",
+			wantErr: true,
+		},
+		{
+			name:    "rejects a mixed null element",
+			input:   `["value",null]`,
 			wantErr: true,
 		},
 		{
