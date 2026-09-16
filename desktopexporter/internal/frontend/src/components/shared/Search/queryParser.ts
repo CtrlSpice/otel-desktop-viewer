@@ -108,6 +108,55 @@ const COMPAT_ALIASES = new Map<string, string>([
   ['NOT REGEXP', 'REGEXP'],
 ])
 
+const NATIVE_INTEGER_FIELDS = new Set([
+  'severitynumber',
+  'timestamp',
+  'observedtimestamp',
+  'droppedattributescount',
+  'flags',
+  'starttime',
+  'endtime',
+  'droppedeventscount',
+  'droppedlinkscount',
+  'duration',
+  'event.timestamp',
+  'event.droppedattributescount',
+  'link.flags',
+  'link.droppedattributescount',
+  'resource.droppedattributescount',
+  'scope.droppedattributescount',
+])
+
+const INT64_MIN = -(1n << 63n)
+const INT64_MAX = (1n << 63n) - 1n
+
+function isExactInt64(value: string): boolean {
+  const match =
+    /^([+-]?)(?:(\d+)(?:\.(\d*))?|\.(\d+))(?:[eE]([+-]?\d+))?$/.exec(value)
+  if (!match || value.length > 256) return false
+
+  const sign = match[1] === '-' ? -1n : 1n
+  const whole = match[2] ?? ''
+  const fraction = match[3] ?? match[4] ?? ''
+  const digits = (whole + fraction).replace(/^0+/, '')
+  if (!digits) return true
+
+  const scale = BigInt(match[5] ?? '0') - BigInt(fraction.length)
+  let integerText: string
+  if (scale >= 0n) {
+    if (BigInt(digits.length) + scale > 19n) return false
+    integerText = digits + '0'.repeat(Number(scale))
+  } else {
+    const shift = -scale
+    const trailingZeros = digits.length - digits.replace(/0+$/, '').length
+    if (shift > BigInt(trailingZeros)) return false
+    integerText = digits.slice(0, digits.length - Number(shift))
+  }
+
+  const integer = sign * BigInt(integerText || '0')
+  return integer >= INT64_MIN && integer <= INT64_MAX
+}
+
 interface WalkContext {
   input: string
   availableFields: FieldDefinition[]
@@ -379,6 +428,24 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
         opNode.to,
         `Operator '${symbol}' is not valid for field '${field.name}'`
       )
+    }
+
+    if (
+      field.searchScope === 'field' &&
+      (symbol === 'IN' || symbol === 'NOT IN') &&
+      NATIVE_INTEGER_FIELDS.has(field.name.toLowerCase()) &&
+      valueNode.name === 'Array'
+    ) {
+      const values = JSON.parse(value) as string[]
+      const invalid = values.find(item => !isExactInt64(item))
+      if (invalid !== undefined) {
+        fail(
+          ctx,
+          valueNode.from,
+          valueNode.to,
+          `Integer list value '${invalid}' must be an exact signed 64-bit integer`
+        )
+      }
     }
   }
 

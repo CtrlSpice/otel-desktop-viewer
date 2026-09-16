@@ -849,12 +849,18 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (string, error) {
 		if err := util.ValidateColumnName(col, resourceColumns); err != nil {
 			return "", fmt.Errorf("trace field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
 		}
+		if resourceField == "droppedAttributesCount" {
+			return search.NativeInteger("r." + col), nil
+		}
 		return "r." + col, nil
 	}
 	if scopeField, found := strings.CutPrefix(field.Name, "scope."); found {
 		col := util.CamelToSnake(scopeField)
 		if err := util.ValidateColumnName(col, scopeColumns); err != nil {
 			return "", fmt.Errorf("trace field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
+		}
+		if scopeField == "droppedAttributesCount" {
+			return search.NativeInteger("sc." + col), nil
 		}
 		return "sc." + col, nil
 	}
@@ -863,7 +869,11 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (string, error) {
 		if err := util.ValidateColumnName(snake, eventColumns); err != nil {
 			return "", fmt.Errorf("event field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
 		}
-		return fmt.Sprintf("exists(select 1 from events e where %s and e.%s {COND})", eventOwner, snake), nil
+		expr := fmt.Sprintf("exists(select 1 from events e where %s and e.%s {COND})", eventOwner, snake)
+		if col == "timestamp" || col == "droppedAttributesCount" {
+			return search.NativeInteger(expr), nil
+		}
+		return expr, nil
 	}
 	if col, found := strings.CutPrefix(field.Name, "link."); found {
 		snake := util.CamelToSnake(col)
@@ -889,10 +899,14 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (string, error) {
 		case "linked_trace_id":
 			colExpr = "replace(l.linked_trace_id::varchar, '-', '')"
 		}
-		return fmt.Sprintf("exists(select 1 from links l where %s and %s {COND})", linkOwner, colExpr), nil
+		expr := fmt.Sprintf("exists(select 1 from links l where %s and %s {COND})", linkOwner, colExpr)
+		if col == "flags" || col == "droppedAttributesCount" {
+			return search.NativeInteger(expr), nil
+		}
+		return expr, nil
 	}
 	if field.Name == "duration" {
-		return "(s.end_time - s.start_time)", nil
+		return search.NativeInteger("(s.end_time - s.start_time)"), nil
 	}
 	if field.Name == "spanID" || field.Name == "parentSpanID" {
 		col := util.CamelToSnake(field.Name)
@@ -907,7 +921,13 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (string, error) {
 		if err := util.ValidateColumnName(col, spanColumns); err != nil {
 			return "", fmt.Errorf("trace field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
 		}
-		return "s." + col, nil
+		expr := "s." + col
+		switch field.Name {
+		case "flags", "startTime", "endTime", "droppedAttributesCount", "droppedEventsCount", "droppedLinksCount":
+			return search.NativeInteger(expr), nil
+		default:
+			return expr, nil
+		}
 	}
 	return field.Name, nil
 }

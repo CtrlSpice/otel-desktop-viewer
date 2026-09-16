@@ -816,6 +816,54 @@ func TestSearchLogs(t *testing.T) {
 		return e
 	}
 
+	t.Run("NativeIntegerList_CastsStringValuesInDuckDB", func(t *testing.T) {
+		query := &search.QueryNode{Type: "condition", Query: &search.Query{
+			Field:         &search.FieldDefinition{Name: "severityNumber", SearchScope: "field"},
+			FieldOperator: "IN",
+			Value:         `["9.0", "4.2e1"]`,
+		}}
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+		})
+		require.NoError(t, err)
+		assert.Len(t, parseSummaries(raw), 1)
+
+		query.Query.Field.Name = "flags"
+		query.Query.Value = `["1e000000"]`
+		raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+		})
+		require.NoError(t, err)
+		assert.Len(t, parseSummaries(raw), 1)
+
+		query.Query.Value = `["0e999999999999999999999"]`
+		raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+		})
+		require.NoError(t, err)
+		assert.Len(t, parseSummaries(raw), 2)
+	})
+
+	t.Run("TextBackedIntegerAttribute_RemainsText", func(t *testing.T) {
+		query := &search.QueryNode{Type: "condition", Query: &search.Query{
+			Field:         &search.FieldDefinition{Name: "log.int", SearchScope: "attribute", AttributeScope: "log", Type: "int64"},
+			FieldOperator: "IN",
+			Value:         `["42.5"]`,
+		}}
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+		})
+		require.NoError(t, err)
+		assert.Empty(t, parseSummaries(raw))
+
+		query.Query.Value = `["42"]`
+		raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+		})
+		require.NoError(t, err)
+		assert.Len(t, parseSummaries(raw), 1)
+	})
+
 	t.Run("GlobalSearch_Body", func(t *testing.T) {
 		query := &search.QueryNode{
 			ID:   "q1",

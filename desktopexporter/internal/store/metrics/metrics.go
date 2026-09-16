@@ -1375,9 +1375,9 @@ func mapMetricFieldExpression(field *search.FieldDefinition) (string, error) {
 	// scopes rows it now references, so they resolve through the joins rather
 	// than as columns on m.
 	case "resource.droppedAttributesCount":
-		return "r.dropped_attributes_count", nil
+		return search.NativeInteger("r.dropped_attributes_count"), nil
 	case "scope.droppedAttributesCount":
-		return "sc.dropped_attributes_count", nil
+		return search.NativeInteger("sc.dropped_attributes_count"), nil
 	default:
 		col := util.CamelToSnake(name)
 		if err := util.ValidateColumnName(col, metricColumns); err != nil {

@@ -50,6 +50,27 @@ const contractFields: FieldDefinition[] = [
   },
 ]
 
+const integerListFields: FieldDefinition[] = [
+  {
+    name: 'severityNumber',
+    type: 'int64',
+    searchScope: 'field',
+    description: 'log severity number',
+    operators: [OPERATORS.IN, OPERATORS.NOT_IN],
+  },
+]
+
+const collidingIntegerFields: FieldDefinition[] = [
+  ...integerListFields,
+  {
+    name: 'severityNumber',
+    type: 'int64',
+    searchScope: 'attribute',
+    attributeScope: 'log',
+    operators: [OPERATORS.IN, OPERATORS.NOT_IN],
+  },
+]
+
 function expectCondition(
   node: QueryNode | null | undefined
 ): Extract<QueryNode, { type: 'condition' }> {
@@ -244,6 +265,54 @@ describe('LIMIT modifier syntax', () => {
 // The contract the Lezer unification changed, pinned. Each of these was
 // either impossible or silently wrong under the hand-written parser.
 describe('unified grammar contract', () => {
+  it('preserves exact native integer list spellings and rejects fractions', () => {
+    const query = expectCondition(
+      parseQuery(
+        'severityNumber IN [42, "42.0", 4.2e1, "9007199254740993"]',
+        integerListFields
+      )
+    )
+    expect(JSON.parse(query.query.value)).toEqual([
+      '42',
+      '42.0',
+      '4.2e1',
+      '9007199254740993',
+    ])
+    expect(() =>
+      parseQuery('severityNumber IN ["42.5"]', integerListFields)
+    ).toThrow(/exact signed 64-bit integer/)
+  })
+
+  it('accepts long exponent spellings by value without expanding them', () => {
+    const query = expectCondition(
+      parseQuery(
+        'severityNumber IN [42e000000, 0e999999999999999999999]',
+        integerListFields
+      )
+    )
+    expect(JSON.parse(query.query.value)).toEqual([
+      '42e000000',
+      '0e999999999999999999999',
+    ])
+    expect(() =>
+      parseQuery('severityNumber IN [1e999999]', integerListFields)
+    ).toThrow(/exact signed 64-bit integer/)
+  })
+
+  it('uses static provenance rather than a colliding attribute name', () => {
+    expect(() =>
+      parseQuery('severityNumber IN [42.5]', collidingIntegerFields)
+    ).toThrow(/exact signed 64-bit integer/)
+
+    const query = expectCondition(
+      parseQuery('severityNumber IN [42.5]', collidingIntegerFields.slice(1))
+    )
+    expect(query.query.field).toMatchObject({
+      searchScope: 'attribute',
+      attributeScope: 'log',
+    })
+  })
+
   it('AND binds tighter than OR', () => {
     const group = expectGroup(
       parseQuery('body = a OR body = b AND body = c', contractFields)
