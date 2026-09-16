@@ -574,6 +574,32 @@ func TestConvertValueForArrayType(t *testing.T) {
 	}
 }
 
+func TestNormalizeNativeIntegerList(t *testing.T) {
+	normalized, err := NormalizeNativeIntegerList([]any{"42", "42.0", "4.2e1", "+9007199254740993", "-9223372036854775808", "9223372036854775807", "42e000000", "0e999999999999999999999"})
+	require.NoError(t, err)
+	assert.Equal(t, []any{"42", "42", "42", "9007199254740993", "-9223372036854775808", "9223372036854775807", "42", "0"}, normalized)
+
+	for _, value := range []string{"42.5", "1e-1", "nope", "9223372036854775808", "-9223372036854775809", "1e999999", "1e-999999"} {
+		t.Run(value, func(t *testing.T) {
+			_, err := NormalizeNativeIntegerList([]any{value})
+			assert.ErrorIs(t, err, ErrInvalidQuery)
+		})
+	}
+}
+
+func TestBuildOperatorCondition_NativeIntegerList(t *testing.T) {
+	params := []NamedParam{}
+	query := &Query{Field: &FieldDefinition{Type: "int64[]"}, FieldOperator: "IN", Value: `["9007199254740993","4.2e1"]`}
+	sql, err := BuildOperatorCondition(NativeInteger("l.timestamp"), query, &params)
+	require.NoError(t, err)
+	assert.Equal(t, "l.timestamp IN CAST(value_0 AS BIGINT[])", sql)
+	assert.Equal(t, []NamedParam{{"value_0", []any{"9007199254740993", "42"}}}, params)
+
+	query.Value = `["42.5"]`
+	_, err = BuildOperatorCondition(NativeInteger("l.timestamp"), query, &params)
+	assert.ErrorIs(t, err, ErrInvalidQuery)
+}
+
 func TestBuildSearchSQL_NilQuery(t *testing.T) {
 	mapper := func(field *FieldDefinition, _ *Query, _ *[]NamedParam) ([]string, error) {
 		return []string{field.Name}, nil

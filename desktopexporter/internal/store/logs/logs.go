@@ -501,7 +501,15 @@ func mapLogFieldExpression(field *search.FieldDefinition) (string, error) {
 	case "severityText":
 		return "l.severity_text", nil
 	case "severityNumber":
-		return "l.severity_number", nil
+		return search.NativeInteger("l.severity_number"), nil
+	case "timestamp":
+		return search.NativeInteger("l.timestamp"), nil
+	case "observedTimestamp":
+		return search.NativeInteger("l.observed_timestamp"), nil
+	case "droppedAttributesCount":
+		return search.NativeInteger("l.dropped_attributes_count"), nil
+	case "flags":
+		return search.NativeInteger("l.flags"), nil
 	case "body":
 		return "l.body", nil
 	case "eventName":
@@ -511,9 +519,9 @@ func mapLogFieldExpression(field *search.FieldDefinition) (string, error) {
 	case "scope.version":
 		return "sc.version", nil
 	case "resource.droppedAttributesCount":
-		return "r.dropped_attributes_count", nil
+		return search.NativeInteger("r.dropped_attributes_count"), nil
 	case "scope.droppedAttributesCount":
-		return "sc.dropped_attributes_count", nil
+		return search.NativeInteger("sc.dropped_attributes_count"), nil
 	default:
 		col := util.CamelToSnake(name)
 		if err := util.ValidateColumnName(col, logColumns); err != nil {

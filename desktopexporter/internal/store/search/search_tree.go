@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
+	"regexp"
 	"strconv"
 	"strings"
 )
 
 var (
 	ErrInvalidQuery = errors.New("invalid search query")
+	numericInteger  = regexp.MustCompile(`^([+-]?)(?:([0-9]+)(?:\.([0-9]*))?|\.([0-9]+))(?:[eE]([+-]?[0-9]+))?$`)
 )
 
 // QueryNode represents a parsed query tree from the frontend
@@ -67,9 +70,16 @@ type FieldMapper func(field *FieldDefinition, query *Query, params *[]NamedParam
 // dictionary at query time.
 const PredicateToken = "{PREDICATE}"
 
+// NativeIntegerToken marks a mapper-owned INTEGER, BIGINT, or safe UINTEGER
+// expression. Its list values stay strings on the wire and DuckDB performs the
+// explicit BIGINT list conversion.
+const NativeIntegerToken = "{NATIVE_INTEGER}"
+
 // Complete marks expr as a finished boolean, so no operator or value is
 // appended to it.
 func Complete(expr string) string { return PredicateToken + expr }
+
+func NativeInteger(expr string) string { return NativeIntegerToken + expr }
 
 // ParseQueryTree converts JSON from frontend to QueryNode struct.
 func ParseQueryTree(jsonData any) (*QueryNode, error) {
@@ -201,6 +211,12 @@ func BuildOperatorCondition(expression string, query *Query, params *[]NamedPara
 		return "", fmt.Errorf("query cannot be nil: %w", ErrInvalidQuery)
 	}
 
+	nativeInteger := false
+	if rest, found := strings.CutPrefix(expression, NativeIntegerToken); found {
+		expression = rest
+		nativeInteger = true
+	}
+
 	operator := query.FieldOperator
 	value := query.Value
 
@@ -233,7 +249,7 @@ func BuildOperatorCondition(expression string, query *Query, params *[]NamedPara
 		return expression + " " + operator, nil
 	}
 
-	if query.Field != nil && strings.HasSuffix(query.Field.Type, "[]") {
+	if !nativeInteger && query.Field != nil && strings.HasSuffix(query.Field.Type, "[]") {
 		return handleArrayOperator(expression, query, params)
 	}
 
@@ -292,8 +308,18 @@ func BuildOperatorCondition(expression string, query *Query, params *[]NamedPara
 		if len(values) == 0 {
 			return "", fmt.Errorf("IN/NOT IN requires at least one value: %w", ErrInvalidQuery)
 		}
+		if nativeInteger {
+			values, err = NormalizeNativeIntegerList(values)
+			if err != nil {
+				return "", err
+			}
+		}
 		*params = append(*params, NamedParam{paramName, values})
-		operatorString = operator + " " + paramName
+		if nativeInteger {
+			operatorString = fmt.Sprintf("%s CAST(%s AS BIGINT[])", operator, paramName)
+		} else {
+			operatorString = operator + " " + paramName
+		}
 	default:
 		return "", fmt.Errorf("unsupported operator %s: %w", operator, ErrInvalidQuery)
 	}
@@ -302,6 +328,65 @@ func BuildOperatorCondition(expression string, query *Query, params *[]NamedPara
 		return strings.ReplaceAll(expression, condToken, operatorString), nil
 	}
 	return expression + " " + operatorString, nil
+}
+
+// NormalizeNativeIntegerList accepts decimal numeric spellings whose value is
+// an exactly representable signed int64 without expanding exponent notation.
+func NormalizeNativeIntegerList(values []any) ([]any, error) {
+	normalized := make([]any, len(values))
+	for i, value := range values {
+		text, ok := value.(string)
+		if !ok || len(text) == 0 || len(text) > 256 {
+			return nil, fmt.Errorf("integer list element %d is invalid: %w", i, ErrInvalidQuery)
+		}
+
+		matches := numericInteger.FindStringSubmatch(text)
+		if matches == nil {
+			return nil, fmt.Errorf("integer list element %q is not a decimal number: %w", text, ErrInvalidQuery)
+		}
+		digits := strings.TrimLeft(matches[2]+matches[3]+matches[4], "0")
+		if digits == "" {
+			normalized[i] = "0"
+			continue
+		}
+
+		exponentText := matches[5]
+		if exponentText == "" {
+			exponentText = "0"
+		}
+		exponent, ok := new(big.Int).SetString(exponentText, 10)
+		if !ok {
+			return nil, fmt.Errorf("integer list element %q is not a decimal number: %w", text, ErrInvalidQuery)
+		}
+		scale := exponent.Sub(exponent, big.NewInt(int64(len(matches[3]+matches[4]))))
+		var integerText string
+		if scale.Sign() >= 0 {
+			if new(big.Int).Add(big.NewInt(int64(len(digits))), scale).Cmp(big.NewInt(19)) > 0 {
+				return nil, fmt.Errorf("integer list element %q is not an exact signed integer: %w", text, ErrInvalidQuery)
+			}
+			integerText = digits + strings.Repeat("0", int(scale.Int64()))
+		} else {
+			shift := new(big.Int).Neg(scale)
+			trailingZeros := len(digits) - len(strings.TrimRight(digits, "0"))
+			if shift.Cmp(big.NewInt(int64(trailingZeros))) > 0 {
+				return nil, fmt.Errorf("integer list element %q is not an exact signed integer: %w", text, ErrInvalidQuery)
+			}
+			integerText = digits[:len(digits)-int(shift.Int64())]
+		}
+
+		integer, ok := new(big.Int).SetString(integerText, 10)
+		if !ok {
+			return nil, fmt.Errorf("integer list element %q is not an exact signed integer: %w", text, ErrInvalidQuery)
+		}
+		if matches[1] == "-" {
+			integer.Neg(integer)
+		}
+		if !integer.IsInt64() {
+			return nil, fmt.Errorf("integer list element %q is not an exact signed integer: %w", text, ErrInvalidQuery)
+		}
+		normalized[i] = integer.String()
+	}
+	return normalized, nil
 }
 
 func mapArrayTypeToDuckDB(frontendType string) (string, error) {
