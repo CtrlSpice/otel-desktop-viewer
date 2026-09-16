@@ -711,7 +711,7 @@ export function createMetricViewContext(
     // A named series has to be *drawn*, or the link is worse than useless: the
     // default visible set is the first MAX_VISIBLE_TIMESERIES, so a link to
     // series 40 of 63 would otherwise land on a chart that does not contain
-    // it. Adding rather than replacing keeps the rest of the user's view.
+    // it. At the scalar cap, bounded reveal replaces the last current series.
     if (q.series) revealSeries(q.series)
 
     // This is the fetch trigger for a raw-only URL datapoint. TimeseriesPanel
@@ -725,11 +725,26 @@ export function createMetricViewContext(
    * @param key - series id
    *
    * @remarks
-   * Only ever adds. A shared link should bring its series into view without
-   * throwing away whatever else the recipient had showing.
+   * Adds when there is capacity. At the scalar cap, replaces the last current
+   * series so a shared link remains drawable without changing saved choices.
    */
   function revealSeries(key: string): void {
-    if (!view.visibleSeries.has(key)) view.visibleSeries.add(key)
+    if (view.visibleSeries.has(key)) return
+
+    const visible = new SvelteSet(view.visibleSeries)
+    const assigned = new Map(view.timeseriesColorByKey)
+    if (!isHistogramKind && visible.size >= MAX_VISIBLE_TIMESERIES) {
+      const evicted = [...visible].at(-1)
+      if (evicted) {
+        visible.delete(evicted)
+        releaseColor(assigned, evicted)
+      }
+    }
+
+    if (acquireColor(timeseriesChartColors, assigned, key) === null) return
+    visible.add(key)
+    view.visibleSeries = visible
+    replaceColorAssignments(assigned)
   }
 
   function writeMetricUrl(mode: HistoryMode): void {
