@@ -1714,10 +1714,14 @@ func TestIngest_CanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
+	var rejected ingest.Rejected
 	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, createTestMetricsPdataN(1), s.FlushedIDs())
+		var err error
+		rejected, err = metrics.IngestReport(ctx, conn, createTestMetricsPdataN(1), s.FlushedIDs())
+		return err
 	})
 	require.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, rejected)
 }
 
 func TestIngest_CanceledDuringIngest(t *testing.T) {
@@ -1726,16 +1730,20 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	var rejected ingest.Rejected
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- s.WithConn(func(conn driver.Conn) error {
-			return metrics.Ingest(ctx, conn, createTestMetricsPdataN(100), s.FlushedIDs())
+			var err error
+			rejected, err = metrics.IngestReport(ctx, conn, createTestMetricsPdataN(100), s.FlushedIDs())
+			return err
 		})
 	}()
 	cancel()
 
 	err := <-errCh
 	require.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, rejected)
 }
 
 // TestSearchSummaries_CardFields verifies the slim summary projection used

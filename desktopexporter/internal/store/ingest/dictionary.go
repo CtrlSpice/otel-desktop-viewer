@@ -636,15 +636,15 @@ func execArgs(ctx context.Context, conn driver.Conn, query string, args []any, w
 		return fmt.Errorf("dictionary flush %s: %w: %w", what, ErrIngestInternal, err)
 	}
 	if _, err := dconn.ExecContext(ctx, query, named); err != nil {
-		err = interruptedContextError(ctx, err)
+		err = InterruptedContextError(ctx, err)
 		return fmt.Errorf("dictionary flush %s: %w: %w", what, ErrIngestInternal, err)
 	}
 	return nil
 }
 
-// interruptedContextError restores the cancellation identity DuckDB drops when
+// InterruptedContextError restores the cancellation identity DuckDB drops when
 // it interrupts an executing statement for a cancelled context.
-func interruptedContextError(ctx context.Context, err error) error {
+func InterruptedContextError(ctx context.Context, err error) error {
 	ctxErr := ctx.Err()
 	if ctxErr == nil {
 		return err

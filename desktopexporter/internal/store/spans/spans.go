@@ -83,7 +83,9 @@ func Ingest(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed
 // three inserts. The second appends the owner rows with the id arrays the first
 // produced. They are split because the dictionary needs conflict handling and
 // the appender has none.
-func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed *ingest.FlushedIDs) (ingest.Rejected, error) {
+func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces, flushed *ingest.FlushedIDs) (_ ingest.Rejected, err error) {
+	defer func() { err = ingest.InterruptedContextError(ctx, err) }()
+
 	if err := ctx.Err(); err != nil {
 		return ingest.Rejected{}, err
 	}

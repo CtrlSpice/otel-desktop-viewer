@@ -97,6 +97,7 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 // IngestReport ingests a batch and reports the metrics it could not write. A
 // non-empty Rejected is not a failure: the batch landed, minus those metrics.
 func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *ingest.FlushedIDs) (_ ingest.Rejected, err error) {
+	defer func() { err = ingest.InterruptedContextError(ctx, err) }()
 
 	// Pass 1: collect every distinct identity in this OTLP request, plus
 	// per-identity service_name (denormalized onto metric_streams). We
