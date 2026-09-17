@@ -139,6 +139,8 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 			_ = conn.Close()
 		}
 	}()
+	schemaInitializationMu.Lock()
+	defer schemaInitializationMu.Unlock()
 
 	// Inspect before any application DDL so refusing an incompatible store is
 	// read-only. Only a verified fresh store receives the metadata stamp below.

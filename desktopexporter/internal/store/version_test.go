@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/schema"
@@ -287,6 +288,37 @@ func TestCompatibleStampedDatabaseInitializes(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 	assert.Equal(t, SchemaOK, s.SchemaCompatibility())
+}
+
+func TestConcurrentFirstOpenStampsOnce(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fresh.db")
+	const openers = 4
+	start := make(chan struct{})
+	errs := make(chan error, openers)
+	var wg sync.WaitGroup
+	for range openers {
+		wg.Go(func() {
+			<-start
+			s, err := NewStore(context.Background(), path, zap.NewNop())
+			if err == nil {
+				err = s.Close()
+			}
+			errs <- err
+		})
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	defer db.Close()
+	var stamps int
+	require.NoError(t, db.QueryRow(`select count(*) from schema_meta`).Scan(&stamps))
+	assert.Equal(t, 1, stamps)
 }
 
 func TestUnrelatedDatabaseInitializes(t *testing.T) {

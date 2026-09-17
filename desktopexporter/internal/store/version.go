@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/schema"
 	"go.uber.org/zap"
@@ -22,6 +23,10 @@ import (
 // There is no migration. The remedy is to delete the file or point --db
 // somewhere else, which is what the message says.
 var ErrSchemaIncompatible = errors.New("database schema is incompatible with this build")
+
+// schemaInitializationMu keeps concurrent first opens in this process from
+// both deciding that an unstamped database is fresh.
+var schemaInitializationMu sync.Mutex
 
 // SchemaCompatibility describes what the version check found when the store was
 // opened.
