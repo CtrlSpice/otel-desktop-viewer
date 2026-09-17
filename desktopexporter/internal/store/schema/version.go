@@ -129,12 +129,17 @@ const (
 		from duckdb_columns() where schema_name = current_schema() and table_name = 'schema_meta'`
 	TelemetryTableExistsQuery = `select count(*) from (
 		select table_name from duckdb_columns()
-		where schema_name = current_schema() and (
-			(table_name = 'spans' and column_name in ('trace_id', 'span_id', 'resource_id', 'scope_id')) or
-			(table_name = 'logs' and column_name in ('trace_id', 'observed_timestamp', 'resource_id', 'scope_id')) or
-			(table_name = 'metric_ingests' and column_name in ('id', 'stream_id', 'resource_id', 'scope_id'))
-		)
+		where schema_name = current_schema() and table_name in ('spans', 'logs', 'metric_ingests')
 		group by table_name
-		having count(*) = 4
+		having (table_name = 'spans'
+			and count(*) filter (where column_name in ('trace_id', 'span_id')) = 2
+			and count(*) filter (where column_name in ('resource_id', 'resource_dropped_attributes_count')) = 1
+			and count(*) filter (where column_name in ('scope_id', 'scope_dropped_attributes_count')) = 1)
+		or (table_name = 'logs'
+			and count(*) filter (where column_name in ('trace_id', 'observed_timestamp')) = 2
+			and count(*) filter (where column_name in ('resource_id', 'resource_dropped_attributes_count')) = 1
+			and count(*) filter (where column_name in ('scope_id', 'scope_dropped_attributes_count')) = 1)
+		or (table_name = 'metric_ingests'
+			and count(*) filter (where column_name in ('id', 'stream_id')) = 2)
 	)`
 )

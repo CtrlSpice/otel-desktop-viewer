@@ -269,9 +269,11 @@ func TestSchemaMetadataWithCoercibleVersionIsRejected(t *testing.T) {
 
 func TestUnversionedTelemetryDatabaseIsRejectedWithoutMutation(t *testing.T) {
 	for table, columns := range map[string]string{
-		"spans":          `trace_id uuid, span_id ubigint, resource_id uuid, scope_id uuid`,
-		"logs":           `trace_id uuid, observed_timestamp bigint, resource_id uuid, scope_id uuid`,
-		"metric_ingests": `id uuid, stream_id uuid, resource_id uuid, scope_id uuid`,
+		"spans": `trace_id uuid, span_id uuid, resource_dropped_attributes_count uinteger,
+			scope_dropped_attributes_count uinteger`,
+		"logs": `trace_id uuid, observed_timestamp bigint, resource_dropped_attributes_count uinteger,
+			scope_dropped_attributes_count uinteger`,
+		"metric_ingests": `id uuid, stream_id uuid`,
 	} {
 		t.Run(table, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "legacy-empty.db")
