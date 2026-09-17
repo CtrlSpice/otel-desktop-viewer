@@ -253,7 +253,7 @@ func TestMalformedSchemaMetadataIsRejected(t *testing.T) {
 }
 
 func TestUnversionedTelemetryDatabaseIsRejectedWithoutMutation(t *testing.T) {
-	for _, table := range []string{"spans", "logs", "metric_ingests"} {
+	for _, table := range []string{"spans", "logs", "metrics", "metric_ingests"} {
 		t.Run(table, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "legacy-empty.db")
 			db, err := sql.Open("duckdb", path)
