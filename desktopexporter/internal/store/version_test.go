@@ -242,9 +242,14 @@ func TestMalformedSchemaMetadataIsRejected(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
 
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
 	_, err = NewStore(context.Background(), path, zap.NewNop())
 	require.ErrorIs(t, err, ErrSchemaIncompatible)
 	assert.Contains(t, err.Error(), "malformed schema metadata")
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, before, after, "malformed metadata must remain untouched")
 }
 
 func TestUnversionedTelemetryDatabaseIsRejectedWithoutMutation(t *testing.T) {
@@ -280,6 +285,26 @@ func TestCompatibleStampedDatabaseInitializes(t *testing.T) {
 	assert.Equal(t, SchemaOK, s.SchemaCompatibility())
 }
 
+func TestUnrelatedDatabaseInitializes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "unrelated.db")
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(`create table unrelated (id integer)`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	s, err := NewStore(context.Background(), path, zap.NewNop())
+	require.NoError(t, err)
+	defer s.Close()
+	assert.Equal(t, SchemaOK, s.SchemaCompatibility())
+
+	var unrelatedTables int
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		return db.QueryRow(`select count(*) from duckdb_tables() where table_name = 'unrelated'`).Scan(&unrelatedTables)
+	}))
+	assert.Equal(t, 1, unrelatedTables)
+}
+
 // The version check has to run before the table and index loops.
 //
 // The scenario that makes this matter: a file whose `spans` table predates a
@@ -313,15 +338,12 @@ func TestVersionCheckRunsBeforeTableCreation(t *testing.T) {
 	core, logs := observer.New(zap.WarnLevel)
 	_, err = NewStore(context.Background(), path, zap.New(core))
 
-	// The open still fails: warn-only means the check explains the failure
-	// rather than preventing it. Enforcement (returning this as an error) is
-	// the switch to flip once the schema settles.
+	// The version check rejects the file before DDL can fail against its old
+	// shape, so callers get the compatibility error rather than an index error.
 	require.Error(t, err, "an incompatible file cannot be opened by this build")
 
-	// The point of the ordering: the version warning is emitted *before* the
-	// failure, so the opaque index error has an explanation attached. With the
-	// check moved after the table/index loops, this open fails identically but
-	// logs nothing -- which is what the mutation check confirms.
+	// The error remains logged with the database and remedy for users who start
+	// the application from an environment that does not display returned errors.
 	require.Equal(t, 1, logs.Len(),
 		"the version warning must be logged before anything builds on the old schema")
 	entry := logs.All()[0].ContextMap()

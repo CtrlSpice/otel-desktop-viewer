@@ -86,10 +86,8 @@ type Store struct {
 	// call sites need no guard.
 	logger *zap.Logger
 
-	// Result of the schema version check, set once during NewStore and read
-	// without locking. The warning is logged at open; this is kept so callers
-	// (and the enforcement switch, when it lands) can act on the outcome
-	// rather than parse a message.
+	// Result of the accepted schema version check, set once during NewStore and
+	// read without locking.
 	schemaCompat SchemaCompatibility
 }
 
