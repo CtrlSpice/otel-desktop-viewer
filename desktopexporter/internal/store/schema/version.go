@@ -125,9 +125,16 @@ const StampVersionQuery = `insert into schema_meta (version) values (?)`
 // even when guarded by EXISTS.
 const (
 	SchemaMetaTableExistsQuery = `select count(*) from duckdb_tables() where schema_name = current_schema() and table_name = 'schema_meta'`
-	TelemetryTableExistsQuery  = `select count(*) from duckdb_tables()
-		where schema_name = current_schema()
-		and table_name in ('attributes', 'resources', 'scopes', 'spans', 'events', 'links', 'logs', 'metrics',
-			'metric_streams', 'metric_series', 'metric_ingests', 'histogram_bounds', 'datapoints',
-			'exemplars', 'ingest_rejections')`
+	SchemaMetaShapeQuery       = `select count(*), count(*) filter (where column_name = 'version' and data_type = 'INTEGER')
+		from duckdb_columns() where schema_name = current_schema() and table_name = 'schema_meta'`
+	TelemetryTableExistsQuery = `select count(*) from (
+		select table_name from duckdb_columns()
+		where schema_name = current_schema() and (
+			(table_name = 'spans' and column_name in ('trace_id', 'span_id', 'resource_id', 'scope_id')) or
+			(table_name = 'logs' and column_name in ('trace_id', 'observed_timestamp', 'resource_id', 'scope_id')) or
+			(table_name = 'metric_ingests' and column_name in ('id', 'stream_id', 'resource_id', 'scope_id'))
+		)
+		group by table_name
+		having count(*) = 4
+	)`
 )

@@ -63,6 +63,14 @@ func inspectSchemaVersion(db *sql.DB, dbPath string, logger *zap.Logger) (Schema
 	if hasSchemaMeta == 0 {
 		return inspectUnstampedDatabase(db, dbPath, logger)
 	}
+	var metadataColumns, validMetadataColumns int
+	if err := db.QueryRow(schema.SchemaMetaShapeQuery).Scan(&metadataColumns, &validMetadataColumns); err != nil {
+		return SchemaOK, false, fmt.Errorf("%w: %s has malformed schema metadata: %w",
+			ErrSchemaIncompatible, describePath(dbPath), err)
+	}
+	if metadataColumns != 1 || validMetadataColumns != 1 {
+		return SchemaOK, false, malformedSchemaMetadataError(dbPath)
+	}
 
 	var count int
 	var minVersion, maxVersion sql.NullInt64

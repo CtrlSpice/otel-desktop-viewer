@@ -253,13 +253,31 @@ func TestMalformedSchemaMetadataIsRejected(t *testing.T) {
 	assert.Equal(t, before, after, "malformed metadata must remain untouched")
 }
 
+func TestSchemaMetadataWithCoercibleVersionIsRejected(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "coercible-schema-meta.db")
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(`create table schema_meta (version varchar, extra integer)`)
+	require.NoError(t, err)
+	_, err = db.Exec(`insert into schema_meta values ('12', 1)`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	_, err = NewStore(context.Background(), path, zap.NewNop())
+	require.ErrorIs(t, err, ErrSchemaIncompatible)
+}
+
 func TestUnversionedTelemetryDatabaseIsRejectedWithoutMutation(t *testing.T) {
-	for _, table := range []string{"spans", "logs", "metrics", "metric_ingests"} {
+	for table, columns := range map[string]string{
+		"spans":          `trace_id uuid, span_id ubigint, resource_id uuid, scope_id uuid`,
+		"logs":           `trace_id uuid, observed_timestamp bigint, resource_id uuid, scope_id uuid`,
+		"metric_ingests": `id uuid, stream_id uuid, resource_id uuid, scope_id uuid`,
+	} {
 		t.Run(table, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "legacy-empty.db")
 			db, err := sql.Open("duckdb", path)
 			require.NoError(t, err)
-			_, err = db.Exec(`create table ` + table + ` (id integer)`)
+			_, err = db.Exec(`create table ` + table + ` (` + columns + `)`)
 			require.NoError(t, err)
 			require.NoError(t, db.Close())
 
@@ -325,7 +343,7 @@ func TestUnrelatedDatabaseInitializes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "unrelated.db")
 	db, err := sql.Open("duckdb", path)
 	require.NoError(t, err)
-	_, err = db.Exec(`create table unrelated (id integer)`)
+	_, err = db.Exec(`create table metrics (id integer)`)
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
 
@@ -336,7 +354,7 @@ func TestUnrelatedDatabaseInitializes(t *testing.T) {
 
 	var unrelatedTables int
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		return db.QueryRow(`select count(*) from duckdb_tables() where table_name = 'unrelated'`).Scan(&unrelatedTables)
+		return db.QueryRow(`select count(*) from duckdb_tables() where table_name = 'metrics'`).Scan(&unrelatedTables)
 	}))
 	assert.Equal(t, 1, unrelatedTables)
 }
