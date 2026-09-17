@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
@@ -58,14 +59,14 @@ func TestHandleStoreErrorLogging(t *testing.T) {
 
 	t.Run("cancellation is silent", func(t *testing.T) {
 		h, logs := newHandler()
-		err := h.handleStoreError(fmt.Errorf("query aborted: %w", context.Canceled))
+		err := h.handleStoreError(context.Background(), fmt.Errorf("query aborted: %w", context.Canceled))
 		assert.Equal(t, ErrRequestCanceled, err)
 		assert.Zero(t, logs.Len(), "cancellation should not be logged")
 	})
 
 	t.Run("internal errors are still logged", func(t *testing.T) {
 		h, logs := newHandler()
-		err := h.handleStoreError(fmt.Errorf("disk on fire"))
+		err := h.handleStoreError(context.Background(), fmt.Errorf("disk on fire"))
 		assert.Equal(t, jsonrpc2.ErrInternal, err)
 		require.Equal(t, 1, logs.Len(), "unexpected failures must still be logged")
 		assert.Equal(t, "store error", logs.All()[0].Message)
@@ -73,14 +74,93 @@ func TestHandleStoreErrorLogging(t *testing.T) {
 
 	t.Run("expected outcomes stay silent", func(t *testing.T) {
 		h, logs := newHandler()
-		err := h.handleStoreError(spans.ErrTraceIDNotFound)
+		err := h.handleStoreError(context.Background(), spans.ErrTraceIDNotFound)
 		assert.Equal(t, ErrTraceNotFound, err)
 		assert.Zero(t, logs.Len())
 	})
 
 	t.Run("nil passes through", func(t *testing.T) {
 		h, logs := newHandler()
-		assert.NoError(t, h.handleStoreError(nil))
+		assert.NoError(t, h.handleStoreError(context.Background(), nil))
 		assert.Zero(t, logs.Len())
 	})
+}
+
+func TestHandleStoreErrorNormalizesTypedInterrupts(t *testing.T) {
+	newHandler := func() (*JSONRPCHandler, *observer.ObservedLogs) {
+		core, logs := observer.New(zap.ErrorLevel)
+		return &JSONRPCHandler{logger: zap.New(core)}, logs
+	}
+	interrupt := func() error {
+		return &duckdb.Error{Type: duckdb.ErrorTypeInterrupt, Msg: "Interrupted!"}
+	}
+
+	tests := []struct {
+		name    string
+		ctx     context.Context
+		err     error
+		want    error
+		logWant int
+	}{
+		{
+			name:    "cancelled context and raw interrupt are silent cancellation",
+			ctx:     canceledContext(t),
+			err:     interrupt(),
+			want:    ErrRequestCanceled,
+			logWant: 0,
+		},
+		{
+			name:    "live context interrupt remains internal",
+			ctx:     context.Background(),
+			err:     interrupt(),
+			want:    jsonrpc2.ErrInternal,
+			logWant: 1,
+		},
+		{
+			name:    "cancelled context non-interrupt remains internal",
+			ctx:     canceledContext(t),
+			err:     &duckdb.Error{Type: duckdb.ErrorTypeConversion, Msg: "conversion failed"},
+			want:    jsonrpc2.ErrInternal,
+			logWant: 1,
+		},
+		{
+			name:    "deadline context interrupt is silent cancellation",
+			ctx:     expiredContext(t),
+			err:     interrupt(),
+			want:    ErrRequestCanceled,
+			logWant: 0,
+		},
+		{
+			name:    "already wrapped cancellation stays silent",
+			ctx:     canceledContext(t),
+			err:     errors.Join(context.Canceled, interrupt()),
+			want:    ErrRequestCanceled,
+			logWant: 0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h, logs := newHandler()
+			assert.Equal(t, tc.want, h.handleStoreError(tc.ctx, tc.err))
+			assert.Len(t, logs.All(), tc.logWant)
+			if tc.logWant > 0 {
+				assert.Equal(t, tc.err, logs.All()[0].Context[0].Interface)
+			}
+		})
+	}
+}
+
+func canceledContext(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}
+
+func expiredContext(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	t.Cleanup(cancel)
+	return ctx
 }
