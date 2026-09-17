@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -187,14 +188,96 @@ func TestPreVersioningDatabaseIsRefused(t *testing.T) {
 	assert.Contains(t, err.Error(), "legacy.db")
 	require.Equal(t, 1, logs.Len())
 
-	// And it stays unstamped, so a second open reports the same thing rather
-	// than quietly deciding the file is fine.
+	// And its metadata table stays absent, so a second open reports the same
+	// thing rather than quietly deciding the file is fine.
 	raw, err := sql.Open("duckdb", path)
 	require.NoError(t, err)
 	defer raw.Close()
-	var stamped sql.NullInt64
-	require.NoError(t, raw.QueryRow(schema.ReadVersionQuery).Scan(&stamped))
-	assert.False(t, stamped.Valid, "a pre-versioning file must not be stamped on sight")
+	var schemaMetaTables int
+	require.NoError(t, raw.QueryRow(schema.SchemaMetaTableExistsQuery).Scan(&schemaMetaTables))
+	assert.Zero(t, schemaMetaTables, "a pre-versioning file must not be stamped on sight")
+}
+
+func TestIncompatibleDatabaseIsRejectedWithoutMutation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "future.db")
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(schema.VersionTableQuery)
+	require.NoError(t, err)
+	_, err = db.Exec(schema.StampVersionQuery, schema.Version+1)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+	_, err = NewStore(context.Background(), path, zap.NewNop())
+	require.ErrorIs(t, err, ErrSchemaIncompatible)
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, before, after, "rejecting an incompatible database must not mutate its file")
+}
+
+func TestEmptySchemaMetadataIsRejectedWithoutMutation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "empty-schema-meta.db")
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(schema.VersionTableQuery)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+	_, err = NewStore(context.Background(), path, zap.NewNop())
+	require.ErrorIs(t, err, ErrSchemaIncompatible)
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, before, after, "empty metadata must not be stamped as a fresh database")
+}
+
+func TestMalformedSchemaMetadataIsRejected(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "malformed-schema-meta.db")
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(`create table schema_meta (unexpected varchar)`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	_, err = NewStore(context.Background(), path, zap.NewNop())
+	require.ErrorIs(t, err, ErrSchemaIncompatible)
+	assert.Contains(t, err.Error(), "malformed schema metadata")
+}
+
+func TestUnversionedTelemetryDatabaseIsRejectedWithoutMutation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy-empty.db")
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(`create table spans (trace_id uuid)`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+	_, err = NewStore(context.Background(), path, zap.NewNop())
+	require.ErrorIs(t, err, ErrSchemaIncompatible)
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, before, after, "an unversioned telemetry database must remain untouched")
+}
+
+func TestCompatibleStampedDatabaseInitializes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "compatible.db")
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(schema.VersionTableQuery)
+	require.NoError(t, err)
+	_, err = db.Exec(schema.StampVersionQuery, schema.Version)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	s, err := NewStore(context.Background(), path, zap.NewNop())
+	require.NoError(t, err)
+	defer s.Close()
+	assert.Equal(t, SchemaOK, s.SchemaCompatibility())
 }
 
 // The version check has to run before the table and index loops.

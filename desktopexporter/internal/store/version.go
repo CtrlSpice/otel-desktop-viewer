@@ -46,82 +46,75 @@ func (s *Store) SchemaCompatibility() SchemaCompatibility {
 	return s.schemaCompat
 }
 
-// checkSchemaVersion inspects the version stamp and decides whether this build
-// can be expected to read the file.
-//
-// Four outcomes:
-//
-//	stamp absent, no data   -> brand new; stamp it and proceed
-//	stamp absent, has data  -> written before versioning; warn
-//	stamp present, matches  -> proceed
-//	stamp present, differs  -> warn
-//
-// A stamp-less file with data is treated as suspect rather than stamped,
-// because stamping it would assert a compatibility nobody has checked and
-// destroy the only evidence that it predates versioning.
-func checkSchemaVersion(db *sql.DB, dbPath string, logger *zap.Logger) (SchemaCompatibility, error) {
-	if _, err := db.Exec(schema.VersionTableQuery); err != nil {
-		return SchemaOK, fmt.Errorf("%w while creating schema_meta: %w", ErrStoreInitFailed, err)
+// inspectSchemaVersion reads only the catalog and version metadata before any
+// application DDL runs. The returned bool says whether a verified fresh store
+// needs its initial stamp.
+func inspectSchemaVersion(db *sql.DB, dbPath string, logger *zap.Logger) (SchemaCompatibility, bool, error) {
+	var hasSchemaMeta int
+	if err := db.QueryRow(schema.SchemaMetaTableExistsQuery).Scan(&hasSchemaMeta); err != nil {
+		return SchemaOK, false, fmt.Errorf("%w while probing for schema metadata: %w", ErrStoreInitFailed, err)
 	}
 
-	// NULL when the table is empty, so scan through a nullable.
-	var stamped sql.NullInt64
-	if err := db.QueryRow(schema.ReadVersionQuery).Scan(&stamped); err != nil {
-		return SchemaOK, fmt.Errorf("%w while reading schema version: %w", ErrStoreInitFailed, err)
+	if hasSchemaMeta == 0 {
+		return inspectUnstampedDatabase(db, dbPath, logger)
 	}
 
-	if stamped.Valid {
-		if stamped.Int64 == schema.Version {
-			return SchemaOK, nil
-		}
-		logger.Error("database was written by a different schema version",
-			zap.String("database", describePath(dbPath)),
-			zap.Int64("file_version", stamped.Int64),
-			zap.Int("expected_version", schema.Version),
-			zap.String("remedy", "delete it or pass a different --db path"))
-		return SchemaMismatch, fmt.Errorf("%w: %s was written by schema version %d, "+
-			"this build uses %d -- delete it or pass a different --db path",
-			ErrSchemaIncompatible, describePath(dbPath), stamped.Int64, schema.Version)
+	var count int
+	var minVersion, maxVersion sql.NullInt64
+	if err := db.QueryRow(schema.ReadVersionMetadataQuery).Scan(&count, &minVersion, &maxVersion); err != nil {
+		return SchemaOK, false, fmt.Errorf("%w: %s has malformed schema metadata: %w",
+			ErrSchemaIncompatible, describePath(dbPath), err)
 	}
+	if count != 1 || !minVersion.Valid || !maxVersion.Valid || minVersion.Int64 != maxVersion.Int64 {
+		return SchemaOK, false, malformedSchemaMetadataError(dbPath)
+	}
+	if maxVersion.Int64 == schema.Version {
+		return SchemaOK, false, nil
+	}
+	logger.Error("database was written by a different schema version",
+		zap.String("database", describePath(dbPath)),
+		zap.Int64("file_version", maxVersion.Int64),
+		zap.Int("expected_version", schema.Version),
+		zap.String("remedy", "delete it or pass a different --db path"))
+	return SchemaMismatch, false, fmt.Errorf("%w: %s was written by schema version %d, "+
+		"this build uses %d -- delete it or pass a different --db path",
+		ErrSchemaIncompatible, describePath(dbPath), maxVersion.Int64, schema.Version)
+}
 
-	hasData, err := hasExistingData(db)
-	if err != nil {
-		return SchemaOK, err
+func inspectUnstampedDatabase(db *sql.DB, dbPath string, logger *zap.Logger) (SchemaCompatibility, bool, error) {
+	var hasSpans int
+	if err := db.QueryRow(schema.SpansTableExistsQuery).Scan(&hasSpans); err != nil {
+		return SchemaOK, false, fmt.Errorf("%w while probing for existing tables: %w", ErrStoreInitFailed, err)
 	}
-	if hasData {
+	if hasSpans != 0 {
 		logger.Error("database holds data but carries no schema version, so it predates "+
 			"versioning and its shape cannot be confirmed",
 			zap.String("database", describePath(dbPath)),
 			zap.Int("expected_version", schema.Version),
 			zap.String("remedy", "delete it or pass a different --db path"))
-		return SchemaPreVersioning, fmt.Errorf("%w: %s holds data but carries no schema "+
+		return SchemaPreVersioning, false, fmt.Errorf("%w: %s holds telemetry tables but carries no schema "+
 			"version, so it predates versioning -- delete it or pass a different --db path",
 			ErrSchemaIncompatible, describePath(dbPath))
 	}
-
-	if _, err := db.Exec(schema.StampVersionQuery, schema.Version); err != nil {
-		return SchemaOK, fmt.Errorf("%w while stamping schema version: %w", ErrStoreInitFailed, err)
-	}
-	return SchemaOK, nil
+	return SchemaOK, true, nil
 }
 
-// hasExistingData reports whether the file already holds telemetry. Two queries
-// rather than one: DuckDB binds a whole statement before running it, so a
-// subquery naming `spans` fails to bind on a database that has never had it.
-func hasExistingData(db *sql.DB) (bool, error) {
-	var tables int
-	if err := db.QueryRow(schema.SpansTableExistsQuery).Scan(&tables); err != nil {
-		return false, fmt.Errorf("%w while probing for existing tables: %w", ErrStoreInitFailed, err)
+func initializeSchemaVersion(db *sql.DB, shouldStamp bool) error {
+	if !shouldStamp {
+		return nil
 	}
-	if tables == 0 {
-		return false, nil
+	if _, err := db.Exec(schema.VersionTableQuery); err != nil {
+		return fmt.Errorf("%w while creating schema_meta: %w", ErrStoreInitFailed, err)
 	}
+	if _, err := db.Exec(schema.StampVersionQuery, schema.Version); err != nil {
+		return fmt.Errorf("%w while stamping schema version: %w", ErrStoreInitFailed, err)
+	}
+	return nil
+}
 
-	var spans int64
-	if err := db.QueryRow(schema.SpanCountQuery).Scan(&spans); err != nil {
-		return false, fmt.Errorf("%w while probing for existing data: %w", ErrStoreInitFailed, err)
-	}
-	return spans > 0, nil
+func malformedSchemaMetadataError(dbPath string) error {
+	return fmt.Errorf("%w: %s has malformed schema metadata -- delete it or pass a different --db path",
+		ErrSchemaIncompatible, describePath(dbPath))
 }
 
 func describePath(dbPath string) string {

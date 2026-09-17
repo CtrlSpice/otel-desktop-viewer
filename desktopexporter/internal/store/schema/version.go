@@ -107,28 +107,23 @@ const Version = 12
 // against a schema that does not match them.
 const VersionTableQuery = `create table if not exists schema_meta (version integer)`
 
-// ReadVersionQuery returns the stamped version, or NULL for a file that has
-// none -- either brand new, or written before versioning existed. The caller
-// distinguishes those two cases.
+// ReadVersionQuery returns the stamped version, or NULL for an empty metadata
+// table. It is kept for callers that only need the recorded version.
 const ReadVersionQuery = `select max(version) from schema_meta`
+
+// ReadVersionMetadataQuery validates the version metadata shape before the
+// store accepts it. A store writes exactly one stamp, so an empty or
+// multiply-stamped table cannot establish compatibility.
+const ReadVersionMetadataQuery = `select count(*), min(version), max(version) from schema_meta`
 
 // StampVersionQuery records the current version. Only ever run against a
 // database with no stamp and no data, so there is nothing to overwrite.
 const StampVersionQuery = `insert into schema_meta (version) values (?)`
 
-// A stamp-less file is either brand new or predates versioning. Telling those
-// apart is a two-step probe: does the spans table exist, and if so does it hold
-// anything.
-//
-// It has to be two queries rather than one guarded by EXISTS, because DuckDB
-// binds the whole statement before executing it -- a subquery naming `spans`
-// fails to bind on a database where that table does not exist yet, which is
-// every brand-new file.
-//
-// The probe asks duckdb_tables() rather than checking for a specific column, so
-// it keeps working across future schema changes: the question is "does this file
-// predate versioning", not "does it match some particular past shape".
+// The catalog probes avoid referring to a possibly absent table: DuckDB binds a
+// whole statement before running it, so a subquery naming a missing table fails
+// even when guarded by EXISTS.
 const (
-	SpansTableExistsQuery = `select count(*) from duckdb_tables() where table_name = 'spans'`
-	SpanCountQuery        = `select count(*) from spans`
+	SchemaMetaTableExistsQuery = `select count(*) from duckdb_tables() where table_name = 'schema_meta'`
+	SpansTableExistsQuery      = `select count(*) from duckdb_tables() where table_name = 'spans'`
 )
