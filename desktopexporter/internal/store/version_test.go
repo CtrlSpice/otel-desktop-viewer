@@ -253,20 +253,24 @@ func TestMalformedSchemaMetadataIsRejected(t *testing.T) {
 }
 
 func TestUnversionedTelemetryDatabaseIsRejectedWithoutMutation(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "legacy-empty.db")
-	db, err := sql.Open("duckdb", path)
-	require.NoError(t, err)
-	_, err = db.Exec(`create table spans (trace_id uuid)`)
-	require.NoError(t, err)
-	require.NoError(t, db.Close())
+	for _, table := range []string{"spans", "logs", "metric_ingests"} {
+		t.Run(table, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "legacy-empty.db")
+			db, err := sql.Open("duckdb", path)
+			require.NoError(t, err)
+			_, err = db.Exec(`create table ` + table + ` (id integer)`)
+			require.NoError(t, err)
+			require.NoError(t, db.Close())
 
-	before, err := os.ReadFile(path)
-	require.NoError(t, err)
-	_, err = NewStore(context.Background(), path, zap.NewNop())
-	require.ErrorIs(t, err, ErrSchemaIncompatible)
-	after, err := os.ReadFile(path)
-	require.NoError(t, err)
-	assert.Equal(t, before, after, "an unversioned telemetry database must remain untouched")
+			before, err := os.ReadFile(path)
+			require.NoError(t, err)
+			_, err = NewStore(context.Background(), path, zap.NewNop())
+			require.ErrorIs(t, err, ErrSchemaIncompatible)
+			after, err := os.ReadFile(path)
+			require.NoError(t, err)
+			assert.Equal(t, before, after, "an unversioned telemetry database must remain untouched")
+		})
+	}
 }
 
 func TestCompatibleStampedDatabaseInitializes(t *testing.T) {
@@ -303,6 +307,24 @@ func TestUnrelatedDatabaseInitializes(t *testing.T) {
 		return db.QueryRow(`select count(*) from duckdb_tables() where table_name = 'unrelated'`).Scan(&unrelatedTables)
 	}))
 	assert.Equal(t, 1, unrelatedTables)
+}
+
+func TestCustomSchemaNamesDoNotAffectCompatibilityInspection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "custom-schema.db")
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(`create schema other`)
+	require.NoError(t, err)
+	_, err = db.Exec(`create table other.spans (id integer)`)
+	require.NoError(t, err)
+	_, err = db.Exec(`create table other.schema_meta (version integer)`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	s, err := NewStore(context.Background(), path, zap.NewNop())
+	require.NoError(t, err)
+	defer s.Close()
+	assert.Equal(t, SchemaOK, s.SchemaCompatibility())
 }
 
 // The version check has to run before the table and index loops.

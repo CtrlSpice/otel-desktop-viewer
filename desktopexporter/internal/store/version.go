@@ -82,11 +82,11 @@ func inspectSchemaVersion(db *sql.DB, dbPath string, logger *zap.Logger) (Schema
 }
 
 func inspectUnstampedDatabase(db *sql.DB, dbPath string, logger *zap.Logger) (SchemaCompatibility, bool, error) {
-	var hasSpans int
-	if err := db.QueryRow(schema.SpansTableExistsQuery).Scan(&hasSpans); err != nil {
+	var hasTelemetryTables int
+	if err := db.QueryRow(schema.TelemetryTableExistsQuery).Scan(&hasTelemetryTables); err != nil {
 		return SchemaOK, false, fmt.Errorf("%w while probing for existing tables: %w", ErrStoreInitFailed, err)
 	}
-	if hasSpans != 0 {
+	if hasTelemetryTables != 0 {
 		logger.Error("database holds data but carries no schema version, so it predates "+
 			"versioning and its shape cannot be confirmed",
 			zap.String("database", describePath(dbPath)),
