@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql/driver"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -635,9 +636,24 @@ func execArgs(ctx context.Context, conn driver.Conn, query string, args []any, w
 		return fmt.Errorf("dictionary flush %s: %w: %w", what, ErrIngestInternal, err)
 	}
 	if _, err := dconn.ExecContext(ctx, query, named); err != nil {
+		err = interruptedContextError(ctx, err)
 		return fmt.Errorf("dictionary flush %s: %w: %w", what, ErrIngestInternal, err)
 	}
 	return nil
+}
+
+// interruptedContextError restores the cancellation identity DuckDB drops when
+// it interrupts an executing statement for a cancelled context.
+func interruptedContextError(ctx context.Context, err error) error {
+	ctxErr := ctx.Err()
+	if ctxErr == nil {
+		return err
+	}
+	var duckErr *duckdb.Error
+	if errors.As(err, &duckErr) && duckErr.Type == duckdb.ErrorTypeInterrupt && !errors.Is(err, ctxErr) {
+		return errors.Join(ctxErr, err)
+	}
+	return err
 }
 
 // prepareNamedValues converts values through the driver's own checker, matching

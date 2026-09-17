@@ -672,6 +672,31 @@ describe('HistogramChart keyboard model', () => {
 })
 
 describe('HistogramHeatmap keyboard model', () => {
+  it('formats explicit string-domain ticks as time and bucket labels', async () => {
+    localStorage.setItem('time-tz', 'UTC')
+    const point: HistogramSlicePoint = {
+      kind: 'histogram',
+      timestamp: BASE_NS,
+      attributesKey: '',
+      bounds: [1, 2],
+      counts: [1, 2, 3],
+      totals: { count: 6, sum: 0, min: 0, max: 2 },
+    }
+    const metric = metricWithDatapoints('Histogram', [
+      histogramDatapoint('labels', [1, 2], [1, 2, 3]),
+    ])
+    renderChart(HistogramHeatmap, { points: [point] }, metric)
+    await tick()
+
+    const labels = Array.from(
+      document.querySelectorAll('.lc-axis-tick-label'),
+      label => label.textContent
+    )
+    expect(labels).toEqual(
+      expect.arrayContaining(['22:13:20', '>2.00', '(1.00, 2.00]', '≤1.00'])
+    )
+  })
+
   it('keeps formatted row labels and sub-millisecond columns distinct, syncs selection on focus, and scrolls only while focused', async () => {
     const columns: HistogramSlicePoint[] = Array.from(
       { length: 24 },

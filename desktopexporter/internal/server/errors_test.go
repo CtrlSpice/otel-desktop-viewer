@@ -2,10 +2,13 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
+	"github.com/duckdb/duckdb-go/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -30,6 +33,11 @@ func TestCancellationIsNotAnInternalError(t *testing.T) {
 			name: "duckdb interrupt wrapping cancellation",
 			err: fmt.Errorf("GetStats: %w: %w\nINTERRUPT Error: Interrupted!",
 				spans.ErrSpansStoreInternal, context.Canceled),
+		},
+		{
+			name: "dictionary interrupt restored as cancellation",
+			err: fmt.Errorf("dictionary flush attributes: %w: %w", ingest.ErrIngestInternal,
+				errors.Join(context.Canceled, &duckdb.Error{Type: duckdb.ErrorTypeInterrupt, Msg: "Interrupted!"})),
 		},
 	}
 

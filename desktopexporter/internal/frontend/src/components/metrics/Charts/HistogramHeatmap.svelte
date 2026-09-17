@@ -339,13 +339,13 @@
     `Use Left and Right to inspect time columns and Up and Down to inspect bucket rows. Home and End move to row boundaries; Control or Command plus Home or End move to grid boundaries.${onSelect ? ' Enter or Space selects the current time column.' : ''} Escape clears chart selection.`
   )
 
-  function formatTimeTick(key: unknown): string {
-    const column = columnByKey.get(String(key))
+  function formatTimeTick(key: string): string {
+    const column = columnByKey.get(key)
     return column ? axisTime(timeContext.tz).format(column.timestampMs) : ''
   }
 
-  function formatBucketTick(key: unknown): string {
-    return bucketLabelByKey.get(String(key)) ?? String(key)
+  function formatBucketTick(key: string): string {
+    return bucketLabelByKey.get(key) ?? key
   }
 </script>
 
