@@ -33,11 +33,11 @@ func NewJSONRPCHandler(store *store.Store, logger *zap.Logger) *JSONRPCHandler {
 // handleStoreError maps store errors to JSON-RPC codes and logs only unexpected
 // failures (those that become -32603). Expected outcomes like not-found,
 // invalid query, or a caller that went away are returned without logging.
-func (h *JSONRPCHandler) handleStoreError(err error) error {
+func (h *JSONRPCHandler) handleStoreError(ctx context.Context, err error) error {
 	if err == nil {
 		return nil
 	}
-	mapped := mapStoreError(err)
+	mapped := mapStoreError(ingest.InterruptedContextError(ctx, err))
 	if mapped == jsonrpc2.ErrInternal {
 		h.logger.Error("store error", zap.Error(err))
 	}
@@ -143,7 +143,7 @@ func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request
 		return spans.SearchTracesWithOptions(ctx, db, timeRange, query, options)
 	})
 	if err != nil {
-		return nil, h.handleStoreError(err)
+		return nil, h.handleStoreError(ctx, err)
 	}
 	return summaries, nil
 }
@@ -210,7 +210,7 @@ func (h *JSONRPCHandler) searchSpans(ctx context.Context, req *jsonrpc2.Request)
 		return spans.SearchSpans(ctx, db, traceID, query)
 	})
 	if err != nil {
-		return nil, h.handleStoreError(err)
+		return nil, h.handleStoreError(ctx, err)
 	}
 	return result, nil
 }
@@ -228,7 +228,7 @@ func (h *JSONRPCHandler) clearTraces(ctx context.Context) (any, error) {
 		return ingest.SweepOrphans(ctx, db, h.store.FlushedIDs())
 	})
 	if err != nil {
-		return nil, h.handleStoreError(err)
+		return nil, h.handleStoreError(ctx, err)
 	}
 	return "Traces cleared successfully", nil
 }
@@ -257,7 +257,7 @@ func (h *JSONRPCHandler) searchLogs(ctx context.Context, req *jsonrpc2.Request) 
 		return logs.SearchWithOptions(ctx, db, timeRange, query, options)
 	})
 	if err != nil {
-		return nil, h.handleStoreError(err)
+		return nil, h.handleStoreError(ctx, err)
 	}
 	return result, nil
 }
@@ -275,7 +275,7 @@ func (h *JSONRPCHandler) clearLogs(ctx context.Context) (any, error) {
 		return ingest.SweepOrphans(ctx, db, h.store.FlushedIDs())
 	})
 	if err != nil {
-		return nil, h.handleStoreError(err)
+		return nil, h.handleStoreError(ctx, err)
 	}
 	return "Logs cleared successfully", nil
 }
@@ -298,7 +298,7 @@ func (h *JSONRPCHandler) getLog(ctx context.Context, req *jsonrpc2.Request) (any
 		return logs.Get(ctx, db, logID)
 	})
 	if err != nil {
-		return nil, h.handleStoreError(err)
+		return nil, h.handleStoreError(ctx, err)
 	}
 	return result, nil
 }
@@ -327,7 +327,7 @@ func (h *JSONRPCHandler) searchMetricSummaries(ctx context.Context, req *jsonrpc
 		return metrics.SearchSummariesWithOptions(ctx, db, timeRange, query, options)
 	})
 	if err != nil {
-		return nil, h.handleStoreError(err)
+		return nil, h.handleStoreError(ctx, err)
 	}
 	return summaries, nil
 }
@@ -574,7 +574,7 @@ func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (
 			args.datapointSeriesIDs, args.datapointSeriesLimit)
 	})
 	if err != nil {
-		return nil, h.handleStoreError(err)
+		return nil, h.handleStoreError(ctx, err)
 	}
 	return result, nil
 }
@@ -592,7 +592,7 @@ func (h *JSONRPCHandler) clearMetrics(ctx context.Context) (any, error) {
 		return ingest.SweepOrphans(ctx, db, h.store.FlushedIDs())
 	})
 	if err != nil {
-		return nil, h.handleStoreError(err)
+		return nil, h.handleStoreError(ctx, err)
 	}
 	return "Metrics cleared successfully", nil
 }
@@ -619,7 +619,7 @@ func (h *JSONRPCHandler) deleteMetricStream(ctx context.Context, req *jsonrpc2.R
 	if err := h.store.WithDBWrite(func(db *sql.DB) error {
 		return metrics.DeleteMetricStream(ctx, db, streamID)
 	}); err != nil {
-		return nil, h.handleStoreError(err)
+		return nil, h.handleStoreError(ctx, err)
 	}
 
 	return "Metric stream deleted successfully", nil
@@ -635,7 +635,7 @@ func (h *JSONRPCHandler) deleteSpansByTraceID(ctx context.Context, req *jsonrpc2
 	if err := h.store.WithDBWrite(func(db *sql.DB) error {
 		return spans.DeleteSpansByTraceIDs(ctx, db, traceIDs)
 	}); err != nil {
-		return nil, h.handleStoreError(err)
+		return nil, h.handleStoreError(ctx, err)
 	}
 
 	return map[string]any{
@@ -654,7 +654,7 @@ func (h *JSONRPCHandler) deleteLogByID(ctx context.Context, req *jsonrpc2.Reques
 	if err := h.store.WithDBWrite(func(db *sql.DB) error {
 		return logs.DeleteLogsByIDs(ctx, db, logIDs)
 	}); err != nil {
-		return nil, h.handleStoreError(err)
+		return nil, h.handleStoreError(ctx, err)
 	}
 
 	return map[string]any{
@@ -689,7 +689,7 @@ func (h *JSONRPCHandler) searchAttributes(ctx context.Context, req *jsonrpc2.Req
 		return attributes.Search(ctx, db, term)
 	})
 	if err != nil {
-		return nil, h.handleStoreError(err)
+		return nil, h.handleStoreError(ctx, err)
 	}
 	return result, nil
 }
@@ -748,7 +748,7 @@ func (h *JSONRPCHandler) getFieldValues(ctx context.Context, req *jsonrpc2.Reque
 		return get(ctx, db, field, term, limit)
 	})
 	if err != nil {
-		return nil, h.handleStoreError(err)
+		return nil, h.handleStoreError(ctx, err)
 	}
 	return result, nil
 }
@@ -762,7 +762,7 @@ func (h *JSONRPCHandler) getTraceAttributes(ctx context.Context, req *jsonrpc2.R
 		return spans.GetTraceAttributes(ctx, db)
 	})
 	if err != nil {
-		return nil, h.handleStoreError(err)
+		return nil, h.handleStoreError(ctx, err)
 	}
 
 	return attributes, nil
@@ -777,7 +777,7 @@ func (h *JSONRPCHandler) getLogAttributes(ctx context.Context, req *jsonrpc2.Req
 		return logs.GetLogAttributes(ctx, db)
 	})
 	if err != nil {
-		return nil, h.handleStoreError(err)
+		return nil, h.handleStoreError(ctx, err)
 	}
 
 	return attributes, nil
@@ -799,7 +799,7 @@ func (h *JSONRPCHandler) getMetricAggregate(ctx context.Context, req *jsonrpc2.R
 			args.viewBuckets, args.selectedSeriesIDs, args.tzName)
 	})
 	if err != nil {
-		return nil, h.handleStoreError(err)
+		return nil, h.handleStoreError(ctx, err)
 	}
 	return result, nil
 }
@@ -813,7 +813,7 @@ func (h *JSONRPCHandler) getMetricAttributes(ctx context.Context, req *jsonrpc2.
 		return metrics.GetMetricAttributes(ctx, db)
 	})
 	if err != nil {
-		return nil, h.handleStoreError(err)
+		return nil, h.handleStoreError(ctx, err)
 	}
 
 	return attributes, nil
@@ -838,7 +838,7 @@ func (h *JSONRPCHandler) getAttributesByTraceID(ctx context.Context, req *jsonrp
 		return spans.GetAttributesByTraceID(ctx, db, traceID)
 	})
 	if err != nil {
-		return nil, h.handleStoreError(err)
+		return nil, h.handleStoreError(ctx, err)
 	}
 
 	return attributes, nil
@@ -860,7 +860,7 @@ func (h *JSONRPCHandler) getTraceSpanCount(ctx context.Context, req *jsonrpc2.Re
 		return stats.GetTraceSpanCount(ctx, db, traceID)
 	})
 	if err != nil {
-		return nil, h.handleStoreError(err)
+		return nil, h.handleStoreError(ctx, err)
 	}
 	return count, nil
 }
@@ -877,7 +877,7 @@ func (h *JSONRPCHandler) getStats(ctx context.Context) (any, error) {
 		return stats.GetStats(ctx, db, sizeBytes, retentionCap)
 	})
 	if err != nil {
-		return nil, h.handleStoreError(err)
+		return nil, h.handleStoreError(ctx, err)
 	}
 	return result, nil
 }
