@@ -1218,9 +1218,9 @@ func Clear(ctx context.Context, db *sql.DB) error {
 //
 // We still can't wrap this in a transaction: DuckDB issue #13819 still
 // fires "phantom" FK violations for in-tx cascades. The pinned-conn
-// auto-commit pattern works around it -- worst-case partial failure
-// leaves orphaned attribute rows for an otherwise-cleaned stream, which
-// a retry of DeleteMetricStream(streamID) will collect on the next pass.
+// auto-commit pattern works around it. A retry of DeleteMetricStream
+// completes any remaining stream-table cascade; orphaned dictionary rows
+// are collected by a later SweepOrphans call after Clear or during retention.
 //
 // Returns nil if the stream does not exist (idempotent delete).
 func DeleteMetricStream(ctx context.Context, db *sql.DB, streamID string) error {
