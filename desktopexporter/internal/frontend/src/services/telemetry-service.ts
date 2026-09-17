@@ -111,6 +111,7 @@ function boundToNanoseconds(bound: QueryTimeBound): string | null {
   return typeof bound === 'bigint' ? bound.toString() : toNanoseconds(bound)
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Validates the raw wire value before bigint conversion.
 function bigintFromWire(value: unknown): bigint {
   if (typeof value !== 'string') {
     const received = value === null ? 'null' : typeof value
@@ -121,6 +122,7 @@ function bigintFromWire(value: unknown): bigint {
   return BigInt(value)
 }
 
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Accepts null; otherwise delegates to the validating wire decoder.
 function nullableBigintFromWire(value: unknown): bigint | null {
   return value === null ? null : bigintFromWire(value)
 }
@@ -136,6 +138,7 @@ export class RequestAbortedError extends Error {
 }
 
 /** True when a rejection is just an abandoned request. */
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- Classifies arbitrary caught or rejected values by identity without assuming Error.
 export function isAbortError(err: unknown): boolean {
   return (
     err instanceof RequestAbortedError ||
