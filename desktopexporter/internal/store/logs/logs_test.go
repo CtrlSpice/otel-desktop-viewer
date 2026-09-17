@@ -770,10 +770,14 @@ func TestIngest_CanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
+	var rejected ingest.Rejected
 	err := s.WithConn(func(conn driver.Conn) error {
-		return logs.Ingest(ctx, conn, createTestLogsPdataN(time.Now().UnixNano(), 1), s.FlushedIDs())
+		var err error
+		rejected, err = logs.IngestReport(ctx, conn, createTestLogsPdataN(time.Now().UnixNano(), 1), s.FlushedIDs())
+		return err
 	})
 	require.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, rejected)
 }
 
 func TestIngest_CanceledDuringIngest(t *testing.T) {
@@ -783,16 +787,20 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	ldata := createTestLogsPdataN(time.Now().UnixNano(), 100)
 
+	var rejected ingest.Rejected
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- s.WithConn(func(conn driver.Conn) error {
-			return logs.Ingest(ctx, conn, ldata, s.FlushedIDs())
+			var err error
+			rejected, err = logs.IngestReport(ctx, conn, ldata, s.FlushedIDs())
+			return err
 		})
 	}()
 	cancel()
 
 	err := <-errCh
 	require.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, rejected)
 }
 
 // TestSearchLogs tests logs.Search with various query types.

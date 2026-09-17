@@ -1258,10 +1258,14 @@ func TestIngest_CanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
+	var rejected ingest.Rejected
 	err := s.WithConn(func(conn driver.Conn) error {
-		return spans.Ingest(ctx, conn, createTestTracesPdataN(1), s.FlushedIDs())
+		var err error
+		rejected, err = spans.IngestReport(ctx, conn, createTestTracesPdataN(1), s.FlushedIDs())
+		return err
 	})
 	require.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, rejected)
 }
 
 func TestIngest_CanceledDuringIngest(t *testing.T) {
@@ -1271,16 +1275,20 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	traces := createTestTracesPdataN(100)
 
+	var rejected ingest.Rejected
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- s.WithConn(func(conn driver.Conn) error {
-			return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+			var err error
+			rejected, err = spans.IngestReport(ctx, conn, traces, s.FlushedIDs())
+			return err
 		})
 	}()
 	cancel()
 
 	err := <-errCh
 	require.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, rejected)
 }
 
 // TestSearchSpansWith32CharHexTraceID verifies that SearchSpans finds a trace when given the 32-char hex form (no hyphens).

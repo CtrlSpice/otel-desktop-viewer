@@ -80,7 +80,9 @@ func Ingest(ctx context.Context, conn driver.Conn, logs plog.Logs, flushed *inge
 
 // IngestReport ingests a batch and reports the records it could not write. A
 // non-empty Rejected is not a failure: the batch landed, minus those rows.
-func IngestReport(ctx context.Context, conn driver.Conn, logs plog.Logs, flushed *ingest.FlushedIDs) (ingest.Rejected, error) {
+func IngestReport(ctx context.Context, conn driver.Conn, logs plog.Logs, flushed *ingest.FlushedIDs) (_ ingest.Rejected, err error) {
+	defer func() { err = ingest.InterruptedContextError(ctx, err) }()
+
 	if err := ctx.Err(); err != nil {
 		return ingest.Rejected{}, err
 	}

@@ -76,7 +76,7 @@ func TestInterruptedContextError(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := interruptedContextError(tc.ctx, tc.err)
+			got := InterruptedContextError(tc.ctx, tc.err)
 			if tc.contextErr == nil {
 				assert.NotErrorIs(t, got, context.Canceled)
 				assert.NotErrorIs(t, got, context.DeadlineExceeded)
