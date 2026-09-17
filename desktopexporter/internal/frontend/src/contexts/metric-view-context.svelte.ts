@@ -109,6 +109,7 @@ import {
 } from '@/components/metrics/utils/metric-timeseries-visible'
 import {
   acquireColor,
+  remapColorAssignments,
   releaseColor,
   seedColorAssignments,
   syncColorAssignments,
@@ -1735,8 +1736,14 @@ export function createMetricViewContext(
 
   const legendFilterActive = $derived(visibleDpCanonicalKeys !== null)
 
-  function replaceColorAssignments(next: TimeseriesColorByKey) {
+  let assignedColorPool: readonly string[] = []
+
+  function replaceColorAssignments(
+    next: TimeseriesColorByKey,
+    pool: readonly string[] = timeseriesChartColors
+  ) {
     view.timeseriesColorByKey = next
+    assignedColorPool = [...pool]
   }
 
   /** Seed assignments when visible keys exist but the map is empty (e.g.
@@ -1932,6 +1939,24 @@ export function createMetricViewContext(
   // (2b) Same metric stream, new telemetry: prune attribute keys that have
   // gone away and colour any that have appeared. Polling can add or drop series
   // within a stream; seeding cannot see those, because it runs once per metric.
+  $effect(() => {
+    const nextPool = timeseriesChartColors
+    if (
+      assignedColorPool.length === 0 ||
+      assignedColorPool.join('\0') === nextPool.join('\0')
+    ) {
+      return
+    }
+    replaceColorAssignments(
+      remapColorAssignments(
+        view.timeseriesColorByKey,
+        assignedColorPool,
+        nextPool
+      ),
+      nextPool
+    )
+  })
+
   $effect(() => {
     const m = getMetric()
     const streamID = m?.id

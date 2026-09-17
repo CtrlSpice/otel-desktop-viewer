@@ -25,6 +25,7 @@ It has **two** dark modes now.
 - [Command Line Options](#command-line-options)
 - [Configuring Your OpenTelemetry SDK](#configuring-your-opentelemetry-sdk)
 - [Example With `otel-cli`](#example-with-otel-cli)
+- [Chart Palettes](docs/chart-palettes.md)
 - [Implementation](#implementation)
 - [What's With the Axolotl??](#whats-with-the-axolotl)
 - [Contributing](#contributing)
