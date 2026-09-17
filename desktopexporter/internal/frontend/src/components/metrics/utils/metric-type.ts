@@ -43,6 +43,7 @@ const STEM_TO_BADGE: Record<CategoricalStem, string> = {
   gold: 'badge-warning',
   rose: 'badge-rose',
   iris: 'badge-primary',
+  love: 'badge-rose',
 }
 
 const METRIC_TYPE_BADGE_BASE = 'badge badge-xs badge-soft'

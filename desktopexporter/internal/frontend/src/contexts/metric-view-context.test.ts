@@ -515,6 +515,29 @@ describe('metric view context visibility seeding', () => {
       localStorage.removeItem(storageKey)
     }
   })
+
+  it('keeps visible key slots while changing to the current theme palette', async () => {
+    const previousTheme = document.documentElement.getAttribute('data-theme')
+    document.documentElement.setAttribute('data-theme', 'rose-pine')
+    try {
+      const ctx = renderProbe('/metrics/m1')
+      const before = new Map(ctx.timeseriesColorByKey)
+      document.documentElement.setAttribute('data-theme', 'rose-pine-dawn')
+      await tick()
+      await tick()
+
+      expect([...ctx.timeseriesColorByKey.keys()]).toEqual([...before.keys()])
+      expect([...ctx.timeseriesColorByKey.values()]).not.toEqual([
+        ...before.values(),
+      ])
+      expect(ctx.timeseriesColorByKey.get('route=/a')).toBe('#2b6c85')
+      expect(ctx.timeseriesColorByKey.get('route=/b')).toBe('#559695')
+    } finally {
+      if (previousTheme === null)
+        document.documentElement.removeAttribute('data-theme')
+      else document.documentElement.setAttribute('data-theme', previousTheme)
+    }
+  })
 })
 
 describe('metric view context datapoint URL sync', () => {

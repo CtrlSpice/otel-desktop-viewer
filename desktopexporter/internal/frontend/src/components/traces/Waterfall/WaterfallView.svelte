@@ -19,16 +19,12 @@
   // name in multi-service traces. Error spans are coloured by a separate
   // semantic token (`--color-error`) and never participate in the rotation.
   //
-  // Colours come from `categoricalPalette()` -- same HCL-interpolated arc
-  // the metric charts use. We anchor the start stem to `iris` so the first
-  // span (root, in a well-formed trace) lands on `--color-primary`, then
-  // walks iris→pine→foam→gold→rose for subsequent keys. Palette size is
-  // `max(uniqueKeys, 5)` so traces with many services get distinct
-  // midpoints; small traces still hit the five named stems exactly.
+  // Colours come from the same approved static palette as metric charts. We
+  // start at iris so the root begins in that family, then interleave all six
+  // families before returning for another lightness level. The finite table
+  // repeats deterministically for traces with more than thirty keys.
 
-  /** Minimum palette size: the five named stems, so single-service traces
-   *  with only 1-2 keys still land on iris/pine/etc. exactly rather than
-   *  a degenerate interpolation. */
+  /** Keep the short-trace palette shape consistent with existing callers. */
   const MIN_TRACE_PALETTE = 5
 
   export type EventMarker = {
@@ -41,7 +37,7 @@
     spanNode: SpanNode
     /** CSS-ready colour string for the bar / gutter / event dot.
      *  Error spans pass `--color-error` via CSS var to preserve semantic
-     *  theming; non-error spans get a concrete HCL colour from the palette. */
+     *  theming; non-error spans get a concrete approved palette colour. */
     color: string
     /** Whether this row is an error span. Consumers branch on this for the
      *  matched/error tinting (which uses semantic vars, not the palette). */

@@ -1,9 +1,8 @@
 // Single source of truth for chart colors. Two flavours live here:
 //
 //   - `categoricalPalette()` -- series-identity colours for line charts,
-//     histogram heatmap legends, and trace waterfall bars. Walks the five
-//     Rosé Pine stem waypoints (pine/foam/gold/rose/iris) in HCL hue order,
-//     rotated so the caller's `start` stem lands at slot 0.
+//     histogram heatmap legends, and trace waterfall bars. Uses the approved
+//     six-family static table, rotated so the caller's requested family leads.
 //
 //   - `heatmapSwatches()` -- smooth count ramp for the histogram heatmap.
 //     Endpoints are per-theme literal hex; HCL interpolation keeps the
@@ -19,6 +18,7 @@
 // reserved hues.
 
 import { interpolateHcl } from 'd3-interpolate'
+import chartPalettes from './chart-palettes.json'
 
 // Per-theme heatmap endpoints. base-200 on the cold end so the lowest swatch
 // blends into the chart surface; the "hot" end varies by theme so the ramp
@@ -64,14 +64,9 @@ export function heatmapSwatches(steps: number, theme: string = ''): string[] {
 
 // ── Categorical series palette ──
 //
-// Fixed-size palette walking the five stem waypoints in hue order
-// (pine → foam → gold → rose → iris, rotated so the caller's `start`
-// stem is first). Sampled at N evenly-spaced positions across the
-// combined HCL arc, so:
-//   - Slot 0 is always the rotated start stem; the last slot the last stem.
-//   - count=5 returns all five stems exactly.
-//   - Other counts mix literal stems with HCL interpolations between
-//     adjacent waypoints (four segments).
+// Fixed static palette interleaving six colour families at five levels. The
+// family order rotates to put `start` first; the level order deliberately
+// spreads the first few series across family and lightness.
 //
 // Callers pass the *cap* (MAX_VISIBLE_TIMESERIES), never the current
 // series count. That is the load-bearing part: a count-aware palette
@@ -81,83 +76,33 @@ export function heatmapSwatches(steps: number, theme: string = ''): string[] {
 // means "the 4th visible timeseries" always gets the same hue, no matter
 // the metric.
 //
-// Density trade-off: the cap is how many slots are sampled from a
-// five-waypoint arc, so raising it packs hues closer together and makes
-// adjacent series harder to distinguish on a line chart.
+// The scalar cap is independent of the finite table size. It keeps dense line
+// charts readable without changing their selection policy.
 //
-export type CategoricalStem = 'pine' | 'foam' | 'gold' | 'rose' | 'iris'
+export type CategoricalStem =
+  'pine' | 'foam' | 'gold' | 'rose' | 'iris' | 'love'
 
-// Hue-monotonic waypoint order: pine (teal) → foam (cyan) → gold
-// (yellow) → rose (pink) → iris (violet), wrapping back to pine.
-// Adjacent waypoints share neighbouring hues so HCL interpolation
-// stays on a short arc (the iris→pine wrap is the long hop).
-const WAYPOINT_ORDER: readonly CategoricalStem[] = [
+// Families rotate in this order. Each level is emitted across all families
+// before moving to the next level.
+const FAMILY_ORDER: readonly CategoricalStem[] = [
   'pine',
   'foam',
   'gold',
   'rose',
   'iris',
+  'love',
 ] as const
 
-// Per-theme stem hexes.
-type StemPalette = {
-  pine: string
-  foam: string
-  gold: string
-  rose: string
-  iris: string
-}
+const DEFAULT_CATEGORICAL_PALETTE = chartPalettes['rose-pine-moon']
+const LEVEL_ORDER = [2, 0, 4, 1, 3] as const
 
-const DEFAULT_CATEGORICAL_PALETTE = {
-  pine: '#3e8fb0',
-  foam: '#9ccfd8',
-  gold: '#f6c177',
-  rose: '#ea9a97',
-  iris: '#c4a7e7',
-} satisfies StemPalette
-const CATEGORICAL_PALETTES = new Map<string, StemPalette>([
-  [
-    'rose-pine',
-    {
-      pine: '#31748f',
-      foam: '#9ccfd8',
-      gold: '#f6c177',
-      rose: '#ebbcba',
-      iris: '#c4a7e7',
-    },
-  ],
-  ['rose-pine-moon', DEFAULT_CATEGORICAL_PALETTE],
-  [
-    'rose-pine-dawn',
-    {
-      pine: '#286983',
-      foam: '#56949f',
-      gold: '#ea9d34',
-      rose: '#d7827e',
-      iris: '#907aa9',
-    },
-  ],
-])
+export const CHART_PALETTES = chartPalettes
 
 /**
- * Categorical chart palette of length `count`, sampled evenly across the
- * four-segment HCL arc connecting the five stem waypoints
- * (pine → foam → gold → rose → iris, rotated so `start` is at slot 0).
- *
- * Sample positions: `t = i / (count - 1) * 4` for i = 0..count-1, with
- * `seg = floor(t)` clamped to [0, 3] picking which segment's HCL
- * interpolator to use, and `segT = t - seg` driving the interpolation.
- *
- * Behaviour at common counts:
- *   - count=1: just the start stem (single-fill callers like histogram bars).
- *   - count=2: start stem and the opposite-end stem (maximum hue distance).
- *   - count=5: all five stems exactly, in rotated order.
- *   - count=10: start stem at slot 0, end stem at slot 9, blends between.
- *   - count=N: stems land approximately at boundaries; interpolations fill in.
- *
- * Returns CSS-compatible strings (`#rrggbb` for stems, `rgb(...)` for
- * interpolated colours -- d3 HCL default). Unknown / empty `theme` falls
- * back to moon. `count <= 0` returns `[]`.
+ * Categorical chart palette of length `count`. The 30 approved colours are
+ * emitted as family/level interleaves and repeat deterministically past that
+ * finite pool. Unknown / empty `theme` falls back to moon. `count <= 0`
+ * returns `[]`.
  */
 export function categoricalPalette(
   count: number,
@@ -170,46 +115,21 @@ export function categoricalPalette(
   }
   if (safeCount === 0) return []
 
-  const palette = CATEGORICAL_PALETTES.get(theme) ?? DEFAULT_CATEGORICAL_PALETTE
-
-  // Rotate WAYPOINT_ORDER so `start` is at index 0. Walk continues
-  // forward through pine→foam→gold→rose→iris, wrapping the *waypoint
-  // sequence* (not the colour loop) -- so start=gold gives
-  // gold→rose→iris→pine→foam.
-  const startIdx = WAYPOINT_ORDER.indexOf(start)
+  const palette = Object.hasOwn(CHART_PALETTES, theme)
+    ? CHART_PALETTES[theme as keyof typeof CHART_PALETTES]
+    : DEFAULT_CATEGORICAL_PALETTE
+  const startIdx = FAMILY_ORDER.indexOf(start)
   const rotated =
     startIdx >= 0
-      ? [
-          ...WAYPOINT_ORDER.slice(startIdx),
-          ...WAYPOINT_ORDER.slice(0, startIdx),
-        ]
-      : [...WAYPOINT_ORDER]
-
-  const waypointCount = rotated.length
-  const segmentCount = waypointCount - 1
-  const hexAt = (i: number) => palette[rotated[i]]
-
-  if (safeCount === 1) return [hexAt(0)]
-
-  // Pre-build segment interpolators -- cheaper than calling
-  // interpolateHcl() once per palette slot when callers ask for large N
-  // (e.g. traces with hundreds of colours).
-  const interps = Array.from({ length: segmentCount }, (_, seg) =>
-    interpolateHcl(hexAt(seg), hexAt(seg + 1))
+      ? [...FAMILY_ORDER.slice(startIdx), ...FAMILY_ORDER.slice(0, startIdx)]
+      : [...FAMILY_ORDER]
+  const approvedPool = LEVEL_ORDER.flatMap(level =>
+    rotated.map(family => palette[family][level]!)
   )
 
   const out: string[] = []
   for (let i = 0; i < safeCount; i++) {
-    const t = (i / (safeCount - 1)) * segmentCount
-    const seg = Math.min(Math.floor(t), segmentCount - 1)
-    const segT = t - seg
-    if (segT === 0) {
-      out.push(hexAt(seg))
-    } else if (segT === 1 && seg === segmentCount - 1) {
-      out.push(hexAt(waypointCount - 1))
-    } else {
-      out.push(interps[seg](segT))
-    }
+    out.push(approvedPool[i % approvedPool.length]!)
   }
   return out
 }

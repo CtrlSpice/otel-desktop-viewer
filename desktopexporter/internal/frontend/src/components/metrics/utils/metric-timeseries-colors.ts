@@ -9,8 +9,8 @@ export type TimeseriesColorByKey = Map<string, string>
 /**
  * Assign colours from a stem-rotated pool (from `categoricalPalette`)
  * to an initial visible set. Walks `legendOrder` so slot-filling
- * follows list order; the first assigned key gets `pool[0]` (the
- * metric type's stem colour).
+ * follows list order; the first assigned key gets `pool[0]`, the requested
+ * family’s approved starting swatch.
  */
 export function seedColorAssignments(
   pool: readonly string[],
@@ -27,7 +27,7 @@ export function seedColorAssignments(
   return out
 }
 
-/** First unused colour in `pool` order (pool[0] is the metric-type stem). */
+/** First unused colour in `pool` order, then deterministic reuse when finite. */
 export function acquireColor(
   pool: readonly string[],
   assigned: TimeseriesColorByKey,
@@ -42,7 +42,25 @@ export function acquireColor(
       return color
     }
   }
-  return null
+  if (pool.length === 0) return null
+  const color = pool[assigned.size % pool.length]!
+  assigned.set(key, color)
+  return color
+}
+
+/** Remap assigned keys to corresponding slots in a new theme's palette. */
+export function remapColorAssignments(
+  assigned: TimeseriesColorByKey,
+  previousPool: readonly string[],
+  nextPool: readonly string[]
+): TimeseriesColorByKey {
+  if (nextPool.length === 0) return new Map()
+  return new Map(
+    [...assigned].map(([key, color]) => {
+      const slot = previousPool.indexOf(color)
+      return [key, nextPool[(slot < 0 ? 0 : slot) % nextPool.length]!]
+    })
+  )
 }
 
 export function releaseColor(

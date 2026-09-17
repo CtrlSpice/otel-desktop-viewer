@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="630" viewBox="0 0 860 630" role="img" aria-labelledby="title description">
+<title id="title">Rose Pine Dawn chart palette</title>
+<desc id="description">Six chart-colour families with five swatches each.</desc>
+<style>
+  text { fill: #575279; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .title { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 26px; font-weight: 700; }
+  .family { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 17px; font-weight: 650; }
+</style>
+<rect width="860" height="630" fill="#faf4ed"/>
+<text x="28" y="48" class="title">Rose Pine Dawn chart palette</text>
+<text x="180" y="76">1</text><text x="312" y="76">2</text><text x="444" y="76">3</text><text x="576" y="76">4</text><text x="708" y="76">5</text>
+<text x="28" y="118" class="family">Pine</text>
+<g transform="translate(180 88)">
+  <rect width="112" height="48" rx="8" fill="#01476c"/>
+  <text x="56" y="70" text-anchor="middle">#01476c</text>
+</g>
+<g transform="translate(312 88)">
+  <rect width="112" height="48" rx="8" fill="#185978"/>
+  <text x="56" y="70" text-anchor="middle">#185978</text>
+</g>
+<g transform="translate(444 88)">
+  <rect width="112" height="48" rx="8" fill="#2b6c85"/>
+  <text x="56" y="70" text-anchor="middle">#2b6c85</text>
+</g>
+<g transform="translate(576 88)">
+  <rect width="112" height="48" rx="8" fill="#3d7e91"/>
+  <text x="56" y="70" text-anchor="middle">#3d7e91</text>
+</g>
+<g transform="translate(708 88)">
+  <rect width="112" height="48" rx="8" fill="#4e929e"/>
+  <text x="56" y="70" text-anchor="middle">#4e929e</text>
+</g>
+<text x="28" y="206" class="family">Foam</text>
+<g transform="translate(180 176)">
+  <rect width="112" height="48" rx="8" fill="#097888"/>
+  <text x="56" y="70" text-anchor="middle">#097888</text>
+</g>
+<g transform="translate(312 176)">
+  <rect width="112" height="48" rx="8" fill="#38878f"/>
+  <text x="56" y="70" text-anchor="middle">#38878f</text>
+</g>
+<g transform="translate(444 176)">
+  <rect width="112" height="48" rx="8" fill="#559695"/>
+  <text x="56" y="70" text-anchor="middle">#559695</text>
+</g>
+<g transform="translate(576 176)">
+  <rect width="112" height="48" rx="8" fill="#6fa59c"/>
+  <text x="56" y="70" text-anchor="middle">#6fa59c</text>
+</g>
+<g transform="translate(708 176)">
+  <rect width="112" height="48" rx="8" fill="#88b5a2"/>
+  <text x="56" y="70" text-anchor="middle">#88b5a2</text>
+</g>
+<text x="28" y="294" class="family">Gold</text>
+<g transform="translate(180 264)">
+  <rect width="112" height="48" rx="8" fill="#e39420"/>
+  <text x="56" y="70" text-anchor="middle">#e39420</text>
+</g>
+<g transform="translate(312 264)">
+  <rect width="112" height="48" rx="8" fill="#e9a243"/>
+  <text x="56" y="70" text-anchor="middle">#e9a243</text>
+</g>
+<g transform="translate(444 264)">
+  <rect width="112" height="48" rx="8" fill="#f0af5d"/>
+  <text x="56" y="70" text-anchor="middle">#f0af5d</text>
+</g>
+<g transform="translate(576 264)">
+  <rect width="112" height="48" rx="8" fill="#f7bd74"/>
+  <text x="56" y="70" text-anchor="middle">#f7bd74</text>
+</g>
+<g transform="translate(708 264)">
+  <rect width="112" height="48" rx="8" fill="#fdca8a"/>
+  <text x="56" y="70" text-anchor="middle">#fdca8a</text>
+</g>
+<text x="28" y="382" class="family">Rose</text>
+<g transform="translate(180 352)">
+  <rect width="112" height="48" rx="8" fill="#c3573e"/>
+  <text x="56" y="70" text-anchor="middle">#c3573e</text>
+</g>
+<g transform="translate(312 352)">
+  <rect width="112" height="48" rx="8" fill="#ce6e60"/>
+  <text x="56" y="70" text-anchor="middle">#ce6e60</text>
+</g>
+<g transform="translate(444 352)">
+  <rect width="112" height="48" rx="8" fill="#d88480"/>
+  <text x="56" y="70" text-anchor="middle">#d88480</text>
+</g>
+<g transform="translate(576 352)">
+  <rect width="112" height="48" rx="8" fill="#e199a0"/>
+  <text x="56" y="70" text-anchor="middle">#e199a0</text>
+</g>
+<g transform="translate(708 352)">
+  <rect width="112" height="48" rx="8" fill="#eaaec0"/>
+  <text x="56" y="70" text-anchor="middle">#eaaec0</text>
+</g>
+<text x="28" y="470" class="family">Iris</text>
+<g transform="translate(180 440)">
+  <rect width="112" height="48" rx="8" fill="#7f5090"/>
+  <text x="56" y="70" text-anchor="middle">#7f5090</text>
+</g>
+<g transform="translate(312 440)">
+  <rect width="112" height="48" rx="8" fill="#88679d"/>
+  <text x="56" y="70" text-anchor="middle">#88679d</text>
+</g>
+<g transform="translate(444 440)">
+  <rect width="112" height="48" rx="8" fill="#917cab"/>
+  <text x="56" y="70" text-anchor="middle">#917cab</text>
+</g>
+<g transform="translate(576 440)">
+  <rect width="112" height="48" rx="8" fill="#9993b8"/>
+  <text x="56" y="70" text-anchor="middle">#9993b8</text>
+</g>
+<g transform="translate(708 440)">
+  <rect width="112" height="48" rx="8" fill="#a1a9c5"/>
+  <text x="56" y="70" text-anchor="middle">#a1a9c5</text>
+</g>
+<text x="28" y="558" class="family">Mulberry</text>
+<g transform="translate(180 528)">
+  <rect width="112" height="48" rx="8" fill="#8d273d"/>
+  <text x="56" y="70" text-anchor="middle">#8d273d</text>
+</g>
+<g transform="translate(312 528)">
+  <rect width="112" height="48" rx="8" fill="#9c3f54"/>
+  <text x="56" y="70" text-anchor="middle">#9c3f54</text>
+</g>
+<g transform="translate(444 528)">
+  <rect width="112" height="48" rx="8" fill="#aa546a"/>
+  <text x="56" y="70" text-anchor="middle">#aa546a</text>
+</g>
+<g transform="translate(576 528)">
+  <rect width="112" height="48" rx="8" fill="#b86981"/>
+  <text x="56" y="70" text-anchor="middle">#b86981</text>
+</g>
+<g transform="translate(708 528)">
+  <rect width="112" height="48" rx="8" fill="#c67e99"/>
+  <text x="56" y="70" text-anchor="middle">#c67e99</text>
+</g>
+</svg>
