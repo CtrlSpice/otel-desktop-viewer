@@ -5,6 +5,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
@@ -105,7 +106,10 @@ func storedSpans(ctx context.Context, conn driver.Conn, keys []spanKey) (map[spa
 	dest := make([]driver.Value, 2)
 	for {
 		if err := rows.Next(dest); err != nil {
-			break
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, fmt.Errorf("storedSpans: %w: %w", ErrSpansStoreInternal, err)
 		}
 		traceText, ok1 := dest[0].(string)
 		spanID, ok2 := dest[1].(uint64)
