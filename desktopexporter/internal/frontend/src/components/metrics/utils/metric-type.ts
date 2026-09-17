@@ -15,6 +15,8 @@ const METRIC_TYPE_STEM = {
   ExponentialHistogram: 'gold',
 } satisfies Record<ConfiguredMetricType, CategoricalStem>
 
+type ConfiguredMetricTypeStem = (typeof METRIC_TYPE_STEM)[ConfiguredMetricType]
+
 function isConfiguredMetricType(
   metricType: string
 ): metricType is ConfiguredMetricType {
@@ -31,19 +33,17 @@ function isConfiguredMetricType(
 
 function configuredMetricTypeStem(
   metricType: string
-): CategoricalStem | undefined {
+): ConfiguredMetricTypeStem | undefined {
   return isConfiguredMetricType(metricType)
     ? METRIC_TYPE_STEM[metricType]
     : undefined
 }
 
-const STEM_TO_BADGE: Record<CategoricalStem, string> = {
+const STEM_TO_BADGE: Record<ConfiguredMetricTypeStem, string> = {
   pine: 'badge-secondary',
   foam: 'badge-info',
   gold: 'badge-warning',
   rose: 'badge-rose',
-  iris: 'badge-primary',
-  love: 'badge-rose',
 }
 
 const METRIC_TYPE_BADGE_BASE = 'badge badge-xs badge-soft'

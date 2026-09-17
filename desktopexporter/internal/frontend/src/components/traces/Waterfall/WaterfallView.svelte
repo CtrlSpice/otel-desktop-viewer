@@ -163,10 +163,9 @@
     return services.size > 1
   }
 
-  /** Build a Map<key, color> by folding spans in order. The palette is
-   *  sized to the unique-key count (min 5), so every categorical key gets
-   *  its own colour up to whatever services/span-names the trace contains.
-   *  Iris is the start stem -- first key seen → iris → --color-primary. */
+  /** Build a Map<key, color> by folding spans in order. The palette uses
+   *  finite reviewed colours with deterministic reuse for additional keys.
+   *  Iris is the start stem for the first key seen. */
   function buildColorMap(
     spans: SpanNode[],
     keyFn: (s: SpanData) => string | null,

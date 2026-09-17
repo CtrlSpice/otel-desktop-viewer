@@ -81,6 +81,27 @@ describe('WaterfallView bigint domain geometry', () => {
     })
     expect(rows[1]).toMatchObject({ offsetPercent: 50, widthPercent: 50 })
   })
+
+  it('uses the active Iris-first palette while preserving error semantics', () => {
+    const spans = [
+      spanNode('first', null, 0),
+      spanNode('second', null, 0),
+      spanNode('error', null, 0),
+    ]
+    spans[2]!.spanData.statusCode = 'Error'
+
+    const rows = buildWaterfallRows(
+      spans,
+      getTraceBounds(spans),
+      'rose-pine-dawn'
+    )
+
+    expect(rows.map(row => row.color)).toEqual([
+      '#917cab',
+      '#aa546a',
+      'var(--color-error)',
+    ])
+  })
 })
 
 /** a → b → c → d → e → f: deep enough that the old heuristic collapsed it. */
