@@ -1220,7 +1220,7 @@ func Clear(ctx context.Context, db *sql.DB) error {
 // fires "phantom" FK violations for in-tx cascades. The pinned-conn
 // auto-commit pattern works around it. A retry of DeleteMetricStream
 // completes any remaining stream-table cascade; orphaned dictionary rows
-// are collected later by a successful Clear or retention sweep.
+// are collected by a later SweepOrphans call after Clear or during retention.
 //
 // Returns nil if the stream does not exist (idempotent delete).
 func DeleteMetricStream(ctx context.Context, db *sql.DB, streamID string) error {
