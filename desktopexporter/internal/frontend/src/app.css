@@ -1660,6 +1660,11 @@ button:focus-visible:not(.btn) {
   @apply text-base-content;
 }
 
+/* Detail Fields use a key/type header followed by a full-width value block. */
+.detail-cell__stacked-value {
+  @apply mt-0.5 min-w-0;
+}
+
 /* Badge cell: shrink-to-fit, right-aligned */
 .detail-cell--badges {
   @apply py-1 pr-4 pl-0 text-xs align-middle whitespace-nowrap text-right;
@@ -1953,6 +1958,11 @@ button:focus-visible:not(.btn) {
 /* Item / field / tab counts (xs soft primary). */
 .badge-count {
   @apply badge badge-xs badge-soft badge-primary tabular-nums;
+}
+
+/* Conflict containers retain count semantics but use Daisy's warning palette. */
+.badge-count.badge-warning {
+  @apply badge-warning;
 }
 
 /* Series min / max / avg chips (detail rows + chart overlays). */

@@ -1,39 +1,32 @@
 <script lang="ts">
   import type { Attributes } from '@/types/api-types'
+  import ConflictMarker from './ConflictMarker.svelte'
   import AttributeValueView from './AttributeValue.svelte'
 
   type Props = { attributes: Attributes; owner: string }
   let { attributes, owner }: Props = $props()
-
-  let conflicts = $derived([
-    ...new Set(
-      attributes.filter(attr => attr.hasConflict).map(attr => attr.key)
-    ),
-  ])
 </script>
 
-{#if conflicts.length > 0}
-  <tr class="table-row">
-    <td class="detail-cell">
-      <p class="attribute-rows__conflict" role="alert">
-        <span aria-label="Warning">&#9650;</span> Conflicting typed values for {conflicts.join(
-          ', '
-        )} in {owner}
-      </p>
-    </td>
-  </tr>
-{/if}
 {#each attributes as attribute, index (`${owner}:${attribute.id ?? 'unidentified'}:${index}`)}
   <tr class="table-row">
     <td class="detail-cell">
-      <span class="detail-cell__key"
-        >{attribute.key}
-        <span class="detail-cell__type">({attribute.value.kind})</span>:</span
-      >
-      <AttributeValueView
-        value={attribute.value}
-        path={`${owner}.${attribute.key}`}
-      />
+      <span class="detail-cell__attribute-header">
+        <span class="detail-cell__key"
+          >{attribute.key}
+          <span class="detail-cell__type">({attribute.value.kind})</span>:</span
+        >
+        {#if attribute.hasConflict}
+          <ConflictMarker
+            label={`Conflicting typed values retained for ${attribute.key} in ${owner}.`}
+          />
+        {/if}
+      </span>
+      <div class="detail-cell__attribute-value">
+        <AttributeValueView
+          value={attribute.value}
+          path={`${owner}.${attribute.key}`}
+        />
+      </div>
     </td>
   </tr>
 {/each}
@@ -44,7 +37,13 @@
     color: var(--color-subtle);
     @apply font-normal;
   }
-  .attribute-rows__conflict {
-    @apply m-0 text-xs text-warning;
+  .detail-cell__key {
+    white-space: nowrap;
+  }
+  .detail-cell__attribute-header {
+    @apply inline-flex items-center gap-1;
+  }
+  .detail-cell__attribute-value {
+    @apply mt-0.5 min-w-0;
   }
 </style>

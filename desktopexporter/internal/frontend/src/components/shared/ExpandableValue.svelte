@@ -1,12 +1,10 @@
 <script lang="ts">
   /*
-   * One "key: value" row of a detail panel, laid out so it survives arbitrary
+   * One stacked field of a detail panel, laid out so it survives arbitrary
    * attribute names.
    *
-   * The pair is a wrapping flex row. When key and value both fit, they sit on
-   * one line as before. When they do not, the value moves to its own line and
-   * gets the full width of the pane. Flex decides that, not a measurement, so
-   * it re-decides on every resize for free.
+   * The key/type header and value are deliberately separate blocks. This keeps
+   * a long key legible while reserving the full detail-pane width for its value.
    *
    * The alternative was a fixed key column, and real data rules it out: a k8s
    * annotation key like
@@ -91,18 +89,11 @@
   @reference "../../app.css";
 
   .detail-pair {
-    @apply flex flex-wrap items-baseline;
-    column-gap: 0.375rem;
+    @apply flex min-w-0 flex-col items-stretch gap-0.5;
   }
 
   .detail-pair__value {
-    /* flex-auto, not flex-1: Tailwind's flex-1 is `flex: 1 1 0%`, and a
-       zero basis means the value is always considered to fit beside the key,
-       so it never moves to its own line -- it just wraps in the sliver left
-       over. An auto basis makes flex compare the value's own width against the
-       space remaining, which is the question this layout is asking.
-       min-width: 0 lets it wrap once it is there. */
-    @apply min-w-0 flex-auto text-base-content;
+    @apply min-w-0 w-full text-base-content;
     overflow-wrap: anywhere;
   }
 

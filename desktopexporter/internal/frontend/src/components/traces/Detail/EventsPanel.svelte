@@ -46,6 +46,7 @@
       label={event.name}
       badge={`+${formatDuration(event.timestamp - spanStartTime)}`}
       count={eventFieldCount(event)}
+      detail
       open={isEventOpen(index)}
     >
       <table class="detail-fields w-full" aria-label="Event {event.name}">

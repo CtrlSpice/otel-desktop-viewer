@@ -261,7 +261,12 @@
             a loop, so this span has no place under the root.
           </div>
         {/if}
-        <FieldGroup label="Span" count={spanFieldCount} bind:open={spanOpen}>
+        <FieldGroup
+          label="Span"
+          count={spanFieldCount}
+          detail
+          bind:open={spanOpen}
+        >
           <table class="detail-fields w-full" aria-label="Span fields">
             <tbody>
               {#if detailSearchFieldVisible(columnFilter, 'name')}
@@ -337,12 +342,15 @@
                         >(string)</span
                       >:
                     </span>
-                    <button
-                      type="button"
-                      class="detail-cell__value link link-primary font-mono"
-                      onclick={() => setSpanInQuery(span.parentSpanID!, 'push')}
-                      >{span.parentSpanID}</button
-                    >
+                    <div class="detail-cell__stacked-value">
+                      <button
+                        type="button"
+                        class="detail-cell__value link link-primary font-mono"
+                        onclick={() =>
+                          setSpanInQuery(span.parentSpanID!, 'push')}
+                        >{span.parentSpanID}</button
+                      >
+                    </div>
                   </td>
                 </tr>
               {/if}
@@ -394,6 +402,7 @@
         <FieldGroup
           label="Resource"
           count={resourceFieldCount}
+          detail
           bind:open={resourceOpen}
         >
           <table class="detail-fields w-full" aria-label="Resource attributes">
@@ -415,7 +424,12 @@
           </table>
         </FieldGroup>
 
-        <FieldGroup label="Scope" count={scopeFieldCount} bind:open={scopeOpen}>
+        <FieldGroup
+          label="Scope"
+          count={scopeFieldCount}
+          detail
+          bind:open={scopeOpen}
+        >
           <table class="detail-fields w-full" aria-label="Scope attributes">
             <tbody>
               {#if span.scope.name && detailSearchFieldVisible(columnFilter, 'scope.name')}

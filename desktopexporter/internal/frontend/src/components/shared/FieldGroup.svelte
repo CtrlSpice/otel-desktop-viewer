@@ -14,6 +14,8 @@
     /** Optional badge before the count (e.g. event offset). */
     badge?: string
     count?: number
+    /** Detail panels align headings and field rows to a shared 16px inset. */
+    detail?: boolean
     open?: boolean
     /** When set, parent owns `open` (e.g. a Set membership). */
     onOpenChange?: (open: boolean) => void
@@ -27,6 +29,7 @@
     headerAction,
     badge,
     count,
+    detail = false,
     open = $bindable(true),
     onOpenChange,
     children,
@@ -53,7 +56,11 @@
 {/snippet}
 
 {#if headerAction}
-  <div class="field-group" class:field-group--open={open}>
+  <div
+    class="field-group"
+    class:field-group--detail={detail}
+    class:field-group--open={open}
+  >
     <div class="field-group__header-row">
       {@render headerAction()}
       <button
@@ -82,6 +89,7 @@
 {:else}
   <details
     class="field-group"
+    class:field-group--detail={detail}
     {open}
     ontoggle={e => setOpen((e.currentTarget as HTMLDetailsElement).open)}
   >
@@ -115,6 +123,20 @@
     @apply border-b-0;
     --fg-inline: var(--field-group-inline, 0.75rem);
     --fg-caret-size: 0.875rem;
+  }
+
+  .field-group--detail {
+    --field-group-inline: 1rem;
+  }
+
+  /* The FieldGroup inset is the single horizontal boundary for detail rows. */
+  .field-group--detail
+    .field-group__content
+    :global(.detail-fields .detail-cell),
+  .field-group--detail
+    .field-group__content
+    :global(.detail-fields .detail-cell--badges) {
+    padding-inline: 0;
   }
 
   /* Content aligns with heading inset (icon or label). */

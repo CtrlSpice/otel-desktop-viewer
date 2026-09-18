@@ -102,6 +102,7 @@
         <FieldGroup
           label="Metric"
           count={metricFieldCount}
+          detail
           bind:open={metricOpen}
         >
           <table class="detail-fields w-full" aria-label="Metric fields">
@@ -185,6 +186,7 @@
           label="Resource"
           count={metric.resource.attributes.length +
             (metric.resourceDroppedAttributesCount > 0 ? 1 : 0)}
+          detail
           bind:open={resourceOpen}
         >
           <table class="detail-fields w-full" aria-label="Resource attributes">
@@ -210,6 +212,7 @@
             (metric.scope.name ? 1 : 0) +
             (metric.scope.version ? 1 : 0) +
             (metric.scopeDroppedAttributesCount > 0 ? 1 : 0)}
+          detail
           bind:open={scopeOpen}
         >
           <table class="detail-fields w-full" aria-label="Scope attributes">

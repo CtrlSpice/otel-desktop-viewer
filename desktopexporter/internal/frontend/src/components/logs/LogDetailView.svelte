@@ -95,7 +95,7 @@
     </PaneHeader>
 
     <div class="log-detail-panel__scroll">
-      <FieldGroup label="Log" count={logFieldCount} bind:open={logOpen}>
+      <FieldGroup label="Log" count={logFieldCount} detail bind:open={logOpen}>
         <table class="detail-fields w-full" aria-label="Log fields">
           <tbody>
             <LogField
@@ -185,6 +185,7 @@
       <FieldGroup
         label="Resource"
         count={resourceFieldCount}
+        detail
         bind:open={resourceOpen}
       >
         <table class="detail-fields w-full" aria-label="Resource attributes">
@@ -204,7 +205,12 @@
         </table>
       </FieldGroup>
 
-      <FieldGroup label="Scope" count={scopeFieldCount} bind:open={scopeOpen}>
+      <FieldGroup
+        label="Scope"
+        count={scopeFieldCount}
+        detail
+        bind:open={scopeOpen}
+      >
         <table class="detail-fields w-full" aria-label="Scope attributes">
           <tbody>
             {#if log.scope.name}
