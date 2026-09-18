@@ -3,7 +3,9 @@ package store
 import (
 	"context"
 	"database/sql"
+	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/schema"
@@ -187,14 +189,194 @@ func TestPreVersioningDatabaseIsRefused(t *testing.T) {
 	assert.Contains(t, err.Error(), "legacy.db")
 	require.Equal(t, 1, logs.Len())
 
-	// And it stays unstamped, so a second open reports the same thing rather
-	// than quietly deciding the file is fine.
+	// And its metadata table stays absent, so a second open reports the same
+	// thing rather than quietly deciding the file is fine.
 	raw, err := sql.Open("duckdb", path)
 	require.NoError(t, err)
 	defer raw.Close()
-	var stamped sql.NullInt64
-	require.NoError(t, raw.QueryRow(schema.ReadVersionQuery).Scan(&stamped))
-	assert.False(t, stamped.Valid, "a pre-versioning file must not be stamped on sight")
+	var schemaMetaTables int
+	require.NoError(t, raw.QueryRow(schema.SchemaMetaTableExistsQuery).Scan(&schemaMetaTables))
+	assert.Zero(t, schemaMetaTables, "a pre-versioning file must not be stamped on sight")
+}
+
+func TestIncompatibleDatabaseIsRejectedWithoutMutation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "future.db")
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(schema.VersionTableQuery)
+	require.NoError(t, err)
+	_, err = db.Exec(schema.StampVersionQuery, schema.Version+1)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+	_, err = NewStore(context.Background(), path, zap.NewNop())
+	require.ErrorIs(t, err, ErrSchemaIncompatible)
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, before, after, "rejecting an incompatible database must not mutate its file")
+}
+
+func TestEmptySchemaMetadataIsRejectedWithoutMutation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "empty-schema-meta.db")
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(schema.VersionTableQuery)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+	_, err = NewStore(context.Background(), path, zap.NewNop())
+	require.ErrorIs(t, err, ErrSchemaIncompatible)
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, before, after, "empty metadata must not be stamped as a fresh database")
+}
+
+func TestMalformedSchemaMetadataIsRejected(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "malformed-schema-meta.db")
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(`create table schema_meta (unexpected varchar)`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+	_, err = NewStore(context.Background(), path, zap.NewNop())
+	require.ErrorIs(t, err, ErrSchemaIncompatible)
+	assert.Contains(t, err.Error(), "malformed schema metadata")
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, before, after, "malformed metadata must remain untouched")
+}
+
+func TestSchemaMetadataWithCoercibleVersionIsRejected(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "coercible-schema-meta.db")
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(`create table schema_meta (version varchar, extra integer)`)
+	require.NoError(t, err)
+	_, err = db.Exec(`insert into schema_meta values ('12', 1)`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	_, err = NewStore(context.Background(), path, zap.NewNop())
+	require.ErrorIs(t, err, ErrSchemaIncompatible)
+}
+
+func TestUnversionedTelemetryDatabaseIsRejectedWithoutMutation(t *testing.T) {
+	for table, columns := range map[string]string{
+		"spans": `trace_id uuid, span_id uuid, resource_dropped_attributes_count uinteger,
+			scope_dropped_attributes_count uinteger`,
+		"logs": `trace_id uuid, observed_timestamp bigint, resource_dropped_attributes_count uinteger,
+			scope_dropped_attributes_count uinteger`,
+		"metric_ingests": `id uuid, stream_id uuid`,
+	} {
+		t.Run(table, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "legacy-empty.db")
+			db, err := sql.Open("duckdb", path)
+			require.NoError(t, err)
+			_, err = db.Exec(`create table ` + table + ` (` + columns + `)`)
+			require.NoError(t, err)
+			require.NoError(t, db.Close())
+
+			before, err := os.ReadFile(path)
+			require.NoError(t, err)
+			_, err = NewStore(context.Background(), path, zap.NewNop())
+			require.ErrorIs(t, err, ErrSchemaIncompatible)
+			after, err := os.ReadFile(path)
+			require.NoError(t, err)
+			assert.Equal(t, before, after, "an unversioned telemetry database must remain untouched")
+		})
+	}
+}
+
+func TestCompatibleStampedDatabaseInitializes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "compatible.db")
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(schema.VersionTableQuery)
+	require.NoError(t, err)
+	_, err = db.Exec(schema.StampVersionQuery, schema.Version)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	s, err := NewStore(context.Background(), path, zap.NewNop())
+	require.NoError(t, err)
+	defer s.Close()
+	assert.Equal(t, SchemaOK, s.SchemaCompatibility())
+}
+
+func TestConcurrentFirstOpenStampsOnce(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fresh.db")
+	const openers = 4
+	start := make(chan struct{})
+	errs := make(chan error, openers)
+	var wg sync.WaitGroup
+	for range openers {
+		wg.Go(func() {
+			<-start
+			s, err := NewStore(context.Background(), path, zap.NewNop())
+			if err == nil {
+				err = s.Close()
+			}
+			errs <- err
+		})
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	defer db.Close()
+	var stamps int
+	require.NoError(t, db.QueryRow(`select count(*) from schema_meta`).Scan(&stamps))
+	assert.Equal(t, 1, stamps)
+}
+
+func TestUnrelatedDatabaseInitializes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "unrelated.db")
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(`create table metrics (id integer)`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	s, err := NewStore(context.Background(), path, zap.NewNop())
+	require.NoError(t, err)
+	defer s.Close()
+	assert.Equal(t, SchemaOK, s.SchemaCompatibility())
+
+	var unrelatedTables int
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		return db.QueryRow(`select count(*) from duckdb_tables() where table_name = 'metrics'`).Scan(&unrelatedTables)
+	}))
+	assert.Equal(t, 1, unrelatedTables)
+}
+
+func TestCustomSchemaNamesDoNotAffectCompatibilityInspection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "custom-schema.db")
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(`create schema other`)
+	require.NoError(t, err)
+	_, err = db.Exec(`create table other.spans (id integer)`)
+	require.NoError(t, err)
+	_, err = db.Exec(`create table other.schema_meta (version integer)`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	s, err := NewStore(context.Background(), path, zap.NewNop())
+	require.NoError(t, err)
+	defer s.Close()
+	assert.Equal(t, SchemaOK, s.SchemaCompatibility())
 }
 
 // The version check has to run before the table and index loops.
@@ -230,15 +412,12 @@ func TestVersionCheckRunsBeforeTableCreation(t *testing.T) {
 	core, logs := observer.New(zap.WarnLevel)
 	_, err = NewStore(context.Background(), path, zap.New(core))
 
-	// The open still fails: warn-only means the check explains the failure
-	// rather than preventing it. Enforcement (returning this as an error) is
-	// the switch to flip once the schema settles.
+	// The version check rejects the file before DDL can fail against its old
+	// shape, so callers get the compatibility error rather than an index error.
 	require.Error(t, err, "an incompatible file cannot be opened by this build")
 
-	// The point of the ordering: the version warning is emitted *before* the
-	// failure, so the opaque index error has an explanation attached. With the
-	// check moved after the table/index loops, this open fails identically but
-	// logs nothing -- which is what the mutation check confirms.
+	// The error remains logged with the database and remedy for users who start
+	// the application from an environment that does not display returned errors.
 	require.Equal(t, 1, logs.Len(),
 		"the version warning must be logged before anything builds on the old schema")
 	entry := logs.All()[0].ContextMap()

@@ -86,10 +86,8 @@ type Store struct {
 	// call sites need no guard.
 	logger *zap.Logger
 
-	// Result of the schema version check, set once during NewStore and read
-	// without locking. The warning is logged at open; this is kept so callers
-	// (and the enforcement switch, when it lands) can act on the outcome
-	// rather than parse a message.
+	// Result of the accepted schema version check, set once during NewStore and
+	// read without locking.
 	schemaCompat SchemaCompatibility
 }
 
@@ -134,6 +132,22 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	db.SetMaxOpenConns(maxPoolConns)
 	db.SetMaxIdleConns(maxPoolConns)
 	db.SetConnMaxIdleTime(5 * time.Minute)
+	initialized := false
+	defer func() {
+		if !initialized {
+			_ = db.Close()
+			_ = conn.Close()
+		}
+	}()
+	schemaInitializationMu.Lock()
+	defer schemaInitializationMu.Unlock()
+
+	// Inspect before any application DDL so refusing an incompatible store is
+	// read-only. Only a verified fresh store receives the metadata stamp below.
+	schemaCompat, shouldStamp, err := inspectSchemaVersion(db, dbPath, logger)
+	if err != nil {
+		return nil, err
+	}
 
 	// 1) Create types - ignore "already exists" errors
 	for _, stmt := range queries.Types() {
@@ -144,16 +158,8 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 		}
 	}
 
-	// 2) Check the schema version before creating anything else.
-	//
-	// The ordering is load-bearing, not stylistic. Run after the table and
-	// index loops and an incompatible file fails inside them first --
-	// `create table if not exists` leaves the old table alone, then index
-	// creation dies against a column that does not exist, and the user gets
-	// "failed to create index 4" instead of "this database was written by a
-	// different version".
-	schemaCompat, err := checkSchemaVersion(db, dbPath, logger)
-	if err != nil {
+	// 2) Create and stamp the version metadata only for a verified fresh store.
+	if err := initializeSchemaVersion(db, shouldStamp); err != nil {
 		return nil, err
 	}
 
@@ -190,6 +196,7 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 		return nil, fmt.Errorf("%w while warming the dictionary flush cache: %w", ErrStoreInitFailed, err)
 	}
 
+	initialized = true
 	return &Store{
 		db:           db,
 		conn:         conn,
