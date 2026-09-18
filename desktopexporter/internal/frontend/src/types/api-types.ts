@@ -68,9 +68,24 @@ export type SpanData = {
 }
 
 export type Attribute = {
+  id?: string
   key: string
-  value: string
-  type: string
+  value: AttributeValue
+  hasConflict?: boolean
+}
+
+export type AttributeValue =
+  | { kind: 'empty'; value: null }
+  | { kind: 'string' | 'bytes'; value: string }
+  | { kind: 'bool'; value: boolean }
+  | { kind: 'int64'; value: bigint }
+  | { kind: 'double'; value: number }
+  | { kind: 'array'; value: AttributeValue[] }
+  | { kind: 'map'; value: AttributeMapEntry[]; conflictingKeys?: string[] }
+
+export type AttributeMapEntry = {
+  key: string
+  value: AttributeValue
 }
 
 export type Attributes = Attribute[]
@@ -112,8 +127,7 @@ export type LogData = {
   spanID: string | null
   severityText: string
   severityNumber: number
-  body: string
-  bodyType: string
+  body: AttributeValue
   resource: ResourceData
   scope: ScopeData
   attributes: Attributes
@@ -135,7 +149,7 @@ export type LogData = {
 // separately; consumers that need both fall back to the detail row.
 //
 // `bodyPreview` is server-truncated to the first N characters.
-// Full body, traceID, spanID, and bodyType are available on LogData
+// Full body, traceID, and spanID are available on LogData
 // (fetched on demand for the detail pane).
 export type LogSummary = {
   id: string

@@ -349,7 +349,9 @@ func TestClearTraces(t *testing.T) {
 	// would slip past a non-empty check.
 	attrsBefore := countRows(t, s, ctx, "select count(*) from attributes")
 	assert.Greater(t, attrsBefore, 0)
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from attributes where scope = 'span'"), 0)
+	assert.Greater(t, countRows(t, s, ctx, `
+		select count(*) from spans s, unnest(s.attribute_ids) t(id)
+		join attributes a on a.id = t.id`), 0)
 
 	err = s.WithDBWrite(func(db *sql.DB) error {
 		return spans.Clear(ctx, db)
@@ -511,9 +513,9 @@ func TestTraceSuite(t *testing.T) {
 
 		assert.Equal(t, "string", byScopeType["service.name"])
 		assert.Equal(t, "int64", byScopeType["root.int"])
-		assert.Equal(t, "float64", byScopeType["root.float"])
+		assert.Equal(t, "double", byScopeType["root.float"])
 		assert.Equal(t, "bool", byScopeType["root.bool"])
-		assert.Equal(t, "string[]", byScopeType["root.list"])
+		assert.Equal(t, "array", byScopeType["root.list"])
 	})
 }
 
@@ -1221,7 +1223,7 @@ func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
 			select count(*)
 			from (select unnest(attribute_ids) as id from spans where span_id = ?::ubigint) x
 			join attributes a on a.id = x.id
-			where a.scope = 'span' and a.key in ('span.index', 'flush_test')
+			where a.key in ('span.index', 'flush_test')
 		`, spanID)
 		assert.GreaterOrEqual(t, attrCount, 2, "span %d should have span.index and flush_test attributes", spanIndex)
 	}
@@ -1235,17 +1237,17 @@ func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
 		select count(*)
 		from spans s
 		join resources r on r.id = s.resource_id
-		join (select id, key, scope from attributes) a
+		join (select id, key from attributes) a
 		  on list_contains(r.attribute_ids, a.id)
-		where s.span_id = ?::ubigint and a.scope = 'resource'
+		where s.span_id = ?::ubigint
 	`, span1ID)
 	scopeAttr := countRows(t, s, ctx, `
 		select count(*)
 		from spans s
 		join scopes sc on sc.id = s.scope_id
-		join (select id, key, scope from attributes) a
+		join (select id, key from attributes) a
 		  on list_contains(sc.attribute_ids, a.id)
-		where s.span_id = ?::ubigint and a.scope = 'scope'
+		where s.span_id = ?::ubigint
 	`, span1ID)
 	assert.GreaterOrEqual(t, resAttr, 1)
 	assert.GreaterOrEqual(t, scopeAttr, 1)
@@ -1639,11 +1641,10 @@ func TestSpans_ServiceNameDenormStaysConsistent(t *testing.T) {
 	//
 	// The path to the source of truth changed: there is no longer a
 	// span-keyed resource attribute row to left-join. It resolves through
-	// resource_id -> resources.attribute_ids -> attributes, which the
-	// attr_value macro does in one step. The inner join on resources is safe
+	// resource_id -> resources.attribute_ids -> attributes. The inner join on resources is safe
 	// because spans.resource_id is NOT NULL with an FK -- a span without a
 	// resource cannot exist -- so an inner join here cannot hide a row the
-	// way it would have under the old nullable-owner shape. attr_value
+	// way it would have under the old nullable-owner shape. The scalar subquery
 	// returns NULL when the key is absent, hence the coalesce: spans whose
 	// resource has no service.name must carry '' in the column.
 	var mismatches int
@@ -1651,7 +1652,11 @@ func TestSpans_ServiceNameDenormStaysConsistent(t *testing.T) {
 		return db.QueryRowContext(ctx, `
 			select count(*) from spans s
 			join resources r on r.id = s.resource_id
-			where s.service_name <> coalesce(attr_value(r.attribute_ids, 'service.name'), '')
+			where s.service_name <> coalesce((
+				select json_extract_string(a.value, '$.value')
+				from unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id
+				where a.key = 'service.name'
+			), '')
 		`).Scan(&mismatches)
 	}))
 	assert.Equal(t, 0, mismatches,

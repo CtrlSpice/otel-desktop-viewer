@@ -145,6 +145,7 @@ func createTestLogsPdataN(baseTime int64, n int) plog.Logs {
 	logs := plog.NewLogs()
 	rl := logs.ResourceLogs().AppendEmpty()
 	rl.Resource().Attributes().PutStr("service.name", "test-service")
+	rl.Resource().Attributes().PutStr("service.instance.id", "batch")
 	rl.Resource().Attributes().PutStr("resource.key", "resource.val")
 	sl := rl.ScopeLogs().AppendEmpty()
 	sl.Scope().SetName("test-scope")
@@ -302,8 +303,7 @@ type logEntryJSON struct {
 	SpanID                 string          `json:"spanID"`
 	SeverityText           string          `json:"severityText"`
 	SeverityNumber         int32           `json:"severityNumber"`
-	Body                   string          `json:"body"`
-	BodyType               string          `json:"bodyType"`
+	Body                   taggedValue     `json:"body"`
 	Resource               resourceLogJSON `json:"resource"`
 	Scope                  scopeLogJSON    `json:"scope"`
 	DroppedAttributesCount uint32          `json:"droppedAttributesCount"`
@@ -325,14 +325,30 @@ type scopeLogJSON struct {
 }
 
 type attrKeyValue struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
-	Type  string `json:"type"`
+	Key   string      `json:"key"`
+	Value taggedValue `json:"value"`
+}
+
+type taggedValue struct {
+	Kind  string          `json:"kind"`
+	Value json.RawMessage `json:"value"`
+}
+
+func stringValue(s string) taggedValue {
+	return taggedValue{Kind: "string", Value: json.RawMessage(strconv.Quote(s))}
+}
+
+func intValue(s string) taggedValue {
+	return taggedValue{Kind: "int64", Value: json.RawMessage(strconv.Quote(s))}
+}
+
+func doubleValue(s string) taggedValue {
+	return taggedValue{Kind: "double", Value: json.RawMessage(s)}
 }
 
 // attrMap returns a map key -> value for easier assertions.
-func attrMap(attrs []attrKeyValue) map[string]string {
-	m := make(map[string]string)
+func attrMap(attrs []attrKeyValue) map[string]taggedValue {
+	m := make(map[string]taggedValue)
 	for _, a := range attrs {
 		m[a.Key] = a.Value
 	}
@@ -396,7 +412,7 @@ func TestLogSpanIDsRoundTripAndEmptyIsNull(t *testing.T) {
 	} {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 			var id string
-			if err := db.QueryRow(`select id::varchar from logs where body = ?`, tc.body).Scan(&id); err != nil {
+			if err := db.QueryRow(`select id::varchar from logs where body = json_object('kind', 'string', 'value', ?)`, tc.body).Scan(&id); err != nil {
 				return nil, err
 			}
 			return logs.Get(ctx, db, id)
@@ -455,7 +471,9 @@ func TestClearLogs(t *testing.T) {
 	// of the dictionary would still be caught.
 	attrsBefore := countRows(t, s, ctx, "select count(*) from attributes")
 	assert.Greater(t, attrsBefore, 0)
-	assert.Greater(t, countRows(t, s, ctx, "select count(*) from attributes where scope = 'log'"), 0)
+	assert.Greater(t, countRows(t, s, ctx, `
+		select count(*) from logs l, unnest(l.attribute_ids) t(id)
+		join attributes a on a.id = t.id`), 0)
 
 	err = s.WithDBWrite(func(db *sql.DB) error {
 		return logs.Clear(ctx, db)
@@ -521,11 +539,11 @@ func TestLogSuite(t *testing.T) {
 	t.Run("LogBodyFromDetail", func(t *testing.T) {
 		entries := searchLogsAll(t, s, ctx)
 		full0 := getLogFull(t, s, ctx, entries[0].ID)
-		assert.Equal(t, "Operation failed", full0.Body)
+		assert.Equal(t, stringValue("Operation failed"), full0.Body)
 		full1 := getLogFull(t, s, ctx, entries[1].ID)
-		assert.Equal(t, "Operation warning", full1.Body)
+		assert.Equal(t, stringValue("Operation warning"), full1.Body)
 		full2 := getLogFull(t, s, ctx, entries[2].ID)
-		assert.Contains(t, full2.Body, "Operation started")
+		assert.Equal(t, "map", full2.Body.Kind)
 	})
 
 	t.Run("LogServiceNameFromSummary", func(t *testing.T) {
@@ -558,8 +576,8 @@ func TestLogSuite(t *testing.T) {
 		entries := searchLogsAll(t, s, ctx)
 		full0 := getLogFull(t, s, ctx, entries[0].ID)
 		resMap := attrMap(full0.Resource.Attributes)
-		assert.Equal(t, "test-service", resMap["service.name"])
-		assert.Equal(t, "1.0.0", resMap["service.version"])
+		assert.Equal(t, stringValue("test-service"), resMap["service.name"])
+		assert.Equal(t, stringValue("1.0.0"), resMap["service.version"])
 		full2 := getLogFull(t, s, ctx, entries[2].ID)
 		assert.Equal(t, uint32(0), full2.Resource.DroppedAttributesCount)
 	})
@@ -577,17 +595,17 @@ func TestLogSuite(t *testing.T) {
 		entries := searchLogsAll(t, s, ctx)
 		full0 := getLogFull(t, s, ctx, entries[0].ID)
 		attrs0 := attrMap(full0.Attributes)
-		assert.Equal(t, "log-b", attrs0["log.string"])
-		assert.Equal(t, "24", attrs0["log.int"])
-		assert.Equal(t, "2.71", attrs0["log.float"])
-		assert.Equal(t, "false", attrs0["log.bool"])
+		assert.Equal(t, stringValue("log-b"), attrs0["log.string"])
+		assert.Equal(t, intValue("24"), attrs0["log.int"])
+		assert.Equal(t, doubleValue("2.71"), attrs0["log.float"])
+		assert.Equal(t, taggedValue{Kind: "bool", Value: json.RawMessage("false")}, attrs0["log.bool"])
 
 		full2 := getLogFull(t, s, ctx, entries[2].ID)
 		attrs2 := attrMap(full2.Attributes)
-		assert.Equal(t, "log-a", attrs2["log.string"])
-		assert.Equal(t, "42", attrs2["log.int"])
-		assert.Equal(t, "3.14", attrs2["log.float"])
-		assert.Equal(t, "true", attrs2["log.bool"])
+		assert.Equal(t, stringValue("log-a"), attrs2["log.string"])
+		assert.Equal(t, intValue("42"), attrs2["log.int"])
+		assert.Equal(t, doubleValue("3.14"), attrs2["log.float"])
+		assert.Equal(t, taggedValue{Kind: "bool", Value: json.RawMessage("true")}, attrs2["log.bool"])
 	})
 
 	t.Run("LogMetadata", func(t *testing.T) {
@@ -649,10 +667,9 @@ func TestGetLogAttributes(t *testing.T) {
 	// on both, so their relative order is not something the function promises.
 	assert.ElementsMatch(t, []attributeDef{
 		{Name: "log.bool", AttributeScope: "log", Type: "bool"},
-		{Name: "log.float", AttributeScope: "log", Type: "float64"},
+		{Name: "log.float", AttributeScope: "log", Type: "double"},
 		{Name: "log.int", AttributeScope: "log", Type: "int64"},
-		{Name: "log.list", AttributeScope: "log", Type: "string[]"},
-		{Name: "log.list", AttributeScope: "log", Type: "int64[]"},
+		{Name: "log.list", AttributeScope: "log", Type: "array"},
 		{Name: "log.string", AttributeScope: "log", Type: "string"},
 		{Name: "service.name", AttributeScope: "resource", Type: "string"},
 		{Name: "service.version", AttributeScope: "resource", Type: "string"},
@@ -745,7 +762,9 @@ func TestIngestLogs_LargeBatchStaysConsistent(t *testing.T) {
 	for _, e := range entries {
 		full := getLogFull(t, s, ctx, e.ID)
 		m := attrMap(full.Attributes)
-		byIndex[m["log.index"]] = full
+		var index string
+		require.NoError(t, json.Unmarshal(m["log.index"].Value, &index))
+		byIndex[index] = full
 	}
 
 	// Assert attributes on first (before any flush), 99th (before flush at 100), 100th (at flush), 249th (after multiple flushes).
@@ -753,13 +772,13 @@ func TestIngestLogs_LargeBatchStaysConsistent(t *testing.T) {
 		e, ok := byIndex[idx]
 		assert.True(t, ok, "entry with log.index %s", idx)
 		resourceAttrs := attrMap(e.Resource.Attributes)
-		assert.Equal(t, "test-service", resourceAttrs["service.name"], "resource.service.name for index %s", idx)
-		assert.Equal(t, "resource.val", resourceAttrs["resource.key"], "resource.key for index %s", idx)
+		assert.Equal(t, stringValue("test-service"), resourceAttrs["service.name"], "resource.service.name for index %s", idx)
+		assert.Equal(t, stringValue("resource.val"), resourceAttrs["resource.key"], "resource.key for index %s", idx)
 		scopeAttrs := attrMap(e.Scope.Attributes)
-		assert.Equal(t, "scope.val", scopeAttrs["scope.key"], "scope.key for index %s", idx)
+		assert.Equal(t, stringValue("scope.val"), scopeAttrs["scope.key"], "scope.key for index %s", idx)
 		logAttrs := attrMap(e.Attributes)
-		assert.Equal(t, idx, logAttrs["log.index"], "log.index for index %s", idx)
-		assert.Equal(t, "ok", logAttrs["flush_test"], "flush_test for index %s", idx)
+		assert.Equal(t, stringValue(idx), logAttrs["log.index"], "log.index for index %s", idx)
+		assert.Equal(t, stringValue("ok"), logAttrs["flush_test"], "flush_test for index %s", idx)
 	}
 }
 
@@ -1236,7 +1255,7 @@ func TestSearchLogs(t *testing.T) {
 		entries := parseSummaries(raw)
 		assert.Len(t, entries, 1)
 		full := getLogFull(t, s, ctx, entries[0].ID)
-		assert.Equal(t, "log-b", attrMap(full.Attributes)["log.string"])
+		assert.Equal(t, stringValue("log-b"), attrMap(full.Attributes)["log.string"])
 	})
 
 	t.Run("Attribute_Resource", func(t *testing.T) {
@@ -1285,14 +1304,18 @@ func TestLogs_ServiceNameDenormStaysConsistent(t *testing.T) {
 
 	// The path to the source of truth changed with the dictionary: there is no
 	// log-keyed resource attribute row left to left-join, so it resolves through
-	// resource_id -> resources.attribute_ids -> attributes, which attr_value
-	// does in one step. logs.resource_id is NOT NULL with an FK, so the inner
-	// join cannot drop a row; attr_value yields NULL for an absent key, hence
-	// the coalesce against the column's '' default. Mirrors the spans test.
+	// resource_id -> resources.attribute_ids -> attributes. logs.resource_id is
+	// NOT NULL with an FK, so the inner join cannot drop a row; the scalar
+	// subquery yields NULL for an absent key, hence the coalesce against the
+	// column's '' default. Mirrors the spans test.
 	mismatches := countRows(t, s, ctx, `
 		select count(*) from logs l
 		join resources r on r.id = l.resource_id
-		where l.service_name <> coalesce(attr_value(r.attribute_ids, 'service.name'), '')
+		where l.service_name <> coalesce((
+			select json_extract_string(a.value, '$.value')
+			from unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id
+			where a.key = 'service.name'
+		), '')
 	`)
 	assert.Equal(t, 0, mismatches,
 		"logs.service_name must equal the source resource attribute (or '' when absent)")

@@ -6,6 +6,7 @@
   import { SPAN_PARAM } from '@/route/query-params'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import Alert02Icon from '@hugeicons/core-free-icons/Alert02Icon'
+  import AttributeRows from '@/components/shared/AttributeRows.svelte'
 
   type Props = {
     links: LinkData[]
@@ -99,13 +100,10 @@
           fieldValue={link.traceState}
           fieldType="string"
         />
-        {#each link.attributes as attr (attr.key)}
-          <SpanField
-            fieldName={attr.key}
-            fieldValue={attr.value}
-            fieldType={attr.type}
-          />
-        {/each}
+        <AttributeRows
+          attributes={link.attributes}
+          owner={`link ${index + 1}`}
+        />
         {#if link.flags > 0}
           <SpanField
             fieldName="flags"

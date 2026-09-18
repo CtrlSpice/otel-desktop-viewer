@@ -13,9 +13,7 @@
 -- non-ASCII in a VARCHAR->BLOB cast.
 --
 -- Verified against an independent shasum on ASCII and UTF-8 input.
-create or replace macro attr_frame(k, v, t, s) as (
+create or replace macro attr_frame(k, v) as (
 		strlen(k)::varchar || ':' || k ||
-		strlen(v)::varchar || ':' || v ||
-		strlen(t)::varchar || ':' || t ||
-		strlen(s)::varchar || ':' || s
+		strlen(v)::varchar || ':' || v
 	)

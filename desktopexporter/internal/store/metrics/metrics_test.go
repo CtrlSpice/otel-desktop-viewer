@@ -1365,13 +1365,16 @@ func TestMetricStreams_ServiceNameDenormStaysConsistent(t *testing.T) {
 	//
 	// The source of truth moved: the resource attribute is no longer a row
 	// owned by the ingest batch, it is an id in the referenced resources row's
-	// array. attr_value resolves it, which is the same macro the search mappers
-	// use -- so this also pins that the macro agrees with what ingest wrote.
+	// array. Resolve it directly so the test asserts the stored source of truth.
 	mismatches := countRows(t, s, ctx, `
 		select count(*) from metric_streams s
 		join metric_ingests mi on mi.stream_id = s.id
 		join resources r on r.id = mi.resource_id
-		where s.service_name <> coalesce(attr_value(r.attribute_ids, 'service.name'), '')
+		where s.service_name <> coalesce((
+			select json_extract_string(a.value, '$.value')
+			from unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id
+			where a.key = 'service.name'
+		), '')
 	`)
 	assert.Equal(t, 0, mismatches,
 		"metric_streams.service_name must equal the source resource attribute")
@@ -1687,7 +1690,7 @@ func TestIngestMetrics_LargeBatchStaysConsistent(t *testing.T) {
 		for _, a := range attrs {
 			kv, _ := a.(map[string]any)
 			if k, _ := kv["key"].(string); k == "resource.key" {
-				resourceKey, _ = kv["value"].(string)
+				resourceKey, _ = kv["value"].(map[string]any)["value"].(string)
 				break
 			}
 		}
@@ -1699,7 +1702,7 @@ func TestIngestMetrics_LargeBatchStaysConsistent(t *testing.T) {
 		for _, a := range scopeAttrs {
 			kv, _ := a.(map[string]any)
 			if k, _ := kv["key"].(string); k == "scope.key" {
-				scopeKey, _ = kv["value"].(string)
+				scopeKey, _ = kv["value"].(map[string]any)["value"].(string)
 				break
 			}
 		}
@@ -2419,7 +2422,7 @@ func TestGetMetric_MergedSeriesKeepTheirLabels(t *testing.T) {
 		for _, a := range attrs {
 			m := a.(map[string]any)
 			if m["key"] == "driver" {
-				drivers[m["value"].(string)] = true
+				drivers[m["value"].(map[string]any)["value"].(string)] = true
 			}
 		}
 	}
@@ -2503,7 +2506,7 @@ func TestGetMetric_ScalarViewBuckets(t *testing.T) {
 		var pod string
 		for _, a := range ts["attributes"].([]any) {
 			if a.(map[string]any)["key"] == "pod" {
-				pod = a.(map[string]any)["value"].(string)
+				pod = a.(map[string]any)["value"].(map[string]any)["value"].(string)
 			}
 		}
 		v, _ := ts["views"].([]any)
@@ -3365,7 +3368,7 @@ func TestGetMetric_Deterministic(t *testing.T) {
 			var pod string
 			for _, a := range ts["attributes"].([]any) {
 				if a.(map[string]any)["key"] == "pod" {
-					pod = a.(map[string]any)["value"].(string)
+					pod = a.(map[string]any)["value"].(map[string]any)["value"].(string)
 				}
 			}
 			for _, dp := range ts["datapoints"].([]any) {
@@ -3598,7 +3601,7 @@ func TestGetMetric_ScalarPoolAggregate(t *testing.T) {
 		for _, a := range ts["attributes"].([]any) {
 			attr := a.(map[string]any)
 			if attr["key"] == "pod" {
-				idByPod[attr["value"].(string)] = ts["attributesKey"].(string)
+				idByPod[attr["value"].(map[string]any)["value"].(string)] = ts["attributesKey"].(string)
 			}
 		}
 	}
@@ -6024,12 +6027,15 @@ func TestMetricMetadataRoundTrip(t *testing.T) {
 
 	meta, ok := got["metadata"].([]any)
 	require.True(t, ok, "metadata must be present on the wire, got %T", got["metadata"])
-	pairs := map[string]string{}
+	pairs := map[string]map[string]any{}
 	for _, e := range meta {
 		a := e.(map[string]any)
-		pairs[a["key"].(string)] = a["value"].(string)
+		pairs[a["key"].(string)] = a["value"].(map[string]any)
 	}
-	require.Equal(t, map[string]string{"owner": "checkout-team", "slo": "99.9"}, pairs)
+	require.Equal(t, map[string]map[string]any{
+		"owner": {"kind": "string", "value": "checkout-team"},
+		"slo":   {"kind": "string", "value": "99.9"},
+	}, pairs)
 
 	// The datapoint's own label must not have leaked into metadata, and vice
 	// versa: they are different maps under different scopes.
@@ -6038,8 +6044,9 @@ func TestMetricMetadataRoundTrip(t *testing.T) {
 	// Stored under its own scope...
 	var n int
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		return db.QueryRow(
-			`select count(*) from attributes where scope = 'metadata'`).Scan(&n)
+		return db.QueryRow(`
+			select count(*) from metric_ingests m, unnest(m.metadata_ids) t(id)
+			join attributes a on a.id = t.id`).Scan(&n)
 	}))
 	require.Equal(t, 2, n, "both metadata attributes belong to the metadata scope")
 

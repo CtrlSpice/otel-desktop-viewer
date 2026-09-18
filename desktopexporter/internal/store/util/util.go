@@ -1,14 +1,98 @@
 package util
 
 import (
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"math"
+	"sort"
 	"strconv"
 	"strings"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 )
+
+// EncodeValue renders one received OTel value as the canonical recursive wire
+// representation. Map entries are sorted for identity because received map
+// order is not semantic; slices retain their received order.
+func EncodeValue(v pcommon.Value) ([]byte, error) {
+	value, err := encodeValuePayload(v)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(struct {
+		Kind  string `json:"kind"`
+		Value any    `json:"value"`
+	}{Kind: value.kind, Value: value.value})
+}
+
+type encodedValue struct {
+	kind  string
+	value any
+}
+
+func encodeValuePayload(v pcommon.Value) (encodedValue, error) {
+	switch v.Type() {
+	case pcommon.ValueTypeEmpty:
+		return encodedValue{kind: "empty", value: nil}, nil
+	case pcommon.ValueTypeStr:
+		return encodedValue{kind: "string", value: v.Str()}, nil
+	case pcommon.ValueTypeBool:
+		return encodedValue{kind: "bool", value: v.Bool()}, nil
+	case pcommon.ValueTypeInt:
+		return encodedValue{kind: "int64", value: strconv.FormatInt(v.Int(), 10)}, nil
+	case pcommon.ValueTypeDouble:
+		n := v.Double()
+		bits := math.Float64bits(n)
+		if n == 0 && math.Signbit(n) || math.IsInf(n, 0) || math.IsNaN(n) {
+			return encodedValue{kind: "double", value: fmt.Sprintf("0x%016x", bits)}, nil
+		}
+		return encodedValue{kind: "double", value: n}, nil
+	case pcommon.ValueTypeBytes:
+		return encodedValue{kind: "bytes", value: base64.StdEncoding.EncodeToString(v.Bytes().AsRaw())}, nil
+	case pcommon.ValueTypeSlice:
+		slice := v.Slice()
+		values := make([]json.RawMessage, 0, slice.Len())
+		for i := 0; i < slice.Len(); i++ {
+			child, err := EncodeValue(slice.At(i))
+			if err != nil {
+				return encodedValue{}, err
+			}
+			values = append(values, child)
+		}
+		return encodedValue{kind: "array", value: values}, nil
+	case pcommon.ValueTypeMap:
+		type mapEntry struct {
+			Key   string          `json:"key"`
+			Value json.RawMessage `json:"value"`
+		}
+		values := make([]mapEntry, 0, v.Map().Len())
+		var encodeErr error
+		v.Map().Range(func(key string, child pcommon.Value) bool {
+			encoded, err := EncodeValue(child)
+			if err != nil {
+				encodeErr = err
+				return false
+			}
+			values = append(values, mapEntry{Key: key, Value: encoded})
+			return true
+		})
+		if encodeErr != nil {
+			return encodedValue{}, encodeErr
+		}
+		sort.SliceStable(values, func(i, j int) bool {
+			if values[i].Key != values[j].Key {
+				return values[i].Key < values[j].Key
+			}
+			return string(values[i].Value) < string(values[j].Value)
+		})
+		return encodedValue{kind: "map", value: values}, nil
+	default:
+		return encodedValue{}, fmt.Errorf("unsupported OpenTelemetry value kind %d", v.Type())
+	}
+}
 
 // SpanIDUint64 converts an OTLP 8-byte span ID to its native integer value.
 func SpanIDUint64(id [8]byte) uint64 {

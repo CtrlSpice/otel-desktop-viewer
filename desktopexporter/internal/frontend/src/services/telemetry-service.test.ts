@@ -10,6 +10,7 @@ import { SPAN_FIELDS, type FieldDefinition } from '@/constants/fields'
 import { OPERATORS } from '@/constants/operators'
 import type {
   JsonMetricData,
+  JsonLogData,
   JsonTraceData,
   JsonTraceSummary,
 } from '@/types/wire-types'
@@ -105,6 +106,40 @@ describe('request cancellation', () => {
       '/rpc',
       expect.objectContaining({ signal: controller.signal })
     )
+  })
+})
+
+describe('telemetryAPI.getLog', () => {
+  it('revives an int64 body value as bigint', async () => {
+    const result: JsonLogData = {
+      id: 'log-1',
+      timestamp: '100',
+      observedTimestamp: '101',
+      traceID: null,
+      spanID: null,
+      severityText: 'INFO',
+      severityNumber: 9,
+      body: { kind: 'int64', value: '9223372036854775807' },
+      resource: { attributes: [], droppedAttributesCount: 0 },
+      scope: {
+        name: '',
+        version: '',
+        attributes: [],
+        droppedAttributesCount: 0,
+      },
+      droppedAttributesCount: 0,
+      flags: 0,
+      eventName: '',
+      attributes: [],
+    }
+    stubRpcResult(result)
+
+    const log = await telemetryAPI.getLog('log-1')
+
+    expect(log.body).toEqual({
+      kind: 'int64',
+      value: 9_223_372_036_854_775_807n,
+    })
   })
 })
 
@@ -287,6 +322,99 @@ describe('telemetryAPI.getMetric', () => {
       }),
     ])
   })
+
+  it('decodes recursive attribute int64 values and exceptional double bits once', async () => {
+    stubRpcResult(
+      metricResult({
+        metadata: [
+          {
+            id: 'metadata-1',
+            key: 'payload',
+            value: {
+              kind: 'map',
+              value: [
+                {
+                  key: 'count',
+                  value: { kind: 'int64', value: '9223372036854775807' },
+                },
+                {
+                  key: 'negativeZero',
+                  value: { kind: 'double', value: '0x8000000000000000' },
+                },
+                {
+                  key: 'list',
+                  value: {
+                    kind: 'array',
+                    value: [{ kind: 'double', value: '0x7ff0000000000000' }],
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      })
+    )
+
+    const value = (await telemetryAPI.getMetric('some-stream', 0, 1))!
+      .metadata[0]!.value
+    expect(value).toMatchObject({ kind: 'map' })
+    if (value.kind !== 'map') throw new Error('Expected a map value')
+    expect(value.value[0]!.value).toEqual({
+      kind: 'int64',
+      value: 9_223_372_036_854_775_807n,
+    })
+    expect(
+      Object.is((value.value[1]!.value as { value: number }).value, -0)
+    ).toBe(true)
+    expect(
+      (value.value[2]!.value as { value: { value: number }[] }).value[0]!.value
+    ).toBe(Number.POSITIVE_INFINITY)
+  })
+
+  it('detects distinct exceptional-double conflicts before decoding', async () => {
+    stubRpcResult(
+      metricResult({
+        metadata: [
+          {
+            id: 'metadata-1',
+            key: 'payload',
+            value: { kind: 'double', value: '0x7ff8000000000001' },
+          },
+          {
+            id: 'metadata-2',
+            key: 'payload',
+            value: { kind: 'double', value: '0x7ff8000000000002' },
+          },
+          {
+            id: 'metadata-3',
+            key: 'nested',
+            value: {
+              kind: 'map',
+              value: [
+                {
+                  key: 'payload',
+                  value: { kind: 'double', value: '0x7ff8000000000001' },
+                },
+                {
+                  key: 'payload',
+                  value: { kind: 'double', value: '0x7ff8000000000002' },
+                },
+              ],
+            },
+          },
+        ],
+      })
+    )
+
+    const metadata = (await telemetryAPI.getMetric('some-stream', 0, 1))!
+      .metadata
+    expect(metadata[0]!.hasConflict).toBe(true)
+    expect(metadata[1]!.hasConflict).toBe(true)
+    expect(metadata[2]!.value).toMatchObject({
+      kind: 'map',
+      conflictingKeys: ['payload'],
+    })
+  })
 })
 
 describe('telemetryAPI.searchTraces', () => {
@@ -376,13 +504,21 @@ describe('telemetryAPI.searchSpans rehydration', () => {
     resources: {
       '7': {
         attributes: [
-          { key: 'service.name', value: 'checkout', type: 'string' },
+          {
+            id: 'resource-checkout',
+            key: 'service.name',
+            value: { kind: 'string', value: 'checkout' },
+          },
         ],
         droppedAttributesCount: 0,
       },
       '9': {
         attributes: [
-          { key: 'service.name', value: 'payments', type: 'string' },
+          {
+            id: 'resource-payments',
+            key: 'service.name',
+            value: { kind: 'string', value: 'payments' },
+          },
         ],
         droppedAttributesCount: 2,
       },
@@ -463,12 +599,14 @@ describe('telemetryAPI.searchSpans rehydration', () => {
     const trace = await fetchTrace()
     // Two spans, two different resources -- a decoder that ignored `r` would
     // still look plausible if every span shared one.
-    expect(trace.spans[0].spanData.resource.attributes[0].value).toBe(
-      'checkout'
-    )
-    expect(trace.spans[1].spanData.resource.attributes[0].value).toBe(
-      'payments'
-    )
+    expect(trace.spans[0].spanData.resource.attributes[0].value).toEqual({
+      kind: 'string',
+      value: 'checkout',
+    })
+    expect(trace.spans[1].spanData.resource.attributes[0].value).toEqual({
+      kind: 'string',
+      value: 'payments',
+    })
     expect(trace.spans[1].spanData.resource.droppedAttributesCount).toBe(2)
   })
 

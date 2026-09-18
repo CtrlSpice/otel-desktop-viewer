@@ -7,12 +7,13 @@ const series = (
   resourceAttrs: Array<[string, string]>
 ): MetricTimeseries => ({
   attributesKey: key,
-  attributes: [{ key: 'http.route', value: '/checkout', type: 'string' }],
+  attributes: [
+    { key: 'http.route', value: { kind: 'string', value: '/checkout' } },
+  ],
   resource: {
     attributes: resourceAttrs.map(([k, v]) => ({
       key: k,
-      value: v,
-      type: 'string',
+      value: { kind: 'string', value: v },
     })),
     droppedAttributesCount: 0,
   },
@@ -40,10 +41,10 @@ describe('distinguishingResourceAttributes', () => {
       ]),
     ])
     expect(got.get('a')).toEqual([
-      { key: 'host.name', value: 'pod-a', type: 'string' },
+      { key: 'host.name', value: { kind: 'string', value: 'pod-a' } },
     ])
     expect(got.get('b')).toEqual([
-      { key: 'host.name', value: 'pod-b', type: 'string' },
+      { key: 'host.name', value: { kind: 'string', value: 'pod-b' } },
     ])
   })
 

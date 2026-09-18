@@ -10,6 +10,7 @@
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import { formatMetricValuePlain } from '@/components/metrics/utils/format-metric-value'
   import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
+  import { attributeValueLabel } from '@/components/shared/attribute-label'
   import DetailNav from '@/components/shared/DetailNav.svelte'
   import { itemHref, navigateToItem } from '@/route'
   import { SPAN_PARAM } from '@/route/query-params'
@@ -407,9 +408,9 @@
                 {:else if ex.spanID}
                   <span class="dp-list__detail-value">span: {ex.spanID}</span>
                 {/if}
-                {#each dedupeAttributes(ex.filteredAttributes) as attr (attr.key)}
+                {#each dedupeAttributes(ex.filteredAttributes) as attr, attributeIndex (`exemplar:${i}:${attr.id ?? 'unidentified'}:${attributeIndex}`)}
                   <span class="dp-list__detail-value"
-                    >{attr.key}: {attr.value}</span
+                    >{attr.key}: {attributeValueLabel(attr.value)}</span
                   >
                 {/each}
               </div>

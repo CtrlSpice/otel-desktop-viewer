@@ -15,9 +15,23 @@
 // not an oversight in these types.
 
 export type JsonAttribute = {
+  id?: string
   key: string
-  value: string
-  type: string
+  value: JsonAttributeValue
+}
+
+export type JsonAttributeValue =
+  | { kind: 'empty'; value: null }
+  | { kind: 'string' | 'bytes'; value: string }
+  | { kind: 'bool'; value: boolean }
+  | { kind: 'int64'; value: string }
+  | { kind: 'double'; value: number | string }
+  | { kind: 'array'; value: JsonAttributeValue[] }
+  | { kind: 'map'; value: JsonAttributeMapEntry[] }
+
+export type JsonAttributeMapEntry = {
+  key: string
+  value: JsonAttributeValue
 }
 
 export type JsonResourceData = {
@@ -186,8 +200,7 @@ export type JsonLogData = {
   spanID: string | null
   severityText: string
   severityNumber: number
-  body: string
-  bodyType: string
+  body: JsonAttributeValue
   resource: JsonResourceData
   scope: JsonScopeData
   droppedAttributesCount: number

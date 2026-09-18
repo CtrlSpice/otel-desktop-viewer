@@ -5,7 +5,7 @@
 -- identity, not presentation, so display order is imposed here.
 create or replace macro attrs_json(ids) as (
 		coalesce((
-			select to_json(list(json_object('key', a.key, 'value', a.value, 'type', a.type::varchar)
+		select to_json(list(json_object('id', a.id::varchar, 'key', a.key, 'value', a.value)
 			                    order by a.key, a.id))
 			from unnest(ids) as t(aid)
 			join attributes a on a.id = t.aid

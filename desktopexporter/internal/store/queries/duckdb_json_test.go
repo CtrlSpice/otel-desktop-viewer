@@ -41,3 +41,14 @@ func TestBucketStartTypePrecision(t *testing.T) {
 		assert.NotContains(t, val, "e+", "varchar cast must not produce scientific notation")
 	}
 }
+
+func TestJSONEachExtractsNestedValueKeys(t *testing.T) {
+	db := macroDB(t)
+
+	var keys string
+	require.NoError(t, db.QueryRow(`
+		select string_agg(json_extract_string(entry.value, '$.key'), ',' order by entry.key)
+		from json_each(json('{"kind":"map","value":[{"key":"first","value":{"kind":"int64","value":"1"}},{"key":"second","value":{"kind":"array","value":[]}}]}'), '$.value') entry
+	`).Scan(&keys))
+	assert.Equal(t, "first,second", keys)
+}

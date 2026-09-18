@@ -31,10 +31,13 @@ import type {
   JsonAttributeType,
   JsonQueryNode,
   JsonAttributeMatch,
+  JsonAttribute,
+  JsonAttributeValue,
   JsonMetricAggregateEnvelope,
   JsonScalarAggregate,
   JsonScalarViewBucket,
 } from '@/types/wire-types'
+import type { Attribute, AttributeValue } from '@/types/api-types'
 import type { QueryNode } from '@/components/shared/Search/queryTree'
 import type { FieldDefinition, FieldType } from '@/constants/fields'
 import { getOperatorsForFieldType } from '@/constants/operators'
@@ -125,6 +128,67 @@ function bigintFromWire(value: unknown): bigint {
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Accepts null; otherwise delegates to the validating wire decoder.
 function nullableBigintFromWire(value: unknown): bigint | null {
   return value === null ? null : bigintFromWire(value)
+}
+
+function doubleFromWire(value: number | string): number {
+  if (typeof value === 'number') return value
+  if (!/^0x[0-9a-f]{16}$/i.test(value)) {
+    throw new Error(`Invalid double wire value: ${value}`)
+  }
+  const bytes = new ArrayBuffer(8)
+  const view = new DataView(bytes)
+  view.setBigUint64(0, BigInt(value), false)
+  return view.getFloat64(0, false)
+}
+
+function attributeValueFromJSON(value: JsonAttributeValue): AttributeValue {
+  switch (value.kind) {
+    case 'empty':
+    case 'string':
+    case 'bytes':
+    case 'bool':
+      return value
+    case 'int64':
+      return { ...value, value: bigintFromWire(value.value) }
+    case 'double':
+      return { ...value, value: doubleFromWire(value.value) }
+    case 'array':
+      return { ...value, value: value.value.map(attributeValueFromJSON) }
+    case 'map':
+      const encodedValuesByKey = new Map<string, Set<string>>()
+      for (const entry of value.value) {
+        const encodedValues =
+          encodedValuesByKey.get(entry.key) ?? new Set<string>()
+        encodedValues.add(JSON.stringify(entry.value))
+        encodedValuesByKey.set(entry.key, encodedValues)
+      }
+      return {
+        ...value,
+        value: value.value.map(entry => ({
+          key: entry.key,
+          value: attributeValueFromJSON(entry.value),
+        })),
+        conflictingKeys: [...encodedValuesByKey].flatMap(([key, values]) =>
+          values.size > 1 ? [key] : []
+        ),
+      }
+  }
+}
+
+function attributesFromJSON(attributes: JsonAttribute[]): Attribute[] {
+  const encodedValuesByKey = new Map<string, Set<string>>()
+  for (const attribute of attributes) {
+    const encodedValues =
+      encodedValuesByKey.get(attribute.key) ?? new Set<string>()
+    encodedValues.add(JSON.stringify(attribute.value))
+    encodedValuesByKey.set(attribute.key, encodedValues)
+  }
+  return attributes.map(attribute => ({
+    id: attribute.id,
+    key: attribute.key,
+    value: attributeValueFromJSON(attribute.value),
+    hasConflict: encodedValuesByKey.get(attribute.key)!.size > 1,
+  }))
 }
 
 /** Thrown when a request is abandoned. Callers that supersede their own
@@ -261,6 +325,18 @@ function traceSummariesFromJSON(json: JsonTraceSummary[]): TraceSummary[] {
 // the wire format just removed.
 function traceDataFromJSON(json: JsonTraceData): TraceData {
   const traceStart = bigintFromWire(json.traceStart)
+  const resources = Object.fromEntries(
+    Object.entries(json.resources).map(([id, resource]) => [
+      id,
+      { ...resource, attributes: attributesFromJSON(resource.attributes) },
+    ])
+  )
+  const scopes = Object.fromEntries(
+    Object.entries(json.scopes).map(([id, scope]) => [
+      id,
+      { ...scope, attributes: attributesFromJSON(scope.attributes) },
+    ])
+  )
 
   return {
     traceID: json.traceID,
@@ -274,13 +350,19 @@ function traceDataFromJSON(json: JsonTraceData): TraceData {
       const node: TraceData['spans'][number] = {
         spanData: {
           ...rest,
+          attributes: attributesFromJSON(rest.attributes),
+          links: rest.links.map(link => ({
+            ...link,
+            attributes: attributesFromJSON(link.attributes),
+          })),
           traceID: json.traceID,
-          resource: json.resources[String(r)],
-          scope: json.scopes[String(s)],
+          resource: resources[String(r)]!,
+          scope: scopes[String(s)]!,
           startTime,
           endTime: startTime + BigInt(dur),
           events: spanNode.spanData.events.map(event => ({
             ...event,
+            attributes: attributesFromJSON(event.attributes),
             timestamp: bigintFromWire(event.timestamp),
           })),
         },
@@ -316,6 +398,16 @@ function logSummariesFromJSON(json: JsonLogSummary[]): LogSummary[] {
 function logDataFromJSON(json: JsonLogData): LogData {
   return {
     ...json,
+    body: attributeValueFromJSON(json.body),
+    attributes: attributesFromJSON(json.attributes),
+    resource: {
+      ...json.resource,
+      attributes: attributesFromJSON(json.resource.attributes),
+    },
+    scope: {
+      ...json.scope,
+      attributes: attributesFromJSON(json.scope.attributes),
+    },
     timestamp: bigintFromWire(json.timestamp),
     observedTimestamp: bigintFromWire(json.observedTimestamp),
   }
@@ -341,7 +433,7 @@ function exemplarFromJSON(json: JsonExemplar): Exemplar {
     timestamp: bigintFromWire(json.timestamp),
     traceID: json.traceID,
     spanID: json.spanID,
-    filteredAttributes: json.filteredAttributes,
+    filteredAttributes: attributesFromJSON(json.filteredAttributes),
   }
   switch (json.valueType) {
     case 'Double':
@@ -386,8 +478,11 @@ function dataPointFromJSON(json: JsonDataPoint): DataPoint {
 function timeseriesFromJSON(json: JsonMetricTimeseries): MetricTimeseries {
   return {
     attributesKey: json.attributesKey,
-    attributes: json.attributes,
-    resource: json.resource,
+    attributes: attributesFromJSON(json.attributes),
+    resource: {
+      ...json.resource,
+      attributes: attributesFromJSON(json.resource.attributes),
+    },
     datapoints: json.datapoints.map(dataPointFromJSON),
     stats: json.stats ?? null,
     datapointCount: json.datapointCount ?? 0,
@@ -425,6 +520,15 @@ function scalarAggregateFromJSON(
 function metricDataFromJSON(json: JsonMetricData): MetricData {
   return {
     ...json,
+    metadata: attributesFromJSON(json.metadata),
+    resource: {
+      ...json.resource,
+      attributes: attributesFromJSON(json.resource.attributes),
+    },
+    scope: {
+      ...json.scope,
+      attributes: attributesFromJSON(json.scope.attributes),
+    },
     timeseries: json.timeseries.map(timeseriesFromJSON),
     boundsMismatch: json.boundsMismatch ?? null,
     lastSeenNs: nullableBigintFromWire(json.lastSeenNs ?? null),

@@ -126,7 +126,7 @@ function makeCumulativeSumMetric(): MetricData {
       {
         attributesKey: 'route=/a',
         resource: { attributes: [], droppedAttributesCount: 0 },
-        attributes: [{ key: 'route', value: '/a', type: 'string' }],
+        attributes: [{ key: 'route', value: { kind: 'string', value: '/a' } }],
         datapoints: [
           makeSumDatapoint('dp-a1', 0, 10),
           makeSumDatapoint('dp-a2', 60_000, 25),
@@ -147,7 +147,7 @@ function makeCumulativeSumMetric(): MetricData {
       {
         attributesKey: 'route=/b',
         resource: { attributes: [], droppedAttributesCount: 0 },
-        attributes: [{ key: 'route', value: '/b', type: 'string' }],
+        attributes: [{ key: 'route', value: { kind: 'string', value: '/b' } }],
         datapoints: [
           makeSumDatapoint('dp-b1', 0, 4),
           makeSumDatapoint('dp-b2', 60_000, 9),
@@ -444,7 +444,7 @@ describe('metric view context visibility seeding', () => {
     metric.timeseries.push({
       ...metric.timeseries[1]!,
       attributesKey: 'route=/c',
-      attributes: [{ key: 'route', value: '/c', type: 'string' }],
+      attributes: [{ key: 'route', value: { kind: 'string', value: '/c' } }],
     })
     const buckets = [
       {

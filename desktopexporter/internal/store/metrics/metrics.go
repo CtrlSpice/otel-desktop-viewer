@@ -1338,9 +1338,8 @@ func metricFieldMapper() search.FieldMapper {
 // column has to be named explicitly.
 const matchIngestByLabel = `m.id in (
 			select d.metric_ingest_id from %s
-			where %s && (
-				select list(a.id) from attributes a where a.key = %s and a.value {COND}
-			)
+			where exists (select 1 from unnest(%s) t(aid) join attributes a on a.id = t.aid
+				where a.key = %s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})
 		)`
 
 // metricSearchFrom is the FROM clause metric search predicates are written
@@ -1436,11 +1435,15 @@ func mapMetricAttributeExpressions(field *search.FieldDefinition, query *search.
 	switch field.AttributeScope {
 	case "resource", "metric":
 		return []string{fmt.Sprintf(
-			"m.resource_id in (select id from resources where attr_value(attribute_ids, %s) {COND})",
+			`m.resource_id in (select r.id from resources r, unnest(r.attribute_ids) t(aid)
+				join attributes a on a.id = t.aid where a.key = %s and
+				coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})`,
 			keyParam)}, nil
 	case "scope":
 		return []string{fmt.Sprintf(
-			"m.scope_id in (select id from scopes where attr_value(attribute_ids, %s) {COND})",
+			`m.scope_id in (select sc.id from scopes sc, unnest(sc.attribute_ids) t(aid)
+				join attributes a on a.id = t.aid where a.key = %s and
+				coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})`,
 			keyParam)}, nil
 	case "datapoint":
 		return []string{fmt.Sprintf(matchIngestByLabel,
@@ -1449,8 +1452,10 @@ func mapMetricAttributeExpressions(field *search.FieldDefinition, query *search.
 		return []string{fmt.Sprintf(matchIngestByLabel,
 			"exemplars e join datapoints d on d.id = e.datapoint_id", "e.attribute_ids", keyParam)}, nil
 	case "metadata":
-		return []string{fmt.Sprintf(
-			"attr_value(m.metadata_ids, %s) {COND}", keyParam)}, nil
+		return []string{fmt.Sprintf(`exists(
+			select 1 from unnest(m.metadata_ids) t(aid) join attributes a on a.id = t.aid
+			where a.key = %s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND}
+		)`, keyParam)}, nil
 	default:
 		return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidMetricQuery)
 	}
@@ -1463,11 +1468,8 @@ const matchIngestByAnyLabel = `m.id in (
 			select d.metric_ingest_id from %s
 			where %s && (
 				select list(a.id) from attributes a where (
-					a.key {COND} OR a.value {COND} OR
-					(a.type = 'string[]' AND list_contains(TRY_CAST(a.value AS VARCHAR[]), CAST({RAW} AS VARCHAR))) OR
-					(a.type = 'int64[]' AND list_contains(TRY_CAST(a.value AS BIGINT[]), TRY_CAST({RAW} AS BIGINT))) OR
-					(a.type = 'float64[]' AND list_contains(TRY_CAST(a.value AS DOUBLE[]), TRY_CAST({RAW} AS DOUBLE))) OR
-					(a.type = 'boolean[]' AND list_contains(TRY_CAST(a.value AS BOOLEAN[]), TRY_CAST({RAW} AS BOOLEAN)))
+					a.key {COND} OR a.value::varchar {COND} OR
+					exists(select 1 from json_each(a.value, '$.value') j where j.value::varchar {COND})
 				)
 			)
 		)`
@@ -1493,11 +1495,8 @@ func mapMetricGlobalExpressions() ([]string, error) {
 			FROM unnest(r.attribute_ids || sc.attribute_ids) AS t(aid)
 			JOIN attributes a ON a.id = t.aid
 			WHERE (
-				a.key {COND} OR a.value {COND} OR
-				(a.type = 'string[]' AND list_contains(TRY_CAST(a.value AS VARCHAR[]), CAST({RAW} AS VARCHAR))) OR
-				(a.type = 'int64[]' AND list_contains(TRY_CAST(a.value AS BIGINT[]), TRY_CAST({RAW} AS BIGINT))) OR
-				(a.type = 'float64[]' AND list_contains(TRY_CAST(a.value AS DOUBLE[]), TRY_CAST({RAW} AS DOUBLE))) OR
-				(a.type = 'boolean[]' AND list_contains(TRY_CAST(a.value AS BOOLEAN[]), TRY_CAST({RAW} AS BOOLEAN)))
+				a.key {COND} OR a.value::varchar {COND} OR
+				exists(select 1 from json_each(a.value, '$.value') j where j.value::varchar {COND})
 		)
 	)`,
 	}, nil

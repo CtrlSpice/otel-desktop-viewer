@@ -75,7 +75,7 @@
 			from search_params, spans s
 		join resources r on r.id = s.resource_id
 		join scopes sc on sc.id = s.scope_id
-			where s.trace_id = search_params.trace_id AND (list_contains(s.attribute_ids, '9f1f8762-3dcf-10ee-4b04-db74f7de5b59'::uuid))
+			where s.trace_id = search_params.trace_id AND (list_contains(s.attribute_ids, '3ef42721-77d5-88fc-4b55-a22bb15d75fd'::uuid))
 		),
 
 		-- The walk's result joined back to its payload, once.
@@ -115,7 +115,7 @@
 			select map(list(id), list({
 				'k': key,
 				'i': id,
-				'j': json_object('key', key, 'value', value, 'type', type::varchar)
+				'j': json_object('id', id::varchar, 'key', key, 'value', value)
 			})) as m
 			from attributes
 			where id in (

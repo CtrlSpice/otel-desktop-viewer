@@ -8,7 +8,6 @@
 			'severityText', l.severity_text,
 			'severityNumber', l.severity_number,
 			'body', l.body,
-			'bodyType', l.body_type,
 			'resource', resource_json(r.attribute_ids, r.dropped_attributes_count),
 			'scope', scope_json(sc.name, sc.version, sc.attribute_ids, sc.dropped_attributes_count),
 			'droppedAttributesCount', l.dropped_attributes_count,
@@ -20,4 +19,3 @@
 		join resources r on r.id = l.resource_id
 		join scopes sc on sc.id = l.scope_id
 		where l.id = ?::uuid
-	

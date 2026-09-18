@@ -174,12 +174,15 @@ func appendPass(
 					spanID = util.SpanIDUint64(sid)
 				}
 
-				bodyValue, bodyType := util.ValueToStringAndType(log.Body())
+				bodyValue, err := util.EncodeValue(log.Body())
+				if err != nil {
+					return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
+				}
 				// Hashed in pass 1; read back by position.
 				logAttrIDs := logAttrs[logCur]
 				logCur++
 
-				err := appenders["logs"].AppendRow(
+				err = appenders["logs"].AppendRow(
 					duckdb.UUID(uuid.New()),        // ID UUID
 					int64(log.Timestamp()),         // Timestamp BIGINT
 					int64(log.ObservedTimestamp()), // ObservedTimestamp BIGINT
@@ -187,8 +190,7 @@ func appendPass(
 					spanID,                         // SpanID UBIGINT or NULL
 					log.SeverityText(),             // SeverityText VARCHAR
 					int32(log.SeverityNumber()),    // SeverityNumber INTEGER
-					bodyValue,                      // Body VARCHAR
-					bodyType,                       // BodyType VARCHAR
+					json.RawMessage(bodyValue),     // Body JSON
 					resourceID,                     // ResourceID UUID
 					scopeID,                        // ScopeID UUID
 					ingest.NonNil(logAttrIDs),      // AttributeIDs UUID[]
@@ -456,7 +458,6 @@ var logColumns = map[string]struct{}{
 	"severity_text":            {},
 	"severity_number":          {},
 	"body":                     {},
-	"body_type":                {},
 	"service_name":             {},
 	"dropped_attributes_count": {},
 	"flags":                    {},
@@ -513,7 +514,7 @@ func mapLogFieldExpression(field *search.FieldDefinition) (string, error) {
 	case "flags":
 		return search.NativeInteger("l.flags"), nil
 	case "body":
-		return "l.body", nil
+		return "coalesce(json_extract_string(l.body, '$.value'), json_extract(l.body, '$.value')::varchar)", nil
 	case "eventName":
 		return "l.event_name", nil
 	case "scope.name":
@@ -564,14 +565,21 @@ func mapLogAttributeExpressions(field *search.FieldDefinition, query *search.Que
 	switch field.AttributeScope {
 	case "resource":
 		return []string{fmt.Sprintf(
-			"l.resource_id in (select id from resources where attr_value(attribute_ids, %s) {COND})",
+			`l.resource_id in (select r.id from resources r, unnest(r.attribute_ids) t(aid)
+				join attributes a on a.id = t.aid where a.key = %s and
+				coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})`,
 			keyParam)}, nil
 	case "scope":
 		return []string{fmt.Sprintf(
-			"l.scope_id in (select id from scopes where attr_value(attribute_ids, %s) {COND})",
+			`l.scope_id in (select sc.id from scopes sc, unnest(sc.attribute_ids) t(aid)
+				join attributes a on a.id = t.aid where a.key = %s and
+				coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})`,
 			keyParam)}, nil
 	case "log":
-		return []string{fmt.Sprintf("attr_value(l.attribute_ids, %s)", keyParam)}, nil
+		return []string{fmt.Sprintf(`exists(
+			select 1 from unnest(l.attribute_ids) t(aid) join attributes a on a.id = t.aid
+			where a.key = %s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND}
+		)`, keyParam)}, nil
 	default:
 		return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidLogQuery)
 	}
@@ -581,7 +589,7 @@ func mapLogGlobalExpressions() ([]string, error) {
 	return []string{
 		"replace(l.trace_id::varchar, '-', '') {COND}",
 		"span_id_wire(l.span_id) {COND}",
-		"CAST(l.body AS VARCHAR) {COND}",
+		"coalesce(json_extract_string(l.body, '$.value'), json_extract(l.body, '$.value')::varchar) {COND}",
 		"CAST(l.severity_text AS VARCHAR) {COND}",
 		"CAST(l.severity_number AS VARCHAR) {COND}",
 		"CAST(l.event_name AS VARCHAR) {COND}",
@@ -594,11 +602,8 @@ func mapLogGlobalExpressions() ([]string, error) {
 			FROM unnest(l.attribute_ids || r.attribute_ids || sc.attribute_ids) AS t(aid)
 			JOIN attributes a ON a.id = t.aid
 			WHERE (
-				a.key {COND} OR a.value {COND} OR
-				(a.type = 'string[]' AND list_contains(TRY_CAST(a.value AS VARCHAR[]), CAST({RAW} AS VARCHAR))) OR
-				(a.type = 'int64[]' AND list_contains(TRY_CAST(a.value AS BIGINT[]), TRY_CAST({RAW} AS BIGINT))) OR
-				(a.type = 'float64[]' AND list_contains(TRY_CAST(a.value AS DOUBLE[]), TRY_CAST({RAW} AS DOUBLE))) OR
-				(a.type = 'boolean[]' AND list_contains(TRY_CAST(a.value AS BOOLEAN[]), TRY_CAST({RAW} AS BOOLEAN)))
+				a.key {COND} OR a.value::varchar {COND} OR
+				exists(select 1 from json_each(a.value, '$.value') j where j.value::varchar {COND})
 			)
 		)`,
 	}, nil

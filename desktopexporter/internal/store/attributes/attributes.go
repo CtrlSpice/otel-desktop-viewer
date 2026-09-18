@@ -30,8 +30,7 @@ var ErrAttributesStoreInternal = errors.New("attributes store internal error")
 // key holds, few enough that a broad term does not return the dictionary.
 const maxSampleValues = 3
 
-// searchQuery groups matching dictionary rows into one entry per
-// (key, scope, type).
+// searchQuery derives scope from each owner array, then groups matching values.
 //
 // Matching is ILIKE on value *and* key: someone typing "checkout" may be
 // looking at a value they saw in the UI, or half-remembering a key name, and
@@ -46,6 +45,24 @@ const maxSampleValues = 3
 // Ordered by match count so the busiest key surfaces first, then by name for
 // stability -- an unordered result would reshuffle between identical calls.
 const searchQuery = `
+	with owner_ids(scope, id) as (
+		select 'span', unnest(attribute_ids) from spans
+		union all select 'event', unnest(attribute_ids) from events
+		union all select 'link', unnest(attribute_ids) from links
+		union all select 'log', unnest(attribute_ids) from logs
+		union all select 'datapoint', unnest(attribute_ids) from datapoints
+		union all select 'exemplar', unnest(attribute_ids) from exemplars
+		union all select 'metadata', unnest(metadata_ids) from metric_ingests
+		union all select 'resource', unnest(r.attribute_ids) from resources r
+			where exists (select 1 from spans s where s.resource_id = r.id)
+				or exists (select 1 from logs l where l.resource_id = r.id)
+				or exists (select 1 from metric_ingests m where m.resource_id = r.id)
+		union all select 'scope', unnest(sc.attribute_ids) from scopes sc
+			where exists (select 1 from spans s where s.scope_id = sc.id)
+				or exists (select 1 from logs l where l.scope_id = sc.id)
+				or exists (select 1 from metric_ingests m where m.scope_id = sc.id)
+	)
+
 	select cast(coalesce(to_json(list(json_object(
 		'name',           sub.key,
 		'attributeScope', sub.scope,
@@ -54,12 +71,12 @@ const searchQuery = `
 		'sampleValues',   sub.samples
 	) order by sub.match_count desc, sub.key, sub.scope)), '[]') as varchar) as matches
 	from (
-		select a.key, a.scope, a.type,
+		select a.key, o.scope, json_extract_string(a.value, '$.kind') as type,
 			count(*) as match_count,
 			list(a.value order by a.value)[1:` + sampleLimit + `] as samples
-		from attributes a
-		where a.value ilike ? or a.key ilike ?
-		group by a.key, a.scope, a.type
+		from owner_ids o join attributes a on a.id = o.id
+		where a.value::varchar ilike ? or a.key ilike ?
+		group by a.key, o.scope, json_extract_string(a.value, '$.kind')
 	) sub`
 
 const sampleLimit = "3"

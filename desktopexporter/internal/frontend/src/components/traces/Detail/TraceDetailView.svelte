@@ -67,6 +67,7 @@
   import SpanField from './SpanField.svelte'
   import EventsPanel from './EventsPanel.svelte'
   import LinksPanel from './LinksPanel.svelte'
+  import AttributeRows from '@/components/shared/AttributeRows.svelte'
   import { formatDuration, formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { setSpanInQuery } from '@/route'
@@ -359,15 +360,12 @@
                   fieldType="uint32"
                 />
               {/if}
-              {#each spanAttributes as attr (attr.key)}
-                {#if detailAttributeVisible(columnFilter, attr.key, 'span')}
-                  <SpanField
-                    fieldName={attr.key}
-                    fieldValue={attr.value}
-                    fieldType={attr.type}
-                  />
-                {/if}
-              {/each}
+              <AttributeRows
+                attributes={spanAttributes.filter(attr =>
+                  detailAttributeVisible(columnFilter, attr.key, 'span')
+                )}
+                owner="span"
+              />
               {#if span.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedAttributesCount')}
                 <SpanField
                   fieldName="dropped attributes count"
@@ -400,15 +398,12 @@
         >
           <table class="detail-fields w-full" aria-label="Resource attributes">
             <tbody>
-              {#each resourceAttributes as attr (attr.key)}
-                {#if detailAttributeVisible(columnFilter, attr.key, 'resource')}
-                  <SpanField
-                    fieldName={attr.key}
-                    fieldValue={attr.value}
-                    fieldType={attr.type}
-                  />
-                {/if}
-              {/each}
+              <AttributeRows
+                attributes={resourceAttributes.filter(attr =>
+                  detailAttributeVisible(columnFilter, attr.key, 'resource')
+                )}
+                owner="resource"
+              />
               {#if span.resource.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'resource.droppedAttributesCount')}
                 <SpanField
                   fieldName="dropped attributes count"
@@ -437,15 +432,12 @@
                   fieldType="string"
                 />
               {/if}
-              {#each scopeAttributes as attr (attr.key)}
-                {#if detailAttributeVisible(columnFilter, attr.key, 'scope')}
-                  <SpanField
-                    fieldName={attr.key}
-                    fieldValue={attr.value}
-                    fieldType={attr.type}
-                  />
-                {/if}
-              {/each}
+              <AttributeRows
+                attributes={scopeAttributes.filter(attr =>
+                  detailAttributeVisible(columnFilter, attr.key, 'scope')
+                )}
+                owner="scope"
+              />
               {#if span.scope.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'scope.droppedAttributesCount')}
                 <SpanField
                   fieldName="dropped attributes count"

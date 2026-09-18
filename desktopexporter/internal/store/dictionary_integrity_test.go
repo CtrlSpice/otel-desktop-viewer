@@ -67,13 +67,6 @@ func assertNoDanglingRefs(t *testing.T, s *Store, when string) {
 			require.NoError(t, err)
 			assert.Zero(t, dangling, "%s: %s.%s references attribute ids that do not exist", when, o.table, o.column)
 
-			var wrongScope int
-			err = db.QueryRow(fmt.Sprintf(`
-				select count(*) from (select unnest(%s) as id from %s) r
-				join attributes a on a.id = r.id
-				where a.scope <> ?`, o.column, o.table), o.scope).Scan(&wrongScope)
-			require.NoError(t, err)
-			assert.Zero(t, wrongScope, "%s: %s.%s holds ids whose scope is not %q", when, o.table, o.column, o.scope)
 		}
 		return nil
 	}))
@@ -227,12 +220,16 @@ func TestDictionaryIntegrityAcrossClearAndReingest(t *testing.T) {
 
 	assert.Equal(t, 1, countIn(t, s, `select count(*) from resources`),
 		"the resource is still referenced by logs and metrics, so the sweep must keep it")
-	assert.Equal(t, 1, countIn(t, s,
-		fmt.Sprintf(`select count(*) from attributes where scope = '%s'`, ingest.ScopeMetricMetadata)),
+	assert.Equal(t, 1, countIn(t, s, `
+		select count(*) from metric_ingests m, unnest(m.metadata_ids) t(id)
+		join attributes a on a.id = t.id`),
 		"live metric metadata must survive a sweep triggered by clearing another signal")
-	assert.Zero(t, countIn(t, s,
-		fmt.Sprintf(`select count(*) from attributes where scope in ('%s','%s','%s')`,
-			ingest.ScopeSpan, ingest.ScopeEvent, ingest.ScopeLink)),
+	assert.Zero(t, countIn(t, s, `
+		select count(*) from attributes a where a.id in (
+			select unnest(attribute_ids) from spans
+			union select unnest(attribute_ids) from events
+			union select unnest(attribute_ids) from links
+		)`),
 		"span, event and link attributes have no owner left and must be swept")
 	assert.Less(t, countIn(t, s, `select count(*) from attributes`), before,
 		"the sweep must actually reclaim something, or this test proves nothing")
@@ -242,8 +239,9 @@ func TestDictionaryIntegrityAcrossClearAndReingest(t *testing.T) {
 	ingestAll(t, s, 2)
 	assertNoDanglingRefs(t, s, "after re-ingest following a clear")
 
-	assert.Positive(t, countIn(t, s,
-		fmt.Sprintf(`select count(*) from attributes where scope = '%s'`, ingest.ScopeSpan)),
+	assert.Positive(t, countIn(t, s, `
+		select count(*) from spans s, unnest(s.attribute_ids) t(id)
+		join attributes a on a.id = t.id`),
 		"span attributes deleted by the sweep must be written again on re-ingest")
 }
 
@@ -348,8 +346,9 @@ func TestSweepInvalidatesDeletedMetricMetadata(t *testing.T) {
 
 	ingestAll(t, s, 1)
 	before := s.FlushedIDs().Len()
-	require.Equal(t, 1, countIn(t, s,
-		fmt.Sprintf(`select count(*) from attributes where scope = '%s'`, ingest.ScopeMetricMetadata)))
+	require.Equal(t, 1, countIn(t, s, `
+		select count(*) from metric_ingests m, unnest(m.metadata_ids) t(id)
+		join attributes a on a.id = t.id`))
 
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
 		return metrics.Clear(ctx, db)
@@ -359,16 +358,18 @@ func TestSweepInvalidatesDeletedMetricMetadata(t *testing.T) {
 	afterSweep := s.FlushedIDs().Len()
 	assert.Less(t, afterSweep, before, "deleted metric dictionary ids must leave the cache")
 	assert.Positive(t, afterSweep, "live trace and log dictionary ids must remain cached")
-	assert.Zero(t, countIn(t, s,
-		fmt.Sprintf(`select count(*) from attributes where scope = '%s'`, ingest.ScopeMetricMetadata)),
+	assert.Zero(t, countIn(t, s, `
+		select count(*) from metric_ingests m, unnest(m.metadata_ids) t(id)
+		join attributes a on a.id = t.id`),
 		"metadata with no metric ingest owner must be collected")
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn, integrityMetrics(1), s.FlushedIDs())
 	}))
 	assertNoDanglingRefs(t, s, "after re-ingesting swept metric metadata")
-	assert.Equal(t, 1, countIn(t, s,
-		fmt.Sprintf(`select count(*) from attributes where scope = '%s'`, ingest.ScopeMetricMetadata)),
+	assert.Equal(t, 1, countIn(t, s, `
+		select count(*) from metric_ingests m, unnest(m.metadata_ids) t(id)
+		join attributes a on a.id = t.id`),
 		"re-ingest must restore metadata removed by the sweep")
 	assert.Equal(t, before, s.FlushedIDs().Len(),
 		"re-ingest must restore the metric dictionary ids without forgetting live signal ids")

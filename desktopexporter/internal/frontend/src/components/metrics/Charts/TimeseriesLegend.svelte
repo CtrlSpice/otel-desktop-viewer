@@ -5,6 +5,7 @@
   import { chartNeutral, readableTextColor } from '@/utils/chart-palette'
   import type { LegendTimeseries as Timeseries } from '@/types/metric-chart-types'
   import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
+  import { attributeValueLabel } from '@/components/shared/attribute-label'
 
   // Currently not mounted anywhere -- TimeseriesPanel.svelte hosts the
   // live legend rows. Kept in sync with that component's colour wiring
@@ -62,7 +63,9 @@
       {@const tooltip =
         rowAttrs.length === 0
           ? 'default'
-          : rowAttrs.map(a => `${a.key}=${a.value}`).join(', ')}
+          : rowAttrs
+              .map(a => `${a.key}=${attributeValueLabel(a.value)}`)
+              .join(', ')}
       <li
         class="timeseries-legend__row"
         class:timeseries-legend__row--disabled={disabled}
@@ -82,11 +85,12 @@
             {#if rowAttrs.length === 0}
               <span class="timeseries-legend__attrs-empty">default</span>
             {:else}
-              {#each rowAttrs as attr (attr.key)}
+              {#each rowAttrs as attr, index (`legend:${attr.id ?? 'unidentified'}:${index}`)}
                 <span class="timeseries-legend__attr">
                   <span class="timeseries-legend__attr-key">{attr.key}</span>
                   <span class="timeseries-legend__attr-eq">=</span>
-                  <span class="timeseries-legend__attr-value">{attr.value}</span
+                  <span class="timeseries-legend__attr-value"
+                    >{attributeValueLabel(attr.value)}</span
                   >
                 </span>
               {/each}

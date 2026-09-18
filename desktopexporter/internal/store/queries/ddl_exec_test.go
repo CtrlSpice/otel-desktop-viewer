@@ -121,7 +121,7 @@ func TestSequencesAssignShortKeys(t *testing.T) {
 	db := freshDB(t)
 
 	_, err := db.Exec(`insert into attributes values
-		('11111111-1111-1111-1111-111111111111','service.name','checkout','string','resource')`)
+		('11111111-1111-1111-1111-111111111111','service.name','{"kind":"string","value":"checkout"}')`)
 	require.NoError(t, err)
 
 	for _, id := range []string{

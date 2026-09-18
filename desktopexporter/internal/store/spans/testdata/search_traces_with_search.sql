@@ -12,7 +12,7 @@ with search_params as (select ? as time_start, ? as time_end),
 			from search_params, spans s
 		join resources r on r.id = s.resource_id
 		join scopes sc on sc.id = s.scope_id
-			where (list_contains(s.attribute_ids, '9f1f8762-3dcf-10ee-4b04-db74f7de5b59'::uuid)) AND s.start_time >= time_start and s.start_time <= time_end
+			where (list_contains(s.attribute_ids, '3ef42721-77d5-88fc-4b55-a22bb15d75fd'::uuid)) AND s.start_time >= time_start and s.start_time <= time_end
 			order by
 				s.trace_id,
 				case when s.parent_span_id is null then 0 else 1 end

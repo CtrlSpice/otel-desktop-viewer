@@ -97,7 +97,9 @@ package schema
 // removing their creation queries would leave the indexes in existing version
 // 11 files, so the bump applies the completed cleanup under the no-migration
 // policy.
-const Version = 12
+// Version 13 stores recursive tagged JSON values in the scope-free attribute
+// dictionary and log bodies. Existing value/type/scope rows are incompatible.
+const Version = 13
 
 // VersionTableQuery creates the version table.
 //

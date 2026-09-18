@@ -56,9 +56,9 @@ func TestBodyPreviewTruncates(t *testing.T) {
 	var long, short int
 	var emptyOK, nullOK bool
 	require.NoError(t, db.QueryRow(`
-		select length(body_preview(repeat('x', 500))),
-		       length(body_preview(repeat('y', 50))),
-		       body_preview('') = '',
+		select length(body_preview(json_object('kind', 'string', 'value', repeat('x', 500)))),
+		       length(body_preview(json_object('kind', 'string', 'value', repeat('y', 50)))),
+		       body_preview(json_object('kind', 'string', 'value', '')) = '',
 		       body_preview(NULL) is null
 	`).Scan(&long, &short, &emptyOK, &nullOK))
 

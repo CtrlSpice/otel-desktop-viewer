@@ -127,8 +127,8 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 			int64(0), int64(0), // Timestamp, ObservedTimestamp
 			nil, nil, // TraceID, SpanID
 			"INFO", int32(9), // SeverityText, SeverityNumber
-			"flush test", "str", // Body, BodyType
-			resourceID, scopeID, // ResourceID, ScopeID
+			`{"kind":"string","value":"flush test"}`, // Body JSON
+			resourceID, scopeID,                      // ResourceID, ScopeID
 			ingest.NonNil(logAttrIDs), // AttributeIDs UUID[]
 			uint32(0), uint32(0), "",  // DroppedAttributesCount, Flags, EventName
 			"flush-test", // ServiceName VARCHAR (NOT NULL, '' = unknown)
@@ -171,20 +171,19 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 	assert.Equal(t, 2, resolved, "attribute_ids written by the appender must resolve against the dictionary")
 
 	// Pin the id derivation itself: the row the appender pointed at must be the
-	// one ingest.AttributeID names for that (key, value, type, scope).
-	flushAttrID := uuid.UUID(ingest.AttributeID("flush_attr", "ok", "string", ingest.ScopeLog)).String()
-	var key, value, scope2 string
+	// one ingest.AttributeID names for that canonical key/value payload.
+	flushAttrID := uuid.UUID(ingest.AttributeID("flush_attr", `{"kind":"string","value":"ok"}`)).String()
+	var key, value string
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRowContext(ctx, `
-			select a.key, a.value, a.scope
+			select a.key, a.value::varchar
 			from (select unnest(attribute_ids) as id from logs where id = ?) x
 			join attributes a on a.id = x.id
 			where a.id = ?
-		`, logIDStr, flushAttrID).Scan(&key, &value, &scope2)
+		`, logIDStr, flushAttrID).Scan(&key, &value)
 	}))
 	assert.Equal(t, "flush_attr", key)
-	assert.Equal(t, "ok", value)
-	assert.Equal(t, ingest.ScopeLog, scope2)
+	assert.JSONEq(t, `{"kind":"string","value":"ok"}`, value)
 }
 
 // TestFlushAppenders_CloseAppenders_NilEmptySafe verifies that FlushAppenders and

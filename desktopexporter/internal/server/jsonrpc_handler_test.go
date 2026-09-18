@@ -351,7 +351,7 @@ func TestSearchLogs(t *testing.T) {
 		assert.True(t, ok)
 		var full map[string]any
 		assert.NoError(t, json.Unmarshal(getRaw, &full))
-		assert.Equal(t, "test log message", full["body"])
+		assert.Equal(t, map[string]any{"kind": "string", "value": "test log message"}, full["body"])
 	})
 
 	t.Run("Garbage spanID in query tree", func(t *testing.T) {
@@ -1243,7 +1243,7 @@ func TestSearchAttributes(t *testing.T) {
 		}
 		require.NotNil(t, found, "service.name should be among the matches")
 		assert.Equal(t, "resource", found["attributeScope"])
-		assert.Contains(t, found["sampleValues"], "pumpkin.pie")
+		assert.Contains(t, found["sampleValues"], map[string]any{"kind": "string", "value": "pumpkin.pie"})
 	})
 
 	t.Run("no match and empty term return an empty list", func(t *testing.T) {
