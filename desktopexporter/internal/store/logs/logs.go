@@ -561,7 +561,7 @@ func mapLogAttributeExpressions(field *search.FieldDefinition, query *search.Que
 
 	keyParam := fmt.Sprintf("attr_key_%d", len(*params))
 	*params = append(*params, search.NamedParam{Name: keyParam, Value: field.Name})
-	if strings.HasSuffix(field.Type, "[]") {
+	if field.Type == "array" || strings.HasSuffix(field.Type, "[]") {
 		var attributeIDs string
 		switch field.AttributeScope {
 		case "resource":

@@ -766,7 +766,7 @@ func TestBuildConditions_MissingField(t *testing.T) {
 
 func TestJSONValueArrayPredicateKeepsAbsentArraysOutOfNegativeMatches(t *testing.T) {
 	query := &Query{
-		Field:         &FieldDefinition{Type: "int64[]"},
+		Field:         &FieldDefinition{Type: "array"},
 		FieldOperator: "NOT CONTAINS",
 		Value:         "42",
 	}
@@ -779,7 +779,7 @@ func TestJSONValueArrayPredicateKeepsAbsentArraysOutOfNegativeMatches(t *testing
 	assert.Contains(t, predicate, "and not exists")
 	assert.Equal(t, []NamedParam{
 		{Name: "attr_key_0", Value: "retries"},
-		{Name: "value_1", Value: int64(42)},
+		{Name: "value_1", Value: "42"},
 	}, params)
 }
 

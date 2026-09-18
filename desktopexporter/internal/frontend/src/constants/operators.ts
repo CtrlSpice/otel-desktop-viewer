@@ -81,6 +81,11 @@ export function getOperatorsForFieldType(fieldType: FieldType): Operator[] {
         OPERATORS.NOT_IN,
       ]
 
+    case 'array':
+      // Received OTel arrays may be empty or mixed, so only membership is
+      // truthful; they have no inferred homogeneous element type.
+      return [OPERATORS.CONTAINS, OPERATORS.NOT_CONTAINS]
+
     default:
       // Fallback to basic operators for unknown types
       return [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS]

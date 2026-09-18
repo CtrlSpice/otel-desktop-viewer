@@ -41,6 +41,10 @@ export type FieldType =
   | 'int64[]'
   | 'float64[]'
   | 'boolean[]'
+  | 'array'
+  | 'bytes'
+  | 'empty'
+  | 'map'
 
 // The owner kinds an attribute search field can target. Mirrors
 // JsonAttributeScope in wire-types.ts, which is what the discovery endpoints

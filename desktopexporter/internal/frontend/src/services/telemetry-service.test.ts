@@ -8,6 +8,7 @@ import {
 import type { QueryNode } from '@/components/shared/Search/queryTree'
 import { SPAN_FIELDS, type FieldDefinition } from '@/constants/fields'
 import { OPERATORS } from '@/constants/operators'
+import { getOperatorsForFieldType } from '@/constants/operators'
 import type {
   JsonMetricData,
   JsonLogData,
@@ -414,6 +415,32 @@ describe('telemetryAPI.getMetric', () => {
       kind: 'map',
       conflictingKeys: ['payload'],
     })
+  })
+})
+
+describe('attribute discovery', () => {
+  it('keeps received array kinds searchable without inventing an element type', async () => {
+    stubRpcResult([
+      {
+        name: 'items',
+        attributeScope: 'span',
+        type: 'array',
+      },
+    ])
+
+    const [field] = await telemetryAPI.getTraceAttributes()
+
+    expect(field).toMatchObject({
+      name: 'items',
+      type: 'array',
+      attributeScope: 'span',
+    })
+    if (field?.searchScope !== 'attribute') {
+      throw new Error('Expected an attribute field')
+    }
+    expect(
+      getOperatorsForFieldType(field.type).map(operator => operator.symbol)
+    ).toEqual([OPERATORS.CONTAINS.symbol, OPERATORS.NOT_CONTAINS.symbol])
   })
 })
 

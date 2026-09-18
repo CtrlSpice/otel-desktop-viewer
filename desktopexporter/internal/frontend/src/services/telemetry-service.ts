@@ -970,13 +970,16 @@ function convertQueryTreeForBackend(queryTree: QueryNode): JsonQueryNode {
   }
 }
 
-// DuckDB's attr_type enum spells scalar booleans 'bool'; the frontend's
-// FieldType uses 'boolean' (matching the enum's own 'boolean[]' arrays).
-// Translate at the boundary -- without this, boolean attributes fall
-// through getOperatorsForFieldType's default branch and lose the
-// boolean operator set.
+// Frontend field names retain the established scalar spellings.
 function fieldTypeFromWire(type: JsonAttributeType): FieldType {
-  return type === 'bool' ? 'boolean' : type
+  switch (type) {
+    case 'bool':
+      return 'boolean'
+    case 'double':
+      return 'float64'
+    default:
+      return type
+  }
 }
 
 // Helper function to convert backend attribute data to FieldDefinition objects

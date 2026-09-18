@@ -576,19 +576,10 @@ export type JsonStats = {
 // --- Attribute discovery (getTraceAttributes / getLogAttributes /
 // getMetricAttributes / getAttributesByTraceID) ---
 
-// The attr_type DuckDB enum verbatim (schema.go). Note the spelling
-// asymmetry the enum itself carries: scalar booleans are 'bool', arrays
-// are 'boolean[]'. The frontend's FieldType uses 'boolean' for both, so
-// the service layer translates the scalar at the boundary.
+// Actual received root OTel kinds. The frontend's FieldType uses 'boolean'
+// for the wire spelling 'bool', translated at the service boundary.
 export type JsonAttributeType =
-  | 'string'
-  | 'int64'
-  | 'float64'
-  | 'bool'
-  | 'string[]'
-  | 'int64[]'
-  | 'float64[]'
-  | 'boolean[]'
+  'string' | 'int64' | 'double' | 'bool' | 'bytes' | 'empty' | 'array' | 'map'
 
 // Union across the discovery endpoints: traces serve resource/scope/span/
 // event/link, logs serve resource/scope/log, metrics serve resource/scope/
