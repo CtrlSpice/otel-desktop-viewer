@@ -183,7 +183,8 @@
 
         <FieldGroup
           label="Resource"
-          count={metric.resource.attributes.length}
+          count={metric.resource.attributes.length +
+            (metric.resourceDroppedAttributesCount > 0 ? 1 : 0)}
           bind:open={resourceOpen}
         >
           <table class="detail-fields w-full" aria-label="Resource attributes">
@@ -207,7 +208,8 @@
           label="Scope"
           count={metric.scope.attributes.length +
             (metric.scope.name ? 1 : 0) +
-            (metric.scope.version ? 1 : 0)}
+            (metric.scope.version ? 1 : 0) +
+            (metric.scopeDroppedAttributesCount > 0 ? 1 : 0)}
           bind:open={scopeOpen}
         >
           <table class="detail-fields w-full" aria-label="Scope attributes">
@@ -222,6 +224,13 @@
                   fieldValue={metric.scope.version}
                   fieldType="string"
                 />{/if}
+              {#if metric.scopeDroppedAttributesCount > 0}
+                <MetricField
+                  fieldName="dropped attributes"
+                  fieldValue={metric.scopeDroppedAttributesCount.toString()}
+                  fieldType="uint32"
+                />
+              {/if}
               <AttributeRows
                 attributes={metric.scope.attributes}
                 owner="scope"

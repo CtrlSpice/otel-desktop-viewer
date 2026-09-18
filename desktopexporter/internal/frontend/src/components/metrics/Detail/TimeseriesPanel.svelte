@@ -254,6 +254,31 @@
                 </tbody>
               </table>
             {/if}
+            <FieldGroup
+              label="Resource"
+              count={metricTs.resource.attributes.length +
+                (metricTs.resource.droppedAttributesCount > 0 ? 1 : 0)}
+              open={false}
+            >
+              <table
+                class="detail-fields w-full"
+                aria-label="Timeseries resource"
+              >
+                <tbody>
+                  {#if metricTs.resource.droppedAttributesCount > 0}
+                    <MetricField
+                      fieldName="dropped attributes"
+                      fieldValue={metricTs.resource.droppedAttributesCount.toString()}
+                      fieldType="uint32"
+                    />
+                  {/if}
+                  <AttributeRows
+                    attributes={metricTs.resource.attributes}
+                    owner={`timeseries ${ts.key} resource`}
+                  />
+                </tbody>
+              </table>
+            </FieldGroup>
             <!-- What arrived, once it has: metricTs.datapoints are the
                  store's merged buckets for a reduced histogram, and this list
                  is the view that has to show the telemetry itself. The merged

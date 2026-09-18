@@ -764,6 +764,25 @@ func TestBuildConditions_MissingField(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestJSONValueArrayPredicateKeepsAbsentArraysOutOfNegativeMatches(t *testing.T) {
+	query := &Query{
+		Field:         &FieldDefinition{Type: "int64[]"},
+		FieldOperator: "NOT CONTAINS",
+		Value:         "42",
+	}
+	params := []NamedParam{{Name: "attr_key_0", Value: "retries"}}
+
+	predicate, err := JSONValueArrayPredicate("s.attribute_ids", "attr_key_0", query, &params)
+
+	require.NoError(t, err)
+	assert.Contains(t, predicate, "json_extract_string(a.value, '$.kind') = 'array'")
+	assert.Contains(t, predicate, "and not exists")
+	assert.Equal(t, []NamedParam{
+		{Name: "attr_key_0", Value: "retries"},
+		{Name: "value_1", Value: int64(42)},
+	}, params)
+}
+
 // A named-field mapper that returns several expressions must produce valid
 // SQL. No shipping mapper does this yet, which is exactly why it needs a pin:
 // the first one to try would have hit the old code path that joined the

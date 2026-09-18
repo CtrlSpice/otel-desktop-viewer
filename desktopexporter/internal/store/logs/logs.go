@@ -561,6 +561,30 @@ func mapLogAttributeExpressions(field *search.FieldDefinition, query *search.Que
 
 	keyParam := fmt.Sprintf("attr_key_%d", len(*params))
 	*params = append(*params, search.NamedParam{Name: keyParam, Value: field.Name})
+	if strings.HasSuffix(field.Type, "[]") {
+		var attributeIDs string
+		switch field.AttributeScope {
+		case "resource":
+			attributeIDs = "r.attribute_ids"
+		case "scope":
+			attributeIDs = "sc.attribute_ids"
+		case "log":
+			attributeIDs = "l.attribute_ids"
+		default:
+			return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidLogQuery)
+		}
+		predicate, err := search.JSONValueArrayPredicate(attributeIDs, keyParam, query, params)
+		if err != nil {
+			return nil, err
+		}
+		switch field.AttributeScope {
+		case "resource":
+			predicate = fmt.Sprintf("l.resource_id in (select r.id from resources r where %s)", predicate)
+		case "scope":
+			predicate = fmt.Sprintf("l.scope_id in (select sc.id from scopes sc where %s)", predicate)
+		}
+		return []string{search.Complete(predicate)}, nil
+	}
 
 	switch field.AttributeScope {
 	case "resource":

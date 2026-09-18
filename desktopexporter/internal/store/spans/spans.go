@@ -988,19 +988,35 @@ func mapTraceAttributeExpressions(field *search.FieldDefinition, query *search.Q
 
 	keyParam := fmt.Sprintf("attr_key_%d", len(*params))
 	*params = append(*params, search.NamedParam{Name: keyParam, Value: field.Name})
-	if strings.HasSuffix(field.Type, "[]") && field.AttributeScope == "span" {
-		valueParam := fmt.Sprintf("value_%d", len(*params))
-		*params = append(*params, search.NamedParam{Name: valueParam, Value: search.ConvertValueForArrayType(query.Value, field.Type)})
-		if query.FieldOperator != "CONTAINS" && query.FieldOperator != "NOT CONTAINS" {
-			return nil, fmt.Errorf("unsupported array attribute query: %w", ErrInvalidTraceQuery)
+	if strings.HasSuffix(field.Type, "[]") {
+		var attributeIDs string
+		switch field.AttributeScope {
+		case "resource":
+			attributeIDs = "r.attribute_ids"
+		case "scope":
+			attributeIDs = "sc.attribute_ids"
+		case "span":
+			attributeIDs = "s.attribute_ids"
+		case "event":
+			attributeIDs = "e.attribute_ids"
+		case "link":
+			attributeIDs = "l.attribute_ids"
+		default:
+			return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidTraceQuery)
 		}
-		predicate := fmt.Sprintf(`exists(
-			select 1 from unnest(s.attribute_ids) t(aid)
-			join attributes a on a.id = t.aid, json_each(a.value, '$.value') j
-			where a.key = %s and json_extract_string(j.value, '$.value') = %s
-		)`, keyParam, valueParam)
-		if query.FieldOperator == "NOT CONTAINS" {
-			predicate = "not " + predicate
+		predicate, err := search.JSONValueArrayPredicate(attributeIDs, keyParam, query, params)
+		if err != nil {
+			return nil, err
+		}
+		switch field.AttributeScope {
+		case "resource":
+			predicate = fmt.Sprintf("s.resource_id in (select r.id from resources r where %s)", predicate)
+		case "scope":
+			predicate = fmt.Sprintf("s.scope_id in (select sc.id from scopes sc where %s)", predicate)
+		case "event":
+			predicate = fmt.Sprintf("exists(select 1 from events e where e.trace_id = s.trace_id and e.span_id = s.span_id and %s)", predicate)
+		case "link":
+			predicate = fmt.Sprintf("exists(select 1 from links l where l.trace_id = s.trace_id and l.span_id = s.span_id and %s)", predicate)
 		}
 		return []string{search.Complete(predicate)}, nil
 	}

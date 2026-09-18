@@ -1431,6 +1431,38 @@ func mapMetricAttributeExpressions(field *search.FieldDefinition, query *search.
 
 	keyParam := fmt.Sprintf("attr_key_%d", len(*params))
 	*params = append(*params, search.NamedParam{Name: keyParam, Value: field.Name})
+	if strings.HasSuffix(field.Type, "[]") {
+		var attributeIDs string
+		switch field.AttributeScope {
+		case "resource", "metric":
+			attributeIDs = "r.attribute_ids"
+		case "scope":
+			attributeIDs = "sc.attribute_ids"
+		case "datapoint":
+			attributeIDs = "d.attribute_ids"
+		case "exemplar":
+			attributeIDs = "e.attribute_ids"
+		case "metadata":
+			attributeIDs = "m.metadata_ids"
+		default:
+			return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidMetricQuery)
+		}
+		predicate, err := search.JSONValueArrayPredicate(attributeIDs, keyParam, query, params)
+		if err != nil {
+			return nil, err
+		}
+		switch field.AttributeScope {
+		case "resource", "metric":
+			predicate = fmt.Sprintf("m.resource_id in (select r.id from resources r where %s)", predicate)
+		case "scope":
+			predicate = fmt.Sprintf("m.scope_id in (select sc.id from scopes sc where %s)", predicate)
+		case "datapoint":
+			predicate = fmt.Sprintf("m.id in (select d.metric_ingest_id from datapoints d where %s)", predicate)
+		case "exemplar":
+			predicate = fmt.Sprintf("m.id in (select d.metric_ingest_id from exemplars e join datapoints d on d.id = e.datapoint_id where %s)", predicate)
+		}
+		return []string{search.Complete(predicate)}, nil
+	}
 
 	switch field.AttributeScope {
 	case "resource", "metric":
