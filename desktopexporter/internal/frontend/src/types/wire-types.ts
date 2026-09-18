@@ -624,7 +624,7 @@ export type JsonAttributeDefinition = {
 // sampleValues is a short, bounded illustration, not a complete list.
 export type JsonAttributeMatch = JsonAttributeDefinition & {
   matchCount: number
-  sampleValues: string[]
+  sampleValues: JsonAttributeValue[]
 }
 
 // --- Mutation results ---

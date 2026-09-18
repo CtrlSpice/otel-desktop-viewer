@@ -3,7 +3,7 @@ import {
   type CompletionResult,
   type Completion,
 } from '@codemirror/autocomplete'
-import type { JsonAttributeMatch } from '@/types/wire-types'
+import type { JsonAttributeMatch, JsonAttributeValue } from '@/types/wire-types'
 import type { FieldDefinition } from '@/constants/fields'
 import type { FieldValueCache } from './field-value-cache'
 
@@ -50,8 +50,24 @@ const MIN_TERM_LENGTH = 2
  * — an unquoted multi-word value is a parse error — and quoting uniformly means
  * the inserted text never depends on what the value happens to contain.
  */
-export function matchToQuery(match: JsonAttributeMatch, value: string): string {
-  return `${match.name} = "${value.replace(/(["\\])/g, '\\$1')}"`
+function sampleValueToQueryValue(value: JsonAttributeValue): string {
+  switch (value.kind) {
+    case 'empty':
+      return 'null'
+    case 'array':
+    case 'map':
+      return JSON.stringify(value.value)
+    default:
+      return String(value.value)
+  }
+}
+
+export function matchToQuery(
+  match: JsonAttributeMatch,
+  value: JsonAttributeValue
+): string {
+  const queryValue = sampleValueToQueryValue(value)
+  return `${match.name} = "${queryValue.replace(/(["\\])/g, '\\$1')}"`
 }
 
 /**
