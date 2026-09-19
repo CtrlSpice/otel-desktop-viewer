@@ -3,9 +3,43 @@ import {
   rateBucketStartForSourceDatapoint,
   timeseriesToChartTimeseries,
 } from './chart-projection'
-import type { MetricTimeseries } from '@/types/api-types'
+import type { GaugeDataPoint, MetricTimeseries } from '@/types/api-types'
 
 describe('timeseriesToChartTimeseries', () => {
+  it('approximates an exact integer only in the chart projection', () => {
+    const datapoint: GaugeDataPoint = {
+      id: 'integer',
+      timestamp: 1n,
+      timestampMs: 0,
+      startTime: 0n,
+      flags: 0,
+      exemplars: [],
+      metricType: 'Gauge',
+      doubleValue: null,
+      intValue: 9_007_199_254_740_993n,
+      valueType: 'Int',
+    }
+    const timeseries = [
+      {
+        attributesKey: 'series-a',
+        attributes: [],
+        resource: { attributes: [], droppedAttributesCount: 0 },
+        datapoints: [datapoint],
+        stats: null,
+        datapointCount: 1,
+        lastSeenNs: 1n,
+        views: null,
+        rateStats: null,
+        sparkline: null,
+      },
+    ] satisfies MetricTimeseries[]
+
+    const [line] = timeseriesToChartTimeseries(timeseries).chartTimeseries
+
+    expect(line!.points[0]!.value).toBe(Number(9_007_199_254_740_993n))
+    expect(datapoint.intValue).toBe(9_007_199_254_740_993n)
+  })
+
   it('preserves exact source identity when Date coordinates collide', () => {
     const base = 1_700_000_000_000_000_000n
     const timeseries = [

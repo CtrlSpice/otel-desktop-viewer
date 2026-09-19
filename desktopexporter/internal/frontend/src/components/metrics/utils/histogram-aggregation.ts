@@ -5,7 +5,9 @@ import type {
 } from '@/types/api-types'
 import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
 
-/** Aggregate values of a histogram bucket, as the store reports them. */
+/** @derived Numeric chart projection of a histogram bucket. Count comes from
+ * received or SQL-reduced uint64 counts and may approximate past 2^53; the
+ * remaining values use the metric's unit and IEEE-754 precision. */
 export type HistogramTotals = {
   count: number
   sum: number
@@ -242,7 +244,14 @@ export function seriesBucketsToSlices(
       ) {
         continue
       }
-      const totals = { count: dp.count, sum: dp.sum, min: dp.min, max: dp.max }
+      // Histogram charts operate in the numeric display domain. Keep the
+      // received datapoint exact and approximate only the projected slice.
+      const totals = {
+        count: Number(dp.count),
+        sum: dp.sum,
+        min: dp.min,
+        max: dp.max,
+      }
       if (dp.metricType === 'Histogram') {
         out.push({
           kind: 'histogram',
@@ -250,7 +259,7 @@ export function seriesBucketsToSlices(
           sourceDatapointID: dp.id,
           attributesKey: ts.attributesKey,
           bounds: dp.explicitBounds ?? [],
-          counts: dp.bucketCounts ?? [],
+          counts: dp.bucketCounts.map(Number),
           totals,
           quantiles: dp.quantiles ?? null,
         })
@@ -263,11 +272,11 @@ export function seriesBucketsToSlices(
         attributesKey: ts.attributesKey,
         scale: dp.scale ?? 0,
         zeroThreshold: dp.zeroThreshold ?? 0,
-        zeroCount: dp.zeroCount ?? 0,
+        zeroCount: Number(dp.zeroCount),
         positiveOffset: dp.positiveBucketOffset ?? 0,
-        positiveCounts: dp.positiveBucketCounts ?? [],
+        positiveCounts: dp.positiveBucketCounts.map(Number),
         negativeOffset: dp.negativeBucketOffset ?? 0,
-        negativeCounts: dp.negativeBucketCounts ?? [],
+        negativeCounts: dp.negativeBucketCounts.map(Number),
         totals,
         quantiles: dp.quantiles ?? null,
       })
@@ -322,7 +331,10 @@ export function histogramSliceToDatapoint(
     // A merged datapoint is built from bucket vectors, which carry no
     // exemplars -- so it holds none, and none were withheld.
     exemplars: [],
-    count: normalized.totals.count,
+    // This object is a chart-owned synthetic datapoint. Its source slice is
+    // already numeric, so converting integral values back to bigint satisfies
+    // the exact datapoint shape without claiming received-source precision.
+    count: BigInt(normalized.totals.count),
     sum: normalized.totals.sum,
     min: normalized.totals.min,
     max: normalized.totals.max,
@@ -333,18 +345,18 @@ export function histogramSliceToDatapoint(
       ...base,
       metricType: 'Histogram',
       explicitBounds: normalized.bounds,
-      bucketCounts: normalized.counts,
+      bucketCounts: normalized.counts.map(BigInt),
     }
   }
   return {
     ...base,
     metricType: 'ExponentialHistogram',
     scale: normalized.scale,
-    zeroCount: normalized.zeroCount,
+    zeroCount: BigInt(normalized.zeroCount),
     zeroThreshold: normalized.zeroThreshold,
     positiveBucketOffset: normalized.positiveOffset,
-    positiveBucketCounts: normalized.positiveCounts,
+    positiveBucketCounts: normalized.positiveCounts.map(BigInt),
     negativeBucketOffset: normalized.negativeOffset,
-    negativeBucketCounts: normalized.negativeCounts,
+    negativeBucketCounts: normalized.negativeCounts.map(BigInt),
   }
 }

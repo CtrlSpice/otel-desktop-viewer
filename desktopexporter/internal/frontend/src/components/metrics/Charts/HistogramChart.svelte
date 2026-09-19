@@ -175,7 +175,9 @@
 
   function buildHistogramBuckets(dp: HistogramDataPoint): Bucket[] {
     const bounds = dp.explicitBounds
-    const counts = dp.bucketCounts
+    // Bars are an approximate numeric view; the source datapoint retains its
+    // exact bigint count vector for detail display and other source consumers.
+    const counts = dp.bucketCounts.map(Number)
     const result: Bucket[] = []
     for (let i = 0; i < counts.length; i++) {
       let label: string
@@ -216,10 +218,10 @@
     return expBuckets(
       dp.scale,
       dp.negativeBucketOffset,
-      dp.negativeBucketCounts,
-      dp.zeroCount,
+      dp.negativeBucketCounts.map(Number),
+      Number(dp.zeroCount),
       dp.positiveBucketOffset,
-      dp.positiveBucketCounts
+      dp.positiveBucketCounts.map(Number)
     ).map((bucket, index) => {
       let key: string
       const zeroThreshold =

@@ -62,6 +62,15 @@ func countRows(t *testing.T, s *store.Store, ctx context.Context, query string, 
 	return n
 }
 
+func metricWireUint64(t *testing.T, value any) uint64 {
+	t.Helper()
+	text, ok := value.(string)
+	require.True(t, ok, "metric uint64 wire value must be decimal text, got %T", value)
+	parsed, err := strconv.ParseUint(text, 10, 64)
+	require.NoError(t, err)
+	return parsed
+}
+
 func mustDecodeTraceIDMetrics(s string) [16]byte {
 	b, err := hex.DecodeString(s)
 	if err != nil || len(b) != 16 {
@@ -378,15 +387,116 @@ func findSummary(t *testing.T, summaries []map[string]any, name string) map[stri
 // getMetricFullByName resolves a stream id via SearchSummaries and fetches
 // full MetricData via GetMetric (timeseries, datapoints, resource, scope).
 func getMetricFullByName(t *testing.T, s *store.Store, ctx context.Context, name string) map[string]any {
+	return getMetricFullByNameInRange(t, s, ctx, name, store.BoundedTimeRange(0, maxNano))
+}
+
+func getMetricFullByNameInRange(t *testing.T, s *store.Store, ctx context.Context, name string, timeRange store.TimeRange) map[string]any {
 	t.Helper()
 	id := findMetricID(t, s, ctx, name)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, id, store.BoundedTimeRange(0, maxNano), 0, nil, nil, 0, 0, 0, nil, "", nil, 0)
+		return metrics.GetMetric(ctx, db, id, timeRange, 0, nil, nil, 0, 0, 0, nil, "", nil, 0)
 	})
 	require.NoError(t, err)
 	var m map[string]any
 	require.NoError(t, json.Unmarshal(raw, &m))
 	return m
+}
+
+func TestReceivedMetricIntegersUseExactDecimalWireValues(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	data := pmetric.NewMetrics()
+	sm := data.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty()
+
+	gaugeMetric := sm.Metrics().AppendEmpty()
+	gaugeMetric.SetName("exact.gauge")
+	gauge := gaugeMetric.SetEmptyGauge()
+	for i, value := range []int64{math.MinInt64, math.MaxInt64, 1<<53 + 1, 0, -1} {
+		dp := gauge.DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.Timestamp(100 + i))
+		dp.SetIntValue(value)
+	}
+	doublePoint := gauge.DataPoints().AppendEmpty()
+	doublePoint.SetTimestamp(106)
+	doublePoint.SetDoubleValue(1.25)
+
+	sumMetric := sm.Metrics().AppendEmpty()
+	sumMetric.SetName("exact.sum")
+	sum := sumMetric.SetEmptySum()
+	sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+	sumPoint := sum.DataPoints().AppendEmpty()
+	sumPoint.SetTimestamp(200)
+	sumPoint.SetIntValue(math.MinInt64)
+
+	maxUint64 := ^uint64(0)
+	histogramMetric := sm.Metrics().AppendEmpty()
+	histogramMetric.SetName("exact.histogram")
+	histogram := histogramMetric.SetEmptyHistogram()
+	histogram.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+	histogramMax := histogram.DataPoints().AppendEmpty()
+	histogramMax.SetTimestamp(300)
+	histogramMax.SetCount(maxUint64)
+	histogramMax.BucketCounts().FromRaw([]uint64{maxUint64})
+	histogramEmpty := histogram.DataPoints().AppendEmpty()
+	histogramEmpty.SetTimestamp(301)
+	histogramEmpty.SetCount(0)
+
+	exponentialMetric := sm.Metrics().AppendEmpty()
+	exponentialMetric.SetName("exact.exponential")
+	exponential := exponentialMetric.SetEmptyExponentialHistogram()
+	exponential.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+	exponentialPoint := exponential.DataPoints().AppendEmpty()
+	exponentialPoint.SetTimestamp(400)
+	exponentialPoint.SetCount(maxUint64)
+	exponentialPoint.SetZeroCount(1<<53 + 1)
+	exponentialPoint.Positive().BucketCounts().FromRaw([]uint64{maxUint64})
+
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+	}))
+
+	fixtureRange := store.BoundedTimeRange(0, 500)
+	gaugeDatapoints := metricDatapoints(getMetricFullByNameInRange(t, s, ctx, "exact.gauge", fixtureRange))
+	var gaugeIntegers []string
+	nullIntegerArms := 0
+	for _, raw := range gaugeDatapoints {
+		dp := raw.(map[string]any)
+		if dp["intValue"] == nil {
+			nullIntegerArms++
+			continue
+		}
+		gaugeIntegers = append(gaugeIntegers, dp["intValue"].(string))
+	}
+	assert.ElementsMatch(t, []string{
+		"-9223372036854775808",
+		"9223372036854775807",
+		"9007199254740993",
+		"0",
+		"-1",
+	}, gaugeIntegers)
+	assert.Equal(t, 1, nullIntegerArms)
+
+	sumDatapoints := metricDatapoints(getMetricFullByNameInRange(t, s, ctx, "exact.sum", fixtureRange))
+	require.Len(t, sumDatapoints, 1)
+	assert.Equal(t, "-9223372036854775808", sumDatapoints[0].(map[string]any)["intValue"])
+
+	histogramDatapoints := metricDatapoints(getMetricFullByNameInRange(t, s, ctx, "exact.histogram", fixtureRange))
+	require.Len(t, histogramDatapoints, 2)
+	byCount := make(map[string]map[string]any, len(histogramDatapoints))
+	for _, raw := range histogramDatapoints {
+		dp := raw.(map[string]any)
+		byCount[dp["count"].(string)] = dp
+	}
+	assert.Equal(t, []any{"18446744073709551615"}, byCount["18446744073709551615"]["bucketCounts"])
+	assert.Equal(t, []any{}, byCount["0"]["bucketCounts"])
+
+	exponentialDatapoints := metricDatapoints(getMetricFullByNameInRange(t, s, ctx, "exact.exponential", fixtureRange))
+	require.Len(t, exponentialDatapoints, 1)
+	exponentialJSON := exponentialDatapoints[0].(map[string]any)
+	assert.Equal(t, "18446744073709551615", exponentialJSON["count"])
+	assert.Equal(t, "9007199254740993", exponentialJSON["zeroCount"])
+	assert.Equal(t, []any{"18446744073709551615"}, exponentialJSON["positiveBucketCounts"])
+	assert.Equal(t, []any{}, exponentialJSON["negativeBucketCounts"])
 }
 
 // TestMetricSuite runs tests on ingested metrics using SearchMetrics (DB-generated JSON).
@@ -439,15 +549,7 @@ func TestMetricSuite(t *testing.T) {
 		dp, _ := datapoints[0].(map[string]any)
 		assert.NotNil(t, dp)
 		assert.Equal(t, "Int", dp["valueType"], "valueType for integer datapoint")
-		// intValue is written when ValueType is Int; DB returns as number
-		switch v := dp["intValue"].(type) {
-		case float64:
-			assert.Equal(t, 42.0, v)
-		case int64:
-			assert.Equal(t, int64(42), v)
-		default:
-			t.Errorf("intValue expected number, got %T", dp["intValue"])
-		}
+		assert.Equal(t, "42", dp["intValue"])
 	})
 
 	t.Run("SumMetric", func(t *testing.T) {
@@ -465,7 +567,7 @@ func TestMetricSuite(t *testing.T) {
 		assert.NotEmpty(t, datapoints)
 		dp, _ := datapoints[0].(map[string]any)
 		assert.NotNil(t, dp)
-		assert.Equal(t, float64(100), dp["count"])
+		assert.Equal(t, "100", dp["count"])
 		assert.Equal(t, 25.5, dp["sum"])
 	})
 
@@ -476,7 +578,7 @@ func TestMetricSuite(t *testing.T) {
 		assert.NotEmpty(t, datapoints)
 		dp, _ := datapoints[0].(map[string]any)
 		assert.NotNil(t, dp)
-		assert.Equal(t, float64(50), dp["count"])
+		assert.Equal(t, "50", dp["count"])
 		assert.Equal(t, float64(2), dp["scale"])
 	})
 
@@ -2344,17 +2446,17 @@ func TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold(t *testing.T) {
 	dp := dps[0].(map[string]any)
 
 	assert.Equal(t, float64(4), dp["zeroThreshold"], "merged threshold is the larger of the two")
-	assert.Equal(t, float64(15), dp["zeroCount"],
+	assert.Equal(t, uint64(15), metricWireUint64(t, dp["zeroCount"]),
 		"buckets below the merged threshold must be folded into zero_count")
 	assert.Equal(t, float64(2), dp["positiveBucketOffset"],
 		"the folded buckets are gone, so the array starts above the cutoff")
 
 	counts, _ := dp["positiveBucketCounts"].([]any)
 	require.Len(t, counts, 1)
-	assert.Equal(t, float64(3), counts[0], "only the bucket above the threshold survives")
+	assert.Equal(t, uint64(3), metricWireUint64(t, counts[0]), "only the bucket above the threshold survives")
 
 	// The whole point: no observation was invented or lost by moving counts.
-	assert.Equal(t, float64(18), dp["count"], "total observations conserved")
+	assert.Equal(t, uint64(18), metricWireUint64(t, dp["count"]), "total observations conserved")
 }
 
 // TestGetMetric_MergedSeriesKeepTheirLabels covers a merged histogram series
@@ -2740,7 +2842,7 @@ func TestCumulativeHistogramMerge_DifferencesAcrossBuckets(t *testing.T) {
 	// Unreduced: the running totals themselves, untouched.
 	unreduced := get(0)
 	require.Len(t, unreduced, 6)
-	assert.Equal(t, float64(12), unreduced[0]["count"],
+	assert.Equal(t, uint64(12), metricWireUint64(t, unreduced[0]["count"]),
 		"without a reduction a cumulative datapoint keeps its running total")
 
 	// Reduced onto minute buckets, which is the cadence: every bucket holds one
@@ -2754,23 +2856,23 @@ func TestCumulativeHistogramMerge_DifferencesAcrossBuckets(t *testing.T) {
 		assert.Len(t, merged, 5,
 			"targetBuckets=%d: six readings describe five intervals", targetBuckets)
 
-		var total float64
+		var total uint64
 		for _, dp := range merged {
-			assert.Equal(t, float64(2), dp["count"],
+			assert.Equal(t, uint64(2), metricWireUint64(t, dp["count"]),
 				"targetBuckets=%d: each minute adds two observations", targetBuckets)
 			assert.Equal(t, float64(10), dp["sum"],
 				"targetBuckets=%d: sum is differenced with count", targetBuckets)
 			buckets := dp["bucketCounts"].([]any)
-			var vec float64
+			var vec uint64
 			for _, c := range buckets {
-				vec += c.(float64)
+				vec += metricWireUint64(t, c)
 			}
-			assert.Equal(t, dp["count"], vec,
+			assert.Equal(t, metricWireUint64(t, dp["count"]), vec,
 				"targetBuckets=%d: the vector agrees with the count on the same row",
 				targetBuckets)
-			total += dp["count"].(float64)
+			total += metricWireUint64(t, dp["count"])
 		}
-		assert.Equal(t, float64(10), total,
+		assert.Equal(t, uint64(10), total,
 			"targetBuckets=%d: the intervals sum to the counter's climb (12-2)",
 			targetBuckets)
 	}
@@ -2829,16 +2931,16 @@ func TestCumulativeHistogramMerge_ResetIsConsistentAcrossFields(t *testing.T) {
 	dp := dpl[0].(map[string]any)
 
 	// 5 before the restart, then 3 (the reading itself), then 5 after.
-	assert.Equal(t, float64(13), dp["count"],
+	assert.Equal(t, uint64(13), metricWireUint64(t, dp["count"]),
 		"activity is summed per reading, with the restart's own value counted once")
 
-	var vec float64
+	var vec uint64
 	for _, c := range dp["bucketCounts"].([]any) {
-		vec += c.(float64)
+		vec += metricWireUint64(t, c)
 	}
-	assert.Equal(t, dp["count"], vec,
+	assert.Equal(t, metricWireUint64(t, dp["count"]), vec,
 		"the bucket vector and the count describe the same observations")
-	assert.Equal(t, dp["count"], dp["sum"],
+	assert.Equal(t, float64(metricWireUint64(t, dp["count"])), dp["sum"],
 		"and so does the sum, since every observation here has value 1")
 }
 
@@ -3845,20 +3947,20 @@ func TestExpHistogramMerge_RescalesBeforeSumming(t *testing.T) {
 
 	// Total count is conserved however the buckets are aligned: 4 + 10.
 	counts, _ := dp["positiveBucketCounts"].([]any)
-	var total float64
+	var total uint64
 	for _, c := range counts {
-		total += c.(float64)
+		total += metricWireUint64(t, c)
 	}
-	assert.Equal(t, float64(14), total, "no observation invented or lost")
-	assert.Equal(t, float64(14), dp["count"], "the reported count agrees with the buckets")
+	assert.Equal(t, uint64(14), total, "no observation invented or lost")
+	assert.Equal(t, uint64(14), metricWireUint64(t, dp["count"]), "the reported count agrees with the buckets")
 
 	// The scale-2 datapoint's four buckets at offset 4 collapse to two at
 	// offset 2 -- exactly where the scale-1 datapoint already sits. A correct
 	// merge overlaps them; a positional sum would lay them side by side.
 	assert.Equal(t, float64(2), dp["positiveBucketOffset"])
 	require.Len(t, counts, 2, "overlapped, not concatenated")
-	assert.Equal(t, float64(7), counts[0])
-	assert.Equal(t, float64(7), counts[1])
+	assert.Equal(t, uint64(7), metricWireUint64(t, counts[0]))
+	assert.Equal(t, uint64(7), metricWireUint64(t, counts[1]))
 }
 
 // TestExpHistogramMerge_CumulativeSubtractsAcrossAScaleChange covers the same
@@ -3919,15 +4021,15 @@ func TestExpHistogramMerge_CumulativeSubtractsAcrossAScaleChange(t *testing.T) {
 	dp := dps[0].(map[string]any)
 
 	// The number that matters: activity, not the running total.
-	assert.Equal(t, float64(20), dp["count"],
+	assert.Equal(t, uint64(20), metricWireUint64(t, dp["count"]),
 		"a cumulative bucket reports the activity within it, not the counter's value")
 
 	counts, _ := dp["positiveBucketCounts"].([]any)
-	var total float64
+	var total uint64
 	for _, c := range counts {
-		total += c.(float64)
+		total += metricWireUint64(t, c)
 	}
-	assert.Equal(t, float64(20), total,
+	assert.Equal(t, uint64(20), total,
 		"the bucket vectors must be differenced on a common scale, not passed through")
 }
 
@@ -4444,7 +4546,7 @@ func TestGetMetric_EmptyExplicitBoundsAggregate(t *testing.T) {
 
 	series := metric["timeseries"].([]any)
 	require.Len(t, series, 2)
-	var seriesBucketTotal float64
+	var seriesBucketTotal uint64
 	for _, rawSeries := range series {
 		dps := rawSeries.(map[string]any)["datapoints"].([]any)
 		require.Len(t, dps, 1, "a whole-window request merges each series once")
@@ -4455,9 +4557,9 @@ func TestGetMetric_EmptyExplicitBoundsAggregate(t *testing.T) {
 		assert.NotContains(t, dp, "max")
 		counts := dp["bucketCounts"].([]any)
 		require.Len(t, counts, 1)
-		seriesBucketTotal += counts[0].(float64)
+		seriesBucketTotal += metricWireUint64(t, counts[0])
 	}
-	assert.Equal(t, float64(12), seriesBucketTotal,
+	assert.Equal(t, uint64(12), seriesBucketTotal,
 		"whole-window per-series histograms must retain both catch-all buckets")
 
 	aggregate := metric["aggregate"].([]any)
@@ -5154,7 +5256,7 @@ func TestGetMetric_HistogramMergeFollowsTheZoneAcrossDST(t *testing.T) {
 		for _, v := range dps {
 			b := v.(map[string]any)
 			out = append(out, fmt.Sprintf("%s/%d",
-				b["timestamp"].(string), int(b["count"].(float64))))
+				b["timestamp"].(string), metricWireUint64(t, b["count"])))
 		}
 		sort.Strings(out)
 		return out
@@ -5722,7 +5824,7 @@ func TestGetMetric_ColumnWindowMergesTheWholeColumn(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &merged))
 	mergedDps := merged["timeseries"].([]any)[0].(map[string]any)["datapoints"].([]any)
 	require.Len(t, mergedDps, 1, "one bucket over one column is one merged datapoint")
-	assert.Equal(t, float64(perColumn*100), mergedDps[0].(map[string]any)["count"],
+	assert.Equal(t, uint64(perColumn*100), metricWireUint64(t, mergedDps[0].(map[string]any)["count"]),
 		"the merged column must total exactly the readings inside it -- %d readings "+
 			"of 100 observations each; more means the fetched window is wider than "+
 			"the column", perColumn)

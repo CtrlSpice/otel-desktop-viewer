@@ -283,6 +283,10 @@ describe('telemetryAPI.getMetric', () => {
     )
 
     const metric = await telemetryAPI.getMetric('some-stream', 0, 1)
+    expect(metric!.timeseries[0]!.datapoints[0]).toMatchObject({
+      doubleValue: 1,
+      intValue: null,
+    })
     const exemplars = metric!.timeseries[0]!.datapoints[0]!.exemplars
     expect(exemplars).toEqual([
       expect.objectContaining({
@@ -322,6 +326,116 @@ describe('telemetryAPI.getMetric', () => {
         intValue: null,
       }),
     ])
+  })
+
+  it('revives every received metric integer field without losing precision', async () => {
+    const wire = metricResult({
+      timeseries: [
+        {
+          attributesKey: 'series-1',
+          attributes: [],
+          resource: { attributes: [], droppedAttributesCount: 0 },
+          datapoints: [
+            {
+              id: 'gauge-min',
+              timestamp: '100',
+              timestampMs: 0,
+              startTime: '0',
+              flags: 0,
+              exemplars: [],
+              metricType: 'Gauge',
+              doubleValue: null,
+              intValue: '-9223372036854775808',
+              valueType: 'Int',
+            },
+            {
+              id: 'sum-max',
+              timestamp: '101',
+              timestampMs: 0,
+              startTime: '0',
+              flags: 0,
+              exemplars: [],
+              metricType: 'Sum',
+              doubleValue: null,
+              intValue: '9223372036854775807',
+              valueType: 'Int',
+              isMonotonic: true,
+              aggregationTemporality: 'Delta',
+            },
+            {
+              id: 'histogram-max',
+              timestamp: '102',
+              timestampMs: 0,
+              startTime: '0',
+              flags: 0,
+              exemplars: [],
+              metricType: 'Histogram',
+              count: '18446744073709551615',
+              sum: 1,
+              min: 1,
+              max: 1,
+              bucketCounts: ['0', '9007199254740993', '18446744073709551615'],
+              explicitBounds: [0, 1],
+              quantiles: null,
+              aggregationTemporality: 'Delta',
+            },
+            {
+              id: 'exponential-max',
+              timestamp: '103',
+              timestampMs: 0,
+              startTime: '0',
+              flags: 0,
+              exemplars: [],
+              metricType: 'ExponentialHistogram',
+              count: '18446744073709551615',
+              sum: 1,
+              min: 1,
+              max: 1,
+              scale: 0,
+              zeroCount: '9007199254740993',
+              zeroThreshold: 0,
+              positiveBucketOffset: 0,
+              positiveBucketCounts: ['18446744073709551615'],
+              negativeBucketOffset: 0,
+              negativeBucketCounts: [],
+              quantiles: null,
+              aggregationTemporality: 'Delta',
+            },
+          ],
+          stats: null,
+          datapointCount: 4,
+          lastSeenNs: '103',
+          views: null,
+          rateStats: null,
+          sparkline: null,
+        },
+      ],
+    })
+    stubRpcResult(wire)
+
+    const metric = await telemetryAPI.getMetric('some-stream', 0, 1)
+    const datapoints = metric!.timeseries[0]!.datapoints
+
+    expect(datapoints[0]).toMatchObject({
+      intValue: -9_223_372_036_854_775_808n,
+    })
+    expect(datapoints[1]).toMatchObject({
+      intValue: 9_223_372_036_854_775_807n,
+    })
+    expect(datapoints[2]).toMatchObject({
+      count: 18_446_744_073_709_551_615n,
+      bucketCounts: [0n, 9_007_199_254_740_993n, 18_446_744_073_709_551_615n],
+    })
+    expect(datapoints[3]).toMatchObject({
+      count: 18_446_744_073_709_551_615n,
+      zeroCount: 9_007_199_254_740_993n,
+      positiveBucketCounts: [18_446_744_073_709_551_615n],
+      negativeBucketCounts: [],
+    })
+    expect(wire.timeseries[0]!.datapoints[2]).toMatchObject({
+      count: '18446744073709551615',
+      bucketCounts: ['0', '9007199254740993', '18446744073709551615'],
+    })
   })
 
   it('decodes recursive attribute int64 values and exceptional double bits once', async () => {

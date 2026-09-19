@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import type { DataPoint, MetricTimeseries } from '@/types/api-types'
+import type {
+  DataPoint,
+  HistogramDataPoint,
+  MetricTimeseries,
+} from '@/types/api-types'
 import {
   HEATMAP_BUCKET_TARGET,
   seriesBucketsToSlices,
@@ -162,6 +166,36 @@ describe('HEATMAP_BUCKET_TARGET', () => {
 })
 
 describe('seriesBucketsToSlices', () => {
+  it('approximates exact counts only in chart slices without mutating the source', () => {
+    const datapoint: HistogramDataPoint = {
+      id: 'extreme',
+      metricType: 'Histogram',
+      timestamp: ts1,
+      timestampMs: 1000,
+      startTime: ts1,
+      count: 18_446_744_073_709_551_615n,
+      sum: 1,
+      min: 1,
+      max: 1,
+      explicitBounds: [],
+      bucketCounts: [18_446_744_073_709_551_615n],
+      exemplars: [],
+      flags: 0,
+      aggregationTemporality: 'Delta',
+    }
+
+    const [slice] = seriesBucketsToSlices([
+      metricSeries('driver=HAM', [datapoint]),
+    ])
+
+    expect(slice!.totals.count).toBe(Number(datapoint.count))
+    expect(slice!.kind === 'histogram' && slice.counts).toEqual([
+      Number(datapoint.bucketCounts[0]),
+    ])
+    expect(datapoint.count).toBe(18_446_744_073_709_551_615n)
+    expect(datapoint.bucketCounts).toEqual([18_446_744_073_709_551_615n])
+  })
+
   it('emits one slice per store bucket, keyed by its series', () => {
     const series = [
       metricSeries('driver=ALO', [
@@ -171,12 +205,12 @@ describe('seriesBucketsToSlices', () => {
           timestamp: ts1,
           timestampMs: 1000,
           startTime: ts1,
-          count: 3,
+          count: 3n,
           sum: 6,
           min: 1,
           max: 3,
           explicitBounds: [1, 2],
-          bucketCounts: [1, 1, 1],
+          bucketCounts: [1n, 1n, 1n],
           exemplars: [],
           flags: 0,
           aggregationTemporality: 'Cumulative',
@@ -187,12 +221,12 @@ describe('seriesBucketsToSlices', () => {
           timestamp: ts2,
           timestampMs: 2000,
           startTime: ts2,
-          count: 1,
+          count: 1n,
           sum: 5,
           min: 5,
           max: 5,
           explicitBounds: [1, 2],
-          bucketCounts: [0, 0, 1],
+          bucketCounts: [0n, 0n, 1n],
           exemplars: [],
           flags: 0,
           aggregationTemporality: 'Cumulative',
@@ -221,15 +255,15 @@ describe('seriesBucketsToSlices', () => {
           timestamp: ts1,
           timestampMs: 1000,
           startTime: ts1,
-          count: 4,
+          count: 4n,
           sum: 8,
           min: 1,
           max: 4,
           scale: 2,
-          zeroCount: 1,
+          zeroCount: 1n,
           zeroThreshold: 0.5,
           positiveBucketOffset: 3,
-          positiveBucketCounts: [1, 2],
+          positiveBucketCounts: [1n, 2n],
           negativeBucketOffset: 0,
           negativeBucketCounts: [],
           exemplars: [],

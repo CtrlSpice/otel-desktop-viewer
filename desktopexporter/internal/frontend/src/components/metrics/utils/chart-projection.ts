@@ -92,7 +92,10 @@ export function timeseriesToChartTimeseries(
     for (let i = ts.datapoints.length - 1; i >= 0; i--) {
       const dp = ts.datapoints[i]!
       if (dp.metricType !== 'Gauge' && dp.metricType !== 'Sum') continue
-      const value = dp.doubleValue ?? dp.intValue ?? 0
+      // Chart coordinates are IEEE-754 numbers. Received integer measurements
+      // stay bigint on the datapoint; only this display projection approximates.
+      const value =
+        dp.doubleValue ?? (dp.intValue === null ? 0 : Number(dp.intValue))
       points.push({
         // The store sends epoch milliseconds; dividing the nanosecond BigInt
         // here cost one division per datapoint for no added precision.
