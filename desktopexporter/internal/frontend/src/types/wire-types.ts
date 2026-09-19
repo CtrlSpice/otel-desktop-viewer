@@ -5,14 +5,11 @@
 // should only change when the backend changes, not when a frontend type is
 // edited.
 //
-// The one systematic wire/domain difference: uint64 nanosecond timestamps
-// ride as strings (JSON numbers are float64 and would clip ns precision)
-// and are promoted to bigint by the revivers in telemetry-service.ts.
-//
-// Timestamps only: other 64-bit fields (datapoint intValue, histogram
-// count/zeroCount/bucket arrays, summary lastValue) ride as JSON numbers
-// and silently lose precision past 2^53. That is the current contract,
-// not an oversight in these types.
+// Received 64-bit integers ride as decimal strings because JSON numbers would
+// clip them past 2^53. The service revivers promote timestamps, integer metric
+// measurements and histogram counts to bigint. Derived scalar summaries,
+// rates, quantiles and chart coordinates remain numbers at their documented
+// approximation boundaries.
 
 export type JsonAttribute = {
   id?: string
@@ -233,8 +230,8 @@ export type JsonExemplar = JsonExemplarBase &
   )
 
 // Datapoints are json_merge_patch(base, per-type object); the per-type
-// field sets mirror the DataPoint union in api-types.ts exactly (they carry
-// no int64-as-string fields), so only the base timestamps differ.
+// field sets mirror the DataPoint union in api-types.ts, with received 64-bit
+// integers encoded as decimal strings and revived at the service boundary.
 type JsonBaseDataPoint = {
   id: string
   timestamp: string
@@ -254,14 +251,14 @@ type JsonBaseDataPoint = {
 export type JsonGaugeDataPoint = JsonBaseDataPoint & {
   metricType: 'Gauge'
   doubleValue: number | null
-  intValue: number | null
+  intValue: string | null
   valueType: string
 }
 
 export type JsonSumDataPoint = JsonBaseDataPoint & {
   metricType: 'Sum'
   doubleValue: number | null
-  intValue: number | null
+  intValue: string | null
   valueType: string
   isMonotonic: boolean
   aggregationTemporality: string
@@ -274,11 +271,11 @@ export type JsonSumDataPoint = JsonBaseDataPoint & {
 
 export type JsonHistogramDataPoint = JsonBaseDataPoint & {
   metricType: 'Histogram'
-  count: number
+  count: string
   sum: number
   min: number
   max: number
-  bucketCounts: number[]
+  bucketCounts: string[]
   explicitBounds: number[]
   /** Quantile values keyed by the quantile, e.g. {"0.5": 12.4}. Computed in
    *  the store from this datapoint's buckets; null when none were requested.
@@ -290,17 +287,17 @@ export type JsonHistogramDataPoint = JsonBaseDataPoint & {
 
 export type JsonExponentialHistogramDataPoint = JsonBaseDataPoint & {
   metricType: 'ExponentialHistogram'
-  count: number
+  count: string
   sum: number
   min: number
   max: number
   scale: number
-  zeroCount: number
+  zeroCount: string
   zeroThreshold: number
   positiveBucketOffset: number
-  positiveBucketCounts: number[]
+  positiveBucketCounts: string[]
   negativeBucketOffset: number
-  negativeBucketCounts: number[]
+  negativeBucketCounts: string[]
   /** Quantile values keyed by the quantile, e.g. {"0.5": 12.4}. Computed in
    *  the store from this datapoint's buckets; null when none were requested.
    *  Keys are the quantile as the server formatted it, so look up by the same
@@ -475,6 +472,12 @@ export type JsonMetricAggregateEnvelope = {
   scalarAggregate: JsonScalarAggregate | null
 }
 
+/** @derived Cross-series histogram view computed by get_metric.sql. The store
+ * differences cumulative inputs or adds delta inputs within each time bucket,
+ * then adds aligned series vectors. Timestamps/start times are epoch ns decimal
+ * text. Counts are JSON numbers for charting and can approximate integers past
+ * 2^53; sum/min/max/quantiles are metric-unit IEEE-754 display values, with
+ * min/max inferred from populated bucket extents and quantiles interpolated. */
 export type JsonAggregateBucket = {
   timestamp: string
   startTime: string
@@ -523,6 +526,9 @@ export type JsonMetricSummary = {
    *  seriesCount on an unbounded range, lower than it never. */
   seriesCardinality: number
   dataPointCount: number
+  /** @derived Latest Gauge/Sum value by timestamp in the requested window.
+   * SQL coalesces the double/int arms into an IEEE-754 metric-unit number, so
+   * an integer source may be approximate past 2^53. Null for histograms. */
   lastValue: number | null
   lastSeen: string
 }

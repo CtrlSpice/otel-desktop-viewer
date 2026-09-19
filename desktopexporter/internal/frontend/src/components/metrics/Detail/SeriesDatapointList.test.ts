@@ -465,6 +465,22 @@ describe('SeriesDatapointList pagination and keyboard access', () => {
     expect(screen.getByText('value: 9223372036854775807')).toBeInTheDocument()
     expect(screen.getByText('value: —')).toBeInTheDocument()
   })
+
+  it('renders an integer datapoint exactly beyond the JavaScript safe range', () => {
+    renderList([
+      makeDatapoint({
+        doubleValue: null,
+        intValue: 9_223_372_036_854_775_807n,
+        valueType: 'Int',
+        exemplars: [],
+      }),
+    ])
+
+    expect(datapointRow('dp-1')).toHaveTextContent('9223372036854775807')
+    expect(datapointRow('dp-1')).toHaveAccessibleName(
+      /value 9223372036854775807, ID dp-1$/
+    )
+  })
 })
 
 describe('SeriesDatapointList exemplar trace correlation', () => {

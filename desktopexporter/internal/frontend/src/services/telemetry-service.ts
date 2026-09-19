@@ -461,11 +461,67 @@ function exemplarFromJSON(json: JsonExemplar): Exemplar {
 }
 
 function dataPointFromJSON(json: JsonDataPoint): DataPoint {
-  return {
-    ...json,
+  const base = {
+    id: json.id,
     timestamp: bigintFromWire(json.timestamp),
+    timestampMs: json.timestampMs,
     startTime: bigintFromWire(json.startTime),
+    flags: json.flags,
     exemplars: json.exemplars.map(exemplarFromJSON),
+    exemplarCount: json.exemplarCount,
+  }
+  switch (json.metricType) {
+    case 'Gauge':
+      return {
+        ...base,
+        metricType: 'Gauge',
+        doubleValue: json.doubleValue,
+        intValue: json.intValue === null ? null : bigintFromWire(json.intValue),
+        valueType: json.valueType,
+      }
+    case 'Sum':
+      return {
+        ...base,
+        metricType: 'Sum',
+        doubleValue: json.doubleValue,
+        intValue: json.intValue === null ? null : bigintFromWire(json.intValue),
+        valueType: json.valueType,
+        isMonotonic: json.isMonotonic,
+        aggregationTemporality: json.aggregationTemporality,
+        delta: json.delta,
+        isReset: json.isReset,
+      }
+    case 'Histogram':
+      return {
+        ...base,
+        metricType: 'Histogram',
+        count: bigintFromWire(json.count),
+        sum: json.sum,
+        min: json.min,
+        max: json.max,
+        bucketCounts: json.bucketCounts.map(bigintFromWire),
+        explicitBounds: json.explicitBounds,
+        quantiles: json.quantiles,
+        aggregationTemporality: json.aggregationTemporality,
+      }
+    case 'ExponentialHistogram':
+      return {
+        ...base,
+        metricType: 'ExponentialHistogram',
+        count: bigintFromWire(json.count),
+        sum: json.sum,
+        min: json.min,
+        max: json.max,
+        scale: json.scale,
+        zeroCount: bigintFromWire(json.zeroCount),
+        zeroThreshold: json.zeroThreshold,
+        positiveBucketOffset: json.positiveBucketOffset,
+        positiveBucketCounts: json.positiveBucketCounts.map(bigintFromWire),
+        negativeBucketOffset: json.negativeBucketOffset,
+        negativeBucketCounts: json.negativeBucketCounts.map(bigintFromWire),
+        quantiles: json.quantiles,
+        aggregationTemporality: json.aggregationTemporality,
+      }
   }
 }
 

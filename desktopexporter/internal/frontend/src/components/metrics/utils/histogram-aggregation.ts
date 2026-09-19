@@ -5,7 +5,9 @@ import type {
 } from '@/types/api-types'
 import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
 
-/** Aggregate values of a histogram bucket, as the store reports them. */
+/** @derived Numeric chart projection of a histogram bucket. Count comes from
+ * received or SQL-reduced uint64 counts and may approximate past 2^53; the
+ * remaining values use the metric's unit and IEEE-754 precision. */
 export type HistogramTotals = {
   count: number
   sum: number
@@ -41,6 +43,21 @@ export type HistogramSlicePoint =
       /** The store's quantiles for this bucket, when they were requested. */
       quantiles?: Record<string, number | null> | null
     }
+
+export type HistogramChartDataPoint =
+  | (Omit<HistogramDataPoint, 'count' | 'bucketCounts'> & {
+      count: number
+      bucketCounts: number[]
+    })
+  | (Omit<
+      ExponentialHistogramDataPoint,
+      'count' | 'zeroCount' | 'positiveBucketCounts' | 'negativeBucketCounts'
+    > & {
+      count: number
+      zeroCount: number
+      positiveBucketCounts: number[]
+      negativeBucketCounts: number[]
+    })
 
 export type HistogramAggregationError =
   | { kind: 'unspecified'; message: string }
@@ -242,7 +259,14 @@ export function seriesBucketsToSlices(
       ) {
         continue
       }
-      const totals = { count: dp.count, sum: dp.sum, min: dp.min, max: dp.max }
+      // Histogram charts operate in the numeric display domain. Keep the
+      // received datapoint exact and approximate only the projected slice.
+      const totals = {
+        count: Number(dp.count),
+        sum: dp.sum,
+        min: dp.min,
+        max: dp.max,
+      }
       if (dp.metricType === 'Histogram') {
         out.push({
           kind: 'histogram',
@@ -250,7 +274,7 @@ export function seriesBucketsToSlices(
           sourceDatapointID: dp.id,
           attributesKey: ts.attributesKey,
           bounds: dp.explicitBounds ?? [],
-          counts: dp.bucketCounts ?? [],
+          counts: dp.bucketCounts.map(Number),
           totals,
           quantiles: dp.quantiles ?? null,
         })
@@ -263,11 +287,11 @@ export function seriesBucketsToSlices(
         attributesKey: ts.attributesKey,
         scale: dp.scale ?? 0,
         zeroThreshold: dp.zeroThreshold ?? 0,
-        zeroCount: dp.zeroCount ?? 0,
+        zeroCount: Number(dp.zeroCount),
         positiveOffset: dp.positiveBucketOffset ?? 0,
-        positiveCounts: dp.positiveBucketCounts ?? [],
+        positiveCounts: dp.positiveBucketCounts.map(Number),
         negativeOffset: dp.negativeBucketOffset ?? 0,
-        negativeCounts: dp.negativeBucketCounts ?? [],
+        negativeCounts: dp.negativeBucketCounts.map(Number),
         totals,
         quantiles: dp.quantiles ?? null,
       })
@@ -302,11 +326,30 @@ export function buildPerSeriesQuantileSeries(
   return out
 }
 
-export function histogramSliceToDatapoint(
+export function histogramDatapointToChartDatapoint(
+  datapoint: HistogramDataPoint | ExponentialHistogramDataPoint
+): HistogramChartDataPoint {
+  if (datapoint.metricType === 'Histogram') {
+    return {
+      ...datapoint,
+      count: Number(datapoint.count),
+      bucketCounts: datapoint.bucketCounts.map(Number),
+    }
+  }
+  return {
+    ...datapoint,
+    count: Number(datapoint.count),
+    zeroCount: Number(datapoint.zeroCount),
+    positiveBucketCounts: datapoint.positiveBucketCounts.map(Number),
+    negativeBucketCounts: datapoint.negativeBucketCounts.map(Number),
+  }
+}
+
+export function histogramSliceToChartDatapoint(
   slice: HistogramSlicePoint,
   id: string,
   temporality: string
-): HistogramDataPoint | ExponentialHistogramDataPoint {
+): HistogramChartDataPoint {
   // The store's own min and max. Deriving them here rebuilt the bucket list
   // from scale and offsets and took its extents -- the same computation the
   // store already does in projected_dps and aggregate_bucket_json, in a second

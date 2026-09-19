@@ -277,7 +277,10 @@
         return { number: '—', unit: null }
       }
       return {
-        number: formatMetricValuePlain(Number(raw)),
+        number:
+          typeof raw === 'bigint'
+            ? raw.toString()
+            : formatMetricValuePlain(raw),
         unit,
       }
     }

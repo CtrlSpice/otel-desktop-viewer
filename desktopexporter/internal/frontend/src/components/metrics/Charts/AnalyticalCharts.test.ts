@@ -8,7 +8,10 @@ import MetricQuantileAreaChart from './MetricQuantileAreaChart.svelte'
 import MetricTimeSeriesChart from './MetricTimeSeriesChart.svelte'
 import MetricChartHarness from '@/test/MetricChartHarness.svelte'
 import type { HistogramSlicePoint } from '@/components/metrics/utils/histogram-aggregation'
-import { quantileSeriesKey } from '@/components/metrics/utils/histogram-aggregation'
+import {
+  histogramDatapointToChartDatapoint,
+  quantileSeriesKey,
+} from '@/components/metrics/utils/histogram-aggregation'
 import type { ChartTimeseries } from '@/types/metric-chart-types'
 import type {
   ExponentialHistogramDataPoint,
@@ -72,11 +75,11 @@ function histogramDatapoint(
     flags: 0,
     exemplars: [],
     metricType: 'Histogram',
-    count: bucketCounts.reduce((sum, count) => sum + count, 0),
+    count: bucketCounts.reduce((sum, count) => sum + BigInt(count), 0n),
     sum: 0,
     min: 0,
     max: 0,
-    bucketCounts,
+    bucketCounts: bucketCounts.map(BigInt),
     explicitBounds,
     aggregationTemporality: 'Delta',
     quantiles: null,
@@ -95,12 +98,12 @@ function exponentialHistogramDatapoint(
     flags: 0,
     exemplars: [],
     metricType: 'ExponentialHistogram',
-    count: 7,
+    count: 7n,
     sum: 0,
     min: -zeroThreshold,
     max: zeroThreshold,
     scale: 1,
-    zeroCount: 7,
+    zeroCount: 7n,
     zeroThreshold,
     positiveBucketOffset: 0,
     positiveBucketCounts: [],
@@ -535,7 +538,10 @@ describe('HistogramChart keyboard model', () => {
     const metric = metricWithDatapoints('Histogram', [duplicateBounds])
     const { unmount } = renderChart(
       HistogramChart,
-      { datapoint: duplicateBounds, enableValueBucketPin: true },
+      {
+        datapoint: histogramDatapointToChartDatapoint(duplicateBounds),
+        enableValueBucketPin: true,
+      },
       metric
     )
     const surface = screen.getByRole('application', {
@@ -563,7 +569,7 @@ describe('HistogramChart keyboard model', () => {
     const catchAll = histogramDatapoint('catch-all', [], [7])
     renderChart(
       HistogramChart,
-      { datapoint: catchAll },
+      { datapoint: histogramDatapointToChartDatapoint(catchAll) },
       metricWithDatapoints('Histogram', [catchAll])
     )
     const snapshot = screen.getByRole('application', {
@@ -584,7 +590,10 @@ describe('HistogramChart keyboard model', () => {
     const metric = metricWithDatapoints('Histogram', [datapoint])
     renderChart(
       HistogramChart,
-      { datapoint, enableValueBucketPin: true },
+      {
+        datapoint: histogramDatapointToChartDatapoint(datapoint),
+        enableValueBucketPin: true,
+      },
       metric
     )
     const surface = screen.getByRole('application', {
@@ -617,7 +626,7 @@ describe('HistogramChart keyboard model', () => {
     const threshold = exponentialHistogramDatapoint('threshold', 0.001)
     const { unmount } = renderChart(
       HistogramChart,
-      { datapoint: threshold },
+      { datapoint: histogramDatapointToChartDatapoint(threshold) },
       metric
     )
     const rangedSurface = screen.getByRole('application', {
@@ -629,7 +638,11 @@ describe('HistogramChart keyboard model', () => {
     unmount()
 
     const exact = exponentialHistogramDatapoint('exact-zero', 0)
-    renderChart(HistogramChart, { datapoint: exact }, metric)
+    renderChart(
+      HistogramChart,
+      { datapoint: histogramDatapointToChartDatapoint(exact) },
+      metric
+    )
     const exactSurface = screen.getByRole('application', {
       name: 'Histogram snapshot distribution chart',
     })
@@ -642,7 +655,12 @@ describe('HistogramChart keyboard model', () => {
     const datapoint = histogramDatapoint('raw-histogram', [], [7])
     const metric = metricWithDatapoints('Histogram', [datapoint])
     let context: MetricViewContext | undefined
-    renderChart(HistogramChart, { datapoint }, metric, next => (context = next))
+    renderChart(
+      HistogramChart,
+      { datapoint: histogramDatapointToChartDatapoint(datapoint) },
+      metric,
+      next => (context = next)
+    )
     if (!context) throw new Error('metric context was not captured')
     context.onDatapointClick(datapoint)
     context.onHeatmapSelect(BASE_NS + 500n)

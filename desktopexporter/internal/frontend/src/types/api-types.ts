@@ -203,14 +203,16 @@ type BaseDataPoint = {
 export type GaugeDataPoint = BaseDataPoint & {
   metricType: 'Gauge'
   doubleValue: number | null
-  intValue: number | null
+  /** Received NumberDataPoint.as_int, kept exact across JSON. */
+  intValue: bigint | null
   valueType: string
 }
 
 export type SumDataPoint = BaseDataPoint & {
   metricType: 'Sum'
   doubleValue: number | null
-  intValue: number | null
+  /** Received NumberDataPoint.as_int, kept exact across JSON. */
+  intValue: bigint | null
   valueType: string
   isMonotonic: boolean
   aggregationTemporality: string
@@ -223,11 +225,13 @@ export type SumDataPoint = BaseDataPoint & {
 
 export type HistogramDataPoint = BaseDataPoint & {
   metricType: 'Histogram'
-  count: number
+  /** Received uint64 count, or an exact integral SQL reduction of such counts. */
+  count: bigint
   sum: number
   min: number
   max: number
-  bucketCounts: number[]
+  /** Received uint64 vector, or an exact integral SQL reduction of one. */
+  bucketCounts: bigint[]
   explicitBounds: number[]
   aggregationTemporality: string
   /** Quantiles computed by the store for this bucket, keyed by the quantile
@@ -239,17 +243,21 @@ export type HistogramDataPoint = BaseDataPoint & {
 
 export type ExponentialHistogramDataPoint = BaseDataPoint & {
   metricType: 'ExponentialHistogram'
-  count: number
+  /** Received uint64 count, or an exact integral SQL reduction of such counts. */
+  count: bigint
   sum: number
   min: number
   max: number
   scale: number
-  zeroCount: number
+  /** Received uint64 zero count, or an exact integral SQL reduction of one. */
+  zeroCount: bigint
   zeroThreshold: number
   positiveBucketOffset: number
-  positiveBucketCounts: number[]
+  /** Received uint64 vector, or an exact integral SQL reduction of one. */
+  positiveBucketCounts: bigint[]
   negativeBucketOffset: number
-  negativeBucketCounts: number[]
+  /** Received uint64 vector, or an exact integral SQL reduction of one. */
+  negativeBucketCounts: bigint[]
   aggregationTemporality: string
   /** Quantiles computed by the store for this bucket, keyed by the quantile
    *  (`"0.5"`). Null when none were requested. Read rather than recomputed:
@@ -441,7 +449,10 @@ export type MetricSummary = {
   seriesCardinality: number
   // In-range datapoints for this metric stream.
   dataPointCount: number
-  // Most recent scalar value for Gauge/Sum metrics; null for histograms.
+  /** @derived Most recent Gauge/Sum value by timestamp in the requested
+   * window. SQL coalesces double/int sources into an IEEE-754 metric-unit
+   * number, so integer measurements past 2^53 are approximate. Null for
+   * histograms. */
   lastValue: number | null
   // Timestamp of the most recent in-range datapoint (nanoseconds).
   lastSeen: bigint

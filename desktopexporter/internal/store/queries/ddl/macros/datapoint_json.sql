@@ -44,12 +44,15 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, quantiles) 
 			case d.metric_type
 				when 'Gauge' then json_object(
 					'doubleValue', d.double_value,
-					'intValue', d.int_value,
+					-- Received NumberDataPoint.as_int is signed int64. Decimal text
+					-- preserves its exact value through JSON; the frontend revives it
+					-- to bigint before any display-only chart projection.
+					'intValue', d.int_value::varchar,
 					'valueType', d.value_type
 				)
 				when 'Sum' then json_object(
 					'doubleValue', d.double_value,
-					'intValue', d.int_value,
+					'intValue', d.int_value::varchar,
 					'valueType', d.value_type,
 					'isMonotonic', d.is_monotonic,
 					'aggregationTemporality', d.aggregation_temporality,
@@ -65,11 +68,14 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, quantiles) 
 						then d.is_reset end
 				)
 				when 'Histogram' then json_object(
-					'count', d.count,
+					-- Received count vectors are unsigned uint64. Reduced histogram
+					-- rows reuse this shape, so their integral results also retain
+					-- their exact SQL value on the wire.
+					'count', d.count::varchar,
 					'sum', d.sum,
 					'min', d.min,
 					'max', d.max,
-					'bucketCounts', d.bucket_counts,
+					'bucketCounts', list_transform(d.bucket_counts, value -> value::varchar),
 					'explicitBounds', d.explicit_bounds,
 					-- Precomputed by get_metric.sql's dp_quantiles chain -- a scalar
 					-- macro computing these per row cost a sub-plan per datapoint.
@@ -78,17 +84,17 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, quantiles) 
 					'aggregationTemporality', d.aggregation_temporality
 				)
 				when 'ExponentialHistogram' then json_object(
-					'count', d.count,
+					'count', d.count::varchar,
 					'sum', d.sum,
 					'min', d.min,
 					'max', d.max,
 					'scale', d.scale,
-					'zeroCount', d.zero_count,
+					'zeroCount', d.zero_count::varchar,
 					'zeroThreshold', d.zero_threshold,
 					'positiveBucketOffset', d.positive_bucket_offset,
-					'positiveBucketCounts', d.positive_bucket_counts,
+					'positiveBucketCounts', list_transform(d.positive_bucket_counts, value -> value::varchar),
 					'negativeBucketOffset', d.negative_bucket_offset,
-					'negativeBucketCounts', d.negative_bucket_counts,
+					'negativeBucketCounts', list_transform(d.negative_bucket_counts, value -> value::varchar),
 					'quantiles', quantiles,
 					'aggregationTemporality', d.aggregation_temporality
 				)
