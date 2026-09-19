@@ -98,6 +98,27 @@ func TestVersionMismatchIsRefused(t *testing.T) {
 	assert.Equal(t, int64(schema.Version), fields["expected_version"])
 }
 
+// Version 15 wrote zero for both absent and supplied-zero histogram statistics.
+// Pin that exact predecessor because those states cannot be reconstructed.
+func TestVersionFifteenDatabaseIsRefused(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v15.db")
+
+	s := newFileStore(t, path)
+	require.NoError(t, s.Close())
+
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(`delete from schema_meta`)
+	require.NoError(t, err)
+	_, err = db.Exec(`insert into schema_meta (version) values (15)`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	_, err = NewStore(context.Background(), path, zap.NewNop())
+	require.ErrorIs(t, err, ErrSchemaIncompatible,
+		"a database with ambiguous histogram optional statistics must be refused")
+}
+
 // Version 10 stored every exemplar value as DOUBLE. Pin that exact predecessor
 // so this incompatible schema transition cannot lose its bump.
 func TestVersionTenDatabaseIsRefused(t *testing.T) {

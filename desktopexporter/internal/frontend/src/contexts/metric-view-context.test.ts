@@ -819,6 +819,36 @@ describe('metric view context datapoint URL sync', () => {
 })
 
 describe('metric view context histogram aggregate decoding', () => {
+  it('keeps an unavailable merged sum distinct from zero', () => {
+    const [unknown, zero] = aggregateToSlices([
+      {
+        timestamp: String(BigInt(BASE_TIMESTAMP_MS) * 1_000_000n),
+        startTime: String(BigInt(BASE_TIMESTAMP_MS) * 1_000_000n),
+        count: 1,
+        sum: null,
+        min: 0,
+        max: 1,
+        bucketCounts: [1],
+        explicitBounds: [],
+        quantiles: null,
+      },
+      {
+        timestamp: String(BigInt(BASE_TIMESTAMP_MS + 1) * 1_000_000n),
+        startTime: String(BigInt(BASE_TIMESTAMP_MS + 1) * 1_000_000n),
+        count: 1,
+        sum: 0,
+        min: 0,
+        max: 1,
+        bucketCounts: [1],
+        explicitBounds: [],
+        quantiles: null,
+      },
+    ])
+
+    expect(unknown!.totals.sum).toBeUndefined()
+    expect(zero!.totals.sum).toBe(0)
+  })
+
   it('keeps an explicit empty-bound catch-all as an explicit histogram', () => {
     const [slice] = aggregateToSlices([
       {

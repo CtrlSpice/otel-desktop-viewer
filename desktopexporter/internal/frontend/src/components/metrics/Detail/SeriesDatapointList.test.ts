@@ -3,7 +3,11 @@ import { describe, expect, it, beforeEach } from 'vitest'
 import { screen, waitFor } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import { tick } from 'svelte'
-import type { SumDataPoint } from '@/types/api-types'
+import type {
+  DataPoint,
+  HistogramDataPoint,
+  SumDataPoint,
+} from '@/types/api-types'
 import type { MetricViewContext } from '@/contexts/metric-view-context.svelte'
 import SeriesDatapointListHarness from '@/test/SeriesDatapointListHarness.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
@@ -63,7 +67,7 @@ function datapointRow(id: string): HTMLTableRowElement {
   return row!
 }
 
-function renderListView(datapoints: SumDataPoint[], unit = '1') {
+function renderListView(datapoints: DataPoint[], unit = '1') {
   let context: MetricViewContext | undefined
   const oncontext = (ctx: MetricViewContext) => {
     context = ctx
@@ -76,15 +80,37 @@ function renderListView(datapoints: SumDataPoint[], unit = '1') {
   if (!context) throw new Error('harness did not report a metric view context')
   return {
     context,
-    rerender: (nextDatapoints: SumDataPoint[]) =>
+    rerender: (nextDatapoints: DataPoint[]) =>
       view.rerender({
         componentProps: { datapoints: nextDatapoints, unit, oncontext },
       }),
   }
 }
 
-function renderList(datapoints: SumDataPoint[], unit = '1'): MetricViewContext {
+function renderList(datapoints: DataPoint[], unit = '1'): MetricViewContext {
   return renderListView(datapoints, unit).context
+}
+
+function makeHistogramDatapoint(
+  id: string,
+  sum: number | null
+): HistogramDataPoint {
+  return {
+    id,
+    timestamp: 1_700_000_000_000_000_000n,
+    timestampMs: 1_700_000_000_000,
+    startTime: 1_700_000_000_000_000_000n,
+    flags: 0,
+    metricType: 'Histogram',
+    count: 1n,
+    sum,
+    min: null,
+    max: null,
+    bucketCounts: [1n],
+    explicitBounds: [],
+    aggregationTemporality: 'Delta',
+    exemplars: [],
+  }
 }
 
 describe('SeriesDatapointList pagination and keyboard access', () => {
@@ -139,6 +165,16 @@ describe('SeriesDatapointList pagination and keyboard access', () => {
     expect(datapointRow('dp-1')).toHaveTextContent('1')
     expect(datapointRow('dp-1')).not.toHaveTextContent('ms')
     expect(datapointRow('dp-1')).toHaveAccessibleName(/value 1 ms, ID dp-1$/)
+  })
+
+  it('shows an absent histogram sum as unavailable and a supplied zero as zero', () => {
+    renderList([
+      makeHistogramDatapoint('hist-absent', null),
+      makeHistogramDatapoint('hist-zero', 0),
+    ])
+
+    expect(datapointRow('hist-absent')).toHaveTextContent('count 1, sum —')
+    expect(datapointRow('hist-zero')).toHaveTextContent('count 1, sum 0')
   })
 
   it('keeps Details hidden unless any datapoint in the set has details', async () => {

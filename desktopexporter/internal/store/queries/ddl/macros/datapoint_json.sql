@@ -10,8 +10,8 @@
 -- Keeping both out means this is a pure function of its arguments, testable
 -- against literals, and the two things it cannot know stay the caller's job.
 --
--- The common fields are merged with the type-specific ones rather than
--- repeated in each branch, so a field every datapoint carries is written once.
+-- Gauge and Sum merge common fields with their type-specific fields. Histogram
+-- branches are complete objects because their optional nulls must survive.
 create or replace macro datapoint_json(d, exemplars, exemplar_count, quantiles) as (
 		-- exemplarCount rides in an outer patch rather than the object below,
 		-- so that it can be *absent* rather than zero.
@@ -24,24 +24,69 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, quantiles) 
 		-- (RFC 7386), so the common case pays nothing and the client reads
 		-- absence as "you have them all".
 		json_merge_patch(
-		json_merge_patch(
-			json_object(
+		case d.metric_type
+			-- These branches are complete objects rather than merge patches:
+			-- RFC 7386 deletes null patch members, while null here is the wire
+			-- representation of an absent received optional statistic.
+			when 'Histogram' then json_merge_patch(json_object(
 				'id', d.id,
 				'metricType', d.metric_type,
 				'timestamp', d.timestamp::varchar,
-				-- The same instant in epoch milliseconds, as a number.
-				--
-				-- The chart needs milliseconds and got them by dividing the
-				-- nanosecond string's BigInt per datapoint -- 23,000 BigInt
-				-- divisions to draw one Gauge. Epoch ms is ~1.8e12, comfortably
-				-- inside float64's exact-integer range, so unlike the ns value it
-				-- loses nothing as a JSON number.
 				'timestampMs', d.timestamp // 1000000,
 				'startTime', d.start_time::varchar,
 				'flags', d.flags,
-				'exemplars', exemplars
-			),
-			case d.metric_type
+				'exemplars', exemplars,
+				-- Received count vectors are unsigned uint64. Reduced histogram
+				-- rows reuse this shape, so their integral results also retain
+				-- their exact SQL value on the wire.
+				'count', d.count::varchar,
+				'sum', d.sum,
+				'min', d.min,
+				'max', d.max,
+				'bucketCounts', list_transform(d.bucket_counts, value -> value::varchar),
+				'explicitBounds', d.explicit_bounds,
+				'aggregationTemporality', d.aggregation_temporality
+			), json_object(
+				-- This patch preserves the existing quantile wire rule without
+				-- touching null received statistics already in the target object.
+				'quantiles', json_merge_patch(json('{}'), quantiles)
+			))
+			when 'ExponentialHistogram' then json_merge_patch(json_object(
+				'id', d.id,
+				'metricType', d.metric_type,
+				'timestamp', d.timestamp::varchar,
+				'timestampMs', d.timestamp // 1000000,
+				'startTime', d.start_time::varchar,
+				'flags', d.flags,
+				'exemplars', exemplars,
+				'count', d.count::varchar,
+				'sum', d.sum,
+				'min', d.min,
+				'max', d.max,
+				'scale', d.scale,
+				'zeroCount', d.zero_count::varchar,
+				'zeroThreshold', d.zero_threshold,
+				'positiveBucketOffset', d.positive_bucket_offset,
+				'positiveBucketCounts', list_transform(d.positive_bucket_counts, value -> value::varchar),
+				'negativeBucketOffset', d.negative_bucket_offset,
+				'negativeBucketCounts', list_transform(d.negative_bucket_counts, value -> value::varchar),
+				'aggregationTemporality', d.aggregation_temporality
+			), json_object(
+				'quantiles', json_merge_patch(json('{}'), quantiles)
+			))
+			else json_merge_patch(
+				json_object(
+					'id', d.id,
+					'metricType', d.metric_type,
+					'timestamp', d.timestamp::varchar,
+					-- The same instant in epoch milliseconds, as a number. Epoch ms
+					-- remains inside float64's exact-integer range.
+					'timestampMs', d.timestamp // 1000000,
+					'startTime', d.start_time::varchar,
+					'flags', d.flags,
+					'exemplars', exemplars
+				),
+				case d.metric_type
 				when 'Gauge' then json_object(
 					'doubleValue', d.double_value,
 					-- Received NumberDataPoint.as_int is signed int64. Decimal text
@@ -67,39 +112,9 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, quantiles) 
 					'isReset', case when d.aggregation_temporality = 'Cumulative'
 						then d.is_reset end
 				)
-				when 'Histogram' then json_object(
-					-- Received count vectors are unsigned uint64. Reduced histogram
-					-- rows reuse this shape, so their integral results also retain
-					-- their exact SQL value on the wire.
-					'count', d.count::varchar,
-					'sum', d.sum,
-					'min', d.min,
-					'max', d.max,
-					'bucketCounts', list_transform(d.bucket_counts, value -> value::varchar),
-					'explicitBounds', d.explicit_bounds,
-					-- Precomputed by get_metric.sql's dp_quantiles chain -- a scalar
-					-- macro computing these per row cost a sub-plan per datapoint.
-					-- Null when no quantiles were requested, as the old guard had it.
-					'quantiles', quantiles,
-					'aggregationTemporality', d.aggregation_temporality
-				)
-				when 'ExponentialHistogram' then json_object(
-					'count', d.count::varchar,
-					'sum', d.sum,
-					'min', d.min,
-					'max', d.max,
-					'scale', d.scale,
-					'zeroCount', d.zero_count::varchar,
-					'zeroThreshold', d.zero_threshold,
-					'positiveBucketOffset', d.positive_bucket_offset,
-					'positiveBucketCounts', list_transform(d.positive_bucket_counts, value -> value::varchar),
-					'negativeBucketOffset', d.negative_bucket_offset,
-					'negativeBucketCounts', list_transform(d.negative_bucket_counts, value -> value::varchar),
-					'quantiles', quantiles,
-					'aggregationTemporality', d.aggregation_temporality
-				)
-			end
-		),
+				end
+			)
+		end,
 		json_object('exemplarCount',
 			case when exemplar_count > json_array_length(exemplars)
 				then exemplar_count end)

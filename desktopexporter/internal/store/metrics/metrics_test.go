@@ -402,6 +402,190 @@ func getMetricFullByNameInRange(t *testing.T, s *store.Store, ctx context.Contex
 	return m
 }
 
+type optionalHistogramStatistic struct {
+	present bool
+	value   float64
+}
+
+type optionalHistogramDatapoint interface {
+	SetTimestamp(pcommon.Timestamp)
+	SetCount(uint64)
+	SetSum(float64)
+	SetMin(float64)
+	SetMax(float64)
+}
+
+func TestHistogramOptionalStatisticsPreservePresence(t *testing.T) {
+	t.Parallel()
+	fixtures := []struct {
+		timestamp uint64
+		sum       optionalHistogramStatistic
+		min       optionalHistogramStatistic
+		max       optionalHistogramStatistic
+	}{
+		{timestamp: 100},
+		{timestamp: 200, sum: optionalHistogramStatistic{true, 0}, min: optionalHistogramStatistic{true, 0}, max: optionalHistogramStatistic{true, 0}},
+		{timestamp: 300, sum: optionalHistogramStatistic{true, -2.5}, min: optionalHistogramStatistic{true, -3}, max: optionalHistogramStatistic{true, 4.5}},
+		{timestamp: 400, sum: optionalHistogramStatistic{true, 7}},
+		{timestamp: 500, min: optionalHistogramStatistic{true, -1}},
+		{timestamp: 600, max: optionalHistogramStatistic{true, 9}},
+	}
+
+	for _, metricType := range []string{"Histogram", "ExponentialHistogram"} {
+		metricType := metricType
+		t.Run(metricType, func(t *testing.T) {
+			t.Parallel()
+			s, ctx := storetest.New(t)
+			md := pmetric.NewMetrics()
+			metric := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+			metric.SetName("optional-" + metricType)
+			var appendPoint func() optionalHistogramDatapoint
+			switch metricType {
+			case "Histogram":
+				histogram := metric.SetEmptyHistogram()
+				histogram.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+				appendPoint = func() optionalHistogramDatapoint { return histogram.DataPoints().AppendEmpty() }
+			case "ExponentialHistogram":
+				histogram := metric.SetEmptyExponentialHistogram()
+				histogram.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+				appendPoint = func() optionalHistogramDatapoint { return histogram.DataPoints().AppendEmpty() }
+			}
+
+			for _, fixture := range fixtures {
+				point := appendPoint()
+				point.SetTimestamp(pcommon.Timestamp(fixture.timestamp))
+				if fixture.sum.present {
+					point.SetSum(fixture.sum.value)
+				}
+				if fixture.min.present {
+					point.SetMin(fixture.min.value)
+				}
+				if fixture.max.present {
+					point.SetMax(fixture.max.value)
+				}
+			}
+
+			require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+				return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+			}))
+			require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+				rows, err := db.QueryContext(ctx, `select timestamp::varchar, sum, min, max
+					from datapoints order by timestamp`)
+				if err != nil {
+					return err
+				}
+				defer rows.Close()
+				for _, fixture := range fixtures {
+					require.True(t, rows.Next())
+					var timestamp string
+					var got [3]sql.NullFloat64
+					require.NoError(t, rows.Scan(&timestamp, &got[0], &got[1], &got[2]))
+					assert.Equal(t, strconv.FormatUint(fixture.timestamp, 10), timestamp)
+					for i, want := range []optionalHistogramStatistic{fixture.sum, fixture.min, fixture.max} {
+						assert.Equal(t, want.present, got[i].Valid)
+						if want.present {
+							assert.Equal(t, want.value, got[i].Float64)
+						}
+					}
+				}
+				require.False(t, rows.Next())
+				return rows.Err()
+			}))
+
+			byTimestamp := make(map[string]map[string]any)
+			for _, raw := range metricDatapoints(getMetricFullByName(t, s, ctx, "optional-"+metricType)) {
+				dp := raw.(map[string]any)
+				byTimestamp[dp["timestamp"].(string)] = dp
+			}
+			for _, fixture := range fixtures {
+				dp := byTimestamp[strconv.FormatUint(fixture.timestamp, 10)]
+				require.NotNil(t, dp)
+				for field, want := range map[string]optionalHistogramStatistic{"sum": fixture.sum, "min": fixture.min, "max": fixture.max} {
+					require.Contains(t, dp, field)
+					if want.present {
+						assert.Equal(t, want.value, dp[field])
+					} else {
+						assert.Nil(t, dp[field])
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestHistogramReductionRequiresEveryInputSum(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name        string
+		metricType  string
+		temporality pmetric.AggregationTemporality
+	}{
+		{name: "delta", metricType: "Histogram", temporality: pmetric.AggregationTemporalityDelta},
+		{name: "cumulative", metricType: "ExponentialHistogram", temporality: pmetric.AggregationTemporalityCumulative},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s, ctx := storetest.New(t)
+			md := pmetric.NewMetrics()
+			metric := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+			metric.SetName("partial-" + tc.name)
+
+			switch tc.metricType {
+			case "Histogram":
+				histogram := metric.SetEmptyHistogram()
+				histogram.SetAggregationTemporality(tc.temporality)
+				for i := range 3 {
+					timestamp := pcommon.Timestamp(time.Duration(i+1) * time.Second)
+					count := uint64(i + 1)
+					dp := histogram.DataPoints().AppendEmpty()
+					dp.SetTimestamp(timestamp)
+					dp.SetCount(count)
+					dp.BucketCounts().FromRaw([]uint64{count})
+					if i != 1 {
+						dp.SetSum(float64(count))
+					}
+				}
+			case "ExponentialHistogram":
+				histogram := metric.SetEmptyExponentialHistogram()
+				histogram.SetAggregationTemporality(tc.temporality)
+				for i := range 3 {
+					timestamp := pcommon.Timestamp(time.Duration(i+1) * time.Second)
+					count := uint64(i + 1)
+					dp := histogram.DataPoints().AppendEmpty()
+					dp.SetTimestamp(timestamp)
+					dp.SetCount(count)
+					dp.Positive().BucketCounts().FromRaw([]uint64{count})
+					if i != 1 {
+						dp.SetSum(float64(count))
+					}
+				}
+			}
+
+			require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+				return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+			}))
+			streamID := findMetricID(t, s, ctx, "partial-"+tc.name)
+			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+				return metrics.GetMetric(ctx, db, streamID,
+					store.BoundedTimeRange(0, int64(4*time.Second)),
+					1, nil, nil, 0, 0, 0, nil, "", nil, 0)
+			})
+			require.NoError(t, err)
+			var full map[string]any
+			require.NoError(t, json.Unmarshal(raw, &full))
+			dps := metricDatapoints(full)
+			require.Len(t, dps, 1)
+			assert.Contains(t, dps[0].(map[string]any), "sum")
+			assert.Nil(t, dps[0].(map[string]any)["sum"])
+			aggregate := full["aggregate"].([]any)
+			require.Len(t, aggregate, 1)
+			assert.Contains(t, aggregate[0].(map[string]any), "sum")
+			assert.Nil(t, aggregate[0].(map[string]any)["sum"])
+		})
+	}
+}
+
 func TestReceivedMetricIntegersUseExactDecimalWireValues(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -4597,8 +4781,10 @@ func TestGetMetric_EmptyExplicitBoundsAggregate(t *testing.T) {
 		dp := dps[0].(map[string]any)
 		require.IsType(t, []any{}, dp["explicitBounds"])
 		assert.Empty(t, dp["explicitBounds"])
-		assert.NotContains(t, dp, "min")
-		assert.NotContains(t, dp, "max")
+		assert.Contains(t, dp, "min")
+		assert.Nil(t, dp["min"])
+		assert.Contains(t, dp, "max")
+		assert.Nil(t, dp["max"])
 		counts := dp["bucketCounts"].([]any)
 		require.Len(t, counts, 1)
 		seriesBucketTotal += metricWireUint64(t, counts[0])

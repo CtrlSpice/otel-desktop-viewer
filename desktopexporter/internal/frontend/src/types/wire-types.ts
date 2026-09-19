@@ -272,9 +272,9 @@ export type JsonSumDataPoint = JsonBaseDataPoint & {
 export type JsonHistogramDataPoint = JsonBaseDataPoint & {
   metricType: 'Histogram'
   count: string
-  sum: number
-  min: number
-  max: number
+  sum: number | null
+  min: number | null
+  max: number | null
   bucketCounts: string[]
   explicitBounds: number[]
   /** Quantile values keyed by the quantile, e.g. {"0.5": 12.4}. Computed in
@@ -288,9 +288,9 @@ export type JsonHistogramDataPoint = JsonBaseDataPoint & {
 export type JsonExponentialHistogramDataPoint = JsonBaseDataPoint & {
   metricType: 'ExponentialHistogram'
   count: string
-  sum: number
-  min: number
-  max: number
+  sum: number | null
+  min: number | null
+  max: number | null
   scale: number
   zeroCount: string
   zeroThreshold: number
@@ -482,11 +482,12 @@ export type JsonAggregateBucket = {
   timestamp: string
   startTime: string
   count: number
-  sum: number
+  sum: number | null
   /** Derived from the buckets: a merge cannot carry the observed min and max
-   *  through, because for cumulative it is a subtraction. */
-  min: number
-  max: number
+   *  through, because for cumulative it is a subtraction. Omitted when an
+   *  empty explicit-bounds vector provides no finite extent. */
+  min?: number
+  max?: number
   /** Explicit-bounds histograms carry these; exponential ones carry the
    *  scale/offset fields below. A bucket has one representation or the other,
    *  never both, so the absent set is omitted rather than sent as nulls. */

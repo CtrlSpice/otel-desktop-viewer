@@ -18,6 +18,8 @@ create table if not exists datapoints (
 		int_value bigint,
 		value_type varchar,
 		count ubigint,
+		-- Optional OTLP histogram statistics. NULL means absent; zero means
+		-- present with value zero for both histogram representations.
 		sum double,
 		min double,
 		max double,

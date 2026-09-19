@@ -767,7 +767,7 @@ func ingestHistogramDatapoints(appenders map[string]*duckdb.Appender, streamID, 
 		if err := appenders["datapoints"].AppendRow(
 			datapointID, streamID, ident.series, ingestID, uint64(dp.Timestamp()), uint64(dp.StartTimestamp()), uint32(dp.Flags()),
 			nil, nil, nil,
-			dp.Count(), dp.Sum(), dp.Min(), dp.Max(), dp.BucketCounts().AsRaw(), ingest.BoundsID(dp.ExplicitBounds().AsRaw()),
+			dp.Count(), optionalFloat64(dp.HasSum(), dp.Sum()), optionalFloat64(dp.HasMin(), dp.Min()), optionalFloat64(dp.HasMax(), dp.Max()), dp.BucketCounts().AsRaw(), ingest.BoundsID(dp.ExplicitBounds().AsRaw()),
 			nil, nil, nil, nil, nil, nil, nil,
 			ident.attrs,
 		); err != nil {
@@ -789,7 +789,7 @@ func ingestExponentialHistogramDatapoints(appenders map[string]*duckdb.Appender,
 		if err := appenders["datapoints"].AppendRow(
 			datapointID, streamID, ident.series, ingestID, uint64(dp.Timestamp()), uint64(dp.StartTimestamp()), uint32(dp.Flags()),
 			nil, nil, nil,
-			dp.Count(), dp.Sum(), dp.Min(), dp.Max(), nil, nil,
+			dp.Count(), optionalFloat64(dp.HasSum(), dp.Sum()), optionalFloat64(dp.HasMin(), dp.Min()), optionalFloat64(dp.HasMax(), dp.Max()), nil, nil,
 			dp.Scale(), dp.ZeroCount(), dp.ZeroThreshold(), pos.Offset(), pos.BucketCounts().AsRaw(), neg.Offset(), neg.BucketCounts().AsRaw(),
 			ident.attrs,
 		); err != nil {
@@ -800,6 +800,13 @@ func ingestExponentialHistogramDatapoints(appenders map[string]*duckdb.Appender,
 		}
 	}
 	return nil
+}
+
+func optionalFloat64(present bool, value float64) any {
+	if !present {
+		return nil
+	}
+	return value
 }
 
 func numberDataPointValue(dp pmetric.NumberDataPoint) (doubleVal any, intVal any, typeStr string) {
