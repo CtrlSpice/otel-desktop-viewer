@@ -300,6 +300,8 @@ export const SPAN_FIELDS: FieldDefinition[] = [
       OPERATORS.LESS_THAN,
       OPERATORS.GREATER_THAN_OR_EQUAL,
       OPERATORS.LESS_THAN_OR_EQUAL,
+      OPERATORS.IN,
+      OPERATORS.NOT_IN,
     ],
     description: 'Span duration in nanoseconds (endTime - startTime)',
   },

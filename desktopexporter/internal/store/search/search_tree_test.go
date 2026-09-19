@@ -639,6 +639,56 @@ func TestBuildOperatorCondition_NativeIntegerList(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidQuery)
 }
 
+func TestNormalizeDuration(t *testing.T) {
+	for input, expected := range map[string]string{
+		"1.5h":                   "5400000000000",
+		"0.5ns":                  "1",
+		"0.499999999999999999ns": "0",
+		"0s":                     "0",
+		"9223372036854775807ns":  "9223372036854775807",
+	} {
+		t.Run(input, func(t *testing.T) {
+			actual, err := NormalizeDuration(input)
+			require.NoError(t, err)
+			assert.Equal(t, expected, actual)
+		})
+	}
+
+	for _, input := range []string{"-1ms", "invalid", "9223372036854775808ns"} {
+		t.Run(input, func(t *testing.T) {
+			_, err := NormalizeDuration(input)
+			assert.ErrorIs(t, err, ErrInvalidQuery)
+		})
+	}
+}
+
+func TestBuildOperatorCondition_Duration(t *testing.T) {
+	params := []NamedParam{}
+	query := &Query{FieldOperator: ">=", Value: "1.5h"}
+	sql, err := BuildOperatorCondition(Duration("s.duration"), query, &params)
+	require.NoError(t, err)
+	assert.Equal(t, "s.duration >= value_0", sql)
+	assert.Equal(t, []NamedParam{{"value_0", int64(5_400_000_000_000)}}, params)
+
+	params = nil
+	query = &Query{FieldOperator: "IN", Value: `["1s","0.5ns"]`}
+	sql, err = BuildOperatorCondition(Duration("s.duration"), query, &params)
+	require.NoError(t, err)
+	assert.Equal(t, "s.duration IN CAST(value_0 AS BIGINT[])", sql)
+	assert.Equal(t, []NamedParam{{"value_0", []any{"1000000000", "1"}}}, params)
+
+	for _, value := range []string{"-1ms", "9223372036854775808ns", `["1s","bad"]`, "[]", "[null]"} {
+		t.Run(value, func(t *testing.T) {
+			operator := ">="
+			if value[0] == '[' {
+				operator = "IN"
+			}
+			_, err := BuildOperatorCondition(Duration("s.duration"), &Query{FieldOperator: operator, Value: value}, &params)
+			assert.ErrorIs(t, err, ErrInvalidQuery)
+		})
+	}
+}
+
 func TestBuildSearchSQL_NilQuery(t *testing.T) {
 	mapper := func(field *FieldDefinition, _ *Query, _ *[]NamedParam) ([]ResolvedExpression, error) {
 		return []ResolvedExpression{Text(field.Name)}, nil

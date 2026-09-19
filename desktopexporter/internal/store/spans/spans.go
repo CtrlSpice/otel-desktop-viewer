@@ -913,7 +913,7 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (search.ResolvedExpr
 		return search.Text(expr), nil
 	}
 	if field.Name == "duration" {
-		return search.NativeInteger("(s.end_time - s.start_time)"), nil
+		return search.Duration("(s.end_time - s.start_time)"), nil
 	}
 	if field.Name == "spanID" || field.Name == "parentSpanID" {
 		col := util.CamelToSnake(field.Name)

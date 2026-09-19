@@ -60,6 +60,16 @@ const integerListFields: FieldDefinition[] = [
   },
 ]
 
+const durationListFields: FieldDefinition[] = [
+  {
+    name: 'duration',
+    type: 'int64',
+    searchScope: 'field',
+    description: 'span duration',
+    operators: [OPERATORS.IN, OPERATORS.NOT_IN],
+  },
+]
+
 const collidingIntegerFields: FieldDefinition[] = [
   ...integerListFields,
   {
@@ -341,6 +351,13 @@ describe('unified grammar contract', () => {
       parseQuery('statusCode IN ["a,b", "c"]', contractFields)
     )
     expect(JSON.parse(q.query.value)).toEqual(['a,b', 'c'])
+  })
+
+  it('leaves duration membership values for duration normalization', () => {
+    const q = expectCondition(
+      parseQuery('duration IN [1s, 500ms]', durationListFields)
+    )
+    expect(q.query.value).toBe('["1s","500ms"]')
   })
 
   it('=~ and !~ are the PromQL spellings of the regex operators', () => {

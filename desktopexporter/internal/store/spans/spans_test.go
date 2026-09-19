@@ -195,7 +195,7 @@ func TestSearchTracesDurationExact(t *testing.T) {
 				"searchScope": "field",
 			},
 			"fieldOperator": "=",
-			"value":         "9007199254740993",
+			"value":         "9007199254740993ns",
 		},
 	}
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
@@ -206,6 +206,31 @@ func TestSearchTracesDurationExact(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &summaries))
 	require.Len(t, summaries, 1)
 	require.Equal(t, traceID, summaries[0].TraceID)
+
+	query["query"].(map[string]any)["fieldOperator"] = "IN"
+	query["query"].(map[string]any)["value"] = `["9007199254740993ns","1s"]`
+	raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.SearchTraces(ctx, db, store.BoundedTimeRange(0, 1<<63-1), query)
+	})
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(raw, &summaries))
+	require.Len(t, summaries, 1)
+	require.Equal(t, traceID, summaries[0].TraceID)
+
+	for _, value := range []string{"-1ms", "9223372036854775808ns", `["1s","invalid"]`} {
+		t.Run(value, func(t *testing.T) {
+			operator := ">="
+			if value[0] == '[' {
+				operator = "IN"
+			}
+			query["query"].(map[string]any)["fieldOperator"] = operator
+			query["query"].(map[string]any)["value"] = value
+			_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+				return spans.SearchTraces(ctx, db, store.BoundedTimeRange(0, 1<<63-1), query)
+			})
+			require.ErrorIs(t, err, spans.ErrInvalidTraceQuery)
+		})
+	}
 }
 
 type traceSummaryJSON struct {

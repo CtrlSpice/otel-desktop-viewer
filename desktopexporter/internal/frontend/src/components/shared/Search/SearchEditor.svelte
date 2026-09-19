@@ -15,7 +15,7 @@
     type FieldDefinition,
   } from '@/constants/fields'
   import { parseSearchRequest } from './queryParser'
-  import type { QueryNode } from './queryTree'
+  import { normalizeDurationValues } from './duration-query'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
     getTimeContext,
@@ -43,7 +43,6 @@
 
   import type { SearchEditorAPI } from './search-editor-api'
   import type { SortDirection } from '@/contexts/signal-list-page.svelte'
-  import { parseDuration } from '@/utils/time'
 
   // --- types ---
   type SearchEditorProps = {
@@ -64,28 +63,6 @@
   }
 
   // --- helpers ---
-
-  /**
-   * Walk the query tree and convert human-readable duration values to
-   * nanosecond strings in-place. Returns an error message if any
-   * duration value can't be parsed, or null on success.
-   */
-  function normalizeDurationValues(node: QueryNode): string | null {
-    if (node.type === 'group') {
-      return node.group.children.reduce<string | null>(
-        (err, child) => err ?? normalizeDurationValues(child),
-        null
-      )
-    }
-    if (!('name' in node.query.field) || node.query.field.name !== 'duration')
-      return null
-
-    const ns = parseDuration(node.query.value)
-    if (ns === null)
-      return `Invalid duration: "${node.query.value}". Try "1s", "500ms", "2m", etc.`
-    node.query.value = ns.toString()
-    return null
-  }
 
   const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 

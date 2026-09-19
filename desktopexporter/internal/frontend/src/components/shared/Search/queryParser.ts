@@ -434,6 +434,7 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
       field.searchScope === 'field' &&
       (symbol === 'IN' || symbol === 'NOT IN') &&
       NATIVE_INTEGER_FIELDS.has(field.name.toLowerCase()) &&
+      field.name.toLowerCase() !== 'duration' &&
       valueNode.name === 'Array'
     ) {
       // SAFETY: The Array branch JSON-stringified its flat string list after rejecting nulls and nested arrays; value is unchanged.
