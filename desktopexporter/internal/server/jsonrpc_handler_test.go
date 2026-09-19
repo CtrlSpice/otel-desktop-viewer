@@ -58,6 +58,8 @@ func buildTestLogs() plog.Logs {
 	sl := rl.ScopeLogs().AppendEmpty()
 	rec := sl.LogRecords().AppendEmpty()
 	rec.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+	rec.SetTraceID([16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})
+	rec.SetSpanID([8]byte{0, 0, 0, 0, 0, 0, 0, 1})
 	rec.Body().SetStr("test log message")
 	rec.SetSeverityText("INFO")
 	rec.SetSeverityNumber(plog.SeverityNumberInfo)
@@ -394,6 +396,63 @@ func TestSearchLogs(t *testing.T) {
 		result, err = handler.Handle(context.Background(), createRequest("searchLogs", []any{"0", maxTime, nil, 0}))
 		assert.Nil(t, result)
 		assert.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
+	})
+}
+
+func TestGetTraceLogs(t *testing.T) {
+	t.Run("Valid", func(t *testing.T) {
+		handler, teardown := setupHandlerWithData(t)
+		defer teardown()
+
+		result, err := handler.Handle(context.Background(), createRequest("getTraceLogs", map[string]any{
+			"traceID": testTraceIDHex,
+		}))
+		require.NoError(t, err)
+		var entries []map[string]any
+		require.NoError(t, json.Unmarshal(result.(json.RawMessage), &entries))
+		require.Len(t, entries, 1)
+		require.Equal(t, "0000000000000001", entries[0]["spanID"])
+		require.Equal(t, "test log message", entries[0]["bodyPreview"])
+		require.NotContains(t, entries[0], "body")
+		require.NotContains(t, entries[0], "attributes")
+	})
+
+	t.Run("Empty", func(t *testing.T) {
+		handler, teardown := setupHandler(t)
+		defer teardown()
+
+		result, err := handler.Handle(context.Background(), createRequest("getTraceLogs", []string{
+			"00000000000000000000000000000002",
+		}))
+		require.NoError(t, err)
+		require.JSONEq(t, `[]`, string(result.(json.RawMessage)))
+	})
+
+	t.Run("Malformed trace ID", func(t *testing.T) {
+		handler, teardown := setupHandler(t)
+		defer teardown()
+
+		result, err := handler.Handle(context.Background(), createRequest("getTraceLogs", []string{"not-a-trace-id"}))
+		require.Nil(t, result)
+		require.Equal(t, ErrInvalidTraceID, err)
+	})
+
+	t.Run("Empty trace ID", func(t *testing.T) {
+		handler, teardown := setupHandler(t)
+		defer teardown()
+
+		result, err := handler.Handle(context.Background(), createRequest("getTraceLogs", []string{""}))
+		require.Nil(t, result)
+		require.Equal(t, ErrInvalidTraceID, err)
+	})
+
+	t.Run("Missing trace ID", func(t *testing.T) {
+		handler, teardown := setupHandler(t)
+		defer teardown()
+
+		result, err := handler.Handle(context.Background(), createRequest("getTraceLogs", []string{}))
+		require.Nil(t, result)
+		require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
 	})
 }
 
