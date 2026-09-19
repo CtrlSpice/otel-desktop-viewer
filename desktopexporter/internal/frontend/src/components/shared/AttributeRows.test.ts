@@ -48,7 +48,7 @@ describe('AttributeRows', () => {
     expect(markers).toHaveLength(2)
     for (const marker of markers) {
       expect(
-        marker.previousElementSibling?.classList.contains('detail-cell__key')
+        marker.nextElementSibling?.classList.contains('detail-cell__key')
       ).toBe(true)
     }
 

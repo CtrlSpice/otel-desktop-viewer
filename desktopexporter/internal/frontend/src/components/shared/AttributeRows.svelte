@@ -11,15 +11,15 @@
   <tr class="table-row">
     <td class="detail-cell">
       <span class="detail-cell__attribute-header">
-        <span class="detail-cell__key"
-          >{attribute.key}
-          <span class="detail-cell__type">({attribute.value.kind})</span>:</span
-        >
         {#if attribute.hasConflict}
           <ConflictMarker
             label={`Conflicting typed values retained for ${attribute.key} in ${owner}.`}
           />
         {/if}
+        <span class="detail-cell__key"
+          >{attribute.key}
+          <span class="detail-cell__type">({attribute.value.kind})</span>:</span
+        >
       </span>
       <div class="detail-cell__attribute-value">
         <AttributeValueView

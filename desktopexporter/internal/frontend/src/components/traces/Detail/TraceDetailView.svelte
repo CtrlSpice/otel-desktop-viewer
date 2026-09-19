@@ -261,9 +261,16 @@
             a loop, so this span has no place under the root.
           </div>
         {/if}
+        {#snippet spanHeading()}
+          <span
+            >Span{#if isRoot}
+              {' '}<span class="detail-view__root">(root)</span>{/if}</span
+          >
+        {/snippet}
         <FieldGroup
           label="Span"
-          count={spanFieldCount}
+          heading={spanHeading}
+          badge={`${spanFieldCount} ${spanFieldCount === 1 ? 'field' : 'fields'}`}
           detail
           bind:open={spanOpen}
         >
@@ -274,7 +281,6 @@
                   fieldName="name"
                   fieldValue={span.name}
                   fieldType="string"
-                  {isRoot}
                 />
               {/if}
               {#if detailSearchFieldVisible(columnFilter, 'kind')}
@@ -534,6 +540,11 @@
   }
 
   .detail-cell__type {
+    color: var(--color-subtle);
+    @apply font-normal;
+  }
+
+  .detail-view__root {
     color: var(--color-subtle);
     @apply font-normal;
   }

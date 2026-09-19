@@ -57,6 +57,13 @@ describe('TraceDetailView parent span link', () => {
       span: makeSpan({ parentSpanID: null }),
     })
     expect(screen.queryByRole('button', { name: 'parent-span' })).toBeNull()
+
+    const rootLabel = screen.getByText('(root)')
+    const heading = rootLabel.closest('summary')
+    expect(heading).toHaveTextContent(/^Span\s*\(root\)\s*\d+ fields/)
+    const nameKey = document.querySelector('.detail-fields .detail-cell__key')
+    expect(nameKey).toHaveTextContent(/^name\s*\(string\):$/)
+    expect(nameKey).not.toHaveTextContent('(root)')
   })
 })
 
