@@ -36,6 +36,7 @@ var methodParamNames = map[string][]string{
 	"searchTraces":          {"startTime", "endTime", "query", "limit", "sort"},
 	"searchSpans":           {"traceID", "query"},
 	"searchLogs":            {"startTime", "endTime", "query", "limit", "sort"},
+	"getTraceLogs":          {"traceID"},
 	"getLog":                {"logID"},
 	"searchMetricSummaries": {"startTime", "endTime", "query", "limit", "sort"},
 	"getMetric": {
