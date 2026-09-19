@@ -260,6 +260,11 @@
       -1 * var(--attribute-indent) + var(--fg-caret-size, 0.875rem) / 2
     );
   }
+  @media (forced-colors: active) {
+    .attribute-value__child--conflicted::before {
+      background: Highlight;
+    }
+  }
   .attribute-value__row {
     @apply flex min-w-0 items-baseline gap-1;
   }
