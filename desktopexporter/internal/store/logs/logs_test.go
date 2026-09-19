@@ -193,7 +193,7 @@ func TestSearchLogsNullableTimeRangesExecute(t *testing.T) {
 		return logs.Ingest(ctx, conn, data, s.FlushedIDs())
 	}))
 
-	start, end := int64(200), int64(200)
+	start, end := uint64(200), uint64(200)
 	for _, tc := range []struct {
 		name           string
 		timeRange      store.TimeRange
@@ -270,11 +270,11 @@ func getLogFull(t *testing.T, s *store.Store, ctx context.Context, id string) lo
 	return entry
 }
 
-// parseWireTimestamp decodes a varchar-encoded int64 nanosecond timestamp
+// parseWireTimestamp decodes a varchar-encoded uint64 nanosecond timestamp
 // from the JSON wire format.
-func parseWireTimestamp(t *testing.T, s string) int64 {
+func parseWireTimestamp(t *testing.T, s string) uint64 {
 	t.Helper()
-	n, err := strconv.ParseInt(s, 10, 64)
+	n, err := strconv.ParseUint(s, 10, 64)
 	require.NoError(t, err)
 	return n
 }
@@ -285,7 +285,7 @@ func parseWireTimestamp(t *testing.T, s string) int64 {
 // minted UUID for keying/selection/detail-fetch only).
 type logSummaryJSON struct {
 	ID             string `json:"id"`
-	Timestamp      string `json:"timestamp"` // varchar-encoded int64 ns
+	Timestamp      string `json:"timestamp"` // varchar-encoded uint64 ns
 	SeverityText   string `json:"severityText"`
 	SeverityNumber int32  `json:"severityNumber"`
 	ServiceName    string `json:"serviceName"`
@@ -297,8 +297,8 @@ type logSummaryJSON struct {
 // resource, scope, flags, eventName, dropped counts, etc).
 type logEntryJSON struct {
 	ID                     string          `json:"id"`
-	Timestamp              string          `json:"timestamp"`         // varchar-encoded int64 ns
-	ObservedTimestamp      string          `json:"observedTimestamp"` // varchar-encoded int64 ns
+	Timestamp              string          `json:"timestamp"`         // varchar-encoded uint64 ns
+	ObservedTimestamp      string          `json:"observedTimestamp"` // varchar-encoded uint64 ns
 	TraceID                string          `json:"traceID"`
 	SpanID                 string          `json:"spanID"`
 	SeverityText           string          `json:"severityText"`
@@ -562,14 +562,14 @@ func TestLogSuite(t *testing.T) {
 		// falls back to ObservedTimestamp when timestamp = 0.
 		// Entry 0 (the ERROR with Timestamp=0) therefore reports
 		// the observed_timestamp on the summary.
-		assert.Equal(t, baseTime+150*int64(time.Millisecond), parseWireTimestamp(t, entries[0].Timestamp))
+		assert.Equal(t, uint64(baseTime+150*int64(time.Millisecond)), parseWireTimestamp(t, entries[0].Timestamp))
 		assert.NotEmpty(t, entries[1].Timestamp)
 		assert.NotEmpty(t, entries[2].Timestamp)
 
 		// Full LogData preserves both fields separately.
 		full0 := getLogFull(t, s, ctx, entries[0].ID)
-		assert.Equal(t, int64(0), parseWireTimestamp(t, full0.Timestamp))
-		assert.Equal(t, baseTime+150*int64(time.Millisecond), parseWireTimestamp(t, full0.ObservedTimestamp))
+		assert.Equal(t, uint64(0), parseWireTimestamp(t, full0.Timestamp))
+		assert.Equal(t, uint64(baseTime+150*int64(time.Millisecond)), parseWireTimestamp(t, full0.ObservedTimestamp))
 	})
 
 	t.Run("LogResource", func(t *testing.T) {

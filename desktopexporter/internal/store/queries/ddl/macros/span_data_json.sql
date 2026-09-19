@@ -26,8 +26,8 @@ create or replace macro span_data_json(
         -- magnitude however brief the span, while a duration stays small. It is
         -- also what the waterfall wants -- a bar is a position and a width, so
         -- the client stops subtracting on every render.
-        'start', ts.start_time - trace_start_ns,
-        'dur', ts.end_time - ts.start_time,
+        'start', (ts.start_time::hugeint - trace_start_ns::hugeint)::varchar,
+        'dur', (ts.end_time::hugeint - ts.start_time::hugeint)::varchar,
         'attributes', coalesce(attrs, json('[]')),
         'events', coalesce(events, json('[]')),
         'links', coalesce(links, json('[]')),

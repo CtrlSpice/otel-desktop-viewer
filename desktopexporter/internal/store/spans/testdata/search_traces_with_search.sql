@@ -1,4 +1,4 @@
-with search_params as (select ? as time_start, ? as time_end, ? as attr_key_2, ? as attr_kind_3, ? as value_4),
+with search_params as (select unnest(?::ubigint[]) as time_start, unnest(?::ubigint[]) as time_end, ? as attr_key_2, ? as attr_kind_3, ? as value_4),
 		trace_summaries as (
 			select distinct on (s.trace_id)
 				s.trace_id,
@@ -36,7 +36,7 @@ with search_params as (select ? as time_start, ? as time_end, ? as attr_key_2, ?
 			'durationNs',   case
 				when sub.trace_start_time is not null
 					and sub.trace_end_time is not null
-					then (sub.trace_end_time - sub.trace_start_time)::varchar
+					then (sub.trace_end_time::hugeint - sub.trace_start_time::hugeint)::varchar
 				else null
 			end,
 			'spanCount',    sub.span_count,

@@ -207,12 +207,12 @@ func (s *Store) enforceRound(ctx context.Context, maxBytes int64) (bool, error) 
 // pruneCutoff returns the timestamp below which rows should be deleted,
 // i.e. the pruneFraction percentile of the given time expression. Returns
 // (0, false) when the table is empty.
-func (s *Store) pruneCutoff(ctx context.Context, db *sql.DB, query string) (int64, bool, error) {
-	var cutoff sql.NullInt64
+func (s *Store) pruneCutoff(ctx context.Context, db *sql.DB, query string) (uint64, bool, error) {
+	var cutoff sql.Null[uint64]
 	if err := db.QueryRowContext(ctx, query, pruneFraction).Scan(&cutoff); err != nil {
 		return 0, false, fmt.Errorf("pruneCutoff: %w: %w", ErrRetentionInternal, err)
 	}
-	return cutoff.Int64, cutoff.Valid, nil
+	return cutoff.V, cutoff.Valid, nil
 }
 
 // pruneOldestSpans deletes the oldest fraction of spans along with their
@@ -223,7 +223,7 @@ func (s *Store) pruneCutoff(ctx context.Context, db *sql.DB, query string) (int6
 // enforceRound sweeps once after all three prunes.
 func (s *Store) pruneOldestSpans(ctx context.Context, db *sql.DB) error {
 	cutoff, ok, err := s.pruneCutoff(ctx, db,
-		`select cast(quantile_cont(start_time, ?) as bigint) from spans`)
+		`select quantile_disc(start_time, ?) from spans`)
 	if err != nil || !ok {
 		return err
 	}
@@ -234,12 +234,12 @@ func (s *Store) pruneOldestSpans(ctx context.Context, db *sql.DB) error {
 	// composite key permits, since a span id is only unique within its trace.
 	for _, q := range []string{
 		`delete from links where (trace_id, span_id) in
-			(select trace_id, span_id from spans where start_time < ?)`,
+			(select trace_id, span_id from spans where start_time < (select unnest(?::ubigint[])))`,
 		`delete from events where (trace_id, span_id) in
-			(select trace_id, span_id from spans where start_time < ?)`,
-		`delete from spans where start_time < ?`,
+			(select trace_id, span_id from spans where start_time < (select unnest(?::ubigint[])))`,
+		`delete from spans where start_time < (select unnest(?::ubigint[]))`,
 	} {
-		if _, err := db.ExecContext(ctx, q, cutoff); err != nil {
+		if _, err := db.ExecContext(ctx, q, []uint64{cutoff}); err != nil {
 			return fmt.Errorf("pruneOldestSpans: %w: %w", ErrRetentionInternal, err)
 		}
 	}
@@ -254,15 +254,15 @@ func (s *Store) pruneOldestLogs(ctx context.Context, db *sql.DB) error {
 	const logTime = `coalesce(nullif(timestamp, 0), observed_timestamp)`
 
 	cutoff, ok, err := s.pruneCutoff(ctx, db,
-		`select cast(quantile_cont(`+logTime+`, ?) as bigint) from logs`)
+		`select quantile_disc(`+logTime+`, ?) from logs`)
 	if err != nil || !ok {
 		return err
 	}
 
 	for _, q := range []string{
-		`delete from logs where ` + logTime + ` < ?`,
+		`delete from logs where ` + logTime + ` < (select unnest(?::ubigint[]))`,
 	} {
-		if _, err := db.ExecContext(ctx, q, cutoff); err != nil {
+		if _, err := db.ExecContext(ctx, q, []uint64{cutoff}); err != nil {
 			return fmt.Errorf("pruneOldestLogs: %w: %w", ErrRetentionInternal, err)
 		}
 	}
@@ -277,17 +277,17 @@ func (s *Store) pruneOldestLogs(ctx context.Context, db *sql.DB) error {
 // A swept stream that is still live gets recreated by ingest's find-or-insert.
 func (s *Store) pruneOldestDatapoints(ctx context.Context, db *sql.DB) error {
 	cutoff, ok, err := s.pruneCutoff(ctx, db,
-		`select cast(quantile_cont(timestamp, ?) as bigint) from datapoints`)
+		`select quantile_disc(timestamp, ?) from datapoints`)
 	if err != nil || !ok {
 		return err
 	}
 
-	doomed := `(select id from datapoints where timestamp < ?)`
+	doomed := `(select id from datapoints where timestamp < (select unnest(?::ubigint[])))`
 	for _, q := range []string{
 		`delete from exemplars where datapoint_id in ` + doomed,
-		`delete from datapoints where timestamp < ?`,
+		`delete from datapoints where timestamp < (select unnest(?::ubigint[]))`,
 	} {
-		if _, err := db.ExecContext(ctx, q, cutoff); err != nil {
+		if _, err := db.ExecContext(ctx, q, []uint64{cutoff}); err != nil {
 			return fmt.Errorf("pruneOldestDatapoints: %w: %w", ErrRetentionInternal, err)
 		}
 	}

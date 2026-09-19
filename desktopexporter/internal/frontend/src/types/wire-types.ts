@@ -5,7 +5,7 @@
 // should only change when the backend changes, not when a frontend type is
 // edited.
 //
-// The one systematic wire/domain difference: int64 nanosecond timestamps
+// The one systematic wire/domain difference: uint64 nanosecond timestamps
 // ride as strings (JSON numbers are float64 and would clip ns precision)
 // and are promoted to bigint by the revivers in telemetry-service.ts.
 //
@@ -112,10 +112,10 @@ export type JsonSpanData = {
   flags: number
   name: string
   kind: string
-  /** Nanoseconds after JsonTraceData.traceStart. */
-  start: number
+  /** Nanoseconds after JsonTraceData.traceStart, kept exact across JSON. */
+  start: string
   /** Duration in nanoseconds, measured from this span's own start. */
-  dur: number
+  dur: string
   // attributes/events/links are coalesced to [] server-side; never absent.
   attributes: JsonAttribute[]
   events: JsonEventData[]

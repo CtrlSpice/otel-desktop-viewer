@@ -99,7 +99,9 @@ package schema
 // policy.
 // Version 13 stores recursive tagged JSON values in the scope-free attribute
 // dictionary and log bodies. Existing value/type/scope rows are incompatible.
-const Version = 13
+// Version 14 stores every received OTLP timestamp as DuckDB UBIGINT. The prior
+// BIGINT columns cannot represent the upper half of OTLP's uint64 range.
+const Version = 14
 
 // VersionTableQuery creates the version table.
 //

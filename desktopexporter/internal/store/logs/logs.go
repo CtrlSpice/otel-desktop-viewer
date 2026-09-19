@@ -183,23 +183,23 @@ func appendPass(
 				logCur++
 
 				err = appenders["logs"].AppendRow(
-					duckdb.UUID(uuid.New()),        // ID UUID
-					int64(log.Timestamp()),         // Timestamp BIGINT
-					int64(log.ObservedTimestamp()), // ObservedTimestamp BIGINT
-					traceUUID,                      // TraceID UUID
-					spanID,                         // SpanID UBIGINT or NULL
-					log.SeverityText(),             // SeverityText VARCHAR
-					int32(log.SeverityNumber()),    // SeverityNumber INTEGER
-					json.RawMessage(bodyValue),     // Body JSON
-					resourceID,                     // ResourceID UUID
-					scopeID,                        // ScopeID UUID
-					ingest.NonNil(logAttrIDs),      // AttributeIDs UUID[]
-					log.DroppedAttributesCount(),   // DroppedAttributesCount UINTEGER
-					uint32(log.Flags()),            // Flags UINTEGER
-					log.EventName(),                // EventName VARCHAR
-					serviceName,                    // ServiceName VARCHAR (NOT NULL, '' = unknown)
-					resourceLogs.SchemaUrl(),       // ResourceSchemaURL VARCHAR (batch-level)
-					scopeLogs.SchemaUrl(),          // ScopeSchemaURL VARCHAR (batch-level)
+					duckdb.UUID(uuid.New()),         // ID UUID
+					uint64(log.Timestamp()),         // Timestamp UBIGINT
+					uint64(log.ObservedTimestamp()), // ObservedTimestamp UBIGINT
+					traceUUID,                       // TraceID UUID
+					spanID,                          // SpanID UBIGINT or NULL
+					log.SeverityText(),              // SeverityText VARCHAR
+					int32(log.SeverityNumber()),     // SeverityNumber INTEGER
+					json.RawMessage(bodyValue),      // Body JSON
+					resourceID,                      // ResourceID UUID
+					scopeID,                         // ScopeID UUID
+					ingest.NonNil(logAttrIDs),       // AttributeIDs UUID[]
+					log.DroppedAttributesCount(),    // DroppedAttributesCount UINTEGER
+					uint32(log.Flags()),             // Flags UINTEGER
+					log.EventName(),                 // EventName VARCHAR
+					serviceName,                     // ServiceName VARCHAR (NOT NULL, '' = unknown)
+					resourceLogs.SchemaUrl(),        // ResourceSchemaURL VARCHAR (batch-level)
+					scopeLogs.SchemaUrl(),           // ScopeSchemaURL VARCHAR (batch-level)
 				)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
@@ -506,9 +506,9 @@ func mapLogFieldExpression(field *search.FieldDefinition) (search.ResolvedExpres
 	case "severityNumber":
 		return search.NativeInteger("l.severity_number"), nil
 	case "timestamp":
-		return search.NativeInteger("l.timestamp"), nil
+		return search.Timestamp("l.timestamp"), nil
 	case "observedTimestamp":
-		return search.NativeInteger("l.observed_timestamp"), nil
+		return search.Timestamp("l.observed_timestamp"), nil
 	case "droppedAttributesCount":
 		return search.NativeInteger("l.dropped_attributes_count"), nil
 	case "flags":
