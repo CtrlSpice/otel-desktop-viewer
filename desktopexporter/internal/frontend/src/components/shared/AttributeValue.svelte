@@ -243,18 +243,22 @@
     @apply relative grid gap-1 py-1;
     padding-inline-start: var(--attribute-indent);
   }
-  .attribute-value__child {
-    @apply relative min-w-0;
-  }
-  .attribute-value__child::before {
-    @apply pointer-events-none absolute -top-1 -bottom-1 w-px bg-base-content/15;
+  .attribute-value__children::before {
+    @apply pointer-events-none absolute inset-y-0 w-px bg-base-content/15;
     content: '';
     left: calc(
       -1 * var(--attribute-indent) + var(--fg-caret-size, 0.875rem) / 2
     );
   }
+  .attribute-value__child {
+    @apply relative min-w-0;
+  }
   .attribute-value__child--conflicted::before {
-    @apply bg-warning;
+    @apply pointer-events-none absolute -top-1 -bottom-1 w-px bg-warning;
+    content: '';
+    left: calc(
+      -1 * var(--attribute-indent) + var(--fg-caret-size, 0.875rem) / 2
+    );
   }
   .attribute-value__row {
     @apply flex min-w-0 items-baseline gap-1;
