@@ -55,10 +55,12 @@
 <script lang="ts">
   import type { SpanData } from '@/types/api-types'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import BiohazardIcon from '@hugeicons/core-free-icons/BiohazardIcon'
-  import LeftToRightListBulletIcon from '@hugeicons/core-free-icons/LeftToRightListBulletIcon'
-  import Link01Icon from '@hugeicons/core-free-icons/Link01Icon'
-  import StopWatchIcon from '@hugeicons/core-free-icons/StopWatchIcon'
+  import {
+    BiohazardIcon,
+    LeftToRightListBulletIcon,
+    Link01Icon,
+    StopWatchIcon,
+  } from '@hugeicons/core-free-icons'
   import PaneHeader, {
     paneTabID,
     type PaneTab,

@@ -5,7 +5,7 @@
   import { getServiceName } from '@/utils/resource'
   import WaterfallTreeGutter from './WaterfallTreeGutter.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import BiohazardIcon from '@hugeicons/core-free-icons/BiohazardIcon'
+  import { BiohazardIcon } from '@hugeicons/core-free-icons'
   import WaterfallEventDots from './WaterfallEventDots.svelte'
 
   type Props = {

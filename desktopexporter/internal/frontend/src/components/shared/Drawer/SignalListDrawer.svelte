@@ -22,11 +22,13 @@
   import { onDestroy, onMount, tick } from 'svelte'
   import VirtualList from '@humanspeak/svelte-virtual-list'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import BarChartHorizontalIcon from '@hugeicons/core-free-icons/BarChartHorizontalIcon'
-  import ChartHistogramIcon from '@hugeicons/core-free-icons/ChartHistogramIcon'
-  import ChevronRightIcon from '@hugeicons/core-free-icons/ChevronRightIcon'
-  import Home12Icon from '@hugeicons/core-free-icons/Home12Icon'
-  import RefreshIcon from '@hugeicons/core-free-icons/RefreshIcon'
+  import {
+    BarChartHorizontalIcon,
+    ChartHistogramIcon,
+    ChevronRightIcon,
+    Home12Icon,
+    RefreshIcon,
+  } from '@hugeicons/core-free-icons'
   import { LogIcon } from '@/icons'
   import ThemeToggle from '@/components/shared/ThemeToggle.svelte'
   import { startDrag, type DragHandle } from '@/components/shared/utils/drag'
