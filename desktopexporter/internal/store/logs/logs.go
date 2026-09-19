@@ -465,14 +465,14 @@ var logColumns = map[string]struct{}{
 }
 
 func logFieldMapper() search.FieldMapper {
-	return func(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]string, error) {
+	return func(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]search.ResolvedExpression, error) {
 		switch field.SearchScope {
 		case "field":
 			expr, err := mapLogFieldExpression(field)
 			if err != nil {
 				return nil, err
 			}
-			return []string{expr}, nil
+			return []search.ResolvedExpression{expr}, nil
 		case "attribute":
 			return mapLogAttributeExpressions(field, query, params)
 		case "global":
@@ -483,10 +483,10 @@ func logFieldMapper() search.FieldMapper {
 	}
 }
 
-func mapLogFieldExpression(field *search.FieldDefinition) (string, error) {
+func mapLogFieldExpression(field *search.FieldDefinition) (search.ResolvedExpression, error) {
 	name := field.Name
 	if name == "" {
-		return "", fmt.Errorf("empty field name: %w", ErrInvalidLogQuery)
+		return search.ResolvedExpression{}, fmt.Errorf("empty field name: %w", ErrInvalidLogQuery)
 	}
 	switch name {
 	case "traceID", "traceId":
@@ -494,15 +494,15 @@ func mapLogFieldExpression(field *search.FieldDefinition) (string, error) {
 		// a raw uuid-column comparison errors on malformed input and LIKE
 		// operators would match against the dashed internal form. Values
 		// are dash-stripped and lowercased by the search package.
-		return "replace(l.trace_id::varchar, '-', '')", nil
+		return search.WireID("replace(l.trace_id::varchar, '-', '')"), nil
 	case "spanID", "spanId":
 		// Span IDs are served as 16-char hex (OTLP wire form), which does
 		// NOT cast to uuid. Convert the column to wire form instead, same
 		// as the trace-search spanID branch, so pasted IDs compare as
 		// strings and typos match nothing rather than erroring.
-		return "span_id_wire(l.span_id)", nil
+		return search.WireID("span_id_wire(l.span_id)"), nil
 	case "severityText":
-		return "l.severity_text", nil
+		return search.Text("l.severity_text"), nil
 	case "severityNumber":
 		return search.NativeInteger("l.severity_number"), nil
 	case "timestamp":
@@ -514,13 +514,13 @@ func mapLogFieldExpression(field *search.FieldDefinition) (string, error) {
 	case "flags":
 		return search.NativeInteger("l.flags"), nil
 	case "body":
-		return "coalesce(json_extract_string(l.body, '$.value'), json_extract(l.body, '$.value')::varchar)", nil
+		return search.Text("coalesce(json_extract_string(l.body, '$.value'), json_extract(l.body, '$.value')::varchar)"), nil
 	case "eventName":
-		return "l.event_name", nil
+		return search.Text("l.event_name"), nil
 	case "scope.name":
-		return "sc.name", nil
+		return search.Text("sc.name"), nil
 	case "scope.version":
-		return "sc.version", nil
+		return search.Text("sc.version"), nil
 	case "resource.droppedAttributesCount":
 		return search.NativeInteger("r.dropped_attributes_count"), nil
 	case "scope.droppedAttributesCount":
@@ -528,9 +528,9 @@ func mapLogFieldExpression(field *search.FieldDefinition) (string, error) {
 	default:
 		col := util.CamelToSnake(name)
 		if err := util.ValidateColumnName(col, logColumns); err != nil {
-			return "", fmt.Errorf("log field %q: %w: %w", name, err, ErrInvalidLogQuery)
+			return search.ResolvedExpression{}, fmt.Errorf("log field %q: %w: %w", name, err, ErrInvalidLogQuery)
 		}
-		return "l." + col, nil
+		return search.Text("l." + col), nil
 	}
 }
 
@@ -540,28 +540,21 @@ func mapLogFieldExpression(field *search.FieldDefinition) (string, error) {
 //
 // Resource and scope predicates are hoisted into the owner table -- see
 // spans.mapTraceAttributeExpressions for the measurement that motivates it.
-func mapLogAttributeExpressions(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]string, error) {
-	// Fast path: equality on a string attribute is a membership test against a
-	// content-derived id. IDProbe returns "" for anything it cannot answer
-	// exactly, falling through to the value comparison below.
-	switch field.AttributeScope {
-	case "resource":
-		if p := ingest.IDProbe("attribute_ids", field, query, ingest.ScopeResource); p != "" {
-			return []string{search.Complete("l.resource_id in (select id from resources where " + p + ")")}, nil
-		}
-	case "scope":
-		if p := ingest.IDProbe("attribute_ids", field, query, ingest.ScopeScope); p != "" {
-			return []string{search.Complete("l.scope_id in (select id from scopes where " + p + ")")}, nil
-		}
-	case "log":
-		if p := ingest.IDProbe("l.attribute_ids", field, query, ingest.ScopeLog); p != "" {
-			return []string{search.Complete(p)}, nil
-		}
+func mapLogAttributeExpressions(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]search.ResolvedExpression, error) {
+	kind, mode, err := search.AttributeKind(field.Type)
+	if err != nil {
+		return nil, err
 	}
 
 	keyParam := fmt.Sprintf("attr_key_%d", len(*params))
 	*params = append(*params, search.NamedParam{Name: keyParam, Value: field.Name})
-	if field.Type == "array" || strings.HasSuffix(field.Type, "[]") {
+	kindParam := ""
+	if kind != "" {
+		kindParam = fmt.Sprintf("attr_kind_%d", len(*params))
+		*params = append(*params, search.NamedParam{Name: kindParam, Value: kind})
+	}
+	kindPredicate := search.AttributeKindPredicate(kindParam)
+	if mode == search.OTelArrayOperand {
 		var attributeIDs string
 		switch field.AttributeScope {
 		case "resource":
@@ -573,7 +566,7 @@ func mapLogAttributeExpressions(field *search.FieldDefinition, query *search.Que
 		default:
 			return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidLogQuery)
 		}
-		predicate, err := search.JSONValueArrayPredicate(attributeIDs, keyParam, query, params)
+		predicate, err := search.JSONValueArrayPredicate(attributeIDs, keyParam, kindParam, query, params)
 		if err != nil {
 			return nil, err
 		}
@@ -583,34 +576,34 @@ func mapLogAttributeExpressions(field *search.FieldDefinition, query *search.Que
 		case "scope":
 			predicate = fmt.Sprintf("l.scope_id in (select sc.id from scopes sc where %s)", predicate)
 		}
-		return []string{search.Complete(predicate)}, nil
+		return []search.ResolvedExpression{search.Complete(predicate)}, nil
 	}
 
 	switch field.AttributeScope {
 	case "resource":
-		return []string{fmt.Sprintf(
+		return []search.ResolvedExpression{search.Text(fmt.Sprintf(
 			`l.resource_id in (select r.id from resources r, unnest(r.attribute_ids) t(aid)
-				join attributes a on a.id = t.aid where a.key = %s and
+				join attributes a on a.id = t.aid where a.key = %s%s and
 				coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})`,
-			keyParam)}, nil
+			keyParam, kindPredicate))}, nil
 	case "scope":
-		return []string{fmt.Sprintf(
+		return []search.ResolvedExpression{search.Text(fmt.Sprintf(
 			`l.scope_id in (select sc.id from scopes sc, unnest(sc.attribute_ids) t(aid)
-				join attributes a on a.id = t.aid where a.key = %s and
+				join attributes a on a.id = t.aid where a.key = %s%s and
 				coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})`,
-			keyParam)}, nil
+			keyParam, kindPredicate))}, nil
 	case "log":
-		return []string{fmt.Sprintf(`exists(
+		return []search.ResolvedExpression{search.Text(fmt.Sprintf(`exists(
 			select 1 from unnest(l.attribute_ids) t(aid) join attributes a on a.id = t.aid
-			where a.key = %s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND}
-		)`, keyParam)}, nil
+			where a.key = %s%s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND}
+		)`, keyParam, kindPredicate))}, nil
 	default:
 		return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidLogQuery)
 	}
 }
 
-func mapLogGlobalExpressions() ([]string, error) {
-	return []string{
+func mapLogGlobalExpressions() ([]search.ResolvedExpression, error) {
+	return search.TextExpressions([]string{
 		"replace(l.trace_id::varchar, '-', '') {COND}",
 		"span_id_wire(l.span_id) {COND}",
 		"coalesce(json_extract_string(l.body, '$.value'), json_extract(l.body, '$.value')::varchar) {COND}",
@@ -630,7 +623,7 @@ func mapLogGlobalExpressions() ([]string, error) {
 				exists(select 1 from json_each(a.value, '$.value') j where j.value::varchar {COND})
 			)
 		)`,
-	}, nil
+	}), nil
 }
 
 // searchLogsParams are the fragments Search assembles into

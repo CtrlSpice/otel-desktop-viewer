@@ -52,34 +52,76 @@ type NamedParam struct {
 	Value any
 }
 
-// FieldMapper maps a FieldDefinition to one or more SQL expressions.
+// OperandMode defines the server-owned binding and normalisation contract.
+type OperandMode uint8
+
+const (
+	TextOperand OperandMode = iota
+	NativeSignedIntegerOperand
+	WireIDOperand
+	OTelArrayOperand
+	CompletePredicateOperand
+)
+
+// ResolvedExpression is the mapper-owned SQL expression and operand contract.
+type ResolvedExpression struct {
+	SQL           string
+	OperandMode   OperandMode
+	AttributeKind string
+}
+
+func Text(expr string) ResolvedExpression {
+	return ResolvedExpression{SQL: expr, OperandMode: TextOperand}
+}
+func NativeInteger(expr string) ResolvedExpression {
+	return ResolvedExpression{SQL: expr, OperandMode: NativeSignedIntegerOperand}
+}
+func WireID(expr string) ResolvedExpression {
+	return ResolvedExpression{SQL: expr, OperandMode: WireIDOperand}
+}
+func Complete(expr string) ResolvedExpression {
+	return ResolvedExpression{SQL: expr, OperandMode: CompletePredicateOperand}
+}
+
+func TextExpressions(expressions []string) []ResolvedExpression {
+	resolved := make([]ResolvedExpression, len(expressions))
+	for i, expression := range expressions {
+		resolved[i] = Text(expression)
+	}
+	return resolved
+}
+
+// AttributeKind validates a requested dynamic attribute kind and chooses its
+// server-owned operand mode.
+func AttributeKind(requested string) (string, OperandMode, error) {
+	switch requested {
+	case "":
+		return "", TextOperand, nil
+	case "boolean":
+		return "bool", TextOperand, nil
+	case "float64":
+		return "double", TextOperand, nil
+	case "array", "string[]", "int64[]", "float64[]", "boolean[]":
+		return "array", OTelArrayOperand, nil
+	case "string", "bool", "int64", "double", "bytes", "map", "empty":
+		return requested, TextOperand, nil
+	default:
+		return "", TextOperand, fmt.Errorf("unsupported attribute kind %q: %w", requested, ErrInvalidQuery)
+	}
+}
+
+func AttributeKindPredicate(kindParam string) string {
+	if kindParam == "" {
+		return ""
+	}
+	return " and json_extract_string(a.value, '$.kind') = " + kindParam
+}
+
+// FieldMapper maps a FieldDefinition to one or more resolved SQL expressions.
 // Signal-specific code provides this to the generic tree walker.
 // The params slice is provided so mappers can add their own CTE parameters
 // (e.g. for parameterized attribute scope/key lookups).
-type FieldMapper func(field *FieldDefinition, query *Query, params *[]NamedParam) ([]string, error)
-
-// PredicateToken marks an expression that is already a complete boolean, so
-// BuildOperatorCondition returns it untouched instead of appending the operator
-// and value.
-//
-// It exists for predicates a mapper can answer better than the generic
-// machinery. The motivating case: an equality test on a string attribute is a
-// membership test against a content-derived id, computable in Go, so the
-// expression becomes list_contains(ids, <literal uuid>) with the operator and
-// value already consumed -- 20x faster than resolving the value through the
-// dictionary at query time.
-const PredicateToken = "{PREDICATE}"
-
-// NativeIntegerToken marks a mapper-owned INTEGER, BIGINT, or safe UINTEGER
-// expression. Its list values stay strings on the wire and DuckDB performs the
-// explicit BIGINT list conversion.
-const NativeIntegerToken = "{NATIVE_INTEGER}"
-
-// Complete marks expr as a finished boolean, so no operator or value is
-// appended to it.
-func Complete(expr string) string { return PredicateToken + expr }
-
-func NativeInteger(expr string) string { return NativeIntegerToken + expr }
+type FieldMapper func(field *FieldDefinition, query *Query, params *[]NamedParam) ([]ResolvedExpression, error)
 
 // ParseQueryTree converts JSON from frontend to QueryNode struct.
 func ParseQueryTree(jsonData any) (*QueryNode, error) {
@@ -206,24 +248,20 @@ func normalizeWireIDValue(value string) string {
 }
 
 // BuildOperatorCondition builds SQL condition for a specific operator.
-func BuildOperatorCondition(expression string, query *Query, params *[]NamedParam) (string, error) {
+func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[]NamedParam) (string, error) {
 	if query == nil {
 		return "", fmt.Errorf("query cannot be nil: %w", ErrInvalidQuery)
 	}
 
-	nativeInteger := false
-	if rest, found := strings.CutPrefix(expression, NativeIntegerToken); found {
-		expression = rest
-		nativeInteger = true
-	}
+	expression := resolved.SQL
 
 	operator := query.FieldOperator
 	value := query.Value
 
 	// A mapper that already produced a complete boolean says so, and nothing
 	// further is appended to it.
-	if rest, found := strings.CutPrefix(expression, PredicateToken); found {
-		return rest, nil
+	if resolved.OperandMode == CompletePredicateOperand {
+		return expression, nil
 	}
 
 	const condToken = "{COND}"
@@ -249,15 +287,8 @@ func BuildOperatorCondition(expression string, query *Query, params *[]NamedPara
 		return expression + " " + operator, nil
 	}
 
-	if !nativeInteger && query.Field != nil && strings.HasSuffix(query.Field.Type, "[]") {
-		return handleArrayOperator(expression, query, params)
-	}
-
-	// Normalized after the NULL check so `= NULL` keeps its IS NULL meaning.
-	if query.Field != nil {
-		if _, ok := wireIDFields[query.Field.Name]; ok {
-			value = normalizeWireIDValue(value)
-		}
+	if resolved.OperandMode == WireIDOperand {
+		value = normalizeWireIDValue(value)
 	}
 
 	paramName := fmt.Sprintf("value_%d", len(*params))
@@ -267,7 +298,7 @@ func BuildOperatorCondition(expression string, query *Query, params *[]NamedPara
 	// DuckDB needs an integer bind parameter — parse the string here as a
 	// workaround until the wire format carries typed values.
 	var bindValue any = value
-	if query.Field != nil && query.Field.Type == "int64" {
+	if resolved.OperandMode == NativeSignedIntegerOperand {
 		if n, err := strconv.ParseInt(value, 10, 64); err == nil {
 			bindValue = n
 		}
@@ -308,14 +339,14 @@ func BuildOperatorCondition(expression string, query *Query, params *[]NamedPara
 		if len(values) == 0 {
 			return "", fmt.Errorf("IN/NOT IN requires at least one value: %w", ErrInvalidQuery)
 		}
-		if nativeInteger {
+		if resolved.OperandMode == NativeSignedIntegerOperand {
 			values, err = NormalizeNativeIntegerList(values)
 			if err != nil {
 				return "", err
 			}
 		}
 		*params = append(*params, NamedParam{paramName, values})
-		if nativeInteger {
+		if resolved.OperandMode == NativeSignedIntegerOperand {
 			operatorString = fmt.Sprintf("%s CAST(%s AS BIGINT[])", operator, paramName)
 		} else {
 			operatorString = operator + " " + paramName
@@ -483,23 +514,24 @@ func handleArrayOperator(expression string, query *Query, params *[]NamedParam) 
 
 // JSONValueArrayPredicate matches an element of a D06 tagged OTel array.
 // Attribute mappers wrap it in their owner-specific resource/scope lookup.
-func JSONValueArrayPredicate(attributeIDs, keyParam string, query *Query, params *[]NamedParam) (string, error) {
+func JSONValueArrayPredicate(attributeIDs, keyParam, kindParam string, query *Query, params *[]NamedParam) (string, error) {
 	if query.FieldOperator != "CONTAINS" && query.FieldOperator != "NOT CONTAINS" {
 		return "", fmt.Errorf("unsupported array attribute query: %w", ErrInvalidQuery)
 	}
 	valueParam := fmt.Sprintf("value_%d", len(*params))
 	*params = append(*params, NamedParam{Name: valueParam, Value: ConvertValueForArrayType(query.Value, query.Field.Type)})
+	kindPredicate := AttributeKindPredicate(kindParam)
 	arrayExists := fmt.Sprintf(`exists(
 		select 1 from unnest(%s) t(aid)
 		join attributes a on a.id = t.aid
-		where a.key = %s and json_extract_string(a.value, '$.kind') = 'array'
-	)`, attributeIDs, keyParam)
+		where a.key = %s%s
+	)`, attributeIDs, keyParam, kindPredicate)
 	predicate := fmt.Sprintf(`exists(
 		select 1 from unnest(%s) t(aid)
 		join attributes a on a.id = t.aid, json_each(a.value, '$.value') j
-		where a.key = %s and json_extract_string(a.value, '$.kind') = 'array'
+		where a.key = %s%s
 			and json_extract_string(j.value, '$.value') = %s
-	)`, attributeIDs, keyParam, valueParam)
+	)`, attributeIDs, keyParam, kindPredicate, valueParam)
 	if query.FieldOperator == "NOT CONTAINS" {
 		return arrayExists + " and not " + predicate, nil
 	}

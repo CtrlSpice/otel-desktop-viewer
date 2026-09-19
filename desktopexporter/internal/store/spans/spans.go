@@ -829,14 +829,14 @@ var linkColumns = map[string]struct{}{
 }
 
 func traceFieldMapper() search.FieldMapper {
-	return func(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]string, error) {
+	return func(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]search.ResolvedExpression, error) {
 		switch field.SearchScope {
 		case "field":
 			expr, err := mapTraceFieldExpression(field)
 			if err != nil {
 				return nil, err
 			}
-			return []string{expr}, nil
+			return []search.ResolvedExpression{expr}, nil
 		case "attribute":
 			return mapTraceAttributeExpressions(field, query, params)
 		case "global":
@@ -847,37 +847,37 @@ func traceFieldMapper() search.FieldMapper {
 	}
 }
 
-func mapTraceFieldExpression(field *search.FieldDefinition) (string, error) {
+func mapTraceFieldExpression(field *search.FieldDefinition) (search.ResolvedExpression, error) {
 	if resourceField, found := strings.CutPrefix(field.Name, "resource."); found {
 		col := util.CamelToSnake(resourceField)
 		if err := util.ValidateColumnName(col, resourceColumns); err != nil {
-			return "", fmt.Errorf("trace field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
+			return search.ResolvedExpression{}, fmt.Errorf("trace field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
 		}
 		if resourceField == "droppedAttributesCount" {
 			return search.NativeInteger("r." + col), nil
 		}
-		return "r." + col, nil
+		return search.Text("r." + col), nil
 	}
 	if scopeField, found := strings.CutPrefix(field.Name, "scope."); found {
 		col := util.CamelToSnake(scopeField)
 		if err := util.ValidateColumnName(col, scopeColumns); err != nil {
-			return "", fmt.Errorf("trace field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
+			return search.ResolvedExpression{}, fmt.Errorf("trace field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
 		}
 		if scopeField == "droppedAttributesCount" {
 			return search.NativeInteger("sc." + col), nil
 		}
-		return "sc." + col, nil
+		return search.Text("sc." + col), nil
 	}
 	if col, found := strings.CutPrefix(field.Name, "event."); found {
 		snake := util.CamelToSnake(col)
 		if err := util.ValidateColumnName(snake, eventColumns); err != nil {
-			return "", fmt.Errorf("event field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
+			return search.ResolvedExpression{}, fmt.Errorf("event field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
 		}
 		expr := fmt.Sprintf("exists(select 1 from events e where %s and e.%s {COND})", eventOwner, snake)
 		if col == "timestamp" || col == "droppedAttributesCount" {
 			return search.NativeInteger(expr), nil
 		}
-		return expr, nil
+		return search.Text(expr), nil
 	}
 	if col, found := strings.CutPrefix(field.Name, "link."); found {
 		snake := util.CamelToSnake(col)
@@ -892,7 +892,7 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (string, error) {
 			snake = "linked_trace_id"
 		}
 		if err := util.ValidateColumnName(snake, linkColumns); err != nil {
-			return "", fmt.Errorf("link field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
+			return search.ResolvedExpression{}, fmt.Errorf("link field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
 		}
 		colExpr := "l." + snake
 		// Compare IDs in wire form so malformed input matches nothing instead
@@ -907,33 +907,36 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (string, error) {
 		if col == "flags" || col == "droppedAttributesCount" {
 			return search.NativeInteger(expr), nil
 		}
-		return expr, nil
+		if snake == "linked_span_id" || snake == "linked_trace_id" {
+			return search.WireID(expr), nil
+		}
+		return search.Text(expr), nil
 	}
 	if field.Name == "duration" {
 		return search.NativeInteger("(s.end_time - s.start_time)"), nil
 	}
 	if field.Name == "spanID" || field.Name == "parentSpanID" {
 		col := util.CamelToSnake(field.Name)
-		return "span_id_wire(s." + col + ")", nil
+		return search.WireID("span_id_wire(s." + col + ")"), nil
 	}
 	if field.Name == "traceID" {
 		// Wire-form comparison, same reasoning as the link.traceID branch.
-		return "replace(s.trace_id::varchar, '-', '')", nil
+		return search.WireID("replace(s.trace_id::varchar, '-', '')"), nil
 	}
 	if len(field.Name) > 0 {
 		col := util.CamelToSnake(field.Name)
 		if err := util.ValidateColumnName(col, spanColumns); err != nil {
-			return "", fmt.Errorf("trace field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
+			return search.ResolvedExpression{}, fmt.Errorf("trace field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
 		}
 		expr := "s." + col
 		switch field.Name {
 		case "flags", "startTime", "endTime", "droppedAttributesCount", "droppedEventsCount", "droppedLinksCount":
 			return search.NativeInteger(expr), nil
 		default:
-			return expr, nil
+			return search.Text(expr), nil
 		}
 	}
-	return field.Name, nil
+	return search.Text(field.Name), nil
 }
 
 // mapTraceAttributeExpressions turns "attribute foo.bar, in scope X" into a
@@ -957,38 +960,21 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (string, error) {
 // 28x, because the subquery runs once over ~24 rows and the outer predicate is
 // then an indexed equality on resource_id (idx_spans_resource). {COND} is
 // embedded so it lands inside the subquery, where the small scan is.
-func mapTraceAttributeExpressions(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]string, error) {
-	// Fast path first: an equality test on a string attribute is a membership
-	// test against an id we can compute here. IDProbe returns "" for anything
-	// it cannot answer exactly, which falls through to the value comparison.
-	switch field.AttributeScope {
-	case "resource":
-		if p := ingest.IDProbe("attribute_ids", field, query, ingest.ScopeResource); p != "" {
-			return []string{search.Complete("s.resource_id in (select id from resources where " + p + ")")}, nil
-		}
-	case "scope":
-		if p := ingest.IDProbe("attribute_ids", field, query, ingest.ScopeScope); p != "" {
-			return []string{search.Complete("s.scope_id in (select id from scopes where " + p + ")")}, nil
-		}
-	case "span":
-		if p := ingest.IDProbe("s.attribute_ids", field, query, ingest.ScopeSpan); p != "" {
-			return []string{search.Complete(p)}, nil
-		}
-	case "event":
-		if p := ingest.IDProbe("e.attribute_ids", field, query, ingest.ScopeEvent); p != "" {
-			return []string{search.Complete(
-				"exists(select 1 from events e where " + eventOwner + " and " + p + ")")}, nil
-		}
-	case "link":
-		if p := ingest.IDProbe("l.attribute_ids", field, query, ingest.ScopeLink); p != "" {
-			return []string{search.Complete(
-				"exists(select 1 from links l where " + linkOwner + " and " + p + ")")}, nil
-		}
+func mapTraceAttributeExpressions(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]search.ResolvedExpression, error) {
+	kind, mode, err := search.AttributeKind(field.Type)
+	if err != nil {
+		return nil, err
 	}
 
 	keyParam := fmt.Sprintf("attr_key_%d", len(*params))
 	*params = append(*params, search.NamedParam{Name: keyParam, Value: field.Name})
-	if field.Type == "array" || strings.HasSuffix(field.Type, "[]") {
+	kindParam := ""
+	if kind != "" {
+		kindParam = fmt.Sprintf("attr_kind_%d", len(*params))
+		*params = append(*params, search.NamedParam{Name: kindParam, Value: kind})
+	}
+	kindPredicate := search.AttributeKindPredicate(kindParam)
+	if mode == search.OTelArrayOperand {
 		var attributeIDs string
 		switch field.AttributeScope {
 		case "resource":
@@ -1004,7 +990,7 @@ func mapTraceAttributeExpressions(field *search.FieldDefinition, query *search.Q
 		default:
 			return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidTraceQuery)
 		}
-		predicate, err := search.JSONValueArrayPredicate(attributeIDs, keyParam, query, params)
+		predicate, err := search.JSONValueArrayPredicate(attributeIDs, keyParam, kindParam, query, params)
 		if err != nil {
 			return nil, err
 		}
@@ -1018,46 +1004,46 @@ func mapTraceAttributeExpressions(field *search.FieldDefinition, query *search.Q
 		case "link":
 			predicate = fmt.Sprintf("exists(select 1 from links l where l.trace_id = s.trace_id and l.span_id = s.span_id and %s)", predicate)
 		}
-		return []string{search.Complete(predicate)}, nil
+		return []search.ResolvedExpression{search.Complete(predicate)}, nil
 	}
 
 	switch field.AttributeScope {
 	case "resource":
-		return []string{fmt.Sprintf(
+		return []search.ResolvedExpression{search.Text(fmt.Sprintf(
 			` s.resource_id in (select r.id from resources r, unnest(r.attribute_ids) t(aid)
-				join attributes a on a.id = t.aid where a.key = %s and
+				join attributes a on a.id = t.aid where a.key = %s%s and
 				coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})`,
-			keyParam)}, nil
+			keyParam, kindPredicate))}, nil
 	case "scope":
-		return []string{fmt.Sprintf(
+		return []search.ResolvedExpression{search.Text(fmt.Sprintf(
 			` s.scope_id in (select sc.id from scopes sc, unnest(sc.attribute_ids) t(aid)
-				join attributes a on a.id = t.aid where a.key = %s and
+				join attributes a on a.id = t.aid where a.key = %s%s and
 				coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})`,
-			keyParam)}, nil
+			keyParam, kindPredicate))}, nil
 	case "span":
-		return []string{fmt.Sprintf(`exists(
+		return []search.ResolvedExpression{search.Text(fmt.Sprintf(`exists(
 			select 1 from unnest(s.attribute_ids) t(aid) join attributes a on a.id = t.aid
-			where a.key = %s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND}
-		)`, keyParam)}, nil
+			where a.key = %s%s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND}
+		)`, keyParam, kindPredicate))}, nil
 	case "event":
-		return []string{fmt.Sprintf(`exists(
+		return []search.ResolvedExpression{search.Text(fmt.Sprintf(`exists(
 			select 1 from events e, unnest(e.attribute_ids) as t(aid)
 			join attributes a on a.id = t.aid
-			where e.trace_id = s.trace_id and e.span_id = s.span_id and a.key = %s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND}
-		)`, keyParam)}, nil
+			where e.trace_id = s.trace_id and e.span_id = s.span_id and a.key = %s%s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND}
+		)`, keyParam, kindPredicate))}, nil
 	case "link":
-		return []string{fmt.Sprintf(`exists(
+		return []search.ResolvedExpression{search.Text(fmt.Sprintf(`exists(
 			select 1 from links l, unnest(l.attribute_ids) as t(aid)
 			join attributes a on a.id = t.aid
-			where l.trace_id = s.trace_id and l.span_id = s.span_id and a.key = %s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND}
-		)`, keyParam)}, nil
+			where l.trace_id = s.trace_id and l.span_id = s.span_id and a.key = %s%s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND}
+		)`, keyParam, kindPredicate))}, nil
 	default:
 		return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidTraceQuery)
 	}
 }
 
-func mapTraceGlobalExpressions() ([]string, error) {
-	return []string{
+func mapTraceGlobalExpressions() ([]search.ResolvedExpression, error) {
+	return search.TextExpressions([]string{
 		"replace(s.trace_id::varchar, '-', '') {COND}",
 		"span_id_wire(s.span_id) {COND}",
 		"span_id_wire(s.parent_span_id) {COND}",
@@ -1083,7 +1069,7 @@ func mapTraceGlobalExpressions() ([]string, error) {
 		matchAnyAttribute("unnest(s.attribute_ids || r.attribute_ids || sc.attribute_ids) as t(aid)", ""),
 		matchAnyAttribute("events e, unnest(e.attribute_ids) as t(aid)", eventOwner+" and "),
 		matchAnyAttribute("links l, unnest(l.attribute_ids) as t(aid)", linkOwner+" and "),
-	}, nil
+	}), nil
 }
 
 // matchAnyAttribute builds an EXISTS that resolves an owner's attribute id

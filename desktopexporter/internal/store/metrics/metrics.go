@@ -1294,14 +1294,14 @@ var metricColumns = map[string]struct{}{
 }
 
 func metricFieldMapper() search.FieldMapper {
-	return func(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]string, error) {
+	return func(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]search.ResolvedExpression, error) {
 		switch field.SearchScope {
 		case "field":
 			expr, err := mapMetricFieldExpression(field)
 			if err != nil {
 				return nil, err
 			}
-			return []string{expr}, nil
+			return []search.ResolvedExpression{expr}, nil
 		case "attribute":
 			return mapMetricAttributeExpressions(field, query, params)
 		case "global":
@@ -1339,7 +1339,7 @@ func metricFieldMapper() search.FieldMapper {
 const matchIngestByLabel = `m.id in (
 			select d.metric_ingest_id from %s
 			where exists (select 1 from unnest(%s) t(aid) join attributes a on a.id = t.aid
-				where a.key = %s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})
+			where a.key = %s%s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})
 		)`
 
 // metricSearchFrom is the FROM clause metric search predicates are written
@@ -1355,22 +1355,22 @@ const metricSearchFrom = `from search_params, metric_ingests m
 			inner join resources r on r.id = m.resource_id
 			inner join scopes sc on sc.id = m.scope_id`
 
-func mapMetricFieldExpression(field *search.FieldDefinition) (string, error) {
+func mapMetricFieldExpression(field *search.FieldDefinition) (search.ResolvedExpression, error) {
 	name := field.Name
 	if name == "" {
-		return "", fmt.Errorf("empty field name: %w", ErrInvalidMetricQuery)
+		return search.ResolvedExpression{}, fmt.Errorf("empty field name: %w", ErrInvalidMetricQuery)
 	}
 	switch name {
 	case "name":
-		return "s.name", nil
+		return search.Text("s.name"), nil
 	case "unit":
-		return "s.unit", nil
+		return search.Text("s.unit"), nil
 	case "scope.name":
-		return "s.scope_name", nil
+		return search.Text("s.scope_name"), nil
 	case "scope.version":
-		return "s.scope_version", nil
+		return search.Text("s.scope_version"), nil
 	case "description":
-		return "m.description", nil
+		return search.Text("m.description"), nil
 	// The two dropped counts moved off metric_ingests onto the resources and
 	// scopes rows it now references, so they resolve through the joins rather
 	// than as columns on m.
@@ -1381,9 +1381,9 @@ func mapMetricFieldExpression(field *search.FieldDefinition) (string, error) {
 	default:
 		col := util.CamelToSnake(name)
 		if err := util.ValidateColumnName(col, metricColumns); err != nil {
-			return "", fmt.Errorf("metric field %q: %w: %w", name, err, ErrInvalidMetricQuery)
+			return search.ResolvedExpression{}, fmt.Errorf("metric field %q: %w: %w", name, err, ErrInvalidMetricQuery)
 		}
-		return "m." + col, nil
+		return search.Text("m." + col), nil
 	}
 }
 
@@ -1397,41 +1397,21 @@ func mapMetricFieldExpression(field *search.FieldDefinition) (string, error) {
 //
 // Both predicates are hoisted into the owner table -- see
 // spans.mapTraceAttributeExpressions for the measurement that motivates it.
-func mapMetricAttributeExpressions(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]string, error) {
-	// Fast path: equality on a string attribute is a membership test against a
-	// content-derived id. IDProbe returns "" for anything it cannot answer
-	// exactly, falling through to the value comparison below.
-	switch field.AttributeScope {
-	case "resource", "metric":
-		if p := ingest.IDProbe("attribute_ids", field, query, ingest.ScopeResource); p != "" {
-			return []string{search.Complete("m.resource_id in (select id from resources where " + p + ")")}, nil
-		}
-	case "scope":
-		if p := ingest.IDProbe("attribute_ids", field, query, ingest.ScopeScope); p != "" {
-			return []string{search.Complete("m.scope_id in (select id from scopes where " + p + ")")}, nil
-		}
-	case "datapoint":
-		if p := ingest.IDProbe("d.attribute_ids", field, query, ingest.ScopeDatapoint); p != "" {
-			return []string{search.Complete(
-				"m.id in (select d.metric_ingest_id from datapoints d where " + p + ")")}, nil
-		}
-	case "exemplar":
-		if p := ingest.IDProbe("e.attribute_ids", field, query, ingest.ScopeExemplar); p != "" {
-			return []string{search.Complete(
-				"m.id in (select d.metric_ingest_id from exemplars e" +
-					" join datapoints d on d.id = e.datapoint_id where " + p + ")")}, nil
-		}
-	case "metadata":
-		// Metric.metadata lives on the ingest row itself, so no subquery: m
-		// is metric_ingests in metricSearchFrom.
-		if p := ingest.IDProbe("m.metadata_ids", field, query, ingest.ScopeMetricMetadata); p != "" {
-			return []string{search.Complete(p)}, nil
-		}
+func mapMetricAttributeExpressions(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]search.ResolvedExpression, error) {
+	kind, mode, err := search.AttributeKind(field.Type)
+	if err != nil {
+		return nil, err
 	}
 
 	keyParam := fmt.Sprintf("attr_key_%d", len(*params))
 	*params = append(*params, search.NamedParam{Name: keyParam, Value: field.Name})
-	if field.Type == "array" || strings.HasSuffix(field.Type, "[]") {
+	kindParam := ""
+	if kind != "" {
+		kindParam = fmt.Sprintf("attr_kind_%d", len(*params))
+		*params = append(*params, search.NamedParam{Name: kindParam, Value: kind})
+	}
+	kindPredicate := search.AttributeKindPredicate(kindParam)
+	if mode == search.OTelArrayOperand {
 		var attributeIDs string
 		switch field.AttributeScope {
 		case "resource", "metric":
@@ -1447,7 +1427,7 @@ func mapMetricAttributeExpressions(field *search.FieldDefinition, query *search.
 		default:
 			return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidMetricQuery)
 		}
-		predicate, err := search.JSONValueArrayPredicate(attributeIDs, keyParam, query, params)
+		predicate, err := search.JSONValueArrayPredicate(attributeIDs, keyParam, kindParam, query, params)
 		if err != nil {
 			return nil, err
 		}
@@ -1461,33 +1441,33 @@ func mapMetricAttributeExpressions(field *search.FieldDefinition, query *search.
 		case "exemplar":
 			predicate = fmt.Sprintf("m.id in (select d.metric_ingest_id from exemplars e join datapoints d on d.id = e.datapoint_id where %s)", predicate)
 		}
-		return []string{search.Complete(predicate)}, nil
+		return []search.ResolvedExpression{search.Complete(predicate)}, nil
 	}
 
 	switch field.AttributeScope {
 	case "resource", "metric":
-		return []string{fmt.Sprintf(
+		return []search.ResolvedExpression{search.Text(fmt.Sprintf(
 			`m.resource_id in (select r.id from resources r, unnest(r.attribute_ids) t(aid)
-				join attributes a on a.id = t.aid where a.key = %s and
+				join attributes a on a.id = t.aid where a.key = %s%s and
 				coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})`,
-			keyParam)}, nil
+			keyParam, kindPredicate))}, nil
 	case "scope":
-		return []string{fmt.Sprintf(
+		return []search.ResolvedExpression{search.Text(fmt.Sprintf(
 			`m.scope_id in (select sc.id from scopes sc, unnest(sc.attribute_ids) t(aid)
-				join attributes a on a.id = t.aid where a.key = %s and
+				join attributes a on a.id = t.aid where a.key = %s%s and
 				coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})`,
-			keyParam)}, nil
+			keyParam, kindPredicate))}, nil
 	case "datapoint":
-		return []string{fmt.Sprintf(matchIngestByLabel,
-			"datapoints d", "d.attribute_ids", keyParam)}, nil
+		return []search.ResolvedExpression{search.Text(fmt.Sprintf(matchIngestByLabel,
+			"datapoints d", "d.attribute_ids", keyParam, kindPredicate))}, nil
 	case "exemplar":
-		return []string{fmt.Sprintf(matchIngestByLabel,
-			"exemplars e join datapoints d on d.id = e.datapoint_id", "e.attribute_ids", keyParam)}, nil
+		return []search.ResolvedExpression{search.Text(fmt.Sprintf(matchIngestByLabel,
+			"exemplars e join datapoints d on d.id = e.datapoint_id", "e.attribute_ids", keyParam, kindPredicate))}, nil
 	case "metadata":
-		return []string{fmt.Sprintf(`exists(
+		return []search.ResolvedExpression{search.Text(fmt.Sprintf(`exists(
 			select 1 from unnest(m.metadata_ids) t(aid) join attributes a on a.id = t.aid
-			where a.key = %s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND}
-		)`, keyParam)}, nil
+			where a.key = %s%s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND}
+		)`, keyParam, kindPredicate))}, nil
 	default:
 		return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidMetricQuery)
 	}
@@ -1506,8 +1486,8 @@ const matchIngestByAnyLabel = `m.id in (
 			)
 		)`
 
-func mapMetricGlobalExpressions() ([]string, error) {
-	return []string{
+func mapMetricGlobalExpressions() ([]search.ResolvedExpression, error) {
+	return search.TextExpressions([]string{
 		"CAST(s.name AS VARCHAR) {COND}",
 		"CAST(m.description AS VARCHAR) {COND}",
 		"CAST(s.unit AS VARCHAR) {COND}",
@@ -1531,7 +1511,7 @@ func mapMetricGlobalExpressions() ([]string, error) {
 				exists(select 1 from json_each(a.value, '$.value') j where j.value::varchar {COND})
 		)
 	)`,
-	}, nil
+	}), nil
 }
 
 // appendNamedValues converts a positional argument list into the

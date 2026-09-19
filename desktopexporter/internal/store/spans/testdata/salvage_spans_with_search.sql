@@ -1,6 +1,6 @@
 
 		with recursive
-		search_params as (select try_cast(? as uuid) as trace_id),
+		search_params as (select try_cast(? as uuid) as trace_id, ? as attr_key_1, ? as attr_kind_2, ? as value_3),
 
 		-- This trace's spans, isolated once, before the walk begins.
 		--
@@ -75,7 +75,10 @@
 			from search_params, spans s
 		join resources r on r.id = s.resource_id
 		join scopes sc on sc.id = s.scope_id
-			where s.trace_id = search_params.trace_id AND (list_contains(s.attribute_ids, '3ef42721-77d5-88fc-4b55-a22bb15d75fd'::uuid))
+			where s.trace_id = search_params.trace_id AND (exists(
+			select 1 from unnest(s.attribute_ids) t(aid) join attributes a on a.id = t.aid
+			where a.key = attr_key_1 and json_extract_string(a.value, '$.kind') = attr_kind_2 and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) = value_3
+		))
 		),
 
 		-- Spans the walk above could not reach, recovered best-effort.

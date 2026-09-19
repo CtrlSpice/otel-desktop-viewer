@@ -299,7 +299,11 @@ func TestBuildOperatorCondition(t *testing.T) {
 				Value:         tt.value,
 			}
 
-			sql, err := BuildOperatorCondition(tt.expression, query, &params)
+			resolved := Text(tt.expression)
+			if tt.fieldName == "traceID" {
+				resolved = WireID(tt.expression)
+			}
+			sql, err := BuildOperatorCondition(resolved, query, &params)
 			if tt.wantErr {
 				assert.Error(t, err)
 				return
@@ -474,7 +478,7 @@ func TestBuildOperatorCondition_ArrayTypes(t *testing.T) {
 				Value:         tt.value,
 			}
 
-			sql, err := BuildOperatorCondition(tt.expression, query, &params)
+			sql, err := handleArrayOperator(tt.expression, query, &params)
 			if tt.wantErr {
 				assert.Error(t, err)
 				return
@@ -636,8 +640,8 @@ func TestBuildOperatorCondition_NativeIntegerList(t *testing.T) {
 }
 
 func TestBuildSearchSQL_NilQuery(t *testing.T) {
-	mapper := func(field *FieldDefinition, _ *Query, _ *[]NamedParam) ([]string, error) {
-		return []string{field.Name}, nil
+	mapper := func(field *FieldDefinition, _ *Query, _ *[]NamedParam) ([]ResolvedExpression, error) {
+		return []ResolvedExpression{Text(field.Name)}, nil
 	}
 
 	start, end := int64(1000), int64(2000)
@@ -650,8 +654,8 @@ func TestBuildSearchSQL_NilQuery(t *testing.T) {
 }
 
 func TestBuildSearchSQL_SimpleCondition(t *testing.T) {
-	mapper := func(field *FieldDefinition, _ *Query, _ *[]NamedParam) ([]string, error) {
-		return []string{field.Name}, nil
+	mapper := func(field *FieldDefinition, _ *Query, _ *[]NamedParam) ([]ResolvedExpression, error) {
+		return []ResolvedExpression{Text(field.Name)}, nil
 	}
 
 	query := &QueryNode{
@@ -674,8 +678,8 @@ func TestBuildSearchSQL_SimpleCondition(t *testing.T) {
 }
 
 func TestBuildSearchSQL_GroupAND(t *testing.T) {
-	mapper := func(field *FieldDefinition, _ *Query, _ *[]NamedParam) ([]string, error) {
-		return []string{field.Name}, nil
+	mapper := func(field *FieldDefinition, _ *Query, _ *[]NamedParam) ([]ResolvedExpression, error) {
+		return []ResolvedExpression{Text(field.Name)}, nil
 	}
 
 	query := &QueryNode{
@@ -719,11 +723,11 @@ func TestBuildSearchSQL_GroupAND(t *testing.T) {
 }
 
 func TestBuildSearchSQL_GlobalORs(t *testing.T) {
-	mapper := func(field *FieldDefinition, _ *Query, _ *[]NamedParam) ([]string, error) {
+	mapper := func(field *FieldDefinition, _ *Query, _ *[]NamedParam) ([]ResolvedExpression, error) {
 		if field.SearchScope == "global" {
-			return []string{"SearchText {COND}", "Name {COND}"}, nil
+			return TextExpressions([]string{"SearchText {COND}", "Name {COND}"}), nil
 		}
-		return []string{field.Name}, nil
+		return []ResolvedExpression{Text(field.Name)}, nil
 	}
 
 	query := &QueryNode{
@@ -745,8 +749,8 @@ func TestBuildSearchSQL_GlobalORs(t *testing.T) {
 }
 
 func TestBuildConditions_MissingField(t *testing.T) {
-	mapper := func(field *FieldDefinition, _ *Query, _ *[]NamedParam) ([]string, error) {
-		return []string{field.Name}, nil
+	mapper := func(field *FieldDefinition, _ *Query, _ *[]NamedParam) ([]ResolvedExpression, error) {
+		return []ResolvedExpression{Text(field.Name)}, nil
 	}
 
 	node := &QueryNode{
@@ -770,16 +774,17 @@ func TestJSONValueArrayPredicateKeepsAbsentArraysOutOfNegativeMatches(t *testing
 		FieldOperator: "NOT CONTAINS",
 		Value:         "42",
 	}
-	params := []NamedParam{{Name: "attr_key_0", Value: "retries"}}
+	params := []NamedParam{{Name: "attr_key_0", Value: "retries"}, {Name: "attr_kind_1", Value: "array"}}
 
-	predicate, err := JSONValueArrayPredicate("s.attribute_ids", "attr_key_0", query, &params)
+	predicate, err := JSONValueArrayPredicate("s.attribute_ids", "attr_key_0", "attr_kind_1", query, &params)
 
 	require.NoError(t, err)
-	assert.Contains(t, predicate, "json_extract_string(a.value, '$.kind') = 'array'")
+	assert.Contains(t, predicate, "json_extract_string(a.value, '$.kind') = attr_kind_1")
 	assert.Contains(t, predicate, "and not exists")
 	assert.Equal(t, []NamedParam{
 		{Name: "attr_key_0", Value: "retries"},
-		{Name: "value_1", Value: "42"},
+		{Name: "attr_kind_1", Value: "array"},
+		{Name: "value_2", Value: "42"},
 	}, params)
 }
 
@@ -797,8 +802,8 @@ func TestMultiExpressionNamedFieldJoinsWithAND(t *testing.T) {
 			Value:         "x",
 		},
 	}
-	mapper := func(field *FieldDefinition, query *Query, params *[]NamedParam) ([]string, error) {
-		return []string{"a.col", "b.col"}, nil
+	mapper := func(field *FieldDefinition, query *Query, params *[]NamedParam) ([]ResolvedExpression, error) {
+		return TextExpressions([]string{"a.col", "b.col"}), nil
 	}
 	start := int64(0)
 	timeCondition, timeParams := TimePredicate("t", &start, nil)
