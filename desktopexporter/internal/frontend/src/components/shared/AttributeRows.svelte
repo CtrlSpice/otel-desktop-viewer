@@ -37,11 +37,8 @@
     color: var(--color-subtle);
     @apply font-normal;
   }
-  .detail-cell__key {
-    white-space: nowrap;
-  }
   .detail-cell__attribute-header {
-    @apply inline-flex items-center gap-1;
+    @apply flex max-w-full flex-wrap items-center gap-1;
   }
   .detail-cell__attribute-value {
     @apply mt-0.5 min-w-0;

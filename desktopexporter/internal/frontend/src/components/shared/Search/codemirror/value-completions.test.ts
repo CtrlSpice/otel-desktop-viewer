@@ -232,6 +232,33 @@ describe('only suggests fields this editor can search', () => {
     )
     expect(result).toBeNull()
   })
+
+  it('does not offer an equals comparison for array-only fields', async () => {
+    const arrayMatch: JsonAttributeMatch = {
+      name: 'nested.values',
+      attributeScope: 'span',
+      type: 'array',
+      matchCount: 1,
+      sampleValues: [
+        { kind: 'array', value: [{ kind: 'string', value: 'x' }] },
+      ],
+    }
+    const arrayField: Extract<FieldDefinition, { searchScope: 'attribute' }> = {
+      name: 'nested.values',
+      searchScope: 'attribute',
+      attributeScope: 'span',
+      type: 'array',
+      operators: [OPERATORS.CONTAINS, OPERATORS.NOT_CONTAINS],
+    }
+
+    const { result } = await complete(
+      'nested',
+      vi.fn().mockResolvedValue([arrayMatch]),
+      [arrayField]
+    )
+
+    expect(result).toBeNull()
+  })
 })
 
 describe('bare-text discovery of enums and columns', () => {

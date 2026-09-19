@@ -94,6 +94,21 @@ function optionsForMatch(match: JsonAttributeMatch): Completion[] {
   }))
 }
 
+function fieldSupportsExactMatch(
+  field: Extract<FieldDefinition, { searchScope: 'attribute' }>,
+  match: JsonAttributeMatch
+): boolean {
+  const type =
+    match.type === 'bool'
+      ? 'boolean'
+      : match.type === 'double'
+        ? 'float64'
+        : match.type
+  return (
+    field.type === type && field.operators.some(({ symbol }) => symbol === '=')
+  )
+}
+
 /**
  * Creates an async completion source backed by value-first discovery.
  *
@@ -153,7 +168,8 @@ export function createValueDiscoverySource(
         field =>
           field.searchScope === 'attribute' &&
           field.name === match.name &&
-          field.attributeScope === match.attributeScope
+          field.attributeScope === match.attributeScope &&
+          fieldSupportsExactMatch(field, match)
       )
     )
 
