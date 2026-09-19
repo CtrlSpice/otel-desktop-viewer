@@ -357,6 +357,10 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 			if err != nil {
 				return "", err
 			}
+		} else if resolved.OperandMode == WireIDOperand {
+			for i, value := range values {
+				values[i] = normalizeWireIDValue(value.(string))
+			}
 		}
 		*params = append(*params, NamedParam{paramName, values})
 		if resolved.OperandMode == NativeSignedIntegerOperand || resolved.OperandMode == DurationOperand {

@@ -689,6 +689,15 @@ func TestBuildOperatorCondition_Duration(t *testing.T) {
 	}
 }
 
+func TestBuildOperatorCondition_WireIDList(t *testing.T) {
+	params := []NamedParam{}
+	query := &Query{FieldOperator: "IN", Value: `["ABC-123","not-an-id"]`}
+	sql, err := BuildOperatorCondition(WireID("span_id_wire(s.span_id)"), query, &params)
+	require.NoError(t, err)
+	assert.Equal(t, "span_id_wire(s.span_id) IN value_0", sql)
+	assert.Equal(t, []NamedParam{{"value_0", []any{"abc123", "notanid"}}}, params)
+}
+
 func TestBuildSearchSQL_NilQuery(t *testing.T) {
 	mapper := func(field *FieldDefinition, _ *Query, _ *[]NamedParam) ([]ResolvedExpression, error) {
 		return []ResolvedExpression{Text(field.Name)}, nil
