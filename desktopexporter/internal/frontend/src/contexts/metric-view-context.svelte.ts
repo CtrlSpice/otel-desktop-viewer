@@ -238,9 +238,10 @@ export interface MetricViewContext {
   readonly metric: MetricData | undefined
   readonly metricType: MetricType
   readonly temporality: string
+  readonly temporalityCode: number | null
   readonly isMonotonic: boolean | null
   readonly isHistogramKind: boolean
-  readonly isUnspecifiedTemporality: boolean
+  readonly isUnsafeTemporality: boolean
   readonly totalDatapointCount: number
 
   // -- Selection / view state --
@@ -1119,10 +1120,10 @@ export function createMetricViewContext(
   const sparklinePointsByKey = $derived.by(
     (): ReadonlyMap<string, readonly ChartPoint[]> => {
       if (isHistogramKind) return new Map()
-      // Unspecified temporality means we can't tell whether the values
+      // Unsafe temporality means we can't tell whether the values
       // are running totals or per-interval counts -- the same numbers
       // mean two very different lines depending on which it is. The
-      // main chart blanks itself + shows UnspecifiedTemporalityCallout
+      // main chart blanks itself + shows the temporality callout
       // for the same reason; row projections should follow that lead
       // rather than guessing.
       if (isUnsafeTemporality) return new Map()
@@ -2308,15 +2309,16 @@ export function createMetricViewContext(
     get temporality() {
       return temporality
     },
+    get temporalityCode() {
+      return temporalityCode
+    },
     get isMonotonic() {
       return isMonotonic
     },
     get isHistogramKind() {
       return isHistogramKind
     },
-    get isUnspecifiedTemporality() {
-      // Kept as the component-facing name; unknown enum codes are equally
-      // unsafe because no derived mode may guess their semantics.
+    get isUnsafeTemporality() {
       return isUnsafeTemporality
     },
     get totalDatapointCount() {

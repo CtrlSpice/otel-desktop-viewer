@@ -264,7 +264,8 @@ it('treats unknown received temporalities as unsafe for derived modes', () => {
 
   const ctx = renderProbe('/metrics/m1', { metric })
 
-  expect(ctx.isUnspecifiedTemporality).toBe(true)
+  expect(ctx.isUnsafeTemporality).toBe(true)
+  expect(ctx.temporalityCode).toBe(99)
   expect(ctx.availableAggregationViews).toEqual(['raw'])
 })
 

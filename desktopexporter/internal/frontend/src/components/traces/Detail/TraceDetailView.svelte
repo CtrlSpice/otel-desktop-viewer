@@ -125,10 +125,12 @@
     let n = 0
     if (detailSearchFieldVisible(f, 'name')) n++
     if (detailSearchFieldVisible(f, 'kind')) n++
+    if (detailSearchFieldVisible(f, 'kindCode')) n++
     if (detailSearchFieldVisible(f, 'startTime')) n++
     if (detailSearchFieldVisible(f, 'endTime')) n++
     if (detailDurationVisible(f)) n++
     if (detailSearchFieldVisible(f, 'statusCode')) n++
+    if (detailSearchFieldVisible(f, 'statusCodeValue')) n++
     if (
       span.statusCodeValue !== 0 &&
       span.statusCodeValue !== 1 &&
@@ -290,6 +292,13 @@
                   fieldType="string"
                 />
               {/if}
+              {#if detailSearchFieldVisible(columnFilter, 'kindCode')}
+                <SpanField
+                  fieldName="kind code"
+                  fieldValue={span.kindCode.toString()}
+                  fieldType="int64"
+                />
+              {/if}
               {#if detailSearchFieldVisible(columnFilter, 'startTime')}
                 <SpanField
                   fieldName="start time"
@@ -324,6 +333,13 @@
                   fieldName="status code"
                   fieldValue={span.statusCode}
                   fieldType="string"
+                />
+              {/if}
+              {#if detailSearchFieldVisible(columnFilter, 'statusCodeValue')}
+                <SpanField
+                  fieldName="status code value"
+                  fieldValue={span.statusCodeValue.toString()}
+                  fieldType="int64"
                 />
               {/if}
               {#if span.statusCodeValue !== 0 && span.statusCodeValue !== 1 && detailSearchFieldVisible(columnFilter, 'statusMessage')}
