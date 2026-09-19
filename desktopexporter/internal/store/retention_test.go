@@ -44,9 +44,9 @@ func seedSpans(t *testing.T, s *Store, n int) {
 	t.Helper()
 	seedOwners(t, s)
 	_, err := s.db.Exec(`
-		insert into attributes (id, key, value, type, scope)
-		select attr_id('pad', repeat('x', 500) || range, 'string', 'span'),
-		       'pad', repeat('x', 500) || range, 'string', 'span'
+		insert into attributes (id, key, value)
+		select attr_id('pad', json_object('kind', 'string', 'value', repeat('x', 500) || range)::varchar),
+		       'pad', json_object('kind', 'string', 'value', repeat('x', 500) || range)
 		from range(?) on conflict do nothing`, n)
 	require.NoError(t, err)
 	_, err = s.db.Exec(`
@@ -54,7 +54,7 @@ func seedSpans(t *testing.T, s *Store, n int) {
 		                   resource_id, scope_id, attribute_ids)
 		select uuid(), range::ubigint, 'span-' || range, range * 1000000, range * 1000000 + 500,
 		       ?::uuid, ?::uuid,
-		       [attr_id('pad', repeat('x', 500) || range, 'string', 'span')]
+		       [attr_id('pad', json_object('kind', 'string', 'value', repeat('x', 500) || range)::varchar)]
 		from range(?)`, seedResourceID, seedScopeID, n)
 	require.NoError(t, err)
 }
@@ -70,7 +70,7 @@ func seedLogs(t *testing.T, s *Store, n int) {
 		select uuid(),
 			case when range % 2 = 0 then range * 1000000 else 0 end,
 			range * 1000000,
-			repeat('y', 200),
+			json_object('kind', 'string', 'value', repeat('y', 200)),
 			?::uuid, ?::uuid, []::uuid[]
 		from range(?)`, seedResourceID, seedScopeID, n)
 	require.NoError(t, err)

@@ -81,10 +81,7 @@ func TestAttributeMemoAgreesWithDerivation(t *testing.T) {
 
 func negZero() float64 { z := 0.0; return -z }
 
-// TestAttributeMemoSeparatesScopes covers the mistake that would be silent:
-// the same labels under two scopes are different dictionary entries, and a memo
-// keyed on labels alone would serve one for the other.
-func TestAttributeMemoSeparatesScopes(t *testing.T) {
+func TestAttributeMemoSharesScopeFreeIDs(t *testing.T) {
 	attrs := mapOf(func(m pcommon.Map) { m.PutStr("http.method", "GET") })
 
 	_, spanIDs := AttributeSet(attrs, ScopeSpan)
@@ -92,10 +89,10 @@ func TestAttributeMemoSeparatesScopes(t *testing.T) {
 	_, spanAgain := AttributeSet(attrs, ScopeSpan)
 
 	require.Len(t, spanIDs, 1)
-	assert.NotEqual(t, spanIDs[0], logIDs[0],
-		"scope is part of dictionary identity, so these are different rows")
+	assert.Equal(t, spanIDs[0], logIDs[0],
+		"scope is derived from the owner, so identical values share one row")
 	assert.Equal(t, spanIDs, spanAgain,
-		"and the warm read must return the span answer, not whichever was cached last")
+		"and the warm read must return the same canonical answer")
 }
 
 // TestAttributeMemoConfirmsOnCollision forces two different sets into one

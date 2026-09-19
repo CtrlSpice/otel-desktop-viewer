@@ -20,11 +20,11 @@ import (
 )
 
 type match struct {
-	Name           string   `json:"name"`
-	AttributeScope string   `json:"attributeScope"`
-	Type           string   `json:"type"`
-	MatchCount     int      `json:"matchCount"`
-	SampleValues   []string `json:"sampleValues"`
+	Name           string            `json:"name"`
+	AttributeScope string            `json:"attributeScope"`
+	Type           string            `json:"type"`
+	MatchCount     int               `json:"matchCount"`
+	SampleValues   []json.RawMessage `json:"sampleValues"`
 }
 
 func setup(t *testing.T) (*store.Store, context.Context) {
@@ -104,11 +104,11 @@ func TestSearchFindsKeysByValue(t *testing.T) {
 	// the key's cardinality.
 	assert.Equal(t, 2, byKey["http.route/span"].MatchCount)
 	assert.ElementsMatch(t,
-		[]string{"/checkout", "/checkout/confirm"},
+		[]json.RawMessage{json.RawMessage(`{"kind":"string","value":"/checkout"}`), json.RawMessage(`{"kind":"string","value":"/checkout/confirm"}`)},
 		byKey["http.route/span"].SampleValues)
 
 	// /health does not match, so it must not be offered as an example.
-	assert.NotContains(t, byKey["http.route/span"].SampleValues, "/health")
+	assert.NotContains(t, byKey["http.route/span"].SampleValues, json.RawMessage(`{"kind":"string","value":"/health"}`))
 }
 
 func TestSearchMatchesKeyNamesToo(t *testing.T) {

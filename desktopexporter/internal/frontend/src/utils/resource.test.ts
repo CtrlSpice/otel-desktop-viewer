@@ -9,14 +9,14 @@ function resourceWith(attributes: Attribute[]): ResourceData {
 describe('getServiceName', () => {
   it('returns the value when service.name is present', () => {
     const resource = resourceWith([
-      { key: 'service.name', value: 'checkout', type: 'string' },
+      { key: 'service.name', value: { kind: 'string', value: 'checkout' } },
     ])
     expect(getServiceName(resource)).toBe('checkout')
   })
 
   it('returns undefined when service.name is absent', () => {
     const resource = resourceWith([
-      { key: 'host.name', value: 'my-host', type: 'string' },
+      { key: 'host.name', value: { kind: 'string', value: 'my-host' } },
     ])
     expect(getServiceName(resource)).toBeUndefined()
   })

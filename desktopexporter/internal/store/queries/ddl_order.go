@@ -70,7 +70,7 @@ func manifest(kind string) []string {
 		}
 		out = append(out, line)
 	}
-	if len(out) == 0 {
+	if len(out) == 0 && kind != "types" {
 		panic("queries: order manifest for " + kind + " is empty")
 	}
 	return out

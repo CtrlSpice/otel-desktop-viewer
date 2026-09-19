@@ -18,10 +18,9 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 )
 
-// Attribute scopes. These are part of dictionary identity, not free-form tags:
-// the same (key, value, type) under two scopes is two rows, which is what lets
-// attribute discovery report attributeScope from a single dictionary scan
-// instead of unnesting every owner array.
+// Attribute scopes identify an owning attribute array. They are intentionally
+// not dictionary identity: the same OTel value has one stable dictionary row
+// regardless of where it was received.
 const (
 	ScopeResource  = "resource"
 	ScopeScope     = "scope"
@@ -38,13 +37,11 @@ const (
 	ScopeMetricMetadata = "metadata"
 )
 
-// Attribute is one dictionary row: a distinct (key, value, type, scope).
+// Attribute is one dictionary row: a distinct key and canonical JSON value.
 type Attribute struct {
 	ID    duckdb.UUID
 	Key   string
 	Value string
-	Type  string
-	Scope string
 }
 
 // Resource is one deduped resource: an attribute set plus its dropped count.
@@ -104,8 +101,8 @@ func hashID(parts ...string) duckdb.UUID {
 // Mirrored by the attr_id SQL macro, which exists as an independent
 // reimplementation for the integrity check -- a Go-side re-hash would use this
 // same function and could only catch storage corruption, not a bug in here.
-func AttributeID(key, value, typ, scope string) duckdb.UUID {
-	return hashID(key, value, typ, scope)
+func AttributeID(key, value string) duckdb.UUID {
+	return hashID(key, value)
 }
 
 // ResourceID derives a resource's identity from the OTel-mandated
@@ -249,13 +246,17 @@ func AttributeSet(attrs pcommon.Map, scope string) ([]Attribute, []duckdb.UUID) 
 func attributeSetUncached(attrs pcommon.Map, scope string) ([]Attribute, []duckdb.UUID) {
 	rows := make([]Attribute, 0, attrs.Len())
 	for k, v := range attrs.All() {
-		value, typ := util.ValueToStringAndType(v)
+		encoded, err := util.EncodeValue(v)
+		if err != nil {
+			// pcommon exposes only the kinds EncodeValue supports. Keep this
+			// defensive branch local until pdata adds a new kind.
+			panic(err)
+		}
+		value := string(encoded)
 		rows = append(rows, Attribute{
-			ID:    AttributeID(k, value, typ, scope),
+			ID:    AttributeID(k, value),
 			Key:   k,
 			Value: value,
-			Type:  typ,
-			Scope: scope,
 		})
 	}
 
@@ -469,8 +470,8 @@ func flushRows[T any](
 // attributesUpsert is static, unlike the per-batch `values (...), (...), ...`
 // text it replaced: the arrays vary, the query never does, so DuckDB can
 // actually prepare it once instead of replanning on every distinct row count.
-const attributesUpsert = `insert into attributes (id, key, value, type, scope)
-	select unnest(?::varchar[])::uuid, unnest(?::varchar[]), unnest(?::varchar[]), unnest(?::varchar[])::attr_type, unnest(?::varchar[])
+const attributesUpsert = `insert into attributes (id, key, value)
+	select unnest(?::varchar[])::uuid, unnest(?::varchar[]), unnest(?::json[])
 	on conflict (id) do nothing`
 
 func (d *Dictionary) flushAttributes(ctx context.Context, conn driver.Conn) error {
@@ -479,16 +480,12 @@ func (d *Dictionary) flushAttributes(ctx context.Context, conn driver.Conn) erro
 			ids := make([]string, 0, len(rows))
 			keys := make([]string, 0, len(rows))
 			values := make([]string, 0, len(rows))
-			types := make([]string, 0, len(rows))
-			scopes := make([]string, 0, len(rows))
 			for _, a := range rows {
 				ids = append(ids, formatUUID(a.ID))
 				keys = append(keys, a.Key)
 				values = append(values, a.Value)
-				types = append(types, a.Type)
-				scopes = append(scopes, a.Scope)
 			}
-			return []any{ids, keys, values, types, scopes}
+			return []any{ids, keys, values}
 		})
 }
 

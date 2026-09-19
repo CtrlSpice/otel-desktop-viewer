@@ -15,14 +15,17 @@ const matches: JsonAttributeMatch[] = [
     attributeScope: 'resource',
     type: 'string',
     matchCount: 1,
-    sampleValues: ['checkout-api'],
+    sampleValues: [{ kind: 'string', value: 'checkout-api' }],
   },
   {
     name: 'http.route',
     attributeScope: 'span',
     type: 'string',
     matchCount: 6,
-    sampleValues: ['/checkout', '/checkout/confirm'],
+    sampleValues: [
+      { kind: 'string', value: '/checkout' },
+      { kind: 'string', value: '/checkout/confirm' },
+    ],
   },
 ]
 
@@ -64,24 +67,38 @@ async function complete(
 
 describe('matchToQuery', () => {
   it('renders a match as the query that would find it', () => {
-    expect(matchToQuery(matches[0], 'checkout-api')).toBe(
-      'service.name = "checkout-api"'
-    )
+    expect(
+      matchToQuery(matches[0], { kind: 'string', value: 'checkout-api' })
+    ).toBe('service.name = "checkout-api"')
   })
 
   // Values are always quoted, so a value containing a space cannot produce the
   // unquoted multi-word form the parser rejects.
   it('quotes values containing spaces', () => {
-    expect(matchToQuery(matches[0], 'Red Bull Racing')).toBe(
-      'service.name = "Red Bull Racing"'
-    )
+    expect(
+      matchToQuery(matches[0], { kind: 'string', value: 'Red Bull Racing' })
+    ).toBe('service.name = "Red Bull Racing"')
   })
 
   it('escapes quotes and backslashes in the value', () => {
-    expect(matchToQuery(matches[0], 'say "hi"')).toBe(
-      'service.name = "say \\"hi\\""'
+    expect(
+      matchToQuery(matches[0], { kind: 'string', value: 'say "hi"' })
+    ).toBe('service.name = "say \\"hi\\""')
+    expect(matchToQuery(matches[0], { kind: 'string', value: 'a\\b' })).toBe(
+      'service.name = "a\\\\b"'
     )
-    expect(matchToQuery(matches[0], 'a\\b')).toBe('service.name = "a\\\\b"')
+  })
+
+  it('uses the tagged value payload for structured and non-string samples', () => {
+    expect(matchToQuery(matches[0], { kind: 'int64', value: '42' })).toBe(
+      'service.name = "42"'
+    )
+    expect(
+      matchToQuery(matches[0], {
+        kind: 'array',
+        value: [{ kind: 'bool', value: true }],
+      })
+    ).toBe('service.name = "[{\\"kind\\":\\"bool\\",\\"value\\":true}]"')
   })
 })
 
@@ -168,14 +185,14 @@ describe('only suggests fields this editor can search', () => {
       attributeScope: 'datapoint',
       type: 'string',
       matchCount: 1,
-      sampleValues: ['Mercedes'],
+      sampleValues: [{ kind: 'string', value: 'Mercedes' }],
     },
     {
       name: 'service.name',
       attributeScope: 'resource',
       type: 'string',
       matchCount: 1,
-      sampleValues: ['Mercedes'],
+      sampleValues: [{ kind: 'string', value: 'Mercedes' }],
     },
   ]
 
@@ -206,13 +223,40 @@ describe('only suggests fields this editor can search', () => {
         attributeScope: 'datapoint',
         type: 'string',
         matchCount: 1,
-        sampleValues: ['Mercedes'],
+        sampleValues: [{ kind: 'string', value: 'Mercedes' }],
       },
     ]
     const { result } = await complete(
       'Merce',
       vi.fn().mockResolvedValue(sameNameWrongScope)
     )
+    expect(result).toBeNull()
+  })
+
+  it('does not offer an equals comparison for array-only fields', async () => {
+    const arrayMatch: JsonAttributeMatch = {
+      name: 'nested.values',
+      attributeScope: 'span',
+      type: 'array',
+      matchCount: 1,
+      sampleValues: [
+        { kind: 'array', value: [{ kind: 'string', value: 'x' }] },
+      ],
+    }
+    const arrayField: Extract<FieldDefinition, { searchScope: 'attribute' }> = {
+      name: 'nested.values',
+      searchScope: 'attribute',
+      attributeScope: 'span',
+      type: 'array',
+      operators: [OPERATORS.CONTAINS, OPERATORS.NOT_CONTAINS],
+    }
+
+    const { result } = await complete(
+      'nested',
+      vi.fn().mockResolvedValue([arrayMatch]),
+      [arrayField]
+    )
+
     expect(result).toBeNull()
   })
 })
@@ -253,7 +297,7 @@ describe('bare-text discovery of enums and columns', () => {
         attributeScope: 'resource',
         type: 'string',
         matchCount: 1,
-        sampleValues: [`service-${i}`],
+        sampleValues: [{ kind: 'string', value: `service-${i}` }],
       }))
     const source = createValueDiscoverySource(
       manyAttrs,

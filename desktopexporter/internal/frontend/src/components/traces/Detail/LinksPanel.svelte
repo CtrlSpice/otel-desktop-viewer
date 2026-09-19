@@ -6,6 +6,7 @@
   import { SPAN_PARAM } from '@/route/query-params'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import Alert02Icon from '@hugeicons/core-free-icons/Alert02Icon'
+  import AttributeRows from '@/components/shared/AttributeRows.svelte'
 
   type Props = {
     links: LinkData[]
@@ -53,6 +54,7 @@
     label={link.traceID ?? 'Invalid link target'}
     icon={invalid ? invalidLinkIcon : undefined}
     count={linkFieldCount(link)}
+    detail
     open={index === 0}
   >
     <table
@@ -65,15 +67,17 @@
             <span class="detail-cell__key">
               trace id <span class="detail-cell__type">(string | null)</span>:
             </span>
-            {#if href}
-              <a
-                class="detail-cell__value link link-primary font-mono"
-                {href}
-                onclick={e => goToLink(e, link)}>{link.traceID}</a
-              >
-            {:else}
-              <span class="detail-cell__value font-mono">null</span>
-            {/if}
+            <div class="detail-cell__stacked-value">
+              {#if href}
+                <a
+                  class="detail-cell__value link link-primary font-mono"
+                  {href}
+                  onclick={e => goToLink(e, link)}>{link.traceID}</a
+                >
+              {:else}
+                <span class="detail-cell__value font-mono">null</span>
+              {/if}
+            </div>
           </td>
         </tr>
         <tr class="table-row">
@@ -81,17 +85,19 @@
             <span class="detail-cell__key">
               span id <span class="detail-cell__type">(string | null)</span>:
             </span>
-            {#if href && link.spanID}
-              <a
-                class="detail-cell__value link link-primary font-mono"
-                {href}
-                onclick={e => goToLink(e, link)}>{link.spanID}</a
-              >
-            {:else}
-              <span class="detail-cell__value font-mono"
-                >{link.spanID ?? 'null'}</span
-              >
-            {/if}
+            <div class="detail-cell__stacked-value">
+              {#if href && link.spanID}
+                <a
+                  class="detail-cell__value link link-primary font-mono"
+                  {href}
+                  onclick={e => goToLink(e, link)}>{link.spanID}</a
+                >
+              {:else}
+                <span class="detail-cell__value font-mono"
+                  >{link.spanID ?? 'null'}</span
+                >
+              {/if}
+            </div>
           </td>
         </tr>
         <SpanField
@@ -99,13 +105,10 @@
           fieldValue={link.traceState}
           fieldType="string"
         />
-        {#each link.attributes as attr (attr.key)}
-          <SpanField
-            fieldName={attr.key}
-            fieldValue={attr.value}
-            fieldType={attr.type}
-          />
-        {/each}
+        <AttributeRows
+          attributes={link.attributes}
+          owner={`link ${index + 1}`}
+        />
         {#if link.flags > 0}
           <SpanField
             fieldName="flags"

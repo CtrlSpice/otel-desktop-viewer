@@ -22,7 +22,7 @@
   import LeftToRightListBulletIcon from '@hugeicons/core-free-icons/LeftToRightListBulletIcon'
   import MetricField from './MetricField.svelte'
   import TimeseriesPanel from './TimeseriesPanel.svelte'
-  import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
+  import AttributeRows from '@/components/shared/AttributeRows.svelte'
 
   const METRIC_DETAIL_PANEL_ID = 'metric-detail-tabpanel'
 
@@ -55,56 +55,6 @@
     if (m.lastSeenNs !== null) n++ // last seen
     n++ // datapoint count
     return n
-  })
-  // An attribute of whatever *emitted* the metric -- its resource or its
-  // instrumentation scope -- for the two panels below the metric's own
-  // fields. Not OTLP's Metric.metadata, which describes the instrument and
-  // renders up with name and description.
-  type EmitterAttr = {
-    key: string
-    value: string
-    type: string
-    scope: 'resource' | 'scope'
-  }
-
-  let resourceAttrs = $derived.by((): EmitterAttr[] => {
-    const m = ctx.metric
-    if (!m) return []
-    return dedupeAttributes(m.resource.attributes).map(a => ({
-      key: a.key,
-      value: a.value,
-      type: a.type,
-      scope: 'resource' as const,
-    }))
-  })
-
-  let scopeAttrs = $derived.by((): EmitterAttr[] => {
-    const m = ctx.metric
-    if (!m) return []
-    const attrs = dedupeAttributes(m.scope.attributes)
-    const out: EmitterAttr[] = []
-    if (m.scope.name) {
-      out.push({
-        key: 'name',
-        value: m.scope.name,
-        type: 'string',
-        scope: 'scope',
-      })
-    }
-    if (m.scope.version) {
-      out.push({
-        key: 'version',
-        value: m.scope.version,
-        type: 'string',
-        scope: 'scope',
-      })
-    }
-    const reserved = new Set(out.map(a => a.key))
-    for (const a of attrs) {
-      if (reserved.has(a.key)) continue
-      out.push({ key: a.key, value: a.value, type: a.type, scope: 'scope' })
-    }
-    return out
   })
 </script>
 
@@ -152,6 +102,7 @@
         <FieldGroup
           label="Metric"
           count={metricFieldCount}
+          detail
           bind:open={metricOpen}
         >
           <table class="detail-fields w-full" aria-label="Metric fields">
@@ -174,13 +125,10 @@
                 below -- those group attributes of the *emitter*. Rendered one
                 row per entry, the way span attributes are.
               -->
-              {#each metric.metadata as attr (attr.key)}
-                <MetricField
-                  fieldName={attr.key}
-                  fieldValue={attr.value}
-                  fieldType={attr.type}
-                />
-              {/each}
+              <AttributeRows
+                attributes={metric.metadata}
+                owner="metric metadata"
+              />
               <MetricField
                 fieldName="type"
                 fieldValue={ctx.metricType}
@@ -236,7 +184,9 @@
 
         <FieldGroup
           label="Resource"
-          count={resourceAttrs.length}
+          count={metric.resource.attributes.length +
+            (metric.resourceDroppedAttributesCount > 0 ? 1 : 0)}
+          detail
           bind:open={resourceOpen}
         >
           <table class="detail-fields w-full" aria-label="Resource attributes">
@@ -248,31 +198,46 @@
                   fieldType="uint32"
                 />
               {/if}
-              {#each resourceAttrs as attr (`resource:${attr.key}`)}
-                <MetricField
-                  fieldName={attr.key}
-                  fieldValue={attr.value}
-                  fieldType={attr.type}
-                />
-              {/each}
+              <AttributeRows
+                attributes={metric.resource.attributes}
+                owner="resource"
+              />
             </tbody>
           </table>
         </FieldGroup>
 
         <FieldGroup
           label="Scope"
-          count={scopeAttrs.length}
+          count={metric.scope.attributes.length +
+            (metric.scope.name ? 1 : 0) +
+            (metric.scope.version ? 1 : 0) +
+            (metric.scopeDroppedAttributesCount > 0 ? 1 : 0)}
+          detail
           bind:open={scopeOpen}
         >
           <table class="detail-fields w-full" aria-label="Scope attributes">
             <tbody>
-              {#each scopeAttrs as attr (`scope:${attr.key}`)}
+              {#if metric.scope.name}<MetricField
+                  fieldName="name"
+                  fieldValue={metric.scope.name}
+                  fieldType="string"
+                />{/if}
+              {#if metric.scope.version}<MetricField
+                  fieldName="version"
+                  fieldValue={metric.scope.version}
+                  fieldType="string"
+                />{/if}
+              {#if metric.scopeDroppedAttributesCount > 0}
                 <MetricField
-                  fieldName={attr.key}
-                  fieldValue={attr.value}
-                  fieldType={attr.type}
+                  fieldName="dropped attributes"
+                  fieldValue={metric.scopeDroppedAttributesCount.toString()}
+                  fieldType="uint32"
                 />
-              {/each}
+              {/if}
+              <AttributeRows
+                attributes={metric.scope.attributes}
+                owner="scope"
+              />
             </tbody>
           </table>
         </FieldGroup>

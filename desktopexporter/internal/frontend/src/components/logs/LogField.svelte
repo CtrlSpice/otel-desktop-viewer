@@ -36,13 +36,13 @@
       {/snippet}
       {#if value}
         {@render keyLabel()}
-        {@render value()}
+        <div class="log-field__value">{@render value()}</div>
       {:else if multiline}
         <!-- Log bodies are always shown whole: the body is the record, and
              clamping it would hide the thing the row exists for. -->
         {@render keyLabel()}
         <span
-          class="detail-cell__value log-field__value--multiline"
+          class="detail-cell__value log-field__value log-field__value--multiline"
           class:tabular-nums={fieldType === 'timestamp'}>{fieldValue}</span
         >
       {:else}
@@ -69,8 +69,11 @@
     max-width: none;
   }
 
+  .log-field__value {
+    @apply mt-0.5 min-w-0;
+  }
   .log-field__value--multiline {
-    @apply mt-0.5 block text-base-content;
+    @apply block text-base-content;
     white-space: pre-wrap;
     overflow-wrap: break-word;
     word-break: break-word;

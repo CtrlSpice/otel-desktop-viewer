@@ -1,6 +1,10 @@
 import type { Attribute } from '@/types/api-types'
 import type { MetricTimeseries } from '@/types/api-types'
 import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
+import {
+  attributeValueCanonical,
+  attributeValueLabel,
+} from '@/components/shared/attribute-label'
 
 /**
  * Works out which resource attributes distinguish the series of one metric.
@@ -47,7 +51,7 @@ export function distinguishingResourceAttributes(
         seen = new Set()
         valuesByKey.set(attr.key, seen)
       }
-      seen.add(attr.value)
+      seen.add(attributeValueCanonical(attr.value))
     }
   }
 
@@ -92,7 +96,7 @@ export function seriesLabelsByKey(
       ts.attributesKey,
       attrs.length === 0
         ? 'default series'
-        : attrs.map(a => `${a.key}: ${a.value}`).join(' ')
+        : attrs.map(a => `${a.key}: ${attributeValueLabel(a.value)}`).join(' ')
     )
   }
   return out

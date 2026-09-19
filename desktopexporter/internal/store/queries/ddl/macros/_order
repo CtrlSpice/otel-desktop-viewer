@@ -10,13 +10,12 @@ attr_id.sql
 attrs_json.sql
 attrs_mapped.sql
 attrs_key.sql
-attr_value.sql
 has_attr.sql
+attribute_def_json.sql
 trace_id_wire.sql
 span_id_wire.sql
 resource_json.sql
 scope_json.sql
-attribute_def_json.sql
 interp_linear.sql
 interp_loglin.sql
 hist_buckets.sql

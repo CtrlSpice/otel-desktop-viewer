@@ -5,7 +5,6 @@
     fieldName: string
     fieldValue: string
     hidden?: boolean
-    isRoot?: boolean
     nested?: boolean
   }
 
@@ -14,7 +13,6 @@
     fieldName,
     fieldValue,
     hidden = false,
-    isRoot = false,
     nested = false,
   }: Props = $props()
 </script>
@@ -25,11 +23,7 @@
       {#snippet keyLabel()}
         <span class="detail-cell__key">
           {fieldName}
-          <span class="detail-cell__type">({fieldType})</span>{#if isRoot}<span
-              class="detail-cell__type"
-            >
-              (root)</span
-            >{/if}:
+          <span class="detail-cell__type">({fieldType})</span>:
         </span>
       {/snippet}
       <ExpandableValue {keyLabel} value={fieldValue} />

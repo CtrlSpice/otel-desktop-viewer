@@ -5,4 +5,3 @@
 #
 # This is the only place the order is written down. Filenames say what an
 # object is; this file says when it is built.
-attr_type.sql

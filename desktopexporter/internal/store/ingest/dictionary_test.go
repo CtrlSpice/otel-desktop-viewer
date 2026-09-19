@@ -26,16 +26,16 @@ func attrMap(kv map[string]string) pcommon.Map {
 // across batches and process restarts, with no database round trip.
 func TestAttributeIDIsContentDerived(t *testing.T) {
 	t.Parallel()
-	a := ingest.AttributeID("http.method", "GET", "string", ingest.ScopeSpan)
-	b := ingest.AttributeID("http.method", "GET", "string", ingest.ScopeSpan)
+	a := ingest.AttributeID("http.method", `{"kind":"string","value":"GET"}`)
+	b := ingest.AttributeID("http.method", `{"kind":"string","value":"GET"}`)
 	assert.Equal(t, a, b, "same content must give the same id")
 
 	// Every field participates.
-	assert.NotEqual(t, a, ingest.AttributeID("http.method", "POST", "string", ingest.ScopeSpan))
-	assert.NotEqual(t, a, ingest.AttributeID("http.verb", "GET", "string", ingest.ScopeSpan))
-	assert.NotEqual(t, a, ingest.AttributeID("http.method", "GET", "int64", ingest.ScopeSpan))
-	assert.NotEqual(t, a, ingest.AttributeID("http.method", "GET", "string", ingest.ScopeResource),
-		"scope is part of identity, so discovery can report attributeScope without unnesting owners")
+	assert.NotEqual(t, a, ingest.AttributeID("http.method", `{"kind":"string","value":"POST"}`))
+	assert.NotEqual(t, a, ingest.AttributeID("http.verb", `{"kind":"string","value":"GET"}`))
+	assert.NotEqual(t, a, ingest.AttributeID("http.method", `{"kind":"int64","value":"GET"}`))
+	assert.Equal(t, a, ingest.AttributeID("http.method", `{"kind":"string","value":"GET"}`),
+		"scope is derived from the owner array, not dictionary identity")
 }
 
 // Length-prefixed framing: without it, ("ab","c") and ("a","bc") would hash the
@@ -44,13 +44,13 @@ func TestAttributeIDIsContentDerived(t *testing.T) {
 func TestHashFramingIsUnambiguous(t *testing.T) {
 	t.Parallel()
 	assert.NotEqual(t,
-		ingest.AttributeID("ab", "c", "string", ingest.ScopeSpan),
-		ingest.AttributeID("a", "bc", "string", ingest.ScopeSpan))
+		ingest.AttributeID("ab", "c"),
+		ingest.AttributeID("a", "bc"))
 
 	// A value full of plausible separators must not collide with anything.
 	assert.NotEqual(t,
-		ingest.AttributeID("k", "a|b=c,d", "string", ingest.ScopeSpan),
-		ingest.AttributeID("k", "a|b=c", "string", ingest.ScopeSpan))
+		ingest.AttributeID("k", "a|b=c,d"),
+		ingest.AttributeID("k", "a|b=c"))
 }
 
 // Arrays are sorted by id and deduped, so two maps with the same content
@@ -286,7 +286,7 @@ func TestStoredIDsMatchTheSQLMacro(t *testing.T) {
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		var mismatched int
 		err := db.QueryRow(
-			`select count(*) from attributes where id <> attr_id(key, value, type::varchar, scope)`,
+			`select count(*) from attributes where id <> attr_id(key, value::varchar)`,
 		).Scan(&mismatched)
 		require.NoError(t, err)
 		assert.Zero(t, mismatched, "Go and SQL must agree on every id")

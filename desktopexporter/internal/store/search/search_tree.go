@@ -481,6 +481,31 @@ func handleArrayOperator(expression string, query *Query, params *[]NamedParam) 
 	}
 }
 
+// JSONValueArrayPredicate matches an element of a D06 tagged OTel array.
+// Attribute mappers wrap it in their owner-specific resource/scope lookup.
+func JSONValueArrayPredicate(attributeIDs, keyParam string, query *Query, params *[]NamedParam) (string, error) {
+	if query.FieldOperator != "CONTAINS" && query.FieldOperator != "NOT CONTAINS" {
+		return "", fmt.Errorf("unsupported array attribute query: %w", ErrInvalidQuery)
+	}
+	valueParam := fmt.Sprintf("value_%d", len(*params))
+	*params = append(*params, NamedParam{Name: valueParam, Value: ConvertValueForArrayType(query.Value, query.Field.Type)})
+	arrayExists := fmt.Sprintf(`exists(
+		select 1 from unnest(%s) t(aid)
+		join attributes a on a.id = t.aid
+		where a.key = %s and json_extract_string(a.value, '$.kind') = 'array'
+	)`, attributeIDs, keyParam)
+	predicate := fmt.Sprintf(`exists(
+		select 1 from unnest(%s) t(aid)
+		join attributes a on a.id = t.aid, json_each(a.value, '$.value') j
+		where a.key = %s and json_extract_string(a.value, '$.kind') = 'array'
+			and json_extract_string(j.value, '$.value') = %s
+	)`, attributeIDs, keyParam, valueParam)
+	if query.FieldOperator == "NOT CONTAINS" {
+		return arrayExists + " and not " + predicate, nil
+	}
+	return predicate, nil
+}
+
 // ParseArrayValue parses the JSON string array sent over the query wire format.
 func ParseArrayValue(value string) ([]any, error) {
 	var decoded []*string

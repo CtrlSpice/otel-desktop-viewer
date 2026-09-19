@@ -6,25 +6,26 @@ describe('dedupeAttributes', () => {
     expect(dedupeAttributes([])).toEqual([])
   })
 
-  it('keeps first-seen key order', () => {
+  it('keeps every entry, including duplicate keys', () => {
     expect(
       dedupeAttributes([
-        { key: 'b', value: '1', type: 'string' },
-        { key: 'a', value: '2', type: 'string' },
-        { key: 'b', value: '3', type: 'string' },
+        { key: 'b', value: { kind: 'string', value: '1' } },
+        { key: 'a', value: { kind: 'string', value: '2' } },
+        { key: 'b', value: { kind: 'int64', value: 3n } },
       ])
     ).toEqual([
-      { key: 'b', value: '3', type: 'string' },
-      { key: 'a', value: '2', type: 'string' },
+      { key: 'b', value: { kind: 'string', value: '1' } },
+      { key: 'a', value: { kind: 'string', value: '2' } },
+      { key: 'b', value: { kind: 'int64', value: 3n } },
     ])
   })
 
-  it('last duplicate wins on value', () => {
+  it('does not collapse distinct typed duplicate values', () => {
     expect(
       dedupeAttributes([
-        { key: 'service.name', value: 'old', type: 'string' },
-        { key: 'service.name', value: 'new', type: 'string' },
+        { key: 'service.name', value: { kind: 'string', value: '1' } },
+        { key: 'service.name', value: { kind: 'int64', value: 1n } },
       ])
-    ).toEqual([{ key: 'service.name', value: 'new', type: 'string' }])
+    ).toHaveLength(2)
   })
 })

@@ -5,5 +5,5 @@
 -- query, which is what it was: that made the query text non-static for a value
 -- that never varies.
 create or replace macro body_preview(body) as (
-    substring(body, 1, 300)
+	substring(coalesce(json_extract_string(body, '$.value'), body::varchar), 1, 300)
 )

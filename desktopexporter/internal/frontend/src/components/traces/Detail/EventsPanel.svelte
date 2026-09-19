@@ -3,6 +3,7 @@
   import type { EventData } from '@/types/api-types'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import SpanField from './SpanField.svelte'
+  import AttributeRows from '@/components/shared/AttributeRows.svelte'
   import { formatDuration, formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
 
@@ -45,6 +46,7 @@
       label={event.name}
       badge={`+${formatDuration(event.timestamp - spanStartTime)}`}
       count={eventFieldCount(event)}
+      detail
       open={isEventOpen(index)}
     >
       <table class="detail-fields w-full" aria-label="Event {event.name}">
@@ -58,13 +60,10 @@
             )}
             fieldType="timestamp"
           />
-          {#each event.attributes as attr (attr.key)}
-            <SpanField
-              fieldName={attr.key}
-              fieldValue={attr.value}
-              fieldType={attr.type}
-            />
-          {/each}
+          <AttributeRows
+            attributes={event.attributes}
+            owner={`event ${index + 1}`}
+          />
           {#if event.droppedAttributesCount > 0}
             <SpanField
               fieldName="dropped attributes count"

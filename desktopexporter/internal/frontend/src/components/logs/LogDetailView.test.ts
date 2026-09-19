@@ -15,10 +15,11 @@ function makeLog(overrides: Partial<LogData> = {}): LogData {
     spanID: 'span-xyz',
     severityText: 'INFO',
     severityNumber: 9,
-    body: 'hello',
-    bodyType: 'string',
+    body: { kind: 'string', value: 'hello' },
     resource: {
-      attributes: [{ key: 'service.name', value: 'checkout', type: 'string' }],
+      attributes: [
+        { key: 'service.name', value: { kind: 'string', value: 'checkout' } },
+      ],
       droppedAttributesCount: 0,
     },
     scope: {

@@ -5,6 +5,8 @@
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import LogField from './LogField.svelte'
+  import AttributeValueView from '@/components/shared/AttributeValue.svelte'
+  import AttributeRows from '@/components/shared/AttributeRows.svelte'
   import { severityLabel as buildSeverityLabel } from '@/components/logs/log-severity'
   import { getServiceName } from '@/utils/resource'
   import { formatTimestamp } from '@/utils/time'
@@ -93,7 +95,7 @@
     </PaneHeader>
 
     <div class="log-detail-panel__scroll">
-      <FieldGroup label="Log" count={logFieldCount} bind:open={logOpen}>
+      <FieldGroup label="Log" count={logFieldCount} detail bind:open={logOpen}>
         <table class="detail-fields w-full" aria-label="Log fields">
           <tbody>
             <LogField
@@ -150,12 +152,11 @@
               />
             {/if}
             {#if log.body}
-              <LogField
-                fieldName="body"
-                fieldType={log.bodyType}
-                fieldValue={log.body}
-                multiline
-              />
+              <LogField fieldName="body" fieldType={log.body.kind} multiline>
+                {#snippet value()}
+                  <AttributeValueView value={log.body} path="body" />
+                {/snippet}
+              </LogField>
             {/if}
             {#if log.eventName}
               <LogField
@@ -176,13 +177,7 @@
                 fieldValue={String(log.droppedAttributesCount)}
               />
             {/if}
-            {#each log.attributes as attr (attr.key)}
-              <LogField
-                fieldName={attr.key}
-                fieldValue={attr.value}
-                fieldType={attr.type}
-              />
-            {/each}
+            <AttributeRows attributes={log.attributes} owner="log" />
           </tbody>
         </table>
       </FieldGroup>
@@ -190,17 +185,15 @@
       <FieldGroup
         label="Resource"
         count={resourceFieldCount}
+        detail
         bind:open={resourceOpen}
       >
         <table class="detail-fields w-full" aria-label="Resource attributes">
           <tbody>
-            {#each log.resource.attributes as attr (attr.key)}
-              <LogField
-                fieldName={attr.key}
-                fieldValue={attr.value}
-                fieldType={attr.type}
-              />
-            {/each}
+            <AttributeRows
+              attributes={log.resource.attributes}
+              owner="resource"
+            />
             {#if log.resource.droppedAttributesCount > 0}
               <LogField
                 fieldName="dropped attributes count"
@@ -212,7 +205,12 @@
         </table>
       </FieldGroup>
 
-      <FieldGroup label="Scope" count={scopeFieldCount} bind:open={scopeOpen}>
+      <FieldGroup
+        label="Scope"
+        count={scopeFieldCount}
+        detail
+        bind:open={scopeOpen}
+      >
         <table class="detail-fields w-full" aria-label="Scope attributes">
           <tbody>
             {#if log.scope.name}
@@ -229,13 +227,7 @@
                 fieldValue={log.scope.version}
               />
             {/if}
-            {#each log.scope.attributes as attr (attr.key)}
-              <LogField
-                fieldName={attr.key}
-                fieldValue={attr.value}
-                fieldType={attr.type}
-              />
-            {/each}
+            <AttributeRows attributes={log.scope.attributes} owner="scope" />
             {#if log.scope.droppedAttributesCount > 0}
               <LogField
                 fieldName="dropped attributes count"

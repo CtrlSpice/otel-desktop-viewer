@@ -67,6 +67,7 @@
   import SpanField from './SpanField.svelte'
   import EventsPanel from './EventsPanel.svelte'
   import LinksPanel from './LinksPanel.svelte'
+  import AttributeRows from '@/components/shared/AttributeRows.svelte'
   import { formatDuration, formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { setSpanInQuery } from '@/route'
@@ -260,7 +261,19 @@
             a loop, so this span has no place under the root.
           </div>
         {/if}
-        <FieldGroup label="Span" count={spanFieldCount} bind:open={spanOpen}>
+        {#snippet spanHeading()}
+          <span
+            >Span{#if isRoot}
+              {' '}<span class="detail-view__root">(root)</span>{/if}</span
+          >
+        {/snippet}
+        <FieldGroup
+          label="Span"
+          heading={spanHeading}
+          badge={`${spanFieldCount} ${spanFieldCount === 1 ? 'field' : 'fields'}`}
+          detail
+          bind:open={spanOpen}
+        >
           <table class="detail-fields w-full" aria-label="Span fields">
             <tbody>
               {#if detailSearchFieldVisible(columnFilter, 'name')}
@@ -268,7 +281,6 @@
                   fieldName="name"
                   fieldValue={span.name}
                   fieldType="string"
-                  {isRoot}
                 />
               {/if}
               {#if detailSearchFieldVisible(columnFilter, 'kind')}
@@ -336,12 +348,15 @@
                         >(string)</span
                       >:
                     </span>
-                    <button
-                      type="button"
-                      class="detail-cell__value link link-primary font-mono"
-                      onclick={() => setSpanInQuery(span.parentSpanID!, 'push')}
-                      >{span.parentSpanID}</button
-                    >
+                    <div class="detail-cell__stacked-value">
+                      <button
+                        type="button"
+                        class="detail-cell__value link link-primary font-mono"
+                        onclick={() =>
+                          setSpanInQuery(span.parentSpanID!, 'push')}
+                        >{span.parentSpanID}</button
+                      >
+                    </div>
                   </td>
                 </tr>
               {/if}
@@ -359,15 +374,12 @@
                   fieldType="uint32"
                 />
               {/if}
-              {#each spanAttributes as attr (attr.key)}
-                {#if detailAttributeVisible(columnFilter, attr.key, 'span')}
-                  <SpanField
-                    fieldName={attr.key}
-                    fieldValue={attr.value}
-                    fieldType={attr.type}
-                  />
-                {/if}
-              {/each}
+              <AttributeRows
+                attributes={spanAttributes.filter(attr =>
+                  detailAttributeVisible(columnFilter, attr.key, 'span')
+                )}
+                owner="span"
+              />
               {#if span.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedAttributesCount')}
                 <SpanField
                   fieldName="dropped attributes count"
@@ -396,19 +408,17 @@
         <FieldGroup
           label="Resource"
           count={resourceFieldCount}
+          detail
           bind:open={resourceOpen}
         >
           <table class="detail-fields w-full" aria-label="Resource attributes">
             <tbody>
-              {#each resourceAttributes as attr (attr.key)}
-                {#if detailAttributeVisible(columnFilter, attr.key, 'resource')}
-                  <SpanField
-                    fieldName={attr.key}
-                    fieldValue={attr.value}
-                    fieldType={attr.type}
-                  />
-                {/if}
-              {/each}
+              <AttributeRows
+                attributes={resourceAttributes.filter(attr =>
+                  detailAttributeVisible(columnFilter, attr.key, 'resource')
+                )}
+                owner="resource"
+              />
               {#if span.resource.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'resource.droppedAttributesCount')}
                 <SpanField
                   fieldName="dropped attributes count"
@@ -420,7 +430,12 @@
           </table>
         </FieldGroup>
 
-        <FieldGroup label="Scope" count={scopeFieldCount} bind:open={scopeOpen}>
+        <FieldGroup
+          label="Scope"
+          count={scopeFieldCount}
+          detail
+          bind:open={scopeOpen}
+        >
           <table class="detail-fields w-full" aria-label="Scope attributes">
             <tbody>
               {#if span.scope.name && detailSearchFieldVisible(columnFilter, 'scope.name')}
@@ -437,15 +452,12 @@
                   fieldType="string"
                 />
               {/if}
-              {#each scopeAttributes as attr (attr.key)}
-                {#if detailAttributeVisible(columnFilter, attr.key, 'scope')}
-                  <SpanField
-                    fieldName={attr.key}
-                    fieldValue={attr.value}
-                    fieldType={attr.type}
-                  />
-                {/if}
-              {/each}
+              <AttributeRows
+                attributes={scopeAttributes.filter(attr =>
+                  detailAttributeVisible(columnFilter, attr.key, 'scope')
+                )}
+                owner="scope"
+              />
               {#if span.scope.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'scope.droppedAttributesCount')}
                 <SpanField
                   fieldName="dropped attributes count"
@@ -528,6 +540,11 @@
   }
 
   .detail-cell__type {
+    color: var(--color-subtle);
+    @apply font-normal;
+  }
+
+  .detail-view__root {
     color: var(--color-subtle);
     @apply font-normal;
   }

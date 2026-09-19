@@ -15,11 +15,9 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/stretchr/testify/assert"
@@ -50,17 +48,17 @@ func TestSearchProbeMatchesIngestedID(t *testing.T) {
 
 	ingestAll(t, s, 1)
 
-	type row struct{ key, value, typ, scope, id string }
+	type row struct{ key, value, typ, id string }
 	var rows []row
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		r, err := db.Query(`select key, value, type::varchar, scope, id::varchar from attributes`)
+		r, err := db.Query(`select key, json_extract_string(value, '$.value'), json_extract_string(value, '$.kind'), id::varchar from attributes where json_extract_string(value, '$.kind') in ('string', 'int64', 'bool')`)
 		if err != nil {
 			return err
 		}
 		defer r.Close()
 		for r.Next() {
 			var x row
-			if err := r.Scan(&x.key, &x.value, &x.typ, &x.scope, &x.id); err != nil {
+			if err := r.Scan(&x.key, &x.value, &x.typ, &x.id); err != nil {
 				return err
 			}
 			rows = append(rows, x)
@@ -78,10 +76,10 @@ func TestSearchProbeMatchesIngestedID(t *testing.T) {
 		probe := ingest.IDProbe("ids",
 			&search.FieldDefinition{Name: x.key, Type: x.typ},
 			&search.Query{FieldOperator: "=", Value: x.value},
-			x.scope)
+			"")
 		require.NotEmpty(t, probe, "probe should fire")
 		assert.Contains(t, probe, x.id,
-			"probe id disagrees with the stored id for %s=%s (%s)", x.key, x.value, x.scope)
+			"probe id disagrees with the stored id for %s=%s", x.key, x.value)
 		checked++
 	}
 	assert.Positive(t, checked, "no attributes were compared")
@@ -183,28 +181,4 @@ func TestFastPathAgreesWithValueComparison(t *testing.T) {
 	// A value that does not exist must find nothing on both paths.
 	assert.Zero(t, count(t, "string", "=", "POST"))
 	assert.Zero(t, count(t, "", "=", "POST"))
-}
-
-// AttrTypes drives the fast path's hashing, so a type present in the schema
-// enum but missing from that list would silently stop matching. Parsed from the
-// enum DDL rather than restated, so the two cannot be edited apart.
-func TestAttrTypesMatchSchemaEnum(t *testing.T) {
-	var ddl string
-	for _, stmt := range queries.Types() {
-		if strings.Contains(stmt.SQL, "attr_type") {
-			ddl = stmt.SQL
-		}
-	}
-	require.NotEmpty(t, ddl, "attr_type enum not found in the type DDL")
-
-	open := strings.Index(ddl, "(")
-	close := strings.LastIndex(ddl, ")")
-	require.Greater(t, close, open)
-	var fromSchema []string
-	for _, part := range strings.Split(ddl[open+1:close], ",") {
-		fromSchema = append(fromSchema, strings.Trim(strings.TrimSpace(part), "'"))
-	}
-
-	assert.Equal(t, fromSchema, ingest.AttrTypes,
-		"ingest.AttrTypes must list exactly the attr_type enum values, in order")
 }

@@ -2,7 +2,6 @@ package ingest
 
 import (
 	"fmt"
-	"slices"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 )
@@ -86,19 +85,30 @@ func IDProbe(arrayExpr string, field *search.FieldDefinition, query *search.Quer
 	if query.FieldOperator != "=" {
 		return ""
 	}
-	if !slices.Contains(AttrTypes, field.Type) {
+	value, ok := searchValue(field.Type, query.Value)
+	if !ok {
 		return ""
 	}
-	id := formatUUID(AttributeID(field.Name, query.Value, field.Type, scope))
+	id := formatUUID(AttributeID(field.Name, value))
 	return fmt.Sprintf("list_contains(%s, '%s'::uuid)", arrayExpr, id)
 }
 
-// AttrTypes is every value of the attr_type enum, in schema order.
-//
-// Must stay in step with TypeCreationQueries in the schema package;
-// TestAttrTypesMatchSchemaEnum fails if it drifts. A type missing here means
-// attributes of that type silently stop matching the search fast path.
-var AttrTypes = []string{
-	"string", "int64", "float64", "bool",
-	"string[]", "int64[]", "float64[]", "boolean[]",
+func searchValue(kind, value string) (string, bool) {
+	// Discovery reports the encoded kind; scalar values can be reconstructed
+	// exactly enough for the equality fast path. Everything else uses SQL.
+	switch kind {
+	case "string":
+		return `{"kind":"string","value":` + quoteJSON(value) + `}`, true
+	case "int64":
+		return `{"kind":"int64","value":` + quoteJSON(value) + `}`, true
+	case "bool":
+		if value == "true" || value == "false" {
+			return `{"kind":"bool","value":` + value + `}`, true
+		}
+	}
+	return "", false
+}
+
+func quoteJSON(s string) string {
+	return fmt.Sprintf("%q", s)
 }

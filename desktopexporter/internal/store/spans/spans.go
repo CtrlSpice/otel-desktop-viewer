@@ -644,12 +644,14 @@ func GetAttributesByTraceID(ctx context.Context, db *sql.DB, traceID string) (js
 
 func traceAttributeKeys(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
 	query := `
-		select cast(to_json(list(attribute_def_json(sub.key, sub.scope, sub.type)
-			order by sub.key, sub.scope, sub.type::varchar)) as varchar) as attributes
+		select cast(to_json(list(json_object('name', sub.key, 'attributeScope', sub.scope,
+			'type', sub.type) order by sub.key, sub.scope, sub.type)) as varchar) as attributes
 		from (
-			select distinct a.key, a.scope, a.type
-			from attributes a
-			where a.scope in ('resource', 'scope', 'span', 'event', 'link')
+			select distinct a.key, 'resource' as scope, json_extract_string(a.value, '$.kind') as type from spans s join resources r on r.id = s.resource_id, unnest(r.attribute_ids) t(aid) join attributes a on a.id = t.aid
+			union select distinct a.key, 'scope', json_extract_string(a.value, '$.kind') from spans s join scopes sc on sc.id = s.scope_id, unnest(sc.attribute_ids) t(aid) join attributes a on a.id = t.aid
+			union select distinct a.key, 'span', json_extract_string(a.value, '$.kind') from spans s, unnest(s.attribute_ids) t(aid) join attributes a on a.id = t.aid
+			union select distinct a.key, 'event', json_extract_string(a.value, '$.kind') from events e, unnest(e.attribute_ids) t(aid) join attributes a on a.id = t.aid
+			union select distinct a.key, 'link', json_extract_string(a.value, '$.kind') from links l, unnest(l.attribute_ids) t(aid) join attributes a on a.id = t.aid
 		) sub
 	`
 	var raw []byte
@@ -986,29 +988,68 @@ func mapTraceAttributeExpressions(field *search.FieldDefinition, query *search.Q
 
 	keyParam := fmt.Sprintf("attr_key_%d", len(*params))
 	*params = append(*params, search.NamedParam{Name: keyParam, Value: field.Name})
+	if field.Type == "array" || strings.HasSuffix(field.Type, "[]") {
+		var attributeIDs string
+		switch field.AttributeScope {
+		case "resource":
+			attributeIDs = "r.attribute_ids"
+		case "scope":
+			attributeIDs = "sc.attribute_ids"
+		case "span":
+			attributeIDs = "s.attribute_ids"
+		case "event":
+			attributeIDs = "e.attribute_ids"
+		case "link":
+			attributeIDs = "l.attribute_ids"
+		default:
+			return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidTraceQuery)
+		}
+		predicate, err := search.JSONValueArrayPredicate(attributeIDs, keyParam, query, params)
+		if err != nil {
+			return nil, err
+		}
+		switch field.AttributeScope {
+		case "resource":
+			predicate = fmt.Sprintf("s.resource_id in (select r.id from resources r where %s)", predicate)
+		case "scope":
+			predicate = fmt.Sprintf("s.scope_id in (select sc.id from scopes sc where %s)", predicate)
+		case "event":
+			predicate = fmt.Sprintf("exists(select 1 from events e where e.trace_id = s.trace_id and e.span_id = s.span_id and %s)", predicate)
+		case "link":
+			predicate = fmt.Sprintf("exists(select 1 from links l where l.trace_id = s.trace_id and l.span_id = s.span_id and %s)", predicate)
+		}
+		return []string{search.Complete(predicate)}, nil
+	}
 
 	switch field.AttributeScope {
 	case "resource":
 		return []string{fmt.Sprintf(
-			"s.resource_id in (select id from resources where attr_value(attribute_ids, %s) {COND})",
+			` s.resource_id in (select r.id from resources r, unnest(r.attribute_ids) t(aid)
+				join attributes a on a.id = t.aid where a.key = %s and
+				coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})`,
 			keyParam)}, nil
 	case "scope":
 		return []string{fmt.Sprintf(
-			"s.scope_id in (select id from scopes where attr_value(attribute_ids, %s) {COND})",
+			` s.scope_id in (select sc.id from scopes sc, unnest(sc.attribute_ids) t(aid)
+				join attributes a on a.id = t.aid where a.key = %s and
+				coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})`,
 			keyParam)}, nil
 	case "span":
-		return []string{fmt.Sprintf("attr_value(s.attribute_ids, %s)", keyParam)}, nil
+		return []string{fmt.Sprintf(`exists(
+			select 1 from unnest(s.attribute_ids) t(aid) join attributes a on a.id = t.aid
+			where a.key = %s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND}
+		)`, keyParam)}, nil
 	case "event":
 		return []string{fmt.Sprintf(`exists(
 			select 1 from events e, unnest(e.attribute_ids) as t(aid)
 			join attributes a on a.id = t.aid
-			where e.trace_id = s.trace_id and e.span_id = s.span_id and a.key = %s and a.value {COND}
+			where e.trace_id = s.trace_id and e.span_id = s.span_id and a.key = %s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND}
 		)`, keyParam)}, nil
 	case "link":
 		return []string{fmt.Sprintf(`exists(
 			select 1 from links l, unnest(l.attribute_ids) as t(aid)
 			join attributes a on a.id = t.aid
-			where l.trace_id = s.trace_id and l.span_id = s.span_id and a.key = %s and a.value {COND}
+			where l.trace_id = s.trace_id and l.span_id = s.span_id and a.key = %s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND}
 		)`, keyParam)}, nil
 	default:
 		return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidTraceQuery)
@@ -1057,11 +1098,8 @@ func matchAnyAttribute(from, scope string) string {
 		from %s
 		join attributes a on a.id = t.aid
 		where %s(
-			a.key {COND} or a.value {COND} or
-			(a.type = 'string[]' AND list_contains(TRY_CAST(a.value AS VARCHAR[]), CAST({RAW} AS VARCHAR))) OR
-			(a.type = 'int64[]' AND list_contains(TRY_CAST(a.value AS BIGINT[]), TRY_CAST({RAW} AS BIGINT))) OR
-			(a.type = 'float64[]' AND list_contains(TRY_CAST(a.value AS DOUBLE[]), TRY_CAST({RAW} AS DOUBLE))) OR
-			(a.type = 'boolean[]' AND list_contains(TRY_CAST(a.value AS BOOLEAN[]), TRY_CAST({RAW} AS BOOLEAN)))
+			a.key {COND} or a.value::varchar {COND} or
+			exists(select 1 from json_each(a.value, '$.value') j where j.value::varchar {COND})
 		)
 	)`, from, scope)
 }

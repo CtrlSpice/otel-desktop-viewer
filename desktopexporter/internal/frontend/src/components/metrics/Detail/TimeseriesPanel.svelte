@@ -22,6 +22,11 @@
   import SeriesDatapointList from '@/components/metrics/Detail/SeriesDatapointList.svelte'
   import Sparkline from '@/components/metrics/Charts/Sparkline.svelte'
   import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
+  import AttributeRows from '@/components/shared/AttributeRows.svelte'
+  import {
+    attributeValueCanonical,
+    attributeValueLabel,
+  } from '@/components/shared/attribute-label'
 
   const ctx = getMetricViewContext()
   const expandedDatapointSections = new SvelteSet<string>()
@@ -57,7 +62,7 @@
       const signatures = new Set<string>()
       for (const row of rows) {
         const a = dedupeAttributes(row.attributes).find(x => x.key === key)
-        signatures.add(a?.value ?? '')
+        signatures.add(a ? attributeValueCanonical(a.value) : '')
       }
       if (signatures.size > 1) differing.add(key)
     }
@@ -80,7 +85,9 @@
   function attrsTooltip(attrs: PanelTimeseries['attributes']): string {
     const unique = dedupeAttributes(attrs)
     if (unique.length === 0) return 'default series'
-    return unique.map(a => `${a.key}: ${a.value}`).join(' ')
+    return unique
+      .map(a => `${a.key}: ${attributeValueLabel(a.value)}`)
+      .join(' ')
   }
 
   function setTimeseriesOpen(key: string, open: boolean) {
@@ -240,16 +247,38 @@
                 aria-label="Timeseries fields"
               >
                 <tbody>
-                  {#each dedupeAttributes(metricTs.attributes) as attr (attr.key)}
-                    <MetricField
-                      fieldName={attr.key}
-                      fieldValue={attr.value}
-                      fieldType={attr.type}
-                    />
-                  {/each}
+                  <AttributeRows
+                    attributes={metricTs.attributes}
+                    owner={`timeseries ${ts.key}`}
+                  />
                 </tbody>
               </table>
             {/if}
+            <FieldGroup
+              label="Resource"
+              count={metricTs.resource.attributes.length +
+                (metricTs.resource.droppedAttributesCount > 0 ? 1 : 0)}
+              open={false}
+            >
+              <table
+                class="detail-fields w-full"
+                aria-label="Timeseries resource"
+              >
+                <tbody>
+                  {#if metricTs.resource.droppedAttributesCount > 0}
+                    <MetricField
+                      fieldName="dropped attributes"
+                      fieldValue={metricTs.resource.droppedAttributesCount.toString()}
+                      fieldType="uint32"
+                    />
+                  {/if}
+                  <AttributeRows
+                    attributes={metricTs.resource.attributes}
+                    owner={`timeseries ${ts.key} resource`}
+                  />
+                </tbody>
+              </table>
+            </FieldGroup>
             <!-- What arrived, once it has: metricTs.datapoints are the
                  store's merged buckets for a reduced histogram, and this list
                  is the view that has to show the telemetry itself. The merged
