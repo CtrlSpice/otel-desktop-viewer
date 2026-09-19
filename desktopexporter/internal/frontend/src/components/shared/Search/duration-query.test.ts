@@ -62,4 +62,19 @@ describe('normalizeDurationValues', () => {
       normalizeDurationValues(durationQuery(input, OPERATORS.NOT_IN))
     ).toBe(expected)
   })
+
+  it('leaves an attribute named duration as a text operand', () => {
+    const node = durationQuery('not a duration')
+    node.query.field = {
+      name: 'duration',
+      type: 'string',
+      searchScope: 'attribute',
+      attributeScope: 'span',
+      description: 'An attribute named duration',
+      operators: [OPERATORS.EQUALS],
+    }
+
+    expect(normalizeDurationValues(node)).toBeNull()
+    expect(node.query.value).toBe('not a duration')
+  })
 })

@@ -18,7 +18,11 @@ export function normalizeDurationValues(node: QueryNode): string | null {
     }
     return null
   }
-  if (!('name' in node.query.field) || node.query.field.name !== 'duration') {
+  if (
+    node.query.field.searchScope !== 'field' ||
+    !('name' in node.query.field) ||
+    node.query.field.name !== 'duration'
+  ) {
     return null
   }
 
