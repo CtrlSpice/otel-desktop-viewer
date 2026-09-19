@@ -484,9 +484,10 @@ export type JsonAggregateBucket = {
   count: number
   sum: number | null
   /** Derived from the buckets: a merge cannot carry the observed min and max
-   *  through, because for cumulative it is a subtraction. */
-  min: number
-  max: number
+   *  through, because for cumulative it is a subtraction. Omitted when an
+   *  empty explicit-bounds vector provides no finite extent. */
+  min?: number
+  max?: number
   /** Explicit-bounds histograms carry these; exponential ones carry the
    *  scale/offset fields below. A bucket has one representation or the other,
    *  never both, so the absent set is omitted rather than sent as nulls. */
