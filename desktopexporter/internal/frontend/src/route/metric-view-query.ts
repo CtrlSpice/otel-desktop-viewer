@@ -77,9 +77,9 @@ function parseDatapointParam(
  *
  * @remarks
  * This is the durable half of a metric link. A series id is content-derived
- * from (stream, resource, labels), so it is the same across restarts and
- * re-ingests and survives retention deleting the specific datapoint a link was
- * built from -- which `dp` alone cannot.
+ * from the stream, originating resource attributes, and datapoint labels, so
+ * it is the same across restarts and re-ingests and survives retention deleting
+ * the specific datapoint a link was built from -- which `dp` alone cannot.
  *
  * Still validated rather than trusted: a series can genuinely disappear when
  * its labels stop being reported, and a link naming one that no longer exists

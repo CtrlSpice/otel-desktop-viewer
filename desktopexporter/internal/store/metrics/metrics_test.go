@@ -2105,8 +2105,8 @@ func TestMetricSeries_ResourceOnlyDiffersByHostNameSplits(t *testing.T) {
 // This is the property the old wire format could not offer: metric links could
 // only reference a datapoint id, which is minted per row and deleted by
 // retention, so a pasted link degraded silently to "no selection". A
-// content-derived id from (stream, resource, labels) is the same every time the
-// same series arrives.
+// content-derived id from the stream, originating resource attributes, and
+// datapoint labels is the same every time the same series arrives.
 func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -2294,9 +2294,29 @@ func TestMetricSeries_DroppedResourceCountPreservesPayloadWithoutSplittingSeries
 	require.NoError(t, err)
 	var metric map[string]any
 	require.NoError(t, json.Unmarshal(raw, &metric))
+	assert.Equal(t, float64(3), metric["resourceDroppedAttributesCount"],
+		"top-level metadata comes from the latest representative ingest")
+	topResource, ok := metric["resource"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, float64(3), topResource["droppedAttributesCount"])
 	timeseries := metric["timeseries"].([]any)
 	require.Len(t, timeseries, 1, "chart detail must keep dropped-count-only payloads on one line")
-	assert.Len(t, timeseries[0].(map[string]any)["datapoints"].([]any), 6)
+	series := timeseries[0].(map[string]any)
+	assert.Len(t, series["datapoints"].([]any), 6)
+	seriesResource, ok := series["resource"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, float64(0), seriesResource["droppedAttributesCount"],
+		"series resource exposes identifying attributes without claiming an arbitrary dropped count")
+	assert.Equal(t, topResource["attributes"], seriesResource["attributes"],
+		"series resource must retain the shared originating attributes")
+
+	attributeValues := map[string]any{}
+	for _, rawAttribute := range seriesResource["attributes"].([]any) {
+		attribute := rawAttribute.(map[string]any)
+		attributeValues[attribute["key"].(string)] = attribute["value"].(map[string]any)["value"]
+	}
+	assert.Equal(t, "checkout", attributeValues["service.name"])
+	assert.Equal(t, "checkout-7f9c", attributeValues["service.instance.id"])
 }
 
 // TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold is the first
