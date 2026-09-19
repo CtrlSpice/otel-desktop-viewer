@@ -15,9 +15,11 @@
 -- only reference a datapoint id, which retention deletes -- shared links
 -- rotted, and degraded silently to "no selection".
 --
--- id = sha256(stream_id, resource_id, attribute_ids), so it is stable
--- across restarts and re-ingests: the same series always has the same id,
--- which is what makes it safe to put in a URL.
+-- id = sha256(stream_id, resource attribute_ids, datapoint attribute_ids), so
+-- it is stable across restarts and re-ingests without treating the resource's
+-- dropped count as metric identity. The same series always has the same id,
+-- which is what makes it safe to put in a URL. resource_id retains a payload
+-- suitable for display; exact per-ingest payloads live on metric_ingests.
 create table if not exists metric_series (
 		id uuid primary key,
 		stream_id uuid not null,

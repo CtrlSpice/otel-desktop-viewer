@@ -1331,18 +1331,13 @@
 			select
 				d.series_id,
 				-- The series id is the key, and the only key. It is
-				-- content-derived from (stream, instance, labels), so it
-				-- distinguishes replicas whose labels are identical, and it is
-				-- stable across restarts -- which is what makes it safe in a
-				-- URL, unlike a datapoint id that retention eventually deletes.
-				--
-				-- Deliberately NOT grouped alongside the ingest's resource_id,
-				-- as it once was. A resource is content-addressed, so enriching
-				-- one mid-stream mints a second resources row for the same
-				-- instance, and grouping by it split one series into two chart
-				-- lines even after the series id itself stopped splitting. The
-				-- resource shown comes from metric_series, which holds exactly
-				-- one per series.
+				-- content-derived from (stream, originating resource attributes,
+				-- labels), so it preserves OTLP metric identity and is stable
+				-- across re-ingests. That stability makes it safe in a URL,
+				-- unlike a datapoint id that retention eventually deletes.
+				-- resource_id need not be a second grouping key: exact payloads
+				-- remain on metric_ingests, while dropped count is not a series
+				-- identity field.
 				d.series_id::varchar as attrs_key,
 				attrs_json(any_value(d.attribute_ids)) as attributes_sample,
 				max(d.timestamp) as latest_ts,
@@ -1476,7 +1471,10 @@
 		-- which is what the detail panel's legend reads top-down.
 		-- Empty list (no dps in window) collapses to '[]' via the
 		-- outer coalesce.
-		-- Each series carries the resource that emitted it.
+		-- Each series carries one resource payload with its identifying
+		-- originating attributes. Payloads differing only by dropped count share
+		-- a series, so that diagnostic count is representative here; exact
+		-- per-ingest payloads remain on metric_ingests.
 		--
 		-- Not optional once series split by resource: two replicas of one
 		-- service produce byte-identical attribute sets, so the resource is the

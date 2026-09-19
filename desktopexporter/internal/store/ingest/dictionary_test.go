@@ -8,6 +8,7 @@ import (
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
+	"github.com/duckdb/duckdb-go/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -55,8 +56,7 @@ func TestHashFramingIsUnambiguous(t *testing.T) {
 
 // Arrays are sorted by id and deduped, so two maps with the same content
 // produce byte-identical arrays regardless of insertion order -- which is what
-// makes scope dedupe work at all (ScopeID still hashes this array; resources
-// no longer do, see the ResourceID tests below).
+// makes resource and scope dedupe work at all.
 func TestAttributeSetIsOrderIndependent(t *testing.T) {
 	t.Parallel()
 	one := pcommon.NewMap()
@@ -79,61 +79,64 @@ func TestAttributeSetIsOrderIndependent(t *testing.T) {
 		"so the same scope in a different order is still one scope")
 }
 
-// ResourceID reads the OTel identifying triplet straight out of the
-// resource's attributes -- see the doc comment on ResourceID for the spec
-// citation. These pin the properties that matter: each of the three fields is
-// part of identity, everything else is not, and a field's absence is not a
-// license to fall back to hashing the whole attribute set.
-
-// Two instances of the same service, distinguished only by
-// service.instance.id, must land on different resource ids -- otherwise two
-// running processes collapse into one resource.
-func TestResourceIdentityIncludesInstanceID(t *testing.T) {
-	t.Parallel()
-	a := attrMap(map[string]string{"service.name": "checkout", "service.instance.id": "i-1"})
-	b := attrMap(map[string]string{"service.name": "checkout", "service.instance.id": "i-2"})
-	assert.NotEqual(t, ingest.ResourceID(a), ingest.ResourceID(b),
-		"two instances of the same service must get different resource ids")
+func resourceID(attrs pcommon.Map, dropped uint32) duckdb.UUID {
+	_, ids := ingest.AttributeSet(attrs, ingest.ScopeResource)
+	return ingest.ResourceID(ids, dropped)
 }
 
-// service.namespace scopes service.name, per the spec's own pairing, so it
-// has to participate too.
-func TestResourceIdentityIncludesNamespace(t *testing.T) {
+func TestResourceIdentityIncludesCompletePayload(t *testing.T) {
 	t.Parallel()
-	a := attrMap(map[string]string{"service.namespace": "ns-a", "service.name": "checkout", "service.instance.id": "i-1"})
-	b := attrMap(map[string]string{"service.namespace": "ns-b", "service.name": "checkout", "service.instance.id": "i-1"})
-	assert.NotEqual(t, ingest.ResourceID(a), ingest.ResourceID(b))
-}
-
-// Enriching a resource -- adding attributes that are not part of the
-// identifying triplet -- must not change its id. This is the property that
-// used to fail: telemetry.sdk.* arriving mid-stream minted a new resource for
-// the same running process.
-func TestResourceIdentityIgnoresNonIdentifyingAttributes(t *testing.T) {
-	t.Parallel()
-	a := attrMap(map[string]string{"service.name": "checkout", "service.instance.id": "i-1", "region": "us-east-1"})
-	b := attrMap(map[string]string{
-		"service.name": "checkout", "service.instance.id": "i-1",
-		"telemetry.sdk.name": "opentelemetry", "telemetry.sdk.version": "1.28.0",
+	a := attrMap(map[string]string{
+		"service.name": "checkout", "service.instance.id": "i-1", "region": "us-east-1",
 	})
-	assert.Equal(t, ingest.ResourceID(a), ingest.ResourceID(b),
-		"enrichment must not mint a new resource id for the same instance")
+	b := attrMap(map[string]string{
+		"service.name": "checkout", "service.instance.id": "i-1", "region": "eu-west-1",
+	})
+	assert.NotEqual(t, resourceID(a, 0), resourceID(b, 0),
+		"distinct received resource attributes must remain distinct")
 }
 
-// Absent means absent: when service.instance.id (and namespace) are missing,
-// every resource for that service.name collapses onto one row, no matter what
-// else the resource carries. This is the property a whole-attribute-set
-// fallback would violate -- these two resources share nothing else, and would
-// hash differently under a fallback that used the rest of the attribute set
-// to compensate for the missing field.
-func TestResourceIdentityAbsentInstanceIDCollapses(t *testing.T) {
+func TestResourceIdentityDoesNotRequireServiceTriplet(t *testing.T) {
 	t.Parallel()
-	a := attrMap(map[string]string{"service.name": "checkout", "region": "us-east-1"})
-	b := attrMap(map[string]string{
-		"service.name": "checkout", "pod": "checkout-7f9c", "telemetry.sdk.name": "opentelemetry",
-	})
-	assert.Equal(t, ingest.ResourceID(a), ingest.ResourceID(b),
-		"without service.instance.id, same service.name must collapse to one resource regardless of what else differs")
+	a := attrMap(map[string]string{"region": "us-east-1"})
+	b := attrMap(map[string]string{"region": "eu-west-1"})
+	assert.NotEqual(t, resourceID(a, 0), resourceID(b, 0),
+		"resources without service attributes still preserve their payload identity")
+}
+
+func TestResourceIdentityIncludesDroppedCount(t *testing.T) {
+	t.Parallel()
+	attrs := attrMap(map[string]string{"service.name": "checkout"})
+	assert.NotEqual(t, resourceID(attrs, 0), resourceID(attrs, 1),
+		"dropped attributes are part of the received payload")
+}
+
+func TestResourceIdentityPreservesTypeAndPresence(t *testing.T) {
+	t.Parallel()
+	stringValue := pcommon.NewMap()
+	stringValue.PutStr("process.pid", "42")
+	intValue := pcommon.NewMap()
+	intValue.PutInt("process.pid", 42)
+	emptyValue := pcommon.NewMap()
+	emptyValue.PutStr("process.pid", "")
+
+	assert.NotEqual(t, resourceID(stringValue, 0), resourceID(intValue, 0),
+		"typed values must not collapse")
+	assert.NotEqual(t, resourceID(emptyValue, 0), resourceID(pcommon.NewMap(), 0),
+		"an empty value must remain distinct from an absent attribute")
+}
+
+func TestResourceIdentityIsOrderIndependent(t *testing.T) {
+	t.Parallel()
+	one := pcommon.NewMap()
+	one.PutStr("service.name", "checkout")
+	one.PutInt("process.pid", 42)
+	two := pcommon.NewMap()
+	two.PutInt("process.pid", 42)
+	two.PutStr("service.name", "checkout")
+
+	assert.Equal(t, resourceID(one, 0), resourceID(two, 0),
+		"map insertion order must not change resource identity")
 }
 
 // Two scopes with identical (empty) attributes are still different scopes.
@@ -200,6 +203,54 @@ func TestFlushIsIdempotent(t *testing.T) {
 		assert.Equal(t, 3, attrs, "three flushes of the same content must write it once")
 		assert.Equal(t, 1, resources)
 		assert.Equal(t, 1, scopes)
+		return nil
+	}))
+}
+
+func TestFlushPreservesDistinctResourcePayloadsAcrossBatches(t *testing.T) {
+	t.Parallel()
+	s := newStore(t)
+	ctx := context.Background()
+
+	add := func(d *ingest.Dictionary, region string, dropped uint32) duckdb.UUID {
+		res := pcommon.NewResource()
+		res.Attributes().PutStr("service.name", "checkout")
+		res.Attributes().PutStr("service.instance.id", "checkout-1")
+		res.Attributes().PutStr("region", region)
+		res.SetDroppedAttributesCount(dropped)
+		return d.AddResource(res)
+	}
+
+	first := ingest.NewDictionary(s.FlushedIDs())
+	eastID := add(first, "us-east-1", 0)
+	westID := add(first, "us-west-1", 0)
+	require.NotEqual(t, eastID, westID, "same-batch payloads must not replace each other")
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return first.Flush(ctx, conn)
+	}))
+
+	second := ingest.NewDictionary(s.FlushedIDs())
+	europeID := add(second, "eu-west-1", 0)
+	droppedID := add(second, "us-east-1", 1)
+	require.NotEqual(t, eastID, europeID)
+	require.NotEqual(t, westID, europeID)
+	require.NotEqual(t, eastID, droppedID, "dropped count must distinguish otherwise identical payloads")
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return second.Flush(ctx, conn)
+	}))
+
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		var resources, regions, dropped int
+		require.NoError(t, db.QueryRow(`select count(*) from resources`).Scan(&resources))
+		require.NoError(t, db.QueryRow(`
+			select count(distinct json_extract_string(a.value, '$.value'))
+			from resources r, unnest(r.attribute_ids) t(id)
+			join attributes a on a.id = t.id
+			where a.key = 'region'`).Scan(&regions))
+		require.NoError(t, db.QueryRow(`select count(*) from resources where dropped_attributes_count = 1`).Scan(&dropped))
+		assert.Equal(t, 4, resources)
+		assert.Equal(t, 3, regions, "each resource row must retain its own payload")
+		assert.Equal(t, 1, dropped)
 		return nil
 	}))
 }
