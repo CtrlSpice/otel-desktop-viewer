@@ -1472,10 +1472,9 @@
 		-- which is what the detail panel's legend reads top-down.
 		-- Empty list (no dps in window) collapses to '[]' via the
 		-- outer coalesce.
-		-- Each series carries one resource payload with its identifying
-		-- originating attributes. Payloads differing only by dropped count share
-		-- a series, so that diagnostic count is representative here; exact
-		-- per-ingest payloads remain on metric_ingests.
+		-- Each series carries its identifying originating resource attributes in
+		-- a Resource-shaped projection whose dropped count is synthetic zero. It
+		-- deliberately does not claim to be one complete received payload.
 		--
 		-- Not optional once series split by resource: two replicas of one
 		-- service produce byte-identical attribute sets, so the resource is the
@@ -1483,9 +1482,9 @@
 		-- entries a user cannot distinguish, which is worse than the single
 		-- merged line the split replaced.
 		--
-		-- The top-level resource (from the representative ingest) stays for
-		-- compatibility, but it is the weaker claim: it describes one arbitrary
-		-- batch, whereas this describes the line being drawn.
+		-- The top-level resource is the complete exact payload from the selected
+		-- representative ingest. This series projection is narrower: it describes
+		-- only the originating attributes that identify the line being drawn.
 		timeseries_agg as (
 			select to_json(list(timeseries_json(
 				t.attrs_key,
