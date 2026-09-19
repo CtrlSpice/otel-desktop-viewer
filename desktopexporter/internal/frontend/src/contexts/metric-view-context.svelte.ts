@@ -50,10 +50,12 @@ import {
   buildVisibleSeriesQuantileChartTimeseries,
   DEFAULT_ACTIVE_HISTOGRAM_QUANTILE_KEY,
   DEFAULT_HISTOGRAM_QUANTILES,
-  histogramSliceToDatapoint,
+  histogramDatapointToChartDatapoint,
+  histogramSliceToChartDatapoint,
   parseQuantileSeriesKey,
   quantileKeyFromValue,
   type HistogramAggregationError,
+  type HistogramChartDataPoint,
   type HistogramSlicePoint,
 } from '@/components/metrics/utils/histogram-aggregation'
 import {
@@ -336,11 +338,9 @@ export interface MetricViewContext {
   seriesDatapoints(seriesKey: string): DataPoint[] | undefined
   readonly heatmapBucketSeries: HistogramSlicePoint[] | null
   readonly bucketSeriesError: BucketSeriesError | null
-  readonly aggregatedDatapoint:
-    HistogramDataPoint | ExponentialHistogramDataPoint | undefined
+  readonly aggregatedDatapoint: HistogramChartDataPoint | undefined
   readonly aggregatedError: BucketSeriesError | null
-  readonly histogramChartDatapoint:
-    HistogramDataPoint | ExponentialHistogramDataPoint | undefined
+  readonly histogramChartDatapoint: HistogramChartDataPoint | undefined
   readonly histogramChartError: BucketSeriesError | null
   readonly activeHistogramDp:
     HistogramDataPoint | ExponentialHistogramDataPoint | undefined
@@ -1548,11 +1548,11 @@ export function createMetricViewContext(
   })
 
   const aggregatedDatapoint = $derived.by(
-    (): HistogramDataPoint | ExponentialHistogramDataPoint | undefined => {
+    (): HistogramChartDataPoint | undefined => {
       const m = getMetric()
       const summary = histogramAggregation.summary
       if (!m || !summary) return undefined
-      return histogramSliceToDatapoint(
+      return histogramSliceToChartDatapoint(
         summary,
         `${m.id}:aggregated`,
         temporality || 'Delta'
@@ -1578,9 +1578,11 @@ export function createMetricViewContext(
   )
 
   const histogramChartDatapoint = $derived.by(
-    (): HistogramDataPoint | ExponentialHistogramDataPoint | undefined => {
+    (): HistogramChartDataPoint | undefined => {
       if (view.histogramScope === 'window') return aggregatedDatapoint
       return histogramBucketDatapoint
+        ? histogramDatapointToChartDatapoint(histogramBucketDatapoint)
+        : undefined
     }
   )
 

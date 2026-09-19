@@ -6,6 +6,7 @@ import type {
 } from '@/types/api-types'
 import {
   HEATMAP_BUCKET_TARGET,
+  histogramSliceToChartDatapoint,
   seriesBucketsToSlices,
   isHistogramAggregationError,
   buildPerSeriesQuantileSeries,
@@ -194,6 +195,15 @@ describe('seriesBucketsToSlices', () => {
     ])
     expect(datapoint.count).toBe(18_446_744_073_709_551_615n)
     expect(datapoint.bucketCounts).toEqual([18_446_744_073_709_551_615n])
+
+    const chartDatapoint = histogramSliceToChartDatapoint(
+      slice!,
+      'synthetic',
+      'Delta'
+    )
+    expect(chartDatapoint.count).toBe(Number(datapoint.count))
+    expect(typeof chartDatapoint.count).toBe('number')
+    expect(datapoint.count).toBe(18_446_744_073_709_551_615n)
   })
 
   it('emits one slice per store bucket, keyed by its series', () => {

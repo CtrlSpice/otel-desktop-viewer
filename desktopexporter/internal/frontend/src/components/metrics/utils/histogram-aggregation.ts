@@ -44,6 +44,21 @@ export type HistogramSlicePoint =
       quantiles?: Record<string, number | null> | null
     }
 
+export type HistogramChartDataPoint =
+  | (Omit<HistogramDataPoint, 'count' | 'bucketCounts'> & {
+      count: number
+      bucketCounts: number[]
+    })
+  | (Omit<
+      ExponentialHistogramDataPoint,
+      'count' | 'zeroCount' | 'positiveBucketCounts' | 'negativeBucketCounts'
+    > & {
+      count: number
+      zeroCount: number
+      positiveBucketCounts: number[]
+      negativeBucketCounts: number[]
+    })
+
 export type HistogramAggregationError =
   | { kind: 'unspecified'; message: string }
   | { kind: 'boundsMismatch'; message: string }
@@ -311,11 +326,30 @@ export function buildPerSeriesQuantileSeries(
   return out
 }
 
-export function histogramSliceToDatapoint(
+export function histogramDatapointToChartDatapoint(
+  datapoint: HistogramDataPoint | ExponentialHistogramDataPoint
+): HistogramChartDataPoint {
+  if (datapoint.metricType === 'Histogram') {
+    return {
+      ...datapoint,
+      count: Number(datapoint.count),
+      bucketCounts: datapoint.bucketCounts.map(Number),
+    }
+  }
+  return {
+    ...datapoint,
+    count: Number(datapoint.count),
+    zeroCount: Number(datapoint.zeroCount),
+    positiveBucketCounts: datapoint.positiveBucketCounts.map(Number),
+    negativeBucketCounts: datapoint.negativeBucketCounts.map(Number),
+  }
+}
+
+export function histogramSliceToChartDatapoint(
   slice: HistogramSlicePoint,
   id: string,
   temporality: string
-): HistogramDataPoint | ExponentialHistogramDataPoint {
+): HistogramChartDataPoint {
   // The store's own min and max. Deriving them here rebuilt the bucket list
   // from scale and offsets and took its extents -- the same computation the
   // store already does in projected_dps and aggregate_bucket_json, in a second
@@ -331,10 +365,7 @@ export function histogramSliceToDatapoint(
     // A merged datapoint is built from bucket vectors, which carry no
     // exemplars -- so it holds none, and none were withheld.
     exemplars: [],
-    // This object is a chart-owned synthetic datapoint. Its source slice is
-    // already numeric, so converting integral values back to bigint satisfies
-    // the exact datapoint shape without claiming received-source precision.
-    count: BigInt(normalized.totals.count),
+    count: normalized.totals.count,
     sum: normalized.totals.sum,
     min: normalized.totals.min,
     max: normalized.totals.max,
@@ -345,18 +376,18 @@ export function histogramSliceToDatapoint(
       ...base,
       metricType: 'Histogram',
       explicitBounds: normalized.bounds,
-      bucketCounts: normalized.counts.map(BigInt),
+      bucketCounts: normalized.counts,
     }
   }
   return {
     ...base,
     metricType: 'ExponentialHistogram',
     scale: normalized.scale,
-    zeroCount: BigInt(normalized.zeroCount),
+    zeroCount: normalized.zeroCount,
     zeroThreshold: normalized.zeroThreshold,
     positiveBucketOffset: normalized.positiveOffset,
-    positiveBucketCounts: normalized.positiveCounts.map(BigInt),
+    positiveBucketCounts: normalized.positiveCounts,
     negativeBucketOffset: normalized.negativeOffset,
-    negativeBucketCounts: normalized.negativeCounts.map(BigInt),
+    negativeBucketCounts: normalized.negativeCounts,
   }
 }
