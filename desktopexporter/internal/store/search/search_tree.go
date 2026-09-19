@@ -13,6 +13,8 @@ import (
 var (
 	ErrInvalidQuery = errors.New("invalid search query")
 	numericInteger  = regexp.MustCompile(`^([+-]?)(?:([0-9]+)(?:\.([0-9]*))?|\.([0-9]+))(?:[eE]([+-]?[0-9]+))?$`)
+	rawDuration     = regexp.MustCompile(`^\d+$`)
+	durationValue   = regexp.MustCompile(`^(\d+(?:\.\d+)?)\s*([a-zµ]+)$`)
 )
 
 // QueryNode represents a parsed query tree from the frontend
@@ -58,6 +60,7 @@ type OperandMode uint8
 const (
 	TextOperand OperandMode = iota
 	NativeSignedIntegerOperand
+	DurationOperand
 	WireIDOperand
 	OTelArrayOperand
 	CompletePredicateOperand
@@ -75,6 +78,9 @@ func Text(expr string) ResolvedExpression {
 }
 func NativeInteger(expr string) ResolvedExpression {
 	return ResolvedExpression{SQL: expr, OperandMode: NativeSignedIntegerOperand}
+}
+func Duration(expr string) ResolvedExpression {
+	return ResolvedExpression{SQL: expr, OperandMode: DurationOperand}
 }
 func WireID(expr string) ResolvedExpression {
 	return ResolvedExpression{SQL: expr, OperandMode: WireIDOperand}
@@ -293,15 +299,17 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 
 	paramName := fmt.Sprintf("value_%d", len(*params))
 
-	// TODO: Query.Value is always a string because the frontend sends JSON and
-	// the Go struct declares Value as string. For int64 fields (e.g. duration),
-	// DuckDB needs an integer bind parameter — parse the string here as a
-	// workaround until the wire format carries typed values.
 	var bindValue any = value
 	if resolved.OperandMode == NativeSignedIntegerOperand {
 		if n, err := strconv.ParseInt(value, 10, 64); err == nil {
 			bindValue = n
 		}
+	} else if resolved.OperandMode == DurationOperand && operator != "IN" && operator != "NOT IN" {
+		normalized, err := NormalizeDuration(value)
+		if err != nil {
+			return "", err
+		}
+		bindValue, _ = strconv.ParseInt(normalized, 10, 64)
 	}
 
 	switch operator {
@@ -344,9 +352,18 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 			if err != nil {
 				return "", err
 			}
+		} else if resolved.OperandMode == DurationOperand {
+			values, err = NormalizeDurationList(values)
+			if err != nil {
+				return "", err
+			}
+		} else if resolved.OperandMode == WireIDOperand {
+			for i, value := range values {
+				values[i] = normalizeWireIDValue(value.(string))
+			}
 		}
 		*params = append(*params, NamedParam{paramName, values})
-		if resolved.OperandMode == NativeSignedIntegerOperand {
+		if resolved.OperandMode == NativeSignedIntegerOperand || resolved.OperandMode == DurationOperand {
 			operatorString = fmt.Sprintf("%s CAST(%s AS BIGINT[])", operator, paramName)
 		} else {
 			operatorString = operator + " " + paramName
@@ -359,6 +376,74 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 		return strings.ReplaceAll(expression, condToken, operatorString), nil
 	}
 	return expression + " " + operatorString, nil
+}
+
+var durationUnits = map[string]*big.Int{
+	"ns":  big.NewInt(1),
+	"us":  big.NewInt(1_000),
+	"µs":  big.NewInt(1_000),
+	"ms":  big.NewInt(1_000_000),
+	"s":   big.NewInt(1_000_000_000),
+	"m":   big.NewInt(60_000_000_000),
+	"min": big.NewInt(60_000_000_000),
+	"h":   big.NewInt(3_600_000_000_000),
+}
+
+// NormalizeDuration accepts the browser's non-negative duration grammar and
+// returns its half-up-rounded signed-int64 nanosecond representation.
+func NormalizeDuration(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", fmt.Errorf("duration is invalid: %w", ErrInvalidQuery)
+	}
+	if rawDuration.MatchString(value) {
+		integer, ok := new(big.Int).SetString(value, 10)
+		if ok && integer.IsInt64() {
+			return integer.String(), nil
+		}
+		return "", fmt.Errorf("duration %q exceeds signed int64: %w", value, ErrInvalidQuery)
+	}
+
+	matches := durationValue.FindStringSubmatch(strings.ToLower(value))
+	if matches == nil {
+		return "", fmt.Errorf("duration %q is invalid: %w", value, ErrInvalidQuery)
+	}
+	multiplier := durationUnits[matches[2]]
+	if multiplier == nil {
+		return "", fmt.Errorf("duration %q is invalid: %w", value, ErrInvalidQuery)
+	}
+	whole, fraction, _ := strings.Cut(matches[1], ".")
+	numerator, ok := new(big.Int).SetString(whole+fraction, 10)
+	if !ok {
+		return "", fmt.Errorf("duration %q is invalid: %w", value, ErrInvalidQuery)
+	}
+	numerator.Mul(numerator, multiplier)
+	denominator := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(len(fraction))), nil)
+	nanoseconds, remainder := new(big.Int), new(big.Int)
+	nanoseconds.QuoRem(numerator, denominator, remainder)
+	if remainder.Lsh(remainder, 1).Cmp(denominator) >= 0 {
+		nanoseconds.Add(nanoseconds, big.NewInt(1))
+	}
+	if !nanoseconds.IsInt64() {
+		return "", fmt.Errorf("duration %q exceeds signed int64: %w", value, ErrInvalidQuery)
+	}
+	return nanoseconds.String(), nil
+}
+
+func NormalizeDurationList(values []any) ([]any, error) {
+	normalized := make([]any, len(values))
+	for i, value := range values {
+		text, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("duration list element %d is invalid: %w", i+1, ErrInvalidQuery)
+		}
+		value, err := NormalizeDuration(text)
+		if err != nil {
+			return nil, fmt.Errorf("duration list element %d: %w", i+1, err)
+		}
+		normalized[i] = value
+	}
+	return normalized, nil
 }
 
 // NormalizeNativeIntegerList accepts decimal numeric spellings whose value is
