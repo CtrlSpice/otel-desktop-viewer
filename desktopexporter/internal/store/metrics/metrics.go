@@ -506,6 +506,7 @@ func collectSeries(
 		resource := resourceMetric.Resource()
 		serviceName := serviceNameFromAttrs(resource.Attributes())
 		resourceID := resourceIDs[ri]
+		_, resourceAttributeIDs := ingest.AttributeSet(resource.Attributes(), ingest.ScopeResource)
 		for _, scopeMetric := range resourceMetric.ScopeMetrics().All() {
 			scope := scopeMetric.Scope()
 			for _, metric := range scopeMetric.Metrics().All() {
@@ -526,13 +527,11 @@ func collectSeries(
 					}
 					ids := dpAttrIDs[cur]
 					cur++
-					sid := ingest.SeriesID(streamID, resourceID, ids)
+					sid := ingest.SeriesID(streamID, resourceAttributeIDs, ids)
 					idents = append(idents, dpIdentity{series: sid, attrs: ids})
-					// resource_id is the resource this series was *first* seen
-					// with, since the insert is on-conflict-do-nothing. When a
-					// resource is enriched mid-stream the series now survives
-					// intact, which is the point, but its stored resource stays
-					// the earlier one. It is a representative, not an identity.
+					// resource_id is representative when payloads differ only by
+					// dropped count. Exact per-ingest resources remain on
+					// metric_ingests; the originating attributes in sid agree.
 					rows[sid] = seriesRow{id: sid, stream: streamID, resource: resourceID, attrs: ids}
 				})
 				if overrun {
