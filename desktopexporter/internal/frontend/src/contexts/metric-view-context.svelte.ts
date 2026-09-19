@@ -440,7 +440,7 @@ export function aggregateToSlices(
   return buckets.map(b => {
     const totals = {
       count: b.count,
-      sum: b.sum,
+      sum: b.sum ?? undefined,
       // Derived from the buckets server-side; a merge cannot carry the
       // originals through.
       min: b.min,

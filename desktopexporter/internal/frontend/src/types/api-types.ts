@@ -227,9 +227,12 @@ export type HistogramDataPoint = BaseDataPoint & {
   metricType: 'Histogram'
   /** Received uint64 count, or an exact integral SQL reduction of such counts. */
   count: bigint
-  sum: number
-  min: number
-  max: number
+  /** Optional received statistics on raw rows; null means the sender omitted
+   *  the field. Reduced sum is null unless every input supplied it; reduced
+   *  min/max are bucket-derived display values. */
+  sum: number | null
+  min: number | null
+  max: number | null
   /** Received uint64 vector, or an exact integral SQL reduction of one. */
   bucketCounts: bigint[]
   explicitBounds: number[]
@@ -245,9 +248,12 @@ export type ExponentialHistogramDataPoint = BaseDataPoint & {
   metricType: 'ExponentialHistogram'
   /** Received uint64 count, or an exact integral SQL reduction of such counts. */
   count: bigint
-  sum: number
-  min: number
-  max: number
+  /** Optional received statistics on raw rows; null means the sender omitted
+   *  the field. Reduced sum is null unless every input supplied it; reduced
+   *  min/max are bucket-derived display values. */
+  sum: number | null
+  min: number | null
+  max: number | null
   scale: number
   /** Received uint64 zero count, or an exact integral SQL reduction of one. */
   zeroCount: bigint

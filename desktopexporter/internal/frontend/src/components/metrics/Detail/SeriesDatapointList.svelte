@@ -289,7 +289,7 @@
       dp.metricType === 'ExponentialHistogram'
     ) {
       return {
-        number: `count ${dp.count}, sum ${formatMetricValuePlain(dp.sum)}`,
+        number: `count ${dp.count}, sum ${dp.sum === null ? '—' : formatMetricValuePlain(dp.sum)}`,
         unit,
       }
     }

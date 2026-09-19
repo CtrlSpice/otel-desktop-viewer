@@ -10,9 +10,9 @@ import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
  * remaining values use the metric's unit and IEEE-754 precision. */
 export type HistogramTotals = {
   count: number
-  sum: number
-  min: number
-  max: number
+  sum: number | undefined
+  min: number | undefined
+  max: number | undefined
 }
 
 export type HistogramSlicePoint =
@@ -45,18 +45,33 @@ export type HistogramSlicePoint =
     }
 
 export type HistogramChartDataPoint =
-  | (Omit<HistogramDataPoint, 'count' | 'bucketCounts'> & {
+  | (Omit<
+      HistogramDataPoint,
+      'count' | 'bucketCounts' | 'sum' | 'min' | 'max'
+    > & {
       count: number
       bucketCounts: number[]
+      sum: number | undefined
+      min: number | undefined
+      max: number | undefined
     })
   | (Omit<
       ExponentialHistogramDataPoint,
-      'count' | 'zeroCount' | 'positiveBucketCounts' | 'negativeBucketCounts'
+      | 'count'
+      | 'zeroCount'
+      | 'positiveBucketCounts'
+      | 'negativeBucketCounts'
+      | 'sum'
+      | 'min'
+      | 'max'
     > & {
       count: number
       zeroCount: number
       positiveBucketCounts: number[]
       negativeBucketCounts: number[]
+      sum: number | undefined
+      min: number | undefined
+      max: number | undefined
     })
 
 export type HistogramAggregationError =
@@ -263,9 +278,9 @@ export function seriesBucketsToSlices(
       // received datapoint exact and approximate only the projected slice.
       const totals = {
         count: Number(dp.count),
-        sum: dp.sum,
-        min: dp.min,
-        max: dp.max,
+        sum: dp.sum ?? undefined,
+        min: dp.min ?? undefined,
+        max: dp.max ?? undefined,
       }
       if (dp.metricType === 'Histogram') {
         out.push({
@@ -334,6 +349,9 @@ export function histogramDatapointToChartDatapoint(
       ...datapoint,
       count: Number(datapoint.count),
       bucketCounts: datapoint.bucketCounts.map(Number),
+      sum: datapoint.sum ?? undefined,
+      min: datapoint.min ?? undefined,
+      max: datapoint.max ?? undefined,
     }
   }
   return {
@@ -342,6 +360,9 @@ export function histogramDatapointToChartDatapoint(
     zeroCount: Number(datapoint.zeroCount),
     positiveBucketCounts: datapoint.positiveBucketCounts.map(Number),
     negativeBucketCounts: datapoint.negativeBucketCounts.map(Number),
+    sum: datapoint.sum ?? undefined,
+    min: datapoint.min ?? undefined,
+    max: datapoint.max ?? undefined,
   }
 }
 

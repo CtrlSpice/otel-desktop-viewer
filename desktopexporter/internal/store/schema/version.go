@@ -98,7 +98,10 @@ package schema
 // Version 15 restores resource ids as hashes of the complete received
 // attribute payload and dropped count. Version 14 rows use service-triplet
 // resource ids, so their record associations cannot be reinterpreted safely.
-const Version = 15
+// Version 16 gives the existing nullable histogram sum/min/max columns their
+// OTLP meaning: NULL is absent and zero is present zero. Version 15 ingestion
+// wrote zero for both states, so its rows cannot be reinterpreted safely.
+const Version = 16
 
 // VersionTableQuery creates the version table.
 //

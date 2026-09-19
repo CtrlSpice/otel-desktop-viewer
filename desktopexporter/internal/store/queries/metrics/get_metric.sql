@@ -1158,7 +1158,7 @@
 				-- requested width reaches the reporting cadence, and the caller
 				-- asks for a bucket count rather than a width.
 				sum(p.count) as count,
-				sum(p.sum) as sum,
+				case when count(p.sum) = count(*) then sum(p.sum) end as sum,
 				-- Explicit bounds: identical across the group or the merge is
 				-- meaningless, and there is no rescale that reconciles them.
 				any_value(p.explicit_bounds) as explicit_bounds,
@@ -1608,7 +1608,7 @@
 				p.bucket_start as timestamp,
 				min(p.start_time) as start_time,
 				sum(p.count) as count,
-				sum(p.sum) as sum,
+				case when count(p.sum) = count(*) then sum(p.sum) end as sum,
 				any_value(p.agg_scale) as scale,
 				max(p.zero_threshold) as zero_threshold,
 				sum(p.zero_count) as zero_count,

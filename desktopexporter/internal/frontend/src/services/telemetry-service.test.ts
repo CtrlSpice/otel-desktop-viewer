@@ -438,6 +438,62 @@ describe('telemetryAPI.getMetric', () => {
     })
   })
 
+  it('keeps absent histogram statistics distinct from present zero', async () => {
+    const base = {
+      timestampMs: 0,
+      startTime: '0',
+      flags: 0,
+      metricType: 'Histogram' as const,
+      count: '0',
+      bucketCounts: ['0'],
+      explicitBounds: [],
+      quantiles: null,
+      aggregationTemporality: 'Delta',
+      exemplars: [],
+    }
+    stubRpcResult(
+      metricResult({
+        metricType: 'Histogram',
+        timeseries: [
+          {
+            attributesKey: 'series-1',
+            attributes: [],
+            resource: { attributes: [], droppedAttributesCount: 0 },
+            datapoints: [
+              {
+                ...base,
+                id: 'absent',
+                timestamp: '1',
+                sum: null,
+                min: null,
+                max: null,
+              },
+              {
+                ...base,
+                id: 'zero',
+                timestamp: '2',
+                sum: 0,
+                min: 0,
+                max: 0,
+              },
+            ],
+            stats: null,
+            datapointCount: 2,
+            lastSeenNs: '2',
+            views: null,
+            rateStats: null,
+            sparkline: null,
+          },
+        ],
+      })
+    )
+
+    const metric = await telemetryAPI.getMetric('some-stream', 0, 2)
+    const [absent, zero] = metric!.timeseries[0]!.datapoints
+    expect(absent).toMatchObject({ sum: null, min: null, max: null })
+    expect(zero).toMatchObject({ sum: 0, min: 0, max: 0 })
+  })
+
   it('decodes recursive attribute int64 values and exceptional double bits once', async () => {
     stubRpcResult(
       metricResult({
