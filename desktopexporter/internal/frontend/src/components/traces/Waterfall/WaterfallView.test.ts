@@ -31,9 +31,11 @@ function spanNode(
       parentSpanID: parentID,
       traceID: 'trace-1',
       name: id,
+      kindCode: 1,
       startTime: BigInt(depth) * 1_000_000n,
       endTime: BigInt(depth + 1) * 1_000_000n,
       statusCode: 'Ok',
+      statusCodeValue: 1,
       events: [],
       links: [],
       attributes: [],
@@ -88,7 +90,7 @@ describe('WaterfallView bigint domain geometry', () => {
       spanNode('second', null, 0),
       spanNode('error', null, 0),
     ]
-    spans[2]!.spanData.statusCode = 'Error'
+    spans[2]!.spanData.statusCodeValue = 2
 
     const rows = buildWaterfallRows(
       spans,
@@ -185,7 +187,7 @@ function navigationSpans(): SpanNode[] {
     spanNode('error-2', null, 0),
     spanNode('healthy-after', null, 0),
   ]
-  spans[1]!.spanData.statusCode = 'Error'
+  spans[1]!.spanData.statusCodeValue = 2
   spans[2]!.spanData.events = [
     {
       name: 'exception',
@@ -194,7 +196,7 @@ function navigationSpans(): SpanNode[] {
       droppedAttributesCount: 0,
     },
   ]
-  spans[4]!.spanData.statusCode = 'Error'
+  spans[4]!.spanData.statusCodeValue = 2
   return spans
 }
 
@@ -294,7 +296,7 @@ describe('WaterfallView error navigation', () => {
 
     const healthySpans = spans.map(node => ({
       ...node,
-      spanData: { ...node.spanData, statusCode: 'Ok', events: [] },
+      spanData: { ...node.spanData, statusCodeValue: 1, events: [] },
     }))
     await view.rerender({
       componentProps: {
@@ -329,7 +331,7 @@ describe('WaterfallView error navigation', () => {
 
   it("uses selection scrolling without reopening the reader's collapsed branch", async () => {
     const spans = deepTree()
-    spans[5]!.spanData.statusCode = 'Error'
+    spans[5]!.spanData.statusCodeValue = 2
     const onSelectSpan = vi.fn()
     const view = renderTree({
       spans,

@@ -16,6 +16,7 @@ function makeMetric(overrides: Partial<MetricSummary> = {}): MetricSummary {
     unit: 'ms',
     metricType: 'Gauge',
     aggregationTemporality: null,
+    aggregationTemporalityCode: null,
     isMonotonic: null,
     serviceName: 'orders-service',
     seriesCount: 3,

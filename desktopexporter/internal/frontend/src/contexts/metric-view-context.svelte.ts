@@ -837,6 +837,10 @@ export function createMetricViewContext(
     return ''
   })
 
+  const temporalityCode = $derived.by((): number | null => {
+    return getMetric()?.aggregationTemporalityCode ?? null
+  })
+
   const isMonotonic = $derived.by((): boolean | null => {
     if (metricType !== 'Sum') return null
     const m = getMetric()
@@ -851,7 +855,7 @@ export function createMetricViewContext(
     metricType === 'Histogram' || metricType === 'ExponentialHistogram'
   )
 
-  const isUnspecifiedTemporality = $derived.by(() => {
+  const isUnsafeTemporality = $derived.by(() => {
     if (
       metricType !== 'Histogram' &&
       metricType !== 'ExponentialHistogram' &&
@@ -859,11 +863,7 @@ export function createMetricViewContext(
     ) {
       return false
     }
-    for (const dp of allDatapoints(getMetric())) {
-      const t = datapointTemporality(dp)
-      if (t === 'Unspecified') return true
-    }
-    return false
+    return temporalityCode !== 1 && temporalityCode !== 2
   })
 
   // What the window holds, which is what the reader is asking. Summing the
@@ -1125,7 +1125,7 @@ export function createMetricViewContext(
       // main chart blanks itself + shows UnspecifiedTemporalityCallout
       // for the same reason; row projections should follow that lead
       // rather than guessing.
-      if (isUnspecifiedTemporality) return new Map()
+      if (isUnsafeTemporality) return new Map()
       const out = new Map<string, readonly ChartPoint[]>()
       const rate = view.aggregationView === 'rate'
       for (const ts of getMetric()?.timeseries ?? []) {
@@ -1140,7 +1140,7 @@ export function createMetricViewContext(
 
   const seriesStatsByKey = $derived.by((): ReadonlyMap<string, SeriesStats> => {
     const out = new Map<string, SeriesStats>()
-    if (isHistogramKind || isUnspecifiedTemporality) return out
+    if (isHistogramKind || isUnsafeTemporality) return out
 
     // Raw, Sum and Avg all leave a row's own line in raw units -- Sum and Avg
     // are cross-series aggregations, and neither means anything applied to one
@@ -1178,7 +1178,7 @@ export function createMetricViewContext(
   })
 
   const availableSeriesStatBadgesList = $derived.by((): SeriesStat[] => {
-    if (isHistogramKind || isUnspecifiedTemporality) return []
+    if (isHistogramKind || isUnsafeTemporality) return []
     return availableSeriesStatBadges({
       metricType,
       temporality,
@@ -1272,7 +1272,7 @@ export function createMetricViewContext(
   })
 
   const rateSlopeOverlayAvailable = $derived.by((): boolean => {
-    if (isHistogramKind || isUnspecifiedTemporality) return false
+    if (isHistogramKind || isUnsafeTemporality) return false
     return availableRateSlopeOverlay({
       metricType,
       temporality,
@@ -1348,6 +1348,7 @@ export function createMetricViewContext(
    *  type + shape + series count. See availableAggregationViews() in
    *  aggregation.ts for the rules. */
   const availableAggregationViewsList = $derived.by((): AggregationView[] => {
+    if (isUnsafeTemporality) return ['raw']
     return availableAggregationViews(
       metricType,
       temporality,
@@ -1470,10 +1471,10 @@ export function createMetricViewContext(
       aggregatedError: null,
     }
     if (!m || !isHistogramKind) return empty
-    if (isUnspecifiedTemporality) {
+    if (isUnsafeTemporality) {
       const err = histogramAggregationErrorToBucketSeriesError({
         kind: 'unspecified',
-        message: 'Aggregation temporality is Unspecified',
+        message: `Aggregation temporality is ${temporality || 'unknown'}`,
       })
       return { ...empty, error: err, aggregatedError: err }
     }
@@ -1551,11 +1552,12 @@ export function createMetricViewContext(
     (): HistogramChartDataPoint | undefined => {
       const m = getMetric()
       const summary = histogramAggregation.summary
-      if (!m || !summary) return undefined
+      if (!m || !summary || temporalityCode === null) return undefined
       return histogramSliceToChartDatapoint(
         summary,
         `${m.id}:aggregated`,
-        temporality || 'Delta'
+        temporality,
+        temporalityCode
       )
     }
   )
@@ -2313,7 +2315,9 @@ export function createMetricViewContext(
       return isHistogramKind
     },
     get isUnspecifiedTemporality() {
-      return isUnspecifiedTemporality
+      // Kept as the component-facing name; unknown enum codes are equally
+      // unsafe because no derived mode may guess their semantics.
+      return isUnsafeTemporality
     },
     get totalDatapointCount() {
       return totalDatapointCount

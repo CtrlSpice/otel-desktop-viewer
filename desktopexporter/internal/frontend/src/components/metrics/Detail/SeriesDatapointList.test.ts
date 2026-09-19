@@ -24,6 +24,7 @@ function makeDatapoint(overrides: Partial<SumDataPoint> = {}): SumDataPoint {
     intValue: null,
     valueType: 'double',
     isMonotonic: true,
+    aggregationTemporalityCode: 2,
     aggregationTemporality: 'Cumulative',
     exemplars: [
       {
@@ -108,6 +109,7 @@ function makeHistogramDatapoint(
     max: null,
     bucketCounts: [1n],
     explicitBounds: [],
+    aggregationTemporalityCode: 1,
     aggregationTemporality: 'Delta',
     exemplars: [],
   }

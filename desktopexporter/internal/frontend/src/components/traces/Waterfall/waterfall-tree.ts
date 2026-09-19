@@ -16,7 +16,7 @@ export interface StructuralMaps {
 
 export function isErrorSpan(span: SpanData): boolean {
   return (
-    span.statusCode === 'Error' || span.events.some(e => e.name === 'exception')
+    span.statusCodeValue === 2 || span.events.some(e => e.name === 'exception')
   )
 }
 

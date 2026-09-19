@@ -49,6 +49,9 @@ export type SpanData = {
   flags: number
 
   name: string
+  /** Authoritative received OTLP SpanKind int32. */
+  kindCode: number
+  /** Readable label derived from kindCode by SQL. */
   kind: string
   startTime: bigint
   endTime: bigint
@@ -63,6 +66,9 @@ export type SpanData = {
   droppedEventsCount: number
   droppedLinksCount: number
 
+  /** Authoritative received OTLP StatusCode int32. */
+  statusCodeValue: number
+  /** Readable label derived from statusCodeValue by SQL. */
   statusCode: string
   statusMessage: string
 }
@@ -215,6 +221,9 @@ export type SumDataPoint = BaseDataPoint & {
   intValue: bigint | null
   valueType: string
   isMonotonic: boolean
+  /** Authoritative received OTLP AggregationTemporality int32. */
+  aggregationTemporalityCode: number
+  /** Readable label derived from aggregationTemporalityCode by SQL. */
   aggregationTemporality: string
   /** Activity since the previous reading of this series, from the store.
    *  Cumulative only; null on a series' first datapoint. */
@@ -236,6 +245,7 @@ export type HistogramDataPoint = BaseDataPoint & {
   /** Received uint64 vector, or an exact integral SQL reduction of one. */
   bucketCounts: bigint[]
   explicitBounds: number[]
+  aggregationTemporalityCode: number
   aggregationTemporality: string
   /** Quantiles computed by the store for this bucket, keyed by the quantile
    *  (`"0.5"`). Null when none were requested. Read rather than recomputed:
@@ -264,6 +274,7 @@ export type ExponentialHistogramDataPoint = BaseDataPoint & {
   negativeBucketOffset: number
   /** Received uint64 vector, or an exact integral SQL reduction of one. */
   negativeBucketCounts: bigint[]
+  aggregationTemporalityCode: number
   aggregationTemporality: string
   /** Quantiles computed by the store for this bucket, keyed by the quantile
    *  (`"0.5"`). Null when none were requested. Read rather than recomputed:
@@ -400,6 +411,16 @@ export type SeriesValueStats = {
   avg: number
 }
 
+type OptionalMetricTemporality =
+  | {
+      aggregationTemporality?: never
+      aggregationTemporalityCode?: never
+    }
+  | {
+      aggregationTemporality: string | null
+      aggregationTemporalityCode: number | null
+    }
+
 export type MetricData = {
   /** The window's most recent datapoint across every series. */
   lastSeenNs: bigint | null
@@ -411,8 +432,6 @@ export type MetricData = {
   unit: string
   /** Stream-level type from metric_streams (getMetric only). */
   metricType?: MetricType
-  /** Stream-level temporality; null for Gauge. */
-  aggregationTemporality?: string | null
   /** Stream-level monotonic flag; null except Sum. */
   isMonotonic?: boolean | null
   resourceDroppedAttributesCount: number
@@ -432,7 +451,7 @@ export type MetricData = {
     requested: { startNs: bigint | null; endNs: bigint | null }
     effective: { startNs: bigint | null; endNs: bigint | null }
   }
-}
+} & OptionalMetricTemporality
 
 // Sparkline point shape used by detail charts (not the drawer summary).
 export type SparklinePoint = {
@@ -448,6 +467,7 @@ export type MetricSummary = {
   unit: string
   metricType: MetricType
   aggregationTemporality: string | null
+  aggregationTemporalityCode: number | null
   isMonotonic: boolean | null
   serviceName: string
   // Distinct attribute sets (timeseries) seen in the queried window.

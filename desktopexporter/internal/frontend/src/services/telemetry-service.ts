@@ -487,6 +487,7 @@ function dataPointFromJSON(json: JsonDataPoint): DataPoint {
         intValue: json.intValue === null ? null : bigintFromWire(json.intValue),
         valueType: json.valueType,
         isMonotonic: json.isMonotonic,
+        aggregationTemporalityCode: json.aggregationTemporalityCode,
         aggregationTemporality: json.aggregationTemporality,
         delta: json.delta,
         isReset: json.isReset,
@@ -502,6 +503,7 @@ function dataPointFromJSON(json: JsonDataPoint): DataPoint {
         bucketCounts: json.bucketCounts.map(bigintFromWire),
         explicitBounds: json.explicitBounds,
         quantiles: json.quantiles,
+        aggregationTemporalityCode: json.aggregationTemporalityCode,
         aggregationTemporality: json.aggregationTemporality,
       }
     case 'ExponentialHistogram':
@@ -520,6 +522,7 @@ function dataPointFromJSON(json: JsonDataPoint): DataPoint {
         negativeBucketOffset: json.negativeBucketOffset,
         negativeBucketCounts: json.negativeBucketCounts.map(bigintFromWire),
         quantiles: json.quantiles,
+        aggregationTemporalityCode: json.aggregationTemporalityCode,
         aggregationTemporality: json.aggregationTemporality,
       }
   }

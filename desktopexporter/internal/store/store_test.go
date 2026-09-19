@@ -241,7 +241,7 @@ func TestStoreConstraintsEnforced(t *testing.T) {
 		insert into metric_streams
 			(id, name, unit, metric_type, aggregation_temporality,
 			 is_monotonic, scope_name, scope_version, service_name)
-		values (gen_random_uuid(), 'test', '', 'Gauge', '', false, '', '', '')
+		values (gen_random_uuid(), 'test', '', 'Gauge', 0, false, '', '', '')
 	`)
 	require.NoError(t, err, "inserting a metric_streams row should succeed")
 

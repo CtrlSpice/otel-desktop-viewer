@@ -130,8 +130,8 @@
     if (detailDurationVisible(f)) n++
     if (detailSearchFieldVisible(f, 'statusCode')) n++
     if (
-      span.statusCode !== 'Unset' &&
-      span.statusCode !== 'Ok' &&
+      span.statusCodeValue !== 0 &&
+      span.statusCodeValue !== 1 &&
       detailSearchFieldVisible(f, 'statusMessage')
     ) {
       n++
@@ -326,7 +326,7 @@
                   fieldType="string"
                 />
               {/if}
-              {#if span.statusCode !== 'Unset' && span.statusCode !== 'Ok' && detailSearchFieldVisible(columnFilter, 'statusMessage')}
+              {#if span.statusCodeValue !== 0 && span.statusCodeValue !== 1 && detailSearchFieldVisible(columnFilter, 'statusMessage')}
                 <SpanField
                   fieldName="status message"
                   fieldValue={span.statusMessage}

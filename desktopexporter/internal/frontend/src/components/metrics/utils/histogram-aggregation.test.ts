@@ -182,6 +182,7 @@ describe('seriesBucketsToSlices', () => {
       bucketCounts: [18_446_744_073_709_551_615n],
       exemplars: [],
       flags: 0,
+      aggregationTemporalityCode: 1,
       aggregationTemporality: 'Delta',
     }
 
@@ -199,7 +200,8 @@ describe('seriesBucketsToSlices', () => {
     const chartDatapoint = histogramSliceToChartDatapoint(
       slice!,
       'synthetic',
-      'Delta'
+      'Delta',
+      1
     )
     expect(chartDatapoint.count).toBe(Number(datapoint.count))
     expect(typeof chartDatapoint.count).toBe('number')
@@ -223,6 +225,7 @@ describe('seriesBucketsToSlices', () => {
           bucketCounts: [1n, 1n, 1n],
           exemplars: [],
           flags: 0,
+          aggregationTemporalityCode: 2,
           aggregationTemporality: 'Cumulative',
         },
         {
@@ -239,6 +242,7 @@ describe('seriesBucketsToSlices', () => {
           bucketCounts: [0n, 0n, 1n],
           exemplars: [],
           flags: 0,
+          aggregationTemporalityCode: 2,
           aggregationTemporality: 'Cumulative',
         },
       ]),
@@ -278,6 +282,7 @@ describe('seriesBucketsToSlices', () => {
           negativeBucketCounts: [],
           exemplars: [],
           flags: 0,
+          aggregationTemporalityCode: 2,
           aggregationTemporality: 'Cumulative',
         },
       ]),

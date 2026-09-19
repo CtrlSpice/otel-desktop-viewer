@@ -1197,6 +1197,11 @@ func metricDatapoints(m map[string]any) []any {
 // pruned out from under the delete.
 func deleteByIdentity(t *testing.T, ctx context.Context, s *store.Store, name, unit, metricType, aggTemporality, isMonotonic, scopeName, scopeVersion, serviceName string) error {
 	t.Helper()
+	temporalityCode := map[string]int32{
+		"": 0, "Unspecified": int32(pmetric.AggregationTemporalityUnspecified),
+		"Delta":      int32(pmetric.AggregationTemporalityDelta),
+		"Cumulative": int32(pmetric.AggregationTemporalityCumulative),
+	}[aggTemporality]
 	const q = `
 		select id::varchar from metric_streams
 		where name = ?
@@ -1212,7 +1217,7 @@ func deleteByIdentity(t *testing.T, ctx context.Context, s *store.Store, name, u
 	return s.WithDBWrite(func(db *sql.DB) error {
 		var streamID string
 		err := db.QueryRowContext(ctx, q,
-			name, unit, metricType, aggTemporality, isMonotonic == "true",
+			name, unit, metricType, temporalityCode, isMonotonic == "true",
 			scopeName, scopeVersion, serviceName,
 		).Scan(&streamID)
 		if errors.Is(err, sql.ErrNoRows) {

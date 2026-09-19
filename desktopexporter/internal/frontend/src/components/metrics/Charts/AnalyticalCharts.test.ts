@@ -81,6 +81,7 @@ function histogramDatapoint(
     max: 0,
     bucketCounts: bucketCounts.map(BigInt),
     explicitBounds,
+    aggregationTemporalityCode: 1,
     aggregationTemporality: 'Delta',
     quantiles: null,
   }
@@ -109,6 +110,7 @@ function exponentialHistogramDatapoint(
     positiveBucketCounts: [],
     negativeBucketOffset: 0,
     negativeBucketCounts: [],
+    aggregationTemporalityCode: 1,
     aggregationTemporality: 'Delta',
     quantiles: null,
   }
@@ -126,6 +128,7 @@ function metricWithDatapoints(
     unit: 'ms',
     metricType,
     aggregationTemporality: metricType === 'Gauge' ? null : 'Delta',
+    aggregationTemporalityCode: metricType === 'Gauge' ? null : 1,
     isMonotonic: null,
     resourceDroppedAttributesCount: 0,
     resource: EMPTY_RESOURCE,
