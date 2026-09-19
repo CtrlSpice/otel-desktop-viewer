@@ -405,12 +405,26 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
           : text(ctx, item)
       )
     }
+    if ((symbol === 'IN' || symbol === 'NOT IN') && items.length === 0) {
+      fail(
+        ctx,
+        valueNode.from,
+        valueNode.to,
+        'IN and NOT IN require a nonempty list'
+      )
+      return null
+    }
     // JSON, not a comma-join: a quoted value may itself contain commas,
     // which the old "[a,b,c]" serialization corrupted on the way through
     // the backend's comma split.
     value = JSON.stringify(items)
   } else {
     value = text(ctx, valueNode)
+  }
+
+  if ((symbol === 'IN' || symbol === 'NOT IN') && valueNode.name !== 'Array') {
+    fail(ctx, valueNode.from, valueNode.to, 'IN and NOT IN require a list')
+    return null
   }
 
   const operator = findOperator(symbol)
