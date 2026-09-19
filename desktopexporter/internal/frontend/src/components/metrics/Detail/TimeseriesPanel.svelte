@@ -255,9 +255,8 @@
               </table>
             {/if}
             <FieldGroup
-              label="Resource"
-              count={metricTs.resource.attributes.length +
-                (metricTs.resource.droppedAttributesCount > 0 ? 1 : 0)}
+              label="Resource attributes"
+              count={metricTs.resource.attributes.length}
               open={false}
             >
               <table
@@ -265,13 +264,6 @@
                 aria-label="Timeseries resource"
               >
                 <tbody>
-                  {#if metricTs.resource.droppedAttributesCount > 0}
-                    <MetricField
-                      fieldName="dropped attributes"
-                      fieldValue={metricTs.resource.droppedAttributesCount.toString()}
-                      fieldType="uint32"
-                    />
-                  {/if}
                   <AttributeRows
                     attributes={metricTs.resource.attributes}
                     owner={`timeseries ${ts.key} resource`}

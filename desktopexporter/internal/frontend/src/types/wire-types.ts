@@ -338,7 +338,8 @@ export type JsonSeriesRateStats = {
 
 export type JsonMetricTimeseries = {
   /**
-   * The series id: content-derived from (stream, resource, labels).
+   * The series id: content-derived from (stream, originating resource
+   * attributes, datapoint labels).
    *
    * Was the canonical "key=value|..." rendering of the labels, which could not
    * survive series splitting by resource -- two replicas of one service have
@@ -349,12 +350,13 @@ export type JsonMetricTimeseries = {
   attributesKey: string
   attributes: JsonAttribute[]
   /**
-   * The resource that emitted this series.
+   * Identifying originating resource attributes for this series.
    *
    * Load-bearing once series split by resource: when two replicas produce
-   * identical labels, this is the only thing that tells them apart. Constant
-   * within a series by construction. JsonMetricData.resource still describes
-   * one arbitrary batch and is the weaker claim.
+   * identical labels, this is the only thing that tells them apart. The reused
+   * resource shape always carries droppedAttributesCount 0: dropped count is
+   * exact only on JsonMetricData.resource, which describes the representative
+   * ingest selected for the response.
    */
   resource: JsonResourceData
   datapoints: JsonDataPoint[]

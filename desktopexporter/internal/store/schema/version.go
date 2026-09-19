@@ -34,19 +34,13 @@ package schema
 // exists to turn into a clear message, so a new column on an existing table
 // bumps it even though a new table or a new index does not.
 //
-// Version 4 changes what a resource id means, not the resources table's
-// columns. It used to be sha256(attribute_ids, dropped_attributes_count) --
-// the resource's whole attribute set -- which meant anything that enriched a
-// resource mid-stream (a processor resolving k8s metadata, an SDK adding
-// telemetry.sdk.* partway through) minted a new row for the same running
-// process; metrics.SeriesID then worked around the resulting instability by
-// keying series on InstanceKey instead of the resource id. It is now
-// sha256(service.namespace, service.name, service.instance.id) -- the OTel
-// triplet the spec actually commits to as identity -- so InstanceKey is gone
-// and SeriesID takes the resource id again. Existing resource rows, and every
-// metric_series row hashed from them, were keyed by the old function: this
-// build would compute different ids for the same resources, so a version 3
-// file's rows are unreadable under the new identity, not merely stale.
+// Version 4 changed what a resource id meant, not the resources table's
+// columns. It replaced sha256(attribute_ids, dropped_attributes_count) with
+// sha256(service.namespace, service.name, service.instance.id), removed
+// InstanceKey, and keyed SeriesID on that resource id. Existing resource and
+// metric_series rows were keyed by the old functions, so a version 3 file was
+// unreadable under version 4 rather than merely stale. Version 15 supersedes
+// that service-triplet identity while retaining this history.
 //
 // Files written before versioning existed carry no stamp at all and are
 // detected separately.
@@ -101,7 +95,10 @@ package schema
 // dictionary and log bodies. Existing value/type/scope rows are incompatible.
 // Version 14 stores every received OTLP timestamp as DuckDB UBIGINT. The prior
 // BIGINT columns cannot represent the upper half of OTLP's uint64 range.
-const Version = 14
+// Version 15 restores resource ids as hashes of the complete received
+// attribute payload and dropped count. Version 14 rows use service-triplet
+// resource ids, so their record associations cannot be reinterpreted safely.
+const Version = 15
 
 // VersionTableQuery creates the version table.
 //

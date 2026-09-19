@@ -44,15 +44,8 @@ type Attribute struct {
 	Value string
 }
 
-// Resource is one deduped resource: an attribute set plus its dropped count.
-//
-// Deduping is by ResourceID, which no longer depends on this attribute set --
-// see ResourceID. So two AddResource calls that resolve to the same id can
-// carry different AttributeIDs (an enriched resource, say); the map in
-// Dictionary keeps whichever this batch saw last, and Flush's `on conflict do
-// nothing` then keeps whichever batch reached the database first. Either way
-// attribute_ids is a representative sample of the resource's payload, not
-// part of what makes the row that resource.
+// Resource is one deduped resource payload: an attribute set plus its dropped
+// count.
 type Resource struct {
 	ID           duckdb.UUID
 	AttributeIDs []duckdb.UUID
@@ -105,78 +98,28 @@ func AttributeID(key, value string) duckdb.UUID {
 	return hashID(key, value)
 }
 
-// ResourceID derives a resource's identity from the OTel-mandated
-// identifying triplet, read straight out of its attributes -- NOT from the
-// resource's whole attribute set.
-//
-// The Resource SDK spec is explicit about what identity means here: the id
-// "MUST be unique for each instance of the same service.namespace,service.name
-// pair (in other words service.namespace,service.name,service.instance.id
-// triplet MUST be globally unique)." All three are Required-level. Nothing
-// else a resource carries -- host.name, k8s.pod.name, telemetry.sdk.*, cloud
-// metadata -- is part of that contract, however much it looks like it should
-// be.
-//
-// A missing attribute contributes an empty string to the hash, not a
-// substitute for one. If a service omits service.instance.id, every instance
-// of that service legitimately shares one resource row, because the telemetry
-// expressed no distinction -- the same collapse a datapoint with no labels
-// gets onto one default series. Falling back to hashing the whole attribute
-// set instead would answer a question the telemetry never asked, and would do
-// so precisely when we know least about the resource: two replicas that both
-// omit service.instance.id sharing one row is a true statement about what was
-// sent; two rows because a processor added telemetry.sdk.* partway through is
-// not.
-//
-// Content-derived like the rest, so ingest never needs a read-back or a wide
-// natural-key index to resolve one, and ids are stable across restarts and
-// re-ingests. Measured in the reference capture: hashing the whole attribute
-// set produced 48 resource rows for 35 distinct service.instance.id values,
-// with telemetry.sdk.* present on 35 of them and absent from the other 13 --
-// the same running process minting a new row the moment it got enriched.
-func ResourceID(attrs pcommon.Map) duckdb.UUID {
-	return hashID(
-		resourceAttrString(attrs, "service.namespace"),
-		resourceAttrString(attrs, "service.name"),
-		resourceAttrString(attrs, "service.instance.id"),
-	)
-}
-
-// resourceAttrString reads one resource identity field, or "" if the
-// resource does not set it. Absent means absent -- see ResourceID.
-func resourceAttrString(attrs pcommon.Map, key string) string {
-	if v, ok := attrs.Get(key); ok {
-		return v.AsString()
-	}
-	return ""
+// ResourceID derives the identity of one received resource payload. Attribute
+// ids are canonical typed (key, value) identities sorted by AttributeSet, so
+// map insertion order does not matter while absent attributes, empty values,
+// and values of different OTel types remain distinct. The dropped count is
+// payload too: it records attributes the sender could not include.
+func ResourceID(attributeIDs []duckdb.UUID, dropped uint32) duckdb.UUID {
+	return hashID(uuidsKey(attributeIDs), strconv.FormatUint(uint64(dropped), 10))
 }
 
 // SeriesID derives a timeseries' identity: the stream it belongs to, the
-// resource that emitted it, and its label set.
+// originating resource attributes, and its label set.
 //
 // Content-derived like the rest, which is what makes it usable in a URL --
 // the same series gets the same id across restarts and re-ingests, so a link
 // survives in a way one built on a minted datapoint id cannot.
 //
-// The resource id is in there because metric_streams identifies a stream by
-// service_name so a counter survives a pod restart, which means two replicas
-// of one service share a stream. The series is where they separate: two
-// replicas with identical labels still carry distinct resource ids (or, if
-// neither identifies itself, legitimately collapse to one series -- see
-// ResourceID), so keying on it is what keeps their datapoints from
-// interleaving into one line.
-//
-// This only works because resource identity is the OTel triplet
-// (service.namespace, service.name, service.instance.id), not a hash of the
-// resource's whole attribute set. A whole-attribute-set hash changes the
-// moment anything enriches the resource mid-stream -- a processor resolving
-// k8s metadata, an SDK adding telemetry.sdk.* partway through -- and putting
-// that unstable value in a series key used to mint a second series for the
-// same instance: one instrument drew two chart lines, split at the moment
-// those attributes appeared, and a ?series= link addressed only one half of
-// it.
-func SeriesID(streamID, resourceID duckdb.UUID, attributeIDs []duckdb.UUID) duckdb.UUID {
-	return hashID(formatUUID(streamID), formatUUID(resourceID), uuidsKey(attributeIDs))
+// Resource droppedAttributesCount is diagnostic payload metadata, not an
+// originating attribute, so it deliberately does not participate. Two metric
+// ingests may therefore retain distinct resource payload rows while sharing a
+// semantic series when only their dropped counts differ.
+func SeriesID(streamID duckdb.UUID, resourceAttributeIDs, attributeIDs []duckdb.UUID) duckdb.UUID {
+	return hashID(formatUUID(streamID), uuidsKey(resourceAttributeIDs), uuidsKey(attributeIDs))
 }
 
 // ScopeID derives a scope's identity. Name and version participate because two
@@ -216,8 +159,7 @@ func uuidString(id duckdb.UUID) string {
 // reaches the wire, because the read path orders by key in SQL.
 //
 // Deduping is a guard that should never fire; if it ever did, [A,A,B] and [A,B]
-// would hash to different scopes -- scopes still key off this array, though
-// resources no longer do; see ResourceID.
+// would hash to different resources and scopes.
 func AttributeSet(attrs pcommon.Map, scope string) ([]Attribute, []duckdb.UUID) {
 	if attrs.Len() == 0 {
 		return nil, nil
@@ -382,8 +324,9 @@ func (d *Dictionary) AddBounds(bounds []float64) duckdb.UUID {
 // AddResource records a resource and returns its id.
 func (d *Dictionary) AddResource(res pcommon.Resource) duckdb.UUID {
 	ids := d.AddAttributes(res.Attributes(), ScopeResource)
-	id := ResourceID(res.Attributes())
-	d.resources[id] = Resource{ID: id, AttributeIDs: ids, Dropped: res.DroppedAttributesCount()}
+	dropped := res.DroppedAttributesCount()
+	id := ResourceID(ids, dropped)
+	d.resources[id] = Resource{ID: id, AttributeIDs: ids, Dropped: dropped}
 	return id
 }
 

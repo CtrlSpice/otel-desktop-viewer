@@ -103,11 +103,12 @@
 		-- the stream so the per-type JSON projection below doesn't need
 		-- a per-row join.
 		-- resource_id rides along for the per-batch resource of each datapoint.
-		-- It is NOT what groups a series: `resources` is content-addressed, so
-		-- one instance that gets enriched mid-stream owns several rows there,
-		-- and grouping on it split a single series across them. A join rather
-		-- than a denormalized column on datapoints: it is a primary-key lookup
-		-- from metric_ingest_id, and datapoints is the largest table here.
+		-- It is not the series grouping key because it also includes the
+		-- resource's dropped count. Series identity uses the originating resource
+		-- attributes instead, so attribute changes split a series while a
+		-- dropped-count-only change does not. A join rather than a denormalized
+		-- column on datapoints: it is a primary-key lookup from metric_ingest_id,
+		-- and datapoints is the largest table here.
 		filtered_dps as (
 			-- bounds_id resolves to the vector here, under the name the rest
 			-- of the query has always read, so the dictionary is invisible
@@ -276,9 +277,9 @@
 			join resources r on r.id = rep.resource_id
 			join scopes sc on sc.id = rep.scope_id
 		),
-		-- One row per (metric, attribute-set) -- i.e. per OTel stream.
-		-- The attribute set itself is owned by the stream (lifted out of
-		-- the per-dp objects), and the dp objects inside are pure OTLP
+		-- One row per series id. The datapoint attribute set itself is owned by
+		-- the series (lifted out of the per-dp objects), and the dp objects inside
+		-- are pure OTLP
 		-- measurement payloads: timestamp, type-specific value fields,
 		-- exemplars, flags. attrs_canonical is the grouping key; we
 		-- coalesce NULL (no-attrs case) to "" so all attribute-less
@@ -286,8 +287,9 @@
 		--
 		-- attributes_sample picks any one datapoint's attributes from
 		-- this timeseries. Within a timeseries they're identical by
-		-- construction -- series_id is content-derived from (stream,
-		-- instance, attribute_ids), so the array cannot vary inside a group.
+		-- construction -- series_id is content-derived from (stream, originating
+		-- resource attribute ids, datapoint attribute ids), so the array cannot
+		-- vary inside a group.
 		--
 		-- any_value wraps the *array*, not the resolved JSON. Written the
 		-- other way round the macro sits inside the aggregate, so it runs once
@@ -1117,9 +1119,8 @@
 				-- came back with no attributes and the legend labelled all
 				-- twenty-one of them "default series".
 				--
-				-- any_value is exact rather than arbitrary: series_id is
-				-- content-derived from (stream, instance, attribute_ids), so the
-				-- array cannot vary within a group.
+				-- any_value is exact rather than arbitrary: series_id includes the
+				-- datapoint attribute ids, so the array cannot vary within a group.
 				any_value(p.attribute_ids) as attribute_ids,
 				-- The bucket this row *is*, not the newest datapoint that went
 				-- into it.
@@ -1331,18 +1332,13 @@
 			select
 				d.series_id,
 				-- The series id is the key, and the only key. It is
-				-- content-derived from (stream, instance, labels), so it
-				-- distinguishes replicas whose labels are identical, and it is
-				-- stable across restarts -- which is what makes it safe in a
-				-- URL, unlike a datapoint id that retention eventually deletes.
-				--
-				-- Deliberately NOT grouped alongside the ingest's resource_id,
-				-- as it once was. A resource is content-addressed, so enriching
-				-- one mid-stream mints a second resources row for the same
-				-- instance, and grouping by it split one series into two chart
-				-- lines even after the series id itself stopped splitting. The
-				-- resource shown comes from metric_series, which holds exactly
-				-- one per series.
+				-- content-derived from (stream, originating resource attributes,
+				-- labels), so it preserves OTLP metric identity and is stable
+				-- across re-ingests. That stability makes it safe in a URL,
+				-- unlike a datapoint id that retention eventually deletes.
+				-- resource_id need not be a second grouping key: exact payloads
+				-- remain on metric_ingests, while dropped count is not a series
+				-- identity field.
 				d.series_id::varchar as attrs_key,
 				attrs_json(any_value(d.attribute_ids)) as attributes_sample,
 				max(d.timestamp) as latest_ts,
@@ -1476,7 +1472,9 @@
 		-- which is what the detail panel's legend reads top-down.
 		-- Empty list (no dps in window) collapses to '[]' via the
 		-- outer coalesce.
-		-- Each series carries the resource that emitted it.
+		-- Each series carries its identifying originating resource attributes in
+		-- a Resource-shaped projection whose dropped count is synthetic zero. It
+		-- deliberately does not claim to be one complete received payload.
 		--
 		-- Not optional once series split by resource: two replicas of one
 		-- service produce byte-identical attribute sets, so the resource is the
@@ -1484,14 +1482,19 @@
 		-- entries a user cannot distinguish, which is worse than the single
 		-- merged line the split replaced.
 		--
-		-- The top-level resource (from the representative ingest) stays for
-		-- compatibility, but it is the weaker claim: it describes one arbitrary
-		-- batch, whereas this describes the line being drawn.
+		-- The top-level resource is the complete exact payload from the selected
+		-- representative ingest. This series projection is narrower: it describes
+		-- only the originating attributes that identify the line being drawn.
 		timeseries_agg as (
 			select to_json(list(timeseries_json(
 				t.attrs_key,
 				t.attributes_sample,
-				resource_json(r.attribute_ids, r.dropped_attributes_count),
+				-- The row supplies the identifying attributes only. resource_id is
+				-- representative when same-attribute payloads differ by dropped
+				-- count, so projecting that count would make an arbitrary value look
+				-- constant for the series. Exact dropped count remains top-level from
+				-- the representative metric_ingest.
+				resource_json(r.attribute_ids, 0),
 				-- Empty rather than null for a series that shipped none: the field
 				-- means "the datapoints you were sent", and every series has an
 				-- answer to that even when the answer is none.

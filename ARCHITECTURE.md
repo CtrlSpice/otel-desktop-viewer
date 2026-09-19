@@ -169,14 +169,14 @@ Schema lives in `desktopexporter/internal/store/queries/ddl/` as one `.sql` file
 | Table | Role |
 |-------|------|
 | `attributes` | Dictionary of distinct `(key, value, type, scope)` rows, keyed by a content hash |
-| `resources` | Deduped resources, shared across all three signals; `seq` is the wire key |
+| `resources` | Deduped received resource payloads, shared across all three signals; `seq` is the wire key |
 | `scopes` | Deduped instrumentation scopes; `seq` is the wire key |
 | `spans` | Span records; `resource_id`, `scope_id`, `attribute_ids`, plus `service_name` denormalized from `service.name` |
 | `events` | Span events (normalized) |
 | `links` | Span links (normalized) |
 | `logs` | Log records; same reference columns as `spans` |
 | `metric_streams` | Canonical identity for a logical metric (name, unit, type, scope, service, …) |
-| `metric_series` | One row per chart line: `(stream_id, resource_id, attribute_ids)` under a content-hashed id |
+| `metric_series` | One row per chart line, identified by stream, originating resource attributes, and datapoint attributes |
 | `metric_ingests` | One row per OTLP batch arrival for a stream (description, `resource_id`, `scope_id`) |
 | `datapoints` | All metric data points in one table; `metric_type` discriminates gauge/sum/histogram/exponential histogram; `series_id` names the line |
 | `exemplars` | Metric exemplars (normalized); separate nullable `double_value` / `int_value` arms preserve the OTLP oneof |
@@ -185,6 +185,8 @@ Schema lives in `desktopexporter/internal/store/queries/ddl/` as one `.sql` file
 
 - **IDs and timestamps use their native widths in DuckDB.** OpenTelemetry 16-byte trace IDs and viewer-internal IDs are UUIDs; 8-byte span IDs and OTLP's unsigned 64-bit nanosecond timestamps are UBIGINT. Signed measurements remain BIGINT. JSON-RPC responses and search comparisons use OTLP **wire form** (dash-less lowercase hex: 32 chars for trace IDs, 16 for span IDs), while timestamps cross JSON precision boundaries as decimal strings.
 - **Attributes are a content-addressed dictionary.** One row per distinct `(key, value, type, scope)` for the whole database, with `id = sha256(...)` truncated to 16 bytes and computed in Go at unwrap. Every owner holds an inline `uuid[]`, deduped and sorted by id. Because identity is the content, ingest knows every id before it writes and needs no read-back, and repeat writes are `on conflict (id) do nothing`.
+- **Resources preserve received payload identity.** A resource id hashes its canonical sorted typed attribute ids plus `droppedAttributesCount`. Identical payloads dedupe across signals and batches; changed attributes, typed values, presence, or dropped count produce distinct rows so every span, log, and metric ingest retains its exact received resource. Resource and scope schema URLs belong to their OTLP wrappers and do not participate.
+- **Metric series use semantic resource identity.** A series id hashes the stream id, canonical originating Resource attribute ids, and datapoint attribute ids. Resource attribute changes split a series; dropped count does not, because it is diagnostic payload metadata rather than an originating Resource attribute. `metric_ingests.resource_id` still preserves the exact payload for every ingest.
 - **Scope is part of dictionary identity**, not a free-form tag. That is what lets attribute discovery answer from `select distinct key, scope, type from attributes` alone, instead of unnesting every owner array. The cost is that the same triple used as both a resource and a span attribute is two rows.
 - **Normalized nested data.** Events, links, and exemplars live in separate tables—not nested arrays or DuckDB UNION types.
 - **Exemplar values keep their OTLP type.** Doubles and signed 64-bit integers occupy separate nullable columns; both NULL means the source exemplar had no value. The wire carries an explicit `valueType`, finite doubles as JSON numbers, non-finite doubles as the standard `"NaN"` / `"Infinity"` / `"-Infinity"` strings, and integers as decimal strings so JavaScript never rounds them before the frontend revives them as `bigint`.
@@ -468,7 +470,7 @@ Or run production-like: `make build && ./otel-desktop-viewer` (embedded assets, 
 | Storage | DuckDB | Columnar OLAP; fast filters and aggregations on local telemetry |
 | Schema | Normalized tables | Query events, links, datapoints independently; avoid UNION/MAP pain |
 | Metric identity | `metric_streams` + `metric_ingests` | Dedupe logical streams; preserve per-batch metadata |
-| Metric series | `metric_series`, id hashed from `(stream_id, resource_id, attribute_ids)` | Splits replicas that would otherwise interleave into one line; gives a chart line a stable id a URL can name |
+| Metric series | `metric_series`, id hashed from `(stream_id, resource_attribute_ids, datapoint_attribute_ids)` | Preserves OTLP resource/label identity without splitting on dropped-count metadata; gives a chart line a stable id a URL can name |
 | Datapoints | Single table with NULLs | Simpler than per-type tables; columnar NULL compression |
 | Attributes | Content-hashed dictionary + `uuid[]` on owners | Dedupes at the atom; ids known before write, so ingest needs no read-back |
 | Attribute ids | sha256 truncated to 128 bits | Fits `uuid`; birthday bound is far below the machine's own error rate. Audited by an independent SQL macro rather than trusted |

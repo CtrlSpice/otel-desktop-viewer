@@ -316,11 +316,13 @@ export type SeriesRateStats = {
 }
 
 export type MetricTimeseries = {
-  /** Series id -- stable across restarts, unique per (stream, resource, labels). */
+  /** Series id -- stable across restarts, unique per (stream, originating
+   *  resource attributes, datapoint labels). */
   attributesKey: string
   attributes: Attributes
-  /** The resource that emitted this series; distinguishes replicas whose
-   *  labels are identical. */
+  /** Identifying originating resource attributes for this series. The resource
+   *  shape is reused, but droppedAttributesCount is always zero because dropped
+   *  count is per-ingest diagnostic metadata rather than series identity. */
   resource: ResourceData
   datapoints: DataPoint[]
   /** Min / max / avg / sum over *every* datapoint in the window, computed by
