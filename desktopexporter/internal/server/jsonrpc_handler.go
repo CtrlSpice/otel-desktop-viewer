@@ -947,9 +947,6 @@ func normalizeUUID(s string) (string, error) {
 	return id.String(), nil
 }
 
-// parseTimestampParam parses a timestamp parameter that must be a JSON string
-// containing a base-10 int64. Large integers travel as strings to avoid
-// float64 precision loss in JSON.
 // parseTimestampParam reads a whole number sent either as a JSON string or as
 // a JSON number.
 //

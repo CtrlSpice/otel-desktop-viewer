@@ -204,7 +204,7 @@ func (s *Store) enforceRound(ctx context.Context, maxBytes int64) (bool, error) 
 	return fits, err
 }
 
-// pruneCutoff returns the timestamp below which rows should be deleted,
+// pruneCutoff returns the timestamp at or below which rows should be deleted,
 // i.e. the pruneFraction percentile of the given time expression. Returns
 // (0, false) when the table is empty.
 func (s *Store) pruneCutoff(ctx context.Context, db *sql.DB, query string) (uint64, bool, error) {
@@ -234,10 +234,10 @@ func (s *Store) pruneOldestSpans(ctx context.Context, db *sql.DB) error {
 	// composite key permits, since a span id is only unique within its trace.
 	for _, q := range []string{
 		`delete from links where (trace_id, span_id) in
-			(select trace_id, span_id from spans where start_time < (select unnest(?::ubigint[])))`,
+			(select trace_id, span_id from spans where start_time <= (select unnest(?::ubigint[])))`,
 		`delete from events where (trace_id, span_id) in
-			(select trace_id, span_id from spans where start_time < (select unnest(?::ubigint[])))`,
-		`delete from spans where start_time < (select unnest(?::ubigint[]))`,
+			(select trace_id, span_id from spans where start_time <= (select unnest(?::ubigint[])))`,
+		`delete from spans where start_time <= (select unnest(?::ubigint[]))`,
 	} {
 		if _, err := db.ExecContext(ctx, q, []uint64{cutoff}); err != nil {
 			return fmt.Errorf("pruneOldestSpans: %w: %w", ErrRetentionInternal, err)
@@ -260,7 +260,7 @@ func (s *Store) pruneOldestLogs(ctx context.Context, db *sql.DB) error {
 	}
 
 	for _, q := range []string{
-		`delete from logs where ` + logTime + ` < (select unnest(?::ubigint[]))`,
+		`delete from logs where ` + logTime + ` <= (select unnest(?::ubigint[]))`,
 	} {
 		if _, err := db.ExecContext(ctx, q, []uint64{cutoff}); err != nil {
 			return fmt.Errorf("pruneOldestLogs: %w: %w", ErrRetentionInternal, err)
@@ -282,10 +282,10 @@ func (s *Store) pruneOldestDatapoints(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 
-	doomed := `(select id from datapoints where timestamp < (select unnest(?::ubigint[])))`
+	doomed := `(select id from datapoints where timestamp <= (select unnest(?::ubigint[])))`
 	for _, q := range []string{
 		`delete from exemplars where datapoint_id in ` + doomed,
-		`delete from datapoints where timestamp < (select unnest(?::ubigint[]))`,
+		`delete from datapoints where timestamp <= (select unnest(?::ubigint[]))`,
 	} {
 		if _, err := db.ExecContext(ctx, q, []uint64{cutoff}); err != nil {
 			return fmt.Errorf("pruneOldestDatapoints: %w: %w", ErrRetentionInternal, err)
