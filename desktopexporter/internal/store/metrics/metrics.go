@@ -1365,6 +1365,8 @@ func mapMetricFieldExpression(field *search.FieldDefinition) (search.ResolvedExp
 		return search.Text("s.name"), nil
 	case "unit":
 		return search.Text("s.unit"), nil
+	case "type":
+		return search.Text("s.metric_type"), nil
 	case "scope.name":
 		return search.Text("s.scope_name"), nil
 	case "scope.version":

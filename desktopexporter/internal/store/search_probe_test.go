@@ -182,3 +182,30 @@ func TestFastPathAgreesWithValueComparison(t *testing.T) {
 	assert.Zero(t, count(t, "string", "=", "POST"))
 	assert.Zero(t, count(t, "", "=", "POST"))
 }
+
+func TestMembershipExcludesSQLNull(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewStore(ctx, "", zap.NewNop())
+	require.NoError(t, err)
+	defer s.Close()
+
+	for _, operator := range []string{"IN", "NOT IN"} {
+		t.Run(operator, func(t *testing.T) {
+			params := []search.NamedParam{}
+			condition, err := search.BuildOperatorCondition(search.Text("candidate"), &search.Query{
+				FieldOperator: operator,
+				Value:         `["blocked"]`,
+			}, &params)
+			require.NoError(t, err)
+			require.Len(t, params, 1)
+
+			var count int
+			require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+				return db.QueryRowContext(ctx, `with search_params as (select ? as value_0)
+			select count(*) from search_params, (values (NULL::varchar), ('blocked'), ('allowed')) t(candidate)
+			where `+condition, params[0].Value).Scan(&count)
+			}))
+			assert.Equal(t, 1, count)
+		})
+	}
+}

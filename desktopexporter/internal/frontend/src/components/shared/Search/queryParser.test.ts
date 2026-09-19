@@ -480,6 +480,14 @@ describe('review findings', () => {
     ).toBeGreaterThan(0)
   })
 
+  it.each(['IN', 'NOT IN'])('%s requires a nonempty list', operator => {
+    for (const value of ['one', '"one"', '[]']) {
+      const input = `statusCode ${operator} ${value}`
+      expect(() => parseQuery(input, contractFields)).toThrow(/require.*list/i)
+      expect(validateQuery(input, contractFields).length).toBeGreaterThan(0)
+    }
+  })
+
   it('a bare word inside a structured query gets an operator hint, not a quoting hint', () => {
     expect(() => parseQuery('body = 1 AND foo', contractFields)).toThrow(
       /field operator value/
