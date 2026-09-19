@@ -1414,11 +1414,21 @@ func TestOptionalTimestampParam(t *testing.T) {
 
 	got, err = h.parseOptionalTimestampParam(json.Number("1787348704416123457"), "endTime")
 	require.NoError(t, err)
-	require.Equal(t, int64(1787348704416123457), *got)
+	require.Equal(t, uint64(1787348704416123457), *got)
 
 	got, err = h.parseOptionalTimestampParam("42", "startTime")
 	require.NoError(t, err)
-	require.Equal(t, int64(42), *got)
+	require.Equal(t, uint64(42), *got)
+
+	got, err = h.parseOptionalTimestampParam(json.Number("18446744073709551615"), "endTime")
+	require.NoError(t, err)
+	require.Equal(t, ^uint64(0), *got)
+
+	_, err = h.parseOptionalTimestampParam("-1", "startTime")
+	require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
+
+	_, err = h.parseOptionalTimestampParam("18446744073709551616", "endTime")
+	require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
 
 	_, err = h.parseOptionalTimestampParam(true, "endTime")
 	require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)

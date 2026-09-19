@@ -1,8 +1,8 @@
 
 		with input as (
 			select ?::uuid as stream_id,
-				?::bigint as time_start,
-				?::bigint as time_end,
+				list_extract(?::ubigint[], 1) as time_start,
+				list_extract(?::ubigint[], 1) as time_end,
 				?::bigint as target_buckets,
 				-- Which series the caller cares about. Null means all of them;
 				-- an empty list means none.
@@ -415,9 +415,9 @@
 						then coalesce((select min_ts from data_extent), d.timestamp)
 					else
 						bucket_start_utc(
-							floor_div(d.timestamp + d.tz_shift,
+							floor_div(d.timestamp::hugeint + d.tz_shift::hugeint,
 							          (select width_ns from reduction))
-								* (select width_ns from reduction),
+								::hugeint * (select width_ns from reduction)::hugeint,
 							(select tz_name from input),
 							(select tz_offset_ns from input))
 				end as bucket_start
@@ -517,9 +517,9 @@
 		-- when the selection changes.
 		series_gaps as (
 			select d.series_id,
-				d.timestamp - lag(d.timestamp) over (
+				d.timestamp::hugeint - lag(d.timestamp) over (
 					partition by d.series_id order by d.timestamp, d.id
-				) as gap_ns
+				)::hugeint as gap_ns
 			from scalar_dps d
 		),
 		series_cadence as (
@@ -560,13 +560,13 @@
 		),
 		scalar_view_bucketed as (
 			select d.series_id,
-				floor_div(d.timestamp + d.tz_shift,
+				floor_div(d.timestamp::hugeint + d.tz_shift::hugeint,
 				          (select width_ns from scalar_view_grid))
-					* (select width_ns from scalar_view_grid) as bucket_local,
+					::hugeint * (select width_ns from scalar_view_grid)::hugeint as bucket_local,
 				bucket_start_utc(
-					floor_div(d.timestamp + d.tz_shift,
+					floor_div(d.timestamp::hugeint + d.tz_shift::hugeint,
 					          (select width_ns from scalar_view_grid))
-						* (select width_ns from scalar_view_grid),
+						::hugeint * (select width_ns from scalar_view_grid)::hugeint,
 					(select tz_name from input),
 					(select tz_offset_ns from input)) as bucket_start,
 				d.value,
@@ -608,9 +608,9 @@
 			from (
 				select e.series_id,
 					bucket_start_utc(
-						unnest(range(e.first_bucket,
-						             e.last_bucket + g.width_ns,
-						             g.width_ns)),
+						e.first_bucket + unnest(range(
+							((e.last_bucket - e.first_bucket) // g.width_ns)::bigint + 1
+						))::hugeint * g.width_ns::hugeint,
 						(select tz_name from input),
 						(select tz_offset_ns from input)) as bucket_start
 				from scalar_view_extent e, scalar_view_grid g
@@ -827,9 +827,9 @@
 		sparkline_bucketed as (
 			select d.series_id,
 				bucket_start_utc(
-					floor_div(d.timestamp + d.tz_shift,
+					floor_div(d.timestamp::hugeint + d.tz_shift::hugeint,
 					          (select width_ns from sparkline_grid))
-						* (select width_ns from sparkline_grid),
+						::hugeint * (select width_ns from sparkline_grid)::hugeint,
 					(select tz_name from input),
 					(select tz_offset_ns from input)) as bucket_start,
 				d.timestamp,

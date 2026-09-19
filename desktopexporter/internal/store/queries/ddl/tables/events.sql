@@ -5,7 +5,7 @@ create table if not exists events (
 		trace_id uuid not null,
 		span_id ubigint not null,
 		name varchar,
-		timestamp bigint,
+		timestamp ubigint,
 		attribute_ids uuid[] not null,
 		dropped_attributes_count uinteger,
 		foreign key (trace_id, span_id) references spans(trace_id, span_id)

@@ -21,8 +21,8 @@
 create or replace macro tz_offset_ns_at(ts_ns, tz_name) as (
     case when tz_name is null then null
     else (
-        epoch_us(make_timestamptz(ts_ns // 1000) AT TIME ZONE tz_name)
-        - ts_ns // 1000
+		epoch_us(make_timestamptz((ts_ns::hugeint // 1000)::bigint) AT TIME ZONE tz_name)::hugeint
+		- ts_ns::hugeint // 1000
     ) * 1000
     end
 )

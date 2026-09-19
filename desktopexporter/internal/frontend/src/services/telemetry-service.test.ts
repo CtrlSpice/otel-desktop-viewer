@@ -567,8 +567,8 @@ describe('telemetryAPI.searchSpans rehydration', () => {
           flags: 0,
           name: 'root',
           kind: 'Server',
-          start: 0,
-          dur: 5_000_000,
+          start: '0',
+          dur: '5000000',
           attributes: [],
           events: [
             {
@@ -598,8 +598,8 @@ describe('telemetryAPI.searchSpans rehydration', () => {
           flags: 0,
           name: 'child',
           kind: 'Internal',
-          start: 1_200_000_000,
-          dur: 3_000_000,
+          start: '1200000000',
+          dur: '3000000',
           attributes: [],
           events: [],
           links: [],

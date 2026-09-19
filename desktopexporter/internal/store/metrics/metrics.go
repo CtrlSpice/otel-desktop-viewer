@@ -693,7 +693,7 @@ func ingestExemplars(appenders map[string]*duckdb.Appender, ingestID, datapointI
 		_, exAttrIDs := ingest.AttributeSet(ex.FilteredAttributes(), ingest.ScopeExemplar)
 		doubleVal, intVal := exemplarValue(ex)
 		if err := appenders["exemplars"].AppendRow(
-			exemplarID, datapointID, int64(ex.Timestamp()), doubleVal, intVal, traceUUID, spanID,
+			exemplarID, datapointID, uint64(ex.Timestamp()), doubleVal, intVal, traceUUID, spanID,
 			ingest.NonNil(exAttrIDs),
 		); err != nil {
 			return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
@@ -720,7 +720,7 @@ func ingestGaugeDatapoints(appenders map[string]*duckdb.Appender, streamID, inge
 		ident := idents[*cur]
 		*cur++
 		if err := appenders["datapoints"].AppendRow(
-			datapointID, streamID, ident.series, ingestID, int64(dp.Timestamp()), int64(dp.StartTimestamp()), uint32(dp.Flags()),
+			datapointID, streamID, ident.series, ingestID, uint64(dp.Timestamp()), uint64(dp.StartTimestamp()), uint32(dp.Flags()),
 			doubleVal, intVal, valType, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 			ident.attrs,
 		); err != nil {
@@ -746,7 +746,7 @@ func ingestSumDatapoints(appenders map[string]*duckdb.Appender, streamID, ingest
 		ident := idents[*cur]
 		*cur++
 		if err := appenders["datapoints"].AppendRow(
-			datapointID, streamID, ident.series, ingestID, int64(dp.Timestamp()), int64(dp.StartTimestamp()), uint32(dp.Flags()),
+			datapointID, streamID, ident.series, ingestID, uint64(dp.Timestamp()), uint64(dp.StartTimestamp()), uint32(dp.Flags()),
 			doubleVal, intVal, valType,
 			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 			ident.attrs,
@@ -766,7 +766,7 @@ func ingestHistogramDatapoints(appenders map[string]*duckdb.Appender, streamID, 
 		ident := idents[*cur]
 		*cur++
 		if err := appenders["datapoints"].AppendRow(
-			datapointID, streamID, ident.series, ingestID, int64(dp.Timestamp()), int64(dp.StartTimestamp()), uint32(dp.Flags()),
+			datapointID, streamID, ident.series, ingestID, uint64(dp.Timestamp()), uint64(dp.StartTimestamp()), uint32(dp.Flags()),
 			nil, nil, nil,
 			dp.Count(), dp.Sum(), dp.Min(), dp.Max(), dp.BucketCounts().AsRaw(), ingest.BoundsID(dp.ExplicitBounds().AsRaw()),
 			nil, nil, nil, nil, nil, nil, nil,
@@ -788,7 +788,7 @@ func ingestExponentialHistogramDatapoints(appenders map[string]*duckdb.Appender,
 		ident := idents[*cur]
 		*cur++
 		if err := appenders["datapoints"].AppendRow(
-			datapointID, streamID, ident.series, ingestID, int64(dp.Timestamp()), int64(dp.StartTimestamp()), uint32(dp.Flags()),
+			datapointID, streamID, ident.series, ingestID, uint64(dp.Timestamp()), uint64(dp.StartTimestamp()), uint32(dp.Flags()),
 			nil, nil, nil,
 			dp.Count(), dp.Sum(), dp.Min(), dp.Max(), nil, nil,
 			dp.Scale(), dp.ZeroCount(), dp.ZeroThreshold(), pos.Offset(), pos.BucketCounts().AsRaw(), neg.Offset(), neg.BucketCounts().AsRaw(),
@@ -1077,10 +1077,10 @@ func getMetric(ctx context.Context, db *sql.DB, params getMetricParams, streamID
 	}
 	var startTime, endTime any
 	if timeRange.Start != nil {
-		startTime = *timeRange.Start
+		startTime = []uint64{*timeRange.Start}
 	}
 	if timeRange.End != nil {
-		endTime = *timeRange.End
+		endTime = []uint64{*timeRange.End}
 	}
 	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs, viewBuckets, sparklineBuckets, selectedArg, tzArg, datapointArg, datapointSeriesLimit).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

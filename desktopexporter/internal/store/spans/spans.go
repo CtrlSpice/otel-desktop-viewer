@@ -236,8 +236,8 @@ func appendPass(
 					uint32(span.Flags()),          // Flags UINTEGER
 					span.Name(),                   // Name VARCHAR
 					span.Kind().String(),          // Kind VARCHAR
-					int64(span.StartTimestamp()),  // StartTime BIGINT
-					int64(span.EndTimestamp()),    // EndTime BIGINT
+					uint64(span.StartTimestamp()), // StartTime UBIGINT
+					uint64(span.EndTimestamp()),   // EndTime UBIGINT
 					resourceID,                    // ResourceID UUID
 					scopeID,                       // ScopeID UUID
 					spanAttrIDs,                   // AttributeIDs UUID[]
@@ -262,7 +262,7 @@ func appendPass(
 						traceUUID,                      // TraceID UUID
 						spanID,                         // SpanID UBIGINT
 						event.Name(),                   // Name VARCHAR
-						int64(event.Timestamp()),       // Timestamp BIGINT
+						uint64(event.Timestamp()),      // Timestamp UBIGINT
 						eventAttrIDs,                   // AttributeIDs UUID[]
 						event.DroppedAttributesCount(), // DroppedAttributesCount UINTEGER
 					)
@@ -418,7 +418,7 @@ func traceSummaryOrderBy(sortOption *search.Sort) (string, error) {
 		"serviceName":  "coalesce(service_name, '')",
 		"rootSpanName": "coalesce(root_name, '')",
 		"startTime":    "trace_start_time",
-		"duration":     "(trace_end_time - trace_start_time)",
+		"duration":     "(trace_end_time::hugeint - trace_start_time::hugeint)",
 		"spanCount":    "span_count",
 		"errorCount":   "error_count",
 	}
@@ -874,7 +874,10 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (search.ResolvedExpr
 			return search.ResolvedExpression{}, fmt.Errorf("event field %q: %w: %w", field.Name, err, ErrInvalidTraceQuery)
 		}
 		expr := fmt.Sprintf("exists(select 1 from events e where %s and e.%s {COND})", eventOwner, snake)
-		if col == "timestamp" || col == "droppedAttributesCount" {
+		if col == "timestamp" {
+			return search.Timestamp(expr), nil
+		}
+		if col == "droppedAttributesCount" {
 			return search.NativeInteger(expr), nil
 		}
 		return search.Text(expr), nil
@@ -913,7 +916,7 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (search.ResolvedExpr
 		return search.Text(expr), nil
 	}
 	if field.Name == "duration" {
-		return search.Duration("(s.end_time - s.start_time)"), nil
+		return search.Duration("(s.end_time::hugeint - s.start_time::hugeint)"), nil
 	}
 	if field.Name == "spanID" || field.Name == "parentSpanID" {
 		col := util.CamelToSnake(field.Name)
@@ -930,7 +933,9 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (search.ResolvedExpr
 		}
 		expr := "s." + col
 		switch field.Name {
-		case "flags", "startTime", "endTime", "droppedAttributesCount", "droppedEventsCount", "droppedLinksCount":
+		case "startTime", "endTime":
+			return search.Timestamp(expr), nil
+		case "flags", "droppedAttributesCount", "droppedEventsCount", "droppedLinksCount":
 			return search.NativeInteger(expr), nil
 		default:
 			return search.Text(expr), nil

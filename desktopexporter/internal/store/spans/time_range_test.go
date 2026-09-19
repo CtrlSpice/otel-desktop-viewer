@@ -8,7 +8,7 @@ import (
 )
 
 func TestTraceTimePredicateShapes(t *testing.T) {
-	start, end := int64(10), int64(20)
+	start, end := uint64(10), uint64(20)
 	for _, tc := range []struct {
 		name      string
 		timeRange timerange.TimeRange
@@ -16,9 +16,9 @@ func TestTraceTimePredicateShapes(t *testing.T) {
 		wantArgs  []any
 	}{
 		{"unbounded", timerange.TimeRange{}, "true", []any{}},
-		{"end only", timerange.TimeRange{End: &end}, "s.start_time <= time_end", []any{end}},
-		{"start only", timerange.TimeRange{Start: &start}, "s.start_time >= time_start", []any{start}},
-		{"bounded", timerange.TimeRange{Start: &start, End: &end}, "s.start_time >= time_start and s.start_time <= time_end", []any{start, end}},
+		{"end only", timerange.TimeRange{End: &end}, "s.start_time <= time_end", []any{[]uint64{end}}},
+		{"start only", timerange.TimeRange{Start: &start}, "s.start_time >= time_start", []any{[]uint64{start}}},
+		{"bounded", timerange.TimeRange{Start: &start, End: &end}, "s.start_time >= time_start and s.start_time <= time_end", []any{[]uint64{start}, []uint64{end}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, where, args, err := buildTraceSQL(nil, tc.timeRange)

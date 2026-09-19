@@ -31,7 +31,7 @@
 			'durationNs',   case
 				when sub.trace_start_time is not null
 					and sub.trace_end_time is not null
-					then (sub.trace_end_time - sub.trace_start_time)::varchar
+					then (sub.trace_end_time::hugeint - sub.trace_start_time::hugeint)::varchar
 				else null
 			end,
 			'spanCount',    sub.span_count,

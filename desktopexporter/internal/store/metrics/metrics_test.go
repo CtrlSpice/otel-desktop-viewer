@@ -262,7 +262,7 @@ func TestSearchMetricSummariesNullableTimeRangesExecute(t *testing.T) {
 		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
 	}))
 
-	start, end := int64(200), int64(200)
+	start, end := uint64(200), uint64(200)
 	for _, tc := range []struct {
 		name          string
 		timeRange     store.TimeRange
@@ -4668,7 +4668,7 @@ func TestGetMetric_NullableBoundsDetermineEffectiveWindow(t *testing.T) {
 	require.Len(t, summaries, 1)
 	streamID := summaries[0]["id"].(string)
 
-	start, end := int64(200), int64(200)
+	start, end := uint64(200), uint64(200)
 	for _, tc := range []struct {
 		name      string
 		timeRange store.TimeRange
@@ -4711,7 +4711,7 @@ func TestGetMetric_NullableBoundsDetermineEffectiveWindow(t *testing.T) {
 		})
 	}
 
-	after, before := int64(400), int64(50)
+	after, before := uint64(400), uint64(50)
 	for _, tc := range []struct {
 		name      string
 		timeRange store.TimeRange

@@ -54,12 +54,17 @@ type NamedParam struct {
 	Value any
 }
 
+// unsignedScalar binds through a one-element UBIGINT array because database/sql
+// rejects scalar uint64 values above MaxInt64 before duckdb-go sees them.
+type unsignedScalar uint64
+
 // OperandMode defines the server-owned binding and normalisation contract.
 type OperandMode uint8
 
 const (
 	TextOperand OperandMode = iota
 	NativeSignedIntegerOperand
+	TimestampOperand
 	DurationOperand
 	WireIDOperand
 	OTelArrayOperand
@@ -78,6 +83,9 @@ func Text(expr string) ResolvedExpression {
 }
 func NativeInteger(expr string) ResolvedExpression {
 	return ResolvedExpression{SQL: expr, OperandMode: NativeSignedIntegerOperand}
+}
+func Timestamp(expr string) ResolvedExpression {
+	return ResolvedExpression{SQL: expr, OperandMode: TimestampOperand}
 }
 func Duration(expr string) ResolvedExpression {
 	return ResolvedExpression{SQL: expr, OperandMode: DurationOperand}
@@ -304,6 +312,13 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 		if n, err := strconv.ParseInt(value, 10, 64); err == nil {
 			bindValue = n
 		}
+	} else if resolved.OperandMode == TimestampOperand && operator != "IN" && operator != "NOT IN" {
+		normalized, err := normalizeNativeUnsignedInteger(value)
+		if err != nil {
+			return "", err
+		}
+		parsed, _ := strconv.ParseUint(normalized, 10, 64)
+		bindValue = unsignedScalar(parsed)
 	} else if resolved.OperandMode == DurationOperand && operator != "IN" && operator != "NOT IN" {
 		normalized, err := NormalizeDuration(value)
 		if err != nil {
@@ -352,6 +367,15 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 			if err != nil {
 				return "", err
 			}
+		} else if resolved.OperandMode == TimestampOperand {
+			timestampValues, timestampErr := NormalizeTimestampList(values)
+			err = timestampErr
+			if err != nil {
+				return "", err
+			}
+			*params = append(*params, NamedParam{paramName, timestampValues})
+			operatorString = fmt.Sprintf("%s CAST(%s AS UBIGINT[])", operator, paramName)
+			break
 		} else if resolved.OperandMode == DurationOperand {
 			values, err = NormalizeDurationList(values)
 			if err != nil {
@@ -363,7 +387,9 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 			}
 		}
 		*params = append(*params, NamedParam{paramName, values})
-		if resolved.OperandMode == NativeSignedIntegerOperand || resolved.OperandMode == DurationOperand {
+		if resolved.OperandMode == TimestampOperand {
+			operatorString = fmt.Sprintf("%s CAST(%s AS UBIGINT[])", operator, paramName)
+		} else if resolved.OperandMode == NativeSignedIntegerOperand || resolved.OperandMode == DurationOperand {
 			operatorString = fmt.Sprintf("%s CAST(%s AS BIGINT[])", operator, paramName)
 		} else {
 			operatorString = operator + " " + paramName
@@ -501,6 +527,64 @@ func NormalizeNativeIntegerList(values []any) ([]any, error) {
 			return nil, fmt.Errorf("integer list element %q is not an exact signed integer: %w", text, ErrInvalidQuery)
 		}
 		normalized[i] = integer.String()
+	}
+	return normalized, nil
+}
+
+func normalizeNativeUnsignedInteger(value string) (string, error) {
+	if value == "" || len(value) > 256 {
+		return "", fmt.Errorf("timestamp %q is invalid: %w", value, ErrInvalidQuery)
+	}
+	matches := numericInteger.FindStringSubmatch(value)
+	if matches == nil || matches[1] == "-" {
+		return "", fmt.Errorf("timestamp %q is not an unsigned decimal number: %w", value, ErrInvalidQuery)
+	}
+	digits := strings.TrimLeft(matches[2]+matches[3]+matches[4], "0")
+	if digits == "" {
+		return "0", nil
+	}
+	exponentText := matches[5]
+	if exponentText == "" {
+		exponentText = "0"
+	}
+	exponent, ok := new(big.Int).SetString(exponentText, 10)
+	if !ok {
+		return "", fmt.Errorf("timestamp %q is not an unsigned decimal number: %w", value, ErrInvalidQuery)
+	}
+	scale := exponent.Sub(exponent, big.NewInt(int64(len(matches[3]+matches[4]))))
+	var integerText string
+	if scale.Sign() >= 0 {
+		if new(big.Int).Add(big.NewInt(int64(len(digits))), scale).Cmp(big.NewInt(20)) > 0 {
+			return "", fmt.Errorf("timestamp %q exceeds uint64: %w", value, ErrInvalidQuery)
+		}
+		integerText = digits + strings.Repeat("0", int(scale.Int64()))
+	} else {
+		shift := new(big.Int).Neg(scale)
+		trailingZeros := len(digits) - len(strings.TrimRight(digits, "0"))
+		if shift.Cmp(big.NewInt(int64(trailingZeros))) > 0 {
+			return "", fmt.Errorf("timestamp %q is not an exact unsigned integer: %w", value, ErrInvalidQuery)
+		}
+		integerText = digits[:len(digits)-int(shift.Int64())]
+	}
+	integer, ok := new(big.Int).SetString(integerText, 10)
+	if !ok || !integer.IsUint64() {
+		return "", fmt.Errorf("timestamp %q exceeds uint64: %w", value, ErrInvalidQuery)
+	}
+	return integer.String(), nil
+}
+
+func NormalizeTimestampList(values []any) ([]uint64, error) {
+	normalized := make([]uint64, len(values))
+	for i, value := range values {
+		text, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("timestamp list element %d is invalid: %w", i+1, ErrInvalidQuery)
+		}
+		text, err := normalizeNativeUnsignedInteger(text)
+		if err != nil {
+			return nil, fmt.Errorf("timestamp list element %d: %w", i+1, err)
+		}
+		normalized[i], _ = strconv.ParseUint(text, 10, 64)
 	}
 	return normalized, nil
 }
@@ -668,16 +752,16 @@ func ConvertValueForArrayType(value, arrayType string) any {
 
 // TimePredicate builds the direct predicate for a nullable inclusive range.
 // Only concrete endpoints become parameters and SQL conditions.
-func TimePredicate(column string, startTime, endTime *int64) (string, []NamedParam) {
+func TimePredicate(column string, startTime, endTime *uint64) (string, []NamedParam) {
 	var conditions []string
 	var params []NamedParam
 	if startTime != nil {
 		conditions = append(conditions, column+" >= time_start")
-		params = append(params, NamedParam{Name: "time_start", Value: *startTime})
+		params = append(params, NamedParam{Name: "time_start", Value: unsignedScalar(*startTime)})
 	}
 	if endTime != nil {
 		conditions = append(conditions, column+" <= time_end")
-		params = append(params, NamedParam{Name: "time_end", Value: *endTime})
+		params = append(params, NamedParam{Name: "time_end", Value: unsignedScalar(*endTime)})
 	}
 	return strings.Join(conditions, " AND "), params
 }
@@ -713,8 +797,13 @@ func BuildSearchSQL(queryNode *QueryNode, mapper FieldMapper, timeCondition stri
 	args = make([]any, len(params))
 	cteParams := make([]string, len(params))
 	for i, p := range params {
-		args[i] = p.Value
-		cteParams[i] = fmt.Sprintf("? as %s", p.Name)
+		if value, ok := p.Value.(unsignedScalar); ok {
+			args[i] = []uint64{uint64(value)}
+			cteParams[i] = fmt.Sprintf("unnest(?::ubigint[]) as %s", p.Name)
+		} else {
+			args[i] = p.Value
+			cteParams[i] = fmt.Sprintf("? as %s", p.Name)
+		}
 	}
 	if len(cteParams) == 0 {
 		cteSQL = "with search_params as (select true as unbounded)"

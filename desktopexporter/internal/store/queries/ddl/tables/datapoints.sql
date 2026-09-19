@@ -11,8 +11,8 @@ create table if not exists datapoints (
 		-- without a join back through metric_series.
 		series_id uuid not null,
 		metric_ingest_id uuid not null,
-		timestamp bigint,
-		start_time bigint,
+		timestamp ubigint,
+		start_time ubigint,
 		flags uinteger,
 		double_value double,
 		int_value bigint,
