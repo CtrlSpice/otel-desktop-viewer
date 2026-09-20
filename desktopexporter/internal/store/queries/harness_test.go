@@ -1,14 +1,49 @@
 package queries_test
 
 import (
+	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
+	"math"
 	"os"
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/queries"
-	_ "github.com/duckdb/duckdb-go/v2"
+	"github.com/duckdb/duckdb-go/v2"
 )
+
+type doubleWireBitsFunc struct {
+	doubleType  duckdb.TypeInfo
+	varcharType duckdb.TypeInfo
+}
+
+func (f doubleWireBitsFunc) Config() duckdb.ScalarFuncConfig {
+	return duckdb.ScalarFuncConfig{InputTypeInfos: []duckdb.TypeInfo{f.doubleType}, ResultTypeInfo: f.varcharType}
+}
+
+func (doubleWireBitsFunc) Executor() duckdb.ScalarFuncExecutor {
+	return duckdb.ScalarFuncExecutor{RowExecutor: func(values []driver.Value) (any, error) {
+		return fmt.Sprintf("0x%016x", math.Float64bits(values[0].(float64))), nil
+	}}
+}
+
+func registerDoubleWireBits(db *sql.DB) error {
+	doubleType, err := duckdb.NewTypeInfo(duckdb.TYPE_DOUBLE)
+	if err != nil {
+		return err
+	}
+	varcharType, err := duckdb.NewTypeInfo(duckdb.TYPE_VARCHAR)
+	if err != nil {
+		return err
+	}
+	conn, err := db.Conn(context.Background())
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	return duckdb.RegisterScalarUDF(conn, "double_wire_bits", &doubleWireBitsFunc{doubleType, varcharType})
+}
 
 // One DuckDB for the tests in this package that only read.
 //
@@ -31,6 +66,10 @@ func TestMain(m *testing.M) {
 	db, err := sql.Open("duckdb", "")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "opening shared duckdb:", err)
+		os.Exit(1)
+	}
+	if err := registerDoubleWireBits(db); err != nil {
+		fmt.Fprintln(os.Stderr, "registering double wire encoder:", err)
 		os.Exit(1)
 	}
 	if err := install(db); err != nil {
@@ -88,6 +127,9 @@ func freshDB(t *testing.T) *sql.DB {
 		t.Fatalf("opening duckdb: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
+	if err := registerDoubleWireBits(db); err != nil {
+		t.Fatal(err)
+	}
 	if err := install(db); err != nil {
 		t.Fatal(err)
 	}

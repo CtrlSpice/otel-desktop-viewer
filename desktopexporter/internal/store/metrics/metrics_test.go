@@ -429,6 +429,8 @@ func TestHistogramOptionalStatisticsPreservePresence(t *testing.T) {
 		{timestamp: 400, sum: optionalHistogramStatistic{true, 7}},
 		{timestamp: 500, min: optionalHistogramStatistic{true, -1}},
 		{timestamp: 600, max: optionalHistogramStatistic{true, 9}},
+		{timestamp: 700, sum: optionalHistogramStatistic{true, math.Copysign(0, -1)}, min: optionalHistogramStatistic{true, math.Float64frombits(0x7ff8000000000001)}, max: optionalHistogramStatistic{true, math.Inf(1)}},
+		{timestamp: 800, sum: optionalHistogramStatistic{true, math.Inf(-1)}},
 	}
 
 	for _, metricType := range []string{"Histogram", "ExponentialHistogram"} {
@@ -484,7 +486,7 @@ func TestHistogramOptionalStatisticsPreservePresence(t *testing.T) {
 					for i, want := range []optionalHistogramStatistic{fixture.sum, fixture.min, fixture.max} {
 						assert.Equal(t, want.present, got[i].Valid)
 						if want.present {
-							assert.Equal(t, want.value, got[i].Float64)
+							assert.Equal(t, math.Float64bits(want.value), math.Float64bits(got[i].Float64))
 						}
 					}
 				}
@@ -503,7 +505,11 @@ func TestHistogramOptionalStatisticsPreservePresence(t *testing.T) {
 				for field, want := range map[string]optionalHistogramStatistic{"sum": fixture.sum, "min": fixture.min, "max": fixture.max} {
 					require.Contains(t, dp, field)
 					if want.present {
-						assert.Equal(t, want.value, dp[field])
+						if !math.IsNaN(want.value) && !math.IsInf(want.value, 0) && !(want.value == 0 && math.Signbit(want.value)) {
+							assert.Equal(t, want.value, dp[field])
+						} else {
+							assert.Equal(t, fmt.Sprintf("0x%016x", math.Float64bits(want.value)), dp[field])
+						}
 					} else {
 						assert.Nil(t, dp[field])
 					}
@@ -1114,9 +1120,10 @@ func TestExemplarValuesRoundTripByType(t *testing.T) {
 		intValue    any
 	}{
 		{"double", func(ex pmetric.Exemplar) { ex.SetDoubleValue(1.25) }, "Double", 1.25, nil},
-		{"NaN", func(ex pmetric.Exemplar) { ex.SetDoubleValue(math.NaN()) }, "Double", "NaN", nil},
-		{"positive infinity", func(ex pmetric.Exemplar) { ex.SetDoubleValue(math.Inf(1)) }, "Double", "Infinity", nil},
-		{"negative infinity", func(ex pmetric.Exemplar) { ex.SetDoubleValue(math.Inf(-1)) }, "Double", "-Infinity", nil},
+		{"negative zero", func(ex pmetric.Exemplar) { ex.SetDoubleValue(math.Copysign(0, -1)) }, "Double", "0x8000000000000000", nil},
+		{"NaN", func(ex pmetric.Exemplar) { ex.SetDoubleValue(math.Float64frombits(0x7ff8000000000001)) }, "Double", "0x7ff8000000000001", nil},
+		{"positive infinity", func(ex pmetric.Exemplar) { ex.SetDoubleValue(math.Inf(1)) }, "Double", "0x7ff0000000000000", nil},
+		{"negative infinity", func(ex pmetric.Exemplar) { ex.SetDoubleValue(math.Inf(-1)) }, "Double", "0xfff0000000000000", nil},
 		{"integer zero", func(ex pmetric.Exemplar) { ex.SetIntValue(0) }, "Int", nil, "0"},
 		{"above 2^53", func(ex pmetric.Exemplar) { ex.SetIntValue(9_007_199_254_740_993) }, "Int", nil, "9007199254740993"},
 		{"minimum int64", func(ex pmetric.Exemplar) { ex.SetIntValue(-1 << 63) }, "Int", nil, "-9223372036854775808"},

@@ -40,11 +40,11 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, quantiles) 
 				-- rows reuse this shape, so their integral results also retain
 				-- their exact SQL value on the wire.
 				'count', d.count::varchar,
-				'sum', d.sum,
-				'min', d.min,
-				'max', d.max,
+				'sum', double_wire_json(d.sum),
+				'min', double_wire_json(d.min),
+				'max', double_wire_json(d.max),
 				'bucketCounts', list_transform(d.bucket_counts, value -> value::varchar),
-				'explicitBounds', d.explicit_bounds,
+				'explicitBounds', list_transform(d.explicit_bounds, value -> double_wire_json(value)),
 				'aggregationTemporalityCode', d.aggregation_temporality,
 				'aggregationTemporality', case d.aggregation_temporality
 					when 0 then 'Unspecified' when 1 then 'Delta' when 2 then 'Cumulative'
@@ -63,12 +63,12 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, quantiles) 
 				'flags', d.flags,
 				'exemplars', exemplars,
 				'count', d.count::varchar,
-				'sum', d.sum,
-				'min', d.min,
-				'max', d.max,
+				'sum', double_wire_json(d.sum),
+				'min', double_wire_json(d.min),
+				'max', double_wire_json(d.max),
 				'scale', d.scale,
 				'zeroCount', d.zero_count::varchar,
-				'zeroThreshold', d.zero_threshold,
+				'zeroThreshold', double_wire_json(d.zero_threshold),
 				'positiveBucketOffset', d.positive_bucket_offset,
 				'positiveBucketCounts', list_transform(d.positive_bucket_counts, value -> value::varchar),
 				'negativeBucketOffset', d.negative_bucket_offset,
@@ -94,7 +94,7 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, quantiles) 
 				),
 				case d.metric_type
 				when 'Gauge' then json_object(
-					'doubleValue', d.double_value,
+					'doubleValue', double_wire_json(d.double_value),
 					-- Received NumberDataPoint.as_int is signed int64. Decimal text
 					-- preserves its exact value through JSON; the frontend revives it
 					-- to bigint before any display-only chart projection.
@@ -102,7 +102,7 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, quantiles) 
 					'valueType', d.value_type
 				)
 				when 'Sum' then json_object(
-					'doubleValue', d.double_value,
+					'doubleValue', double_wire_json(d.double_value),
 					'intValue', d.int_value::varchar,
 					'valueType', d.value_type,
 					'isMonotonic', d.is_monotonic,
@@ -119,7 +119,7 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, quantiles) 
 					'delta', case when d.aggregation_temporality = 2 then
 						case when d.delta_int is not null
 							then to_json(d.delta_int::varchar)
-							else to_json(d.delta_double)
+							else double_wire_json(d.delta_double)
 						end
 					end,
 					'isReset', case when d.aggregation_temporality = 2

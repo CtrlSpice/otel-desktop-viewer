@@ -92,6 +92,8 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	appendInt("mixed-hugeint-overflow", 200, math.MaxInt64)
 	appendInt("mixed-hugeint-reset", 100, math.MaxInt64)
 	appendDouble("mixed-hugeint-reset", 200, -math.Ldexp(1, 127))
+	appendDouble("double-overflow", 100, -math.MaxFloat64)
+	appendDouble("double-overflow", 200, math.MaxFloat64)
 
 	empty := sum.DataPoints().AppendEmpty()
 	empty.Attributes().PutStr("series", "empty-then-int")
@@ -142,7 +144,7 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	nonfinite := nonfiniteMetric.SetEmptySum()
 	nonfinite.SetIsMonotonic(true)
 	nonfinite.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
-	for i, value := range []float64{1, math.NaN(), math.Inf(1), math.Inf(-1), 3} {
+	for i, value := range []float64{1, math.Float64frombits(0x7ff8000000000001), math.Float64frombits(0xfff8000000000002), math.Inf(1), math.Inf(-1), 3} {
 		dp := nonfinite.DataPoints().AppendEmpty()
 		dp.SetTimestamp(pcommon.Timestamp(100 + i*100))
 		dp.SetDoubleValue(value)
@@ -198,6 +200,7 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	require.Equal(t, "-9223372036854777856", latestFor("mixed-below-min-reset")["delta"])
 	require.Equal(t, math.Ldexp(1, 127), latestFor("mixed-hugeint-overflow")["delta"])
 	require.Equal(t, -math.Ldexp(1, 127), latestFor("mixed-hugeint-reset")["delta"])
+	require.Equal(t, "0x7ff0000000000000", latestFor("double-overflow")["delta"])
 	require.NotContains(t, latestFor("first"), "delta")
 	require.NotContains(t, latestFor("first"), "isReset")
 	require.NotContains(t, latestFor("empty-then-int"), "delta")
@@ -261,17 +264,18 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	require.NotContains(t, latestAfterEmpty, "isReset")
 
 	// Non-finite observations are excluded from arithmetic, so the finite points
-	// span a delta of two. The bare NaN also records the separate existing JSON
-	// transport defect without claiming that this response is valid JSON.
+	// span a delta of two. Detail still carries every received value through the
+	// hexadecimal double wire form where JSON numbers cannot represent it.
 	nonfiniteID := findMetricID(t, s, ctx, "test.nonfinite")
 	nonfiniteRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, nonfiniteID, store.BoundedTimeRange(0, 600),
+		return metrics.GetMetric(ctx, db, nonfiniteID, store.BoundedTimeRange(0, 700),
 			0, nil, nil, 0, 0, 0, nil, "", nil, 0)
 	})
 	require.NoError(t, err)
-	require.False(t, json.Valid(nonfiniteRaw))
-	require.Contains(t, string(nonfiniteRaw), `"doubleValue":NaN`)
-	require.Contains(t, string(nonfiniteRaw), `"doubleValue":Infinity`)
-	require.Contains(t, string(nonfiniteRaw), `"doubleValue":-Infinity`)
+	require.True(t, json.Valid(nonfiniteRaw))
+	require.Contains(t, string(nonfiniteRaw), `"doubleValue":"0x7ff8000000000001"`)
+	require.Contains(t, string(nonfiniteRaw), `"doubleValue":"0xfff8000000000002"`)
+	require.Contains(t, string(nonfiniteRaw), `"doubleValue":"0x7ff0000000000000"`)
+	require.Contains(t, string(nonfiniteRaw), `"doubleValue":"0xfff0000000000000"`)
 	require.Contains(t, string(nonfiniteRaw), `"delta":2.0`)
 }

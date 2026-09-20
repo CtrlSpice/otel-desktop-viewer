@@ -219,6 +219,9 @@ export type JsonLogData = {
 export type JsonMetricType =
   'Empty' | 'Gauge' | 'Sum' | 'Histogram' | 'ExponentialHistogram'
 
+/** A JSON number, or exact IEEE-754 bits when JSON cannot represent the value. */
+export type JsonDouble = number | `0x${string}`
+
 type JsonExemplarBase = {
   timestamp: string
   traceID: string | null
@@ -226,11 +229,9 @@ type JsonExemplarBase = {
   filteredAttributes: JsonAttribute[]
 }
 
-type JsonExemplarDouble = number | 'NaN' | 'Infinity' | '-Infinity'
-
 export type JsonExemplar = JsonExemplarBase &
   (
-    | { valueType: 'Double'; doubleValue: JsonExemplarDouble; intValue: null }
+    | { valueType: 'Double'; doubleValue: JsonDouble; intValue: null }
     | { valueType: 'Int'; doubleValue: null; intValue: string }
     | { valueType: 'Empty'; doubleValue: null; intValue: null }
   )
@@ -256,14 +257,14 @@ type JsonBaseDataPoint = {
 
 export type JsonGaugeDataPoint = JsonBaseDataPoint & {
   metricType: 'Gauge'
-  doubleValue: number | null
+  doubleValue: JsonDouble | null
   intValue: string | null
   valueType: string
 }
 
 export type JsonSumDataPoint = JsonBaseDataPoint & {
   metricType: 'Sum'
-  doubleValue: number | null
+  doubleValue: JsonDouble | null
   intValue: string | null
   valueType: string
   isMonotonic: boolean
@@ -272,9 +273,9 @@ export type JsonSumDataPoint = JsonBaseDataPoint & {
   /** Readable label derived from aggregationTemporalityCode by SQL. */
   aggregationTemporality: string
   /** Activity since the previous reading of this series. Exact integral
-   *  results use decimal text; double-domain results use a JSON number.
+   *  results use decimal text; double-domain results use JsonDouble.
    *  Cumulative only; null on the first datapoint. */
-  delta?: number | string | null
+  delta?: JsonDouble | string | null
   /** Whether the counter restarted in that interval. */
   isReset?: boolean | null
 }
@@ -282,16 +283,16 @@ export type JsonSumDataPoint = JsonBaseDataPoint & {
 export type JsonHistogramDataPoint = JsonBaseDataPoint & {
   metricType: 'Histogram'
   count: string
-  sum: number | null
-  min: number | null
-  max: number | null
+  sum: JsonDouble | null
+  min: JsonDouble | null
+  max: JsonDouble | null
   bucketCounts: string[]
-  explicitBounds: number[]
+  explicitBounds: JsonDouble[]
   /** Quantile values keyed by the quantile, e.g. {"0.5": 12.4}. Computed in
    *  the store from this datapoint's buckets; null when none were requested.
    *  Keys are the quantile as the server formatted it, so look up by the same
    *  string the request sent. */
-  quantiles: Record<string, number | null> | null
+  quantiles: Record<string, JsonDouble | null> | null
   aggregationTemporalityCode: number
   aggregationTemporality: string
 }
@@ -299,12 +300,12 @@ export type JsonHistogramDataPoint = JsonBaseDataPoint & {
 export type JsonExponentialHistogramDataPoint = JsonBaseDataPoint & {
   metricType: 'ExponentialHistogram'
   count: string
-  sum: number | null
-  min: number | null
-  max: number | null
+  sum: JsonDouble | null
+  min: JsonDouble | null
+  max: JsonDouble | null
   scale: number
   zeroCount: string
-  zeroThreshold: number
+  zeroThreshold: JsonDouble
   positiveBucketOffset: number
   positiveBucketCounts: string[]
   negativeBucketOffset: number
@@ -313,7 +314,7 @@ export type JsonExponentialHistogramDataPoint = JsonBaseDataPoint & {
    *  the store from this datapoint's buckets; null when none were requested.
    *  Keys are the quantile as the server formatted it, so look up by the same
    *  string the request sent. */
-  quantiles: Record<string, number | null> | null
+  quantiles: Record<string, JsonDouble | null> | null
   aggregationTemporalityCode: number
   aggregationTemporality: string
 }
@@ -331,21 +332,21 @@ export type JsonDataPoint =
 export type JsonScalarViewBucket = {
   bucketStart: string
   sampleCount: number
-  sum: number | null
-  avg: number | null
-  rate: number | null
+  sum: JsonDouble | null
+  avg: JsonDouble | null
+  rate: JsonDouble | null
   /** Slope of the drawn rate line's segment arriving at this bucket, in
    *  rate-units per second. Null for buckets the rate view does not draw and
    *  for the first it does, which no segment arrives at. */
-  slope: number | null
+  slope: JsonDouble | null
   hasReset: boolean
 }
 
 /** Extremes of a series' drawn rate line, for the rate view's badges. */
 export type JsonSeriesRateStats = {
-  min: number
-  max: number
-  avg: number
+  min: JsonDouble
+  max: JsonDouble
+  avg: JsonDouble
 }
 
 export type JsonMetricTimeseries = {
@@ -399,7 +400,7 @@ export type JsonMetricTimeseries = {
  *  happened rather than being squared off to a bucket boundary. */
 export type JsonSparklinePoint = {
   timestamp: string
-  value: number
+  value: JsonDouble
 }
 
 export type JsonMetricData = {
@@ -493,25 +494,25 @@ export type JsonAggregateBucket = {
   timestamp: string
   startTime: string
   count: number
-  sum: number | null
+  sum: JsonDouble | null
   /** Derived from the buckets: a merge cannot carry the observed min and max
    *  through, because for cumulative it is a subtraction. Omitted when an
    *  empty explicit-bounds vector provides no finite extent. */
-  min?: number
-  max?: number
+  min?: JsonDouble
+  max?: JsonDouble
   /** Explicit-bounds histograms carry these; exponential ones carry the
    *  scale/offset fields below. A bucket has one representation or the other,
    *  never both, so the absent set is omitted rather than sent as nulls. */
   bucketCounts?: number[]
-  explicitBounds?: number[]
+  explicitBounds?: JsonDouble[]
   scale?: number
-  zeroThreshold?: number
+  zeroThreshold?: JsonDouble
   zeroCount?: number
   positiveBucketOffset?: number
   positiveBucketCounts?: number[]
   negativeBucketOffset?: number
   negativeBucketCounts?: number[]
-  quantiles: Record<string, number | null> | null
+  quantiles: Record<string, JsonDouble | null> | null
 }
 
 export type JsonMetricSummary = {
@@ -540,7 +541,7 @@ export type JsonMetricSummary = {
   /** @derived Latest Gauge/Sum value by timestamp in the requested window.
    * SQL coalesces the double/int arms into an IEEE-754 metric-unit number, so
    * an integer source may be approximate past 2^53. Null for histograms. */
-  lastValue: number | null
+  lastValue: JsonDouble | null
   lastSeen: string
 }
 
@@ -691,8 +692,8 @@ export type JsonQueryNode =
  *  the window, as opposed to the subset a chart draws. */
 export type JsonSeriesValueStats = {
   count: number
-  min: number
-  max: number
-  sum: number
-  avg: number
+  min: JsonDouble
+  max: JsonDouble
+  sum: JsonDouble
+  avg: JsonDouble
 }

@@ -78,7 +78,7 @@
     DEFAULT_HISTOGRAM_QUANTILES,
     HEATMAP_BUCKET_TARGET,
   } from '@/components/metrics/utils/histogram-aggregation'
-  import type { JsonAggregateBucket } from '@/types/wire-types'
+  import type { AggregateBucket } from '@/types/api-types'
   import { untrack } from 'svelte'
   import { SvelteMap } from 'svelte/reactivity'
   import {
@@ -190,12 +190,12 @@
 
   // The store's cross-series merge for the current legend selection. Null
   // until the first fetch resolves, and whenever the metric changes.
-  let selectedAggregate = $state<JsonAggregateBucket[] | null>(null)
+  let selectedAggregate = $state<AggregateBucket[] | null>(null)
   // The same merge over one bucket spanning the window. A window summary is
   // not the last column of a chart, and it is not the columns added together
   // either -- it is the merge asked a different question, so the store answers
   // it rather than the client approximating from what it already has.
-  let selectedAggregateSummary = $state<JsonAggregateBucket | null>(null)
+  let selectedAggregateSummary = $state<AggregateBucket | null>(null)
   // The store's cross-series fold for a scalar metric: the checked pool and the
   // full pool, on the same bucket grid the per-series views use. Refetched when
   // the legend changes, which is the whole reason it is separate from the
