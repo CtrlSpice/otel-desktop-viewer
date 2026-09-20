@@ -15,6 +15,7 @@ export function resolveField(
 ): NamedField | undefined {
   const explicit = parseAttributeFieldReference(name, signal)
   if (explicit) return explicit
+  if (/^attr\s*\(/.test(name)) return undefined
 
   const foldedName = name.toLowerCase()
   const nativeField = availableFields.find(

@@ -310,6 +310,22 @@ describe('explicit attribute identity', () => {
     ).toThrow(/Unknown field/)
   })
 
+  it.each(['attr(log, "x", string)', 'attr(span, "x", decimal)'])(
+    'does not reinterpret invalid explicit syntax as the bare key %s',
+    reference => {
+      const collidingAttribute: FieldDefinition = {
+        name: reference,
+        type: 'string',
+        searchScope: 'attribute',
+        attributeScope: 'span',
+        operators: [OPERATORS.EQUALS],
+      }
+      expect(() =>
+        parseQuery(`${reference} = "value"`, [collidingAttribute], 'traces')
+      ).toThrow(/Unknown field/)
+    }
+  )
+
   it('deduplicates identical tuples before checking bare-name ambiguity', () => {
     const duplicate = [mixedKindFields[0], mixedKindFields[0]]
     expect(
