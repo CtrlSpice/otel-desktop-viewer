@@ -3,9 +3,11 @@
   import { slide } from 'svelte/transition'
   import { Calendar } from 'bits-ui'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import ArrowLeft01Icon from '@hugeicons/core-free-icons/ArrowLeft01Icon'
-  import ArrowRight01Icon from '@hugeicons/core-free-icons/ArrowRight01Icon'
-  import Calendar03Icon from '@hugeicons/core-free-icons/Calendar03Icon'
+  import {
+    ArrowLeft01Icon,
+    ArrowRight01Icon,
+    Calendar03Icon,
+  } from '@hugeicons/core-free-icons'
   import {
     CalendarDate,
     parseDate,

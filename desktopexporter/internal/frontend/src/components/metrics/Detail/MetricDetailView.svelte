@@ -18,8 +18,10 @@
   } from '@/components/shared/PaneHeader.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import BarChartHorizontalIcon from '@hugeicons/core-free-icons/BarChartHorizontalIcon'
-  import LeftToRightListBulletIcon from '@hugeicons/core-free-icons/LeftToRightListBulletIcon'
+  import {
+    BarChartHorizontalIcon,
+    LeftToRightListBulletIcon,
+  } from '@hugeicons/core-free-icons'
   import MetricField from './MetricField.svelte'
   import TimeseriesPanel from './TimeseriesPanel.svelte'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'

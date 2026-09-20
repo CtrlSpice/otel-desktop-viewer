@@ -1,8 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import Cancel01Icon from '@hugeicons/core-free-icons/Cancel01Icon'
-  import DateTimeIcon from '@hugeicons/core-free-icons/DateTimeIcon'
+  import { Cancel01Icon, DateTimeIcon } from '@hugeicons/core-free-icons'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import {

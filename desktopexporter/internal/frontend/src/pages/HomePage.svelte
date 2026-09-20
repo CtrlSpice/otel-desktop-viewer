@@ -16,11 +16,13 @@
 <script lang="ts">
   import { onMount, type Component } from 'svelte'
   import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/svelte'
-  import Alert02Icon from '@hugeicons/core-free-icons/Alert02Icon'
-  import BarChartHorizontalIcon from '@hugeicons/core-free-icons/BarChartHorizontalIcon'
-  import ChartHistogramIcon from '@hugeicons/core-free-icons/ChartHistogramIcon'
-  import CheckmarkCircle02Icon from '@hugeicons/core-free-icons/CheckmarkCircle02Icon'
-  import Copy01Icon from '@hugeicons/core-free-icons/Copy01Icon'
+  import {
+    Alert02Icon,
+    BarChartHorizontalIcon,
+    ChartHistogramIcon,
+    CheckmarkCircle02Icon,
+    Copy01Icon,
+  } from '@hugeicons/core-free-icons'
   import { LogIcon } from '@/icons'
   import ReadonlyCodePanel from '@/components/shared/ReadonlyCodePanel.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
