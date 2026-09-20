@@ -85,6 +85,30 @@ describe('case-distinct attribute completions', () => {
     expect(caseDistinctLabels('eNv ')).not.toContain('CONTAINS')
     expect(caseDistinctLabels('eNv ')).not.toContain('>')
   })
+
+  it('does not offer an attribute shadowed by a built-in field', () => {
+    const native: FieldDefinition = {
+      name: 'name',
+      type: 'string',
+      searchScope: 'field',
+      description: 'span name',
+      operators: [OPERATORS.EQUALS],
+    }
+    const attribute: FieldDefinition = {
+      name: 'Name',
+      type: 'string',
+      searchScope: 'attribute',
+      attributeScope: 'span',
+      operators: [OPERATORS.EQUALS],
+    }
+    const state = EditorState.create({ doc: 'na', extensions: [queryLanguage] })
+    const result = createQueryCompletionSource(() => [attribute, native])(
+      new CompletionContext(state, state.doc.length, false)
+    )
+
+    expect(result?.options.map(option => option.label)).toContain('name')
+    expect(result?.options.map(option => option.label)).not.toContain('Name')
+  })
 })
 
 describe('field positions', () => {

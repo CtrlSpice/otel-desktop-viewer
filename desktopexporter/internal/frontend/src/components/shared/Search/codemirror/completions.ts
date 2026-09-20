@@ -417,6 +417,7 @@ function fieldCompletions(
   const options: Completion[] = []
   for (const field of fields) {
     if (field.searchScope === 'global') continue
+    if (resolveField(field.name, fields) !== field) continue
     options.push({
       label: field.name,
       type: 'property',

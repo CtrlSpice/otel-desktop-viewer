@@ -262,6 +262,31 @@ describe('only suggests fields this editor can search', () => {
     ])
   })
 
+  it('does not offer an attribute expression that resolves to a built-in field', async () => {
+    const native: FieldDefinition = {
+      name: 'name',
+      type: 'string',
+      searchScope: 'field',
+      description: 'span name',
+      operators: [OPERATORS.EQUALS],
+    }
+    const attribute = attrField('Name', 'span')
+    const collision: JsonAttributeMatch = {
+      name: 'Name',
+      attributeScope: 'span',
+      type: 'string',
+      matchCount: 1,
+      sampleValues: [{ kind: 'string', value: 'staging' }],
+    }
+    const { result } = await complete(
+      'staging',
+      vi.fn().mockResolvedValue([collision]),
+      [attribute, native]
+    )
+
+    expect(result).toBeNull()
+  })
+
   it('does not offer an equals comparison for array-only fields', async () => {
     const arrayMatch: JsonAttributeMatch = {
       name: 'nested.values',
