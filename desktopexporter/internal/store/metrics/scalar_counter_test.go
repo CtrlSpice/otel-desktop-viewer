@@ -88,6 +88,10 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	appendInt("mixed-below-min", 200, math.MinInt64)
 	appendInt("mixed-below-min-reset", 100, math.MinInt64)
 	appendDouble("mixed-below-min-reset", 200, -9223372036854777856.0)
+	appendDouble("mixed-hugeint-overflow", 100, -math.Ldexp(1, 127))
+	appendInt("mixed-hugeint-overflow", 200, math.MaxInt64)
+	appendInt("mixed-hugeint-reset", 100, math.MaxInt64)
+	appendDouble("mixed-hugeint-reset", 200, -math.Ldexp(1, 127))
 
 	empty := sum.DataPoints().AppendEmpty()
 	empty.Attributes().PutStr("series", "empty-then-int")
@@ -109,6 +113,17 @@ func TestScalarCounterArithmetic(t *testing.T) {
 		dp.SetTimestamp(pcommon.Timestamp(100 + i*100))
 		dp.SetIntValue(value)
 	}
+	nonmonotonicMixedMetric := rm.ScopeMetrics().At(0).Metrics().AppendEmpty()
+	nonmonotonicMixedMetric.SetName("test.nonmonotonic-mixed-overflow")
+	nonmonotonicMixed := nonmonotonicMixedMetric.SetEmptySum()
+	nonmonotonicMixed.SetIsMonotonic(false)
+	nonmonotonicMixed.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+	firstMixed := nonmonotonicMixed.DataPoints().AppendEmpty()
+	firstMixed.SetTimestamp(100)
+	firstMixed.SetIntValue(math.MaxInt64)
+	secondMixed := nonmonotonicMixed.DataPoints().AppendEmpty()
+	secondMixed.SetTimestamp(200)
+	secondMixed.SetDoubleValue(-math.Ldexp(1, 127))
 
 	nonfiniteMetric := rm.ScopeMetrics().At(0).Metrics().AppendEmpty()
 	nonfiniteMetric.SetName("test.nonfinite")
@@ -169,6 +184,8 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	require.Equal(t, "9223372036854775807", latestFor("mixed-above-max-reset")["delta"])
 	require.Equal(t, "2048", latestFor("mixed-below-min")["delta"])
 	require.Equal(t, "-9223372036854777856", latestFor("mixed-below-min-reset")["delta"])
+	require.Equal(t, math.Ldexp(1, 127), latestFor("mixed-hugeint-overflow")["delta"])
+	require.Equal(t, -math.Ldexp(1, 127), latestFor("mixed-hugeint-reset")["delta"])
 	require.NotContains(t, latestFor("first"), "delta")
 	require.NotContains(t, latestFor("first"), "isReset")
 	require.NotContains(t, latestFor("empty-then-int"), "delta")
@@ -205,6 +222,13 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	latest := nonmonotonicDatapoints[0].(map[string]any)
 	require.Equal(t, "-18446744073709551615", latest["delta"])
 	require.Equal(t, false, latest["isReset"])
+
+	nonmonotonicMixedRaw := getMetricFullByNameInRange(t, s, ctx, "test.nonmonotonic-mixed-overflow", store.BoundedTimeRange(0, 300))
+	nonmonotonicMixedDatapoints := metricDatapoints(nonmonotonicMixedRaw)
+	require.Len(t, nonmonotonicMixedDatapoints, 2)
+	latestMixed := nonmonotonicMixedDatapoints[0].(map[string]any)
+	require.Equal(t, -math.Ldexp(1, 127), latestMixed["delta"])
+	require.Equal(t, false, latestMixed["isReset"])
 
 	// Non-finite observations are excluded from arithmetic, so the finite points
 	// span a delta of two. The bare NaN also records the separate existing JSON

@@ -487,6 +487,16 @@
 		),
 		scalar_compared as (
 			select l.*,
+				case when exact_integer is not null and prev_exact_integer is not null then case
+					when prev_exact_integer < 0 then
+						exact_integer <= 170141183460469231731687303715884105727::hugeint
+							+ prev_exact_integer
+					when prev_exact_integer > 0 then
+						exact_integer >= (-170141183460469231731687303715884105727::hugeint - 1)
+							+ prev_exact_integer
+					else true
+				end
+				end as exact_difference_fits,
 				case when metric_type = 'Sum' and is_monotonic then case
 					when int_value is not null and prev_int_value is not null
 						then int_value < prev_int_value
@@ -519,6 +529,7 @@
 				case
 					when exact_integer is not null and prev_exact_integer is not null
 					 and (int_value is not null or prev_int_value is not null)
+					 and (is_reset or exact_difference_fits)
 						then case when is_reset then exact_integer
 						          else exact_integer - prev_exact_integer end
 					when exact_integer is not null and is_reset
@@ -527,7 +538,8 @@
 				end as delta_int,
 				case
 					when exact_integer is not null and prev_exact_integer is not null
-					 and (int_value is not null or prev_int_value is not null) then null
+					 and (int_value is not null or prev_int_value is not null)
+					 and (is_reset or exact_difference_fits) then null
 					when exact_integer is not null and is_reset
 					 and (int_value is not null or prev_int_value is not null) then null
 					when is_reset then coalesce(double_value, int_value::double)
