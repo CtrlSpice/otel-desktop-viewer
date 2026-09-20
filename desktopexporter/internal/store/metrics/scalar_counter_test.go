@@ -212,7 +212,7 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	streamID := findMetricID(t, s, ctx, "test.counter")
 	withViews, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(0, 300),
-			0, nil, nil, 0, 2, 0, nil, "", nil, 0)
+			0, nil, nil, 0, 2, 2, nil, "", nil, 0)
 	})
 	require.NoError(t, err)
 	var viewsMetric map[string]any
@@ -220,12 +220,23 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	for _, rawSeries := range viewsMetric["timeseries"].([]any) {
 		series := rawSeries.(map[string]any)
 		attribute := series["attributes"].([]any)[0].(map[string]any)
-		if attribute["value"].(map[string]any)["value"] != "above-2^53" {
-			continue
+		switch attribute["value"].(map[string]any)["value"] {
+		case "above-2^53":
+			views := series["views"].([]any)
+			require.NotEmpty(t, views)
+			require.Positive(t, views[len(views)-1].(map[string]any)["rate"].(float64))
+		case "int-empty-int":
+			var sampleCount float64
+			for _, rawView := range series["views"].([]any) {
+				sampleCount += rawView.(map[string]any)["sampleCount"].(float64)
+			}
+			require.Equal(t, float64(2), sampleCount)
+			sparkline := series["sparkline"].([]any)
+			require.Len(t, sparkline, 2)
+			for _, rawPoint := range sparkline {
+				require.NotNil(t, rawPoint.(map[string]any)["value"])
+			}
 		}
-		views := series["views"].([]any)
-		require.NotEmpty(t, views)
-		require.Positive(t, views[len(views)-1].(map[string]any)["rate"].(float64))
 	}
 
 	nonmonotonicRaw := getMetricFullByNameInRange(t, s, ctx, "test.nonmonotonic", store.BoundedTimeRange(0, 300))

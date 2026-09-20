@@ -452,7 +452,7 @@
 		-- the instrument really sent is still visible in the datapoint list,
 		-- which is fetched unreduced -- the chart drops what it cannot draw, the
 		-- record keeps what arrived.
-		scalar_dps as (
+		scalar_sequence as (
 			select d.series_id, d.id, d.timestamp, d.tz_shift,
 				d.metric_type, d.is_monotonic,
 				d.double_value, d.int_value,
@@ -469,6 +469,13 @@
 			  and (d.int_value is not null or d.double_value is null
 			       or isfinite(d.double_value))
 		),
+		-- Views and sparklines aggregate numeric observations only. Empty arms stay
+		-- solely in scalar_sequence so they break lag intervals without becoming
+		-- samples or null chart extrema.
+		scalar_dps as (
+			select * from scalar_sequence
+			where int_value is not null or double_value is not null
+		),
 		scalar_lagged as (
 			select s.*,
 				lag(s.id) over (
@@ -483,7 +490,7 @@
 				lag(s.exact_integer) over (
 					partition by s.series_id order by s.timestamp, s.id
 				) as prev_exact_integer
-			from scalar_dps s
+			from scalar_sequence s
 		),
 		scalar_compared as (
 			select l.*,
