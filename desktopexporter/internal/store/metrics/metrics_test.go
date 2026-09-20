@@ -3172,6 +3172,76 @@ func TestCumulativeHistogramMerge_ResetIsConsistentAcrossFields(t *testing.T) {
 		"and so does the sum, since every observation here has value 1")
 }
 
+func TestHistogramReductionPreservesUnsignedCountDomain(t *testing.T) {
+	t.Parallel()
+	const maxUint64 = ^uint64(0)
+	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+
+	getReduced := func(t *testing.T, fixture pmetric.Metrics) map[string]any {
+		t.Helper()
+		s, ctx := storetest.New(t)
+		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+			return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		}))
+		summaries := searchMetricsAll(t, s, ctx)
+		require.Len(t, summaries, 1)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+				base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+				1, nil, nil, 0, 0, 0, nil, "", nil, 0)
+		})
+		require.NoError(t, err)
+		var got map[string]any
+		require.NoError(t, json.Unmarshal(raw, &got))
+		return got
+	}
+
+	t.Run("cumulative explicit histogram", func(t *testing.T) {
+		readings := []uint64{0, 1 << 63, maxUint64, 1}
+		dps := make([]histTestDP, 0, len(readings))
+		for i, count := range readings {
+			dps = append(dps, histTestDP{
+				timestamp: base.Add(time.Duration(i) * time.Second),
+				bounds:    []float64{1},
+				counts:    []uint64{count, 0},
+				count:     count,
+			})
+		}
+		got := getReduced(t, makeHistogramFixtureT(
+			"uint64.explicit", pmetric.AggregationTemporalityCumulative, dps))
+
+		datapoints := metricDatapoints(got)
+		require.Len(t, datapoints, 1)
+		dp := datapoints[0].(map[string]any)
+		assert.Equal(t, "18446744073709551616", dp["count"])
+		assert.Equal(t, []any{"18446744073709551616", "0"}, dp["bucketCounts"])
+
+		aggregate := got["aggregate"].([]any)
+		require.Len(t, aggregate, 1)
+		assert.Equal(t, float64(18446744073709551616), aggregate[0].(map[string]any)["count"])
+	})
+
+	t.Run("delta exponential histogram", func(t *testing.T) {
+		fixture := makeExpHistogramFixtureT("uint64.exponential", pmetric.AggregationTemporalityDelta,
+			[]expHistTestDP{
+				{timestamp: base, scale: 1, posCounts: []uint64{maxUint64}, count: maxUint64},
+				{timestamp: base.Add(time.Second), scale: 0, posCounts: []uint64{maxUint64}, count: maxUint64},
+			})
+		got := getReduced(t, fixture)
+
+		datapoints := metricDatapoints(got)
+		require.Len(t, datapoints, 1)
+		dp := datapoints[0].(map[string]any)
+		assert.Equal(t, "36893488147419103230", dp["count"])
+		assert.Equal(t, []any{"36893488147419103230"}, dp["positiveBucketCounts"])
+		assert.Equal(t, []any{}, dp["negativeBucketCounts"])
+
+		aggregate := got["aggregate"].([]any)
+		require.Len(t, aggregate, 1)
+		assert.Equal(t, float64(36893488147419103230), aggregate[0].(map[string]any)["count"])
+	})
+}
+
 // TestGetMetric_WindowSummaryIsOneBucket covers the request that asks a single
 // question about a whole span: one bucket, not "about one bucket".
 //
