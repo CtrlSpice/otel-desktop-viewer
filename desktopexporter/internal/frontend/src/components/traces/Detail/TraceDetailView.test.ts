@@ -76,9 +76,48 @@ describe('TraceDetailView numeric enum fields', () => {
     expect(table).not.toHaveTextContent('status code (string):')
     expect(table).not.toHaveTextContent('Unknown (99)')
     expect(
+      screen.getByRole('img', { name: 'Unrecognised status code' })
+    ).toBeInTheDocument()
+    expect(
       table.closest('details')?.querySelector('summary')
     ).toHaveTextContent(/Span\s*1 field/)
   })
+
+  it.each([
+    { statusCodeValue: 99, statusCode: 'Unknown (99)' },
+    { statusCodeValue: -1, statusCode: 'Unknown (-1)' },
+  ])(
+    'marks unknown status code $statusCodeValue without hiding its received value',
+    ({ statusCodeValue, statusCode }) => {
+      renderWithContexts(TraceDetailView, {
+        span: makeSpan({ statusCode, statusCodeValue }),
+      })
+
+      const table = screen.getByRole('table', { name: 'Span fields' })
+      expect(table).toHaveTextContent(statusCode)
+      expect(table).toHaveTextContent(statusCodeValue.toString())
+      expect(
+        screen.getByRole('img', { name: 'Unrecognised status code' })
+      ).toBeInTheDocument()
+    }
+  )
+
+  it.each([
+    { statusCodeValue: 0, statusCode: 'Unset' },
+    { statusCodeValue: 1, statusCode: 'Ok' },
+    { statusCodeValue: 2, statusCode: 'Error' },
+  ])(
+    'does not mark recognised status code $statusCodeValue as a defect',
+    ({ statusCodeValue, statusCode }) => {
+      renderWithContexts(TraceDetailView, {
+        span: makeSpan({ statusCode, statusCodeValue }),
+      })
+
+      expect(
+        screen.queryByRole('img', { name: 'Unrecognised status code' })
+      ).not.toBeInTheDocument()
+    }
+  )
 })
 
 describe('TraceDetailView parent span link', () => {
