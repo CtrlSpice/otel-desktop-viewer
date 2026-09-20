@@ -172,6 +172,51 @@ func ingestAll(t *testing.T, s *Store, seed byte) {
 	}))
 }
 
+func TestDistinctResourcePayloadsStayAttachedAcrossSignals(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s, err := NewStore(ctx, "", zap.NewNop())
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+
+	traces := integrityTraces(21)
+	traceResource := traces.ResourceSpans().At(0).Resource()
+	traceResource.Attributes().PutStr("deployment.environment.name", "trace-env")
+	logData := integrityLogs(22)
+	logResource := logData.ResourceLogs().At(0).Resource()
+	logResource.Attributes().PutStr("deployment.environment.name", "log-env")
+	metricData := integrityMetrics(23)
+	metricResource := metricData.ResourceMetrics().At(0).Resource()
+	metricResource.Attributes().PutStr("deployment.environment.name", "metric-env")
+
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+	}))
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, logData, s.FlushedIDs())
+	}))
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, metricData, s.FlushedIDs())
+	}))
+
+	assert.Equal(t, 3, countIn(t, s, `select count(*) from resources`),
+		"the shared service attributes must not collapse distinct signal payloads")
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		for _, tc := range []struct {
+			name, query, want string
+		}{
+			{"span", `select json_extract_string(a.value, '$.value') from spans s join resources r on r.id = s.resource_id, unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id where a.key = 'deployment.environment.name'`, "trace-env"},
+			{"log", `select json_extract_string(a.value, '$.value') from logs l join resources r on r.id = l.resource_id, unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id where a.key = 'deployment.environment.name'`, "log-env"},
+			{"metric", `select json_extract_string(a.value, '$.value') from metric_ingests m join resources r on r.id = m.resource_id, unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id where a.key = 'deployment.environment.name'`, "metric-env"},
+		} {
+			var got string
+			require.NoError(t, db.QueryRow(tc.query).Scan(&got), tc.name)
+			assert.Equal(t, tc.want, got, tc.name)
+		}
+		return nil
+	}))
+}
+
 func sweep(t *testing.T, s *Store) {
 	t.Helper()
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {

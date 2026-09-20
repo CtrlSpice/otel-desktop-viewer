@@ -23,6 +23,6 @@
 -- offset applies unchanged: the plain arithmetic zone-less callers keep.
 create or replace macro bucket_start_utc(local_ns, tz_name, fallback_ns) as (
     case when tz_name is null then local_ns - fallback_ns
-    else epoch_ns(make_timestamp(local_ns // 1000) AT TIME ZONE tz_name)
+	else epoch_us(make_timestamp((local_ns::hugeint // 1000)::bigint) AT TIME ZONE tz_name)::hugeint * 1000
     end
 )

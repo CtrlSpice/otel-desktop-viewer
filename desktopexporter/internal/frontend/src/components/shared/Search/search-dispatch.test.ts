@@ -35,6 +35,7 @@ const metricResults = [
     unit: '{order}',
     metricType: 'Sum',
     aggregationTemporality: 'Cumulative',
+    aggregationTemporalityCode: 2,
     isMonotonic: true,
     serviceName: 'checkout',
     seriesCount: 1,

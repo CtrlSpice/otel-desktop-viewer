@@ -190,10 +190,10 @@ describe('metricViewQueryToParams', () => {
 //
 // A datapoint id is minted per row and deleted by retention, so a metric link
 // more than a retention window old names a point that no longer exists and
-// degrades to no selection. A series id is content-derived from
-// (stream, resource, labels): the same series has the same id across restarts
-// and re-ingests, so it still resolves long after the point it was captured
-// with has been pruned.
+// degrades to no selection. A series id is content-derived from the stream,
+// originating resource attributes, and datapoint labels: the same series has
+// the same id across restarts and re-ingests, so it still resolves long after
+// the point it was captured with has been pruned.
 describe('series param', () => {
   it('parses a known series id', () => {
     const q = parseMetricViewQuery({ series: 'series-1' }, timeseriesCtx)

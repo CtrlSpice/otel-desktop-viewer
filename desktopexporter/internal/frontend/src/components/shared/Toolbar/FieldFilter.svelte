@@ -1,6 +1,6 @@
 <script lang="ts">
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import FilterIcon from '@hugeicons/core-free-icons/FilterIcon'
+  import { FilterIcon } from '@hugeicons/core-free-icons'
   import {
     getStaticFieldsForSearch,
     getDynamicAttributes,

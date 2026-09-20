@@ -7,6 +7,6 @@ type TimeRange = timerange.TimeRange
 
 // BoundedTimeRange builds the concrete range used by callers that already have
 // both endpoints.
-func BoundedTimeRange(start, end int64) TimeRange {
+func BoundedTimeRange[T ~int | ~int64 | ~uint64](start, end T) TimeRange {
 	return timerange.Bounded(start, end)
 }

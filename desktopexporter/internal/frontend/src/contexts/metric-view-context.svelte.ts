@@ -50,10 +50,12 @@ import {
   buildVisibleSeriesQuantileChartTimeseries,
   DEFAULT_ACTIVE_HISTOGRAM_QUANTILE_KEY,
   DEFAULT_HISTOGRAM_QUANTILES,
-  histogramSliceToDatapoint,
+  histogramDatapointToChartDatapoint,
+  histogramSliceToChartDatapoint,
   parseQuantileSeriesKey,
   quantileKeyFromValue,
   type HistogramAggregationError,
+  type HistogramChartDataPoint,
   type HistogramSlicePoint,
 } from '@/components/metrics/utils/histogram-aggregation'
 import {
@@ -236,9 +238,10 @@ export interface MetricViewContext {
   readonly metric: MetricData | undefined
   readonly metricType: MetricType
   readonly temporality: string
+  readonly temporalityCode: number | null
   readonly isMonotonic: boolean | null
   readonly isHistogramKind: boolean
-  readonly isUnspecifiedTemporality: boolean
+  readonly isUnsafeTemporality: boolean
   readonly totalDatapointCount: number
 
   // -- Selection / view state --
@@ -336,11 +339,9 @@ export interface MetricViewContext {
   seriesDatapoints(seriesKey: string): DataPoint[] | undefined
   readonly heatmapBucketSeries: HistogramSlicePoint[] | null
   readonly bucketSeriesError: BucketSeriesError | null
-  readonly aggregatedDatapoint:
-    HistogramDataPoint | ExponentialHistogramDataPoint | undefined
+  readonly aggregatedDatapoint: HistogramChartDataPoint | undefined
   readonly aggregatedError: BucketSeriesError | null
-  readonly histogramChartDatapoint:
-    HistogramDataPoint | ExponentialHistogramDataPoint | undefined
+  readonly histogramChartDatapoint: HistogramChartDataPoint | undefined
   readonly histogramChartError: BucketSeriesError | null
   readonly activeHistogramDp:
     HistogramDataPoint | ExponentialHistogramDataPoint | undefined
@@ -440,7 +441,7 @@ export function aggregateToSlices(
   return buckets.map(b => {
     const totals = {
       count: b.count,
-      sum: b.sum,
+      sum: b.sum ?? undefined,
       // Derived from the buckets server-side; a merge cannot carry the
       // originals through.
       min: b.min,
@@ -837,6 +838,10 @@ export function createMetricViewContext(
     return ''
   })
 
+  const temporalityCode = $derived.by((): number | null => {
+    return getMetric()?.aggregationTemporalityCode ?? null
+  })
+
   const isMonotonic = $derived.by((): boolean | null => {
     if (metricType !== 'Sum') return null
     const m = getMetric()
@@ -851,7 +856,7 @@ export function createMetricViewContext(
     metricType === 'Histogram' || metricType === 'ExponentialHistogram'
   )
 
-  const isUnspecifiedTemporality = $derived.by(() => {
+  const isUnsafeTemporality = $derived.by(() => {
     if (
       metricType !== 'Histogram' &&
       metricType !== 'ExponentialHistogram' &&
@@ -859,11 +864,7 @@ export function createMetricViewContext(
     ) {
       return false
     }
-    for (const dp of allDatapoints(getMetric())) {
-      const t = datapointTemporality(dp)
-      if (t === 'Unspecified') return true
-    }
-    return false
+    return temporalityCode !== 1 && temporalityCode !== 2
   })
 
   // What the window holds, which is what the reader is asking. Summing the
@@ -1119,13 +1120,13 @@ export function createMetricViewContext(
   const sparklinePointsByKey = $derived.by(
     (): ReadonlyMap<string, readonly ChartPoint[]> => {
       if (isHistogramKind) return new Map()
-      // Unspecified temporality means we can't tell whether the values
+      // Unsafe temporality means we can't tell whether the values
       // are running totals or per-interval counts -- the same numbers
       // mean two very different lines depending on which it is. The
-      // main chart blanks itself + shows UnspecifiedTemporalityCallout
+      // main chart blanks itself + shows the temporality callout
       // for the same reason; row projections should follow that lead
       // rather than guessing.
-      if (isUnspecifiedTemporality) return new Map()
+      if (isUnsafeTemporality) return new Map()
       const out = new Map<string, readonly ChartPoint[]>()
       const rate = view.aggregationView === 'rate'
       for (const ts of getMetric()?.timeseries ?? []) {
@@ -1140,7 +1141,7 @@ export function createMetricViewContext(
 
   const seriesStatsByKey = $derived.by((): ReadonlyMap<string, SeriesStats> => {
     const out = new Map<string, SeriesStats>()
-    if (isHistogramKind || isUnspecifiedTemporality) return out
+    if (isHistogramKind || isUnsafeTemporality) return out
 
     // Raw, Sum and Avg all leave a row's own line in raw units -- Sum and Avg
     // are cross-series aggregations, and neither means anything applied to one
@@ -1178,7 +1179,7 @@ export function createMetricViewContext(
   })
 
   const availableSeriesStatBadgesList = $derived.by((): SeriesStat[] => {
-    if (isHistogramKind || isUnspecifiedTemporality) return []
+    if (isHistogramKind || isUnsafeTemporality) return []
     return availableSeriesStatBadges({
       metricType,
       temporality,
@@ -1272,7 +1273,7 @@ export function createMetricViewContext(
   })
 
   const rateSlopeOverlayAvailable = $derived.by((): boolean => {
-    if (isHistogramKind || isUnspecifiedTemporality) return false
+    if (isHistogramKind || isUnsafeTemporality) return false
     return availableRateSlopeOverlay({
       metricType,
       temporality,
@@ -1348,6 +1349,7 @@ export function createMetricViewContext(
    *  type + shape + series count. See availableAggregationViews() in
    *  aggregation.ts for the rules. */
   const availableAggregationViewsList = $derived.by((): AggregationView[] => {
+    if (isUnsafeTemporality) return ['raw']
     return availableAggregationViews(
       metricType,
       temporality,
@@ -1470,10 +1472,10 @@ export function createMetricViewContext(
       aggregatedError: null,
     }
     if (!m || !isHistogramKind) return empty
-    if (isUnspecifiedTemporality) {
+    if (isUnsafeTemporality) {
       const err = histogramAggregationErrorToBucketSeriesError({
         kind: 'unspecified',
-        message: 'Aggregation temporality is Unspecified',
+        message: `Aggregation temporality is ${temporality || 'unknown'}`,
       })
       return { ...empty, error: err, aggregatedError: err }
     }
@@ -1548,14 +1550,15 @@ export function createMetricViewContext(
   })
 
   const aggregatedDatapoint = $derived.by(
-    (): HistogramDataPoint | ExponentialHistogramDataPoint | undefined => {
+    (): HistogramChartDataPoint | undefined => {
       const m = getMetric()
       const summary = histogramAggregation.summary
-      if (!m || !summary) return undefined
-      return histogramSliceToDatapoint(
+      if (!m || !summary || temporalityCode === null) return undefined
+      return histogramSliceToChartDatapoint(
         summary,
         `${m.id}:aggregated`,
-        temporality || 'Delta'
+        temporality,
+        temporalityCode
       )
     }
   )
@@ -1578,9 +1581,11 @@ export function createMetricViewContext(
   )
 
   const histogramChartDatapoint = $derived.by(
-    (): HistogramDataPoint | ExponentialHistogramDataPoint | undefined => {
+    (): HistogramChartDataPoint | undefined => {
       if (view.histogramScope === 'window') return aggregatedDatapoint
       return histogramBucketDatapoint
+        ? histogramDatapointToChartDatapoint(histogramBucketDatapoint)
+        : undefined
     }
   )
 
@@ -2304,14 +2309,17 @@ export function createMetricViewContext(
     get temporality() {
       return temporality
     },
+    get temporalityCode() {
+      return temporalityCode
+    },
     get isMonotonic() {
       return isMonotonic
     },
     get isHistogramKind() {
       return isHistogramKind
     },
-    get isUnspecifiedTemporality() {
-      return isUnspecifiedTemporality
+    get isUnsafeTemporality() {
+      return isUnsafeTemporality
     },
     get totalDatapointCount() {
       return totalDatapointCount

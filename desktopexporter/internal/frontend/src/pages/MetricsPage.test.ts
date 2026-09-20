@@ -71,7 +71,8 @@ function makeSummary(metricType: MetricType): MetricSummary {
     description: '',
     unit: 'ms',
     metricType,
-    aggregationTemporality: 'Cumulative',
+    aggregationTemporality: metricType === 'Gauge' ? null : 'Cumulative',
+    aggregationTemporalityCode: metricType === 'Gauge' ? null : 2,
     isMonotonic: metricType === 'Sum' ? true : null,
     serviceName: 'checkout-api',
     seriesCount: 1,
@@ -94,7 +95,8 @@ function makeMetric(
     metadata: [],
     unit: 'ms',
     metricType,
-    aggregationTemporality: 'Cumulative',
+    aggregationTemporality: metricType === 'Gauge' ? null : 'Cumulative',
+    aggregationTemporalityCode: metricType === 'Gauge' ? null : 2,
     isMonotonic: metricType === 'Sum' ? true : null,
     resourceDroppedAttributesCount: 0,
     resource: EMPTY_RESOURCE,
@@ -146,6 +148,7 @@ function makeSumDatapoint(
     intValue: null,
     valueType: 'double',
     isMonotonic: true,
+    aggregationTemporalityCode: 2,
     aggregationTemporality: 'Cumulative',
   }
 }

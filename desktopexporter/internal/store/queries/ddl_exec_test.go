@@ -31,7 +31,7 @@ func TestAllDDLExecutes(t *testing.T) {
 	}
 }
 
-func TestSpanIDColumnTypesAndNullability(t *testing.T) {
+func TestNativeUnsignedColumnTypesAndNullability(t *testing.T) {
 	db := freshDB(t)
 
 	tests := []struct {
@@ -40,9 +40,12 @@ func TestSpanIDColumnTypesAndNullability(t *testing.T) {
 		{"spans", "trace_id", "UUID", "NO"},
 		{"spans", "span_id", "UBIGINT", "NO"},
 		{"spans", "parent_span_id", "UBIGINT", "YES"},
+		{"spans", "start_time", "UBIGINT", "YES"},
+		{"spans", "end_time", "UBIGINT", "YES"},
 		{"events", "id", "UUID", "NO"},
 		{"events", "trace_id", "UUID", "NO"},
 		{"events", "span_id", "UBIGINT", "NO"},
+		{"events", "timestamp", "UBIGINT", "YES"},
 		{"links", "id", "UUID", "NO"},
 		{"links", "trace_id", "UUID", "NO"},
 		{"links", "span_id", "UBIGINT", "NO"},
@@ -51,10 +54,15 @@ func TestSpanIDColumnTypesAndNullability(t *testing.T) {
 		{"logs", "id", "UUID", "NO"},
 		{"logs", "trace_id", "UUID", "YES"},
 		{"logs", "span_id", "UBIGINT", "YES"},
+		{"logs", "timestamp", "UBIGINT", "YES"},
+		{"logs", "observed_timestamp", "UBIGINT", "YES"},
+		{"datapoints", "timestamp", "UBIGINT", "YES"},
+		{"datapoints", "start_time", "UBIGINT", "YES"},
 		{"exemplars", "id", "UUID", "NO"},
 		{"exemplars", "datapoint_id", "UUID", "NO"},
 		{"exemplars", "trace_id", "UUID", "YES"},
 		{"exemplars", "span_id", "UBIGINT", "YES"},
+		{"exemplars", "timestamp", "UBIGINT", "YES"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.table+"/"+tc.column, func(t *testing.T) {

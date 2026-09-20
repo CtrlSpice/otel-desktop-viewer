@@ -8,7 +8,7 @@
 				min(s.start_time) over (partition by s.trace_id) as trace_start_time,
 				max(s.end_time) over (partition by s.trace_id) as trace_end_time,
 				count(*) over (partition by s.trace_id) as span_count,
-				count(case when s.status_code = 'Error' then 1 end) over (partition by s.trace_id) as error_count
+				count(case when s.status_code = 2 then 1 end) over (partition by s.trace_id) as error_count
 			{{.From}}
 			where {{.Where}}
 			order by
@@ -31,7 +31,7 @@
 			'durationNs',   case
 				when sub.trace_start_time is not null
 					and sub.trace_end_time is not null
-					then (sub.trace_end_time - sub.trace_start_time)::varchar
+					then (sub.trace_end_time::hugeint - sub.trace_start_time::hugeint)::varchar
 				else null
 			end,
 			'spanCount',    sub.span_count,

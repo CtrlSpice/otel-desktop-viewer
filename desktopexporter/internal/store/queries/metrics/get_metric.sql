@@ -1,8 +1,8 @@
 
 		with input as (
 			select ?::uuid as stream_id,
-				?::bigint as time_start,
-				?::bigint as time_end,
+				list_extract(?::ubigint[], 1) as time_start,
+				list_extract(?::ubigint[], 1) as time_end,
 				?::bigint as target_buckets,
 				-- Which series the caller cares about. Null means all of them;
 				-- an empty list means none.
@@ -103,11 +103,12 @@
 		-- the stream so the per-type JSON projection below doesn't need
 		-- a per-row join.
 		-- resource_id rides along for the per-batch resource of each datapoint.
-		-- It is NOT what groups a series: `resources` is content-addressed, so
-		-- one instance that gets enriched mid-stream owns several rows there,
-		-- and grouping on it split a single series across them. A join rather
-		-- than a denormalized column on datapoints: it is a primary-key lookup
-		-- from metric_ingest_id, and datapoints is the largest table here.
+		-- It is not the series grouping key because it also includes the
+		-- resource's dropped count. Series identity uses the originating resource
+		-- attributes instead, so attribute changes split a series while a
+		-- dropped-count-only change does not. A join rather than a denormalized
+		-- column on datapoints: it is a primary-key lookup from metric_ingest_id,
+		-- and datapoints is the largest table here.
 		filtered_dps as (
 			-- bounds_id resolves to the vector here, under the name the rest
 			-- of the query has always read, so the dictionary is invisible
@@ -276,9 +277,9 @@
 			join resources r on r.id = rep.resource_id
 			join scopes sc on sc.id = rep.scope_id
 		),
-		-- One row per (metric, attribute-set) -- i.e. per OTel stream.
-		-- The attribute set itself is owned by the stream (lifted out of
-		-- the per-dp objects), and the dp objects inside are pure OTLP
+		-- One row per series id. The datapoint attribute set itself is owned by
+		-- the series (lifted out of the per-dp objects), and the dp objects inside
+		-- are pure OTLP
 		-- measurement payloads: timestamp, type-specific value fields,
 		-- exemplars, flags. attrs_canonical is the grouping key; we
 		-- coalesce NULL (no-attrs case) to "" so all attribute-less
@@ -286,8 +287,9 @@
 		--
 		-- attributes_sample picks any one datapoint's attributes from
 		-- this timeseries. Within a timeseries they're identical by
-		-- construction -- series_id is content-derived from (stream,
-		-- instance, attribute_ids), so the array cannot vary inside a group.
+		-- construction -- series_id is content-derived from (stream, originating
+		-- resource attribute ids, datapoint attribute ids), so the array cannot
+		-- vary inside a group.
 		--
 		-- any_value wraps the *array*, not the resolved JSON. Written the
 		-- other way round the macro sits inside the aggregate, so it runs once
@@ -365,7 +367,7 @@
 				-- because each datapoint is a running total and adding them
 				-- would count every observation once per datapoint.
 				when s.metric_type in ('Histogram', 'ExponentialHistogram')
-				     and s.aggregation_temporality in ('Delta', 'Cumulative')
+				     and s.aggregation_temporality in (1, 2)
 					then bucket_width_ns(rs.span_ns, i.target_buckets)
 			end as width_ns
 			-- reduction_span as a relation, not a scalar subquery: the comment
@@ -415,9 +417,9 @@
 						then coalesce((select min_ts from data_extent), d.timestamp)
 					else
 						bucket_start_utc(
-							floor_div(d.timestamp + d.tz_shift,
+							floor_div(d.timestamp::hugeint + d.tz_shift::hugeint,
 							          (select width_ns from reduction))
-								* (select width_ns from reduction),
+								::hugeint * (select width_ns from reduction)::hugeint,
 							(select tz_name from input),
 							(select tz_offset_ns from input))
 				end as bucket_start
@@ -517,9 +519,9 @@
 		-- when the selection changes.
 		series_gaps as (
 			select d.series_id,
-				d.timestamp - lag(d.timestamp) over (
+				d.timestamp::hugeint - lag(d.timestamp) over (
 					partition by d.series_id order by d.timestamp, d.id
-				) as gap_ns
+				)::hugeint as gap_ns
 			from scalar_dps d
 		),
 		series_cadence as (
@@ -560,13 +562,13 @@
 		),
 		scalar_view_bucketed as (
 			select d.series_id,
-				floor_div(d.timestamp + d.tz_shift,
+				floor_div(d.timestamp::hugeint + d.tz_shift::hugeint,
 				          (select width_ns from scalar_view_grid))
-					* (select width_ns from scalar_view_grid) as bucket_local,
+					::hugeint * (select width_ns from scalar_view_grid)::hugeint as bucket_local,
 				bucket_start_utc(
-					floor_div(d.timestamp + d.tz_shift,
+					floor_div(d.timestamp::hugeint + d.tz_shift::hugeint,
 					          (select width_ns from scalar_view_grid))
-						* (select width_ns from scalar_view_grid),
+						::hugeint * (select width_ns from scalar_view_grid)::hugeint,
 					(select tz_name from input),
 					(select tz_offset_ns from input)) as bucket_start,
 				d.value,
@@ -608,9 +610,9 @@
 			from (
 				select e.series_id,
 					bucket_start_utc(
-						unnest(range(e.first_bucket,
-						             e.last_bucket + g.width_ns,
-						             g.width_ns)),
+						e.first_bucket + unnest(range(
+							((e.last_bucket - e.first_bucket) // g.width_ns)::bigint + 1
+						))::hugeint * g.width_ns::hugeint,
 						(select tz_name from input),
 						(select tz_offset_ns from input)) as bucket_start
 				from scalar_view_extent e, scalar_view_grid g
@@ -827,9 +829,9 @@
 		sparkline_bucketed as (
 			select d.series_id,
 				bucket_start_utc(
-					floor_div(d.timestamp + d.tz_shift,
+					floor_div(d.timestamp::hugeint + d.tz_shift::hugeint,
 					          (select width_ns from sparkline_grid))
-						* (select width_ns from sparkline_grid),
+						::hugeint * (select width_ns from sparkline_grid)::hugeint,
 					(select tz_name from input),
 					(select tz_offset_ns from input)) as bucket_start,
 				d.timestamp,
@@ -997,7 +999,7 @@
 				-- or the subtraction spans two different bucket layouts. The cost
 				-- is resolution: a cumulative series aligns to its coarsest
 				-- scale rather than each bucket's.
-				case when b.aggregation_temporality = 'Cumulative'
+				case when b.aggregation_temporality = 2
 					then min(b.scale) over (partition by b.series_id)
 					else min(b.scale) over (partition by b.series_id, b.bucket_start)
 				end as target_scale
@@ -1018,13 +1020,13 @@
 		hist_aligned as (
 			select d.*,
 				-- Partitioned like target_scale above, and for the same reason.
-				case when d.aggregation_temporality = 'Cumulative'
+				case when d.aggregation_temporality = 2
 					then min(case when len(d.pos_d.counts) > 0 then d.pos_d.offset end)
 						over (partition by d.series_id)
 					else min(case when len(d.pos_d.counts) > 0 then d.pos_d.offset end)
 						over (partition by d.series_id, d.bucket_start)
 				end as pos_target_offset,
-				case when d.aggregation_temporality = 'Cumulative'
+				case when d.aggregation_temporality = 2
 					then min(case when len(d.neg_d.counts) > 0 then d.neg_d.offset end)
 						over (partition by d.series_id)
 					else min(case when len(d.neg_d.counts) > 0 then d.neg_d.offset end)
@@ -1075,29 +1077,29 @@
 					prev_count, prev_sum, prev_zero_count,
 					prev_bucket_counts, prev_pos_p, prev_neg_p
 				),
-				case when l.aggregation_temporality <> 'Cumulative' then l.count
+				case when l.aggregation_temporality <> 2 then l.count
 					when l.count < l.prev_count then l.count
 					else l.count - l.prev_count end as count,
-				case when l.aggregation_temporality <> 'Cumulative' then l.sum
+				case when l.aggregation_temporality <> 2 then l.sum
 					when l.count < l.prev_count then l.sum
 					else l.sum - l.prev_sum end as sum,
-				case when l.aggregation_temporality <> 'Cumulative' then l.zero_count
+				case when l.aggregation_temporality <> 2 then l.zero_count
 					when l.count < l.prev_count then l.zero_count
 					else l.zero_count - l.prev_zero_count end as zero_count,
-				case when l.aggregation_temporality <> 'Cumulative' then l.bucket_counts
+				case when l.aggregation_temporality <> 2 then l.bucket_counts
 					else coalesce(
 						diff_bucket_vectors(l.bucket_counts, l.prev_bucket_counts),
 						l.bucket_counts) end as bucket_counts,
-				case when l.aggregation_temporality <> 'Cumulative' then l.pos_p
+				case when l.aggregation_temporality <> 2 then l.pos_p
 					else coalesce(
 						diff_bucket_vectors(l.pos_p, l.prev_pos_p),
 						l.pos_p) end as pos_p,
-				case when l.aggregation_temporality <> 'Cumulative' then l.neg_p
+				case when l.aggregation_temporality <> 2 then l.neg_p
 					else coalesce(
 						diff_bucket_vectors(l.neg_p, l.prev_neg_p),
 						l.neg_p) end as neg_p
 			from hist_lagged l
-			where l.aggregation_temporality <> 'Cumulative'
+			where l.aggregation_temporality <> 2
 			   or l.prev_count is not null
 		),
 
@@ -1117,9 +1119,8 @@
 				-- came back with no attributes and the legend labelled all
 				-- twenty-one of them "default series".
 				--
-				-- any_value is exact rather than arbitrary: series_id is
-				-- content-derived from (stream, instance, attribute_ids), so the
-				-- array cannot vary within a group.
+				-- any_value is exact rather than arbitrary: series_id includes the
+				-- datapoint attribute ids, so the array cannot vary within a group.
 				any_value(p.attribute_ids) as attribute_ids,
 				-- The bucket this row *is*, not the newest datapoint that went
 				-- into it.
@@ -1157,7 +1158,7 @@
 				-- requested width reaches the reporting cadence, and the caller
 				-- asks for a bucket count rather than a width.
 				sum(p.count) as count,
-				sum(p.sum) as sum,
+				case when count(p.sum) = count(*) then sum(p.sum) end as sum,
 				-- Explicit bounds: identical across the group or the merge is
 				-- meaningless, and there is no rescale that reconciles them.
 				any_value(p.explicit_bounds) as explicit_bounds,
@@ -1331,18 +1332,13 @@
 			select
 				d.series_id,
 				-- The series id is the key, and the only key. It is
-				-- content-derived from (stream, instance, labels), so it
-				-- distinguishes replicas whose labels are identical, and it is
-				-- stable across restarts -- which is what makes it safe in a
-				-- URL, unlike a datapoint id that retention eventually deletes.
-				--
-				-- Deliberately NOT grouped alongside the ingest's resource_id,
-				-- as it once was. A resource is content-addressed, so enriching
-				-- one mid-stream mints a second resources row for the same
-				-- instance, and grouping by it split one series into two chart
-				-- lines even after the series id itself stopped splitting. The
-				-- resource shown comes from metric_series, which holds exactly
-				-- one per series.
+				-- content-derived from (stream, originating resource attributes,
+				-- labels), so it preserves OTLP metric identity and is stable
+				-- across re-ingests. That stability makes it safe in a URL,
+				-- unlike a datapoint id that retention eventually deletes.
+				-- resource_id need not be a second grouping key: exact payloads
+				-- remain on metric_ingests, while dropped count is not a series
+				-- identity field.
 				d.series_id::varchar as attrs_key,
 				attrs_json(any_value(d.attribute_ids)) as attributes_sample,
 				max(d.timestamp) as latest_ts,
@@ -1476,7 +1472,9 @@
 		-- which is what the detail panel's legend reads top-down.
 		-- Empty list (no dps in window) collapses to '[]' via the
 		-- outer coalesce.
-		-- Each series carries the resource that emitted it.
+		-- Each series carries its identifying originating resource attributes in
+		-- a Resource-shaped projection whose dropped count is synthetic zero. It
+		-- deliberately does not claim to be one complete received payload.
 		--
 		-- Not optional once series split by resource: two replicas of one
 		-- service produce byte-identical attribute sets, so the resource is the
@@ -1484,14 +1482,19 @@
 		-- entries a user cannot distinguish, which is worse than the single
 		-- merged line the split replaced.
 		--
-		-- The top-level resource (from the representative ingest) stays for
-		-- compatibility, but it is the weaker claim: it describes one arbitrary
-		-- batch, whereas this describes the line being drawn.
+		-- The top-level resource is the complete exact payload from the selected
+		-- representative ingest. This series projection is narrower: it describes
+		-- only the originating attributes that identify the line being drawn.
 		timeseries_agg as (
 			select to_json(list(timeseries_json(
 				t.attrs_key,
 				t.attributes_sample,
-				resource_json(r.attribute_ids, r.dropped_attributes_count),
+				-- The row supplies the identifying attributes only. resource_id is
+				-- representative when same-attribute payloads differ by dropped
+				-- count, so projecting that count would make an arbitrary value look
+				-- constant for the series. Exact dropped count remains top-level from
+				-- the representative metric_ingest.
+				resource_json(r.attribute_ids, 0),
 				-- Empty rather than null for a series that shipped none: the field
 				-- means "the datapoints you were sent", and every series has an
 				-- answer to that even when the answer is none.
@@ -1605,7 +1608,7 @@
 				p.bucket_start as timestamp,
 				min(p.start_time) as start_time,
 				sum(p.count) as count,
-				sum(p.sum) as sum,
+				case when count(p.sum) = count(*) then sum(p.sum) end as sum,
 				any_value(p.agg_scale) as scale,
 				max(p.zero_threshold) as zero_threshold,
 				sum(p.zero_count) as zero_count,
@@ -1729,7 +1732,14 @@
 			-- description comes from: both are per-batch and neither is identity.
 			'metadata', coalesce(attrs_json(r.metadata_ids), json('[]')),
 			'metricType', s.metric_type,
-			'aggregationTemporality', s.aggregation_temporality,
+			'aggregationTemporalityCode', case
+				when s.metric_type = 'Gauge' then null
+				else s.aggregation_temporality end,
+			'aggregationTemporality', case
+				when s.metric_type = 'Gauge' then null
+				else case s.aggregation_temporality
+				when 0 then 'Unspecified' when 1 then 'Delta' when 2 then 'Cumulative'
+				else 'Unknown (' || s.aggregation_temporality::varchar || ')' end end,
 			'isMonotonic', s.is_monotonic,
 			'resourceDroppedAttributesCount', coalesce((select resource_dropped from representative_owners), 0),
 			'resource', coalesce(

@@ -19,8 +19,8 @@ export function histogramDistributionLegendColumns(opts: {
   expHistogram?: { scale: number; zeroCount: number }
 }): SelectionLegendRow[][] {
   const unitSuffix = opts.unit?.trim() ? ` ${opts.unit.trim()}` : ''
-  const formatValue = (value: number) =>
-    `${formatMetricValue(value)}${unitSuffix}`
+  const formatValue = (value: number | undefined) =>
+    value === undefined ? '—' : `${formatMetricValue(value)}${unitSuffix}`
   const neutral = 'var(--color-base-content)'
 
   const volume: SelectionLegendRow[] = [
@@ -114,8 +114,8 @@ export function quantileMergedSelectionLegendRows(
   unit: string
 ): SelectionLegendRow[] {
   const unitSuffix = unit.trim() ? ` ${unit.trim()}` : ''
-  const formatValue = (value: number) =>
-    `${formatMetricValue(value)}${unitSuffix}`
+  const formatValue = (value: number | undefined) =>
+    value === undefined ? '—' : `${formatMetricValue(value)}${unitSuffix}`
 
   return [
     {

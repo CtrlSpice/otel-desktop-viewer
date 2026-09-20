@@ -1,19 +1,19 @@
 <script lang="ts">
-  // Renders the "this metric stream has aggregationTemporality =
-  // Unspecified" condition. The OTel proto enum literally says
+  // Renders an unsafe metric temporality. For code 0, the OTel proto enum says
   // "MUST not be used", so the spec does the comedic heavy lifting.
   // Subtle Mufasa "you must never go there, Simba" energy on the
   // detail panel; just a quiet text label in the spark slot.
   //
-  // Two variants share one component because the visual language
-  // ("you sent us something the spec forbids") is the same -- only
-  // the size and the ascii-vs-no-ascii decision differs.
+  // Both unsafe conditions share this chart slot, but unknown codes must keep
+  // their own identity instead of inheriting the protocol's code-0 warning.
 
   type Props = {
     size?: 'mini' | 'full'
+    temporalityCode: number
+    temporalityLabel: string
   }
 
-  let { size = 'full' }: Props = $props()
+  let { size = 'full', temporalityCode, temporalityLabel }: Props = $props()
 
   // Deep-link to the proto enum line. Pinned to main: this enum has
   // been stable since the metrics proto was finalised and is unlikely
@@ -23,7 +23,23 @@
     'https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/metrics/v1/metrics.proto#L286'
 </script>
 
-{#if size === 'mini'}
+{#if temporalityCode !== 0 && size === 'mini'}
+  <span
+    class="callout-mini callout-mini--unknown tooltip tooltip-top"
+    data-tip={`Unsafe unknown temporality code ${temporalityCode}`}
+  >
+    {temporalityLabel}; received code {temporalityCode}
+  </span>
+{:else if temporalityCode !== 0}
+  <div class="callout-full callout-unknown" role="alert">
+    <strong>Unsafe aggregation temporality</strong>
+    <span>{temporalityLabel}</span>
+    <span>Received numeric code: {temporalityCode}</span>
+    <span
+      >Derived chart modes are unavailable because this code is unknown.</span
+    >
+  </div>
+{:else if size === 'mini'}
   <span
     class="callout-mini tooltip tooltip-top"
     data-tip="Temporality: unspecified"
@@ -96,6 +112,11 @@
 
   .callout-full {
     @apply flex h-full flex-col items-center justify-center gap-3 px-4 py-8 text-center;
+  }
+
+  .callout-mini--unknown,
+  .callout-unknown {
+    @apply text-warning;
   }
 
   /*

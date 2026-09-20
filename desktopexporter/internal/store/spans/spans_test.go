@@ -139,7 +139,7 @@ func TestSearchTracesNullableTimeRangesExecute(t *testing.T) {
 		return spans.Ingest(ctx, conn, data, s.FlushedIDs())
 	}))
 
-	start, end := int64(200), int64(200)
+	start, end := uint64(200), uint64(200)
 	for _, tc := range []struct {
 		name      string
 		timeRange store.TimeRange

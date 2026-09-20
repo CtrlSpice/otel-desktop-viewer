@@ -49,6 +49,9 @@ export type SpanData = {
   flags: number
 
   name: string
+  /** Authoritative received OTLP SpanKind int32. */
+  kindCode: number
+  /** Readable label derived from kindCode by SQL. */
   kind: string
   startTime: bigint
   endTime: bigint
@@ -63,6 +66,9 @@ export type SpanData = {
   droppedEventsCount: number
   droppedLinksCount: number
 
+  /** Authoritative received OTLP StatusCode int32. */
+  statusCodeValue: number
+  /** Readable label derived from statusCodeValue by SQL. */
   statusCode: string
   statusMessage: string
 }
@@ -203,16 +209,21 @@ type BaseDataPoint = {
 export type GaugeDataPoint = BaseDataPoint & {
   metricType: 'Gauge'
   doubleValue: number | null
-  intValue: number | null
+  /** Received NumberDataPoint.as_int, kept exact across JSON. */
+  intValue: bigint | null
   valueType: string
 }
 
 export type SumDataPoint = BaseDataPoint & {
   metricType: 'Sum'
   doubleValue: number | null
-  intValue: number | null
+  /** Received NumberDataPoint.as_int, kept exact across JSON. */
+  intValue: bigint | null
   valueType: string
   isMonotonic: boolean
+  /** Authoritative received OTLP AggregationTemporality int32. */
+  aggregationTemporalityCode: number
+  /** Readable label derived from aggregationTemporalityCode by SQL. */
   aggregationTemporality: string
   /** Activity since the previous reading of this series, from the store.
    *  Cumulative only; null on a series' first datapoint. */
@@ -223,12 +234,18 @@ export type SumDataPoint = BaseDataPoint & {
 
 export type HistogramDataPoint = BaseDataPoint & {
   metricType: 'Histogram'
-  count: number
-  sum: number
-  min: number
-  max: number
-  bucketCounts: number[]
+  /** Received uint64 count, or an exact integral SQL reduction of such counts. */
+  count: bigint
+  /** Optional received statistics on raw rows; null means the sender omitted
+   *  the field. Reduced sum is null unless every input supplied it; reduced
+   *  min/max are bucket-derived display values. */
+  sum: number | null
+  min: number | null
+  max: number | null
+  /** Received uint64 vector, or an exact integral SQL reduction of one. */
+  bucketCounts: bigint[]
   explicitBounds: number[]
+  aggregationTemporalityCode: number
   aggregationTemporality: string
   /** Quantiles computed by the store for this bucket, keyed by the quantile
    *  (`"0.5"`). Null when none were requested. Read rather than recomputed:
@@ -239,17 +256,25 @@ export type HistogramDataPoint = BaseDataPoint & {
 
 export type ExponentialHistogramDataPoint = BaseDataPoint & {
   metricType: 'ExponentialHistogram'
-  count: number
-  sum: number
-  min: number
-  max: number
+  /** Received uint64 count, or an exact integral SQL reduction of such counts. */
+  count: bigint
+  /** Optional received statistics on raw rows; null means the sender omitted
+   *  the field. Reduced sum is null unless every input supplied it; reduced
+   *  min/max are bucket-derived display values. */
+  sum: number | null
+  min: number | null
+  max: number | null
   scale: number
-  zeroCount: number
+  /** Received uint64 zero count, or an exact integral SQL reduction of one. */
+  zeroCount: bigint
   zeroThreshold: number
   positiveBucketOffset: number
-  positiveBucketCounts: number[]
+  /** Received uint64 vector, or an exact integral SQL reduction of one. */
+  positiveBucketCounts: bigint[]
   negativeBucketOffset: number
-  negativeBucketCounts: number[]
+  /** Received uint64 vector, or an exact integral SQL reduction of one. */
+  negativeBucketCounts: bigint[]
+  aggregationTemporalityCode: number
   aggregationTemporality: string
   /** Quantiles computed by the store for this bucket, keyed by the quantile
    *  (`"0.5"`). Null when none were requested. Read rather than recomputed:
@@ -308,11 +333,13 @@ export type SeriesRateStats = {
 }
 
 export type MetricTimeseries = {
-  /** Series id -- stable across restarts, unique per (stream, resource, labels). */
+  /** Series id -- stable across restarts, unique per (stream, originating
+   *  resource attributes, datapoint labels). */
   attributesKey: string
   attributes: Attributes
-  /** The resource that emitted this series; distinguishes replicas whose
-   *  labels are identical. */
+  /** Identifying originating resource attributes for this series. The resource
+   *  shape is reused, but droppedAttributesCount is always zero because dropped
+   *  count is per-ingest diagnostic metadata rather than series identity. */
   resource: ResourceData
   datapoints: DataPoint[]
   /** Min / max / avg / sum over *every* datapoint in the window, computed by
@@ -384,6 +411,16 @@ export type SeriesValueStats = {
   avg: number
 }
 
+type OptionalMetricTemporality =
+  | {
+      aggregationTemporality?: never
+      aggregationTemporalityCode?: never
+    }
+  | {
+      aggregationTemporality: string | null
+      aggregationTemporalityCode: number | null
+    }
+
 export type MetricData = {
   /** The window's most recent datapoint across every series. */
   lastSeenNs: bigint | null
@@ -395,8 +432,6 @@ export type MetricData = {
   unit: string
   /** Stream-level type from metric_streams (getMetric only). */
   metricType?: MetricType
-  /** Stream-level temporality; null for Gauge. */
-  aggregationTemporality?: string | null
   /** Stream-level monotonic flag; null except Sum. */
   isMonotonic?: boolean | null
   resourceDroppedAttributesCount: number
@@ -416,7 +451,7 @@ export type MetricData = {
     requested: { startNs: bigint | null; endNs: bigint | null }
     effective: { startNs: bigint | null; endNs: bigint | null }
   }
-}
+} & OptionalMetricTemporality
 
 // Sparkline point shape used by detail charts (not the drawer summary).
 export type SparklinePoint = {
@@ -432,6 +467,7 @@ export type MetricSummary = {
   unit: string
   metricType: MetricType
   aggregationTemporality: string | null
+  aggregationTemporalityCode: number | null
   isMonotonic: boolean | null
   serviceName: string
   // Distinct attribute sets (timeseries) seen in the queried window.
@@ -439,7 +475,10 @@ export type MetricSummary = {
   seriesCardinality: number
   // In-range datapoints for this metric stream.
   dataPointCount: number
-  // Most recent scalar value for Gauge/Sum metrics; null for histograms.
+  /** @derived Most recent Gauge/Sum value by timestamp in the requested
+   * window. SQL coalesces double/int sources into an IEEE-754 metric-unit
+   * number, so integer measurements past 2^53 are approximate. Null for
+   * histograms. */
   lastValue: number | null
   // Timestamp of the most recent in-range datapoint (nanoseconds).
   lastSeen: bigint

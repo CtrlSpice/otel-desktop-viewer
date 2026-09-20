@@ -1,9 +1,11 @@
 <script module lang="ts">
   import type { Component } from 'svelte'
   import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/svelte'
-  import BarChartHorizontalIcon from '@hugeicons/core-free-icons/BarChartHorizontalIcon'
-  import ChartHistogramIcon from '@hugeicons/core-free-icons/ChartHistogramIcon'
-  import Home12Icon from '@hugeicons/core-free-icons/Home12Icon'
+  import {
+    BarChartHorizontalIcon,
+    ChartHistogramIcon,
+    Home12Icon,
+  } from '@hugeicons/core-free-icons'
   import { LogIcon } from '@/icons'
   import type { SignalName } from '@/route'
 

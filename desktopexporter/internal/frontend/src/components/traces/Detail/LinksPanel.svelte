@@ -5,7 +5,7 @@
   import { itemHref, navigateToItem } from '@/route'
   import { SPAN_PARAM } from '@/route/query-params'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import Alert02Icon from '@hugeicons/core-free-icons/Alert02Icon'
+  import { Alert02Icon } from '@hugeicons/core-free-icons'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
 
   type Props = {

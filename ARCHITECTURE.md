@@ -169,25 +169,41 @@ Schema lives in `desktopexporter/internal/store/queries/ddl/` as one `.sql` file
 | Table | Role |
 |-------|------|
 | `attributes` | Dictionary of distinct `(key, value, type, scope)` rows, keyed by a content hash |
-| `resources` | Deduped resources, shared across all three signals; `seq` is the wire key |
+| `resources` | Deduped received resource payloads, shared across all three signals; `seq` is the wire key |
 | `scopes` | Deduped instrumentation scopes; `seq` is the wire key |
 | `spans` | Span records; `resource_id`, `scope_id`, `attribute_ids`, plus `service_name` denormalized from `service.name` |
 | `events` | Span events (normalized) |
 | `links` | Span links (normalized) |
 | `logs` | Log records; same reference columns as `spans` |
 | `metric_streams` | Canonical identity for a logical metric (name, unit, type, scope, service, …) |
-| `metric_series` | One row per chart line: `(stream_id, resource_id, attribute_ids)` under a content-hashed id |
+| `metric_series` | One row per chart line, identified by stream, originating resource attributes, and datapoint attributes |
 | `metric_ingests` | One row per OTLP batch arrival for a stream (description, `resource_id`, `scope_id`) |
 | `datapoints` | All metric data points in one table; `metric_type` discriminates gauge/sum/histogram/exponential histogram; `series_id` names the line |
 | `exemplars` | Metric exemplars (normalized); separate nullable `double_value` / `int_value` arms preserve the OTLP oneof |
 
+Received numeric enums are stored as signed DuckDB `INTEGER` values, without
+closed-domain checks: `spans.kind`, `spans.status_code`, and
+`metric_streams.aggregation_temporality` retain the protocol int32 exactly,
+including zero and unknown positive or negative values. Metric temporality is
+part of stream identity; Gauge uses code zero as a non-applicable placeholder,
+distinguished from a received Unspecified value by `metric_type`. SQL responses
+carry the authoritative numeric code beside a derived display label. The label
+is `Unspecified`/`Internal`/`Server`/`Client`/`Producer`/`Consumer` for known
+span kinds, `Unset`/`Ok`/`Error` for known status codes, and
+`Unspecified`/`Delta`/`Cumulative` for known temporalities; unknowns render as
+`Unknown (<code>)`. Log `severity_number` remains its independently received
+numeric identity.
+
 **Design themes**
 
-- **IDs use their native widths in DuckDB.** OpenTelemetry 16-byte trace IDs and viewer-internal IDs are UUIDs; 8-byte span IDs are UBIGINT. JSON-RPC responses and search comparisons use OTLP **wire form** (dash-less lowercase hex: 32 chars for trace IDs, 16 for span IDs).
+- **IDs and timestamps use their native widths in DuckDB.** OpenTelemetry 16-byte trace IDs and viewer-internal IDs are UUIDs; 8-byte span IDs and OTLP's unsigned 64-bit nanosecond timestamps are UBIGINT. Signed measurements remain BIGINT. JSON-RPC responses and search comparisons use OTLP **wire form** (dash-less lowercase hex: 32 chars for trace IDs, 16 for span IDs), while timestamps cross JSON precision boundaries as decimal strings.
 - **Attributes are a content-addressed dictionary.** One row per distinct `(key, value, type, scope)` for the whole database, with `id = sha256(...)` truncated to 16 bytes and computed in Go at unwrap. Every owner holds an inline `uuid[]`, deduped and sorted by id. Because identity is the content, ingest knows every id before it writes and needs no read-back, and repeat writes are `on conflict (id) do nothing`.
+- **Resources preserve received payload identity.** A resource id hashes its canonical sorted typed attribute ids plus `droppedAttributesCount`. Identical payloads dedupe across signals and batches; changed attributes, typed values, presence, or dropped count produce distinct rows so every span, log, and metric ingest retains its exact received resource. Resource and scope schema URLs belong to their OTLP wrappers and do not participate.
+- **Metric series use semantic resource identity.** A series id hashes the stream id, canonical originating Resource attribute ids, and datapoint attribute ids. Resource attribute changes split a series; dropped count does not, because it is diagnostic payload metadata rather than an originating Resource attribute. `metric_ingests.resource_id` still preserves the exact payload for every ingest.
 - **Scope is part of dictionary identity**, not a free-form tag. That is what lets attribute discovery answer from `select distinct key, scope, type from attributes` alone, instead of unnesting every owner array. The cost is that the same triple used as both a resource and a span attribute is two rows.
 - **Normalized nested data.** Events, links, and exemplars live in separate tables—not nested arrays or DuckDB UNION types.
 - **Exemplar values keep their OTLP type.** Doubles and signed 64-bit integers occupy separate nullable columns; both NULL means the source exemplar had no value. The wire carries an explicit `valueType`, finite doubles as JSON numbers, non-finite doubles as the standard `"NaN"` / `"Infinity"` / `"-Infinity"` strings, and integers as decimal strings so JavaScript never rounds them before the frontend revives them as `bigint`.
+- **Histogram optional statistics keep presence.** Histogram and exponential-histogram `sum`, `min`, and `max` are received optional doubles. SQL NULL and JSON `null` mean absent; a numeric zero means the sender supplied zero. A merged sum is available only when every contributing interval has a sum. Merged `min` and `max` are separate bucket-derived display projections, not replacements for the received fields.
 - **Empty IDs never become synthetic zero strings.** Optional parent, log, exemplar, and link target IDs are SQL NULL and JSON `null`. A span's own ID is required for its identity, so an empty one is refused through the ingest diagnostics path instead of being stored as zero.
 - **Single `datapoints` table.** Type-specific columns use NULLs for irrelevant fields; `metric_type` + CHECK constraints enforce the discriminated union. Columnar compression makes sparse rows cheap.
 - **`metric_streams` + `metric_ingests`.** Stream identity is deduplicated across batches; per-batch metadata varies without splitting logical metrics.
@@ -255,6 +271,10 @@ Ordered aggregation is `to_json(list(x order by k))` rather than `json_group_arr
 - **Scalar views** (Sum / Average / Rate) on a resolution distinct from both the chart reduction and the per-row sparkline, aggregated on a shared absolute-time grid so toggling which series are visible cannot re-cut the buckets underneath the chart.
 - **Sparklines**, a third, coarser resolution sized for a ~128px row rather than a full-width chart.
 - **Cross-series pools** ("Selected" and "All"), folding checked series or every series in the stream into one aggregate line, computed from the same per-series view rows so the pooled line aligns with the per-series lines drawn beneath it.
+
+Received metric integers keep their OTel domains across the detail path. NumberDataPoint `as_int` is signed int64 in `BIGINT`; Histogram and ExponentialHistogram counts and bucket vectors are unsigned uint64 in `UBIGINT`/`UBIGINT[]`. `datapoint_json` sends these values as exact decimal text, and `telemetry-service.ts` revives them once to `bigint`/`bigint[]`. Detail rows format those exact values directly. Scalar chart coordinates and histogram chart/heatmap slices explicitly convert the exact source to JavaScript `number`; that display projection is the approximation boundary and does not replace or mutate the decoded datapoint.
+
+The reduction products above are derived UI views, not received OTel fields. Their sources are the received measurements and counts in the requested window; their formulas are the SQL operations named above, their time coordinates are epoch milliseconds or nanosecond bucket starts as documented by their types, and scalar values, rates, quantiles and chart coordinates use IEEE-754 numbers. Histogram differences, downscales, folds and merges use signed 128-bit `HUGEINT` intermediates so every uint64 input and derived totals above `MaxUint64` remain exact. Per-series reduced counts use decimal-string transport and frontend `bigint`; the cross-series aggregate enters the existing approximate chart-number wire shape. An aggregate beyond `HUGEINT` fails the query rather than wrapping or clipping.
 
 **Exemplars are capped in two independent directions.** Per datapoint, at most 5 exemplars are listed, ranked by distance from either extreme of the datapoint's own exemplar values (so the set spans the range rather than clustering at one end); a datapoint carries `exemplarCount` only when its actual count exceeds what was listed, so its absence can be read as "nothing was withheld." Mixed integer/double ranking uses a DOUBLE ordering key plus a HUGEINT tie-break, preserving exact order between adjacent integers above JavaScript's safe range. Empty and non-finite values sort after finite values. Per bucket, at most 2 exemplar-bearing datapoints are retained as carriers — again ranked from both ends, this time by how far their exemplars reach — so a bucket a few pixels wide caps at six datapoints total (four from M4 plus up to two exemplar carriers) rather than costing as much as the densest stream that landed in it.
 
@@ -467,7 +487,7 @@ Or run production-like: `make build && ./otel-desktop-viewer` (embedded assets, 
 | Storage | DuckDB | Columnar OLAP; fast filters and aggregations on local telemetry |
 | Schema | Normalized tables | Query events, links, datapoints independently; avoid UNION/MAP pain |
 | Metric identity | `metric_streams` + `metric_ingests` | Dedupe logical streams; preserve per-batch metadata |
-| Metric series | `metric_series`, id hashed from `(stream_id, resource_id, attribute_ids)` | Splits replicas that would otherwise interleave into one line; gives a chart line a stable id a URL can name |
+| Metric series | `metric_series`, id hashed from `(stream_id, resource_attribute_ids, datapoint_attribute_ids)` | Preserves OTLP resource/label identity without splitting on dropped-count metadata; gives a chart line a stable id a URL can name |
 | Datapoints | Single table with NULLs | Simpler than per-type tables; columnar NULL compression |
 | Attributes | Content-hashed dictionary + `uuid[]` on owners | Dedupes at the atom; ids known before write, so ingest needs no read-back |
 | Attribute ids | sha256 truncated to 128 bits | Fits `uuid`; birthday bound is far below the machine's own error rate. Audited by an independent SQL macro rather than trusted |
