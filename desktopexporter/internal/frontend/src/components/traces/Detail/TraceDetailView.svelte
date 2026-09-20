@@ -107,6 +107,12 @@
   let scopeAttributes = $derived(span?.scope.attributes ?? [])
   let numEvents = $derived(span?.events.length ?? 0)
   let numLinks = $derived(span?.links.length ?? 0)
+  let hasUnrecognisedStatusCode = $derived(
+    span !== undefined &&
+      span.statusCodeValue !== 0 &&
+      span.statusCodeValue !== 1 &&
+      span.statusCodeValue !== 2
+  )
 
   // --- Tab state ---
 
@@ -335,6 +341,9 @@
                   fieldName="status code"
                   fieldValue={span.statusCode}
                   fieldType="string"
+                  defectLabel={hasUnrecognisedStatusCode
+                    ? 'Unrecognised status code'
+                    : undefined}
                 />
               {/if}
               {#if detailSearchFieldVisible(columnFilter, 'statusCodeValue')}
@@ -342,6 +351,10 @@
                   fieldName="status code value"
                   fieldValue={span.statusCodeValue.toString()}
                   fieldType="int64"
+                  defectLabel={hasUnrecognisedStatusCode &&
+                  !detailSearchFieldVisible(columnFilter, 'statusCode')
+                    ? 'Unrecognised status code'
+                    : undefined}
                 />
               {/if}
               {#if span.statusCodeValue !== 0 && span.statusCodeValue !== 1 && detailSearchFieldVisible(columnFilter, 'statusMessage')}
