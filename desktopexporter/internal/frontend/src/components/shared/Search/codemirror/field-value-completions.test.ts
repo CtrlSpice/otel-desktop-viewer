@@ -140,8 +140,6 @@ describe('span name value completions', () => {
 })
 
 describe('IN array values', () => {
-  // Metric `unit` is the field that actually offers IN among the
-  // discoverable ones; span name deliberately does not.
   const UNITS = ['ms', 's', 'By']
 
   async function units(doc: string, pos = doc.length) {
@@ -205,10 +203,15 @@ describe('operator gating', () => {
   }
 
   it('declines an operator the field does not accept', async () => {
-    // span name takes no array operator, so completing inside one would help
-    // write exactly what the linter underlines.
-    expect(await traces('name IN [')).toBeNull()
-    expect(await traces('name IN ')).toBeNull()
+    expect(await metrics('unit > ')).toBeNull()
+  })
+
+  it('offers membership completion for newly exposed static fields', async () => {
+    const bracket = await traces('name IN ')
+    expect(bracket?.options.map(option => option.label)).toEqual(['['])
+
+    const values = await traces('name IN [')
+    expect(values?.options.map(option => option.label)).toEqual(NAMES)
   })
 
   it('offers the bracket after an array operator', async () => {
