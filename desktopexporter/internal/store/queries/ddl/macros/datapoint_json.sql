@@ -45,7 +45,10 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, quantiles) 
 				'max', d.max,
 				'bucketCounts', list_transform(d.bucket_counts, value -> value::varchar),
 				'explicitBounds', d.explicit_bounds,
-				'aggregationTemporality', d.aggregation_temporality
+				'aggregationTemporalityCode', d.aggregation_temporality,
+				'aggregationTemporality', case d.aggregation_temporality
+					when 0 then 'Unspecified' when 1 then 'Delta' when 2 then 'Cumulative'
+					else 'Unknown (' || d.aggregation_temporality::varchar || ')' end
 			), json_object(
 				-- This patch preserves the existing quantile wire rule without
 				-- touching null received statistics already in the target object.
@@ -70,7 +73,10 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, quantiles) 
 				'positiveBucketCounts', list_transform(d.positive_bucket_counts, value -> value::varchar),
 				'negativeBucketOffset', d.negative_bucket_offset,
 				'negativeBucketCounts', list_transform(d.negative_bucket_counts, value -> value::varchar),
-				'aggregationTemporality', d.aggregation_temporality
+				'aggregationTemporalityCode', d.aggregation_temporality,
+				'aggregationTemporality', case d.aggregation_temporality
+					when 0 then 'Unspecified' when 1 then 'Delta' when 2 then 'Cumulative'
+					else 'Unknown (' || d.aggregation_temporality::varchar || ')' end
 			), json_object(
 				'quantiles', json_merge_patch(json('{}'), quantiles)
 			))
@@ -100,16 +106,19 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, quantiles) 
 					'intValue', d.int_value::varchar,
 					'valueType', d.value_type,
 					'isMonotonic', d.is_monotonic,
-					'aggregationTemporality', d.aggregation_temporality,
+					'aggregationTemporalityCode', d.aggregation_temporality,
+					'aggregationTemporality', case d.aggregation_temporality
+						when 0 then 'Unspecified' when 1 then 'Delta' when 2 then 'Cumulative'
+						else 'Unknown (' || d.aggregation_temporality::varchar || ')' end,
 					-- Activity since the previous reading of this series, and
 					-- whether the counter restarted in between. Null on the first
 					-- datapoint of a series, which describes no interval.
 					--
 					-- Cumulative only: a Delta Sum's value already *is* the
 					-- interval's activity, so differencing it would be wrong.
-					'delta', case when d.aggregation_temporality = 'Cumulative'
+					'delta', case when d.aggregation_temporality = 2
 						then d.delta end,
-					'isReset', case when d.aggregation_temporality = 'Cumulative'
+					'isReset', case when d.aggregation_temporality = 2
 						then d.is_reset end
 				)
 				end

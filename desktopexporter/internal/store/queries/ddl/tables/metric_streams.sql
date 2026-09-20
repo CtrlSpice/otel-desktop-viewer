@@ -13,14 +13,14 @@
 -- but come from different services are different streams) and also acts
 -- as the denormalized "filter by service" column for SearchSummaries.
 --
--- All eight identity columns are NOT NULL with empty-string ("" for
--- varchars, false for is_monotonic) defaults representing "not
+-- All eight identity columns are NOT NULL with zero (aggregation temporality),
+-- empty-string (varchars), or false (is_monotonic) defaults representing "not
 -- applicable" (Gauge has no temporality/monotonicity, Histogram has
 -- no monotonicity, etc.). This is a deliberate workaround for
 -- DuckDB's standard-SQL behavior that treats two NULL values as
 -- distinct in a UNIQUE constraint, which would defeat the
 -- find-or-insert dedupe at ingest. The semantic distinction between
--- "unknown" and "not applicable" is borne by metric_type alone --
+-- enum zero and "not applicable" is borne by metric_type alone --
 -- readers know that a Gauge's is_monotonic is N/A regardless of the
 -- stored value.
 create table if not exists metric_streams (
@@ -28,7 +28,9 @@ create table if not exists metric_streams (
 		name varchar not null,
 		unit varchar not null default '',
 		metric_type varchar not null,
-		aggregation_temporality varchar not null default '',
+		-- Received OTLP enum number for Sum/Histogram/ExponentialHistogram.
+		-- Gauge uses zero; metric_type makes that non-applicable value explicit.
+		aggregation_temporality integer not null default 0,
 		is_monotonic boolean not null default false,
 		scope_name varchar not null default '',
 		scope_version varchar not null default '',

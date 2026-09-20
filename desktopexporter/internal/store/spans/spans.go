@@ -235,7 +235,7 @@ func appendPass(
 					parentSpanID,                  // ParentSpanID UBIGINT or NULL
 					uint32(span.Flags()),          // Flags UINTEGER
 					span.Name(),                   // Name VARCHAR
-					span.Kind().String(),          // Kind VARCHAR
+					int32(span.Kind()),            // Kind INTEGER (received enum code)
 					uint64(span.StartTimestamp()), // StartTime UBIGINT
 					uint64(span.EndTimestamp()),   // EndTime UBIGINT
 					resourceID,                    // ResourceID UUID
@@ -244,7 +244,7 @@ func appendPass(
 					span.DroppedAttributesCount(), // DroppedAttributesCount UINTEGER
 					span.DroppedEventsCount(),     // DroppedEventsCount UINTEGER
 					span.DroppedLinksCount(),      // DroppedLinksCount UINTEGER
-					span.Status().Code().String(), // StatusCode VARCHAR
+					int32(span.Status().Code()),   // StatusCode INTEGER (received enum code)
 					span.Status().Message(),       // StatusMessage VARCHAR
 					serviceName,                   // ServiceName VARCHAR (NOT NULL, '' = unknown)
 					resourceSpan.SchemaUrl(),      // ResourceSchemaURL VARCHAR (batch-level)
@@ -926,6 +926,24 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (search.ResolvedExpr
 		// Wire-form comparison, same reasoning as the link.traceID branch.
 		return search.WireID("replace(s.trace_id::varchar, '-', '')"), nil
 	}
+	// Keep established readable enum fields searchable while the database owns
+	// the received numbers. The explicit numeric fields make unknown codes
+	// queryable without teaching the generic search layer about OTel enums.
+	switch field.Name {
+	case "kind":
+		return search.Text(`case s.kind
+			when 0 then 'Unspecified' when 1 then 'Internal' when 2 then 'Server'
+			when 3 then 'Client' when 4 then 'Producer' when 5 then 'Consumer'
+			else 'Unknown (' || s.kind::varchar || ')' end`), nil
+	case "statusCode":
+		return search.Text(`case s.status_code
+			when 0 then 'Unset' when 1 then 'Ok' when 2 then 'Error'
+			else 'Unknown (' || s.status_code::varchar || ')' end`), nil
+	case "kindCode":
+		return search.NativeInteger("s.kind"), nil
+	case "statusCodeValue":
+		return search.NativeInteger("s.status_code"), nil
+	}
 	if len(field.Name) > 0 {
 		col := util.CamelToSnake(field.Name)
 		if err := util.ValidateColumnName(col, spanColumns); err != nil {
@@ -1053,8 +1071,13 @@ func mapTraceGlobalExpressions() ([]search.ResolvedExpression, error) {
 		"span_id_wire(s.span_id) {COND}",
 		"span_id_wire(s.parent_span_id) {COND}",
 		"CAST(s.name AS VARCHAR) {COND}",
-		"CAST(s.kind AS VARCHAR) {COND}",
-		"CAST(s.status_code AS VARCHAR) {COND}",
+		`CAST(case s.kind
+			when 0 then 'Unspecified' when 1 then 'Internal' when 2 then 'Server'
+			when 3 then 'Client' when 4 then 'Producer' when 5 then 'Consumer'
+			else 'Unknown (' || s.kind::varchar || ')' end AS VARCHAR) {COND}`,
+		`CAST(case s.status_code
+			when 0 then 'Unset' when 1 then 'Ok' when 2 then 'Error'
+			else 'Unknown (' || s.status_code::varchar || ')' end AS VARCHAR) {COND}`,
 		"CAST(s.status_message AS VARCHAR) {COND}",
 		"CAST(s.trace_state AS VARCHAR) {COND}",
 		"CAST(sc.name AS VARCHAR) {COND}",

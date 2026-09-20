@@ -8,7 +8,7 @@ with search_params as (select unnest(?::ubigint[]) as time_start, unnest(?::ubig
 				min(s.start_time) over (partition by s.trace_id) as trace_start_time,
 				max(s.end_time) over (partition by s.trace_id) as trace_end_time,
 				count(*) over (partition by s.trace_id) as span_count,
-				count(case when s.status_code = 'Error' then 1 end) over (partition by s.trace_id) as error_count
+				count(case when s.status_code = 2 then 1 end) over (partition by s.trace_id) as error_count
 			from search_params, spans s
 		join resources r on r.id = s.resource_id
 		join scopes sc on sc.id = s.scope_id

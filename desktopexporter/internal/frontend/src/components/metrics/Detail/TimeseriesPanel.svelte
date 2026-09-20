@@ -167,7 +167,7 @@
       {@const sparklineColor =
         checked && seriesColor ? seriesColor : chartNeutral()}
       {@const sparklineSuppressed =
-        ctx.isHistogramKind || ctx.isUnspecifiedTemporality}
+        ctx.isHistogramKind || ctx.isUnsafeTemporality}
       {@const rowStats = ctx.seriesStatsByKey.get(ts.key)}
       {@const statBadges = ctx.availableSeriesStatBadges}
       {@const showStatBadges =
