@@ -7,7 +7,8 @@ import {
 } from './queryTree'
 import { parser } from './codemirror/query.parser'
 import type { SyntaxNode } from '@lezer/common'
-import { resolveField } from './field-resolution'
+import { fieldResolutionIsAmbiguous, resolveField } from './field-resolution'
+import type { SearchSignal } from './attribute-field-reference'
 
 // One grammar, one parse.
 //
@@ -165,6 +166,7 @@ function isExactUint64(value: string): boolean {
 interface WalkContext {
   input: string
   availableFields: FieldDefinition[]
+  signal?: SearchSignal
   // parse mode throws on the first problem; validate mode collects them all
   errors: ValidationError[] | null
 }
@@ -352,9 +354,16 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
   }
 
   const fieldName = text(ctx, fieldNode)
-  const field = resolveField(fieldName, ctx.availableFields)
+  const field = resolveField(fieldName, ctx.availableFields, ctx.signal)
   if (!field) {
-    fail(ctx, fieldNode.from, fieldNode.to, `Unknown field: ${fieldName}`)
+    fail(
+      ctx,
+      fieldNode.from,
+      fieldNode.to,
+      fieldResolutionIsAmbiguous(fieldName, ctx.availableFields)
+        ? `Ambiguous field: ${fieldName}. Select an explicit attribute scope and kind.`
+        : `Unknown field: ${fieldName}`
+    )
   }
 
   let symbol: string
@@ -500,7 +509,8 @@ function createGlobalTextSearch(input: string): QueryNode {
 // later does not change what QueryNode means.
 export function parseSearchRequest(
   input: string,
-  availableFields: FieldDefinition[]
+  availableFields: FieldDefinition[],
+  signal?: SearchSignal
 ): ParsedSearchRequest | null {
   if (!input.trim()) return null
 
@@ -516,7 +526,7 @@ export function parseSearchRequest(
   const predicateText = input.slice(0, predicateEnd).trim()
   const { structured, firstError } = surveyTree(tree, predicateEnd)
 
-  const ctx: WalkContext = { input, availableFields, errors: null }
+  const ctx: WalkContext = { input, availableFields, signal, errors: null }
   let predicate: QueryNode | null = null
 
   if (predicateText) {
@@ -550,9 +560,10 @@ export function parseSearchRequest(
 // when the transport slice starts carrying limits.
 export function parseQuery(
   input: string,
-  availableFields: FieldDefinition[]
+  availableFields: FieldDefinition[],
+  signal?: SearchSignal
 ): QueryNode | null {
-  const request = parseSearchRequest(input, availableFields)
+  const request = parseSearchRequest(input, availableFields, signal)
   if (request?.limit !== null && request?.limit !== undefined) {
     throw new Error('LIMIT is not available for this search yet')
   }
@@ -563,7 +574,8 @@ export function parseQuery(
 // with its position instead of throwing on the first.
 export function validateQuery(
   input: string,
-  availableFields: FieldDefinition[]
+  availableFields: FieldDefinition[],
+  signal?: SearchSignal
 ): ValidationError[] {
   if (!input.trim()) return []
 
@@ -588,7 +600,7 @@ export function validateQuery(
     })
   }
 
-  const ctx: WalkContext = { input, availableFields, errors }
+  const ctx: WalkContext = { input, availableFields, signal, errors }
   if (structured && predicateText) {
     const predicateNode = findPredicateNode(request)
     if (predicateNode) walkExpression(ctx, predicateNode)

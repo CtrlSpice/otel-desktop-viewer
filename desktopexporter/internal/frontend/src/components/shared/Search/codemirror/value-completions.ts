@@ -6,7 +6,12 @@ import {
 import type { JsonAttributeMatch, JsonAttributeValue } from '@/types/wire-types'
 import type { FieldDefinition } from '@/constants/fields'
 import type { FieldValueCache } from './field-value-cache'
-import { resolveField } from '../field-resolution'
+import {
+  attributeFieldIdentity,
+  createAttributeFieldReference,
+  formatAttributeFieldReference,
+  type AttributeField,
+} from '../attribute-field-reference'
 
 /**
  * Value-first completion: the user types text they can see in the UI, and the
@@ -67,8 +72,14 @@ export function matchToQuery(
   match: JsonAttributeMatch,
   value: JsonAttributeValue
 ): string {
+  const field = createAttributeFieldReference(
+    match.attributeScope,
+    match.name,
+    match.type
+  )
+  if (!field) throw new Error('Attribute match has an unsupported identity')
   const queryValue = sampleValueToQueryValue(value)
-  return `${match.name} = "${queryValue.replace(/(["\\])/g, '\\$1')}"`
+  return `${formatAttributeFieldReference(field)} = "${queryValue.replace(/(["\\])/g, '\\$1')}"`
 }
 
 /**
@@ -164,16 +175,22 @@ export function createValueDiscoverySource(
     // well as name matters: the same key can exist under several scopes, and
     // only some of them are valid here.
     const fields = getFields()
-    const searchable = matches.filter(match =>
-      fields.some(
-        field =>
-          field.searchScope === 'attribute' &&
-          field.name === match.name &&
-          field.attributeScope === match.attributeScope &&
-          fieldSupportsExactMatch(field, match) &&
-          resolveField(match.name, fields) === field
+    const searchable = matches.flatMap(match => {
+      const candidate = createAttributeFieldReference(
+        match.attributeScope,
+        match.name,
+        match.type
       )
-    )
+      if (!candidate) return []
+      const field = fields.find(
+        (available): available is AttributeField =>
+          available.searchScope === 'attribute' &&
+          attributeFieldIdentity(available) ===
+            attributeFieldIdentity(candidate) &&
+          fieldSupportsExactMatch(available, match)
+      )
+      return field ? [match] : []
+    })
 
     const term = word.text.toLowerCase()
     const fieldDefs = getFields().filter(
@@ -225,7 +242,13 @@ export function createValueDiscoverySource(
     // the other two categories out of the list entirely -- `Serv` should
     // offer `kind = Server` even when eight service.* attributes match.
     // Each category gets a quota, then leftovers backfill spare capacity.
-    const attributeOptions = searchable.flatMap(optionsForMatch)
+    const attributeOptions = [
+      ...new Map(
+        searchable
+          .flatMap(optionsForMatch)
+          .map(option => [option.label, option])
+      ).values(),
+    ]
     const quotas: [Completion[], number][] = [
       [attributeOptions, 4],
       [enumOptions, 2],

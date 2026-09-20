@@ -18,6 +18,14 @@ import {
 } from './query.parser.terms'
 import { parser } from './query.parser'
 import { resolveField } from '../field-resolution'
+import {
+  attributeFieldIdentity,
+  formatAttributeFieldReference,
+  parseAttributeFieldReference,
+  storedKindForField,
+  type AttributeField,
+  type SearchSignal,
+} from '../attribute-field-reference'
 
 const LOGICAL_COMPLETIONS: Completion[] = [
   {
@@ -36,6 +44,23 @@ const RESULT_LIMIT_COMPLETION: Completion = {
   apply: '| LIMIT ',
 }
 
+function unclosedGroupDepth(text: string): number {
+  let depth = 0
+  let quote: '"' | "'" | null = null
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
+    if (quote) {
+      if (char === '\\') i++
+      else if (char === quote) quote = null
+      continue
+    }
+    if (char === '"' || char === "'") quote = char
+    else if (char === '(') depth++
+    else if (char === ')') depth = Math.max(0, depth - 1)
+  }
+  return depth
+}
+
 /**
  * Whether the text is a complete, error-free structured expression -- the
  * state after which boolean continuations or a result limit are accepted.
@@ -47,11 +72,7 @@ const RESULT_LIMIT_COMPLETION: Completion = {
 function expressionIsComplete(text: string): boolean {
   let trimmed = text.trim()
   if (!trimmed || trimmed.endsWith('(')) return false
-  let depth = 0
-  for (const c of trimmed) {
-    if (c === '(') depth++
-    else if (c === ')') depth--
-  }
+  const depth = unclosedGroupDepth(trimmed)
   if (depth > 0) trimmed += ')'.repeat(depth)
   let structured = false
   let hasError = false
@@ -127,7 +148,8 @@ function idPatternCompletions(
 }
 
 export function createQueryCompletionSource(
-  getFields: () => FieldDefinition[]
+  getFields: () => FieldDefinition[],
+  signal?: SearchSignal
 ) {
   return function queryCompletionSource(
     context: CompletionContext
@@ -147,7 +169,7 @@ export function createQueryCompletionSource(
       // operator has already been typed, which is too late to suggest one.
       // Once the name is complete and followed by a space, the only thing
       // that can come next is an operator, so offer them here too.
-      const opHit = topLevelOperatorCompletions(context, getFields())
+      const opHit = topLevelOperatorCompletions(context, getFields(), signal)
       if (opHit) return opHit
     }
 
@@ -161,7 +183,13 @@ export function createQueryCompletionSource(
       if (field && pos <= field.to) {
         // Replace through the end of the word: accepting mid-name used to
         // keep the tail, so `na|me` accepted as name became "name me".
-        return fieldCompletions(context, getFields(), field.from, field.to)
+        return fieldCompletions(
+          context,
+          getFields(),
+          signal,
+          field.from,
+          field.to
+        )
       }
 
       // After field: whitespace before operator → operators (not another field).
@@ -172,7 +200,8 @@ export function createQueryCompletionSource(
             return operatorCompletions(
               context,
               context.state.sliceDoc(field.from, field.to),
-              getFields()
+              getFields(),
+              signal
             )
           }
         }
@@ -193,10 +222,11 @@ export function createQueryCompletionSource(
               context,
               fieldText,
               getFields(),
+              signal,
               node.from
             )
           }
-          return valueCompletions(context, fieldText, getFields())
+          return valueCompletions(context, fieldText, getFields(), signal)
         }
       }
 
@@ -224,7 +254,13 @@ export function createQueryCompletionSource(
               const sinceBracket = context.state.sliceDoc(valueNode.from, from)
               const quotes = (sinceBracket.match(/["']/g) ?? []).length
               if (quotes % 2 === 0) return null
-              const r = valueCompletions(context, fieldText, getFields(), from)
+              const r = valueCompletions(
+                context,
+                fieldText,
+                getFields(),
+                signal,
+                from
+              )
               if (!r) return null
               return {
                 ...r,
@@ -232,7 +268,7 @@ export function createQueryCompletionSource(
               }
             }
           }
-          return valueCompletions(context, fieldText, getFields(), from)
+          return valueCompletions(context, fieldText, getFields(), signal, from)
         }
       }
     }
@@ -250,11 +286,7 @@ export function createQueryCompletionSource(
         partial ? partial.from : context.pos
       )
       if (expressionIsComplete(before)) {
-        const unclosedGroups = [...before].reduce((depth, char) => {
-          if (char === '(') return depth + 1
-          if (char === ')') return Math.max(0, depth - 1)
-          return depth
-        }, 0)
+        const unclosedGroups = unclosedGroupDepth(before)
         return {
           from: partial?.from ?? context.pos,
           options:
@@ -268,15 +300,15 @@ export function createQueryCompletionSource(
 
     // After logical op: fields.
     if (node.name === 'And' || node.name === 'Or') {
-      return fieldCompletions(context, getFields())
+      return fieldCompletions(context, getFields(), signal)
     }
 
     if (node.name === 'Query' || node.name === 'SearchRequest') {
-      return fieldCompletions(context, getFields())
+      return fieldCompletions(context, getFields(), signal)
     }
 
     if (node.name === 'Group' && context.pos < node.to) {
-      return fieldCompletions(context, getFields())
+      return fieldCompletions(context, getFields(), signal)
     }
 
     const parentNode = node.parent
@@ -287,7 +319,7 @@ export function createQueryCompletionSource(
       context.pos > node.to
     ) {
       const fieldText = context.state.sliceDoc(node.from, node.to)
-      return operatorCompletions(context, fieldText, getFields())
+      return operatorCompletions(context, fieldText, getFields(), signal)
     }
 
     // Typing an operator after a bare field name -- `name C` on the way to
@@ -313,6 +345,7 @@ export function createQueryCompletionSource(
             context,
             before,
             getFields(),
+            signal,
             opPartial.from
           )
         }
@@ -334,7 +367,7 @@ export function createQueryCompletionSource(
         before.endsWith('(') ||
         /(?:^|[\s(])(?:AND|OR)$/i.test(before)
       ) {
-        return fieldCompletions(context, getFields(), word.from)
+        return fieldCompletions(context, getFields(), signal, word.from)
       }
     }
 
@@ -349,12 +382,12 @@ export function createQueryCompletionSource(
         .sliceDoc(0, context.pos)
         .replace(/[(\s]+$/, '')
       if (/(?:^|[\s(])(?:AND|OR)$/i.test(before)) {
-        return fieldCompletions(context, getFields())
+        return fieldCompletions(context, getFields(), signal)
       }
     }
 
     if (context.explicit) {
-      return fieldCompletions(context, getFields())
+      return fieldCompletions(context, getFields(), signal)
     }
 
     return null
@@ -390,7 +423,8 @@ function inOpenString(text: string): boolean {
  */
 function topLevelOperatorCompletions(
   context: CompletionContext,
-  fields: FieldDefinition[]
+  fields: FieldDefinition[],
+  signal?: SearchSignal
 ): CompletionResult | null {
   // An unterminated string swallows the guard this function relies on: the
   // error-recovered Comparison node ends before the trailing space, so the
@@ -400,35 +434,74 @@ function topLevelOperatorCompletions(
   // the common case, not a corner.
   if (inOpenString(context.state.sliceDoc(0, context.pos))) return null
 
+  const source = context.state.sliceDoc(0, context.pos)
+  if (/\s$/.test(source)) {
+    const explicit = parseAttributeFieldReference(source.trim(), signal)
+    if (explicit) {
+      return operatorCompletions(context, source.trim(), fields, signal)
+    }
+  }
+
   const before = context.matchBefore(/[\w.]+\s+/)
   if (!before) return null
   const word = before.text.trim()
-  const known = resolveField(word, fields) !== undefined
+  const known = resolveField(word, fields, signal) !== undefined
   if (!known) return null
-  return operatorCompletions(context, word, fields, context.pos)
+  return operatorCompletions(context, word, fields, signal, context.pos)
+}
+
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
+function compareAttributeFields(left: AttributeField, right: AttributeField) {
+  return (
+    compareText(left.attributeScope, right.attributeScope) ||
+    compareText(left.name, right.name) ||
+    compareText(storedKindForField(left), storedKindForField(right))
+  )
 }
 
 function fieldCompletions(
   context: CompletionContext,
   fields: FieldDefinition[],
+  signal?: SearchSignal,
   from?: number,
   to?: number
 ): CompletionResult | null {
   const options: Completion[] = []
+  const nativeFields = fields.filter(
+    (field): field is Extract<FieldDefinition, { searchScope: 'field' }> =>
+      field.searchScope === 'field'
+  )
+  const attributes = new Map<string, AttributeField>()
   for (const field of fields) {
-    if (field.searchScope === 'global') continue
-    if (resolveField(field.name, fields) !== field) continue
+    if (field.searchScope === 'attribute') {
+      attributes.set(attributeFieldIdentity(field), field)
+    }
+  }
+
+  for (const field of [
+    ...nativeFields,
+    ...[...attributes.values()].sort(compareAttributeFields),
+  ]) {
+    const attribute = field.searchScope === 'attribute' ? field : null
     options.push({
       label: field.name,
       type: 'property',
-      detail: field.type,
+      detail: attribute
+        ? `${attribute.attributeScope} · ${storedKindForField(attribute)}`
+        : field.type,
       info: 'description' in field ? field.description : undefined,
       boost: field.searchScope === 'field' ? 1 : 0,
+      section: attribute
+        ? `${attribute.attributeScope} / ${attribute.name}`
+        : 'Fields',
       // Accepting a field inserts the trailing space that ends it, which is
       // also what makes the operator list fire: picking `name` should leave
       // the cursor somewhere the next suggestion is waiting, not somewhere
       // the user has to guess that a space is expected.
-      apply: field.name + ' ',
+      apply: `${attribute ? formatAttributeFieldReference(attribute) : field.name} `,
     })
   }
 
@@ -447,9 +520,10 @@ function operatorCompletions(
   context: CompletionContext,
   fieldName: string,
   fields: FieldDefinition[],
+  signal?: SearchSignal,
   from?: number
 ): CompletionResult | null {
-  const field = resolveField(fieldName, fields)
+  const field = resolveField(fieldName, fields, signal)
 
   // The derived operators are wire spellings, not query syntax: the null
   // check is typed `= NULL` and negated regex is typed `!~`, so offering
@@ -482,9 +556,10 @@ function valueCompletions(
   context: CompletionContext,
   fieldName: string,
   fields: FieldDefinition[],
+  signal?: SearchSignal,
   from?: number
 ): CompletionResult | null {
-  const field = resolveField(fieldName, fields)
+  const field = resolveField(fieldName, fields, signal)
   if (!field) return null
 
   const knownValues =

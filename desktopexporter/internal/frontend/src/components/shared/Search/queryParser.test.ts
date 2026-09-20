@@ -3,6 +3,10 @@ import { parseQuery, parseSearchRequest, validateQuery } from './queryParser'
 import { OPERATORS } from '../../../constants/operators'
 import type { FieldDefinition } from '../../../constants/fields'
 import type { QueryNode } from './queryTree'
+import {
+  formatAttributeFieldReference,
+  parseAttributeFieldReference,
+} from './attribute-field-reference'
 
 const fields: FieldDefinition[] = [
   {
@@ -105,6 +109,30 @@ const collidingIntegerFields: FieldDefinition[] = [
     searchScope: 'attribute',
     attributeScope: 'log',
     operators: [OPERATORS.IN, OPERATORS.NOT_IN],
+  },
+]
+
+const mixedKindFields: FieldDefinition[] = [
+  {
+    name: 'same.key',
+    type: 'int64',
+    searchScope: 'attribute',
+    attributeScope: 'span',
+    operators: [OPERATORS.EQUALS, OPERATORS.GREATER_THAN],
+  },
+  {
+    name: 'same.key',
+    type: 'string',
+    searchScope: 'attribute',
+    attributeScope: 'span',
+    operators: [OPERATORS.EQUALS, OPERATORS.CONTAINS],
+  },
+  {
+    name: 'same.key',
+    type: 'int64',
+    searchScope: 'attribute',
+    attributeScope: 'resource',
+    operators: [OPERATORS.EQUALS],
   },
 ]
 
@@ -241,6 +269,121 @@ describe('attribute key identity', () => {
           .field
       ).toBe(native)
     }
+  })
+})
+
+describe('explicit attribute identity', () => {
+  it.each([
+    ['attr(span, "same.key", int64) = 42', 'int64', 'span'],
+    ['attr(span, "same.key", string) = "42"', 'string', 'span'],
+    ['attr(resource, "same.key", int64) = 42', 'int64', 'resource'],
+  ] as const)('preserves the selected tuple in %s', (input, type, scope) => {
+    const condition = expectCondition(
+      parseQuery(input, mixedKindFields, 'traces')
+    )
+    expect(condition.query.field).toMatchObject({
+      name: 'same.key',
+      type,
+      searchScope: 'attribute',
+      attributeScope: scope,
+    })
+  })
+
+  it('does not depend on discovery availability, order, or duplicates', () => {
+    const input = 'attr(span, "same.key", string) = "42"'
+    const expected = expectCondition(parseQuery(input, [], 'traces')).query
+      .field
+    for (const available of [
+      mixedKindFields,
+      [...mixedKindFields].reverse(),
+      [...mixedKindFields, mixedKindFields[1]],
+    ]) {
+      expect(
+        expectCondition(parseQuery(input, available, 'traces')).query.field
+      ).toEqual(expected)
+    }
+  })
+
+  it('rejects a scope that the active signal cannot own', () => {
+    expect(() =>
+      parseQuery('attr(log, "same.key", string) = "42"', [], 'traces')
+    ).toThrow(/Unknown field/)
+  })
+
+  it.each(['attr(log, "x", string)', 'attr(span, "x", decimal)'])(
+    'does not reinterpret invalid explicit syntax as the bare key %s',
+    reference => {
+      const collidingAttribute: FieldDefinition = {
+        name: reference,
+        type: 'string',
+        searchScope: 'attribute',
+        attributeScope: 'span',
+        operators: [OPERATORS.EQUALS],
+      }
+      expect(() =>
+        parseQuery(`${reference} = "value"`, [collidingAttribute], 'traces')
+      ).toThrow(/Unknown field/)
+      expect(() => parseQuery(reference, [], 'traces')).toThrow(
+        /Incomplete expression/
+      )
+      expect(validateQuery(reference, [], 'traces')).toEqual([
+        expect.objectContaining({ message: 'Incomplete expression' }),
+      ])
+    }
+  )
+
+  it('deduplicates identical tuples before checking bare-name ambiguity', () => {
+    const duplicate = [mixedKindFields[0], mixedKindFields[0]]
+    expect(
+      expectCondition(parseQuery('same.key = 42', duplicate, 'traces')).query
+        .field
+    ).toMatchObject({ type: 'int64', attributeScope: 'span' })
+  })
+
+  it('requires explicit text for a bare name with multiple tuples', () => {
+    expect(() =>
+      parseQuery('same.key = 42', mixedKindFields, 'traces')
+    ).toThrow(
+      'Ambiguous field: same.key. Select an explicit attribute scope and kind.'
+    )
+  })
+
+  it.each([
+    'quote"key',
+    'back\\slash',
+    'comma,key',
+    'dot.key',
+    'colon:key',
+    'open(key',
+    'close)key',
+    'space key',
+    'control\u0001key',
+    '雪',
+  ])('round-trips the exact quoted key %j', key => {
+    const field = parseAttributeFieldReference(
+      `attr(span, ${JSON.stringify(key)}, string)`,
+      'traces'
+    )
+    if (!field) throw new Error('Expected an attribute field')
+    const text = `${formatAttributeFieldReference(field)} = "value"`
+    expect(
+      expectCondition(parseQuery(text, [], 'traces')).query.field
+    ).toMatchObject({ name: key, type: 'string', attributeScope: 'span' })
+  })
+
+  it.each([
+    ['string', 'string'],
+    ['int64', 'int64'],
+    ['double', 'float64'],
+    ['bool', 'boolean'],
+    ['bytes', 'bytes'],
+    ['empty', 'empty'],
+    ['array', 'array'],
+    ['map', 'map'],
+  ] as const)('maps stored kind %s to frontend type %s', (kind, type) => {
+    expect(
+      parseAttributeFieldReference(`attr(span, "key", ${kind})`, 'traces')
+    ).toMatchObject({ type })
   })
 })
 
