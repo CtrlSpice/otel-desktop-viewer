@@ -323,6 +323,12 @@ describe('explicit attribute identity', () => {
       expect(() =>
         parseQuery(`${reference} = "value"`, [collidingAttribute], 'traces')
       ).toThrow(/Unknown field/)
+      expect(() => parseQuery(reference, [], 'traces')).toThrow(
+        /Incomplete expression/
+      )
+      expect(validateQuery(reference, [], 'traces')).toEqual([
+        expect.objectContaining({ message: 'Incomplete expression' }),
+      ])
     }
   )
 
