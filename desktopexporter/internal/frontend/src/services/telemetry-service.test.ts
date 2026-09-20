@@ -153,7 +153,7 @@ describe('telemetryAPI.getMetric', () => {
       error: { code: -32003, message: 'Metric not found' },
     })
     await expect(
-      telemetryAPI.getMetric('some-stream', 0, 1)
+      telemetryAPI.getMetric('some-stream', 0n, 1n)
     ).resolves.toBeNull()
   })
 
@@ -163,7 +163,7 @@ describe('telemetryAPI.getMetric', () => {
       id: 1,
       error: { code: -32009, message: 'Invalid metric stream ID' },
     })
-    const call = telemetryAPI.getMetric('not-a-stream', 0, 1)
+    const call = telemetryAPI.getMetric('not-a-stream', 0n, 1n)
     await expect(call).rejects.toBeInstanceOf(JsonRpcError)
     await expect(call).rejects.toMatchObject({ code: -32009 })
   })
@@ -178,7 +178,7 @@ describe('telemetryAPI.getMetric', () => {
         },
       })
     )
-    const metric = await telemetryAPI.getMetric('some-stream', 0, 1)
+    const metric = await telemetryAPI.getMetric('some-stream', 0n, 1n)
     expect(metric).not.toBeNull()
     expect(metric!.name).toBe('test.gauge')
     expect(metric!.timeseries).toEqual([])
@@ -292,7 +292,7 @@ describe('telemetryAPI.getMetric', () => {
       })
     )
 
-    const metric = await telemetryAPI.getMetric('some-stream', 0, 1)
+    const metric = await telemetryAPI.getMetric('some-stream', 0n, 1n)
     expect(metric!.timeseries[0]!.datapoints[0]).toMatchObject({
       intValue: null,
     })
@@ -456,7 +456,7 @@ describe('telemetryAPI.getMetric', () => {
     })
     stubRpcResult(wire)
 
-    const metric = await telemetryAPI.getMetric('some-stream', 0, 1)
+    const metric = await telemetryAPI.getMetric('some-stream', 0n, 1n)
     const datapoints = metric!.timeseries[0]!.datapoints
 
     expect(datapoints[0]).toMatchObject({
@@ -554,7 +554,7 @@ describe('telemetryAPI.getMetric', () => {
       })
     )
 
-    const metric = await telemetryAPI.getMetric('some-stream', 0, 2)
+    const metric = await telemetryAPI.getMetric('some-stream', 0n, 2n)
     const [absent, zero] = metric!.timeseries[0]!.datapoints
     expect(absent).toMatchObject({ sum: null, min: null, max: null })
     expect(zero).toMatchObject({ sum: 0, min: 0, max: 0 })
@@ -592,7 +592,7 @@ describe('telemetryAPI.getMetric', () => {
       })
     )
 
-    const value = (await telemetryAPI.getMetric('some-stream', 0, 1))!
+    const value = (await telemetryAPI.getMetric('some-stream', 0n, 1n))!
       .metadata[0]!.value
     expect(value).toMatchObject({ kind: 'map' })
     if (value.kind !== 'map') throw new Error('Expected a map value')
@@ -643,7 +643,7 @@ describe('telemetryAPI.getMetric', () => {
       })
     )
 
-    const metadata = (await telemetryAPI.getMetric('some-stream', 0, 1))!
+    const metadata = (await telemetryAPI.getMetric('some-stream', 0n, 1n))!
       .metadata
     expect(metadata[0]!.hasConflict).toBe(true)
     expect(metadata[1]!.hasConflict).toBe(true)
@@ -673,8 +673,8 @@ describe('telemetryAPI.getMetricAggregate', () => {
 
     const result = await telemetryAPI.getMetricAggregate(
       'some-stream',
-      0,
-      1,
+      0n,
+      1n,
       1,
       null,
       [0.5],
@@ -731,7 +731,7 @@ describe('telemetryAPI.searchTraces', () => {
     ]
     stubRpcResult(summaries)
 
-    await expect(telemetryAPI.searchTraces(0, 1)).resolves.toMatchObject([
+    await expect(telemetryAPI.searchTraces(0n, 1n)).resolves.toMatchObject([
       {
         traceID: 'trace-1',
         startTime: 1700000000000000000n,
@@ -762,7 +762,7 @@ describe('telemetryAPI.searchTraces', () => {
       },
     ] satisfies JsonTraceSummary[])
 
-    await expect(telemetryAPI.searchTraces(0, 1)).resolves.toMatchObject([
+    await expect(telemetryAPI.searchTraces(0n, 1n)).resolves.toMatchObject([
       { startTime: -9_223_372_036_854_775_808n, durationNs: null },
       { startTime: 16n, durationNs: 12n },
     ])
@@ -781,7 +781,7 @@ describe('telemetryAPI.searchTraces', () => {
       },
     ])
 
-    await expect(telemetryAPI.searchTraces(0, 1)).rejects.toThrow(
+    await expect(telemetryAPI.searchTraces(0n, 1n)).rejects.toThrow(
       'Invalid bigint wire value: expected string, got boolean'
     )
   })
@@ -1070,7 +1070,7 @@ describe('telemetryAPI metric bigint boundary', () => {
     delete result.timeseries[0]!.lastSeenNs
     stubRpcResult(result)
 
-    const metric = await telemetryAPI.getMetric('some-stream', 0, 1)
+    const metric = await telemetryAPI.getMetric('some-stream', 0n, 1n)
     expect(metric!.lastSeenNs).toBeNull()
     expect(metric!.timeseries[0]!.lastSeenNs).toBeNull()
     expect(metric!.timeseries[0]!.views![0]!.bucketStart).toBe(
@@ -1104,7 +1104,6 @@ function captureRequest() {
 
 describe('request parameters', () => {
   // Named methods, with the exact object each one is expected to send.
-  // toNanoseconds renders milliseconds as a decimal string, hence '2000000'.
   const named = [
     [
       'searchAttributes',
@@ -1118,18 +1117,18 @@ describe('request parameters', () => {
     ],
     [
       'searchTraces',
-      () => telemetryAPI.searchTraces(2, 5),
-      { startTime: '2000000', endTime: '5000000' },
+      () => telemetryAPI.searchTraces(2n, 5n),
+      { startTime: '2', endTime: '5' },
     ],
     [
       'searchLogs',
-      () => telemetryAPI.searchLogs(2, 5),
-      { startTime: '2000000', endTime: '5000000' },
+      () => telemetryAPI.searchLogs(2n, 5n),
+      { startTime: '2', endTime: '5' },
     ],
     [
       'searchMetricSummaries',
-      () => telemetryAPI.searchMetricSummaries(2, 5),
-      { startTime: '2000000', endTime: '5000000' },
+      () => telemetryAPI.searchMetricSummaries(2n, 5n),
+      { startTime: '2', endTime: '5' },
     ],
     [
       'getTraceSpanCount',
@@ -1177,7 +1176,7 @@ describe('request parameters', () => {
   // values, both sent -- which is what the getMetric tests cover.
   it('omits query entirely when no query tree is supplied', async () => {
     const sent = captureRequest()
-    await telemetryAPI.searchTraces(2, 5).catch(() => {})
+    await telemetryAPI.searchTraces(2n, 5n).catch(() => {})
     expect('query' in sent().params).toBe(false)
   })
 
@@ -1193,7 +1192,7 @@ describe('request parameters', () => {
     } satisfies QueryNode
 
     const sent = captureRequest()
-    await telemetryAPI.searchTraces(2, 5, tree).catch(() => {})
+    await telemetryAPI.searchTraces(2n, 5n, tree).catch(() => {})
     const params = sent().params
     expect(Object.keys(params).sort()).toEqual([
       'endTime',
@@ -1222,7 +1221,7 @@ describe('request parameters', () => {
     } satisfies QueryNode
 
     const sent = captureRequest()
-    await telemetryAPI.searchTraces(2, 5, tree).catch(() => {})
+    await telemetryAPI.searchTraces(2n, 5n, tree).catch(() => {})
     expect(sent().params.query).toEqual({
       id: 'duration-boundary',
       type: 'condition',
@@ -1236,19 +1235,23 @@ describe('request parameters', () => {
 
   it('includes a trace result limit without requiring a query tree', async () => {
     const sent = captureRequest()
-    await telemetryAPI.searchTraces(2, 5, undefined, 250).catch(() => {})
+    await telemetryAPI.searchTraces(2n, 5n, undefined, 250).catch(() => {})
     expect(sent().params).toEqual({
-      startTime: '2000000',
-      endTime: '5000000',
+      startTime: '2',
+      endTime: '5',
       limit: 250,
     })
   })
 
   it.each([
-    ['logs', () => telemetryAPI.searchLogs(2, 5, undefined, 250), 'searchLogs'],
+    [
+      'logs',
+      () => telemetryAPI.searchLogs(2n, 5n, undefined, 250),
+      'searchLogs',
+    ],
     [
       'metrics',
-      () => telemetryAPI.searchMetricSummaries(2, 5, undefined, 250),
+      () => telemetryAPI.searchMetricSummaries(2n, 5n, undefined, 250),
       'searchMetricSummaries',
     ],
   ])(
@@ -1259,8 +1262,8 @@ describe('request parameters', () => {
       expect(sent()).toMatchObject({
         method,
         params: {
-          startTime: '2000000',
-          endTime: '5000000',
+          startTime: '2',
+          endTime: '5',
           limit: 250,
         },
       })
@@ -1272,7 +1275,7 @@ describe('request parameters', () => {
     [
       'traces',
       () =>
-        telemetryAPI.searchTraces(2, 5, undefined, 25, {
+        telemetryAPI.searchTraces(2n, 5n, undefined, 25, {
           field: 'duration',
           direction: 'desc',
         }),
@@ -1282,7 +1285,7 @@ describe('request parameters', () => {
     [
       'logs',
       () =>
-        telemetryAPI.searchLogs(2, 5, undefined, 25, {
+        telemetryAPI.searchLogs(2n, 5n, undefined, 25, {
           field: 'severity',
           direction: 'asc',
         }),
@@ -1292,7 +1295,7 @@ describe('request parameters', () => {
     [
       'metrics',
       () =>
-        telemetryAPI.searchMetricSummaries(2, 5, undefined, 25, {
+        telemetryAPI.searchMetricSummaries(2n, 5n, undefined, 25, {
           field: 'dataPointCount',
           direction: 'desc',
         }),
@@ -1382,13 +1385,60 @@ describe('request parameters', () => {
     })
   })
 
+  it.each([
+    ['searchTraces', () => telemetryAPI.searchTraces(null, 5n)],
+    ['searchLogs', () => telemetryAPI.searchLogs(null, 5n)],
+    [
+      'searchMetricSummaries',
+      () => telemetryAPI.searchMetricSummaries(null, 5n),
+    ],
+    ['getMetric', () => telemetryAPI.getMetric('stream-1', null, 5n)],
+    [
+      'getMetricAggregate',
+      () =>
+        telemetryAPI.getMetricAggregate('stream-1', null, 5n, 10, null, [], 0),
+    ],
+  ])(
+    '%s preserves an independently unbounded start',
+    async (method, invoke) => {
+      const sent = captureRequest()
+      await invoke().catch(() => {})
+      expect(sent()).toMatchObject({
+        method,
+        params: { startTime: null, endTime: '5' },
+      })
+    }
+  )
+
+  it.each([
+    ['searchTraces', () => telemetryAPI.searchTraces(2n, null)],
+    ['searchLogs', () => telemetryAPI.searchLogs(2n, null)],
+    [
+      'searchMetricSummaries',
+      () => telemetryAPI.searchMetricSummaries(2n, null),
+    ],
+    ['getMetric', () => telemetryAPI.getMetric('stream-1', 2n, null)],
+    [
+      'getMetricAggregate',
+      () =>
+        telemetryAPI.getMetricAggregate('stream-1', 2n, null, 10, null, [], 0),
+    ],
+  ])('%s preserves an independently unbounded end', async (method, invoke) => {
+    const sent = captureRequest()
+    await invoke().catch(() => {})
+    expect(sent()).toMatchObject({
+      method,
+      params: { startTime: '2', endTime: null },
+    })
+  })
+
   it('getMetric sends the final named parameter contract exactly', async () => {
     const sent = captureRequest()
     await telemetryAPI
       .getMetric(
         'stream-1',
-        2,
-        5,
+        2n,
+        5n,
         10,
         ['series-1'],
         [0.5],
@@ -1403,8 +1453,8 @@ describe('request parameters', () => {
       .catch(() => {})
     expect(sent().params).toEqual({
       streamID: 'stream-1',
-      startTime: '2000000',
-      endTime: '5000000',
+      startTime: '2',
+      endTime: '5',
       targetBuckets: 10,
       seriesIDs: ['series-1'],
       quantiles: [0.5],
@@ -1420,18 +1470,18 @@ describe('request parameters', () => {
 
   it('preserves omitted, empty, and null series selections', async () => {
     const omitted = captureRequest()
-    await telemetryAPI.getMetric('stream-1', 2, 5).catch(() => {})
+    await telemetryAPI.getMetric('stream-1', 2n, 5n).catch(() => {})
     expect('seriesIDs' in omitted().params).toBe(false)
 
     const empty = captureRequest()
     await telemetryAPI
-      .getMetric('stream-1', 2, 5, undefined, [])
+      .getMetric('stream-1', 2n, 5n, undefined, [])
       .catch(() => {})
     expect(empty().params.seriesIDs).toEqual([])
 
     const unfiltered = captureRequest()
     await telemetryAPI
-      .getMetricAggregate('stream-1', 2, 5, 10, null, [], 0)
+      .getMetricAggregate('stream-1', 2n, 5n, 10, null, [], 0)
       .catch(() => {})
     expect(unfiltered().params.seriesIDs).toBeNull()
   })
@@ -1469,12 +1519,12 @@ describe('request parameters', () => {
   it('serializes exact bigint bounds without converting them through number', async () => {
     const sent = captureRequest()
     await telemetryAPI
-      .searchTraces(9_223_372_036_854_775_807n, -9_223_372_036_854_775_808n)
+      .searchTraces(18_446_744_073_709_551_615n, 0n)
       .catch(() => {})
 
     expect(sent().params).toEqual({
-      startTime: '9223372036854775807',
-      endTime: '-9223372036854775808',
+      startTime: '18446744073709551615',
+      endTime: '0',
     })
   })
 })

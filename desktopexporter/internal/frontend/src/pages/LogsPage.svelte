@@ -38,7 +38,7 @@
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
     getTimeContext,
-    selectionToQueryRangeMs,
+    selectionToQueryRangeNs,
   } from '@/contexts/time-context.svelte'
   import { navigateToItem } from '@/route'
   import type { LogData } from '@/types/api-types'
@@ -73,7 +73,7 @@
     initialSort: { column: 'timestamp', direction: 'desc' },
     compare: compareLogs,
     fetchList: async () => {
-      const { startTime, endTime } = selectionToQueryRangeMs(
+      const { startTime, endTime } = selectionToQueryRangeNs(
         timeContext.selection,
         Date.now()
       )

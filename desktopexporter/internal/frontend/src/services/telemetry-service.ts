@@ -96,25 +96,11 @@ export type SearchSort = {
 // Custom error codes minted by the backend (internal/server/errors.go).
 const ERR_CODE_METRIC_NOT_FOUND = -32003
 
-// Helper function to convert milliseconds to nanoseconds
-function toNanoseconds(milliseconds: number): string {
-  return milliseconds === 0 ? '0' : milliseconds.toString() + '000000'
-}
+/** An absolute query bound in Unix nanoseconds, or null when unbounded. */
+export type QueryTimeBound = bigint | null
 
-/**
- * A time bound for a query: milliseconds, or exact nanoseconds as a bigint.
- *
- * Milliseconds are what every view works in and what the pickers produce. A
- * bigint is for the caller that needs a boundary the millisecond grid cannot
- * express -- fetching one heatmap column means ending one nanosecond short of
- * the next column's start, and rounding that to milliseconds would drop the
- * column's last millisecond of readings.
- */
-export type QueryTimeBound = number | bigint | null
-
-function boundToNanoseconds(bound: QueryTimeBound): string | null {
-  if (bound === null) return null
-  return typeof bound === 'bigint' ? bound.toString() : toNanoseconds(bound)
+function serializeNanoseconds(bound: QueryTimeBound): string | null {
+  return bound === null ? null : bound.toString()
 }
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Validates the raw wire value before bigint conversion.
@@ -790,8 +776,8 @@ export let telemetryAPI = {
     limit?: number,
     sort?: SearchSort
   ): Promise<TraceSummary[]> => {
-    const startTimeNs = boundToNanoseconds(startTime)
-    const endTimeNs = boundToNanoseconds(endTime)
+    const startTimeNs = serializeNanoseconds(startTime)
+    const endTimeNs = serializeNanoseconds(endTime)
 
     const rawData = await callRPC<JsonTraceSummary[]>(
       'searchTraces',
@@ -841,8 +827,8 @@ export let telemetryAPI = {
     limit?: number,
     sort?: SearchSort
   ): Promise<LogSummary[]> => {
-    const startTimeNs = boundToNanoseconds(startTime)
-    const endTimeNs = boundToNanoseconds(endTime)
+    const startTimeNs = serializeNanoseconds(startTime)
+    const endTimeNs = serializeNanoseconds(endTime)
     const rawData = await callRPC<JsonLogSummary[]>(
       'searchLogs',
       named({
@@ -873,8 +859,8 @@ export let telemetryAPI = {
     limit?: number,
     sort?: SearchSort
   ): Promise<MetricSummary[]> => {
-    const startTimeNs = boundToNanoseconds(startTime)
-    const endTimeNs = boundToNanoseconds(endTime)
+    const startTimeNs = serializeNanoseconds(startTime)
+    const endTimeNs = serializeNanoseconds(endTime)
     const rawData = await callRPC<JsonMetricSummary[]>(
       'searchMetricSummaries',
       named({
@@ -929,8 +915,8 @@ export let telemetryAPI = {
      *  set is chosen from the response being fetched. */
     datapointSeriesLimit?: number
   ): Promise<MetricData | null> => {
-    const startTimeNs = boundToNanoseconds(startTime)
-    const endTimeNs = boundToNanoseconds(endTime)
+    const startTimeNs = serializeNanoseconds(startTime)
+    const endTimeNs = serializeNanoseconds(endTime)
     // Not-found arrives as a JSON-RPC error (one wire convention across all
     // signals); translate it to null here so callers keep a simple contract.
     try {
@@ -995,8 +981,8 @@ export let telemetryAPI = {
      *  per-series lines beneath them. */
     tzName?: string
   ): Promise<MetricAggregateEnvelope | null> => {
-    const startTimeNs = boundToNanoseconds(startTime)
-    const endTimeNs = boundToNanoseconds(endTime)
+    const startTimeNs = serializeNanoseconds(startTime)
+    const endTimeNs = serializeNanoseconds(endTime)
     try {
       const raw = await callRPC<JsonMetricAggregateEnvelope | null>(
         'getMetricAggregate',

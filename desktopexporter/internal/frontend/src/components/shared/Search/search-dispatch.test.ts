@@ -48,18 +48,18 @@ const metricResults = [
 
 const traceContext = {
   signal: 'traces',
-  startTime: 10,
-  endTime: 20,
+  startTime: 10n,
+  endTime: 20n,
 } satisfies SearchContext
 const logContext = {
   signal: 'logs',
-  startTime: 10,
-  endTime: 20,
+  startTime: 10n,
+  endTime: 20n,
 } satisfies SearchContext
 const metricContext = {
   signal: 'metrics',
-  startTime: 10,
-  endTime: 20,
+  startTime: 10n,
+  endTime: 20n,
 } satisfies SearchContext
 
 const queryTree = {
@@ -89,7 +89,7 @@ describe('search dispatch', () => {
       queryTree,
       updateSeq: 11,
     })
-    expect(searchTraces).toHaveBeenCalledWith(10, 20, queryTree, 25, sort)
+    expect(searchTraces).toHaveBeenCalledWith(10n, 20n, queryTree, 25, sort)
     expect(searchLogs).not.toHaveBeenCalled()
     expect(searchMetrics).not.toHaveBeenCalled()
   })
@@ -109,7 +109,7 @@ describe('search dispatch', () => {
       queryTree,
       updateSeq: 12,
     })
-    expect(searchLogs).toHaveBeenCalledWith(10, 20, queryTree, 50, sort)
+    expect(searchLogs).toHaveBeenCalledWith(10n, 20n, queryTree, 50, sort)
     expect(searchTraces).not.toHaveBeenCalled()
     expect(searchMetrics).not.toHaveBeenCalled()
   })
@@ -129,7 +129,7 @@ describe('search dispatch', () => {
       queryTree,
       updateSeq: 13,
     })
-    expect(searchMetrics).toHaveBeenCalledWith(10, 20, queryTree, 75, sort)
+    expect(searchMetrics).toHaveBeenCalledWith(10n, 20n, queryTree, 75, sort)
     expect(searchTraces).not.toHaveBeenCalled()
     expect(searchLogs).not.toHaveBeenCalled()
   })
@@ -144,8 +144,8 @@ describe('search dispatch', () => {
 
     await expect(runSearch(traceContext, 14)).rejects.toBe(error)
     expect(searchTraces).toHaveBeenCalledWith(
-      10,
-      20,
+      10n,
+      20n,
       undefined,
       undefined,
       undefined
