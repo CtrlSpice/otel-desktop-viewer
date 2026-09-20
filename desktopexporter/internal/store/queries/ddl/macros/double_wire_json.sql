@@ -5,6 +5,6 @@ create or replace macro double_wire_json(value) as (
 		when value is null then null::json
 		when isfinite(value) and not (value = 0 and signbit(value))
 			then to_json(value)
-		else to_json(double_wire_bits(value))
+		else to_json('0x' || lower(hex((value::double)::bit::blob)))
 	end
 )

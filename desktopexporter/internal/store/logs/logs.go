@@ -582,6 +582,7 @@ func mapLogAttributeExpressions(field *search.FieldDefinition, query *search.Que
 		*params = append(*params, search.NamedParam{Name: kindParam, Value: kind})
 	}
 	kindPredicate := search.AttributeKindPredicate(kindParam)
+	valueExpression := search.AttributeValueExpression(kind)
 	if mode == search.OTelArrayOperand {
 		var attributeIDs string
 		switch field.AttributeScope {
@@ -609,22 +610,22 @@ func mapLogAttributeExpressions(field *search.FieldDefinition, query *search.Que
 
 	switch field.AttributeScope {
 	case "resource":
-		return []search.ResolvedExpression{search.Text(fmt.Sprintf(
+		return []search.ResolvedExpression{search.AttributeExpression(fmt.Sprintf(
 			`l.resource_id in (select r.id from resources r, unnest(r.attribute_ids) t(aid)
 				join attributes a on a.id = t.aid where a.key = %s%s and
-				coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})`,
-			keyParam, kindPredicate))}, nil
+				%s {COND})`,
+			keyParam, kindPredicate, valueExpression), kind, mode)}, nil
 	case "scope":
-		return []search.ResolvedExpression{search.Text(fmt.Sprintf(
+		return []search.ResolvedExpression{search.AttributeExpression(fmt.Sprintf(
 			`l.scope_id in (select sc.id from scopes sc, unnest(sc.attribute_ids) t(aid)
 				join attributes a on a.id = t.aid where a.key = %s%s and
-				coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})`,
-			keyParam, kindPredicate))}, nil
+				%s {COND})`,
+			keyParam, kindPredicate, valueExpression), kind, mode)}, nil
 	case "log":
-		return []search.ResolvedExpression{search.Text(fmt.Sprintf(`exists(
+		return []search.ResolvedExpression{search.AttributeExpression(fmt.Sprintf(`exists(
 			select 1 from unnest(l.attribute_ids) t(aid) join attributes a on a.id = t.aid
-			where a.key = %s%s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND}
-		)`, keyParam, kindPredicate))}, nil
+			where a.key = %s%s and %s {COND}
+		)`, keyParam, kindPredicate, valueExpression), kind, mode)}, nil
 	default:
 		return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidLogQuery)
 	}

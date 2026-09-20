@@ -1,6 +1,7 @@
 package search
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -494,6 +495,53 @@ func TestBuildOperatorCondition_ArrayTypes(t *testing.T) {
 			assert.Equal(t, expected, params)
 		})
 	}
+}
+
+func TestAttributeNumericOperands(t *testing.T) {
+	t.Run("int64 scalar remains exact above 2^53", func(t *testing.T) {
+		params := []NamedParam{}
+		condition, err := BuildOperatorCondition(
+			AttributeExpression("attribute_int64(a.value)", "int64", AttributeSignedIntegerOperand),
+			&Query{FieldOperator: ">", Value: "9007199254740993"},
+			&params,
+		)
+		require.NoError(t, err)
+		assert.Equal(t, "attribute_int64(a.value) > value_0", condition)
+		assert.Equal(t, []NamedParam{{"value_0", int64(9_007_199_254_740_993)}}, params)
+	})
+
+	t.Run("int64 rejects a fractional operand", func(t *testing.T) {
+		_, err := BuildOperatorCondition(
+			AttributeExpression("attribute_int64(a.value)", "int64", AttributeSignedIntegerOperand),
+			&Query{FieldOperator: "=", Value: "42.5"},
+			&[]NamedParam{},
+		)
+		assert.ErrorIs(t, err, ErrInvalidQuery)
+	})
+
+	t.Run("double membership binds typed values and wire bits", func(t *testing.T) {
+		params := []NamedParam{}
+		condition, err := BuildOperatorCondition(
+			AttributeExpression("attribute_double(a.value)", "double", AttributeDoubleOperand),
+			&Query{FieldOperator: "IN", Value: `["1.5","0x8000000000000000"]`},
+			&params,
+		)
+		require.NoError(t, err)
+		assert.Equal(t, "attribute_double(a.value) IN CAST(value_0 AS DOUBLE[])", condition)
+		require.Len(t, params, 1)
+		values := params[0].Value.([]any)
+		assert.Equal(t, 1.5, values[0])
+		assert.True(t, math.Signbit(values[1].(float64)))
+	})
+
+	t.Run("double rejects noncanonical special spelling", func(t *testing.T) {
+		_, err := BuildOperatorCondition(
+			AttributeExpression("attribute_double(a.value)", "double", AttributeDoubleOperand),
+			&Query{FieldOperator: "=", Value: "NaN"},
+			&[]NamedParam{},
+		)
+		assert.ErrorIs(t, err, ErrInvalidQuery)
+	})
 }
 
 func TestParseArrayValue(t *testing.T) {
