@@ -3,7 +3,11 @@ import {
   rateBucketStartForSourceDatapoint,
   timeseriesToChartTimeseries,
 } from './chart-projection'
-import type { GaugeDataPoint, MetricTimeseries } from '@/types/api-types'
+import type {
+  GaugeDataPoint,
+  MetricTimeseries,
+  SumDataPoint,
+} from '@/types/api-types'
 
 describe('timeseriesToChartTimeseries', () => {
   it('approximates an exact integer only in the chart projection', () => {
@@ -38,6 +42,45 @@ describe('timeseriesToChartTimeseries', () => {
 
     expect(line!.points[0]!.value).toBe(Number(9_007_199_254_740_993n))
     expect(datapoint.intValue).toBe(9_007_199_254_740_993n)
+  })
+
+  it('approximates an exact calculated delta only in the chart projection', () => {
+    const datapoint: SumDataPoint = {
+      id: 'integer-sum',
+      timestamp: 2n,
+      timestampMs: 0,
+      startTime: 0n,
+      flags: 0,
+      exemplars: [],
+      metricType: 'Sum',
+      doubleValue: null,
+      intValue: 9_007_199_254_740_993n,
+      valueType: 'Int',
+      isMonotonic: true,
+      aggregationTemporalityCode: 2,
+      aggregationTemporality: 'Cumulative',
+      delta: 9_007_199_254_740_993n,
+      isReset: false,
+    }
+    const timeseries = [
+      {
+        attributesKey: 'series-a',
+        attributes: [],
+        resource: { attributes: [], droppedAttributesCount: 0 },
+        datapoints: [datapoint],
+        stats: null,
+        datapointCount: 1,
+        lastSeenNs: 2n,
+        views: null,
+        rateStats: null,
+        sparkline: null,
+      },
+    ] satisfies MetricTimeseries[]
+
+    const [line] = timeseriesToChartTimeseries(timeseries).chartTimeseries
+
+    expect(line!.points[0]!.delta).toBe(Number(datapoint.delta))
+    expect(datapoint.delta).toBe(9_007_199_254_740_993n)
   })
 
   it('preserves exact source identity when Date coordinates collide', () => {

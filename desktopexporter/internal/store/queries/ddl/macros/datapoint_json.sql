@@ -116,8 +116,12 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, quantiles) 
 					--
 					-- Cumulative only: a Delta Sum's value already *is* the
 					-- interval's activity, so differencing it would be wrong.
-					'delta', case when d.aggregation_temporality = 2
-						then d.delta end,
+					'delta', case when d.aggregation_temporality = 2 then
+						case when d.delta_int is not null
+							then to_json(d.delta_int::varchar)
+							else to_json(d.delta_double)
+						end
+					end,
 					'isReset', case when d.aggregation_temporality = 2
 						then d.is_reset end
 				)

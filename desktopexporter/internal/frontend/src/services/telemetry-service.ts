@@ -489,7 +489,10 @@ function dataPointFromJSON(json: JsonDataPoint): DataPoint {
         isMonotonic: json.isMonotonic,
         aggregationTemporalityCode: json.aggregationTemporalityCode,
         aggregationTemporality: json.aggregationTemporality,
-        delta: json.delta,
+        delta:
+          typeof json.delta === 'string'
+            ? bigintFromWire(json.delta)
+            : json.delta,
         isReset: json.isReset,
       }
     case 'Histogram':
