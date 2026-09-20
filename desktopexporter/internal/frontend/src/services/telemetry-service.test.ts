@@ -207,7 +207,7 @@ describe('telemetryAPI.getMetric', () => {
                 startTime: '0',
                 flags: 0,
                 metricType: 'Gauge',
-                doubleValue: 1,
+                doubleValue: '0x8000000000000000',
                 intValue: null,
                 valueType: 'Double',
                 exemplars: [
@@ -241,7 +241,7 @@ describe('telemetryAPI.getMetric', () => {
                   {
                     timestamp: '104',
                     valueType: 'Double',
-                    doubleValue: 'NaN',
+                    doubleValue: '0x7ff8000000000001',
                     intValue: null,
                     traceID: null,
                     spanID: null,
@@ -250,7 +250,7 @@ describe('telemetryAPI.getMetric', () => {
                   {
                     timestamp: '105',
                     valueType: 'Double',
-                    doubleValue: 'Infinity',
+                    doubleValue: '0x7ff0000000000000',
                     intValue: null,
                     traceID: null,
                     spanID: null,
@@ -259,7 +259,16 @@ describe('telemetryAPI.getMetric', () => {
                   {
                     timestamp: '106',
                     valueType: 'Double',
-                    doubleValue: '-Infinity',
+                    doubleValue: '0xfff0000000000000',
+                    intValue: null,
+                    traceID: null,
+                    spanID: null,
+                    filteredAttributes: [],
+                  },
+                  {
+                    timestamp: '107',
+                    valueType: 'Double',
+                    doubleValue: '0xfff8000000000002',
                     intValue: null,
                     traceID: null,
                     spanID: null,
@@ -285,9 +294,12 @@ describe('telemetryAPI.getMetric', () => {
 
     const metric = await telemetryAPI.getMetric('some-stream', 0, 1)
     expect(metric!.timeseries[0]!.datapoints[0]).toMatchObject({
-      doubleValue: 1,
       intValue: null,
     })
+    const datapoint = metric!.timeseries[0]!.datapoints[0]!
+    expect(datapoint.metricType).toBe('Gauge')
+    if (datapoint.metricType !== 'Gauge') throw new Error('expected Gauge')
+    expect(Object.is(datapoint.doubleValue, -0)).toBe(true)
     const exemplars = metric!.timeseries[0]!.datapoints[0]!.exemplars
     expect(exemplars).toEqual([
       expect.objectContaining({
@@ -326,10 +338,18 @@ describe('telemetryAPI.getMetric', () => {
         doubleValue: Number.NEGATIVE_INFINITY,
         intValue: null,
       }),
+      // JavaScript exposes both payloads as NaN; stored/wire bit identity is
+      // asserted by the store tests rather than inferred from Number.NaN.
+      expect.objectContaining({
+        timestamp: 107n,
+        valueType: 'Double',
+        doubleValue: Number.NaN,
+        intValue: null,
+      }),
     ])
   })
 
-  it('revives every received metric integer field without losing precision', async () => {
+  it('revives received metric numeric fields without losing precision', async () => {
     const wire = metricResult({
       timeseries: [
         {
@@ -375,12 +395,12 @@ describe('telemetryAPI.getMetric', () => {
               exemplars: [],
               metricType: 'Histogram',
               count: '18446744073709551615',
-              sum: 1,
-              min: 1,
-              max: 1,
+              sum: '0x7ff8000000000001',
+              min: '0xfff0000000000000',
+              max: '0x7ff0000000000000',
               bucketCounts: ['0', '9007199254740993', '18446744073709551615'],
-              explicitBounds: [0, 1],
-              quantiles: null,
+              explicitBounds: ['0x8000000000000000', 1],
+              quantiles: { '0.5': '0x7ff0000000000000' },
               aggregationTemporalityCode: -1,
               aggregationTemporality: 'Unknown (-1)',
             },
@@ -398,7 +418,7 @@ describe('telemetryAPI.getMetric', () => {
               max: 1,
               scale: 0,
               zeroCount: '9007199254740993',
-              zeroThreshold: 0,
+              zeroThreshold: '0x8000000000000000',
               positiveBucketOffset: 0,
               positiveBucketCounts: ['18446744073709551615'],
               negativeBucketOffset: 0,
@@ -407,10 +427,27 @@ describe('telemetryAPI.getMetric', () => {
               aggregationTemporalityCode: 1,
               aggregationTemporality: 'Delta',
             },
+            {
+              id: 'sum-overflow',
+              timestamp: '104',
+              timestampMs: 0,
+              startTime: '0',
+              flags: 0,
+              exemplars: [],
+              metricType: 'Sum',
+              doubleValue: 1,
+              intValue: null,
+              valueType: 'Double',
+              isMonotonic: true,
+              aggregationTemporalityCode: 2,
+              aggregationTemporality: 'Cumulative',
+              delta: '0x7ff0000000000000',
+              isReset: false,
+            },
           ],
           stats: null,
-          datapointCount: 4,
-          lastSeenNs: '103',
+          datapointCount: 5,
+          lastSeenNs: '104',
           views: null,
           rateStats: null,
           sparkline: null,
@@ -435,11 +472,30 @@ describe('telemetryAPI.getMetric', () => {
       aggregationTemporalityCode: -1,
       aggregationTemporality: 'Unknown (-1)',
     })
+    const histogram = datapoints[2]!
+    if (histogram.metricType !== 'Histogram') {
+      throw new Error('expected Histogram')
+    }
+    expect(Number.isNaN(histogram.sum)).toBe(true)
+    expect(histogram.min).toBe(Number.NEGATIVE_INFINITY)
+    expect(histogram.max).toBe(Number.POSITIVE_INFINITY)
+    expect(Object.is(histogram.explicitBounds[0], -0)).toBe(true)
+    expect(histogram.quantiles).toEqual({
+      '0.5': Number.POSITIVE_INFINITY,
+    })
     expect(datapoints[3]).toMatchObject({
       count: 18_446_744_073_709_551_615n,
       zeroCount: 9_007_199_254_740_993n,
       positiveBucketCounts: [18_446_744_073_709_551_615n],
       negativeBucketCounts: [],
+    })
+    const exponential = datapoints[3]!
+    if (exponential.metricType !== 'ExponentialHistogram') {
+      throw new Error('expected ExponentialHistogram')
+    }
+    expect(Object.is(exponential.zeroThreshold, -0)).toBe(true)
+    expect(datapoints[4]).toMatchObject({
+      delta: Number.POSITIVE_INFINITY,
     })
     expect(wire.timeseries[0]!.datapoints[2]).toMatchObject({
       count: '18446744073709551615',

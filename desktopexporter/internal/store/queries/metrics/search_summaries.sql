@@ -135,7 +135,7 @@
 			'seriesCount', sub.series_count,
 			'seriesCardinality', sub.series_cardinality,
 			'dataPointCount', sub.datapoint_count,
-			'lastValue', sub.last_value,
+			'lastValue', double_wire_json(sub.last_value),
 			'lastSeen', sub.last_dp_ts::varchar
 		) order by {{.SummaryOrder}})), '[]') as varchar) as summaries
 		from selected_summaries sub

@@ -760,8 +760,9 @@
 		-- to the floor the reader sees.
 		scalar_rate_stats as (
 			select series_id,
-				json_object('min', min(drawn_rate), 'max', max(drawn_rate),
-				            'avg', avg(drawn_rate)) as rate_stats
+				json_object('min', double_wire_json(min(drawn_rate)),
+				            'max', double_wire_json(max(drawn_rate)),
+				            'avg', double_wire_json(avg(drawn_rate))) as rate_stats
 			from scalar_view_drawn
 			group by series_id
 		),
@@ -770,10 +771,10 @@
 				to_json(list(json_object(
 					'bucketStart', a.bucket_start::varchar,
 					'sampleCount', a.sample_count,
-					'sum', a.value_sum,
-					'avg', a.value_avg,
-					'rate', a.rate,
-					'slope', sl.slope,
+					'sum', double_wire_json(a.value_sum),
+					'avg', double_wire_json(a.value_avg),
+					'rate', double_wire_json(a.rate),
+					'slope', double_wire_json(sl.slope),
 					'hasReset', a.has_reset
 				) order by a.bucket_start)) as views
 			from scalar_view_agg a
@@ -855,19 +856,19 @@
 				coalesce(to_json(list(json_object(
 					'bucketStart', a.bucket_start::varchar,
 					'sampleCount', a.sample_count,
-					'sum', a.value_sum,
-					'avg', a.value_avg,
-					'rate', a.rate,
-					'slope', sl.slope,
+					'sum', double_wire_json(a.value_sum),
+					'avg', double_wire_json(a.value_avg),
+					'rate', double_wire_json(a.rate),
+					'slope', double_wire_json(sl.slope),
 					'hasReset', a.has_reset
 				) order by a.bucket_start) filter (where a.pool = 'selected')), json('[]')) as selected,
 				coalesce(to_json(list(json_object(
 					'bucketStart', a.bucket_start::varchar,
 					'sampleCount', a.sample_count,
-					'sum', a.value_sum,
-					'avg', a.value_avg,
-					'rate', a.rate,
-					'slope', sl.slope,
+					'sum', double_wire_json(a.value_sum),
+					'avg', double_wire_json(a.value_avg),
+					'rate', double_wire_json(a.rate),
+					'slope', double_wire_json(sl.slope),
 					'hasReset', a.has_reset
 				) order by a.bucket_start) filter (where a.pool = 'all')), json('[]')) as all_series
 			from scalar_pool_agg a
@@ -955,7 +956,7 @@
 			select series_id,
 				to_json(list(json_object(
 					'timestamp', timestamp::varchar,
-					'value', value
+					'value', double_wire_json(value)
 				) order by timestamp, value)) as sparkline
 			from sparkline_points
 			group by series_id
@@ -1527,7 +1528,7 @@
 		dp_quantiles as (
 			select t.id, to_json(map(
 				list(t.q::varchar order by t.qi),
-				list(p.v order by t.qi))) as quantiles
+				list(double_wire_json(p.v) order by t.qi))) as quantiles
 			from (select b.id, qq.q, qq.qi from dp_qsrc b,
 				(select u.q, u.i as qi from unnest((select quantiles from input)) with ordinality u(q, i)) qq) t
 			left join dp_q_picked p on p.id = t.id and p.q = t.q and p.rn = 1
@@ -1779,7 +1780,7 @@
 		agg_quantiles as (
 			select t.bucket_start, to_json(map(
 				list(t.q::varchar order by t.qi),
-				list(p.v order by t.qi))) as quantiles
+				list(double_wire_json(p.v) order by t.qi))) as quantiles
 			from (select b.bucket_start, qq.q, qq.qi from agg_qsrc b,
 				(select u.q, u.i as qi from unnest((select quantiles from input)) with ordinality u(q, i)) qq) t
 			left join agg_q_picked p on p.bucket_start = t.bucket_start and p.q = t.q and p.rn = 1

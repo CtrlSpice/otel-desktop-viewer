@@ -22,12 +22,12 @@
  * lifetime even as the user navigates between metrics. (The
  * underlying `selectedMetric` cell lives on MetricsPage.)
  */
-import type { JsonAggregateBucket } from '@/types/wire-types'
 import { createContext, untrack } from 'svelte'
 import { SvelteSet } from 'svelte/reactivity'
 import type {
   MetricData,
   MetricTimeseries,
+  AggregateBucket,
   MetricType,
   DataPoint,
   HistogramDataPoint,
@@ -435,7 +435,7 @@ export interface MetricViewContext {
  * maps field names and widens the counts to numbers.
  */
 export function aggregateToSlices(
-  buckets: JsonAggregateBucket[] | null
+  buckets: AggregateBucket[] | null
 ): HistogramSlicePoint[] {
   if (!buckets) return []
   return buckets.map(b => {
@@ -488,9 +488,9 @@ export function createMetricViewContext(
    * layer over a metric and owes its predictability to not doing IO. The page
    * owns the fetch, this owns what the numbers mean.
    */
-  getAggregate: () => JsonAggregateBucket[] | null = () => null,
+  getAggregate: () => AggregateBucket[] | null = () => null,
   /** The same merge over a single bucket spanning the window. */
-  getAggregateSummary: () => JsonAggregateBucket | null = () => null,
+  getAggregateSummary: () => AggregateBucket | null = () => null,
   /**
    * The store's cross-series fold for a scalar metric: the checked pool and the
    * full pool, on the same bucket grid the per-series views use.

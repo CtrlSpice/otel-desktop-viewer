@@ -14,6 +14,7 @@ import type {
   ScalarAggregate,
   ScalarViewBucket,
   MetricAggregateEnvelope,
+  AggregateBucket,
 } from '@/types/api-types'
 import type {
   JsonAttributeDefinition,
@@ -36,6 +37,8 @@ import type {
   JsonMetricAggregateEnvelope,
   JsonScalarAggregate,
   JsonScalarViewBucket,
+  JsonAggregateBucket,
+  JsonDouble,
 } from '@/types/wire-types'
 import type { Attribute, AttributeValue } from '@/types/api-types'
 import type { QueryNode } from '@/components/shared/Search/queryTree'
@@ -139,6 +142,29 @@ function doubleFromWire(value: number | string): number {
   const view = new DataView(bytes)
   view.setBigUint64(0, BigInt(value), false)
   return view.getFloat64(0, false)
+}
+
+function nullableDoubleFromWire(value: JsonDouble | null): number | null {
+  return value === null ? null : doubleFromWire(value)
+}
+
+function scalarDeltaFromWire(
+  value: JsonDouble | string | null | undefined
+): number | bigint | null | undefined {
+  if (typeof value !== 'string') return value
+  return value.startsWith('0x') ? doubleFromWire(value) : bigintFromWire(value)
+}
+
+function doubleRecordFromJSON(
+  values: Record<string, JsonDouble | null> | null
+): Record<string, number | null> | null {
+  if (values === null) return null
+  return Object.fromEntries(
+    Object.entries(values).map(([key, value]) => [
+      key,
+      nullableDoubleFromWire(value),
+    ])
+  )
 }
 
 function attributeValueFromJSON(value: JsonAttributeValue): AttributeValue {
@@ -413,21 +439,6 @@ function logDataFromJSON(json: JsonLogData): LogData {
   }
 }
 
-function exemplarDoubleFromJSON(
-  value: number | 'NaN' | 'Infinity' | '-Infinity'
-): number {
-  switch (value) {
-    case 'NaN':
-      return Number.NaN
-    case 'Infinity':
-      return Number.POSITIVE_INFINITY
-    case '-Infinity':
-      return Number.NEGATIVE_INFINITY
-    default:
-      return value
-  }
-}
-
 function exemplarFromJSON(json: JsonExemplar): Exemplar {
   const base = {
     timestamp: bigintFromWire(json.timestamp),
@@ -440,7 +451,7 @@ function exemplarFromJSON(json: JsonExemplar): Exemplar {
       return {
         ...base,
         valueType: 'Double',
-        doubleValue: exemplarDoubleFromJSON(json.doubleValue),
+        doubleValue: doubleFromWire(json.doubleValue),
         intValue: null,
       }
     case 'Int':
@@ -475,7 +486,7 @@ function dataPointFromJSON(json: JsonDataPoint): DataPoint {
       return {
         ...base,
         metricType: 'Gauge',
-        doubleValue: json.doubleValue,
+        doubleValue: nullableDoubleFromWire(json.doubleValue),
         intValue: json.intValue === null ? null : bigintFromWire(json.intValue),
         valueType: json.valueType,
       }
@@ -483,16 +494,13 @@ function dataPointFromJSON(json: JsonDataPoint): DataPoint {
       return {
         ...base,
         metricType: 'Sum',
-        doubleValue: json.doubleValue,
+        doubleValue: nullableDoubleFromWire(json.doubleValue),
         intValue: json.intValue === null ? null : bigintFromWire(json.intValue),
         valueType: json.valueType,
         isMonotonic: json.isMonotonic,
         aggregationTemporalityCode: json.aggregationTemporalityCode,
         aggregationTemporality: json.aggregationTemporality,
-        delta:
-          typeof json.delta === 'string'
-            ? bigintFromWire(json.delta)
-            : json.delta,
+        delta: scalarDeltaFromWire(json.delta),
         isReset: json.isReset,
       }
     case 'Histogram':
@@ -500,12 +508,12 @@ function dataPointFromJSON(json: JsonDataPoint): DataPoint {
         ...base,
         metricType: 'Histogram',
         count: bigintFromWire(json.count),
-        sum: json.sum,
-        min: json.min,
-        max: json.max,
+        sum: nullableDoubleFromWire(json.sum),
+        min: nullableDoubleFromWire(json.min),
+        max: nullableDoubleFromWire(json.max),
         bucketCounts: json.bucketCounts.map(bigintFromWire),
-        explicitBounds: json.explicitBounds,
-        quantiles: json.quantiles,
+        explicitBounds: json.explicitBounds.map(doubleFromWire),
+        quantiles: doubleRecordFromJSON(json.quantiles),
         aggregationTemporalityCode: json.aggregationTemporalityCode,
         aggregationTemporality: json.aggregationTemporality,
       }
@@ -514,17 +522,17 @@ function dataPointFromJSON(json: JsonDataPoint): DataPoint {
         ...base,
         metricType: 'ExponentialHistogram',
         count: bigintFromWire(json.count),
-        sum: json.sum,
-        min: json.min,
-        max: json.max,
+        sum: nullableDoubleFromWire(json.sum),
+        min: nullableDoubleFromWire(json.min),
+        max: nullableDoubleFromWire(json.max),
         scale: json.scale,
         zeroCount: bigintFromWire(json.zeroCount),
-        zeroThreshold: json.zeroThreshold,
+        zeroThreshold: doubleFromWire(json.zeroThreshold),
         positiveBucketOffset: json.positiveBucketOffset,
         positiveBucketCounts: json.positiveBucketCounts.map(bigintFromWire),
         negativeBucketOffset: json.negativeBucketOffset,
         negativeBucketCounts: json.negativeBucketCounts.map(bigintFromWire),
-        quantiles: json.quantiles,
+        quantiles: doubleRecordFromJSON(json.quantiles),
         aggregationTemporalityCode: json.aggregationTemporalityCode,
         aggregationTemporality: json.aggregationTemporality,
       }
@@ -546,15 +554,30 @@ function timeseriesFromJSON(json: JsonMetricTimeseries): MetricTimeseries {
       attributes: attributesFromJSON(json.resource.attributes),
     },
     datapoints: json.datapoints.map(dataPointFromJSON),
-    stats: json.stats ?? null,
+    stats: json.stats
+      ? {
+          ...json.stats,
+          min: doubleFromWire(json.stats.min),
+          max: doubleFromWire(json.stats.max),
+          sum: doubleFromWire(json.stats.sum),
+          avg: doubleFromWire(json.stats.avg),
+        }
+      : null,
     datapointCount: json.datapointCount ?? 0,
     lastSeenNs: nullableBigintFromWire(json.lastSeenNs ?? null),
     views: json.views ? scalarViewBucketsFromJSON(json.views) : null,
-    rateStats: json.rateStats ?? null,
+    rateStats: json.rateStats
+      ? {
+          min: doubleFromWire(json.rateStats.min),
+          max: doubleFromWire(json.rateStats.max),
+          avg: doubleFromWire(json.rateStats.avg),
+        }
+      : null,
     sparkline:
       json.sparkline?.map(p => ({
         ...p,
         timestamp: bigintFromWire(p.timestamp),
+        value: doubleFromWire(p.value),
       })) ?? null,
   }
 }
@@ -566,7 +589,38 @@ function timeseriesFromJSON(json: JsonMetricTimeseries): MetricTimeseries {
 function scalarViewBucketsFromJSON(
   json: JsonScalarViewBucket[]
 ): ScalarViewBucket[] {
-  return json.map(b => ({ ...b, bucketStart: bigintFromWire(b.bucketStart) }))
+  return json.map(b => ({
+    ...b,
+    bucketStart: bigintFromWire(b.bucketStart),
+    sum: nullableDoubleFromWire(b.sum),
+    avg: nullableDoubleFromWire(b.avg),
+    rate: nullableDoubleFromWire(b.rate),
+    slope: nullableDoubleFromWire(b.slope),
+  }))
+}
+
+function aggregateBucketsFromJSON(
+  json: JsonAggregateBucket[] | null
+): MetricAggregateEnvelope['aggregate'] {
+  if (!json) return null
+  return json.map(bucket => {
+    const { sum, min, max, explicitBounds, zeroThreshold, quantiles, ...rest } =
+      bucket
+    const decoded: AggregateBucket = {
+      ...rest,
+      sum: nullableDoubleFromWire(sum),
+      quantiles: doubleRecordFromJSON(quantiles),
+    }
+    if (min !== undefined) decoded.min = doubleFromWire(min)
+    if (max !== undefined) decoded.max = doubleFromWire(max)
+    if (explicitBounds !== undefined) {
+      decoded.explicitBounds = explicitBounds.map(doubleFromWire)
+    }
+    if (zeroThreshold !== undefined) {
+      decoded.zeroThreshold = doubleFromWire(zeroThreshold)
+    }
+    return decoded
+  })
 }
 
 function scalarAggregateFromJSON(
@@ -580,8 +634,13 @@ function scalarAggregateFromJSON(
 }
 
 function metricDataFromJSON(json: JsonMetricData): MetricData {
+  const {
+    aggregate: _aggregate,
+    scalarAggregate: _scalarAggregate,
+    ...rest
+  } = json
   return {
-    ...json,
+    ...rest,
     metadata: attributesFromJSON(json.metadata),
     resource: {
       ...json.resource,
@@ -611,6 +670,7 @@ function metricSummaryFromJSON(json: JsonMetricSummary): MetricSummary {
   return {
     ...json,
     description: json.description ?? '',
+    lastValue: nullableDoubleFromWire(json.lastValue),
     lastSeen: bigintFromWire(json.lastSeen),
   }
 }
@@ -955,7 +1015,7 @@ export let telemetryAPI = {
       )
       if (!raw) return null
       return {
-        aggregate: raw.aggregate,
+        aggregate: aggregateBucketsFromJSON(raw.aggregate),
         scalarAggregate: scalarAggregateFromJSON(raw.scalarAggregate),
       }
     } catch (error) {

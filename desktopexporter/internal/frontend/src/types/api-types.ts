@@ -396,10 +396,22 @@ export type ScalarAggregate = {
   all: ScalarViewBucket[]
 }
 
+export type AggregateBucket = Omit<
+  JsonAggregateBucket,
+  'sum' | 'min' | 'max' | 'explicitBounds' | 'zeroThreshold' | 'quantiles'
+> & {
+  sum: number | null
+  min?: number
+  max?: number
+  explicitBounds?: number[]
+  zeroThreshold?: number
+  quantiles: Record<string, number | null> | null
+}
+
 /** What getMetricAggregate resolves to: one envelope serving both metric
  *  shapes, each field null on the shape it does not apply to. */
 export type MetricAggregateEnvelope = {
-  aggregate: JsonAggregateBucket[] | null
+  aggregate: AggregateBucket[] | null
   scalarAggregate: ScalarAggregate | null
 }
 
