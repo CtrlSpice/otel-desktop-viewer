@@ -72,8 +72,7 @@
   import { StreamLanguage } from '@codemirror/language'
   import { shell } from '@codemirror/legacy-modes/mode/shell'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import CheckmarkCircle02Icon from '@hugeicons/core-free-icons/CheckmarkCircle02Icon'
-  import Copy01Icon from '@hugeicons/core-free-icons/Copy01Icon'
+  import { CheckmarkCircle02Icon, Copy01Icon } from '@hugeicons/core-free-icons'
 
   type Props = {
     code: string

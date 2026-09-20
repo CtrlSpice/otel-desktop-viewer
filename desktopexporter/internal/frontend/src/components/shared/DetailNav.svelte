@@ -1,9 +1,11 @@
 <script lang="ts">
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import ArrowLeftDoubleIcon from '@hugeicons/core-free-icons/ArrowLeftDoubleIcon'
-  import ArrowRightDoubleIcon from '@hugeicons/core-free-icons/ArrowRightDoubleIcon'
-  import ChevronLeftIcon from '@hugeicons/core-free-icons/ChevronLeftIcon'
-  import ChevronRightIcon from '@hugeicons/core-free-icons/ChevronRightIcon'
+  import {
+    ArrowLeftDoubleIcon,
+    ArrowRightDoubleIcon,
+    ChevronLeftIcon,
+    ChevronRightIcon,
+  } from '@hugeicons/core-free-icons'
 
   type Props = {
     /** 0-based index of current selection in the list, or -1 if nothing is selected */

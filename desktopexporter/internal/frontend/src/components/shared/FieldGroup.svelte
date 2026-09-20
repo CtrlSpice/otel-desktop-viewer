@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import ChevronDownIcon from '@hugeicons/core-free-icons/ChevronDownIcon'
+  import { ChevronDownIcon } from '@hugeicons/core-free-icons'
 
   type Props = {
     label: string

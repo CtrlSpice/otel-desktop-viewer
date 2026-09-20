@@ -1,5 +1,5 @@
 <script lang="ts">
-  import ChevronDownIcon from '@hugeicons/core-free-icons/ChevronDownIcon'
+  import { ChevronDownIcon } from '@hugeicons/core-free-icons'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import type { AttributeMapEntry, AttributeValue } from '@/types/api-types'
   import AttributeValueView from './AttributeValue.svelte'

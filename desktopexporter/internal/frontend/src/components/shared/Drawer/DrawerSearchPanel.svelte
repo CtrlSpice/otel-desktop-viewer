@@ -1,7 +1,6 @@
 <script lang="ts" generics="TSortColumn extends string">
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import ArrowUp02Icon from '@hugeicons/core-free-icons/ArrowUp02Icon'
-  import Sorting05Icon from '@hugeicons/core-free-icons/Sorting05Icon'
+  import { ArrowUp02Icon, Sorting05Icon } from '@hugeicons/core-free-icons'
   import DateTimeFilter from '@/components/shared/Toolbar/DateTimeFilter.svelte'
   import SearchEditor from '@/components/shared/Search/SearchEditor.svelte'
   import {

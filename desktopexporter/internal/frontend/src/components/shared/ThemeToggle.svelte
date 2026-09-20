@@ -2,9 +2,11 @@
   import { onMount } from 'svelte'
   import { fade } from 'svelte/transition'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import FallingStarIcon from '@hugeicons/core-free-icons/FallingStarIcon'
-  import Moon02Icon from '@hugeicons/core-free-icons/Moon02Icon'
-  import Sun03Icon from '@hugeicons/core-free-icons/Sun03Icon'
+  import {
+    FallingStarIcon,
+    Moon02Icon,
+    Sun03Icon,
+  } from '@hugeicons/core-free-icons'
 
   type ThemeName = 'rose-pine-dawn' | 'rose-pine-moon' | 'rose-pine'
 

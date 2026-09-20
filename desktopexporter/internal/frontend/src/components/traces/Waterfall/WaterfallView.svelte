@@ -234,8 +234,7 @@
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import ChevronLeftIcon from '@hugeicons/core-free-icons/ChevronLeftIcon'
-  import ChevronRightIcon from '@hugeicons/core-free-icons/ChevronRightIcon'
+  import { ChevronLeftIcon, ChevronRightIcon } from '@hugeicons/core-free-icons'
   import WaterfallTimeAxisHeader, {
     waterfallTimeAxis,
   } from './WaterfallTimeAxisHeader.svelte'
