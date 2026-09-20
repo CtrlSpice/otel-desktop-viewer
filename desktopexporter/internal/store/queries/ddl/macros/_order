@@ -33,6 +33,8 @@ sum_bucket_vectors.sql
 uuid_list.sql
 body_preview.sql
 zero_fold.sql
+attribute_int64.sql
+attribute_double.sql
 double_wire_json.sql
 datapoint_json.sql
 exemplar_json.sql

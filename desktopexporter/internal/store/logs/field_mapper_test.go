@@ -35,3 +35,21 @@ func TestStaticLogFieldsResolveToScalarOperandModes(t *testing.T) {
 		})
 	}
 }
+
+func TestNumericLogAttributeOwnersUseTypedDatabaseDecoders(t *testing.T) {
+	for _, scope := range []string{"resource", "scope", "log"} {
+		t.Run(scope, func(t *testing.T) {
+			params := []search.NamedParam{}
+			resolved, err := mapLogAttributeExpressions(
+				&search.FieldDefinition{Name: "number", SearchScope: "attribute", AttributeScope: scope, Type: "float64"},
+				&search.Query{FieldOperator: ">", Value: "2"},
+				&params,
+			)
+			require.NoError(t, err)
+			require.Len(t, resolved, 1)
+			assert.Equal(t, search.AttributeDoubleOperand, resolved[0].OperandMode)
+			assert.Contains(t, resolved[0].SQL, "attribute_double(a.value)")
+			assert.Contains(t, resolved[0].SQL, "json_extract_string(a.value, '$.kind') = attr_kind_1")
+		})
+	}
+}

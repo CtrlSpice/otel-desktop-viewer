@@ -6,7 +6,6 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
-	"math"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -23,41 +22,6 @@ import (
 // a burst of JSON-RPC calls opens one per in-flight request, and each is a real
 // DuckDB connection with real memory cost.
 const maxPoolConns = 4
-
-type doubleWireBitsFunc struct {
-	doubleType  duckdb.TypeInfo
-	varcharType duckdb.TypeInfo
-}
-
-func (f doubleWireBitsFunc) Config() duckdb.ScalarFuncConfig {
-	return duckdb.ScalarFuncConfig{
-		InputTypeInfos: []duckdb.TypeInfo{f.doubleType},
-		ResultTypeInfo: f.varcharType,
-	}
-}
-
-func (doubleWireBitsFunc) Executor() duckdb.ScalarFuncExecutor {
-	return duckdb.ScalarFuncExecutor{RowExecutor: func(values []driver.Value) (any, error) {
-		return fmt.Sprintf("0x%016x", math.Float64bits(values[0].(float64))), nil
-	}}
-}
-
-func registerDoubleWireBits(ctx context.Context, db *sql.DB) error {
-	doubleType, err := duckdb.NewTypeInfo(duckdb.TYPE_DOUBLE)
-	if err != nil {
-		return err
-	}
-	varcharType, err := duckdb.NewTypeInfo(duckdb.TYPE_VARCHAR)
-	if err != nil {
-		return err
-	}
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	return duckdb.RegisterScalarUDF(conn, "double_wire_bits", &doubleWireBitsFunc{doubleType, varcharType})
-}
 
 // Sentinel errors for use with errors.Is.
 var (
@@ -184,10 +148,6 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	if err != nil {
 		return nil, err
 	}
-	if err := registerDoubleWireBits(ctx, db); err != nil {
-		return nil, fmt.Errorf("%w while registering double wire encoder: %w", ErrStoreInitFailed, err)
-	}
-
 	// 1) Create types - ignore "already exists" errors
 	for _, stmt := range queries.Types() {
 		if _, err = db.Exec(stmt.SQL); err != nil {

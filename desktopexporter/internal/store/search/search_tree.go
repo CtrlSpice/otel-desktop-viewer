@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"regexp"
 	"strconv"
@@ -69,6 +70,8 @@ const (
 	WireIDOperand
 	OTelArrayOperand
 	CompletePredicateOperand
+	AttributeSignedIntegerOperand
+	AttributeDoubleOperand
 )
 
 // ResolvedExpression is the mapper-owned SQL expression and operand contract.
@@ -114,14 +117,33 @@ func AttributeKind(requested string) (string, OperandMode, error) {
 	case "boolean":
 		return "bool", TextOperand, nil
 	case "float64":
-		return "double", TextOperand, nil
+		return "double", AttributeDoubleOperand, nil
 	case "array", "string[]", "int64[]", "float64[]", "boolean[]":
 		return "array", OTelArrayOperand, nil
-	case "string", "bool", "int64", "double", "bytes", "map", "empty":
+	case "int64":
+		return requested, AttributeSignedIntegerOperand, nil
+	case "double":
+		return requested, AttributeDoubleOperand, nil
+	case "string", "bool", "bytes", "map", "empty":
 		return requested, TextOperand, nil
 	default:
 		return "", TextOperand, fmt.Errorf("unsupported attribute kind %q: %w", requested, ErrInvalidQuery)
 	}
+}
+
+func AttributeValueExpression(kind string) string {
+	switch kind {
+	case "int64":
+		return "attribute_int64(a.value)"
+	case "double":
+		return "attribute_double(a.value)"
+	default:
+		return "coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar)"
+	}
+}
+
+func AttributeExpression(sql, kind string, mode OperandMode) ResolvedExpression {
+	return ResolvedExpression{SQL: sql, OperandMode: mode, AttributeKind: kind}
 }
 
 func AttributeKindPredicate(kindParam string) string {
@@ -312,6 +334,18 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 		if n, err := strconv.ParseInt(value, 10, 64); err == nil {
 			bindValue = n
 		}
+	} else if resolved.OperandMode == AttributeSignedIntegerOperand && operator != "IN" && operator != "NOT IN" {
+		normalized, err := normalizeExactSignedInteger(value)
+		if err != nil {
+			return "", err
+		}
+		bindValue, _ = strconv.ParseInt(normalized, 10, 64)
+	} else if resolved.OperandMode == AttributeDoubleOperand && operator != "IN" && operator != "NOT IN" {
+		parsed, err := normalizeAttributeDouble(value)
+		if err != nil {
+			return "", err
+		}
+		bindValue = parsed
 	} else if resolved.OperandMode == TimestampOperand && operator != "IN" && operator != "NOT IN" {
 		normalized, err := normalizeNativeUnsignedInteger(value)
 		if err != nil {
@@ -362,8 +396,13 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 		if len(values) == 0 {
 			return "", fmt.Errorf("IN/NOT IN requires at least one value: %w", ErrInvalidQuery)
 		}
-		if resolved.OperandMode == NativeSignedIntegerOperand {
+		if resolved.OperandMode == NativeSignedIntegerOperand || resolved.OperandMode == AttributeSignedIntegerOperand {
 			values, err = NormalizeNativeIntegerList(values)
+			if err != nil {
+				return "", err
+			}
+		} else if resolved.OperandMode == AttributeDoubleOperand {
+			values, err = normalizeAttributeDoubleList(values)
 			if err != nil {
 				return "", err
 			}
@@ -389,8 +428,10 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 		*params = append(*params, NamedParam{paramName, values})
 		if resolved.OperandMode == TimestampOperand {
 			operatorString = fmt.Sprintf("%s CAST(%s AS UBIGINT[])", operator, paramName)
-		} else if resolved.OperandMode == NativeSignedIntegerOperand || resolved.OperandMode == DurationOperand {
+		} else if resolved.OperandMode == NativeSignedIntegerOperand || resolved.OperandMode == AttributeSignedIntegerOperand || resolved.OperandMode == DurationOperand {
 			operatorString = fmt.Sprintf("%s CAST(%s AS BIGINT[])", operator, paramName)
+		} else if resolved.OperandMode == AttributeDoubleOperand {
+			operatorString = fmt.Sprintf("%s CAST(%s AS DOUBLE[])", operator, paramName)
 		} else {
 			operatorString = operator + " " + paramName
 		}
@@ -402,6 +443,39 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 		return strings.ReplaceAll(expression, condToken, operatorString), nil
 	}
 	return expression + " " + operatorString, nil
+}
+
+func normalizeAttributeDouble(value string) (float64, error) {
+	if len(value) == 18 && strings.HasPrefix(value, "0x") {
+		bits, err := strconv.ParseUint(value[2:], 16, 64)
+		if err == nil {
+			return math.Float64frombits(bits), nil
+		}
+	}
+	if value == "" || len(value) > 256 || !numericInteger.MatchString(value) {
+		return 0, fmt.Errorf("double %q is invalid: %w", value, ErrInvalidQuery)
+	}
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0, fmt.Errorf("double %q is invalid: %w", value, ErrInvalidQuery)
+	}
+	return parsed, nil
+}
+
+func normalizeAttributeDoubleList(values []any) ([]any, error) {
+	normalized := make([]any, len(values))
+	for i, value := range values {
+		text, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("double list element %d is invalid: %w", i+1, ErrInvalidQuery)
+		}
+		parsed, err := normalizeAttributeDouble(text)
+		if err != nil {
+			return nil, fmt.Errorf("double list element %d: %w", i+1, err)
+		}
+		normalized[i] = parsed
+	}
+	return normalized, nil
 }
 
 var durationUnits = map[string]*big.Int{
@@ -478,57 +552,64 @@ func NormalizeNativeIntegerList(values []any) ([]any, error) {
 	normalized := make([]any, len(values))
 	for i, value := range values {
 		text, ok := value.(string)
-		if !ok || len(text) == 0 || len(text) > 256 {
-			return nil, fmt.Errorf("integer list element %d is invalid: %w", i, ErrInvalidQuery)
-		}
-
-		matches := numericInteger.FindStringSubmatch(text)
-		if matches == nil {
-			return nil, fmt.Errorf("integer list element %q is not a decimal number: %w", text, ErrInvalidQuery)
-		}
-		digits := strings.TrimLeft(matches[2]+matches[3]+matches[4], "0")
-		if digits == "" {
-			normalized[i] = "0"
-			continue
-		}
-
-		exponentText := matches[5]
-		if exponentText == "" {
-			exponentText = "0"
-		}
-		exponent, ok := new(big.Int).SetString(exponentText, 10)
 		if !ok {
-			return nil, fmt.Errorf("integer list element %q is not a decimal number: %w", text, ErrInvalidQuery)
+			return nil, fmt.Errorf("integer list element %d is invalid: %w", i+1, ErrInvalidQuery)
 		}
-		scale := exponent.Sub(exponent, big.NewInt(int64(len(matches[3]+matches[4]))))
-		var integerText string
-		if scale.Sign() >= 0 {
-			if new(big.Int).Add(big.NewInt(int64(len(digits))), scale).Cmp(big.NewInt(19)) > 0 {
-				return nil, fmt.Errorf("integer list element %q is not an exact signed integer: %w", text, ErrInvalidQuery)
-			}
-			integerText = digits + strings.Repeat("0", int(scale.Int64()))
-		} else {
-			shift := new(big.Int).Neg(scale)
-			trailingZeros := len(digits) - len(strings.TrimRight(digits, "0"))
-			if shift.Cmp(big.NewInt(int64(trailingZeros))) > 0 {
-				return nil, fmt.Errorf("integer list element %q is not an exact signed integer: %w", text, ErrInvalidQuery)
-			}
-			integerText = digits[:len(digits)-int(shift.Int64())]
+		value, err := normalizeExactSignedInteger(text)
+		if err != nil {
+			return nil, fmt.Errorf("integer list element %d: %w", i+1, err)
 		}
-
-		integer, ok := new(big.Int).SetString(integerText, 10)
-		if !ok {
-			return nil, fmt.Errorf("integer list element %q is not an exact signed integer: %w", text, ErrInvalidQuery)
-		}
-		if matches[1] == "-" {
-			integer.Neg(integer)
-		}
-		if !integer.IsInt64() {
-			return nil, fmt.Errorf("integer list element %q is not an exact signed integer: %w", text, ErrInvalidQuery)
-		}
-		normalized[i] = integer.String()
+		normalized[i] = value
 	}
 	return normalized, nil
+}
+
+func normalizeExactSignedInteger(text string) (string, error) {
+	if text == "" || len(text) > 256 {
+		return "", fmt.Errorf("integer %q is invalid: %w", text, ErrInvalidQuery)
+	}
+	matches := numericInteger.FindStringSubmatch(text)
+	if matches == nil {
+		return "", fmt.Errorf("integer %q is not a decimal number: %w", text, ErrInvalidQuery)
+	}
+	digits := strings.TrimLeft(matches[2]+matches[3]+matches[4], "0")
+	if digits == "" {
+		return "0", nil
+	}
+	exponentText := matches[5]
+	if exponentText == "" {
+		exponentText = "0"
+	}
+	exponent, ok := new(big.Int).SetString(exponentText, 10)
+	if !ok {
+		return "", fmt.Errorf("integer %q is not a decimal number: %w", text, ErrInvalidQuery)
+	}
+	scale := exponent.Sub(exponent, big.NewInt(int64(len(matches[3]+matches[4]))))
+	var integerText string
+	if scale.Sign() >= 0 {
+		if new(big.Int).Add(big.NewInt(int64(len(digits))), scale).Cmp(big.NewInt(19)) > 0 {
+			return "", fmt.Errorf("integer %q is not an exact signed integer: %w", text, ErrInvalidQuery)
+		}
+		integerText = digits + strings.Repeat("0", int(scale.Int64()))
+	} else {
+		shift := new(big.Int).Neg(scale)
+		trailingZeros := len(digits) - len(strings.TrimRight(digits, "0"))
+		if shift.Cmp(big.NewInt(int64(trailingZeros))) > 0 {
+			return "", fmt.Errorf("integer %q is not an exact signed integer: %w", text, ErrInvalidQuery)
+		}
+		integerText = digits[:len(digits)-int(shift.Int64())]
+	}
+	integer, ok := new(big.Int).SetString(integerText, 10)
+	if !ok {
+		return "", fmt.Errorf("integer %q is not an exact signed integer: %w", text, ErrInvalidQuery)
+	}
+	if matches[1] == "-" {
+		integer.Neg(integer)
+	}
+	if !integer.IsInt64() {
+		return "", fmt.Errorf("integer %q is not an exact signed integer: %w", text, ErrInvalidQuery)
+	}
+	return integer.String(), nil
 }
 
 func normalizeNativeUnsignedInteger(value string) (string, error) {

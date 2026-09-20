@@ -871,7 +871,7 @@ func TestSearchLogs(t *testing.T) {
 		assert.Len(t, parseSummaries(raw), 2)
 	})
 
-	t.Run("TextBackedIntegerAttribute_RemainsText", func(t *testing.T) {
+	t.Run("IntegerAttributeRejectsFractionalMembershipOperand", func(t *testing.T) {
 		query := &search.QueryNode{Type: "condition", Query: &search.Query{
 			Field:         &search.FieldDefinition{Name: "log.int", SearchScope: "attribute", AttributeScope: "log", Type: "int64"},
 			FieldOperator: "IN",
@@ -880,10 +880,31 @@ func TestSearchLogs(t *testing.T) {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
-		require.NoError(t, err)
-		assert.Empty(t, parseSummaries(raw))
+		require.ErrorIs(t, err, search.ErrInvalidQuery)
 
 		query.Query.Value = `["42"]`
+		raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+		})
+		require.NoError(t, err)
+		assert.Len(t, parseSummaries(raw), 1)
+	})
+
+	t.Run("NumericAttributesUseNumericComparisonAndMembership", func(t *testing.T) {
+		query := &search.QueryNode{Type: "condition", Query: &search.Query{
+			Field:         &search.FieldDefinition{Name: "log.int", SearchScope: "attribute", AttributeScope: "log", Type: "int64"},
+			FieldOperator: ">",
+			Value:         "3",
+		}}
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+		})
+		require.NoError(t, err)
+		assert.Len(t, parseSummaries(raw), 2)
+
+		query.Query.Field = &search.FieldDefinition{Name: "log.float", SearchScope: "attribute", AttributeScope: "log", Type: "float64"}
+		query.Query.FieldOperator = "IN"
+		query.Query.Value = `["3.14"]`
 		raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 			return logs.Search(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
