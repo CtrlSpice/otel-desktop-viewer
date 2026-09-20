@@ -1351,7 +1351,7 @@ func metricFieldMapper() search.FieldMapper {
 const matchIngestByLabel = `m.id in (
 			select d.metric_ingest_id from %s
 			where exists (select 1 from unnest(%s) t(aid) join attributes a on a.id = t.aid
-			where a.key = %s%s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})
+			where a.key = %s%s and %s {COND})
 		)`
 
 // metricSearchFrom is the FROM clause metric search predicates are written
@@ -1425,6 +1425,7 @@ func mapMetricAttributeExpressions(field *search.FieldDefinition, query *search.
 		*params = append(*params, search.NamedParam{Name: kindParam, Value: kind})
 	}
 	kindPredicate := search.AttributeKindPredicate(kindParam)
+	valueExpression := search.AttributeValueExpression(kind)
 	if mode == search.OTelArrayOperand {
 		var attributeIDs string
 		switch field.AttributeScope {
@@ -1460,28 +1461,28 @@ func mapMetricAttributeExpressions(field *search.FieldDefinition, query *search.
 
 	switch field.AttributeScope {
 	case "resource", "metric":
-		return []search.ResolvedExpression{search.Text(fmt.Sprintf(
+		return []search.ResolvedExpression{search.AttributeExpression(fmt.Sprintf(
 			`m.resource_id in (select r.id from resources r, unnest(r.attribute_ids) t(aid)
 				join attributes a on a.id = t.aid where a.key = %s%s and
-				coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})`,
-			keyParam, kindPredicate))}, nil
+				%s {COND})`,
+			keyParam, kindPredicate, valueExpression), kind, mode)}, nil
 	case "scope":
-		return []search.ResolvedExpression{search.Text(fmt.Sprintf(
+		return []search.ResolvedExpression{search.AttributeExpression(fmt.Sprintf(
 			`m.scope_id in (select sc.id from scopes sc, unnest(sc.attribute_ids) t(aid)
 				join attributes a on a.id = t.aid where a.key = %s%s and
-				coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})`,
-			keyParam, kindPredicate))}, nil
+				%s {COND})`,
+			keyParam, kindPredicate, valueExpression), kind, mode)}, nil
 	case "datapoint":
-		return []search.ResolvedExpression{search.Text(fmt.Sprintf(matchIngestByLabel,
-			"datapoints d", "d.attribute_ids", keyParam, kindPredicate))}, nil
+		return []search.ResolvedExpression{search.AttributeExpression(fmt.Sprintf(matchIngestByLabel,
+			"datapoints d", "d.attribute_ids", keyParam, kindPredicate, valueExpression), kind, mode)}, nil
 	case "exemplar":
-		return []search.ResolvedExpression{search.Text(fmt.Sprintf(matchIngestByLabel,
-			"exemplars e join datapoints d on d.id = e.datapoint_id", "e.attribute_ids", keyParam, kindPredicate))}, nil
+		return []search.ResolvedExpression{search.AttributeExpression(fmt.Sprintf(matchIngestByLabel,
+			"exemplars e join datapoints d on d.id = e.datapoint_id", "e.attribute_ids", keyParam, kindPredicate, valueExpression), kind, mode)}, nil
 	case "metadata":
-		return []search.ResolvedExpression{search.Text(fmt.Sprintf(`exists(
+		return []search.ResolvedExpression{search.AttributeExpression(fmt.Sprintf(`exists(
 			select 1 from unnest(m.metadata_ids) t(aid) join attributes a on a.id = t.aid
-			where a.key = %s%s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND}
-		)`, keyParam, kindPredicate))}, nil
+			where a.key = %s%s and %s {COND}
+		)`, keyParam, kindPredicate, valueExpression), kind, mode)}, nil
 	default:
 		return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidMetricQuery)
 	}
