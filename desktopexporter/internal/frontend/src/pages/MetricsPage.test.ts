@@ -381,8 +381,8 @@ describe('MetricsPage raw series fetching', () => {
 
     expect(rawSeriesCalls()).toHaveLength(1)
     expect(rawSeriesCalls()[0]?.slice(1, 3)).toEqual([
-      requestNow - duration,
-      requestNow,
+      BigInt(requestNow - duration) * 1_000_000n,
+      BigInt(requestNow) * 1_000_000n,
     ])
   })
 
@@ -403,7 +403,11 @@ describe('MetricsPage raw series fetching', () => {
 
     renderWithContexts(MetricsPage)
     await waitFor(() => expect(rawSeriesCalls()).toHaveLength(1))
-    expect(rawSeriesCalls()[0]?.slice(0, 3)).toEqual(['metric-1', 100, 200])
+    expect(rawSeriesCalls()[0]?.slice(0, 3)).toEqual([
+      'metric-1',
+      100_000_000n,
+      200_000_000n,
+    ])
 
     navigateCurrentRoute(
       withQueryPatch(readRoute().query, { start: '300', end: '400' }),
@@ -411,7 +415,11 @@ describe('MetricsPage raw series fetching', () => {
     )
 
     await waitFor(() => expect(rawSeriesCalls()).toHaveLength(2))
-    expect(rawSeriesCalls()[1]?.slice(0, 3)).toEqual(['metric-1', 300, 400])
+    expect(rawSeriesCalls()[1]?.slice(0, 3)).toEqual([
+      'metric-1',
+      300_000_000n,
+      400_000_000n,
+    ])
 
     current.resolve(
       makeMetric('Sum', [makeSumDatapoint('dp-current', 1_700_000_000_300, 3)])

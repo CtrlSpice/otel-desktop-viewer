@@ -20,6 +20,7 @@
   import {
     getTimeContext,
     selectionToQueryRangeMs,
+    selectionToQueryRangeNs,
   } from '@/contexts/time-context.svelte'
   import type { SearchResultEvent } from '@/types/api-types'
   import { runSearch, type SearchContext } from './search-dispatch'
@@ -203,7 +204,7 @@
 
   /** Build a SearchContext from the current component state. */
   function currentSearchContext(): SearchContext {
-    const { startTime, endTime } = selectionToQueryRangeMs(
+    const { startTime, endTime } = selectionToQueryRangeNs(
       timeContext.selection,
       Date.now()
     )

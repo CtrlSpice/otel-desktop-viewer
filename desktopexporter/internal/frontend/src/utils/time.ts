@@ -565,6 +565,7 @@ export function isDateTimestamp(value: unknown): value is number {
   return (
     typeof value === 'number' &&
     Number.isFinite(value) &&
+    Number.isInteger(value) &&
     Math.abs(value) <= MAX_DATE_TIMESTAMP
   )
 }

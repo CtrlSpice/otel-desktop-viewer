@@ -87,7 +87,7 @@
   } from '@/services/telemetry-service'
   import {
     getTimeContext,
-    selectionToQueryRangeMs,
+    selectionToQueryRangeNs,
   } from '@/contexts/time-context.svelte'
   import { resolveTimezoneName, timezoneOffsetMinutes } from '@/utils/time'
   import { navigateToItem } from '@/route'
@@ -151,7 +151,7 @@
     initialSort: { column: 'lastSeen', direction: 'desc' },
     compare: compareMetrics,
     fetchList: async () => {
-      const { startTime, endTime } = selectionToQueryRangeMs(
+      const { startTime, endTime } = selectionToQueryRangeNs(
         timeContext.selection,
         Date.now()
       )
@@ -491,15 +491,15 @@
     if (!scopeChanged && !expansionTriggered) return
 
     const now = Date.now()
-    const { startTime, endTime } = selectionToQueryRangeMs(selection, now)
+    const { startTime, endTime } = selectionToQueryRangeNs(selection, now)
     const timezoneOffsetNs = tzOffsetNs(now)
     const timezoneName = tzName()
     // Capture every input that can change the store's answer. A structured key
     // avoids collisions with attribute-derived series and metric identifiers.
     const key = JSON.stringify([
       streamID,
-      startTime,
-      endTime,
+      startTime?.toString() ?? null,
+      endTime?.toString() ?? null,
       timezone,
       timezoneOffsetNs,
       timezoneName ?? null,
@@ -701,7 +701,7 @@
     const token = ++detailToken
     try {
       detailLoading = true
-      const { startTime, endTime } = selectionToQueryRangeMs(
+      const { startTime, endTime } = selectionToQueryRangeNs(
         timeContext.selection,
         Date.now()
       )

@@ -41,8 +41,13 @@ export type QueryTimeRangeMs = {
   endTime: number | null
 }
 
+export type QueryTimeRangeNs = {
+  startTime: bigint | null
+  endTime: bigint | null
+}
+
 /**
- * Unix ms range for search/export APIs.
+ * Unix ms range for picker persistence, URL state and display adapters.
  * Presets store their duration and are anchored so the window ends at `nowMs`.
  * Custom and recent use the stored bounds as-is.
  */
@@ -57,6 +62,18 @@ export function selectionToQueryRangeMs(
     return { startTime: nowMs - selection.durationMs, endTime: nowMs }
   }
   return { startTime: selection.start, endTime: selection.end }
+}
+
+/** Convert a picker selection to the absolute Unix nanoseconds query APIs use. */
+export function selectionToQueryRangeNs(
+  selection: TimeSelection,
+  nowMs: number
+): QueryTimeRangeNs {
+  const { startTime, endTime } = selectionToQueryRangeMs(selection, nowMs)
+  return {
+    startTime: startTime === null ? null : BigInt(startTime) * 1_000_000n,
+    endTime: endTime === null ? null : BigInt(endTime) * 1_000_000n,
+  }
 }
 
 interface TimeContext {

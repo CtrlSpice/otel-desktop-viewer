@@ -5,6 +5,7 @@ import { screen } from '@testing-library/svelte'
 import type { TimeContext } from '@/contexts/time-context.svelte'
 import {
   selectionToQueryRangeMs,
+  selectionToQueryRangeNs,
   TIME_RANGE_PRESETS,
 } from '@/contexts/time-context.svelte'
 import { loadRecentTimeRanges, normalizeTimezone } from '@/utils/time'
@@ -160,6 +161,16 @@ describe('time context localStorage restore', () => {
     expect(selectionType()).toBe('all')
   })
 
+  it('rejects fractional saved millisecond bounds', () => {
+    localStorage.setItem(
+      'time-selection',
+      JSON.stringify({ type: 'custom', start: 1.5, end: 2 })
+    )
+    setTestUrl('/traces')
+    renderProbe()
+    expect(selectionType()).toBe('all')
+  })
+
   it('rejects reversed saved bounds', () => {
     localStorage.setItem(
       'time-selection',
@@ -262,6 +273,17 @@ describe('time context URL precedence', () => {
       JSON.stringify({ start: 111, end: 222, type: 'custom' })
     )
     setTestUrl('/traces?start=333&end=8640000000000001')
+    renderProbe()
+    expect(selectionStart()).toBe(111)
+    expect(selectionEnd()).toBe(222)
+  })
+
+  it('falls back to localStorage when URL bounds are fractional milliseconds', () => {
+    localStorage.setItem(
+      'time-selection',
+      JSON.stringify({ start: 111, end: 222, type: 'custom' })
+    )
+    setTestUrl('/traces?start=333.5&end=444')
     renderProbe()
     expect(selectionStart()).toBe(111)
     expect(selectionEnd()).toBe(222)
@@ -482,5 +504,50 @@ describe('selectionToQueryRangeMs', () => {
     expect(
       selectionToQueryRangeMs({ type: 'custom', start: 0, end: 1000 }, 9999)
     ).toEqual({ startTime: 0, endTime: 1000 })
+  })
+})
+
+describe('selectionToQueryRangeNs', () => {
+  it('keeps All unbounded', () => {
+    expect(selectionToQueryRangeNs({ type: 'all' }, 1234)).toEqual({
+      startTime: null,
+      endTime: null,
+    })
+  })
+
+  it('converts picker milliseconds to absolute Unix nanoseconds', () => {
+    expect(
+      selectionToQueryRangeNs(
+        { type: 'custom', start: 1_234, end: 5_678 },
+        9999
+      )
+    ).toEqual({
+      startTime: 1_234_000_000n,
+      endTime: 5_678_000_000n,
+    })
+  })
+
+  it('converts a relative preset using the supplied current time', () => {
+    expect(
+      selectionToQueryRangeNs(
+        { type: 'preset', durationMs: 300_000 },
+        1_000_000
+      )
+    ).toEqual({
+      startTime: 700_000_000_000n,
+      endTime: 1_000_000_000_000n,
+    })
+  })
+
+  it('preserves epoch zero and negative integer milliseconds exactly', () => {
+    expect(
+      selectionToQueryRangeNs({ type: 'custom', start: -1, end: 0 }, 9999)
+    ).toEqual({ startTime: -1_000_000n, endTime: 0n })
+  })
+
+  it('rejects fractional milliseconds instead of rounding an exact bound', () => {
+    expect(() =>
+      selectionToQueryRangeNs({ type: 'custom', start: 1.5, end: 2 }, 9999)
+    ).toThrow(RangeError)
   })
 })

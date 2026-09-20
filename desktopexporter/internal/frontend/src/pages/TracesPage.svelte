@@ -50,7 +50,7 @@
   import { telemetryAPI, isAbortError } from '@/services/telemetry-service'
   import {
     getTimeContext,
-    selectionToQueryRangeMs,
+    selectionToQueryRangeNs,
   } from '@/contexts/time-context.svelte'
   import { getRouteContext } from '@/contexts/route-context.svelte'
   import {
@@ -108,7 +108,7 @@
     initialSort: { column: 'startTime', direction: 'desc' },
     compare: compareTraceSummaries,
     fetchList: async () => {
-      const { startTime, endTime } = selectionToQueryRangeMs(
+      const { startTime, endTime } = selectionToQueryRangeNs(
         timeContext.selection,
         Date.now()
       )

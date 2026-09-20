@@ -6,8 +6,8 @@ export type SearchSignal = SearchResultEvent['signal']
 
 export interface SearchContext {
   signal: SearchSignal
-  startTime: number | null
-  endTime: number | null
+  startTime: bigint | null
+  endTime: bigint | null
 }
 
 export async function runSearch(
