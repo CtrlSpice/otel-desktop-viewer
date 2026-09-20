@@ -384,6 +384,34 @@ func Get(ctx context.Context, db *sql.DB, logID string) (json.RawMessage, error)
 	return json.RawMessage(raw), nil
 }
 
+// GetTraceLogs returns every lightweight log summary carrying traceID. The
+// trace boundary is the complete correlation boundary: timestamps only order
+// rows, and nullable or dangling span IDs remain in the result for callers to
+// classify. Full body and attribute detail remains owned by Get.
+func GetTraceLogs(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage, error) {
+	query, args, err := getTraceLogsSQL(traceID)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("GetTraceLogs: %w: %w", ErrLogsStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+func getTraceLogsSQL(traceID string) (string, []any, error) {
+	query, err := queries.Render(queries.GetTraceLogs, nil)
+	if err != nil {
+		return "", nil, err
+	}
+	return query, []any{traceID}, nil
+}
+
 // GetLogAttributes returns every log-side attribute name/scope/type this store
 // knows about. See spans.GetTraceAttributes for why the dictionary answers this
 // directly instead of unnesting every log in a window.
