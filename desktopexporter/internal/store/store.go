@@ -56,7 +56,7 @@ func registerDoubleWireBits(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	defer conn.Close()
-	return duckdb.RegisterScalarUDF(conn, "double_wire_bits", doubleWireBitsFunc{doubleType, varcharType})
+	return duckdb.RegisterScalarUDF(conn, "double_wire_bits", &doubleWireBitsFunc{doubleType, varcharType})
 }
 
 // Sentinel errors for use with errors.Is.

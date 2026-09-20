@@ -42,7 +42,7 @@ func registerDoubleWireBits(db *sql.DB) error {
 		return err
 	}
 	defer conn.Close()
-	return duckdb.RegisterScalarUDF(conn, "double_wire_bits", doubleWireBitsFunc{doubleType, varcharType})
+	return duckdb.RegisterScalarUDF(conn, "double_wire_bits", &doubleWireBitsFunc{doubleType, varcharType})
 }
 
 // One DuckDB for the tests in this package that only read.
