@@ -1,5 +1,7 @@
 -- Aggregation helper: element-wise sum of a list of equal-length numeric
--- lists. Used to merge bucket_counts arrays across multiple histogram
+-- lists. Results are HUGEINT[] so merging multiple valid uint64 populations
+-- remains exact even when a derived bucket total exceeds MaxUint64. Used to
+-- merge bucket_counts arrays across multiple histogram
 -- streams that share the same explicit_bounds. The caller is responsible
 -- for enforcing the shared-bounds invariant; this macro is intentionally
 -- permissive about length mismatches (zero-pads via list_zip + coalesce)
@@ -13,7 +15,8 @@ create or replace macro sum_bucket_vectors(vectors) as (
 		case
 			when vectors is null or len(vectors) = 0 then null
 			else list_reduce(
-				vectors,
+				list_transform(vectors,
+					lambda v: list_transform(v, lambda value: value::hugeint)),
 				lambda acc, v: list_transform(
 					list_zip(acc, v),
 					lambda pair: coalesce(pair[1], 0) + coalesce(pair[2], 0)

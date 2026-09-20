@@ -4,7 +4,7 @@
 -- aggregation when streams arrive at different scales -- everyone gets
 -- downscaled to the group's minimum scale before bucket-wise summation.
 --
--- Returns {offset: bigint, counts: bigint[]}. levels <= 0 (and null/empty
+-- Returns {offset: bigint, counts: hugeint[]}. levels <= 0 (and null/empty
 -- counts) is a no-op: input is returned unchanged. Negative levels would
 -- require *upscaling*, which is not generally possible without losing
 -- information about the original sub-bucket distribution.
@@ -54,10 +54,9 @@ create or replace macro downscale_exp_buckets(counts, offset_, levels) as (
 				then {'offset': floor_div(offset_, cast(pow(2, levels) as bigint)), 'counts': counts}
 			else {
 				'offset': floor_div(offset_, cast(pow(2, levels) as bigint)),
-				-- list_sum promotes to HUGEINT; cast back to BIGINT so the
-				-- output type matches the input and downstream macros that
-				-- expect bigint[] (sum_bucket_vectors, exp_pos_buckets, ...)
-				-- don't trip on inferred-type mismatches.
+				-- list_sum promotes received UBIGINT counts to HUGEINT. Keep that
+				-- widened domain: one downscaled bucket can contain several valid
+				-- uint64 source buckets and therefore exceed MaxUint64.
 				'counts': list_transform(
 					range(
 						0,
@@ -96,7 +95,7 @@ create or replace macro downscale_exp_buckets(counts, offset_, levels) as (
 							),
 							0
 						)
-						as bigint
+						as hugeint
 					)
 				)
 			}

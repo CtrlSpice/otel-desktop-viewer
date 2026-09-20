@@ -493,6 +493,18 @@ func TestMacros_FoldBelowCutoff(t *testing.T) {
 		require.True(t, ok)
 		assert.InDelta(t, 70.0, got, 0)
 	})
+
+	t.Run("high-bit counts fold in the hugeint domain", func(t *testing.T) {
+		var typ, folded string
+		require.NoError(t, db.QueryRow(`
+			select typeof(r.folded), r.folded::varchar
+			from (select fold_below_cutoff(
+				[18446744073709551615::ubigint, 18446744073709551615::ubigint], 0, 1
+			) as r)
+		`).Scan(&typ, &folded))
+		assert.Equal(t, "HUGEINT", typ)
+		assert.Equal(t, "36893488147419103230", folded)
+	})
 }
 
 func TestMacros_PadLeftToOffset(t *testing.T) {
@@ -603,6 +615,16 @@ func TestMacros_PadLeftToOffset(t *testing.T) {
 		`)
 		require.True(t, ok)
 		assert.InDelta(t, 34.0, got, 0)
+	})
+
+	t.Run("high-bit counts retain their domain through padding", func(t *testing.T) {
+		var typ, counts string
+		require.NoError(t, db.QueryRow(`
+			select typeof(r), r::varchar
+			from (select pad_left_to_offset([18446744073709551615::ubigint], 2, 0) as r)
+		`).Scan(&typ, &counts))
+		assert.Equal(t, "HUGEINT[]", typ)
+		assert.Equal(t, "[0, 0, 18446744073709551615]", counts)
 	})
 }
 
