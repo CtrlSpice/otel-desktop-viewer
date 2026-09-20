@@ -66,9 +66,9 @@ describe('case-distinct attribute completions', () => {
 
     expect(result?.options.map(option => [option.label, option.apply])).toEqual(
       [
-        ['env', 'env '],
-        ['Env', 'Env '],
-        ['ENV', 'ENV '],
+        ['ENV', 'attr(event, "ENV", int64) '],
+        ['env', 'attr(resource, "env", string) '],
+        ['Env', 'attr(span, "Env", bool) '],
       ]
     )
   })
@@ -86,7 +86,7 @@ describe('case-distinct attribute completions', () => {
     expect(caseDistinctLabels('eNv ')).not.toContain('>')
   })
 
-  it('does not offer an attribute shadowed by a built-in field', () => {
+  it('keeps built-ins first while making a colliding attribute explicit', () => {
     const native: FieldDefinition = {
       name: 'name',
       type: 'string',
@@ -107,7 +107,64 @@ describe('case-distinct attribute completions', () => {
     )
 
     expect(result?.options.map(option => option.label)).toContain('name')
-    expect(result?.options.map(option => option.label)).not.toContain('Name')
+    expect(result?.options.find(option => option.label === 'Name')?.apply).toBe(
+      'attr(span, "Name", string) '
+    )
+  })
+})
+
+describe('attribute identity completions', () => {
+  const variants: FieldDefinition[] = [
+    {
+      name: 'attempts',
+      type: 'string',
+      searchScope: 'attribute',
+      attributeScope: 'span',
+      operators: [OPERATORS.EQUALS, OPERATORS.CONTAINS],
+    },
+    {
+      name: 'attempts',
+      type: 'int64',
+      searchScope: 'attribute',
+      attributeScope: 'span',
+      operators: [OPERATORS.EQUALS, OPERATORS.GREATER_THAN],
+    },
+    {
+      name: 'attempts',
+      type: 'int64',
+      searchScope: 'attribute',
+      attributeScope: 'resource',
+      operators: [OPERATORS.EQUALS],
+    },
+  ]
+
+  function variantCompletions(available: FieldDefinition[], doc = 'att') {
+    const state = EditorState.create({ doc, extensions: [queryLanguage] })
+    return createQueryCompletionSource(
+      () => available,
+      'traces'
+    )(new CompletionContext(state, doc.length, false))
+  }
+
+  it('deduplicates and sorts tuples by scope, exact key, and stored kind', () => {
+    const result = variantCompletions([
+      variants[0],
+      variants[2],
+      variants[1],
+      variants[1],
+    ])
+    expect(result?.options.map(option => option.apply)).toEqual([
+      'attr(resource, "attempts", int64) ',
+      'attr(span, "attempts", int64) ',
+      'attr(span, "attempts", string) ',
+    ])
+  })
+
+  it('offers operators for the inserted identity', () => {
+    const text = 'attr(span, "attempts", string) '
+    const result = variantCompletions(variants, text)
+    expect(result?.options.map(option => option.label)).toContain('CONTAINS')
+    expect(result?.options.map(option => option.label)).not.toContain('>')
   })
 })
 

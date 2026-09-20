@@ -1257,6 +1257,31 @@ describe('request parameters', () => {
     }
   )
 
+  it.each([
+    ['attr(log, "same.key", int64) = 42', 'int64', '42'],
+    ['attr(log, "same.key", string) = "42"', 'string', '42'],
+  ])(
+    'serializes the explicit stored kind from %s',
+    async (text, type, value) => {
+      const tree = parseQuery(text, [], 'logs')
+      if (!tree) throw new Error('Expected an explicit attribute query')
+      const sent = captureRequest()
+
+      await telemetryAPI.searchLogs(2n, 5n, tree).catch(() => {})
+
+      expect(sent().params.query.query).toMatchObject({
+        field: {
+          name: 'same.key',
+          type,
+          searchScope: 'attribute',
+          attributeScope: 'log',
+        },
+        fieldOperator: '=',
+        value,
+      })
+    }
+  )
+
   it('includes a trace result limit without requiring a query tree', async () => {
     const sent = captureRequest()
     await telemetryAPI.searchTraces(2n, 5n, undefined, 250).catch(() => {})

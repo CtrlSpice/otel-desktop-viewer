@@ -23,7 +23,9 @@ Group { "(" expression ")" }
 
 Comparison { FieldName operator value }
 
-FieldName { Word }
+FieldName { AttributeReference | Word }
+
+AttributeReference { Word "(" Word "," QuotedString "," Word ")" }
 
 operator { Operator | KeywordOperator }
 

@@ -35,7 +35,7 @@ const matches: JsonAttributeMatch[] = [
 const attrField = (
   name: string,
   attributeScope: AttributeScope
-): FieldDefinition => ({
+): Extract<FieldDefinition, { searchScope: 'attribute' }> => ({
   name,
   type: 'string',
   searchScope: 'attribute',
@@ -69,7 +69,7 @@ describe('matchToQuery', () => {
   it('renders a match as the query that would find it', () => {
     expect(
       matchToQuery(matches[0], { kind: 'string', value: 'checkout-api' })
-    ).toBe('service.name = "checkout-api"')
+    ).toBe('attr(resource, "service.name", string) = "checkout-api"')
   })
 
   // Values are always quoted, so a value containing a space cannot produce the
@@ -77,28 +77,30 @@ describe('matchToQuery', () => {
   it('quotes values containing spaces', () => {
     expect(
       matchToQuery(matches[0], { kind: 'string', value: 'Red Bull Racing' })
-    ).toBe('service.name = "Red Bull Racing"')
+    ).toBe('attr(resource, "service.name", string) = "Red Bull Racing"')
   })
 
   it('escapes quotes and backslashes in the value', () => {
     expect(
       matchToQuery(matches[0], { kind: 'string', value: 'say "hi"' })
-    ).toBe('service.name = "say \\"hi\\""')
+    ).toBe('attr(resource, "service.name", string) = "say \\"hi\\""')
     expect(matchToQuery(matches[0], { kind: 'string', value: 'a\\b' })).toBe(
-      'service.name = "a\\\\b"'
+      'attr(resource, "service.name", string) = "a\\\\b"'
     )
   })
 
   it('uses the tagged value payload for structured and non-string samples', () => {
     expect(matchToQuery(matches[0], { kind: 'int64', value: '42' })).toBe(
-      'service.name = "42"'
+      'attr(resource, "service.name", string) = "42"'
     )
     expect(
       matchToQuery(matches[0], {
         kind: 'array',
         value: [{ kind: 'bool', value: true }],
       })
-    ).toBe('service.name = "[{\\"kind\\":\\"bool\\",\\"value\\":true}]"')
+    ).toBe(
+      'attr(resource, "service.name", string) = "[{\\"kind\\":\\"bool\\",\\"value\\":true}]"'
+    )
   })
 })
 
@@ -107,9 +109,46 @@ describe('value discovery completions', () => {
     const { result } = await complete('checkout')
     expect(result).not.toBeNull()
     expect(result!.options.map(o => o.label)).toEqual([
-      'service.name = "checkout-api"',
-      'http.route = "/checkout"',
-      'http.route = "/checkout/confirm"',
+      'attr(resource, "service.name", string) = "checkout-api"',
+      'attr(span, "http.route", string) = "/checkout"',
+      'attr(span, "http.route", string) = "/checkout/confirm"',
+    ])
+  })
+
+  it('keeps the discovered stored kind in each inserted condition', async () => {
+    const variants: JsonAttributeMatch[] = [
+      {
+        name: 'attempts',
+        attributeScope: 'span',
+        type: 'string',
+        matchCount: 1,
+        sampleValues: [{ kind: 'string', value: '42' }],
+      },
+      {
+        name: 'attempts',
+        attributeScope: 'span',
+        type: 'int64',
+        matchCount: 1,
+        sampleValues: [{ kind: 'int64', value: '42' }],
+      },
+    ]
+    const variantFields: FieldDefinition[] = [
+      { ...attrField('attempts', 'span'), type: 'string' },
+      {
+        ...attrField('attempts', 'span'),
+        type: 'int64',
+        operators: [OPERATORS.EQUALS],
+      },
+    ]
+    const { result } = await complete(
+      '42',
+      vi.fn().mockResolvedValue(variants),
+      variantFields
+    )
+
+    expect(result?.options.map(option => option.label)).toEqual([
+      'attr(span, "attempts", string) = "42"',
+      'attr(span, "attempts", int64) = "42"',
     ])
   })
 
@@ -123,9 +162,9 @@ describe('value discovery completions', () => {
   it('boosts keys where the term is specific', async () => {
     const { result } = await complete('checkout')
     const specific = result!.options.find(o =>
-      o.label.startsWith('service.name')
+      o.label.includes('"service.name"')
     )
-    const broad = result!.options.find(o => o.label.startsWith('http.route'))
+    const broad = result!.options.find(o => o.label.includes('"http.route"'))
     expect(specific!.boost).toBeGreaterThan(broad!.boost ?? 0)
   })
 
@@ -202,7 +241,7 @@ describe('only suggests fields this editor can search', () => {
       vi.fn().mockResolvedValue(crossSignal)
     )
     expect(result!.options.map(o => o.label)).toEqual([
-      'service.name = "Mercedes"',
+      'attr(resource, "service.name", string) = "Mercedes"',
     ])
   })
 
@@ -257,12 +296,12 @@ describe('only suggests fields this editor can search', () => {
     )
 
     expect(result?.options.map(option => option.label)).toEqual([
-      'env = "production"',
-      'Env = "staging"',
+      'attr(resource, "env", string) = "production"',
+      'attr(span, "Env", string) = "staging"',
     ])
   })
 
-  it('does not offer an attribute expression that resolves to a built-in field', async () => {
+  it('offers an explicit attribute expression despite a built-in collision', async () => {
     const native: FieldDefinition = {
       name: 'name',
       type: 'string',
@@ -284,7 +323,9 @@ describe('only suggests fields this editor can search', () => {
       [attribute, native]
     )
 
-    expect(result).toBeNull()
+    expect(result?.options.map(option => option.label)).toEqual([
+      'attr(span, "Name", string) = "staging"',
+    ])
   })
 
   it('does not offer an equals comparison for array-only fields', async () => {

@@ -240,7 +240,7 @@
     }
 
     try {
-      const request = parseSearchRequest(text, availableFields)
+      const request = parseSearchRequest(text, availableFields, signal)
       searchError = null
       if (!request) {
         fetchClean(beginListUpdate(signal))
@@ -347,7 +347,7 @@
           // fires on bare text at the top level, where the other has nothing to
           // offer. Async, so it cannot block typing.
           override: [
-            createQueryCompletionSource(() => availableFields),
+            createQueryCompletionSource(() => availableFields, signal),
             createValueDiscoverySource(
               telemetryAPI.searchAttributes,
               () => availableFields,
@@ -360,7 +360,7 @@
           activateOnTyping: true,
           icons: false,
         }),
-        createQueryLinter(() => availableFields),
+        createQueryLinter(() => availableFields, signal),
         createQueryKeymap(onSubmit),
         ...queryTheme,
         tooltips({ position: 'fixed' }),
@@ -590,6 +590,11 @@
       <p>
         Quote values containing spaces:
         <code class="q-value">"Red Bull Racing"</code> — keywords work lowercase too
+      </p>
+      <p>
+        Attribute suggestions include their exact scope and stored kind, for
+        example <code class="q-field">attr(span, "attempts", int64)</code>. This
+        selects received integer values; it does not convert other values.
       </p>
       <p>
         Cap the returned results by appending
