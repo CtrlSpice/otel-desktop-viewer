@@ -1,7 +1,7 @@
 <script lang="ts">
   import DetailNav from './DetailNav.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import Delete02Icon from '@hugeicons/core-free-icons/Delete02Icon'
+  import { Delete02Icon } from '@hugeicons/core-free-icons'
 
   type Props = {
     index: number

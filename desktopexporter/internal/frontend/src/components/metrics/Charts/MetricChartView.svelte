@@ -221,12 +221,16 @@
   <div class="metric-chart-view metric-chart-view--empty">
     <p class="text-base-content/40 text-sm">Select a metric to view details</p>
   </div>
-{:else if ctx.isUnspecifiedTemporality}
+{:else if ctx.isUnsafeTemporality}
   <!-- FunError takes the entire chart row. The detail pane (Fields /
        Series) still renders independently because it consumes
        different data; this branch only blanks the chart. -->
   <div class="metric-chart-view metric-chart-view--fill">
-    <UnspecifiedTemporalityCallout size="full" />
+    <UnspecifiedTemporalityCallout
+      size="full"
+      temporalityCode={ctx.temporalityCode!}
+      temporalityLabel={ctx.temporality}
+    />
   </div>
 {:else if ctx.isHistogramKind}
   {@render histogramChartSlot()}

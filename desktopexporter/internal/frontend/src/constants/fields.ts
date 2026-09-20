@@ -268,6 +268,18 @@ export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
     enumValues: SPAN_KIND_ENUM,
   },
   {
+    name: 'kindCode',
+    type: 'int64',
+    searchScope: 'field',
+    operators: [
+      OPERATORS.EQUALS,
+      OPERATORS.NOT_EQUALS,
+      OPERATORS.GREATER_THAN,
+      OPERATORS.LESS_THAN,
+    ],
+    description: 'Received OTLP span kind number',
+  },
+  {
     name: 'startTime',
     type: 'int64',
     searchScope: 'field',
@@ -352,6 +364,18 @@ export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
     operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description: 'Status code (Unset, Ok, Error)',
     enumValues: SPAN_STATUS_CODE_ENUM,
+  },
+  {
+    name: 'statusCodeValue',
+    type: 'int64',
+    searchScope: 'field',
+    operators: [
+      OPERATORS.EQUALS,
+      OPERATORS.NOT_EQUALS,
+      OPERATORS.GREATER_THAN,
+      OPERATORS.LESS_THAN,
+    ],
+    description: 'Received OTLP span status code number',
   },
   {
     name: 'statusMessage',

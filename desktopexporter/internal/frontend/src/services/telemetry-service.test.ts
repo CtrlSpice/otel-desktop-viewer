@@ -52,7 +52,8 @@ function metricResult(overrides: Partial<JsonMetricData> = {}): JsonMetricData {
     metadata: [],
     unit: '1',
     metricType: 'Gauge',
-    aggregationTemporality: '',
+    aggregationTemporalityCode: null,
+    aggregationTemporality: null,
     isMonotonic: false,
     resourceDroppedAttributesCount: 0,
     resource: { attributes: [], droppedAttributesCount: 0 },
@@ -283,6 +284,10 @@ describe('telemetryAPI.getMetric', () => {
     )
 
     const metric = await telemetryAPI.getMetric('some-stream', 0, 1)
+    expect(metric!.timeseries[0]!.datapoints[0]).toMatchObject({
+      doubleValue: 1,
+      intValue: null,
+    })
     const exemplars = metric!.timeseries[0]!.datapoints[0]!.exemplars
     expect(exemplars).toEqual([
       expect.objectContaining({
@@ -322,6 +327,178 @@ describe('telemetryAPI.getMetric', () => {
         intValue: null,
       }),
     ])
+  })
+
+  it('revives every received metric integer field without losing precision', async () => {
+    const wire = metricResult({
+      timeseries: [
+        {
+          attributesKey: 'series-1',
+          attributes: [],
+          resource: { attributes: [], droppedAttributesCount: 0 },
+          datapoints: [
+            {
+              id: 'gauge-min',
+              timestamp: '100',
+              timestampMs: 0,
+              startTime: '0',
+              flags: 0,
+              exemplars: [],
+              metricType: 'Gauge',
+              doubleValue: null,
+              intValue: '-9223372036854775808',
+              valueType: 'Int',
+            },
+            {
+              id: 'sum-max',
+              timestamp: '101',
+              timestampMs: 0,
+              startTime: '0',
+              flags: 0,
+              exemplars: [],
+              metricType: 'Sum',
+              doubleValue: null,
+              intValue: '9223372036854775807',
+              valueType: 'Int',
+              isMonotonic: true,
+              aggregationTemporalityCode: 1,
+              aggregationTemporality: 'Delta',
+            },
+            {
+              id: 'histogram-max',
+              timestamp: '102',
+              timestampMs: 0,
+              startTime: '0',
+              flags: 0,
+              exemplars: [],
+              metricType: 'Histogram',
+              count: '18446744073709551615',
+              sum: 1,
+              min: 1,
+              max: 1,
+              bucketCounts: ['0', '9007199254740993', '18446744073709551615'],
+              explicitBounds: [0, 1],
+              quantiles: null,
+              aggregationTemporalityCode: -1,
+              aggregationTemporality: 'Unknown (-1)',
+            },
+            {
+              id: 'exponential-max',
+              timestamp: '103',
+              timestampMs: 0,
+              startTime: '0',
+              flags: 0,
+              exemplars: [],
+              metricType: 'ExponentialHistogram',
+              count: '18446744073709551615',
+              sum: 1,
+              min: 1,
+              max: 1,
+              scale: 0,
+              zeroCount: '9007199254740993',
+              zeroThreshold: 0,
+              positiveBucketOffset: 0,
+              positiveBucketCounts: ['18446744073709551615'],
+              negativeBucketOffset: 0,
+              negativeBucketCounts: [],
+              quantiles: null,
+              aggregationTemporalityCode: 1,
+              aggregationTemporality: 'Delta',
+            },
+          ],
+          stats: null,
+          datapointCount: 4,
+          lastSeenNs: '103',
+          views: null,
+          rateStats: null,
+          sparkline: null,
+        },
+      ],
+    })
+    stubRpcResult(wire)
+
+    const metric = await telemetryAPI.getMetric('some-stream', 0, 1)
+    const datapoints = metric!.timeseries[0]!.datapoints
+
+    expect(datapoints[0]).toMatchObject({
+      intValue: -9_223_372_036_854_775_808n,
+    })
+    expect(datapoints[1]).toMatchObject({
+      intValue: 9_223_372_036_854_775_807n,
+    })
+    expect(datapoints[2]).toMatchObject({
+      count: 18_446_744_073_709_551_615n,
+      bucketCounts: [0n, 9_007_199_254_740_993n, 18_446_744_073_709_551_615n],
+      aggregationTemporalityCode: -1,
+      aggregationTemporality: 'Unknown (-1)',
+    })
+    expect(datapoints[3]).toMatchObject({
+      count: 18_446_744_073_709_551_615n,
+      zeroCount: 9_007_199_254_740_993n,
+      positiveBucketCounts: [18_446_744_073_709_551_615n],
+      negativeBucketCounts: [],
+    })
+    expect(wire.timeseries[0]!.datapoints[2]).toMatchObject({
+      count: '18446744073709551615',
+      bucketCounts: ['0', '9007199254740993', '18446744073709551615'],
+    })
+  })
+
+  it('keeps absent histogram statistics distinct from present zero', async () => {
+    const base = {
+      timestampMs: 0,
+      startTime: '0',
+      flags: 0,
+      metricType: 'Histogram' as const,
+      count: '0',
+      bucketCounts: ['0'],
+      explicitBounds: [],
+      quantiles: null,
+      aggregationTemporalityCode: 1,
+      aggregationTemporality: 'Delta',
+      exemplars: [],
+    }
+    stubRpcResult(
+      metricResult({
+        metricType: 'Histogram',
+        timeseries: [
+          {
+            attributesKey: 'series-1',
+            attributes: [],
+            resource: { attributes: [], droppedAttributesCount: 0 },
+            datapoints: [
+              {
+                ...base,
+                id: 'absent',
+                timestamp: '1',
+                sum: null,
+                min: null,
+                max: null,
+              },
+              {
+                ...base,
+                id: 'zero',
+                timestamp: '2',
+                sum: 0,
+                min: 0,
+                max: 0,
+              },
+            ],
+            stats: null,
+            datapointCount: 2,
+            lastSeenNs: '2',
+            views: null,
+            rateStats: null,
+            sparkline: null,
+          },
+        ],
+      })
+    )
+
+    const metric = await telemetryAPI.getMetric('some-stream', 0, 2)
+    const [absent, zero] = metric!.timeseries[0]!.datapoints
+    expect(absent).toMatchObject({ sum: null, min: null, max: null })
+    expect(zero).toMatchObject({ sum: 0, min: 0, max: 0 })
   })
 
   it('decodes recursive attribute int64 values and exceptional double bits once', async () => {
@@ -566,9 +743,10 @@ describe('telemetryAPI.searchSpans rehydration', () => {
           parentSpanID: null,
           flags: 0,
           name: 'root',
+          kindCode: 2,
           kind: 'Server',
-          start: 0,
-          dur: 5_000_000,
+          start: '0',
+          dur: '5000000',
           attributes: [],
           events: [
             {
@@ -584,6 +762,7 @@ describe('telemetryAPI.searchSpans rehydration', () => {
           droppedAttributesCount: 0,
           droppedEventsCount: 0,
           droppedLinksCount: 0,
+          statusCodeValue: 1,
           statusCode: 'Ok',
           statusMessage: '',
         },
@@ -597,9 +776,10 @@ describe('telemetryAPI.searchSpans rehydration', () => {
           parentSpanID: 'aaaa',
           flags: 0,
           name: 'child',
-          kind: 'Internal',
-          start: 1_200_000_000,
-          dur: 3_000_000,
+          kindCode: -1,
+          kind: 'Unknown (-1)',
+          start: '1200000000',
+          dur: '3000000',
           attributes: [],
           events: [],
           links: [],
@@ -608,7 +788,8 @@ describe('telemetryAPI.searchSpans rehydration', () => {
           droppedAttributesCount: 0,
           droppedEventsCount: 0,
           droppedLinksCount: 0,
-          statusCode: 'Ok',
+          statusCodeValue: 99,
+          statusCode: 'Unknown (99)',
           statusMessage: '',
         },
         depth: 1,

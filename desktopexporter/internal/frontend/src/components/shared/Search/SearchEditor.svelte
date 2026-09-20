@@ -37,8 +37,7 @@
   import { queryTheme, ensureTooltipStyles } from './codemirror/theme'
   import { createQueryKeymap } from './codemirror/keymap'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import Cancel01Icon from '@hugeicons/core-free-icons/Cancel01Icon'
-  import HelpCircleIcon from '@hugeicons/core-free-icons/HelpCircleIcon'
+  import { Cancel01Icon, HelpCircleIcon } from '@hugeicons/core-free-icons'
   import FieldErrorMessage from '@/components/shared/FieldErrorMessage.svelte'
 
   import type { SearchEditorAPI } from './search-editor-api'

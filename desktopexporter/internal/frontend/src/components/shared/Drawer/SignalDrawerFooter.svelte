@@ -1,6 +1,6 @@
 <script lang="ts">
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import Delete02Icon from '@hugeicons/core-free-icons/Delete02Icon'
+  import { Delete02Icon } from '@hugeicons/core-free-icons'
 
   type SignalLabel = 'trace' | 'log' | 'metric'
 

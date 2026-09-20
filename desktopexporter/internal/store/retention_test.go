@@ -30,6 +30,51 @@ func seedOwners(t *testing.T, s *Store) {
 	require.NoError(t, err)
 }
 
+func TestPruneCutoffPreservesHighBitTimestamp(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewStore(ctx, "", zap.NewNop())
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+	seedOwners(t, s)
+
+	max := ^uint64(0)
+	_, err = s.db.Exec(`insert into spans
+		(trace_id, span_id, name, start_time, end_time, resource_id, scope_id, attribute_ids)
+		values (uuid(), 1::ubigint, 'max', (select unnest(?::ubigint[])),
+			(select unnest(?::ubigint[])), ?::uuid, ?::uuid, [])`,
+		[]uint64{max}, []uint64{max}, seedResourceID, seedScopeID)
+	require.NoError(t, err)
+
+	cutoff, ok, err := s.pruneCutoff(ctx, s.db,
+		`select quantile_disc(start_time, ?) from spans`)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, max, cutoff)
+}
+
+func TestPruneOldestSignalsMakeProgressWithSmallTables(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewStore(ctx, "", zap.NewNop())
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+
+	seedSpans(t, s, 2)
+	seedLogs(t, s, 2)
+	const streamID = "11111111-1111-1111-1111-111111111111"
+	const ingestID = "22222222-2222-2222-2222-222222222222"
+	seedDatapoints(t, s, streamID, ingestID, 2, 0)
+
+	require.NoError(t, s.pruneOldestSpans(ctx, s.db))
+	require.NoError(t, s.pruneOldestLogs(ctx, s.db))
+	require.NoError(t, s.pruneOldestDatapoints(ctx, s.db))
+
+	for _, table := range []string{"spans", "logs", "datapoints"} {
+		var count int
+		require.NoError(t, s.db.QueryRow(`select count(*) from `+table).Scan(&count))
+		require.Equal(t, 1, count, table)
+	}
+}
+
 // seedSpans inserts n spans with start_time = i * 1ms (i in [0, n)), each
 // referencing one fat attribute of its own so pruning visibly moves the size
 // measurement.

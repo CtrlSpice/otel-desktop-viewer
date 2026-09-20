@@ -62,6 +62,15 @@ func countRows(t *testing.T, s *store.Store, ctx context.Context, query string, 
 	return n
 }
 
+func metricWireUint64(t *testing.T, value any) uint64 {
+	t.Helper()
+	text, ok := value.(string)
+	require.True(t, ok, "metric uint64 wire value must be decimal text, got %T", value)
+	parsed, err := strconv.ParseUint(text, 10, 64)
+	require.NoError(t, err)
+	return parsed
+}
+
 func mustDecodeTraceIDMetrics(s string) [16]byte {
 	b, err := hex.DecodeString(s)
 	if err != nil || len(b) != 16 {
@@ -262,7 +271,7 @@ func TestSearchMetricSummariesNullableTimeRangesExecute(t *testing.T) {
 		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
 	}))
 
-	start, end := int64(200), int64(200)
+	start, end := uint64(200), uint64(200)
 	for _, tc := range []struct {
 		name          string
 		timeRange     store.TimeRange
@@ -378,15 +387,300 @@ func findSummary(t *testing.T, summaries []map[string]any, name string) map[stri
 // getMetricFullByName resolves a stream id via SearchSummaries and fetches
 // full MetricData via GetMetric (timeseries, datapoints, resource, scope).
 func getMetricFullByName(t *testing.T, s *store.Store, ctx context.Context, name string) map[string]any {
+	return getMetricFullByNameInRange(t, s, ctx, name, store.BoundedTimeRange(0, maxNano))
+}
+
+func getMetricFullByNameInRange(t *testing.T, s *store.Store, ctx context.Context, name string, timeRange store.TimeRange) map[string]any {
 	t.Helper()
 	id := findMetricID(t, s, ctx, name)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, id, store.BoundedTimeRange(0, maxNano), 0, nil, nil, 0, 0, 0, nil, "", nil, 0)
+		return metrics.GetMetric(ctx, db, id, timeRange, 0, nil, nil, 0, 0, 0, nil, "", nil, 0)
 	})
 	require.NoError(t, err)
 	var m map[string]any
 	require.NoError(t, json.Unmarshal(raw, &m))
 	return m
+}
+
+type optionalHistogramStatistic struct {
+	present bool
+	value   float64
+}
+
+type optionalHistogramDatapoint interface {
+	SetTimestamp(pcommon.Timestamp)
+	SetCount(uint64)
+	SetSum(float64)
+	SetMin(float64)
+	SetMax(float64)
+}
+
+func TestHistogramOptionalStatisticsPreservePresence(t *testing.T) {
+	t.Parallel()
+	fixtures := []struct {
+		timestamp uint64
+		sum       optionalHistogramStatistic
+		min       optionalHistogramStatistic
+		max       optionalHistogramStatistic
+	}{
+		{timestamp: 100},
+		{timestamp: 200, sum: optionalHistogramStatistic{true, 0}, min: optionalHistogramStatistic{true, 0}, max: optionalHistogramStatistic{true, 0}},
+		{timestamp: 300, sum: optionalHistogramStatistic{true, -2.5}, min: optionalHistogramStatistic{true, -3}, max: optionalHistogramStatistic{true, 4.5}},
+		{timestamp: 400, sum: optionalHistogramStatistic{true, 7}},
+		{timestamp: 500, min: optionalHistogramStatistic{true, -1}},
+		{timestamp: 600, max: optionalHistogramStatistic{true, 9}},
+	}
+
+	for _, metricType := range []string{"Histogram", "ExponentialHistogram"} {
+		metricType := metricType
+		t.Run(metricType, func(t *testing.T) {
+			t.Parallel()
+			s, ctx := storetest.New(t)
+			md := pmetric.NewMetrics()
+			metric := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+			metric.SetName("optional-" + metricType)
+			var appendPoint func() optionalHistogramDatapoint
+			switch metricType {
+			case "Histogram":
+				histogram := metric.SetEmptyHistogram()
+				histogram.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+				appendPoint = func() optionalHistogramDatapoint { return histogram.DataPoints().AppendEmpty() }
+			case "ExponentialHistogram":
+				histogram := metric.SetEmptyExponentialHistogram()
+				histogram.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+				appendPoint = func() optionalHistogramDatapoint { return histogram.DataPoints().AppendEmpty() }
+			}
+
+			for _, fixture := range fixtures {
+				point := appendPoint()
+				point.SetTimestamp(pcommon.Timestamp(fixture.timestamp))
+				if fixture.sum.present {
+					point.SetSum(fixture.sum.value)
+				}
+				if fixture.min.present {
+					point.SetMin(fixture.min.value)
+				}
+				if fixture.max.present {
+					point.SetMax(fixture.max.value)
+				}
+			}
+
+			require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+				return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+			}))
+			require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+				rows, err := db.QueryContext(ctx, `select timestamp::varchar, sum, min, max
+					from datapoints order by timestamp`)
+				if err != nil {
+					return err
+				}
+				defer rows.Close()
+				for _, fixture := range fixtures {
+					require.True(t, rows.Next())
+					var timestamp string
+					var got [3]sql.NullFloat64
+					require.NoError(t, rows.Scan(&timestamp, &got[0], &got[1], &got[2]))
+					assert.Equal(t, strconv.FormatUint(fixture.timestamp, 10), timestamp)
+					for i, want := range []optionalHistogramStatistic{fixture.sum, fixture.min, fixture.max} {
+						assert.Equal(t, want.present, got[i].Valid)
+						if want.present {
+							assert.Equal(t, want.value, got[i].Float64)
+						}
+					}
+				}
+				require.False(t, rows.Next())
+				return rows.Err()
+			}))
+
+			byTimestamp := make(map[string]map[string]any)
+			for _, raw := range metricDatapoints(getMetricFullByName(t, s, ctx, "optional-"+metricType)) {
+				dp := raw.(map[string]any)
+				byTimestamp[dp["timestamp"].(string)] = dp
+			}
+			for _, fixture := range fixtures {
+				dp := byTimestamp[strconv.FormatUint(fixture.timestamp, 10)]
+				require.NotNil(t, dp)
+				for field, want := range map[string]optionalHistogramStatistic{"sum": fixture.sum, "min": fixture.min, "max": fixture.max} {
+					require.Contains(t, dp, field)
+					if want.present {
+						assert.Equal(t, want.value, dp[field])
+					} else {
+						assert.Nil(t, dp[field])
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestHistogramReductionRequiresEveryInputSum(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name        string
+		metricType  string
+		temporality pmetric.AggregationTemporality
+	}{
+		{name: "delta", metricType: "Histogram", temporality: pmetric.AggregationTemporalityDelta},
+		{name: "cumulative", metricType: "ExponentialHistogram", temporality: pmetric.AggregationTemporalityCumulative},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s, ctx := storetest.New(t)
+			md := pmetric.NewMetrics()
+			metric := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+			metric.SetName("partial-" + tc.name)
+
+			switch tc.metricType {
+			case "Histogram":
+				histogram := metric.SetEmptyHistogram()
+				histogram.SetAggregationTemporality(tc.temporality)
+				for i := range 3 {
+					timestamp := pcommon.Timestamp(time.Duration(i+1) * time.Second)
+					count := uint64(i + 1)
+					dp := histogram.DataPoints().AppendEmpty()
+					dp.SetTimestamp(timestamp)
+					dp.SetCount(count)
+					dp.BucketCounts().FromRaw([]uint64{count})
+					if i != 1 {
+						dp.SetSum(float64(count))
+					}
+				}
+			case "ExponentialHistogram":
+				histogram := metric.SetEmptyExponentialHistogram()
+				histogram.SetAggregationTemporality(tc.temporality)
+				for i := range 3 {
+					timestamp := pcommon.Timestamp(time.Duration(i+1) * time.Second)
+					count := uint64(i + 1)
+					dp := histogram.DataPoints().AppendEmpty()
+					dp.SetTimestamp(timestamp)
+					dp.SetCount(count)
+					dp.Positive().BucketCounts().FromRaw([]uint64{count})
+					if i != 1 {
+						dp.SetSum(float64(count))
+					}
+				}
+			}
+
+			require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+				return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+			}))
+			streamID := findMetricID(t, s, ctx, "partial-"+tc.name)
+			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+				return metrics.GetMetric(ctx, db, streamID,
+					store.BoundedTimeRange(0, int64(4*time.Second)),
+					1, nil, nil, 0, 0, 0, nil, "", nil, 0)
+			})
+			require.NoError(t, err)
+			var full map[string]any
+			require.NoError(t, json.Unmarshal(raw, &full))
+			dps := metricDatapoints(full)
+			require.Len(t, dps, 1)
+			assert.Contains(t, dps[0].(map[string]any), "sum")
+			assert.Nil(t, dps[0].(map[string]any)["sum"])
+			aggregate := full["aggregate"].([]any)
+			require.Len(t, aggregate, 1)
+			assert.Contains(t, aggregate[0].(map[string]any), "sum")
+			assert.Nil(t, aggregate[0].(map[string]any)["sum"])
+		})
+	}
+}
+
+func TestReceivedMetricIntegersUseExactDecimalWireValues(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	data := pmetric.NewMetrics()
+	sm := data.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty()
+
+	gaugeMetric := sm.Metrics().AppendEmpty()
+	gaugeMetric.SetName("exact.gauge")
+	gauge := gaugeMetric.SetEmptyGauge()
+	for i, value := range []int64{math.MinInt64, math.MaxInt64, 1<<53 + 1, 0, -1} {
+		dp := gauge.DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.Timestamp(100 + i))
+		dp.SetIntValue(value)
+	}
+	doublePoint := gauge.DataPoints().AppendEmpty()
+	doublePoint.SetTimestamp(106)
+	doublePoint.SetDoubleValue(1.25)
+
+	sumMetric := sm.Metrics().AppendEmpty()
+	sumMetric.SetName("exact.sum")
+	sum := sumMetric.SetEmptySum()
+	sum.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+	sumPoint := sum.DataPoints().AppendEmpty()
+	sumPoint.SetTimestamp(200)
+	sumPoint.SetIntValue(math.MinInt64)
+
+	maxUint64 := ^uint64(0)
+	histogramMetric := sm.Metrics().AppendEmpty()
+	histogramMetric.SetName("exact.histogram")
+	histogram := histogramMetric.SetEmptyHistogram()
+	histogram.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+	histogramMax := histogram.DataPoints().AppendEmpty()
+	histogramMax.SetTimestamp(300)
+	histogramMax.SetCount(maxUint64)
+	histogramMax.BucketCounts().FromRaw([]uint64{maxUint64})
+	histogramEmpty := histogram.DataPoints().AppendEmpty()
+	histogramEmpty.SetTimestamp(301)
+	histogramEmpty.SetCount(0)
+
+	exponentialMetric := sm.Metrics().AppendEmpty()
+	exponentialMetric.SetName("exact.exponential")
+	exponential := exponentialMetric.SetEmptyExponentialHistogram()
+	exponential.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+	exponentialPoint := exponential.DataPoints().AppendEmpty()
+	exponentialPoint.SetTimestamp(400)
+	exponentialPoint.SetCount(maxUint64)
+	exponentialPoint.SetZeroCount(1<<53 + 1)
+	exponentialPoint.Positive().BucketCounts().FromRaw([]uint64{maxUint64})
+
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+	}))
+
+	fixtureRange := store.BoundedTimeRange(0, 500)
+	gaugeDatapoints := metricDatapoints(getMetricFullByNameInRange(t, s, ctx, "exact.gauge", fixtureRange))
+	var gaugeIntegers []string
+	nullIntegerArms := 0
+	for _, raw := range gaugeDatapoints {
+		dp := raw.(map[string]any)
+		if dp["intValue"] == nil {
+			nullIntegerArms++
+			continue
+		}
+		gaugeIntegers = append(gaugeIntegers, dp["intValue"].(string))
+	}
+	assert.ElementsMatch(t, []string{
+		"-9223372036854775808",
+		"9223372036854775807",
+		"9007199254740993",
+		"0",
+		"-1",
+	}, gaugeIntegers)
+	assert.Equal(t, 1, nullIntegerArms)
+
+	sumDatapoints := metricDatapoints(getMetricFullByNameInRange(t, s, ctx, "exact.sum", fixtureRange))
+	require.Len(t, sumDatapoints, 1)
+	assert.Equal(t, "-9223372036854775808", sumDatapoints[0].(map[string]any)["intValue"])
+
+	histogramDatapoints := metricDatapoints(getMetricFullByNameInRange(t, s, ctx, "exact.histogram", fixtureRange))
+	require.Len(t, histogramDatapoints, 2)
+	byCount := make(map[string]map[string]any, len(histogramDatapoints))
+	for _, raw := range histogramDatapoints {
+		dp := raw.(map[string]any)
+		byCount[dp["count"].(string)] = dp
+	}
+	assert.Equal(t, []any{"18446744073709551615"}, byCount["18446744073709551615"]["bucketCounts"])
+	assert.Equal(t, []any{}, byCount["0"]["bucketCounts"])
+
+	exponentialDatapoints := metricDatapoints(getMetricFullByNameInRange(t, s, ctx, "exact.exponential", fixtureRange))
+	require.Len(t, exponentialDatapoints, 1)
+	exponentialJSON := exponentialDatapoints[0].(map[string]any)
+	assert.Equal(t, "18446744073709551615", exponentialJSON["count"])
+	assert.Equal(t, "9007199254740993", exponentialJSON["zeroCount"])
+	assert.Equal(t, []any{"18446744073709551615"}, exponentialJSON["positiveBucketCounts"])
+	assert.Equal(t, []any{}, exponentialJSON["negativeBucketCounts"])
 }
 
 // TestMetricSuite runs tests on ingested metrics using SearchMetrics (DB-generated JSON).
@@ -439,15 +733,7 @@ func TestMetricSuite(t *testing.T) {
 		dp, _ := datapoints[0].(map[string]any)
 		assert.NotNil(t, dp)
 		assert.Equal(t, "Int", dp["valueType"], "valueType for integer datapoint")
-		// intValue is written when ValueType is Int; DB returns as number
-		switch v := dp["intValue"].(type) {
-		case float64:
-			assert.Equal(t, 42.0, v)
-		case int64:
-			assert.Equal(t, int64(42), v)
-		default:
-			t.Errorf("intValue expected number, got %T", dp["intValue"])
-		}
+		assert.Equal(t, "42", dp["intValue"])
 	})
 
 	t.Run("SumMetric", func(t *testing.T) {
@@ -465,7 +751,7 @@ func TestMetricSuite(t *testing.T) {
 		assert.NotEmpty(t, datapoints)
 		dp, _ := datapoints[0].(map[string]any)
 		assert.NotNil(t, dp)
-		assert.Equal(t, float64(100), dp["count"])
+		assert.Equal(t, "100", dp["count"])
 		assert.Equal(t, 25.5, dp["sum"])
 	})
 
@@ -476,7 +762,7 @@ func TestMetricSuite(t *testing.T) {
 		assert.NotEmpty(t, datapoints)
 		dp, _ := datapoints[0].(map[string]any)
 		assert.NotNil(t, dp)
-		assert.Equal(t, float64(50), dp["count"])
+		assert.Equal(t, "50", dp["count"])
 		assert.Equal(t, float64(2), dp["scale"])
 	})
 
@@ -911,6 +1197,11 @@ func metricDatapoints(m map[string]any) []any {
 // pruned out from under the delete.
 func deleteByIdentity(t *testing.T, ctx context.Context, s *store.Store, name, unit, metricType, aggTemporality, isMonotonic, scopeName, scopeVersion, serviceName string) error {
 	t.Helper()
+	temporalityCode := map[string]int32{
+		"": 0, "Unspecified": int32(pmetric.AggregationTemporalityUnspecified),
+		"Delta":      int32(pmetric.AggregationTemporalityDelta),
+		"Cumulative": int32(pmetric.AggregationTemporalityCumulative),
+	}[aggTemporality]
 	const q = `
 		select id::varchar from metric_streams
 		where name = ?
@@ -926,7 +1217,7 @@ func deleteByIdentity(t *testing.T, ctx context.Context, s *store.Store, name, u
 	return s.WithDBWrite(func(db *sql.DB) error {
 		var streamID string
 		err := db.QueryRowContext(ctx, q,
-			name, unit, metricType, aggTemporality, isMonotonic == "true",
+			name, unit, metricType, temporalityCode, isMonotonic == "true",
 			scopeName, scopeVersion, serviceName,
 		).Scan(&streamID)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1953,12 +2244,9 @@ func TestMetricSearch_DatapointAndExemplarLabels(t *testing.T) {
 // shape in any replicated deployment rather than an exotic one. Prometheus
 // would show two series here; we showed one, silently averaging two machines.
 //
-// What tells the replicas apart is service.instance.id -- the only field the
-// OTel spec actually commits to as resource identity (see ingest.ResourceID).
-// host.name differing too is realistic flavor, not what does the work here;
-// TestMetricSeries_ResourceOnlyDiffersByHostNameCollapses below pins that
-// host.name alone, without service.instance.id, would NOT split these into
-// two series.
+// The complete Resource attributes identify the originating OTLP metric
+// stream. service.instance.id and host.name both differ here, so the payloads
+// and therefore the chart series are distinct.
 func buildTwoReplicaMetrics(t *testing.T) pmetric.Metrics {
 	t.Helper()
 	md := pmetric.NewMetrics()
@@ -2012,7 +2300,7 @@ func TestMetricSeries_SplitByResource(t *testing.T) {
 		return n
 	}
 	assert.Equal(t, 2, countRows("resources"),
-		"distinct service.instance.id must produce distinct resource rows")
+		"distinct resource payloads must produce distinct resource rows")
 
 	// One logical stream: that part is correct and must stay correct, or a pod
 	// restart would fragment the timeseries.
@@ -2052,15 +2340,10 @@ func TestMetricSeries_SplitByResource(t *testing.T) {
 		"series keys must differ, or the split produces two identical legend entries")
 }
 
-// TestMetricSeries_ResourceOnlyDiffersByHostNameCollapses is the inverse of
-// TestMetricSeries_SplitByResource: two resources that differ only by
-// host.name, with no service.instance.id at all, must collapse onto one
-// series. host.name (and k8s.pod.name) used to be a fallback identity --
-// InstanceKey walked a list of stand-ins when service.instance.id was absent
-// -- but the OTel spec sanctions only service.instance.id for this, so that
-// fallback is gone. Absent means absent: the telemetry never claimed these
-// were different instances, so we do not either.
-func TestMetricSeries_ResourceOnlyDiffersByHostNameCollapses(t *testing.T) {
+// Resource attributes are part of OTLP metric identity. Two payloads that
+// differ only by host.name remain two series even when neither has a
+// service.instance.id; storage must not invent a coarser resource identity.
+func TestMetricSeries_ResourceOnlyDiffersByHostNameSplits(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -2098,13 +2381,13 @@ func TestMetricSeries_ResourceOnlyDiffersByHostNameCollapses(t *testing.T) {
 		}))
 		return n
 	}
-	assert.Equal(t, 1, countRows("resources"),
-		"host.name alone, without service.instance.id, must not fragment the resource")
+	assert.Equal(t, 2, countRows("resources"),
+		"distinct received resource payloads must remain distinct")
 
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
-	assert.Equal(t, float64(1), summaries[0]["seriesCount"],
-		"neither replica identified itself, so they legitimately collapse to one series")
+	assert.Equal(t, float64(2), summaries[0]["seriesCount"],
+		"the resource difference is part of OTLP metric identity")
 }
 
 // A series id has to survive re-ingest, restarts and retention, because it is
@@ -2113,8 +2396,8 @@ func TestMetricSeries_ResourceOnlyDiffersByHostNameCollapses(t *testing.T) {
 // This is the property the old wire format could not offer: metric links could
 // only reference a datapoint id, which is minted per row and deleted by
 // retention, so a pasted link degraded silently to "no selection". A
-// content-derived id from (stream, resource, labels) is the same every time the
-// same series arrives.
+// content-derived id from the stream, originating resource attributes, and
+// datapoint labels is the same every time the same series arrives.
 func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -2178,12 +2461,13 @@ func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 // buildInstanceMetrics emits one gauge from one instance, optionally with extra
 // resource attributes bolted on -- the shape a collector processor produces
 // when it starts resolving metadata partway through a stream.
-func buildInstanceMetrics(t *testing.T, extra map[string]string, base int64) pmetric.Metrics {
+func buildInstanceMetrics(t *testing.T, extra map[string]string, dropped uint32, base int64) pmetric.Metrics {
 	t.Helper()
 	md := pmetric.NewMetrics()
 	rm := md.ResourceMetrics().AppendEmpty()
 	rm.Resource().Attributes().PutStr("service.name", "checkout")
 	rm.Resource().Attributes().PutStr("service.instance.id", "checkout-7f9c")
+	rm.Resource().SetDroppedAttributesCount(dropped)
 	for k, v := range extra {
 		rm.Resource().Attributes().PutStr(k, v)
 	}
@@ -2205,41 +2489,23 @@ func buildInstanceMetrics(t *testing.T, extra map[string]string, base int64) pme
 	return md
 }
 
-// TestMetricSeries_SurvivesResourceEnrichment is the regression test for a
-// series -- and, as of Change A, a resource -- splitting when nothing about
-// the instance changed.
-//
-// A resource id used to be a hash of the resource's whole attribute set, so
-// enriching a resource mid-stream (an SDK adding telemetry.sdk.* partway
-// through, say) minted a second resource row for the same running process,
-// and because the series id was derived from that resource row, a second
-// series too: one instrument from one instance drew two chart lines, split at
-// the moment the extra attributes appeared, and a ?series= link addressed
-// only half of it. Observed in the reference capture: 48 resource rows for 35
-// distinct service.instance.id, telemetry.sdk.* present on 35 and absent from
-// 13.
-//
-// Resource identity is now the OTel triplet read from attributes (see
-// ingest.ResourceID), and both payloads here share the same
-// service.instance.id -- so enrichment no longer mints a resource either: one
-// row, one series. That is the whole point of Change A, and is why this test
-// now asserts ONE resources row rather than two: the earlier version of this
-// test asserted two as the "correct" half of the split, back when a resource
-// id still carried the attribute set as identity. It no longer does.
-func TestMetricSeries_SurvivesResourceEnrichment(t *testing.T) {
+// Adding resource attributes changes the received OTLP Resource and therefore
+// metric identity. The coarser metric_streams row still groups both payloads
+// for navigation, while metric_series keeps their points separate.
+func TestMetricSeries_SplitsWhenResourcePayloadChanges(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
 	base := time.Now().UnixNano()
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, buildInstanceMetrics(t, nil, base), s.FlushedIDs())
+		return metrics.Ingest(ctx, conn, buildInstanceMetrics(t, nil, 0, base), s.FlushedIDs())
 	}))
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn, buildInstanceMetrics(t, map[string]string{
 			"telemetry.sdk.name":     "opentelemetry",
 			"telemetry.sdk.language": "go",
 			"telemetry.sdk.version":  "1.28.0",
-		}, base+10_000_000), s.FlushedIDs())
+		}, 0, base+10_000_000), s.FlushedIDs())
 	}))
 
 	countRows := func(table string) int {
@@ -2250,15 +2516,15 @@ func TestMetricSeries_SurvivesResourceEnrichment(t *testing.T) {
 		return n
 	}
 
-	assert.Equal(t, 1, countRows("resources"),
-		"same service.instance.id: enrichment must not mint a second resource row")
-	assert.Equal(t, 1, countRows("metric_series"),
-		"enriching a resource must not mint a second series for the same instance")
+	assert.Equal(t, 2, countRows("resources"),
+		"distinct received resource payloads must remain distinguishable")
+	assert.Equal(t, 2, countRows("metric_series"),
+		"resource attributes participate in OTLP metric series identity")
 
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
-	assert.Equal(t, float64(1), summaries[0]["seriesCount"],
-		"the summary must agree that this is one series")
+	assert.Equal(t, float64(2), summaries[0]["seriesCount"],
+		"the summary must report both resource-specific series")
 
 	streamID, ok := summaries[0]["id"].(string)
 	require.True(t, ok)
@@ -2270,9 +2536,78 @@ func TestMetricSeries_SurvivesResourceEnrichment(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &metric))
 
 	ts, _ := metric["timeseries"].([]any)
-	require.Len(t, ts, 1, "one line on the chart, not two")
-	dps, _ := ts[0].(map[string]any)["datapoints"].([]any)
-	assert.Len(t, dps, 6, "both batches land on the same line")
+	require.Len(t, ts, 2, "one line per received resource payload")
+	for _, entry := range ts {
+		dps, _ := entry.(map[string]any)["datapoints"].([]any)
+		assert.Len(t, dps, 3, "each resource-specific series keeps its own batch")
+	}
+}
+
+func TestMetricSeries_DroppedResourceCountPreservesPayloadWithoutSplittingSeries(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	base := time.Now().UnixNano()
+
+	for i, dropped := range []uint32{0, 3} {
+		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+			return metrics.Ingest(ctx, conn,
+				buildInstanceMetrics(t, nil, dropped, base+int64(i)*10_000_000), s.FlushedIDs())
+		}))
+	}
+
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		var resources, series, ingests, ingestResources, joinedIngests int
+		var minDropped, maxDropped uint32
+		require.NoError(t, db.QueryRow(`select count(*) from resources`).Scan(&resources))
+		require.NoError(t, db.QueryRow(`select count(*) from metric_series`).Scan(&series))
+		require.NoError(t, db.QueryRow(`select count(*), count(distinct resource_id) from metric_ingests`).Scan(&ingests, &ingestResources))
+		require.NoError(t, db.QueryRow(`
+			select count(*), min(r.dropped_attributes_count), max(r.dropped_attributes_count)
+			from metric_ingests mi join resources r on r.id = mi.resource_id`).Scan(&joinedIngests, &minDropped, &maxDropped))
+		assert.Equal(t, 2, resources, "dropped-count payloads need distinct resource rows")
+		assert.Equal(t, 1, series, "dropped count is not semantic metric series identity")
+		assert.Equal(t, 2, ingests)
+		assert.Equal(t, 2, ingestResources, "each metric ingest must retain its exact resource reference")
+		assert.Equal(t, 2, joinedIngests)
+		assert.Equal(t, uint32(0), minDropped)
+		assert.Equal(t, uint32(3), maxDropped)
+		return nil
+	}))
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+	assert.Equal(t, float64(1), summaries[0]["seriesCount"])
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
+			store.BoundedTimeRange(0, time.Now().UnixNano()+int64(time.Hour)),
+			0, nil, nil, 0, 0, 0, nil, "", nil, 0)
+	})
+	require.NoError(t, err)
+	var metric map[string]any
+	require.NoError(t, json.Unmarshal(raw, &metric))
+	assert.Equal(t, float64(3), metric["resourceDroppedAttributesCount"],
+		"top-level metadata comes from the latest representative ingest")
+	topResource, ok := metric["resource"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, float64(3), topResource["droppedAttributesCount"])
+	timeseries := metric["timeseries"].([]any)
+	require.Len(t, timeseries, 1, "chart detail must keep dropped-count-only payloads on one line")
+	series := timeseries[0].(map[string]any)
+	assert.Len(t, series["datapoints"].([]any), 6)
+	seriesResource, ok := series["resource"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, float64(0), seriesResource["droppedAttributesCount"],
+		"series resource exposes identifying attributes without claiming an arbitrary dropped count")
+	assert.Equal(t, topResource["attributes"], seriesResource["attributes"],
+		"series resource must retain the shared originating attributes")
+
+	attributeValues := map[string]any{}
+	for _, rawAttribute := range seriesResource["attributes"].([]any) {
+		attribute := rawAttribute.(map[string]any)
+		attributeValues[attribute["key"].(string)] = attribute["value"].(map[string]any)["value"]
+	}
+	assert.Equal(t, "checkout", attributeValues["service.name"])
+	assert.Equal(t, "checkout-7f9c", attributeValues["service.instance.id"])
 }
 
 // TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold is the first
@@ -2344,17 +2679,17 @@ func TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold(t *testing.T) {
 	dp := dps[0].(map[string]any)
 
 	assert.Equal(t, float64(4), dp["zeroThreshold"], "merged threshold is the larger of the two")
-	assert.Equal(t, float64(15), dp["zeroCount"],
+	assert.Equal(t, uint64(15), metricWireUint64(t, dp["zeroCount"]),
 		"buckets below the merged threshold must be folded into zero_count")
 	assert.Equal(t, float64(2), dp["positiveBucketOffset"],
 		"the folded buckets are gone, so the array starts above the cutoff")
 
 	counts, _ := dp["positiveBucketCounts"].([]any)
 	require.Len(t, counts, 1)
-	assert.Equal(t, float64(3), counts[0], "only the bucket above the threshold survives")
+	assert.Equal(t, uint64(3), metricWireUint64(t, counts[0]), "only the bucket above the threshold survives")
 
 	// The whole point: no observation was invented or lost by moving counts.
-	assert.Equal(t, float64(18), dp["count"], "total observations conserved")
+	assert.Equal(t, uint64(18), metricWireUint64(t, dp["count"]), "total observations conserved")
 }
 
 // TestGetMetric_MergedSeriesKeepTheirLabels covers a merged histogram series
@@ -2740,7 +3075,7 @@ func TestCumulativeHistogramMerge_DifferencesAcrossBuckets(t *testing.T) {
 	// Unreduced: the running totals themselves, untouched.
 	unreduced := get(0)
 	require.Len(t, unreduced, 6)
-	assert.Equal(t, float64(12), unreduced[0]["count"],
+	assert.Equal(t, uint64(12), metricWireUint64(t, unreduced[0]["count"]),
 		"without a reduction a cumulative datapoint keeps its running total")
 
 	// Reduced onto minute buckets, which is the cadence: every bucket holds one
@@ -2754,23 +3089,23 @@ func TestCumulativeHistogramMerge_DifferencesAcrossBuckets(t *testing.T) {
 		assert.Len(t, merged, 5,
 			"targetBuckets=%d: six readings describe five intervals", targetBuckets)
 
-		var total float64
+		var total uint64
 		for _, dp := range merged {
-			assert.Equal(t, float64(2), dp["count"],
+			assert.Equal(t, uint64(2), metricWireUint64(t, dp["count"]),
 				"targetBuckets=%d: each minute adds two observations", targetBuckets)
 			assert.Equal(t, float64(10), dp["sum"],
 				"targetBuckets=%d: sum is differenced with count", targetBuckets)
 			buckets := dp["bucketCounts"].([]any)
-			var vec float64
+			var vec uint64
 			for _, c := range buckets {
-				vec += c.(float64)
+				vec += metricWireUint64(t, c)
 			}
-			assert.Equal(t, dp["count"], vec,
+			assert.Equal(t, metricWireUint64(t, dp["count"]), vec,
 				"targetBuckets=%d: the vector agrees with the count on the same row",
 				targetBuckets)
-			total += dp["count"].(float64)
+			total += metricWireUint64(t, dp["count"])
 		}
-		assert.Equal(t, float64(10), total,
+		assert.Equal(t, uint64(10), total,
 			"targetBuckets=%d: the intervals sum to the counter's climb (12-2)",
 			targetBuckets)
 	}
@@ -2829,17 +3164,87 @@ func TestCumulativeHistogramMerge_ResetIsConsistentAcrossFields(t *testing.T) {
 	dp := dpl[0].(map[string]any)
 
 	// 5 before the restart, then 3 (the reading itself), then 5 after.
-	assert.Equal(t, float64(13), dp["count"],
+	assert.Equal(t, uint64(13), metricWireUint64(t, dp["count"]),
 		"activity is summed per reading, with the restart's own value counted once")
 
-	var vec float64
+	var vec uint64
 	for _, c := range dp["bucketCounts"].([]any) {
-		vec += c.(float64)
+		vec += metricWireUint64(t, c)
 	}
-	assert.Equal(t, dp["count"], vec,
+	assert.Equal(t, metricWireUint64(t, dp["count"]), vec,
 		"the bucket vector and the count describe the same observations")
-	assert.Equal(t, dp["count"], dp["sum"],
+	assert.Equal(t, float64(metricWireUint64(t, dp["count"])), dp["sum"],
 		"and so does the sum, since every observation here has value 1")
+}
+
+func TestHistogramReductionPreservesUnsignedCountDomain(t *testing.T) {
+	t.Parallel()
+	const maxUint64 = ^uint64(0)
+	base := time.Date(2026, 5, 24, 13, 0, 0, 0, time.UTC)
+
+	getReduced := func(t *testing.T, fixture pmetric.Metrics) map[string]any {
+		t.Helper()
+		s, ctx := storetest.New(t)
+		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+			return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+		}))
+		summaries := searchMetricsAll(t, s, ctx)
+		require.Len(t, summaries, 1)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+				base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
+				1, nil, nil, 0, 0, 0, nil, "", nil, 0)
+		})
+		require.NoError(t, err)
+		var got map[string]any
+		require.NoError(t, json.Unmarshal(raw, &got))
+		return got
+	}
+
+	t.Run("cumulative explicit histogram", func(t *testing.T) {
+		readings := []uint64{0, 1 << 63, maxUint64, 1}
+		dps := make([]histTestDP, 0, len(readings))
+		for i, count := range readings {
+			dps = append(dps, histTestDP{
+				timestamp: base.Add(time.Duration(i) * time.Second),
+				bounds:    []float64{1},
+				counts:    []uint64{count, 0},
+				count:     count,
+			})
+		}
+		got := getReduced(t, makeHistogramFixtureT(
+			"uint64.explicit", pmetric.AggregationTemporalityCumulative, dps))
+
+		datapoints := metricDatapoints(got)
+		require.Len(t, datapoints, 1)
+		dp := datapoints[0].(map[string]any)
+		assert.Equal(t, "18446744073709551616", dp["count"])
+		assert.Equal(t, []any{"18446744073709551616", "0"}, dp["bucketCounts"])
+
+		aggregate := got["aggregate"].([]any)
+		require.Len(t, aggregate, 1)
+		assert.Equal(t, float64(18446744073709551616), aggregate[0].(map[string]any)["count"])
+	})
+
+	t.Run("delta exponential histogram", func(t *testing.T) {
+		fixture := makeExpHistogramFixtureT("uint64.exponential", pmetric.AggregationTemporalityDelta,
+			[]expHistTestDP{
+				{timestamp: base, scale: 1, posCounts: []uint64{maxUint64}, count: maxUint64},
+				{timestamp: base.Add(time.Second), scale: 0, posCounts: []uint64{maxUint64}, count: maxUint64},
+			})
+		got := getReduced(t, fixture)
+
+		datapoints := metricDatapoints(got)
+		require.Len(t, datapoints, 1)
+		dp := datapoints[0].(map[string]any)
+		assert.Equal(t, "36893488147419103230", dp["count"])
+		assert.Equal(t, []any{"36893488147419103230"}, dp["positiveBucketCounts"])
+		assert.Equal(t, []any{}, dp["negativeBucketCounts"])
+
+		aggregate := got["aggregate"].([]any)
+		require.Len(t, aggregate, 1)
+		assert.Equal(t, float64(36893488147419103230), aggregate[0].(map[string]any)["count"])
+	})
 }
 
 // TestGetMetric_WindowSummaryIsOneBucket covers the request that asks a single
@@ -3845,20 +4250,20 @@ func TestExpHistogramMerge_RescalesBeforeSumming(t *testing.T) {
 
 	// Total count is conserved however the buckets are aligned: 4 + 10.
 	counts, _ := dp["positiveBucketCounts"].([]any)
-	var total float64
+	var total uint64
 	for _, c := range counts {
-		total += c.(float64)
+		total += metricWireUint64(t, c)
 	}
-	assert.Equal(t, float64(14), total, "no observation invented or lost")
-	assert.Equal(t, float64(14), dp["count"], "the reported count agrees with the buckets")
+	assert.Equal(t, uint64(14), total, "no observation invented or lost")
+	assert.Equal(t, uint64(14), metricWireUint64(t, dp["count"]), "the reported count agrees with the buckets")
 
 	// The scale-2 datapoint's four buckets at offset 4 collapse to two at
 	// offset 2 -- exactly where the scale-1 datapoint already sits. A correct
 	// merge overlaps them; a positional sum would lay them side by side.
 	assert.Equal(t, float64(2), dp["positiveBucketOffset"])
 	require.Len(t, counts, 2, "overlapped, not concatenated")
-	assert.Equal(t, float64(7), counts[0])
-	assert.Equal(t, float64(7), counts[1])
+	assert.Equal(t, uint64(7), metricWireUint64(t, counts[0]))
+	assert.Equal(t, uint64(7), metricWireUint64(t, counts[1]))
 }
 
 // TestExpHistogramMerge_CumulativeSubtractsAcrossAScaleChange covers the same
@@ -3919,15 +4324,15 @@ func TestExpHistogramMerge_CumulativeSubtractsAcrossAScaleChange(t *testing.T) {
 	dp := dps[0].(map[string]any)
 
 	// The number that matters: activity, not the running total.
-	assert.Equal(t, float64(20), dp["count"],
+	assert.Equal(t, uint64(20), metricWireUint64(t, dp["count"]),
 		"a cumulative bucket reports the activity within it, not the counter's value")
 
 	counts, _ := dp["positiveBucketCounts"].([]any)
-	var total float64
+	var total uint64
 	for _, c := range counts {
-		total += c.(float64)
+		total += metricWireUint64(t, c)
 	}
-	assert.Equal(t, float64(20), total,
+	assert.Equal(t, uint64(20), total,
 		"the bucket vectors must be differenced on a common scale, not passed through")
 }
 
@@ -4444,20 +4849,22 @@ func TestGetMetric_EmptyExplicitBoundsAggregate(t *testing.T) {
 
 	series := metric["timeseries"].([]any)
 	require.Len(t, series, 2)
-	var seriesBucketTotal float64
+	var seriesBucketTotal uint64
 	for _, rawSeries := range series {
 		dps := rawSeries.(map[string]any)["datapoints"].([]any)
 		require.Len(t, dps, 1, "a whole-window request merges each series once")
 		dp := dps[0].(map[string]any)
 		require.IsType(t, []any{}, dp["explicitBounds"])
 		assert.Empty(t, dp["explicitBounds"])
-		assert.NotContains(t, dp, "min")
-		assert.NotContains(t, dp, "max")
+		assert.Contains(t, dp, "min")
+		assert.Nil(t, dp["min"])
+		assert.Contains(t, dp, "max")
+		assert.Nil(t, dp["max"])
 		counts := dp["bucketCounts"].([]any)
 		require.Len(t, counts, 1)
-		seriesBucketTotal += counts[0].(float64)
+		seriesBucketTotal += metricWireUint64(t, counts[0])
 	}
-	assert.Equal(t, float64(12), seriesBucketTotal,
+	assert.Equal(t, uint64(12), seriesBucketTotal,
 		"whole-window per-series histograms must retain both catch-all buckets")
 
 	aggregate := metric["aggregate"].([]any)
@@ -4668,7 +5075,7 @@ func TestGetMetric_NullableBoundsDetermineEffectiveWindow(t *testing.T) {
 	require.Len(t, summaries, 1)
 	streamID := summaries[0]["id"].(string)
 
-	start, end := int64(200), int64(200)
+	start, end := uint64(200), uint64(200)
 	for _, tc := range []struct {
 		name      string
 		timeRange store.TimeRange
@@ -4711,7 +5118,7 @@ func TestGetMetric_NullableBoundsDetermineEffectiveWindow(t *testing.T) {
 		})
 	}
 
-	after, before := int64(400), int64(50)
+	after, before := uint64(400), uint64(50)
 	for _, tc := range []struct {
 		name      string
 		timeRange store.TimeRange
@@ -5154,7 +5561,7 @@ func TestGetMetric_HistogramMergeFollowsTheZoneAcrossDST(t *testing.T) {
 		for _, v := range dps {
 			b := v.(map[string]any)
 			out = append(out, fmt.Sprintf("%s/%d",
-				b["timestamp"].(string), int(b["count"].(float64))))
+				b["timestamp"].(string), metricWireUint64(t, b["count"])))
 		}
 		sort.Strings(out)
 		return out
@@ -5722,7 +6129,7 @@ func TestGetMetric_ColumnWindowMergesTheWholeColumn(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &merged))
 	mergedDps := merged["timeseries"].([]any)[0].(map[string]any)["datapoints"].([]any)
 	require.Len(t, mergedDps, 1, "one bucket over one column is one merged datapoint")
-	assert.Equal(t, float64(perColumn*100), mergedDps[0].(map[string]any)["count"],
+	assert.Equal(t, uint64(perColumn*100), metricWireUint64(t, mergedDps[0].(map[string]any)["count"]),
 		"the merged column must total exactly the readings inside it -- %d readings "+
 			"of 100 observations each; more means the fetched window is wider than "+
 			"the column", perColumn)

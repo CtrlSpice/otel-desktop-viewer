@@ -58,6 +58,8 @@ func buildTestLogs() plog.Logs {
 	sl := rl.ScopeLogs().AppendEmpty()
 	rec := sl.LogRecords().AppendEmpty()
 	rec.SetTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+	rec.SetTraceID([16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})
+	rec.SetSpanID([8]byte{0, 0, 0, 0, 0, 0, 0, 1})
 	rec.Body().SetStr("test log message")
 	rec.SetSeverityText("INFO")
 	rec.SetSeverityNumber(plog.SeverityNumberInfo)
@@ -394,6 +396,63 @@ func TestSearchLogs(t *testing.T) {
 		result, err = handler.Handle(context.Background(), createRequest("searchLogs", []any{"0", maxTime, nil, 0}))
 		assert.Nil(t, result)
 		assert.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
+	})
+}
+
+func TestGetTraceLogs(t *testing.T) {
+	t.Run("Valid", func(t *testing.T) {
+		handler, teardown := setupHandlerWithData(t)
+		defer teardown()
+
+		result, err := handler.Handle(context.Background(), createRequest("getTraceLogs", map[string]any{
+			"traceID": testTraceIDHex,
+		}))
+		require.NoError(t, err)
+		var entries []map[string]any
+		require.NoError(t, json.Unmarshal(result.(json.RawMessage), &entries))
+		require.Len(t, entries, 1)
+		require.Equal(t, "0000000000000001", entries[0]["spanID"])
+		require.Equal(t, "test log message", entries[0]["bodyPreview"])
+		require.NotContains(t, entries[0], "body")
+		require.NotContains(t, entries[0], "attributes")
+	})
+
+	t.Run("Empty", func(t *testing.T) {
+		handler, teardown := setupHandler(t)
+		defer teardown()
+
+		result, err := handler.Handle(context.Background(), createRequest("getTraceLogs", []string{
+			"00000000000000000000000000000002",
+		}))
+		require.NoError(t, err)
+		require.JSONEq(t, `[]`, string(result.(json.RawMessage)))
+	})
+
+	t.Run("Malformed trace ID", func(t *testing.T) {
+		handler, teardown := setupHandler(t)
+		defer teardown()
+
+		result, err := handler.Handle(context.Background(), createRequest("getTraceLogs", []string{"not-a-trace-id"}))
+		require.Nil(t, result)
+		require.Equal(t, ErrInvalidTraceID, err)
+	})
+
+	t.Run("Empty trace ID", func(t *testing.T) {
+		handler, teardown := setupHandler(t)
+		defer teardown()
+
+		result, err := handler.Handle(context.Background(), createRequest("getTraceLogs", []string{""}))
+		require.Nil(t, result)
+		require.Equal(t, ErrInvalidTraceID, err)
+	})
+
+	t.Run("Missing trace ID", func(t *testing.T) {
+		handler, teardown := setupHandler(t)
+		defer teardown()
+
+		result, err := handler.Handle(context.Background(), createRequest("getTraceLogs", []string{}))
+		require.Nil(t, result)
+		require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
 	})
 }
 
@@ -1414,11 +1473,21 @@ func TestOptionalTimestampParam(t *testing.T) {
 
 	got, err = h.parseOptionalTimestampParam(json.Number("1787348704416123457"), "endTime")
 	require.NoError(t, err)
-	require.Equal(t, int64(1787348704416123457), *got)
+	require.Equal(t, uint64(1787348704416123457), *got)
 
 	got, err = h.parseOptionalTimestampParam("42", "startTime")
 	require.NoError(t, err)
-	require.Equal(t, int64(42), *got)
+	require.Equal(t, uint64(42), *got)
+
+	got, err = h.parseOptionalTimestampParam(json.Number("18446744073709551615"), "endTime")
+	require.NoError(t, err)
+	require.Equal(t, ^uint64(0), *got)
+
+	_, err = h.parseOptionalTimestampParam("-1", "startTime")
+	require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
+
+	_, err = h.parseOptionalTimestampParam("18446744073709551616", "endTime")
+	require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
 
 	_, err = h.parseOptionalTimestampParam(true, "endTime")
 	require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)

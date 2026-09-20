@@ -2,10 +2,14 @@ package timerange
 
 // TimeRange is an inclusive time window. A nil endpoint is unbounded.
 type TimeRange struct {
-	Start *int64
-	End   *int64
+	Start *uint64
+	End   *uint64
 }
 
-func Bounded(start, end int64) TimeRange {
-	return TimeRange{Start: &start, End: &end}
+func Bounded[T ~int | ~int64 | ~uint64](start, end T) TimeRange {
+	if start < 0 || end < 0 {
+		panic("OTLP timestamp bounds cannot be negative")
+	}
+	startTimestamp, endTimestamp := uint64(start), uint64(end)
+	return TimeRange{Start: &startTimestamp, End: &endTimestamp}
 }

@@ -8,16 +8,18 @@ create table if not exists spans (
 		-- links did not, which was an oversight rather than a decision.
 		flags uinteger,
 		name varchar,
-		kind varchar,
-		start_time bigint,
-		end_time bigint,
+		-- Received OTLP enum number. Labels are derived only in projections.
+		kind integer,
+		start_time ubigint,
+		end_time ubigint,
 		resource_id uuid not null,
 		scope_id uuid not null,
 		attribute_ids uuid[] not null,
 		dropped_attributes_count uinteger,
 		dropped_events_count uinteger,
 		dropped_links_count uinteger,
-		status_code varchar,
+		-- Received OTLP enum number. Labels are derived only in projections.
+		status_code integer,
 		status_message varchar,
 		-- Denormalized cache of the resource attribute service.name (the
 		-- single most-filtered-on column for span search). The source of

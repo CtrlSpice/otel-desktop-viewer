@@ -55,10 +55,12 @@
 <script lang="ts">
   import type { SpanData } from '@/types/api-types'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import BiohazardIcon from '@hugeicons/core-free-icons/BiohazardIcon'
-  import LeftToRightListBulletIcon from '@hugeicons/core-free-icons/LeftToRightListBulletIcon'
-  import Link01Icon from '@hugeicons/core-free-icons/Link01Icon'
-  import StopWatchIcon from '@hugeicons/core-free-icons/StopWatchIcon'
+  import {
+    BiohazardIcon,
+    LeftToRightListBulletIcon,
+    Link01Icon,
+    StopWatchIcon,
+  } from '@hugeicons/core-free-icons'
   import PaneHeader, {
     paneTabID,
     type PaneTab,
@@ -105,6 +107,12 @@
   let scopeAttributes = $derived(span?.scope.attributes ?? [])
   let numEvents = $derived(span?.events.length ?? 0)
   let numLinks = $derived(span?.links.length ?? 0)
+  let hasUnrecognisedStatusCode = $derived(
+    span !== undefined &&
+      span.statusCodeValue !== 0 &&
+      span.statusCodeValue !== 1 &&
+      span.statusCodeValue !== 2
+  )
 
   // --- Tab state ---
 
@@ -125,13 +133,15 @@
     let n = 0
     if (detailSearchFieldVisible(f, 'name')) n++
     if (detailSearchFieldVisible(f, 'kind')) n++
+    if (detailSearchFieldVisible(f, 'kindCode')) n++
     if (detailSearchFieldVisible(f, 'startTime')) n++
     if (detailSearchFieldVisible(f, 'endTime')) n++
     if (detailDurationVisible(f)) n++
     if (detailSearchFieldVisible(f, 'statusCode')) n++
+    if (detailSearchFieldVisible(f, 'statusCodeValue')) n++
     if (
-      span.statusCode !== 'Unset' &&
-      span.statusCode !== 'Ok' &&
+      span.statusCodeValue !== 0 &&
+      span.statusCodeValue !== 1 &&
       detailSearchFieldVisible(f, 'statusMessage')
     ) {
       n++
@@ -290,6 +300,13 @@
                   fieldType="string"
                 />
               {/if}
+              {#if detailSearchFieldVisible(columnFilter, 'kindCode')}
+                <SpanField
+                  fieldName="kind code"
+                  fieldValue={span.kindCode.toString()}
+                  fieldType="int64"
+                />
+              {/if}
               {#if detailSearchFieldVisible(columnFilter, 'startTime')}
                 <SpanField
                   fieldName="start time"
@@ -324,9 +341,23 @@
                   fieldName="status code"
                   fieldValue={span.statusCode}
                   fieldType="string"
+                  defectLabel={hasUnrecognisedStatusCode
+                    ? 'Unrecognised status code'
+                    : undefined}
                 />
               {/if}
-              {#if span.statusCode !== 'Unset' && span.statusCode !== 'Ok' && detailSearchFieldVisible(columnFilter, 'statusMessage')}
+              {#if detailSearchFieldVisible(columnFilter, 'statusCodeValue')}
+                <SpanField
+                  fieldName="status code value"
+                  fieldValue={span.statusCodeValue.toString()}
+                  fieldType="int64"
+                  defectLabel={hasUnrecognisedStatusCode &&
+                  !detailSearchFieldVisible(columnFilter, 'statusCode')
+                    ? 'Unrecognised status code'
+                    : undefined}
+                />
+              {/if}
+              {#if span.statusCodeValue !== 0 && span.statusCodeValue !== 1 && detailSearchFieldVisible(columnFilter, 'statusMessage')}
                 <SpanField
                   fieldName="status message"
                   fieldValue={span.statusMessage}

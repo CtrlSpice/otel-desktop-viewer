@@ -35,10 +35,7 @@
     orderedCursorCommandForKey,
   } from '@/components/metrics/utils/chart-keyboard-cursor'
   import { createOrderedChartKeyboardCursor } from '@/components/metrics/utils/chart-keyboard-state.svelte'
-  import type {
-    HistogramDataPoint,
-    ExponentialHistogramDataPoint,
-  } from '@/types/api-types'
+  import type { HistogramChartDataPoint } from '@/components/metrics/utils/histogram-aggregation'
 
   // lo/hi are the numeric bucket bounds; they may be -Infinity, +Infinity, or
   // (for an exact exp-histogram zero bucket) both 0. Used to position quantile
@@ -59,7 +56,7 @@
   }
 
   type Props = {
-    datapoint: HistogramDataPoint | ExponentialHistogramDataPoint
+    datapoint: HistogramChartDataPoint
     /** Metric `unit` for axis labelling (e.g. "ms", "bytes"). Optional;
      * the x-axis title shows just "value" when unit is empty. */
     unit?: string
@@ -173,7 +170,9 @@
     }
   })
 
-  function buildHistogramBuckets(dp: HistogramDataPoint): Bucket[] {
+  function buildHistogramBuckets(
+    dp: Extract<HistogramChartDataPoint, { metricType: 'Histogram' }>
+  ): Bucket[] {
     const bounds = dp.explicitBounds
     const counts = dp.bucketCounts
     const result: Bucket[] = []
@@ -210,7 +209,7 @@
   }
 
   function buildExpHistogramBuckets(
-    dp: ExponentialHistogramDataPoint
+    dp: Extract<HistogramChartDataPoint, { metricType: 'ExponentialHistogram' }>
   ): Bucket[] {
     const negativeCount = dp.negativeBucketCounts.length
     return expBuckets(

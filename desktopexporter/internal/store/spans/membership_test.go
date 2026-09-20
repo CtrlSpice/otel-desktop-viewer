@@ -76,6 +76,15 @@ func TestSpanMembershipExecutionAndExistentialSemantics(t *testing.T) {
 		assert.Empty(t, matchedNames(raw))
 	})
 
+	t.Run("received numeric enum lists", func(t *testing.T) {
+		assert.Equal(t, []string{"root-operation"}, matchedNames(searchSpans("kindCode", "IN", `["2"]`)))
+		assert.Equal(t, []string{
+			"child-operation",
+			"great-grandchild-operation",
+			"orphaned-grandchild-operation",
+		}, matchedNames(searchSpans("statusCodeValue", "IN", `["2"]`)))
+	})
+
 	t.Run("all mapper modes execute with NOT IN", func(t *testing.T) {
 		for _, tc := range []struct {
 			name  string

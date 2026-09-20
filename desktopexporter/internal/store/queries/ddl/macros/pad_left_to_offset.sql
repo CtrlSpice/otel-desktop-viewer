@@ -11,13 +11,13 @@
 --
 -- Implementation note: DuckDB doesn't have list_repeat(value, n) in this
 -- version, so the zero prefix is built via list_transform(range(0, n)).
--- The 0::bigint cast keeps the prefix type aligned with bigint[] inputs
--- so list_concat doesn't fail on a bigint-vs-int mismatch.
+-- The 0::hugeint cast keeps the prefix type aligned with widened derived
+-- counts so list_concat does not narrow them back into a source-sized domain.
 create or replace macro pad_left_to_offset(counts, current_offset, target_offset) as (
 		case
 			when counts is null or current_offset <= target_offset then counts
 			else list_concat(
-				list_transform(range(0, current_offset - target_offset), lambda x: 0::bigint),
+				list_transform(range(0, current_offset - target_offset), lambda x: 0::hugeint),
 				counts
 			)
 		end

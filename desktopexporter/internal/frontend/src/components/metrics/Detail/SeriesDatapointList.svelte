@@ -277,7 +277,10 @@
         return { number: '—', unit: null }
       }
       return {
-        number: formatMetricValuePlain(Number(raw)),
+        number:
+          typeof raw === 'bigint'
+            ? raw.toString()
+            : formatMetricValuePlain(raw),
         unit,
       }
     }
@@ -286,7 +289,7 @@
       dp.metricType === 'ExponentialHistogram'
     ) {
       return {
-        number: `count ${dp.count}, sum ${formatMetricValuePlain(dp.sum)}`,
+        number: `count ${dp.count}, sum ${dp.sum === null ? '—' : formatMetricValuePlain(dp.sum)}`,
         unit,
       }
     }

@@ -744,13 +744,13 @@ func TestBuildSearchSQL_NilQuery(t *testing.T) {
 		return []ResolvedExpression{Text(field.Name)}, nil
 	}
 
-	start, end := int64(1000), int64(2000)
+	start, end := uint64(1000), uint64(2000)
 	timeCondition, timeParams := TimePredicate("StartTime", &start, &end)
 	cte, where, args, err := BuildSearchSQL(nil, mapper, timeCondition, timeParams)
 	require.NoError(t, err)
-	assert.Equal(t, "with search_params as (select ? as time_start, ? as time_end)", cte)
+	assert.Equal(t, "with search_params as (select unnest(?::ubigint[]) as time_start, unnest(?::ubigint[]) as time_end)", cte)
 	assert.Equal(t, "StartTime >= time_start AND StartTime <= time_end", where)
-	assert.Equal(t, []any{int64(1000), int64(2000)}, args)
+	assert.Equal(t, []any{[]uint64{1000}, []uint64{2000}}, args)
 }
 
 func TestBuildSearchSQL_SimpleCondition(t *testing.T) {
@@ -768,13 +768,13 @@ func TestBuildSearchSQL_SimpleCondition(t *testing.T) {
 		},
 	}
 
-	start, end := int64(1000), int64(2000)
+	start, end := uint64(1000), uint64(2000)
 	timeCondition, timeParams := TimePredicate("StartTime", &start, &end)
 	cte, where, args, err := BuildSearchSQL(query, mapper, timeCondition, timeParams)
 	require.NoError(t, err)
-	assert.Equal(t, "with search_params as (select ? as time_start, ? as time_end, ? as value_2)", cte)
+	assert.Equal(t, "with search_params as (select unnest(?::ubigint[]) as time_start, unnest(?::ubigint[]) as time_end, ? as value_2)", cte)
 	assert.Equal(t, "(Name = value_2) AND StartTime >= time_start AND StartTime <= time_end", where)
-	assert.Equal(t, []any{int64(1000), int64(2000), "test-span"}, args)
+	assert.Equal(t, []any{[]uint64{1000}, []uint64{2000}, "test-span"}, args)
 }
 
 func TestBuildSearchSQL_GroupAND(t *testing.T) {
@@ -810,7 +810,7 @@ func TestBuildSearchSQL_GroupAND(t *testing.T) {
 		},
 	}
 
-	start, end := int64(1000), int64(2000)
+	start, end := uint64(1000), uint64(2000)
 	timeCondition, timeParams := TimePredicate("StartTime", &start, &end)
 	cte, where, args, err := BuildSearchSQL(query, mapper, timeCondition, timeParams)
 	require.NoError(t, err)
@@ -818,8 +818,8 @@ func TestBuildSearchSQL_GroupAND(t *testing.T) {
 	assert.Contains(t, cte, "value_3")
 	assert.Contains(t, where, "Name = value_2 AND Kind = value_3")
 	assert.Len(t, args, 4)
-	assert.Equal(t, int64(1000), args[0])
-	assert.Equal(t, int64(2000), args[1])
+	assert.Equal(t, []uint64{1000}, args[0])
+	assert.Equal(t, []uint64{2000}, args[1])
 }
 
 func TestBuildSearchSQL_GlobalORs(t *testing.T) {
@@ -840,7 +840,7 @@ func TestBuildSearchSQL_GlobalORs(t *testing.T) {
 		},
 	}
 
-	start, end := int64(1000), int64(2000)
+	start, end := uint64(1000), uint64(2000)
 	timeCondition, timeParams := TimePredicate("StartTime", &start, &end)
 	_, where, args, err := BuildSearchSQL(query, mapper, timeCondition, timeParams)
 	require.NoError(t, err)
@@ -905,7 +905,7 @@ func TestMultiExpressionNamedFieldJoinsWithAND(t *testing.T) {
 	mapper := func(field *FieldDefinition, query *Query, params *[]NamedParam) ([]ResolvedExpression, error) {
 		return TextExpressions([]string{"a.col", "b.col"}), nil
 	}
-	start := int64(0)
+	start := uint64(0)
 	timeCondition, timeParams := TimePredicate("t", &start, nil)
 	cte, where, args, err := BuildSearchSQL(node, mapper, timeCondition, timeParams)
 	require.NoError(t, err)
@@ -915,17 +915,17 @@ func TestMultiExpressionNamedFieldJoinsWithAND(t *testing.T) {
 }
 
 func TestTimePredicateShapes(t *testing.T) {
-	start, end := int64(10), int64(20)
+	start, end := uint64(10), uint64(20)
 	for _, tc := range []struct {
 		name       string
-		start, end *int64
+		start, end *uint64
 		wantSQL    string
 		wantArgs   []NamedParam
 	}{
 		{"unbounded", nil, nil, "", nil},
-		{"end only", nil, &end, "ts <= time_end", []NamedParam{{Name: "time_end", Value: end}}},
-		{"start only", &start, nil, "ts >= time_start", []NamedParam{{Name: "time_start", Value: start}}},
-		{"bounded", &start, &end, "ts >= time_start AND ts <= time_end", []NamedParam{{Name: "time_start", Value: start}, {Name: "time_end", Value: end}}},
+		{"end only", nil, &end, "ts <= time_end", []NamedParam{{Name: "time_end", Value: unsignedScalar(end)}}},
+		{"start only", &start, nil, "ts >= time_start", []NamedParam{{Name: "time_start", Value: unsignedScalar(start)}}},
+		{"bounded", &start, &end, "ts >= time_start AND ts <= time_end", []NamedParam{{Name: "time_start", Value: unsignedScalar(start)}, {Name: "time_end", Value: unsignedScalar(end)}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			gotSQL, gotArgs := TimePredicate("ts", tc.start, tc.end)

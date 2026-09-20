@@ -1,7 +1,7 @@
 create table if not exists logs (
 		id uuid primary key,
-		timestamp bigint,
-		observed_timestamp bigint,
+		timestamp ubigint,
+		observed_timestamp ubigint,
 		trace_id uuid,
 		span_id ubigint,
 		severity_text varchar,

@@ -1,7 +1,7 @@
 create table if not exists exemplars (
 		id uuid primary key,
 		datapoint_id uuid not null,
-		timestamp bigint,
+		timestamp ubigint,
 		double_value double,
 		int_value bigint,
 		trace_id uuid,

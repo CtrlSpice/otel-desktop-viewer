@@ -1,4 +1,4 @@
-with search_params as (select ? as time_start, ? as time_end),
+with search_params as (select unnest(?::ubigint[]) as time_start, unnest(?::ubigint[]) as time_end),
 		trace_summaries as (
 			select distinct on (s.trace_id)
 				s.trace_id,
@@ -8,7 +8,7 @@ with search_params as (select ? as time_start, ? as time_end),
 				min(s.start_time) over (partition by s.trace_id) as trace_start_time,
 				max(s.end_time) over (partition by s.trace_id) as trace_end_time,
 				count(*) over (partition by s.trace_id) as span_count,
-				count(case when s.status_code = 'Error' then 1 end) over (partition by s.trace_id) as error_count
+				count(case when s.status_code = 2 then 1 end) over (partition by s.trace_id) as error_count
 			from search_params, spans s
 		join resources r on r.id = s.resource_id
 		join scopes sc on sc.id = s.scope_id
@@ -33,7 +33,7 @@ with search_params as (select ? as time_start, ? as time_end),
 			'durationNs',   case
 				when sub.trace_start_time is not null
 					and sub.trace_end_time is not null
-					then (sub.trace_end_time - sub.trace_start_time)::varchar
+					then (sub.trace_end_time::hugeint - sub.trace_start_time::hugeint)::varchar
 				else null
 			end,
 			'spanCount',    sub.span_count,

@@ -1,9 +1,11 @@
 <script lang="ts">
   import { tick } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import CustomizeIcon from '@hugeicons/core-free-icons/CustomizeIcon'
-  import FilterIcon from '@hugeicons/core-free-icons/FilterIcon'
-  import GlobalIcon from '@hugeicons/core-free-icons/GlobalIcon'
+  import {
+    CustomizeIcon,
+    FilterIcon,
+    GlobalIcon,
+  } from '@hugeicons/core-free-icons'
   import {
     getTimeContext,
     selectionToQueryRangeMs,

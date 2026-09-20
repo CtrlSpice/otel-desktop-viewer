@@ -74,6 +74,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.searchSpans(ctx, req)
 	case "searchLogs":
 		return h.searchLogs(ctx, req)
+	case "getTraceLogs":
+		return h.getTraceLogs(ctx, req)
 	case "getLog":
 		return h.getLog(ctx, req)
 	case "searchMetricSummaries":
@@ -255,6 +257,27 @@ func (h *JSONRPCHandler) searchLogs(ctx context.Context, req *jsonrpc2.Request) 
 	}
 	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
 		return logs.SearchWithOptions(ctx, db, timeRange, query, options)
+	})
+	if err != nil {
+		return nil, h.handleStoreError(ctx, err)
+	}
+	return result, nil
+}
+
+func (h *JSONRPCHandler) getTraceLogs(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	var params []any
+	if err := decodeParams(req.Params, &params); err != nil {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	if len(params) != 1 {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	traceID, err := h.parseIDParam(params[0], ErrInvalidTraceID, normalizeUUID)
+	if err != nil {
+		return nil, err
+	}
+	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.GetTraceLogs(ctx, db, traceID)
 	})
 	if err != nil {
 		return nil, h.handleStoreError(ctx, err)
@@ -914,7 +937,7 @@ func (h *JSONRPCHandler) parseIDParams(req *jsonrpc2.Request, invalidIDErr error
 }
 
 // parseIDParam validates and normalizes a single entity ID param (read
-// paths: searchSpans, getLog, getMetric, getAttributesByTraceID,
+// paths: searchSpans, getTraceLogs, getLog, getMetric, getAttributesByTraceID,
 // getTraceSpanCount). Like parseIDParams, a bad value returns the
 // signal-specific -3200x code instead of reaching SQL as a cast error.
 func (h *JSONRPCHandler) parseIDParam(param any, invalidIDErr error, normalize func(string) (string, error)) (string, error) {
@@ -947,9 +970,6 @@ func normalizeUUID(s string) (string, error) {
 	return id.String(), nil
 }
 
-// parseTimestampParam parses a timestamp parameter that must be a JSON string
-// containing a base-10 int64. Large integers travel as strings to avoid
-// float64 precision loss in JSON.
 // parseTimestampParam reads a whole number sent either as a JSON string or as
 // a JSON number.
 //
@@ -996,13 +1016,30 @@ func (h *JSONRPCHandler) parseTimestampParam(param any, paramName string) (int64
 
 // parseOptionalTimestampParam is reserved for nullable time bounds. All other
 // numeric parameters keep parseTimestampParam's strict non-null contract.
-func (h *JSONRPCHandler) parseOptionalTimestampParam(param any, paramName string) (*int64, error) {
+func (h *JSONRPCHandler) parseOptionalTimestampParam(param any, paramName string) (*uint64, error) {
 	if param == nil {
 		return nil, nil
 	}
-	parsed, err := h.parseTimestampParam(param, paramName)
+	var text string
+	switch v := param.(type) {
+	case string:
+		text = v
+	case json.Number:
+		text = v.String()
+	case float64:
+		return nil, fmt.Errorf(
+			"%s decoded as float64, which cannot hold a nanosecond timestamp exactly: %w",
+			paramName, jsonrpc2.ErrInvalidParams)
+	default:
+		return nil, fmt.Errorf(
+			"%s must be an unsigned whole number, as a JSON number or a decimal string, got %T: %w",
+			paramName, param, jsonrpc2.ErrInvalidParams)
+	}
+	parsed, err := strconv.ParseUint(text, 10, 64)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf(
+			"%s must be an unsigned whole number, got %q: %w",
+			paramName, text, jsonrpc2.ErrInvalidParams)
 	}
 	return &parsed, nil
 }

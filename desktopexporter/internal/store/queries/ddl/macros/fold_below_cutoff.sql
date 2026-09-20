@@ -4,7 +4,7 @@
 -- back into zero_count by the caller, completing the zero_threshold
 -- reconciliation step described in the histogram-trend-chart plan.
 --
--- Returns {counts: bigint[], offset: bigint, folded: bigint}. Where the
+-- Returns {counts: hugeint[], offset: bigint, folded: hugeint}. Where the
 -- inputs trigger a no-op, folded is 0 and counts/offset pass through:
 -- - counts is NULL or empty
 -- - cutoff is NULL (signals "no zero_threshold to apply")
@@ -29,7 +29,7 @@
 create or replace macro fold_below_cutoff(counts, offset_, cutoff) as (
 		case
 			when counts is null or len(counts) = 0 or cutoff is null or cutoff < offset_
-				then {'counts': counts, 'offset': offset_, 'folded': 0::bigint}
+				then {'counts': counts, 'offset': offset_, 'folded': 0::hugeint}
 			-- The drop count is repeated three times rather than bound once in
 			-- a CTE. That reads worse, and it is deliberate: a subquery inside
 			-- a macro cannot be used from a lambda --
@@ -40,7 +40,7 @@ create or replace macro fold_below_cutoff(counts, offset_, cutoff) as (
 			else {
 				'counts': list_slice(counts, least(cutoff - offset_ + 1, len(counts)) + 1, len(counts)),
 				'offset': offset_ + least(cutoff - offset_ + 1, len(counts)),
-				'folded': cast(coalesce(list_sum(list_slice(counts, 1, least(cutoff - offset_ + 1, len(counts)))), 0) as bigint)
+				'folded': cast(coalesce(list_sum(list_slice(counts, 1, least(cutoff - offset_ + 1, len(counts)))), 0) as hugeint)
 			}
 		end
 	)

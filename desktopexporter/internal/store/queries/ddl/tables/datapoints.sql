@@ -11,13 +11,15 @@ create table if not exists datapoints (
 		-- without a join back through metric_series.
 		series_id uuid not null,
 		metric_ingest_id uuid not null,
-		timestamp bigint,
-		start_time bigint,
+		timestamp ubigint,
+		start_time ubigint,
 		flags uinteger,
 		double_value double,
 		int_value bigint,
 		value_type varchar,
 		count ubigint,
+		-- Optional OTLP histogram statistics. NULL means absent; zero means
+		-- present with value zero for both histogram representations.
 		sum double,
 		min double,
 		max double,

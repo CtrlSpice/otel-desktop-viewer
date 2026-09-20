@@ -145,7 +145,7 @@ func TestCumulativeMergeAgainstTheOtelSDK(t *testing.T) {
 
 	// What the second collection alone contains, computed here from the values
 	// rather than read from either side.
-	wantCounts := make([]float64, len(bounds)+1)
+	wantCounts := make([]uint64, len(bounds)+1)
 	wantSum := 0.0
 	for _, v := range secondCycle {
 		wantSum += v
@@ -159,7 +159,7 @@ func TestCumulativeMergeAgainstTheOtelSDK(t *testing.T) {
 		wantCounts[i]++
 	}
 
-	assert.Equal(t, float64(len(secondCycle)), merged["count"],
+	assert.Equal(t, uint64(len(secondCycle)), metricWireUint64(t, merged["count"]),
 		"the merge must recover exactly the second collection's observation count")
 	assert.InDelta(t, wantSum, merged["sum"], 1e-9,
 		"and its sum: the first collection is the baseline and subtracts away")
@@ -167,6 +167,6 @@ func TestCumulativeMergeAgainstTheOtelSDK(t *testing.T) {
 	gotCounts := merged["bucketCounts"].([]any)
 	require.Len(t, gotCounts, len(wantCounts))
 	for i, want := range wantCounts {
-		assert.Equalf(t, want, gotCounts[i], "bucket %d", i)
+		assert.Equalf(t, want, metricWireUint64(t, gotCounts[i]), "bucket %d", i)
 	}
 }

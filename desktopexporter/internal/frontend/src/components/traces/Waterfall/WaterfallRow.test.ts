@@ -18,6 +18,7 @@ function makeSpanData(overrides: Partial<SpanData> = {}): SpanData {
     parentSpanID: null,
     flags: 0,
     name: 'span-1',
+    kindCode: 1,
     kind: 'Internal',
     startTime: 0n,
     endTime: 1_000_000n,
@@ -35,6 +36,7 @@ function makeSpanData(overrides: Partial<SpanData> = {}): SpanData {
     droppedEventsCount: 0,
     droppedLinksCount: 0,
     statusCode: 'Ok',
+    statusCodeValue: 1,
     statusMessage: '',
     ...overrides,
   }
