@@ -181,6 +181,19 @@ Schema lives in `desktopexporter/internal/store/queries/ddl/` as one `.sql` file
 | `datapoints` | All metric data points in one table; `metric_type` discriminates gauge/sum/histogram/exponential histogram; `series_id` names the line |
 | `exemplars` | Metric exemplars (normalized); separate nullable `double_value` / `int_value` arms preserve the OTLP oneof |
 
+Received numeric enums are stored as signed DuckDB `INTEGER` values, without
+closed-domain checks: `spans.kind`, `spans.status_code`, and
+`metric_streams.aggregation_temporality` retain the protocol int32 exactly,
+including zero and unknown positive or negative values. Metric temporality is
+part of stream identity; Gauge uses code zero as a non-applicable placeholder,
+distinguished from a received Unspecified value by `metric_type`. SQL responses
+carry the authoritative numeric code beside a derived display label. The label
+is `Unspecified`/`Internal`/`Server`/`Client`/`Producer`/`Consumer` for known
+span kinds, `Unset`/`Ok`/`Error` for known status codes, and
+`Unspecified`/`Delta`/`Cumulative` for known temporalities; unknowns render as
+`Unknown (<code>)`. Log `severity_number` remains its independently received
+numeric identity.
+
 **Design themes**
 
 - **IDs and timestamps use their native widths in DuckDB.** OpenTelemetry 16-byte trace IDs and viewer-internal IDs are UUIDs; 8-byte span IDs and OTLP's unsigned 64-bit nanosecond timestamps are UBIGINT. Signed measurements remain BIGINT. JSON-RPC responses and search comparisons use OTLP **wire form** (dash-less lowercase hex: 32 chars for trace IDs, 16 for span IDs), while timestamps cross JSON precision boundaries as decimal strings.

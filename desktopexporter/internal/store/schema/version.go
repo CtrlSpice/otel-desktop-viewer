@@ -101,7 +101,10 @@ package schema
 // Version 16 gives the existing nullable histogram sum/min/max columns their
 // OTLP meaning: NULL is absent and zero is present zero. Version 15 ingestion
 // wrote zero for both states, so its rows cannot be reinterpreted safely.
-const Version = 16
+// Version 17 stores received span kind, span status code, and metric
+// aggregation temporality as their signed int32 protocol values. Version 16
+// rows contain derived labels, which cannot recover unknown numeric values.
+const Version = 17
 
 // VersionTableQuery creates the version table.
 //

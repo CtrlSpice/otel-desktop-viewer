@@ -11,7 +11,7 @@ function spanNode(
   id: string,
   parentID: string | null,
   depth: number,
-  statusCode: 'Ok' | 'Error' = 'Ok'
+  statusCodeValue = 1
 ): SpanNode {
   return {
     depth,
@@ -22,9 +22,11 @@ function spanNode(
       parentSpanID: parentID,
       traceID: 'trace-1',
       name: id,
+      kindCode: 1,
       startTime: 0n,
       endTime: 1n,
-      statusCode,
+      statusCode: 'display label',
+      statusCodeValue,
       events: [],
       links: [],
       attributes: [],
@@ -46,6 +48,11 @@ function spanNode(
 }
 
 describe('isErrorSpan', () => {
+  it('uses the received status code rather than the display label', () => {
+    expect(isErrorSpan(spanNode('x', null, 0, 2).spanData)).toBe(true)
+    expect(isErrorSpan(spanNode('x', null, 0, 1).spanData)).toBe(false)
+  })
+
   it('treats exception events as errors', () => {
     const node = spanNode('x', null, 0)
     node.spanData.events = [

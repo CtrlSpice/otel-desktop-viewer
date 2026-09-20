@@ -8,7 +8,7 @@
 				min(s.start_time) over (partition by s.trace_id) as trace_start_time,
 				max(s.end_time) over (partition by s.trace_id) as trace_end_time,
 				count(*) over (partition by s.trace_id) as span_count,
-				count(case when s.status_code = 'Error' then 1 end) over (partition by s.trace_id) as error_count
+				count(case when s.status_code = 2 then 1 end) over (partition by s.trace_id) as error_count
 			{{.From}}
 			where {{.Where}}
 			order by

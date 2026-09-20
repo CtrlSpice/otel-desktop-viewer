@@ -367,7 +367,7 @@
 				-- because each datapoint is a running total and adding them
 				-- would count every observation once per datapoint.
 				when s.metric_type in ('Histogram', 'ExponentialHistogram')
-				     and s.aggregation_temporality in ('Delta', 'Cumulative')
+				     and s.aggregation_temporality in (1, 2)
 					then bucket_width_ns(rs.span_ns, i.target_buckets)
 			end as width_ns
 			-- reduction_span as a relation, not a scalar subquery: the comment
@@ -999,7 +999,7 @@
 				-- or the subtraction spans two different bucket layouts. The cost
 				-- is resolution: a cumulative series aligns to its coarsest
 				-- scale rather than each bucket's.
-				case when b.aggregation_temporality = 'Cumulative'
+				case when b.aggregation_temporality = 2
 					then min(b.scale) over (partition by b.series_id)
 					else min(b.scale) over (partition by b.series_id, b.bucket_start)
 				end as target_scale
@@ -1020,13 +1020,13 @@
 		hist_aligned as (
 			select d.*,
 				-- Partitioned like target_scale above, and for the same reason.
-				case when d.aggregation_temporality = 'Cumulative'
+				case when d.aggregation_temporality = 2
 					then min(case when len(d.pos_d.counts) > 0 then d.pos_d.offset end)
 						over (partition by d.series_id)
 					else min(case when len(d.pos_d.counts) > 0 then d.pos_d.offset end)
 						over (partition by d.series_id, d.bucket_start)
 				end as pos_target_offset,
-				case when d.aggregation_temporality = 'Cumulative'
+				case when d.aggregation_temporality = 2
 					then min(case when len(d.neg_d.counts) > 0 then d.neg_d.offset end)
 						over (partition by d.series_id)
 					else min(case when len(d.neg_d.counts) > 0 then d.neg_d.offset end)
@@ -1077,29 +1077,29 @@
 					prev_count, prev_sum, prev_zero_count,
 					prev_bucket_counts, prev_pos_p, prev_neg_p
 				),
-				case when l.aggregation_temporality <> 'Cumulative' then l.count
+				case when l.aggregation_temporality <> 2 then l.count
 					when l.count < l.prev_count then l.count
 					else l.count - l.prev_count end as count,
-				case when l.aggregation_temporality <> 'Cumulative' then l.sum
+				case when l.aggregation_temporality <> 2 then l.sum
 					when l.count < l.prev_count then l.sum
 					else l.sum - l.prev_sum end as sum,
-				case when l.aggregation_temporality <> 'Cumulative' then l.zero_count
+				case when l.aggregation_temporality <> 2 then l.zero_count
 					when l.count < l.prev_count then l.zero_count
 					else l.zero_count - l.prev_zero_count end as zero_count,
-				case when l.aggregation_temporality <> 'Cumulative' then l.bucket_counts
+				case when l.aggregation_temporality <> 2 then l.bucket_counts
 					else coalesce(
 						diff_bucket_vectors(l.bucket_counts, l.prev_bucket_counts),
 						l.bucket_counts) end as bucket_counts,
-				case when l.aggregation_temporality <> 'Cumulative' then l.pos_p
+				case when l.aggregation_temporality <> 2 then l.pos_p
 					else coalesce(
 						diff_bucket_vectors(l.pos_p, l.prev_pos_p),
 						l.pos_p) end as pos_p,
-				case when l.aggregation_temporality <> 'Cumulative' then l.neg_p
+				case when l.aggregation_temporality <> 2 then l.neg_p
 					else coalesce(
 						diff_bucket_vectors(l.neg_p, l.prev_neg_p),
 						l.neg_p) end as neg_p
 			from hist_lagged l
-			where l.aggregation_temporality <> 'Cumulative'
+			where l.aggregation_temporality <> 2
 			   or l.prev_count is not null
 		),
 
@@ -1732,7 +1732,14 @@
 			-- description comes from: both are per-batch and neither is identity.
 			'metadata', coalesce(attrs_json(r.metadata_ids), json('[]')),
 			'metricType', s.metric_type,
-			'aggregationTemporality', s.aggregation_temporality,
+			'aggregationTemporalityCode', case
+				when s.metric_type = 'Gauge' then null
+				else s.aggregation_temporality end,
+			'aggregationTemporality', case
+				when s.metric_type = 'Gauge' then null
+				else case s.aggregation_temporality
+				when 0 then 'Unspecified' when 1 then 'Delta' when 2 then 'Cumulative'
+				else 'Unknown (' || s.aggregation_temporality::varchar || ')' end end,
 			'isMonotonic', s.is_monotonic,
 			'resourceDroppedAttributesCount', coalesce((select resource_dropped from representative_owners), 0),
 			'resource', coalesce(

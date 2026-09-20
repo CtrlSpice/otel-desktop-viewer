@@ -90,7 +90,7 @@
 
   function isErrorSpan(span: SpanData): boolean {
     return (
-      span.statusCode === 'Error' ||
+      span.statusCodeValue === 2 ||
       span.events.some(e => e.name === 'exception')
     )
   }
@@ -348,7 +348,7 @@
   })
 
   let errorSpans = $derived(
-    spans.filter(node => node.spanData.statusCode === 'Error')
+    spans.filter(node => node.spanData.statusCodeValue === 2)
   )
   let headerErrorCount = $derived(errorSpans.length)
 
@@ -363,7 +363,7 @@
     return (
       spans
         .slice(0, selectedSpanIndex)
-        .findLast(node => node.spanData.statusCode === 'Error')?.spanData
+        .findLast(node => node.spanData.statusCodeValue === 2)?.spanData
         .spanID ?? null
     )
   })
@@ -371,7 +371,7 @@
   let nextErrorSpanID = $derived.by(() => {
     const startIndex = selectedSpanIndex < 0 ? 0 : selectedSpanIndex + 1
     return (
-      spans.slice(startIndex).find(node => node.spanData.statusCode === 'Error')
+      spans.slice(startIndex).find(node => node.spanData.statusCodeValue === 2)
         ?.spanData.spanID ?? null
     )
   })

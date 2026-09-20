@@ -108,6 +108,9 @@ export type JsonSpanData = {
    */
   flags: number
   name: string
+  /** Authoritative received OTLP SpanKind int32. */
+  kindCode: number
+  /** Readable label derived from kindCode by SQL. */
   kind: string
   /** Nanoseconds after JsonTraceData.traceStart, kept exact across JSON. */
   start: string
@@ -124,6 +127,9 @@ export type JsonSpanData = {
   droppedAttributesCount: number
   droppedEventsCount: number
   droppedLinksCount: number
+  /** Authoritative received OTLP StatusCode int32. */
+  statusCodeValue: number
+  /** Readable label derived from statusCodeValue by SQL. */
   statusCode: string
   statusMessage: string
 }
@@ -261,6 +267,9 @@ export type JsonSumDataPoint = JsonBaseDataPoint & {
   intValue: string | null
   valueType: string
   isMonotonic: boolean
+  /** Authoritative received OTLP AggregationTemporality int32. */
+  aggregationTemporalityCode: number
+  /** Readable label derived from aggregationTemporalityCode by SQL. */
   aggregationTemporality: string
   /** Activity since the previous reading of this series. Cumulative only;
    *  null on the first datapoint, which describes no interval. */
@@ -282,6 +291,7 @@ export type JsonHistogramDataPoint = JsonBaseDataPoint & {
    *  Keys are the quantile as the server formatted it, so look up by the same
    *  string the request sent. */
   quantiles: Record<string, number | null> | null
+  aggregationTemporalityCode: number
   aggregationTemporality: string
 }
 
@@ -303,6 +313,7 @@ export type JsonExponentialHistogramDataPoint = JsonBaseDataPoint & {
    *  Keys are the quantile as the server formatted it, so look up by the same
    *  string the request sent. */
   quantiles: Record<string, number | null> | null
+  aggregationTemporalityCode: number
   aggregationTemporality: string
 }
 
@@ -408,11 +419,10 @@ export type JsonMetricData = {
   metadata: JsonAttribute[]
   unit: string
   metricType: JsonMetricType
-  // Projected straight off metric_streams, where "not applicable" is
-  // encoded as '' / false (not-null columns; the encoding keeps the
-  // stream UNIQUE constraint deduping correctly). Contrast with
-  // JsonMetricSummary, which nulls isMonotonic for non-Sum types.
-  aggregationTemporality: string
+  // Numeric code is authoritative. Gauge's stored zero is non-applicable by
+  // metricType, so its derived label is null rather than "Unspecified".
+  aggregationTemporalityCode: number | null
+  aggregationTemporality: string | null
   isMonotonic: boolean
   resourceDroppedAttributesCount: number
   resource: JsonResourceData
@@ -510,9 +520,8 @@ export type JsonMetricSummary = {
   description: string | null
   unit: string
   metricType: JsonMetricType
-  // Not-null stream column; '' encodes "not applicable" (see
-  // JsonMetricData).
-  aggregationTemporality: string
+  aggregationTemporalityCode: number | null
+  aggregationTemporality: string | null
   // Explicitly nulled by the projection for every type except Sum --
   // unlike getMetric, which serves the raw stream column (false for
   // non-Sums).

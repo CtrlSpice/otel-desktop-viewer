@@ -83,6 +83,7 @@ function makeSumDatapointAt(
     intValue: null,
     valueType: 'double',
     isMonotonic: true,
+    aggregationTemporalityCode: 2,
     aggregationTemporality: 'Cumulative',
   }
 }
@@ -100,6 +101,7 @@ function makeCumulativeSumMetric(): MetricData {
     metadata: [],
     unit: '1',
     metricType: 'Sum',
+    aggregationTemporalityCode: 2,
     aggregationTemporality: 'Cumulative',
     isMonotonic: true,
     resourceDroppedAttributesCount: 0,
@@ -254,6 +256,18 @@ function renderProbe(
 function reportedAggregationView(): string {
   return screen.getByTestId('aggregation-view').textContent?.trim() ?? ''
 }
+
+it('treats unknown received temporalities as unsafe for derived modes', () => {
+  const metric = makeCumulativeSumMetric()
+  metric.aggregationTemporalityCode = 99
+  metric.aggregationTemporality = 'Cumulative'
+
+  const ctx = renderProbe('/metrics/m1', { metric })
+
+  expect(ctx.isUnsafeTemporality).toBe(true)
+  expect(ctx.temporalityCode).toBe(99)
+  expect(ctx.availableAggregationViews).toEqual(['raw'])
+})
 
 function reportedSelectedDatapointID(): string {
   return screen.getByTestId('selected-datapoint-id').textContent?.trim() ?? ''

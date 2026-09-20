@@ -42,7 +42,7 @@ func GetStats(ctx context.Context, db *sql.DB, sizeBytes int64, maxSizeBytes int
 				-- unnest. The empty string is the "no service.name" marker, so
 				-- it is excluded rather than counted as a service.
 				'serviceCount', (select count(distinct service_name) from spans where service_name <> ''),
-				'errorCount',   count(*) filter (where status_code = 'Error'),
+				'errorCount',   count(*) filter (where status_code = 2),
 				'lastReceived', cast(max(start_time) as varchar)
 			) from spans),
 			'logs', (select json_object(

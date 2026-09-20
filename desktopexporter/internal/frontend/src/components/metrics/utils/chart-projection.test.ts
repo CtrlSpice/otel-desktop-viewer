@@ -114,6 +114,7 @@ describe('timeseriesToChartTimeseries', () => {
           intValue: null,
           valueType: 'double',
           isMonotonic: true,
+          aggregationTemporalityCode: 2,
           aggregationTemporality: 'Cumulative',
         },
         {
@@ -128,6 +129,7 @@ describe('timeseriesToChartTimeseries', () => {
           intValue: null,
           valueType: 'double',
           isMonotonic: true,
+          aggregationTemporalityCode: 2,
           aggregationTemporality: 'Cumulative',
         },
         {
@@ -142,6 +144,7 @@ describe('timeseriesToChartTimeseries', () => {
           intValue: null,
           valueType: 'double',
           isMonotonic: true,
+          aggregationTemporalityCode: 2,
           aggregationTemporality: 'Cumulative',
         },
       ],

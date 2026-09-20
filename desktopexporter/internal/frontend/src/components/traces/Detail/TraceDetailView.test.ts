@@ -4,6 +4,7 @@ import { screen } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import TraceDetailView from './TraceDetailView.svelte'
 import type { SpanData } from '@/types/api-types'
+import { SPAN_FIELDS } from '@/constants/fields'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
 function makeSpan(overrides: Partial<SpanData> = {}): SpanData {
@@ -13,9 +14,11 @@ function makeSpan(overrides: Partial<SpanData> = {}): SpanData {
     flags: 0,
     traceID: 'trace-1',
     name: 'child',
+    kindCode: 1,
     startTime: 0n,
     endTime: 1_000_000n,
     statusCode: 'Ok',
+    statusCodeValue: 1,
     events: [],
     links: [],
     attributes: [],
@@ -35,6 +38,48 @@ function makeSpan(overrides: Partial<SpanData> = {}): SpanData {
     ...overrides,
   }
 }
+
+function spanField(name: string) {
+  return SPAN_FIELDS.find(field => 'name' in field && field.name === name)!
+}
+
+describe('TraceDetailView numeric enum fields', () => {
+  beforeEach(() => {
+    setTestUrl('/traces/trace-1?span=child-span&start=0&end=1')
+  })
+
+  it('shows only the authoritative negative kind code when filtered by kindCode', () => {
+    renderWithContexts(TraceDetailView, {
+      span: makeSpan({ kind: 'Unknown (-1)', kindCode: -1 }),
+      columnFilter: [spanField('kindCode')],
+    })
+
+    const table = screen.getByRole('table', { name: 'Span fields' })
+    expect(table).toHaveTextContent('kind code (int64):')
+    expect(table).toHaveTextContent('-1')
+    expect(table).not.toHaveTextContent('kind (string):')
+    expect(table).not.toHaveTextContent('Unknown (-1)')
+    expect(
+      table.closest('details')?.querySelector('summary')
+    ).toHaveTextContent(/Span\s*1 field/)
+  })
+
+  it('shows only the authoritative unknown status code when filtered by statusCodeValue', () => {
+    renderWithContexts(TraceDetailView, {
+      span: makeSpan({ statusCode: 'Unknown (99)', statusCodeValue: 99 }),
+      columnFilter: [spanField('statusCodeValue')],
+    })
+
+    const table = screen.getByRole('table', { name: 'Span fields' })
+    expect(table).toHaveTextContent('status code value (int64):')
+    expect(table).toHaveTextContent('99')
+    expect(table).not.toHaveTextContent('status code (string):')
+    expect(table).not.toHaveTextContent('Unknown (99)')
+    expect(
+      table.closest('details')?.querySelector('summary')
+    ).toHaveTextContent(/Span\s*1 field/)
+  })
+})
 
 describe('TraceDetailView parent span link', () => {
   beforeEach(() => {

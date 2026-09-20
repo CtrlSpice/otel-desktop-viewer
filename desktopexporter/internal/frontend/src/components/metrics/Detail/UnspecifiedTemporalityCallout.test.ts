@@ -14,7 +14,13 @@ import UnspecifiedTemporalityCallout from './UnspecifiedTemporalityCallout.svelt
 // is what "the art still lines up" reduces to in a test.
 
 function renderFull() {
-  return render(UnspecifiedTemporalityCallout, { props: { size: 'full' } })
+  return render(UnspecifiedTemporalityCallout, {
+    props: {
+      size: 'full',
+      temporalityCode: 0,
+      temporalityLabel: 'Unspecified',
+    },
+  })
 }
 
 function asciiBlocks(): string[] {
@@ -93,16 +99,63 @@ describe('UnspecifiedTemporalityCallout, mini', () => {
   // The spark slot gets a label and no art: the same fact, sized for a place
   // where a vignette would not fit.
   it('renders a bare label with no ascii', () => {
-    render(UnspecifiedTemporalityCallout, { props: { size: 'mini' } })
+    render(UnspecifiedTemporalityCallout, {
+      props: {
+        size: 'mini',
+        temporalityCode: 0,
+        temporalityLabel: 'Unspecified',
+      },
+    })
     expect(screen.getByText('unspecifiedTemporality')).toBeInTheDocument()
     expect(document.querySelectorAll('pre.callout-ascii')).toHaveLength(0)
   })
 
   it('says what the label means on hover', () => {
-    render(UnspecifiedTemporalityCallout, { props: { size: 'mini' } })
+    render(UnspecifiedTemporalityCallout, {
+      props: {
+        size: 'mini',
+        temporalityCode: 0,
+        temporalityLabel: 'Unspecified',
+      },
+    })
     expect(screen.getByText('unspecifiedTemporality')).toHaveAttribute(
       'data-tip',
       'Temporality: unspecified'
     )
+  })
+})
+
+describe('UnspecifiedTemporalityCallout, unknown codes', () => {
+  it('identifies an unknown positive code without using code-0 wording', () => {
+    render(UnspecifiedTemporalityCallout, {
+      props: {
+        size: 'full',
+        temporalityCode: 99,
+        temporalityLabel: 'Unknown (99)',
+      },
+    })
+
+    const alert = screen.getByRole('alert')
+    expect(alert).toHaveTextContent('Unknown (99)')
+    expect(alert).toHaveTextContent('Received numeric code: 99')
+    expect(alert).not.toHaveTextContent('MUST not be used')
+    expect(alert).not.toHaveTextContent('AGGREGATION_TEMPORALITY_UNSPECIFIED')
+  })
+
+  it('identifies an unknown negative code in the mini warning', () => {
+    render(UnspecifiedTemporalityCallout, {
+      props: {
+        size: 'mini',
+        temporalityCode: -1,
+        temporalityLabel: 'Unknown (-1)',
+      },
+    })
+
+    const warning = screen.getByText('Unknown (-1); received code -1')
+    expect(warning).toHaveAttribute(
+      'data-tip',
+      'Unsafe unknown temporality code -1'
+    )
+    expect(warning).not.toHaveTextContent('AGGREGATION_TEMPORALITY_UNSPECIFIED')
   })
 })

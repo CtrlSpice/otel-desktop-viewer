@@ -369,7 +369,8 @@ export function histogramDatapointToChartDatapoint(
 export function histogramSliceToChartDatapoint(
   slice: HistogramSlicePoint,
   id: string,
-  temporality: string
+  temporality: string,
+  temporalityCode: number
 ): HistogramChartDataPoint {
   // The store's own min and max. Deriving them here rebuilt the bucket list
   // from scale and offsets and took its extents -- the same computation the
@@ -390,6 +391,7 @@ export function histogramSliceToChartDatapoint(
     sum: normalized.totals.sum,
     min: normalized.totals.min,
     max: normalized.totals.max,
+    aggregationTemporalityCode: temporalityCode,
     aggregationTemporality: temporality,
   }
   if (normalized.kind === 'histogram') {

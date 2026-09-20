@@ -262,6 +262,20 @@ export const SPAN_FIELDS: FieldDefinition[] = [
     enumValues: SPAN_KIND_ENUM,
   },
   {
+    name: 'kindCode',
+    type: 'int64',
+    searchScope: 'field',
+    operators: [
+      OPERATORS.EQUALS,
+      OPERATORS.NOT_EQUALS,
+      OPERATORS.GREATER_THAN,
+      OPERATORS.LESS_THAN,
+      OPERATORS.IN,
+      OPERATORS.NOT_IN,
+    ],
+    description: 'Received OTLP span kind number',
+  },
+  {
     name: 'startTime',
     type: 'int64',
     searchScope: 'field',
@@ -353,6 +367,20 @@ export const SPAN_FIELDS: FieldDefinition[] = [
     ],
     description: 'Status code (Unset, Ok, Error)',
     enumValues: SPAN_STATUS_CODE_ENUM,
+  },
+  {
+    name: 'statusCodeValue',
+    type: 'int64',
+    searchScope: 'field',
+    operators: [
+      OPERATORS.EQUALS,
+      OPERATORS.NOT_EQUALS,
+      OPERATORS.GREATER_THAN,
+      OPERATORS.LESS_THAN,
+      OPERATORS.IN,
+      OPERATORS.NOT_IN,
+    ],
+    description: 'Received OTLP span status code number',
   },
   {
     name: 'statusMessage',
