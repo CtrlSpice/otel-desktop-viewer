@@ -6,6 +6,7 @@ import {
 import type { JsonAttributeMatch, JsonAttributeValue } from '@/types/wire-types'
 import type { FieldDefinition } from '@/constants/fields'
 import type { FieldValueCache } from './field-value-cache'
+import { resolveField } from '../field-resolution'
 
 /**
  * Value-first completion: the user types text they can see in the UI, and the
@@ -169,7 +170,8 @@ export function createValueDiscoverySource(
           field.searchScope === 'attribute' &&
           field.name === match.name &&
           field.attributeScope === match.attributeScope &&
-          fieldSupportsExactMatch(field, match)
+          fieldSupportsExactMatch(field, match) &&
+          resolveField(match.name, fields) === field
       )
     )
 

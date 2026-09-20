@@ -130,6 +130,120 @@ function valueOf(input: string): string {
   return expectCondition(parseQuery(input, fields)).query.value
 }
 
+const caseDistinctAttributeFields: FieldDefinition[] = [
+  {
+    name: 'env',
+    type: 'string',
+    searchScope: 'attribute',
+    attributeScope: 'resource',
+    operators: [OPERATORS.EQUALS, OPERATORS.CONTAINS],
+  },
+  {
+    name: 'Env',
+    type: 'boolean',
+    searchScope: 'attribute',
+    attributeScope: 'span',
+    operators: [OPERATORS.EQUALS],
+  },
+  {
+    name: 'ENV',
+    type: 'int64',
+    searchScope: 'attribute',
+    attributeScope: 'event',
+    operators: [OPERATORS.EQUALS],
+  },
+]
+
+describe('attribute key identity', () => {
+  it.each([
+    ['env', 'string', 'resource'],
+    ['Env', 'boolean', 'span'],
+    ['ENV', 'int64', 'event'],
+  ] as const)('resolves %s with exact received casing', (name, type, scope) => {
+    const condition = expectCondition(
+      parseQuery(`${name} = value`, caseDistinctAttributeFields)
+    )
+
+    expect(condition.query.field).toMatchObject({
+      name,
+      type,
+      searchScope: 'attribute',
+      attributeScope: scope,
+    })
+  })
+
+  it('does not depend on case-variant discovery order', () => {
+    const reversed = [...caseDistinctAttributeFields].reverse()
+
+    for (const availableFields of [caseDistinctAttributeFields, reversed]) {
+      const condition = expectCondition(
+        parseQuery('Env = true', availableFields)
+      )
+      expect(condition.query.field).toMatchObject({
+        name: 'Env',
+        type: 'boolean',
+        attributeScope: 'span',
+      })
+    }
+  })
+
+  it('rejects a casing that has no exact attribute key', () => {
+    expect(() =>
+      parseQuery('eNv = value', caseDistinctAttributeFields)
+    ).toThrow(/Unknown field: eNv/)
+  })
+
+  it('preserves exact casing for dotted attribute keys', () => {
+    const condition = expectCondition(
+      parseQuery('service.Env = prod', [
+        {
+          name: 'service.Env',
+          type: 'string',
+          searchScope: 'attribute',
+          attributeScope: 'resource',
+          operators: [OPERATORS.EQUALS],
+        },
+        {
+          name: 'service.env',
+          type: 'string',
+          searchScope: 'attribute',
+          attributeScope: 'resource',
+          operators: [OPERATORS.EQUALS],
+        },
+      ])
+    )
+
+    expect(condition.query.field).toMatchObject({ name: 'service.Env' })
+  })
+
+  it('keeps built-in fields case-insensitive and ahead of collisions', () => {
+    const native: FieldDefinition = {
+      name: 'name',
+      type: 'string',
+      searchScope: 'field',
+      description: 'span name',
+      operators: [OPERATORS.EQUALS],
+    }
+    const collidingAttribute: FieldDefinition = {
+      name: 'Name',
+      type: 'boolean',
+      searchScope: 'attribute',
+      attributeScope: 'span',
+      operators: [OPERATORS.EQUALS],
+    }
+
+    for (const availableFields of [
+      [native, collidingAttribute],
+      [collidingAttribute, native],
+    ]) {
+      expect(
+        expectCondition(parseQuery('NAME = checkout', availableFields)).query
+          .field
+      ).toBe(native)
+    }
+  })
+})
+
 describe('queryParser value normalization', () => {
   // Spacing around the operator is syntax and carries no meaning, so every
   // arrangement has to reach the backend as the same value. These are the

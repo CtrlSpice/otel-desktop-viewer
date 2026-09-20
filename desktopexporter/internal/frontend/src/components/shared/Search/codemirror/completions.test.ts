@@ -4,6 +4,8 @@ import { CompletionContext } from '@codemirror/autocomplete'
 import { createQueryCompletionSource } from './completions'
 import { queryLanguage } from './query-language'
 import { getFieldsBySignal } from '@/constants/fields'
+import { OPERATORS } from '@/constants/operators'
+import type { FieldDefinition } from '@/constants/fields'
 
 // The completion source decides everything from the Lezer tree plus a little
 // position logic, and until now had no tests -- every regression in it was
@@ -22,6 +24,92 @@ function labels(doc: string, pos?: number): string[] | null {
   const r = complete(doc, pos)
   return r ? r.options.map(o => o.label) : null
 }
+
+const caseDistinctFields: FieldDefinition[] = [
+  {
+    name: 'env',
+    type: 'string',
+    searchScope: 'attribute',
+    attributeScope: 'resource',
+    operators: [OPERATORS.CONTAINS],
+  },
+  {
+    name: 'Env',
+    type: 'boolean',
+    searchScope: 'attribute',
+    attributeScope: 'span',
+    operators: [OPERATORS.EQUALS],
+  },
+  {
+    name: 'ENV',
+    type: 'int64',
+    searchScope: 'attribute',
+    attributeScope: 'event',
+    operators: [OPERATORS.GREATER_THAN],
+  },
+]
+
+function caseDistinctLabels(doc: string): string[] | null {
+  const state = EditorState.create({ doc, extensions: [queryLanguage] })
+  const result = createQueryCompletionSource(() => caseDistinctFields)(
+    new CompletionContext(state, doc.length, false)
+  )
+  return result ? result.options.map(option => option.label) : null
+}
+
+describe('case-distinct attribute completions', () => {
+  it('displays and inserts every exact received key', () => {
+    const state = EditorState.create({ doc: 'en', extensions: [queryLanguage] })
+    const result = createQueryCompletionSource(() => caseDistinctFields)(
+      new CompletionContext(state, 2, false)
+    )
+
+    expect(result?.options.map(option => [option.label, option.apply])).toEqual(
+      [
+        ['env', 'env '],
+        ['Env', 'Env '],
+        ['ENV', 'ENV '],
+      ]
+    )
+  })
+
+  it('offers operators for the exact selected attribute only', () => {
+    expect(caseDistinctLabels('env ')).toContain('CONTAINS')
+    expect(caseDistinctLabels('env ')).not.toContain('>')
+    expect(caseDistinctLabels('Env ')).toEqual(['='])
+    expect(caseDistinctLabels('ENV ')).toEqual(['>'])
+  })
+
+  it('does not resolve a non-exact attribute casing', () => {
+    expect(caseDistinctLabels('eNv ')).not.toContain('=')
+    expect(caseDistinctLabels('eNv ')).not.toContain('CONTAINS')
+    expect(caseDistinctLabels('eNv ')).not.toContain('>')
+  })
+
+  it('does not offer an attribute shadowed by a built-in field', () => {
+    const native: FieldDefinition = {
+      name: 'name',
+      type: 'string',
+      searchScope: 'field',
+      description: 'span name',
+      operators: [OPERATORS.EQUALS],
+    }
+    const attribute: FieldDefinition = {
+      name: 'Name',
+      type: 'string',
+      searchScope: 'attribute',
+      attributeScope: 'span',
+      operators: [OPERATORS.EQUALS],
+    }
+    const state = EditorState.create({ doc: 'na', extensions: [queryLanguage] })
+    const result = createQueryCompletionSource(() => [attribute, native])(
+      new CompletionContext(state, state.doc.length, false)
+    )
+
+    expect(result?.options.map(option => option.label)).toContain('name')
+    expect(result?.options.map(option => option.label)).not.toContain('Name')
+  })
+})
 
 describe('field positions', () => {
   it('offers fields at the start of a word', () => {

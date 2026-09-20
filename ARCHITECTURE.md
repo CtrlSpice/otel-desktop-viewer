@@ -299,6 +299,8 @@ The `attr_id` / `attr_frame` SQL macros reimplement the same hash independently.
 
 Attribute *discovery* is served from the dictionary (`store/attributes`), which also answers value-first lookup: given text a user can see in the UI, return the keys that hold it, across every signal in one scan of a small table.
 
+Received OTel attribute keys are resolved by exact string identity in structured search: casing is preserved, and keys that differ only by case remain distinct. Built-in application fields retain their case-insensitive names and take precedence over an attribute with a colliding name. The current query language has no attribute scope/type qualifier or quoted field-name syntax, so an exact built-in collision and the same exact key discovered in multiple scopes or types cannot yet be selected independently.
+
 ### HTTP server
 
 `internal/server/server.go`:
