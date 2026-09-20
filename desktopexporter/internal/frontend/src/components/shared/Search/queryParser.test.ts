@@ -332,6 +332,8 @@ describe('explicit attribute identity', () => {
     'comma,key',
     'dot.key',
     'colon:key',
+    'open(key',
+    'close)key',
     'space key',
     'control\u0001key',
     '雪',

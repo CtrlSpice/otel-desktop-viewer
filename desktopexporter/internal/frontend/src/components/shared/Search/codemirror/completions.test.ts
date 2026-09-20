@@ -306,6 +306,18 @@ describe('after a complete expression', () => {
   it('but an empty open group is not a complete expression', () => {
     expect(labels('(ki')).not.toEqual(['AND', 'OR', '| LIMIT'])
   })
+
+  it('ignores parentheses inside an explicit quoted attribute key', () => {
+    expect(labels('attr(span, "open(key", string) = "value" ')).toEqual([
+      'AND',
+      'OR',
+      '| LIMIT',
+    ])
+    expect(labels('(attr(span, "close)key", string) = "value" ')).toEqual([
+      'AND',
+      'OR',
+    ])
+  })
 })
 
 describe('id shapes', () => {

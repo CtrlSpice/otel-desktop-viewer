@@ -44,6 +44,23 @@ const RESULT_LIMIT_COMPLETION: Completion = {
   apply: '| LIMIT ',
 }
 
+function unclosedGroupDepth(text: string): number {
+  let depth = 0
+  let quote: '"' | "'" | null = null
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
+    if (quote) {
+      if (char === '\\') i++
+      else if (char === quote) quote = null
+      continue
+    }
+    if (char === '"' || char === "'") quote = char
+    else if (char === '(') depth++
+    else if (char === ')') depth = Math.max(0, depth - 1)
+  }
+  return depth
+}
+
 /**
  * Whether the text is a complete, error-free structured expression -- the
  * state after which boolean continuations or a result limit are accepted.
@@ -55,11 +72,7 @@ const RESULT_LIMIT_COMPLETION: Completion = {
 function expressionIsComplete(text: string): boolean {
   let trimmed = text.trim()
   if (!trimmed || trimmed.endsWith('(')) return false
-  let depth = 0
-  for (const c of trimmed) {
-    if (c === '(') depth++
-    else if (c === ')') depth--
-  }
+  const depth = unclosedGroupDepth(trimmed)
   if (depth > 0) trimmed += ')'.repeat(depth)
   let structured = false
   let hasError = false
@@ -273,11 +286,7 @@ export function createQueryCompletionSource(
         partial ? partial.from : context.pos
       )
       if (expressionIsComplete(before)) {
-        const unclosedGroups = [...before].reduce((depth, char) => {
-          if (char === '(') return depth + 1
-          if (char === ')') return Math.max(0, depth - 1)
-          return depth
-        }, 0)
+        const unclosedGroups = unclosedGroupDepth(before)
         return {
           from: partial?.from ?? context.pos,
           options:
