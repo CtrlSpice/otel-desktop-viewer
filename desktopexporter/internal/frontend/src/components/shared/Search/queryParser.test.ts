@@ -70,6 +70,33 @@ const durationListFields: FieldDefinition[] = [
   },
 ]
 
+const timestampListFields: FieldDefinition[] = [
+  {
+    name: 'timestamp',
+    type: 'int64',
+    searchScope: 'field',
+    description: 'log timestamp',
+    operators: [OPERATORS.IN, OPERATORS.NOT_IN],
+  },
+]
+
+const numericEnumListFields: FieldDefinition[] = [
+  {
+    name: 'kindCode',
+    type: 'int64',
+    searchScope: 'field',
+    description: 'received span kind number',
+    operators: [OPERATORS.IN, OPERATORS.NOT_IN],
+  },
+  {
+    name: 'statusCodeValue',
+    type: 'int64',
+    searchScope: 'field',
+    description: 'received span status code number',
+    operators: [OPERATORS.IN, OPERATORS.NOT_IN],
+  },
+]
+
 const collidingIntegerFields: FieldDefinition[] = [
   ...integerListFields,
   {
@@ -308,6 +335,33 @@ describe('unified grammar contract', () => {
       parseQuery('severityNumber IN [1e999999]', integerListFields)
     ).toThrow(/exact signed 64-bit integer/)
   })
+
+  it('accepts exact unsigned timestamp lists through uint64 max', () => {
+    const query = expectCondition(
+      parseQuery(
+        'timestamp IN [9223372036854775808, 18446744073709551615]',
+        timestampListFields
+      )
+    )
+    expect(JSON.parse(query.query.value)).toEqual([
+      '9223372036854775808',
+      '18446744073709551615',
+    ])
+    for (const invalid of ['-1', '18446744073709551616', '1.5']) {
+      expect(() =>
+        parseQuery(`timestamp IN [${invalid}]`, timestampListFields)
+      ).toThrow(/exact unsigned 64-bit integer/)
+    }
+  })
+
+  it.each(['kindCode', 'statusCodeValue'])(
+    'requires exact signed integer lists for %s',
+    field => {
+      expect(() =>
+        parseQuery(`${field} IN [2.5]`, numericEnumListFields)
+      ).toThrow(/exact signed 64-bit integer/)
+    }
+  )
 
   it('uses static provenance rather than a colliding attribute name', () => {
     expect(() =>
