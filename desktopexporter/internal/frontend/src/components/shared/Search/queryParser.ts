@@ -108,53 +108,69 @@ const COMPAT_ALIASES = new Map<string, string>([
   ['NOT REGEXP', 'REGEXP'],
 ])
 
-const NATIVE_INTEGER_FIELDS = new Set([
+const SIGNED_INTEGER_FIELDS = new Set([
   'severitynumber',
-  'timestamp',
-  'observedtimestamp',
   'droppedattributescount',
   'flags',
-  'starttime',
-  'endtime',
   'droppedeventscount',
   'droppedlinkscount',
-  'duration',
-  'event.timestamp',
   'event.droppedattributescount',
   'link.flags',
   'link.droppedattributescount',
   'resource.droppedattributescount',
   'scope.droppedattributescount',
+  'kindcode',
+  'statuscodevalue',
+])
+
+const TIMESTAMP_FIELDS = new Set([
+  'timestamp',
+  'observedtimestamp',
+  'starttime',
+  'endtime',
+  'event.timestamp',
 ])
 
 const INT64_MIN = -(1n << 63n)
 const INT64_MAX = (1n << 63n) - 1n
+const UINT64_MAX = (1n << 64n) - 1n
 
-function isExactInt64(value: string): boolean {
+function parseExactInteger(value: string): bigint | null {
   const match =
     /^([+-]?)(?:(\d+)(?:\.(\d*))?|\.(\d+))(?:[eE]([+-]?\d+))?$/.exec(value)
-  if (!match || value.length > 256) return false
+  if (!match || value.length > 256) return null
 
   const sign = match[1] === '-' ? -1n : 1n
   const whole = match[2] ?? ''
   const fraction = match[3] ?? match[4] ?? ''
   const digits = (whole + fraction).replace(/^0+/, '')
-  if (!digits) return true
+  if (!digits) return 0n
 
   const scale = BigInt(match[5] ?? '0') - BigInt(fraction.length)
   let integerText: string
   if (scale >= 0n) {
-    if (BigInt(digits.length) + scale > 19n) return false
+    if (BigInt(digits.length) + scale > 20n) return null
     integerText = digits + '0'.repeat(Number(scale))
   } else {
     const shift = -scale
     const trailingZeros = digits.length - digits.replace(/0+$/, '').length
-    if (shift > BigInt(trailingZeros)) return false
+    if (shift > BigInt(trailingZeros)) return null
     integerText = digits.slice(0, digits.length - Number(shift))
   }
 
-  const integer = sign * BigInt(integerText || '0')
+  return sign * BigInt(integerText || '0')
+}
+
+function isExactInt64(value: string): boolean {
+  const integer = parseExactInteger(value)
+  if (integer === null) return false
   return integer >= INT64_MIN && integer <= INT64_MAX
+}
+
+function isExactUint64(value: string): boolean {
+  const integer = parseExactInteger(value)
+  if (integer === null) return false
+  return integer >= 0n && integer <= UINT64_MAX
 }
 
 interface WalkContext {
@@ -405,12 +421,26 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
           : text(ctx, item)
       )
     }
+    if ((symbol === 'IN' || symbol === 'NOT IN') && items.length === 0) {
+      fail(
+        ctx,
+        valueNode.from,
+        valueNode.to,
+        'IN and NOT IN require a nonempty list'
+      )
+      return null
+    }
     // JSON, not a comma-join: a quoted value may itself contain commas,
     // which the old "[a,b,c]" serialization corrupted on the way through
     // the backend's comma split.
     value = JSON.stringify(items)
   } else {
     value = text(ctx, valueNode)
+  }
+
+  if ((symbol === 'IN' || symbol === 'NOT IN') && valueNode.name !== 'Array') {
+    fail(ctx, valueNode.from, valueNode.to, 'IN and NOT IN require a list')
+    return null
   }
 
   const operator = findOperator(symbol)
@@ -433,19 +463,22 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
     if (
       field.searchScope === 'field' &&
       (symbol === 'IN' || symbol === 'NOT IN') &&
-      NATIVE_INTEGER_FIELDS.has(field.name.toLowerCase()) &&
-      field.name.toLowerCase() !== 'duration' &&
+      (SIGNED_INTEGER_FIELDS.has(field.name.toLowerCase()) ||
+        TIMESTAMP_FIELDS.has(field.name.toLowerCase())) &&
       valueNode.name === 'Array'
     ) {
       // SAFETY: The Array branch JSON-stringified its flat string list after rejecting nulls and nested arrays; value is unchanged.
       const values = JSON.parse(value) as string[]
-      const invalid = values.find(item => !isExactInt64(item))
+      const timestamp = TIMESTAMP_FIELDS.has(field.name.toLowerCase())
+      const invalid = values.find(item =>
+        timestamp ? !isExactUint64(item) : !isExactInt64(item)
+      )
       if (invalid !== undefined) {
         fail(
           ctx,
           valueNode.from,
           valueNode.to,
-          `Integer list value '${invalid}' must be an exact signed 64-bit integer`
+          `Integer list value '${invalid}' must be an exact ${timestamp ? 'unsigned' : 'signed'} 64-bit integer`
         )
       }
     }

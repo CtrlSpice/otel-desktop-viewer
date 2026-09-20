@@ -698,6 +698,47 @@ func TestBuildOperatorCondition_WireIDList(t *testing.T) {
 	assert.Equal(t, []NamedParam{{"value_0", []any{"abc123", "notanid"}}}, params)
 }
 
+func TestBuildOperatorCondition_MembershipRequiresNonemptyFlatStringList(t *testing.T) {
+	modes := map[string]ResolvedExpression{
+		"text":           Text("s.text"),
+		"native integer": NativeInteger("s.integer"),
+		"duration":       Duration("s.duration"),
+		"wire ID":        WireID("s.wire_id"),
+	}
+	invalidValues := map[string]string{
+		"scalar":          "value",
+		"empty":           "[]",
+		"nested":          `[["value"]]`,
+		"null-containing": `["value",null]`,
+	}
+
+	for mode, resolved := range modes {
+		for shape, value := range invalidValues {
+			for _, operator := range []string{"IN", "NOT IN"} {
+				t.Run(mode+"/"+shape+"/"+operator, func(t *testing.T) {
+					_, err := BuildOperatorCondition(resolved, &Query{FieldOperator: operator, Value: value}, new([]NamedParam))
+					assert.ErrorIs(t, err, ErrInvalidQuery)
+				})
+			}
+		}
+	}
+}
+
+func TestBuildOperatorCondition_MembershipBindsHostileValues(t *testing.T) {
+	const hostile = `x') OR TRUE --`
+	params := []NamedParam{}
+
+	sql, err := BuildOperatorCondition(Text("s.name"), &Query{
+		FieldOperator: "NOT IN",
+		Value:         `["x') OR TRUE --","safe"]`,
+	}, &params)
+
+	require.NoError(t, err)
+	assert.Equal(t, "s.name NOT IN value_0", sql)
+	assert.NotContains(t, sql, hostile)
+	assert.Equal(t, []NamedParam{{"value_0", []any{hostile, "safe"}}}, params)
+}
+
 func TestBuildSearchSQL_NilQuery(t *testing.T) {
 	mapper := func(field *FieldDefinition, _ *Query, _ *[]NamedParam) ([]ResolvedExpression, error) {
 		return []ResolvedExpression{Text(field.Name)}, nil

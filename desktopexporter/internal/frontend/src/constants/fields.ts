@@ -88,6 +88,17 @@ export type FieldDefinition =
       searchScope: 'global'
     }
 
+type StaticFieldDefinition = Extract<FieldDefinition, { searchScope: 'field' }>
+
+function withScalarMembership(
+  fields: StaticFieldDefinition[]
+): StaticFieldDefinition[] {
+  return fields.map(field => ({
+    ...field,
+    operators: [...field.operators, OPERATORS.IN, OPERATORS.NOT_IN],
+  }))
+}
+
 /** OTLP span kind string names (aligns with pdata). */
 export const SPAN_KIND_ENUM = [
   'Unspecified',
@@ -202,7 +213,7 @@ export async function getDynamicAttributes(
 }
 
 // Span/Trace fields
-export const SPAN_FIELDS: FieldDefinition[] = [
+export const SPAN_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'traceID',
     type: 'string',
@@ -251,12 +262,7 @@ export const SPAN_FIELDS: FieldDefinition[] = [
     name: 'kind',
     type: 'string',
     searchScope: 'field',
-    operators: [
-      OPERATORS.EQUALS,
-      OPERATORS.NOT_EQUALS,
-      OPERATORS.IN,
-      OPERATORS.NOT_IN,
-    ],
+    operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description:
       'Span kind (Unspecified, Internal, Server, Client, Producer, Consumer)',
     enumValues: SPAN_KIND_ENUM,
@@ -270,8 +276,6 @@ export const SPAN_FIELDS: FieldDefinition[] = [
       OPERATORS.NOT_EQUALS,
       OPERATORS.GREATER_THAN,
       OPERATORS.LESS_THAN,
-      OPERATORS.IN,
-      OPERATORS.NOT_IN,
     ],
     description: 'Received OTLP span kind number',
   },
@@ -314,8 +318,6 @@ export const SPAN_FIELDS: FieldDefinition[] = [
       OPERATORS.LESS_THAN,
       OPERATORS.GREATER_THAN_OR_EQUAL,
       OPERATORS.LESS_THAN_OR_EQUAL,
-      OPERATORS.IN,
-      OPERATORS.NOT_IN,
     ],
     description: 'Span duration in nanoseconds (endTime - startTime)',
   },
@@ -359,12 +361,7 @@ export const SPAN_FIELDS: FieldDefinition[] = [
     name: 'statusCode',
     type: 'string',
     searchScope: 'field',
-    operators: [
-      OPERATORS.EQUALS,
-      OPERATORS.NOT_EQUALS,
-      OPERATORS.IN,
-      OPERATORS.NOT_IN,
-    ],
+    operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description: 'Status code (Unset, Ok, Error)',
     enumValues: SPAN_STATUS_CODE_ENUM,
   },
@@ -377,8 +374,6 @@ export const SPAN_FIELDS: FieldDefinition[] = [
       OPERATORS.NOT_EQUALS,
       OPERATORS.GREATER_THAN,
       OPERATORS.LESS_THAN,
-      OPERATORS.IN,
-      OPERATORS.NOT_IN,
     ],
     description: 'Received OTLP span status code number',
   },
@@ -489,10 +484,10 @@ export const SPAN_FIELDS: FieldDefinition[] = [
     ],
     description: 'Number of link attributes dropped due to limits',
   },
-]
+])
 
 // Log-specific fields
-export const LOG_FIELDS: FieldDefinition[] = [
+export const LOG_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'timestamp',
     type: 'int64',
@@ -539,12 +534,7 @@ export const LOG_FIELDS: FieldDefinition[] = [
     name: 'severityText',
     type: 'string',
     searchScope: 'field',
-    operators: [
-      OPERATORS.EQUALS,
-      OPERATORS.NOT_EQUALS,
-      OPERATORS.IN,
-      OPERATORS.NOT_IN,
-    ],
+    operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description:
       'Text representation of log severity (TRACE, DEBUG, INFO, WARN, ERROR, FATAL)',
     enumValues: LOG_SEVERITY_TEXT_ENUM,
@@ -560,8 +550,6 @@ export const LOG_FIELDS: FieldDefinition[] = [
       OPERATORS.LESS_THAN,
       OPERATORS.GREATER_THAN_OR_EQUAL,
       OPERATORS.LESS_THAN_OR_EQUAL,
-      OPERATORS.IN,
-      OPERATORS.NOT_IN,
     ],
     description: 'Numeric severity level of the log (1-24)',
   },
@@ -615,10 +603,10 @@ export const LOG_FIELDS: FieldDefinition[] = [
     ],
     description: 'Name of the event associated with this log',
   },
-]
+])
 
 // Metric-specific fields
-export const METRIC_FIELDS: FieldDefinition[] = [
+export const METRIC_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'name',
     discoverableValues: true,
@@ -656,8 +644,6 @@ export const METRIC_FIELDS: FieldDefinition[] = [
     operators: [
       OPERATORS.EQUALS,
       OPERATORS.NOT_EQUALS,
-      OPERATORS.IN,
-      OPERATORS.NOT_IN,
       OPERATORS.CONTAINS,
       OPERATORS.NOT_CONTAINS,
     ],
@@ -667,34 +653,15 @@ export const METRIC_FIELDS: FieldDefinition[] = [
     name: 'type',
     type: 'string',
     searchScope: 'field',
-    operators: [
-      OPERATORS.EQUALS,
-      OPERATORS.NOT_EQUALS,
-      OPERATORS.IN,
-      OPERATORS.NOT_IN,
-    ],
+    operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
     description:
       'Type of metric (Empty, Gauge, Sum, Histogram, ExponentialHistogram)',
     enumValues: METRIC_TYPE_ENUM,
   },
-  {
-    name: 'received',
-    type: 'int64',
-    searchScope: 'field',
-    operators: [
-      OPERATORS.EQUALS,
-      OPERATORS.NOT_EQUALS,
-      OPERATORS.GREATER_THAN,
-      OPERATORS.LESS_THAN,
-      OPERATORS.GREATER_THAN_OR_EQUAL,
-      OPERATORS.LESS_THAN_OR_EQUAL,
-    ],
-    description: 'Timestamp when the metric was received in nanoseconds',
-  },
-]
+])
 
 // Instrumentation Scope fields
-export const SCOPE_FIELDS: FieldDefinition[] = [
+export const SCOPE_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'scope.name',
     type: 'string',
@@ -735,10 +702,10 @@ export const SCOPE_FIELDS: FieldDefinition[] = [
     ],
     description: 'Number of scope attributes dropped due to limits',
   },
-]
+])
 
 // Resource fields
-export const RESOURCE_FIELDS: FieldDefinition[] = [
+export const RESOURCE_FIELDS: FieldDefinition[] = withScalarMembership([
   {
     name: 'resource.droppedAttributesCount',
     type: 'int64',
@@ -751,4 +718,4 @@ export const RESOURCE_FIELDS: FieldDefinition[] = [
     ],
     description: 'Number of resource attributes dropped due to limits',
   },
-]
+])
