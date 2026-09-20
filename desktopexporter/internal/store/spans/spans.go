@@ -997,6 +997,7 @@ func mapTraceAttributeExpressions(field *search.FieldDefinition, query *search.Q
 		*params = append(*params, search.NamedParam{Name: kindParam, Value: kind})
 	}
 	kindPredicate := search.AttributeKindPredicate(kindParam)
+	valueExpression := search.AttributeValueExpression(kind)
 	if mode == search.OTelArrayOperand {
 		var attributeIDs string
 		switch field.AttributeScope {
@@ -1032,34 +1033,34 @@ func mapTraceAttributeExpressions(field *search.FieldDefinition, query *search.Q
 
 	switch field.AttributeScope {
 	case "resource":
-		return []search.ResolvedExpression{search.Text(fmt.Sprintf(
+		return []search.ResolvedExpression{search.AttributeExpression(fmt.Sprintf(
 			` s.resource_id in (select r.id from resources r, unnest(r.attribute_ids) t(aid)
 				join attributes a on a.id = t.aid where a.key = %s%s and
-				coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})`,
-			keyParam, kindPredicate))}, nil
+				%s {COND})`,
+			keyParam, kindPredicate, valueExpression), kind, mode)}, nil
 	case "scope":
-		return []search.ResolvedExpression{search.Text(fmt.Sprintf(
+		return []search.ResolvedExpression{search.AttributeExpression(fmt.Sprintf(
 			` s.scope_id in (select sc.id from scopes sc, unnest(sc.attribute_ids) t(aid)
 				join attributes a on a.id = t.aid where a.key = %s%s and
-				coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND})`,
-			keyParam, kindPredicate))}, nil
+				%s {COND})`,
+			keyParam, kindPredicate, valueExpression), kind, mode)}, nil
 	case "span":
-		return []search.ResolvedExpression{search.Text(fmt.Sprintf(`exists(
+		return []search.ResolvedExpression{search.AttributeExpression(fmt.Sprintf(`exists(
 			select 1 from unnest(s.attribute_ids) t(aid) join attributes a on a.id = t.aid
-			where a.key = %s%s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND}
-		)`, keyParam, kindPredicate))}, nil
+			where a.key = %s%s and %s {COND}
+		)`, keyParam, kindPredicate, valueExpression), kind, mode)}, nil
 	case "event":
-		return []search.ResolvedExpression{search.Text(fmt.Sprintf(`exists(
+		return []search.ResolvedExpression{search.AttributeExpression(fmt.Sprintf(`exists(
 			select 1 from events e, unnest(e.attribute_ids) as t(aid)
 			join attributes a on a.id = t.aid
-			where e.trace_id = s.trace_id and e.span_id = s.span_id and a.key = %s%s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND}
-		)`, keyParam, kindPredicate))}, nil
+			where e.trace_id = s.trace_id and e.span_id = s.span_id and a.key = %s%s and %s {COND}
+		)`, keyParam, kindPredicate, valueExpression), kind, mode)}, nil
 	case "link":
-		return []search.ResolvedExpression{search.Text(fmt.Sprintf(`exists(
+		return []search.ResolvedExpression{search.AttributeExpression(fmt.Sprintf(`exists(
 			select 1 from links l, unnest(l.attribute_ids) as t(aid)
 			join attributes a on a.id = t.aid
-			where l.trace_id = s.trace_id and l.span_id = s.span_id and a.key = %s%s and coalesce(json_extract_string(a.value, '$.value'), json_extract(a.value, '$.value')::varchar) {COND}
-		)`, keyParam, kindPredicate))}, nil
+			where l.trace_id = s.trace_id and l.span_id = s.span_id and a.key = %s%s and %s {COND}
+		)`, keyParam, kindPredicate, valueExpression), kind, mode)}, nil
 	default:
 		return nil, fmt.Errorf("unknown attribute scope %s: %w", field.AttributeScope, ErrInvalidTraceQuery)
 	}
