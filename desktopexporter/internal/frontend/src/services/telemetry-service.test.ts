@@ -654,6 +654,42 @@ describe('telemetryAPI.getMetric', () => {
   })
 })
 
+describe('telemetryAPI.getMetricAggregate', () => {
+  it('decodes aggregate doubles while preserving omitted extents', async () => {
+    stubRpcResult({
+      aggregate: [
+        {
+          timestamp: '100',
+          startTime: '0',
+          count: 0,
+          sum: '0x8000000000000000',
+          bucketCounts: [0, 0],
+          explicitBounds: ['0x7ff0000000000000'],
+          quantiles: { '0.5': '0x7ff8000000000001' },
+        },
+      ],
+      scalarAggregate: null,
+    })
+
+    const result = await telemetryAPI.getMetricAggregate(
+      'some-stream',
+      0,
+      1,
+      1,
+      null,
+      [0.5],
+      0
+    )
+
+    const aggregate = result!.aggregate![0]!
+    expect(Object.is(aggregate.sum, -0)).toBe(true)
+    expect(aggregate.explicitBounds).toEqual([Number.POSITIVE_INFINITY])
+    expect(Number.isNaN(aggregate.quantiles!['0.5'])).toBe(true)
+    expect(aggregate).not.toHaveProperty('min')
+    expect(aggregate).not.toHaveProperty('max')
+  })
+})
+
 describe('attribute discovery', () => {
   it('keeps received array kinds searchable without inventing an element type', async () => {
     stubRpcResult([

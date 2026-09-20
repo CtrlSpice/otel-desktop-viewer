@@ -52,6 +52,14 @@ func TestAggregateBucketJSONUsesBoundsPresenceForRepresentation(t *testing.T) {
 		assert.NotContains(t, got, "scale")
 	})
 
+	t.Run("empty explicit observations omit unknowable extents", func(t *testing.T) {
+		got := query("[1.0]::double[]", "[0, 0]::ubigint[]", "null::integer",
+			"null::ubigint", "[]::ubigint[]")
+
+		assert.NotContains(t, got, "min")
+		assert.NotContains(t, got, "max")
+	})
+
 	t.Run("null bounds stay exponential", func(t *testing.T) {
 		got := query("null::double[]", "null::ubigint[]", "0::integer",
 			"2::ubigint", "[5]::ubigint[]")
@@ -63,5 +71,13 @@ func TestAggregateBucketJSONUsesBoundsPresenceForRepresentation(t *testing.T) {
 		assert.Equal(t, []any{float64(5)}, got["positiveBucketCounts"])
 		assert.Equal(t, float64(0), got["min"])
 		assert.Equal(t, float64(2), got["max"])
+	})
+
+	t.Run("empty exponential observations omit unknowable extents", func(t *testing.T) {
+		got := query("null::double[]", "null::ubigint[]", "0::integer",
+			"0::ubigint", "[0]::ubigint[]")
+
+		assert.NotContains(t, got, "min")
+		assert.NotContains(t, got, "max")
 	})
 }
