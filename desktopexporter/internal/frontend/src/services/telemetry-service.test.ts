@@ -1410,6 +1410,28 @@ describe('request parameters', () => {
     }
   )
 
+  it.each([
+    ['searchTraces', () => telemetryAPI.searchTraces(2n, null)],
+    ['searchLogs', () => telemetryAPI.searchLogs(2n, null)],
+    [
+      'searchMetricSummaries',
+      () => telemetryAPI.searchMetricSummaries(2n, null),
+    ],
+    ['getMetric', () => telemetryAPI.getMetric('stream-1', 2n, null)],
+    [
+      'getMetricAggregate',
+      () =>
+        telemetryAPI.getMetricAggregate('stream-1', 2n, null, 10, null, [], 0),
+    ],
+  ])('%s preserves an independently unbounded end', async (method, invoke) => {
+    const sent = captureRequest()
+    await invoke().catch(() => {})
+    expect(sent()).toMatchObject({
+      method,
+      params: { startTime: '2', endTime: null },
+    })
+  })
+
   it('getMetric sends the final named parameter contract exactly', async () => {
     const sent = captureRequest()
     await telemetryAPI
