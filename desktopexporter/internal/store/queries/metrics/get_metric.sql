@@ -497,7 +497,10 @@
 					else true
 				end
 				end as exact_difference_fits,
-				case when metric_type = 'Sum' and is_monotonic then case
+				case
+					when (int_value is null and double_value is null)
+					  or (prev_int_value is null and prev_double_value is null) then null
+					when metric_type = 'Sum' and is_monotonic then case
 					when int_value is not null and prev_int_value is not null
 						then int_value < prev_int_value
 					when double_value is not null and prev_double_value is not null
@@ -512,7 +515,9 @@
 						when double_value >= 9223372036854775808.0 then false
 						else floor(double_value)::hugeint < prev_int_value::hugeint
 					end
-				end else false end as is_reset
+					end
+					else false
+				end as is_reset
 			from scalar_lagged l
 			where prev_id is not null
 		),

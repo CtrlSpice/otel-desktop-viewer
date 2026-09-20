@@ -124,6 +124,18 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	secondMixed := nonmonotonicMixed.DataPoints().AppendEmpty()
 	secondMixed.SetTimestamp(200)
 	secondMixed.SetDoubleValue(-math.Ldexp(1, 127))
+	nonmonotonicEmptyMetric := rm.ScopeMetrics().At(0).Metrics().AppendEmpty()
+	nonmonotonicEmptyMetric.SetName("test.nonmonotonic-empty")
+	nonmonotonicEmpty := nonmonotonicEmptyMetric.SetEmptySum()
+	nonmonotonicEmpty.SetIsMonotonic(false)
+	nonmonotonicEmpty.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+	for i, value := range []int64{10, 15} {
+		dp := nonmonotonicEmpty.DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.Timestamp(100 + i*200))
+		dp.SetIntValue(value)
+	}
+	emptyNonmonotonic := nonmonotonicEmpty.DataPoints().AppendEmpty()
+	emptyNonmonotonic.SetTimestamp(200)
 
 	nonfiniteMetric := rm.ScopeMetrics().At(0).Metrics().AppendEmpty()
 	nonfiniteMetric.SetName("test.nonfinite")
@@ -229,6 +241,13 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	latestMixed := nonmonotonicMixedDatapoints[0].(map[string]any)
 	require.Equal(t, -math.Ldexp(1, 127), latestMixed["delta"])
 	require.Equal(t, false, latestMixed["isReset"])
+
+	nonmonotonicEmptyRaw := getMetricFullByNameInRange(t, s, ctx, "test.nonmonotonic-empty", store.BoundedTimeRange(0, 400))
+	nonmonotonicEmptyDatapoints := metricDatapoints(nonmonotonicEmptyRaw)
+	require.Len(t, nonmonotonicEmptyDatapoints, 3)
+	latestAfterEmpty := nonmonotonicEmptyDatapoints[0].(map[string]any)
+	require.NotContains(t, latestAfterEmpty, "delta")
+	require.NotContains(t, latestAfterEmpty, "isReset")
 
 	// Non-finite observations are excluded from arithmetic, so the finite points
 	// span a delta of two. The bare NaN also records the separate existing JSON
