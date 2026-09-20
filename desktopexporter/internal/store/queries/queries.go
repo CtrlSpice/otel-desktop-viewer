@@ -110,6 +110,8 @@ const (
 
 	// GetLog returns one log record with its attributes resolved.
 	GetLog Name = "logs/get_log.sql"
+	// GetTraceLogs returns lightweight summaries for every log in one trace.
+	GetTraceLogs Name = "logs/get_trace_logs.sql"
 	// GetLogAttributes lists the attribute keys logs carry.
 	GetLogAttributes Name = "logs/get_log_attributes.sql"
 
@@ -124,7 +126,7 @@ const (
 var queryNames = []Name{
 	SearchSpans, SalvageSpans, SearchTraces,
 	GetMetric, GetMetricAttributes,
-	GetLog, GetLogAttributes,
+	GetLog, GetTraceLogs, GetLogAttributes,
 	SearchMetricSummaries, SearchLogs,
 }
 
