@@ -361,8 +361,10 @@ describe('telemetryAPI.getMetric', () => {
               intValue: '9223372036854775807',
               valueType: 'Int',
               isMonotonic: true,
-              aggregationTemporalityCode: 1,
-              aggregationTemporality: 'Delta',
+              aggregationTemporalityCode: 2,
+              aggregationTemporality: 'Cumulative',
+              delta: '18446744073709551615',
+              isReset: false,
             },
             {
               id: 'histogram-max',
@@ -425,6 +427,7 @@ describe('telemetryAPI.getMetric', () => {
     })
     expect(datapoints[1]).toMatchObject({
       intValue: 9_223_372_036_854_775_807n,
+      delta: 18_446_744_073_709_551_615n,
     })
     expect(datapoints[2]).toMatchObject({
       count: 18_446_744_073_709_551_615n,

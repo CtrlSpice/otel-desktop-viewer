@@ -226,8 +226,9 @@ export type SumDataPoint = BaseDataPoint & {
   /** Readable label derived from aggregationTemporalityCode by SQL. */
   aggregationTemporality: string
   /** Activity since the previous reading of this series, from the store.
+   *  Exact integral results are bigint; double-domain results are number.
    *  Cumulative only; null on a series' first datapoint. */
-  delta?: number | null
+  delta?: number | bigint | null
   /** Whether the counter restarted in that interval. */
   isReset?: boolean | null
 }

@@ -103,8 +103,10 @@ export function timeseriesToChartTimeseries(
         value,
         timestampNs: dp.timestamp,
         sourceDatapointID: dp.id,
-        // Cumulative Sums only; a Gauge has no interval to describe.
-        delta: dp.metricType === 'Sum' ? (dp.delta ?? null) : null,
+        // Cumulative Sums only; a Gauge has no interval to describe. Exact
+        // integral deltas stay bigint until this display-number projection.
+        delta:
+          dp.metricType === 'Sum' && dp.delta != null ? Number(dp.delta) : null,
         isReset: dp.metricType === 'Sum' ? (dp.isReset ?? null) : null,
       })
     }

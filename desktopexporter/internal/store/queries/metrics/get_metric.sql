@@ -454,17 +454,56 @@
 		-- record keeps what arrived.
 		scalar_dps as (
 			select d.series_id, d.id, d.timestamp, d.tz_shift,
-				coalesce(d.double_value, d.int_value) as value
+				d.metric_type, d.is_monotonic,
+				d.double_value, d.int_value,
+				coalesce(d.double_value, d.int_value) as value,
+				case
+					when d.int_value is not null then d.int_value::hugeint
+					when trunc(d.double_value) = d.double_value
+					 and d.double_value >= -9223372036854775808.0
+					 and d.double_value <= 9223372036854775808.0
+						then try_cast(d.double_value as hugeint)
+				end as exact_integer
 			from filtered_dps d
 			where d.metric_type in ('Gauge', 'Sum')
-			  and isfinite(coalesce(d.double_value, d.int_value))
+			  and (d.int_value is not null or isfinite(d.double_value))
 		),
 		scalar_lagged as (
 			select s.*,
-				lag(s.value) over (
+				lag(s.id) over (
 					partition by s.series_id order by s.timestamp, s.id
-				) as prev_value
+				) as prev_id,
+				lag(s.double_value) over (
+					partition by s.series_id order by s.timestamp, s.id
+				) as prev_double_value,
+				lag(s.int_value) over (
+					partition by s.series_id order by s.timestamp, s.id
+				) as prev_int_value,
+				lag(s.exact_integer) over (
+					partition by s.series_id order by s.timestamp, s.id
+				) as prev_exact_integer
 			from scalar_dps s
+		),
+		scalar_compared as (
+			select l.*,
+				case when metric_type = 'Sum' and is_monotonic then case
+					when int_value is not null and prev_int_value is not null
+						then int_value < prev_int_value
+					when double_value is not null and prev_double_value is not null
+						then double_value < prev_double_value
+					when int_value is not null then case
+						when prev_double_value >= 9223372036854775808.0 then true
+						when prev_double_value <= -9223372036854775808.0 then false
+						else int_value::hugeint < ceil(prev_double_value)::hugeint
+					end
+					else case
+						when double_value < -9223372036854775808.0 then true
+						when double_value >= 9223372036854775808.0 then false
+						else floor(double_value)::hugeint < prev_int_value::hugeint
+					end
+				end else false end as is_reset
+			from scalar_lagged l
+			where prev_id is not null
 		),
 		-- id rides through so consumers join on the row itself. Joining on
 		-- (series, timestamp) had two failure modes with duplicate timestamps,
@@ -476,12 +515,26 @@
 			select series_id,
 				id,
 				timestamp,
-				case when value < prev_value then value
-				     else value - prev_value
-				end as delta,
-				value < prev_value as is_reset
-			from scalar_lagged
-			where prev_value is not null
+				case
+					when exact_integer is not null and prev_exact_integer is not null
+					 and (int_value is not null or prev_int_value is not null)
+						then case when is_reset then exact_integer
+						          else exact_integer - prev_exact_integer end
+					when exact_integer is not null and is_reset
+					 and (int_value is not null or prev_int_value is not null)
+						then exact_integer
+				end as delta_int,
+				case
+					when exact_integer is not null and prev_exact_integer is not null
+					 and (int_value is not null or prev_int_value is not null) then null
+					when exact_integer is not null and is_reset
+					 and (int_value is not null or prev_int_value is not null) then null
+					when is_reset then coalesce(double_value, int_value::double)
+					else coalesce(double_value, int_value::double)
+						- coalesce(prev_double_value, prev_int_value::double)
+				end as delta_double,
+				is_reset
+			from scalar_compared
 		),
 
 		-- The grid the scalar views aggregate on.
@@ -572,7 +625,7 @@
 					(select tz_name from input),
 					(select tz_offset_ns from input)) as bucket_start,
 				d.value,
-				sd.delta,
+				coalesce(sd.delta_double, sd.delta_int::double) as delta,
 				sd.is_reset
 			from scalar_dps d
 			left join scalar_deltas sd
@@ -1230,7 +1283,7 @@
 		-- entirely. Both arrive here as null, which is the honest answer -- "no
 		-- interval" rather than a zero that would read as "no activity".
 		filtered_with_deltas as (
-			select d.*, sd.delta as delta, sd.is_reset as is_reset
+			select d.*, sd.delta_int, sd.delta_double, sd.is_reset as is_reset
 			from filtered_dps d
 			left join scalar_deltas sd
 				on sd.id = d.id
@@ -1266,7 +1319,8 @@
 				null::double as double_value, null::bigint as int_value,
 				null::varchar as value_type, m.is_monotonic,
 				-- Histograms have no scalar to difference.
-				null::double as delta, null::boolean as is_reset
+				null::hugeint as delta_int, null::double as delta_double,
+				null::boolean as is_reset
 			from hist_folded m
 			-- A bucket whose datapoints disagree about explicit bounds cannot be
 			-- merged; there is no rescale that reconciles two boundary sets, the

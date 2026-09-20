@@ -271,9 +271,10 @@ export type JsonSumDataPoint = JsonBaseDataPoint & {
   aggregationTemporalityCode: number
   /** Readable label derived from aggregationTemporalityCode by SQL. */
   aggregationTemporality: string
-  /** Activity since the previous reading of this series. Cumulative only;
-   *  null on the first datapoint, which describes no interval. */
-  delta?: number | null
+  /** Activity since the previous reading of this series. Exact integral
+   *  results use decimal text; double-domain results use a JSON number.
+   *  Cumulative only; null on the first datapoint. */
+  delta?: number | string | null
   /** Whether the counter restarted in that interval. */
   isReset?: boolean | null
 }
