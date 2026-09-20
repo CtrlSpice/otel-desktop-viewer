@@ -460,13 +460,14 @@
 				case
 					when d.int_value is not null then d.int_value::hugeint
 					when trunc(d.double_value) = d.double_value
-					 and d.double_value >= -9223372036854775808.0
-					 and d.double_value <= 9223372036854775808.0
 						then try_cast(d.double_value as hugeint)
 				end as exact_integer
 			from filtered_dps d
 			where d.metric_type in ('Gauge', 'Sum')
-			  and (d.int_value is not null or isfinite(d.double_value))
+			  -- Empty arms stay in the sequence as interval barriers. Non-finite
+			  -- doubles remain excluded from scalar arithmetic.
+			  and (d.int_value is not null or d.double_value is null
+			       or isfinite(d.double_value))
 		),
 		scalar_lagged as (
 			select s.*,

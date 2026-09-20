@@ -80,11 +80,24 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	appendDouble("mixed-min-to-double", 200, -9223372036854775808.0)
 	appendDouble("mixed-double-to-min-plus-one", 100, -9223372036854775808.0)
 	appendInt("mixed-double-to-min-plus-one", 200, math.MinInt64+1)
+	appendInt("mixed-above-max", 100, math.MaxInt64)
+	appendDouble("mixed-above-max", 200, 9223372036854777856.0)
+	appendDouble("mixed-above-max-reset", 100, 9223372036854777856.0)
+	appendInt("mixed-above-max-reset", 200, math.MaxInt64)
+	appendDouble("mixed-below-min", 100, -9223372036854777856.0)
+	appendInt("mixed-below-min", 200, math.MinInt64)
+	appendInt("mixed-below-min-reset", 100, math.MinInt64)
+	appendDouble("mixed-below-min-reset", 200, -9223372036854777856.0)
 
 	empty := sum.DataPoints().AppendEmpty()
 	empty.Attributes().PutStr("series", "empty-then-int")
 	empty.SetTimestamp(100)
 	appendInt("empty-then-int", 200, 1)
+	appendInt("int-empty-int", 100, 10)
+	emptyBetween := sum.DataPoints().AppendEmpty()
+	emptyBetween.Attributes().PutStr("series", "int-empty-int")
+	emptyBetween.SetTimestamp(200)
+	appendInt("int-empty-int", 300, 15)
 
 	nonmonotonicMetric := rm.ScopeMetrics().At(0).Metrics().AppendEmpty()
 	nonmonotonicMetric.SetName("test.nonmonotonic")
@@ -102,7 +115,7 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	nonfinite := nonfiniteMetric.SetEmptySum()
 	nonfinite.SetIsMonotonic(true)
 	nonfinite.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
-	for i, value := range []float64{1, math.NaN(), 3} {
+	for i, value := range []float64{1, math.NaN(), math.Inf(1), math.Inf(-1), 3} {
 		dp := nonfinite.DataPoints().AppendEmpty()
 		dp.SetTimestamp(pcommon.Timestamp(100 + i*100))
 		dp.SetDoubleValue(value)
@@ -111,7 +124,7 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
 	}))
-	raw := getMetricFullByNameInRange(t, s, ctx, "test.counter", store.BoundedTimeRange(0, 300))
+	raw := getMetricFullByNameInRange(t, s, ctx, "test.counter", store.BoundedTimeRange(0, 400))
 
 	bySeries := make(map[string]map[string]any)
 	for _, rawSeries := range raw["timeseries"].([]any) {
@@ -152,9 +165,15 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	require.Equal(t, true, latestFor("mixed-double-to-max")["isReset"])
 	require.Equal(t, "0", latestFor("mixed-min-to-double")["delta"])
 	require.Equal(t, "1", latestFor("mixed-double-to-min-plus-one")["delta"])
+	require.Equal(t, "2049", latestFor("mixed-above-max")["delta"])
+	require.Equal(t, "9223372036854775807", latestFor("mixed-above-max-reset")["delta"])
+	require.Equal(t, "2048", latestFor("mixed-below-min")["delta"])
+	require.Equal(t, "-9223372036854777856", latestFor("mixed-below-min-reset")["delta"])
 	require.NotContains(t, latestFor("first"), "delta")
 	require.NotContains(t, latestFor("first"), "isReset")
 	require.NotContains(t, latestFor("empty-then-int"), "delta")
+	require.NotContains(t, latestFor("int-empty-int"), "delta")
+	require.NotContains(t, latestFor("int-empty-int"), "isReset")
 
 	tied := bySeries["tie"]["datapoints"].([]any)
 	require.Len(t, tied, 2)
@@ -192,11 +211,13 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	// transport defect without claiming that this response is valid JSON.
 	nonfiniteID := findMetricID(t, s, ctx, "test.nonfinite")
 	nonfiniteRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, nonfiniteID, store.BoundedTimeRange(0, 400),
+		return metrics.GetMetric(ctx, db, nonfiniteID, store.BoundedTimeRange(0, 600),
 			0, nil, nil, 0, 0, 0, nil, "", nil, 0)
 	})
 	require.NoError(t, err)
 	require.False(t, json.Valid(nonfiniteRaw))
 	require.Contains(t, string(nonfiniteRaw), `"doubleValue":NaN`)
+	require.Contains(t, string(nonfiniteRaw), `"doubleValue":Infinity`)
+	require.Contains(t, string(nonfiniteRaw), `"doubleValue":-Infinity`)
 	require.Contains(t, string(nonfiniteRaw), `"delta":2.0`)
 }
