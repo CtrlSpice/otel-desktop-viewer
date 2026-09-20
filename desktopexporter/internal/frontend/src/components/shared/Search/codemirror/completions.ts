@@ -17,6 +17,7 @@ import {
   Word as ValueTerm,
 } from './query.parser.terms'
 import { parser } from './query.parser'
+import { resolveField } from '../field-resolution'
 
 const LOGICAL_COMPLETIONS: Completion[] = [
   {
@@ -402,10 +403,7 @@ function topLevelOperatorCompletions(
   const before = context.matchBefore(/[\w.]+\s+/)
   if (!before) return null
   const word = before.text.trim()
-  const known = fields.some(
-    f =>
-      f.searchScope !== 'global' && f.name.toLowerCase() === word.toLowerCase()
-  )
+  const known = resolveField(word, fields) !== undefined
   if (!known) return null
   return operatorCompletions(context, word, fields, context.pos)
 }
@@ -450,22 +448,16 @@ function operatorCompletions(
   fields: FieldDefinition[],
   from?: number
 ): CompletionResult | null {
-  const field = fields.find(
-    f =>
-      f.searchScope !== 'global' &&
-      f.name.toLowerCase() === fieldName.toLowerCase()
-  )
+  const field = resolveField(fieldName, fields)
 
   // The derived operators are wire spellings, not query syntax: the null
   // check is typed `= NULL` and negated regex is typed `!~`, so offering
   // "IS NULL" or "NOT REGEXP" here would complete into text the grammar
   // cannot parse.
   const derived = new Set(['IS NULL', 'IS NOT NULL', 'NOT REGEXP'])
-  const ops = (
-    field && field.searchScope !== 'global'
-      ? field.operators
-      : Object.values(OPERATORS)
-  ).filter(op => !derived.has(op.symbol))
+  const ops = (field ? field.operators : Object.values(OPERATORS)).filter(
+    op => !derived.has(op.symbol)
+  )
 
   const options: Completion[] = ops.map(op => ({
     label: op.symbol,
@@ -491,12 +483,8 @@ function valueCompletions(
   fields: FieldDefinition[],
   from?: number
 ): CompletionResult | null {
-  const field = fields.find(
-    f =>
-      f.searchScope !== 'global' &&
-      f.name.toLowerCase() === fieldName.toLowerCase()
-  )
-  if (!field || field.searchScope === 'global') return null
+  const field = resolveField(fieldName, fields)
+  if (!field) return null
 
   const knownValues =
     'enumValues' in field && field.enumValues && field.enumValues.length > 0

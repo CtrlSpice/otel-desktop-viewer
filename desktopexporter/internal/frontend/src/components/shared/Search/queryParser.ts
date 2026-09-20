@@ -7,6 +7,7 @@ import {
 } from './queryTree'
 import { parser } from './codemirror/query.parser'
 import type { SyntaxNode } from '@lezer/common'
+import { resolveField } from './field-resolution'
 
 // One grammar, one parse.
 //
@@ -62,18 +63,6 @@ function unquote(text: string): string {
     else out += next
   }
   return out
-}
-
-type NamedField = Exclude<FieldDefinition, { searchScope: 'global' }>
-
-function findField(
-  name: string,
-  availableFields: FieldDefinition[]
-): NamedField | undefined {
-  return availableFields.find(
-    (f): f is NamedField =>
-      f.searchScope !== 'global' && f.name.toLowerCase() === name.toLowerCase()
-  )
 }
 
 function findOperator(symbol: string): Operator | undefined {
@@ -363,7 +352,7 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
   }
 
   const fieldName = text(ctx, fieldNode)
-  const field = findField(fieldName, ctx.availableFields)
+  const field = resolveField(fieldName, ctx.availableFields)
   if (!field) {
     fail(ctx, fieldNode.from, fieldNode.to, `Unknown field: ${fieldName}`)
   }

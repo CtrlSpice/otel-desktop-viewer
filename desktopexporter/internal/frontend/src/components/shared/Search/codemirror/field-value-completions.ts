@@ -9,6 +9,7 @@ import type { SyntaxNode } from '@lezer/common'
 import { FieldName as FieldTerm } from './query.parser.terms'
 import type { FieldDefinition } from '@/constants/fields'
 import type { FieldValueCache } from './field-value-cache'
+import { resolveField } from '../field-resolution'
 
 /**
  * Value completion for plain-column fields: `name = ` offers the names the
@@ -60,13 +61,15 @@ export function createFieldValueSource(
     const field = comparison.getChild(FieldTerm)
     if (!field) return null
     const fieldText = context.state.sliceDoc(field.from, field.to)
-    const def = getFields().find(
-      (f): f is Extract<FieldDefinition, { searchScope: 'field' }> =>
-        f.searchScope === 'field' &&
-        f.discoverableValues === true &&
-        f.name.toLowerCase() === fieldText.toLowerCase()
-    )
-    if (!def) return null
+    const resolved = resolveField(fieldText, getFields())
+    if (
+      !resolved ||
+      resolved.searchScope !== 'field' ||
+      resolved.discoverableValues !== true
+    ) {
+      return null
+    }
+    const def = resolved
 
     const op =
       comparison.getChild('Operator') ?? comparison.getChild('KeywordOperator')

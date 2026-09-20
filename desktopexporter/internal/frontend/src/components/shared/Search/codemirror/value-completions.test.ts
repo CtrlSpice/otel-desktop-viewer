@@ -233,6 +233,35 @@ describe('only suggests fields this editor can search', () => {
     expect(result).toBeNull()
   })
 
+  it('keeps values associated with their case-distinct attribute keys', async () => {
+    const caseMatches: JsonAttributeMatch[] = [
+      {
+        name: 'env',
+        attributeScope: 'resource',
+        type: 'string',
+        matchCount: 1,
+        sampleValues: [{ kind: 'string', value: 'production' }],
+      },
+      {
+        name: 'Env',
+        attributeScope: 'span',
+        type: 'string',
+        matchCount: 1,
+        sampleValues: [{ kind: 'string', value: 'staging' }],
+      },
+    ]
+    const { result } = await complete(
+      'ing',
+      vi.fn().mockResolvedValue(caseMatches),
+      [attrField('Env', 'span'), attrField('env', 'resource')]
+    )
+
+    expect(result?.options.map(option => option.label)).toEqual([
+      'env = "production"',
+      'Env = "staging"',
+    ])
+  })
+
   it('does not offer an equals comparison for array-only fields', async () => {
     const arrayMatch: JsonAttributeMatch = {
       name: 'nested.values',

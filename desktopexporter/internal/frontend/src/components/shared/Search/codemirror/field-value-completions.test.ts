@@ -105,6 +105,19 @@ describe('span name value completions', () => {
     expect(fetch).toHaveBeenCalledWith('metrics', 'unit', '', 500)
   })
 
+  it('preserves case-insensitive built-in field lookup', async () => {
+    const fetch = vi.fn(async () => NAMES)
+    const { source } = makeSource('traces', fetch)
+    const state = EditorState.create({
+      doc: 'NAME = ',
+      extensions: [queryLanguage],
+    })
+
+    await source(new CompletionContext(state, state.doc.length, false))
+
+    expect(fetch).toHaveBeenCalledWith('traces', 'name', '', 500)
+  })
+
   it('fetches each field once per session, shared across triggers', async () => {
     const fetch = vi.fn(async () => NAMES)
     const { source } = makeSource('traces', fetch)

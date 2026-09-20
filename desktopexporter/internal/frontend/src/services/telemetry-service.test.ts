@@ -16,6 +16,7 @@ import type {
   JsonTraceSummary,
 } from '@/types/wire-types'
 import { parseDuration } from '@/utils/time'
+import { parseQuery } from '@/components/shared/Search/queryParser'
 
 // The backend signals not-found with JSON-RPC errors (one convention across
 // all signals; see internal/server/errors.go). getMetric's callers expect
@@ -1232,6 +1233,29 @@ describe('request parameters', () => {
       },
     })
   })
+
+  it.each(['env', 'Env', 'ENV'])(
+    'serializes the exact parsed attribute key %s',
+    async name => {
+      const fields: FieldDefinition[] = ['env', 'Env', 'ENV'].map(
+        (fieldName, index) => ({
+          name: fieldName,
+          type: index === 0 ? 'string' : index === 1 ? 'boolean' : 'int64',
+          searchScope: 'attribute',
+          attributeScope:
+            index === 0 ? 'resource' : index === 1 ? 'span' : 'event',
+          operators: [OPERATORS.EQUALS],
+        })
+      )
+      const tree = parseQuery(`${name} = value`, fields)
+      if (!tree) throw new Error('Expected an attribute query')
+      const sent = captureRequest()
+
+      await telemetryAPI.searchTraces(2n, 5n, tree).catch(() => {})
+
+      expect(sent().params.query.query.field.name).toBe(name)
+    }
+  )
 
   it('includes a trace result limit without requiring a query tree', async () => {
     const sent = captureRequest()
