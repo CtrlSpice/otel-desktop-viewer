@@ -140,6 +140,17 @@ func TestGetTraceOTLP(t *testing.T) {
 	assert.Equal(t, pcommon.ValueTypeEmpty, mustAttribute(t, primary, "empty").Type())
 	assert.Equal(t, 0, mustAttribute(t, primary, "empty.array").Slice().Len())
 	assert.Equal(t, 0, mustAttribute(t, primary, "empty.map").Map().Len())
+	tree := mustAttribute(t, primary, "tree").Map()
+	assert.Equal(t, "user-kind", treeValue(t, tree, "kind").Str())
+	assert.Equal(t, "user-value", treeValue(t, tree, "value").Str())
+	assert.Equal(t, 12, treeValue(t, tree, "broad").Slice().Len())
+	deep := treeValue(t, tree, "deep")
+	for range 200 {
+		require.Equal(t, pcommon.ValueTypeSlice, deep.Type())
+		require.Equal(t, 1, deep.Slice().Len())
+		deep = deep.Slice().At(0)
+	}
+	assert.Equal(t, int64(42), deep.Int())
 	var linked, empty ptrace.SpanLink
 	for _, link := range primary.Links().All() {
 		if link.TraceID().IsEmpty() {
@@ -171,6 +182,13 @@ func mustAttribute(t *testing.T, span ptrace.Span, key string) pcommon.Value {
 	t.Helper()
 	value, ok := span.Attributes().Get(key)
 	require.True(t, ok, "missing attribute %q", key)
+	return value
+}
+
+func treeValue(t *testing.T, values pcommon.Map, key string) pcommon.Value {
+	t.Helper()
+	value, ok := values.Get(key)
+	require.True(t, ok, "missing map key %q", key)
 	return value
 }
 
@@ -246,6 +264,18 @@ func otlpTraceFixture() ptrace.Traces {
 	items.AppendEmpty().SetDouble(math.Float64frombits(0x8000000000000000))
 	primary.Attributes().PutEmptySlice("empty.array")
 	primary.Attributes().PutEmptyMap("empty.map")
+	tree := primary.Attributes().PutEmptyMap("tree")
+	tree.PutStr("kind", "user-kind")
+	tree.PutStr("value", "user-value")
+	broad := tree.PutEmptySlice("broad")
+	for i := 0; i < 12; i++ {
+		broad.AppendEmpty().SetInt(int64(i))
+	}
+	deep := tree.PutEmptySlice("deep")
+	for range 199 {
+		deep = deep.AppendEmpty().SetEmptySlice()
+	}
+	deep.AppendEmpty().SetInt(42)
 
 	for i := 0; i < 2; i++ {
 		event := primary.Events().AppendEmpty()
@@ -475,14 +505,21 @@ func BenchmarkGetTraceOTLP(b *testing.B) {
 		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
 	}))
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		err := s.WithDBRead(func(db *sql.DB) error {
-			_, err := spans.GetTraceOTLP(ctx, db, otlpTraceID)
-			return err
+	for _, threads := range []int{1, 4} {
+		b.Run(fmt.Sprintf("threads-%d", threads), func(b *testing.B) {
+			require.NoError(b, s.WithDBRead(func(db *sql.DB) error {
+				_, err := db.Exec(fmt.Sprintf("set threads=%d", threads))
+				return err
+			}))
+			for i := 0; i < b.N; i++ {
+				err := s.WithDBRead(func(db *sql.DB) error {
+					_, err := spans.GetTraceOTLP(ctx, db, otlpTraceID)
+					return err
+				})
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
 		})
-		if err != nil {
-			b.Fatal(err)
-		}
 	}
 }

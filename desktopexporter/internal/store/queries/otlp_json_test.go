@@ -29,7 +29,7 @@ func TestOTLPAnyValue(t *testing.T) {
 
 	var document string
 	require.NoError(t, db.QueryRow(
-		`select otlp_document_text(otlp_any_value(?::json))`, encoded,
+		`select otlp_document_text(value) from otlp_any_values([?::json])`, encoded,
 	).Scan(&document))
 	assert.Equal(t,
 		`{"kvlistValue":{"values":[{"key":"MiXeD_snake\n\"é","value":{"arrayValue":{"values":[{},`+
@@ -60,26 +60,13 @@ func BenchmarkOTLPAnyValue(b *testing.B) {
 	}
 	encoded := `{"kind":"map","value":[` + entries.String() + `]}`
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		var document string
-		if err := db.QueryRow(`select otlp_document_text(otlp_any_value(?::json))`, encoded).Scan(&document); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkOTLPAnyValueDeep(b *testing.B) {
-	db := sharedDB
-	for _, depth := range []int{25, 50, 100} {
-		encoded := `{"kind":"int64","value":"1"}`
-		for range depth {
-			encoded = `{"kind":"array","value":[` + encoded + `]}`
-		}
-		b.Run(fmt.Sprintf("depth-%d", depth), func(b *testing.B) {
+	for _, threads := range []int{1, 4} {
+		b.Run(fmt.Sprintf("threads-%d", threads), func(b *testing.B) {
+			_, err := db.Exec(fmt.Sprintf("set threads=%d", threads))
+			require.NoError(b, err)
 			for i := 0; i < b.N; i++ {
 				var document string
-				if err := db.QueryRow(`select otlp_document_text(otlp_any_value(?::json))`, encoded).Scan(&document); err != nil {
+				if err := db.QueryRow(`select otlp_document_text(value) from otlp_any_values([?::json])`, encoded).Scan(&document); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -87,22 +74,91 @@ func BenchmarkOTLPAnyValueDeep(b *testing.B) {
 	}
 }
 
-func TestOTLPAnyValueDepthLimit(t *testing.T) {
+func BenchmarkOTLPAnyValueDeep(b *testing.B) {
+	db := sharedDB
+	for _, threads := range []int{1, 4} {
+		for _, depth := range []int{25, 100, 400, 1600} {
+			encoded := `{"kind":"int64","value":"1"}`
+			for range depth {
+				encoded = `{"kind":"array","value":[` + encoded + `]}`
+			}
+			b.Run(fmt.Sprintf("threads-%d/depth-%d", threads, depth), func(b *testing.B) {
+				_, err := db.Exec(fmt.Sprintf("set threads=%d", threads))
+				require.NoError(b, err)
+				for i := 0; i < b.N; i++ {
+					var document string
+					if err := db.QueryRow(`select otlp_document_text(value) from otlp_any_values([?::json])`, encoded).Scan(&document); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+		}
+	}
+}
+
+func BenchmarkOTLPAnyValueBatch(b *testing.B) {
+	db := sharedDB
+	values := make([]string, 1000)
+	for i := range values {
+		children := make([]string, 8)
+		for j := range children {
+			children[j] = fmt.Sprintf(`{"kind":"int64","value":"%d"}`, i*8+j)
+		}
+		values[i] = `{"kind":"map","value":[{"key":"values","value":{"kind":"array","value":[` + strings.Join(children, ",") + `]}}]}`
+	}
+	encoded := `{"kind":"array","value":[` + strings.Join(values, ",") + `]}`
+	for _, threads := range []int{1, 4} {
+		b.Run(fmt.Sprintf("threads-%d", threads), func(b *testing.B) {
+			_, err := db.Exec(fmt.Sprintf("set threads=%d", threads))
+			require.NoError(b, err)
+			for i := 0; i < b.N; i++ {
+				var document string
+				require.NoError(b, db.QueryRow(`
+					select string_agg(value::varchar, '' order by source_id)
+					from otlp_any_values(json_extract(?::json, '$.value[*]'))`, encoded,
+				).Scan(&document))
+			}
+		})
+	}
+}
+
+func TestOTLPAnyValueDeep(t *testing.T) {
 	db := macroDB(t)
 	encoded := `{"kind":"int64","value":"1"}`
-	for range 100 {
+	expected := `{"intValue":"1"}`
+	for range 200 {
 		encoded = `{"kind":"array","value":[` + encoded + `]}`
+		expected = `{"arrayValue":{"values":[` + expected + `]}}`
 	}
 	var document string
 	require.NoError(t, db.QueryRow(
-		`select otlp_document_text(otlp_any_value(?::json))`, encoded,
+		`select otlp_document_text(value) from otlp_any_values([?::json])`, encoded,
 	).Scan(&document))
+	assert.Equal(t, expected, document)
+}
 
-	encoded = `{"kind":"array","value":[` + encoded + `]}`
-	err := db.QueryRow(
-		`select otlp_document_text(otlp_any_value(?::json))`, encoded,
-	).Scan(&document)
-	require.ErrorContains(t, err, "stored OTel value exceeds OTLP conversion depth limit of 100")
+func TestOTLPAnyValueKeepsOrderingAndSourceCorrelation(t *testing.T) {
+	db := macroDB(t)
+	inputs := []string{
+		`{"kind":"array","value":[{"kind":"empty","value":null},{"kind":"map","value":[]},{"kind":"array","value":[]},{"kind":"string","value":"one"}]}`,
+		`{"kind":"map","value":[{"key":"kind","value":{"kind":"int64","value":"0"}},{"key":"value","value":{"kind":"string","value":"line\n\\\"é"}}]}`,
+	}
+	for i := 0; i < 12; i++ {
+		inputs[0] = strings.TrimSuffix(inputs[0], `]}`) + fmt.Sprintf(`,{"kind":"int64","value":"%d"}]}`, i)
+	}
+
+	var document string
+	require.NoError(t, db.QueryRow(`
+		with batch as materialized (
+			select json_object('kind', 'array', 'value', list(encoded order by source_id)) as encoded
+			from (values (2, ?::json), (1, ?::json)) source(source_id, encoded)
+		)
+		select otlp_document_text(json_object(
+			'arrayValue', json_object('values', list(value order by source_id))))
+		from otlp_any_values((select json_extract(encoded, '$.value[*]') from batch))`, inputs[1], inputs[0]).Scan(&document))
+	assert.Contains(t, document, `{"arrayValue":{"values":[{"arrayValue":{"values":[{},{"kvlistValue":{"values":[]}},{"arrayValue":{"values":[]}},{"stringValue":"one"},{"intValue":"0"}`)
+	assert.Contains(t, document, `{"intValue":"11"}]}},{"kvlistValue"`)
+	assert.Contains(t, document, `{"key":"value","value":{"stringValue":"line\n\\\"é"}}]}}]}}`)
 }
 
 func TestOTLPAnyValueEmptyContainers(t *testing.T) {
@@ -115,7 +171,7 @@ func TestOTLPAnyValueEmptyContainers(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			var got string
 			require.NoError(t, db.QueryRow(
-				`select otlp_document_text(otlp_any_value(?::json))`, tc[0],
+				`select otlp_document_text(value) from otlp_any_values([?::json])`, tc[0],
 			).Scan(&got))
 			assert.Equal(t, tc[1], got)
 		})
@@ -127,8 +183,12 @@ func TestOTLPConversionRejectsNullAndMalformedValues(t *testing.T) {
 	for name, query := range map[string]string{
 		"SQL null field":        `select otlp_document_text(json_object('value', null))`,
 		"SQL null list element": `select otlp_document_text(json_object('values', [json('{}'), null::json]))`,
-		"SQL null value":        `select otlp_document_text(otlp_any_value(null::json))`,
-		"unknown stored kind":   `select otlp_document_text(otlp_any_value('{"kind":"future","value":1}'::json))`,
+		"SQL null batch":        `select otlp_document_text(value) from otlp_any_values(null::json[])`,
+		"SQL null value":        `select otlp_document_text(value) from otlp_any_values([null::json])`,
+		"unknown stored kind":   `select otlp_document_text(value) from otlp_any_values(['{"kind":"future","value":1}'::json])`,
+		"missing nested kind":   `select otlp_document_text(value) from otlp_any_values(['{"kind":"array","value":[{"value":"lost"}]}'::json])`,
+		"missing map key":       `select otlp_document_text(value) from otlp_any_values(['{"kind":"map","value":[{"value":{"kind":"empty","value":null}}]}'::json])`,
+		"non-array container":   `select otlp_document_text(value) from otlp_any_values(['{"kind":"array","value":{}}'::json])`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			var got sql.NullString
@@ -136,8 +196,11 @@ func TestOTLPConversionRejectsNullAndMalformedValues(t *testing.T) {
 			require.Error(t, err)
 			assert.True(t,
 				strings.Contains(err.Error(), "OTLP document contains SQL NULL") ||
+					strings.Contains(err.Error(), "stored OTel value batch is SQL NULL") ||
 					strings.Contains(err.Error(), "stored OTel value is SQL NULL") ||
-					strings.Contains(err.Error(), "unknown stored OTel value kind"),
+					strings.Contains(err.Error(), "unknown stored OTel value kind") ||
+					strings.Contains(err.Error(), "stored OTel value contains a disconnected node") ||
+					strings.Contains(err.Error(), "stored OTel container"),
 				err.Error())
 		})
 	}
