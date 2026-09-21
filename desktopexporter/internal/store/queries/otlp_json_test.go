@@ -181,14 +181,21 @@ func TestOTLPAnyValueEmptyContainers(t *testing.T) {
 func TestOTLPConversionRejectsNullAndMalformedValues(t *testing.T) {
 	db := macroDB(t)
 	for name, query := range map[string]string{
-		"SQL null field":        `select otlp_document_text(json_object('value', null))`,
-		"SQL null list element": `select otlp_document_text(json_object('values', [json('{}'), null::json]))`,
-		"SQL null batch":        `select otlp_document_text(value) from otlp_any_values(null::json[])`,
-		"SQL null value":        `select otlp_document_text(value) from otlp_any_values([null::json])`,
-		"unknown stored kind":   `select otlp_document_text(value) from otlp_any_values(['{"kind":"future","value":1}'::json])`,
-		"missing nested kind":   `select otlp_document_text(value) from otlp_any_values(['{"kind":"array","value":[{"value":"lost"}]}'::json])`,
-		"missing map key":       `select otlp_document_text(value) from otlp_any_values(['{"kind":"map","value":[{"value":{"kind":"empty","value":null}}]}'::json])`,
-		"non-array container":   `select otlp_document_text(value) from otlp_any_values(['{"kind":"array","value":{}}'::json])`,
+		"SQL null field":            `select otlp_document_text(json_object('value', null))`,
+		"SQL null list element":     `select otlp_document_text(json_object('values', [json('{}'), null::json]))`,
+		"SQL null batch":            `select otlp_document_text(value) from otlp_any_values(null::json[])`,
+		"SQL null value":            `select otlp_document_text(value) from otlp_any_values([null::json])`,
+		"unknown stored kind":       `select otlp_document_text(value) from otlp_any_values(['{"kind":"future","value":1}'::json])`,
+		"missing nested kind":       `select otlp_document_text(value) from otlp_any_values(['{"kind":"array","value":[{"value":"lost"}]}'::json])`,
+		"missing map key":           `select otlp_document_text(value) from otlp_any_values(['{"kind":"map","value":[{"value":{"kind":"empty","value":null}}]}'::json])`,
+		"non-array container":       `select otlp_document_text(value) from otlp_any_values(['{"kind":"array","value":{}}'::json])`,
+		"string with bool":          `select otlp_document_text(value) from otlp_any_values(['{"kind":"string","value":false}'::json])`,
+		"bool with string":          `select otlp_document_text(value) from otlp_any_values(['{"kind":"bool","value":"false"}'::json])`,
+		"int64 with number":         `select otlp_document_text(value) from otlp_any_values(['{"kind":"int64","value":1}'::json])`,
+		"int64 out of range":        `select otlp_document_text(value) from otlp_any_values(['{"kind":"int64","value":"9223372036854775808"}'::json])`,
+		"int64 non-canonical":       `select otlp_document_text(value) from otlp_any_values(['{"kind":"int64","value":"01"}'::json])`,
+		"bytes with invalid base64": `select otlp_document_text(value) from otlp_any_values(['{"kind":"bytes","value":"not base64"}'::json])`,
+		"double with bool":          `select otlp_document_text(value) from otlp_any_values(['{"kind":"double","value":false}'::json])`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			var got sql.NullString
@@ -200,6 +207,8 @@ func TestOTLPConversionRejectsNullAndMalformedValues(t *testing.T) {
 					strings.Contains(err.Error(), "stored OTel value is SQL NULL") ||
 					strings.Contains(err.Error(), "unknown stored OTel value kind") ||
 					strings.Contains(err.Error(), "stored OTel value contains a disconnected node") ||
+					strings.Contains(err.Error(), "stored OTel scalar has invalid value") ||
+					strings.Contains(err.Error(), "Could not decode string") ||
 					strings.Contains(err.Error(), "stored OTel container"),
 				err.Error())
 		})

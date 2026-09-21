@@ -84,6 +84,19 @@ create or replace macro otlp_any_values(encoded_values) as table (
 				when k.otlp_field is null
 					then error('unknown stored OTel value kind: ' || n.kind)
 				when n.scalar is null then error('stored OTel scalar has no value')
+				when n.kind in ('string', 'bytes', 'int64') and n.payload_type != 'VARCHAR'
+					then error('stored OTel scalar has invalid value')
+				when n.kind = 'bool' and n.payload_type != 'BOOLEAN'
+					then error('stored OTel scalar has invalid value')
+				when n.kind = 'int64' and (
+					not regexp_full_match(json_extract_string(n.scalar, '$'), '-?(0|[1-9][0-9]*)')
+					or try_cast(json_extract_string(n.scalar, '$') as bigint) is null)
+					then error('stored OTel scalar has invalid value')
+				when n.kind = 'bytes' and to_base64(from_base64(
+					json_extract_string(n.scalar, '$'))) != json_extract_string(n.scalar, '$')
+					then error('stored OTel scalar has invalid value')
+				when n.kind = 'double' and n.payload_type not in ('BIGINT', 'UBIGINT', 'DOUBLE', 'VARCHAR')
+					then error('stored OTel scalar has invalid value')
 				when n.kind = 'double'
 					then json_object(k.otlp_field, otlp_double_json(
 						json_object('kind', 'double', 'value', n.scalar)))::varchar
