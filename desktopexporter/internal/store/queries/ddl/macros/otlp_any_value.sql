@@ -1,6 +1,8 @@
 -- Recursively convert one canonical stored pcommon.Value to an OTLP AnyValue.
 -- Nodes at the same depth are converted together, deepest-first. The fold uses
 -- fixed-width node IDs and retains only the direct-child layer needed next.
+-- Conversion rejects values deeper than 100 levels before they can monopolize
+-- DuckDB with pathological recursive input.
 create or replace macro otlp_any_value(encoded_value) as (
 	with recursive value_nodes(node_key, parent_key, child_ordinal, node_depth, encoded) as (
 		select 'r'::varchar, null::varchar, 0::bigint, 0::bigint, case
@@ -18,6 +20,14 @@ create or replace macro otlp_any_value(encoded_value) as (
 				else []::json[]
 			end
 		) with ordinality as child(encoded, ordinality)
+		where n.node_depth < 100
+	),
+	depth_limit as (
+		select coalesce(bool_or(
+			node_depth = 100
+			and json_extract_string(encoded, '$.kind') in ('array', 'map')
+			and json_array_length(json_extract(encoded, '$.value')) > 0), false) as exceeded
+		from value_nodes
 	),
 	numbered as (
 		select row_number() over (order by node_key)::bigint as node_id, *
@@ -70,8 +80,12 @@ create or replace macro otlp_any_value(encoded_value) as (
 		from fold
 		join layers layer on layer.node_depth = fold.node_depth - 1
 	)
-	select map_extract_value(values_by_node,
-		(select node_id from numbered where parent_key is null))
+	select case
+		when (select exceeded from depth_limit)
+			then error('stored OTel value exceeds OTLP conversion depth limit of 100')
+		else map_extract_value(values_by_node,
+			(select node_id from numbered where parent_key is null))
+	end
 	from fold
 	order by node_depth
 	limit 1

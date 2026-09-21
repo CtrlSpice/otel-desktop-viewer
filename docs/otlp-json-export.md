@@ -19,7 +19,9 @@ changes negative zero to zero.
 The output emits retained implicit-presence scalar and repeated fields at their
 default values. It omits absent optional fields and IDs and unset oneof arms.
 It rejects a completed document containing JSON null rather than inventing a
-source value; a valid empty `AnyValue` remains `{}`.
+source value; a valid empty `AnyValue` remains `{}`. Recursive stored values are
+limited to 100 nested array/map levels. Deeper values fail conversion instead
+of consuming unbounded query time.
 
 This is reconstruction of the retained normalized signal, not recovery of the
 original request bytes. The store cannot recover original request segmentation,

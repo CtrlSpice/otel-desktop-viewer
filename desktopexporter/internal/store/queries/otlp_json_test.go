@@ -71,7 +71,7 @@ func BenchmarkOTLPAnyValue(b *testing.B) {
 
 func BenchmarkOTLPAnyValueDeep(b *testing.B) {
 	db := sharedDB
-	for _, depth := range []int{25, 50, 100, 200} {
+	for _, depth := range []int{25, 50, 100} {
 		encoded := `{"kind":"int64","value":"1"}`
 		for range depth {
 			encoded = `{"kind":"array","value":[` + encoded + `]}`
@@ -85,6 +85,24 @@ func BenchmarkOTLPAnyValueDeep(b *testing.B) {
 			}
 		})
 	}
+}
+
+func TestOTLPAnyValueDepthLimit(t *testing.T) {
+	db := macroDB(t)
+	encoded := `{"kind":"int64","value":"1"}`
+	for range 100 {
+		encoded = `{"kind":"array","value":[` + encoded + `]}`
+	}
+	var document string
+	require.NoError(t, db.QueryRow(
+		`select otlp_document_text(otlp_any_value(?::json))`, encoded,
+	).Scan(&document))
+
+	encoded = `{"kind":"array","value":[` + encoded + `]}`
+	err := db.QueryRow(
+		`select otlp_document_text(otlp_any_value(?::json))`, encoded,
+	).Scan(&document)
+	require.ErrorContains(t, err, "stored OTel value exceeds OTLP conversion depth limit of 100")
 }
 
 func TestOTLPAnyValueEmptyContainers(t *testing.T) {
