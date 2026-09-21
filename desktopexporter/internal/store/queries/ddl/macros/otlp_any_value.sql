@@ -136,7 +136,7 @@ create or replace macro otlp_any_values(encoded_values) as table (
 			(select count(*) from otlp_av_node_paths p where p.source_id = input.source_id) as path_count
 		from otlp_av_input input
 	)
-	select output.source_id, case
+	select counts.source_id, case
 		when counts.path_count = 0 then error('stored OTel value has no tagged root')
 		when counts.path_count != counts.node_count
 			then error('stored OTel value contains a disconnected node')
@@ -146,14 +146,14 @@ create or replace macro otlp_any_values(encoded_values) as table (
 			select 1 from otlp_av_nodes n
 			left join otlp_av_child_bounds children
 				on children.source_id = n.source_id and children.parent_id = n.id
-			where n.source_id = output.source_id and n.kind in ('array', 'map') and (
+			where n.source_id = counts.source_id and n.kind in ('array', 'map') and (
 				n.payload_type != 'ARRAY'
 				or coalesce(children.child_count, 0) != json_array_length(n.scalar)
 			)
 		) then error('stored OTel container contains a malformed child')
 		else string_agg(output.fragment, '' order by output.sort_path)::json
 	end as value
-	from otlp_av_output_fragments output
-	join otlp_av_counts counts using (source_id)
-	group by output.source_id, counts.node_count, counts.edge_count, counts.path_count
+	from otlp_av_counts counts
+	left join otlp_av_output_fragments output using (source_id)
+	group by counts.source_id, counts.node_count, counts.edge_count, counts.path_count
 )

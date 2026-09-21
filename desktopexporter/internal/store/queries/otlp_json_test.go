@@ -185,6 +185,8 @@ func TestOTLPConversionRejectsNullAndMalformedValues(t *testing.T) {
 		"SQL null list element":     `select otlp_document_text(json_object('values', [json('{}'), null::json]))`,
 		"SQL null batch":            `select otlp_document_text(value) from otlp_any_values(null::json[])`,
 		"SQL null value":            `select otlp_document_text(value) from otlp_any_values([null::json])`,
+		"JSON null value":           `select otlp_document_text(value) from otlp_any_values([json('null')])`,
+		"untagged root":             `select otlp_document_text(value) from otlp_any_values([json('{}')])`,
 		"unknown stored kind":       `select otlp_document_text(value) from otlp_any_values(['{"kind":"future","value":1}'::json])`,
 		"missing nested kind":       `select otlp_document_text(value) from otlp_any_values(['{"kind":"array","value":[{"value":"lost"}]}'::json])`,
 		"missing map key":           `select otlp_document_text(value) from otlp_any_values(['{"kind":"map","value":[{"value":{"kind":"empty","value":null}}]}'::json])`,
@@ -205,6 +207,7 @@ func TestOTLPConversionRejectsNullAndMalformedValues(t *testing.T) {
 				strings.Contains(err.Error(), "OTLP document contains SQL NULL") ||
 					strings.Contains(err.Error(), "stored OTel value batch is SQL NULL") ||
 					strings.Contains(err.Error(), "stored OTel value is SQL NULL") ||
+					strings.Contains(err.Error(), "stored OTel value has no tagged root") ||
 					strings.Contains(err.Error(), "unknown stored OTel value kind") ||
 					strings.Contains(err.Error(), "stored OTel value contains a disconnected node") ||
 					strings.Contains(err.Error(), "stored OTel scalar has invalid value") ||

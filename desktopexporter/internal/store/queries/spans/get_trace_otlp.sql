@@ -18,10 +18,10 @@ used_attribute_ids as materialized (
 ),
 attribute_batch_input as materialized (
 	select
-		coalesce(list(a.id order by a.id), []::uuid[]) as ids,
-		coalesce(list(a.value order by a.id), []::json[]) as encoded_values
+		coalesce(list(used.id order by used.id), []::uuid[]) as ids,
+		coalesce(list(a.value order by used.id), []::json[]) as encoded_values
 	from used_attribute_ids used
-	join attributes a using (id)
+	left join attributes a using (id)
 ),
 attribute_batch as materialized (
 	select attribute_batch_input.ids,

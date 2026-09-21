@@ -219,6 +219,25 @@ func TestGetTraceOTLPRejectsStoredSQLNull(t *testing.T) {
 	assert.ErrorContains(t, err, "OTLP document contains SQL NULL")
 }
 
+func TestGetTraceOTLPRejectsDanglingAttribute(t *testing.T) {
+	s, ctx := storetest.New(t)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, otlpTraceFixture(), s.FlushedIDs())
+	}))
+
+	err := s.WithDBRead(func(db *sql.DB) error {
+		if _, err := db.ExecContext(ctx, `
+			delete from attributes
+			where id = (select unnest(attribute_ids) from spans limit 1)`); err != nil {
+			return err
+		}
+		_, err := spans.GetTraceOTLP(ctx, db, otlpTraceID)
+		return err
+	})
+	assert.ErrorIs(t, err, spans.ErrSpansStoreInternal)
+	assert.ErrorContains(t, err, "stored OTel value is SQL NULL")
+}
+
 func otlpTraceFixture() ptrace.Traces {
 	traces := ptrace.NewTraces()
 	traceID := mustDecodeTraceID(otlpTraceID)
