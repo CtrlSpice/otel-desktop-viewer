@@ -12,9 +12,11 @@ used_attribute_ids as materialized (
 	union
 	select unnest(l.attribute_ids) from links l join selected s using (trace_id, span_id)
 	union
-	select unnest(r.attribute_ids) from resources r join selected s on s.resource_id = r.id
+	select unnest(r.attribute_ids) from resources r
+	where r.id in (select resource_id from selected)
 	union
-	select unnest(sc.attribute_ids) from scopes sc join selected s on s.scope_id = sc.id
+	select unnest(sc.attribute_ids) from scopes sc
+	where sc.id in (select scope_id from selected)
 ),
 attribute_batch_input as materialized (
 	select
