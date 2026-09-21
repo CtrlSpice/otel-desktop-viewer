@@ -69,6 +69,24 @@ func BenchmarkOTLPAnyValue(b *testing.B) {
 	}
 }
 
+func BenchmarkOTLPAnyValueDeep(b *testing.B) {
+	db := sharedDB
+	for _, depth := range []int{25, 50, 100, 200} {
+		encoded := `{"kind":"int64","value":"1"}`
+		for range depth {
+			encoded = `{"kind":"array","value":[` + encoded + `]}`
+		}
+		b.Run(fmt.Sprintf("depth-%d", depth), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				var document string
+				if err := db.QueryRow(`select otlp_document_text(otlp_any_value(?::json))`, encoded).Scan(&document); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 func TestOTLPAnyValueEmptyContainers(t *testing.T) {
 	db := macroDB(t)
 	for name, tc := range map[string][2]string{
