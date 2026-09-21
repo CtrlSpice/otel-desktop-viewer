@@ -53,7 +53,7 @@
 </script>
 
 <script lang="ts">
-  import type { SpanData } from '@/types/api-types'
+  import type { SpanData, TraceLogSummary } from '@/types/api-types'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
     BiohazardIcon,
@@ -67,7 +67,7 @@
   } from '@/components/shared/PaneHeader.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import SpanField from './SpanField.svelte'
-  import EventsPanel from './EventsPanel.svelte'
+  import ActivityPanel from './ActivityPanel.svelte'
   import LinksPanel from './LinksPanel.svelte'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
   import { formatDuration, formatTimestamp } from '@/utils/time'
@@ -82,6 +82,8 @@
     salvaged?: boolean
     cyclePoint?: boolean
     selectedEventIndex?: number | null
+    selectedLogID?: string | null
+    logs?: TraceLogSummary[]
     /** Empty: show all Fields rows. Non-empty: only selected search fields / attributes. */
     columnFilter?: FieldDefinition[]
   }
@@ -91,6 +93,8 @@
     salvaged = false,
     cyclePoint = false,
     selectedEventIndex = null,
+    selectedLogID = null,
+    logs = [],
     columnFilter = [],
   }: Props = $props()
 
@@ -106,6 +110,7 @@
   let resourceAttributes = $derived(span?.resource.attributes ?? [])
   let scopeAttributes = $derived(span?.scope.attributes ?? [])
   let numEvents = $derived(span?.events.length ?? 0)
+  let numActivity = $derived(numEvents + logs.length)
   let numLinks = $derived(span?.links.length ?? 0)
   let hasUnrecognisedStatusCode = $derived(
     span !== undefined &&
@@ -116,11 +121,13 @@
 
   // --- Tab state ---
 
-  type Tab = 'fields' | 'events' | 'links'
+  type Tab = 'fields' | 'activity' | 'links'
   let activeTab = $state<Tab>('fields')
 
   $effect(() => {
-    if (selectedEventIndex !== null) activeTab = 'events'
+    if (selectedEventIndex !== null || selectedLogID !== null) {
+      activeTab = 'activity'
+    }
   })
 
   let spanOpen = $state(true)
@@ -229,7 +236,12 @@
 
   {@const tabs: PaneTab[] = [
     { id: 'fields', label: 'Fields', icon: fieldsIcon },
-    { id: 'events', label: 'Events', icon: eventsIcon, count: numEvents },
+    {
+      id: 'activity',
+      label: 'Activity',
+      icon: eventsIcon,
+      count: numActivity,
+    },
     { id: 'links', label: 'Links', icon: linksIcon, count: numLinks },
   ]}
 
@@ -499,14 +511,18 @@
             </tbody>
           </table>
         </FieldGroup>
-      {:else if activeTab === 'events'}
-        {#if numEvents === 0}
-          <p class="detail-view__tab-empty">No events recorded for this span</p>
+      {:else if activeTab === 'activity'}
+        {#if numActivity === 0}
+          <p class="detail-view__tab-empty">
+            No activity recorded for this span
+          </p>
         {:else}
-          <EventsPanel
+          <ActivityPanel
             events={span.events}
+            {logs}
             spanStartTime={span.startTime}
             {selectedEventIndex}
+            {selectedLogID}
           />
         {/if}
       {:else if activeTab === 'links'}

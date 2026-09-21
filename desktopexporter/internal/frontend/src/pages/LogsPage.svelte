@@ -71,6 +71,7 @@
     signal: 'logs',
     getItemID: log => log.id,
     initialSort: { column: 'timestamp', direction: 'desc' },
+    preserveMissingSelection: true,
     compare: compareLogs,
     fetchList: async () => {
       const { startTime, endTime } = selectionToQueryRangeNs(
@@ -221,6 +222,16 @@
         <div class="logs-page__placeholder alert alert-error">
           <span>Error: {displayError}</span>
         </div>
+      {:else if page.selectedID && detailFetcher.loading && !detailFetcher.data}
+        <div class="logs-page__placeholder logs-empty">
+          Loading log details…
+        </div>
+      {:else if page.selectedID && detailFetcher.error}
+        <div class="logs-page__placeholder alert alert-error">
+          <span>Error: {detailFetcher.error}</span>
+        </div>
+      {:else if page.selectedID && detailFetcher.data}
+        <LogDetailPanel log={detailFetcher.data} />
       {:else if page.loading && !hasLogRows}
         <div class="logs-page__placeholder logs-empty">Loading logs…</div>
       {:else if !page.loading && !hasLogRows}
@@ -229,14 +240,6 @@
           <p class="mt-2 text-sm text-rp-muted">
             Send telemetry to the exporter or adjust the time range
           </p>
-        </div>
-      {:else if detailFetcher.loading && !detailFetcher.data}
-        <div class="logs-page__placeholder logs-empty">
-          Loading log details…
-        </div>
-      {:else if detailFetcher.error}
-        <div class="logs-page__placeholder alert alert-error">
-          <span>Error: {detailFetcher.error}</span>
         </div>
       {:else}
         <LogDetailPanel log={detailFetcher.data ?? undefined} />

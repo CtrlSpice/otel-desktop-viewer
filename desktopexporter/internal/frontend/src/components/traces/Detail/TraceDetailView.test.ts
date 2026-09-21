@@ -3,7 +3,7 @@ import { describe, expect, it, beforeEach } from 'vitest'
 import { screen } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import TraceDetailView from './TraceDetailView.svelte'
-import type { SpanData } from '@/types/api-types'
+import type { SpanData, TraceLogSummary } from '@/types/api-types'
 import { SPAN_FIELDS } from '@/constants/fields'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
@@ -160,6 +160,43 @@ describe('TraceDetailView tabs', () => {
 
     expect(fields).toHaveAttribute('aria-controls', panel.id)
     expect(panel).toHaveAttribute('aria-labelledby', fields.id)
+  })
+
+  it('uses one Activity count and opens separate event and log groups', () => {
+    const logs: TraceLogSummary[] = [
+      {
+        id: 'log-1',
+        timestamp: 5n,
+        spanID: 'child-span',
+        severityText: 'INFO',
+        severityNumber: 9,
+        serviceName: 'checkout',
+        eventName: '',
+        bodyPreview: '',
+      },
+    ]
+    renderWithContexts(TraceDetailView, {
+      span: makeSpan({
+        events: [
+          {
+            name: 'ready',
+            timestamp: 4n,
+            attributes: [],
+            droppedAttributesCount: 0,
+          },
+        ],
+      }),
+      logs,
+      selectedLogID: 'log-1',
+    })
+
+    expect(screen.queryByRole('tab', { name: /Events/ })).toBeNull()
+    expect(screen.getByRole('tab', { name: /Activity.*2/ })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+    expect(screen.getByText('Events')).toBeVisible()
+    expect(screen.getByText('Logs')).toBeVisible()
   })
 })
 

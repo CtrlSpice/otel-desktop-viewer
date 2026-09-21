@@ -1,5 +1,9 @@
 <script lang="ts">
-  import type { EventMarker } from './WaterfallView.svelte'
+  type EventMarker = {
+    percent: number
+    name: string
+    eventIndex: number
+  }
 
   type Props = {
     markers: EventMarker[]

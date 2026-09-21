@@ -57,17 +57,23 @@
     navigateToItem,
     getSpanFromQuery,
     setSpanInQuery,
-    selectSpanEvent,
     setEventInQuery,
+    setLogInQuery,
+    selectSpanEvent,
+    selectSpanLog,
+    parseEventIndex,
     SPAN_PARAM,
     EVENT_PARAM,
+    LOG_PARAM,
   } from '@/route'
   import type {
     TraceData,
     SearchResultEvent,
     TraceStats,
+    TraceLogSummary,
   } from '@/types/api-types'
   import type { QueryNode } from '@/components/shared/Search/queryTree'
+  import type { TimelineRecord } from '@/components/traces/Waterfall/timeline-markers'
   import {
     createSignalListPage,
     type SortOption,
@@ -145,26 +151,31 @@
 
   // `/traces/<traceID>?span=<spanID>&event=<index>` — span/event in query string.
   let selectedSpanID = $derived(routeContext.route.query[SPAN_PARAM] ?? null)
-  let selectedEventIndex = $derived.by((): number | null => {
-    const raw = routeContext.route.query[EVENT_PARAM]
-    if (!raw) return null
-    const index = Number.parseInt(raw, 10)
-    if (!Number.isFinite(index) || index < 0) return null
-    return index
-  })
+  let selectedEventRaw = $derived(routeContext.route.query[EVENT_PARAM])
+  let selectedEventIndex = $derived(parseEventIndex(selectedEventRaw))
+  let selectedLogID = $derived(routeContext.route.query[LOG_PARAM] ?? null)
   let traceData = $state<TraceData | null>(null)
+  let traceLogs = $state<TraceLogSummary[]>([])
   let detailLoading = $state(false)
   let activeQueryTree = $state<QueryNode | undefined>(undefined)
 
   let hasTraceRows = $derived(page.items.length > 0)
   let displayError = $derived(page.error ?? actionError)
 
+  let currentTraceData = $derived(
+    traceData?.traceID === page.selectedID ? traceData : null
+  )
   let selectedNode = $derived(
-    traceData?.spans.find(n => n.spanData.spanID === selectedSpanID) ??
-      traceData?.spans[0] ??
+    currentTraceData?.spans.find(n => n.spanData.spanID === selectedSpanID) ??
+      currentTraceData?.spans[0] ??
       undefined
   )
   let selectedSpan = $derived(selectedNode?.spanData)
+  let selectedSpanLogs = $derived(
+    selectedSpan
+      ? traceLogs.filter(log => log.spanID === selectedSpan.spanID)
+      : []
+  )
 
   let resolvedEventIndex = $derived.by((): number | null => {
     const span = selectedSpan
@@ -173,12 +184,31 @@
     if (index >= span.events.length) return null
     return index
   })
+  let resolvedLogID = $derived.by((): string | null => {
+    const logID = selectedLogID
+    const span = selectedSpan
+    if (!logID || !span) return null
+    return traceLogs.some(log => log.id === logID && log.spanID === span.spanID)
+      ? logID
+      : null
+  })
 
   $effect(() => {
-    const index = selectedEventIndex
-    const span = selectedSpan
-    if (index === null) return
-    if (!span || index >= span.events.length) setEventInQuery(null)
+    const raw = selectedEventRaw
+    if (detailLoading || currentTraceData === null) return
+
+    if (resolvedEventIndex !== null) {
+      if (selectedLogID !== null) setEventInQuery(resolvedEventIndex)
+      return
+    }
+
+    if (resolvedLogID !== null) {
+      if (raw !== undefined) setLogInQuery(resolvedLogID)
+      return
+    }
+
+    if (raw !== undefined) setEventInQuery(null)
+    else if (selectedLogID !== null) setLogInQuery(null)
   })
 
   $effect(() => {
@@ -187,7 +217,7 @@
       // Don't tear down the detail view while the list is still loading -- a
       // shared link's trace id may simply not be in the list yet.
       if (!page.mounted || page.loading) return
-      traceData = null
+      clearTraceDetail()
       setSpanInQuery(null)
       return
     }
@@ -202,8 +232,12 @@
     setSpanInQuery(spanID, 'push')
   }
 
-  function handleSelectEvent(spanID: string, eventIndex: number) {
-    selectSpanEvent(spanID, eventIndex, 'push')
+  function handleSelectTimelineRecord(spanID: string, record: TimelineRecord) {
+    if (record.kind === 'event') {
+      selectSpanEvent(spanID, record.eventIndex, 'push')
+    } else {
+      selectSpanLog(spanID, record.log.id, 'push')
+    }
   }
 
   function handleSearchResults(event: SearchResultEvent) {
@@ -222,6 +256,14 @@
 
   onDestroy(() => detailFetch?.abort())
 
+  function clearTraceDetail() {
+    detailFetch?.abort()
+    detailFetch = null
+    traceData = null
+    traceLogs = []
+    detailLoading = false
+  }
+
   async function fetchTraceDetail(traceID: string, queryTree?: QueryNode) {
     detailFetch?.abort()
     const fetchCtl = new AbortController()
@@ -229,12 +271,13 @@
 
     try {
       detailLoading = true
-      const result = await telemetryAPI.searchSpans(
-        traceID,
-        queryTree,
-        fetchCtl.signal
-      )
+      const [result, logs] = await Promise.all([
+        telemetryAPI.searchSpans(traceID, queryTree, fetchCtl.signal),
+        telemetryAPI.getTraceLogs(traceID, fetchCtl.signal),
+      ])
+      if (detailFetch !== fetchCtl) return
       traceData = result
+      traceLogs = logs
       const spanIDs = result.spans.map(n => n.spanData.spanID)
       const urlSpan = getSpanFromQuery()
       let desired: string | null
@@ -248,11 +291,14 @@
       }
       if (desired !== urlSpan) setSpanInQuery(desired)
     } catch (err) {
+      if (detailFetch !== fetchCtl) return
+      fetchCtl.abort()
       // A superseded fetch is not a failure: a newer one is already in flight
       // and owns the view state.
       if (isAbortError(err)) return
       console.error('Failed to fetch trace detail:', err)
       traceData = null
+      traceLogs = []
       setSpanInQuery(null)
     } finally {
       // Only the newest fetch owns the loading flag; an aborted older one
@@ -268,8 +314,8 @@
     actionError = null
     try {
       await telemetryAPI.clearTraces()
+      clearTraceDetail()
       navigateToItem('traces', null, 'replace')
-      traceData = null
       await page.runListFetch()
     } catch (err) {
       actionError =
@@ -283,8 +329,8 @@
     try {
       await telemetryAPI.deleteTraces([traceID])
       if (page.selectedID === traceID) {
+        clearTraceDetail()
         navigateToItem('traces', null, 'replace')
-        traceData = null
       }
       await page.runListFetch()
     } catch (err) {
@@ -295,7 +341,7 @@
   }
 
   function deleteSelectedTrace() {
-    if (traceData) handleDeleteTrace(traceData.traceID)
+    if (currentTraceData) handleDeleteTrace(currentTraceData.traceID)
   }
 </script>
 
@@ -365,24 +411,26 @@
             Send telemetry to the exporter or adjust the time range
           </p>
         </div>
-      {:else if traceData}
-        {#if traceData.unplacedSpanCount > 0}
+      {:else if currentTraceData}
+        {#if currentTraceData.unplacedSpanCount > 0}
           <div class="traces-page__unplaced alert alert-warning" role="alert">
             <span>
-              {traceData.unplacedSpanCount}
-              {traceData.unplacedSpanCount === 1 ? 'span is' : 'spans are'} missing
-              from this trace. Their parent links form a loop, so they have no place
-              in the tree — usually an instrumentation bug in the service that emitted
-              them.
+              {currentTraceData.unplacedSpanCount}
+              {currentTraceData.unplacedSpanCount === 1
+                ? 'span is'
+                : 'spans are'} missing from this trace. Their parent links form a
+              loop, so they have no place in the tree — usually an instrumentation
+              bug in the service that emitted them.
             </span>
           </div>
         {/if}
         <WaterfallView
-          spans={traceData.spans}
+          spans={currentTraceData.spans}
+          logs={traceLogs}
           {selectedSpanID}
           searchActive={activeQueryTree !== undefined}
           onSelectSpan={handleSelectSpan}
-          onSelectEvent={handleSelectEvent}
+          onSelectTimelineRecord={handleSelectTimelineRecord}
           loading={detailLoading}
         />
       {:else if detailLoading}
@@ -402,6 +450,8 @@
         salvaged={selectedNode?.salvaged ?? false}
         cyclePoint={selectedNode?.cyclePoint ?? false}
         selectedEventIndex={resolvedEventIndex}
+        selectedLogID={resolvedLogID}
+        logs={selectedSpanLogs}
       />
     {/snippet}
 
@@ -414,7 +464,7 @@
         onPrev={() => page.selectByOffset(-1)}
         onNext={() => page.selectByOffset(1)}
         onLast={page.selectLast}
-        onDelete={traceData ? deleteSelectedTrace : undefined}
+        onDelete={currentTraceData ? deleteSelectedTrace : undefined}
       />
     {/snippet}
   </PageLayout>

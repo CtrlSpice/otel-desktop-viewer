@@ -504,6 +504,11 @@ export function formatDuration(nanoseconds: bigint): string {
   return unit ? `${value} ${unit}` : value
 }
 
+export function formatSignedDuration(nanoseconds: bigint): string {
+  const magnitude = nanoseconds < 0n ? -nanoseconds : nanoseconds
+  return `${nanoseconds < 0n ? '-' : '+'}${formatDuration(magnitude)}`
+}
+
 /** Value + unit for labeled duration display (e.g. drawer cards). */
 export function formatDurationParts(nanoseconds: bigint): FormattedValueParts {
   if (nanoseconds >= 1_000_000_000n) {

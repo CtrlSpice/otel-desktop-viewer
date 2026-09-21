@@ -6,7 +6,17 @@
   import WaterfallTreeGutter from './WaterfallTreeGutter.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { BiohazardIcon } from '@hugeicons/core-free-icons'
-  import WaterfallEventDots from './WaterfallEventDots.svelte'
+  import TimelineMarkers from './TimelineMarkers.svelte'
+  import {
+    BAR_LABEL_GAP_REM,
+    DURATION_GUTTER_REM,
+    MARKER_CLUSTER_DISTANCE_REM,
+    OUTSIDE_RECORD_SLOT_REM,
+    TIMELINE_LEFT_INSET_REM,
+    WATERFALL_BAR_HEIGHT_REM,
+    clusterTimelineRecords,
+  } from './timeline-markers'
+  import { remToPx } from '@/state/panel-width'
 
   type Props = {
     row: WaterfallRowData
@@ -18,10 +28,15 @@
     rowIndex: number
     spanColWidth: number
     serviceColWidth: number
+    timelineWidth: number
+    traceStart: bigint
+    traceEnd: bigint
     matched?: boolean
     onRowClick: () => void
-    onSelectEvent?: (eventIndex: number) => void
     onToggleExpand: () => void
+    onSelectTimelineRecord: (
+      record: import('./timeline-markers').TimelineRecord
+    ) => void
   }
 
   let {
@@ -34,10 +49,13 @@
     rowIndex,
     spanColWidth,
     serviceColWidth,
+    timelineWidth,
+    traceStart,
+    traceEnd,
     matched = false,
     onRowClick,
-    onSelectEvent,
     onToggleExpand,
+    onSelectTimelineRecord,
   }: Props = $props()
 
   let span = $derived(row.spanNode.spanData)
@@ -63,33 +81,18 @@
   let durationLabel = $derived(formatDuration(span.endTime - span.startTime))
   let serviceName = $derived(getServiceName(span.resource) ?? 'unknown')
 
-  /** Min bar width (% of timeline) before the duration sits inside the
-   *  pill. Rounded-full caps eat ~one bar height of usable width, so this
-   *  is higher than a square bar would need. */
-  const MIN_LABEL_INSIDE_PCT = 24
-  const LABEL_FLIP_SIDE_PCT = 50
-  let barFitsLabel = $derived(row.widthPercent > MIN_LABEL_INSIDE_PCT)
-  let labelOnLeft = $derived(
-    !barFitsLabel && row.offsetPercent > LABEL_FLIP_SIDE_PCT
-  )
   let hasChildren = $derived(row.tree.childrenCount > 0)
   let ariaLevel = $derived(row.spanNode.depth + 1)
 
-  // Event markers arrive as %-of-trace (`marker.percent`). The visible
-  // dots layer lives *inside* the bar pill so its `overflow: hidden` +
-  // rounded edges clip ticks to the pill's vertical and horizontal
-  // bounds. That means we need to rescale every marker from
-  // %-of-timeline → %-of-bar before rendering it inside the pill. The
-  // tooltip-target layer stays in %-of-timeline space because it sits
-  // in a sibling layer that has to escape the bar to paint above
-  // labels.
-  let barEventMarkers = $derived.by(() => {
-    if (row.widthPercent <= 0) return []
-    return row.eventMarkers.map(m => ({
-      ...m,
-      percent: ((m.percent - row.offsetPercent) / row.widthPercent) * 100,
-    }))
-  })
+  let markers = $derived(
+    clusterTimelineRecords(
+      row.records,
+      traceStart,
+      traceEnd,
+      timelineWidth,
+      remToPx(MARKER_CLUSTER_DISTANCE_REM)
+    )
+  )
 </script>
 
 <!-- The virtual list wraps this row in divs, so its production role must be explicit. -->
@@ -168,60 +171,44 @@
     <span class="col-resize-marker" aria-hidden="true"></span>
   </td>
   <td role="gridcell" class="waterfall-row__td-bar p-0 align-middle">
-    <div class="waterfall-row__bar-area" style:--bar-color={row.color}>
-      <div
-        class="waterfall-row__bar"
-        style:left="{row.offsetPercent}%"
-        style:width="{row.widthPercent}%"
-      >
-        {#if barEventMarkers.length > 0}
-          <div class="waterfall-row__event-dots">
-            <WaterfallEventDots
-              markers={barEventMarkers}
-              color={row.color}
-              layer="dots"
+    <div
+      class="waterfall-row__bar-area"
+      style:--bar-color={row.color}
+      style:--timeline-left-inset="{TIMELINE_LEFT_INSET_REM}rem"
+      style:--duration-gutter="{DURATION_GUTTER_REM}rem"
+      style:--outside-record-slot="{OUTSIDE_RECORD_SLOT_REM}rem"
+      style:--bar-label-gap="{BAR_LABEL_GAP_REM}rem"
+      style:--waterfall-bar-height="{WATERFALL_BAR_HEIGHT_REM}rem"
+    >
+      <div class="waterfall-row__timeline-frame">
+        <div
+          class="waterfall-row__bar"
+          style:left="{row.offsetPercent}%"
+          style:width="{row.widthPercent}%"
+        ></div>
+        <div class="waterfall-row__bar-grid" aria-hidden="true">
+          {#each barGridPercents as p}
+            <div class="waterfall-row__grid-line" style:left="{p}%"></div>
+          {/each}
+        </div>
+        <span
+          class="waterfall-row__bar-label"
+          style:left="calc({row.offsetPercent + row.widthPercent}% +
+          var(--bar-label-gap))"
+        >
+          {durationLabel}
+        </span>
+        {#if markers.length > 0}
+          <div class="waterfall-row__markers">
+            <TimelineMarkers
+              {markers}
+              spanColor={row.color}
+              spanStartTime={span.startTime}
+              onSelectRecord={onSelectTimelineRecord}
             />
           </div>
         {/if}
       </div>
-      <div class="waterfall-row__bar-grid" aria-hidden="true">
-        {#each barGridPercents as p}
-          <div class="waterfall-row__grid-line" style:left="{p}%"></div>
-        {/each}
-      </div>
-      {#if barFitsLabel}
-        <span
-          class="waterfall-row__bar-label waterfall-row__bar-label--inside"
-          style:left="{row.offsetPercent}%"
-          style:width="{row.widthPercent}%"
-        >
-          {durationLabel}
-        </span>
-      {/if}
-      {#if !barFitsLabel}
-        <span
-          class="waterfall-row__bar-label waterfall-row__bar-label--outside"
-          class:waterfall-row__bar-label--left={labelOnLeft}
-          style:left={labelOnLeft
-            ? undefined
-            : `${row.offsetPercent + row.widthPercent + 0.5}%`}
-          style:right={labelOnLeft
-            ? `${100 - row.offsetPercent + 0.5}%`
-            : undefined}
-        >
-          {durationLabel}
-        </span>
-      {/if}
-      {#if row.eventMarkers.length > 0}
-        <div class="waterfall-row__event-tooltips">
-          <WaterfallEventDots
-            markers={row.eventMarkers}
-            color={row.color}
-            layer="tooltips"
-            {onSelectEvent}
-          />
-        </div>
-      {/if}
     </div>
   </td>
 </tr>
@@ -260,10 +247,13 @@
 
   .waterfall-row__bar-area {
     @apply relative flex items-center;
-    --waterfall-bar-height: 0.875rem;
     height: var(--table-row-h);
-    margin-left: 1.25rem;
-    margin-right: 1.75rem;
+  }
+
+  .waterfall-row__timeline-frame {
+    @apply absolute top-0 bottom-0;
+    left: var(--timeline-left-inset);
+    right: calc(var(--duration-gutter) + var(--outside-record-slot));
   }
 
   /* `--bar-color` on the bar area tints the span pill. */
@@ -292,37 +282,11 @@
     @apply absolute top-0 bottom-0 w-px -translate-x-1/2 bg-base-content/10;
   }
 
-  /* Visible dots are rendered inside the bar pill (which is
-     `overflow: hidden` via `rounded-full` + a fixed h/w), so they're
-     clipped to the bar's bounds on both axes automatically. */
-  .waterfall-row__event-dots {
-    @apply pointer-events-none absolute inset-0;
-  }
-
-  /* Tooltip hit targets stay in a sibling layer above the bar labels so
-     the hover popup escapes the bar's clip and paints over duration text.
-     Hit-area sizing (taller box, inset to clear the rounded caps) is on
-     the individual targets in WaterfallEventDots; this container stays
-     spanning the whole timeline so `marker.percent` math is unchanged. */
-  .waterfall-row__event-tooltips {
+  .waterfall-row__markers {
     @apply pointer-events-none absolute inset-0 z-20 overflow-visible;
   }
 
   .waterfall-row__bar-label {
-    @apply pointer-events-none;
-  }
-
-  .waterfall-row__bar-label--inside {
-    @apply absolute z-[4] flex min-w-0 items-center justify-start overflow-hidden
-           truncate px-0.5 text-[9px] tabular-nums leading-none rounded-full;
-    top: 50%;
-    height: var(--waterfall-bar-height);
-    max-height: var(--waterfall-bar-height);
-    transform: translateY(-50%);
-    color: var(--waterfall-bar-label-color, var(--color-base-200));
-  }
-
-  .waterfall-row__bar-label--outside {
     @apply absolute z-[4] text-[9px] tabular-nums whitespace-nowrap leading-none;
     top: 50%;
     transform: translateY(-50%);

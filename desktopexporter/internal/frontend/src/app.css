@@ -68,6 +68,8 @@ html[data-theme='rose-pine'] {
   --color-error-content: #e0def4;
   --waterfall-bar-opacity: 1;
   --waterfall-bar-label-color: var(--color-base-200);
+  --waterfall-marker-mix-target: var(--color-base-content);
+  --waterfall-marker-mix-strength: 40%;
   --metric-series-line-opacity: var(--waterfall-bar-opacity);
   /* Ticks are the bar hue lightened by mixing toward white. */
   --waterfall-tick-mix-target: white;
@@ -104,6 +106,8 @@ html[data-theme='rose-pine-moon'] {
   --color-error-content: #e0def4;
   --waterfall-bar-opacity: 1;
   --waterfall-bar-label-color: var(--color-base-200);
+  --waterfall-marker-mix-target: var(--color-base-content);
+  --waterfall-marker-mix-strength: 40%;
   --metric-series-line-opacity: var(--waterfall-bar-opacity);
   --waterfall-tick-mix-target: white;
   --waterfall-tick-mix-strength: 45%;
@@ -139,6 +143,8 @@ html[data-theme='rose-pine-dawn'] {
   --color-error-content: #faf4ed;
   --waterfall-bar-opacity: 0.6;
   --waterfall-bar-label-color: var(--color-base-content);
+  --waterfall-marker-mix-target: var(--color-base-content);
+  --waterfall-marker-mix-strength: 0%;
   --metric-series-line-opacity: var(--waterfall-bar-opacity);
   /* Ticks lighten the bar hue toward white, matching the dark themes'
      "punched-out highlight" feel rather than an inked dip. */

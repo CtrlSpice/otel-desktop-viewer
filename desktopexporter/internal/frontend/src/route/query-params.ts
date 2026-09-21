@@ -1,5 +1,6 @@
 export const SPAN_PARAM = 'span'
 export const EVENT_PARAM = 'event'
+export const LOG_PARAM = 'log'
 
 export const METRIC_VIEW_PARAMS = [
   'agg',
@@ -14,6 +15,7 @@ export type MetricViewParam = (typeof METRIC_VIEW_PARAMS)[number]
 export const SIGNAL_ITEM_QUERY_PARAMS = [
   SPAN_PARAM,
   EVENT_PARAM,
+  LOG_PARAM,
   ...METRIC_VIEW_PARAMS,
 ] as const
 

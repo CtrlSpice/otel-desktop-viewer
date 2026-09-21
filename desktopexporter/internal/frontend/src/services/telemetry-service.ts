@@ -5,6 +5,7 @@ import type {
   TraceSummary,
   LogData,
   LogSummary,
+  TraceLogSummary,
   MetricData,
   MetricTimeseries,
   MetricSummary,
@@ -23,6 +24,7 @@ import type {
   JsonExemplar,
   JsonLogData,
   JsonLogSummary,
+  JsonTraceLogSummary,
   JsonMetricData,
   JsonMetricSummary,
   JsonMetricTimeseries,
@@ -403,6 +405,12 @@ function logSummaryFromJSON(json: JsonLogSummary): LogSummary {
 
 function logSummariesFromJSON(json: JsonLogSummary[]): LogSummary[] {
   return json.map(logSummaryFromJSON)
+}
+
+function traceLogSummariesFromJSON(
+  json: JsonTraceLogSummary[]
+): TraceLogSummary[] {
+  return json.map(log => ({ ...log, timestamp: bigintFromWire(log.timestamp) }))
 }
 
 // Full log row returned by getLog(id). Promotes both timestamp
@@ -809,6 +817,18 @@ export let telemetryAPI = {
       signal
     )
     return traceDataFromJSON(rawData)
+  },
+
+  getTraceLogs: async (
+    traceID: string,
+    signal?: AbortSignal
+  ): Promise<TraceLogSummary[]> => {
+    const rawData = await callRPC<JsonTraceLogSummary[]>(
+      'getTraceLogs',
+      named({ traceID }),
+      signal
+    )
+    return traceLogSummariesFromJSON(rawData)
   },
 
   clearTraces: () => callRPC<string>('clearTraces', undefined),
