@@ -42,8 +42,8 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// install puts the schema on a connection: types first, since macros and
-// tables both refer to them, then macros, then tables.
+// install puts the schema on a connection in the same dependency order as
+// NewStore: types, tables, then macros that may query those tables.
 func install(db *sql.DB) error {
 	// Types are created with plain CREATE TYPE and there is no IF NOT EXISTS
 	// for it, so a redundant one is an "already exists" error rather than a
@@ -51,14 +51,14 @@ func install(db *sql.DB) error {
 	for _, stmt := range queries.Types() {
 		db.Exec(stmt.SQL)
 	}
-	for _, stmt := range queries.Macros() {
-		if _, err := db.Exec(stmt.SQL); err != nil {
-			return fmt.Errorf("creating macro %s: %w", stmt.Name, err)
-		}
-	}
 	for _, stmt := range queries.Tables() {
 		if _, err := db.Exec(stmt.SQL); err != nil {
 			return fmt.Errorf("creating table %s: %w", stmt.Name, err)
+		}
+	}
+	for _, stmt := range queries.Macros() {
+		if _, err := db.Exec(stmt.SQL); err != nil {
+			return fmt.Errorf("creating macro %s: %w", stmt.Name, err)
 		}
 	}
 	return nil

@@ -36,6 +36,12 @@ zero_fold.sql
 attribute_int64.sql
 attribute_double.sql
 double_wire_json.sql
+otlp_double_json.sql
+otlp_any_value.sql
+otlp_attributes.sql
+otlp_resource.sql
+otlp_scope.sql
+otlp_document_text.sql
 datapoint_json.sql
 exemplar_json.sql
 timeseries_json.sql
