@@ -6,6 +6,7 @@ import {
   formatDateTimeRangeLabel,
   formatDuration,
   formatDurationParts,
+  formatSignedDuration,
   formatEditableDateTime,
   formatTimestamp,
   formatTimestampParts,
@@ -217,6 +218,14 @@ describe('formatDuration', () => {
 
   it('uses nanoseconds for zero', () => {
     expect(formatDuration(0n)).toBe('0 ns')
+  })
+})
+
+describe('formatSignedDuration', () => {
+  it('adds one sign and formats the absolute magnitude', () => {
+    expect(formatSignedDuration(-oneSecondNs)).toBe('-1.000 s')
+    expect(formatSignedDuration(oneMsNs)).toBe('+1.000 ms')
+    expect(formatSignedDuration(0n)).toBe('+0 ns')
   })
 })
 

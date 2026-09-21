@@ -2,8 +2,11 @@ import { describe, expect, it, vi, afterEach, type Mock } from 'vitest'
 import {
   getEventFromQuery,
   getSpanFromQuery,
+  parseEventIndex,
   selectSpanEvent,
+  selectSpanLog,
   setEventInQuery,
+  setLogInQuery,
   setSpanInQuery,
 } from './span-query'
 import { parseRoute } from './router'
@@ -40,9 +43,26 @@ describe('getEventFromQuery', () => {
     expect(getEventFromQuery()).toBe(2)
   })
 
-  it('returns null for invalid event index', () => {
-    stubWindow('http://local/traces/t1?event=-1')
-    expect(getEventFromQuery()).toBeNull()
+  it.each(['1junk', '1.5', '-1', '9007199254740992', ''])(
+    'returns null for invalid event index %j',
+    value => {
+      stubWindow(`http://local/traces/t1?event=${value}`)
+      expect(getEventFromQuery()).toBeNull()
+    }
+  )
+})
+
+describe('parseEventIndex', () => {
+  it('accepts only complete non-negative safe-integer decimal strings', () => {
+    expect(parseEventIndex('0')).toBe(0)
+    expect(parseEventIndex('12')).toBe(12)
+    expect(parseEventIndex('01')).toBe(1)
+    expect(parseEventIndex(undefined)).toBeNull()
+    expect(parseEventIndex('')).toBeNull()
+    expect(parseEventIndex('1junk')).toBeNull()
+    expect(parseEventIndex('1.5')).toBeNull()
+    expect(parseEventIndex('-1')).toBeNull()
+    expect(parseEventIndex('9007199254740992')).toBeNull()
   })
 })
 
@@ -51,9 +71,9 @@ describe('setSpanInQuery', () => {
     vi.unstubAllGlobals()
   })
 
-  it('clears event when span changes', () => {
+  it('clears event and log when span changes', () => {
     const { replaceState } = stubWindow(
-      'http://local/traces/t1?span=s1&event=2&start=0'
+      'http://local/traces/t1?span=s1&event=2&log=l1&start=0'
     )
     setSpanInQuery('s2')
     const url = navigationURL(replaceState)
@@ -70,12 +90,29 @@ describe('selectSpanEvent', () => {
   })
 
   it('sets span and event together', () => {
-    const { pushState } = stubWindow('http://local/traces/t1?start=0')
+    const { pushState } = stubWindow(
+      'http://local/traces/t1?start=0&log=old-log'
+    )
     selectSpanEvent('s1', 3)
     const url = navigationURL(pushState)
     expect(parseRoute(url)).toEqual({
       path: '/traces/t1',
       query: { start: '0', span: 's1', event: '3' },
+    })
+  })
+})
+
+describe('selectSpanLog', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('sets span and log together and clears event', () => {
+    const { pushState } = stubWindow('http://local/traces/t1?start=0&event=2')
+    selectSpanLog('s1', 'l1')
+    expect(parseRoute(navigationURL(pushState))).toEqual({
+      path: '/traces/t1',
+      query: { start: '0', span: 's1', log: 'l1' },
     })
   })
 })
@@ -87,7 +124,7 @@ describe('setEventInQuery', () => {
 
   it('sets event without changing span', () => {
     const { replaceState } = stubWindow(
-      'http://local/traces/t1?span=s1&start=0'
+      'http://local/traces/t1?span=s1&start=0&log=l1'
     )
     setEventInQuery(1)
     const url = navigationURL(replaceState)
@@ -106,6 +143,23 @@ describe('setEventInQuery', () => {
     expect(parseRoute(url)).toEqual({
       path: '/traces/t1',
       query: { start: '0', span: 's1' },
+    })
+  })
+})
+
+describe('setLogInQuery', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('sets log without changing span and clears event', () => {
+    const { replaceState } = stubWindow(
+      'http://local/traces/t1?span=s1&event=1&start=0'
+    )
+    setLogInQuery('l1')
+    expect(parseRoute(navigationURL(replaceState))).toEqual({
+      path: '/traces/t1',
+      query: { start: '0', span: 's1', log: 'l1' },
     })
   })
 })

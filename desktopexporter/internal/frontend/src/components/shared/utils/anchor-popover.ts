@@ -40,8 +40,15 @@ export function positionAnchorPopover(
     popover.style.top = `${rect.bottom + gap}px`
     popover.style.left = 'auto'
     popover.style.right = `${window.innerWidth - rect.right}px`
+    popover.style.maxHeight = ''
 
-    const popRect = popover.getBoundingClientRect()
+    let popRect = popover.getBoundingClientRect()
+    const viewportMaxHeight = window.innerHeight - VIEWPORT_MARGIN_PX * 2
+    if (popRect.height > viewportMaxHeight) {
+      popover.style.maxHeight = `${viewportMaxHeight}px`
+      popRect = popover.getBoundingClientRect()
+    }
+
     if (
       popRect.width > 0 &&
       (popRect.left < VIEWPORT_MARGIN_PX ||
@@ -50,6 +57,14 @@ export function positionAnchorPopover(
       const maxLeft = window.innerWidth - VIEWPORT_MARGIN_PX - popRect.width
       popover.style.right = 'auto'
       popover.style.left = `${Math.max(VIEWPORT_MARGIN_PX, Math.min(popRect.left, maxLeft))}px`
+    }
+
+    if (
+      popRect.height > 0 &&
+      popRect.bottom > window.innerHeight - VIEWPORT_MARGIN_PX
+    ) {
+      const above = rect.top - gap - popRect.height
+      popover.style.top = `${Math.max(VIEWPORT_MARGIN_PX, above)}px`
     }
   } else {
     popover.style.top = `${rect.bottom + inwardGapPx()}px`

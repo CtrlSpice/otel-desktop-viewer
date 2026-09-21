@@ -79,7 +79,7 @@ describe('WaterfallView bigint domain geometry', () => {
     expect(rows[0]).toMatchObject({
       offsetPercent: 0,
       widthPercent: 50,
-      eventMarkers: [{ percent: 25, eventIndex: 0 }],
+      records: [{ id: 'event:first:0', eventIndex: 0 }],
     })
     expect(rows[1]).toMatchObject({ offsetPercent: 50, widthPercent: 50 })
   })
@@ -125,6 +125,7 @@ function renderTree(overrides: Record<string, unknown> = {}) {
     spans: deepTree(),
     selectedSpanID: null,
     onSelectSpan: vi.fn(),
+    onSelectTimelineRecord: vi.fn(),
     ...overrides,
   })
 }

@@ -4,7 +4,7 @@
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import SpanField from './SpanField.svelte'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
-  import { formatDuration, formatTimestamp } from '@/utils/time'
+  import { formatSignedDuration, formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
 
   type Props = {
@@ -44,7 +44,7 @@
   <div id={`span-event-${index}`}>
     <FieldGroup
       label={event.name}
-      badge={`+${formatDuration(event.timestamp - spanStartTime)}`}
+      badge={formatSignedDuration(event.timestamp - spanStartTime)}
       count={eventFieldCount(event)}
       detail
       open={isEventOpen(index)}

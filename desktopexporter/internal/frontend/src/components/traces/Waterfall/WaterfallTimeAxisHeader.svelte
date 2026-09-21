@@ -205,6 +205,12 @@
 </script>
 
 <script lang="ts">
+  import {
+    DURATION_GUTTER_REM,
+    OUTSIDE_RECORD_SLOT_REM,
+    TIMELINE_LEFT_INSET_REM,
+  } from './timeline-markers'
+
   type Props = {
     traceDurationNs: bigint
     targetTickCount?: number
@@ -233,6 +239,9 @@
 <tr
   class="waterfall-time-axis-header"
   style:--tick-label-w="{tickLabelWidth}px"
+  style:--timeline-left-inset="{TIMELINE_LEFT_INSET_REM}rem"
+  style:--duration-gutter="{DURATION_GUTTER_REM}rem"
+  style:--outside-record-slot="{OUTSIDE_RECORD_SLOT_REM}rem"
 >
   <th
     scope="col"
@@ -299,14 +308,14 @@
   .waterfall-time-axis-header__th-ruler {
     @apply relative min-w-[12rem] align-middle text-xs tracking-normal;
     color: var(--color-subtle);
-    padding-left: 1.25rem;
-    padding-right: 1.75rem;
+    padding-left: var(--timeline-left-inset);
+    padding-right: calc(var(--duration-gutter) + var(--outside-record-slot));
   }
 
   .waterfall-time-axis-header__ruler {
     @apply absolute bottom-0 top-0 min-w-0 overflow-visible;
-    left: 1.25rem;
-    right: 1.75rem;
+    left: var(--timeline-left-inset);
+    right: calc(var(--duration-gutter) + var(--outside-record-slot));
   }
 
   .waterfall-time-axis-header__tick {

@@ -12,6 +12,7 @@ import { getOperatorsForFieldType } from '@/constants/operators'
 import type {
   JsonMetricData,
   JsonLogData,
+  JsonTraceLogSummary,
   JsonTraceData,
   JsonTraceSummary,
 } from '@/types/wire-types'
@@ -143,6 +144,28 @@ describe('telemetryAPI.getLog', () => {
       kind: 'int64',
       value: 9_223_372_036_854_775_807n,
     })
+  })
+})
+
+describe('telemetryAPI.getTraceLogs', () => {
+  it('revives exact timestamps and preserves nullable span IDs', async () => {
+    const result: JsonTraceLogSummary[] = [
+      {
+        id: 'log-1',
+        timestamp: '9223372036854775807',
+        spanID: null,
+        severityText: 'INFO',
+        severityNumber: 9,
+        serviceName: 'checkout',
+        eventName: 'order.received',
+        bodyPreview: 'received',
+      },
+    ]
+    stubRpcResult(result)
+
+    await expect(telemetryAPI.getTraceLogs('trace-1')).resolves.toEqual([
+      { ...result[0], timestamp: 9_223_372_036_854_775_807n },
+    ])
   })
 })
 
@@ -1134,6 +1157,11 @@ describe('request parameters', () => {
     [
       'getTraceSpanCount',
       () => telemetryAPI.getTraceSpanCount('abc'),
+      { traceID: 'abc' },
+    ],
+    [
+      'getTraceLogs',
+      () => telemetryAPI.getTraceLogs('abc'),
       { traceID: 'abc' },
     ],
     [

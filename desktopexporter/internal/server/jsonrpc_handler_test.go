@@ -61,6 +61,7 @@ func buildTestLogs() plog.Logs {
 	rec.SetTraceID([16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})
 	rec.SetSpanID([8]byte{0, 0, 0, 0, 0, 0, 0, 1})
 	rec.Body().SetStr("test log message")
+	rec.SetEventName("request.failed")
 	rec.SetSeverityText("INFO")
 	rec.SetSeverityNumber(plog.SeverityNumberInfo)
 	return logs
@@ -412,6 +413,7 @@ func TestGetTraceLogs(t *testing.T) {
 		require.NoError(t, json.Unmarshal(result.(json.RawMessage), &entries))
 		require.Len(t, entries, 1)
 		require.Equal(t, "0000000000000001", entries[0]["spanID"])
+		require.Equal(t, "request.failed", entries[0]["eventName"])
 		require.Equal(t, "test log message", entries[0]["bodyPreview"])
 		require.NotContains(t, entries[0], "body")
 		require.NotContains(t, entries[0], "attributes")

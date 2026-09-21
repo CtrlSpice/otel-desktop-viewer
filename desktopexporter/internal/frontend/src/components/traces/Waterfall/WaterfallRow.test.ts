@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
-import { render } from '@testing-library/svelte'
+import { fireEvent, render } from '@testing-library/svelte'
 import type { WaterfallRowData } from './WaterfallView.svelte'
 import type { SpanData, SpanNode } from '@/types/api-types'
 import WaterfallRowHarness from '@/test/WaterfallRowHarness.svelte'
@@ -56,11 +56,18 @@ function makeRow(spanNodeOverrides: Partial<SpanNode> = {}): WaterfallRowData {
     offsetPercent: 0,
     widthPercent: 50,
     tree: { childrenCount: 0, isLastChild: false, ancestorHasNextSibling: [] },
-    eventMarkers: [],
+    records: [],
   }
 }
 
-function renderRow(row: WaterfallRowData, matched = false) {
+function renderRow(
+  row: WaterfallRowData,
+  matched = false,
+  callbacks: {
+    onRowClick?: () => void
+    onSelectTimelineRecord?: () => void
+  } = {}
+) {
   return render(WaterfallRowHarness, {
     props: {
       row,
@@ -72,10 +79,13 @@ function renderRow(row: WaterfallRowData, matched = false) {
       rowIndex: 1,
       spanColWidth: 200,
       serviceColWidth: 100,
+      timelineWidth: 400,
+      traceStart: 0n,
+      traceEnd: 1_000_000n,
       matched,
-      onRowClick: () => {},
+      onRowClick: callbacks.onRowClick ?? (() => {}),
       onToggleExpand: () => {},
-      onSelectEvent: vi.fn(),
+      onSelectTimelineRecord: callbacks.onSelectTimelineRecord ?? (() => {}),
     },
   })
 }
@@ -91,6 +101,51 @@ describe('WaterfallRow direct match badge', () => {
 
     const { getByText } = renderRow(makeRow(), true)
     expect(getByText('Match')).toBeVisible()
+  })
+})
+
+describe('WaterfallRow timeline layout', () => {
+  it('keeps the duration after the bar and retains the production bar', () => {
+    const { container } = renderRow(makeRow())
+    const label = container.querySelector('.waterfall-row__bar-label')
+    const bar = container.querySelector('.waterfall-row__bar')
+    expect(label?.getAttribute('style')?.replace(/\s+/g, ' ')).toContain(
+      'calc(50% + var(--bar-label-gap))'
+    )
+    expect(label).not.toHaveClass('waterfall-row__bar-label--inside')
+    expect(bar).toHaveClass('waterfall-row__bar')
+  })
+})
+
+describe('WaterfallRow activity selection', () => {
+  it('does not turn a popover row click into a span-row click', async () => {
+    const row = makeRow()
+    row.records = [
+      {
+        kind: 'event',
+        id: 'event:span-1:0',
+        timestamp: 10n,
+        eventIndex: 0,
+        event: {
+          name: 'ready',
+          timestamp: 10n,
+          attributes: [],
+          droppedAttributesCount: 0,
+        },
+      },
+    ]
+    const onRowClick = vi.fn()
+    const onSelectTimelineRecord = vi.fn()
+    const view = renderRow(row, false, {
+      onRowClick,
+      onSelectTimelineRecord,
+    })
+
+    await fireEvent.focus(view.getByRole('button', { name: 'Select 1 event' }))
+    await fireEvent.click(view.getByRole('button', { name: /Event.*ready/ }))
+
+    expect(onSelectTimelineRecord).toHaveBeenCalledTimes(1)
+    expect(onRowClick).not.toHaveBeenCalled()
   })
 })
 

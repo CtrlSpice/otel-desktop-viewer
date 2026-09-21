@@ -141,3 +141,23 @@ describe('LogsPage refresh', () => {
     expect(getLog).not.toHaveBeenCalled()
   })
 })
+
+describe('LogsPage direct selection outside the list range', () => {
+  it('keeps the requested ID and renders its fetched detail', async () => {
+    searchLogs.mockResolvedValue([])
+    getStats.mockResolvedValue(makeStats())
+    getLog.mockResolvedValue(makeLogData('outside current range'))
+    setTestUrl('/logs/log-1?start=1&end=2')
+
+    renderWithContexts(LogsPage)
+
+    await waitFor(() => expect(getLog).toHaveBeenCalledWith('log-1'))
+    expect(window.location.pathname).toBe('/logs/log-1')
+    await waitFor(() =>
+      expect(
+        screen.getByRole('table', { name: 'Log fields' })
+      ).toHaveTextContent('outside current range')
+    )
+    expect(screen.queryByText('No logs in this time range')).toBeNull()
+  })
+})

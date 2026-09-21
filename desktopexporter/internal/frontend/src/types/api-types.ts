@@ -166,6 +166,12 @@ export type LogSummary = {
   bodyPreview: string
 }
 
+/** Complete trace-scoped log projection used for span correlation. */
+export type TraceLogSummary = LogSummary & {
+  spanID: string | null
+  eventName: string
+}
+
 // Metrics types
 export type MetricType =
   'Empty' | 'Gauge' | 'Sum' | 'Histogram' | 'ExponentialHistogram'

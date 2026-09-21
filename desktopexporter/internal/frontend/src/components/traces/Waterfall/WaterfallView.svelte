@@ -1,9 +1,10 @@
 <script module lang="ts">
-  import type { SpanNode, SpanData } from '@/types/api-types'
+  import type { SpanNode, SpanData, TraceLogSummary } from '@/types/api-types'
   import type { TreeConnectorMeta } from './WaterfallTreeGutter.svelte'
   import { getServiceName } from '@/utils/resource'
   import { categoricalPalette } from '@/utils/chart-palette'
   import { themeSignal } from '@/state/theme.svelte'
+  import { recordsForSpan, type TimelineRecord } from './timeline-markers'
 
   // --- Shared types ---
 
@@ -27,12 +28,6 @@
   /** Keep the short-trace palette shape consistent with existing callers. */
   const MIN_TRACE_PALETTE = 5
 
-  export type EventMarker = {
-    percent: number
-    name: string
-    eventIndex: number
-  }
-
   export type WaterfallRowData = {
     spanNode: SpanNode
     /** CSS-ready colour string for the bar / gutter / event dot.
@@ -45,7 +40,7 @@
     offsetPercent: number
     widthPercent: number
     tree: TreeConnectorMeta
-    eventMarkers: EventMarker[]
+    records: import('./timeline-markers').TimelineRecord[]
   }
 
   export function getTraceBounds(spans: SpanNode[]): TraceBounds {
@@ -190,7 +185,8 @@
   export function buildWaterfallRows(
     spans: SpanNode[],
     bounds: TraceBounds,
-    theme: string
+    theme: string,
+    logsBySpanID: ReadonlyMap<string, TraceLogSummary[]> = new Map()
   ): WaterfallRowData[] {
     const multi = isMultiService(spans)
     const keyFn = (s: SpanData) => categoricalKeyFor(s, multi)
@@ -217,11 +213,10 @@
           node.spanData.endTime - node.spanData.startTime
         ),
         tree: treeMeta[i]!,
-        eventMarkers: node.spanData.events.map((e, eventIndex) => ({
-          percent: getOffsetPercent(bounds.start, bounds.duration, e.timestamp),
-          name: e.name,
-          eventIndex,
-        })),
+        records: recordsForSpan(
+          node,
+          logsBySpanID.get(node.spanData.spanID) ?? []
+        ),
       }
     })
   }
@@ -253,6 +248,13 @@
     collapsedForTrace,
     setCollapsedForTrace,
   } from './waterfall-collapse-store'
+  import {
+    DURATION_GUTTER_REM,
+    OUTSIDE_RECORD_SLOT_REM,
+    TIMELINE_LEFT_INSET_REM,
+    partitionTraceLogs,
+  } from './timeline-markers'
+  import { remToPx } from '@/state/panel-width'
 
   const WATERFALL_ROW_HEIGHT_PX = 28
   const GRID_PAGE_STEP = 8
@@ -301,26 +303,31 @@
 
   type Props = {
     spans: SpanNode[]
+    logs?: TraceLogSummary[]
     selectedSpanID: string | null
     searchActive?: boolean
     onSelectSpan: (spanID: string) => void
-    onSelectEvent?: (spanID: string, eventIndex: number) => void
+    onSelectTimelineRecord: (spanID: string, record: TimelineRecord) => void
     loading?: boolean
     footer?: Snippet
   }
 
   let {
     spans,
+    logs = [],
     selectedSpanID,
     searchActive = false,
     onSelectSpan,
-    onSelectEvent,
+    onSelectTimelineRecord,
     loading = false,
     footer,
   }: Props = $props()
 
   let bounds = $derived(getTraceBounds(spans))
-  let rows = $derived(buildWaterfallRows(spans, bounds, themeSignal.value))
+  let logPartition = $derived(partitionTraceLogs(logs, spans))
+  let rows = $derived(
+    buildWaterfallRows(spans, bounds, themeSignal.value, logPartition.bySpanID)
+  )
   let rowIndexBySpanID = $derived(
     new Map(rows.map((row, index) => [row.spanNode.spanData.spanID, index + 1]))
   )
@@ -540,6 +547,15 @@
 
   let timelineColPx = $derived(
     scrollContainerW - spanColWidth - serviceColWidth
+  )
+  let timelinePlotPx = $derived(
+    Math.max(
+      0,
+      timelineColPx -
+        remToPx(TIMELINE_LEFT_INSET_REM) -
+        remToPx(DURATION_GUTTER_REM) -
+        remToPx(OUTSIDE_RECORD_SLOT_REM)
+    )
   )
   let targetTickCount = $derived.by(() => {
     const fits = Math.floor(
@@ -913,7 +929,10 @@
   }
 </script>
 
-<div class="waterfall-view {loading ? 'opacity-70' : 'opacity-100'}">
+<div
+  class="waterfall-view {loading ? 'opacity-70' : 'opacity-100'}"
+  data-unmatched-log-count={logPartition.unmatched.length}
+>
   <PaneHeader
     mode="title"
     title={headerName}
@@ -1057,12 +1076,16 @@
               matched={searchActive && matchedIDs.has(sid)}
               {spanColWidth}
               {serviceColWidth}
+              timelineWidth={timelinePlotPx}
+              traceStart={bounds.start}
+              traceEnd={bounds.end}
               onRowClick={() => {
                 onSelectSpan(sid)
                 void focusRowTr(sid)
               }}
-              onSelectEvent={eventIndex => onSelectEvent?.(sid, eventIndex)}
               onToggleExpand={() => toggleCollapse(sid)}
+              onSelectTimelineRecord={record =>
+                onSelectTimelineRecord(sid, record)}
             />
           {/snippet}
         </VirtualList>

@@ -45,6 +45,8 @@ export type SignalListPageOptions<TItem, TSortColumn extends string> = {
     direction: SortDirection
   ) => number
   initialSort: { column: TSortColumn; direction: SortDirection }
+  /** Keep a route-selected ID that is absent from the current filtered list. */
+  preserveMissingSelection?: boolean
   /** Called after each poll interval; update polled stat counters here. */
   pollStats?: () => Promise<void>
   /** Derive refresh pulse + aside tip from baseline vs polled counters. */
@@ -163,6 +165,8 @@ export function createSignalListPage<TItem, TSortColumn extends string>(
     const idx = findItemIndexByID(sortedItems, id, opts.getItemID)
     if (idx >= 0) {
       lastValidIndex = idx
+    } else if (id && opts.preserveMissingSelection) {
+      return
     } else if (sortedItems.length > 0) {
       const fallback =
         sortedItems[resolveFallbackIndex(lastValidIndex, sortedItems.length)]

@@ -25,6 +25,7 @@ type traceLogSummaryJSON struct {
 	SeverityText   string  `json:"severityText"`
 	SeverityNumber int32   `json:"severityNumber"`
 	ServiceName    string  `json:"serviceName"`
+	EventName      string  `json:"eventName"`
 	BodyPreview    string  `json:"bodyPreview"`
 }
 
@@ -65,6 +66,7 @@ func TestGetTraceLogsPreservesTraceScopedRowsAndOrder(t *testing.T) {
 	missingSpan.SetSpanID(missingSpanID)
 	missingSpan.SetTimestamp(200)
 	missingSpan.SetObservedTimestamp(999)
+	missingSpan.SetEventName("cart.updated")
 	missingSpan.Body().SetStr("missing-span")
 
 	for _, body := range []string{"tie-a", "tie-b"} {
@@ -116,7 +118,9 @@ func TestGetTraceLogsPreservesTraceScopedRowsAndOrder(t *testing.T) {
 	require.Nil(t, got[0].SpanID)
 	require.Equal(t, "trace-only", got[0].BodyPreview)
 	require.Equal(t, "0000000000000007", *got[1].SpanID)
+	require.Equal(t, "cart.updated", got[1].EventName)
 	require.Equal(t, "missing-span", got[1].BodyPreview)
+	require.Empty(t, got[0].EventName)
 	require.Equal(t, "00000000-0000-0000-0000-000000000010", got[2].ID)
 	require.Equal(t, "tie-b", got[2].BodyPreview)
 	require.Equal(t, "00000000-0000-0000-0000-0000000000ff", got[3].ID)
@@ -128,8 +132,8 @@ func TestGetTraceLogsPreservesTraceScopedRowsAndOrder(t *testing.T) {
 	var shape []map[string]json.RawMessage
 	require.NoError(t, json.Unmarshal(raw, &shape))
 	for _, entry := range shape {
-		require.Len(t, entry, 7)
-		for _, key := range []string{"id", "timestamp", "spanID", "severityText", "severityNumber", "serviceName", "bodyPreview"} {
+		require.Len(t, entry, 8)
+		for _, key := range []string{"id", "timestamp", "spanID", "severityText", "severityNumber", "serviceName", "eventName", "bodyPreview"} {
 			require.Contains(t, entry, key)
 		}
 		require.NotContains(t, entry, "body")

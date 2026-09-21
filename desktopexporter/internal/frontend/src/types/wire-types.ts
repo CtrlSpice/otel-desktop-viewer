@@ -195,6 +195,11 @@ export type JsonLogSummary = {
   bodyPreview: string
 }
 
+export type JsonTraceLogSummary = JsonLogSummary & {
+  spanID: string | null
+  eventName: string
+}
+
 export type JsonLogData = {
   id: string
   timestamp: string

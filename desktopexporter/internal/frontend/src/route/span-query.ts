@@ -4,7 +4,7 @@ import {
   withQueryPatch,
   type HistoryMode,
 } from './router'
-import { EVENT_PARAM, SPAN_PARAM } from './query-params'
+import { EVENT_PARAM, LOG_PARAM, SPAN_PARAM } from './query-params'
 
 /**
  * Returns the trace span query param from the live URL.
@@ -23,11 +23,13 @@ export function getSpanFromQuery(): string | null {
  * @returns zero-based event index, or `null` when absent or invalid
  */
 export function getEventFromQuery(): number | null {
-  const raw = readRoute().query[EVENT_PARAM]
-  if (!raw) return null
-  const index = Number.parseInt(raw, 10)
-  if (!Number.isFinite(index) || index < 0) return null
-  return index
+  return parseEventIndex(readRoute().query[EVENT_PARAM])
+}
+
+export function parseEventIndex(raw: string | undefined): number | null {
+  if (raw === undefined || !/^\d+$/.test(raw)) return null
+  const index = Number(raw)
+  return Number.isSafeInteger(index) ? index : null
 }
 
 /**
@@ -45,6 +47,7 @@ export function setSpanInQuery(
   const query = withQueryPatch(readRoute().query, {
     [SPAN_PARAM]: spanID,
     [EVENT_PARAM]: null,
+    [LOG_PARAM]: null,
   })
   navigateCurrentRoute(query, mode)
 }
@@ -61,6 +64,7 @@ export function setEventInQuery(
 ): void {
   const query = withQueryPatch(readRoute().query, {
     [EVENT_PARAM]: eventIndex === null ? null : String(eventIndex),
+    [LOG_PARAM]: null,
   })
   navigateCurrentRoute(query, mode)
 }
@@ -80,6 +84,33 @@ export function selectSpanEvent(
   const query = withQueryPatch(readRoute().query, {
     [SPAN_PARAM]: spanID,
     [EVENT_PARAM]: String(eventIndex),
+    [LOG_PARAM]: null,
+  })
+  navigateCurrentRoute(query, mode)
+}
+
+/** Selects a span-owned log on the current trace route. */
+export function selectSpanLog(
+  spanID: string,
+  logID: string,
+  mode: HistoryMode = 'push'
+): void {
+  const query = withQueryPatch(readRoute().query, {
+    [SPAN_PARAM]: spanID,
+    [EVENT_PARAM]: null,
+    [LOG_PARAM]: logID,
+  })
+  navigateCurrentRoute(query, mode)
+}
+
+/** Sets or clears the selected span-owned log and clears event selection. */
+export function setLogInQuery(
+  logID: string | null,
+  mode: HistoryMode = 'replace'
+): void {
+  const query = withQueryPatch(readRoute().query, {
+    [EVENT_PARAM]: null,
+    [LOG_PARAM]: logID,
   })
   navigateCurrentRoute(query, mode)
 }
