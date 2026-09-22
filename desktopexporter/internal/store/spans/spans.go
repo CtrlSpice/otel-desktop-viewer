@@ -488,6 +488,26 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 	return salvaged, nil
 }
 
+// GetTraceOTLP returns every stored span for traceID as one standard OTLP JSON
+// document. The SQL owns reconstruction so callers receive the stored signal,
+// not the search and display projection. Callers must transport the returned
+// bytes unchanged: parsing and re-encoding in JavaScript loses negative zero.
+func GetTraceOTLP(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage, error) {
+	query, err := queries.Render(queries.GetTraceOTLP, nil)
+	if err != nil {
+		return nil, fmt.Errorf("GetTraceOTLP: %w: %w", ErrSpansStoreInternal, err)
+	}
+
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, traceID).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("GetTraceOTLP: %w", ErrTraceIDNotFound)
+		}
+		return nil, fmt.Errorf("GetTraceOTLP: %w: %w", ErrSpansStoreInternal, err)
+	}
+	return json.RawMessage(raw), nil
+}
+
 // salvageSpans runs the cycle-aware variant of the trace fetch.
 func salvageSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) (json.RawMessage, error) {
 	query, args, err := renderSpansQuery(queries.SalvageSpans, traceID, criteria)

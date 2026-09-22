@@ -222,6 +222,7 @@ The per-id delete paths (`deleteSpansByTraceID`, `deleteSpanByID`, `deleteLogByI
 - **`service_name` stays denormalized** on `spans` and `logs` even though resources are now deduped. With ~24 resource rows the join is cheap, but this is the hottest filter in span search and a column scan still beats a join plus an array unnest.
 - **Indexes are equality-only, by engine constraint.** DuckDB's ART indexes serve equality and `IN` on a single column — never multicolumn predicates, ranges, joins, aggregation or sorting — and min-max zonemaps are maintained automatically for every column. So the explicit time-column and multicolumn indexes were dropped: they cost every write and, measured alternating to avoid cache bias, made no difference to reads. A `LIST` column cannot be indexed or FK'd at all, which is why `metric_series` exists — it turns a chart's grouping key from an unindexable array into one indexable `uuid`.
 - **Depth is computed at query time** via recursive CTEs when building trace waterfalls—not stored on ingest.
+- **OTLP trace export reconstructs the normalized signal in SQL.** It selects every stored span with the requested trace ID, including cycles, orphans, and disconnected components; selection does not depend on the UI search filters or parent reachability. Each span keeps its own resource, scope, and schema grouping, so the result can contain multiple `resourceSpans` blocks. Stored attributes remain tagged JSON until export. The converter records their node relationships first, assigns numeric sort paths to one depth at a time, emits local JSON fragments, and assembles them once. This replaced approaches that repeatedly copied completed subtrees or used one recursive SQL step per opening and closing fragment. Received keys are unchanged. Go only binds parameters, scans the compact JSON text, and handles errors.
 - **The schema is versioned.** `schema_meta` holds a single integer, checked against `schema.Version` before the table and index loops run. A mismatch, or a pre-versioning database with data in it, is refused with a message naming the db path — deliberately an error rather than a warning, so an incompatible database fails immediately instead of surfacing later as an opaque query error.
 
 ### Ingest
@@ -459,6 +460,12 @@ User selects trace
   → Full trace JSON with depth CTE, events, links, attributes
   → traceDataFromJSON rehydrates the compressed wire shape
   → Waterfall + detail panels
+
+Independent OTLP export
+  → spans.GetTraceOTLP(traceID)
+  → SQL selects every stored span with that trace ID
+  → SQL restores OTLP resource/scope groups and serializes tagged values
+  → compact OTLP JSON bytes returned unchanged
 ```
 
 ### Wire format

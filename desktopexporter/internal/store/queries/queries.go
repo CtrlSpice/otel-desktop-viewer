@@ -102,6 +102,9 @@ const (
 
 	// SearchTraces lists trace summaries for the trace list view.
 	SearchTraces Name = "spans/search_traces.sql"
+	// GetTraceOTLP reconstructs every stored span for one trace as standard
+	// OTLP JSON, without applying UI search or tree-reachability rules.
+	GetTraceOTLP Name = "spans/get_trace_otlp.sql"
 
 	// GetMetric returns one stream's series and datapoints in a time window.
 	GetMetric Name = "metrics/get_metric.sql"
@@ -124,7 +127,7 @@ const (
 // queryNames is every read-path query. Kept beside the constants so adding one
 // without registering it is a visible omission rather than a silent one.
 var queryNames = []Name{
-	SearchSpans, SalvageSpans, SearchTraces,
+	SearchSpans, SalvageSpans, SearchTraces, GetTraceOTLP,
 	GetMetric, GetMetricAttributes,
 	GetLog, GetTraceLogs, GetLogAttributes,
 	SearchMetricSummaries, SearchLogs,
