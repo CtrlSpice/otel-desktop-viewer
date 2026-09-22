@@ -22,10 +22,12 @@ import (
 )
 
 var (
-	ErrInvalidMetricQuery   = errors.New("invalid metric search query")
-	ErrInvalidMetricLimit   = errors.New("invalid metric search limit")
-	ErrStreamIDNotFound     = errors.New("metric stream ID not found")
-	ErrMetricsStoreInternal = errors.New("metrics store internal error")
+	ErrInvalidMetricQuery     = errors.New("invalid metric search query")
+	ErrInvalidMetricLimit     = errors.New("invalid metric search limit")
+	ErrStreamIDNotFound       = errors.New("metric stream ID not found")
+	ErrMetricIngestIDNotFound = errors.New("metric ingest ID not found")
+	ErrUnsupportedMetricType  = errors.New("unsupported metric type")
+	ErrMetricsStoreInternal   = errors.New("metrics store internal error")
 )
 
 // flushIntervalMetrics counts *metrics*, not datapoints -- a different unit
@@ -1019,6 +1021,36 @@ func GetFieldValues(ctx context.Context, db *sql.DB, field, term string, limit i
 // extent. A concrete endpoint remains the effective endpoint.
 func GetMetric(ctx context.Context, db *sql.DB, streamID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, tzName string, datapointSeriesIDs []string, datapointSeriesLimit int64) (json.RawMessage, error) {
 	return getMetric(ctx, db, getMetricParams{}, streamID, timeRange, targetBuckets, seriesIDs, quantiles, tzOffsetNs, viewBuckets, sparklineBuckets, selectedSeriesIDs, tzName, datapointSeriesIDs, datapointSeriesLimit)
+}
+
+// GetMetricOTLP returns one received metric occurrence as a standard OTLP JSON
+// object. metricIngestID identifies a metric_ingests row, not a logical stream;
+// the result therefore keeps that occurrence's resource, scope, metadata,
+// description, schema URLs, datapoints, and exemplars. Callers must transport
+// the returned bytes unchanged because parsing and re-encoding can lose -0.0.
+func GetMetricOTLP(ctx context.Context, db *sql.DB, metricIngestID string) (json.RawMessage, error) {
+	query, err := queries.Render(queries.GetMetricOTLP, nil)
+	if err != nil {
+		return nil, fmt.Errorf("GetMetricOTLP: %w: %w", ErrMetricsStoreInternal, err)
+	}
+
+	var metricType string
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, metricIngestID).Scan(&metricType, &raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("GetMetricOTLP: %w", ErrMetricIngestIDNotFound)
+		}
+		return nil, fmt.Errorf("GetMetricOTLP: %w: %w", ErrMetricsStoreInternal, err)
+	}
+	if raw == nil {
+		switch metricType {
+		case "Gauge", "Sum", "Histogram", "ExponentialHistogram":
+			return nil, fmt.Errorf("GetMetricOTLP: %w: query returned null for %s", ErrMetricsStoreInternal, metricType)
+		default:
+			return nil, fmt.Errorf("GetMetricOTLP: %w: %s", ErrUnsupportedMetricType, metricType)
+		}
+	}
+	return json.RawMessage(raw), nil
 }
 
 // getMetric runs the query in whichever shape params asks for. Both shapes take
