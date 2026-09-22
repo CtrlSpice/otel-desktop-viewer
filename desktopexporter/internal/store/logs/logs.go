@@ -384,6 +384,28 @@ func Get(ctx context.Context, db *sql.DB, logID string) (json.RawMessage, error)
 	return json.RawMessage(raw), nil
 }
 
+// GetLogOTLP returns the stored log identified by logID as one standard OTLP
+// JSON document. Callers must transport the returned bytes unchanged: parsing
+// and re-encoding in JavaScript loses negative zero.
+func GetLogOTLP(ctx context.Context, db *sql.DB, logID string) (json.RawMessage, error) {
+	query, err := queries.Render(queries.GetLogOTLP, nil)
+	if err != nil {
+		return nil, fmt.Errorf("GetLogOTLP: %w: %w", ErrLogsStoreInternal, err)
+	}
+
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, logID).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("GetLogOTLP: %w", ErrLogIDNotFound)
+		}
+		return nil, fmt.Errorf("GetLogOTLP: %w: %w", ErrLogsStoreInternal, err)
+	}
+	if raw == nil {
+		return nil, fmt.Errorf("GetLogOTLP: %w", ErrLogIDNotFound)
+	}
+	return json.RawMessage(raw), nil
+}
+
 // GetTraceLogs returns every lightweight log summary carrying traceID. The
 // trace boundary is the complete correlation boundary: timestamps only order
 // rows, and nullable or dangling span IDs remain in the result for callers to
