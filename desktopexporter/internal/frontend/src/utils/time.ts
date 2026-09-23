@@ -47,6 +47,7 @@ export function normalizeTimezone(value: string): Timezone | null {
 
 /** Named zones offered by this runtime. Manual entry remains available as a fallback. */
 export function getSupportedTimezones(): IANATimezone[] {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Checks whether this runtime provides Intl.supportedValuesOf before requesting its named time zones.
   if (typeof Intl.supportedValuesOf !== 'function') return []
   const zones = new Set<IANATimezone>()
   for (const value of Intl.supportedValuesOf('timeZone')) {

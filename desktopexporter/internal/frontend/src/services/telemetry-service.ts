@@ -107,7 +107,9 @@ function serializeNanoseconds(bound: QueryTimeBound): string | null {
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Validates the raw wire value before bigint conversion.
 function bigintFromWire(value: unknown): bigint {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Rejects non-string wire values before bigint conversion so rounded JSON numbers cannot be accepted as exact integers.
   if (typeof value !== 'string') {
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Reports the rejected wire value's runtime type in the boundary validation error.
     const received = value === null ? 'null' : typeof value
     throw new Error(
       `Invalid bigint wire value: expected string, got ${received}`
@@ -122,6 +124,7 @@ function nullableBigintFromWire(value: unknown): bigint | null {
 }
 
 function doubleFromWire(value: number | string): number {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Decodes the two double wire encodings: JSON numbers and hexadecimal IEEE-754 bit strings.
   if (typeof value === 'number') return value
   if (!/^0x[0-9a-f]{16}$/i.test(value)) {
     throw new Error(`Invalid double wire value: ${value}`)
@@ -139,6 +142,7 @@ function nullableDoubleFromWire(value: JsonDouble | null): number | null {
 function scalarDeltaFromWire(
   value: JsonDouble | string | null | undefined
 ): number | bigint | null | undefined {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Decodes calculated-delta wire values: numbers and nullish values pass through; strings go to the bigint or double decoder.
   if (typeof value !== 'string') return value
   return value.startsWith('0x') ? doubleFromWire(value) : bigintFromWire(value)
 }

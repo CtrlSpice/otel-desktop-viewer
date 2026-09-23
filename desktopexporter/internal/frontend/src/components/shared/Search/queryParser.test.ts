@@ -60,17 +60,42 @@ const integerListFields: FieldDefinition[] = [
     type: 'int64',
     searchScope: 'field',
     description: 'log severity number',
-    operators: [OPERATORS.IN, OPERATORS.NOT_IN],
+    operators: [
+      OPERATORS.EQUALS,
+      OPERATORS.NOT_EQUALS,
+      OPERATORS.GREATER_THAN,
+      OPERATORS.IN,
+      OPERATORS.NOT_IN,
+    ],
   },
 ]
 
-const durationListFields: FieldDefinition[] = [
+const durationFields: FieldDefinition[] = [
   {
     name: 'duration',
     type: 'int64',
     searchScope: 'field',
     description: 'span duration',
-    operators: [OPERATORS.IN, OPERATORS.NOT_IN],
+    operators: [
+      OPERATORS.EQUALS,
+      OPERATORS.NOT_EQUALS,
+      OPERATORS.GREATER_THAN,
+      OPERATORS.GREATER_THAN_OR_EQUAL,
+      OPERATORS.LESS_THAN,
+      OPERATORS.LESS_THAN_OR_EQUAL,
+      OPERATORS.IN,
+      OPERATORS.NOT_IN,
+    ],
+  },
+]
+
+const durationAttributeFields: FieldDefinition[] = [
+  {
+    name: 'duration',
+    type: 'string',
+    searchScope: 'attribute',
+    attributeScope: 'span',
+    operators: [OPERATORS.EQUALS, OPERATORS.IN, OPERATORS.NOT_IN],
   },
 ]
 
@@ -80,7 +105,13 @@ const timestampListFields: FieldDefinition[] = [
     type: 'int64',
     searchScope: 'field',
     description: 'log timestamp',
-    operators: [OPERATORS.IN, OPERATORS.NOT_IN],
+    operators: [
+      OPERATORS.EQUALS,
+      OPERATORS.NOT_EQUALS,
+      OPERATORS.GREATER_THAN,
+      OPERATORS.IN,
+      OPERATORS.NOT_IN,
+    ],
   },
 ]
 
@@ -108,7 +139,7 @@ const collidingIntegerFields: FieldDefinition[] = [
     type: 'int64',
     searchScope: 'attribute',
     attributeScope: 'log',
-    operators: [OPERATORS.IN, OPERATORS.NOT_IN],
+    operators: [OPERATORS.EQUALS, OPERATORS.IN, OPERATORS.NOT_IN],
   },
 ]
 
@@ -664,13 +695,6 @@ describe('unified grammar contract', () => {
     expect(JSON.parse(q.query.value)).toEqual(['a,b', 'c'])
   })
 
-  it('leaves duration membership values for duration normalization', () => {
-    const q = expectCondition(
-      parseQuery('duration IN [1s, 500ms]', durationListFields)
-    )
-    expect(q.query.value).toBe('["1s","500ms"]')
-  })
-
   it('=~ and !~ are the PromQL spellings of the regex operators', () => {
     const q = expectCondition(parseQuery('body =~ foo.*', contractFields))
     expect(q.query.operator.symbol).toBe('REGEXP')
@@ -716,6 +740,206 @@ describe('unified grammar contract', () => {
     const q = expectCondition(parseQuery('checkout latency', contractFields))
     expect(q.query.field.searchScope).toBe('global')
     expect(q.query.value).toBe('checkout latency')
+  })
+})
+
+describe('native duration operands', () => {
+  it.each([
+    ['duration = 1.5h', '5400000000000'],
+    ['DURATION = 1s', '1000000000'],
+    ['duration >= "0.5ns"', '1'],
+    ['duration < 0.499999999999999999ns', '0'],
+    ['duration != 9007199254740993ns', '9007199254740993'],
+  ])('serializes %s as exact nanoseconds', (input, expected) => {
+    expect(expectCondition(parseQuery(input, durationFields)).query.value).toBe(
+      expected
+    )
+  })
+
+  it.each(['IN', 'NOT IN'])('%s preserves list order on the wire', operator => {
+    const query = expectCondition(
+      parseQuery(
+        `duration ${operator} [1s, "0.5ns", 9007199254740993ns, 0s]`,
+        durationFields
+      )
+    )
+
+    expect(query.query.value).toBe('["1000000000","1","9007199254740993","0"]')
+  })
+
+  it('normalizes parseSearchRequest before producing its final wire value', () => {
+    const request = parseSearchRequest(
+      'duration IN [2m, 500ms] | LIMIT 5',
+      durationFields
+    )
+
+    expect(expectCondition(request?.predicate).query.value).toBe(
+      '["120000000000","500000000"]'
+    )
+    expect(request?.limit).toBe(5)
+  })
+
+  it.each([
+    ['duration = -1ms', /Invalid duration:/],
+    ['duration = [1s]', /Invalid duration:/],
+    ['duration = 9223372036854775808ns', /Invalid duration:/],
+    [
+      'duration IN [1s, 9223372036854775808ns]',
+      /Invalid duration at list element 2/,
+    ],
+    ['duration IN [1s, bad]', /Invalid duration at list element 2/],
+  ])('rejects invalid or overflowing input in %s', (input, message) => {
+    expect(() => parseQuery(input, durationFields)).toThrow(message)
+    expect(validateQuery(input, durationFields)).toEqual([
+      expect.objectContaining({ message: expect.stringMatching(message) }),
+    ])
+  })
+
+  it('points validation at the invalid list element', () => {
+    const input = 'duration IN [1s, bad, 2s]'
+    expect(validateQuery(input, durationFields)).toEqual([
+      {
+        from: input.indexOf('bad'),
+        to: input.indexOf('bad') + 3,
+        message: 'Invalid duration at list element 2',
+      },
+    ])
+  })
+
+  it.each([
+    ['duration IN [1s', /Invalid duration/],
+    ['duration IN []', /nonempty list/],
+    ['duration IN [NULL]', /NULL is not allowed/],
+    ['duration IN [[1s], 2s]', /nested/],
+  ])(
+    'rejects malformed list syntax at the parser boundary: %s',
+    (input, message) => {
+      expect(() => parseQuery(input, durationFields)).toThrow(message)
+      expect(validateQuery(input, durationFields).length).toBeGreaterThan(0)
+    }
+  )
+
+  it.each([
+    ['duration = NULL', 'IS NULL'],
+    ['duration != nil', 'IS NOT NULL'],
+  ])('keeps the operand-free null check %s', (input, operator) => {
+    const query = expectCondition(parseQuery(input, durationFields))
+    expect(query.query.operator.symbol).toBe(operator)
+    expect(query.query.value).toBe('')
+  })
+
+  it('leaves an attribute named duration as text', () => {
+    const scalar = expectCondition(
+      parseQuery('duration = "not a duration"', durationAttributeFields)
+    )
+    const list = expectCondition(
+      parseQuery('duration IN [1s, "not a duration"]', durationAttributeFields)
+    )
+
+    expect(scalar.query.value).toBe('not a duration')
+    expect(list.query.value).toBe('["1s","not a duration"]')
+  })
+
+  it('leaves an explicitly selected duration attribute as text', () => {
+    const query = expectCondition(
+      parseQuery(
+        'attr(span, "duration", string) = "not a duration"',
+        durationFields,
+        'traces'
+      )
+    )
+
+    expect(query.query.field).toMatchObject({
+      name: 'duration',
+      type: 'string',
+      searchScope: 'attribute',
+      attributeScope: 'span',
+    })
+    expect(query.query.value).toBe('not a duration')
+  })
+})
+
+describe('native integer scalar operands', () => {
+  it.each([
+    ['severityNumber = -9223372036854775808', '-9223372036854775808'],
+    ['severityNumber = 9223372036854775807', '9223372036854775807'],
+    ['severityNumber = 9007199254740993', '9007199254740993'],
+    ['severityNumber = +8', '8'],
+    ['severityNumber = 8.0', '8'],
+    ['severityNumber = 8e0', '8'],
+  ])('serializes %s as canonical decimal text', (input, expected) => {
+    expect(
+      expectCondition(parseSearchRequest(input, integerListFields)?.predicate)
+        .query.value
+    ).toBe(expected)
+    expect(validateQuery(input, integerListFields)).toEqual([])
+  })
+
+  it.each([
+    'severityNumber = 8.5',
+    'severityNumber = 9223372036854775808',
+    'severityNumber = -9223372036854775809',
+  ])('rejects an inexact or overflowing signed scalar: %s', input => {
+    const value = input.slice(input.indexOf('=') + 2)
+    expect(() => parseQuery(input, integerListFields)).toThrow(
+      /exact signed 64-bit integer/
+    )
+    expect(validateQuery(input, integerListFields)).toEqual([
+      {
+        from: input.indexOf(value),
+        to: input.length,
+        message: `Integer value '${value}' must be an exact signed 64-bit integer`,
+      },
+    ])
+  })
+
+  it.each([
+    ['timestamp = 0', '0'],
+    ['timestamp = 9007199254740993', '9007199254740993'],
+    ['timestamp = 18446744073709551615', '18446744073709551615'],
+    ['timestamp = 8.0', '8'],
+  ])('serializes %s as an exact unsigned scalar', (input, expected) => {
+    expect(
+      expectCondition(parseSearchRequest(input, timestampListFields)?.predicate)
+        .query.value
+    ).toBe(expected)
+    expect(validateQuery(input, timestampListFields)).toEqual([])
+  })
+
+  it.each([
+    'timestamp = -1',
+    'timestamp = 8.5',
+    'timestamp = 18446744073709551616',
+  ])('rejects an invalid unsigned scalar: %s', input => {
+    expect(() => parseQuery(input, timestampListFields)).toThrow(
+      /exact unsigned 64-bit integer/
+    )
+    expect(validateQuery(input, timestampListFields)).toEqual([
+      expect.objectContaining({
+        from: input.indexOf('=') + 2,
+        to: input.length,
+        message: expect.stringMatching(/exact unsigned 64-bit integer/),
+      }),
+    ])
+  })
+
+  it('keeps lists, null checks, and same-named attributes on their existing paths', () => {
+    const list = expectCondition(
+      parseQuery('severityNumber NOT IN [8.0, 8e0]', integerListFields)
+    )
+    expect(list.query.value).toBe('["8.0","8e0"]')
+
+    const nullCheck = expectCondition(
+      parseQuery('severityNumber = NULL', integerListFields)
+    )
+    expect(nullCheck.query.operator.symbol).toBe('IS NULL')
+    expect(nullCheck.query.value).toBe('')
+
+    const attribute = expectCondition(
+      parseQuery('severityNumber = 8.5', collidingIntegerFields.slice(1))
+    )
+    expect(attribute.query.field.searchScope).toBe('attribute')
+    expect(attribute.query.value).toBe('8.5')
   })
 })
 
