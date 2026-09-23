@@ -87,9 +87,6 @@ function makeStats(): Stats {
 }
 
 beforeEach(() => {
-  if (typeof Element.prototype.scrollTo !== 'function') {
-    Element.prototype.scrollTo = () => {}
-  }
   searchLogs.mockReset()
   getLog.mockReset()
   getStats.mockReset()

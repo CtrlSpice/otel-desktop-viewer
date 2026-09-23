@@ -74,6 +74,23 @@ if (
   globalThis.ResizeObserver = ResizeObserverStub
 }
 
+// jsdom omits scrolling methods used by the virtual list and selection
+// helpers. Inert defaults let those components settle; tests that observe
+// scrolling replace these methods with local spies.
+if (
+  typeof Element !== 'undefined' &&
+  typeof Element.prototype.scrollTo !== 'function'
+) {
+  Element.prototype.scrollTo = () => {}
+}
+
+if (
+  typeof Element !== 'undefined' &&
+  typeof Element.prototype.scrollIntoView !== 'function'
+) {
+  Element.prototype.scrollIntoView = () => {}
+}
+
 // jsdom lacks the Web Animations API that Svelte transitions use. This only
 // supplies Svelte's observed contract, completing on the next microtask.
 if (

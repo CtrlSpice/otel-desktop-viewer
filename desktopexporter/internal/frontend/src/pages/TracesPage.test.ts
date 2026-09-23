@@ -178,12 +178,6 @@ async function renderSelectedTrace(unplacedSpanCount: number) {
 }
 
 beforeEach(() => {
-  if (typeof Element.prototype.scrollTo !== 'function') {
-    Element.prototype.scrollTo = () => {}
-  }
-  if (typeof Element.prototype.scrollIntoView !== 'function') {
-    Element.prototype.scrollIntoView = () => {}
-  }
   searchTraces.mockReset()
   getStats.mockReset()
   searchSpans.mockReset()

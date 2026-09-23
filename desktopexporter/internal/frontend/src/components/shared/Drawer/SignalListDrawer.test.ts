@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createRawSnippet } from 'svelte'
 import { screen, waitFor } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
@@ -47,15 +47,6 @@ const drawerSearch = createRawSnippet(() => ({
 const drawerChromeToolbar = createRawSnippet(() => ({
   render: () => '<p>sort control</p>',
 }))
-
-// Selecting a row makes the drawer ask the virtual list to scroll it into
-// view, and the library calls viewport.scrollTo — which jsdom does not
-// implement. Without this stand-in the scroll promise rejects.
-beforeAll(() => {
-  if (typeof Element.prototype.scrollTo !== 'function') {
-    Element.prototype.scrollTo = () => {}
-  }
-})
 
 // Instantiation expression pins the drawer's generic to DrawerItem; passing
 // the bare component would collapse T to unknown and reject our snippet.
