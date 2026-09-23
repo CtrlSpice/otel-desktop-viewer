@@ -108,6 +108,9 @@ const (
 
 	// GetMetric returns one stream's series and datapoints in a time window.
 	GetMetric Name = "metrics/get_metric.sql"
+	// GetMetricOTLP reconstructs one stored metric stream as standard OTLP JSON,
+	// without applying UI aggregation or time-window rules.
+	GetMetricOTLP Name = "metrics/get_metric_otlp.sql"
 	// GetMetricAttributes lists the attribute keys metrics carry.
 	GetMetricAttributes Name = "metrics/get_metric_attributes.sql"
 
@@ -130,7 +133,7 @@ const (
 // without registering it is a visible omission rather than a silent one.
 var queryNames = []Name{
 	SearchSpans, SalvageSpans, SearchTraces, GetTraceOTLP,
-	GetMetric, GetMetricAttributes,
+	GetMetric, GetMetricOTLP, GetMetricAttributes,
 	GetLog, GetLogOTLP, GetTraceLogs, GetLogAttributes,
 	SearchMetricSummaries, SearchLogs,
 }
