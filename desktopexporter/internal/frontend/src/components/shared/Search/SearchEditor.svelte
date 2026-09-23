@@ -15,7 +15,6 @@
     type FieldDefinition,
   } from '@/constants/fields'
   import { parseSearchRequest } from './queryParser'
-  import { normalizeDurationValues } from './duration-query'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
     getTimeContext,
@@ -251,14 +250,6 @@
       if (!queryTree && limit === null) {
         fetchClean(beginListUpdate(signal))
         return
-      }
-
-      if (queryTree) {
-        const durationErr = normalizeDurationValues(queryTree)
-        if (durationErr) {
-          searchError = durationErr
-          return
-        }
       }
 
       const searchCtx = currentSearchContext()

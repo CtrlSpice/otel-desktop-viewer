@@ -9,6 +9,7 @@ import { parser } from './codemirror/query.parser'
 import type { SyntaxNode } from '@lezer/common'
 import { fieldResolutionIsAmbiguous, resolveField } from './field-resolution'
 import type { SearchSignal } from './attribute-field-reference'
+import { normalizeDuration, normalizeDurationList } from './duration-query'
 
 // One grammar, one parse.
 //
@@ -380,7 +381,9 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
     return null
   }
 
-  let value: string
+  let value = ''
+  let listItems: string[] | null = null
+  let listItemNodes: SyntaxNode[] = []
   if (valueNode.name === 'Null') {
     // A bare NULL/NIL keyword is the null check; a quoted "NULL" stays the
     // literal string, which the old parser could not distinguish.
@@ -418,6 +421,7 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
           ? unquote(text(ctx, item))
           : text(ctx, item)
       )
+      listItemNodes.push(item)
     }
     if ((symbol === 'IN' || symbol === 'NOT IN') && items.length === 0) {
       fail(
@@ -428,10 +432,7 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
       )
       return null
     }
-    // JSON, not a comma-join: a quoted value may itself contain commas,
-    // which the old "[a,b,c]" serialization corrupted on the way through
-    // the backend's comma split.
-    value = JSON.stringify(items)
+    listItems = items
   } else {
     value = text(ctx, valueNode)
   }
@@ -449,7 +450,8 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
 
   if (field) {
     const required = COMPAT_ALIASES.get(symbol) ?? symbol
-    if (!field.operators.some(op => op.symbol === required)) {
+    const operatorIsValid = field.operators.some(op => op.symbol === required)
+    if (!operatorIsValid) {
       fail(
         ctx,
         opNode.from,
@@ -465,10 +467,8 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
         TIMESTAMP_FIELDS.has(field.name.toLowerCase())) &&
       valueNode.name === 'Array'
     ) {
-      // SAFETY: The Array branch JSON-stringified its flat string list after rejecting nulls and nested arrays; value is unchanged.
-      const values = JSON.parse(value) as string[]
       const timestamp = TIMESTAMP_FIELDS.has(field.name.toLowerCase())
-      const invalid = values.find(item =>
+      const invalid = listItems?.find(item =>
         timestamp ? !isExactUint64(item) : !isExactInt64(item)
       )
       if (invalid !== undefined) {
@@ -480,9 +480,53 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
         )
       }
     }
+
+    if (
+      field.searchScope === 'field' &&
+      field.name === 'duration' &&
+      operatorIsValid &&
+      valueNode.name !== 'Null'
+    ) {
+      if (symbol === 'IN' || symbol === 'NOT IN') {
+        if (!listItems) return null
+        const result = normalizeDurationList(listItems)
+        if (!result.ok) {
+          const errorNode =
+            result.index === undefined
+              ? valueNode
+              : (listItemNodes[result.index] ?? valueNode)
+          fail(ctx, errorNode.from, errorNode.to, result.error)
+          return null
+        }
+        listItems = result.value
+      } else {
+        if (listItems) {
+          fail(
+            ctx,
+            valueNode.from,
+            valueNode.to,
+            `Invalid duration: "${text(ctx, valueNode)}". Try "1s", "500ms", "2m", etc.`
+          )
+          return null
+        }
+        const result = normalizeDuration(value)
+        if (!result.ok) {
+          fail(ctx, valueNode.from, valueNode.to, result.error)
+          return null
+        }
+        value = result.value
+      }
+    }
   }
 
   if (!field) return null
+
+  if (listItems) {
+    // JSON, not a comma-join: a quoted value may itself contain commas,
+    // which the old "[a,b,c]" serialization corrupted on the way through
+    // the backend's comma split.
+    value = JSON.stringify(listItems)
+  }
 
   return {
     id: generateID(),

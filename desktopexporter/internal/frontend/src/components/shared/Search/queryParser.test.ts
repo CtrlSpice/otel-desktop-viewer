@@ -64,13 +64,32 @@ const integerListFields: FieldDefinition[] = [
   },
 ]
 
-const durationListFields: FieldDefinition[] = [
+const durationFields: FieldDefinition[] = [
   {
     name: 'duration',
     type: 'int64',
     searchScope: 'field',
     description: 'span duration',
-    operators: [OPERATORS.IN, OPERATORS.NOT_IN],
+    operators: [
+      OPERATORS.EQUALS,
+      OPERATORS.NOT_EQUALS,
+      OPERATORS.GREATER_THAN,
+      OPERATORS.GREATER_THAN_OR_EQUAL,
+      OPERATORS.LESS_THAN,
+      OPERATORS.LESS_THAN_OR_EQUAL,
+      OPERATORS.IN,
+      OPERATORS.NOT_IN,
+    ],
+  },
+]
+
+const durationAttributeFields: FieldDefinition[] = [
+  {
+    name: 'duration',
+    type: 'string',
+    searchScope: 'attribute',
+    attributeScope: 'span',
+    operators: [OPERATORS.EQUALS, OPERATORS.IN, OPERATORS.NOT_IN],
   },
 ]
 
@@ -664,13 +683,6 @@ describe('unified grammar contract', () => {
     expect(JSON.parse(q.query.value)).toEqual(['a,b', 'c'])
   })
 
-  it('leaves duration membership values for duration normalization', () => {
-    const q = expectCondition(
-      parseQuery('duration IN [1s, 500ms]', durationListFields)
-    )
-    expect(q.query.value).toBe('["1s","500ms"]')
-  })
-
   it('=~ and !~ are the PromQL spellings of the regex operators', () => {
     const q = expectCondition(parseQuery('body =~ foo.*', contractFields))
     expect(q.query.operator.symbol).toBe('REGEXP')
@@ -716,6 +728,122 @@ describe('unified grammar contract', () => {
     const q = expectCondition(parseQuery('checkout latency', contractFields))
     expect(q.query.field.searchScope).toBe('global')
     expect(q.query.value).toBe('checkout latency')
+  })
+})
+
+describe('native duration operands', () => {
+  it.each([
+    ['duration = 1.5h', '5400000000000'],
+    ['DURATION = 1s', '1000000000'],
+    ['duration >= "0.5ns"', '1'],
+    ['duration < 0.499999999999999999ns', '0'],
+    ['duration != 9007199254740993ns', '9007199254740993'],
+  ])('serializes %s as exact nanoseconds', (input, expected) => {
+    expect(expectCondition(parseQuery(input, durationFields)).query.value).toBe(
+      expected
+    )
+  })
+
+  it.each(['IN', 'NOT IN'])('%s preserves list order on the wire', operator => {
+    const query = expectCondition(
+      parseQuery(
+        `duration ${operator} [1s, "0.5ns", 9007199254740993ns, 0s]`,
+        durationFields
+      )
+    )
+
+    expect(query.query.value).toBe('["1000000000","1","9007199254740993","0"]')
+  })
+
+  it('normalizes parseSearchRequest before producing its final wire value', () => {
+    const request = parseSearchRequest(
+      'duration IN [2m, 500ms] | LIMIT 5',
+      durationFields
+    )
+
+    expect(expectCondition(request?.predicate).query.value).toBe(
+      '["120000000000","500000000"]'
+    )
+    expect(request?.limit).toBe(5)
+  })
+
+  it.each([
+    ['duration = -1ms', /Invalid duration:/],
+    ['duration = [1s]', /Invalid duration:/],
+    ['duration = 9223372036854775808ns', /Invalid duration:/],
+    [
+      'duration IN [1s, 9223372036854775808ns]',
+      /Invalid duration at list element 2/,
+    ],
+    ['duration IN [1s, bad]', /Invalid duration at list element 2/],
+  ])('rejects invalid or overflowing input in %s', (input, message) => {
+    expect(() => parseQuery(input, durationFields)).toThrow(message)
+    expect(validateQuery(input, durationFields)).toEqual([
+      expect.objectContaining({ message: expect.stringMatching(message) }),
+    ])
+  })
+
+  it('points validation at the invalid list element', () => {
+    const input = 'duration IN [1s, bad, 2s]'
+    expect(validateQuery(input, durationFields)).toEqual([
+      {
+        from: input.indexOf('bad'),
+        to: input.indexOf('bad') + 3,
+        message: 'Invalid duration at list element 2',
+      },
+    ])
+  })
+
+  it.each([
+    ['duration IN [1s', /Invalid duration/],
+    ['duration IN []', /nonempty list/],
+    ['duration IN [NULL]', /NULL is not allowed/],
+    ['duration IN [[1s], 2s]', /nested/],
+  ])(
+    'rejects malformed list syntax at the parser boundary: %s',
+    (input, message) => {
+      expect(() => parseQuery(input, durationFields)).toThrow(message)
+      expect(validateQuery(input, durationFields).length).toBeGreaterThan(0)
+    }
+  )
+
+  it.each([
+    ['duration = NULL', 'IS NULL'],
+    ['duration != nil', 'IS NOT NULL'],
+  ])('keeps the operand-free null check %s', (input, operator) => {
+    const query = expectCondition(parseQuery(input, durationFields))
+    expect(query.query.operator.symbol).toBe(operator)
+    expect(query.query.value).toBe('')
+  })
+
+  it('leaves an attribute named duration as text', () => {
+    const scalar = expectCondition(
+      parseQuery('duration = "not a duration"', durationAttributeFields)
+    )
+    const list = expectCondition(
+      parseQuery('duration IN [1s, "not a duration"]', durationAttributeFields)
+    )
+
+    expect(scalar.query.value).toBe('not a duration')
+    expect(list.query.value).toBe('["1s","not a duration"]')
+  })
+
+  it('leaves an explicitly selected duration attribute as text', () => {
+    const query = expectCondition(
+      parseQuery(
+        'attr(span, "duration", string) = "not a duration"',
+        durationFields,
+        'traces'
+      )
+    )
+
+    expect(query.query.field).toMatchObject({
+      name: 'duration',
+      type: 'string',
+      searchScope: 'attribute',
+      attributeScope: 'span',
+    })
+    expect(query.query.value).toBe('not a duration')
   })
 })
 
