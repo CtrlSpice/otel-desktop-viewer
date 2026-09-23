@@ -134,14 +134,24 @@ func TestGetMetricOTLP(t *testing.T) {
 	assert.Equal(t, int32(9), edp.Negative().Offset())
 	assert.Equal(t, 0, edp.Negative().BucketCounts().Len())
 	assert.True(t, math.Signbit(edp.ZeroThreshold()))
+}
+
+func TestValidateMetricOTLPRejectsInvalidWireShapes(t *testing.T) {
+	s, ctx := storetest.New(t)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, otlpMetricFixture(), s.FlushedIDs())
+	}))
+	ids := metricStreamIDs(t, s, ctx)
+	gaugeText := string(getMetricOTLP(t, s, ctx, ids["otlp.gauge"]))
+	sumText := string(getMetricOTLP(t, s, ctx, ids["otlp.sum"]))
 
 	for name, mutated := range map[string]string{
 		"wrong casing":   strings.Replace(gaugeText, `"timeUnixNano":`, `"timeUnixNANO":`, 1),
-		"enum name":      strings.Replace(string(sumRaw), `"aggregationTemporality":99`, `"aggregationTemporality":"CUMULATIVE"`, 1),
+		"enum name":      strings.Replace(sumText, `"aggregationTemporality":99`, `"aggregationTemporality":"CUMULATIVE"`, 1),
 		"base64 ID":      strings.Replace(gaugeText, `"traceId":"11111111111111112222222222222222"`, `"traceId":"EREREREREREiIiIiIiIiIg=="`, 1),
 		"unquoted int64": strings.Replace(gaugeText, `"timeUnixNano":"18446744073709551615"`, `"timeUnixNano":18446744073709551615`, 1),
 	} {
-		t.Run("rejects "+name, func(t *testing.T) {
+		t.Run(name, func(t *testing.T) {
 			require.Error(t, validateMetricOTLP([]byte(mutated)))
 		})
 	}
@@ -235,7 +245,7 @@ func TestGetMetricOTLPStreamOwnershipAndEmptyValues(t *testing.T) {
 	assert.JSONEq(t, `{"resourceMetrics":[]}`, string(getMetricOTLP(t, s, ctx, emptyID)))
 }
 
-func TestGetMetricOTLPErrors(t *testing.T) {
+func TestGetMetricOTLPNotFound(t *testing.T) {
 	s, ctx := storetest.New(t)
 	for _, id := range []string{"00000000-0000-0000-0000-000000000000", "not-a-uuid"} {
 		_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
@@ -243,7 +253,10 @@ func TestGetMetricOTLPErrors(t *testing.T) {
 		})
 		assert.ErrorIs(t, err, metrics.ErrStreamIDNotFound)
 	}
+}
 
+func TestGetMetricOTLPRejectsUnsupportedMetricTypes(t *testing.T) {
+	s, ctx := storetest.New(t)
 	summary := pmetric.NewMetrics()
 	m := summary.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
 	m.SetName("unsupported-summary")
@@ -427,7 +440,7 @@ func mustMapValue(t *testing.T, values pcommon.Map, key string) pcommon.Value {
 }
 
 func validateMetricOTLP(document []byte) error {
-	if err := rejectMetricDuplicateJSONKeys(document); err != nil {
+	if err := storetest.RejectDuplicateJSONKeys(document); err != nil {
 		return err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(document))
@@ -520,51 +533,6 @@ func validateMetricOTLPValue(value any, path string) error {
 		}
 	}
 	return nil
-}
-
-func rejectMetricDuplicateJSONKeys(document []byte) error {
-	decoder := json.NewDecoder(bytes.NewReader(document))
-	var walk func() error
-	walk = func() error {
-		token, err := decoder.Token()
-		if err != nil {
-			return err
-		}
-		delim, ok := token.(json.Delim)
-		if !ok {
-			return nil
-		}
-		switch delim {
-		case '{':
-			seen := map[string]bool{}
-			for decoder.More() {
-				keyToken, err := decoder.Token()
-				if err != nil {
-					return err
-				}
-				key := keyToken.(string)
-				if seen[key] {
-					return fmt.Errorf("duplicate JSON key %q", key)
-				}
-				seen[key] = true
-				if err := walk(); err != nil {
-					return err
-				}
-			}
-			_, err = decoder.Token()
-			return err
-		case '[':
-			for decoder.More() {
-				if err := walk(); err != nil {
-					return err
-				}
-			}
-			_, err = decoder.Token()
-			return err
-		}
-		return nil
-	}
-	return walk()
 }
 
 func BenchmarkGetMetricOTLP(b *testing.B) {

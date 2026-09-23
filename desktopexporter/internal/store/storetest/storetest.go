@@ -1,4 +1,4 @@
-// Package storetest builds stores for tests.
+// Package storetest provides shared support for store tests.
 //
 // Every test package under store/ needs the same thing to start: an in-memory
 // store, a context, and a guarantee it gets closed. That was six identical

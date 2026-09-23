@@ -165,6 +165,18 @@ func TestGetTraceOTLP(t *testing.T) {
 	assert.Equal(t, uint32(2), uint32(empty.Flags()))
 	assert.True(t, empty.TraceID().IsEmpty())
 	assert.True(t, empty.SpanID().IsEmpty())
+}
+
+func TestValidateTraceOTLPRejectsInvalidWireShapes(t *testing.T) {
+	s, ctx := storetest.New(t)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, otlpTraceFixture(), s.FlushedIDs())
+	}))
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.GetTraceOTLP(ctx, db, otlpTraceID)
+	})
+	require.NoError(t, err)
+	direct := string(raw)
 
 	for name, mutated := range map[string]string{
 		"wrong casing":   strings.Replace(direct, `"traceId":`, `"traceID":`, 1),
@@ -172,7 +184,7 @@ func TestGetTraceOTLP(t *testing.T) {
 		"base64 ID":      strings.Replace(direct, `"traceId":"`+otlpTraceID+`"`, `"traceId":"/ty6mHZUMhABI0VniavN7w=="`, 1),
 		"unquoted int64": strings.Replace(direct, `"startTimeUnixNano":"18446744073709551614"`, `"startTimeUnixNano":18446744073709551614`, 1),
 	} {
-		t.Run("rejects "+name, func(t *testing.T) {
+		t.Run(name, func(t *testing.T) {
 			require.Error(t, validateTraceOTLP([]byte(mutated)))
 		})
 	}
@@ -355,7 +367,7 @@ func otlpTraceFixture() ptrace.Traces {
 }
 
 func validateTraceOTLP(document []byte) error {
-	if err := rejectDuplicateJSONKeys(document); err != nil {
+	if err := storetest.RejectDuplicateJSONKeys(document); err != nil {
 		return err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(document))
@@ -446,51 +458,6 @@ func validateTraceOTLPValue(value any, path string) error {
 		}
 	}
 	return nil
-}
-
-func rejectDuplicateJSONKeys(document []byte) error {
-	decoder := json.NewDecoder(bytes.NewReader(document))
-	var walk func() error
-	walk = func() error {
-		token, err := decoder.Token()
-		if err != nil {
-			return err
-		}
-		delim, ok := token.(json.Delim)
-		if !ok {
-			return nil
-		}
-		switch delim {
-		case '{':
-			seen := map[string]bool{}
-			for decoder.More() {
-				keyToken, err := decoder.Token()
-				if err != nil {
-					return err
-				}
-				key := keyToken.(string)
-				if seen[key] {
-					return fmt.Errorf("duplicate JSON key %q", key)
-				}
-				seen[key] = true
-				if err := walk(); err != nil {
-					return err
-				}
-			}
-			_, err = decoder.Token()
-			return err
-		case '[':
-			for decoder.More() {
-				if err := walk(); err != nil {
-					return err
-				}
-			}
-			_, err = decoder.Token()
-			return err
-		}
-		return nil
-	}
-	return walk()
 }
 
 func BenchmarkGetTraceOTLP(b *testing.B) {
