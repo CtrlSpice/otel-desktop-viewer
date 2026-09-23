@@ -60,7 +60,13 @@ const integerListFields: FieldDefinition[] = [
     type: 'int64',
     searchScope: 'field',
     description: 'log severity number',
-    operators: [OPERATORS.IN, OPERATORS.NOT_IN],
+    operators: [
+      OPERATORS.EQUALS,
+      OPERATORS.NOT_EQUALS,
+      OPERATORS.GREATER_THAN,
+      OPERATORS.IN,
+      OPERATORS.NOT_IN,
+    ],
   },
 ]
 
@@ -99,7 +105,13 @@ const timestampListFields: FieldDefinition[] = [
     type: 'int64',
     searchScope: 'field',
     description: 'log timestamp',
-    operators: [OPERATORS.IN, OPERATORS.NOT_IN],
+    operators: [
+      OPERATORS.EQUALS,
+      OPERATORS.NOT_EQUALS,
+      OPERATORS.GREATER_THAN,
+      OPERATORS.IN,
+      OPERATORS.NOT_IN,
+    ],
   },
 ]
 
@@ -127,7 +139,7 @@ const collidingIntegerFields: FieldDefinition[] = [
     type: 'int64',
     searchScope: 'attribute',
     attributeScope: 'log',
-    operators: [OPERATORS.IN, OPERATORS.NOT_IN],
+    operators: [OPERATORS.EQUALS, OPERATORS.IN, OPERATORS.NOT_IN],
   },
 ]
 
@@ -844,6 +856,90 @@ describe('native duration operands', () => {
       attributeScope: 'span',
     })
     expect(query.query.value).toBe('not a duration')
+  })
+})
+
+describe('native integer scalar operands', () => {
+  it.each([
+    ['severityNumber = -9223372036854775808', '-9223372036854775808'],
+    ['severityNumber = 9223372036854775807', '9223372036854775807'],
+    ['severityNumber = 9007199254740993', '9007199254740993'],
+    ['severityNumber = +8', '8'],
+    ['severityNumber = 8.0', '8'],
+    ['severityNumber = 8e0', '8'],
+  ])('serializes %s as canonical decimal text', (input, expected) => {
+    expect(
+      expectCondition(parseSearchRequest(input, integerListFields)?.predicate)
+        .query.value
+    ).toBe(expected)
+    expect(validateQuery(input, integerListFields)).toEqual([])
+  })
+
+  it.each([
+    'severityNumber = 8.5',
+    'severityNumber = 9223372036854775808',
+    'severityNumber = -9223372036854775809',
+  ])('rejects an inexact or overflowing signed scalar: %s', input => {
+    const value = input.slice(input.indexOf('=') + 2)
+    expect(() => parseQuery(input, integerListFields)).toThrow(
+      /exact signed 64-bit integer/
+    )
+    expect(validateQuery(input, integerListFields)).toEqual([
+      {
+        from: input.indexOf(value),
+        to: input.length,
+        message: `Integer value '${value}' must be an exact signed 64-bit integer`,
+      },
+    ])
+  })
+
+  it.each([
+    ['timestamp = 0', '0'],
+    ['timestamp = 9007199254740993', '9007199254740993'],
+    ['timestamp = 18446744073709551615', '18446744073709551615'],
+    ['timestamp = 8.0', '8'],
+  ])('serializes %s as an exact unsigned scalar', (input, expected) => {
+    expect(
+      expectCondition(parseSearchRequest(input, timestampListFields)?.predicate)
+        .query.value
+    ).toBe(expected)
+    expect(validateQuery(input, timestampListFields)).toEqual([])
+  })
+
+  it.each([
+    'timestamp = -1',
+    'timestamp = 8.5',
+    'timestamp = 18446744073709551616',
+  ])('rejects an invalid unsigned scalar: %s', input => {
+    expect(() => parseQuery(input, timestampListFields)).toThrow(
+      /exact unsigned 64-bit integer/
+    )
+    expect(validateQuery(input, timestampListFields)).toEqual([
+      expect.objectContaining({
+        from: input.indexOf('=') + 2,
+        to: input.length,
+        message: expect.stringMatching(/exact unsigned 64-bit integer/),
+      }),
+    ])
+  })
+
+  it('keeps lists, null checks, and same-named attributes on their existing paths', () => {
+    const list = expectCondition(
+      parseQuery('severityNumber NOT IN [8.0, 8e0]', integerListFields)
+    )
+    expect(list.query.value).toBe('["8.0","8e0"]')
+
+    const nullCheck = expectCondition(
+      parseQuery('severityNumber = NULL', integerListFields)
+    )
+    expect(nullCheck.query.operator.symbol).toBe('IS NULL')
+    expect(nullCheck.query.value).toBe('')
+
+    const attribute = expectCondition(
+      parseQuery('severityNumber = 8.5', collidingIntegerFields.slice(1))
+    )
+    expect(attribute.query.field.searchScope).toBe('attribute')
+    expect(attribute.query.value).toBe('8.5')
   })
 })
 

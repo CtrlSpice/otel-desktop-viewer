@@ -1,9 +1,11 @@
 package search
 
 import (
+	"database/sql"
 	"math"
 	"testing"
 
+	_ "github.com/duckdb/duckdb-go/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -685,6 +687,88 @@ func TestBuildOperatorCondition_NativeIntegerList(t *testing.T) {
 	query.Value = `["42.5"]`
 	_, err = BuildOperatorCondition(NativeInteger("l.timestamp"), query, &params)
 	assert.ErrorIs(t, err, ErrInvalidQuery)
+}
+
+func TestBuildOperatorCondition_NativeIntegerScalar(t *testing.T) {
+	for input, expected := range map[string]int64{
+		"-9223372036854775808": math.MinInt64,
+		"9223372036854775807":  math.MaxInt64,
+		"9007199254740993":     9_007_199_254_740_993,
+		"+8":                   8,
+		"8.0":                  8,
+		"8e0":                  8,
+	} {
+		t.Run(input, func(t *testing.T) {
+			params := []NamedParam{}
+			condition, err := BuildOperatorCondition(
+				NativeInteger("severity_number"),
+				&Query{FieldOperator: "=", Value: input},
+				&params,
+			)
+			require.NoError(t, err)
+			assert.Equal(t, "severity_number = value_0", condition)
+			assert.Equal(t, []NamedParam{{"value_0", expected}}, params)
+		})
+	}
+
+	for _, input := range []string{"8.5", "9223372036854775808", "-9223372036854775809"} {
+		t.Run(input, func(t *testing.T) {
+			_, err := BuildOperatorCondition(
+				NativeInteger("severity_number"),
+				&Query{FieldOperator: "=", Value: input},
+				new([]NamedParam),
+			)
+			assert.ErrorIs(t, err, ErrInvalidQuery)
+		})
+	}
+
+	db, err := sql.Open("duckdb", "")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	params := []NamedParam{}
+	condition, err := BuildOperatorCondition(
+		NativeInteger("severity_number"),
+		&Query{FieldOperator: "=", Value: "8.0"},
+		&params,
+	)
+	require.NoError(t, err)
+	query := "with params as (select ? as value_0) select severity_number from (values (8::integer), (9::integer)) records(severity_number), params where " + condition
+	var matched int
+	require.NoError(t, db.QueryRow(query, params[0].Value).Scan(&matched))
+	assert.Equal(t, 8, matched)
+}
+
+func TestBuildOperatorCondition_TimestampScalar(t *testing.T) {
+	for input, expected := range map[string]uint64{
+		"0":                    0,
+		"9007199254740993":     9_007_199_254_740_993,
+		"18446744073709551615": math.MaxUint64,
+		"8.0":                  8,
+	} {
+		t.Run(input, func(t *testing.T) {
+			params := []NamedParam{}
+			condition, err := BuildOperatorCondition(
+				Timestamp("timestamp"),
+				&Query{FieldOperator: "=", Value: input},
+				&params,
+			)
+			require.NoError(t, err)
+			assert.Equal(t, "timestamp = value_0", condition)
+			require.Len(t, params, 1)
+			assert.Equal(t, unsignedScalar(expected), params[0].Value)
+		})
+	}
+
+	for _, input := range []string{"-1", "8.5", "18446744073709551616"} {
+		t.Run(input, func(t *testing.T) {
+			_, err := BuildOperatorCondition(
+				Timestamp("timestamp"),
+				&Query{FieldOperator: "=", Value: input},
+				new([]NamedParam),
+			)
+			assert.ErrorIs(t, err, ErrInvalidQuery)
+		})
+	}
 }
 
 func TestNormalizeDuration(t *testing.T) {
