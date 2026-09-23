@@ -24,14 +24,12 @@ import (
 	"golang.org/x/exp/jsonrpc2"
 )
 
-func setupHandler(t *testing.T) (*JSONRPCHandler, func()) {
+func setupHandler(t *testing.T) *JSONRPCHandler {
 	t.Helper()
 	s, err := store.NewStore(context.Background(), "", zap.NewNop())
 	require.NoError(t, err)
-	handler := NewJSONRPCHandler(s, zap.NewNop())
-	return handler, func() {
-		s.Close()
-	}
+	t.Cleanup(func() { s.Close() })
+	return NewJSONRPCHandler(s, zap.NewNop())
 }
 
 // buildTestTraces returns ptrace.Traces with one span (trace ID 00...01) for handler tests.
@@ -67,10 +65,11 @@ func buildTestLogs() plog.Logs {
 	return logs
 }
 
-func setupHandlerWithData(t *testing.T) (*JSONRPCHandler, func()) {
+func setupHandlerWithData(t *testing.T) *JSONRPCHandler {
 	t.Helper()
 	s, err := store.NewStore(context.Background(), "", zap.NewNop())
 	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
 	handler := NewJSONRPCHandler(s, zap.NewNop())
 	ctx := context.Background()
 
@@ -84,9 +83,7 @@ func setupHandlerWithData(t *testing.T) (*JSONRPCHandler, func()) {
 	})
 	assert.NoError(t, err, "ingest logs")
 
-	return handler, func() {
-		s.Close()
-	}
+	return handler
 }
 
 func createRequest(method string, params any) *jsonrpc2.Request {
@@ -143,8 +140,7 @@ const testTraceIDHex = "00000000000000000000000000000001"
 
 func TestSearchTraces(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {
-		handler, teardown := setupHandler(t)
-		defer teardown()
+		handler := setupHandler(t)
 
 		req := createRequest("searchTraces", []string{"0", strconv.FormatInt(1<<63-1, 10)})
 		result, err := handler.Handle(context.Background(), req)
@@ -158,8 +154,7 @@ func TestSearchTraces(t *testing.T) {
 	})
 
 	t.Run("With Data", func(t *testing.T) {
-		handler, teardown := setupHandlerWithData(t)
-		defer teardown()
+		handler := setupHandlerWithData(t)
 
 		req := createRequest("searchTraces", []string{"0", strconv.FormatInt(1<<63-1, 10)})
 		result, err := handler.Handle(context.Background(), req)
@@ -174,8 +169,7 @@ func TestSearchTraces(t *testing.T) {
 	})
 
 	t.Run("Garbage traceID in query tree", func(t *testing.T) {
-		handler, teardown := setupHandlerWithData(t)
-		defer teardown()
+		handler := setupHandlerWithData(t)
 
 		query := map[string]any{
 			"id":   "q-garbage",
@@ -198,8 +192,7 @@ func TestSearchTraces(t *testing.T) {
 	})
 
 	t.Run("Limit", func(t *testing.T) {
-		handler, teardown := setupHandlerWithData(t)
-		defer teardown()
+		handler := setupHandlerWithData(t)
 
 		maxTime := strconv.FormatInt(1<<63-1, 10)
 		result, err := handler.Handle(context.Background(), createRequest("searchTraces", []any{"0", maxTime, nil, 1}))
@@ -217,8 +210,7 @@ func TestSearchTraces(t *testing.T) {
 }
 
 func TestSearchHandlersAcceptNullableBoundsPositionallyAndByName(t *testing.T) {
-	handler, teardown := setupHandlerWithData(t)
-	defer teardown()
+	handler := setupHandlerWithData(t)
 
 	for _, method := range []struct {
 		name   string
@@ -248,8 +240,7 @@ func TestSearchHandlersAcceptNullableBoundsPositionallyAndByName(t *testing.T) {
 		})
 	}
 
-	metricHandler, metricTeardown := setupHandlerWithMetrics(t)
-	defer metricTeardown()
+	metricHandler := setupHandlerWithMetrics(t)
 	for _, tc := range rpcNullableRangeCases() {
 		t.Run("searchMetricSummaries/"+tc.name, func(t *testing.T) {
 			result, err := metricHandler.Handle(context.Background(), createRequest("searchMetricSummaries", searchRangeParams(tc)))
@@ -264,8 +255,7 @@ func TestSearchHandlersAcceptNullableBoundsPositionallyAndByName(t *testing.T) {
 }
 
 func TestSearchSpans(t *testing.T) {
-	handler, teardown := setupHandlerWithData(t)
-	defer teardown()
+	handler := setupHandlerWithData(t)
 
 	t.Run("Found", func(t *testing.T) {
 		req := createRequest("searchSpans", []string{testTraceIDHex})
@@ -292,8 +282,7 @@ func TestSearchSpans(t *testing.T) {
 }
 
 func TestClearTraces(t *testing.T) {
-	handler, teardown := setupHandlerWithData(t)
-	defer teardown()
+	handler := setupHandlerWithData(t)
 
 	req := createRequest("clearTraces", nil)
 	result, err := handler.Handle(context.Background(), req)
@@ -313,8 +302,7 @@ func TestClearTraces(t *testing.T) {
 
 func TestSearchLogs(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {
-		handler, teardown := setupHandler(t)
-		defer teardown()
+		handler := setupHandler(t)
 
 		req := createRequest("searchLogs", []string{"0", strconv.FormatInt(1<<63-1, 10)})
 		result, err := handler.Handle(context.Background(), req)
@@ -328,8 +316,7 @@ func TestSearchLogs(t *testing.T) {
 	})
 
 	t.Run("With Data", func(t *testing.T) {
-		handler, teardown := setupHandlerWithData(t)
-		defer teardown()
+		handler := setupHandlerWithData(t)
 
 		req := createRequest("searchLogs", []string{"0", strconv.FormatInt(1<<63-1, 10)})
 		result, err := handler.Handle(context.Background(), req)
@@ -358,8 +345,7 @@ func TestSearchLogs(t *testing.T) {
 	})
 
 	t.Run("Garbage spanID in query tree", func(t *testing.T) {
-		handler, teardown := setupHandlerWithData(t)
-		defer teardown()
+		handler := setupHandlerWithData(t)
 
 		query := map[string]any{
 			"id":   "q-garbage",
@@ -382,8 +368,7 @@ func TestSearchLogs(t *testing.T) {
 	})
 
 	t.Run("Limit", func(t *testing.T) {
-		handler, teardown := setupHandlerWithData(t)
-		defer teardown()
+		handler := setupHandlerWithData(t)
 		maxTime := strconv.FormatInt(1<<63-1, 10)
 
 		result, err := handler.Handle(context.Background(), createRequest("searchLogs", []any{"0", maxTime, nil, 1}))
@@ -402,8 +387,7 @@ func TestSearchLogs(t *testing.T) {
 
 func TestGetTraceLogs(t *testing.T) {
 	t.Run("Valid", func(t *testing.T) {
-		handler, teardown := setupHandlerWithData(t)
-		defer teardown()
+		handler := setupHandlerWithData(t)
 
 		result, err := handler.Handle(context.Background(), createRequest("getTraceLogs", map[string]any{
 			"traceID": testTraceIDHex,
@@ -420,8 +404,7 @@ func TestGetTraceLogs(t *testing.T) {
 	})
 
 	t.Run("Empty", func(t *testing.T) {
-		handler, teardown := setupHandler(t)
-		defer teardown()
+		handler := setupHandler(t)
 
 		result, err := handler.Handle(context.Background(), createRequest("getTraceLogs", []string{
 			"00000000000000000000000000000002",
@@ -431,8 +414,7 @@ func TestGetTraceLogs(t *testing.T) {
 	})
 
 	t.Run("Malformed trace ID", func(t *testing.T) {
-		handler, teardown := setupHandler(t)
-		defer teardown()
+		handler := setupHandler(t)
 
 		result, err := handler.Handle(context.Background(), createRequest("getTraceLogs", []string{"not-a-trace-id"}))
 		require.Nil(t, result)
@@ -440,8 +422,7 @@ func TestGetTraceLogs(t *testing.T) {
 	})
 
 	t.Run("Empty trace ID", func(t *testing.T) {
-		handler, teardown := setupHandler(t)
-		defer teardown()
+		handler := setupHandler(t)
 
 		result, err := handler.Handle(context.Background(), createRequest("getTraceLogs", []string{""}))
 		require.Nil(t, result)
@@ -449,8 +430,7 @@ func TestGetTraceLogs(t *testing.T) {
 	})
 
 	t.Run("Missing trace ID", func(t *testing.T) {
-		handler, teardown := setupHandler(t)
-		defer teardown()
+		handler := setupHandler(t)
 
 		result, err := handler.Handle(context.Background(), createRequest("getTraceLogs", []string{}))
 		require.Nil(t, result)
@@ -470,8 +450,7 @@ func TestSearchSortParams(t *testing.T) {
 	}
 	for _, tc := range valid {
 		t.Run(tc.method+" accepts sort", func(t *testing.T) {
-			handler, teardown := setupHandler(t)
-			defer teardown()
+			handler := setupHandler(t)
 
 			result, err := handler.Handle(context.Background(), createRequest(tc.method, []any{
 				"0", maxTime, nil, 1,
@@ -482,8 +461,7 @@ func TestSearchSortParams(t *testing.T) {
 		})
 
 		t.Run(tc.method+" rejects unsupported field", func(t *testing.T) {
-			handler, teardown := setupHandler(t)
-			defer teardown()
+			handler := setupHandler(t)
 
 			result, err := handler.Handle(context.Background(), createRequest(tc.method, []any{
 				"0", maxTime, nil, 1,
@@ -495,8 +473,7 @@ func TestSearchSortParams(t *testing.T) {
 	}
 
 	t.Run("rejects invalid direction", func(t *testing.T) {
-		handler, teardown := setupHandler(t)
-		defer teardown()
+		handler := setupHandler(t)
 
 		result, err := handler.Handle(context.Background(), createRequest("searchTraces", []any{
 			"0", maxTime, nil, 1,
@@ -507,8 +484,7 @@ func TestSearchSortParams(t *testing.T) {
 	})
 
 	t.Run("rejects malformed object", func(t *testing.T) {
-		handler, teardown := setupHandler(t)
-		defer teardown()
+		handler := setupHandler(t)
 
 		result, err := handler.Handle(context.Background(), createRequest("searchTraces", []any{
 			"0", maxTime, nil, 1,
@@ -521,8 +497,7 @@ func TestSearchSortParams(t *testing.T) {
 
 func TestGetTraceAttributes(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {
-		handler, teardown := setupHandler(t)
-		defer teardown()
+		handler := setupHandler(t)
 
 		req := createRequest("getTraceAttributes", []any{})
 		result, err := handler.Handle(context.Background(), req)
@@ -534,8 +509,7 @@ func TestGetTraceAttributes(t *testing.T) {
 	})
 
 	t.Run("With Data", func(t *testing.T) {
-		handler, teardown := setupHandlerWithData(t)
-		defer teardown()
+		handler := setupHandlerWithData(t)
 
 		req := createRequest("getTraceAttributes", []any{})
 		result, err := handler.Handle(context.Background(), req)
@@ -563,8 +537,7 @@ func TestGetTraceAttributes(t *testing.T) {
 	})
 
 	t.Run("Invalid Parameters", func(t *testing.T) {
-		handler, teardown := setupHandler(t)
-		defer teardown()
+		handler := setupHandler(t)
 
 		req := createRequest("getTraceAttributes", []string{"123"})
 		result, err := handler.Handle(context.Background(), req)
@@ -575,8 +548,7 @@ func TestGetTraceAttributes(t *testing.T) {
 	})
 
 	t.Run("Invalid Parameter Types", func(t *testing.T) {
-		handler, teardown := setupHandler(t)
-		defer teardown()
+		handler := setupHandler(t)
 
 		req := createRequest("getTraceAttributes", []string{"pumpkin", "pie"})
 		result, err := handler.Handle(context.Background(), req)
@@ -602,8 +574,7 @@ func TestDeleteParamValidation(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.method, func(t *testing.T) {
-			handler, teardown := setupHandler(t)
-			defer teardown()
+			handler := setupHandler(t)
 			ctx := context.Background()
 
 			t.Run("Empty Array", func(t *testing.T) {
@@ -676,8 +647,7 @@ func TestDeleteParamValidation(t *testing.T) {
 // ErrInternal. Mostly reads, plus deleteMetricStream, which is single-ID
 // because metrics address a stream by one uuid (see the handler comment).
 func TestReadPathIDValidation(t *testing.T) {
-	handler, teardown := setupHandler(t)
-	defer teardown()
+	handler := setupHandler(t)
 	ctx := context.Background()
 
 	cases := []struct {
@@ -702,8 +672,7 @@ func TestReadPathIDValidation(t *testing.T) {
 }
 
 func TestMethodNotFound(t *testing.T) {
-	handler, teardown := setupHandler(t)
-	defer teardown()
+	handler := setupHandler(t)
 
 	req := createRequest("nonexistentMethod", nil)
 	result, err := handler.Handle(context.Background(), req)
@@ -715,8 +684,7 @@ func TestMethodNotFound(t *testing.T) {
 
 // TestSearchLogsInvalidParams ensures searchLogs with wrong param count returns ErrInvalidParams.
 func TestSearchLogsInvalidParams(t *testing.T) {
-	handler, teardown := setupHandler(t)
-	defer teardown()
+	handler := setupHandler(t)
 
 	req := createRequest("searchLogs", []string{"0"}) // only one param
 	result, err := handler.Handle(context.Background(), req)
@@ -727,8 +695,7 @@ func TestSearchLogsInvalidParams(t *testing.T) {
 
 // TestSearchMetricSummariesInvalidParams ensures searchMetricSummaries with wrong param count returns ErrInvalidParams.
 func TestSearchMetricSummariesInvalidParams(t *testing.T) {
-	handler, teardown := setupHandler(t)
-	defer teardown()
+	handler := setupHandler(t)
 
 	req := createRequest("searchMetricSummaries", []string{"0"}) // only one param
 	result, err := handler.Handle(context.Background(), req)
@@ -738,8 +705,7 @@ func TestSearchMetricSummariesInvalidParams(t *testing.T) {
 }
 
 func TestGetStats(t *testing.T) {
-	handler, teardown := setupHandlerWithData(t)
-	defer teardown()
+	handler := setupHandlerWithData(t)
 
 	result, err := handler.Handle(context.Background(), createRequest("getStats", nil))
 
@@ -765,8 +731,7 @@ func TestGetStats(t *testing.T) {
 }
 
 func TestClearLogs(t *testing.T) {
-	handler, teardown := setupHandlerWithData(t)
-	defer teardown()
+	handler := setupHandlerWithData(t)
 	ctx := context.Background()
 
 	result, err := handler.Handle(ctx, createRequest("clearLogs", nil))
@@ -783,8 +748,7 @@ func TestClearLogs(t *testing.T) {
 }
 
 func TestClearMetrics(t *testing.T) {
-	handler, teardown := setupHandlerWithMetrics(t)
-	defer teardown()
+	handler := setupHandlerWithMetrics(t)
 	ctx := context.Background()
 
 	result, err := handler.Handle(ctx, createRequest("clearMetrics", nil))
@@ -801,8 +765,7 @@ func TestClearMetrics(t *testing.T) {
 }
 
 func TestGetLogNotFound(t *testing.T) {
-	handler, teardown := setupHandlerWithData(t)
-	defer teardown()
+	handler := setupHandlerWithData(t)
 
 	req := createRequest("getLog", []string{"00000000-0000-0000-0000-0000000000aa"})
 	result, err := handler.Handle(context.Background(), req)
@@ -813,8 +776,7 @@ func TestGetLogNotFound(t *testing.T) {
 }
 
 func TestDeleteSpansByTraceID(t *testing.T) {
-	handler, teardown := setupHandlerWithData(t)
-	defer teardown()
+	handler := setupHandlerWithData(t)
 	ctx := context.Background()
 
 	result, err := handler.Handle(ctx, createRequest("deleteSpansByTraceID", []string{testTraceIDHex}))
@@ -833,8 +795,7 @@ func TestDeleteSpansByTraceID(t *testing.T) {
 }
 
 func TestDeleteLogByID(t *testing.T) {
-	handler, teardown := setupHandlerWithData(t)
-	defer teardown()
+	handler := setupHandlerWithData(t)
 	ctx := context.Background()
 
 	searchResult, err := handler.Handle(ctx, createRequest("searchLogs", []string{"0", strconv.FormatInt(1<<63-1, 10)}))
@@ -859,8 +820,7 @@ func TestDeleteLogByID(t *testing.T) {
 }
 
 func TestDeleteMetricStream(t *testing.T) {
-	handler, teardown := setupHandlerWithMetrics(t)
-	defer teardown()
+	handler := setupHandlerWithMetrics(t)
 	ctx := context.Background()
 
 	maxNano := strconv.FormatInt(1<<63-1, 10)
@@ -895,8 +855,7 @@ func TestDeleteMetricStream(t *testing.T) {
 // The cascade is a series of unconditional DELETEs, so this is a no-op rather
 // than an error -- the UI relies on that when a poll races a delete.
 func TestDeleteMetricStreamNotFound(t *testing.T) {
-	handler, teardown := setupHandlerWithMetrics(t)
-	defer teardown()
+	handler := setupHandlerWithMetrics(t)
 
 	result, err := handler.Handle(context.Background(),
 		createRequest("deleteMetricStream", []string{"00000000-0000-0000-0000-0000000000ff"}))
@@ -927,8 +886,7 @@ func assertAttributeDiscovery(t *testing.T, result any) {
 
 func TestGetLogAttributes(t *testing.T) {
 	t.Run("With Data", func(t *testing.T) {
-		handler, teardown := setupHandlerWithData(t)
-		defer teardown()
+		handler := setupHandlerWithData(t)
 
 		result, err := handler.Handle(context.Background(), createRequest("getLogAttributes", []any{}))
 		assert.NoError(t, err)
@@ -936,8 +894,7 @@ func TestGetLogAttributes(t *testing.T) {
 	})
 
 	t.Run("Invalid Parameters", func(t *testing.T) {
-		handler, teardown := setupHandler(t)
-		defer teardown()
+		handler := setupHandler(t)
 
 		result, err := handler.Handle(context.Background(), createRequest("getLogAttributes", []string{"123"}))
 		assert.Nil(t, result)
@@ -947,8 +904,7 @@ func TestGetLogAttributes(t *testing.T) {
 
 func TestGetMetricAttributes(t *testing.T) {
 	t.Run("With Data", func(t *testing.T) {
-		handler, teardown := setupHandlerWithMetrics(t)
-		defer teardown()
+		handler := setupHandlerWithMetrics(t)
 
 		result, err := handler.Handle(context.Background(), createRequest("getMetricAttributes", []any{}))
 		assert.NoError(t, err)
@@ -956,8 +912,7 @@ func TestGetMetricAttributes(t *testing.T) {
 	})
 
 	t.Run("Invalid Parameters", func(t *testing.T) {
-		handler, teardown := setupHandler(t)
-		defer teardown()
+		handler := setupHandler(t)
 
 		result, err := handler.Handle(context.Background(), createRequest("getMetricAttributes", []string{"123"}))
 		assert.Nil(t, result)
@@ -967,8 +922,7 @@ func TestGetMetricAttributes(t *testing.T) {
 
 func TestGetAttributesByTraceID(t *testing.T) {
 	t.Run("With Data", func(t *testing.T) {
-		handler, teardown := setupHandlerWithData(t)
-		defer teardown()
+		handler := setupHandlerWithData(t)
 
 		result, err := handler.Handle(context.Background(), createRequest("getAttributesByTraceID", []string{testTraceIDHex}))
 		assert.NoError(t, err)
@@ -976,8 +930,7 @@ func TestGetAttributesByTraceID(t *testing.T) {
 	})
 
 	t.Run("Invalid Parameters", func(t *testing.T) {
-		handler, teardown := setupHandler(t)
-		defer teardown()
+		handler := setupHandler(t)
 
 		result, err := handler.Handle(context.Background(), createRequest("getAttributesByTraceID", []any{42}))
 		assert.Nil(t, result)
@@ -986,8 +939,7 @@ func TestGetAttributesByTraceID(t *testing.T) {
 }
 
 func TestGetTraceSpanCount(t *testing.T) {
-	handler, teardown := setupHandlerWithData(t)
-	defer teardown()
+	handler := setupHandlerWithData(t)
 	ctx := context.Background()
 
 	t.Run("With Data", func(t *testing.T) {
@@ -1023,10 +975,11 @@ func buildTestMetrics() pmetric.Metrics {
 	return m
 }
 
-func setupHandlerWithMetrics(t *testing.T) (*JSONRPCHandler, func()) {
+func setupHandlerWithMetrics(t *testing.T) *JSONRPCHandler {
 	t.Helper()
 	s, err := store.NewStore(context.Background(), "", zap.NewNop())
 	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
 	handler := NewJSONRPCHandler(s, zap.NewNop())
 	ctx := context.Background()
 
@@ -1035,13 +988,12 @@ func setupHandlerWithMetrics(t *testing.T) (*JSONRPCHandler, func()) {
 	})
 	require.NoError(t, err, "ingest metrics")
 
-	return handler, func() { s.Close() }
+	return handler
 }
 
 func TestSearchMetricSummaries(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {
-		handler, teardown := setupHandler(t)
-		defer teardown()
+		handler := setupHandler(t)
 
 		req := createRequest("searchMetricSummaries", []string{"0", strconv.FormatInt(1<<63-1, 10)})
 		result, err := handler.Handle(context.Background(), req)
@@ -1055,8 +1007,7 @@ func TestSearchMetricSummaries(t *testing.T) {
 	})
 
 	t.Run("With Data", func(t *testing.T) {
-		handler, teardown := setupHandlerWithMetrics(t)
-		defer teardown()
+		handler := setupHandlerWithMetrics(t)
 
 		req := createRequest("searchMetricSummaries", []string{"0", strconv.FormatInt(1<<63-1, 10)})
 		result, err := handler.Handle(context.Background(), req)
@@ -1078,8 +1029,7 @@ func TestSearchMetricSummaries(t *testing.T) {
 	})
 
 	t.Run("With Query", func(t *testing.T) {
-		handler, teardown := setupHandlerWithMetrics(t)
-		defer teardown()
+		handler := setupHandlerWithMetrics(t)
 
 		query := map[string]any{
 			"id":   "q1",
@@ -1105,8 +1055,7 @@ func TestSearchMetricSummaries(t *testing.T) {
 	})
 
 	t.Run("Limit", func(t *testing.T) {
-		handler, teardown := setupHandlerWithMetrics(t)
-		defer teardown()
+		handler := setupHandlerWithMetrics(t)
 		maxTime := strconv.FormatInt(1<<63-1, 10)
 
 		result, err := handler.Handle(context.Background(), createRequest("searchMetricSummaries", []any{"0", maxTime, nil, 1}))
@@ -1125,8 +1074,7 @@ func TestSearchMetricSummaries(t *testing.T) {
 
 func TestGetMetric(t *testing.T) {
 	t.Run("Found", func(t *testing.T) {
-		handler, teardown := setupHandlerWithMetrics(t)
-		defer teardown()
+		handler := setupHandlerWithMetrics(t)
 
 		summaryReq := createRequest("searchMetricSummaries", []string{
 			"0", strconv.FormatInt(1<<63-1, 10),
@@ -1168,8 +1116,7 @@ func TestGetMetric(t *testing.T) {
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
-		handler, teardown := setupHandlerWithMetrics(t)
-		defer teardown()
+		handler := setupHandlerWithMetrics(t)
 
 		req := createRequest("getMetric", []any{
 			"00000000-0000-0000-0000-000000000000",
@@ -1187,8 +1134,7 @@ func TestGetMetric(t *testing.T) {
 	// not-found: it returns valid MetricData with an empty timeseries list.
 	// Only an unknown stream ID gets ErrMetricNotFound (see subtest above).
 	t.Run("Known Stream, Empty Window", func(t *testing.T) {
-		handler, teardown := setupHandlerWithMetrics(t)
-		defer teardown()
+		handler := setupHandlerWithMetrics(t)
 
 		summaryReq := createRequest("searchMetricSummaries", []string{
 			"0", strconv.FormatInt(1<<63-1, 10),
@@ -1223,8 +1169,7 @@ func TestGetMetric(t *testing.T) {
 }
 
 func TestMetricHandlersAcceptNullableBoundsPositionallyAndByName(t *testing.T) {
-	handler, teardown := setupHandlerWithMetrics(t)
-	defer teardown()
+	handler := setupHandlerWithMetrics(t)
 
 	summaryResult, err := handler.Handle(context.Background(), createRequest(
 		"searchMetricSummaries", []any{nil, nil}))
@@ -1290,8 +1235,7 @@ func TestSearchAttributes(t *testing.T) {
 	}
 
 	t.Run("finds the key holding a value", func(t *testing.T) {
-		handler, teardown := setupHandlerWithData(t)
-		defer teardown()
+		handler := setupHandlerWithData(t)
 
 		got := call(t, handler, []string{"pumpkin"})
 		require.NotEmpty(t, got, "a value present in the fixture must be found")
@@ -1308,8 +1252,7 @@ func TestSearchAttributes(t *testing.T) {
 	})
 
 	t.Run("no match and empty term return an empty list", func(t *testing.T) {
-		handler, teardown := setupHandlerWithData(t)
-		defer teardown()
+		handler := setupHandlerWithData(t)
 
 		assert.Empty(t, call(t, handler, []string{"no-such-text-anywhere"}))
 		assert.Empty(t, call(t, handler, []string{""}),
@@ -1317,8 +1260,7 @@ func TestSearchAttributes(t *testing.T) {
 	})
 
 	t.Run("rejects malformed params", func(t *testing.T) {
-		handler, teardown := setupHandler(t)
-		defer teardown()
+		handler := setupHandler(t)
 
 		for _, params := range []any{[]string{}, []string{"a", "b"}, []int{1}} {
 			_, err := handler.Handle(context.Background(), createRequest("searchAttributes", params))
@@ -1330,8 +1272,7 @@ func TestSearchAttributes(t *testing.T) {
 // TestMetricHandlersAcceptEveryParameter pins both contiguous positional
 // contracts and their distinct final arities.
 func TestMetricHandlersAcceptEveryParameter(t *testing.T) {
-	handler, teardown := setupHandlerWithMetrics(t)
-	defer teardown()
+	handler := setupHandlerWithMetrics(t)
 
 	summaryResult, err := handler.Handle(context.Background(), createRequest(
 		"searchMetricSummaries", []string{"0", strconv.FormatInt(1<<63-1, 10)}))
@@ -1521,8 +1462,7 @@ func TestOptionalTimestampParam(t *testing.T) {
 }
 
 func TestAttributeMethodsAcceptNoParams(t *testing.T) {
-	handler, teardown := setupHandler(t)
-	defer teardown()
+	handler := setupHandler(t)
 
 	for _, method := range []string{"getTraceAttributes", "getLogAttributes", "getMetricAttributes"} {
 		t.Run(method, func(t *testing.T) {
@@ -1559,8 +1499,7 @@ func TestAttributeMethodsAcceptNoParams(t *testing.T) {
 // what keep an allowlist an allowlist, so they are pinned rather than left to
 // the named-params table walk, which only checks the method has a name list.
 func TestGetFieldValues(t *testing.T) {
-	handler, teardown := setupHandlerWithData(t)
-	defer teardown()
+	handler := setupHandlerWithData(t)
 	ctx := context.Background()
 
 	decode := func(t *testing.T, result any) []string {

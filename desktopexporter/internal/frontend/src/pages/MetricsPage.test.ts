@@ -177,12 +177,6 @@ function makeStats(): Stats {
 }
 
 beforeEach(() => {
-  if (typeof Element.prototype.scrollTo !== 'function') {
-    Element.prototype.scrollTo = () => {}
-  }
-  if (typeof Element.prototype.scrollIntoView !== 'function') {
-    Element.prototype.scrollIntoView = () => {}
-  }
   searchMetricSummaries.mockReset()
   getStats.mockReset()
   getMetric.mockReset()

@@ -63,12 +63,6 @@ const EMPTY_STATS: Stats = {
 }
 
 beforeEach(() => {
-  if (typeof Element.prototype.scrollTo !== 'function') {
-    Element.prototype.scrollTo = () => {}
-  }
-  if (typeof Element.prototype.scrollIntoView !== 'function') {
-    Element.prototype.scrollIntoView = () => {}
-  }
   vi.clearAllMocks()
   getStats.mockResolvedValue(EMPTY_STATS)
   searchTraces.mockResolvedValue([])

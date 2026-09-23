@@ -114,6 +114,19 @@ func TestGetLogOTLP(t *testing.T) {
 		deep = deep.Slice().At(0)
 	}
 	assert.Equal(t, "bottom", deep.Str())
+}
+
+func TestValidateLogOTLPRejectsInvalidWireShapes(t *testing.T) {
+	s, ctx := storetest.New(t)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, otlpLogFixture(), s.FlushedIDs())
+	}))
+	primaryID := lookupLogID(t, s, ctx, "primary.event")
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.GetLogOTLP(ctx, db, primaryID)
+	})
+	require.NoError(t, err)
+	direct := string(raw)
 
 	for name, mutated := range map[string]string{
 		"wrong casing":   strings.Replace(direct, `"traceId":`, `"traceID":`, 1),
@@ -121,7 +134,7 @@ func TestGetLogOTLP(t *testing.T) {
 		"base64 ID":      strings.Replace(direct, `"traceId":"`+otlpLogTraceID+`"`, `"traceId":"/ty6mHZUMhABI0VniavN7w=="`, 1),
 		"unquoted int64": strings.Replace(direct, `"timeUnixNano":"18446744073709551614"`, `"timeUnixNano":18446744073709551614`, 1),
 	} {
-		t.Run("rejects "+name, func(t *testing.T) {
+		t.Run(name, func(t *testing.T) {
 			require.Error(t, validateLogOTLP([]byte(mutated)))
 		})
 	}
@@ -285,7 +298,7 @@ func otlpLogFixture() plog.Logs {
 }
 
 func validateLogOTLP(document []byte) error {
-	if err := rejectDuplicateLogJSONKeys(document); err != nil {
+	if err := storetest.RejectDuplicateJSONKeys(document); err != nil {
 		return err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(document))
@@ -375,51 +388,6 @@ func validateLogOTLPValue(value any, path string) error {
 		}
 	}
 	return nil
-}
-
-func rejectDuplicateLogJSONKeys(document []byte) error {
-	decoder := json.NewDecoder(bytes.NewReader(document))
-	var walk func() error
-	walk = func() error {
-		token, err := decoder.Token()
-		if err != nil {
-			return err
-		}
-		delim, ok := token.(json.Delim)
-		if !ok {
-			return nil
-		}
-		switch delim {
-		case '{':
-			seen := map[string]bool{}
-			for decoder.More() {
-				keyToken, err := decoder.Token()
-				if err != nil {
-					return err
-				}
-				key := keyToken.(string)
-				if seen[key] {
-					return fmt.Errorf("duplicate JSON key %q", key)
-				}
-				seen[key] = true
-				if err := walk(); err != nil {
-					return err
-				}
-			}
-			_, err = decoder.Token()
-			return err
-		case '[':
-			for decoder.More() {
-				if err := walk(); err != nil {
-					return err
-				}
-			}
-			_, err = decoder.Token()
-			return err
-		}
-		return nil
-	}
-	return walk()
 }
 
 func BenchmarkGetLogOTLP(b *testing.B) {
