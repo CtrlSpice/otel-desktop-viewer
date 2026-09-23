@@ -483,6 +483,33 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
 
     if (
       field.searchScope === 'field' &&
+      operatorIsValid &&
+      valueNode.name !== 'Null' &&
+      !listItems &&
+      (SIGNED_INTEGER_FIELDS.has(field.name.toLowerCase()) ||
+        TIMESTAMP_FIELDS.has(field.name.toLowerCase()))
+    ) {
+      const timestamp = TIMESTAMP_FIELDS.has(field.name.toLowerCase())
+      const integer = parseExactInteger(value)
+      if (
+        integer === null ||
+        (timestamp
+          ? integer < 0n || integer > UINT64_MAX
+          : integer < INT64_MIN || integer > INT64_MAX)
+      ) {
+        fail(
+          ctx,
+          valueNode.from,
+          valueNode.to,
+          `Integer value '${value}' must be an exact ${timestamp ? 'unsigned' : 'signed'} 64-bit integer`
+        )
+        return null
+      }
+      value = integer.toString()
+    }
+
+    if (
+      field.searchScope === 'field' &&
       field.name === 'duration' &&
       operatorIsValid &&
       valueNode.name !== 'Null'

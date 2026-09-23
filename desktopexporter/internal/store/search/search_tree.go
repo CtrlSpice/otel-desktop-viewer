@@ -330,11 +330,8 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 	paramName := fmt.Sprintf("value_%d", len(*params))
 
 	var bindValue any = value
-	if resolved.OperandMode == NativeSignedIntegerOperand {
-		if n, err := strconv.ParseInt(value, 10, 64); err == nil {
-			bindValue = n
-		}
-	} else if resolved.OperandMode == AttributeSignedIntegerOperand && operator != "IN" && operator != "NOT IN" {
+	if (resolved.OperandMode == NativeSignedIntegerOperand || resolved.OperandMode == AttributeSignedIntegerOperand) &&
+		operator != "IN" && operator != "NOT IN" {
 		normalized, err := normalizeExactSignedInteger(value)
 		if err != nil {
 			return "", err
