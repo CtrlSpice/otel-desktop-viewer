@@ -43,6 +43,7 @@ function resolveNextPos(
 }
 
 function escapeForSelector(value: string): string {
+  // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Checks whether this runtime provides CSS.escape before calling it; otherwise uses the quoted-selector fallback.
   return typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
     ? CSS.escape(value)
     : value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
