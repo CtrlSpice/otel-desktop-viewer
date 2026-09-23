@@ -13,16 +13,17 @@ resource, scope, and wrapper schema URLs, so one document can contain multiple
 their OTLP field names and wrappers are added only during export, without
 changing received attribute keys.
 
-`metrics.GetMetricOTLP` reconstructs one received metric occurrence selected by
-`metric_ingests.id`. It does not select by metric name, logical stream, UI series,
-representative resource, or time range. The output contains that occurrence's
-resource, scope, wrapper schema URLs, description, metadata, datapoints, and
-exemplars. Gauge, Sum, Histogram, and ExponentialHistogram are supported;
-Summary and unrecognised stored metric types return an unsupported-type error.
-The getter preserves temporality, monotonicity, number alternatives, optional
-histogram statistics, explicit and exponential buckets, and exemplar IDs. It
-does not export chart aggregates, reduced buckets, quantiles, rates, or other UI
-projections.
+`metrics.GetMetricOTLP` reconstructs one logical metric selected by
+`metric_streams.id`. The output is a standard OTLP JSON object containing all
+retained datapoints across that stream's stored reports. Reports with matching
+resource, scope, schema URLs, description, and metadata combine into one Metric;
+different source contexts remain associated with their own datapoints. A known
+supported stream with no reports returns an empty `resourceMetrics` array. Gauge,
+Sum, Histogram, and ExponentialHistogram are supported; Summary and unrecognised
+stored metric types return an unsupported-type error. The getter preserves
+temporality, monotonicity, number alternatives, optional histogram statistics,
+explicit and exponential buckets, and exemplar IDs. It does not export chart
+aggregates, reduced buckets, quantiles, rates, or other UI projections.
 
 SQL converts the distinct stored values used by the trace as one batch, while
 keeping each value's nodes and output separate. It first records every node and
@@ -32,7 +33,7 @@ opening and closing text, and one ordered aggregation per stored value assembles
 the result. This traversal-first shape avoids repeatedly copying completed
 subtrees and avoids one recursive SQL step per opening or closing fragment.
 Transformation, ordering, and serialization remain in SQL; Go binds the signal
-identifier, scans the result, and maps errors. A metric occurrence converts its
+identifier, scans the result, and maps errors. A metric stream converts its
 distinct resource, scope, metadata, datapoint, and exemplar attribute values in
 one shared batch before reattaching them to their stored owners.
 

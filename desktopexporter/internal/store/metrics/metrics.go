@@ -22,12 +22,11 @@ import (
 )
 
 var (
-	ErrInvalidMetricQuery     = errors.New("invalid metric search query")
-	ErrInvalidMetricLimit     = errors.New("invalid metric search limit")
-	ErrStreamIDNotFound       = errors.New("metric stream ID not found")
-	ErrMetricIngestIDNotFound = errors.New("metric ingest ID not found")
-	ErrUnsupportedMetricType  = errors.New("unsupported metric type")
-	ErrMetricsStoreInternal   = errors.New("metrics store internal error")
+	ErrInvalidMetricQuery    = errors.New("invalid metric search query")
+	ErrInvalidMetricLimit    = errors.New("invalid metric search limit")
+	ErrStreamIDNotFound      = errors.New("metric stream ID not found")
+	ErrUnsupportedMetricType = errors.New("unsupported metric type")
+	ErrMetricsStoreInternal  = errors.New("metrics store internal error")
 )
 
 // flushIntervalMetrics counts *metrics*, not datapoints -- a different unit
@@ -1023,12 +1022,11 @@ func GetMetric(ctx context.Context, db *sql.DB, streamID string, timeRange timer
 	return getMetric(ctx, db, getMetricParams{}, streamID, timeRange, targetBuckets, seriesIDs, quantiles, tzOffsetNs, viewBuckets, sparklineBuckets, selectedSeriesIDs, tzName, datapointSeriesIDs, datapointSeriesLimit)
 }
 
-// GetMetricOTLP returns one received metric occurrence as a standard OTLP JSON
-// object. metricIngestID identifies a metric_ingests row, not a logical stream;
-// the result therefore keeps that occurrence's resource, scope, metadata,
-// description, schema URLs, datapoints, and exemplars. Callers must transport
-// the returned bytes unchanged because parsing and re-encoding can lose -0.0.
-func GetMetricOTLP(ctx context.Context, db *sql.DB, metricIngestID string) (json.RawMessage, error) {
+// GetMetricOTLP returns all retained reports for a metric stream as a standard
+// OTLP JSON object. Reports with matching resource, scope, description, and
+// metadata are combined while distinct source contexts remain separate. Callers
+// must transport the returned bytes unchanged because re-encoding can lose -0.0.
+func GetMetricOTLP(ctx context.Context, db *sql.DB, streamID string) (json.RawMessage, error) {
 	query, err := queries.Render(queries.GetMetricOTLP, nil)
 	if err != nil {
 		return nil, fmt.Errorf("GetMetricOTLP: %w: %w", ErrMetricsStoreInternal, err)
@@ -1036,9 +1034,9 @@ func GetMetricOTLP(ctx context.Context, db *sql.DB, metricIngestID string) (json
 
 	var metricType string
 	var raw []byte
-	if err := db.QueryRowContext(ctx, query, metricIngestID).Scan(&metricType, &raw); err != nil {
+	if err := db.QueryRowContext(ctx, query, streamID).Scan(&metricType, &raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("GetMetricOTLP: %w", ErrMetricIngestIDNotFound)
+			return nil, fmt.Errorf("GetMetricOTLP: %w", ErrStreamIDNotFound)
 		}
 		return nil, fmt.Errorf("GetMetricOTLP: %w: %w", ErrMetricsStoreInternal, err)
 	}
