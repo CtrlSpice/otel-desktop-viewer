@@ -519,6 +519,45 @@ describe('SeriesDatapointList pagination and keyboard access', () => {
       /value 9223372036854775807, ID dp-1$/
     )
   })
+
+  it('preserves double precedence, zero values, and absent-value units', () => {
+    renderList(
+      [
+        makeDatapoint({
+          id: 'double',
+          doubleValue: 1.23456789,
+          intValue: 9_223_372_036_854_775_807n,
+          exemplars: [],
+        }),
+        makeDatapoint({ id: 'double-zero', doubleValue: 0, exemplars: [] }),
+        makeDatapoint({
+          id: 'int-zero',
+          doubleValue: null,
+          intValue: 0n,
+          valueType: 'Int',
+          exemplars: [],
+        }),
+        makeDatapoint({
+          id: 'absent',
+          doubleValue: null,
+          intValue: null,
+          exemplars: [],
+        }),
+      ],
+      'ms'
+    )
+
+    expect(datapointRow('double')).toHaveAccessibleName(
+      /value 1\.234568 ms, ID double$/
+    )
+    expect(datapointRow('double-zero')).toHaveAccessibleName(
+      /value 0 ms, ID double-zero$/
+    )
+    expect(datapointRow('int-zero')).toHaveAccessibleName(
+      /value 0 ms, ID int-zero$/
+    )
+    expect(datapointRow('absent')).toHaveAccessibleName(/value —, ID absent$/)
+  })
 })
 
 describe('SeriesDatapointList exemplar trace correlation', () => {

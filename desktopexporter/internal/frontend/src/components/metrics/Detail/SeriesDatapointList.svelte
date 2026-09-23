@@ -272,17 +272,13 @@
   function datapointValueParts(dp: DataPoint) {
     const unit = displayUnit(metricUnit)
     if (dp.metricType === 'Gauge' || dp.metricType === 'Sum') {
-      const raw = dp.doubleValue ?? dp.intValue
-      if (raw === undefined || raw === null) {
-        return { number: '—', unit: null }
+      if (dp.doubleValue !== null) {
+        return { number: formatMetricValuePlain(dp.doubleValue), unit }
       }
-      return {
-        number:
-          typeof raw === 'bigint'
-            ? raw.toString()
-            : formatMetricValuePlain(raw),
-        unit,
+      if (dp.intValue !== null) {
+        return { number: dp.intValue.toString(), unit }
       }
+      return { number: '—', unit: null }
     }
     if (
       dp.metricType === 'Histogram' ||
