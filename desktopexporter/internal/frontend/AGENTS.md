@@ -2,7 +2,9 @@
 
 - `npm run lint` rejects both Oxlint errors and warnings. Keep the standard lint
   gate at zero warnings without disabling rules or adding blanket suppressions.
-- `npm run lint:anti-slop:evaluate` reports the separate anti-slop cleanup backlog.
+- `npm run lint:anti-slop:evaluate` reports the production anti-slop cleanup
+  backlog; tests and test harnesses are excluded from this advisory scan only.
+  Enforced lint, type checks, Vitest, and Playwright retain their existing scope.
 - Reviewed external-value decoding and runtime-capability checks may use a
   next-line `anti-slop/no-runtime-typeof` exemption with a concrete boundary
   justification. Scope it to one finding; keep all other findings visible.
