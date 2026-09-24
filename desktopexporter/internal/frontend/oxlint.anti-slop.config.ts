@@ -13,8 +13,12 @@ export default defineConfig({
     '.pi/**',
     '.roo/**',
     '.windsurf/**',
+    '**/*.test.*',
+    '**/*.spec.*',
+    'e2e/**',
     'src/components/shared/Search/codemirror/query.parser.ts',
     'src/components/shared/Search/codemirror/query.parser.terms.ts',
+    'src/test/**',
     'tools/oxlint/anti-slop/**',
   ],
   jsPlugins: [
