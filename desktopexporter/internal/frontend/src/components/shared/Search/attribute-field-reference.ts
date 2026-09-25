@@ -64,6 +64,8 @@ export function createAttributeFieldReference(
   const type = FIELD_TYPES_BY_STORED_KIND.get(kind)
   if (!type) return null
 
+  // SAFETY: The membership checks below reject unknown scopes and scopes that
+  // do not belong to the selected signal before a search field is constructed.
   const attributeScope = scope as AttributeScope
   if (signal && !SCOPES_BY_SIGNAL[signal].has(attributeScope)) {
     return null
@@ -95,6 +97,8 @@ export function parseAttributeFieldReference(
 
   let name: string
   try {
+    // SAFETY: The regex captures a quoted JSON string. Parsing returns a
+    // string or throws; the catch rejects invalid JSON.
     name = JSON.parse(match[2]) as string
   } catch {
     return null
