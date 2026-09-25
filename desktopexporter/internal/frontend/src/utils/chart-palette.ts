@@ -94,6 +94,7 @@ const FAMILY_ORDER: readonly CategoricalStem[] = [
 ] as const
 
 const DEFAULT_CATEGORICAL_PALETTE = chartPalettes['rose-pine-moon']
+const PALETTES_BY_THEME = new Map(Object.entries(chartPalettes))
 const LEVEL_ORDER = [2, 0, 4, 1, 3] as const
 
 export const CHART_PALETTES = chartPalettes
@@ -115,9 +116,7 @@ export function categoricalPalette(
   }
   if (safeCount === 0) return []
 
-  const palette = Object.hasOwn(CHART_PALETTES, theme)
-    ? CHART_PALETTES[theme as keyof typeof CHART_PALETTES]
-    : DEFAULT_CATEGORICAL_PALETTE
+  const palette = PALETTES_BY_THEME.get(theme) ?? DEFAULT_CATEGORICAL_PALETTE
   const startIdx = FAMILY_ORDER.indexOf(start)
   const rotated =
     startIdx >= 0
