@@ -16,6 +16,7 @@
   } from '@/contexts/signal-list-page.svelte'
 
   type DrawerSearchPanelSegment = 'full' | 'toolbar' | 'search'
+  type SortMenuFocusTarget = 'selected' | 'first' | 'last'
 
   type Props = {
     /** `toolbar` = sort/time/refresh · `search` = editor · `full` = both */
@@ -46,7 +47,7 @@
   let sortTriggerEl = $state<HTMLButtonElement | null>(null)
   let sortPopoverOpen = $state(false)
   let focusedSortIndex = $state(0)
-  let pendingMenuFocus: 'selected' | 'first' | 'last' = 'selected'
+  let pendingMenuFocus: SortMenuFocusTarget = 'selected'
 
   const sortPopoverID = createPopoverID('sort-popover')
 
@@ -71,7 +72,9 @@
         if (open) {
           const target = pendingMenuFocus
           pendingMenuFocus = 'selected'
-          queueMicrotask(() => focusSortItem(target))
+          queueMicrotask(() => {
+            if (sortPopoverOpen) focusSortTarget(target)
+          })
         }
       },
     })
@@ -96,32 +99,36 @@
     )
   }
 
-  function focusSortItem(target: 'selected' | 'first' | 'last' | number) {
+  function focusSortItem(index: number) {
     const menuItems = sortMenuItems()
-    if (menuItems.length === 0) {
+    const item = menuItems[index]
+    if (!item) {
       sortTriggerEl?.focus()
       return
     }
-    const selectedIndex = Math.max(
-      0,
-      sortOptions.findIndex(option => option.value === sortValue)
-    )
-    const index =
-      typeof target === 'number'
-        ? target
-        : target === 'first'
-          ? 0
-          : target === 'last'
-            ? menuItems.length - 1
-            : selectedIndex
+
     focusedSortIndex = index
-    menuItems[index]?.focus()
+    item.focus()
   }
 
-  function openSortMenu(target: 'selected' | 'first' | 'last') {
+  function focusSortTarget(target: SortMenuFocusTarget) {
+    const menuItems = sortMenuItems()
+    const selectedIndex = sortOptions.findIndex(
+      option => option.value === sortValue
+    )
+    const index =
+      target === 'first'
+        ? 0
+        : target === 'last'
+          ? menuItems.length - 1
+          : Math.max(0, selectedIndex)
+    focusSortItem(index)
+  }
+
+  function openSortMenu(target: SortMenuFocusTarget) {
     pendingMenuFocus = target
     if (sortPopoverOpen) {
-      focusSortItem(target)
+      focusSortTarget(target)
     } else {
       sortPopoverEl?.showPopover()
     }

@@ -94,6 +94,29 @@ test.describe('home page accessibility', () => {
     expect(tracesLinkMetrics.zIndex).toBeGreaterThan(0)
   })
 
+  test('moves focus through the trace sort menu with native keyboard events', async ({
+    page,
+  }) => {
+    await page.goto('/traces')
+    const trigger = page.getByRole('button', { name: /^Sort by/ })
+    await trigger.focus()
+
+    await page.keyboard.press('ArrowDown')
+    const firstOption = page.getByRole('menuitemradio', { name: 'Start Time' })
+    await expect(firstOption).toBeFocused()
+    await expect(firstOption).toHaveAttribute('tabindex', '0')
+
+    await page.keyboard.press('End')
+    const lastOption = page.getByRole('menuitemradio', { name: 'Error Count' })
+    await expect(lastOption).toBeFocused()
+    await expect(lastOption).toHaveAttribute('tabindex', '0')
+    await expect(firstOption).toHaveAttribute('tabindex', '-1')
+
+    await page.keyboard.press('Escape')
+    await expect(trigger).toBeFocused()
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  })
+
   test('keeps visible endpoint labels in their accessible names', async ({
     page,
   }) => {
