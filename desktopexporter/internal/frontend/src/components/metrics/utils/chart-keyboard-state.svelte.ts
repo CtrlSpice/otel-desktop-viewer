@@ -27,18 +27,31 @@ type CursorStateConfig<Cursor, Command> = {
   initial(): Cursor | null
   reconcile(current: Cursor | null): Cursor | null
   move(current: Cursor | null, command: Command): Cursor | null
-  externalIdentity(): string | null
+  externalIdentity(): CursorIdentity | null
   syncExternal(current: Cursor | null): Cursor | null
 }
 
-function keyIdentity(key: CursorKey | null): string | null {
-  return key === null ? null : `${typeof key}:${String(key)}`
+type CursorIdentity =
+  readonly [key: CursorKey] | readonly [first: CursorKey, second: CursorKey]
+
+function sameIdentity(
+  a: CursorIdentity | null | undefined,
+  b: CursorIdentity | null
+): boolean {
+  if (a === null || a === undefined || b === null) return a === b
+  return (
+    a.length === b.length &&
+    Object.is(a[0], b[0]) &&
+    (a.length === 1 || Object.is(a[1], b[1]))
+  )
 }
 
-function lineCursorIdentity(cursor: LineCursor | null): string | null {
-  return cursor
-    ? `${cursor.lineKey}\u0000${keyIdentity(cursor.pointKey)}`
-    : null
+function keyIdentity(key: CursorKey | null): CursorIdentity | null {
+  return key === null ? null : [key]
+}
+
+function lineCursorIdentity(cursor: LineCursor | null): CursorIdentity | null {
+  return cursor ? [cursor.lineKey, cursor.pointKey] : null
 }
 
 function createCursorState<Cursor, Command>(
@@ -55,10 +68,10 @@ function createCursorState<Cursor, Command>(
     if (focused && next !== cursor) cursor = next
   })
 
-  let lastExternalIdentity: string | null | undefined
+  let lastExternalIdentity: CursorIdentity | null | undefined
   $effect(() => {
     const identity = config.externalIdentity()
-    if (identity === lastExternalIdentity) return
+    if (sameIdentity(lastExternalIdentity, identity)) return
     lastExternalIdentity = identity
     if (!focused || identity === null) return
 
