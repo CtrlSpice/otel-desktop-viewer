@@ -20,8 +20,8 @@ The contributor owns the pull request, review discussion, corrections, and follo
 
 ## Choosing work
 
-- **Report bugs** using the [bug report template](.github/ISSUE_TEMPLATE/bug_report.yml). Reproduction steps, logs, and screenshots are especially helpful.
-- **Suggest features** using the [feature request template](.github/ISSUE_TEMPLATE/feature_request.yml).
+- **Report bugs** using the [bug report template](../.github/ISSUE_TEMPLATE/bug_report.yml). Reproduction steps, logs, and screenshots are especially helpful.
+- **Suggest features** using the [feature request template](../.github/ISSUE_TEMPLATE/feature_request.yml).
 - **Improve documentation** in the README, [ARCHITECTURE.md](ARCHITECTURE.md), and comments around non-obvious behavior.
 - **Send a pull request** after following the coordination guidance below.
 
@@ -227,4 +227,4 @@ Maintainers decide what enters the project and may defer or close work that fall
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the project's [Apache 2.0 license](LICENSE).
+By contributing, you agree that your contributions will be licensed under the project's [Apache 2.0 license](../LICENSE).
