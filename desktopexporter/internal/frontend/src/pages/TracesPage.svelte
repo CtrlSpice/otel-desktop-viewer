@@ -72,7 +72,7 @@
     TraceStats,
     TraceLogSummary,
   } from '@/types/api-types'
-  import type { QueryNode } from '@/components/shared/Search/queryTree'
+  import type { QueryNode } from '@/search/model'
   import type { TimelineRecord } from '@/components/traces/Waterfall/timeline-markers'
   import {
     createSignalListPage,

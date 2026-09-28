@@ -1,15 +1,21 @@
-import { type FieldDefinition } from '@/constants/fields'
-import { OPERATORS, type Operator } from '@/constants/operators'
 import {
+  OPERATORS,
+  type FieldDefinition,
+  type Operator,
   type ParsedSearchRequest,
   type QueryNode,
-  generateID,
-} from './queryTree'
+  type SearchSignal,
+} from '@/search/model'
 import { parser } from './codemirror/query.parser'
 import type { SyntaxNode } from '@lezer/common'
 import { fieldResolutionIsAmbiguous, resolveField } from './field-resolution'
-import type { SearchSignal } from './attribute-field-reference'
 import { normalizeDuration, normalizeDurationList } from './duration-query'
+
+// Generate unique ID
+let nextQueryID = 0
+function generateID(): string {
+  return `query-${++nextQueryID}`
+}
 
 // One grammar, one parse.
 //

@@ -1,11 +1,11 @@
 import {
+  getOperatorsForFieldType,
   type AttributeScope,
   type FieldDefinition,
   type FieldType,
-} from '@/constants/fields'
-import { getOperatorsForFieldType } from '@/constants/operators'
+  type SearchSignal,
+} from '@/search/model'
 
-export type SearchSignal = 'traces' | 'logs' | 'metrics'
 export type AttributeField = Extract<
   FieldDefinition,
   { searchScope: 'attribute' }

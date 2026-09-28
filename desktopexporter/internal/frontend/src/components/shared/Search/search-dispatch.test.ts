@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { runSearch, type SearchContext } from './search-dispatch'
 import { telemetryAPI } from '@/services/telemetry-service'
 import type { LogSummary, MetricSummary, TraceSummary } from '@/types/api-types'
-import type { QueryNode } from './queryTree'
+import type { QueryNode } from '@/search/model'
 
 const traceResults = [
   {

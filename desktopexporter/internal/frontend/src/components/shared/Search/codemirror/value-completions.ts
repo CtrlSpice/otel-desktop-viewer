@@ -4,7 +4,7 @@ import {
   type Completion,
 } from '@codemirror/autocomplete'
 import type { JsonAttributeMatch, JsonAttributeValue } from '@/types/wire-types'
-import type { FieldDefinition } from '@/constants/fields'
+import type { FieldDefinition } from '@/search/model'
 import type { FieldValueCache } from './field-value-cache'
 import {
   attributeFieldIdentity,

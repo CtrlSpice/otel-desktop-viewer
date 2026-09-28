@@ -7,7 +7,7 @@ import {
 import { syntaxTree } from '@codemirror/language'
 import type { SyntaxNode } from '@lezer/common'
 import { FieldName as FieldTerm } from './query.parser.terms'
-import type { FieldDefinition } from '@/constants/fields'
+import type { FieldDefinition } from '@/search/model'
 import type { FieldValueCache } from './field-value-cache'
 import { resolveField } from '../field-resolution'
 

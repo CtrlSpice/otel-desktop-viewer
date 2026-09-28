@@ -4,8 +4,7 @@ import { CompletionContext } from '@codemirror/autocomplete'
 import { createQueryCompletionSource } from './completions'
 import { queryLanguage } from './query-language'
 import { getFieldsBySignal } from '@/constants/fields'
-import { OPERATORS } from '@/constants/operators'
-import type { FieldDefinition } from '@/constants/fields'
+import { OPERATORS, type FieldDefinition } from '@/search/model'
 
 // The completion source decides everything from the Lezer tree plus a little
 // position logic, and until now had no tests -- every regression in it was

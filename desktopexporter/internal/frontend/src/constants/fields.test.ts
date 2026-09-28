@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { parseQuery } from '@/components/shared/Search/queryParser'
-import { OPERATORS, getOperatorsForFieldType } from './operators'
-import { getStaticFieldsForSearch, type FieldDefinition } from './fields'
+import { getStaticFieldsForSearch } from './fields'
+import {
+  getOperatorsForFieldType,
+  OPERATORS,
+  type FieldDefinition,
+} from '@/search/model'
 
 const staticFieldNames = {
   traces: [

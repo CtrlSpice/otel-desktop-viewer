@@ -9,11 +9,9 @@
   import { autocompletion, closeBrackets } from '@codemirror/autocomplete'
   import { history, defaultKeymap, historyKeymap } from '@codemirror/commands'
   import { keymap } from '@codemirror/view'
-  import {
-    getStaticFieldsForSearch,
-    getDynamicAttributes,
-    type FieldDefinition,
-  } from '@/constants/fields'
+  import { getStaticFieldsForSearch } from '@/constants/fields'
+  import { getDynamicAttributes } from '@/services/search-field-service'
+  import type { FieldDefinition, SearchSignal } from '@/search/model'
   import { parseSearchRequest } from './queryParser'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
@@ -45,7 +43,7 @@
 
   // --- types ---
   type SearchEditorProps = {
-    signal: 'traces' | 'metrics' | 'logs'
+    signal: SearchSignal
     sortValue: TSortColumn
     sortDirection: SortDirection
     onSearchResults?: (event: SearchResultEvent) => void

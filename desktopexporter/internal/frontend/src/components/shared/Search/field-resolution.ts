@@ -1,8 +1,7 @@
-import type { FieldDefinition } from '@/constants/fields'
+import type { FieldDefinition, SearchSignal } from '@/search/model'
 import {
   attributeFieldIdentity,
   parseAttributeFieldReference,
-  type SearchSignal,
 } from './attribute-field-reference'
 
 export type NamedField = Exclude<FieldDefinition, { searchScope: 'global' }>

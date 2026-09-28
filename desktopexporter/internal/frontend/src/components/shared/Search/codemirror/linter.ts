@@ -1,8 +1,7 @@
 import { type Diagnostic, linter } from '@codemirror/lint'
 import type { EditorView } from '@codemirror/view'
 import { validateQuery, type ValidationError } from '../queryParser'
-import type { FieldDefinition } from '@/constants/fields'
-import type { SearchSignal } from '../attribute-field-reference'
+import type { FieldDefinition, SearchSignal } from '@/search/model'
 
 export function createQueryLinter(
   getFields: () => FieldDefinition[],

@@ -43,9 +43,12 @@ import type {
   JsonDouble,
 } from '@/types/wire-types'
 import type { Attribute, AttributeValue } from '@/types/api-types'
-import type { QueryNode } from '@/components/shared/Search/queryTree'
-import type { FieldDefinition, FieldType } from '@/constants/fields'
-import { getOperatorsForFieldType } from '@/constants/operators'
+import {
+  getOperatorsForFieldType,
+  type FieldDefinition,
+  type FieldType,
+  type QueryNode,
+} from '@/search/model'
 
 // JSON-RPC Client
 type JsonRpcParamValue =

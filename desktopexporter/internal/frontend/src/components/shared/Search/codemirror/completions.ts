@@ -5,8 +5,11 @@ import {
 } from '@codemirror/autocomplete'
 import { syntaxTree } from '@codemirror/language'
 import type { SyntaxNode } from '@lezer/common'
-import type { FieldDefinition } from '@/constants/fields'
-import { OPERATORS } from '@/constants/operators'
+import {
+  OPERATORS,
+  type FieldDefinition,
+  type SearchSignal,
+} from '@/search/model'
 import {
   Array as ArrayTerm,
   FieldName as FieldTerm,
@@ -24,7 +27,6 @@ import {
   parseAttributeFieldReference,
   storedKindForField,
   type AttributeField,
-  type SearchSignal,
 } from '../attribute-field-reference'
 
 const LOGICAL_COMPLETIONS: Completion[] = [

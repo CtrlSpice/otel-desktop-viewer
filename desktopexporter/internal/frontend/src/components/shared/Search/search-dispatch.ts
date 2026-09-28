@@ -1,8 +1,6 @@
-import type { QueryNode } from './queryTree'
+import type { QueryNode, SearchSignal } from '@/search/model'
 import { telemetryAPI, type SearchSort } from '@/services/telemetry-service'
 import type { SearchResultEvent } from '@/types/api-types'
-
-export type SearchSignal = SearchResultEvent['signal']
 
 export interface SearchContext {
   signal: SearchSignal

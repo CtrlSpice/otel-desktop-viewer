@@ -3,18 +3,18 @@
   import { FilterIcon } from '@hugeicons/core-free-icons'
   import {
     getStaticFieldsForSearch,
-    getDynamicAttributes,
     sameFieldDefinition,
-    type FieldDefinition,
     type ColumnVisibility,
   } from '@/constants/fields'
+  import { getDynamicAttributes } from '@/services/search-field-service'
+  import type { FieldDefinition, SearchSignal } from '@/search/model'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
   } from '@/contexts/time-context.svelte'
 
   type Props = {
-    signal: 'traces' | 'metrics' | 'logs'
+    signal: SearchSignal
     selectedFields: FieldDefinition[]
     onToggleField: (field: FieldDefinition) => void
     /** Optional text after the filter icon (e.g. “Columns”). */
