@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { parseQuery, parseSearchRequest, validateQuery } from './queryParser'
-import { OPERATORS } from '../../../constants/operators'
-import type { FieldDefinition } from '../../../constants/fields'
-import type { QueryNode } from './queryTree'
+import { OPERATORS, type FieldDefinition, type QueryNode } from '@/search/model'
 import {
   formatAttributeFieldReference,
   parseAttributeFieldReference,

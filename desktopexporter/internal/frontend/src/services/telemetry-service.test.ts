@@ -5,10 +5,13 @@ import {
   JsonRpcError,
   RequestAbortedError,
 } from './telemetry-service'
-import type { QueryNode } from '@/components/shared/Search/queryTree'
-import { SPAN_FIELDS, type FieldDefinition } from '@/constants/fields'
-import { OPERATORS } from '@/constants/operators'
-import { getOperatorsForFieldType } from '@/constants/operators'
+import { SPAN_FIELDS } from '@/constants/fields'
+import {
+  getOperatorsForFieldType,
+  OPERATORS,
+  type FieldDefinition,
+  type QueryNode,
+} from '@/search/model'
 import type {
   JsonMetricData,
   JsonLogData,

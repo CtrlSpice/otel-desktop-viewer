@@ -5,9 +5,12 @@ import { createValueDiscoverySource, matchToQuery } from './value-completions'
 import { createFieldValueCache } from './field-value-cache'
 import { queryLanguageSupport } from './query-language'
 import type { JsonAttributeMatch } from '@/types/wire-types'
-import { OPERATORS } from '@/constants/operators'
-import type { AttributeScope, FieldDefinition } from '@/constants/fields'
 import { getFieldsBySignal } from '@/constants/fields'
+import {
+  OPERATORS,
+  type AttributeScope,
+  type FieldDefinition,
+} from '@/search/model'
 
 const matches: JsonAttributeMatch[] = [
   {

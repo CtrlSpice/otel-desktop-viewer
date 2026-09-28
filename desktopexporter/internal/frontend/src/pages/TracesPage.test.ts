@@ -9,7 +9,7 @@ import type {
   SpanNode,
   TraceLogSummary,
 } from '@/types/api-types'
-import type { QueryNode } from '@/components/shared/Search/queryTree'
+import type { QueryNode } from '@/search/model'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
 // TracesPage is the only place the unplaced-span warning banner is rendered

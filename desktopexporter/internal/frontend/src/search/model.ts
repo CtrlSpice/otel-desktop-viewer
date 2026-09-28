@@ -1,6 +1,37 @@
-// Search operators with labels and symbols
-import type { FieldType } from './fields'
+export type SearchSignal = 'traces' | 'logs' | 'metrics'
 
+// Normalized search-field value types. Received discovery kinds are converted
+// at the telemetry boundary before they enter this model.
+export type FieldType =
+  | 'string'
+  | 'int64'
+  | 'float64'
+  | 'boolean'
+  | 'string[]'
+  | 'int64[]'
+  | 'float64[]'
+  | 'boolean[]'
+  | 'array'
+  | 'bytes'
+  | 'empty'
+  | 'map'
+
+// The owner kinds an attribute search field can target. Mirrors
+// JsonAttributeScope in wire-types.ts, which is what the discovery endpoints
+// return; the two must stay in step or a discovered field cannot be turned into
+// a search field.
+export type AttributeScope =
+  | 'resource'
+  | 'scope'
+  | 'span'
+  | 'event'
+  | 'link'
+  | 'log'
+  | 'datapoint'
+  | 'exemplar'
+  | 'metadata'
+
+// Search operators with labels and symbols
 export const OPERATORS = {
   EQUALS: { label: 'equals', symbol: '=' },
   NOT_EQUALS: { label: 'does not equal', symbol: '!=' },
@@ -29,6 +60,33 @@ export const OPERATORS = {
 } as const
 
 export type Operator = (typeof OPERATORS)[keyof typeof OPERATORS]
+
+export type FieldDefinition =
+  | {
+      name: string
+      type: FieldType
+      searchScope: 'field'
+      operators: Operator[]
+      description: string
+      /** If set, search autocomplete offers these literals after the operator. */
+      enumValues?: readonly string[]
+      /** If set, the store serves this field's distinct values through
+       * getFieldValues, and autocomplete offers them -- in the value position
+       * and from bare text. The server allowlists the same names; the two
+       * lists change together. */
+      discoverableValues?: true
+    }
+  | {
+      name: string
+      type: FieldType
+      searchScope: 'attribute'
+      attributeScope: AttributeScope
+      operators: Operator[]
+      description?: string
+    }
+  | {
+      searchScope: 'global'
+    }
 
 // Get appropriate operators based on field type
 export function getOperatorsForFieldType(fieldType: FieldType): Operator[] {
@@ -90,4 +148,33 @@ export function getOperatorsForFieldType(fieldType: FieldType): Operator[] {
       // Fallback to basic operators for unknown types
       return [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS]
   }
+}
+
+export type Query = {
+  field: FieldDefinition
+  operator: Operator
+  value: string
+}
+
+export type LogicalOperator = 'AND' | 'OR'
+
+export type QueryNode =
+  | {
+      id: string
+      type: 'condition'
+      query: Query
+    }
+  | {
+      id: string
+      type: 'group'
+      group: {
+        operator: LogicalOperator
+        children: QueryNode[]
+      }
+    }
+
+/** A parsed search keeps result controls outside the boolean predicate tree. */
+export type ParsedSearchRequest = {
+  predicate: QueryNode | null
+  limit: number | null
 }

@@ -1,5 +1,5 @@
 <script module lang="ts">
-  import type { AttributeScope, FieldDefinition } from '@/constants/fields'
+  import type { AttributeScope, FieldDefinition } from '@/search/model'
 
   /** When empty, show all detail rows; otherwise only matching search fields / attributes. */
   export function detailSearchFieldVisible(

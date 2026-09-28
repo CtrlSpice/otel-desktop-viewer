@@ -1,6 +1,9 @@
 // Search field definitions for different signal types
-import { telemetryAPI } from '@/services/telemetry-service'
-import { OPERATORS, type Operator } from './operators'
+import {
+  OPERATORS,
+  type FieldDefinition,
+  type SearchSignal,
+} from '@/search/model'
 
 // --- Column visibility (shared across signal tables) ---
 
@@ -30,63 +33,6 @@ export const TRACE_COLUMN_DEFAULTS: ColumnVisibility[] = [
   { fieldID: 'errorCount', label: 'Errors', category: 'flexible' },
   { fieldID: 'exceptionCount', label: 'Exceptions', category: 'flexible' },
 ]
-
-// OpenTelemetry attribute value types
-export type FieldType =
-  | 'string'
-  | 'int64'
-  | 'float64'
-  | 'boolean'
-  | 'string[]'
-  | 'int64[]'
-  | 'float64[]'
-  | 'boolean[]'
-  | 'array'
-  | 'bytes'
-  | 'empty'
-  | 'map'
-
-// The owner kinds an attribute search field can target. Mirrors
-// JsonAttributeScope in wire-types.ts, which is what the discovery endpoints
-// return; the two must stay in step or a discovered field cannot be turned into
-// a search field.
-export type AttributeScope =
-  | 'resource'
-  | 'scope'
-  | 'span'
-  | 'event'
-  | 'link'
-  | 'log'
-  | 'datapoint'
-  | 'exemplar'
-  | 'metadata'
-
-export type FieldDefinition =
-  | {
-      name: string
-      type: FieldType
-      searchScope: 'field'
-      operators: Operator[]
-      description: string
-      /** If set, search autocomplete offers these literals after the operator. */
-      enumValues?: readonly string[]
-      /** If set, the store serves this field's distinct values through
-       * getFieldValues, and autocomplete offers them -- in the value position
-       * and from bare text. The server allowlists the same names; the two
-       * lists change together. */
-      discoverableValues?: true
-    }
-  | {
-      name: string
-      type: FieldType
-      searchScope: 'attribute'
-      attributeScope: AttributeScope
-      operators: Operator[]
-      description?: string
-    }
-  | {
-      searchScope: 'global'
-    }
 
 type StaticFieldDefinition = Extract<FieldDefinition, { searchScope: 'field' }>
 
@@ -132,9 +78,7 @@ export const METRIC_TYPE_ENUM = [
 ] as const
 
 // Field suggestions based on signal
-export function getFieldsBySignal(
-  signal: 'traces' | 'logs' | 'metrics'
-): FieldDefinition[] {
+export function getFieldsBySignal(signal: SearchSignal): FieldDefinition[] {
   const baseFields = [...RESOURCE_FIELDS, ...SCOPE_FIELDS]
 
   switch (signal) {
@@ -151,7 +95,7 @@ export function getFieldsBySignal(
 
 /** Static searchable fields for CodeMirror suggestions and parsing. */
 export function getStaticFieldsForSearch(
-  signal: 'traces' | 'logs' | 'metrics'
+  signal: SearchSignal
 ): FieldDefinition[] {
   return getFieldsBySignal(signal)
 }
@@ -173,43 +117,6 @@ export function sameFieldDefinition(
     )
   }
   return true
-}
-
-// Function to get dynamic attributes
-export async function getDynamicAttributes(
-  signal: 'traces' | 'logs' | 'metrics'
-): Promise<FieldDefinition[]> {
-  switch (signal) {
-    case 'traces':
-      try {
-        const attributes = await telemetryAPI.getTraceAttributes()
-        return attributes
-      } catch (error) {
-        console.warn('Failed to load dynamic attributes:', error)
-        return []
-      }
-
-    case 'logs':
-      try {
-        const attributes = await telemetryAPI.getLogAttributes()
-        return attributes
-      } catch (error) {
-        console.warn('Failed to load dynamic log attributes:', error)
-        return []
-      }
-
-    case 'metrics':
-      try {
-        const attributes = await telemetryAPI.getMetricAttributes()
-        return attributes
-      } catch (error) {
-        console.warn('Failed to load dynamic metric attributes:', error)
-        return []
-      }
-    default:
-      console.warn('Unknown signal type: ', signal)
-      return []
-  }
 }
 
 // Span/Trace fields
