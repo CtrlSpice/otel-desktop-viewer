@@ -1,6 +1,7 @@
-# Agent support
+# Agent integration proposal
 
-Working plan, updated 2026-09-11.
+Status: proposal. The current capabilities below are implemented; the remaining
+sections describe possible future work, not committed features.
 
 ## Goal
 

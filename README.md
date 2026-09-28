@@ -384,7 +384,7 @@ The CLI is a custom OpenTelemetry Collector distribution. A `desktop` exporter:
 - exposes data through a **JSON-RPC** API at `POST /rpc`
 - serves a **Svelte** web UI embedded in the binary via [`go:embed`](https://go.dev/embed/)
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for a full system overview.
+See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for a full system overview.
 
 ## What's With the Axolotl??
 
@@ -394,7 +394,7 @@ More seriously, I like to give my [side projects](https://github.com/CtrlSpice/b
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before participating.
+See [CONTRIBUTING.md](docs/CONTRIBUTING.md). Please read our [Code of Conduct](docs/CODE_OF_CONDUCT.md) before participating.
 
 ## License
 
