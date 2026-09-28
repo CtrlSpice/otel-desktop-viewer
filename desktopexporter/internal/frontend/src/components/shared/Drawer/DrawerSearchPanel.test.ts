@@ -98,6 +98,21 @@ describe('DrawerSearchPanel toolbar segment', () => {
     ).toHaveFocus()
   })
 
+  it('focuses the first option when the selected value is absent', async () => {
+    renderPanel({
+      segment: 'toolbar',
+      sortOptions: [
+        { value: 'time', label: 'Start time' },
+        { value: 'spanCount', label: 'Span count' },
+      ],
+    })
+    await openSortMenu()
+
+    expect(
+      screen.getByRole('menuitemradio', { name: 'Start time' })
+    ).toHaveFocus()
+  })
+
   it('opens to the first or last option with ArrowDown or ArrowUp', async () => {
     renderPanel({ segment: 'toolbar' })
     const user = userEvent.setup()

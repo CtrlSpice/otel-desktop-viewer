@@ -92,6 +92,12 @@ describe('categoricalPalette', () => {
     expect(categoricalPalette(2.9, 'pine')).toHaveLength(2)
   })
 
+  it('falls back to the moon palette for unknown and empty themes', () => {
+    const moon = categoricalPalette(5, 'pine', 'rose-pine-moon')
+    expect(categoricalPalette(5, 'pine', 'not-a-theme')).toEqual(moon)
+    expect(categoricalPalette(5, 'pine')).toEqual(moon)
+  })
+
   it('falls back for inherited object property names', () => {
     expect(categoricalPalette(5, 'pine', 'constructor')).toEqual(
       categoricalPalette(5, 'pine', 'rose-pine-moon')
