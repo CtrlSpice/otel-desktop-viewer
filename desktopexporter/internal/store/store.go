@@ -23,6 +23,10 @@ import (
 // DuckDB connection with real memory cost.
 const maxPoolConns = 4
 
+// These database-global controls must be set before DuckDB initializes its
+// statically linked JSON and ICU extensions or exposes any connection.
+const hardenedDuckDBOptions = "allow_community_extensions=false&autoload_known_extensions=false&autoinstall_known_extensions=false&enable_external_access=false&lock_configuration=true"
+
 // Sentinel errors for use with errors.Is.
 var (
 	ErrStoreConnectionClosed = errors.New("store connection is closed")
@@ -114,7 +118,10 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	if dbPath != "" {
 		dbPath = filepath.Clean(dbPath)
 	}
-	connector, err := duckdb.NewConnector(dbPath, nil)
+	if strings.ContainsAny(dbPath, "?#") {
+		return nil, fmt.Errorf("%w: database path cannot contain '?' or '#'", ErrStoreInitFailed)
+	}
+	connector, err := duckdb.NewConnector(dbPath+"?"+hardenedDuckDBOptions, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrStoreInitFailed, err)
 	}
@@ -123,7 +130,6 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrStoreInitFailed, err)
 	}
-
 	db := sql.OpenDB(connector)
 
 	// Idle connections are kept rather than dropped: we hold no connection-local

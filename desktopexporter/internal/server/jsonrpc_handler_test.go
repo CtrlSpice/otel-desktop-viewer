@@ -13,6 +13,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
+	storequery "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/query"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1578,4 +1579,51 @@ func TestGetFieldValues(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestQuery(t *testing.T) {
+	handler := setupHandler(t)
+	ctx := context.Background()
+
+	result, err := handler.Handle(ctx, createRequest("query", map[string]any{
+		"sql": "select * from range(26)",
+	}))
+	require.NoError(t, err)
+	queryResult, ok := result.(storequery.Result)
+	require.True(t, ok, "result type %T", result)
+	assert.Equal(t, storequery.DefaultLimit, queryResult.RowCount)
+	assert.True(t, queryResult.Truncated)
+
+	result, err = handler.Handle(ctx, createRequest("query", []any{"SHOW TABLES", 2}))
+	require.NoError(t, err)
+	queryResult = result.(storequery.Result)
+	assert.LessOrEqual(t, queryResult.RowCount, 2)
+	assert.NotEmpty(t, queryResult.Columns)
+
+	for _, params := range []any{
+		[]any{"delete from spans"},
+		[]any{"select 1; select 2"},
+		[]any{"select 1", storequery.MaxLimit + 1},
+		[]any{1},
+	} {
+		_, err := handler.Handle(ctx, createRequest("query", params))
+		assert.Error(t, err, "params %#v", params)
+	}
+}
+
+func TestQueryDistinguishesServerTimeoutFromCallerCancellation(t *testing.T) {
+	handler := setupHandler(t)
+	handler.queryLimit = 10 * time.Millisecond
+
+	_, err := handler.Handle(context.Background(), createRequest("query", []any{
+		"select sum(i) from range(1000000000) t(i)",
+	}))
+	assert.ErrorIs(t, err, ErrQueryTimeout)
+	assert.NotErrorIs(t, err, ErrRequestCanceled)
+
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = handler.Handle(canceled, createRequest("query", []any{"select 1"}))
+	assert.ErrorIs(t, err, ErrRequestCanceled)
+	assert.NotErrorIs(t, err, ErrQueryTimeout)
 }
