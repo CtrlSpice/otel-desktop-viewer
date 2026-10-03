@@ -3,6 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -318,4 +321,88 @@ func TestComponentModuleVersionsMatchGoMod(t *testing.T) {
 		checked++
 	}
 	assert.Positive(t, checked, "no versioned collector modules were compared")
+}
+
+func TestQueryCommandColumnAndJSONOutput(t *testing.T) {
+	var received map[string]any
+	viewer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/rpc", r.URL.Path)
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&received))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"columns":[{"name":"name","duckdbType":"VARCHAR","encoding":"string"},{"name":"count","duckdbType":"UBIGINT","encoding":"decimal-string"}],"rows":[["界","9007199254740993"]],"limit":7,"rowCount":1,"truncated":false}}`))
+	}))
+	defer viewer.Close()
+
+	cmd := newCommand(otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer"}})
+	var output bytes.Buffer
+	cmd.SetOut(&output)
+	cmd.SetErr(&output)
+	cmd.SetArgs([]string{"query", "select name, count from example", "--endpoint", viewer.URL, "--limit", "7"})
+	require.NoError(t, cmd.Execute())
+	assert.Equal(t, "name  count           \n----  ----------------\n界    9007199254740993\n", output.String())
+	params := received["params"].(map[string]any)
+	assert.Equal(t, "select name, count from example", params["sql"])
+	assert.Equal(t, float64(7), params["limit"])
+
+	output.Reset()
+	cmd = newCommand(otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer"}})
+	cmd.SetOut(&output)
+	cmd.SetErr(&output)
+	cmd.SetArgs([]string{"query", "select 1", "--endpoint", viewer.URL, "--json"})
+	require.NoError(t, cmd.Execute())
+	assert.JSONEq(t, `{"columns":[{"name":"name","duckdbType":"VARCHAR","encoding":"string"},{"name":"count","duckdbType":"UBIGINT","encoding":"decimal-string"}],"rows":[["界","9007199254740993"]],"limit":7,"rowCount":1,"truncated":false}`, output.String())
+}
+
+func TestQueryCommandHelpAndFailures(t *testing.T) {
+	cmd := newCommand(otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer"}})
+	var output bytes.Buffer
+	cmd.SetOut(&output)
+	cmd.SetErr(&output)
+	cmd.SetArgs([]string{"query", "--help"})
+	require.NoError(t, cmd.Execute())
+	assert.Contains(t, output.String(), "🔎")
+	assert.Contains(t, output.String(), "--limit")
+	assert.Contains(t, output.String(), "SHOW TABLES")
+
+	for _, tc := range []struct {
+		name    string
+		code    int
+		message string
+	}{
+		{"rejected SQL", -32602, "query rejected: writes are not allowed"},
+		{"server timeout", -32011, "Query exceeded the 2 second execution limit; narrow the SQL and retry"},
+		{"caller cancellation", -32010, "Request canceled"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			viewer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"jsonrpc": "2.0", "id": 1,
+					"error": map[string]any{"code": tc.code, "message": tc.message},
+				})
+			}))
+			defer viewer.Close()
+
+			cmd := newCommand(otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer"}})
+			var failureOutput bytes.Buffer
+			cmd.SetOut(&failureOutput)
+			cmd.SetErr(&failureOutput)
+			cmd.SetArgs([]string{"query", "select expensive_work", "--endpoint", viewer.URL})
+			err := cmd.Execute()
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.message)
+			assert.NotContains(t, failureOutput.String(), "Usage:")
+		})
+	}
+}
+
+func TestFormatColumnsEscapesControlsAndMeasuresGraphemes(t *testing.T) {
+	result := queryResult{
+		Columns: []queryColumn{{Name: "emoji"}, {Name: "value"}},
+		Rows: [][]any{
+			{"👨‍👩‍👧‍👦", "e\u0301"},
+			{"界", "line\n\t\x1b[31m"},
+		},
+		Limit: 25, RowCount: 2, Truncated: true,
+	}
+	assert.Equal(t, "emoji  value             \n-----  ------------------\n👨‍👩‍👧‍👦     é                 \n界     line\\n\\t\\u001b[31m\n[2 rows shown; more rows available, use --limit up to 1000]\n", formatColumns(result))
 }

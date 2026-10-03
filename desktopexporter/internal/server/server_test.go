@@ -3,17 +3,21 @@ package server
 import (
 	"bytes"
 	"context"
+	"database/sql/driver"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	storequery "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/query"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -262,4 +266,60 @@ func TestStaticCacheHeaders(t *testing.T) {
 			"a matching validator should cost a 304, not another copy")
 		assert.Empty(t, rec.Body.String())
 	})
+}
+
+func TestRPCQueryReadsIngestedDataInBothStoreModes(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		dbPath func(*testing.T) string
+	}{
+		{"in-memory", func(*testing.T) string { return "" }},
+		{"persistent", func(t *testing.T) string { return filepath.Join(t.TempDir(), "viewer.db") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			viewerStore, err := store.NewStore(context.Background(), tc.dbPath(t), zap.NewNop())
+			require.NoError(t, err)
+			defer viewerStore.Close()
+			err = viewerStore.WithConn(func(conn driver.Conn) error {
+				return spans.Ingest(context.Background(), conn, buildTestTraces(), viewerStore.FlushedIDs())
+			})
+			require.NoError(t, err)
+
+			viewerServer, err := NewServer("localhost:0", viewerStore, zap.NewNop(), telemetry.Disabled())
+			require.NoError(t, err)
+			testServer := httptest.NewServer(viewerServer.server.Handler)
+			defer testServer.Close()
+
+			body := `{"jsonrpc":"2.0","id":1,"method":"query","params":{"sql":"select name from spans","limit":25}}`
+			response, err := http.Post(testServer.URL+"/rpc", "application/json", strings.NewReader(body))
+			require.NoError(t, err)
+			defer response.Body.Close()
+			var rpcResponse struct {
+				Result storequery.Result `json:"result"`
+			}
+			require.NoError(t, json.NewDecoder(response.Body).Decode(&rpcResponse))
+			require.Len(t, rpcResponse.Result.Rows, 1)
+			assert.Equal(t, "test", rpcResponse.Result.Rows[0][0])
+		})
+	}
+}
+
+func TestRPCQueryReturnsActionableErrors(t *testing.T) {
+	testServer, teardown := setupServer(t)
+	defer teardown()
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"query","params":{"sql":"delete from spans"}}`
+	response, err := http.Post(testServer.URL+"/rpc", "application/json", strings.NewReader(body))
+	require.NoError(t, err)
+	defer response.Body.Close()
+	var rpcResponse struct {
+		Error struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&rpcResponse))
+	assert.Equal(t, -32602, rpcResponse.Error.Code)
+	assert.Contains(t, rpcResponse.Error.Message, "query rejected")
+	assert.Contains(t, rpcResponse.Error.Message, "not read-only")
 }

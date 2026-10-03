@@ -26,6 +26,7 @@ const (
 	ErrCodeInvalidQuery    = -32007
 	ErrCodeInvalidStreamID = -32009
 	ErrCodeRequestCanceled = -32010
+	ErrCodeQueryTimeout    = -32011
 )
 
 // Custom JSON-RPC errors
@@ -44,6 +45,7 @@ var (
 	// context.Canceled. Nobody is left to receive this, so it exists to keep
 	// cancellation out of the internal-error bucket rather than to be shown.
 	ErrRequestCanceled = jsonrpc2.NewError(ErrCodeRequestCanceled, "Request canceled")
+	ErrQueryTimeout    = jsonrpc2.NewError(ErrCodeQueryTimeout, "Query exceeded the 2 second execution limit; narrow the SQL and retry")
 )
 
 // mapStoreError maps store-layer sentinel errors to JSON-RPC errors.
