@@ -13,6 +13,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
+	storequery "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/query"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -30,6 +31,37 @@ func setupHandler(t *testing.T) *JSONRPCHandler {
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	return NewJSONRPCHandler(s, zap.NewNop())
+}
+
+func TestQuery(t *testing.T) {
+	handler := setupHandler(t)
+	ctx := context.Background()
+
+	result, err := handler.Handle(ctx, createRequest("query", map[string]any{
+		"sql": "select * from range(26)",
+	}))
+	require.NoError(t, err)
+	queryResult, ok := result.(storequery.Result)
+	require.True(t, ok, "result type %T", result)
+	assert.Equal(t, storequery.DefaultLimit, queryResult.RowCount)
+	assert.True(t, queryResult.Truncated)
+
+	result, err = handler.Handle(ctx, createRequest("query", []any{"SHOW TABLES", 2}))
+	require.NoError(t, err)
+	queryResult = result.(storequery.Result)
+	assert.LessOrEqual(t, queryResult.RowCount, uint64(2))
+	assert.NotEmpty(t, queryResult.Columns)
+
+	for _, params := range []any{
+		[]any{"delete from spans"},
+		[]any{"select 1; select 2"},
+		[]any{"select 1", -1},
+		[]any{"select 1", 1.5},
+		[]any{1},
+	} {
+		_, err := handler.Handle(ctx, createRequest("query", params))
+		assert.Error(t, err, "params %#v", params)
+	}
 }
 
 // buildTestTraces returns ptrace.Traces with one span (trace ID 00...01) for handler tests.

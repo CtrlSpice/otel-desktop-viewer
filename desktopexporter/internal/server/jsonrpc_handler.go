@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
+	storequery "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/query"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/stats"
@@ -112,9 +114,54 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.getStats(ctx)
 	case "getTraceSpanCount":
 		return h.getTraceSpanCount(ctx, req)
+	case "query":
+		return h.query(ctx, req)
 	default:
 		return nil, jsonrpc2.ErrMethodNotFound
 	}
+}
+
+func (h *JSONRPCHandler) query(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	var params []any
+	if err := decodeParams(req.Params, &params); err != nil || len(params) < 1 || len(params) > 2 {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	statement, ok := params[0].(string)
+	if !ok {
+		return nil, fmt.Errorf("sql must be a string: %w", jsonrpc2.ErrInvalidParams)
+	}
+	limit := storequery.DefaultLimit
+	if len(params) == 2 {
+		number, ok := params[1].(json.Number)
+		if !ok {
+			return nil, fmt.Errorf("limit must be a non-negative whole number: %w", jsonrpc2.ErrInvalidParams)
+		}
+		parsed, err := strconv.ParseUint(number.String(), 10, 64)
+		if err != nil || parsed == ^uint64(0) {
+			return nil, fmt.Errorf("limit must be a non-negative whole number: %w", jsonrpc2.ErrInvalidParams)
+		}
+		limit = parsed
+	}
+
+	result, err := storeRead(h.store, func(db *sql.DB) (storequery.Result, error) {
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			return storequery.Result{}, err
+		}
+		defer conn.Close()
+		return storequery.Execute(ctx, conn, statement, limit)
+	})
+	if err == nil {
+		return result, nil
+	}
+	if errors.Is(err, storequery.ErrReadOnly) || errors.Is(err, storequery.ErrUnsupportedType) ||
+		errors.Is(err, storequery.ErrInvalidLimit) {
+		return nil, fmt.Errorf("query rejected: %v: %w", err, jsonrpc2.ErrInvalidParams)
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, h.handleStoreError(ctx, err)
+	}
+	return nil, fmt.Errorf("query failed: %v: %w", err, ErrInvalidQuery)
 }
 
 func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request) (any, error) {
