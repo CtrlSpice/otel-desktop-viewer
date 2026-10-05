@@ -28,6 +28,8 @@ func TestNamedParamsMatchPositional(t *testing.T) {
 			`{"logID":"L1"}`, `["L1"]`},
 		{"searchAttributes",
 			`{"term":"http"}`, `["http"]`},
+		{"query",
+			`{"limit":5,"sql":"select 1"}`, `["select 1",5]`},
 		// Order in the object must not matter.
 		{"searchLogs",
 			`{"endTime":"2","startTime":"1"}`, `["1","2"]`},

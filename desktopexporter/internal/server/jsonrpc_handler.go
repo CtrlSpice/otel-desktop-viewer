@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
+	storequery "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/query"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/stats"
@@ -55,6 +57,22 @@ func storeRead[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error)
 		return err
 	})
 	return out, err
+}
+
+func handlerRead[T any](ctx context.Context, h *JSONRPCHandler, fn func(db *sql.DB) (T, error)) (any, error) {
+	result, err := storeRead(h.store, fn)
+	if err != nil {
+		return nil, h.handleStoreError(ctx, err)
+	}
+	return result, nil
+}
+
+func decodePositionalParams(raw json.RawMessage, minParams, maxParams int) ([]any, error) {
+	var params []any
+	if err := decodeParams(raw, &params); err != nil || len(params) < minParams || len(params) > maxParams {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	return params, nil
 }
 
 func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
@@ -112,49 +130,109 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.getStats(ctx)
 	case "getTraceSpanCount":
 		return h.getTraceSpanCount(ctx, req)
+	case "query":
+		return h.query(ctx, req)
 	default:
 		return nil, jsonrpc2.ErrMethodNotFound
 	}
 }
 
-func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	var params []any
-	if err := decodeParams(req.Params, &params); err != nil {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
+type queryParams struct {
+	statement string
+	limit     uint64
+}
 
-	if len(params) < 2 || len(params) > 5 {
-		return nil, jsonrpc2.ErrInvalidParams
+func parseQueryParams(raw json.RawMessage) (queryParams, error) {
+	params, err := decodePositionalParams(raw, 1, 2)
+	if err != nil {
+		return queryParams{}, err
 	}
+	statement, ok := params[0].(string)
+	if !ok {
+		return queryParams{}, fmt.Errorf("sql must be a string: %w", jsonrpc2.ErrInvalidParams)
+	}
+	limit := storequery.DefaultLimit
+	if len(params) == 2 {
+		number, ok := params[1].(json.Number)
+		if !ok {
+			return queryParams{}, fmt.Errorf("limit must be a non-negative whole number: %w", jsonrpc2.ErrInvalidParams)
+		}
+		parsed, err := strconv.ParseUint(number.String(), 10, 64)
+		if err != nil {
+			return queryParams{}, fmt.Errorf("limit must be a non-negative whole number: %w", jsonrpc2.ErrInvalidParams)
+		}
+		limit = parsed
+	}
+	return queryParams{statement: statement, limit: limit}, nil
+}
 
-	timeRange, err := h.parseTimeRange(params[0], params[1])
+func (h *JSONRPCHandler) query(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	params, err := parseQueryParams(req.Params)
 	if err != nil {
 		return nil, err
 	}
 
+	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+		conn, err := db.Conn(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer conn.Close()
+		return storequery.Execute(ctx, conn, params.statement, params.limit)
+	})
+	if err == nil {
+		return result, nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return nil, h.handleStoreError(ctx, err)
+	}
+	if errors.Is(err, storequery.ErrReadOnly) {
+		return nil, fmt.Errorf("query rejected: %v: %w", err, jsonrpc2.ErrInvalidParams)
+	}
+	return nil, fmt.Errorf("query failed: %v: %w", err, ErrInvalidQuery)
+}
+
+type searchParams struct {
+	timeRange store.TimeRange
+	query     any
+	options   search.ResultOptions
+}
+
+func parseSearchParams(raw json.RawMessage) (searchParams, error) {
+	params, err := decodePositionalParams(raw, 2, 5)
+	if err != nil {
+		return searchParams{}, err
+	}
+	timeRange, err := parseTimeRange(params[0], params[1])
+	if err != nil {
+		return searchParams{}, err
+	}
 	var query any
 	if len(params) >= 3 {
 		query = params[2]
 	}
-	options, err := h.parseSearchOptions(params)
+	options, err := parseSearchOptions(params)
+	if err != nil {
+		return searchParams{}, err
+	}
+	return searchParams{timeRange: timeRange, query: query, options: options}, nil
+}
+
+func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	params, err := parseSearchParams(req.Params)
 	if err != nil {
 		return nil, err
 	}
-
-	summaries, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchTracesWithOptions(ctx, db, timeRange, query, options)
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.SearchTracesWithOptions(ctx, db, params.timeRange, params.query, params.options)
 	})
-	if err != nil {
-		return nil, h.handleStoreError(ctx, err)
-	}
-	return summaries, nil
 }
 
-func (h *JSONRPCHandler) parseSearchLimit(params []any) (*int64, error) {
+func parseSearchLimit(params []any) (*int64, error) {
 	if len(params) < 4 || params[3] == nil {
 		return nil, nil
 	}
-	limit, err := h.parseTimestampParam(params[3], "limit")
+	limit, err := parseTimestampParam(params[3], "limit")
 	if err != nil {
 		return nil, err
 	}
@@ -164,8 +242,8 @@ func (h *JSONRPCHandler) parseSearchLimit(params []any) (*int64, error) {
 	return &limit, nil
 }
 
-func (h *JSONRPCHandler) parseSearchOptions(params []any) (search.ResultOptions, error) {
-	limit, err := h.parseSearchLimit(params)
+func parseSearchOptions(params []any) (search.ResultOptions, error) {
+	limit, err := parseSearchLimit(params)
 	if err != nil {
 		return search.ResultOptions{}, err
 	}
@@ -189,16 +267,11 @@ func (h *JSONRPCHandler) parseSearchOptions(params []any) (search.ResultOptions,
 }
 
 func (h *JSONRPCHandler) searchSpans(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	var params []any
-	if err := decodeParams(req.Params, &params); err != nil {
-		return nil, jsonrpc2.ErrInvalidParams
+	params, err := decodePositionalParams(req.Params, 1, 2)
+	if err != nil {
+		return nil, err
 	}
-
-	if len(params) < 1 || len(params) > 2 {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-
-	traceID, err := h.parseIDParam(params[0], ErrInvalidTraceID, normalizeUUID)
+	traceID, err := parseIDParam(params[0], ErrInvalidTraceID, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
@@ -208,151 +281,59 @@ func (h *JSONRPCHandler) searchSpans(ctx context.Context, req *jsonrpc2.Request)
 		query = params[1]
 	}
 
-	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.SearchSpans(ctx, db, traceID, query)
 	})
-	if err != nil {
-		return nil, h.handleStoreError(ctx, err)
-	}
-	return result, nil
 }
 
 func (h *JSONRPCHandler) clearTraces(ctx context.Context) (any, error) {
-	// Clear deletes the signal's own rows but never the dictionary: attribute,
-	// resource and scope rows are shared across signals, so only a sweep can
-	// prove one is unreferenced. It has to run here rather than being left to
-	// retention -- retention is size-driven and does not run at all when the
-	// cap is disabled, which would leak every orphaned row until restart.
-	err := h.store.WithDBWrite(func(db *sql.DB) error {
-		if err := spans.Clear(ctx, db); err != nil {
-			return err
-		}
-		return ingest.SweepOrphans(ctx, db, h.store.FlushedIDs())
-	})
-	if err != nil {
-		return nil, h.handleStoreError(ctx, err)
-	}
-	return "Traces cleared successfully", nil
+	return h.clearSignal(ctx, spans.Clear, "Traces cleared successfully")
 }
 
 func (h *JSONRPCHandler) searchLogs(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	var params []any
-	if err := decodeParams(req.Params, &params); err != nil {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	if len(params) < 2 || len(params) > 5 {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	timeRange, err := h.parseTimeRange(params[0], params[1])
+	params, err := parseSearchParams(req.Params)
 	if err != nil {
 		return nil, err
 	}
-	var query any
-	if len(params) >= 3 {
-		query = params[2]
-	}
-	options, err := h.parseSearchOptions(params)
-	if err != nil {
-		return nil, err
-	}
-	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
-		return logs.SearchWithOptions(ctx, db, timeRange, query, options)
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.SearchWithOptions(ctx, db, params.timeRange, params.query, params.options)
 	})
-	if err != nil {
-		return nil, h.handleStoreError(ctx, err)
-	}
-	return result, nil
 }
 
 func (h *JSONRPCHandler) getTraceLogs(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	var params []any
-	if err := decodeParams(req.Params, &params); err != nil {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	if len(params) != 1 {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	traceID, err := h.parseIDParam(params[0], ErrInvalidTraceID, normalizeUUID)
+	traceID, err := parseSingleIDParam(req.Params, ErrInvalidTraceID, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
-	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
 		return logs.GetTraceLogs(ctx, db, traceID)
 	})
-	if err != nil {
-		return nil, h.handleStoreError(ctx, err)
-	}
-	return result, nil
 }
 
 func (h *JSONRPCHandler) clearLogs(ctx context.Context) (any, error) {
-	// Clear deletes the signal's own rows but never the dictionary: attribute,
-	// resource and scope rows are shared across signals, so only a sweep can
-	// prove one is unreferenced. It has to run here rather than being left to
-	// retention -- retention is size-driven and does not run at all when the
-	// cap is disabled, which would leak every orphaned row until restart.
-	err := h.store.WithDBWrite(func(db *sql.DB) error {
-		if err := logs.Clear(ctx, db); err != nil {
-			return err
-		}
-		return ingest.SweepOrphans(ctx, db, h.store.FlushedIDs())
-	})
-	if err != nil {
-		return nil, h.handleStoreError(ctx, err)
-	}
-	return "Logs cleared successfully", nil
+	return h.clearSignal(ctx, logs.Clear, "Logs cleared successfully")
 }
 
 // getLog returns the full LogData for a single log row identified by
 // its tool-minted UUID (the same id returned in Search summaries).
 func (h *JSONRPCHandler) getLog(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	var params []any
-	if err := decodeParams(req.Params, &params); err != nil {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	if len(params) != 1 {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	logID, err := h.parseIDParam(params[0], ErrInvalidLogID, normalizeUUID)
+	logID, err := parseSingleIDParam(req.Params, ErrInvalidLogID, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
-	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
 		return logs.Get(ctx, db, logID)
 	})
-	if err != nil {
-		return nil, h.handleStoreError(ctx, err)
-	}
-	return result, nil
 }
 
 func (h *JSONRPCHandler) searchMetricSummaries(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	var params []any
-	if err := decodeParams(req.Params, &params); err != nil {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	if len(params) < 2 || len(params) > 5 {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	timeRange, err := h.parseTimeRange(params[0], params[1])
+	params, err := parseSearchParams(req.Params)
 	if err != nil {
 		return nil, err
 	}
-	var query any
-	if len(params) >= 3 {
-		query = params[2]
-	}
-	options, err := h.parseSearchOptions(params)
-	if err != nil {
-		return nil, err
-	}
-	summaries, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.SearchSummariesWithOptions(ctx, db, timeRange, query, options)
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.SearchSummariesWithOptions(ctx, db, params.timeRange, params.query, params.options)
 	})
-	if err != nil {
-		return nil, h.handleStoreError(ctx, err)
-	}
-	return summaries, nil
 }
 
 // getMetricParams holds the common metric request plus detail-only fields.
@@ -371,245 +352,192 @@ type getMetricParams struct {
 	tzName               string
 }
 
-func (h *JSONRPCHandler) parseGetMetricParams(req *jsonrpc2.Request, aggregateOnly bool) (getMetricParams, error) {
-	var out getMetricParams
-	var params []any
-	if err := decodeParams(req.Params, &params); err != nil {
-		return out, jsonrpc2.ErrInvalidParams
+func parseOptionalInt(params []any, index int, name string) (int64, error) {
+	if len(params) <= index || params[index] == nil {
+		return 0, nil
 	}
-	// Everything past the third is optional. The aggregate form stops after
-	// selectedSeriesIDs and tzName; detail-only sparkline and datapoint shipping
-	// options are not part of that contract.
+	return parseTimestampParam(params[index], name)
+}
+
+func parseOptionalNonNegativeInt(params []any, index int, name string) (int64, error) {
+	value, err := parseOptionalInt(params, index, name)
+	if err != nil {
+		return 0, err
+	}
+	if value < 0 {
+		return 0, jsonrpc2.ErrInvalidParams
+	}
+	return value, nil
+}
+
+func parseOptionalStringList(params []any, index int) ([]string, error) {
+	if len(params) <= index || params[index] == nil {
+		return nil, nil
+	}
+	raw, ok := params[index].([]any)
+	if !ok {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	values := make([]string, 0, len(raw))
+	for _, value := range raw {
+		text, ok := value.(string)
+		if !ok {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		values = append(values, text)
+	}
+	return values, nil
+}
+
+func parseOptionalQuantiles(params []any, index int) ([]float64, error) {
+	if len(params) <= index || params[index] == nil {
+		return nil, nil
+	}
+	raw, ok := params[index].([]any)
+	if !ok {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	var quantiles []float64
+	for _, value := range raw {
+		var quantile float64
+		switch number := value.(type) {
+		case json.Number:
+			parsed, err := number.Float64()
+			if err != nil {
+				return nil, fmt.Errorf("quantiles must be numbers, got %q: %w", number.String(), jsonrpc2.ErrInvalidParams)
+			}
+			quantile = parsed
+		case float64:
+			quantile = number
+		default:
+			return nil, fmt.Errorf("quantiles must be numbers, got %T: %w", value, jsonrpc2.ErrInvalidParams)
+		}
+		if quantile < 0 || quantile > 1 {
+			return nil, fmt.Errorf("quantiles must be between 0 and 1, got %v: %w", quantile, jsonrpc2.ErrInvalidParams)
+		}
+		quantiles = append(quantiles, quantile)
+	}
+	return quantiles, nil
+}
+
+func parseOptionalString(params []any, index int) (string, error) {
+	if len(params) <= index || params[index] == nil {
+		return "", nil
+	}
+	value, ok := params[index].(string)
+	if !ok {
+		return "", jsonrpc2.ErrInvalidParams
+	}
+	return value, nil
+}
+
+func parseGetMetricParams(raw json.RawMessage, aggregateOnly bool) (getMetricParams, error) {
 	maxParams := 13
 	if aggregateOnly {
 		maxParams = 10
 	}
-	if len(params) < 3 || len(params) > maxParams {
-		return out, jsonrpc2.ErrInvalidParams
-	}
-	streamID, err := h.parseIDParam(params[0], ErrInvalidStreamID, normalizeUUID)
+	params, err := decodePositionalParams(raw, 3, maxParams)
 	if err != nil {
-		return out, err
+		return getMetricParams{}, err
 	}
-	timeRange, err := h.parseTimeRange(params[1], params[2])
+	streamID, err := parseIDParam(params[0], ErrInvalidStreamID, normalizeUUID)
 	if err != nil {
-		return out, err
+		return getMetricParams{}, err
 	}
-	// How many time buckets to reduce the window to. The client knows its
-	// chart width; the store cannot.
-	var targetBuckets int64
-	if len(params) >= 4 && params[3] != nil {
-		targetBuckets, err = h.parseTimestampParam(params[3], "targetBuckets")
-		if err != nil {
-			return out, err
-		}
-		if targetBuckets < 0 {
-			return out, jsonrpc2.ErrInvalidParams
-		}
+	timeRange, err := parseTimeRange(params[1], params[2])
+	if err != nil {
+		return getMetricParams{}, err
 	}
-
-	// Which series to return. Absent means all; empty means none.
-	var seriesIDs []string
-	if len(params) >= 5 && params[4] != nil {
-		raw, ok := params[4].([]any)
-		if !ok {
-			return out, jsonrpc2.ErrInvalidParams
-		}
-		// Non-nil before the loop: an empty array means "no series", and
-		// appending nothing to a nil slice would leave it indistinguishable
-		// from the parameter being absent.
-		seriesIDs = []string{}
-		for _, v := range raw {
-			id, ok := v.(string)
-			if !ok {
-				return out, jsonrpc2.ErrInvalidParams
-			}
-			seriesIDs = append(seriesIDs, id)
-		}
+	targetBuckets, err := parseOptionalNonNegativeInt(params, 3, "targetBuckets")
+	if err != nil {
+		return getMetricParams{}, err
+	}
+	seriesIDs, err := parseOptionalStringList(params, 4)
+	if err != nil {
+		return getMetricParams{}, err
+	}
+	quantiles, err := parseOptionalQuantiles(params, 5)
+	if err != nil {
+		return getMetricParams{}, err
+	}
+	tzOffsetNs, err := parseOptionalInt(params, 6, "tzOffsetNs")
+	if err != nil {
+		return getMetricParams{}, err
+	}
+	viewBuckets, err := parseOptionalNonNegativeInt(params, 7, "viewBuckets")
+	if err != nil {
+		return getMetricParams{}, err
 	}
 
-	// Which quantiles to compute per histogram datapoint. Absent or empty
-	// means none, so a caller drawing no overlays does not pay for them.
-	var quantiles []float64
-	if len(params) >= 6 && params[5] != nil {
-		raw, ok := params[5].([]any)
-		if !ok {
-			return out, jsonrpc2.ErrInvalidParams
-		}
-		for _, v := range raw {
-			// Quantiles are genuinely fractional, so float64 is the right type
-			// here -- unlike timestamps. They arrive as json.Number because
-			// params are decoded with UseNumber; float64 stays accepted so a
-			// caller that decoded params some other way still works.
-			var q float64
-			switch n := v.(type) {
-			case json.Number:
-				f, err := n.Float64()
-				if err != nil {
-					return out, fmt.Errorf("quantiles must be numbers, got %q: %w",
-						n.String(), jsonrpc2.ErrInvalidParams)
-				}
-				q = f
-			case float64:
-				q = n
-			default:
-				return out, fmt.Errorf("quantiles must be numbers, got %T: %w",
-					v, jsonrpc2.ErrInvalidParams)
-			}
-			if q < 0 || q > 1 {
-				return out, fmt.Errorf("quantiles must be between 0 and 1, got %v: %w",
-					q, jsonrpc2.ErrInvalidParams)
-			}
-			quantiles = append(quantiles, q)
-		}
-	}
-
-	// The viewer's UTC offset in nanoseconds, so day boundaries fall where the
-	// reader's calendar puts them. Absent means UTC.
-	var tzOffsetNs int64
-	if len(params) >= 7 && params[6] != nil {
-		tzOffsetNs, err = h.parseTimestampParam(params[6], "tzOffsetNs")
-		if err != nil {
-			return out, err
-		}
-	}
-	// Resolution for the scalar views. Absent means none, which is what a
-	// caller that does not request scalar views means.
-	var viewBuckets int64
-	if len(params) >= 8 && params[7] != nil {
-		viewBuckets, err = h.parseTimestampParam(params[7], "viewBuckets")
-		if err != nil {
-			return out, err
-		}
-		if viewBuckets < 0 {
-			return out, jsonrpc2.ErrInvalidParams
-		}
-	}
-
-	// Resolution for the per-row sparklines. Absent means none, and a series
-	// then carries a null sparkline rather than the store guessing a width for a
-	// list row it cannot see.
+	selectedSeriesIndex, tzNameIndex := 9, 10
 	var sparklineBuckets int64
-	if !aggregateOnly && len(params) >= 9 && params[8] != nil {
-		sparklineBuckets, err = h.parseTimestampParam(params[8], "sparklineBuckets")
+	if aggregateOnly {
+		selectedSeriesIndex, tzNameIndex = 8, 9
+	} else {
+		sparklineBuckets, err = parseOptionalNonNegativeInt(params, 8, "sparklineBuckets")
 		if err != nil {
-			return out, err
+			return getMetricParams{}, err
 		}
-		if sparklineBuckets < 0 {
-			return out, jsonrpc2.ErrInvalidParams
-		}
+	}
+	selectedSeriesIDs, err := parseOptionalStringList(params, selectedSeriesIndex)
+	if err != nil {
+		return getMetricParams{}, err
+	}
+	tzName, err := parseOptionalString(params, tzNameIndex)
+	if err != nil {
+		return getMetricParams{}, err
 	}
 
-	// Which series the reader has checked, for the Selected cross-series line.
-	// Absent or null means none are checked -- a real state, in which the chart
-	// draws the All line by itself.
-	var selectedSeriesIDs []string
-	selectedSeriesIndex := 9
-	if aggregateOnly {
-		selectedSeriesIndex = 8
-	}
-	if len(params) > selectedSeriesIndex && params[selectedSeriesIndex] != nil {
-		raw, ok := params[selectedSeriesIndex].([]any)
-		if !ok {
-			return out, jsonrpc2.ErrInvalidParams
-		}
-		selectedSeriesIDs = []string{}
-		for _, v := range raw {
-			id, ok := v.(string)
-			if !ok {
-				return out, jsonrpc2.ErrInvalidParams
-			}
-			selectedSeriesIDs = append(selectedSeriesIDs, id)
-		}
-	}
-
-	// The IANA zone the viewer is displaying in. tzOffsetNs above is a single
-	// offset captured at one instant, so it is wrong on the other side of a DST
-	// transition; a zone name lets the query resolve the offset per datapoint.
-	// If no zone is named, the single offset is used.
-	var tzName string
-	tzNameIndex := 10
-	if aggregateOnly {
-		tzNameIndex = 9
-	}
-	if len(params) > tzNameIndex && params[tzNameIndex] != nil {
-		name, ok := params[tzNameIndex].(string)
-		if !ok {
-			return out, jsonrpc2.ErrInvalidParams
-		}
-		tzName = name
-	}
-
-	// Which series ship their datapoints, and how many when the caller cannot
-	// name them. Absent means every series does.
 	var datapointSeriesIDs []string
-	if !aggregateOnly && len(params) >= 12 && params[11] != nil {
-		raw, ok := params[11].([]any)
-		if !ok {
-			return out, jsonrpc2.ErrInvalidParams
-		}
-		// Non-nil before the loop: an empty array names no series and ships no
-		// datapoints, which is a different answer from the parameter being absent.
-		datapointSeriesIDs = []string{}
-		for _, v := range raw {
-			id, ok := v.(string)
-			if !ok {
-				return out, jsonrpc2.ErrInvalidParams
-			}
-			datapointSeriesIDs = append(datapointSeriesIDs, id)
-		}
-	}
-
 	var datapointSeriesLimit int64
-	if !aggregateOnly && len(params) >= 13 && params[12] != nil {
-		datapointSeriesLimit, err = h.parseTimestampParam(params[12], "datapointSeriesLimit")
+	if !aggregateOnly {
+		datapointSeriesIDs, err = parseOptionalStringList(params, 11)
 		if err != nil {
-			return out, err
+			return getMetricParams{}, err
 		}
-		if datapointSeriesLimit < 0 {
-			return out, jsonrpc2.ErrInvalidParams
+		datapointSeriesLimit, err = parseOptionalNonNegativeInt(params, 12, "datapointSeriesLimit")
+		if err != nil {
+			return getMetricParams{}, err
 		}
 	}
 
-	out.streamID = streamID
-	out.timeRange = timeRange
-	out.targetBuckets = targetBuckets
-	out.seriesIDs = seriesIDs
-	out.quantiles = quantiles
-	out.tzOffsetNs = tzOffsetNs
-	out.viewBuckets = viewBuckets
-	out.sparklineBuckets = sparklineBuckets
-	out.selectedSeriesIDs = selectedSeriesIDs
-	out.datapointSeriesIDs = datapointSeriesIDs
-	out.datapointSeriesLimit = datapointSeriesLimit
-	out.tzName = tzName
-	return out, nil
+	return getMetricParams{
+		streamID: streamID, timeRange: timeRange, targetBuckets: targetBuckets,
+		seriesIDs: seriesIDs, quantiles: quantiles, tzOffsetNs: tzOffsetNs,
+		viewBuckets: viewBuckets, sparklineBuckets: sparklineBuckets,
+		selectedSeriesIDs: selectedSeriesIDs, datapointSeriesIDs: datapointSeriesIDs,
+		datapointSeriesLimit: datapointSeriesLimit, tzName: tzName,
+	}, nil
 }
 
 func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	args, err := h.parseGetMetricParams(req, false)
+	args, err := parseGetMetricParams(req.Params, false)
 	if err != nil {
 		return nil, err
 	}
-	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, args.streamID, args.timeRange,
 			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs, args.viewBuckets, args.sparklineBuckets, args.selectedSeriesIDs, args.tzName,
 			args.datapointSeriesIDs, args.datapointSeriesLimit)
 	})
-	if err != nil {
-		return nil, h.handleStoreError(ctx, err)
-	}
-	return result, nil
 }
 
 func (h *JSONRPCHandler) clearMetrics(ctx context.Context) (any, error) {
+	return h.clearSignal(ctx, metrics.Clear, "Metrics cleared successfully")
+}
+
+func (h *JSONRPCHandler) clearSignal(
+	ctx context.Context,
+	clear func(context.Context, *sql.DB) error,
+	successMessage string,
+) (any, error) {
 	// Clear deletes the signal's own rows but never the dictionary: attribute,
 	// resource and scope rows are shared across signals, so only a sweep can
 	// prove one is unreferenced. It has to run here rather than being left to
 	// retention -- retention is size-driven and does not run at all when the
 	// cap is disabled, which would leak every orphaned row until restart.
 	err := h.store.WithDBWrite(func(db *sql.DB) error {
-		if err := metrics.Clear(ctx, db); err != nil {
+		if err := clear(ctx, db); err != nil {
 			return err
 		}
 		return ingest.SweepOrphans(ctx, db, h.store.FlushedIDs())
@@ -617,7 +545,7 @@ func (h *JSONRPCHandler) clearMetrics(ctx context.Context) (any, error) {
 	if err != nil {
 		return nil, h.handleStoreError(ctx, err)
 	}
-	return "Metrics cleared successfully", nil
+	return successMessage, nil
 }
 
 // deleteMetricStream deletes one metric stream and everything hanging off it.
@@ -626,15 +554,7 @@ func (h *JSONRPCHandler) clearMetrics(ctx context.Context) (any, error) {
 // in this handler (see getMetric), and the delete cascade in the store is keyed
 // on a single stream_id.
 func (h *JSONRPCHandler) deleteMetricStream(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	var params []any
-	if err := decodeParams(req.Params, &params); err != nil {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	if len(params) != 1 {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-
-	streamID, err := h.parseIDParam(params[0], ErrInvalidStreamID, normalizeUUID)
+	streamID, err := parseSingleIDParam(req.Params, ErrInvalidStreamID, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
@@ -650,7 +570,7 @@ func (h *JSONRPCHandler) deleteMetricStream(ctx context.Context, req *jsonrpc2.R
 
 // deleteSpansByTraceID deletes all spans for one or more traces.
 func (h *JSONRPCHandler) deleteSpansByTraceID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	traceIDs, err := h.parseIDParams(req, ErrInvalidTraceID, normalizeUUID)
+	traceIDs, err := parseIDParams(req.Params, ErrInvalidTraceID, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
@@ -669,7 +589,7 @@ func (h *JSONRPCHandler) deleteSpansByTraceID(ctx context.Context, req *jsonrpc2
 
 // deleteLogByID deletes one or more specific logs by their IDs.
 func (h *JSONRPCHandler) deleteLogByID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	logIDs, err := h.parseIDParams(req, ErrInvalidLogID, normalizeUUID)
+	logIDs, err := parseIDParams(req.Params, ErrInvalidLogID, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
@@ -696,25 +616,13 @@ func (h *JSONRPCHandler) deleteLogByID(ctx context.Context, req *jsonrpc2.Reques
 // a row, which is the cost this avoids. The scope on each result says which
 // signals can carry it.
 func (h *JSONRPCHandler) searchAttributes(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	var params []any
-	if err := decodeParams(req.Params, &params); err != nil {
-		return nil, jsonrpc2.ErrInvalidParams
+	term, err := parseSingleStringParam(req.Params)
+	if err != nil {
+		return nil, err
 	}
-	if len(params) != 1 {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	term, ok := params[0].(string)
-	if !ok {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-
-	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
 		return attributes.Search(ctx, db, term)
 	})
-	if err != nil {
-		return nil, h.handleStoreError(ctx, err)
-	}
-	return result, nil
 }
 
 // getFieldValues returns distinct values of one completable column, for
@@ -722,36 +630,44 @@ func (h *JSONRPCHandler) searchAttributes(ctx context.Context, req *jsonrpc2.Req
 // each signal package's allowlist, so an unknown field is an invalid-params
 // answer rather than an empty list -- a typo should look like one. The limit
 // is clamped rather than trusted: the caller wants a dropdown, not a dump.
-func (h *JSONRPCHandler) getFieldValues(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	var params []any
-	if err := decodeParams(req.Params, &params); err != nil {
-		return nil, jsonrpc2.ErrInvalidParams
+type fieldValuesParams struct {
+	signal string
+	field  string
+	term   string
+	limit  int64
+}
+
+func parseFieldValuesParams(raw json.RawMessage) (fieldValuesParams, error) {
+	params, err := decodePositionalParams(raw, 4, 4)
+	if err != nil {
+		return fieldValuesParams{}, err
 	}
-	if len(params) != 4 {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	signal, ok := params[0].(string)
-	if !ok {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	field, ok := params[1].(string)
-	if !ok {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	term, ok := params[2].(string)
-	if !ok {
-		return nil, jsonrpc2.ErrInvalidParams
+	values := make([]string, 3)
+	for index := range values {
+		value, ok := params[index].(string)
+		if !ok {
+			return fieldValuesParams{}, jsonrpc2.ErrInvalidParams
+		}
+		values[index] = value
 	}
 	// Same decoder targetBuckets uses: accepts a JSON number or a string.
-	limit, err := h.parseTimestampParam(params[3], "limit")
+	limit, err := parseTimestampParam(params[3], "limit")
 	if err != nil {
-		return nil, err
+		return fieldValuesParams{}, err
 	}
 	if limit < 1 {
 		limit = 1
 	}
 	if limit > 500 {
 		limit = 500
+	}
+	return fieldValuesParams{signal: values[0], field: values[1], term: values[2], limit: limit}, nil
+}
+
+func (h *JSONRPCHandler) getFieldValues(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	params, err := parseFieldValuesParams(req.Params)
+	if err != nil {
+		return nil, err
 	}
 
 	// A map rather than a switch: the named-params coverage test reads
@@ -762,18 +678,14 @@ func (h *JSONRPCHandler) getFieldValues(ctx context.Context, req *jsonrpc2.Reque
 		"logs":    logs.GetFieldValues,
 		"metrics": metrics.GetFieldValues,
 	}
-	get, ok := bySignal[signal]
+	get, ok := bySignal[params.signal]
 	if !ok {
-		return nil, fmt.Errorf("%w: unknown signal %q", jsonrpc2.ErrInvalidParams, signal)
+		return nil, fmt.Errorf("%w: unknown signal %q", jsonrpc2.ErrInvalidParams, params.signal)
 	}
 
-	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
-		return get(ctx, db, field, term, limit)
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
+		return get(ctx, db, params.field, params.term, params.limit)
 	})
-	if err != nil {
-		return nil, h.handleStoreError(ctx, err)
-	}
-	return result, nil
 }
 
 func (h *JSONRPCHandler) getTraceAttributes(ctx context.Context, req *jsonrpc2.Request) (any, error) {
@@ -781,14 +693,9 @@ func (h *JSONRPCHandler) getTraceAttributes(ctx context.Context, req *jsonrpc2.R
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
-	attributes, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.GetTraceAttributes(ctx, db)
 	})
-	if err != nil {
-		return nil, h.handleStoreError(ctx, err)
-	}
-
-	return attributes, nil
 }
 
 func (h *JSONRPCHandler) getLogAttributes(ctx context.Context, req *jsonrpc2.Request) (any, error) {
@@ -796,14 +703,9 @@ func (h *JSONRPCHandler) getLogAttributes(ctx context.Context, req *jsonrpc2.Req
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
-	attributes, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
 		return logs.GetLogAttributes(ctx, db)
 	})
-	if err != nil {
-		return nil, h.handleStoreError(ctx, err)
-	}
-
-	return attributes, nil
 }
 
 // getMetricAggregate takes the common metric parameters, viewBuckets,
@@ -812,19 +714,15 @@ func (h *JSONRPCHandler) getLogAttributes(ctx context.Context, req *jsonrpc2.Req
 // the two are fetched on different triggers -- metric selection versus legend
 // selection -- so they are different requests, not one request in two modes.
 func (h *JSONRPCHandler) getMetricAggregate(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	args, err := h.parseGetMetricParams(req, true)
+	args, err := parseGetMetricParams(req.Params, true)
 	if err != nil {
 		return nil, err
 	}
-	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetricAggregate(ctx, db, args.streamID, args.timeRange,
 			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs,
 			args.viewBuckets, args.selectedSeriesIDs, args.tzName)
 	})
-	if err != nil {
-		return nil, h.handleStoreError(ctx, err)
-	}
-	return result, nil
 }
 
 func (h *JSONRPCHandler) getMetricAttributes(ctx context.Context, req *jsonrpc2.Request) (any, error) {
@@ -832,66 +730,36 @@ func (h *JSONRPCHandler) getMetricAttributes(ctx context.Context, req *jsonrpc2.
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
-	attributes, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetricAttributes(ctx, db)
 	})
-	if err != nil {
-		return nil, h.handleStoreError(ctx, err)
-	}
-
-	return attributes, nil
 }
 
 func (h *JSONRPCHandler) getAttributesByTraceID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	var params []any
-	if err := decodeParams(req.Params, &params); err != nil {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-
-	if len(params) != 1 {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-
-	traceID, err := h.parseIDParam(params[0], ErrInvalidTraceID, normalizeUUID)
+	traceID, err := parseSingleIDParam(req.Params, ErrInvalidTraceID, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
 
-	attributes, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.GetAttributesByTraceID(ctx, db, traceID)
 	})
-	if err != nil {
-		return nil, h.handleStoreError(ctx, err)
-	}
-
-	return attributes, nil
 }
 
 func (h *JSONRPCHandler) getTraceSpanCount(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	var params []any
-	if err := decodeParams(req.Params, &params); err != nil {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	if len(params) != 1 {
-		return nil, jsonrpc2.ErrInvalidParams
-	}
-	traceID, err := h.parseIDParam(params[0], ErrInvalidTraceID, normalizeUUID)
+	traceID, err := parseSingleIDParam(req.Params, ErrInvalidTraceID, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
-	count, err := storeRead(h.store, func(db *sql.DB) (int64, error) {
+	return handlerRead(ctx, h, func(db *sql.DB) (int64, error) {
 		return stats.GetTraceSpanCount(ctx, db, traceID)
 	})
-	if err != nil {
-		return nil, h.handleStoreError(ctx, err)
-	}
-	return count, nil
 }
 
 func (h *JSONRPCHandler) getStats(ctx context.Context) (any, error) {
 	retentionCap := h.store.RetentionCap()
 
-	result, err := storeRead(h.store, func(db *sql.DB) (json.RawMessage, error) {
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
 		// SizeBytesWithDB, not SizeBytes: we already hold the read lock.
 		sizeBytes, err := h.store.SizeBytesWithDB(ctx, db)
 		if err != nil {
@@ -899,10 +767,6 @@ func (h *JSONRPCHandler) getStats(ctx context.Context) (any, error) {
 		}
 		return stats.GetStats(ctx, db, sizeBytes, retentionCap)
 	})
-	if err != nil {
-		return nil, h.handleStoreError(ctx, err)
-	}
-	return result, nil
 }
 
 // parseIDParams unmarshals a request's params as a non-empty array of entity
@@ -911,9 +775,9 @@ func (h *JSONRPCHandler) getStats(ctx context.Context) (any, error) {
 // returns invalidIDErr (the signal-specific -3200x code). Previously these
 // params went straight into SQL, where a non-string or non-UUID value became
 // a DB cast error reported as a generic internal error.
-func (h *JSONRPCHandler) parseIDParams(req *jsonrpc2.Request, invalidIDErr error, normalize func(string) (string, error)) ([]any, error) {
+func parseIDParams(raw json.RawMessage, invalidIDErr error, normalize func(string) (string, error)) ([]any, error) {
 	var params []any
-	if err := decodeParams(req.Params, &params); err != nil {
+	if err := decodeParams(raw, &params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
@@ -940,7 +804,7 @@ func (h *JSONRPCHandler) parseIDParams(req *jsonrpc2.Request, invalidIDErr error
 // paths: searchSpans, getTraceLogs, getLog, getMetric, getAttributesByTraceID,
 // getTraceSpanCount). Like parseIDParams, a bad value returns the
 // signal-specific -3200x code instead of reaching SQL as a cast error.
-func (h *JSONRPCHandler) parseIDParam(param any, invalidIDErr error, normalize func(string) (string, error)) (string, error) {
+func parseIDParam(param any, invalidIDErr error, normalize func(string) (string, error)) (string, error) {
 	s, ok := param.(string)
 	if !ok {
 		return "", invalidIDErr
@@ -950,6 +814,26 @@ func (h *JSONRPCHandler) parseIDParam(param any, invalidIDErr error, normalize f
 		return "", invalidIDErr
 	}
 	return id, nil
+}
+
+func parseSingleIDParam(raw json.RawMessage, invalidIDErr error, normalize func(string) (string, error)) (string, error) {
+	params, err := decodePositionalParams(raw, 1, 1)
+	if err != nil {
+		return "", err
+	}
+	return parseIDParam(params[0], invalidIDErr, normalize)
+}
+
+func parseSingleStringParam(raw json.RawMessage) (string, error) {
+	params, err := decodePositionalParams(raw, 1, 1)
+	if err != nil {
+		return "", err
+	}
+	value, ok := params[0].(string)
+	if !ok {
+		return "", jsonrpc2.ErrInvalidParams
+	}
+	return value, nil
 }
 
 // normalizeUUID validates a 128-bit entity ID (trace IDs: 32-char hex on the
@@ -988,7 +872,7 @@ func normalizeUUID(s string) (string, error) {
 // The error says which parameter and what was wrong with it. The bare
 // "invalid params" this used to return gave a caller nothing to act on, which
 // costs time even when the caller can read this file.
-func (h *JSONRPCHandler) parseTimestampParam(param any, paramName string) (int64, error) {
+func parseTimestampParam(param any, paramName string) (int64, error) {
 	var text string
 	switch v := param.(type) {
 	case string:
@@ -1016,7 +900,7 @@ func (h *JSONRPCHandler) parseTimestampParam(param any, paramName string) (int64
 
 // parseOptionalTimestampParam is reserved for nullable time bounds. All other
 // numeric parameters keep parseTimestampParam's strict non-null contract.
-func (h *JSONRPCHandler) parseOptionalTimestampParam(param any, paramName string) (*uint64, error) {
+func parseOptionalTimestampParam(param any, paramName string) (*uint64, error) {
 	if param == nil {
 		return nil, nil
 	}
@@ -1044,12 +928,12 @@ func (h *JSONRPCHandler) parseOptionalTimestampParam(param any, paramName string
 	return &parsed, nil
 }
 
-func (h *JSONRPCHandler) parseTimeRange(startParam, endParam any) (store.TimeRange, error) {
-	startTime, err := h.parseOptionalTimestampParam(startParam, "startTime")
+func parseTimeRange(startParam, endParam any) (store.TimeRange, error) {
+	startTime, err := parseOptionalTimestampParam(startParam, "startTime")
 	if err != nil {
 		return store.TimeRange{}, err
 	}
-	endTime, err := h.parseOptionalTimestampParam(endParam, "endTime")
+	endTime, err := parseOptionalTimestampParam(endParam, "endTime")
 	if err != nil {
 		return store.TimeRange{}, err
 	}
