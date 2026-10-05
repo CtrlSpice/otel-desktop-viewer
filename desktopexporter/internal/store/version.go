@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -54,17 +55,17 @@ func (s *Store) SchemaCompatibility() SchemaCompatibility {
 // inspectSchemaVersion reads only the catalog and version metadata before any
 // application DDL runs. The returned bool says whether a verified fresh store
 // needs its initial stamp.
-func inspectSchemaVersion(db *sql.DB, dbPath string, logger *zap.Logger) (SchemaCompatibility, bool, error) {
+func inspectSchemaVersion(ctx context.Context, db *sql.DB, dbPath string, logger *zap.Logger) (SchemaCompatibility, bool, error) {
 	var hasSchemaMeta int
-	if err := db.QueryRow(schema.SchemaMetaTableExistsQuery).Scan(&hasSchemaMeta); err != nil {
+	if err := db.QueryRowContext(ctx, schema.SchemaMetaTableExistsQuery).Scan(&hasSchemaMeta); err != nil {
 		return SchemaOK, false, fmt.Errorf("%w while probing for schema metadata: %w", ErrStoreInitFailed, err)
 	}
 
 	if hasSchemaMeta == 0 {
-		return inspectUnstampedDatabase(db, dbPath, logger)
+		return inspectUnstampedDatabase(ctx, db, dbPath, logger)
 	}
 	var metadataColumns, validMetadataColumns int
-	if err := db.QueryRow(schema.SchemaMetaShapeQuery).Scan(&metadataColumns, &validMetadataColumns); err != nil {
+	if err := db.QueryRowContext(ctx, schema.SchemaMetaShapeQuery).Scan(&metadataColumns, &validMetadataColumns); err != nil {
 		return SchemaOK, false, fmt.Errorf("%w: %s has malformed schema metadata: %w",
 			ErrSchemaIncompatible, describePath(dbPath), err)
 	}
@@ -74,7 +75,7 @@ func inspectSchemaVersion(db *sql.DB, dbPath string, logger *zap.Logger) (Schema
 
 	var count int
 	var minVersion, maxVersion sql.NullInt64
-	if err := db.QueryRow(schema.ReadVersionMetadataQuery).Scan(&count, &minVersion, &maxVersion); err != nil {
+	if err := db.QueryRowContext(ctx, schema.ReadVersionMetadataQuery).Scan(&count, &minVersion, &maxVersion); err != nil {
 		return SchemaOK, false, fmt.Errorf("%w: %s has malformed schema metadata: %w",
 			ErrSchemaIncompatible, describePath(dbPath), err)
 	}
@@ -94,9 +95,9 @@ func inspectSchemaVersion(db *sql.DB, dbPath string, logger *zap.Logger) (Schema
 		ErrSchemaIncompatible, describePath(dbPath), maxVersion.Int64, schema.Version)
 }
 
-func inspectUnstampedDatabase(db *sql.DB, dbPath string, logger *zap.Logger) (SchemaCompatibility, bool, error) {
+func inspectUnstampedDatabase(ctx context.Context, db *sql.DB, dbPath string, logger *zap.Logger) (SchemaCompatibility, bool, error) {
 	var hasTelemetryTables int
-	if err := db.QueryRow(schema.TelemetryTableExistsQuery).Scan(&hasTelemetryTables); err != nil {
+	if err := db.QueryRowContext(ctx, schema.TelemetryTableExistsQuery).Scan(&hasTelemetryTables); err != nil {
 		return SchemaOK, false, fmt.Errorf("%w while probing for existing tables: %w", ErrStoreInitFailed, err)
 	}
 	if hasTelemetryTables != 0 {
@@ -112,14 +113,14 @@ func inspectUnstampedDatabase(db *sql.DB, dbPath string, logger *zap.Logger) (Sc
 	return SchemaOK, true, nil
 }
 
-func initializeSchemaVersion(db *sql.DB, shouldStamp bool) error {
+func initializeSchemaVersion(ctx context.Context, db *sql.DB, shouldStamp bool) error {
 	if !shouldStamp {
 		return nil
 	}
-	if _, err := db.Exec(schema.VersionTableQuery); err != nil {
+	if _, err := db.ExecContext(ctx, schema.VersionTableQuery); err != nil {
 		return fmt.Errorf("%w while creating schema_meta: %w", ErrStoreInitFailed, err)
 	}
-	if _, err := db.Exec(schema.StampVersionQuery, schema.Version); err != nil {
+	if _, err := db.ExecContext(ctx, schema.StampVersionQuery, schema.Version); err != nil {
 		return fmt.Errorf("%w while stamping schema version: %w", ErrStoreInitFailed, err)
 	}
 	return nil
