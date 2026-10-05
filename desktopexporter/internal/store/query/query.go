@@ -33,8 +33,8 @@ type Column struct {
 }
 
 type MapEntry struct {
-	Key   string `json:"key"`
-	Value any    `json:"value"`
+	Key   any `json:"key"`
+	Value any `json:"value"`
 }
 
 type Result struct {
@@ -158,6 +158,8 @@ func executionQuery(names, types []string) string {
 		projections[i] = quoted
 		if strings.EqualFold(types[i], "JSON") {
 			projections[i] = "CAST(" + quoted + " AS VARCHAR) AS " + quoted
+		} else if isMapType(types[i]) {
+			projections[i] = "map_entries(" + quoted + ") AS " + quoted
 		}
 	}
 	return "SELECT " + strings.Join(projections, ", ") + " FROM query(?) LIMIT ?"
@@ -259,9 +261,16 @@ func isTemporalType(typeName string) bool {
 		typeName == "TIMESTAMP_NS" || typeName == "TIMESTAMP WITH TIME ZONE"
 }
 
+func isMapType(typeName string) bool {
+	return strings.HasPrefix(strings.ToUpper(typeName), "MAP(")
+}
+
 func encodeValue(column Column, value any) (any, error) {
 	if value == nil {
 		return nil, nil
+	}
+	if isMapType(column.DuckDBType) {
+		return encodeMapEntries(value)
 	}
 	switch column.Encoding {
 	case "boolean", "string", "json-text":
@@ -305,6 +314,35 @@ func encodeValue(column Column, value any) (any, error) {
 	}
 }
 
+func encodeMapEntries(value any) ([]MapEntry, error) {
+	items, ok := value.([]any)
+	if !ok {
+		return nil, fmt.Errorf("expected MAP entries, got %T", value)
+	}
+	entries := make([]MapEntry, len(items))
+	for i, item := range items {
+		fields, ok := item.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("map entry %d: expected STRUCT, got %T", i, item)
+		}
+		key, keyPresent := fields["key"]
+		entryValue, valuePresent := fields["value"]
+		if !keyPresent || !valuePresent {
+			return nil, fmt.Errorf("map entry %d: missing key or value", i)
+		}
+		encodedKey, err := encodeNested(key)
+		if err != nil {
+			return nil, fmt.Errorf("map entry %d key: %w", i, err)
+		}
+		encodedValue, err := encodeNested(entryValue)
+		if err != nil {
+			return nil, fmt.Errorf("map entry %d value: %w", i, err)
+		}
+		entries[i] = MapEntry{Key: encodedKey, Value: encodedValue}
+	}
+	return entries, nil
+}
+
 func encodeNested(value any) (any, error) {
 	switch value := value.(type) {
 	case nil, bool, string:
@@ -343,15 +381,15 @@ func encodeNested(value any) (any, error) {
 		keys, values := value.Keys(), value.Values()
 		entries := make([]MapEntry, len(keys))
 		for i, key := range keys {
-			stringKey, ok := key.(string)
-			if !ok {
-				return nil, fmt.Errorf("DuckDB MAP key %T: %w", key, ErrUnsupportedType)
-			}
-			encoded, err := encodeNested(values[i])
+			encodedKey, err := encodeNested(key)
 			if err != nil {
-				return nil, fmt.Errorf("map entry %d: %w", i, err)
+				return nil, fmt.Errorf("map entry %d key: %w", i, err)
 			}
-			entries[i] = MapEntry{Key: stringKey, Value: encoded}
+			encodedValue, err := encodeNested(values[i])
+			if err != nil {
+				return nil, fmt.Errorf("map entry %d value: %w", i, err)
+			}
+			entries[i] = MapEntry{Key: encodedKey, Value: encodedValue}
 		}
 		return entries, nil
 	default:
