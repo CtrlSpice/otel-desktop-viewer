@@ -23,6 +23,7 @@ It has **two** dark modes now.
   - [Via Docker](#via-docker)
 - [Docker Compose](#docker-compose)
 - [Command Line Options](#command-line-options)
+- [Query a Running Viewer](#query-a-running-viewer)
 - [Configuring Your OpenTelemetry SDK](#configuring-your-opentelemetry-sdk)
 - [Example With `otel-cli`](#example-with-otel-cli)
 - [Chart Palettes](docs/chart-palettes.md)
@@ -246,6 +247,17 @@ Flags:
 ```bash
 otel-desktop-viewer --db ./telemetry.duckdb --db-max-size 4GB
 ```
+
+## Query a Running Viewer
+
+Start the viewer with the bare command, then query it from another terminal:
+
+```bash
+otel-desktop-viewer query 'SHOW TABLES'
+otel-desktop-viewer query 'SELECT service_name, count(*) FROM spans GROUP BY service_name' --limit 50
+```
+
+The `query` command runs read-only SQL against the viewer at `http://localhost:8000`. It returns up to 25 rows as aligned columns by default. Use `--endpoint` for another viewer address, `--limit` for another row limit, or `--json` for the JSON result.
 
 ## Configuring Your OpenTelemetry SDK
 
