@@ -64,14 +64,66 @@ func TestExecutePreservesExactScalarAndNestedValues(t *testing.T) {
 	})
 }
 
-func TestExecuteReportsUnionAsTheRemainingRepresentationBlocker(t *testing.T) {
+func TestExecuteReportsUnsupportedResultTypeLocations(t *testing.T) {
 	withConnection(t, "", func(conn *sql.Conn) {
-		_, err := query.Execute(context.Background(), conn, "select union_value(number := 1::bigint)", 25)
-		assert.ErrorIs(t, err, query.ErrUnsupportedType)
+		cases := []struct {
+			name      string
+			statement string
+			message   string
+		}{
+			{
+				name:      "variant column",
+				statement: "select 1::variant as payload",
+				message:   `Unsupported result type: VARIANT in column "payload"`,
+			},
+			{
+				name:      "union column",
+				statement: "select union_value(number := 1::bigint) as choice",
+				message:   `Unsupported result type: UNION(number BIGINT) in column "choice"`,
+			},
+			{
+				name:      "struct field",
+				statement: "select {'inner': 1::variant} as payload",
+				message:   `Unsupported result type: VARIANT in column "payload" field "inner"`,
+			},
+			{
+				name:      "array item",
+				statement: "select [union_value(number := 1::bigint)] as payload",
+				message:   `Unsupported result type: UNION(number BIGINT) in column "payload" array item`,
+			},
+			{
+				name:      "map key",
+				statement: "select map([1::variant], ['value']) as payload",
+				message:   `Unsupported result type: VARIANT in column "payload" map key`,
+			},
+			{
+				name:      "map value",
+				statement: "select map(['key'], [1::variant]) as payload",
+				message:   `Unsupported result type: VARIANT in column "payload" map value`,
+			},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				result, err := query.Execute(context.Background(), conn, tc.statement, 25)
+				assert.ErrorIs(t, err, query.ErrUnsupportedType)
+				assert.ErrorContains(t, err, tc.message)
+				assert.Empty(t, result.Columns)
+				assert.Empty(t, result.Rows)
+			})
+		}
 
 		result, err := query.Execute(context.Background(), conn, "select interval '1 month 2 days 3 microseconds'", 25)
 		require.NoError(t, err)
 		assert.Equal(t, query.Value{Kind: "string", Value: "1 month 2 days 00:00:00.000003"}, result.Rows[0][0])
+
+		result, err = query.Execute(context.Background(), conn,
+			"select 1::bigint as value union all select 2::bigint", 25)
+		require.NoError(t, err)
+		assert.Equal(t, [][]any{
+			{query.Value{Kind: "int64", Value: "1"}},
+			{query.Value{Kind: "int64", Value: "2"}},
+		}, result.Rows)
 	})
 }
 

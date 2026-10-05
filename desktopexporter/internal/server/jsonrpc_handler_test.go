@@ -59,6 +59,23 @@ func TestQuery(t *testing.T) {
 	queryResult = result.(storequery.Result)
 	assert.Equal(t, ^uint64(0), queryResult.Limit)
 
+	result, err = handler.Handle(ctx, createRequest("query", []any{"select 1::variant as payload"}))
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
+	assert.ErrorContains(t, err, `Unsupported result type: VARIANT in column "payload"`)
+
+	result, err = handler.Handle(ctx, createRequest("query", []any{"select from"}))
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
+	assert.ErrorContains(t, err, "parse one SQL statement")
+	assert.NotContains(t, err.Error(), "Unsupported result type")
+
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	result, err = handler.Handle(canceledCtx, createRequest("query", []any{"select 1"}))
+	assert.Nil(t, result)
+	assert.Equal(t, ErrRequestCanceled, err)
+
 	for _, params := range []any{
 		[]any{"delete from spans"},
 		[]any{"select 1; select 2"},

@@ -77,15 +77,14 @@ func Execute(ctx context.Context, conn *sql.Conn, statement string, limit uint64
 	if len(databaseTypes) != len(originalNames) {
 		return result, fmt.Errorf("query metadata changed from %d to %d columns", len(originalNames), len(databaseTypes))
 	}
-	result.Columns = make([]Column, len(databaseTypes))
-	for i, databaseType := range databaseTypes {
-		result.Columns[i] = Column{Name: originalNames[i], DuckDBType: databaseType}
-	}
-
 	withLookahead := limit != ^uint64(0)
 	executionSQL, err := executionQuery(sourceNames, databaseTypes, withLookahead)
 	if err != nil {
 		return result, fmt.Errorf("prepare lossless query projection: %w", err)
+	}
+	result.Columns = make([]Column, len(databaseTypes))
+	for i, databaseType := range databaseTypes {
+		result.Columns[i] = Column{Name: originalNames[i], DuckDBType: databaseType}
 	}
 	var rows *sql.Rows
 	if withLookahead {
@@ -167,6 +166,9 @@ func executionQuery(names, types []string, withLimit bool) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("column %q type %q: %w", name, types[i], err)
 		}
+		if err := validateSupportedResultType(logicalType, fmt.Sprintf("column %q", name)); err != nil {
+			return "", err
+		}
 		projection := quoted
 		if needsLosslessProjection(logicalType) {
 			projection = losslessProjection(quoted, logicalType, &lambdaID)
@@ -191,12 +193,13 @@ const (
 )
 
 type logicalType struct {
-	kind   logicalTypeKind
-	name   string
-	child  *logicalType
-	key    *logicalType
-	value  *logicalType
-	fields []logicalField
+	kind        logicalTypeKind
+	name        string
+	displayName string
+	child       *logicalType
+	key         *logicalType
+	value       *logicalType
+	fields      []logicalField
 }
 
 type logicalField struct {
@@ -214,7 +217,7 @@ func parseLogicalType(typeName string) (logicalType, error) {
 		return logicalType{kind: logicalList, child: &child}, err
 	}
 	if strings.EqualFold(typeName, "JSON") {
-		return logicalType{kind: logicalJSON, name: "JSON"}, nil
+		return logicalType{kind: logicalJSON, name: "JSON", displayName: typeName}, nil
 	}
 	if inner, ok := typeArguments(typeName, "MAP"); ok {
 		parts, err := splitTypeList(inner)
@@ -247,7 +250,30 @@ func parseLogicalType(typeName string) (logicalType, error) {
 		}
 		return logicalType{kind: logicalStruct, fields: fields}, nil
 	}
-	return logicalType{kind: logicalScalar, name: strings.ToUpper(typeName)}, nil
+	return logicalType{kind: logicalScalar, name: strings.ToUpper(typeName), displayName: typeName}, nil
+}
+
+func validateSupportedResultType(type_ logicalType, location string) error {
+	switch type_.kind {
+	case logicalScalar:
+		if type_.name == "VARIANT" || strings.HasPrefix(type_.name, "UNION(") {
+			return fmt.Errorf("Unsupported result type: %s in %s: %w", type_.displayName, location, ErrUnsupportedType)
+		}
+	case logicalList:
+		return validateSupportedResultType(*type_.child, location+" array item")
+	case logicalMap:
+		if err := validateSupportedResultType(*type_.key, location+" map key"); err != nil {
+			return err
+		}
+		return validateSupportedResultType(*type_.value, location+" map value")
+	case logicalStruct:
+		for _, field := range type_.fields {
+			if err := validateSupportedResultType(field.type_, location+fmt.Sprintf(" field %q", field.name)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func stripListOrArraySuffix(typeName string) (string, bool) {
