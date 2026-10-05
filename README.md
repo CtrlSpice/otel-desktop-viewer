@@ -25,6 +25,7 @@ It has **two** dark modes now.
 - [Command Line Options](#command-line-options)
 - [Configuring Your OpenTelemetry SDK](#configuring-your-opentelemetry-sdk)
 - [Example With `otel-cli`](#example-with-otel-cli)
+- [Agent Usage Skill](#agent-usage-skill)
 - [Chart Palettes](docs/chart-palettes.md)
 - [Implementation](#implementation)
 - [What's With the Axolotl??](#whats-with-the-axolotl)
@@ -375,6 +376,10 @@ otel-cli span end --sockdir "$sockdir"
 Open `http://localhost:8000/traces` to explore the result. For more otel-cli features (custom span times, `{{traceparent}}` in command args, config files, and a built-in TUI server), see the [otel-cli README](https://github.com/equinix-labs/otel-cli).
 
 ![otel-cli example trace](docs/screenshots/otel-cli-example.png)
+
+## Agent Usage Skill
+
+The [OTel Desktop Viewer usage skill](skills/otel-desktop-viewer-usage/SKILL.md) gives coding agents focused read-only SQL examples for inspecting telemetry in a running viewer. It requires a build where `otel-desktop-viewer --help` lists `query`.
 
 ## Implementation
 
