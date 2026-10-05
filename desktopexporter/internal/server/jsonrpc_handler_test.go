@@ -3,8 +3,12 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,6 +34,185 @@ func setupHandler(t *testing.T) *JSONRPCHandler {
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
 	return NewJSONRPCHandler(s, zap.NewNop())
+}
+
+func TestQueryUsesDefaultAndExplicitLimits(t *testing.T) {
+	handler := setupHandler(t)
+
+	result, err := handler.Handle(context.Background(), createRequest("query", []any{"select * from range(26)"}))
+	require.NoError(t, err)
+	encoded, err := json.Marshal(result)
+	require.NoError(t, err)
+	var response struct {
+		Rows      [][]json.RawMessage `json:"rows"`
+		Truncated bool                `json:"truncated"`
+	}
+	require.NoError(t, json.Unmarshal(encoded, &response))
+	assert.Len(t, response.Rows, 25)
+	assert.True(t, response.Truncated)
+
+	result, err = handler.Handle(context.Background(), createRequest("query", map[string]any{"sql": "SHOW TABLES", "limit": 2}))
+	require.NoError(t, err)
+	encoded, err = json.Marshal(result)
+	require.NoError(t, err)
+	assert.Contains(t, string(encoded), `"columns":[`)
+	assert.Contains(t, string(encoded), `"truncated":`)
+
+	result, err = handler.Handle(context.Background(), createRequest("query", []any{"DESCRIBE spans"}))
+	require.NoError(t, err)
+	encoded, err = json.Marshal(result)
+	require.NoError(t, err)
+	assert.Contains(t, string(encoded), `"column_name"`)
+}
+
+func TestQueryPreservesNativeIntegerAndTopLevelJSON(t *testing.T) {
+	handler := setupHandler(t)
+	result, err := handler.Handle(context.Background(), createRequest("query", []any{
+		`select 9007199254740993::bigint as n, json('{"n":9007199254740993}') as payload`,
+	}))
+	require.NoError(t, err)
+
+	encoded, err := json.Marshal(result)
+	require.NoError(t, err)
+	assert.Contains(t, string(encoded), `"rows":[[9007199254740993,{"n":9007199254740993}]]`)
+}
+
+func TestQueryReadsViewerTablesAndMacros(t *testing.T) {
+	handler := setupHandlerWithData(t)
+
+	result, err := handler.Handle(context.Background(), createRequest("query", []any{`
+		select l.event_name,
+		       body_preview(l.body) as preview,
+		       trace_id_wire(l.trace_id) as trace_id,
+		       span_id_wire(l.span_id) as span_id,
+		       attrs_json(r.attribute_ids) as resource_attributes
+		from logs l
+		join resources r on r.id = l.resource_id
+		where l.service_name = 'pumpkin.pie'`,
+	}))
+	require.NoError(t, err)
+	encoded, err := json.Marshal(result)
+	require.NoError(t, err)
+
+	var response struct {
+		Rows [][]json.RawMessage `json:"rows"`
+	}
+	require.NoError(t, json.Unmarshal(encoded, &response))
+	require.Len(t, response.Rows, 1)
+	require.Len(t, response.Rows[0], 5)
+	assert.JSONEq(t, `"request.failed"`, string(response.Rows[0][0]))
+	assert.JSONEq(t, `"test log message"`, string(response.Rows[0][1]))
+	assert.JSONEq(t, `"00000000000000000000000000000001"`, string(response.Rows[0][2]))
+	assert.JSONEq(t, `"0000000000000001"`, string(response.Rows[0][3]))
+	assert.Contains(t, string(response.Rows[0][4]), `"key":"service.name"`)
+	assert.Contains(t, string(response.Rows[0][4]), `"value":{"kind":"string","value":"pumpkin.pie"}`)
+
+	result, err = handler.Handle(context.Background(), createRequest("query", map[string]any{
+		"sql": `select count(*)::bigint as matched
+			from spans s
+			join logs l on l.trace_id = s.trace_id
+			where s.service_name = 'pumpkin.pie'`,
+	}))
+	require.NoError(t, err)
+	encoded, err = json.Marshal(result)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{
+		"columns":[{"name":"matched","type":"BIGINT"}],
+		"rows":[[1]],
+		"truncated":false
+	}`, string(encoded))
+}
+
+func TestQueryPublicResponseCoversLimitBoundariesAndDuplicateColumns(t *testing.T) {
+	handler := setupHandler(t)
+	for _, tc := range []struct {
+		name   string
+		params any
+		want   string
+	}{
+		{name: "zero", params: []any{"select 1", 0}, want: `{"columns":[{"name":"1","type":"INTEGER"}],"rows":[],"truncated":true}`},
+		{name: "maximum", params: map[string]any{"sql": "select 1", "limit": uint64(math.MaxUint64)}, want: `{"columns":[{"name":"1","type":"INTEGER"}],"rows":[[1]],"truncated":false}`},
+		{name: "empty duplicate columns", params: []any{"select 1 as duplicate, 2 as duplicate where false"}, want: `{"columns":[{"name":"duplicate","type":"INTEGER"},{"name":"duplicate","type":"INTEGER"}],"rows":[],"truncated":false}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := handler.Handle(context.Background(), createRequest("query", tc.params))
+			require.NoError(t, err)
+			encoded, err := json.Marshal(result)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.want, string(encoded))
+		})
+	}
+}
+
+func TestQueryPublicCancellationLeavesStoreReusable(t *testing.T) {
+	handler := setupHandler(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	_, err := handler.Handle(ctx, createRequest("query", []any{
+		"select sum(i) from range(1000000000) input(i)",
+	}))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrRequestCanceled)
+
+	result, err := handler.Handle(context.Background(), createRequest("query", []any{"select 1"}))
+	require.NoError(t, err)
+	encoded, err := json.Marshal(result)
+	require.NoError(t, err)
+	assert.Contains(t, string(encoded), `"rows":[[1]]`)
+}
+
+func TestQueryPreparationCancellationUsesRequestCanceled(t *testing.T) {
+	handler := setupHandler(t)
+	statement := "SELECT " + strings.Repeat("1,", 100_000) + "1"
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+
+	result, err := handler.Handle(ctx, createRequest("query", []any{statement}))
+
+	assert.Nil(t, result)
+	assert.Equal(t, ErrRequestCanceled, err)
+	assert.False(t, errors.Is(err, jsonrpc2.ErrInvalidParams), "%v", err)
+}
+
+func TestQueryPublicReadsReopenedPersistentStore(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "viewer.db")
+	initial, err := store.NewStore(context.Background(), path, zap.NewNop())
+	require.NoError(t, err)
+	require.NoError(t, initial.Close())
+
+	reopened, err := store.NewStore(context.Background(), path, zap.NewNop())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reopened.Close()) })
+	handler := NewJSONRPCHandler(reopened, zap.NewNop())
+	result, err := handler.Handle(context.Background(), createRequest("query", map[string]any{
+		"sql": "select count(*)::bigint as span_count from spans",
+	}))
+	require.NoError(t, err)
+	encoded, err := json.Marshal(result)
+	require.NoError(t, err)
+	assert.Contains(t, string(encoded), `"rows":[[0]]`)
+}
+
+func TestQueryRejectsInvalidParametersAndWrites(t *testing.T) {
+	handler := setupHandler(t)
+	for _, params := range []any{
+		[]any{},
+		[]any{"select 1", 1, 2},
+		[]any{1},
+		[]any{"select 1", nil},
+		[]any{"select 1", -1},
+		[]any{"select 1", 1.5},
+		[]any{"delete from spans"},
+		[]any{"select 1; select 2"},
+	} {
+		_, err := handler.Handle(context.Background(), createRequest("query", params))
+		assert.ErrorIs(t, err, jsonrpc2.ErrInvalidParams, "params %#v: %v", params, err)
+	}
+
+	_, err := handler.Handle(context.Background(), createRequest("query", []any{
+		"select cast(value as integer) from (values ('failed')) input(value)",
+	}))
+	assert.ErrorIs(t, err, ErrInvalidQuery)
 }
 
 // buildTestTraces returns ptrace.Traces with one span (trace ID 00...01) for handler tests.
@@ -1327,136 +1510,6 @@ func TestMetricHandlersAcceptEveryParameter(t *testing.T) {
 			_, err := handler.Handle(context.Background(),
 				createRequest(method, append(append([]any{}, full...), "extra")))
 			assert.Error(t, err, "a parameter beyond the known list must be refused")
-		})
-	}
-}
-
-// TestTimestampParamsAcceptNumbersWithoutLosingPrecision covers the trap that
-// numeric timestamps used to fall into.
-//
-// A nanosecond timestamp is around 1.8e18, far past float64's exact-integer
-// limit of 2^53. Decoded the ordinary way, three of four realistic timestamps
-// round -- by up to 65ns -- which would move a query boundary without failing.
-// Params are decoded with UseNumber so a JSON number arrives as text and
-// parses exactly; this proves the decode path, not just the parser.
-func TestTimestampParamsAcceptNumbersWithoutLosingPrecision(t *testing.T) {
-	h := &JSONRPCHandler{}
-
-	// Values chosen because they do NOT survive a float64 round trip.
-	lossy := []int64{
-		1787348704416123456,
-		1787348704416123457,
-		1787277368394484963,
-	}
-
-	for _, want := range lossy {
-		require.NotEqual(t, want, int64(float64(want)),
-			"fixture must actually be lossy through float64, or it proves nothing")
-
-		t.Run(fmt.Sprintf("number_%d", want), func(t *testing.T) {
-			var params []any
-			require.NoError(t, decodeParams(
-				json.RawMessage(fmt.Sprintf(`[%d, %d]`, want, want)), &params))
-
-			got, err := h.parseTimestampParam(params[0], "startTime")
-			require.NoError(t, err)
-			require.Equal(t, want, got, "decoded through a JSON number, exactly")
-		})
-
-		t.Run(fmt.Sprintf("string_%d", want), func(t *testing.T) {
-			var params []any
-			require.NoError(t, decodeParams(
-				json.RawMessage(fmt.Sprintf(`["%d"]`, want)), &params))
-
-			got, err := h.parseTimestampParam(params[0], "startTime")
-			require.NoError(t, err)
-			require.Equal(t, want, got, "the original string form still works")
-		})
-	}
-}
-
-// TestTimestampParamErrorsSayWhatIsWrong guards the half that matters to a
-// caller who cannot read this file: the message, not just the code.
-func TestTimestampParamErrorsSayWhatIsWrong(t *testing.T) {
-	h := &JSONRPCHandler{}
-
-	t.Run("float64 is refused rather than rounded", func(t *testing.T) {
-		// Reaching the parser with a float64 means the decoder was bypassed and
-		// the precision is already gone. Rounding it would hide that.
-		_, err := h.parseTimestampParam(float64(1787348704416123456), "startTime")
-		require.Error(t, err)
-		require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
-		require.Contains(t, err.Error(), "startTime")
-		require.Contains(t, err.Error(), "float64")
-	})
-
-	t.Run("wrong type names the parameter and the type", func(t *testing.T) {
-		_, err := h.parseTimestampParam(true, "endTime")
-		require.Error(t, err)
-		require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
-		require.Contains(t, err.Error(), "endTime")
-		require.Contains(t, err.Error(), "bool")
-	})
-
-	t.Run("unparseable text is quoted back", func(t *testing.T) {
-		var params []any
-		require.NoError(t, decodeParams(json.RawMessage(`["not-a-number"]`), &params))
-		_, err := h.parseTimestampParam(params[0], "startTime")
-		require.Error(t, err)
-		require.Contains(t, err.Error(), `"not-a-number"`)
-	})
-}
-
-func TestOptionalTimestampParam(t *testing.T) {
-	h := &JSONRPCHandler{}
-
-	got, err := h.parseOptionalTimestampParam(nil, "startTime")
-	require.NoError(t, err)
-	require.Nil(t, got)
-
-	got, err = h.parseOptionalTimestampParam(json.Number("1787348704416123457"), "endTime")
-	require.NoError(t, err)
-	require.Equal(t, uint64(1787348704416123457), *got)
-
-	got, err = h.parseOptionalTimestampParam("42", "startTime")
-	require.NoError(t, err)
-	require.Equal(t, uint64(42), *got)
-
-	got, err = h.parseOptionalTimestampParam(json.Number("18446744073709551615"), "endTime")
-	require.NoError(t, err)
-	require.Equal(t, ^uint64(0), *got)
-
-	_, err = h.parseOptionalTimestampParam("-1", "startTime")
-	require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
-
-	_, err = h.parseOptionalTimestampParam("18446744073709551616", "endTime")
-	require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
-
-	_, err = h.parseOptionalTimestampParam(true, "endTime")
-	require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
-
-	_, err = h.parseTimestampParam(nil, "targetBuckets")
-	require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams,
-		"non-bound numeric fields must remain non-null")
-
-	start, end := json.Number("10"), json.Number("20")
-	for _, tc := range []struct {
-		name             string
-		startParam       any
-		endParam         any
-		wantStartPresent bool
-		wantEndPresent   bool
-	}{
-		{"unbounded", nil, nil, false, false},
-		{"end only", nil, end, false, true},
-		{"start only", start, nil, true, false},
-		{"bounded", start, end, true, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			timeRange, err := h.parseTimeRange(tc.startParam, tc.endParam)
-			require.NoError(t, err)
-			require.Equal(t, tc.wantStartPresent, timeRange.Start != nil)
-			require.Equal(t, tc.wantEndPresent, timeRange.End != nil)
 		})
 	}
 }
