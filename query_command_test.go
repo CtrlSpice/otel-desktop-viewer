@@ -1,0 +1,163 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/otelcol"
+)
+
+func TestQueryCommandPrintsColumnsAndSendsSQL(t *testing.T) {
+	var request queryRPCRequest
+	viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, httpRequest *http.Request) {
+		assert.Equal(t, "/rpc", httpRequest.URL.Path)
+		require.NoError(t, json.NewDecoder(httpRequest.Body).Decode(&request))
+		writer.Header().Set("Content-Type", "application/json")
+		_, err := writer.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"columns":[{"name":"service","type":"VARCHAR"},{"name":"count","type":"BIGINT"}],"rows":[["checkout",9007199254740993],[null,0]],"truncated":true}}`))
+		require.NoError(t, err)
+	}))
+	defer viewer.Close()
+
+	cmd := newCommand(otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer"}})
+	var output bytes.Buffer
+	cmd.SetOut(&output)
+	cmd.SetErr(&output)
+	cmd.SetArgs([]string{"query", "select service_name, count(*) from spans group by service_name", "--endpoint", viewer.URL, "--limit", "2"})
+
+	require.NoError(t, cmd.Execute())
+	assert.Equal(t, "service   count           \n--------  ----------------\ncheckout  9007199254740993\nNULL      0               \n[2 rows shown; more rows available; use --limit to return more]\n", output.String())
+	assert.Equal(t, "query", request.Method)
+	assert.Equal(t, "select service_name, count(*) from spans group by service_name", request.Params["sql"])
+	assert.Equal(t, float64(2), request.Params["limit"])
+}
+
+func TestQueryCommandJSONPreservesIntegerTokensNullAndEmptyText(t *testing.T) {
+	result := `{"columns":[{"name":"n","type":"BIGINT"},{"name":"text","type":"VARCHAR"}],"rows":[[9007199254740993,""],[0,null]],"truncated":false}`
+	viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, err := writer.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":` + result + `}`))
+		require.NoError(t, err)
+	}))
+	defer viewer.Close()
+
+	cmd := newCommand(otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer"}})
+	var output bytes.Buffer
+	cmd.SetOut(&output)
+	cmd.SetErr(&output)
+	cmd.SetArgs([]string{"query", "select n, text from values", "--endpoint", viewer.URL, "--json"})
+
+	require.NoError(t, cmd.Execute())
+	assert.Equal(t, result+"\n", output.String())
+}
+
+func TestQueryCommandDefaultLimitAndHelpAreOffline(t *testing.T) {
+	requestReceived := make(chan queryRPCRequest, 1)
+	viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, httpRequest *http.Request) {
+		var request queryRPCRequest
+		require.NoError(t, json.NewDecoder(httpRequest.Body).Decode(&request))
+		requestReceived <- request
+		_, err := writer.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"columns":[],"rows":[],"truncated":false}}`))
+		require.NoError(t, err)
+	}))
+	defer viewer.Close()
+
+	cmd := newCommand(otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer"}})
+	cmd.SetArgs([]string{"query", "select 1", "--endpoint", viewer.URL})
+	require.NoError(t, cmd.Execute())
+	request := <-requestReceived
+	assert.Equal(t, float64(queryDefaultLimit), request.Params["limit"])
+
+	cmd = newCommand(otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer"}})
+	var output bytes.Buffer
+	cmd.SetOut(&output)
+	cmd.SetErr(&output)
+	cmd.SetArgs([]string{"query", "--help", "--endpoint", "http://127.0.0.1:1"})
+	require.NoError(t, cmd.Execute())
+	assert.Contains(t, output.String(), "🔎 Run one read-only DuckDB query against the existing viewer process.")
+	assert.Contains(t, output.String(), "SHOW TABLES")
+	assert.Contains(t, output.String(), "--json")
+	assert.Contains(t, output.String(), "--limit")
+
+	cmd = newCommand(otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer"}})
+	output.Reset()
+	cmd.SetOut(&output)
+	cmd.SetErr(&output)
+	cmd.SetArgs([]string{"--help"})
+	require.NoError(t, cmd.Execute())
+	assert.Contains(t, output.String(), "query       🔎 Run read-only SQL against the running viewer")
+}
+
+func TestQueryCommandReturnsRPCAndHTTPFailuresWithoutUsage(t *testing.T) {
+	t.Run("RPC error", func(t *testing.T) {
+		viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			_, err := writer.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"query rejected: write statement"}}`))
+			require.NoError(t, err)
+		}))
+		defer viewer.Close()
+
+		cmd := newCommand(otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer"}})
+		var output bytes.Buffer
+		cmd.SetOut(&output)
+		cmd.SetErr(&output)
+		cmd.SetArgs([]string{"query", "delete from spans", "--endpoint", viewer.URL})
+		err := cmd.Execute()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "viewer query error -32602: query rejected: write statement")
+		assert.NotContains(t, output.String(), "Usage:")
+	})
+
+	t.Run("HTTP error", func(t *testing.T) {
+		viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			writer.WriteHeader(http.StatusServiceUnavailable)
+		}))
+		defer viewer.Close()
+
+		_, _, err := requestQuery(context.Background(), viewer.Client(), viewer.URL, "select 1", queryDefaultLimit)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "HTTP 503 Service Unavailable")
+	})
+}
+
+func TestRequestQueryPropagatesCancellation(t *testing.T) {
+	requestStarted := make(chan struct{})
+	releaseHandler := make(chan struct{})
+	viewer := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		close(requestStarted)
+		<-releaseHandler
+	}))
+	defer viewer.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		_, _, err := requestQuery(ctx, viewer.Client(), viewer.URL, "select 1", queryDefaultLimit)
+		result <- err
+	}()
+	<-requestStarted
+	cancel()
+	err := <-result
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+	close(releaseHandler)
+}
+
+func TestFormatQueryColumnsDistinguishesNullEmptyAndEscapesControls(t *testing.T) {
+	result := queryResult{
+		Columns: []queryColumn{{Name: "value"}, {Name: "payload"}},
+		Rows: [][]any{
+			{"", nil},
+			{"e\u0301", map[string]any{"line": "one\ntwo"}},
+		},
+	}
+
+	output := formatQueryColumns(result)
+	assert.Equal(t, "value  payload            \n-----  -------------------\n       NULL               \né      {\"line\":\"one\\ntwo\"}\n", output)
+	assert.False(t, strings.ContainsRune(output, '\x1b'))
+}
