@@ -81,7 +81,10 @@ func TestExecutePreservesNativeMapKeyTypesAndNestedValues(t *testing.T) {
             [map(['nested'], [123.4500::decimal(10,4)])]
           ) as unsigned_key,
           map([123.4500::decimal(10,4)], ['decimal key']) as decimal_key,
-          map([{'id': 9007199254740993::bigint}], ['struct key']) as struct_key`, 25)
+		  map([{'id': 9007199254740993::bigint}], ['struct key']) as struct_key,
+		  map([json('{"n":9007199254740993,"k":1,"k":2}')], ['json key']) as json_key,
+		  map([]::integer[], []::varchar[]) as empty_map,
+		  null::map(integer, varchar) as null_map`, 25)
 		require.NoError(t, err)
 		require.Len(t, result.Rows, 1)
 		assert.Equal(t, []any{
@@ -91,21 +94,60 @@ func TestExecutePreservesNativeMapKeyTypesAndNestedValues(t *testing.T) {
 			},
 			[]query.MapEntry{{
 				Key:   "18446744073709551615",
-				Value: []query.MapEntry{{Key: "nested", Value: "123.4500"}},
+				Value: []any{map[string]any{"key": "nested", "value": "123.4500"}},
 			}},
 			[]query.MapEntry{{Key: "123.4500", Value: "decimal key"}},
 			[]query.MapEntry{{Key: map[string]any{"id": "9007199254740993"}, Value: "struct key"}},
+			[]query.MapEntry{{Key: `{"n":9007199254740993,"k":1,"k":2}`, Value: "json key"}},
+			[]query.MapEntry{},
+			nil,
 		}, result.Rows[0])
 		assert.Equal(t, "MAP(BIGINT, UBIGINT[])", result.Columns[0].DuckDBType)
 		assert.Equal(t, "MAP(UBIGINT, MAP(VARCHAR, DECIMAL(10,4)))", result.Columns[1].DuckDBType)
 		assert.Equal(t, "MAP(DECIMAL(10,4), VARCHAR)", result.Columns[2].DuckDBType)
 		assert.Equal(t, `MAP(STRUCT(id BIGINT), VARCHAR)`, result.Columns[3].DuckDBType)
+		assert.Equal(t, "MAP(JSON, VARCHAR)", result.Columns[4].DuckDBType)
 
 		encoded, err := json.Marshal(result.Rows[0])
 		require.NoError(t, err)
 		assert.Contains(t, string(encoded), `"key":"9007199254740993"`)
 		assert.Contains(t, string(encoded), `"key":{"id":"9007199254740993"}`)
 		assert.NotContains(t, string(encoded), `"9007199254740993":`)
+	})
+}
+
+func TestExecutePreservesCompositeMapKeysAndJSONAtRecursivePositions(t *testing.T) {
+	withConnection(t, "", func(conn *sql.Conn) {
+		result, err := query.Execute(context.Background(), conn, `select
+          map(
+            ['outer'],
+            [map(
+              [{'id': 9007199254740993::bigint}],
+              [json('{"n":9007199254740993,"k":1,"k":2}')]
+            )]
+          ) as nested_map,
+          [map([{'id': 9007199254740993::bigint}], ['list value'])] as map_list,
+          {'map field': map([{'id': 9007199254740993::bigint}], ['struct value'])} as map_struct`, 25)
+		require.NoError(t, err)
+		require.Len(t, result.Rows, 1)
+
+		structuredKey := map[string]any{"id": "9007199254740993"}
+		assert.Equal(t, []any{
+			[]query.MapEntry{{
+				Key: "outer",
+				Value: []any{map[string]any{
+					"key":   structuredKey,
+					"value": `{"n":9007199254740993,"k":1,"k":2}`,
+				}},
+			}},
+			[]any{[]any{map[string]any{"key": structuredKey, "value": "list value"}}},
+			map[string]any{
+				"map field": []any{map[string]any{"key": structuredKey, "value": "struct value"}},
+			},
+		}, result.Rows[0])
+		assert.Equal(t, "MAP(VARCHAR, MAP(STRUCT(id BIGINT), JSON))", result.Columns[0].DuckDBType)
+		assert.Equal(t, "MAP(STRUCT(id BIGINT), VARCHAR)[]", result.Columns[1].DuckDBType)
+		assert.Equal(t, `STRUCT("map field" MAP(STRUCT(id BIGINT), VARCHAR))`, result.Columns[2].DuckDBType)
 	})
 }
 

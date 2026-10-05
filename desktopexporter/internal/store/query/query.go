@@ -85,7 +85,11 @@ func Execute(ctx context.Context, conn *sql.Conn, statement string, limit uint64
 		result.Columns[i] = describeColumn(originalNames[i], databaseType)
 	}
 
-	rows, err := conn.QueryContext(ctx, executionQuery(sourceNames, databaseTypes), statement, limit+1)
+	executionSQL, err := executionQuery(sourceNames, databaseTypes)
+	if err != nil {
+		return result, fmt.Errorf("prepare lossless query projection: %w", err)
+	}
+	rows, err := conn.QueryContext(ctx, executionSQL, statement, limit+1)
 	if err != nil {
 		return result, fmt.Errorf("execute supported read-only query: %w", err)
 	}
@@ -151,18 +155,253 @@ func describeQuery(ctx context.Context, conn *sql.Conn, statement string) (names
 	return names, types, nil
 }
 
-func executionQuery(names, types []string) string {
+func executionQuery(names, types []string) (string, error) {
 	projections := make([]string, len(names))
+	lambdaID := 0
 	for i, name := range names {
 		quoted := `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
-		projections[i] = quoted
-		if strings.EqualFold(types[i], "JSON") {
-			projections[i] = "CAST(" + quoted + " AS VARCHAR) AS " + quoted
-		} else if isMapType(types[i]) {
-			projections[i] = "map_entries(" + quoted + ") AS " + quoted
+		logicalType, err := parseLogicalType(types[i])
+		if err != nil {
+			return "", fmt.Errorf("column %q type %q: %w", name, types[i], err)
+		}
+		projection := quoted
+		if needsLosslessProjection(logicalType) {
+			projection = losslessProjection(quoted, logicalType, &lambdaID)
+		}
+		projections[i] = projection + " AS " + quoted
+	}
+	return "SELECT " + strings.Join(projections, ", ") + " FROM query(?) LIMIT ?", nil
+}
+
+type logicalTypeKind uint8
+
+const (
+	logicalScalar logicalTypeKind = iota
+	logicalJSON
+	logicalList
+	logicalMap
+	logicalStruct
+)
+
+type logicalType struct {
+	kind   logicalTypeKind
+	child  *logicalType
+	key    *logicalType
+	value  *logicalType
+	fields []logicalField
+}
+
+type logicalField struct {
+	name  string
+	type_ logicalType
+}
+
+func parseLogicalType(typeName string) (logicalType, error) {
+	typeName = strings.TrimSpace(typeName)
+	if typeName == "" {
+		return logicalType{}, errors.New("empty logical type")
+	}
+	if base, ok := stripListOrArraySuffix(typeName); ok {
+		child, err := parseLogicalType(base)
+		return logicalType{kind: logicalList, child: &child}, err
+	}
+	if strings.EqualFold(typeName, "JSON") {
+		return logicalType{kind: logicalJSON}, nil
+	}
+	if inner, ok := typeArguments(typeName, "MAP"); ok {
+		parts, err := splitTypeList(inner)
+		if err != nil || len(parts) != 2 {
+			return logicalType{}, fmt.Errorf("invalid MAP type")
+		}
+		key, err := parseLogicalType(parts[0])
+		if err != nil {
+			return logicalType{}, err
+		}
+		value, err := parseLogicalType(parts[1])
+		return logicalType{kind: logicalMap, key: &key, value: &value}, err
+	}
+	if inner, ok := typeArguments(typeName, "STRUCT"); ok {
+		parts, err := splitTypeList(inner)
+		if err != nil {
+			return logicalType{}, err
+		}
+		fields := make([]logicalField, len(parts))
+		for i, part := range parts {
+			name, childType, err := splitStructField(part)
+			if err != nil {
+				return logicalType{}, err
+			}
+			child, err := parseLogicalType(childType)
+			if err != nil {
+				return logicalType{}, err
+			}
+			fields[i] = logicalField{name: name, type_: child}
+		}
+		return logicalType{kind: logicalStruct, fields: fields}, nil
+	}
+	return logicalType{kind: logicalScalar}, nil
+}
+
+func stripListOrArraySuffix(typeName string) (string, bool) {
+	if !strings.HasSuffix(typeName, "]") {
+		return "", false
+	}
+	depth := 0
+	quoted := false
+	lastOpen := -1
+	for i := 0; i < len(typeName); i++ {
+		switch typeName[i] {
+		case '"':
+			if quoted && i+1 < len(typeName) && typeName[i+1] == '"' {
+				i++
+				continue
+			}
+			quoted = !quoted
+		case '(':
+			if !quoted {
+				depth++
+			}
+		case ')':
+			if !quoted {
+				depth--
+			}
+		case '[':
+			if !quoted && depth == 0 {
+				lastOpen = i
+			}
 		}
 	}
-	return "SELECT " + strings.Join(projections, ", ") + " FROM query(?) LIMIT ?"
+	if quoted || depth != 0 || lastOpen <= 0 {
+		return "", false
+	}
+	return strings.TrimSpace(typeName[:lastOpen]), true
+}
+
+func typeArguments(typeName, constructor string) (string, bool) {
+	prefix := constructor + "("
+	if len(typeName) <= len(prefix) || !strings.EqualFold(typeName[:len(prefix)], prefix) || typeName[len(typeName)-1] != ')' {
+		return "", false
+	}
+	return typeName[len(prefix) : len(typeName)-1], true
+}
+
+func splitTypeList(input string) ([]string, error) {
+	var parts []string
+	start, parenDepth, bracketDepth := 0, 0, 0
+	quoted := false
+	for i := 0; i < len(input); i++ {
+		switch input[i] {
+		case '"':
+			if quoted && i+1 < len(input) && input[i+1] == '"' {
+				i++
+				continue
+			}
+			quoted = !quoted
+		case '(':
+			if !quoted {
+				parenDepth++
+			}
+		case ')':
+			if !quoted {
+				parenDepth--
+			}
+		case '[':
+			if !quoted {
+				bracketDepth++
+			}
+		case ']':
+			if !quoted {
+				bracketDepth--
+			}
+		case ',':
+			if !quoted && parenDepth == 0 && bracketDepth == 0 {
+				parts = append(parts, strings.TrimSpace(input[start:i]))
+				start = i + 1
+			}
+		}
+		if parenDepth < 0 || bracketDepth < 0 {
+			return nil, errors.New("unbalanced logical type")
+		}
+	}
+	if quoted || parenDepth != 0 || bracketDepth != 0 {
+		return nil, errors.New("unbalanced logical type")
+	}
+	parts = append(parts, strings.TrimSpace(input[start:]))
+	return parts, nil
+}
+
+func splitStructField(field string) (string, string, error) {
+	field = strings.TrimSpace(field)
+	if field == "" {
+		return "", "", errors.New("empty STRUCT field")
+	}
+	if field[0] != '"' {
+		space := strings.IndexAny(field, " \t")
+		if space <= 0 {
+			return "", "", fmt.Errorf("invalid STRUCT field %q", field)
+		}
+		return field[:space], strings.TrimSpace(field[space:]), nil
+	}
+	var name strings.Builder
+	for i := 1; i < len(field); i++ {
+		if field[i] != '"' {
+			name.WriteByte(field[i])
+			continue
+		}
+		if i+1 < len(field) && field[i+1] == '"' {
+			name.WriteByte('"')
+			i++
+			continue
+		}
+		childType := strings.TrimSpace(field[i+1:])
+		if childType == "" {
+			return "", "", fmt.Errorf("STRUCT field %q has no type", name.String())
+		}
+		return name.String(), childType, nil
+	}
+	return "", "", fmt.Errorf("unterminated STRUCT field %q", field)
+}
+
+func needsLosslessProjection(type_ logicalType) bool {
+	switch type_.kind {
+	case logicalJSON, logicalMap:
+		return true
+	case logicalList:
+		return needsLosslessProjection(*type_.child)
+	case logicalStruct:
+		for _, field := range type_.fields {
+			if needsLosslessProjection(field.type_) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func losslessProjection(expression string, type_ logicalType, lambdaID *int) string {
+	switch type_.kind {
+	case logicalJSON:
+		return "CAST(" + expression + " AS VARCHAR)"
+	case logicalList:
+		name := fmt.Sprintf("item_%d", *lambdaID)
+		*lambdaID = *lambdaID + 1
+		return "list_transform(" + expression + ", " + name + " -> " + losslessProjection(name, *type_.child, lambdaID) + ")"
+	case logicalMap:
+		name := fmt.Sprintf("entry_%d", *lambdaID)
+		*lambdaID = *lambdaID + 1
+		key := losslessProjection(name+`."key"`, *type_.key, lambdaID)
+		value := losslessProjection(name+`."value"`, *type_.value, lambdaID)
+		return "list_transform(map_entries(" + expression + "), " + name + " -> struct_pack(key := " + key + ", value := " + value + "))"
+	case logicalStruct:
+		fields := make([]string, len(type_.fields))
+		for i, field := range type_.fields {
+			quoted := `"` + strings.ReplaceAll(field.name, `"`, `""`) + `"`
+			fields[i] = quoted + " := " + losslessProjection(expression+"."+quoted, field.type_, lambdaID)
+		}
+		return "CASE WHEN " + expression + " IS NULL THEN NULL ELSE struct_pack(" + strings.Join(fields, ", ") + ") END"
+	default:
+		return expression
+	}
 }
 
 func rollback(conn *sql.Conn, requestCtx context.Context) error {
@@ -261,15 +500,15 @@ func isTemporalType(typeName string) bool {
 		typeName == "TIMESTAMP_NS" || typeName == "TIMESTAMP WITH TIME ZONE"
 }
 
-func isMapType(typeName string) bool {
-	return strings.HasPrefix(strings.ToUpper(typeName), "MAP(")
-}
-
 func encodeValue(column Column, value any) (any, error) {
 	if value == nil {
 		return nil, nil
 	}
-	if isMapType(column.DuckDBType) {
+	type_, err := parseLogicalType(column.DuckDBType)
+	if err != nil {
+		return nil, err
+	}
+	if type_.kind == logicalMap {
 		return encodeMapEntries(value)
 	}
 	switch column.Encoding {
