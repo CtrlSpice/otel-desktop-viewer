@@ -144,13 +144,13 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 
 	// Inspect before any application DDL so refusing an incompatible store is
 	// read-only. Only a verified fresh store receives the metadata stamp below.
-	schemaCompat, shouldStamp, err := inspectSchemaVersion(db, dbPath, logger)
+	schemaCompat, shouldStamp, err := inspectSchemaVersion(ctx, db, dbPath, logger)
 	if err != nil {
 		return nil, err
 	}
 	// 1) Create types - ignore "already exists" errors
 	for _, stmt := range queries.Types() {
-		if _, err = db.Exec(stmt.SQL); err != nil {
+		if _, err = db.ExecContext(ctx, stmt.SQL); err != nil {
 			if !strings.Contains(err.Error(), "already exists") {
 				return nil, fmt.Errorf("%w while creating type %s: %w", ErrStoreInitFailed, stmt.Name, err)
 			}
@@ -158,27 +158,27 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	}
 
 	// 2) Create and stamp the version metadata only for a verified fresh store.
-	if err := initializeSchemaVersion(db, shouldStamp); err != nil {
+	if err := initializeSchemaVersion(ctx, db, shouldStamp); err != nil {
 		return nil, err
 	}
 
 	// 3) Create the tables for our signals
 	for _, stmt := range queries.Tables() {
-		if _, err = db.Exec(stmt.SQL); err != nil {
+		if _, err = db.ExecContext(ctx, stmt.SQL); err != nil {
 			return nil, fmt.Errorf("%w while creating table %s: %w", ErrStoreInitFailed, stmt.Name, err)
 		}
 	}
 
 	// 4) Create indexes - queries use IF NOT EXISTS so reopening is safe
 	for _, stmt := range queries.Indexes() {
-		if _, err = db.Exec(stmt.SQL); err != nil {
+		if _, err = db.ExecContext(ctx, stmt.SQL); err != nil {
 			return nil, fmt.Errorf("%w while creating index %s: %w", ErrStoreInitFailed, stmt.Name, err)
 		}
 	}
 
 	// 5) Create macros - queries use CREATE OR REPLACE so reopening is safe
 	for _, stmt := range queries.Macros() {
-		if _, err = db.Exec(stmt.SQL); err != nil {
+		if _, err = db.ExecContext(ctx, stmt.SQL); err != nil {
 			return nil, fmt.Errorf("%w while creating macro %s: %w", ErrStoreInitFailed, stmt.Name, err)
 		}
 	}

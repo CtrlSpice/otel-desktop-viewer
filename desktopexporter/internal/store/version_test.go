@@ -56,6 +56,21 @@ func TestInMemoryStoreIsClean(t *testing.T) {
 	assert.Zero(t, logs.Len())
 }
 
+func TestSchemaInitializationHonorsCancellation(t *testing.T) {
+	db, err := sql.Open("duckdb", "")
+	require.NoError(t, err)
+	defer db.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err = initializeSchemaVersion(ctx, db, true)
+	require.ErrorIs(t, err, context.Canceled)
+
+	var schemaMetaTables int
+	require.NoError(t, db.QueryRow(schema.SchemaMetaTableExistsQuery).Scan(&schemaMetaTables))
+	assert.Zero(t, schemaMetaTables)
+}
+
 // A file stamped with a different version must be refused, not silently used.
 //
 // This was warn-only through the rewrite, while the schema was still moving.
