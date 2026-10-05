@@ -129,6 +129,13 @@ func requestQuery(
 	if err := decoder.Decode(&rpcResponse); err != nil {
 		return nil, queryResult{}, fmt.Errorf("decode viewer response: %w", err)
 	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, queryResult{}, fmt.Errorf("decode viewer response: additional JSON value")
+		}
+		return nil, queryResult{}, fmt.Errorf("decode viewer response: trailing data: %w", err)
+	}
 	if rpcResponse.Error != nil {
 		return nil, queryResult{}, fmt.Errorf("viewer query error %d: %s", rpcResponse.Error.Code, rpcResponse.Error.Message)
 	}
