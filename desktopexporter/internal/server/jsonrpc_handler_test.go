@@ -52,6 +52,13 @@ func TestQuery(t *testing.T) {
 	assert.LessOrEqual(t, queryResult.RowCount, uint64(2))
 	assert.NotEmpty(t, queryResult.Columns)
 
+	result, err = handler.Handle(ctx, createRequest("query", []any{
+		"select 1::integer", json.Number("18446744073709551615"),
+	}))
+	require.NoError(t, err)
+	queryResult = result.(storequery.Result)
+	assert.Equal(t, ^uint64(0), queryResult.Limit)
+
 	for _, params := range []any{
 		[]any{"delete from spans"},
 		[]any{"select 1; select 2"},

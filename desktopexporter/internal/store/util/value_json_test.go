@@ -30,3 +30,24 @@ func TestEncodeValuePreservesKindsAndDoubleBits(t *testing.T) {
 		t.Errorf("EncodeValue() = %s, want %s", got, want)
 	}
 }
+
+func TestCanonicalEncodedValueDistinguishesTypedValuesFromBareJSON(t *testing.T) {
+	canonical := []byte(`{"kind":"map","value":[` +
+		`{"key":"same","value":{"kind":"int64","value":"1"}},` +
+		`{"key":"same","value":{"kind":"string","value":"1"}}]}`)
+	raw, ok := CanonicalEncodedValue(canonical)
+	if !ok || string(raw) != string(canonical) {
+		t.Fatalf("CanonicalEncodedValue() = (%s, %v), want unchanged canonical value", raw, ok)
+	}
+
+	for _, value := range [][]byte{
+		[]byte(`{"n":9007199254740993,"k":1,"k":2}`),
+		[]byte(`{"kind":"int64","value":1}`),
+		[]byte(`{"kind":"int64","value":"9223372036854775808"}`),
+		[]byte(`{"kind":"map","value":[{"key":"missing-value"}]}`),
+	} {
+		if _, ok := CanonicalEncodedValue(value); ok {
+			t.Errorf("CanonicalEncodedValue(%s) unexpectedly accepted bare or malformed JSON", value)
+		}
+	}
+}

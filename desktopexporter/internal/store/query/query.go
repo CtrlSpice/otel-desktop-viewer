@@ -12,8 +12,8 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
-	"time"
 
+	storeutil "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/google/uuid"
 )
@@ -21,7 +21,6 @@ import (
 const DefaultLimit uint64 = 25
 
 var (
-	ErrInvalidLimit    = errors.New("query limit must be a non-negative whole number")
 	ErrReadOnly        = errors.New("query must be one read-only SELECT or supported introspection statement")
 	ErrUnsupportedType = errors.New("query result type has no approved lossless wire representation")
 )
@@ -29,13 +28,14 @@ var (
 type Column struct {
 	Name       string `json:"name"`
 	DuckDBType string `json:"duckdbType"`
-	Encoding   string `json:"encoding"`
 }
 
 type MapEntry struct {
 	Key   any `json:"key"`
 	Value any `json:"value"`
 }
+
+type Value = storeutil.EncodedValue
 
 type Result struct {
 	Columns   []Column `json:"columns"`
@@ -54,9 +54,6 @@ func Execute(ctx context.Context, conn *sql.Conn, statement string, limit uint64
 	}
 	if strings.TrimSpace(statement) == "" {
 		return result, fmt.Errorf("empty SQL: %w", ErrReadOnly)
-	}
-	if limit == ^uint64(0) {
-		return result, ErrInvalidLimit
 	}
 	originalNames, err := classifyReadOnly(conn, statement)
 	if err != nil {
@@ -82,14 +79,20 @@ func Execute(ctx context.Context, conn *sql.Conn, statement string, limit uint64
 	}
 	result.Columns = make([]Column, len(databaseTypes))
 	for i, databaseType := range databaseTypes {
-		result.Columns[i] = describeColumn(originalNames[i], databaseType)
+		result.Columns[i] = Column{Name: originalNames[i], DuckDBType: databaseType}
 	}
 
-	executionSQL, err := executionQuery(sourceNames, databaseTypes)
+	withLookahead := limit != ^uint64(0)
+	executionSQL, err := executionQuery(sourceNames, databaseTypes, withLookahead)
 	if err != nil {
 		return result, fmt.Errorf("prepare lossless query projection: %w", err)
 	}
-	rows, err := conn.QueryContext(ctx, executionSQL, statement, limit+1)
+	var rows *sql.Rows
+	if withLookahead {
+		rows, err = conn.QueryContext(ctx, executionSQL, statement, limit+1)
+	} else {
+		rows, err = conn.QueryContext(ctx, executionSQL, statement)
+	}
 	if err != nil {
 		return result, fmt.Errorf("execute supported read-only query: %w", err)
 	}
@@ -155,7 +158,7 @@ func describeQuery(ctx context.Context, conn *sql.Conn, statement string) (names
 	return names, types, nil
 }
 
-func executionQuery(names, types []string) (string, error) {
+func executionQuery(names, types []string, withLimit bool) (string, error) {
 	projections := make([]string, len(names))
 	lambdaID := 0
 	for i, name := range names {
@@ -170,7 +173,11 @@ func executionQuery(names, types []string) (string, error) {
 		}
 		projections[i] = projection + " AS " + quoted
 	}
-	return "SELECT " + strings.Join(projections, ", ") + " FROM query(?) LIMIT ?", nil
+	query := "SELECT " + strings.Join(projections, ", ") + " FROM query(?)"
+	if withLimit {
+		query += " LIMIT ?"
+	}
+	return query, nil
 }
 
 type logicalTypeKind uint8
@@ -185,6 +192,7 @@ const (
 
 type logicalType struct {
 	kind   logicalTypeKind
+	name   string
 	child  *logicalType
 	key    *logicalType
 	value  *logicalType
@@ -206,7 +214,7 @@ func parseLogicalType(typeName string) (logicalType, error) {
 		return logicalType{kind: logicalList, child: &child}, err
 	}
 	if strings.EqualFold(typeName, "JSON") {
-		return logicalType{kind: logicalJSON}, nil
+		return logicalType{kind: logicalJSON, name: "JSON"}, nil
 	}
 	if inner, ok := typeArguments(typeName, "MAP"); ok {
 		parts, err := splitTypeList(inner)
@@ -239,7 +247,7 @@ func parseLogicalType(typeName string) (logicalType, error) {
 		}
 		return logicalType{kind: logicalStruct, fields: fields}, nil
 	}
-	return logicalType{kind: logicalScalar}, nil
+	return logicalType{kind: logicalScalar, name: strings.ToUpper(typeName)}, nil
 }
 
 func stripListOrArraySuffix(typeName string) (string, bool) {
@@ -366,6 +374,8 @@ func needsLosslessProjection(type_ logicalType) bool {
 	switch type_.kind {
 	case logicalJSON, logicalMap:
 		return true
+	case logicalScalar:
+		return isTemporalType(type_.name) || type_.name == "INTERVAL"
 	case logicalList:
 		return needsLosslessProjection(*type_.child)
 	case logicalStruct:
@@ -399,6 +409,11 @@ func losslessProjection(expression string, type_ logicalType, lambdaID *int) str
 			fields[i] = quoted + " := " + losslessProjection(expression+"."+quoted, field.type_, lambdaID)
 		}
 		return "CASE WHEN " + expression + " IS NULL THEN NULL ELSE struct_pack(" + strings.Join(fields, ", ") + ") END"
+	case logicalScalar:
+		if isTemporalType(type_.name) || type_.name == "INTERVAL" {
+			return "CAST(" + expression + " AS VARCHAR)"
+		}
+		return expression
 	default:
 		return expression
 	}
@@ -456,38 +471,19 @@ func classifyReadOnly(conn *sql.Conn, statement string) ([]string, error) {
 	return names, err
 }
 
-func describeColumn(name, databaseType string) Column {
-	typeName := strings.ToUpper(databaseType)
-	column := Column{Name: name, DuckDBType: databaseType, Encoding: "recursive"}
-	switch {
-	case typeName == "BOOLEAN":
-		column.Encoding = "boolean"
-	case isIntegerType(typeName):
-		column.Encoding = "decimal-string"
-	case strings.HasPrefix(typeName, "DECIMAL("):
-		column.Encoding = "fixed-decimal-string"
-	case typeName == "FLOAT":
-		column.Encoding = "float32-number-or-bits"
-	case typeName == "DOUBLE":
-		column.Encoding = "float64-number-or-bits"
-	case typeName == "VARCHAR" || typeName == "ENUM" || typeName == "BIT":
-		column.Encoding = "string"
-	case typeName == "JSON":
-		column.Encoding = "json-text"
-	case typeName == "UUID":
-		column.Encoding = "uuid-string"
-	case typeName == "BLOB":
-		column.Encoding = "bytes-base64"
-	case isTemporalType(typeName):
-		column.Encoding = "temporal-string"
-	}
-	return column
-}
-
 func isIntegerType(typeName string) bool {
 	switch typeName {
 	case "TINYINT", "SMALLINT", "INTEGER", "BIGINT", "HUGEINT", "BIGNUM",
 		"UTINYINT", "USMALLINT", "UINTEGER", "UBIGINT", "UHUGEINT":
+		return true
+	default:
+		return false
+	}
+}
+
+func isSignedInt64Type(typeName string) bool {
+	switch typeName {
+	case "TINYINT", "SMALLINT", "INTEGER", "BIGINT":
 		return true
 	default:
 		return false
@@ -501,138 +497,143 @@ func isTemporalType(typeName string) bool {
 }
 
 func encodeValue(column Column, value any) (any, error) {
-	if value == nil {
-		return nil, nil
-	}
 	type_, err := parseLogicalType(column.DuckDBType)
 	if err != nil {
 		return nil, err
 	}
-	if type_.kind == logicalMap {
-		return encodeMapEntries(value)
+	return encodeTypedValue(type_, value)
+}
+
+func encodeTypedValue(type_ logicalType, value any) (any, error) {
+	if value == nil {
+		return Value{Kind: "empty", Value: nil}, nil
 	}
-	switch column.Encoding {
-	case "boolean", "string", "json-text":
-		return value, nil
-	case "decimal-string":
-		return integerString(value)
-	case "fixed-decimal-string":
-		decimal, ok := value.(duckdb.Decimal)
+	switch type_.kind {
+	case logicalJSON:
+		text, ok := value.(string)
 		if !ok {
-			return nil, fmt.Errorf("expected duckdb.Decimal, got %T", value)
+			return nil, fmt.Errorf("expected JSON text, got %T", value)
 		}
-		return fixedDecimal(decimal), nil
-	case "float32-number-or-bits", "float64-number-or-bits":
-		return encodeFloat(value)
-	case "uuid-string":
-		bytes, ok := value.([]byte)
+		if raw, ok := storeutil.CanonicalEncodedValue([]byte(text)); ok {
+			return raw, nil
+		}
+		return Value{Kind: "string", Value: text}, nil
+	case logicalList:
+		items, ok := value.([]any)
 		if !ok {
-			return nil, fmt.Errorf("expected UUID bytes, got %T", value)
+			return nil, fmt.Errorf("expected LIST or ARRAY, got %T", value)
 		}
-		id, err := uuid.FromBytes(bytes)
-		if err != nil {
-			return nil, err
+		encoded := make([]any, len(items))
+		for i, item := range items {
+			var err error
+			encoded[i], err = encodeTypedValue(*type_.child, item)
+			if err != nil {
+				return nil, fmt.Errorf("list item %d: %w", i, err)
+			}
 		}
-		return id.String(), nil
-	case "bytes-base64":
-		bytes, ok := value.([]byte)
+		return Value{Kind: "array", Value: encoded}, nil
+	case logicalMap:
+		return encodeMapValue(type_, value)
+	case logicalStruct:
+		fields, ok := value.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("expected BLOB bytes, got %T", value)
+			return nil, fmt.Errorf("expected STRUCT, got %T", value)
 		}
-		return base64.StdEncoding.EncodeToString(bytes), nil
-	case "temporal-string":
-		valueTime, ok := value.(time.Time)
-		if !ok {
-			return nil, fmt.Errorf("expected time.Time, got %T", value)
+		entries := make([]MapEntry, len(type_.fields))
+		for i, field := range type_.fields {
+			fieldValue, present := fields[field.name]
+			if !present {
+				return nil, fmt.Errorf("STRUCT field %q is missing", field.name)
+			}
+			encoded, err := encodeTypedValue(field.type_, fieldValue)
+			if err != nil {
+				return nil, fmt.Errorf("STRUCT field %q: %w", field.name, err)
+			}
+			entries[i] = MapEntry{Key: field.name, Value: encoded}
 		}
-		return valueTime.Format(time.RFC3339Nano), nil
-	case "recursive":
-		return encodeNested(value)
+		return Value{Kind: "map", Value: entries}, nil
 	default:
-		return nil, fmt.Errorf("unknown encoding %q", column.Encoding)
+		return encodeScalarValue(type_.name, value)
 	}
 }
 
-func encodeMapEntries(value any) ([]MapEntry, error) {
+func encodeMapValue(type_ logicalType, value any) (Value, error) {
 	items, ok := value.([]any)
 	if !ok {
-		return nil, fmt.Errorf("expected MAP entries, got %T", value)
+		return Value{}, fmt.Errorf("expected MAP entries, got %T", value)
 	}
 	entries := make([]MapEntry, len(items))
 	for i, item := range items {
 		fields, ok := item.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("map entry %d: expected STRUCT, got %T", i, item)
+			return Value{}, fmt.Errorf("map entry %d: expected STRUCT, got %T", i, item)
 		}
 		key, keyPresent := fields["key"]
 		entryValue, valuePresent := fields["value"]
 		if !keyPresent || !valuePresent {
-			return nil, fmt.Errorf("map entry %d: missing key or value", i)
+			return Value{}, fmt.Errorf("map entry %d: missing key or value", i)
 		}
-		encodedKey, err := encodeNested(key)
+		encodedKey, err := encodeTypedValue(*type_.key, key)
 		if err != nil {
-			return nil, fmt.Errorf("map entry %d key: %w", i, err)
+			return Value{}, fmt.Errorf("map entry %d key: %w", i, err)
 		}
-		encodedValue, err := encodeNested(entryValue)
+		encodedValue, err := encodeTypedValue(*type_.value, entryValue)
 		if err != nil {
-			return nil, fmt.Errorf("map entry %d value: %w", i, err)
+			return Value{}, fmt.Errorf("map entry %d value: %w", i, err)
 		}
 		entries[i] = MapEntry{Key: encodedKey, Value: encodedValue}
 	}
-	return entries, nil
+	return Value{Kind: "map", Value: entries}, nil
 }
 
-func encodeNested(value any) (any, error) {
-	switch value := value.(type) {
-	case nil, bool, string:
-		return value, nil
-	case int8, int16, int32, int64, uint8, uint16, uint32, uint64, *big.Int:
-		return integerString(value)
-	case float32, float64:
-		return encodeFloat(value)
-	case duckdb.Decimal:
-		return fixedDecimal(value), nil
-	case []byte:
-		return base64.StdEncoding.EncodeToString(value), nil
-	case time.Time:
-		return value.Format(time.RFC3339Nano), nil
-	case []any:
-		encoded := make([]any, len(value))
-		for i, item := range value {
-			var err error
-			encoded[i], err = encodeNested(item)
-			if err != nil {
-				return nil, fmt.Errorf("list item %d: %w", i, err)
-			}
+func encodeScalarValue(typeName string, value any) (Value, error) {
+	switch {
+	case typeName == "BOOLEAN":
+		boolean, ok := value.(bool)
+		if !ok {
+			return Value{}, fmt.Errorf("expected BOOLEAN, got %T", value)
 		}
-		return encoded, nil
-	case map[string]any:
-		encoded := make(map[string]any, len(value))
-		for key, item := range value {
-			var err error
-			encoded[key], err = encodeNested(item)
-			if err != nil {
-				return nil, fmt.Errorf("struct field %q: %w", key, err)
-			}
+		return Value{Kind: "bool", Value: boolean}, nil
+	case isSignedInt64Type(typeName):
+		integer, err := integerString(value)
+		return Value{Kind: "int64", Value: integer}, err
+	case isIntegerType(typeName):
+		integer, err := integerString(value)
+		return Value{Kind: "string", Value: integer}, err
+	case strings.HasPrefix(typeName, "DECIMAL("):
+		decimal, ok := value.(duckdb.Decimal)
+		if !ok {
+			return Value{}, fmt.Errorf("expected DECIMAL, got %T", value)
 		}
-		return encoded, nil
-	case duckdb.OrderedMap:
-		keys, values := value.Keys(), value.Values()
-		entries := make([]MapEntry, len(keys))
-		for i, key := range keys {
-			encodedKey, err := encodeNested(key)
-			if err != nil {
-				return nil, fmt.Errorf("map entry %d key: %w", i, err)
-			}
-			encodedValue, err := encodeNested(values[i])
-			if err != nil {
-				return nil, fmt.Errorf("map entry %d value: %w", i, err)
-			}
-			entries[i] = MapEntry{Key: encodedKey, Value: encodedValue}
+		return Value{Kind: "string", Value: fixedDecimal(decimal)}, nil
+	case typeName == "FLOAT" || typeName == "DOUBLE":
+		floating, err := encodeFloat(value)
+		return Value{Kind: "double", Value: floating}, err
+	case typeName == "UUID":
+		bytes, ok := value.([]byte)
+		if !ok {
+			return Value{}, fmt.Errorf("expected UUID bytes, got %T", value)
 		}
-		return entries, nil
+		id, err := uuid.FromBytes(bytes)
+		if err != nil {
+			return Value{}, err
+		}
+		return Value{Kind: "string", Value: id.String()}, nil
+	case typeName == "BLOB" || typeName == "GEOMETRY":
+		bytes, ok := value.([]byte)
+		if !ok {
+			return Value{}, fmt.Errorf("expected bytes, got %T", value)
+		}
+		return Value{Kind: "bytes", Value: base64.StdEncoding.EncodeToString(bytes)}, nil
+	case typeName == "VARCHAR" || typeName == "ENUM" || typeName == "BIT" ||
+		isTemporalType(typeName) || typeName == "INTERVAL":
+		text, ok := value.(string)
+		if !ok {
+			return Value{}, fmt.Errorf("expected %s text, got %T", typeName, value)
+		}
+		return Value{Kind: "string", Value: text}, nil
 	default:
-		return nil, fmt.Errorf("DuckDB value %T: %w", value, ErrUnsupportedType)
+		return Value{}, fmt.Errorf("DuckDB type %s: %w", typeName, ErrUnsupportedType)
 	}
 }
 

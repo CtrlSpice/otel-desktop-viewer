@@ -137,7 +137,7 @@ func (h *JSONRPCHandler) query(ctx context.Context, req *jsonrpc2.Request) (any,
 			return nil, fmt.Errorf("limit must be a non-negative whole number: %w", jsonrpc2.ErrInvalidParams)
 		}
 		parsed, err := strconv.ParseUint(number.String(), 10, 64)
-		if err != nil || parsed == ^uint64(0) {
+		if err != nil {
 			return nil, fmt.Errorf("limit must be a non-negative whole number: %w", jsonrpc2.ErrInvalidParams)
 		}
 		limit = parsed
@@ -154,8 +154,7 @@ func (h *JSONRPCHandler) query(ctx context.Context, req *jsonrpc2.Request) (any,
 	if err == nil {
 		return result, nil
 	}
-	if errors.Is(err, storequery.ErrReadOnly) || errors.Is(err, storequery.ErrUnsupportedType) ||
-		errors.Is(err, storequery.ErrInvalidLimit) {
+	if errors.Is(err, storequery.ErrReadOnly) || errors.Is(err, storequery.ErrUnsupportedType) {
 		return nil, fmt.Errorf("query rejected: %v: %w", err, jsonrpc2.ErrInvalidParams)
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

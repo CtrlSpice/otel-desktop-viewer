@@ -22,10 +22,112 @@ func EncodeValue(v pcommon.Value) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(struct {
-		Kind  string `json:"kind"`
-		Value any    `json:"value"`
-	}{Kind: value.kind, Value: value.value})
+	return json.Marshal(EncodedValue{Kind: value.kind, Value: value.value})
+}
+
+// EncodedValue is the canonical recursive wire representation shared by stored
+// OTel values and query result projections.
+type EncodedValue struct {
+	Kind  string `json:"kind"`
+	Value any    `json:"value"`
+}
+
+// CanonicalEncodedValue returns data unchanged only when it already conforms to
+// the received OTel value model. Arbitrary JSON remains a distinct value.
+func CanonicalEncodedValue(data []byte) (json.RawMessage, bool) {
+	raw := json.RawMessage(data)
+	if !json.Valid(raw) || !validEncodedValue(raw) {
+		return nil, false
+	}
+	return raw, true
+}
+
+func validEncodedValue(raw json.RawMessage) bool {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil || len(object) != 2 {
+		return false
+	}
+	var kind string
+	if err := json.Unmarshal(object["kind"], &kind); err != nil {
+		return false
+	}
+	value, ok := object["value"]
+	if !ok {
+		return false
+	}
+	switch kind {
+	case "empty":
+		return strings.TrimSpace(string(value)) == "null"
+	case "string":
+		var text string
+		return json.Unmarshal(value, &text) == nil
+	case "bool":
+		var boolean bool
+		return json.Unmarshal(value, &boolean) == nil
+	case "int64":
+		var integer string
+		if json.Unmarshal(value, &integer) != nil {
+			return false
+		}
+		parsed, err := strconv.ParseInt(integer, 10, 64)
+		return err == nil && strconv.FormatInt(parsed, 10) == integer
+	case "double":
+		return validEncodedDouble(value)
+	case "bytes":
+		var encoded string
+		if json.Unmarshal(value, &encoded) != nil {
+			return false
+		}
+		_, err := base64.StdEncoding.DecodeString(encoded)
+		return err == nil
+	case "array":
+		var values []json.RawMessage
+		if json.Unmarshal(value, &values) != nil {
+			return false
+		}
+		for _, child := range values {
+			if !validEncodedValue(child) {
+				return false
+			}
+		}
+		return true
+	case "map":
+		var entries []map[string]json.RawMessage
+		if json.Unmarshal(value, &entries) != nil {
+			return false
+		}
+		for _, entry := range entries {
+			if len(entry) != 2 || !validEncodedValue(entry["value"]) {
+				return false
+			}
+			var key string
+			if json.Unmarshal(entry["key"], &key) != nil {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+func validEncodedDouble(raw json.RawMessage) bool {
+	var bits string
+	if json.Unmarshal(raw, &bits) == nil {
+		if len(bits) != 18 || !strings.HasPrefix(bits, "0x") {
+			return false
+		}
+		_, err := strconv.ParseUint(bits[2:], 16, 64)
+		return err == nil
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder.UseNumber()
+	var number json.Number
+	if decoder.Decode(&number) != nil {
+		return false
+	}
+	_, err := strconv.ParseFloat(number.String(), 64)
+	return err == nil
 }
 
 type encodedValue struct {
