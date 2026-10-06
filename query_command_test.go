@@ -162,6 +162,50 @@ func TestRequestQueryRequiresOneCompleteJSONRPCResponse(t *testing.T) {
 	}
 }
 
+func TestRequestQueryValidatesResultStructure(t *testing.T) {
+	tests := []struct {
+		name    string
+		result  string
+		wantErr string
+	}{
+		{name: "null result", result: `null`, wantErr: "result must be an object"},
+		{name: "missing columns", result: `{"rows":[],"truncated":false}`, wantErr: "missing columns"},
+		{name: "missing rows", result: `{"columns":[],"truncated":false}`, wantErr: "missing rows"},
+		{name: "missing truncated", result: `{"columns":[],"rows":[]}`, wantErr: "missing truncated"},
+		{name: "columns are not an array", result: `{"columns":{},"rows":[],"truncated":false}`, wantErr: "decode columns"},
+		{name: "column is not an object", result: `{"columns":[null],"rows":[],"truncated":false}`, wantErr: "columns[0]: must be an object"},
+		{name: "column is missing type", result: `{"columns":[{"name":"n"}],"rows":[],"truncated":false}`, wantErr: "missing name or type"},
+		{name: "rows are not an array", result: `{"columns":[],"rows":{},"truncated":false}`, wantErr: "decode rows"},
+		{name: "row is not an array", result: `{"columns":[],"rows":[null],"truncated":false}`, wantErr: "rows[0]: must be an array"},
+		{name: "row width does not match columns", result: `{"columns":[],"rows":[[1]],"truncated":false}`, wantErr: "got 1 values for 0 columns"},
+		{name: "truncated is not a boolean", result: `{"columns":[],"rows":[],"truncated":"false"}`, wantErr: "decode truncated"},
+		{name: "valid empty result with extra field", result: `{"columns":[],"rows":[],"truncated":false,"future":"accepted"}`},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				_, err := writer.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":` + test.result + `}`))
+				require.NoError(t, err)
+			}))
+			defer viewer.Close()
+
+			raw, result, err := requestQuery(context.Background(), viewer.Client(), viewer.URL, "select 1", queryDefaultLimit)
+			if test.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), test.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, test.result, string(raw))
+			assert.Empty(t, result.Columns)
+			assert.Empty(t, result.Rows)
+			assert.False(t, result.Truncated)
+		})
+	}
+}
+
 func TestRequestQueryPropagatesCancellation(t *testing.T) {
 	requestStarted := make(chan struct{})
 	releaseHandler := make(chan struct{})
