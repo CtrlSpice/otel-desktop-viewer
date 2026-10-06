@@ -294,6 +294,13 @@ async function callRPC<T>(
 
   const data: JsonRpcResponse = await response.json()
 
+  if (data.jsonrpc !== request.jsonrpc) {
+    throw new Error(`Invalid JSON-RPC version: ${String(data.jsonrpc)}`)
+  }
+  if (data.id !== request.id) {
+    throw new Error('JSON-RPC response ID does not match request ID')
+  }
+
   if (data.error) {
     throw new JsonRpcError(data.error.code, data.error.message)
   }
