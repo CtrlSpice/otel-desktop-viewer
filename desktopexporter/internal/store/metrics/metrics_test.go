@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -24,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.uber.org/zap"
 )
 
 const maxNano = 1<<63 - 1
@@ -94,7 +96,7 @@ func mustDecodeSpanIDMetrics(s string) [8]byte {
 // createTestMetricsPdataN builds pmetric.Metrics with n gauge metrics (one resource/scope).
 // Each metric has resource and scope attributes. Used to exercise flushIntervalMetrics by ingesting >= 100 metrics.
 func createTestMetricsPdataN(n int) pmetric.Metrics {
-	base := time.Now().UnixNano()
+	base := int64(1_700_000_000_000_000_000)
 	metrics := pmetric.NewMetrics()
 	rm := metrics.ResourceMetrics().AppendEmpty()
 	rm.Resource().Attributes().PutStr("service.name", "test-service")
@@ -385,7 +387,7 @@ func findSummary(t *testing.T, summaries []map[string]any, name string) map[stri
 }
 
 // getMetricFullByName resolves a stream id via SearchSummaries and fetches
-// full MetricData via GetMetric (timeseries, datapoints, resource, scope).
+// full MetricViewData via GetMetricView (timeseries, datapoints, resource, scope).
 func getMetricFullByName(t *testing.T, s *store.Store, ctx context.Context, name string) map[string]any {
 	return getMetricFullByNameInRange(t, s, ctx, name, store.BoundedTimeRange(0, maxNano))
 }
@@ -394,12 +396,213 @@ func getMetricFullByNameInRange(t *testing.T, s *store.Store, ctx context.Contex
 	t.Helper()
 	id := findMetricID(t, s, ctx, name)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, id, timeRange, 0, nil, nil, 0, 0, 0, nil, "", nil, 0)
+		return metrics.GetMetricView(ctx, db, id, timeRange, 0, nil, nil, 0, 0, 0, nil, "", nil, 0)
 	})
 	require.NoError(t, err)
 	var m map[string]any
 	require.NoError(t, json.Unmarshal(raw, &m))
 	return m
+}
+
+func getExactMetricSeriesByName(t *testing.T, s *store.Store, ctx context.Context, name string, timeRange store.TimeRange) map[string]any {
+	t.Helper()
+	metricID := findMetricID(t, s, ctx, name)
+	discoveryRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, metricID)
+	})
+	require.NoError(t, err)
+	var discovery map[string]any
+	require.NoError(t, json.Unmarshal(discoveryRaw, &discovery))
+	series := discovery["series"].([]any)
+	require.Len(t, series, 1)
+	seriesID := series[0].(map[string]any)["seriesRef"].(string)
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetricSeries(ctx, db, metricID, seriesID, timeRange)
+	})
+	require.NoError(t, err)
+	var result map[string]any
+	require.NoError(t, json.Unmarshal(raw, &result))
+	return result
+}
+
+func exactMetricSeriesDatapoints(t *testing.T, series map[string]any) []any {
+	t.Helper()
+	return series["datapoints"].([]any)
+}
+
+func TestExactMetricSeriesPreservesMetricOwnership(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	for i, timestamp := range []pcommon.Timestamp{100, 200} {
+		data := pmetric.NewMetrics()
+		rm := data.ResourceMetrics().AppendEmpty()
+		rm.SetSchemaUrl(fmt.Sprintf("resource-schema-%d", i))
+		rm.Resource().SetDroppedAttributesCount(uint32(i + 1))
+		nested := rm.Resource().Attributes().PutEmptyMap("nested")
+		nested.PutInt("exact", math.MaxInt64)
+		sm := rm.ScopeMetrics().AppendEmpty()
+		sm.SetSchemaUrl("scope-identity-schema")
+		sm.Scope().SetName("sdk")
+		sm.Scope().SetVersion("1")
+		sm.Scope().SetDroppedAttributesCount(uint32(i + 3))
+		sm.Scope().Attributes().PutEmptySlice("levels").AppendEmpty().SetInt(math.MinInt64)
+		metric := sm.Metrics().AppendEmpty()
+		metric.SetName("owned.gauge")
+		metric.SetDescription(fmt.Sprintf("report-%d", i))
+		metric.Metadata().PutInt("batch", int64(i))
+		point := metric.SetEmptyGauge().DataPoints().AppendEmpty()
+		point.SetTimestamp(timestamp)
+		point.Attributes().PutStr("series", "one")
+		point.SetIntValue(int64(i + 1))
+		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+			return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
+		}))
+	}
+
+	metricIDs, err := readStore(s, func(db *sql.DB) ([]string, error) {
+		rows, err := db.QueryContext(ctx, `select m.id::varchar from metric_streams m
+			join resources r on r.id = m.resource_id
+			where m.name = 'owned.gauge' order by r.schema_url`)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var ids []string
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return nil, err
+			}
+			ids = append(ids, id)
+		}
+		return ids, rows.Err()
+	})
+	require.NoError(t, err)
+	require.Len(t, metricIDs, 2)
+	for i, metricID := range metricIDs {
+		discoveryRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetric(ctx, db, metricID)
+		})
+		require.NoError(t, err)
+		var discovery map[string]any
+		require.NoError(t, json.Unmarshal(discoveryRaw, &discovery))
+		require.Equal(t, fmt.Sprintf("report-%d", i), discovery["description"])
+		require.Len(t, discovery["metadata"].([]any), 1)
+		resource := discovery["resource"].(map[string]any)
+		require.Equal(t, fmt.Sprintf("resource-schema-%d", i), resource["schemaUrl"])
+		require.Equal(t, float64(i+1), resource["droppedAttributesCount"])
+		scope := discovery["scope"].(map[string]any)
+		require.Equal(t, float64(i+3), scope["droppedAttributesCount"])
+
+		seriesSummary := discovery["series"].([]any)[0].(map[string]any)
+		require.Equal(t, "1", seriesSummary["datapointCount"])
+		seriesID := seriesSummary["seriesRef"].(string)
+		selectedRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetricSeries(ctx, db, metricID, seriesID, store.TimeRange{})
+		})
+		require.NoError(t, err)
+		var selected map[string]any
+		require.NoError(t, json.Unmarshal(selectedRaw, &selected))
+		datapoints := selected["datapoints"].([]any)
+		require.Len(t, datapoints, 1)
+		require.Equal(t, fmt.Sprint((i+1)*100), datapoints[0].(map[string]any)["timestamp"])
+	}
+}
+
+func TestResourceSchemaURLChangesKeepMetricIdentity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "resource-schema-url.db")
+	ctx := context.Background()
+
+	appendMetric := func(batch pmetric.Metrics, resourceSchemaURL, scopeSchemaURL, description string, timestamp pcommon.Timestamp) {
+		rm := batch.ResourceMetrics().AppendEmpty()
+		rm.SetSchemaUrl(resourceSchemaURL)
+		rm.Resource().Attributes().PutStr("service.name", "checkout")
+		rm.Resource().SetDroppedAttributesCount(2)
+		sm := rm.ScopeMetrics().AppendEmpty()
+		sm.SetSchemaUrl(scopeSchemaURL)
+		sm.Scope().SetName("sdk")
+		sm.Scope().SetVersion("1")
+		sm.Scope().SetDroppedAttributesCount(3)
+		metric := sm.Metrics().AppendEmpty()
+		metric.SetName("requests")
+		metric.SetDescription(description)
+		metric.Metadata().PutStr("report", description)
+		point := metric.SetEmptyGauge().DataPoints().AppendEmpty()
+		point.SetTimestamp(timestamp)
+		point.Attributes().PutStr("route", "/checkout")
+		point.SetIntValue(int64(timestamp))
+	}
+
+	ingestBatch := func(t *testing.T, s *store.Store, batch pmetric.Metrics) {
+		t.Helper()
+		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+			return metrics.Ingest(ctx, conn, batch, s.FlushedIDs())
+		}))
+	}
+
+	s, err := store.NewStore(ctx, path, zap.NewNop())
+	require.NoError(t, err)
+	first := pmetric.NewMetrics()
+	appendMetric(first, "resource-a", "scope-a", "first", 1)
+	appendMetric(first, "resource-b", "scope-a", "second", 2)
+	ingestBatch(t, s, first)
+
+	second := pmetric.NewMetrics()
+	appendMetric(second, "resource-c", "scope-a", "third", 3)
+	ingestBatch(t, s, second)
+	require.NoError(t, s.Close())
+
+	s, err = store.NewStore(ctx, path, zap.NewNop())
+	require.NoError(t, err)
+	defer s.Close()
+	third := pmetric.NewMetrics()
+	appendMetric(third, "resource-d", "scope-a", "fourth", 4)
+	ingestBatch(t, s, third)
+
+	var metricID string
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		var metricsCount, seriesCount, datapointCount, resourceCount, payloadCount int
+		if err := db.QueryRow(`select count(*), min(id::varchar) from metric_streams where name = 'requests'`).Scan(&metricsCount, &metricID); err != nil {
+			return err
+		}
+		if err := db.QueryRow(`select count(*) from metric_series`).Scan(&seriesCount); err != nil {
+			return err
+		}
+		if err := db.QueryRow(`select count(*) from datapoints`).Scan(&datapointCount); err != nil {
+			return err
+		}
+		if err := db.QueryRow(`select count(*), count(distinct payload_id) from resources`).Scan(&resourceCount, &payloadCount); err != nil {
+			return err
+		}
+		require.Equal(t, 1, metricsCount)
+		require.Equal(t, 1, seriesCount)
+		require.Equal(t, 4, datapointCount)
+		require.Equal(t, 4, resourceCount)
+		require.Equal(t, 1, payloadCount)
+		return nil
+	}))
+
+	discoveryRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, metricID)
+	})
+	require.NoError(t, err)
+	var discovery map[string]any
+	require.NoError(t, json.Unmarshal(discoveryRaw, &discovery))
+	assert.Equal(t, "fourth", discovery["description"])
+	assert.Equal(t, "resource-d", discovery["resource"].(map[string]any)["schemaUrl"])
+
+	otlp, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetricOTLP(ctx, db, metricID)
+	})
+	require.NoError(t, err)
+	assert.Contains(t, string(otlp), `"schemaUrl":"resource-d"`)
+	assert.NotContains(t, string(otlp), `"schemaUrl":"resource-a"`)
+
+	differentScope := pmetric.NewMetrics()
+	appendMetric(differentScope, "resource-e", "scope-b", "different scope", 5)
+	ingestBatch(t, s, differentScope)
+	require.Equal(t, 2, countRows(t, s, ctx, `select count(*) from metric_streams where name = 'requests'`),
+		"Scope schema URL remains part of Metric identity")
 }
 
 type optionalHistogramStatistic struct {
@@ -515,6 +718,29 @@ func TestHistogramOptionalStatisticsPreservePresence(t *testing.T) {
 					}
 				}
 			}
+
+			receivedByTimestamp := make(map[string]map[string]any)
+			for _, raw := range exactMetricSeriesDatapoints(t,
+				getExactMetricSeriesByName(t, s, ctx, "optional-"+metricType, store.TimeRange{})) {
+				dp := raw.(map[string]any)
+				receivedByTimestamp[dp["timestamp"].(string)] = dp
+			}
+			for _, fixture := range fixtures {
+				dp := receivedByTimestamp[strconv.FormatUint(fixture.timestamp, 10)]
+				require.NotNil(t, dp)
+				for field, want := range map[string]optionalHistogramStatistic{"sum": fixture.sum, "min": fixture.min, "max": fixture.max} {
+					if !want.present {
+						assert.NotContains(t, dp, field)
+						continue
+					}
+					require.Contains(t, dp, field)
+					if !math.IsNaN(want.value) && !math.IsInf(want.value, 0) && !(want.value == 0 && math.Signbit(want.value)) {
+						assert.Equal(t, want.value, dp[field])
+					} else {
+						assert.Equal(t, fmt.Sprintf("0x%016x", math.Float64bits(want.value)), dp[field])
+					}
+				}
+			}
 		})
 	}
 }
@@ -573,9 +799,10 @@ func TestHistogramReductionRequiresEveryInputSum(t *testing.T) {
 			}))
 			streamID := findMetricID(t, s, ctx, "partial-"+tc.name)
 			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-				return metrics.GetMetric(ctx, db, streamID,
+				return metrics.GetMetricView(ctx, db, streamID,
 					store.BoundedTimeRange(0, int64(4*time.Second)),
 					1, nil, nil, 0, 0, 0, nil, "", nil, 0)
+
 			})
 			require.NoError(t, err)
 			var full map[string]any
@@ -687,6 +914,37 @@ func TestReceivedMetricIntegersUseExactDecimalWireValues(t *testing.T) {
 	assert.Equal(t, "9007199254740993", exponentialJSON["zeroCount"])
 	assert.Equal(t, []any{"18446744073709551615"}, exponentialJSON["positiveBucketCounts"])
 	assert.Equal(t, []any{}, exponentialJSON["negativeBucketCounts"])
+
+	receivedGauge := exactMetricSeriesDatapoints(t,
+		getExactMetricSeriesByName(t, s, ctx, "exact.gauge", fixtureRange))
+	require.Len(t, receivedGauge, 6)
+	var receivedGaugeIntegers []string
+	for _, raw := range receivedGauge {
+		dp := raw.(map[string]any)
+		require.Contains(t, dp, "intValue")
+		require.Contains(t, dp, "doubleValue")
+		if dp["valueType"] == "Int" {
+			receivedGaugeIntegers = append(receivedGaugeIntegers, dp["intValue"].(string))
+		}
+	}
+	assert.ElementsMatch(t, gaugeIntegers, receivedGaugeIntegers)
+
+	receivedSum := exactMetricSeriesDatapoints(t,
+		getExactMetricSeriesByName(t, s, ctx, "exact.sum", fixtureRange))
+	require.Len(t, receivedSum, 1)
+	assert.Equal(t, "-9223372036854775808", receivedSum[0].(map[string]any)["intValue"])
+
+	receivedHistogram := exactMetricSeriesDatapoints(t,
+		getExactMetricSeriesByName(t, s, ctx, "exact.histogram", fixtureRange))
+	require.Len(t, receivedHistogram, 2)
+	assert.Equal(t, "18446744073709551615", receivedHistogram[0].(map[string]any)["count"])
+
+	receivedExponential := exactMetricSeriesDatapoints(t,
+		getExactMetricSeriesByName(t, s, ctx, "exact.exponential", fixtureRange))
+	require.Len(t, receivedExponential, 1)
+	assert.Equal(t, "18446744073709551615", receivedExponential[0].(map[string]any)["count"])
+	positive := receivedExponential[0].(map[string]any)["positive"].(map[string]any)
+	assert.Equal(t, []any{"18446744073709551615"}, positive["bucketCounts"])
 }
 
 // TestMetricSuite runs tests on ingested metrics using SearchMetrics (DB-generated JSON).
@@ -1161,6 +1419,18 @@ func TestExemplarValuesRoundTripByType(t *testing.T) {
 			assert.Equal(t, tc.intValue, ex["intValue"])
 		})
 	}
+
+	received := getExactMetricSeriesByName(t, s, ctx, "typed_exemplars", store.TimeRange{})
+	receivedByTimestamp := make(map[string]map[string]any, len(tests))
+	for _, rawDP := range exactMetricSeriesDatapoints(t, received) {
+		dp := rawDP.(map[string]any)
+		require.NotContains(t, dp, "exemplarCount")
+		exemplars := dp["exemplars"].([]any)
+		require.Len(t, exemplars, 1)
+		ex := exemplars[0].(map[string]any)
+		receivedByTimestamp[ex["timestamp"].(string)] = ex
+	}
+	require.Equal(t, byTimestamp, receivedByTimestamp)
 }
 
 func requireMetric(t *testing.T, m map[string]any, name string) {
@@ -1194,7 +1464,7 @@ func metricDatapoints(m map[string]any) []any {
 	return out
 }
 
-// deleteByIdentity is a thin test helper that resolves the 8-field OTel
+// deleteByIdentity is a thin test helper that resolves the exact OTel
 // identity to a stream UUID via metric_streams and then calls
 // DeleteMetricStream. The production JSON-RPC layer does the same
 // resolve-then-delete pattern; we replicate it here so the existing
@@ -1210,15 +1480,16 @@ func deleteByIdentity(t *testing.T, ctx context.Context, s *store.Store, name, u
 		"Cumulative": int32(pmetric.AggregationTemporalityCumulative),
 	}[aggTemporality]
 	const q = `
-		select id::varchar from metric_streams
-		where name = ?
-		  and unit = ?
-		  and metric_type = ?
-		  and aggregation_temporality = ?
-		  and is_monotonic = ?
-		  and scope_name = ?
-		  and scope_version = ?
-		  and service_name = ?
+		select m.id::varchar from metric_streams m
+		join scopes sc on sc.id = m.scope_id
+		where m.name = ?
+		  and m.unit = ?
+		  and m.metric_type = ?
+		  and m.aggregation_temporality = ?
+		  and m.is_monotonic = ?
+		  and sc.name = ?
+		  and sc.version = ?
+		  and m.service_name = ?
 		limit 1
 	`
 	return s.WithDBWrite(func(db *sql.DB) error {
@@ -1275,8 +1546,6 @@ func TestDeleteMetricStream(t *testing.T) {
 	t.Run("collapses multiple ingestions of the same logical metric", func(t *testing.T) {
 		s, ctx := storetest.New(t)
 
-		// Three independent batches => three metric_ingests rows for the
-		// same logical Gauge, all sharing one metric_streams row.
 		for i := 0; i < 3; i++ {
 			err := s.WithConn(func(conn driver.Conn) error {
 				return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
@@ -1284,11 +1553,9 @@ func TestDeleteMetricStream(t *testing.T) {
 			assert.NoError(t, err)
 		}
 
-		// SearchSummaries collapses by identity so we still see 5 rows.
 		assert.Len(t, searchSummariesAll(t, s, ctx), 5)
-		// One stream per logical metric (5), 3 ingests per stream (15).
 		assert.Equal(t, 5, countRows(t, s, ctx, `select count(*) from metric_streams`))
-		assert.Equal(t, 15, countRows(t, s, ctx, `select count(*) from metric_ingests`))
+		assert.Equal(t, 15, countRows(t, s, ctx, `select count(*) from datapoints`))
 
 		err := deleteByIdentity(t, ctx, s,
 			"gauge_metric", "bytes", "Gauge",
@@ -1298,9 +1565,8 @@ func TestDeleteMetricStream(t *testing.T) {
 		assert.NoError(t, err)
 
 		assert.Len(t, searchSummariesAll(t, s, ctx), 4)
-		// One stream + its three ingests should be gone.
 		assert.Equal(t, 4, countRows(t, s, ctx, `select count(*) from metric_streams`))
-		assert.Equal(t, 12, countRows(t, s, ctx, `select count(*) from metric_ingests`))
+		assert.Equal(t, 12, countRows(t, s, ctx, `select count(*) from datapoints`))
 		assert.Equal(t, 0, countRows(t, s, ctx,
 			`select count(*) from metric_streams where name = ?`, "gauge_metric"))
 		assert.Equal(t, 0, countRows(t, s, ctx,
@@ -1453,20 +1719,13 @@ func TestDeleteMetricStream(t *testing.T) {
 		exBefore := countRows(t, s, ctx,
 			`select count(*) from exemplars where datapoint_id in (select id from datapoints where stream_id in (select id from metric_streams where name = ?))`,
 			"histogram_metric")
-		// The old query counted attribute rows owned by this stream's ingest
-		// batches -- i.e. its resource and scope attributes. Those are now ids
-		// in the referenced resources / scopes arrays, so the equivalent
-		// question is how many distinct ids the stream's ingests reach.
-		//
-		// Deliberately not the datapoint labels: the histogram fixture's
-		// datapoints carry none, so counting those would assert nothing.
 		attrBefore := countRows(t, s, ctx,
 			`select count(distinct t.aid)
-			 from metric_ingests mi
-			 join resources r on r.id = mi.resource_id
-			 join scopes sc on sc.id = mi.scope_id,
+			 from metric_streams m
+			 join resources r on r.id = m.resource_id
+			 join scopes sc on sc.id = m.scope_id,
 			 unnest(r.attribute_ids || sc.attribute_ids) as t(aid)
-			 where mi.stream_id in (select id from metric_streams where name = ?)`,
+			 where m.name = ?`,
 			"histogram_metric")
 		assert.Greater(t, dpBefore, 0)
 		assert.Greater(t, exBefore, 0)
@@ -1517,7 +1776,7 @@ func TestDeleteMetricStream(t *testing.T) {
 			   and not exists (select 1 from scopes sc, unnest(sc.attribute_ids) t(aid) where t.aid = a.id)
 			   and not exists (select 1 from datapoints d, unnest(d.attribute_ids) t(aid) where t.aid = a.id)
 			   and not exists (select 1 from metric_series ms, unnest(ms.attribute_ids) t(aid) where t.aid = a.id)
-			   and not exists (select 1 from metric_ingests mi, unnest(mi.metadata_ids) t(aid) where t.aid = a.id)
+			   and not exists (select 1 from metric_streams m, unnest(m.metadata_ids) t(aid) where t.aid = a.id)
 			   and not exists (select 1 from exemplars e, unnest(e.attribute_ids) t(aid) where t.aid = a.id)`),
 			"the sweep must leave no unreferenced dictionary row behind")
 		assert.Greater(t, countRows(t, s, ctx, `select count(*) from resources`), 0,
@@ -1525,16 +1784,8 @@ func TestDeleteMetricStream(t *testing.T) {
 	})
 }
 
-// TestMetricStreams_FindOrInsertIdempotent verifies the contract that
-// matters most for the normalized identity layer: ingesting the same
-// 8-field stream identity across N independent OTLP batches collapses
-// to exactly one metric_streams row. Per-batch context (description,
-// dropped counts) lives on metric_ingests, so we expect N ingest rows
-// but only one stream row, and every datapoint / attribute / exemplar
-// should point at the same stream_id.
-//
-// This test is the find-or-insert mirror of the cascade-delete test:
-// together they pin down the two halves of "identity is canonical."
+// TestMetricStreams_FindOrInsertIdempotent verifies that repeated exact Metrics
+// resolve to stable Metric and series references.
 func TestMetricStreams_FindOrInsertIdempotent(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -1547,23 +1798,15 @@ func TestMetricStreams_FindOrInsertIdempotent(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// createTestMetricsPdata produces five distinct logical metrics.
-	// Across N batches we should still see exactly five stream rows.
 	assert.Equal(t, 5, countRows(t, s, ctx,
 		`select count(*) from metric_streams`),
 		"distinct logical metrics should not multiply across batches")
-	assert.Equal(t, 5*batches, countRows(t, s, ctx,
-		`select count(*) from metric_ingests`),
-		"every batch should add one ingest per metric")
+	assert.Equal(t, 5*batches, countRows(t, s, ctx, `select count(*) from datapoints`))
 
-	// Stream ids should be stable across batches: every datapoint's
-	// stream_id must match a metric_streams row, and every per-batch
-	// metric_ingests row pointing at the same logical metric must
-	// resolve to the same stream_id.
 	gaugeStreamRows := countRows(t, s, ctx,
-		`select count(distinct stream_id) from metric_ingests where stream_id in (
-			select id from metric_streams where name = 'gauge_metric'
-		)`)
+		`select count(distinct d.stream_id) from datapoints d
+		 join metric_streams m on m.id = d.stream_id
+		 where m.name = 'gauge_metric'`)
 	assert.Equal(t, 1, gaugeStreamRows,
 		"all gauge_metric ingests must share one stream_id")
 
@@ -1577,13 +1820,13 @@ func TestMetricStreams_FindOrInsertIdempotent(t *testing.T) {
 
 // TestMetricStreams_DistinctIdentitiesStayDistinct guards the inverse
 // of the dedup contract: two metrics that differ in any one of the
-// eight identity fields must produce two metric_streams rows, even when
+// identifying fields must produce two metric_streams rows, even when
 // the rest of the tuple matches. We change one field at a time and
 // assert each change yields a fresh stream so a future "be permissive"
 // regression won't silently merge two semantically distinct streams.
 func TestMetricStreams_DistinctIdentitiesStayDistinct(t *testing.T) {
 	t.Parallel()
-	mk := func(t *testing.T, mutate func(m pmetric.Metric, scope pcommon.InstrumentationScope, res pcommon.Resource)) pmetric.Metrics {
+	mk := func(t *testing.T, mutate func(m pmetric.Metric, sm pmetric.ScopeMetrics, rm pmetric.ResourceMetrics)) pmetric.Metrics {
 		t.Helper()
 		md := pmetric.NewMetrics()
 		rm := md.ResourceMetrics().AppendEmpty()
@@ -1598,26 +1841,37 @@ func TestMetricStreams_DistinctIdentitiesStayDistinct(t *testing.T) {
 		m.Sum().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 		dp := m.Sum().DataPoints().AppendEmpty()
 		dp.SetIntValue(1)
-		mutate(m, sm.Scope(), rm.Resource())
+		mutate(m, sm, rm)
 		return md
 	}
 
 	cases := []struct {
 		name   string
-		mutate func(m pmetric.Metric, scope pcommon.InstrumentationScope, res pcommon.Resource)
+		mutate func(m pmetric.Metric, sm pmetric.ScopeMetrics, rm pmetric.ResourceMetrics)
 	}{
-		{"name", func(m pmetric.Metric, _ pcommon.InstrumentationScope, _ pcommon.Resource) { m.SetName("requests_v2") }},
-		{"unit", func(m pmetric.Metric, _ pcommon.InstrumentationScope, _ pcommon.Resource) { m.SetUnit("ms") }},
-		{"temporality", func(m pmetric.Metric, _ pcommon.InstrumentationScope, _ pcommon.Resource) {
+		{"name", func(m pmetric.Metric, _ pmetric.ScopeMetrics, _ pmetric.ResourceMetrics) { m.SetName("requests_v2") }},
+		{"unit", func(m pmetric.Metric, _ pmetric.ScopeMetrics, _ pmetric.ResourceMetrics) { m.SetUnit("ms") }},
+		{"type", func(m pmetric.Metric, _ pmetric.ScopeMetrics, _ pmetric.ResourceMetrics) { m.SetEmptyGauge() }},
+		{"temporality", func(m pmetric.Metric, _ pmetric.ScopeMetrics, _ pmetric.ResourceMetrics) {
 			m.Sum().SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
 		}},
-		{"is_monotonic", func(m pmetric.Metric, _ pcommon.InstrumentationScope, _ pcommon.Resource) {
+		{"is_monotonic", func(m pmetric.Metric, _ pmetric.ScopeMetrics, _ pmetric.ResourceMetrics) {
 			m.Sum().SetIsMonotonic(false)
 		}},
-		{"scope_name", func(_ pmetric.Metric, sc pcommon.InstrumentationScope, _ pcommon.Resource) { sc.SetName("scope-b") }},
-		{"scope_version", func(_ pmetric.Metric, sc pcommon.InstrumentationScope, _ pcommon.Resource) { sc.SetVersion("v2") }},
-		{"service_name", func(_ pmetric.Metric, _ pcommon.InstrumentationScope, res pcommon.Resource) {
-			res.Attributes().PutStr("service.name", "svc-b")
+		{"scope_name", func(_ pmetric.Metric, sm pmetric.ScopeMetrics, _ pmetric.ResourceMetrics) {
+			sm.Scope().SetName("scope-b")
+		}},
+		{"scope_version", func(_ pmetric.Metric, sm pmetric.ScopeMetrics, _ pmetric.ResourceMetrics) {
+			sm.Scope().SetVersion("v2")
+		}},
+		{"scope_schema_url", func(_ pmetric.Metric, sm pmetric.ScopeMetrics, _ pmetric.ResourceMetrics) {
+			sm.SetSchemaUrl("schema-b")
+		}},
+		{"scope_attribute", func(_ pmetric.Metric, sm pmetric.ScopeMetrics, _ pmetric.ResourceMetrics) {
+			sm.Scope().Attributes().PutStr("build", "blue")
+		}},
+		{"resource_attribute", func(_ pmetric.Metric, _ pmetric.ScopeMetrics, rm pmetric.ResourceMetrics) {
+			rm.Resource().Attributes().PutStr("host.name", "pod-b")
 		}},
 	}
 
@@ -1626,7 +1880,7 @@ func TestMetricStreams_DistinctIdentitiesStayDistinct(t *testing.T) {
 			s, ctx := storetest.New(t)
 
 			err := s.WithConn(func(conn driver.Conn) error {
-				return metrics.Ingest(ctx, conn, mk(t, func(pmetric.Metric, pcommon.InstrumentationScope, pcommon.Resource) {}), s.FlushedIDs())
+				return metrics.Ingest(ctx, conn, mk(t, func(pmetric.Metric, pmetric.ScopeMetrics, pmetric.ResourceMetrics) {}), s.FlushedIDs())
 			})
 			require.NoError(t, err)
 
@@ -1640,6 +1894,71 @@ func TestMetricStreams_DistinctIdentitiesStayDistinct(t *testing.T) {
 				"changing %s should produce a distinct stream", tc.name)
 		})
 	}
+}
+
+func TestMetricStreams_NonIdentifyingVariantsReuseIdentity(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	makeBatch := func(variant bool) pmetric.Metrics {
+		md := pmetric.NewMetrics()
+		rm := md.ResourceMetrics().AppendEmpty()
+		rm.Resource().Attributes().PutStr("service.name", "svc")
+		sm := rm.ScopeMetrics().AppendEmpty()
+		sm.Scope().SetName("scope")
+		metric := sm.Metrics().AppendEmpty()
+		metric.SetName("requests")
+		metric.SetDescription("first")
+		metric.Metadata().PutStr("owner", "first")
+		metric.SetEmptyGauge().DataPoints().AppendEmpty().SetIntValue(1)
+		if variant {
+			metric.SetDescription("second")
+			metric.Metadata().PutStr("owner", "second")
+		}
+		return md
+	}
+	for _, variant := range []bool{false, true} {
+		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+			return metrics.Ingest(ctx, conn, makeBatch(variant), s.FlushedIDs())
+		}))
+	}
+	assert.Equal(t, 1, countRows(t, s, ctx, `select count(*) from metric_streams`))
+	assert.Equal(t, 1, countRows(t, s, ctx, `select count(*) from resources`))
+	assert.Equal(t, 1, countRows(t, s, ctx, `select count(*) from scopes`))
+	assert.Equal(t, 1, countRows(t, s, ctx, `select count(*) from metric_series`))
+	var streamID string
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		return db.QueryRow(`select id::varchar from metric_streams`).Scan(&streamID)
+	}))
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetricOTLP(ctx, db, streamID)
+	})
+	require.NoError(t, err)
+	text := string(raw)
+	assert.Contains(t, text, `"description":"second"`)
+	assert.NotContains(t, text, `"description":"first"`)
+}
+
+func TestMetricIdentityUniqueIndexes(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
+	}))
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		_, err := db.Exec(`insert into metric_streams
+			select uuid(), resource_id, resource_payload_id, scope_id, name, description,
+				unit, metadata_ids, metric_type, aggregation_temporality, is_monotonic, service_name
+			from metric_streams where name = 'gauge_metric'`)
+		require.ErrorContains(t, err, "Duplicate key")
+		_, err = db.Exec(`insert into metric_series
+			select uuid(), stream_id, attribute_ids from metric_series limit 1`)
+		require.ErrorContains(t, err, "Duplicate key")
+		_, err = db.Exec(`insert into metric_series select uuid(), id,
+			['00000000-0000-0000-0000-000000000001'::uuid]
+			from metric_streams where name = 'gauge_metric'`)
+		require.NoError(t, err, "Datapoint attributes must split series within each metric")
+		return nil
+	}))
 }
 
 // TestMetricStreams_ServiceNameDenormStaysConsistent verifies the
@@ -1659,15 +1978,9 @@ func TestMetricStreams_ServiceNameDenormStaysConsistent(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// All five fixture metrics share service.name = test-service.
-	//
-	// The source of truth moved: the resource attribute is no longer a row
-	// owned by the ingest batch, it is an id in the referenced resources row's
-	// array. Resolve it directly so the test asserts the stored source of truth.
 	mismatches := countRows(t, s, ctx, `
 		select count(*) from metric_streams s
-		join metric_ingests mi on mi.stream_id = s.id
-		join resources r on r.id = mi.resource_id
+		join resources r on r.id = s.resource_id
 		where s.service_name <> coalesce((
 			select json_extract_string(a.value, '$.value')
 			from unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id
@@ -1715,7 +2028,7 @@ func TestClearMetrics(t *testing.T) {
 	metricList = searchMetricsAll(t, s, ctx)
 	assert.Empty(t, metricList)
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from metric_streams"))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from metric_ingests"))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from metric_series"))
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from datapoints"))
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from exemplars"))
 
@@ -2045,6 +2358,10 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 	err := <-errCh
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Empty(t, rejected)
+	for _, table := range []string{"metric_streams", "metric_series", "datapoints"} {
+		assert.Equal(t, 0, countRows(t, s, context.Background(), `select count(*) from `+table),
+			"canceled ingest must not leave provisional rows in %s", table)
+	}
 }
 
 // TestSearchSummaries_CardFields verifies the slim summary projection used
@@ -2107,13 +2424,7 @@ func TestSearchSummaries_CardFields(t *testing.T) {
 	})
 }
 
-// Datapoint and exemplar labels are searchable.
-//
-// They were not before the attribute dictionary: metric search runs per
-// metric_ingests row, and reaching datapoint labels from there meant a
-// correlated walk of the largest table in the store. Resolving the dictionary
-// first makes it one array-overlap scan (39.2ms -> 7.7ms on the reference
-// capture), so the coverage gap is now just a gap.
+// Datapoint and exemplar labels are searchable through dictionary IDs.
 func TestMetricSearch_DatapointAndExemplarLabels(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -2244,9 +2555,9 @@ func TestMetricSearch_DatapointAndExemplarLabels(t *testing.T) {
 // Two replicas of one service, emitting the same instrument with the same
 // labels, must be two series -- not one interleaved line.
 //
-// metric_streams identifies a stream by service_name rather than by resource,
-// deliberately, so a counter survives a pod restart. Nothing downstream then
-// re-introduced the resource, so replicas collapsed together: SDKs put
+// The old metric_streams identity used service_name rather than the complete
+// Resource. Nothing downstream then re-introduced the Resource, so replicas
+// collapsed together: SDKs put
 // host.name and k8s.pod.name on the *resource*, which made this the common
 // shape in any replicated deployment rather than an exotic one. Prometheus
 // would show two series here; we showed one, silently averaging two machines.
@@ -2309,42 +2620,21 @@ func TestMetricSeries_SplitByResource(t *testing.T) {
 	assert.Equal(t, 2, countRows("resources"),
 		"distinct resource payloads must produce distinct resource rows")
 
-	// One logical stream: that part is correct and must stay correct, or a pod
-	// restart would fragment the timeseries.
 	summaries := searchMetricsAll(t, s, ctx)
-	require.Len(t, summaries, 1, "two replicas are still one metric stream")
-	assert.Equal(t, float64(2), summaries[0]["seriesCount"],
-		"the summary must report two series, agreeing with the detail view")
-
-	streamID, ok := summaries[0]["id"].(string)
-	require.True(t, ok)
-
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(0, time.Now().UnixNano()+int64(time.Hour)), 0, nil, nil, 0, 0, 0, nil, "", nil, 0)
-	})
-	require.NoError(t, err)
-	var metric map[string]any
-	require.NoError(t, json.Unmarshal(raw, &metric))
-
-	ts, _ := metric["timeseries"].([]any)
-	require.Len(t, ts, 2, "one series per replica, not one merged line")
-
-	// Each carries its own three points -- a merge would produce one series of
-	// six, which is the shape that silently averaged two machines together.
-	keys := map[string]bool{}
-	for _, entry := range ts {
-		e := entry.(map[string]any)
-		dps, _ := e["datapoints"].([]any)
-		assert.Len(t, dps, 3, "each replica keeps its own datapoints")
-		keys[e["attributesKey"].(string)] = true
+	require.Len(t, summaries, 2, "each Resource identifies a separate OTel Metric")
+	for _, summary := range summaries {
+		assert.Equal(t, float64(1), summary["seriesCount"])
+		streamID := summary["id"].(string)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetricView(ctx, db, streamID, store.BoundedTimeRange(0, time.Now().UnixNano()+int64(time.Hour)), 0, nil, nil, 0, 0, 0, nil, "", nil, 0)
+		})
+		require.NoError(t, err)
+		var metric map[string]any
+		require.NoError(t, json.Unmarshal(raw, &metric))
+		ts := metric["timeseries"].([]any)
+		require.Len(t, ts, 1)
+		assert.Len(t, ts[0].(map[string]any)["datapoints"].([]any), 3)
 	}
-
-	// And they must be distinguishable. The labels are identical by
-	// construction, so a key derived from labels alone collides -- which would
-	// render two indistinguishable legend entries, strictly worse than the
-	// single merged line it replaced.
-	assert.Len(t, keys, 2,
-		"series keys must differ, or the split produces two identical legend entries")
 }
 
 // Resource attributes are part of OTLP metric identity. Two payloads that
@@ -2392,19 +2682,14 @@ func TestMetricSeries_ResourceOnlyDiffersByHostNameSplits(t *testing.T) {
 		"distinct received resource payloads must remain distinct")
 
 	summaries := searchMetricsAll(t, s, ctx)
-	require.Len(t, summaries, 1)
-	assert.Equal(t, float64(2), summaries[0]["seriesCount"],
-		"the resource difference is part of OTLP metric identity")
+	require.Len(t, summaries, 2)
+	for _, summary := range summaries {
+		assert.Equal(t, float64(1), summary["seriesCount"])
+	}
 }
 
-// A series id has to survive re-ingest, restarts and retention, because it is
-// what a shared URL names.
-//
-// This is the property the old wire format could not offer: metric links could
-// only reference a datapoint id, which is minted per row and deleted by
-// retention, so a pasted link degraded silently to "no selection". A
-// content-derived id from the stream, originating resource attributes, and
-// datapoint labels is the same every time the same series arrives.
+// A series id has to survive re-ingest and retention within one persisted
+// database, because it is what a shared URL names.
 func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -2445,24 +2730,104 @@ func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 	// And the id the wire serves is the id in the table, or a URL built from
 	// one could not be resolved back to the other.
 	summaries := searchMetricsAll(t, s, ctx)
-	require.Len(t, summaries, 1)
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(0,
-			time.Now().UnixNano()+int64(time.Hour)),
-			0, nil, nil, 0, 0, 0, nil, "", nil, 0)
-
-	})
-	require.NoError(t, err)
-	var metric map[string]any
-	require.NoError(t, json.Unmarshal(raw, &metric))
-
+	require.Len(t, summaries, 2)
 	var served []string
-	for _, entry := range metric["timeseries"].([]any) {
-		served = append(served, entry.(map[string]any)["attributesKey"].(string))
+	for _, summary := range summaries {
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetricView(ctx, db, summary["id"].(string), store.BoundedTimeRange(0,
+				time.Now().UnixNano()+int64(time.Hour)), 0, nil, nil, 0, 0, 0, nil, "", nil, 0)
+
+		})
+		require.NoError(t, err)
+		var metric map[string]any
+		require.NoError(t, json.Unmarshal(raw, &metric))
+		served = append(served, metric["timeseries"].([]any)[0].(map[string]any)["attributesKey"].(string))
 	}
 	sort.Strings(served)
 	assert.Equal(t, first, served,
 		"the key on the wire must be the series id, so a link resolves back to a row")
+
+	other, otherCtx := storetest.New(t)
+	require.NoError(t, other.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(otherCtx, conn, buildTwoReplicaMetrics(t), other.FlushedIDs())
+	}))
+	streamIDs := func(rows []map[string]any) []string {
+		ids := make([]string, 0, len(rows))
+		for _, row := range rows {
+			ids = append(ids, row["id"].(string))
+		}
+		sort.Strings(ids)
+		return ids
+	}
+	assert.NotEqual(t, streamIDs(summaries), streamIDs(searchMetricsAll(t, other, otherCtx)),
+		"a fresh store generates its own stream IDs")
+	var fresh []string
+	require.NoError(t, other.WithDBRead(func(db *sql.DB) error {
+		rows, err := db.Query(`select id::varchar from metric_series order by 1`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			fresh = append(fresh, id)
+		}
+		return rows.Err()
+	}))
+	assert.NotEqual(t, first, fresh, "a fresh store generates its own series IDs")
+}
+
+func TestExactMetricAndSeriesIDsSurvivePersistentReopen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "metric-identity.db")
+	ctx := context.Background()
+	open := func() *store.Store {
+		s, err := store.NewStore(ctx, path, zap.NewNop())
+		require.NoError(t, err)
+		return s
+	}
+	readIDs := func(s *store.Store, table string) []string {
+		var ids []string
+		require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+			rows, err := db.Query(`select id::varchar from ` + table + ` order by 1`)
+			if err != nil {
+				return err
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var id string
+				if err := rows.Scan(&id); err != nil {
+					return err
+				}
+				ids = append(ids, id)
+			}
+			return rows.Err()
+		}))
+		return ids
+	}
+
+	first := open()
+	require.NoError(t, first.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t), first.FlushedIDs())
+	}))
+	streamIDs := readIDs(first, "metric_streams")
+	seriesIDs := readIDs(first, "metric_series")
+	require.Len(t, streamIDs, 2)
+	require.Len(t, seriesIDs, 2)
+	require.NoError(t, first.Close())
+
+	reopened := open()
+	assert.Equal(t, streamIDs, readIDs(reopened, "metric_streams"))
+	assert.Equal(t, seriesIDs, readIDs(reopened, "metric_series"))
+	require.NoError(t, reopened.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t), reopened.FlushedIDs())
+	}))
+	assert.Equal(t, streamIDs, readIDs(reopened, "metric_streams"))
+	assert.Equal(t, seriesIDs, readIDs(reopened, "metric_series"))
+	assert.Equal(t, 12, countRows(t, reopened, ctx, `select count(*) from datapoints`))
+	require.NoError(t, reopened.Close())
 }
 
 // buildInstanceMetrics emits one gauge from one instance, optionally with extra
@@ -2496,9 +2861,8 @@ func buildInstanceMetrics(t *testing.T, extra map[string]string, dropped uint32,
 	return md
 }
 
-// Adding resource attributes changes the received OTLP Resource and therefore
-// metric identity. The coarser metric_streams row still groups both payloads
-// for navigation, while metric_series keeps their points separate.
+// Adding Resource attributes changes the OTel Metric identity, so navigation
+// and series selection must both keep the payloads separate.
 func TestMetricSeries_SplitsWhenResourcePayloadChanges(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -2529,28 +2893,13 @@ func TestMetricSeries_SplitsWhenResourcePayloadChanges(t *testing.T) {
 		"resource attributes participate in OTLP metric series identity")
 
 	summaries := searchMetricsAll(t, s, ctx)
-	require.Len(t, summaries, 1)
-	assert.Equal(t, float64(2), summaries[0]["seriesCount"],
-		"the summary must report both resource-specific series")
-
-	streamID, ok := summaries[0]["id"].(string)
-	require.True(t, ok)
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(0, time.Now().UnixNano()+int64(time.Hour)), 0, nil, nil, 0, 0, 0, nil, "", nil, 0)
-	})
-	require.NoError(t, err)
-	var metric map[string]any
-	require.NoError(t, json.Unmarshal(raw, &metric))
-
-	ts, _ := metric["timeseries"].([]any)
-	require.Len(t, ts, 2, "one line per received resource payload")
-	for _, entry := range ts {
-		dps, _ := entry.(map[string]any)["datapoints"].([]any)
-		assert.Len(t, dps, 3, "each resource-specific series keeps its own batch")
+	require.Len(t, summaries, 2)
+	for _, summary := range summaries {
+		assert.Equal(t, float64(1), summary["seriesCount"])
 	}
 }
 
-func TestMetricSeries_DroppedResourceCountPreservesPayloadWithoutSplittingSeries(t *testing.T) {
+func TestMetricSeries_DroppedResourceCountPreservesExactOwners(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 	base := time.Now().UnixNano()
@@ -2563,62 +2912,228 @@ func TestMetricSeries_DroppedResourceCountPreservesPayloadWithoutSplittingSeries
 	}
 
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		var resources, series, ingests, ingestResources, joinedIngests int
+		var resources, metricsCount, series int
 		var minDropped, maxDropped uint32
 		require.NoError(t, db.QueryRow(`select count(*) from resources`).Scan(&resources))
+		require.NoError(t, db.QueryRow(`select count(*) from metric_streams`).Scan(&metricsCount))
 		require.NoError(t, db.QueryRow(`select count(*) from metric_series`).Scan(&series))
-		require.NoError(t, db.QueryRow(`select count(*), count(distinct resource_id) from metric_ingests`).Scan(&ingests, &ingestResources))
 		require.NoError(t, db.QueryRow(`
-			select count(*), min(r.dropped_attributes_count), max(r.dropped_attributes_count)
-			from metric_ingests mi join resources r on r.id = mi.resource_id`).Scan(&joinedIngests, &minDropped, &maxDropped))
+			select min(r.dropped_attributes_count), max(r.dropped_attributes_count)
+			from metric_streams m join resources r on r.id = m.resource_id`).Scan(&minDropped, &maxDropped))
 		assert.Equal(t, 2, resources, "dropped-count payloads need distinct resource rows")
-		assert.Equal(t, 1, series, "dropped count is not semantic metric series identity")
-		assert.Equal(t, 2, ingests)
-		assert.Equal(t, 2, ingestResources, "each metric ingest must retain its exact resource reference")
-		assert.Equal(t, 2, joinedIngests)
+		assert.Equal(t, 2, metricsCount)
+		assert.Equal(t, 2, series)
 		assert.Equal(t, uint32(0), minDropped)
 		assert.Equal(t, uint32(3), maxDropped)
 		return nil
 	}))
 
 	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 2)
+	seenDropped := map[float64]bool{}
+	for _, summary := range summaries {
+		assert.Equal(t, float64(1), summary["seriesCount"])
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetricView(ctx, db, summary["id"].(string),
+				store.BoundedTimeRange(0, time.Now().UnixNano()+int64(time.Hour)),
+				0, nil, nil, 0, 0, 0, nil, "", nil, 0)
+		})
+		require.NoError(t, err)
+		var metric map[string]any
+		require.NoError(t, json.Unmarshal(raw, &metric))
+		dropped := metric["resourceDroppedAttributesCount"].(float64)
+		seenDropped[dropped] = true
+		resource := metric["resource"].(map[string]any)
+		assert.Equal(t, dropped, resource["droppedAttributesCount"])
+		timeseries := metric["timeseries"].([]any)
+		require.Len(t, timeseries, 1)
+		series := timeseries[0].(map[string]any)
+		assert.Len(t, series["datapoints"].([]any), 3)
+		assert.Equal(t, dropped, series["resource"].(map[string]any)["droppedAttributesCount"])
+	}
+	assert.Equal(t, map[float64]bool{0: true, 3: true}, seenDropped)
+}
+
+func TestMetricViewRetainsIdentityResourceOutsideDatapointWindow(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	timestamp := int64(1_700_000_000_000_000_000)
+	md := buildInstanceMetrics(t, map[string]string{"host.name": "pod-a"}, 0, timestamp)
+	rm := md.ResourceMetrics().At(0)
+	rm.SetSchemaUrl("https://opentelemetry.io/schemas/1.29.0")
+	rm.Resource().SetDroppedAttributesCount(7)
+	sm := md.ResourceMetrics().At(0).ScopeMetrics().At(0)
+	sm.SetSchemaUrl("https://opentelemetry.io/schemas/1.30.0")
+	sm.Scope().SetDroppedAttributesCount(5)
+	sm.Scope().Attributes().PutStr("scope.build", "blue")
+	metricPayload := sm.Metrics().At(0)
+	metricPayload.SetDescription("received description")
+	metricPayload.Metadata().PutStr("metadata.key", "metadata value")
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+	}))
+
+	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
-	assert.Equal(t, float64(1), summaries[0]["seriesCount"])
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
-			store.BoundedTimeRange(0, time.Now().UnixNano()+int64(time.Hour)),
+		return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string),
+			store.BoundedTimeRange(timestamp+1, timestamp+2),
 			0, nil, nil, 0, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var metric map[string]any
 	require.NoError(t, json.Unmarshal(raw, &metric))
-	assert.Equal(t, float64(3), metric["resourceDroppedAttributesCount"],
-		"top-level metadata comes from the latest representative ingest")
-	topResource, ok := metric["resource"].(map[string]any)
-	require.True(t, ok)
-	assert.Equal(t, float64(3), topResource["droppedAttributesCount"])
-	timeseries := metric["timeseries"].([]any)
-	require.Len(t, timeseries, 1, "chart detail must keep dropped-count-only payloads on one line")
-	series := timeseries[0].(map[string]any)
-	assert.Len(t, series["datapoints"].([]any), 6)
-	seriesResource, ok := series["resource"].(map[string]any)
-	require.True(t, ok)
-	assert.Equal(t, float64(0), seriesResource["droppedAttributesCount"],
-		"series resource exposes identifying attributes without claiming an arbitrary dropped count")
-	assert.Equal(t, topResource["attributes"], seriesResource["attributes"],
-		"series resource must retain the shared originating attributes")
 
+	resource := metric["resource"].(map[string]any)
 	attributeValues := map[string]any{}
-	for _, rawAttribute := range seriesResource["attributes"].([]any) {
+	for _, rawAttribute := range resource["attributes"].([]any) {
 		attribute := rawAttribute.(map[string]any)
 		attributeValues[attribute["key"].(string)] = attribute["value"].(map[string]any)["value"]
 	}
 	assert.Equal(t, "checkout", attributeValues["service.name"])
-	assert.Equal(t, "checkout-7f9c", attributeValues["service.instance.id"])
+	assert.Equal(t, "pod-a", attributeValues["host.name"])
+	assert.Equal(t, "otelhttp", metric["scopeName"])
+	assert.Equal(t, "1.2.0", metric["scopeVersion"])
+	assert.Equal(t, "https://opentelemetry.io/schemas/1.29.0", metric["resourceSchemaUrl"])
+	assert.Equal(t, "https://opentelemetry.io/schemas/1.30.0", metric["scopeSchemaUrl"])
+	assert.Equal(t, "received description", metric["description"])
+	assert.Equal(t, float64(7), metric["resourceDroppedAttributesCount"])
+	assert.Equal(t, float64(5), metric["scopeDroppedAttributesCount"])
+	metadata := metric["metadata"].([]any)
+	require.Len(t, metadata, 1)
+	assert.Equal(t, "metadata.key", metadata[0].(map[string]any)["key"])
+	scope := metric["scope"].(map[string]any)
+	scopeAttributeValues := map[string]any{}
+	for _, rawAttribute := range scope["attributes"].([]any) {
+		attribute := rawAttribute.(map[string]any)
+		scopeAttributeValues[attribute["key"].(string)] = attribute["value"].(map[string]any)["value"]
+	}
+	assert.Equal(t, "blue", scopeAttributeValues["scope.build"])
+	assert.Empty(t, metric["timeseries"])
+}
+
+func TestMetricViewProjectsMonotonicityOnlyForSum(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	md := pmetric.NewMetrics()
+	sm := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty()
+	const timestamp = pcommon.Timestamp(100)
+
+	gauge := sm.Metrics().AppendEmpty()
+	gauge.SetName("gauge")
+	gauge.SetEmptyGauge().DataPoints().AppendEmpty().SetTimestamp(timestamp)
+
+	sum := sm.Metrics().AppendEmpty()
+	sum.SetName("sum")
+	sumData := sum.SetEmptySum()
+	sumData.SetIsMonotonic(true)
+	sumData.DataPoints().AppendEmpty().SetTimestamp(timestamp)
+
+	histogram := sm.Metrics().AppendEmpty()
+	histogram.SetName("histogram")
+	histogram.SetEmptyHistogram().DataPoints().AppendEmpty().SetTimestamp(timestamp)
+
+	exponential := sm.Metrics().AppendEmpty()
+	exponential.SetName("exponential")
+	exponential.SetEmptyExponentialHistogram().DataPoints().AppendEmpty().SetTimestamp(timestamp)
+
+	summaryMetric := sm.Metrics().AppendEmpty()
+	summaryMetric.SetName("summary")
+	summaryMetric.SetEmptySummary().DataPoints().AppendEmpty().SetTimestamp(timestamp)
+
+	var rejected ingest.Rejected
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		var err error
+		rejected, err = metrics.IngestReport(ctx, conn, md, s.FlushedIDs())
+		return err
+	}))
+	require.Equal(t, 1, rejected.Count())
+	require.ErrorIs(t, rejected.Reason(), metrics.ErrUnsupportedMetricType)
+
+	for _, summary := range searchMetricsAll(t, s, ctx) {
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetricView(ctx, db, summary["id"].(string),
+				store.BoundedTimeRange(101, 102), 0, nil, nil, 0, 0, 0, nil, "", nil, 0)
+
+		})
+		require.NoError(t, err)
+		var metric map[string]any
+		require.NoError(t, json.Unmarshal(raw, &metric))
+		if summary["name"] == "sum" {
+			assert.Equal(t, true, metric["isMonotonic"])
+		} else {
+			assert.Nil(t, metric["isMonotonic"], "%s monotonicity is not applicable", summary["name"])
+		}
+		if summary["name"] == "sum" || summary["name"] == "histogram" || summary["name"] == "exponential" {
+			assert.Equal(t, float64(0), metric["aggregationTemporalityCode"])
+		} else {
+			assert.Nil(t, metric["aggregationTemporalityCode"], "%s temporality is not applicable", summary["name"])
+			assert.Nil(t, metric["aggregationTemporality"], "%s temporality is not applicable", summary["name"])
+		}
+	}
+	require.Equal(t, 0, countRows(t, s, ctx, `select count(*) from metric_streams where name = 'summary'`))
+}
+
+func TestHistogramSelectionIsPartitionedByExactScopeIdentity(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	md := pmetric.NewMetrics()
+	rm := md.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "checkout")
+	for i, fixture := range []struct {
+		schema string
+		build  string
+		count  uint64
+	}{{"scope-blue", "blue", 3}, {"scope-green", "green", 7}} {
+		sm := rm.ScopeMetrics().AppendEmpty()
+		sm.SetSchemaUrl(fixture.schema)
+		sm.Scope().SetName("otelhttp")
+		sm.Scope().SetVersion("1.2.0")
+		sm.Scope().Attributes().PutStr("build", fixture.build)
+		metric := sm.Metrics().AppendEmpty()
+		metric.SetName("http.server.duration")
+		metric.SetUnit("ms")
+		histogram := metric.SetEmptyHistogram()
+		histogram.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+		dp := histogram.DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.Timestamp(1_700_000_000_000_000_000 + i))
+		dp.SetCount(fixture.count)
+		dp.SetSum(float64(fixture.count))
+		dp.ExplicitBounds().FromRaw([]float64{1})
+		dp.BucketCounts().FromRaw([]uint64{fixture.count, 0})
+	}
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+	}))
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 2)
+	wantCounts := map[string]uint64{"scope-blue": 3, "scope-green": 7}
+	for _, summary := range summaries {
+		assert.EqualValues(t, 1, summary["seriesCount"])
+		assert.EqualValues(t, 1, summary["dataPointCount"])
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetricView(ctx, db, summary["id"].(string),
+				store.BoundedTimeRange(0, maxNano), 0, nil, nil, 0, 0, 0, nil, "", nil, 0)
+
+		})
+		require.NoError(t, err)
+		var metric map[string]any
+		require.NoError(t, json.Unmarshal(raw, &metric))
+		schemaURL := metric["scopeSchemaUrl"].(string)
+		want, ok := wantCounts[schemaURL]
+		require.True(t, ok)
+		timeseries := metric["timeseries"].([]any)
+		require.Len(t, timeseries, 1)
+		points := timeseries[0].(map[string]any)["datapoints"].([]any)
+		require.Len(t, points, 1)
+		assert.Equal(t, want, metricWireUint64(t, points[0].(map[string]any)["count"]))
+	}
 }
 
 // TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold is the first
-// end-to-end test of the server-side reduction path. Every other GetMetric call
+// end-to-end test of the server-side reduction path. Every other GetMetricView call
 // in this package passes resolution 0, so the reduction machinery -- M4
 // election, the alignment chain, hist_merged -- was covered only by macro unit
 // tests and never run assembled. That is how the bug below survived.
@@ -2670,7 +3185,7 @@ func TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold(t *testing.T) {
 	// Resolution 1 puts both datapoints in a single bucket, which is what makes
 	// them merge at all.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(0,
+		return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(0,
 			time.Now().UnixNano()+int64(time.Hour)),
 			1, nil, nil, 0, 0, 0, nil, "", nil, 0)
 
@@ -2699,7 +3214,7 @@ func TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold(t *testing.T) {
 	assert.Equal(t, uint64(18), metricWireUint64(t, dp["count"]), "total observations conserved")
 }
 
-// TestGetMetric_MergedSeriesKeepTheirLabels covers a merged histogram series
+// TestGetMetricView_MergedSeriesKeepTheirLabels covers a merged histogram series
 // still reporting the attributes that identify it.
 //
 // hist_merged aggregates per (series, bucket) and listed its output columns
@@ -2712,7 +3227,7 @@ func TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold(t *testing.T) {
 //
 // The bug needed a reduction to appear at all, which is why no existing test
 // saw it: they either request no reduction or never look at the labels.
-func TestGetMetric_MergedSeriesKeepTheirLabels(t *testing.T) {
+func TestGetMetricView_MergedSeriesKeepTheirLabels(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -2743,7 +3258,7 @@ func TestGetMetric_MergedSeriesKeepTheirLabels(t *testing.T) {
 	// from filtered_dps and carry their labels regardless, which is exactly the
 	// blind spot this covers.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+		return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
 			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
 
 			1, nil, nil, 0, 0, 0, nil, "", nil, 0)
@@ -2772,7 +3287,7 @@ func TestGetMetric_MergedSeriesKeepTheirLabels(t *testing.T) {
 		"each merged series keeps its own label, not a blank or a neighbour's")
 }
 
-// TestGetMetric_ScalarViewBuckets covers the grid the Sum / Average / Rate
+// TestGetMetricView_ScalarViewBuckets covers the grid the Sum / Average / Rate
 // views aggregate on, which used to be built in the browser.
 //
 // The client sliced each series between its *own* first and last point, so two
@@ -2784,7 +3299,7 @@ func TestGetMetric_MergedSeriesKeepTheirLabels(t *testing.T) {
 // zero, because Sum and Rate read a gap as no activity while Average has to
 // skip it -- the mean of nothing is not nought. Emitting 0 would bake one
 // view's reading into all three.
-func TestGetMetric_ScalarViewBuckets(t *testing.T) {
+func TestGetMetricView_ScalarViewBuckets(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -2831,7 +3346,7 @@ func TestGetMetric_ScalarViewBuckets(t *testing.T) {
 	// With no requested bounds, the grid comes from the ten minutes that hold
 	// datapoints rather than an arbitrary wider range.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
+		return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
 			0, nil, nil, 0, 12, 0, nil, "", nil, 0)
 
 	})
@@ -2899,7 +3414,7 @@ func TestGetMetric_ScalarViewBuckets(t *testing.T) {
 	assert.NotNil(t, first["avg"])
 }
 
-// TestGetMetric_RateSlopeAndStats covers the two numbers derived from the
+// TestGetMetricView_RateSlopeAndStats covers the two numbers derived from the
 // drawn rate line: the slope arriving at each drawn point, and the line's
 // extremes for the rate view's badges.
 //
@@ -2907,7 +3422,7 @@ func TestGetMetric_ScalarViewBuckets(t *testing.T) {
 // states the drawn sequence once -- an empty bucket draws a zero, a bucket
 // with samples but no rate draws nothing -- and derives both from it, so the
 // overlay, the badges and the line cannot disagree.
-func TestGetMetric_RateSlopeAndStats(t *testing.T) {
+func TestGetMetricView_RateSlopeAndStats(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -2938,7 +3453,7 @@ func TestGetMetric_RateSlopeAndStats(t *testing.T) {
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
+		return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
 			0, nil, nil, 0, 12, 0, nil, "", nil, 0)
 
 	})
@@ -3063,7 +3578,7 @@ func TestCumulativeHistogramMerge_DifferencesAcrossBuckets(t *testing.T) {
 
 	get := func(targetBuckets int64) []map[string]any {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, store.TimeRange{},
+			return metrics.GetMetricView(ctx, db, streamID, store.TimeRange{},
 				targetBuckets, nil, nil, 0, 0, 0, nil, "", nil, 0)
 
 		})
@@ -3157,7 +3672,7 @@ func TestCumulativeHistogramMerge_ResetIsConsistentAcrossFields(t *testing.T) {
 	require.Len(t, summaries, 1)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+		return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
 			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
 
 			1, nil, nil, 0, 0, 0, nil, "", nil, 0)
@@ -3198,9 +3713,10 @@ func TestHistogramReductionPreservesUnsignedCountDomain(t *testing.T) {
 		summaries := searchMetricsAll(t, s, ctx)
 		require.Len(t, summaries, 1)
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+			return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
 				base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
 				1, nil, nil, 0, 0, 0, nil, "", nil, 0)
+
 		})
 		require.NoError(t, err)
 		var got map[string]any
@@ -3254,7 +3770,7 @@ func TestHistogramReductionPreservesUnsignedCountDomain(t *testing.T) {
 	})
 }
 
-// TestGetMetric_WindowSummaryIsOneBucket covers the request that asks a single
+// TestGetMetricView_WindowSummaryIsOneBucket covers the request that asks a single
 // question about a whole span: one bucket, not "about one bucket".
 //
 // The ladder cannot express it. bucket_width_ns snaps to a nameable width and
@@ -3266,7 +3782,7 @@ func TestHistogramReductionPreservesUnsignedCountDomain(t *testing.T) {
 //
 // Absolute boundaries are right for a chart and wrong for a summary, which is
 // why one bucket is a different request rather than a smaller number of them.
-func TestGetMetric_WindowSummaryIsOneBucket(t *testing.T) {
+func TestGetMetricView_WindowSummaryIsOneBucket(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -3295,7 +3811,7 @@ func TestGetMetric_WindowSummaryIsOneBucket(t *testing.T) {
 	require.Len(t, summaries, 1)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricAggregate(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
+		return metrics.GetMetricAggregateView(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
 			1, nil, []float64{0.5}, 0, 0, nil, "")
 
 	})
@@ -3326,7 +3842,7 @@ func TestGetMetric_WindowSummaryIsOneBucket(t *testing.T) {
 	assert.NotNil(t, q["0.5"], "a window p50 over every observation in the span")
 }
 
-// TestGetMetric_DatapointLimitMatchesResponseOrder pins the agreement between
+// TestGetMetricView_DatapointLimitMatchesResponseOrder pins the agreement between
 // the two sides of "the first N series".
 //
 // The client cannot name the series it wants on a first visit -- it picks them
@@ -3337,7 +3853,7 @@ func TestGetMetric_WindowSummaryIsOneBucket(t *testing.T) {
 // bucket start, so a reduced histogram shipped one set and the client drew
 // another. Measured on a 21-series histogram: three checked series arrived with
 // no datapoints, and three that were shipped theirs were never drawn.
-func TestGetMetric_DatapointLimitMatchesResponseOrder(t *testing.T) {
+func TestGetMetricView_DatapointLimitMatchesResponseOrder(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -3370,7 +3886,7 @@ func TestGetMetric_DatapointLimitMatchesResponseOrder(t *testing.T) {
 
 	const limit = 3
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
+		return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
 			20, nil, nil, 0, 0, 0, nil, "", nil, limit)
 
 	})
@@ -3397,7 +3913,7 @@ func TestGetMetric_DatapointLimitMatchesResponseOrder(t *testing.T) {
 			"lists, so the client's \"check the first N\" checks series that have data")
 }
 
-// TestGetMetric_BoundsMismatchIsReported covers the one histogram disagreement
+// TestGetMetricView_BoundsMismatchIsReported covers the one histogram disagreement
 // that cannot be reconciled: two datapoints in a bucket carrying different
 // explicit bounds.
 //
@@ -3409,7 +3925,7 @@ func TestGetMetric_DatapointLimitMatchesResponseOrder(t *testing.T) {
 // a missing bucket is indistinguishable from a stretch with no data -- so an
 // exporter that changed its histogram configuration mid-window, which is a real
 // finding for anyone debugging one, looked like an idle period.
-func TestGetMetric_BoundsMismatchIsReported(t *testing.T) {
+func TestGetMetricView_BoundsMismatchIsReported(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -3439,7 +3955,7 @@ func TestGetMetric_BoundsMismatchIsReported(t *testing.T) {
 
 	get := func(targetBuckets int64) map[string]any {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(
+			return metrics.GetMetricView(ctx, db, streamID, store.BoundedTimeRange(
 				base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
 
 				targetBuckets, nil, nil, 0, 0, 0, nil, "", nil, 0)
@@ -3483,7 +3999,7 @@ func TestGetMetric_BoundsMismatchIsReported(t *testing.T) {
 		"both readings survive when nothing is being merged")
 }
 
-// TestGetMetric_ViewGridRespectsCadence covers the grid the Sum, Average and
+// TestGetMetricView_ViewGridRespectsCadence covers the grid the Sum, Average and
 // Rate views are drawn on: it may not divide finer than the data arrives.
 //
 // The ladder picks a width from the span and a bucket count and knows nothing
@@ -3496,7 +4012,7 @@ func TestGetMetric_BoundsMismatchIsReported(t *testing.T) {
 // The cap is on the bucket count rather than the width, so the answer stays a
 // ladder rung: a reader can name a 1-minute boundary and cannot name a
 // 30.5-second one.
-func TestGetMetric_ViewGridRespectsCadence(t *testing.T) {
+func TestGetMetricView_ViewGridRespectsCadence(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -3520,7 +4036,7 @@ func TestGetMetric_ViewGridRespectsCadence(t *testing.T) {
 	require.Len(t, summaries, 1)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
+		return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
 			0, nil, nil, 0, 120, 0, nil, "", nil, 0)
 
 	})
@@ -3578,7 +4094,7 @@ func TestGetMetric_ViewGridRespectsCadence(t *testing.T) {
 	}
 	require.NotEmpty(t, denseID)
 	denseRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, denseID, store.TimeRange{},
+		return metrics.GetMetricView(ctx, db, denseID, store.TimeRange{},
 			0, nil, nil, 0, 120, 0, nil, "", nil, 0)
 
 	})
@@ -3590,7 +4106,7 @@ func TestGetMetric_ViewGridRespectsCadence(t *testing.T) {
 		"a series reporting every second keeps the resolution it can support")
 }
 
-// TestGetMetric_CountsDescribeTheWindow pins the distinction between what the
+// TestGetMetricView_CountsDescribeTheWindow pins the distinction between what the
 // window holds and what the response carries.
 //
 // Datapoints are narrowed to the series being drawn and reduced besides, so
@@ -3599,7 +4115,7 @@ func TestGetMetric_ViewGridRespectsCadence(t *testing.T) {
 // 5,908 of 19,319, and twelve series showed a count of zero beside sparklines
 // visibly full of data -- reading as series that had stopped reporting rather
 // than ones this response did not carry.
-func TestGetMetric_CountsDescribeTheWindow(t *testing.T) {
+func TestGetMetricView_CountsDescribeTheWindow(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -3623,7 +4139,7 @@ func TestGetMetric_CountsDescribeTheWindow(t *testing.T) {
 
 	// Narrowed hard: datapoints for one series of four.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
+		return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
 			0, nil, nil, 0, 0, 0, nil, "", nil, 1)
 
 	})
@@ -3690,7 +4206,7 @@ func TestGetMetric_CountsDescribeTheWindow(t *testing.T) {
 	hraw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		// Reduced to a handful of buckets, so the merge collapses 30 datapoints
 		// into far fewer rows.
-		return metrics.GetMetric(ctx, db, histID, store.TimeRange{},
+		return metrics.GetMetricView(ctx, db, histID, store.TimeRange{},
 			5, nil, nil, 0, 0, 0, nil, "", nil, 0)
 
 	})
@@ -3708,7 +4224,7 @@ func TestGetMetric_CountsDescribeTheWindow(t *testing.T) {
 		"and the metric's total counts datapoints too")
 }
 
-// TestGetMetric_Deterministic pins the answer to a question the store must
+// TestGetMetricView_Deterministic pins the answer to a question the store must
 // only have one answer to: the same request against the same data returns the
 // same bytes.
 //
@@ -3719,7 +4235,7 @@ func TestGetMetric_CountsDescribeTheWindow(t *testing.T) {
 // delta join and the list ordering the same way. Found live: the same request
 // returned six different responses in six tries, differing in which datapoints
 // the M4 election kept.
-func TestGetMetric_Deterministic(t *testing.T) {
+func TestGetMetricView_Deterministic(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -3754,7 +4270,7 @@ func TestGetMetric_Deterministic(t *testing.T) {
 
 	get := func(targetBuckets int64) json.RawMessage {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, store.TimeRange{},
+			return metrics.GetMetricView(ctx, db, streamID, store.TimeRange{},
 				targetBuckets, nil, nil, 0, 4, 2, nil, "", nil, 0)
 
 		})
@@ -3833,7 +4349,7 @@ func TestGetMetric_Deterministic(t *testing.T) {
 		"a fully tied bucket elects the smallest and largest id, nothing else")
 }
 
-// TestGetMetric_DatapointNarrowing covers the narrowest of the three series
+// TestGetMetricView_DatapointNarrowing covers the narrowest of the three series
 // parameters: which series ship their datapoints.
 //
 // The property worth pinning is what it must NOT touch. Datapoints are almost
@@ -3842,7 +4358,7 @@ func TestGetMetric_Deterministic(t *testing.T) {
 // its sparkline, because the panel lists series nobody is drawing and the All
 // aggregate folds them. Narrowing that reached the aggregates would turn "all"
 // into "all of the checked ones", which is wrong and looks plausible.
-func TestGetMetric_DatapointNarrowing(t *testing.T) {
+func TestGetMetricView_DatapointNarrowing(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -3868,7 +4384,7 @@ func TestGetMetric_DatapointNarrowing(t *testing.T) {
 
 	get := func(dpSeries []string, limit int64) []any {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, store.TimeRange{},
+			return metrics.GetMetricView(ctx, db, streamID, store.TimeRange{},
 				0, nil, nil, 0, 12, 8, nil, "", dpSeries, limit)
 
 		})
@@ -3948,7 +4464,7 @@ func TestGetMetric_DatapointNarrowing(t *testing.T) {
 	assert.Equal(t, 1, bothWith, "the list decides when it is given")
 }
 
-// TestGetMetric_ScalarPoolAggregate covers the cross-series lines: a pool of
+// TestGetMetricView_ScalarPoolAggregate covers the cross-series lines: a pool of
 // series folded into one line per bucket.
 //
 // The fold replaces combinePool in TypeScript, which merged the pool's chart
@@ -3958,7 +4474,7 @@ func TestGetMetric_DatapointNarrowing(t *testing.T) {
 // the pool lands on the same absolute grid as the per-series views, and the
 // average is pooled over every sample rather than averaged over per-series
 // averages.
-func TestGetMetric_ScalarPoolAggregate(t *testing.T) {
+func TestGetMetricView_ScalarPoolAggregate(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -3995,7 +4511,7 @@ func TestGetMetric_ScalarPoolAggregate(t *testing.T) {
 
 	get := func(selected []string) map[string]any {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, store.TimeRange{},
+			return metrics.GetMetricView(ctx, db, streamID, store.TimeRange{},
 				0, nil, nil, 0, 12, 0, selected, "", nil, 0)
 
 		})
@@ -4086,7 +4602,7 @@ func TestGetMetric_ScalarPoolAggregate(t *testing.T) {
 		"the All pool does not narrow with the selection")
 }
 
-// TestGetMetric_Sparkline covers the third reduction: the shape of a series at
+// TestGetMetricView_Sparkline covers the third reduction: the shape of a series at
 // list-row resolution.
 //
 // It exists as its own reduction rather than reusing either of the other two,
@@ -4096,7 +4612,7 @@ func TestGetMetric_ScalarPoolAggregate(t *testing.T) {
 // 128px box. Against the views, it keeps extremes rather than averaging them,
 // because a sparkline's whole job is to show that something happened, and a
 // mean over a wide bucket is exactly what hides a spike.
-func TestGetMetric_Sparkline(t *testing.T) {
+func TestGetMetricView_Sparkline(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -4130,7 +4646,7 @@ func TestGetMetric_Sparkline(t *testing.T) {
 
 	const buckets = 8
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, store.TimeRange{},
+		return metrics.GetMetricView(ctx, db, streamID, store.TimeRange{},
 			0, nil, nil, 0, 0, buckets, nil, "", nil, 0)
 
 	})
@@ -4177,7 +4693,7 @@ func TestGetMetric_Sparkline(t *testing.T) {
 	// Asking for no buckets is how a caller that draws no sparklines avoids
 	// paying for them, and it has to be legible as "absent" rather than empty.
 	rawNone, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, store.TimeRange{},
+		return metrics.GetMetricView(ctx, db, streamID, store.TimeRange{},
 			0, nil, nil, 0, 0, 0, nil, "", nil, 0)
 
 	})
@@ -4235,7 +4751,7 @@ func TestExpHistogramMerge_RescalesBeforeSumming(t *testing.T) {
 	// Target 1 puts both datapoints in one bucket, which is what makes them
 	// merge at all.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+		return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
 			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
 
 			1, nil, nil, 0, 0, 0, nil, "", nil, 0)
@@ -4314,7 +4830,7 @@ func TestExpHistogramMerge_CumulativeSubtractsAcrossAScaleChange(t *testing.T) {
 	require.Len(t, summaries, 1)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+		return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
 			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
 
 			1, nil, nil, 0, 0, 0, nil, "", nil, 0)
@@ -4343,12 +4859,12 @@ func TestExpHistogramMerge_CumulativeSubtractsAcrossAScaleChange(t *testing.T) {
 		"the bucket vectors must be differenced on a common scale, not passed through")
 }
 
-// TestGetMetric_SeriesFilter covers the parameter that makes server-side
+// TestGetMetricView_SeriesFilter covers the parameter that makes server-side
 // cross-series aggregation possible: the caller names the series it wants and
 // the store narrows before the reduction, so asking for two of ten costs two.
 //
 // Nil means all; an empty list means no series.
-func TestGetMetric_SeriesFilter(t *testing.T) {
+func TestGetMetricView_SeriesFilter(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -4378,7 +4894,7 @@ func TestGetMetric_SeriesFilter(t *testing.T) {
 
 	seriesKeys := func(ids []string) []string {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(0, end), 0, ids, nil, 0, 0, 0, nil, "", nil, 0)
+			return metrics.GetMetricView(ctx, db, streamID, store.BoundedTimeRange(0, end), 0, ids, nil, 0, 0, 0, nil, "", nil, 0)
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -4407,7 +4923,7 @@ func TestGetMetric_SeriesFilter(t *testing.T) {
 		"an empty selection means no series, not every series")
 }
 
-// TestGetMetric_Quantiles covers quantiles computed in the store rather than
+// TestGetMetricView_Quantiles covers quantiles computed in the store rather than
 // from bucket vectors on the client.
 //
 // The expected values are the ones the TypeScript implementation produces for
@@ -4416,7 +4932,7 @@ func TestGetMetric_SeriesFilter(t *testing.T) {
 // 30 lands exactly on the upper edge of the second bucket.
 //
 // Empty means none, so a caller drawing no overlays does not pay for them.
-func TestGetMetric_Quantiles(t *testing.T) {
+func TestGetMetricView_Quantiles(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -4438,7 +4954,7 @@ func TestGetMetric_Quantiles(t *testing.T) {
 
 	datapoint := func(qs []float64) map[string]any {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(0, end), 0, nil, qs, 0, 0, 0, nil, "", nil, 0)
+			return metrics.GetMetricView(ctx, db, streamID, store.BoundedTimeRange(0, end), 0, nil, qs, 0, 0, 0, nil, "", nil, 0)
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -4462,17 +4978,17 @@ func TestGetMetric_Quantiles(t *testing.T) {
 		"no quantiles requested means none computed")
 }
 
-// TestGetMetric_QuantileHandWorked pins the quantile arithmetic to values
+// TestGetMetricView_QuantileHandWorked pins the quantile arithmetic to values
 // worked out by hand, through the real query rather than against macro
 // literals.
 //
 // These cases lived in schema_test as literal calls to hist_quantile and
 // exp_hist_quantile. Those macros are gone -- each computed its walk in a
 // per-row sub-plan, and the walk now happens once, set-based, inside
-// get_metric.sql's quantile CTEs -- so the arithmetic they pinned is pinned
+// get_metric_view.sql's quantile CTEs -- so the arithmetic they pinned is pinned
 // here instead, where it exercises the code that actually ships. The
 // hand-derivations in the comments are unchanged from the originals.
-func TestGetMetric_QuantileHandWorked(t *testing.T) {
+func TestGetMetricView_QuantileHandWorked(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 	base := time.Now().Add(-time.Minute)
@@ -4598,7 +5114,7 @@ func TestGetMetric_QuantileHandWorked(t *testing.T) {
 	quantileOf := func(name string, q float64) (any, bool) {
 		id := findMetricID(t, s, ctx, name)
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, id, store.BoundedTimeRange(0, end), 0, nil, []float64{q}, 0, 0, 0, nil, "", nil, 0)
+			return metrics.GetMetricView(ctx, db, id, store.BoundedTimeRange(0, end), 0, nil, []float64{q}, 0, 0, 0, nil, "", nil, 0)
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -4655,7 +5171,7 @@ func TestGetMetric_QuantileHandWorked(t *testing.T) {
 	t.Run("duplicate quantiles are tolerated", func(t *testing.T) {
 		id := findMetricID(t, s, ctx, "hw.exp.0")
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, id, store.BoundedTimeRange(0, end), 0, nil,
+			return metrics.GetMetricView(ctx, db, id, store.BoundedTimeRange(0, end), 0, nil,
 				[]float64{0.5, 0.5, 0.95, 0.5}, 0, 0, 0, nil, "", nil, 0)
 
 		})
@@ -4680,7 +5196,7 @@ func TestGetMetric_QuantileHandWorked(t *testing.T) {
 		}))
 		id := findMetricID(t, s, ctx, "hw.merge")
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetricAggregate(ctx, db, id, store.BoundedTimeRange(0, end), 1, nil, []float64{0.5}, 0, 1, nil, "")
+			return metrics.GetMetricAggregateView(ctx, db, id, store.BoundedTimeRange(0, end), 1, nil, []float64{0.5}, 0, 1, nil, "")
 		})
 		require.NoError(t, err)
 		var env map[string]any
@@ -4694,7 +5210,7 @@ func TestGetMetric_QuantileHandWorked(t *testing.T) {
 
 func ptrF(v float64) *float64 { return &v }
 
-// TestGetMetric_CrossSeriesAggregate covers the merge that lets the client stop
+// TestGetMetricView_CrossSeriesAggregate covers the merge that lets the client stop
 // combining series itself.
 //
 // Two series, different scales, in one time bucket. The aggregate must put them
@@ -4711,7 +5227,7 @@ func ptrF(v float64) *float64 { return &v }
 //	merged   scale -1, counts [35, 35] at offset 0
 //
 // Totals: A has 60 observations, B has 10, so the aggregate must report 70.
-func TestGetMetric_CrossSeriesAggregate(t *testing.T) {
+func TestGetMetricView_CrossSeriesAggregate(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -4737,7 +5253,7 @@ func TestGetMetric_CrossSeriesAggregate(t *testing.T) {
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(0,
+		return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(0,
 			time.Now().UnixNano()+int64(time.Hour)),
 			1, nil, []float64{0.5}, 0, 0, 0, nil, "", nil, 0)
 
@@ -4782,12 +5298,12 @@ func TestGetMetric_CrossSeriesAggregate(t *testing.T) {
 	assert.InDelta(t, 16.0, a["max"], 1e-9, "upper edge of the last populated bucket")
 }
 
-// TestGetMetric_EmptyExplicitBoundsAggregate covers the valid explicit
+// TestGetMetricView_EmptyExplicitBoundsAggregate covers the valid explicit
 // histogram shape with no boundaries and one catch-all bucket. Representation
 // is identified by the presence of explicitBounds, not by whether it contains
 // an element: treating [] as exponential drops the only bucket vector from the
 // heatmap aggregate even though its top-level count still looks plausible.
-func TestGetMetric_EmptyExplicitBoundsAggregate(t *testing.T) {
+func TestGetMetricView_EmptyExplicitBoundsAggregate(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -4846,7 +5362,7 @@ func TestGetMetric_EmptyExplicitBoundsAggregate(t *testing.T) {
 	}
 
 	full, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(0, end), 1, nil,
+		return metrics.GetMetricView(ctx, db, streamID, store.BoundedTimeRange(0, end), 1, nil,
 			[]float64{0.5}, 0, 0, 0, nil, "", nil, 0)
 
 	})
@@ -4879,7 +5395,7 @@ func TestGetMetric_EmptyExplicitBoundsAggregate(t *testing.T) {
 	assertCatchAll(aggregate[0].(map[string]any))
 
 	only, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricAggregate(ctx, db, streamID, store.BoundedTimeRange(0, end), 1, nil,
+		return metrics.GetMetricAggregateView(ctx, db, streamID, store.BoundedTimeRange(0, end), 1, nil,
 			[]float64{0.5}, 0, 0, nil, "")
 
 	})
@@ -4891,7 +5407,7 @@ func TestGetMetric_EmptyExplicitBoundsAggregate(t *testing.T) {
 	assertCatchAll(onlyAggregate[0].(map[string]any))
 }
 
-// TestGetMetric_TimezoneAlignedBuckets covers bucket boundaries landing where
+// TestGetMetricView_TimezoneAlignedBuckets covers bucket boundaries landing where
 // the reader's calendar puts them rather than where the epoch does.
 //
 // The store shifts by the viewer's UTC offset, floors, and shifts back -- the
@@ -4901,7 +5417,7 @@ func TestGetMetric_EmptyExplicitBoundsAggregate(t *testing.T) {
 // bucket late. That is the hazard the client comment flags for BigInt division,
 // and it is why this test reaches back before 1970 rather than only checking a
 // present-day offset.
-func TestGetMetric_TimezoneAlignedBuckets(t *testing.T) {
+func TestGetMetricView_TimezoneAlignedBuckets(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -4934,7 +5450,7 @@ func TestGetMetric_TimezoneAlignedBuckets(t *testing.T) {
 
 	bucketCount := func(offsetNs int64) int {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(start, end), 3, nil, nil, offsetNs, 0, 0, nil, "", nil, 0)
+			return metrics.GetMetricView(ctx, db, streamID, store.BoundedTimeRange(start, end), 3, nil, nil, offsetNs, 0, 0, nil, "", nil, 0)
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -4961,7 +5477,7 @@ func TestGetMetric_TimezoneAlignedBuckets(t *testing.T) {
 		"bucket boundaries must move with the offset, or tz_offset_ns is not reaching bucket_start")
 }
 
-// TestGetMetric_NullBoundsSpanTheData covers the reduction dividing the data's
+// TestGetMetricView_NullBoundsSpanTheData covers the reduction dividing the data's
 // own extent when both requested endpoints are null.
 //
 // The bug this pins: the reduction always divided the *requested* window, so
@@ -4973,7 +5489,7 @@ func TestGetMetric_TimezoneAlignedBuckets(t *testing.T) {
 //
 // Both halves matter. Null bounds must recover the resolution, and an explicit
 // window must keep dividing itself.
-func TestGetMetric_NullBoundsSpanTheData(t *testing.T) {
+func TestGetMetricView_NullBoundsSpanTheData(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -5004,7 +5520,7 @@ func TestGetMetric_NullBoundsSpanTheData(t *testing.T) {
 
 	get := func(timeRange store.TimeRange) map[string]any {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, streamID, timeRange, 8, nil, nil, 0, 0, 0, nil, "", nil, 0)
+			return metrics.GetMetricView(ctx, db, streamID, timeRange, 8, nil, nil, 0, 0, 0, nil, "", nil, 0)
 		})
 		require.NoError(t, err)
 		var m map[string]any
@@ -5046,7 +5562,7 @@ func TestGetMetric_NullBoundsSpanTheData(t *testing.T) {
 	// says a metric stopped reporting.
 	tight := base.Add(-6 * time.Hour).UnixNano()
 	rawTight, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(tight, end), 8, nil, nil, 0, 0, 0, nil, "", nil, 0)
+		return metrics.GetMetricView(ctx, db, streamID, store.BoundedTimeRange(tight, end), 8, nil, nil, 0, 0, 0, nil, "", nil, 0)
 	})
 	require.NoError(t, err)
 	var mTight map[string]any
@@ -5054,7 +5570,7 @@ func TestGetMetric_NullBoundsSpanTheData(t *testing.T) {
 	assert.Positive(t, buckets(mTight), "an explicit window still buckets")
 }
 
-func TestGetMetric_NullableBoundsDetermineEffectiveWindow(t *testing.T) {
+func TestGetMetricView_NullableBoundsDetermineEffectiveWindow(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -5099,8 +5615,9 @@ func TestGetMetric_NullableBoundsDetermineEffectiveWindow(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-				return metrics.GetMetric(ctx, db, streamID, tc.timeRange,
+				return metrics.GetMetricView(ctx, db, streamID, tc.timeRange,
 					2, nil, nil, 0, 0, 0, nil, "", nil, 0)
+
 			})
 			require.NoError(t, err)
 			var got map[string]any
@@ -5115,8 +5632,9 @@ func TestGetMetric_NullableBoundsDetermineEffectiveWindow(t *testing.T) {
 			}, window["effective"])
 
 			aggregate, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-				return metrics.GetMetricAggregate(ctx, db, streamID, tc.timeRange,
+				return metrics.GetMetricAggregateView(ctx, db, streamID, tc.timeRange,
 					2, nil, nil, 0, 0, nil, "")
+
 			})
 			require.NoError(t, err, "nullable bounds must reach the aggregate reduction path")
 			require.JSONEq(t,
@@ -5139,8 +5657,9 @@ func TestGetMetric_NullableBoundsDetermineEffectiveWindow(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-				return metrics.GetMetric(ctx, db, streamID, tc.timeRange,
+				return metrics.GetMetricView(ctx, db, streamID, tc.timeRange,
 					2, nil, nil, 0, 2, 2, nil, "", nil, 0)
+
 			})
 			require.NoError(t, err, "an empty effective extent must not perform invalid null arithmetic")
 			var got map[string]any
@@ -5156,8 +5675,9 @@ func TestGetMetric_NullableBoundsDetermineEffectiveWindow(t *testing.T) {
 			}, window["effective"])
 
 			aggregate, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-				return metrics.GetMetricAggregate(ctx, db, streamID, tc.timeRange,
+				return metrics.GetMetricAggregateView(ctx, db, streamID, tc.timeRange,
 					2, nil, nil, 0, 2, nil, "")
+
 			})
 			require.NoError(t, err, "aggregate reduction must tolerate an empty effective window")
 			require.JSONEq(t,
@@ -5167,7 +5687,7 @@ func TestGetMetric_NullableBoundsDetermineEffectiveWindow(t *testing.T) {
 	}
 }
 
-// TestGetMetric_MergedRowsCarryTheirBucket covers a merged histogram row
+// TestGetMetricView_MergedRowsCarryTheirBucket covers a merged histogram row
 // reporting the bucket it is, rather than the newest datapoint inside it.
 //
 // The merge grouped by bucket_start and then reported max(timestamp), so rows
@@ -5180,7 +5700,7 @@ func TestGetMetric_NullableBoundsDetermineEffectiveWindow(t *testing.T) {
 // The window is explicit and the target chosen so the ladder in bucket_width_ns
 // lands on exactly 10s: 60s / 6 admits 10s and refuses 5s. Pinning the width is
 // what lets the assertion be "on the grid" rather than "self-consistent".
-func TestGetMetric_MergedRowsCarryTheirBucket(t *testing.T) {
+func TestGetMetricView_MergedRowsCarryTheirBucket(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -5214,7 +5734,7 @@ func TestGetMetric_MergedRowsCarryTheirBucket(t *testing.T) {
 	streamID := summaries[0]["id"].(string)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(
+		return metrics.GetMetricView(ctx, db, streamID, store.BoundedTimeRange(
 			base.UnixNano(), base.Add(60*time.Second).UnixNano()),
 
 			6, nil, nil, 0, 0, 0, nil, "", nil, 0)
@@ -5277,13 +5797,13 @@ func TestGetMetric_MergedRowsCarryTheirBucket(t *testing.T) {
 	}
 }
 
-// TestGetMetricAggregate covers the aggregate-only call, which exists so a
+// TestGetMetricAggregateView covers the aggregate-only call, which exists so a
 // legend toggle does not re-ship the per-series payload.
 //
-// It must answer the same question as GetMetric's aggregate field for the same
+// It must answer the same question as GetMetricView's aggregate field for the same
 // arguments -- it runs the same query and keeps one field, and this is what
 // stops those two drifting.
-func TestGetMetricAggregate(t *testing.T) {
+func TestGetMetricAggregateView(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -5311,7 +5831,7 @@ func TestGetMetricAggregate(t *testing.T) {
 
 	// Same arguments to both calls.
 	full, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(0, end), 1, nil, []float64{0.5}, 0, 0, 0, nil, "", nil, 0)
+		return metrics.GetMetricView(ctx, db, streamID, store.BoundedTimeRange(0, end), 1, nil, []float64{0.5}, 0, 0, 0, nil, "", nil, 0)
 	})
 	require.NoError(t, err)
 	var m map[string]any
@@ -5319,7 +5839,7 @@ func TestGetMetricAggregate(t *testing.T) {
 	fromFull, _ := json.Marshal(m["aggregate"])
 
 	only, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricAggregate(ctx, db, streamID, store.BoundedTimeRange(0, end), 1, nil, []float64{0.5}, 0, 0, nil, "")
+		return metrics.GetMetricAggregateView(ctx, db, streamID, store.BoundedTimeRange(0, end), 1, nil, []float64{0.5}, 0, 0, nil, "")
 	})
 	require.NoError(t, err)
 
@@ -5330,7 +5850,7 @@ func TestGetMetricAggregate(t *testing.T) {
 	require.NoError(t, json.Unmarshal(only, &envelope))
 	fromOnly, _ := json.Marshal(envelope["aggregate"])
 	assert.JSONEq(t, string(fromFull), string(fromOnly),
-		"the aggregate-only call must match GetMetric's aggregate field")
+		"the aggregate-only call must match GetMetricView's aggregate field")
 
 	// A histogram has no scalar pools: scalar_dps is Gauge and Sum only, so
 	// nothing reaches the fold.
@@ -5347,7 +5867,7 @@ func TestGetMetricAggregate(t *testing.T) {
 	allCount := agg[0]["count"].(float64)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricAggregate(ctx, db, streamID, store.BoundedTimeRange(0, end), 1, []string{}, nil, 0, 0, nil, "")
+		return metrics.GetMetricAggregateView(ctx, db, streamID, store.BoundedTimeRange(0, end), 1, []string{}, nil, 0, 0, nil, "")
 	})
 	require.NoError(t, err)
 	var emptyEnvelope map[string]any
@@ -5387,7 +5907,7 @@ func TestGetMetricAggregate(t *testing.T) {
 		scalarID := findMetricID(t, s, ctx, "agg.scalar")
 
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetricAggregate(ctx, db, scalarID, store.BoundedTimeRange(0, end), 1, nil, nil, 0, 4, nil, "")
+			return metrics.GetMetricAggregateView(ctx, db, scalarID, store.BoundedTimeRange(0, end), 1, nil, nil, 0, 4, nil, "")
 		})
 		require.NoError(t, err)
 		var env map[string]any
@@ -5427,7 +5947,7 @@ func mapKeys(m map[string]any) []string {
 	return out
 }
 
-// TestGetMetric_BucketsFollowTheZoneAcrossDST pins bucketing to the viewer's
+// TestGetMetricView_BucketsFollowTheZoneAcrossDST pins bucketing to the viewer's
 // timezone rather than to one offset sampled from it.
 //
 // The caller used to send a single tzOffsetNs, captured in the browser at the
@@ -5436,7 +5956,7 @@ func mapKeys(m map[string]any) []string {
 // UTC+0 after, which makes that local day 25 hours long. Applying either offset
 // to the whole window puts the two readings below on different local days, so a
 // day bucket splits a day that did not end.
-func TestGetMetric_BucketsFollowTheZoneAcrossDST(t *testing.T) {
+func TestGetMetricView_BucketsFollowTheZoneAcrossDST(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -5468,7 +5988,7 @@ func TestGetMetric_BucketsFollowTheZoneAcrossDST(t *testing.T) {
 	dayBuckets := func(tzName string, tzOffsetNs int64) []any {
 		t.Helper()
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
+			return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
 				0, nil, nil, tzOffsetNs, 2, 0, nil, tzName, nil, 0)
 
 		})
@@ -5517,13 +6037,13 @@ func TestGetMetric_BucketsFollowTheZoneAcrossDST(t *testing.T) {
 			"the Monday -- the behaviour a zone-less caller keeps, and the bug")
 }
 
-// TestGetMetric_HistogramMergeFollowsTheZoneAcrossDST is the histogram half of
+// TestGetMetricView_HistogramMergeFollowsTheZoneAcrossDST is the histogram half of
 // the DST question. The scalar test above reads the view grid, which never
 // exercises the datapoint election -- histograms have no views, and their
 // merged rows land *on* bucket timestamps, so the election's bucket cutting is
 // directly visible here and nowhere else. A mutant reverting the election's
 // zone conversion survives the scalar test; this one is built to kill it.
-func TestGetMetric_HistogramMergeFollowsTheZoneAcrossDST(t *testing.T) {
+func TestGetMetricView_HistogramMergeFollowsTheZoneAcrossDST(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -5556,7 +6076,7 @@ func TestGetMetric_HistogramMergeFollowsTheZoneAcrossDST(t *testing.T) {
 	shape := func(tzName string, tzOffsetNs int64) []string {
 		t.Helper()
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
+			return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
 				2, nil, nil, tzOffsetNs, 0, 0, nil, tzName, nil, 0)
 
 		})
@@ -5592,7 +6112,7 @@ func TestGetMetric_HistogramMergeFollowsTheZoneAcrossDST(t *testing.T) {
 			"observation into the Monday -- the behaviour zone-less callers keep")
 }
 
-// TestGetMetric_ExemplarsAreCappedPerBucket pins the ceiling on how much an
+// TestGetMetricView_ExemplarsAreCappedPerBucket pins the ceiling on how much an
 // exemplar-dense stream can grow a reduced response.
 //
 // Exemplar-bearing datapoints are retained on top of the four M4 elects, so
@@ -5600,7 +6120,7 @@ func TestGetMetric_HistogramMergeFollowsTheZoneAcrossDST(t *testing.T) {
 // reasoning that exemplars are sparse -- an assumption about other people's SDK
 // settings rather than anything this query controls. A stream sampling every
 // datapoint defeated the reduction outright: every row came back.
-func TestGetMetric_ExemplarsAreCappedPerBucket(t *testing.T) {
+func TestGetMetricView_ExemplarsAreCappedPerBucket(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -5637,7 +6157,7 @@ func TestGetMetric_ExemplarsAreCappedPerBucket(t *testing.T) {
 	// One target bucket, so the whole run reduces to a single bucket and the
 	// per-bucket ceiling is the whole response's ceiling.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
+		return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
 			1, nil, nil, 0, 0, 0, nil, "", nil, 0)
 
 	})
@@ -5664,11 +6184,11 @@ func TestGetMetric_ExemplarsAreCappedPerBucket(t *testing.T) {
 		"capping must not become dropping -- a reader still needs a way into a trace")
 }
 
-// TestGetMetric_ExemplarListIsCappedAndCounted covers the other direction the
+// TestGetMetricView_ExemplarListIsCappedAndCounted covers the other direction the
 // response grew in: how many exemplars one datapoint carries, which OTel does
 // not limit. The list is capped and the true count travels beside it, so a
 // client can say "5 of 60" rather than silently showing five.
-func TestGetMetric_ExemplarListIsCappedAndCounted(t *testing.T) {
+func TestGetMetricView_ExemplarListIsCappedAndCounted(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -5702,7 +6222,7 @@ func TestGetMetric_ExemplarListIsCappedAndCounted(t *testing.T) {
 	require.Len(t, summaries, 1)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
+		return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
 			0, nil, nil, 0, 0, 0, nil, "", nil, 0)
 
 	})
@@ -5720,14 +6240,14 @@ func TestGetMetric_ExemplarListIsCappedAndCounted(t *testing.T) {
 			"than a silent loss of trace links")
 }
 
-// TestGetMetric_ExemplarSelectionKeepsBothExtremes pins which exemplars survive
+// TestGetMetricView_ExemplarSelectionKeepsBothExtremes pins which exemplars survive
 // the cap, not merely how many.
 //
 // The cap first kept a prefix in time order, which is reproducible and useless:
 // a reader following an exemplar is chasing the slow request or the one that
 // returned nothing, and time order hands them whichever happened first. Both
 // caps now rank from either extreme, so what survives spans the range.
-func TestGetMetric_ExemplarSelectionKeepsBothExtremes(t *testing.T) {
+func TestGetMetricView_ExemplarSelectionKeepsBothExtremes(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -5762,7 +6282,7 @@ func TestGetMetric_ExemplarSelectionKeepsBothExtremes(t *testing.T) {
 	require.Len(t, summaries, 1)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
+		return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
 			0, nil, nil, 0, 0, 0, nil, "", nil, 0)
 
 	})
@@ -5796,7 +6316,7 @@ func TestGetMetric_ExemplarSelectionKeepsBothExtremes(t *testing.T) {
 // representation. Give their rows ids in ascending value order: a ranking that
 // compared only the rounded DOUBLE would deterministically keep the first five
 // and drop the true maximum.
-func TestGetMetric_IntegerExemplarSelectionRemainsExactAbove2Pow53(t *testing.T) {
+func TestGetMetricView_IntegerExemplarSelectionRemainsExactAbove2Pow53(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -5847,7 +6367,7 @@ func TestGetMetric_IntegerExemplarSelectionRemainsExactAbove2Pow53(t *testing.T)
 // Doubles and adjacent integers at this magnitude share one float64
 // approximation. Deterministic ids favor the earliest rows, so ranking on the
 // approximation alone would fill the cap before reaching the true integer max.
-func TestGetMetric_MixedExemplarSelectionUsesExactIntegerTieBreak(t *testing.T) {
+func TestGetMetricView_MixedExemplarSelectionUsesExactIntegerTieBreak(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -5904,11 +6424,11 @@ func TestGetMetric_MixedExemplarSelectionUsesExactIntegerTieBreak(t *testing.T) 
 		"the exact integer maximum must survive rows with the same float64 approximation")
 }
 
-// TestGetMetric_ExemplarCarriersAreTheExtremeOnes is the per-bucket half of the
+// TestGetMetricView_ExemplarCarriersAreTheExtremeOnes is the per-bucket half of the
 // same question: of the datapoints a bucket could retain for their exemplars,
 // which two does it keep? The ones whose exemplars reach lowest and highest,
 // not the two that happened first.
-func TestGetMetric_ExemplarCarriersAreTheExtremeOnes(t *testing.T) {
+func TestGetMetricView_ExemplarCarriersAreTheExtremeOnes(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -5966,7 +6486,7 @@ func TestGetMetric_ExemplarCarriersAreTheExtremeOnes(t *testing.T) {
 	// One bucket for the whole run, so the per-bucket carrier cap is what
 	// decides the answer.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
+		return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
 			1, nil, nil, 0, 0, 0, nil, "", nil, 0)
 
 	})
@@ -5992,7 +6512,7 @@ func TestGetMetric_ExemplarCarriersAreTheExtremeOnes(t *testing.T) {
 			"as diagnostic as one that hung")
 }
 
-// TestGetMetric_ColumnWindowMergesTheWholeColumn pins the contract a heatmap
+// TestGetMetricView_ColumnWindowMergesTheWholeColumn pins the contract a heatmap
 // click depends on: asked for one bucket over one column's time range, the store
 // returns each series merged across that whole range.
 //
@@ -6007,7 +6527,7 @@ func TestGetMetric_ExemplarCarriersAreTheExtremeOnes(t *testing.T) {
 // The fixture makes that difference as large as it gets: fast readings at the
 // start of each column, slow ones after, which is the shape of a latency spike
 // and the reason someone clicks a heatmap in the first place.
-func TestGetMetric_ColumnWindowMergesTheWholeColumn(t *testing.T) {
+func TestGetMetricView_ColumnWindowMergesTheWholeColumn(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -6049,7 +6569,7 @@ func TestGetMetric_ColumnWindowMergesTheWholeColumn(t *testing.T) {
 	p95 := func(target int64, timeRange store.TimeRange, atTimestamp *int64) float64 {
 		t.Helper()
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, id, timeRange,
+			return metrics.GetMetricView(ctx, db, id, timeRange,
 				target, nil, []float64{0.95}, 0, 0, 0, nil, "", nil, 0)
 
 		})
@@ -6075,7 +6595,7 @@ func TestGetMetric_ColumnWindowMergesTheWholeColumn(t *testing.T) {
 
 	// Find a column boundary the way the UI does: the heatmap's own grid.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, id, store.TimeRange{},
+		return metrics.GetMetricView(ctx, db, id, store.TimeRange{},
 			100, nil, nil, 0, 0, 0, nil, "", nil, 0)
 
 	})
@@ -6127,7 +6647,7 @@ func TestGetMetric_ColumnWindowMergesTheWholeColumn(t *testing.T) {
 	perColumn := columnWidth / (10 * int64(time.Second)) // readings inside one column
 	require.Positive(t, perColumn)
 	raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, id, store.BoundedTimeRange(columnStart, columnEnd),
+		return metrics.GetMetricView(ctx, db, id, store.BoundedTimeRange(columnStart, columnEnd),
 			1, nil, nil, 0, 0, 0, nil, "", nil, 0)
 
 	})
@@ -6189,7 +6709,7 @@ func TestHistogramBoundsAreStoredOnce(t *testing.T) {
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
+		return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
 			0, nil, nil, 0, 0, 0, nil, "", nil, 0)
 
 	})
@@ -6317,7 +6837,7 @@ func TestIngest_SingleBucketHistogram(t *testing.T) {
 	require.Len(t, summaries, 1, "the metric must be readable after ingest")
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
+		return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(
 			base.Add(-time.Hour).UnixNano(), base.Add(time.Hour).UnixNano()),
 
 			0, nil, nil, 0, 0, 0, nil, "", nil, 0)
@@ -6402,20 +6922,8 @@ func TestIngest_NilArraysReachingTheAppender(t *testing.T) {
 	})
 }
 
-// TestMetricMetadataRoundTrip pins OTLP's Metric.metadata through the store.
-//
-// It was the last field of any signal that arrived and was discarded: a
-// systematic diff of pdata's getters against the schema found nothing else
-// missing once span and link flags landed. Metadata describes the instrument
-// -- not the labels that identify a series -- so it lives on metric_ingests
-// beside description, which varies per batch for the same reason.
-//
-// The scope matters as much as the value. Metadata attributes go into the
-// dictionary under their own scope, which is deliberately absent from the
-// allowlist in get_metric_attributes.sql: stored and displayed, but never
-// offered as a search field. That exclusion is asserted here, because the
-// allowlist is the only thing keeping it out and a later edit could widen it
-// without anyone noticing.
+// TestMetricMetadataRoundTrip verifies Metric metadata storage, display, and
+// attribute discovery.
 func TestMetricMetadataRoundTrip(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -6451,25 +6959,17 @@ func TestMetricMetadataRoundTrip(t *testing.T) {
 		"slo":   {"kind": "string", "value": "99.9"},
 	}, pairs)
 
-	// The datapoint's own label must not have leaked into metadata, and vice
-	// versa: they are different maps under different scopes.
+	// Datapoint labels and Metric metadata have separate attribute scopes.
 	require.NotContains(t, pairs, "route")
 
-	// Stored under its own scope...
 	var n int
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRow(`
-			select count(*) from metric_ingests m, unnest(m.metadata_ids) t(id)
+			select count(*) from metric_streams m, unnest(m.metadata_ids) t(id)
 			join attributes a on a.id = t.id`).Scan(&n)
 	}))
 	require.Equal(t, 2, n, "both metadata attributes belong to the metadata scope")
 
-	// ...and discovery offers it under that scope. This assertion used to be
-	// inverted: discovery deliberately hid metadata because the search mapper
-	// had no case for it, and a discovered-but-unsearchable field would have
-	// been a dropdown entry that errors when picked. The mapper handles the
-	// metadata scope now (see TestSearchSummariesByMetricMetadata), so hiding
-	// it would be the dangling half.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetricAttributes(ctx, db)
 	})
@@ -6485,11 +6985,8 @@ func TestMetricMetadataRoundTrip(t *testing.T) {
 	require.True(t, offered, "metadata keys must be offered as searchable: %v", defs)
 }
 
-// Metric.metadata was stored (metric_ingests.metadata_ids) but reachable by
-// no search: the mapper had no "metadata" scope and the discovery query did
-// not list it, so its keys never appeared in the attribute dropdown and a
-// hand-written condition was rejected. Pins the mapper's both paths -- the
-// IDProbe equality fast path and the attr_value fallback -- plus discovery.
+// TestSearchSummariesByMetricMetadata covers metadata equality, general value
+// matching, and attribute discovery.
 func TestSearchSummariesByMetricMetadata(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)

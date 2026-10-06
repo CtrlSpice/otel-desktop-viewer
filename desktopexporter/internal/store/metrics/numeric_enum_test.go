@@ -85,7 +85,7 @@ func TestAggregationTemporalityNumericIdentityAndWireProjection(t *testing.T) {
 			assert.Equal(t, labels[code], summary.AggregationTemporality)
 		}
 		detailRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, summary.ID, store.BoundedTimeRange(0, 10), 100, nil, nil, 0, 100, 100, nil, "UTC", nil, 100)
+			return metrics.GetMetricView(ctx, db, summary.ID, store.BoundedTimeRange(0, 10), 100, nil, nil, 0, 100, 100, nil, "UTC", nil, 100)
 		})
 		require.NoError(t, err)
 		var detail struct {

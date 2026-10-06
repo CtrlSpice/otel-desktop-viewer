@@ -26,8 +26,9 @@ func BenchmarkGetFieldValues(b *testing.B) {
 			}
 			defer s.Close()
 			err = s.WithDBWrite(func(db *sql.DB) error {
-				if _, err := db.Exec(`insert into resources (id, attribute_ids)
-					values ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', [])`); err != nil {
+				if _, err := db.Exec(`insert into resources (id, payload_id, attribute_ids)
+					values ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+						'dddddddd-dddd-dddd-dddd-dddddddddddd', [])`); err != nil {
 					return err
 				}
 				if _, err := db.Exec(`insert into scopes (id, name, version, attribute_ids)

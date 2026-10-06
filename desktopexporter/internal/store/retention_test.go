@@ -14,6 +14,7 @@ import (
 // on spans and logs, so every fixture needs a real row to point at.
 const (
 	seedResourceID = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+	seedPayloadID  = "dddddddd-dddd-dddd-dddd-dddddddddddd"
 	seedScopeID    = "ffffffff-ffff-ffff-ffff-ffffffffffff"
 )
 
@@ -21,8 +22,9 @@ const (
 func seedOwners(t *testing.T, s *Store) {
 	t.Helper()
 	_, err := s.db.Exec(`
-		insert into resources (id, attribute_ids) values (?::uuid, []::uuid[])
-		on conflict do nothing`, seedResourceID)
+		insert into resources (id, payload_id, attribute_ids)
+		values (?::uuid, ?::uuid, []::uuid[])
+		on conflict do nothing`, seedResourceID, seedPayloadID)
 	require.NoError(t, err)
 	_, err = s.db.Exec(`
 		insert into scopes (id, name, version, attribute_ids)
@@ -121,28 +123,27 @@ func seedLogs(t *testing.T, s *Store, n int) {
 	require.NoError(t, err)
 }
 
-// seedDatapoints inserts n datapoints for the given stream/ingest pair with
-// timestamp = startTime + i * 1ms.
-func seedDatapoints(t *testing.T, s *Store, streamID, ingestID string, n int, startTime int64) {
+// seedDatapoints inserts n datapoints with timestamp = startTime + i * 1ms.
+func seedDatapoints(t *testing.T, s *Store, streamID, _ string, n int, startTime int64) {
 	t.Helper()
-	_, err := s.db.Exec(`insert into metric_streams (id, name, metric_type) values (?, 'metric-' || ?, 'Gauge') on conflict do nothing`, streamID, streamID)
-	require.NoError(t, err)
 	seedOwners(t, s)
-	_, err = s.db.Exec(`insert into metric_ingests (id, stream_id, resource_id, scope_id) values (?, ?, ?::uuid, ?::uuid)`,
-		ingestID, streamID, seedResourceID, seedScopeID)
+	_, err := s.db.Exec(`insert into metric_streams
+		(id, resource_id, resource_payload_id, scope_id, name, metric_type)
+		values (?, ?::uuid, ?::uuid, ?::uuid, 'metric-' || ?, 'Gauge') on conflict do nothing`,
+		streamID, seedResourceID, seedPayloadID, seedScopeID, streamID)
 	require.NoError(t, err)
 	// datapoints.series_id is a NOT NULL foreign key, so the series has to
 	// exist before its points. One series per stream is enough here -- these
 	// tests are about pruning by time, not about series identity.
 	_, err = s.db.Exec(`
-		insert into metric_series (id, stream_id, resource_id, attribute_ids)
-		values (?::uuid, ?::uuid, ?::uuid, []::uuid[]) on conflict do nothing`,
-		streamID, streamID, seedResourceID)
+		insert into metric_series (id, stream_id, attribute_ids)
+		values (?::uuid, ?::uuid, []::uuid[]) on conflict do nothing`,
+		streamID, streamID)
 	require.NoError(t, err)
 	_, err = s.db.Exec(`
-		insert into datapoints (id, stream_id, series_id, metric_ingest_id, timestamp, double_value, value_type, attribute_ids)
-		select uuid(), ?::uuid, ?::uuid, ?::uuid, ? + range * 1000000, range, 'double', []::uuid[]
-		from range(?)`, streamID, streamID, ingestID, startTime, n)
+		insert into datapoints (id, stream_id, series_id, timestamp, double_value, value_type, attribute_ids)
+		select uuid(), ?::uuid, ?::uuid, ? + range * 1000000, range, 'double', []::uuid[]
+		from range(?)`, streamID, streamID, startTime, n)
 	require.NoError(t, err)
 }
 
@@ -234,7 +235,7 @@ func TestEnforceRetentionPrunesOldest(t *testing.T) {
 	assert.Zero(t, dangling, "pruning must never leave a span pointing at a missing attribute")
 }
 
-func TestEnforceRetentionSweepsOrphanedMetricIdentity(t *testing.T) {
+func TestEnforceRetentionRetainsGeneratedMetricIdentity(t *testing.T) {
 	ctx := context.Background()
 	s, err := NewStore(ctx, "", zap.NewNop())
 	require.NoError(t, err)
@@ -252,14 +253,20 @@ func TestEnforceRetentionSweepsOrphanedMetricIdentity(t *testing.T) {
 
 	require.NoError(t, s.EnforceRetention(ctx, 1))
 
-	var oldStreams, oldIngests, liveStreams int64
+	var oldStreams, oldSeries, liveStreams int64
 	require.NoError(t, s.db.QueryRow(`select count(*) from metric_streams where id = ?::uuid`, oldStream).Scan(&oldStreams))
-	require.NoError(t, s.db.QueryRow(`select count(*) from metric_ingests where id = ?::uuid`, oldIngest).Scan(&oldIngests))
+	require.NoError(t, s.db.QueryRow(`select count(*) from metric_series where id = ?::uuid`, oldStream).Scan(&oldSeries))
 	require.NoError(t, s.db.QueryRow(`select count(*) from metric_streams where id = ?::uuid`, liveStream).Scan(&liveStreams))
 
-	assert.Zero(t, oldStreams, "fully-pruned stream should be swept")
-	assert.Zero(t, oldIngests, "ingest with no remaining datapoints should be swept")
+	assert.Equal(t, int64(1), oldStreams, "generated stream id must survive full pruning")
+	assert.Equal(t, int64(1), oldSeries, "generated series id must survive full pruning")
 	assert.Equal(t, int64(1), liveStreams, "stream with surviving datapoints must remain")
+
+	var activeStreams, activeSeries int64
+	require.NoError(t, s.db.QueryRow(`select count(distinct stream_id) from datapoints`).Scan(&activeStreams))
+	require.NoError(t, s.db.QueryRow(`select count(distinct series_id) from datapoints`).Scan(&activeSeries))
+	assert.Equal(t, int64(1), activeStreams, "retained identity-only streams must not count as active")
+	assert.Equal(t, int64(1), activeSeries, "retained identity-only series must not count as active")
 }
 
 func TestEnforceRetentionDisabled(t *testing.T) {

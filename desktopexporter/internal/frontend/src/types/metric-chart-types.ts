@@ -83,9 +83,8 @@ export type ChartTimeseries = {
  */
 export type LegendTimeseries = {
   /** Stable identifier for this series, used as the bind key. This is
-   * `MetricTimeseries.attributesKey`, which is now the series id --
-   * content-derived from the stream, originating resource attributes, and
-   * datapoint labels rather than a rendering of the labels. The same id covers Gauge/Sum, Histogram and
+   * `MetricTimeseries.attributesKey`, which is now the opaque database-local
+   * series id rather than a rendering of the labels. The same id covers Gauge/Sum, Histogram and
    * ExponentialHistogram, so one legend implementation serves all of them. */
   key: string
   /** Attributes that distinguish this timeseries from siblings. May

@@ -68,8 +68,8 @@ export function rateBucketStartForSourceDatapoint(
  */
 export function timeseriesToChartTimeseries(
   timeseries: MetricTimeseries[],
-  /** How to name a series for a human. `attributesKey` is a content-derived id,
-   *  so it identifies a line but cannot label one -- a tooltip showing it reads
+  /** How to name a series for a human. `attributesKey` is an opaque id, so it
+   *  identifies a line but cannot label one -- a tooltip showing it reads
    *  as a uuid. Resolving the label needs every series of the metric (to know
    *  which resource attributes distinguish them), which this function is not
    *  always given, so the caller supplies it. */

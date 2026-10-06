@@ -129,7 +129,7 @@
    *  Each incoming line is labelled "<attributes> · p95", and its key encodes
    *  the same series plus the quantile. Stripping the pill off the label gives
    *  the series' own name, which is what the tooltip and the legend want:
-   *  the key on its own is a content-derived id and reads as a uuid. */
+   *  the key on its own is an opaque id and reads as a uuid. */
   let seriesLabelByKey = $derived.by(() => {
     const out = new Map<string, string>()
     for (const ts of timeseries) {

@@ -300,7 +300,7 @@ func TestMacros_DownscaleExpBuckets(t *testing.T) {
 	// Compose with sum_bucket_vectors: downscale stream A from scale 1 to
 	// scale 0, then merge with stream B (already at scale 0). Verify the
 	// merged bucket counts. Quantiles of a merged result are covered end to
-	// end in metrics_test (TestGetMetric_QuantileHandWorked), through the
+	// end in metrics_test (TestGetMetricView_QuantileHandWorked), through the
 	// aggregate path; the per-bucket assertions above prove downscale's
 	// correctness.
 	t.Run("composes with sum_bucket_vectors", func(t *testing.T) {
@@ -691,7 +691,7 @@ func TestMacros_SumBucketVectors(t *testing.T) {
 	})
 
 	// The end-to-end case that merged two streams and took p50 of the sum
-	// now lives in metrics_test (TestGetMetric_QuantileHandWorked, "aggregate
+	// now lives in metrics_test (TestGetMetricView_QuantileHandWorked, "aggregate
 	// p50 over merged series"), where it runs through the real aggregate
 	// path instead of composing macros by hand.
 }

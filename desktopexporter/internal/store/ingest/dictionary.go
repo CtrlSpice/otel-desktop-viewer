@@ -44,10 +44,11 @@ type Attribute struct {
 	Value string
 }
 
-// Resource is one deduped resource payload: an attribute set plus its dropped
-// count.
+// Resource is one exact Resource payload and schema URL.
 type Resource struct {
 	ID           duckdb.UUID
+	PayloadID    duckdb.UUID
+	SchemaURL    string
 	AttributeIDs []duckdb.UUID
 	Dropped      uint32
 }
@@ -57,6 +58,7 @@ type Scope struct {
 	ID           duckdb.UUID
 	Name         string
 	Version      string
+	SchemaURL    string
 	AttributeIDs []duckdb.UUID
 	Dropped      uint32
 }
@@ -98,35 +100,28 @@ func AttributeID(key, value string) duckdb.UUID {
 	return hashID(key, value)
 }
 
-// ResourceID derives the identity of one received resource payload. Attribute
+// ResourcePayloadID derives the identity of one received resource payload. Attribute
 // ids are canonical typed (key, value) identities sorted by AttributeSet, so
 // map insertion order does not matter while absent attributes, empty values,
 // and values of different OTel types remain distinct. The dropped count is
 // payload too: it records attributes the sender could not include.
-func ResourceID(attributeIDs []duckdb.UUID, dropped uint32) duckdb.UUID {
+func ResourcePayloadID(attributeIDs []duckdb.UUID, dropped uint32) duckdb.UUID {
 	return hashID(uuidsKey(attributeIDs), strconv.FormatUint(uint64(dropped), 10))
 }
 
-// SeriesID derives a timeseries' identity: the stream it belongs to, the
-// originating resource attributes, and its label set.
-//
-// Content-derived like the rest, which is what makes it usable in a URL --
-// the same series gets the same id across restarts and re-ingests, so a link
-// survives in a way one built on a minted datapoint id cannot.
-//
-// Resource droppedAttributesCount is diagnostic payload metadata, not an
-// originating attribute, so it deliberately does not participate. Two metric
-// ingests may therefore retain distinct resource payload rows while sharing a
-// semantic series when only their dropped counts differ.
-func SeriesID(streamID duckdb.UUID, resourceAttributeIDs, attributeIDs []duckdb.UUID) duckdb.UUID {
-	return hashID(formatUUID(streamID), uuidsKey(resourceAttributeIDs), uuidsKey(attributeIDs))
+// ResourceID adds the Resource wrapper's schema URL to its payload identity.
+func ResourceID(payloadID duckdb.UUID, schemaURL string) duckdb.UUID {
+	return hashID(uuidString(payloadID), schemaURL)
 }
 
-// ScopeID derives a scope's identity. Name and version participate because two
-// instrumentation libraries with identical (empty) attribute sets are still
-// different scopes.
-func ScopeID(name, version string, attributeIDs []duckdb.UUID, dropped uint32) duckdb.UUID {
-	return hashID(name, version, uuidsKey(attributeIDs), strconv.FormatUint(uint64(dropped), 10))
+type ResourceRef struct {
+	ID        duckdb.UUID
+	PayloadID duckdb.UUID
+}
+
+// ScopeID derives a scope payload's identity from every retained field.
+func ScopeID(name, version, schemaURL string, attributeIDs []duckdb.UUID, dropped uint32) duckdb.UUID {
+	return hashID(name, version, schemaURL, uuidsKey(attributeIDs), strconv.FormatUint(uint64(dropped), 10))
 }
 
 func uuidsKey(ids []duckdb.UUID) string {
@@ -321,23 +316,28 @@ func (d *Dictionary) AddBounds(bounds []float64) duckdb.UUID {
 	return id
 }
 
-// AddResource records a resource and returns its id.
-func (d *Dictionary) AddResource(res pcommon.Resource) duckdb.UUID {
+// AddResource records an exact Resource and returns its exact and payload ids.
+func (d *Dictionary) AddResource(res pcommon.Resource, schemaURL string) ResourceRef {
 	ids := d.AddAttributes(res.Attributes(), ScopeResource)
 	dropped := res.DroppedAttributesCount()
-	id := ResourceID(ids, dropped)
-	d.resources[id] = Resource{ID: id, AttributeIDs: ids, Dropped: dropped}
-	return id
+	payloadID := ResourcePayloadID(ids, dropped)
+	id := ResourceID(payloadID, schemaURL)
+	d.resources[id] = Resource{
+		ID: id, PayloadID: payloadID, SchemaURL: schemaURL,
+		AttributeIDs: ids, Dropped: dropped,
+	}
+	return ResourceRef{ID: id, PayloadID: payloadID}
 }
 
 // AddScope records an instrumentation scope and returns its id.
-func (d *Dictionary) AddScope(scope pcommon.InstrumentationScope) duckdb.UUID {
+func (d *Dictionary) AddScope(scope pcommon.InstrumentationScope, schemaURL string) duckdb.UUID {
 	ids := d.AddAttributes(scope.Attributes(), ScopeScope)
-	id := ScopeID(scope.Name(), scope.Version(), ids, scope.DroppedAttributesCount())
+	id := ScopeID(scope.Name(), scope.Version(), schemaURL, ids, scope.DroppedAttributesCount())
 	d.scopes[id] = Scope{
 		ID:           id,
 		Name:         scope.Name(),
 		Version:      scope.Version(),
+		SchemaURL:    schemaURL,
 		AttributeIDs: ids,
 		Dropped:      scope.DroppedAttributesCount(),
 	}
@@ -449,27 +449,32 @@ func (d *Dictionary) flushBounds(ctx context.Context, conn driver.Conn) error {
 		})
 }
 
-const resourcesUpsert = `insert into resources (id, attribute_ids, dropped_attributes_count)
-	select unnest(?::varchar[])::uuid, unnest(?::varchar[][])::uuid[], unnest(?::uinteger[])
+const resourcesUpsert = `insert into resources (id, payload_id, schema_url, attribute_ids, dropped_attributes_count)
+	select unnest(?::varchar[])::uuid, unnest(?::varchar[])::uuid,
+	       unnest(?::varchar[]), unnest(?::varchar[][])::uuid[], unnest(?::uinteger[])
 	on conflict (id) do nothing`
 
 func (d *Dictionary) flushResources(ctx context.Context, conn driver.Conn) error {
 	return flushRows(ctx, conn, d.flushed, d.resources, resourcesUpsert, "resources",
 		func(rows map[duckdb.UUID]Resource) []any {
 			ids := make([]string, 0, len(rows))
+			payloadIDs := make([]string, 0, len(rows))
+			schemaURLs := make([]string, 0, len(rows))
 			attributeIDs := make([][]string, 0, len(rows))
 			dropped := make([]uint32, 0, len(rows))
 			for _, r := range rows {
 				ids = append(ids, formatUUID(r.ID))
+				payloadIDs = append(payloadIDs, formatUUID(r.PayloadID))
+				schemaURLs = append(schemaURLs, r.SchemaURL)
 				attributeIDs = append(attributeIDs, formatUUIDs(r.AttributeIDs))
 				dropped = append(dropped, r.Dropped)
 			}
-			return []any{ids, attributeIDs, dropped}
+			return []any{ids, payloadIDs, schemaURLs, attributeIDs, dropped}
 		})
 }
 
-const scopesUpsert = `insert into scopes (id, name, version, attribute_ids, dropped_attributes_count)
-	select unnest(?::varchar[])::uuid, unnest(?::varchar[]), unnest(?::varchar[]), unnest(?::varchar[][])::uuid[], unnest(?::uinteger[])
+const scopesUpsert = `insert into scopes (id, name, version, schema_url, attribute_ids, dropped_attributes_count)
+	select unnest(?::varchar[])::uuid, unnest(?::varchar[]), unnest(?::varchar[]), unnest(?::varchar[]), unnest(?::varchar[][])::uuid[], unnest(?::uinteger[])
 	on conflict (id) do nothing`
 
 func (d *Dictionary) flushScopes(ctx context.Context, conn driver.Conn) error {
@@ -478,16 +483,18 @@ func (d *Dictionary) flushScopes(ctx context.Context, conn driver.Conn) error {
 			ids := make([]string, 0, len(rows))
 			names := make([]string, 0, len(rows))
 			versions := make([]string, 0, len(rows))
+			schemaURLs := make([]string, 0, len(rows))
 			attributeIDs := make([][]string, 0, len(rows))
 			dropped := make([]uint32, 0, len(rows))
 			for _, sc := range rows {
 				ids = append(ids, formatUUID(sc.ID))
 				names = append(names, sc.Name)
 				versions = append(versions, sc.Version)
+				schemaURLs = append(schemaURLs, sc.SchemaURL)
 				attributeIDs = append(attributeIDs, formatUUIDs(sc.AttributeIDs))
 				dropped = append(dropped, sc.Dropped)
 			}
-			return []any{ids, names, versions, attributeIDs, dropped}
+			return []any{ids, names, versions, schemaURLs, attributeIDs, dropped}
 		})
 }
 

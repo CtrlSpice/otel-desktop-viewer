@@ -136,7 +136,8 @@ func TestSequencesAssignShortKeys(t *testing.T) {
 		"22222222-2222-2222-2222-222222222222",
 		"33333333-3333-3333-3333-333333333333",
 	} {
-		_, err = db.Exec(`insert into resources (id, attribute_ids) values (?::uuid, ['11111111-1111-1111-1111-111111111111']::uuid[])`, id)
+		_, err = db.Exec(`insert into resources (id, payload_id, attribute_ids)
+			values (?::uuid, gen_random_uuid(), ['11111111-1111-1111-1111-111111111111']::uuid[])`, id)
 		require.NoError(t, err)
 	}
 
@@ -145,13 +146,16 @@ func TestSequencesAssignShortKeys(t *testing.T) {
 	require.NotEqual(t, a, b, "each resource must get its own wire key")
 }
 
-// DuckDB cannot index a LIST, so an attribute_ids index would fail at startup.
-// Pin that none is attempted -- it is the constraint behind several design
-// choices and an easy one to forget.
+// DuckDB cannot index a LIST directly. Casting the complete list to VARCHAR is
+// allowed because it retains every element while giving the index a scalar key.
 func TestNoIndexOnArrayColumns(t *testing.T) {
 	for _, stmt := range queries.Indexes() {
-		require.NotContains(t, stmt.SQL, "attribute_ids",
-			"DuckDB cannot index a LIST column; this would fail at store open")
+		require.NotContains(t, stmt.SQL, "(attribute_ids)",
+			"DuckDB cannot index a LIST column directly; this would fail at store open")
+		require.NotContains(t, stmt.SQL, "(resource_attribute_ids)",
+			"DuckDB cannot index a LIST column directly; this would fail at store open")
+		require.NotContains(t, stmt.SQL, "(scope_attribute_ids)",
+			"DuckDB cannot index a LIST column directly; this would fail at store open")
 	}
 }
 

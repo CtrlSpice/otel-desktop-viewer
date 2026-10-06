@@ -55,11 +55,7 @@ func TestSchemaCoversOTLP(t *testing.T) {
 	// Fields whose value lives in a shape the name cannot find: a different
 	// table, or columns spelled nothing like the field.
 	//
-	// Each entry names the table and column that must exist. That is the whole
-	// point -- an exception that merely skipped the field would turn this test
-	// off for it, which is exactly the bug it is meant to catch. Verified: a
-	// first draft listed Metadata as a comment string, and deleting
-	// metric_ingests.metadata_ids still passed.
+	// Each entry names a table and column that must exist.
 	type storedAt struct{ table, column string }
 	elsewhere := map[string]storedAt{
 		"NumberDataPoint.Exemplars":               {"exemplars", "datapoint_id"},
@@ -106,9 +102,6 @@ func TestSchemaCoversOTLP(t *testing.T) {
 	// is no table to check it against. Listing it here with an excuse would
 	// have hidden that. Filed separately.
 	//
-	// A pdata message can map to more than one table: a Metric's identity is
-	// metric_streams while its per-batch fields (description, metadata) are on
-	// metric_ingests, and both are "stored".
 	cases := []struct {
 		what   string // bare pdata type name, used to key the maps above
 		val    any
@@ -122,7 +115,7 @@ func TestSchemaCoversOTLP(t *testing.T) {
 		{"HistogramDataPoint", pmetric.NewHistogramDataPoint(), []string{"datapoints"}},
 		{"ExponentialHistogramDataPoint", pmetric.NewExponentialHistogramDataPoint(), []string{"datapoints"}},
 		{"Exemplar", pmetric.NewExemplar(), []string{"exemplars"}},
-		{"Metric", pmetric.NewMetric(), []string{"metric_streams", "metric_ingests"}},
+		{"Metric", pmetric.NewMetric(), []string{"metric_streams"}},
 	}
 
 	// Fields OTLP defines that this store does not keep, on purpose.

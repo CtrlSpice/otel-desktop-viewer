@@ -362,27 +362,10 @@ export type JsonSeriesRateStats = {
 }
 
 export type JsonMetricTimeseries = {
-  /**
-   * The series id: content-derived from (stream, originating resource
-   * attributes, datapoint labels).
-   *
-   * Was the canonical "key=value|..." rendering of the labels, which could not
-   * survive series splitting by resource -- two replicas of one service have
-   * byte-identical labels and so produced colliding keys. It is also stable
-   * across restarts and retention, which the old key was not, so it can be put
-   * in a URL.
-   */
+  /** Generated database-local series reference. */
   attributesKey: string
   attributes: JsonAttribute[]
-  /**
-   * Identifying originating resource attributes for this series.
-   *
-   * Load-bearing once series split by resource: when two replicas produce
-   * identical labels, this is the only thing that tells them apart. The reused
-   * resource shape always carries droppedAttributesCount 0: dropped count is
-   * exact only on JsonMetricData.resource, which describes the representative
-   * ingest selected for the response.
-   */
+  /** Resource associated with the parent Metric. */
   resource: JsonResourceData
   datapoints: JsonDataPoint[]
   /** Server-computed stats over the whole window; null for histograms. */
@@ -415,7 +398,7 @@ export type JsonSparklinePoint = {
   value: JsonDouble
 }
 
-export type JsonMetricData = {
+export type JsonMetricViewData = {
   /** The window's most recent datapoint across every series, ns as a string.
    *  Independent of which series shipped datapoints. */
   lastSeenNs: string | null
@@ -425,10 +408,8 @@ export type JsonMetricData = {
   description: string
   /**
    * OTLP Metric.metadata: an attribute map describing the instrument itself,
-   * not the labels that identify a series. Coalesced to [] server-side.
-   *
-   * Read from the same representative ingest description comes from, since
-   * both are per-batch rather than part of stream identity.
+   * not the labels that identify a series. This is the latest received value.
+   * Coalesced to [] server-side.
    */
   metadata: JsonAttribute[]
   unit: string
@@ -437,11 +418,14 @@ export type JsonMetricData = {
   // metricType, so its derived label is null rather than "Unspecified".
   aggregationTemporalityCode: number | null
   aggregationTemporality: string | null
-  isMonotonic: boolean
+  isMonotonic: boolean | null
   resourceDroppedAttributesCount: number
+  /** Latest received ResourceMetrics schema URL for this Metric. */
+  resourceSchemaUrl: string
   resource: JsonResourceData
   scopeName: string
   scopeVersion: string
+  scopeSchemaUrl: string
   scopeDroppedAttributesCount: number
   scope: JsonScopeData
   timeseries: JsonMetricTimeseries[]
@@ -489,14 +473,114 @@ export type JsonScalarAggregate = {
   all: JsonScalarViewBucket[]
 }
 
-/** What getMetricAggregate returns: one envelope serving both metric shapes,
+/** What getMetricAggregateView returns: one envelope serving both metric shapes,
  *  each field null or empty on the shape it does not apply to. */
-export type JsonMetricAggregateEnvelope = {
+export type JsonMetricAggregateViewData = {
   aggregate: JsonAggregateBucket[] | null
   scalarAggregate: JsonScalarAggregate | null
 }
 
-/** @derived Cross-series histogram view computed by get_metric.sql. The store
+export type JsonExactMetricResource = {
+  attributes: JsonAttribute[]
+  droppedAttributesCount: number
+  schemaUrl: string
+}
+
+export type JsonExactMetricScope = {
+  name: string
+  version: string
+  attributes: JsonAttribute[]
+  droppedAttributesCount: number
+  schemaUrl: string
+}
+
+type JsonExactMetricIdentityBase = {
+  metricRef: string
+  name: string
+  description: string
+  unit: string
+  metadata: JsonAttribute[]
+  resource: JsonExactMetricResource
+  scope: JsonExactMetricScope
+}
+
+export type JsonExactMetricIdentity = JsonExactMetricIdentityBase &
+  (
+    | { metricType: 'Gauge' }
+    | {
+        metricType: 'Sum'
+        aggregationTemporalityCode: number
+        isMonotonic: boolean
+      }
+    | {
+        metricType: 'Histogram' | 'ExponentialHistogram'
+        aggregationTemporalityCode: number
+      }
+  )
+
+export type JsonMetricSeriesSummary = {
+  seriesRef: string
+  attributes: JsonAttribute[]
+  /** Computed count of retained datapoints in this series. */
+  datapointCount: string
+  /** Computed earliest received datapoint timestamp, or null with no points. */
+  firstDatapointTimestamp: string | null
+  /** Computed latest received datapoint timestamp, or null with no points. */
+  lastDatapointTimestamp: string | null
+}
+
+export type JsonExactMetric = JsonExactMetricIdentity & {
+  series: JsonMetricSeriesSummary[]
+}
+
+type JsonReceivedDataPointBase = {
+  datapointID: string
+  timestamp: string
+  startTime: string
+  flags: number
+  exemplars: JsonExemplar[]
+}
+
+export type JsonReceivedNumberDataPoint = JsonReceivedDataPointBase &
+  (
+    | { valueType: 'Int'; intValue: string; doubleValue: null }
+    | { valueType: 'Double'; intValue: null; doubleValue: JsonDouble }
+    | { valueType: 'Empty'; intValue: null; doubleValue: null }
+  )
+
+export type JsonReceivedHistogramDataPoint = JsonReceivedDataPointBase & {
+  count: string
+  sum?: JsonDouble
+  min?: JsonDouble
+  max?: JsonDouble
+  bucketCounts: string[]
+  explicitBounds: JsonDouble[]
+}
+
+export type JsonReceivedExponentialHistogramDataPoint =
+  JsonReceivedDataPointBase & {
+    count: string
+    sum?: JsonDouble
+    min?: JsonDouble
+    max?: JsonDouble
+    scale: number
+    zeroCount: string
+    zeroThreshold: JsonDouble
+    positive: { offset: number; bucketCounts: string[] }
+    negative: { offset: number; bucketCounts: string[] }
+  }
+
+export type JsonExactMetricSeries = JsonExactMetricIdentity & {
+  seriesRef: string
+  attributes: JsonAttribute[]
+  datapoints: (
+    | JsonReceivedNumberDataPoint
+    | JsonReceivedHistogramDataPoint
+    | JsonReceivedExponentialHistogramDataPoint
+  )[]
+}
+
+/** @derived Cross-series histogram view computed by get_metric_view.sql. The store
  * differences cumulative inputs or adds delta inputs within each time bucket,
  * then adds aligned series vectors. Timestamps/start times are epoch ns decimal
  * text. Counts are JSON numbers for charting and can approximate integers past
@@ -537,7 +621,7 @@ export type JsonMetricSummary = {
   aggregationTemporalityCode: number | null
   aggregationTemporality: string | null
   // Explicitly nulled by the projection for every type except Sum --
-  // unlike getMetric, which serves the raw stream column (false for
+  // unlike getMetricView, which serves the raw stream column (false for
   // non-Sums).
   isMonotonic: boolean | null
   serviceName: string

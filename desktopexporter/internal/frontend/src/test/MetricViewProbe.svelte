@@ -6,7 +6,7 @@
   } from '@/contexts/metric-view-context.svelte'
   import type {
     DataPoint,
-    MetricData,
+    MetricViewData,
     ScalarAggregate,
   } from '@/types/api-types'
   import TimeseriesPanel from '@/components/metrics/Detail/TimeseriesPanel.svelte'
@@ -16,7 +16,7 @@
   // tests can observe it through the DOM, and hands the context back so
   // tests can drive it through its public methods.
   type Props = {
-    metric: MetricData | undefined
+    metric: MetricViewData | undefined
     seriesDatapoints?: Readonly<Record<string, DataPoint[]>>
     scalarAggregate?: ScalarAggregate | null
     oncontext?: (ctx: MetricViewContext) => void

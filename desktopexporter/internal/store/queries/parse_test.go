@@ -20,7 +20,7 @@ import (
 // It exists because nothing else checked this. A query is only exercised when
 // some store test happens to execute it, so a malformed one is caught late, by
 // a test whose name has nothing to do with the mistake -- or not at all, if no
-// test covers that path. get_metric.sql is ~700 lines across 30 CTEs, where a
+// test covers that path. get_metric_view.sql is ~700 lines across 30 CTEs, where a
 // CTE list is comma-separated with a special last element and DuckDB rejects a
 // trailing comma, so inserting a stage means editing its neighbours. Three
 // syntax errors went in that way while the cross-series aggregate was being

@@ -12,7 +12,7 @@
  *   - Everything else is `$derived` from (metric, that cell, time
  *     window). No second source of truth.
  *   - Histogram heatmap / summary are derived client-side from the same
- *     getMetric payload as Gauge/Sum (no bucket-series RPC).
+ *     getMetricView payload as Gauge/Sum (no bucket-series RPC).
  *   - `$effect` is used for: (1) reset per-metric view state when the
  *     metric identity changes; (2) seed / reconcile legend visibility.
  *     Everywhere else is pure derivation.
@@ -25,7 +25,7 @@
 import { createContext, untrack } from 'svelte'
 import { SvelteSet } from 'svelte/reactivity'
 import type {
-  MetricData,
+  MetricViewData,
   MetricTimeseries,
   AggregateBucket,
   MetricType,
@@ -235,7 +235,7 @@ type HistogramAggregationResult = {
 
 export interface MetricViewContext {
   // -- Metric identity / shape --
-  readonly metric: MetricData | undefined
+  readonly metric: MetricViewData | undefined
   readonly metricType: MetricType
   readonly temporality: string
   readonly temporalityCode: number | null
@@ -335,7 +335,7 @@ export interface MetricViewContext {
    * As an effect this ran after the first render, so the chart built once for
    * the outgoing metric's state and again for the incoming one.
    */
-  seedForMetric(metric: MetricData | undefined): void
+  seedForMetric(metric: MetricViewData | undefined): void
   seriesDatapoints(seriesKey: string): DataPoint[] | undefined
   readonly heatmapBucketSeries: HistogramSlicePoint[] | null
   readonly bucketSeriesError: BucketSeriesError | null
@@ -370,7 +370,7 @@ export interface MetricViewContext {
   readonly activeQuantileOverlays: SvelteSet<string>
 
   // -- Detail view wiring --
-  readonly filteredTimeseries: MetricData['timeseries']
+  readonly filteredTimeseries: MetricViewData['timeseries']
   /** Checked timeseries → colour from the stem-rotated pool. Unchecked rows
    *  have no entry; their checkbox uses neutral. */
   readonly timeseriesColorByKey: TimeseriesColorByKey
@@ -480,7 +480,7 @@ export function aggregateToSlices(
 }
 
 export function createMetricViewContext(
-  getMetric: () => MetricData | undefined,
+  getMetric: () => MetricViewData | undefined,
   /**
    * The store's cross-series aggregate for the current legend selection.
    *
@@ -513,7 +513,7 @@ export function createMetricViewContext(
    * step. Reading the per-series bucket that starts where the column starts
    * looks right and is not: a column spans several of them.
    */
-  getColumnDistribution: () => MetricData | undefined = () => undefined
+  getColumnDistribution: () => MetricViewData | undefined = () => undefined
 ): MetricViewContext {
   // The ONE per-metric mutable cell. Reset by the effect below when
   // the metric identity changes; otherwise written only by methods
@@ -765,7 +765,7 @@ export function createMetricViewContext(
   )
 
   function* allDatapoints(
-    m: MetricData | undefined
+    m: MetricViewData | undefined
   ): IterableIterator<DataPoint> {
     if (!m) return
     for (const ts of m.timeseries) {
@@ -1530,7 +1530,7 @@ export function createMetricViewContext(
   // For a reduced histogram those rows are the store's merged buckets, not raw
   // datapoints -- the comment here claimed "raw" and went on claiming it after
   // the merge moved into SQL, because both are `ts.datapoints` and neither the
-  // type nor the shape changed underneath it. MetricData.datapointCount is what
+  // type nor the shape changed underneath it. MetricViewData.datapointCount is what
   // holds the window's real total; on the reference capture the two read 3,094
   // and 17,076.
   const histogramLegendTimeseries = $derived.by((): LegendTimeseries[] => {
@@ -1806,7 +1806,7 @@ export function createMetricViewContext(
    * distinction that only existed because this ran late -- the keys are in the
    * metric the moment it does.
    */
-  function seedForMetric(m: MetricData | undefined) {
+  function seedForMetric(m: MetricViewData | undefined) {
     const streamID = m?.id
 
     pendingUrlDatapoint = null
