@@ -1816,6 +1816,23 @@ func TestSchemaURLsAreStored(t *testing.T) {
 	}))
 	assert.Equal(t, resURL, gotRes, "the resource schema url must survive ingest")
 	assert.Equal(t, scopeURL, gotScope, "the scope schema url must survive ingest")
+
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.SearchSpans(ctx, db, "01000000000000000000000000000000", nil)
+	})
+	require.NoError(t, err)
+	var detail struct {
+		Spans []struct {
+			SpanData struct {
+				ResourceSchemaURL string `json:"resourceSchemaURL"`
+				ScopeSchemaURL    string `json:"scopeSchemaURL"`
+			} `json:"spanData"`
+		} `json:"spans"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &detail))
+	require.Len(t, detail.Spans, 1)
+	assert.Equal(t, resURL, detail.Spans[0].SpanData.ResourceSchemaURL)
+	assert.Equal(t, scopeURL, detail.Spans[0].SpanData.ScopeSchemaURL)
 }
 
 // TestSearchSpansReportsUnplacedSpans covers spans the walk cannot place under
