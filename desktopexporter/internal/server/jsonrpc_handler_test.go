@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -462,6 +463,95 @@ func TestSearchSpans(t *testing.T) {
 		assert.Nil(t, result)
 		assert.Equal(t, ErrTraceNotFound, err)
 	})
+}
+
+func TestGetTraceDetail(t *testing.T) {
+	handler := setupHandlerWithData(t)
+
+	t.Run("named params return complete span and logs", func(t *testing.T) {
+		result, err := handler.Handle(context.Background(), createRequest("getTraceDetail", map[string]any{
+			"traceID": testTraceIDHex,
+		}))
+		require.NoError(t, err)
+		var detail struct {
+			Trace struct {
+				TraceID string `json:"traceID"`
+				Spans   []struct {
+					SpanData map[string]json.RawMessage `json:"spanData"`
+				} `json:"spans"`
+			} `json:"trace"`
+			Logs []map[string]json.RawMessage `json:"logs"`
+		}
+		require.NoError(t, json.Unmarshal(result.(json.RawMessage), &detail))
+		require.Equal(t, testTraceIDHex, detail.Trace.TraceID)
+		require.Len(t, detail.Trace.Spans, 1)
+		require.Contains(t, detail.Trace.Spans[0].SpanData, "resourceSchemaURL")
+		require.Contains(t, detail.Trace.Spans[0].SpanData, "scopeSchemaURL")
+		require.Len(t, detail.Logs, 1)
+		for _, field := range []string{"timestamp", "observedTimestamp", "traceID", "spanID", "body", "attributes", "resource", "scope", "resourceSchemaURL", "scopeSchemaURL", "droppedAttributesCount", "flags", "eventName"} {
+			require.Contains(t, detail.Logs[0], field)
+		}
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		result, err := handler.Handle(context.Background(), createRequest("getTraceDetail", []string{"00000000000000000000000000000099"}))
+		require.Nil(t, result)
+		require.Equal(t, ErrTraceNotFound, err)
+	})
+
+	t.Run("malformed trace ID", func(t *testing.T) {
+		result, err := handler.Handle(context.Background(), createRequest("getTraceDetail", []string{"bad"}))
+		require.Nil(t, result)
+		require.Equal(t, ErrInvalidTraceID, err)
+	})
+
+	t.Run("canceled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		result, err := handler.Handle(ctx, createRequest("getTraceDetail", []string{testTraceIDHex}))
+		require.Nil(t, result)
+		require.Equal(t, ErrRequestCanceled, err)
+	})
+}
+
+func TestGetTraceDetailPreservesFullLogWireValuesAndAssociations(t *testing.T) {
+	handler := setupHandlerWithData(t)
+	const body = `{"kind":"map","value":[{"key":"duplicate","value":{"kind":"int64","value":"-9223372036854775808"}},{"key":"duplicate","value":{"kind":"int64","value":"9223372036854775807"}},{"key":"negative-zero","value":{"kind":"double","value":{"bits":"8000000000000000"}}},{"key":"infinity","value":{"kind":"double","value":{"bits":"7ff0000000000000"}}}]}`
+	require.NoError(t, handler.store.WithDBWrite(func(db *sql.DB) error {
+		if _, err := db.Exec(`update logs set
+			timestamp = 18446744073709551615::ubigint,
+			observed_timestamp = 18446744073709551614::ubigint,
+			span_id = null,
+			body = ?::json,
+			resource_schema_url = 'resource-schema',
+			scope_schema_url = 'scope-schema'`, body); err != nil {
+			return err
+		}
+		_, err := db.Exec(`insert into logs select
+			'00000000-0000-0000-0000-000000000099'::uuid,
+			0::ubigint, 1::ubigint, trace_id, 18446744073709551615::ubigint,
+			severity_text, severity_number, body, resource_id, scope_id,
+			attribute_ids, dropped_attributes_count, flags, event_name, service_name,
+			resource_schema_url, scope_schema_url
+			from logs limit 1`)
+		return err
+	}))
+
+	result, err := handler.Handle(context.Background(), createRequest("getTraceDetail", map[string]any{"traceID": testTraceIDHex}))
+	require.NoError(t, err)
+	var detail struct {
+		Logs []map[string]json.RawMessage `json:"logs"`
+	}
+	require.NoError(t, json.Unmarshal(result.(json.RawMessage), &detail))
+	require.Len(t, detail.Logs, 2)
+	require.JSONEq(t, `"00000000000000000000000000000001"`, string(detail.Logs[0]["traceID"]))
+	require.JSONEq(t, `"ffffffffffffffff"`, string(detail.Logs[0]["spanID"]))
+	require.JSONEq(t, `null`, string(detail.Logs[1]["spanID"]))
+	require.JSONEq(t, body, string(detail.Logs[1]["body"]))
+	require.JSONEq(t, `"18446744073709551615"`, string(detail.Logs[1]["timestamp"]))
+	require.JSONEq(t, `"18446744073709551614"`, string(detail.Logs[1]["observedTimestamp"]))
+	require.JSONEq(t, `"resource-schema"`, string(detail.Logs[1]["resourceSchemaURL"]))
+	require.JSONEq(t, `"scope-schema"`, string(detail.Logs[1]["scopeSchemaURL"]))
 }
 
 func TestClearTraces(t *testing.T) {

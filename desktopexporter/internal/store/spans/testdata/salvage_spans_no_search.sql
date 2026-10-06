@@ -156,7 +156,8 @@
 			select st.depth, st.sort_path, st.salvaged, st.cycle_point,
 				s.span_id, s.parent_span_id, s.trace_id, s.trace_state, s.name, s.kind,
 				s.flags,
-				s.start_time, s.end_time, s.resource_id, s.scope_id, s.attribute_ids,
+				s.start_time, s.end_time, s.resource_id, s.scope_id,
+				s.resource_schema_url, s.scope_schema_url, s.attribute_ids,
 				s.dropped_attributes_count, s.dropped_events_count, s.dropped_links_count,
 				s.status_code, s.status_message
 			from walked st

@@ -120,6 +120,8 @@ const (
 	GetLogOTLP Name = "logs/get_log_otlp.sql"
 	// GetTraceLogs returns lightweight summaries for every log in one trace.
 	GetTraceLogs Name = "logs/get_trace_logs.sql"
+	// GetTraceLogDetails returns full detail for every log in one trace.
+	GetTraceLogDetails Name = "logs/get_trace_log_details.sql"
 	// GetLogAttributes lists the attribute keys logs carry.
 	GetLogAttributes Name = "logs/get_log_attributes.sql"
 
@@ -134,7 +136,7 @@ const (
 var queryNames = []Name{
 	SearchSpans, SalvageSpans, SearchTraces, GetTraceOTLP,
 	GetMetric, GetMetricOTLP, GetMetricAttributes,
-	GetLog, GetLogOTLP, GetTraceLogs, GetLogAttributes,
+	GetLog, GetLogOTLP, GetTraceLogs, GetTraceLogDetails, GetLogAttributes,
 	SearchMetricSummaries, SearchLogs,
 }
 

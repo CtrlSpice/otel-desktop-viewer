@@ -40,6 +40,7 @@ import (
 var methodParamNames = map[string][]string{
 	"searchTraces":          {"startTime", "endTime", "query", "limit", "sort"},
 	"searchSpans":           {"traceID", "query"},
+	"getTraceDetail":        {"traceID"},
 	"searchLogs":            {"startTime", "endTime", "query", "limit", "sort"},
 	"getTraceLogs":          {"traceID"},
 	"getLog":                {"logID"},

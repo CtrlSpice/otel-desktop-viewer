@@ -78,6 +78,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.searchTraces(ctx, req)
 	case "searchSpans":
 		return h.searchSpans(ctx, req)
+	case "getTraceDetail":
+		return h.getTraceDetail(ctx, req)
 	case "searchLogs":
 		return h.searchLogs(ctx, req)
 	case "getTraceLogs":
@@ -178,6 +180,30 @@ func (h *JSONRPCHandler) searchSpans(ctx context.Context, req *jsonrpc2.Request)
 
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.SearchSpans(ctx, db, traceID, query)
+	})
+}
+
+func (h *JSONRPCHandler) getTraceDetail(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	traceID, err := parseSingleIDParam(req.Params, ErrInvalidTraceID, normalizeUUID)
+	if err != nil {
+		return nil, err
+	}
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
+		trace, err := spans.SearchSpans(ctx, db, traceID, nil)
+		if err != nil {
+			return nil, err
+		}
+		traceLogs, err := logs.GetTraceDetails(ctx, db, traceID)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]byte, 0, len(trace)+len(traceLogs)+20)
+		result = append(result, `{"trace":`...)
+		result = append(result, trace...)
+		result = append(result, `,"logs":`...)
+		result = append(result, traceLogs...)
+		result = append(result, '}')
+		return json.RawMessage(result), nil
 	})
 }
 
