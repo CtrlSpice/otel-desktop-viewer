@@ -152,6 +152,54 @@ ORDER BY owning_span_count DESC, a.key, value_kind"
 This counts recent spans that own each key and received value kind. It does not
 count resource, scope, event, link, log, datapoint, or exemplar ownership.
 
+To inspect common values for one exact span-attribute key, replace
+`http.request.method` below. The one-hour predicate is the telemetry scope. The
+denominator is the number of spans in that scope that own the key, not all recent
+spans and not dictionary rows. `owning_span_count` is exact;
+`relative_frequency` is the derived count divided by that denominator and uses
+`DOUBLE`. Keeping both `value_kind` and the complete `tagged_value` preserves the
+received value kind and representation.
+
+```sh
+otel-desktop-viewer query --limit 10 "
+WITH owned_values AS (
+  SELECT
+    s.trace_id,
+    s.span_id,
+    json_extract_string(a.value, '$.kind') AS value_kind,
+    a.value AS tagged_value
+  FROM spans AS s
+  CROSS JOIN unnest(s.attribute_ids) AS owned(attribute_id)
+  JOIN attributes AS a ON a.id = owned.attribute_id
+  WHERE s.start_time >= epoch_ns(current_timestamp - INTERVAL '1 hour')
+    AND a.key = 'http.request.method'
+),
+value_counts AS (
+  SELECT
+    value_kind,
+    tagged_value,
+    count(DISTINCT struct_pack(trace_id := trace_id, span_id := span_id))
+      AS owning_span_count
+  FROM owned_values
+  GROUP BY value_kind, tagged_value
+),
+denominator AS (
+  SELECT count(DISTINCT struct_pack(trace_id := trace_id, span_id := span_id))
+    AS owning_span_count
+  FROM owned_values
+)
+SELECT
+  value_kind,
+  tagged_value,
+  value_counts.owning_span_count,
+  value_counts.owning_span_count::DOUBLE /
+    nullif(denominator.owning_span_count, 0)::DOUBLE AS relative_frequency
+FROM value_counts
+CROSS JOIN denominator
+ORDER BY value_counts.owning_span_count DESC, value_kind, tagged_value::VARCHAR
+LIMIT 10"
+```
+
 ## Interpret results
 
 - Treat no rows as a successful query result. Check the endpoint, time

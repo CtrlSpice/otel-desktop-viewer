@@ -15,10 +15,12 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/query"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.uber.org/zap"
 )
 
@@ -243,6 +245,71 @@ func TestExecuteReturnsIngestedNestedTypedValues(t *testing.T) {
 		require.Len(t, result.Rows, 1)
 		assert.Contains(t, string(result.Rows[0][0]), `{"kind":"int64","value":"9007199254740993"}`)
 		assert.JSONEq(t, `{"kind":"int64","value":"9007199254740993"}`, string(result.Rows[0][1]))
+		return nil
+	}))
+}
+
+func TestExecuteCountsCommonTypedSpanAttributeValuesByOwningSpan(t *testing.T) {
+	viewerStore, err := store.NewStore(context.Background(), "", zap.NewNop())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, viewerStore.Close()) })
+
+	telemetry := ptrace.NewTraces()
+	ss := telemetry.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans()
+	for i := 0; i < 4; i++ {
+		span := ss.AppendEmpty()
+		span.SetTraceID(pcommon.TraceID{15: byte(i + 1)})
+		span.SetSpanID(pcommon.SpanID{7: byte(i + 1)})
+		span.SetStartTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+		switch i {
+		case 0, 1:
+			span.Attributes().PutStr("http.request.method", "GET")
+		case 2:
+			span.Attributes().PutStr("http.request.method", "POST")
+		case 3:
+			span.Attributes().PutInt("http.request.method", 7)
+		}
+	}
+	require.NoError(t, viewerStore.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(context.Background(), conn, telemetry, viewerStore.FlushedIDs())
+	}))
+
+	require.NoError(t, viewerStore.WithDBRead(func(db *sql.DB) error {
+		conn, err := db.Conn(context.Background())
+		require.NoError(t, err)
+		defer conn.Close()
+		raw, err := query.Execute(context.Background(), conn, `
+			with owned_values as (
+				select s.trace_id, s.span_id,
+					json_extract_string(a.value, '$.kind') as value_kind,
+					a.value as tagged_value
+				from spans s
+				cross join unnest(s.attribute_ids) owned(attribute_id)
+				join attributes a on a.id = owned.attribute_id
+				where s.start_time >= epoch_ns(current_timestamp - interval '1 hour')
+				  and a.key = 'http.request.method'
+			), value_counts as (
+				select value_kind, tagged_value,
+					count(distinct struct_pack(trace_id := trace_id, span_id := span_id)) as owning_span_count
+				from owned_values group by value_kind, tagged_value
+			), denominator as (
+				select count(distinct struct_pack(trace_id := trace_id, span_id := span_id)) as owning_span_count
+				from owned_values
+			)
+			select value_kind, tagged_value, value_counts.owning_span_count,
+				value_counts.owning_span_count::double /
+					nullif(denominator.owning_span_count, 0)::double as relative_frequency
+			from value_counts cross join denominator
+			order by value_counts.owning_span_count desc, value_kind, tagged_value::varchar
+			limit 10`, 10)
+		require.NoError(t, err)
+		result := decodeResponse(t, raw)
+		require.Len(t, result.Rows, 3)
+		assert.JSONEq(t, `2`, string(result.Rows[0][2]))
+		assert.JSONEq(t, `0.5`, string(result.Rows[0][3]))
+		assert.Contains(t, string(result.Rows[0][1]), `"kind":"string"`)
+		assert.Contains(t, string(raw), `"kind":"int64","value":"7"`)
+		assert.False(t, result.Truncated)
 		return nil
 	}))
 }
