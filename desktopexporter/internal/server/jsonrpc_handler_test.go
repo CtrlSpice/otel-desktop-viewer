@@ -724,6 +724,27 @@ func TestCompactTraceLogsPreservesNullAndDanglingSpanIDs(t *testing.T) {
 	require.Equal(t, "CUSTOM", logs[1].Severity)
 }
 
+func TestLogSeverityLabelUsesReceivedTextOrExactNumberBand(t *testing.T) {
+	for _, tc := range []struct {
+		text, number, want string
+	}{
+		{"CUSTOM", "not-a-number", "CUSTOM"},
+		{"", "0", "UNSPECIFIED"},
+		{"", "1", "TRACE"},
+		{"", "4", "TRACE"},
+		{"", "5", "DEBUG"},
+		{"", "24", "FATAL"},
+		{"", "25", "Unknown (25)"},
+		{"", "-1", "Unknown (-1)"},
+	} {
+		got, err := logSeverityLabel(tc.text, json.Number(tc.number))
+		require.NoError(t, err)
+		require.Equal(t, tc.want, got)
+	}
+	_, err := logSeverityLabel("", json.Number("not-a-number"))
+	require.ErrorContains(t, err, "decode log severity number")
+}
+
 func TestGetSpanResolutionNeverGuesses(t *testing.T) {
 	handler := setupHandler(t)
 	spanID := pcommon.SpanID{7: 42}

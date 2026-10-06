@@ -266,34 +266,44 @@ func compactTraceLogs(raw json.RawMessage) ([]compactTraceLog, error) {
 	}
 	result := make([]compactTraceLog, len(summaries))
 	for i, summary := range summaries {
+		severity, err := logSeverityLabel(summary.SeverityText, summary.SeverityNumber)
+		if err != nil {
+			return nil, err
+		}
 		result[i] = compactTraceLog{
 			Timestamp: summary.Timestamp, SpanID: summary.SpanID,
-			Severity: logSeverityLabel(summary.SeverityText, summary.SeverityNumber),
+			Severity: severity,
 			Service:  summary.ServiceName, EventName: summary.EventName, Body: summary.BodyPreview,
 		}
 	}
 	return result, nil
 }
 
-func logSeverityLabel(text string, number json.Number) string {
+func logSeverityLabel(text string, number json.Number) (string, error) {
 	if text != "" {
-		return text
+		return text, nil
 	}
-	value, _ := number.Int64()
+	value, err := number.Int64()
+	if err != nil {
+		return "", fmt.Errorf("decode log severity number: %w", err)
+	}
 	switch {
-	case value <= 4:
-		return "TRACE"
-	case value <= 8:
-		return "DEBUG"
-	case value <= 12:
-		return "INFO"
-	case value <= 16:
-		return "WARN"
-	case value <= 20:
-		return "ERROR"
-	default:
-		return "FATAL"
+	case value == 0:
+		return "UNSPECIFIED", nil
+	case value >= 1 && value <= 4:
+		return "TRACE", nil
+	case value >= 5 && value <= 8:
+		return "DEBUG", nil
+	case value >= 9 && value <= 12:
+		return "INFO", nil
+	case value >= 13 && value <= 16:
+		return "WARN", nil
+	case value >= 17 && value <= 20:
+		return "ERROR", nil
+	case value >= 21 && value <= 24:
+		return "FATAL", nil
 	}
+	return fmt.Sprintf("Unknown (%d)", value), nil
 }
 
 type spanNotFoundResult struct {
