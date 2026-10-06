@@ -187,12 +187,18 @@
         <FieldGroup
           label="Resource"
           count={metric.resource.attributes.length +
+            (metric.resourceSchemaUrl ? 1 : 0) +
             (metric.resourceDroppedAttributesCount > 0 ? 1 : 0)}
           detail
           bind:open={resourceOpen}
         >
           <table class="detail-fields w-full" aria-label="Resource attributes">
             <tbody>
+              {#if metric.resourceSchemaUrl}<MetricField
+                  fieldName="schema URL"
+                  fieldValue={metric.resourceSchemaUrl}
+                  fieldType="string"
+                />{/if}
               {#if metric.resourceDroppedAttributesCount > 0}
                 <MetricField
                   fieldName="dropped attributes"
@@ -213,6 +219,7 @@
           count={metric.scope.attributes.length +
             (metric.scope.name ? 1 : 0) +
             (metric.scope.version ? 1 : 0) +
+            (metric.scopeSchemaUrl ? 1 : 0) +
             (metric.scopeDroppedAttributesCount > 0 ? 1 : 0)}
           detail
           bind:open={scopeOpen}
@@ -227,6 +234,11 @@
               {#if metric.scope.version}<MetricField
                   fieldName="version"
                   fieldValue={metric.scope.version}
+                  fieldType="string"
+                />{/if}
+              {#if metric.scopeSchemaUrl}<MetricField
+                  fieldName="schema URL"
+                  fieldValue={metric.scopeSchemaUrl}
                   fieldType="string"
                 />{/if}
               {#if metric.scopeDroppedAttributesCount > 0}

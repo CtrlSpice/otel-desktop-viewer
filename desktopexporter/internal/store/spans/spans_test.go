@@ -1778,13 +1778,7 @@ func TestSpans_ServiceNameDenormStaysConsistent(t *testing.T) {
 	assert.Greater(t, joined, 0)
 }
 
-// TestSchemaURLsAreStored pins that the batch-level schema urls survive ingest.
-//
-// They live on the OTLP wrappers -- ResourceSpans.SchemaUrl and
-// ScopeSpans.SchemaUrl -- and NOT on the Resource or InstrumentationScope
-// messages, neither of which has the field. That is why they are columns on
-// spans rather than part of resource or scope identity: the same scope emitted
-// through two pipelines stamping different urls is still one scope.
+// TestSchemaURLsAreStored pins that both wrapper schema URLs survive ingest.
 func TestSchemaURLsAreStored(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -1811,7 +1805,10 @@ func TestSchemaURLsAreStored(t *testing.T) {
 	var gotRes, gotScope string
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRow(
-			`select resource_schema_url, scope_schema_url from spans`,
+			`select r.schema_url, sc.schema_url
+			 from spans sp
+			 join resources r on r.id = sp.resource_id
+			 join scopes sc on sc.id = sp.scope_id`,
 		).Scan(&gotRes, &gotScope)
 	}))
 	assert.Equal(t, resURL, gotRes, "the resource schema url must survive ingest")

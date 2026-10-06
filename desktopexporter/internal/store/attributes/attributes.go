@@ -52,15 +52,15 @@ const searchQuery = `
 		union all select 'log', unnest(attribute_ids) from logs
 		union all select 'datapoint', unnest(attribute_ids) from datapoints
 		union all select 'exemplar', unnest(attribute_ids) from exemplars
-		union all select 'metadata', unnest(metadata_ids) from metric_ingests
+		union all select 'metadata', unnest(metadata_ids) from metric_streams
 		union all select 'resource', unnest(r.attribute_ids) from resources r
 			where exists (select 1 from spans s where s.resource_id = r.id)
 				or exists (select 1 from logs l where l.resource_id = r.id)
-				or exists (select 1 from metric_ingests m where m.resource_id = r.id)
+				or exists (select 1 from metric_streams m where m.resource_id = r.id)
 		union all select 'scope', unnest(sc.attribute_ids) from scopes sc
 			where exists (select 1 from spans s where s.scope_id = sc.id)
 				or exists (select 1 from logs l where l.scope_id = sc.id)
-				or exists (select 1 from metric_ingests m where m.scope_id = sc.id)
+				or exists (select 1 from metric_streams m where m.scope_id = sc.id)
 	)
 
 	select cast(coalesce(to_json(list(json_object(

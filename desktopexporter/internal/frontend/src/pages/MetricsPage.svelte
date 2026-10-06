@@ -91,7 +91,11 @@
   } from '@/contexts/time-context.svelte'
   import { resolveTimezoneName, timezoneOffsetMinutes } from '@/utils/time'
   import { navigateToItem } from '@/route'
-  import type { DataPoint, MetricData, MetricStats } from '@/types/api-types'
+  import type {
+    DataPoint,
+    MetricViewData,
+    MetricStats,
+  } from '@/types/api-types'
   import {
     createSignalListPage,
     type SortOption,
@@ -185,7 +189,7 @@
     },
   })
 
-  let selectedMetric = $state<MetricData | undefined>(undefined)
+  let selectedMetric = $state<MetricViewData | undefined>(undefined)
   let detailLoading = $state(false)
 
   // The store's cross-series merge for the current legend selection. Null
@@ -223,7 +227,7 @@
   // pixels, the quantile lines want enough points not to visibly step. So the
   // only way to answer "what did each series look like in this column" is to
   // ask for that column.
-  let columnDistribution = $state<MetricData | undefined>(undefined)
+  let columnDistribution = $state<MetricViewData | undefined>(undefined)
   let columnToken = 0
 
   createMetricViewContext(
@@ -377,7 +381,7 @@
       const narrowTo = isHistogramMetric ? visibleKeys : null
       const scalarSelected = isHistogramMetric ? [] : visibleKeys
       const [buckets, whole] = await Promise.all([
-        telemetryAPI.getMetricAggregate(
+        telemetryAPI.getMetricAggregateView(
           summary.id,
           startTime,
           endTime,
@@ -385,7 +389,7 @@
           narrowTo,
           quantiles,
           tzOffsetNs(),
-          // The same grid getMetric asked for, or the pooled lines would be
+          // The same grid getMetricView asked for, or the pooled lines would be
           // bucketed against different boundaries than the per-series lines
           // drawn beneath them.
           SCALAR_VIEW_BUCKETS,
@@ -397,14 +401,14 @@
         // Its single field feeds the summary distribution; a Gauge or Sum has
         // no bucket vectors to merge, so the answer is null by construction --
         // the store proves it rather than discovering it, since
-        // aggregateShapeFor drops the merge chain outright for those types.
+        // aggregateViewShapeFor drops the merge chain outright for those types.
         // Asking anyway spent a round trip and a full query plan per legend
         // toggle to be told null, measured at 23ms against a 27ms toggle.
         //
         // The scalar pools do not come from here. They ride on the bucketed
         // call above, which is the one asked for the view grid.
         isHistogramMetric
-          ? telemetryAPI.getMetricAggregate(
+          ? telemetryAPI.getMetricAggregateView(
               summary.id,
               startTime,
               endTime,
@@ -444,7 +448,7 @@
   }
 
   function effectiveMetricBounds(
-    metric: MetricData
+    metric: MetricViewData
   ): { startTime: bigint; endTime: bigint } | null {
     const { startNs, endNs } = metric.window.effective
     if (startNs === null || endNs === null || endNs < startNs) return null
@@ -550,7 +554,7 @@
     if (seriesInFlight.has(requestKey)) return
     seriesInFlight.add(requestKey)
     try {
-      const result = await telemetryAPI.getMetric(
+      const result = await telemetryAPI.getMetricView(
         streamID,
         startTime,
         endTime,
@@ -618,7 +622,7 @@
     columnDistribution = undefined
     void (async () => {
       try {
-        const result = await telemetryAPI.getMetric(
+        const result = await telemetryAPI.getMetricView(
           summary.id,
           // Exact nanoseconds, not milliseconds: the end sits one nanosecond
           // short of the next column, and rounding it would drop the column's
@@ -724,7 +728,7 @@
         ? HEATMAP_BUCKET_TARGET
         : METRIC_BUCKET_TARGET
       const result =
-        (await telemetryAPI.getMetric(
+        (await telemetryAPI.getMetricView(
           summary.id,
           startTime,
           endTime,

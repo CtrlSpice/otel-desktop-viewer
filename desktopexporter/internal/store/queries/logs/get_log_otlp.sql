@@ -47,9 +47,9 @@ converted_attributes as materialized (
 log_documents as (
 	select
 		l.resource_id,
-		l.resource_schema_url,
+		r.schema_url as resource_schema_url,
 		l.scope_id,
-		l.scope_schema_url,
+		sc.schema_url as scope_schema_url,
 		json_merge_patch(
 			json_object(
 				'timeUnixNano', l.timestamp::varchar,
@@ -65,6 +65,8 @@ log_documents as (
 			case when l.span_id is null then json('{}') else json_object('spanId', span_id_wire(l.span_id)) end
 		) as document
 	from selected l
+	join resources r on r.id = l.resource_id
+	join scopes sc on sc.id = l.scope_id
 ),
 scope_data as (
 	select resource_id, resource_schema_url,

@@ -43,7 +43,7 @@ var ownerArrays = []struct{ table, column, scope string }{
 	{"datapoints", "attribute_ids", ingest.ScopeDatapoint},
 	{"metric_series", "attribute_ids", ingest.ScopeDatapoint},
 	{"exemplars", "attribute_ids", ingest.ScopeExemplar},
-	{"metric_ingests", "metadata_ids", ingest.ScopeMetricMetadata},
+	{"metric_streams", "metadata_ids", ingest.ScopeMetricMetadata},
 	{"resources", "attribute_ids", ingest.ScopeResource},
 	{"scopes", "attribute_ids", ingest.ScopeScope},
 }
@@ -81,9 +81,7 @@ func countIn(t *testing.T, s *Store, query string) int {
 	return n
 }
 
-// sharedResource is the same resource for all three signals, so the store ends
-// up with one resources row referenced from spans, logs and metric_ingests --
-// the cross-signal sharing the dictionary exists to make possible.
+// sharedResource is the same Resource for all three signals.
 func sharedResource(res pcommon.Resource) {
 	res.Attributes().PutStr("service.name", "checkout")
 	res.Attributes().PutStr("host.name", "pod-a")
@@ -172,6 +170,51 @@ func ingestAll(t *testing.T, s *Store, seed byte) {
 	}))
 }
 
+func TestResourceSchemaURLIdentityIsSharedAcrossSignals(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s, err := NewStore(ctx, "", zap.NewNop())
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+
+	const sharedURL = "https://example.test/resource/shared"
+	traces := integrityTraces(31)
+	traces.ResourceSpans().At(0).SetSchemaUrl(sharedURL)
+	logData := integrityLogs(32)
+	logData.ResourceLogs().At(0).SetSchemaUrl(sharedURL)
+	metricData := integrityMetrics(33)
+	metricData.ResourceMetrics().At(0).SetSchemaUrl(sharedURL)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+	}))
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, logData, s.FlushedIDs())
+	}))
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, metricData, s.FlushedIDs())
+	}))
+
+	other := integrityTraces(34)
+	other.ResourceSpans().At(0).SetSchemaUrl("https://example.test/resource/other")
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, other, s.FlushedIDs())
+	}))
+
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		var resources, payloads, sharedOwners int
+		require.NoError(t, db.QueryRow(`select count(*), count(distinct payload_id) from resources`).Scan(&resources, &payloads))
+		require.NoError(t, db.QueryRow(`select count(*) from resources r
+			where r.schema_url = ?
+			  and exists (select 1 from spans s where s.resource_id = r.id)
+			  and exists (select 1 from logs l where l.resource_id = r.id)
+			  and exists (select 1 from metric_streams m where m.resource_id = r.id)`, sharedURL).Scan(&sharedOwners))
+		assert.Equal(t, 2, resources)
+		assert.Equal(t, 1, payloads, "schema URL must not alter the Resource payload identity")
+		assert.Equal(t, 1, sharedOwners, "equal payload and URL must share one exact Resource row")
+		return nil
+	}))
+}
+
 func TestDistinctResourcePayloadsStayAttachedAcrossSignals(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -207,7 +250,7 @@ func TestDistinctResourcePayloadsStayAttachedAcrossSignals(t *testing.T) {
 		}{
 			{"span", `select json_extract_string(a.value, '$.value') from spans s join resources r on r.id = s.resource_id, unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id where a.key = 'deployment.environment.name'`, "trace-env"},
 			{"log", `select json_extract_string(a.value, '$.value') from logs l join resources r on r.id = l.resource_id, unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id where a.key = 'deployment.environment.name'`, "log-env"},
-			{"metric", `select json_extract_string(a.value, '$.value') from metric_ingests m join resources r on r.id = m.resource_id, unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id where a.key = 'deployment.environment.name'`, "metric-env"},
+			{"metric", `select json_extract_string(a.value, '$.value') from metric_streams m join resources r on r.id = m.resource_id, unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id where a.key = 'deployment.environment.name'`, "metric-env"},
 		} {
 			var got string
 			require.NoError(t, db.QueryRow(tc.query).Scan(&got), tc.name)
@@ -250,7 +293,7 @@ func TestDictionaryIntegrityAcrossClearAndReingest(t *testing.T) {
 		`select count(*) from resources r
 		 where exists (select 1 from spans s where s.resource_id = r.id)
 		   and exists (select 1 from logs l where l.resource_id = r.id)
-		   and exists (select 1 from metric_ingests mi where mi.resource_id = r.id)`),
+		   and exists (select 1 from metric_streams m where m.resource_id = r.id)`),
 		"the one resource row must be referenced from spans, logs and metrics alike")
 
 	before := countIn(t, s, `select count(*) from attributes`)
@@ -266,7 +309,7 @@ func TestDictionaryIntegrityAcrossClearAndReingest(t *testing.T) {
 	assert.Equal(t, 1, countIn(t, s, `select count(*) from resources`),
 		"the resource is still referenced by logs and metrics, so the sweep must keep it")
 	assert.Equal(t, 1, countIn(t, s, `
-		select count(*) from metric_ingests m, unnest(m.metadata_ids) t(id)
+		select count(*) from metric_streams m, unnest(m.metadata_ids) t(id)
 		join attributes a on a.id = t.id`),
 		"live metric metadata must survive a sweep triggered by clearing another signal")
 	assert.Zero(t, countIn(t, s, `
@@ -392,7 +435,7 @@ func TestSweepInvalidatesDeletedMetricMetadata(t *testing.T) {
 	ingestAll(t, s, 1)
 	before := s.FlushedIDs().Len()
 	require.Equal(t, 1, countIn(t, s, `
-		select count(*) from metric_ingests m, unnest(m.metadata_ids) t(id)
+		select count(*) from metric_streams m, unnest(m.metadata_ids) t(id)
 		join attributes a on a.id = t.id`))
 
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
@@ -404,7 +447,7 @@ func TestSweepInvalidatesDeletedMetricMetadata(t *testing.T) {
 	assert.Less(t, afterSweep, before, "deleted metric dictionary ids must leave the cache")
 	assert.Positive(t, afterSweep, "live trace and log dictionary ids must remain cached")
 	assert.Zero(t, countIn(t, s, `
-		select count(*) from metric_ingests m, unnest(m.metadata_ids) t(id)
+		select count(*) from metric_streams m, unnest(m.metadata_ids) t(id)
 		join attributes a on a.id = t.id`),
 		"metadata with no metric ingest owner must be collected")
 
@@ -413,7 +456,7 @@ func TestSweepInvalidatesDeletedMetricMetadata(t *testing.T) {
 	}))
 	assertNoDanglingRefs(t, s, "after re-ingesting swept metric metadata")
 	assert.Equal(t, 1, countIn(t, s, `
-		select count(*) from metric_ingests m, unnest(m.metadata_ids) t(id)
+		select count(*) from metric_streams m, unnest(m.metadata_ids) t(id)
 		join attributes a on a.id = t.id`),
 		"re-ingest must restore metadata removed by the sweep")
 	assert.Equal(t, before, s.FlushedIDs().Len(),

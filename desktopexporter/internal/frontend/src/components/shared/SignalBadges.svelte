@@ -8,7 +8,7 @@
    * The component is discriminated by `signal` and takes only the
    * primitive facts it needs to render — not the full summary or
    * detail data type. Callers translate from whatever they have on
-   * hand (MetricSummary, MetricData + view ctx, SpanData[], …) into
+   * hand (MetricSummary, MetricViewData + view ctx, SpanData[], …) into
    * the small shape this component expects. Keeps the component
    * decoupled from data sources and easy to use anywhere.
    */

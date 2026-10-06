@@ -104,7 +104,18 @@ package schema
 // Version 17 stores received span kind, span status code, and metric
 // aggregation temporality as their signed int32 protocol values. Version 16
 // rows contain derived labels, which cannot recover unknown numeric values.
-const Version = 17
+// Version 18 makes metric_streams identify one exact OTel Metric from complete
+// Resource attributes, the complete InstrumentationScope tuple, and the
+// identifying Metric descriptor fields. It also removes the now-redundant
+// Resource owner from metric_series and gives streams and series generated,
+// database-scoped IDs resolved through their exact stored keys.
+// Version 19 stores each Metric on one row with direct Resource and Scope
+// references. Metric description, metadata, and Resource schema URL live on
+// that row. Datapoints reference the Metric directly.
+// Version 20 moves Resource schema URL into the shared Resource row and
+// separates exact Resource lookup from the Resource payload key used by Metric
+// identity. Spans, logs, and Metrics reference the shared exact row.
+const Version = 20
 
 // VersionTableQuery creates the version table.
 //
@@ -136,7 +147,7 @@ const (
 		from duckdb_columns() where schema_name = current_schema() and table_name = 'schema_meta'`
 	TelemetryTableExistsQuery = `select count(*) from (
 		select table_name from duckdb_columns()
-		where schema_name = current_schema() and table_name in ('spans', 'logs', 'metric_ingests')
+		where schema_name = current_schema() and table_name in ('spans', 'logs', 'metric_ingests', 'metric_streams')
 		group by table_name
 		having (table_name = 'spans'
 			and count(*) filter (where column_name in ('trace_id', 'span_id')) = 2
@@ -148,5 +159,7 @@ const (
 			and count(*) filter (where column_name in ('scope_id', 'scope_dropped_attributes_count')) = 1)
 		or (table_name = 'metric_ingests'
 			and count(*) filter (where column_name in ('id', 'stream_id')) = 2)
+		or (table_name = 'metric_streams'
+			and count(*) filter (where column_name in ('id', 'name')) = 2)
 	)`
 )

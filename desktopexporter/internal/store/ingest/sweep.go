@@ -3,7 +3,10 @@ package ingest
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"fmt"
+	"io"
 
 	"github.com/duckdb/duckdb-go/v2"
 )
@@ -26,7 +29,7 @@ type ExecContext interface {
 //
 // This is the price of the dictionary: DuckDB cannot put a foreign key into a
 // LIST, so there is no anti-join to run and no refcount to consult. The live set
-// has to be rebuilt by unnesting all ten owner arrays.
+// has to be rebuilt by unnesting every owner array.
 //
 // UNION rather than UNION ALL: the whole point is a distinct set, and letting
 // DuckDB dedupe during the union is cheaper than materialising ~10^6 duplicate
@@ -38,7 +41,7 @@ const liveAttributeIDs = `
 	union select unnest(attribute_ids) from logs
 	union select unnest(attribute_ids) from datapoints
 	union select unnest(attribute_ids) from metric_series
-	union select unnest(metadata_ids) from metric_ingests
+	union select unnest(metadata_ids) from metric_streams
 	union select unnest(attribute_ids) from exemplars
 	union select unnest(attribute_ids) from resources
 	union select unnest(attribute_ids) from scopes`
@@ -67,13 +70,12 @@ var sweepQueries = []string{
 	`delete from resources where id not in (
 		select resource_id from spans
 		union select resource_id from logs
-		union select resource_id from metric_ingests
-		union select resource_id from metric_series
+		union select resource_id from metric_streams
 	) returning id::varchar`,
 	`delete from scopes where id not in (
 		select scope_id from spans
 		union select scope_id from logs
-		union select scope_id from metric_ingests
+		union select scope_id from metric_streams
 	) returning id::varchar`,
 
 	`delete from attributes where id not in (` + liveAttributeIDs + `) returning id::varchar`,
@@ -131,6 +133,47 @@ func SweepOrphans(ctx context.Context, exec ExecContext, flushed *FlushedIDs) er
 			return fmt.Errorf("SweepOrphans: %w: %w", ErrIngestInternal, err)
 		}
 		removed = append(removed, ids...)
+	}
+	flushed.forgetIDs(removed)
+	return nil
+}
+
+// SweepOrphansConn is the driver.Conn form used by ingestion cleanup before the
+// store releases its write connection. It applies the same sweep and cache
+// invalidation as SweepOrphans.
+func SweepOrphansConn(ctx context.Context, conn driver.Conn, flushed *FlushedIDs) error {
+	queryer, ok := conn.(driver.QueryerContext)
+	if !ok {
+		flushed.Forget()
+		return fmt.Errorf("SweepOrphansConn: %w: connection cannot query", ErrIngestInternal)
+	}
+	var removed []duckdb.UUID
+	for _, q := range sweepQueries {
+		rows, err := queryer.QueryContext(ctx, q, nil)
+		if err != nil {
+			flushed.Forget()
+			return fmt.Errorf("SweepOrphansConn: %w: %w", ErrIngestInternal, err)
+		}
+		for {
+			dest := []driver.Value{nil}
+			err := rows.Next(dest)
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				rows.Close()
+				flushed.Forget()
+				return fmt.Errorf("SweepOrphansConn: %w: %w", ErrIngestInternal, err)
+			}
+			id, err := parseUUID(dest[0].(string))
+			if err != nil {
+				rows.Close()
+				flushed.Forget()
+				return fmt.Errorf("SweepOrphansConn: %w: %w", ErrIngestInternal, err)
+			}
+			removed = append(removed, id)
+		}
+		rows.Close()
 	}
 	flushed.forgetIDs(removed)
 	return nil

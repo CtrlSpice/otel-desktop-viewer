@@ -132,7 +132,7 @@ func TestCumulativeMergeAgainstTheOtelSDK(t *testing.T) {
 	// One bucket over everything, so the merge is last-minus-first across both
 	// collections.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(storeCtx, db, summaries[0]["id"].(string), store.TimeRange{},
+		return metrics.GetMetricView(storeCtx, db, summaries[0]["id"].(string), store.TimeRange{},
 			1, nil, nil, 0, 0, 0, nil, "", nil, 0)
 
 	})

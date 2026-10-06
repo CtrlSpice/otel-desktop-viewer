@@ -6,7 +6,7 @@ import type {
   LogData,
   LogSummary,
   TraceLogSummary,
-  MetricData,
+  MetricViewData,
   MetricTimeseries,
   MetricSummary,
   Stats,
@@ -14,7 +14,12 @@ import type {
   DataPoint,
   ScalarAggregate,
   ScalarViewBucket,
-  MetricAggregateEnvelope,
+  MetricAggregateViewData,
+  ExactMetric,
+  ExactMetricSeries,
+  ReceivedNumberDataPoint,
+  ReceivedHistogramDataPoint,
+  ReceivedExponentialHistogramDataPoint,
   AggregateBucket,
 } from '@/types/api-types'
 import type {
@@ -25,7 +30,7 @@ import type {
   JsonLogData,
   JsonLogSummary,
   JsonTraceLogSummary,
-  JsonMetricData,
+  JsonMetricViewData,
   JsonMetricSummary,
   JsonMetricTimeseries,
   JsonStats,
@@ -36,7 +41,12 @@ import type {
   JsonAttributeMatch,
   JsonAttribute,
   JsonAttributeValue,
-  JsonMetricAggregateEnvelope,
+  JsonMetricAggregateViewData,
+  JsonExactMetric,
+  JsonExactMetricSeries,
+  JsonReceivedNumberDataPoint,
+  JsonReceivedHistogramDataPoint,
+  JsonReceivedExponentialHistogramDataPoint,
   JsonScalarAggregate,
   JsonScalarViewBucket,
   JsonAggregateBucket,
@@ -609,7 +619,7 @@ function scalarViewBucketsFromJSON(
 
 function aggregateBucketsFromJSON(
   json: JsonAggregateBucket[] | null
-): MetricAggregateEnvelope['aggregate'] {
+): MetricAggregateViewData['aggregate'] {
   if (!json) return null
   return json.map(bucket => {
     const { sum, min, max, explicitBounds, zeroThreshold, quantiles, ...rest } =
@@ -641,7 +651,7 @@ function scalarAggregateFromJSON(
   }
 }
 
-function metricDataFromJSON(json: JsonMetricData): MetricData {
+function metricViewDataFromJSON(json: JsonMetricViewData): MetricViewData {
   const {
     aggregate: _aggregate,
     scalarAggregate: _scalarAggregate,
@@ -671,6 +681,159 @@ function metricDataFromJSON(json: JsonMetricData): MetricData {
         endNs: nullableBigintFromWire(json.window.effective.endNs),
       },
     },
+  }
+}
+
+function exactMetricIdentityFromJSON<
+  T extends JsonExactMetric | JsonExactMetricSeries,
+>(json: T) {
+  return {
+    ...json,
+    metadata: attributesFromJSON(json.metadata),
+    resource: {
+      ...json.resource,
+      attributes: attributesFromJSON(json.resource.attributes),
+    },
+    scope: {
+      ...json.scope,
+      attributes: attributesFromJSON(json.scope.attributes),
+    },
+  }
+}
+
+function exactMetricFromJSON(json: JsonExactMetric): ExactMetric {
+  return {
+    ...exactMetricIdentityFromJSON(json),
+    series: json.series.map(series => ({
+      ...series,
+      attributes: attributesFromJSON(series.attributes),
+      datapointCount: bigintFromWire(series.datapointCount),
+      firstDatapointTimestamp: nullableBigintFromWire(
+        series.firstDatapointTimestamp
+      ),
+      lastDatapointTimestamp: nullableBigintFromWire(
+        series.lastDatapointTimestamp
+      ),
+    })),
+  }
+}
+
+function receivedNumberDataPointFromJSON(
+  json: JsonReceivedNumberDataPoint
+): ReceivedNumberDataPoint {
+  const base = {
+    datapointID: json.datapointID,
+    timestamp: bigintFromWire(json.timestamp),
+    startTime: bigintFromWire(json.startTime),
+    flags: json.flags,
+    exemplars: json.exemplars.map(exemplarFromJSON),
+  }
+  switch (json.valueType) {
+    case 'Int':
+      return {
+        ...base,
+        valueType: 'Int',
+        intValue: bigintFromWire(json.intValue),
+        doubleValue: null,
+      }
+    case 'Double':
+      return {
+        ...base,
+        valueType: 'Double',
+        intValue: null,
+        doubleValue: doubleFromWire(json.doubleValue),
+      }
+    case 'Empty':
+      return {
+        ...base,
+        valueType: 'Empty',
+        intValue: null,
+        doubleValue: null,
+      }
+  }
+}
+
+function receivedHistogramDataPointFromJSON(
+  json: JsonReceivedHistogramDataPoint
+): ReceivedHistogramDataPoint {
+  const decoded: ReceivedHistogramDataPoint = {
+    datapointID: json.datapointID,
+    timestamp: bigintFromWire(json.timestamp),
+    startTime: bigintFromWire(json.startTime),
+    flags: json.flags,
+    exemplars: json.exemplars.map(exemplarFromJSON),
+    count: bigintFromWire(json.count),
+    bucketCounts: json.bucketCounts.map(bigintFromWire),
+    explicitBounds: json.explicitBounds.map(doubleFromWire),
+  }
+  if (json.sum !== undefined) decoded.sum = doubleFromWire(json.sum)
+  if (json.min !== undefined) decoded.min = doubleFromWire(json.min)
+  if (json.max !== undefined) decoded.max = doubleFromWire(json.max)
+  return decoded
+}
+
+function receivedExponentialHistogramDataPointFromJSON(
+  json: JsonReceivedExponentialHistogramDataPoint
+): ReceivedExponentialHistogramDataPoint {
+  const decoded: ReceivedExponentialHistogramDataPoint = {
+    datapointID: json.datapointID,
+    timestamp: bigintFromWire(json.timestamp),
+    startTime: bigintFromWire(json.startTime),
+    flags: json.flags,
+    exemplars: json.exemplars.map(exemplarFromJSON),
+    count: bigintFromWire(json.count),
+    scale: json.scale,
+    zeroCount: bigintFromWire(json.zeroCount),
+    zeroThreshold: doubleFromWire(json.zeroThreshold),
+    positive: {
+      offset: json.positive.offset,
+      bucketCounts: json.positive.bucketCounts.map(bigintFromWire),
+    },
+    negative: {
+      offset: json.negative.offset,
+      bucketCounts: json.negative.bucketCounts.map(bigintFromWire),
+    },
+  }
+  if (json.sum !== undefined) decoded.sum = doubleFromWire(json.sum)
+  if (json.min !== undefined) decoded.min = doubleFromWire(json.min)
+  if (json.max !== undefined) decoded.max = doubleFromWire(json.max)
+  return decoded
+}
+
+function receivedMetricDatapointsFromJSON(json: JsonExactMetricSeries) {
+  let datapoints: ExactMetricSeries['datapoints']
+  switch (json.metricType) {
+    case 'Gauge':
+    case 'Sum':
+      datapoints = json.datapoints.map(point =>
+        receivedNumberDataPointFromJSON(point as JsonReceivedNumberDataPoint)
+      )
+      break
+    case 'Histogram':
+      datapoints = json.datapoints.map(point =>
+        receivedHistogramDataPointFromJSON(
+          point as JsonReceivedHistogramDataPoint
+        )
+      )
+      break
+    case 'ExponentialHistogram':
+      datapoints = json.datapoints.map(point =>
+        receivedExponentialHistogramDataPointFromJSON(
+          point as JsonReceivedExponentialHistogramDataPoint
+        )
+      )
+      break
+  }
+  return datapoints
+}
+
+function exactMetricSeriesFromJSON(
+  json: JsonExactMetricSeries
+): ExactMetricSeries {
+  return {
+    ...exactMetricIdentityFromJSON(json),
+    attributes: attributesFromJSON(json.attributes),
+    datapoints: receivedMetricDatapointsFromJSON(json),
   }
 }
 
@@ -908,8 +1071,54 @@ export let telemetryAPI = {
     return metricSummariesFromJSON(rawData)
   },
 
-  getMetric: async (
-    streamID: string,
+  getMetric: async (metricRef: string): Promise<ExactMetric | null> => {
+    try {
+      const rawData = await callRPC<JsonExactMetric>(
+        'getMetric',
+        named({ metricRef })
+      )
+      return exactMetricFromJSON(rawData)
+    } catch (error) {
+      if (
+        error instanceof JsonRpcError &&
+        error.code === ERR_CODE_METRIC_NOT_FOUND
+      ) {
+        return null
+      }
+      throw error
+    }
+  },
+
+  getMetricSeries: async (
+    metricRef: string,
+    seriesRef: string,
+    startTime: QueryTimeBound,
+    endTime: QueryTimeBound
+  ): Promise<ExactMetricSeries | null> => {
+    try {
+      const rawData = await callRPC<JsonExactMetricSeries>(
+        'getMetricSeries',
+        named({
+          metricRef,
+          seriesRef,
+          startTime: serializeNanoseconds(startTime),
+          endTime: serializeNanoseconds(endTime),
+        })
+      )
+      return exactMetricSeriesFromJSON(rawData)
+    } catch (error) {
+      if (
+        error instanceof JsonRpcError &&
+        error.code === ERR_CODE_METRIC_NOT_FOUND
+      ) {
+        return null
+      }
+      throw error
+    }
+  },
+
+  getMetricView: async (
+    metricID: string,
     startTime: QueryTimeBound,
     endTime: QueryTimeBound,
     /** How many time buckets to reduce the window to. Omit for every
@@ -948,16 +1157,16 @@ export let telemetryAPI = {
      *  response's own order. For the first visit to a metric, where the visible
      *  set is chosen from the response being fetched. */
     datapointSeriesLimit?: number
-  ): Promise<MetricData | null> => {
+  ): Promise<MetricViewData | null> => {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
     // Not-found arrives as a JSON-RPC error (one wire convention across all
     // signals); translate it to null here so callers keep a simple contract.
     try {
-      const rawData = await callRPC<JsonMetricData>(
-        'getMetric',
+      const rawData = await callRPC<JsonMetricViewData>(
+        'getMetricView',
         named({
-          streamID,
+          metricID,
           startTime: startTimeNs,
           endTime: endTimeNs,
           targetBuckets,
@@ -974,7 +1183,7 @@ export let telemetryAPI = {
           datapointSeriesLimit,
         })
       )
-      return metricDataFromJSON(rawData)
+      return metricViewDataFromJSON(rawData)
     } catch (error) {
       if (
         error instanceof JsonRpcError &&
@@ -990,8 +1199,8 @@ export let telemetryAPI = {
    *  changed. Per-series quantiles are additive and come with the metric; this
    *  is the part that depends on which series are visible, so it is the part
    *  worth refetching on a toggle. */
-  getMetricAggregate: async (
-    streamID: string,
+  getMetricAggregateView: async (
+    metricID: string,
     startTime: QueryTimeBound,
     endTime: QueryTimeBound,
     targetBuckets: number,
@@ -1010,18 +1219,18 @@ export let telemetryAPI = {
      *  trim the payload, it would redefine the answer -- "All" folded over a
      *  narrowed set means "all of the checked ones". */
     selectedSeriesIDs?: string[],
-    /** The zone the buckets follow, as in getMetric -- and it must be the same
+    /** The zone the buckets follow, as in getMetricView -- and it must be the same
      *  one, or the pooled lines are cut on different boundaries than the
      *  per-series lines beneath them. */
     tzName?: string
-  ): Promise<MetricAggregateEnvelope | null> => {
+  ): Promise<MetricAggregateViewData | null> => {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
     try {
-      const raw = await callRPC<JsonMetricAggregateEnvelope | null>(
-        'getMetricAggregate',
+      const raw = await callRPC<JsonMetricAggregateViewData | null>(
+        'getMetricAggregateView',
         named({
-          streamID,
+          metricID,
           startTime: startTimeNs,
           endTime: endTimeNs,
           targetBuckets,

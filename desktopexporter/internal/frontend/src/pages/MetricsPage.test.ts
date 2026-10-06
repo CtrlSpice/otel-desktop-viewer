@@ -7,7 +7,7 @@ import MetricsPage from './MetricsPage.svelte'
 import type {
   DataPoint,
   MetricSummary,
-  MetricData,
+  MetricViewData,
   MetricType,
   Stats,
   SumDataPoint,
@@ -18,25 +18,25 @@ import { navigateCurrentRoute, readRoute, withQueryPatch } from '@/route'
 // A legend toggle fetches the aggregate at two grids: a bucketed one for the
 // heatmap, and a whole-window collapse for the summary distribution. Only a
 // histogram has the second. A Gauge or Sum has no bucket vectors to merge, so
-// the store prunes that chain outright (aggregateShapeFor) and the projection
+// the store prunes that chain outright (aggregateViewShapeFor) and the projection
 // answers a literal null -- asking for it spends a round trip and a full query
 // plan to be told so.
 //
-// The store side of that contract is pinned in Go by TestGetMetricAggregate.
+// The store side of that contract is pinned in Go by TestGetMetricAggregateView.
 // This is the client side: that it asks for the second grid only when the
 // metric can answer.
 
 const {
   searchMetricSummaries,
   getStats,
-  getMetric,
-  getMetricAggregate,
+  getMetricView,
+  getMetricAggregateView,
   getMetricAttributes,
 } = vi.hoisted(() => ({
   searchMetricSummaries: vi.fn(),
   getStats: vi.fn(),
-  getMetric: vi.fn(),
-  getMetricAggregate: vi.fn(),
+  getMetricView: vi.fn(),
+  getMetricAggregateView: vi.fn(),
   getMetricAttributes: vi.fn(),
 }))
 
@@ -49,8 +49,8 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
       ...actual.telemetryAPI,
       searchMetricSummaries,
       getStats,
-      getMetric,
-      getMetricAggregate,
+      getMetricView,
+      getMetricAggregateView,
       getMetricAttributes,
     },
   }
@@ -86,7 +86,7 @@ function makeSummary(metricType: MetricType): MetricSummary {
 function makeMetric(
   metricType: MetricType,
   datapoints: DataPoint[] = []
-): MetricData {
+): MetricViewData {
   return {
     lastSeenNs: 1_700_000_000_000_000_000n,
     id: 'metric-1',
@@ -99,9 +99,11 @@ function makeMetric(
     aggregationTemporalityCode: metricType === 'Gauge' ? null : 2,
     isMonotonic: metricType === 'Sum' ? true : null,
     resourceDroppedAttributesCount: 0,
+    resourceSchemaUrl: '',
     resource: EMPTY_RESOURCE,
     scopeName: '',
     scopeVersion: '',
+    scopeSchemaUrl: '',
     scopeDroppedAttributesCount: 0,
     scope: EMPTY_SCOPE,
     timeseries: [
@@ -179,8 +181,8 @@ function makeStats(): Stats {
 beforeEach(() => {
   searchMetricSummaries.mockReset()
   getStats.mockReset()
-  getMetric.mockReset()
-  getMetricAggregate.mockReset()
+  getMetricView.mockReset()
+  getMetricAggregateView.mockReset()
   getMetricAttributes.mockReset()
   getMetricAttributes.mockResolvedValue([])
 })
@@ -194,8 +196,8 @@ afterEach(() => {
 async function renderSelected(metricType: MetricType) {
   searchMetricSummaries.mockResolvedValue([makeSummary(metricType)])
   getStats.mockResolvedValue(makeStats())
-  getMetric.mockResolvedValue(makeMetric(metricType))
-  getMetricAggregate.mockResolvedValue({
+  getMetricView.mockResolvedValue(makeMetric(metricType))
+  getMetricAggregateView.mockResolvedValue({
     aggregate: null,
     scalarAggregate: null,
   })
@@ -203,8 +205,8 @@ async function renderSelected(metricType: MetricType) {
   renderWithContexts(MetricsPage)
   // The aggregate fetch is debounced behind the detail landing; wait for the
   // detail first so the wait below is for the debounce, not the round trip.
-  await waitFor(() => expect(getMetric).toHaveBeenCalled())
-  await waitFor(() => expect(getMetricAggregate).toHaveBeenCalled(), {
+  await waitFor(() => expect(getMetricView).toHaveBeenCalled())
+  await waitFor(() => expect(getMetricAggregateView).toHaveBeenCalled(), {
     timeout: 3000,
   })
 }
@@ -212,19 +214,19 @@ async function renderSelected(metricType: MetricType) {
 /** targetBuckets is the 4th positional argument; the whole-window call is the
  *  one that asks for exactly 1 bucket. */
 function wholeWindowCalls() {
-  return getMetricAggregate.mock.calls.filter(args => args[3] === 1)
+  return getMetricAggregateView.mock.calls.filter(args => args[3] === 1)
 }
 
 function rawSeriesCalls() {
-  return getMetric.mock.calls.filter(args => args[3] === 0)
+  return getMetricView.mock.calls.filter(args => args[3] === 0)
 }
 
 describe('MetricsPage aggregate fetching', () => {
   it('uses an unbounded detail request and its effective window for aggregates', async () => {
     await renderSelected('Histogram')
-    const detail = getMetric.mock.calls.find(args => args[3] !== 0)
+    const detail = getMetricView.mock.calls.find(args => args[3] !== 0)
     expect(detail?.slice(1, 3)).toEqual([null, null])
-    expect(getMetricAggregate.mock.calls[0]?.slice(1, 3)).toEqual([
+    expect(getMetricAggregateView.mock.calls[0]?.slice(1, 3)).toEqual([
       1_700_000_000_000_000_000n,
       1_700_000_001_000_000_000n,
     ])
@@ -235,23 +237,23 @@ describe('MetricsPage aggregate fetching', () => {
     getStats.mockResolvedValue(makeStats())
     const metric = makeMetric('Histogram')
     metric.window.effective = { startNs: null, endNs: null }
-    getMetric.mockResolvedValue(metric)
-    getMetricAggregate.mockResolvedValue({
+    getMetricView.mockResolvedValue(metric)
+    getMetricAggregateView.mockResolvedValue({
       aggregate: null,
       scalarAggregate: null,
     })
     setTestUrl('/metrics/metric-1')
     renderWithContexts(MetricsPage)
 
-    await waitFor(() => expect(getMetric).toHaveBeenCalled())
+    await waitFor(() => expect(getMetricView).toHaveBeenCalled())
     await new Promise(resolve => setTimeout(resolve, 300))
-    expect(getMetricAggregate).not.toHaveBeenCalled()
+    expect(getMetricAggregateView).not.toHaveBeenCalled()
   })
 
   it('passes a named timezone through for calendar bucket alignment', async () => {
     localStorage.setItem('time-tz', 'America/New_York')
     await renderSelected('Gauge')
-    const detailCall = getMetric.mock.calls[0]
+    const detailCall = getMetricView.mock.calls[0]
     expect(detailCall[6]).toEqual(expect.any(Number))
     expect(detailCall[10]).toBe('America/New_York')
   })
@@ -267,7 +269,7 @@ describe('MetricsPage aggregate fetching', () => {
     await new Promise(r => setTimeout(r, 400))
     expect(wholeWindowCalls()).toHaveLength(0)
     // The bucketed call still happens -- the scalar pools ride on it.
-    expect(getMetricAggregate.mock.calls.length).toBeGreaterThan(0)
+    expect(getMetricAggregateView.mock.calls.length).toBeGreaterThan(0)
   })
 
   it('does not ask a Sum either', async () => {
@@ -295,8 +297,8 @@ describe('MetricsPage chart control keyboard navigation', () => {
       { ...makeSummary('Sum'), seriesCount: metric.timeseries.length },
     ])
     getStats.mockResolvedValue(makeStats())
-    getMetric.mockResolvedValue(metric)
-    getMetricAggregate.mockResolvedValue({
+    getMetricView.mockResolvedValue(metric)
+    getMetricAggregateView.mockResolvedValue({
       aggregate: null,
       scalarAggregate: null,
     })
@@ -332,7 +334,7 @@ describe('MetricsPage raw series fetching', () => {
   function prepareRawSeriesTest() {
     searchMetricSummaries.mockResolvedValue([makeSummary('Sum')])
     getStats.mockResolvedValue(makeStats())
-    getMetricAggregate.mockResolvedValue({
+    getMetricAggregateView.mockResolvedValue({
       aggregate: null,
       scalarAggregate: null,
     })
@@ -352,7 +354,7 @@ describe('MetricsPage raw series fetching', () => {
       })
     )
     prepareRawSeriesTest()
-    getMetric.mockImplementation((...args: unknown[]) =>
+    getMetricView.mockImplementation((...args: unknown[]) =>
       Promise.resolve(
         args[3] === 0 ? makeMetric('Sum') : makeMetric('Sum', [reduced])
       )
@@ -382,10 +384,10 @@ describe('MetricsPage raw series fetching', () => {
 
   it('starts a new-window request while the old-window request is in flight', async () => {
     prepareRawSeriesTest()
-    const stale = deferred<MetricData | null>()
-    const current = deferred<MetricData | null>()
+    const stale = deferred<MetricViewData | null>()
+    const current = deferred<MetricViewData | null>()
     let rawRequest = 0
-    getMetric.mockImplementation((...args: unknown[]) => {
+    getMetricView.mockImplementation((...args: unknown[]) => {
       if (args[3] !== 0) {
         return Promise.resolve(makeMetric('Sum', [reduced]))
       }
@@ -434,7 +436,7 @@ describe('MetricsPage raw series fetching', () => {
     expect(document.querySelector('tr[data-dp-id="dp-stale"]')).toBeNull()
   })
 
-  const terminalResponses: Array<[string, () => MetricData | null]> = [
+  const terminalResponses: Array<[string, () => MetricViewData | null]> = [
     ['a null result', () => null],
     ['an omitted series', () => ({ ...makeMetric('Sum'), timeseries: [] })],
     ['an empty requested series', () => makeMetric('Sum')],
@@ -444,8 +446,8 @@ describe('MetricsPage raw series fetching', () => {
     'publishes terminal empty datapoints for %s',
     async (_name, response) => {
       prepareRawSeriesTest()
-      const raw = deferred<MetricData | null>()
-      getMetric.mockImplementation((...args: unknown[]) =>
+      const raw = deferred<MetricViewData | null>()
+      getMetricView.mockImplementation((...args: unknown[]) =>
         args[3] === 0
           ? raw.promise
           : Promise.resolve(makeMetric('Sum', [reduced]))
