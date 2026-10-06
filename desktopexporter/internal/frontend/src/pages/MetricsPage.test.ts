@@ -99,6 +99,7 @@ function makeMetric(
     aggregationTemporalityCode: metricType === 'Gauge' ? null : 2,
     isMonotonic: metricType === 'Sum' ? true : null,
     resourceDroppedAttributesCount: 0,
+    resourceSchemaUrl: '',
     resource: EMPTY_RESOURCE,
     scopeName: '',
     scopeVersion: '',

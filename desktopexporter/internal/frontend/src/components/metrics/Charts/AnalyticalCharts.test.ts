@@ -131,6 +131,7 @@ function metricWithDatapoints(
     aggregationTemporalityCode: metricType === 'Gauge' ? null : 1,
     isMonotonic: null,
     resourceDroppedAttributesCount: 0,
+    resourceSchemaUrl: '',
     resource: EMPTY_RESOURCE,
     scopeName: EMPTY_SCOPE.name,
     scopeVersion: EMPTY_SCOPE.version,

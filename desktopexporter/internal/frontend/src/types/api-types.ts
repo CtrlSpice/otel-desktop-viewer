@@ -461,6 +461,8 @@ export type MetricData = {
   /** Stream-level monotonic flag; null except Sum. */
   isMonotonic?: boolean | null
   resourceDroppedAttributesCount: number
+  /** Received ResourceMetrics schema URL from the representative ingest. */
+  resourceSchemaUrl: string
   resource: ResourceData
   scopeName: string
   scopeVersion: string

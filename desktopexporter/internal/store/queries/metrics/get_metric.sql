@@ -267,7 +267,8 @@
 		-- row fixes it, and the dedupe makes it free: every batch from the
 		-- same sender now points at one resources row anyway.
 		representative_owners as (
-			select r.attribute_ids as resource_attribute_ids,
+			select rep.resource_schema_url,
+			       r.attribute_ids as resource_attribute_ids,
 			       r.dropped_attributes_count as resource_dropped,
 			       sc.attribute_ids as scope_attribute_ids,
 			       sc.dropped_attributes_count as scope_dropped
@@ -1818,6 +1819,10 @@
 				else 'Unknown (' || s.aggregation_temporality::varchar || ')' end else null end,
 			'isMonotonic', case when s.metric_type = 'Sum' then s.is_monotonic else null end,
 			'resourceDroppedAttributesCount', coalesce((select resource_dropped from representative_owners), 0),
+			-- Resource schema URL is non-identifying and can vary by ingest, so
+			-- expose the value owned by the same representative as description,
+			-- metadata, Resource attributes and dropped count.
+			'resourceSchemaUrl', coalesce((select resource_schema_url from representative_owners), ''),
 			-- Resource attributes identify the selected Metric and remain available
 			-- even when the requested window has no representative ingest.
 			'resource', resource_json(s.resource_attribute_ids,

@@ -187,12 +187,18 @@
         <FieldGroup
           label="Resource"
           count={metric.resource.attributes.length +
+            (metric.resourceSchemaUrl ? 1 : 0) +
             (metric.resourceDroppedAttributesCount > 0 ? 1 : 0)}
           detail
           bind:open={resourceOpen}
         >
           <table class="detail-fields w-full" aria-label="Resource attributes">
             <tbody>
+              {#if metric.resourceSchemaUrl}<MetricField
+                  fieldName="schema URL"
+                  fieldValue={metric.resourceSchemaUrl}
+                  fieldType="string"
+                />{/if}
               {#if metric.resourceDroppedAttributesCount > 0}
                 <MetricField
                   fieldName="dropped attributes"

@@ -23,6 +23,7 @@
     unit,
     metricType: datapoints[0]?.metricType ?? 'Empty',
     resourceDroppedAttributesCount: 0,
+    resourceSchemaUrl: '',
     resource: { attributes: [], droppedAttributesCount: 0 },
     scopeName: '',
     scopeVersion: '',

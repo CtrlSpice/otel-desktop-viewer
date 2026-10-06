@@ -438,6 +438,8 @@ export type JsonMetricData = {
   aggregationTemporality: string | null
   isMonotonic: boolean | null
   resourceDroppedAttributesCount: number
+  /** Received ResourceMetrics schema URL from the representative ingest. */
+  resourceSchemaUrl: string
   resource: JsonResourceData
   scopeName: string
   scopeVersion: string
