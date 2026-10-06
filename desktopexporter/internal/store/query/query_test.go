@@ -9,16 +9,21 @@ import (
 	"errors"
 	"math"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
+	storemetrics "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/query"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.uber.org/zap"
 )
 
@@ -243,6 +248,149 @@ func TestExecuteReturnsIngestedNestedTypedValues(t *testing.T) {
 		require.Len(t, result.Rows, 1)
 		assert.Contains(t, string(result.Rows[0][0]), `{"kind":"int64","value":"9007199254740993"}`)
 		assert.JSONEq(t, `{"kind":"int64","value":"9007199254740993"}`, string(result.Rows[0][1]))
+		return nil
+	}))
+}
+
+func TestExecuteReturnsCurrentMetricDatapointFields(t *testing.T) {
+	viewerStore, err := store.NewStore(context.Background(), "", zap.NewNop())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, viewerStore.Close()) })
+
+	now := time.Now().Add(-time.Minute)
+	telemetry := pmetric.NewMetrics()
+	rm := telemetry.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "checkout")
+	metric := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	metric.SetName("checkout.queue.depth")
+	point := metric.SetEmptyGauge().DataPoints().AppendEmpty()
+	point.SetTimestamp(pcommon.Timestamp(now.UnixNano()))
+	point.SetStartTimestamp(pcommon.Timestamp(now.Add(-time.Hour).UnixNano()))
+	point.SetIntValue(9_007_199_254_740_993)
+	point.Attributes().PutStr("queue", "payments")
+	require.NoError(t, viewerStore.WithConn(func(conn driver.Conn) error {
+		return storemetrics.Ingest(context.Background(), conn, telemetry, viewerStore.FlushedIDs())
+	}))
+
+	require.NoError(t, viewerStore.WithDBRead(func(db *sql.DB) error {
+		conn, err := db.Conn(context.Background())
+		require.NoError(t, err)
+		defer conn.Close()
+		raw, err := query.Execute(context.Background(), conn, `
+			select
+				m.id::varchar as metric_ref,
+				ms.id::varchar as series_ref,
+				m.name,
+				m.metric_type,
+				m.aggregation_temporality,
+				m.is_monotonic,
+				d.timestamp,
+				d.start_time,
+				d.value_type,
+				d.int_value,
+				d.double_value,
+				d.count,
+				d.sum,
+				d.min,
+				d.max
+			from metrics as m
+			join metric_series as ms on ms.metric_id = m.id
+			join metric_datapoints as d
+				on d.metric_id = m.id and d.series_id = ms.id
+			where d.timestamp >= epoch_ns(current_timestamp - interval '1 hour')
+				and d.timestamp <= epoch_ns(current_timestamp)
+			order by d.timestamp desc, m.name, series_ref`, 25)
+		require.NoError(t, err)
+		result := decodeResponse(t, raw)
+		require.Len(t, result.Rows, 1)
+		assert.Equal(t, "UBIGINT", result.Columns[6].Type)
+		assert.Equal(t, "UBIGINT", result.Columns[7].Type)
+		assert.NotEqual(t, `""`, string(result.Rows[0][0]))
+		assert.NotEqual(t, `""`, string(result.Rows[0][1]))
+		assert.JSONEq(t, `"checkout.queue.depth"`, string(result.Rows[0][2]))
+		assert.JSONEq(t, `"Gauge"`, string(result.Rows[0][3]))
+		assert.JSONEq(t, `0`, string(result.Rows[0][4]))
+		assert.JSONEq(t, `false`, string(result.Rows[0][5]))
+		assert.JSONEq(t, strconv.FormatInt(now.UnixNano(), 10), string(result.Rows[0][6]))
+		assert.JSONEq(t, strconv.FormatInt(now.Add(-time.Hour).UnixNano(), 10), string(result.Rows[0][7]))
+		assert.JSONEq(t, `"Int"`, string(result.Rows[0][8]))
+		assert.JSONEq(t, `9007199254740993`, string(result.Rows[0][9]))
+		for _, index := range []int{10, 11, 12, 13, 14} {
+			assert.JSONEq(t, `null`, string(result.Rows[0][index]))
+		}
+		assert.False(t, result.Truncated)
+		return nil
+	}))
+}
+
+func TestExecuteCountsCommonTypedSpanAttributeValuesByOwningSpan(t *testing.T) {
+	viewerStore, err := store.NewStore(context.Background(), "", zap.NewNop())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, viewerStore.Close()) })
+
+	telemetry := ptrace.NewTraces()
+	ss := telemetry.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans()
+	now := time.Now()
+	for i := 0; i < 5; i++ {
+		span := ss.AppendEmpty()
+		traceByte := []byte{1, 2, 1, 3, 4}[i]
+		spanByte := []byte{1, 1, 2, 3, 4}[i]
+		span.SetTraceID(pcommon.TraceID{15: traceByte})
+		span.SetSpanID(pcommon.SpanID{7: spanByte})
+		span.SetStartTimestamp(pcommon.Timestamp(now.UnixNano()))
+		switch i {
+		case 0, 1:
+			span.Attributes().PutStr("http.request.method", "GET")
+		case 2:
+			span.Attributes().PutStr("http.request.method", "POST")
+		case 3:
+			span.Attributes().PutInt("http.request.method", 7)
+		case 4:
+			span.SetStartTimestamp(pcommon.Timestamp(now.Add(time.Hour).UnixNano()))
+			span.Attributes().PutStr("http.request.method", "GET")
+		}
+	}
+	require.NoError(t, viewerStore.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(context.Background(), conn, telemetry, viewerStore.FlushedIDs())
+	}))
+
+	require.NoError(t, viewerStore.WithDBRead(func(db *sql.DB) error {
+		conn, err := db.Conn(context.Background())
+		require.NoError(t, err)
+		defer conn.Close()
+		raw, err := query.Execute(context.Background(), conn, `
+			with owned_values as (
+				select s.trace_id, s.span_id,
+					json_extract_string(a.value, '$.kind') as value_kind,
+					a.value as tagged_value
+				from spans s
+				cross join unnest(s.attribute_ids) owned(attribute_id)
+				join attributes a on a.id = owned.attribute_id
+				where s.start_time >= epoch_ns(current_timestamp - interval '1 hour')
+				  and s.start_time <= epoch_ns(current_timestamp)
+				  and a.key = 'http.request.method'
+			), value_counts as (
+				select value_kind, tagged_value,
+					count(distinct struct_pack(trace_id := trace_id, span_id := span_id)) as owning_span_count
+				from owned_values group by value_kind, tagged_value
+			), denominator as (
+				select count(distinct struct_pack(trace_id := trace_id, span_id := span_id)) as owning_span_count
+				from owned_values
+			)
+			select value_kind, tagged_value, value_counts.owning_span_count,
+				value_counts.owning_span_count::double /
+					nullif(denominator.owning_span_count, 0)::double as relative_frequency
+			from value_counts cross join denominator
+			order by value_counts.owning_span_count desc, value_kind, tagged_value::varchar
+			limit 10`, 10)
+		require.NoError(t, err)
+		result := decodeResponse(t, raw)
+		require.Len(t, result.Rows, 3)
+		assert.JSONEq(t, `2`, string(result.Rows[0][2]))
+		assert.JSONEq(t, `0.5`, string(result.Rows[0][3]))
+		assert.Contains(t, string(result.Rows[0][1]), `"kind":"string"`)
+		assert.Contains(t, string(raw), `"kind":"int64","value":"7"`)
+		assert.False(t, result.Truncated)
 		return nil
 	}))
 }
