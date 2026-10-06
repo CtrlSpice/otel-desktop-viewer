@@ -295,20 +295,24 @@ otel-desktop-viewer metrics --start 2026-10-02T08:00:00Z --end 2026-10-02T09:00:
 
 These commands use the viewer at `http://localhost:8000`, search the last hour, and return up to 25 summaries as aligned columns by default. Use `--endpoint` for another viewer address, `--service` to select one service, `--since` or `--start` and `--end` for the time window, `--limit` for another result limit, or `--json` for JSON.
 
-Inspect every stored span and trace-linked log for one trace:
+Inspect every compact span and trace-linked log row for one trace:
 
 ```bash
 otel-desktop-viewer trace 0123456789abcdef0123456789abcdef
 otel-desktop-viewer trace 0123456789abcdef0123456789abcdef --json
 ```
 
-The default span table contains `spanID`, `parentSpanID`, `service`, `name`,
-`startOffsetNs`, and `durationNs`. Trace ID appears once in the `TRACE` section.
-The start offset is the received span start minus the earliest received span
-start in the complete stored trace. Duration is the received end minus the
-received start. Both values are exact integer nanoseconds. The default sections
-omit complete attributes, events, links, resources, scopes, and schema URLs;
-`--json` emits those stored values exactly.
+The table and JSON modes contain the same fields and are not truncated. The
+trace start is `min(spans.start_time)`. Trace duration is
+`max(spans.end_time) - min(spans.start_time)`, each span offset is
+`span.start_time - trace start`, and each span duration is
+`span.end_time - span.start_time`. These derived values use nanoseconds and are
+returned as exact decimal strings. A log timestamp is its received timestamp
+when non-zero, otherwise its received observed timestamp. Log severity is the
+received severity text when present, otherwise the display band derived from
+the received severity number. Log body is the viewer's compact `body_preview`
+display value, not the complete stored tagged body. Use `query` when complete
+stored log fields are needed.
 
 Inspect one span with full typed detail and every log associated with that exact
 trace and span ID:
