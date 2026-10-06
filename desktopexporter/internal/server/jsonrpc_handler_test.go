@@ -174,6 +174,27 @@ func TestQueryPreparationCancellationUsesRequestCanceled(t *testing.T) {
 	assert.False(t, errors.Is(err, jsonrpc2.ErrInvalidParams), "%v", err)
 }
 
+func TestQueryExplicitCancellationLeavesStoreReusable(t *testing.T) {
+	handler := setupHandler(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	timer := time.AfterFunc(100*time.Millisecond, cancel)
+	defer timer.Stop()
+
+	_, err := handler.Handle(ctx, createRequest("query", []any{
+		"select sum(i) from range(1000000000) input(i)",
+	}))
+	require.ErrorIs(t, ctx.Err(), context.Canceled)
+	require.ErrorIs(t, err, ErrRequestCanceled)
+	assert.NotErrorIs(t, err, ErrInvalidQuery)
+
+	result, err := handler.Handle(context.Background(), createRequest("query", []any{"select 1"}))
+	require.NoError(t, err)
+	encoded, err := json.Marshal(result)
+	require.NoError(t, err)
+	assert.Contains(t, string(encoded), `"rows":[[1]]`)
+}
+
 func TestQueryPublicReadsReopenedPersistentStore(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "viewer.db")
 	initial, err := store.NewStore(context.Background(), path, zap.NewNop())

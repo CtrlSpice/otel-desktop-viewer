@@ -295,6 +295,8 @@ otel-desktop-viewer metrics --start 2026-10-02T08:00:00Z --end 2026-10-02T09:00:
 
 These commands use the viewer at `http://localhost:8000`, search the last hour, and return up to 25 summaries as aligned columns by default. Use `--endpoint` for another viewer address, `--service` to select one service, `--since` or `--start` and `--end` for the time window, `--limit` for another result limit, or `--json` for JSON.
 
+In `metrics --json`, `metricRef` is a viewer-assigned Metric reference. It is copied directly from the backend metric summary `id`, which projects `metric_streams.id` (`metricRef = metric_streams.id`; unit: none), as an exact UUID string. It is opaque, scoped to the viewer database and its lifetime, and is not received from OTLP. Automation may retain and pass it unchanged, but must never parse or reinterpret it.
+
 ## Configuring Your OpenTelemetry SDK
 
 Point your app's OTLP exporter at the viewer. Send to `http://localhost:4318` (HTTP) or `http://localhost:4317` (gRPC).
