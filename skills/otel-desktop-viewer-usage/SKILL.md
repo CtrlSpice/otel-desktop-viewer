@@ -23,14 +23,16 @@ otel-desktop-viewer --open-browser=false
 
 For agent or automated use:
 
-1. Try `SHOW TABLES` below against the configured viewer HTTP endpoint and reuse
-   a compatible viewer that is already running. The default endpoint is
-   `http://localhost:8000`.
+1. Try the `otel-desktop-viewer query 'SHOW TABLES'` probe below against the
+   configured viewer HTTP endpoint and reuse a compatible viewer that is already
+   running. The default endpoint is `http://localhost:8000`.
 2. If none is available, start `otel-desktop-viewer --open-browser=false` as a
    managed, nonblocking child process and retain its process handle.
-3. Wait until the configured viewer HTTP endpoint accepts connections, then run
-   `query`, `traces`, `logs`, or `metrics` commands.
-4. In a `finally` or equivalent cleanup step, terminate and wait for only the
+3. During startup, require both that the child remains running and that the same
+   `SHOW TABLES` probe succeeds. If the child exits, surface its error output and
+   stop; do not reuse or stop another process listening at the endpoint.
+4. Once both checks pass, run `query`, `traces`, `logs`, or `metrics` commands.
+5. In a `finally` or equivalent cleanup step, terminate and wait for only the
    child process started in step 2.
 
 Do not stop or restart an existing viewer owned by the user. Starting the viewer
@@ -50,7 +52,7 @@ otel-desktop-viewer query 'SHOW TABLES'
 otel-desktop-viewer query 'DESCRIBE spans'
 otel-desktop-viewer query 'DESCRIBE logs'
 otel-desktop-viewer query 'DESCRIBE attributes'
-otel-desktop-viewer query "SELECT function_name FROM duckdb_functions() WHERE function_type = 'macro' ORDER BY function_name" --limit 100
+otel-desktop-viewer query "SELECT function_name FROM duckdb_functions() WHERE function_type = 'macro' AND function_name IN ('span_id_wire', 'trace_id_wire') ORDER BY function_name"
 ```
 
 The examples below use the current `spans`, `logs`, and `attributes` tables and
