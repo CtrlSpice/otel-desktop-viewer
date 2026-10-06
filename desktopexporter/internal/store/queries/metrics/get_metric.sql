@@ -90,15 +90,6 @@
 			select s.* from metric_streams s, input
 			where s.id = input.stream_id
 		),
-		matched_ingests as (
-			select m.* from metric_ingests m, input
-			where m.stream_id = input.stream_id
-			  and exists (
-				select 1 from datapoints d
-				where d.metric_ingest_id = m.id
-				  {{.TimeFilter}}
-			  )
-		),
 		-- Datapoints inherit aggregation_temporality / is_monotonic from
 		-- the stream so the per-type JSON projection below doesn't need
 		-- a per-row join.
@@ -246,15 +237,23 @@
 			from filtered_dps
 			group by metric_ingest_id
 		),
+		all_ingest_latest_dp as (
+			select d.metric_ingest_id, max(d.timestamp) as last_dp_ts
+			from datapoints d, input
+			where d.stream_id = input.stream_id
+			group by d.metric_ingest_id
+		),
 		-- Most recent matched ingest is the source of variable-but-
 		-- non-identifying fields (description, dropped counts).
 		representative as (
-			select mi.* from matched_ingests mi
-			inner join ingest_latest_dp ild on ild.metric_ingest_id = mi.id
+			select mi.* from metric_ingests mi
+			inner join all_ingest_latest_dp aild on aild.metric_ingest_id = mi.id
+			left join ingest_latest_dp ild on ild.metric_ingest_id = mi.id
 			-- id breaks the tie: ingests of one batch share the latest datapoint
 			-- timestamp, and an arbitrary pick let description and dropped counts
 			-- differ between two runs of the same request.
-			order by ild.last_dp_ts desc nulls last, mi.id
+			order by (ild.last_dp_ts is not null) desc,
+			         coalesce(ild.last_dp_ts, aild.last_dp_ts) desc nulls last, mi.id
 			limit 1
 		),
 		-- Resource and scope come from the representative ingest, the same
@@ -1799,10 +1798,10 @@
 			where f.distinct_bounds <= 1
 		)
 		-- Left join: a stream with no datapoints in the window still
-		-- produces a row (empty timeseries, blank representative fields).
+		-- produces a row with empty timeseries and the latest retained owner.
 		-- Only an unknown stream yields zero rows -> sql.ErrNoRows ->
 		-- ErrStreamIDNotFound. The representative-sourced fields are
-		-- coalesced so the wire shape stays non-null either way.
+		-- coalesced so the wire shape stays non-null for identity-only rows.
 		select cast(json_object(
 {{- if not .AggregateOnly}}
 			'id', s.id, 'name', s.name, 'description', coalesce(r.description, ''), 'unit', s.unit,
@@ -1811,13 +1810,12 @@
 			'metadata', coalesce(attrs_json(r.metadata_ids), json('[]')),
 			'metricType', s.metric_type,
 			'aggregationTemporalityCode', case
-				when s.metric_type = 'Gauge' then null
-				else s.aggregation_temporality end,
+				when s.metric_type in ('Sum', 'Histogram', 'ExponentialHistogram') then s.aggregation_temporality
+				else null end,
 			'aggregationTemporality', case
-				when s.metric_type = 'Gauge' then null
-				else case s.aggregation_temporality
+				when s.metric_type in ('Sum', 'Histogram', 'ExponentialHistogram') then case s.aggregation_temporality
 				when 0 then 'Unspecified' when 1 then 'Delta' when 2 then 'Cumulative'
-				else 'Unknown (' || s.aggregation_temporality::varchar || ')' end end,
+				else 'Unknown (' || s.aggregation_temporality::varchar || ')' end else null end,
 			'isMonotonic', case when s.metric_type = 'Sum' then s.is_monotonic else null end,
 			'resourceDroppedAttributesCount', coalesce((select resource_dropped from representative_owners), 0),
 			-- Resource attributes identify the selected Metric and remain available

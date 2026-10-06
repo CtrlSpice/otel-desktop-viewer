@@ -117,16 +117,15 @@
 			'metricType', sub.metric_type,
 			-- Code is received OTLP data; label is a display projection.
 			'aggregationTemporalityCode', case
-				when sub.metric_type = 'Gauge' then null
-				else sub.aggregation_temporality end,
+				when sub.metric_type in ('Sum', 'Histogram', 'ExponentialHistogram') then sub.aggregation_temporality
+				else null end,
 			'aggregationTemporality', case
-				when sub.metric_type = 'Gauge' then null
-				else case sub.aggregation_temporality
+				when sub.metric_type in ('Sum', 'Histogram', 'ExponentialHistogram') then case sub.aggregation_temporality
 				when 0 then 'Unspecified'
 				when 1 then 'Delta'
 				when 2 then 'Cumulative'
 				else 'Unknown (' || sub.aggregation_temporality::varchar || ')'
-				end end,
+				end else null end,
 			'isMonotonic', case
 				when sub.metric_type = 'Sum' then sub.is_monotonic
 				else null

@@ -2745,9 +2745,15 @@ func TestMetricDetailRetainsIdentityResourceOutsideDatapointWindow(t *testing.T)
 	s, ctx := storetest.New(t)
 	timestamp := int64(1_700_000_000_000_000_000)
 	md := buildInstanceMetrics(t, map[string]string{"host.name": "pod-a"}, 0, timestamp)
+	rm := md.ResourceMetrics().At(0)
+	rm.Resource().SetDroppedAttributesCount(7)
 	sm := md.ResourceMetrics().At(0).ScopeMetrics().At(0)
 	sm.SetSchemaUrl("https://opentelemetry.io/schemas/1.30.0")
+	sm.Scope().SetDroppedAttributesCount(5)
 	sm.Scope().Attributes().PutStr("scope.build", "blue")
+	metricPayload := sm.Metrics().At(0)
+	metricPayload.SetDescription("received description")
+	metricPayload.Metadata().PutStr("metadata.key", "metadata value")
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
 	}))
@@ -2774,6 +2780,12 @@ func TestMetricDetailRetainsIdentityResourceOutsideDatapointWindow(t *testing.T)
 	assert.Equal(t, "otelhttp", metric["scopeName"])
 	assert.Equal(t, "1.2.0", metric["scopeVersion"])
 	assert.Equal(t, "https://opentelemetry.io/schemas/1.30.0", metric["scopeSchemaUrl"])
+	assert.Equal(t, "received description", metric["description"])
+	assert.Equal(t, float64(7), metric["resourceDroppedAttributesCount"])
+	assert.Equal(t, float64(5), metric["scopeDroppedAttributesCount"])
+	metadata := metric["metadata"].([]any)
+	require.Len(t, metadata, 1)
+	assert.Equal(t, "metadata.key", metadata[0].(map[string]any)["key"])
 	scope := metric["scope"].(map[string]any)
 	scopeAttributeValues := map[string]any{}
 	for _, rawAttribute := range scope["attributes"].([]any) {
@@ -2809,6 +2821,10 @@ func TestMetricDetailProjectsMonotonicityOnlyForSum(t *testing.T) {
 	exponential.SetName("exponential")
 	exponential.SetEmptyExponentialHistogram().DataPoints().AppendEmpty().SetTimestamp(timestamp)
 
+	summaryMetric := sm.Metrics().AppendEmpty()
+	summaryMetric.SetName("summary")
+	summaryMetric.SetEmptySummary().DataPoints().AppendEmpty().SetTimestamp(timestamp)
+
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
 	}))
@@ -2825,6 +2841,12 @@ func TestMetricDetailProjectsMonotonicityOnlyForSum(t *testing.T) {
 			assert.Equal(t, true, metric["isMonotonic"])
 		} else {
 			assert.Nil(t, metric["isMonotonic"], "%s monotonicity is not applicable", summary["name"])
+		}
+		if summary["name"] == "sum" || summary["name"] == "histogram" || summary["name"] == "exponential" {
+			assert.Equal(t, float64(0), metric["aggregationTemporalityCode"])
+		} else {
+			assert.Nil(t, metric["aggregationTemporalityCode"], "%s temporality is not applicable", summary["name"])
+			assert.Nil(t, metric["aggregationTemporality"], "%s temporality is not applicable", summary["name"])
 		}
 	}
 }

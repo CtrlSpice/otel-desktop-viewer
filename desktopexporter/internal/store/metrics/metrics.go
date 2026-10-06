@@ -169,16 +169,18 @@ func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flus
 		return driver.DefaultParameterConverter.ConvertValue(v)
 	}
 
+	// Attribute rows must exist before the stream identities that reference
+	// them. DuckDB cannot enforce foreign keys into the UUID arrays.
+	if err := dict.Flush(ctx, conn); err != nil {
+		return ingest.Rejected{}, fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
+	}
 	if err := resolveStreamIDs(ctx, dconn, prepareArg, identities); err != nil {
 		return ingest.Rejected{}, err
 	}
 
 	// Pass 2: open the appenders and walk the request again, writing
-	// metric_ingests + datapoints + attributes. We resolve each metric's
-	// stream_id by matching its exact identity in the resolved batch.
-	if err := dict.Flush(ctx, conn); err != nil {
-		return ingest.Rejected{}, fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
-	}
+	// metric_ingests and datapoints. We resolve each metric's stream_id by
+	// matching its exact identity in the resolved batch.
 
 	// Resolve every datapoint's series before any of them are appended.
 	//

@@ -234,7 +234,7 @@ func TestEnforceRetentionPrunesOldest(t *testing.T) {
 	assert.Zero(t, dangling, "pruning must never leave a span pointing at a missing attribute")
 }
 
-func TestEnforceRetentionSweepsOrphanedMetricIdentity(t *testing.T) {
+func TestEnforceRetentionRetainsGeneratedMetricIdentity(t *testing.T) {
 	ctx := context.Background()
 	s, err := NewStore(ctx, "", zap.NewNop())
 	require.NoError(t, err)
@@ -252,12 +252,14 @@ func TestEnforceRetentionSweepsOrphanedMetricIdentity(t *testing.T) {
 
 	require.NoError(t, s.EnforceRetention(ctx, 1))
 
-	var oldStreams, oldIngests, liveStreams int64
+	var oldStreams, oldSeries, oldIngests, liveStreams int64
 	require.NoError(t, s.db.QueryRow(`select count(*) from metric_streams where id = ?::uuid`, oldStream).Scan(&oldStreams))
+	require.NoError(t, s.db.QueryRow(`select count(*) from metric_series where id = ?::uuid`, oldStream).Scan(&oldSeries))
 	require.NoError(t, s.db.QueryRow(`select count(*) from metric_ingests where id = ?::uuid`, oldIngest).Scan(&oldIngests))
 	require.NoError(t, s.db.QueryRow(`select count(*) from metric_streams where id = ?::uuid`, liveStream).Scan(&liveStreams))
 
-	assert.Zero(t, oldStreams, "fully-pruned stream should be swept")
+	assert.Equal(t, int64(1), oldStreams, "generated stream id must survive full pruning")
+	assert.Equal(t, int64(1), oldSeries, "generated series id must survive full pruning")
 	assert.Zero(t, oldIngests, "ingest with no remaining datapoints should be swept")
 	assert.Equal(t, int64(1), liveStreams, "stream with surviving datapoints must remain")
 }
