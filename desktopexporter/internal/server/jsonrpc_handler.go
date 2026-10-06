@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -81,8 +80,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.searchTraces(ctx, req)
 	case "searchSpans":
 		return h.searchSpans(ctx, req)
-	case "getTrace":
-		return h.getTrace(ctx, req)
+	case "getTraceDetail":
+		return h.getTraceDetail(ctx, req)
 	case "getSpan":
 		return h.getSpan(ctx, req)
 	case "searchLogs":
@@ -188,112 +187,28 @@ func (h *JSONRPCHandler) searchSpans(ctx context.Context, req *jsonrpc2.Request)
 	})
 }
 
-type compactTraceResult struct {
-	Trace compactTraceSummary `json:"trace"`
-	Spans []compactTraceSpan  `json:"spans"`
-	Logs  []compactTraceLog   `json:"logs"`
-}
-
-type compactTraceSummary struct {
-	TraceID    string `json:"traceID"`
-	SpanCount  int64  `json:"spanCount"`
-	LogCount   int    `json:"logCount"`
-	StartTime  string `json:"startTime"`
-	DurationNs string `json:"durationNs"`
-}
-
-type compactTraceSpan struct {
-	SpanID        string  `json:"spanID"`
-	ParentSpanID  *string `json:"parentSpanID"`
-	Service       string  `json:"service"`
-	Name          string  `json:"name"`
-	StartOffsetNs string  `json:"startOffsetNs"`
-	DurationNs    string  `json:"durationNs"`
-}
-
-type traceLogSummary struct {
-	Timestamp      string      `json:"timestamp"`
-	SpanID         *string     `json:"spanID"`
-	SeverityText   string      `json:"severityText"`
-	SeverityNumber json.Number `json:"severityNumber"`
-	ServiceName    string      `json:"serviceName"`
-	EventName      string      `json:"eventName"`
-	BodyPreview    string      `json:"bodyPreview"`
-}
-
-type compactTraceLog struct {
-	Timestamp string  `json:"timestamp"`
-	SpanID    *string `json:"spanID"`
-	Severity  string  `json:"severity"`
-	Service   string  `json:"service"`
-	EventName string  `json:"eventName"`
-	Body      string  `json:"body"`
-}
-
-func (h *JSONRPCHandler) getTrace(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) getTraceDetail(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	traceID, err := parseSingleIDParam(req.Params, ErrInvalidTraceID, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
-	return handlerRead(ctx, h, func(db *sql.DB) (compactTraceResult, error) {
-		traceRaw, err := spans.GetTrace(ctx, db, traceID)
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
+		trace, err := spans.SearchSpans(ctx, db, traceID, nil)
 		if err != nil {
-			return compactTraceResult{}, err
+			return nil, err
 		}
-		var result compactTraceResult
-		if err := json.Unmarshal(traceRaw, &result); err != nil {
-			return compactTraceResult{}, err
-		}
-		logsRaw, err := logs.GetTraceLogs(ctx, db, traceID)
+		traceLogs, err := logs.GetTraceDetails(ctx, db, traceID)
 		if err != nil {
-			return compactTraceResult{}, err
+			return nil, err
 		}
-		result.Logs, err = compactTraceLogs(logsRaw)
-		if err != nil {
-			return compactTraceResult{}, err
-		}
-		result.Trace.LogCount = len(result.Logs)
-		return result, nil
+		result := make([]byte, 0, len(trace)+len(traceLogs)+20)
+		result = append(result, `{"trace":`...)
+		result = append(result, trace...)
+		result = append(result, `,"logs":`...)
+		result = append(result, traceLogs...)
+		result = append(result, '}')
+		return json.RawMessage(result), nil
 	})
-}
-
-func compactTraceLogs(raw json.RawMessage) ([]compactTraceLog, error) {
-	var summaries []traceLogSummary
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	if err := decoder.Decode(&summaries); err != nil {
-		return nil, err
-	}
-	result := make([]compactTraceLog, len(summaries))
-	for i, summary := range summaries {
-		result[i] = compactTraceLog{
-			Timestamp: summary.Timestamp, SpanID: summary.SpanID,
-			Severity: logSeverityLabel(summary.SeverityText, summary.SeverityNumber),
-			Service:  summary.ServiceName, EventName: summary.EventName, Body: summary.BodyPreview,
-		}
-	}
-	return result, nil
-}
-
-func logSeverityLabel(text string, number json.Number) string {
-	if text != "" {
-		return text
-	}
-	value, _ := number.Int64()
-	switch {
-	case value <= 4:
-		return "TRACE"
-	case value <= 8:
-		return "DEBUG"
-	case value <= 12:
-		return "INFO"
-	case value <= 16:
-		return "WARN"
-	case value <= 20:
-		return "ERROR"
-	default:
-		return "FATAL"
-	}
 }
 
 type spanNotFoundResult struct {

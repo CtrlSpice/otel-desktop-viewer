@@ -979,6 +979,8 @@ describe('telemetryAPI.searchSpans rehydration', () => {
           links: [],
           r: 7,
           s: 3,
+          resourceSchemaURL: 'https://example.test/resource/v1',
+          scopeSchemaURL: 'https://example.test/scope/v1',
           droppedAttributesCount: 0,
           droppedEventsCount: 0,
           droppedLinksCount: 0,
@@ -1005,6 +1007,8 @@ describe('telemetryAPI.searchSpans rehydration', () => {
           links: [],
           r: 9,
           s: 3,
+          resourceSchemaURL: 'https://example.test/resource/v2',
+          scopeSchemaURL: 'https://example.test/scope/v2',
           droppedAttributesCount: 0,
           droppedEventsCount: 0,
           droppedLinksCount: 0,
@@ -1036,6 +1040,16 @@ describe('telemetryAPI.searchSpans rehydration', () => {
       value: 'payments',
     })
     expect(trace.spans[1].spanData.resource.droppedAttributesCount).toBe(2)
+  })
+
+  it('keeps received schema URLs with their source span', async () => {
+    const trace = await fetchTrace()
+    expect(trace.spans[0].spanData.resourceSchemaURL).toBe(
+      'https://example.test/resource/v1'
+    )
+    expect(trace.spans[1].spanData.scopeSchemaURL).toBe(
+      'https://example.test/scope/v2'
+    )
   })
 
   it('resolves scopes by reference', async () => {

@@ -48,6 +48,11 @@ create or replace macro span_data_json(
         -- on the wire.
         'r', resource_seq,
         's', scope_seq,
+		-- These are received on the ResourceSpans and ScopeSpans wrappers and
+		-- stored per span, so they must remain on this row rather than the
+		-- compressed resource/scope maps.
+		'resourceSchemaURL', ts.resource_schema_url,
+		'scopeSchemaURL', ts.scope_schema_url,
         'droppedAttributesCount', ts.dropped_attributes_count,
         'droppedEventsCount', ts.dropped_events_count,
         'droppedLinksCount', ts.dropped_links_count,

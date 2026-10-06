@@ -426,6 +426,23 @@ func GetTraceLogs(ctx context.Context, db *sql.DB, traceID string) (json.RawMess
 	return json.RawMessage(raw), nil
 }
 
+// GetTraceDetails returns every complete stored log carrying traceID. It keeps
+// nullable and dangling span associations and uses one bulk query.
+func GetTraceDetails(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage, error) {
+	query, err := queries.Render(queries.GetTraceLogDetails, nil)
+	if err != nil {
+		return nil, err
+	}
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, traceID).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("GetTraceDetails: %w: %w", ErrLogsStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
 // GetSpanLogs returns every full log row associated with one exact composite
 // span identity. The result is complete and uses one bulk query.
 func GetSpanLogs(ctx context.Context, db *sql.DB, traceID string, spanID uint64) (json.RawMessage, error) {

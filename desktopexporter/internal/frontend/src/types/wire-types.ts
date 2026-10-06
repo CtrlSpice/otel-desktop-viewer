@@ -131,6 +131,10 @@ export type JsonSpanData = {
   r: number
   /** Key into JsonTraceData.scopes. */
   s: number
+  /** Received ResourceSpans schema URL, stored per span rather than resource. */
+  resourceSchemaURL: string
+  /** Received ScopeSpans schema URL, stored per span rather than scope. */
+  scopeSchemaURL: string
   droppedAttributesCount: number
   droppedEventsCount: number
   droppedLinksCount: number

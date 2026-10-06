@@ -52,8 +52,10 @@ func TestGetTraceLogsPreservesTraceScopedRowsAndOrder(t *testing.T) {
 
 	data := plog.NewLogs()
 	resourceLogs := data.ResourceLogs().AppendEmpty()
+	resourceLogs.SetSchemaUrl("https://example.test/resource-schema")
 	resourceLogs.Resource().Attributes().PutStr("service.name", "trace-service")
 	scopeLogs := resourceLogs.ScopeLogs().AppendEmpty()
+	scopeLogs.SetSchemaUrl("https://example.test/scope-schema")
 
 	traceOnly := scopeLogs.LogRecords().AppendEmpty()
 	traceOnly.SetTraceID(traceID)
@@ -127,6 +129,21 @@ func TestGetTraceLogsPreservesTraceScopedRowsAndOrder(t *testing.T) {
 	require.Equal(t, "tie-a", got[3].BodyPreview)
 	for _, entry := range got {
 		require.NotEqual(t, "same-span-other-trace", entry.BodyPreview)
+	}
+
+	detailRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.GetTraceDetails(ctx, db, "00000000000000000000000000000099")
+	})
+	require.NoError(t, err)
+	var details []map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(detailRaw, &details))
+	require.Len(t, details, 4)
+	require.JSONEq(t, `null`, string(details[0]["spanID"]))
+	require.JSONEq(t, `"0000000000000007"`, string(details[1]["spanID"]))
+	require.JSONEq(t, `"https://example.test/resource-schema"`, string(details[0]["resourceSchemaURL"]))
+	require.JSONEq(t, `"https://example.test/scope-schema"`, string(details[0]["scopeSchemaURL"]))
+	for _, field := range []string{"timestamp", "observedTimestamp", "traceID", "spanID", "severityText", "severityNumber", "body", "resource", "scope", "attributes", "droppedAttributesCount", "flags", "eventName"} {
+		require.Contains(t, details[0], field)
 	}
 
 	var shape []map[string]json.RawMessage

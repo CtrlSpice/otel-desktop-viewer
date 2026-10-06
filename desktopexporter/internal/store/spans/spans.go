@@ -514,23 +514,6 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 	return salvaged, nil
 }
 
-// GetTrace returns the compact, untruncated overview for one trace. The query
-// computes exact nanosecond strings and reads every span in one operation.
-func GetTrace(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage, error) {
-	query, err := queries.Render(queries.GetTrace, nil)
-	if err != nil {
-		return nil, fmt.Errorf("GetTrace: %w: %w", ErrSpansStoreInternal, err)
-	}
-	var raw []byte
-	if err := db.QueryRowContext(ctx, query, traceID).Scan(&raw); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("GetTrace: %w", ErrTraceIDNotFound)
-		}
-		return nil, fmt.Errorf("GetTrace: %w: %w", ErrSpansStoreInternal, err)
-	}
-	return json.RawMessage(raw), nil
-}
-
 // GetSpanSummaries returns at most limit stable summary rows for one span ID,
 // together with the exact number of matching composite identities.
 func GetSpanSummaries(ctx context.Context, db *sql.DB, spanID uint64, limit int64) (json.RawMessage, int64, error) {
