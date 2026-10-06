@@ -1,5 +1,5 @@
 ---
-name: otel-desktop-viewer-usage
+name: otel-desktop-viewer
 description: "Inspect traces, correlated logs, and attribute use in a running OTel Desktop Viewer with bounded read-only SQL."
 ---
 

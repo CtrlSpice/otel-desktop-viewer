@@ -379,7 +379,13 @@ Open `http://localhost:8000/traces` to explore the result. For more otel-cli fea
 
 ## Agent Usage Skill
 
-The [OTel Desktop Viewer usage skill](skills/otel-desktop-viewer-usage/SKILL.md) gives coding agents focused read-only SQL examples for inspecting telemetry in a running viewer. It requires a build where `otel-desktop-viewer --help` lists `query`.
+Install the `otel-desktop-viewer` skill from this repository:
+
+```bash
+npx skills add CtrlSpice/otel-desktop-viewer --skill otel-desktop-viewer
+```
+
+The [OTel Desktop Viewer skill](skills/otel-desktop-viewer/SKILL.md) gives coding agents focused read-only SQL examples for inspecting telemetry in a running viewer. It requires a build where `otel-desktop-viewer --help` lists `query`.
 
 ## Implementation
 
