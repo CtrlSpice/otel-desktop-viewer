@@ -31,9 +31,10 @@ if you started it. Never stop a viewer you did not start.
 To observe the viewer itself, keep a monitoring viewer running:
   otel-desktop-viewer --grpc 4327 --http 4328 --browser-port 8001
 Then start the observed viewer in another terminal:
-  otel-desktop-viewer --telemetry-endpoint http://localhost:4327
-The monitoring viewer must remain alive through observed viewer shutdown. The
-caller owns starting, stopping, and waiting for both processes.
+  otel-desktop-viewer --self-telemetry-endpoint http://localhost:4327
+Omitting --self-telemetry-endpoint keeps self-telemetry off. The monitoring
+endpoint must remain running through observed viewer shutdown. The caller owns
+starting, stopping, and waiting for both foreground processes.
 
 USAGE
   otel-desktop-viewer [flags]
@@ -53,8 +54,8 @@ VIEWER FLAGS
       --open-browser         Open viewer after startup (default true)
       --db string            DuckDB file; omit for memory
       --db-max-size string   Maximum telemetry-store size (defaults to 512MB in memory or 2GB with --db; 0 disables pruning)
-      --telemetry-endpoint string
-                            External OTLP gRPC endpoint for viewer telemetry
+      --self-telemetry-endpoint string
+                            Export the viewer's own traces and metrics to this OTLP/gRPC endpoint
 
 GLOBAL FLAGS
   -h, --help      Help for this command
@@ -195,9 +196,9 @@ func TestViewerStartupUsesParsedFlagsAndBrowserContext(t *testing.T) {
 		opened <- url
 		return nil
 	})
-	cmd.SetArgs([]string{"--host", "0.0.0.0", "--http", "14318", "--grpc", "14317", "--browser-port", "18000", "--db", "viewer.duckdb", "--db-max-size", "3GB", "--telemetry-endpoint", "http://localhost:4327"})
+	cmd.SetArgs([]string{"--host", "0.0.0.0", "--http", "14318", "--grpc", "14317", "--browser-port", "18000", "--db", "viewer.duckdb", "--db-max-size", "3GB", "--self-telemetry-endpoint", "http://localhost:4327"})
 	require.NoError(t, cmd.Execute())
-	expected := configOptions{host: "0.0.0.0", httpPort: 14318, grpcPort: 14317, browserPort: 18000, db: "viewer.duckdb", dbMaxSize: "3GB", telemetryEndpoint: "http://localhost:4327"}
+	expected := configOptions{host: "0.0.0.0", httpPort: 14318, grpcPort: 14317, browserPort: 18000, db: "viewer.duckdb", dbMaxSize: "3GB", selfTelemetryEndpoint: "http://localhost:4327"}
 	assert.Equal(t, collectorURIs(expected), received.ConfigProviderSettings.ResolverSettings.URIs)
 	assert.Equal(t, "env", received.ConfigProviderSettings.ResolverSettings.DefaultScheme)
 	select {

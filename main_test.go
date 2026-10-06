@@ -105,7 +105,7 @@ func TestCollectorURIsResolve(t *testing.T) {
 
 	t.Run("telemetry external", func(t *testing.T) {
 		o := testOptions()
-		o.telemetryEndpoint = "http://localhost:4327"
+		o.selfTelemetryEndpoint = "http://localhost:4327"
 
 		cfg, err := resolveConfig(t, o)
 		require.NoError(t, err)
@@ -125,7 +125,7 @@ func TestServiceTelemetryValidates(t *testing.T) {
 
 	t.Run("external", func(t *testing.T) {
 		o := testOptions()
-		o.telemetryEndpoint = "http://localhost:4327"
+		o.selfTelemetryEndpoint = "http://localhost:4327"
 		require.NoError(t, validateServiceTelemetry(t, o))
 	})
 }
@@ -140,7 +140,7 @@ func TestExternalTelemetrySetsExporterMode(t *testing.T) {
 		"exporter telemetry should be left at its default when the flag is off")
 
 	o := testOptions()
-	o.telemetryEndpoint = "http://localhost:4327"
+	o.selfTelemetryEndpoint = "http://localhost:4327"
 	on := strings.Join(telemetryURIs(o), "\n")
 
 	assert.Contains(t, on, "exporters::desktop::telemetry: enabled")
@@ -178,9 +178,9 @@ func TestPipelinesBatch(t *testing.T) {
 }
 
 // The external OTLP target is independent of this viewer's own gRPC receiver.
-func TestTelemetryEndpointConfiguresBothSignalsExactly(t *testing.T) {
+func TestSelfTelemetryEndpointConfiguresBothSignalsExactly(t *testing.T) {
 	o := testOptions()
-	o.telemetryEndpoint = "http://collector.example:4327"
+	o.selfTelemetryEndpoint = "http://collector.example:4327"
 	o.grpcPort = 15317
 	o.host = "127.0.0.1"
 

@@ -103,9 +103,18 @@ logs:    otlp → batch → desktop
 | `--db` | *(empty)* | DuckDB file path; empty = in-memory |
 | `--db-max-size` | *(empty)* | Store size cap (e.g. `512MB`, `2GB`); oldest telemetry pruned when exceeded. `0` disables pruning. Defaults to 512 MB in-memory, 2 GB on disk. |
 | `--open-browser` | true | Open UI on startup |
-| `--telemetry-endpoint` | *(empty)* | External OTLP gRPC URL for the viewer's own traces and metrics. Empty means off. Sets both the `desktop` exporter's and the `duckdb` extension's telemetry mode to `enabled`; both signals use the supplied endpoint exactly. |
+| `--self-telemetry-endpoint` | *(empty)* | Export the viewer's own traces and metrics to this OTLP/gRPC endpoint. Empty means off. Sets both the `desktop` exporter's and the `duckdb` extension's telemetry mode to `enabled`; both signals use the supplied endpoint exactly. |
 
 Configuration is injected as inline YAML resolver URIs at startup. There is no `--config` file path exposed by the CLI today, though the underlying collector supports YAML providers.
+
+Self-telemetry uses another viewer as the monitoring endpoint. Run both viewers in the foreground in separate terminals:
+
+```bash
+otel-desktop-viewer --grpc 4327 --http 4328 --browser-port 8001
+otel-desktop-viewer --self-telemetry-endpoint http://localhost:4327
+```
+
+The first command starts the monitoring viewer and the second starts the observed viewer. The monitoring endpoint must remain running through observed viewer shutdown. The caller owns starting, stopping, and waiting for both foreground processes.
 
 ## Desktop exporter and DuckDB extension
 

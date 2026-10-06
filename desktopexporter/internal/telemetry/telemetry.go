@@ -3,8 +3,8 @@
 //
 // The tool is an OpenTelemetry viewer, so it measures itself the way it expects
 // its users to measure their services -- with real telemetry rather than ad-hoc
-// timing logs. Point it at its own OTLP endpoint and it renders its own query
-// spans.
+// timing logs. The viewer CLI can export these traces and metrics to an external
+// OTLP endpoint, such as another viewer.
 //
 // Disabled is the default. A disabled Telemetry uses noop providers rather than
 // nil checks, so call sites are unconditional and cost a virtual call when off.

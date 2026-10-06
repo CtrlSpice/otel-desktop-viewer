@@ -75,7 +75,7 @@ func newRootCommand(
 	root.Flags().BoolVar(&openBrowser, "open-browser", openBrowser, "Open viewer after startup")
 	root.Flags().StringVar(&options.db, "db", "", "DuckDB file; omit for memory")
 	root.Flags().StringVar(&options.dbMaxSize, "db-max-size", "", "Maximum telemetry-store size (defaults to 512MB in memory or 2GB with --db; 0 disables pruning)")
-	root.Flags().StringVar(&options.telemetryEndpoint, "telemetry-endpoint", "", "External OTLP gRPC endpoint for viewer telemetry")
+	root.Flags().StringVar(&options.selfTelemetryEndpoint, "self-telemetry-endpoint", "", "Export the viewer's own traces and metrics to this OTLP/gRPC endpoint")
 
 	commands := []*cobra.Command{
 		newQueryCommand(client),
@@ -132,9 +132,10 @@ if you started it. Never stop a viewer you did not start.
 To observe the viewer itself, keep a monitoring viewer running:
   otel-desktop-viewer --grpc 4327 --http 4328 --browser-port 8001
 Then start the observed viewer in another terminal:
-  otel-desktop-viewer --telemetry-endpoint http://localhost:4327
-The monitoring viewer must remain alive through observed viewer shutdown. The
-caller owns starting, stopping, and waiting for both processes.
+  otel-desktop-viewer --self-telemetry-endpoint http://localhost:4327
+Omitting --self-telemetry-endpoint keeps self-telemetry off. The monitoring
+endpoint must remain running through observed viewer shutdown. The caller owns
+starting, stopping, and waiting for both foreground processes.
 
 USAGE
   %s [flags]
@@ -154,8 +155,8 @@ VIEWER FLAGS
       --open-browser         Open viewer after startup (default true)
       --db string            DuckDB file; omit for memory
       --db-max-size string   Maximum telemetry-store size (defaults to 512MB in memory or 2GB with --db; 0 disables pruning)
-      --telemetry-endpoint string
-                            External OTLP gRPC endpoint for viewer telemetry
+      --self-telemetry-endpoint string
+                            Export the viewer's own traces and metrics to this OTLP/gRPC endpoint
 
 GLOBAL FLAGS
   -h, --help      Help for this command

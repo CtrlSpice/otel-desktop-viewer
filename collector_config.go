@@ -15,10 +15,10 @@ type configOptions struct {
 	db          string
 	dbMaxSize   string
 
-	// telemetryEndpoint turns on the viewer's own instrumentation and sends its
-	// traces and metrics to an external OTLP gRPC endpoint. An empty value keeps
-	// viewer telemetry off.
-	telemetryEndpoint string
+	// selfTelemetryEndpoint turns on the viewer's own instrumentation and sends
+	// its traces and metrics to an external OTLP gRPC endpoint. An empty value
+	// keeps viewer telemetry off.
+	selfTelemetryEndpoint string
 }
 
 // collectorURIs builds the yaml config fragments that stand in for a config
@@ -90,10 +90,10 @@ func collectorURIs(o configOptions) []string {
 // (Prometheus) reader, so raising the level without replacing that reader would
 // publish metrics on a Prometheus endpoint rather than sending them to us.
 func telemetryURIs(o configOptions) []string {
-	if o.telemetryEndpoint == "" {
+	if o.selfTelemetryEndpoint == "" {
 		return []string{`yaml:service::telemetry::metrics::level: none`}
 	}
-	target := strconv.Quote(o.telemetryEndpoint)
+	target := strconv.Quote(o.selfTelemetryEndpoint)
 	return []string{
 		`yaml:exporters::desktop::telemetry: enabled`,
 		`yaml:extensions::duckdb::telemetry: enabled`,
