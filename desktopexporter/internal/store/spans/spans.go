@@ -531,6 +531,42 @@ func GetTrace(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage,
 	return json.RawMessage(raw), nil
 }
 
+// GetSpanTraceIDs returns every trace containing spanID in ascending order.
+func GetSpanTraceIDs(ctx context.Context, db *sql.DB, spanID uint64) (json.RawMessage, error) {
+	query, err := queries.Render(queries.GetSpanTraceIDs, nil)
+	if err != nil {
+		return nil, fmt.Errorf("GetSpanTraceIDs: %w: %w", ErrSpansStoreInternal, err)
+	}
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, []uint64{spanID}).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("GetSpanTraceIDs: %w: %w", ErrSpansStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+// GetSpan returns full stored detail for one composite trace and span identity.
+// A missing exact pair returns a nil result without an error.
+func GetSpan(ctx context.Context, db *sql.DB, traceID string, spanID uint64) (json.RawMessage, error) {
+	query, err := queries.Render(queries.GetSpan, nil)
+	if err != nil {
+		return nil, fmt.Errorf("GetSpan: %w: %w", ErrSpansStoreInternal, err)
+	}
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, traceID, []uint64{spanID}).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("GetSpan: %w: %w", ErrSpansStoreInternal, err)
+	}
+	if raw == nil {
+		return nil, nil
+	}
+	return json.RawMessage(raw), nil
+}
+
 // GetTraceOTLP returns every stored span for traceID as one standard OTLP JSON
 // document. The SQL owns reconstruction so callers receive the stored signal,
 // not the search and display projection. Callers must transport the returned

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -721,6 +722,176 @@ func TestCompactTraceLogsPreservesNullAndDanglingSpanIDs(t *testing.T) {
 	require.NotNil(t, logs[1].SpanID)
 	require.Equal(t, "ffffffffffffffff", *logs[1].SpanID)
 	require.Equal(t, "CUSTOM", logs[1].Severity)
+}
+
+func TestGetSpanResolutionNeverGuesses(t *testing.T) {
+	handler := setupHandler(t)
+	spanID := pcommon.SpanID{7: 42}
+	data := ptrace.NewTraces()
+	for _, last := range []byte{4, 2, 3, 1} {
+		rs := data.ResourceSpans().AppendEmpty()
+		ss := rs.ScopeSpans().AppendEmpty()
+		span := ss.Spans().AppendEmpty()
+		span.SetTraceID(pcommon.TraceID{15: last})
+		span.SetSpanID(spanID)
+		span.SetName(fmt.Sprintf("trace-%d", last))
+		span.SetStartTimestamp(1)
+		span.SetEndTimestamp(2)
+	}
+	require.NoError(t, handler.store.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(context.Background(), conn, data, handler.store.FlushedIDs())
+	}))
+
+	result, err := handler.Handle(context.Background(), createRequest("getSpan", map[string]any{"spanID": "000000000000002A"}))
+	require.NoError(t, err)
+	ambiguous := result.(spanAmbiguousResult)
+	require.Equal(t, 4, ambiguous.MatchCount)
+	require.Equal(t, []string{
+		"00000000000000000000000000000001",
+		"00000000000000000000000000000002",
+		"00000000000000000000000000000003",
+		"00000000000000000000000000000004",
+	}, ambiguous.TraceIDs)
+	require.Equal(t, "000000000000002a", ambiguous.SpanID)
+
+	result, err = handler.Handle(context.Background(), createRequest("getSpan", []any{"000000000000002a", "00000000000000000000000000000003"}))
+	require.NoError(t, err)
+	found := result.(spanFoundResult)
+	require.Equal(t, "00000000000000000000000000000003", found.TraceID)
+	require.Contains(t, string(found.Span), `"name":"trace-3"`)
+
+	require.NoError(t, handler.store.WithDBWrite(func(db *sql.DB) error {
+		_, err := db.Exec(`delete from spans where trace_id in (?::uuid, ?::uuid)`,
+			"00000000000000000000000000000003", "00000000000000000000000000000004")
+		return err
+	}))
+	result, err = handler.Handle(context.Background(), createRequest("getSpan", []any{"000000000000002a"}))
+	require.NoError(t, err)
+	require.Equal(t, 2, result.(spanAmbiguousResult).MatchCount)
+
+	require.NoError(t, handler.store.WithDBWrite(func(db *sql.DB) error {
+		_, err := db.Exec(`delete from spans where trace_id = ?::uuid`, "00000000000000000000000000000002")
+		return err
+	}))
+	result, err = handler.Handle(context.Background(), createRequest("getSpan", []any{"000000000000002a"}))
+	require.NoError(t, err)
+	require.Equal(t, "00000000000000000000000000000001", result.(spanFoundResult).TraceID)
+
+	result, err = handler.Handle(context.Background(), createRequest("getSpan", []any{"000000000000002a", "00000000000000000000000000000009"}))
+	require.NoError(t, err)
+	missing := result.(spanNotFoundResult)
+	require.Equal(t, "notFound", missing.Status)
+	require.NotNil(t, missing.TraceID)
+	require.Equal(t, "00000000000000000000000000000009", *missing.TraceID)
+}
+
+func TestGetSpanNotFoundValidationAndCancellation(t *testing.T) {
+	handler := setupHandler(t)
+	result, err := handler.Handle(context.Background(), createRequest("getSpan", map[string]any{"spanID": "0000000000000000"}))
+	require.NoError(t, err)
+	missing := result.(spanNotFoundResult)
+	require.Nil(t, missing.TraceID)
+	require.Equal(t, "0000000000000000", missing.SpanID)
+
+	for _, params := range []any{
+		[]any{}, []any{"0"}, []any{"000000000000000g"}, []any{42}, []any{"0000000000000001", "bad-trace"},
+		map[string]any{"spanID": "0000000000000001", "unknown": "x"},
+	} {
+		result, err = handler.Handle(context.Background(), createRequest("getSpan", params))
+		require.Nil(t, result)
+		require.Error(t, err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	result, err = handler.Handle(ctx, createRequest("getSpan", []any{"0000000000000001"}))
+	require.Nil(t, result)
+	require.ErrorIs(t, err, ErrRequestCanceled)
+}
+
+func TestGetSpanReturnsFullExactDetailAndOnlyCompositeLogs(t *testing.T) {
+	handler := setupHandler(t)
+	traceID := pcommon.TraceID{15: 7}
+	otherTraceID := pcommon.TraceID{15: 8}
+	spanID := pcommon.SpanID{7: 9}
+	data := ptrace.NewTraces()
+	for _, id := range []pcommon.TraceID{traceID, otherTraceID} {
+		rs := data.ResourceSpans().AppendEmpty()
+		rs.SetSchemaUrl("resource-schema")
+		rs.Resource().SetDroppedAttributesCount(10)
+		rs.Resource().Attributes().PutStr("service.name", "exact")
+		ss := rs.ScopeSpans().AppendEmpty()
+		ss.SetSchemaUrl("scope-schema")
+		ss.Scope().SetName("scope")
+		ss.Scope().SetVersion("1")
+		ss.Scope().SetDroppedAttributesCount(11)
+		span := ss.Spans().AppendEmpty()
+		span.SetTraceID(id)
+		span.SetSpanID(spanID)
+		span.SetFlags(0xffffffff)
+		span.SetName("exact span")
+		span.SetKind(ptrace.SpanKindServer)
+		span.SetStartTimestamp(pcommon.Timestamp(^uint64(0) - 10))
+		span.SetEndTimestamp(pcommon.Timestamp(^uint64(0)))
+		span.SetDroppedAttributesCount(12)
+		span.SetDroppedEventsCount(13)
+		span.SetDroppedLinksCount(14)
+		span.Status().SetCode(ptrace.StatusCodeError)
+		span.Attributes().PutInt("max", math.MaxInt64)
+		span.Attributes().PutDouble("negative-zero", math.Copysign(0, -1))
+		span.Attributes().PutDouble("infinity", math.Inf(1))
+		event := span.Events().AppendEmpty()
+		event.SetName("event")
+		event.SetTimestamp(pcommon.Timestamp(^uint64(0) - 1))
+		event.SetDroppedAttributesCount(15)
+		link := span.Links().AppendEmpty()
+		link.SetFlags(16)
+		link.SetDroppedAttributesCount(17)
+	}
+	require.NoError(t, handler.store.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(context.Background(), conn, data, handler.store.FlushedIDs())
+	}))
+
+	logData := plog.NewLogs()
+	for i, id := range []pcommon.TraceID{traceID, otherTraceID} {
+		rl := logData.ResourceLogs().AppendEmpty()
+		rl.SetSchemaUrl("log-resource-schema")
+		rl.Resource().SetDroppedAttributesCount(20)
+		sl := rl.ScopeLogs().AppendEmpty()
+		sl.SetSchemaUrl("log-scope-schema")
+		sl.Scope().SetName("log-scope")
+		record := sl.LogRecords().AppendEmpty()
+		record.SetTraceID(id)
+		record.SetSpanID(spanID)
+		record.SetTimestamp(pcommon.Timestamp(^uint64(0) - uint64(i)))
+		record.SetObservedTimestamp(pcommon.Timestamp(^uint64(0)))
+		record.SetFlags(21)
+		record.SetDroppedAttributesCount(22)
+		record.Body().SetStr(fmt.Sprintf("trace-%d", id[15]))
+	}
+	require.NoError(t, handler.store.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(context.Background(), conn, logData, handler.store.FlushedIDs())
+	}))
+
+	result, err := handler.Handle(context.Background(), createRequest("getSpan", map[string]any{
+		"spanID": "0000000000000009", "traceID": "00000000000000000000000000000007",
+	}))
+	require.NoError(t, err)
+	found := result.(spanFoundResult)
+	encoded, err := json.Marshal(found)
+	require.NoError(t, err)
+	text := string(encoded)
+	for _, want := range []string{
+		`"startTime":"18446744073709551605"`, `"endTime":"18446744073709551615"`,
+		`"value":"9223372036854775807"`, `"value":"0x8000000000000000"`, `"value":"0x7ff0000000000000"`,
+		`"traceID":null`, `"spanID":null`, `"flags":4294967295`, `"kindCode":2`, `"statusCodeValue":2`,
+		`"droppedAttributesCount":12`, `"droppedEventsCount":13`, `"droppedLinksCount":14`,
+		`"resourceSchemaURL":"resource-schema"`, `"scopeSchemaURL":"scope-schema"`,
+		`"resourceSchemaURL":"log-resource-schema"`, `"scopeSchemaURL":"log-scope-schema"`, `"trace-7"`,
+	} {
+		require.Contains(t, text, want)
+	}
+	require.NotContains(t, text, "trace-8")
 }
 
 func serverMapKeys(value map[string]any) []string {

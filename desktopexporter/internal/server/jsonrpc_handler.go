@@ -7,6 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/attributes"
@@ -81,6 +84,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.searchSpans(ctx, req)
 	case "getTrace":
 		return h.getTrace(ctx, req)
+	case "getSpan":
+		return h.getSpan(ctx, req)
 	case "searchLogs":
 		return h.searchLogs(ctx, req)
 	case "getTraceLogs":
@@ -290,6 +295,100 @@ func logSeverityLabel(text string, number json.Number) string {
 	default:
 		return "FATAL"
 	}
+}
+
+type spanNotFoundResult struct {
+	Status  string  `json:"status"`
+	SpanID  string  `json:"spanID"`
+	TraceID *string `json:"traceID"`
+}
+
+type spanAmbiguousResult struct {
+	Status     string   `json:"status"`
+	SpanID     string   `json:"spanID"`
+	MatchCount int      `json:"matchCount"`
+	TraceIDs   []string `json:"traceIDs"`
+}
+
+type spanFoundResult struct {
+	Status  string          `json:"status"`
+	TraceID string          `json:"traceID"`
+	Span    json.RawMessage `json:"span"`
+	Logs    json.RawMessage `json:"logs"`
+}
+
+func (h *JSONRPCHandler) getSpan(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	params, err := decodePositionalParams(req.Params, 1, 2)
+	if err != nil {
+		return nil, err
+	}
+	spanID, spanValue, err := parseSpanIDParam(params[0])
+	if err != nil {
+		return nil, err
+	}
+	var requestedTraceID *string
+	if len(params) == 2 {
+		traceID, err := parseIDParam(params[1], ErrInvalidTraceID, normalizeUUID)
+		if err != nil {
+			return nil, err
+		}
+		requestedTraceID = &traceID
+	}
+
+	return handlerRead(ctx, h, func(db *sql.DB) (any, error) {
+		traceID := requestedTraceID
+		if traceID == nil {
+			traceIDsRaw, err := spans.GetSpanTraceIDs(ctx, db, spanValue)
+			if err != nil {
+				return nil, err
+			}
+			var traceIDs []string
+			if err := json.Unmarshal(traceIDsRaw, &traceIDs); err != nil {
+				return nil, err
+			}
+			sort.Strings(traceIDs)
+			switch len(traceIDs) {
+			case 0:
+				return spanNotFoundResult{Status: "notFound", SpanID: spanID}, nil
+			case 1:
+				traceID = &traceIDs[0]
+			default:
+				return spanAmbiguousResult{
+					Status: "ambiguous", SpanID: spanID,
+					MatchCount: len(traceIDs), TraceIDs: traceIDs,
+				}, nil
+			}
+		}
+
+		span, err := spans.GetSpan(ctx, db, *traceID, spanValue)
+		if err != nil {
+			return nil, err
+		}
+		if span == nil {
+			resultTraceID := strings.ReplaceAll(*traceID, "-", "")
+			return spanNotFoundResult{Status: "notFound", SpanID: spanID, TraceID: &resultTraceID}, nil
+		}
+		spanLogs, err := logs.GetSpanLogs(ctx, db, *traceID, spanValue)
+		if err != nil {
+			return nil, err
+		}
+		return spanFoundResult{
+			Status: "found", TraceID: strings.ReplaceAll(*traceID, "-", ""),
+			Span: span, Logs: spanLogs,
+		}, nil
+	})
+}
+
+func parseSpanIDParam(value any) (string, uint64, error) {
+	text, ok := value.(string)
+	if !ok || len(text) != 16 {
+		return "", 0, jsonrpc2.ErrInvalidParams
+	}
+	parsed, err := strconv.ParseUint(text, 16, 64)
+	if err != nil {
+		return "", 0, jsonrpc2.ErrInvalidParams
+	}
+	return strings.ToLower(text), parsed, nil
 }
 
 func (h *JSONRPCHandler) clearTraces(ctx context.Context) (any, error) {

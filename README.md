@@ -314,6 +314,19 @@ the received severity number. Log body is the viewer's compact `body_preview`
 display value, not the complete stored tagged body. Use `query` when complete
 stored log fields are needed.
 
+Inspect one span with full typed detail and every log associated with that exact
+trace and span ID:
+
+```bash
+otel-desktop-viewer span 000000000000002a
+otel-desktop-viewer span 0123456789abcdef0123456789abcdef 000000000000002a --json
+```
+
+A standalone span ID returns a not-found result, one exact span, or every
+matching trace ID in ascending order. It never chooses between duplicate span
+IDs from different traces. The qualified form selects only the requested trace
+and span pair. Both not-found forms are successful structured results.
+
 ## Configuring Your OpenTelemetry SDK
 
 Point your app's OTLP exporter at the viewer. Send to `http://localhost:4318` (HTTP) or `http://localhost:4317` (gRPC).

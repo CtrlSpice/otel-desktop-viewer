@@ -426,6 +426,23 @@ func GetTraceLogs(ctx context.Context, db *sql.DB, traceID string) (json.RawMess
 	return json.RawMessage(raw), nil
 }
 
+// GetSpanLogs returns every full log row associated with one exact composite
+// span identity. The result is complete and uses one bulk query.
+func GetSpanLogs(ctx context.Context, db *sql.DB, traceID string, spanID uint64) (json.RawMessage, error) {
+	query, err := queries.Render(queries.GetSpanLogs, nil)
+	if err != nil {
+		return nil, fmt.Errorf("GetSpanLogs: %w: %w", ErrLogsStoreInternal, err)
+	}
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, traceID, []uint64{spanID}).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("GetSpanLogs: %w: %w", ErrLogsStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
 func getTraceLogsSQL(traceID string) (string, []any, error) {
 	query, err := queries.Render(queries.GetTraceLogs, nil)
 	if err != nil {
