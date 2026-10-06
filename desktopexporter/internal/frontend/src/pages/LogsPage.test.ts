@@ -5,12 +5,13 @@ import LogsPage from './LogsPage.svelte'
 import type { LogSummary, LogData, Stats } from '@/types/api-types'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
-const { searchLogSummaries, getLog, getStats, getLogAttributeDefinitions } = vi.hoisted(() => ({
-  searchLogSummaries: vi.fn(),
-  getLog: vi.fn(),
-  getStats: vi.fn(),
-  getLogAttributeDefinitions: vi.fn(),
-}))
+const { searchLogSummaries, getLog, getStats, getLogAttributeDefinitions } =
+  vi.hoisted(() => ({
+    searchLogSummaries: vi.fn(),
+    getLog: vi.fn(),
+    getStats: vi.fn(),
+    getLogAttributeDefinitions: vi.fn(),
+  }))
 
 vi.mock('@/services/telemetry-service', async importOriginal => {
   const actual =
@@ -101,7 +102,9 @@ describe('LogsPage refresh', () => {
     const refresh = screen.getByRole('button', { name: /refresh/i })
     refresh.click()
 
-    await waitFor(() => expect(searchLogSummaries.mock.calls.length).toBeGreaterThan(1))
+    await waitFor(() =>
+      expect(searchLogSummaries.mock.calls.length).toBeGreaterThan(1)
+    )
     await waitFor(() => expect(getLog).toHaveBeenCalledTimes(2))
   })
 
@@ -116,7 +119,9 @@ describe('LogsPage refresh', () => {
     const refresh = screen.getByRole('button', { name: /refresh/i })
     refresh.click()
 
-    await waitFor(() => expect(searchLogSummaries.mock.calls.length).toBeGreaterThan(1))
+    await waitFor(() =>
+      expect(searchLogSummaries.mock.calls.length).toBeGreaterThan(1)
+    )
     // A detail fetch with no selection would race the pane's empty state.
     expect(getLog).not.toHaveBeenCalled()
   })

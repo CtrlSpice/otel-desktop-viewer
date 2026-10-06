@@ -89,7 +89,13 @@ describe('search dispatch', () => {
       queryTree,
       updateSeq: 11,
     })
-    expect(searchTraceSummaries).toHaveBeenCalledWith(10n, 20n, queryTree, 25, sort)
+    expect(searchTraceSummaries).toHaveBeenCalledWith(
+      10n,
+      20n,
+      queryTree,
+      25,
+      sort
+    )
     expect(searchLogSummaries).not.toHaveBeenCalled()
     expect(searchMetrics).not.toHaveBeenCalled()
   })
@@ -109,7 +115,13 @@ describe('search dispatch', () => {
       queryTree,
       updateSeq: 12,
     })
-    expect(searchLogSummaries).toHaveBeenCalledWith(10n, 20n, queryTree, 50, sort)
+    expect(searchLogSummaries).toHaveBeenCalledWith(
+      10n,
+      20n,
+      queryTree,
+      50,
+      sort
+    )
     expect(searchTraceSummaries).not.toHaveBeenCalled()
     expect(searchMetrics).not.toHaveBeenCalled()
   })

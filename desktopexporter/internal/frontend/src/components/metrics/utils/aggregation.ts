@@ -103,7 +103,7 @@ export function isCumulativeTemporality(temporality: string): boolean {
  * restart; a non-monotonic cumulative Sum is allowed to fall for real,
  * so every decrease would be reported as a reset and the rate would be
  * fiction.
-  */
+ */
 export function defaultAggregationViewFor(
   metricType: string,
   temporality: string,

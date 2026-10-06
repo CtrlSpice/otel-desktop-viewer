@@ -5,8 +5,8 @@ import { startDrag, type DragHandle } from './drag'
  * for drags, and reconciliation for a column set that changes.
  *
  * @remarks
-  * Widths use stable column ids. Drags shrink neighbours nearest-first and
-  * conserve total width; the column nearest the bar receives all growth.
+ * Widths use stable column ids. Drags shrink neighbours nearest-first and
+ * conserve total width; the column nearest the bar receives all growth.
  */
 
 export type ColumnSpec = {

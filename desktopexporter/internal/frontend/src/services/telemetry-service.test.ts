@@ -231,9 +231,9 @@ describe('telemetryAPI.getTraceLogSummaries', () => {
     ]
     stubRpcResult(result)
 
-    await expect(telemetryAPI.getTraceLogSummaries('trace-1')).resolves.toEqual([
-      { ...result[0], timestamp: 9_223_372_036_854_775_807n },
-    ])
+    await expect(telemetryAPI.getTraceLogSummaries('trace-1')).resolves.toEqual(
+      [{ ...result[0], timestamp: 9_223_372_036_854_775_807n }]
+    )
   })
 })
 
@@ -1101,7 +1101,9 @@ describe('telemetryAPI.searchTraceSummaries', () => {
     ]
     stubRpcResult(summaries)
 
-    await expect(telemetryAPI.searchTraceSummaries(0n, 1n)).resolves.toMatchObject([
+    await expect(
+      telemetryAPI.searchTraceSummaries(0n, 1n)
+    ).resolves.toMatchObject([
       {
         traceID: 'trace-1',
         startTime: 1700000000000000000n,
@@ -1167,7 +1169,9 @@ describe('telemetryAPI.searchTraceSummaries', () => {
       },
     ] satisfies JsonTraceSummary[])
 
-    await expect(telemetryAPI.searchTraceSummaries(0n, 1n)).resolves.toMatchObject([
+    await expect(
+      telemetryAPI.searchTraceSummaries(0n, 1n)
+    ).resolves.toMatchObject([
       { startTime: -9_223_372_036_854_775_808n, durationNs: null },
       { startTime: 16n, durationNs: 12n },
     ])
@@ -1652,7 +1656,9 @@ describe('request parameters', () => {
 
   it('includes a trace result limit without requiring a query tree', async () => {
     const sent = captureRequest()
-    await telemetryAPI.searchTraceSummaries(2n, 5n, undefined, 250).catch(() => {})
+    await telemetryAPI
+      .searchTraceSummaries(2n, 5n, undefined, 250)
+      .catch(() => {})
     expect(sent().params).toEqual({
       startTime: '2',
       endTime: '5',
@@ -1741,7 +1747,11 @@ describe('request parameters', () => {
       () => telemetryAPI.deleteTraces(['a', 'b']),
       ['a', 'b'],
     ],
-    ['deleteLogsByRefs', () => telemetryAPI.deleteLogsByRefs('log-1'), ['log-1']],
+    [
+      'deleteLogsByRefs',
+      () => telemetryAPI.deleteLogsByRefs('log-1'),
+      ['log-1'],
+    ],
   ])(
     '%s stays positional, because its params are the ids',
     async (method, invoke, expected) => {
@@ -1754,9 +1764,18 @@ describe('request parameters', () => {
   )
 
   it.each([
-    ['getTraceAttributeDefinitions', () => telemetryAPI.getTraceAttributeDefinitions()],
-    ['getLogAttributeDefinitions', () => telemetryAPI.getLogAttributeDefinitions()],
-    ['getMetricAttributeDefinitions', () => telemetryAPI.getMetricAttributeDefinitions()],
+    [
+      'getTraceAttributeDefinitions',
+      () => telemetryAPI.getTraceAttributeDefinitions(),
+    ],
+    [
+      'getLogAttributeDefinitions',
+      () => telemetryAPI.getLogAttributeDefinitions(),
+    ],
+    [
+      'getMetricAttributeDefinitions',
+      () => telemetryAPI.getMetricAttributeDefinitions(),
+    ],
     ['clearTraces', () => telemetryAPI.clearTraces()],
     ['clearLogs', () => telemetryAPI.clearLogs()],
     ['clearMetrics', () => telemetryAPI.clearMetrics()],
@@ -1769,7 +1788,10 @@ describe('request parameters', () => {
   })
 
   it.each([
-    ['searchTraceSummaries', () => telemetryAPI.searchTraceSummaries(null, null)],
+    [
+      'searchTraceSummaries',
+      () => telemetryAPI.searchTraceSummaries(null, null),
+    ],
     ['searchLogSummaries', () => telemetryAPI.searchLogSummaries(null, null)],
     [
       'searchMetricSummaries',

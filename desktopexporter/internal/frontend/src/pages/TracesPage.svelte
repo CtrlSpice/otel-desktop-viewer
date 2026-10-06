@@ -118,7 +118,10 @@
         timeContext.selection,
         Date.now()
       )
-      const results = await telemetryAPI.searchTraceSummaries(startTime, endTime)
+      const results = await telemetryAPI.searchTraceSummaries(
+        startTime,
+        endTime
+      )
       const s = await telemetryAPI.getStats()
       baselineStats = s.traces
       polledStats = s.traces
