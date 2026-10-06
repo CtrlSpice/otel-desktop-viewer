@@ -774,6 +774,7 @@ func cleanupProvisionalIdentities(
 	identities []streamIdentity,
 	seriesRows []seriesRow,
 ) error {
+	var cleanupErr error
 	for _, row := range seriesRows {
 		if !row.existenceKnown || row.existed {
 			continue
@@ -781,14 +782,17 @@ func cleanupProvisionalIdentities(
 		args, err := appendNamedValues(nil, prepareArg,
 			ingest.FormatUUID(row.stream), uuidStrings(row.attrs))
 		if err != nil {
-			return fmt.Errorf("cleanupProvisionalIdentities: %w: %w", ErrMetricsStoreInternal, err)
+			cleanupErr = errors.Join(cleanupErr,
+				fmt.Errorf("cleanupProvisionalIdentities: %w: %w", ErrMetricsStoreInternal, err))
+			continue
 		}
 		_, err = dconn.ExecContext(ctx, `delete from metric_series s
 			where s.stream_id = ?::uuid
 			  and s.attribute_ids = list_transform(?::varchar[], x -> x::uuid)
 			  and not exists (select 1 from datapoints d where d.series_id = s.id)`, args)
 		if err != nil {
-			return fmt.Errorf("cleanupProvisionalIdentities: %w: %w", ErrMetricsStoreInternal, err)
+			cleanupErr = errors.Join(cleanupErr,
+				fmt.Errorf("cleanupProvisionalIdentities: %w: %w", ErrMetricsStoreInternal, err))
 		}
 	}
 	for _, identity := range identities {
@@ -802,7 +806,9 @@ func cleanupProvisionalIdentities(
 			identity.ScopeVersion, identity.ScopeSchemaURL,
 			uuidStrings(identity.ScopeAttributeIDs))
 		if err != nil {
-			return fmt.Errorf("cleanupProvisionalIdentities: %w: %w", ErrMetricsStoreInternal, err)
+			cleanupErr = errors.Join(cleanupErr,
+				fmt.Errorf("cleanupProvisionalIdentities: %w: %w", ErrMetricsStoreInternal, err))
+			continue
 		}
 		_, err = dconn.ExecContext(ctx, `delete from metric_streams s
 			where s.resource_attribute_ids = list_transform(?::varchar[], x -> x::uuid)
@@ -812,10 +818,11 @@ func cleanupProvisionalIdentities(
 			  and s.scope_attribute_ids = list_transform(?::varchar[], x -> x::uuid)
 			  and not exists (select 1 from metric_ingests mi where mi.stream_id = s.id)`, args)
 		if err != nil {
-			return fmt.Errorf("cleanupProvisionalIdentities: %w: %w", ErrMetricsStoreInternal, err)
+			cleanupErr = errors.Join(cleanupErr,
+				fmt.Errorf("cleanupProvisionalIdentities: %w: %w", ErrMetricsStoreInternal, err))
 		}
 	}
-	return ingest.SweepOrphansConn(ctx, dconn, flushed)
+	return errors.Join(cleanupErr, ingest.SweepOrphansConn(ctx, dconn, flushed))
 }
 
 // serviceNameFromAttrs returns the value of the resource attribute
