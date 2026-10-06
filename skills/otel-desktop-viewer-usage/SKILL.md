@@ -13,19 +13,34 @@ local viewer. It is not an instrumentation recipe or an audit framework.
 This skill requires a build where `otel-desktop-viewer --help` lists `query`.
 If it does not, use the web UI instead of guessing a query command or RPC call.
 
-First try `SHOW TABLES` below against the intended endpoint and reuse that
-viewer if it is running. If no viewer is running, start the long-running viewer
-in a separate terminal or background process, wait until it is ready, and leave
-it running while you query it. The current viewer starts with the bare command:
+The viewer is a foreground server. The `query`, `traces`, `logs`, and `metrics`
+commands are clients and require that server to remain running. A person can
+keep it running in another terminal:
 
 ```sh
-otel-desktop-viewer
+otel-desktop-viewer --open-browser=false
 ```
 
-The query command talks to the same running process. It defaults to
-`http://localhost:8000`, returns at most 25 rows, and prints an aligned table.
-Use `--endpoint` for a viewer at another HTTP address, `--limit` for another row
-limit, or `--json` for the result object.
+For agent or automated use:
+
+1. Try `SHOW TABLES` below against the configured viewer HTTP endpoint and reuse
+   a compatible viewer that is already running. The default endpoint is
+   `http://localhost:8000`.
+2. If none is available, start `otel-desktop-viewer --open-browser=false` as a
+   managed, nonblocking child process and retain its process handle.
+3. Wait until the configured viewer HTTP endpoint accepts connections, then run
+   `query`, `traces`, `logs`, or `metrics` commands.
+4. In a `finally` or equivalent cleanup step, terminate and wait for only the
+   child process started in step 2.
+
+Do not stop or restart an existing viewer owned by the user. Starting the viewer
+does not return a PID or process object; the caller's process tool must retain
+the child handle. There is no detach, status, stop, daemon, REPL, or direct
+database mode, and client commands do not launch the viewer automatically.
+
+The query command defaults to `http://localhost:8000`, returns at most 25 rows,
+and prints an aligned table. Use `--endpoint` for a viewer at another HTTP
+address, `--limit` for another row limit, or `--json` for the result object.
 
 Check the installed build rather than assuming its schema or options:
 
