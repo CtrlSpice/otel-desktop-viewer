@@ -58,6 +58,11 @@ the registered `trace_id_wire` and `span_id_wire` macros.
 
 ## Query recent spans
 
+Stored trace and span IDs require the `trace_id_wire` and `span_id_wire` macros
+for display. `start_time` and `end_time` are stored unsigned integer nanoseconds
+since the Unix epoch. `status_code` is the received OTel enum number. Any labels
+or durations are derived values, not replacements for these stored fields.
+
 ```sh
 otel-desktop-viewer query "
 SELECT
@@ -73,14 +78,17 @@ WHERE start_time >= epoch_ns(current_timestamp - INTERVAL '1 hour')
 ORDER BY start_time DESC"
 ```
 
-`start_time` and `end_time` are stored unsigned integer nanoseconds since the
-Unix epoch. `status_code` is the received OTel enum number. Labels and durations
-would be computed values, not replacements for these stored values.
-
 ## Query one trace and its logs
 
-Replace the example ID with a 32-character trace ID returned above. Query logs
-separately so trace-only logs and logs whose span is absent remain visible.
+A span is identified by `(trace_id, span_id)`, not by `span_id` alone. Logs can
+have a trace ID with a null `span_id` or with no matching stored span. Query logs
+separately to preserve those trace-only and missing-span logs.
+`effective_timestamp` is derived from the received `timestamp` and
+`observed_timestamp`. `severity_number` and `severity_text` are received fields;
+the number is the OTel enum value. Log `body` uses canonical recursive tagged
+JSON with the shape `{kind,value}`.
+
+Replace the example ID with a 32-character trace ID returned above.
 
 ```sh
 otel-desktop-viewer query "
@@ -111,16 +119,14 @@ WHERE trace_id = '4bf92f3577b34da6a3ce929d0e0e4736'::UUID
 ORDER BY effective_timestamp, id"
 ```
 
-A span is identified by `(trace_id, span_id)`; do not join on `span_id` alone.
-A null log `span_id` is a valid trace-only association. `effective_timestamp` is
-computed from the received timestamps. `severity_number` is the received enum
-number, while `severity_text` is the received text.
-
 ## Query recent span attribute use
 
-`attributes` is a dictionary of distinct key and canonical typed-value pairs;
-its row count is not a telemetry count. Join each span's `attribute_ids` and
-count the owning span identities:
+`attributes` is a dictionary, not a table of telemetry rows. Spans own entries
+through `spans.attribute_ids`. Each value uses canonical recursive tagged JSON
+with the shape `{kind,value}`, and `value_kind` below reads that received type
+tag. Received `int64` values are stored as decimal strings and must not be cast
+to `DOUBLE`; native SQL integers remain integer JSON tokens in `--json` output.
+Join the ownership list and count the owning span identities:
 
 ```sh
 otel-desktop-viewer query "
@@ -139,10 +145,6 @@ ORDER BY owning_span_count DESC, a.key, value_kind"
 
 This counts recent spans that own each key and received value kind. It does not
 count resource, scope, event, link, log, datapoint, or exemplar ownership.
-Attribute values and log bodies are stored as recursive `{kind,value}` JSON.
-Received `int64` attribute values are decimal strings inside that tagged value;
-do not cast them to `DOUBLE`. Native SQL integer results remain integer tokens
-in `--json` output.
 
 ## Interpret results
 
