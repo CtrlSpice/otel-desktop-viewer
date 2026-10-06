@@ -680,18 +680,7 @@ func renderSpansQuery(name queries.Name, traceID string, criteria any) (string, 
 	return query, args, nil
 }
 
-// GetTraceAttributes returns every attribute name/scope/type this store knows
-// about, for the search field dropdowns. These used to be an indexed join from
-// attributes to spans over a window; with attributes deduped into a dictionary,
-// honouring a window would
-// mean unnesting every span's array and joining back -- on the interactive path
-// that populates a dropdown. The dictionary is small and already bounded by
-// retention, so it answers directly. The semantics become "keys this store
-// knows about" rather than "keys in this window", which is the better answer
-// for a dropdown anyway.
-//
-// This is why scope is part of dictionary identity: without it, attributeScope
-// could not be produced without the unnest this exists to avoid.
+// GetTraceAttributes returns attribute definitions across retained traces.
 func GetTraceAttributes(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
 	return traceAttributeKeys(ctx, db)
 }
