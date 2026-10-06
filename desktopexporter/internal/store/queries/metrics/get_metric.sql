@@ -286,9 +286,8 @@
 		--
 		-- attributes_sample picks any one datapoint's attributes from
 		-- this timeseries. Within a timeseries they're identical by
-		-- construction -- series_id is content-derived from (stream, originating
-		-- resource attribute ids, datapoint attribute ids), so the array cannot
-		-- vary inside a group.
+		-- construction -- series_id is content-derived from the exact stream id
+		-- and datapoint attribute ids, so the array cannot vary inside a group.
 		--
 		-- any_value wraps the *array*, not the resolved JSON. Written the
 		-- other way round the macro sits inside the aggregate, so it runs once

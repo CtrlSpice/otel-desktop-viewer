@@ -51,10 +51,10 @@ func GetStats(ctx context.Context, db *sql.DB, sizeBytes int64, maxSizeBytes int
 				'lastReceived', cast(coalesce(max(nullif(timestamp, 0)), max(observed_timestamp)) as varchar)
 			) from logs),
 			'metrics', (select json_object(
-				-- metricCount is the number of exact known OTel Metric identities
-				-- (one per name+unit+type+temporality+monotonic+scope+
-				-- service tuple), so the frontend's "metrics" badge
-				-- shows logical concepts rather than ingest batches.
+				-- metricCount is the number of exact known OTel Metric identities:
+				-- Resource attributes, InstrumentationScope fields and schema URL,
+				-- plus the applicable Metric descriptor fields. The frontend's
+				-- "metrics" badge shows Metrics rather than ingest batches.
 				-- metric_ingests is the per-batch table; using its row
 				-- count would inflate by the number of OTLP requests.
 				'metricCount',    (select count(*) from metric_streams),
