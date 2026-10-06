@@ -256,11 +256,14 @@ func TestExecuteCountsCommonTypedSpanAttributeValuesByOwningSpan(t *testing.T) {
 
 	telemetry := ptrace.NewTraces()
 	ss := telemetry.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans()
-	for i := 0; i < 4; i++ {
+	now := time.Now()
+	for i := 0; i < 5; i++ {
 		span := ss.AppendEmpty()
-		span.SetTraceID(pcommon.TraceID{15: byte(i + 1)})
-		span.SetSpanID(pcommon.SpanID{7: byte(i + 1)})
-		span.SetStartTimestamp(pcommon.Timestamp(time.Now().UnixNano()))
+		traceByte := []byte{1, 2, 1, 3, 4}[i]
+		spanByte := []byte{1, 1, 2, 3, 4}[i]
+		span.SetTraceID(pcommon.TraceID{15: traceByte})
+		span.SetSpanID(pcommon.SpanID{7: spanByte})
+		span.SetStartTimestamp(pcommon.Timestamp(now.UnixNano()))
 		switch i {
 		case 0, 1:
 			span.Attributes().PutStr("http.request.method", "GET")
@@ -268,6 +271,9 @@ func TestExecuteCountsCommonTypedSpanAttributeValuesByOwningSpan(t *testing.T) {
 			span.Attributes().PutStr("http.request.method", "POST")
 		case 3:
 			span.Attributes().PutInt("http.request.method", 7)
+		case 4:
+			span.SetStartTimestamp(pcommon.Timestamp(now.Add(time.Hour).UnixNano()))
+			span.Attributes().PutStr("http.request.method", "GET")
 		}
 	}
 	require.NoError(t, viewerStore.WithConn(func(conn driver.Conn) error {
@@ -287,6 +293,7 @@ func TestExecuteCountsCommonTypedSpanAttributeValuesByOwningSpan(t *testing.T) {
 				cross join unnest(s.attribute_ids) owned(attribute_id)
 				join attributes a on a.id = owned.attribute_id
 				where s.start_time >= epoch_ns(current_timestamp - interval '1 hour')
+				  and s.start_time <= epoch_ns(current_timestamp)
 				  and a.key = 'http.request.method'
 			), value_counts as (
 				select value_kind, tagged_value,

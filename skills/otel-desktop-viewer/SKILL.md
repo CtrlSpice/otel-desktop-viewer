@@ -24,9 +24,10 @@ Use one viewer process for the whole task, including follow-up questions:
    `http://localhost:8000`.
 2. If the probe succeeds, reuse that existing viewer for every command. Treat
    it as user-owned.
-3. If the probe fails, start at most one
+3. If the probe fails at the default endpoint, start at most one
    `otel-desktop-viewer --open-browser=false` foreground child for this task.
-   Keep its process handle.
+   Keep its process handle. If a configured non-default endpoint fails, report
+   it as unavailable; do not start an unrelated viewer at the default endpoint.
 4. Require both that the child remains running and that the same `SHOW TABLES`
    probe succeeds before sending queries. If the child exits, report its error
    output and stop the workflow.
@@ -75,6 +76,7 @@ SELECT
   status_code
 FROM spans
 WHERE start_time >= epoch_ns(current_timestamp - INTERVAL '1 hour')
+  AND start_time <= epoch_ns(current_timestamp)
 ORDER BY start_time DESC"
 ```
 
@@ -172,6 +174,7 @@ WITH owned_values AS (
   CROSS JOIN unnest(s.attribute_ids) AS owned(attribute_id)
   JOIN attributes AS a ON a.id = owned.attribute_id
   WHERE s.start_time >= epoch_ns(current_timestamp - INTERVAL '1 hour')
+    AND s.start_time <= epoch_ns(current_timestamp)
     AND a.key = 'http.request.method'
 ),
 value_counts AS (
