@@ -30,6 +30,8 @@ func TestNamedParamsMatchPositional(t *testing.T) {
 			`{"traceID":"abc"}`, `["abc"]`},
 		{"getLog",
 			`{"logID":"L1"}`, `["L1"]`},
+		{"getSpan",
+			`{"limit":25,"traceID":"T1","spanID":"S1"}`, `["S1","T1",25]`},
 		{"searchAttributes",
 			`{"term":"http"}`, `["http"]`},
 		{"query",

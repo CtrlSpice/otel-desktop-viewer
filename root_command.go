@@ -80,6 +80,8 @@ func newRootCommand(
 	commands := []*cobra.Command{
 		newQueryCommand(client),
 		newTracesCommand(client, now),
+		newTraceCommand(client),
+		newSpanCommand(client),
 		newLogsCommand(client, now),
 		newMetricsCommand(client, now),
 	}
@@ -144,6 +146,8 @@ USAGE
 COMMANDS
   query     🔎 Run SQL against a running viewer
   traces    🧵 Search traces in a running viewer
+  trace     🧵 Inspect one complete trace
+  span      🧵 Inspect one span
   logs      🪵 Search logs in a running viewer
   metrics   📈 Search metrics in a running viewer
 

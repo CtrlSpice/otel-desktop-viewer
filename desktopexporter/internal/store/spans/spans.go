@@ -32,6 +32,10 @@ var (
 // scopeKey identifies a scope by position: the ri'th resource's si'th scope.
 type scopeKey struct{ ri, si int }
 
+type queryRower interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
 // flushIntervalSpans bounds how many spans accumulate in the appenders before
 // they are pushed to DuckDB. It exists to cap memory on a pathological batch,
 // not to make writes visible sooner -- nothing reads mid-batch, since ingest
@@ -464,7 +468,7 @@ func traceSummaryOrderBy(sortOption *search.Sort) (string, error) {
 }
 
 // SearchSpans returns spans for a single trace, optionally filtered by search criteria.
-// When criteria is nil, all spans for the trace are returned (replacing GetTrace).
+// When criteria is nil, all spans for the trace are returned.
 // When criteria is provided, only matching spans are returned (replacing SearchTraceSpans).
 // SearchSpans fetches one whole trace.
 //
@@ -510,6 +514,61 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 		return json.RawMessage(raw), nil
 	}
 	return salvaged, nil
+}
+
+// GetTrace returns the compact, untruncated overview for one trace. The query
+// computes exact nanosecond strings and reads every span in one operation.
+func GetTrace(ctx context.Context, db queryRower, traceID string) (json.RawMessage, error) {
+	query, err := queries.Render(queries.GetTrace, nil)
+	if err != nil {
+		return nil, fmt.Errorf("GetTrace: %w: %w", ErrSpansStoreInternal, err)
+	}
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, traceID).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("GetTrace: %w", ErrTraceIDNotFound)
+		}
+		return nil, fmt.Errorf("GetTrace: %w: %w", ErrSpansStoreInternal, err)
+	}
+	return json.RawMessage(raw), nil
+}
+
+// GetSpanSummaries returns at most limit stable summary rows for one span ID,
+// together with the exact number of matching composite identities.
+func GetSpanSummaries(ctx context.Context, db queryRower, spanID uint64, limit int64) (json.RawMessage, int64, error) {
+	query, err := queries.Render(queries.GetSpanSummaries, nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("GetSpanSummaries: %w: %w", ErrSpansStoreInternal, err)
+	}
+	var raw []byte
+	var matchCount int64
+	if err := db.QueryRowContext(ctx, query, []uint64{spanID}, limit).Scan(&raw, &matchCount); err != nil {
+		return nil, 0, fmt.Errorf("GetSpanSummaries: %w: %w", ErrSpansStoreInternal, err)
+	}
+	if raw == nil {
+		raw = []byte("[]")
+	}
+	return json.RawMessage(raw), matchCount, nil
+}
+
+// GetSpan returns full stored detail for one composite trace and span identity.
+// A missing exact pair returns a nil result without an error.
+func GetSpan(ctx context.Context, db queryRower, traceID string, spanID uint64) (json.RawMessage, error) {
+	query, err := queries.Render(queries.GetSpan, nil)
+	if err != nil {
+		return nil, fmt.Errorf("GetSpan: %w: %w", ErrSpansStoreInternal, err)
+	}
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, traceID, []uint64{spanID}).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("GetSpan: %w: %w", ErrSpansStoreInternal, err)
+	}
+	if raw == nil {
+		return nil, nil
+	}
+	return json.RawMessage(raw), nil
 }
 
 // GetTraceOTLP returns every stored span for traceID as one standard OTLP JSON
@@ -621,18 +680,7 @@ func renderSpansQuery(name queries.Name, traceID string, criteria any) (string, 
 	return query, args, nil
 }
 
-// GetTraceAttributes returns every attribute name/scope/type this store knows
-// about, for the search field dropdowns. These used to be an indexed join from
-// attributes to spans over a window; with attributes deduped into a dictionary,
-// honouring a window would
-// mean unnesting every span's array and joining back -- on the interactive path
-// that populates a dropdown. The dictionary is small and already bounded by
-// retention, so it answers directly. The semantics become "keys this store
-// knows about" rather than "keys in this window", which is the better answer
-// for a dropdown anyway.
-//
-// This is why scope is part of dictionary identity: without it, attributeScope
-// could not be produced without the unnest this exists to avoid.
+// GetTraceAttributes returns attribute definitions across retained traces.
 func GetTraceAttributes(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
 	return traceAttributeKeys(ctx, db)
 }
@@ -679,11 +727,26 @@ func GetFieldValues(ctx context.Context, db *sql.DB, field, term string, limit i
 	return json.RawMessage(raw), nil
 }
 
-// GetAttributesByTraceID returns the same store-wide key list as
-// GetTraceAttributes. Narrowing to one trace would cost the unnest described
-// there; both callers populate the same dropdown.
 func GetAttributesByTraceID(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage, error) {
-	return traceAttributeKeys(ctx, db)
+	query := `
+		select cast(to_json(list(json_object('name', sub.key, 'attributeScope', sub.scope,
+			'type', sub.type) order by sub.key, sub.scope, sub.type)) as varchar) as attributes
+		from (
+			select distinct a.key, 'resource' as scope, json_extract_string(a.value, '$.kind') as type from spans s join resources r on r.id = s.resource_id, unnest(r.attribute_ids) t(aid) join attributes a on a.id = t.aid where s.trace_id = ?::uuid
+			union select distinct a.key, 'scope', json_extract_string(a.value, '$.kind') from spans s join scopes sc on sc.id = s.scope_id, unnest(sc.attribute_ids) t(aid) join attributes a on a.id = t.aid where s.trace_id = ?::uuid
+			union select distinct a.key, 'span', json_extract_string(a.value, '$.kind') from spans s, unnest(s.attribute_ids) t(aid) join attributes a on a.id = t.aid where s.trace_id = ?::uuid
+			union select distinct a.key, 'event', json_extract_string(a.value, '$.kind') from events e, unnest(e.attribute_ids) t(aid) join attributes a on a.id = t.aid where e.trace_id = ?::uuid
+			union select distinct a.key, 'link', json_extract_string(a.value, '$.kind') from links l, unnest(l.attribute_ids) t(aid) join attributes a on a.id = t.aid where l.trace_id = ?::uuid
+		) sub
+	`
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, traceID, traceID, traceID, traceID, traceID).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("GetAttributesByTraceID: %w: %w", ErrSpansStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
 }
 
 func traceAttributeKeys(ctx context.Context, db *sql.DB) (json.RawMessage, error) {

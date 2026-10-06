@@ -43,6 +43,8 @@ USAGE
 COMMANDS
   query     🔎 Run SQL against a running viewer
   traces    🧵 Search traces in a running viewer
+  trace     🧵 Inspect one complete trace
+  span      🧵 Inspect one span
   logs      🪵 Search logs in a running viewer
   metrics   📈 Search metrics in a running viewer
 
@@ -243,7 +245,7 @@ func TestRootExposesOnlyViewerCommandsAndFlags(t *testing.T) {
 			names = append(names, child.Name())
 		}
 	}
-	assert.Equal(t, []string{"logs", "metrics", "query", "traces"}, names)
+	assert.Equal(t, []string{"logs", "metrics", "query", "span", "trace", "traces"}, names)
 	for _, forbidden := range []string{"config", "set", "feature-gates"} {
 		assert.Nil(t, cmd.Flags().Lookup(forbidden))
 	}

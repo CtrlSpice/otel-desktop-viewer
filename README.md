@@ -297,6 +297,41 @@ These commands use the viewer at `http://localhost:8000`, search the last hour, 
 
 In `metrics --json`, `metricRef` is a viewer-assigned Metric reference. It is copied directly from the backend metric summary `id`, which projects `metric_streams.id` (`metricRef = metric_streams.id`; unit: none), as an exact UUID string. It is opaque, scoped to the viewer database and its lifetime, and is not received from OTLP. Automation may retain and pass it unchanged, but must never parse or reinterpret it.
 
+Inspect every compact span and trace-linked log row for one trace:
+
+```bash
+otel-desktop-viewer trace 0123456789abcdef0123456789abcdef
+otel-desktop-viewer trace 0123456789abcdef0123456789abcdef --json
+```
+
+The table and JSON modes contain the same fields and are not truncated. The
+trace start is `min(spans.start_time)`. Trace duration is
+`max(spans.end_time) - min(spans.start_time)`, each span offset is
+`span.start_time - trace start`, and each span duration is
+`span.end_time - span.start_time`. These derived values use nanoseconds and are
+returned as exact decimal strings. A log timestamp is its received timestamp
+when non-zero, otherwise its received observed timestamp. Log severity is the
+received severity text when present, otherwise the display band derived from
+the received severity number. Log body is the viewer's compact `body_preview`
+display value, not the complete stored tagged body. Use `query` when complete
+stored log fields are needed.
+
+Inspect one span with full typed detail and every log associated with that exact
+trace and span ID:
+
+```bash
+otel-desktop-viewer span 000000000000002a
+otel-desktop-viewer span 0123456789abcdef0123456789abcdef 000000000000002a --json
+```
+
+A standalone span ID returns a not-found result, one exact span, or stable span
+summaries when the ID occurs in multiple traces. The default limit is 25; use
+`--limit` to request more or fewer. Ambiguous summaries include both IDs, the
+exact match count, and whether more rows are available. It never chooses between
+duplicate span IDs from different traces. The qualified form selects only the
+requested trace and span pair. Both not-found forms are successful structured
+results.
+
 ## Configuring Your OpenTelemetry SDK
 
 Point your app's OTLP exporter at the viewer. Send to `http://localhost:4318` (HTTP) or `http://localhost:4317` (gRPC).

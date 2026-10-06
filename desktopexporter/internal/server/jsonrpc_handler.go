@@ -1,11 +1,15 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"strconv"
+	"strings"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/attributes"
@@ -42,9 +46,8 @@ func (h *JSONRPCHandler) handleStoreError(ctx context.Context, err error) error 
 	return mapped
 }
 
-// storeRead runs a query that returns a value, under the store's read lock.
-// Every read path in this file goes through here so no handler reaches the
-// pool unordered against ingest and retention.
+// storeRead runs a query that returns a value under the store's read lock.
+// The lock excludes pool mutation and close; ingest may run concurrently.
 func storeRead[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error) {
 	var out T
 	err := s.WithDBRead(func(db *sql.DB) error {
@@ -55,8 +58,35 @@ func storeRead[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error)
 	return out, err
 }
 
+func storeSnapshotRead[T any](ctx context.Context, s *store.Store, fn func(tx *sql.Tx) (T, error)) (T, error) {
+	return storeRead(s, func(db *sql.DB) (T, error) {
+		var zero T
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return zero, err
+		}
+		defer tx.Rollback()
+		result, err := fn(tx)
+		if err != nil {
+			return zero, err
+		}
+		if err := tx.Commit(); err != nil {
+			return zero, err
+		}
+		return result, nil
+	})
+}
+
 func handlerRead[T any](ctx context.Context, h *JSONRPCHandler, fn func(db *sql.DB) (T, error)) (any, error) {
 	result, err := storeRead(h.store, fn)
+	if err != nil {
+		return nil, h.handleStoreError(ctx, err)
+	}
+	return result, nil
+}
+
+func handlerSnapshotRead[T any](ctx context.Context, h *JSONRPCHandler, fn func(tx *sql.Tx) (T, error)) (any, error) {
+	result, err := storeSnapshotRead(ctx, h.store, fn)
 	if err != nil {
 		return nil, h.handleStoreError(ctx, err)
 	}
@@ -78,6 +108,10 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.searchTraces(ctx, req)
 	case "searchSpans":
 		return h.searchSpans(ctx, req)
+	case "getTrace":
+		return h.getTrace(ctx, req)
+	case "getSpan":
+		return h.getSpan(ctx, req)
 	case "searchLogs":
 		return h.searchLogs(ctx, req)
 	case "getTraceLogs":
@@ -183,6 +217,240 @@ func (h *JSONRPCHandler) searchSpans(ctx context.Context, req *jsonrpc2.Request)
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
 		return spans.SearchSpans(ctx, db, traceID, query)
 	})
+}
+
+type compactTraceResult struct {
+	Trace compactTraceSummary `json:"trace"`
+	Spans []compactTraceSpan  `json:"spans"`
+	Logs  []compactTraceLog   `json:"logs"`
+}
+
+type compactTraceSummary struct {
+	TraceID    string `json:"traceID"`
+	SpanCount  int64  `json:"spanCount"`
+	LogCount   int    `json:"logCount"`
+	StartTime  string `json:"startTime"`
+	DurationNs string `json:"durationNs"`
+}
+
+type compactTraceSpan struct {
+	SpanID        string  `json:"spanID"`
+	ParentSpanID  *string `json:"parentSpanID"`
+	Service       string  `json:"service"`
+	Name          string  `json:"name"`
+	StartOffsetNs string  `json:"startOffsetNs"`
+	DurationNs    string  `json:"durationNs"`
+}
+
+type traceLogSummary struct {
+	Timestamp      string      `json:"timestamp"`
+	SpanID         *string     `json:"spanID"`
+	SeverityText   string      `json:"severityText"`
+	SeverityNumber json.Number `json:"severityNumber"`
+	ServiceName    string      `json:"serviceName"`
+	EventName      string      `json:"eventName"`
+	BodyPreview    string      `json:"bodyPreview"`
+}
+
+type compactTraceLog struct {
+	Timestamp string  `json:"timestamp"`
+	SpanID    *string `json:"spanID"`
+	Severity  string  `json:"severity"`
+	Service   string  `json:"service"`
+	EventName string  `json:"eventName"`
+	Body      string  `json:"body"`
+}
+
+func (h *JSONRPCHandler) getTrace(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	traceID, err := parseSingleIDParam(req.Params, ErrInvalidTraceID, normalizeUUID)
+	if err != nil {
+		return nil, err
+	}
+	return handlerSnapshotRead(ctx, h, func(db *sql.Tx) (compactTraceResult, error) {
+		traceRaw, err := spans.GetTrace(ctx, db, traceID)
+		if err != nil {
+			return compactTraceResult{}, err
+		}
+		var result compactTraceResult
+		if err := json.Unmarshal(traceRaw, &result); err != nil {
+			return compactTraceResult{}, err
+		}
+		logsRaw, err := logs.GetTraceLogs(ctx, db, traceID)
+		if err != nil {
+			return compactTraceResult{}, err
+		}
+		result.Logs, err = compactTraceLogs(logsRaw)
+		if err != nil {
+			return compactTraceResult{}, err
+		}
+		result.Trace.LogCount = len(result.Logs)
+		return result, nil
+	})
+}
+
+func compactTraceLogs(raw json.RawMessage) ([]compactTraceLog, error) {
+	var summaries []traceLogSummary
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&summaries); err != nil {
+		return nil, err
+	}
+	result := make([]compactTraceLog, len(summaries))
+	for i, summary := range summaries {
+		severity, err := logSeverityLabel(summary.SeverityText, summary.SeverityNumber)
+		if err != nil {
+			return nil, err
+		}
+		result[i] = compactTraceLog{
+			Timestamp: summary.Timestamp, SpanID: summary.SpanID,
+			Severity: severity,
+			Service:  summary.ServiceName, EventName: summary.EventName, Body: summary.BodyPreview,
+		}
+	}
+	return result, nil
+}
+
+func logSeverityLabel(text string, number json.Number) (string, error) {
+	if text != "" {
+		return text, nil
+	}
+	value, err := number.Int64()
+	if err != nil {
+		return "", fmt.Errorf("decode log severity number: %w", err)
+	}
+	switch {
+	case value == 0:
+		return "UNSPECIFIED", nil
+	case value >= 1 && value <= 4:
+		return "TRACE", nil
+	case value >= 5 && value <= 8:
+		return "DEBUG", nil
+	case value >= 9 && value <= 12:
+		return "INFO", nil
+	case value >= 13 && value <= 16:
+		return "WARN", nil
+	case value >= 17 && value <= 20:
+		return "ERROR", nil
+	case value >= 21 && value <= 24:
+		return "FATAL", nil
+	}
+	return fmt.Sprintf("Unknown (%d)", value), nil
+}
+
+type spanNotFoundResult struct {
+	Status  string  `json:"status"`
+	SpanID  string  `json:"spanID"`
+	TraceID *string `json:"traceID"`
+}
+
+type spanAmbiguousResult struct {
+	Status     string          `json:"status"`
+	SpanID     string          `json:"spanID"`
+	MatchCount int64           `json:"matchCount"`
+	Summaries  json.RawMessage `json:"summaries"`
+	Truncated  bool            `json:"truncated"`
+}
+
+type spanFoundResult struct {
+	Status  string          `json:"status"`
+	TraceID string          `json:"traceID"`
+	Span    json.RawMessage `json:"span"`
+	Logs    json.RawMessage `json:"logs"`
+}
+
+func (h *JSONRPCHandler) getSpan(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	params, err := decodePositionalParams(req.Params, 1, 3)
+	if err != nil {
+		return nil, err
+	}
+	spanID, spanValue, err := parseSpanIDParam(params[0])
+	if err != nil {
+		return nil, err
+	}
+	var requestedTraceID *string
+	if len(params) >= 2 && params[1] != nil {
+		traceID, err := parseIDParam(params[1], ErrInvalidTraceID, normalizeUUID)
+		if err != nil {
+			return nil, err
+		}
+		requestedTraceID = &traceID
+	}
+	limit := int64(25)
+	if len(params) == 3 && params[2] != nil {
+		parsed, err := parseTimestampParam(params[2], "limit")
+		if err != nil || parsed < 1 || parsed == math.MaxInt64 {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		limit = parsed
+	}
+
+	return handlerSnapshotRead(ctx, h, func(db *sql.Tx) (any, error) {
+		traceID := requestedTraceID
+		if traceID == nil {
+			summaries, matchCount, err := spans.GetSpanSummaries(ctx, db, spanValue, limit+1)
+			if err != nil {
+				return nil, err
+			}
+			var rows []json.RawMessage
+			if err := json.Unmarshal(summaries, &rows); err != nil {
+				return nil, err
+			}
+			switch matchCount {
+			case 0:
+				return spanNotFoundResult{Status: "notFound", SpanID: spanID}, nil
+			case 1:
+				var summary struct {
+					TraceID string `json:"traceID"`
+				}
+				if len(rows) != 1 || json.Unmarshal(rows[0], &summary) != nil || summary.TraceID == "" {
+					return nil, errors.New("invalid span summary result")
+				}
+				traceID = &summary.TraceID
+			default:
+				truncated := int64(len(rows)) > limit
+				if truncated {
+					rows = rows[:limit]
+				}
+				bounded, err := json.Marshal(rows)
+				if err != nil {
+					return nil, err
+				}
+				return spanAmbiguousResult{
+					Status: "ambiguous", SpanID: spanID,
+					MatchCount: matchCount, Summaries: bounded, Truncated: truncated,
+				}, nil
+			}
+		}
+
+		span, err := spans.GetSpan(ctx, db, *traceID, spanValue)
+		if err != nil {
+			return nil, err
+		}
+		if span == nil {
+			resultTraceID := strings.ReplaceAll(*traceID, "-", "")
+			return spanNotFoundResult{Status: "notFound", SpanID: spanID, TraceID: &resultTraceID}, nil
+		}
+		spanLogs, err := logs.GetSpanLogs(ctx, db, *traceID, spanValue)
+		if err != nil {
+			return nil, err
+		}
+		return spanFoundResult{
+			Status: "found", TraceID: strings.ReplaceAll(*traceID, "-", ""),
+			Span: span, Logs: spanLogs,
+		}, nil
+	})
+}
+
+func parseSpanIDParam(value any) (string, uint64, error) {
+	text, ok := value.(string)
+	if !ok || len(text) != 16 {
+		return "", 0, jsonrpc2.ErrInvalidParams
+	}
+	parsed, err := strconv.ParseUint(text, 16, 64)
+	if err != nil {
+		return "", 0, jsonrpc2.ErrInvalidParams
+	}
+	return strings.ToLower(text), parsed, nil
 }
 
 func (h *JSONRPCHandler) clearTraces(ctx context.Context) (any, error) {

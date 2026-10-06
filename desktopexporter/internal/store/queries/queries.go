@@ -89,6 +89,13 @@ const (
 	// SearchSpans fetches one whole trace: the recursive tree walk, its
 	// payload, and the resource/scope maps the wire format references.
 	SearchSpans Name = "spans/search_spans.sql"
+	// GetTrace returns the compact span rows and exact timing summary used by
+	// the trace command. It deliberately omits full span detail.
+	GetTrace Name = "spans/get_trace.sql"
+	// GetSpanSummaries returns bounded summary rows for one exact span ID.
+	GetSpanSummaries Name = "spans/get_span_summaries.sql"
+	// GetSpan returns one full span selected by its composite identity.
+	GetSpan Name = "spans/get_span.sql"
 
 	// SalvageSpans is SearchSpans plus a second, cycle-aware walk that
 	// recovers spans the ordinary walk cannot reach.
@@ -125,6 +132,8 @@ const (
 	GetLogOTLP Name = "logs/get_log_otlp.sql"
 	// GetTraceLogs returns lightweight summaries for every log in one trace.
 	GetTraceLogs Name = "logs/get_trace_logs.sql"
+	// GetSpanLogs returns full logs associated with one composite span identity.
+	GetSpanLogs Name = "logs/get_span_logs.sql"
 	// GetLogAttributes lists the attribute keys logs carry.
 	GetLogAttributes Name = "logs/get_log_attributes.sql"
 
@@ -137,9 +146,9 @@ const (
 // queryNames is every read-path query. Kept beside the constants so adding one
 // without registering it is a visible omission rather than a silent one.
 var queryNames = []Name{
-	SearchSpans, SalvageSpans, SearchTraces, GetTraceOTLP,
+	SearchSpans, SalvageSpans, SearchTraces, GetTrace, GetSpanSummaries, GetSpan, GetTraceOTLP,
 	GetMetric, GetMetricSeries, GetMetricView, GetMetricOTLP, GetMetricAttributes,
-	GetLog, GetLogOTLP, GetTraceLogs, GetLogAttributes,
+	GetLog, GetLogOTLP, GetTraceLogs, GetSpanLogs, GetLogAttributes,
 	SearchMetricSummaries, SearchLogs,
 }
 
