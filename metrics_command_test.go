@@ -30,7 +30,7 @@ func TestMetricsCommandPreservesSummaryFieldsFiltersAndResolvesTimeOnce(t *testi
 
 	fixedNow := time.Date(2026, 10, 2, 9, 0, 0, 111222333, time.UTC)
 	clockCalls := 0
-	cmd := newMetricsCommand(func() time.Time {
+	cmd := newMetricsCommand(http.DefaultClient, func() time.Time {
 		clockCalls++
 		return fixedNow
 	})
@@ -58,7 +58,7 @@ func TestMetricsCommandPreservesSummaryFieldsFiltersAndResolvesTimeOnce(t *testi
 	assert.Equal(t, "resource", field["attributeScope"])
 
 	output.Reset()
-	cmd = newMetricsCommand(func() time.Time { return fixedNow })
+	cmd = newMetricsCommand(http.DefaultClient, func() time.Time { return fixedNow })
 	cmd.SetOut(&output)
 	cmd.SetErr(&output)
 	cmd.SetArgs([]string{"--endpoint", viewer.URL, "--json"})
@@ -87,7 +87,7 @@ func TestMetricsCommandLimitsEmptyErrorsCancellationAndHelp(t *testing.T) {
 	})
 
 	t.Run("malformed arguments", func(t *testing.T) {
-		cmd := newMetricsCommand(time.Now)
+		cmd := newMetricsCommand(http.DefaultClient, time.Now)
 		cmd.SetArgs([]string{"--start", "later"})
 		require.ErrorContains(t, cmd.Execute(), "use RFC3339")
 	})

@@ -78,7 +78,7 @@ func TestTracesCommandPreservesSummaryFieldsInTableAndJSON(t *testing.T) {
 	defer viewer.Close()
 
 	fixedNow := time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)
-	cmd := newTracesCommand(func() time.Time { return fixedNow })
+	cmd := newTracesCommand(http.DefaultClient, func() time.Time { return fixedNow })
 	var output bytes.Buffer
 	cmd.SetOut(&output)
 	cmd.SetErr(&output)
@@ -98,7 +98,7 @@ func TestTracesCommandPreservesSummaryFieldsInTableAndJSON(t *testing.T) {
 	assert.Equal(t, "checkout", condition["value"])
 
 	output.Reset()
-	cmd = newTracesCommand(func() time.Time { return fixedNow })
+	cmd = newTracesCommand(http.DefaultClient, func() time.Time { return fixedNow })
 	cmd.SetOut(&output)
 	cmd.SetErr(&output)
 	cmd.SetArgs([]string{"--endpoint", viewer.URL, "--service", "checkout", "--json"})
@@ -107,7 +107,7 @@ func TestTracesCommandPreservesSummaryFieldsInTableAndJSON(t *testing.T) {
 	<-requests
 
 	output.Reset()
-	cmd = newTracesCommand(func() time.Time { return fixedNow })
+	cmd = newTracesCommand(http.DefaultClient, func() time.Time { return fixedNow })
 	cmd.SetOut(&output)
 	cmd.SetErr(&output)
 	cmd.SetArgs([]string{"--endpoint", viewer.URL, "--json"})
@@ -124,7 +124,7 @@ func TestTracesCommandTruncationEmptyErrorsCancellationAndHelp(t *testing.T) {
 				`{"traceID":"2","hasRootSpan":false,"rootSpan":null,"startTime":"2","durationNs":null,"spanCount":1,"errorCount":0,"matchedSpans":[{"traceID":"2","spanID":"0000000000000002"}]}]}`))
 		}))
 		defer viewer.Close()
-		cmd := newTracesCommand(time.Now)
+		cmd := newTracesCommand(http.DefaultClient, time.Now)
 		var output bytes.Buffer
 		cmd.SetOut(&output)
 		cmd.SetArgs([]string{"--endpoint", viewer.URL, "--service", "checkout", "--limit", "1", "--json"})
@@ -139,7 +139,7 @@ func TestTracesCommandTruncationEmptyErrorsCancellationAndHelp(t *testing.T) {
 				`{"traceID":"2","hasRootSpan":false,"rootSpan":null,"startTime":"2","durationNs":null,"spanCount":1,"errorCount":0}]}`))
 		}))
 		defer viewer.Close()
-		cmd := newTracesCommand(time.Now)
+		cmd := newTracesCommand(http.DefaultClient, time.Now)
 		var output bytes.Buffer
 		cmd.SetOut(&output)
 		cmd.SetArgs([]string{"--endpoint", viewer.URL, "--limit", "1"})
@@ -192,7 +192,7 @@ func TestTracesCommandTruncationEmptyErrorsCancellationAndHelp(t *testing.T) {
 		root.SetErr(&output)
 		root.SetArgs([]string{"traces", "--help", "--endpoint", "http://127.0.0.1:1"})
 		require.NoError(t, root.Execute())
-		for _, text := range []string{"🔭", "--service", "--since", "default 1h0m0s", "--start", "--end", "--limit", "default 25", "--endpoint", "--json", "checkout"} {
+		for _, text := range []string{"🧵", "--service", "--since", "default 1h0m0s", "--start", "--end", "--limit", "default 25", "--endpoint", "--json", "checkout"} {
 			assert.Contains(t, output.String(), text)
 		}
 	})

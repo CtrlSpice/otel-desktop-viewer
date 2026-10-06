@@ -224,7 +224,7 @@ func TestStartupFailureIsNotAnsweredWithUsage(t *testing.T) {
 		cmd.SetErr(&out)
 		err := cmd.Execute()
 		require.Error(t, err)
-		assert.Contains(t, out.String(), "Usage:",
+		assert.Contains(t, out.String(), "USAGE",
 			"a mistyped flag is exactly what usage exists to explain")
 	})
 
@@ -236,7 +236,8 @@ func TestStartupFailureIsNotAnsweredWithUsage(t *testing.T) {
 		cmd := newCommand(set)
 		require.False(t, cmd.SilenceUsage,
 			"not on the command, or a mistyped flag would be silenced too")
-		require.False(t, cmd.SilenceErrors)
+		require.True(t, cmd.SilenceErrors,
+			"the process boundary prints returned errors once")
 
 		// Run with flags that parse but a config that cannot start, so RunE is
 		// entered and fails. What it did to the command on the way in is the
@@ -250,7 +251,7 @@ func TestStartupFailureIsNotAnsweredWithUsage(t *testing.T) {
 		assert.True(t, cmd.SilenceUsage,
 			"RunE must silence usage: past flag parsing, a failure is not a usage mistake")
 		assert.True(t, cmd.SilenceErrors)
-		assert.NotContains(t, out.String(), "Usage:",
+		assert.NotContains(t, out.String(), "USAGE",
 			"a startup failure must not be answered with the flag listing")
 	})
 }
