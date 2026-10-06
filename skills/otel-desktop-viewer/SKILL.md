@@ -1,48 +1,46 @@
 ---
 name: otel-desktop-viewer
-description: "Inspect traces, correlated logs, and attribute use in a running OTel Desktop Viewer with bounded read-only SQL."
+description: "Use when a user asks to inspect telemetry already received by OTel Desktop Viewer, including recent spans, correlated logs, or typed span-attribute use, through its bounded read-only query client."
 ---
 
-# OTel Desktop Viewer usage
+# Inspect OTel Desktop Viewer telemetry
 
-Use this skill to answer focused questions about telemetry already received by a
-local viewer. It is not an instrumentation recipe or an audit framework.
+## Connect to one viewer
 
-## Prerequisite
-
-This skill requires a build where `otel-desktop-viewer --help` lists `query`.
-If it does not, use the web UI instead of guessing a query command or RPC call.
-
-The viewer is a foreground server. The `query`, `traces`, `logs`, and `metrics`
-commands are clients and require that server to remain running. A person can
-keep it running in another terminal:
+Check that the installed build supports the query client:
 
 ```sh
-otel-desktop-viewer --open-browser=false
+otel-desktop-viewer --help
 ```
 
-For agent or automated use:
+Continue only when the root help lists `query`. Otherwise, tell the user that
+the installed build does not provide the query command and direct them to the
+web UI.
 
-1. Try the `otel-desktop-viewer query 'SHOW TABLES'` probe below against the
-   configured viewer HTTP endpoint and reuse a compatible viewer that is already
-   running. The default endpoint is `http://localhost:8000`.
-2. If none is available, start `otel-desktop-viewer --open-browser=false` as a
-   managed, nonblocking child process and retain its process handle.
-3. During startup, require both that the child remains running and that the same
-   `SHOW TABLES` probe succeeds. If the child exits, surface its error output and
-   stop; do not reuse or stop another process listening at the endpoint.
-4. Once both checks pass, run `query`, `traces`, `logs`, or `metrics` commands.
-5. In a `finally` or equivalent cleanup step, terminate and wait for only the
-   child process started in step 2.
+Use one viewer process for the whole task, including follow-up questions:
 
-Do not stop or restart an existing viewer owned by the user. Starting the viewer
-does not return a PID or process object; the caller's process tool must retain
-the child handle. There is no detach, status, stop, daemon, REPL, or direct
-database mode, and client commands do not launch the viewer automatically.
+1. Probe the configured HTTP endpoint with
+   `otel-desktop-viewer query 'SHOW TABLES'`. The default endpoint is
+   `http://localhost:8000`.
+2. If the probe succeeds, reuse that existing viewer for every command. Treat
+   it as user-owned.
+3. If the probe fails, start at most one
+   `otel-desktop-viewer --open-browser=false` foreground child for this task.
+   Keep its process handle.
+4. Require both that the child remains running and that the same `SHOW TABLES`
+   probe succeeds before sending queries. If the child exits, report its error
+   output and stop the workflow.
+5. Keep the same child running for every command and follow-up question. At the
+   end of the task, terminate and wait for that child only.
 
-The query command defaults to `http://localhost:8000`, returns at most 25 rows,
-and prints an aligned table. Use `--endpoint` for a viewer at another HTTP
-address, `--limit` for another row limit, or `--json` for the result object.
+Never stop or restart an existing viewer. The caller owns the child handle; the
+viewer does not return one.
+
+The query command returns at most 25 rows and prints an aligned table. Use
+`--endpoint` for another HTTP address, `--limit` for another row limit, or
+`--json` for the result object.
+
+## Inspect the installed schema
 
 Check the installed build rather than assuming its schema or options:
 
@@ -58,7 +56,7 @@ otel-desktop-viewer query "SELECT function_name FROM duckdb_functions() WHERE fu
 The examples below use the current `spans`, `logs`, and `attributes` tables and
 the registered `trace_id_wire` and `span_id_wire` macros.
 
-## Recent spans
+## Query recent spans
 
 ```sh
 otel-desktop-viewer query "
@@ -79,7 +77,7 @@ ORDER BY start_time DESC"
 Unix epoch. `status_code` is the received OTel enum number. Labels and durations
 would be computed values, not replacements for these stored values.
 
-## One trace and its logs
+## Query one trace and its logs
 
 Replace the example ID with a 32-character trace ID returned above. Query logs
 separately so trace-only logs and logs whose span is absent remain visible.
@@ -118,7 +116,7 @@ A null log `span_id` is a valid trace-only association. `effective_timestamp` is
 computed from the received timestamps. `severity_number` is the received enum
 number, while `severity_text` is the received text.
 
-## Recent span attribute use
+## Query recent span attribute use
 
 `attributes` is a dictionary of distinct key and canonical typed-value pairs;
 its row count is not a telemetry count. Join each span's `attribute_ids` and
@@ -146,17 +144,15 @@ Received `int64` attribute values are decimal strings inside that tagged value;
 do not cast them to `DOUBLE`. Native SQL integer results remain integer tokens
 in `--json` output.
 
-## Interpret and verify
+## Interpret results
 
-- No rows is a successful result. Check the endpoint, time predicate, trace ID,
-  and exact received attribute key before concluding that telemetry is absent.
-- A SQL error is different from no rows. Run `SHOW TABLES` and `DESCRIBE` against
-  the same viewer build, then correct the named table or column.
+- Treat no rows as a successful query result. Check the endpoint, time
+  predicate, trace ID, and exact received attribute key before reporting that
+  telemetry is absent.
+- Treat a SQL error separately from no rows. Run `SHOW TABLES` and `DESCRIBE`
+  against the same viewer, then correct the named table or column.
 - The default limit is 25. The table output reports when a look-ahead row proves
   that more rows are available; exactly 25 rows alone does not prove truncation.
 - Use `--json` when exact machine-readable values or column types matter. Counts
   and `effective_timestamp` are computed by these queries, not received OTel
   fields.
-- Verify an investigation by narrowing its time range or ID, checking the owner
-  count rather than dictionary rows, and confirming any truncation notice before
-  reporting the result.
