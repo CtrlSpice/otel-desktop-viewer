@@ -295,6 +295,25 @@ otel-desktop-viewer metrics --start 2026-10-02T08:00:00Z --end 2026-10-02T09:00:
 
 These commands use the viewer at `http://localhost:8000`, search the last hour, and return up to 25 summaries as aligned columns by default. Use `--endpoint` for another viewer address, `--service` to select one service, `--since` or `--start` and `--end` for the time window, `--limit` for another result limit, or `--json` for JSON.
 
+Inspect every compact span and trace-linked log row for one trace:
+
+```bash
+otel-desktop-viewer trace 0123456789abcdef0123456789abcdef
+otel-desktop-viewer trace 0123456789abcdef0123456789abcdef --json
+```
+
+The table and JSON modes contain the same fields and are not truncated. The
+trace start is `min(spans.start_time)`. Trace duration is
+`max(spans.end_time) - min(spans.start_time)`, each span offset is
+`span.start_time - trace start`, and each span duration is
+`span.end_time - span.start_time`. These derived values use nanoseconds and are
+returned as exact decimal strings. A log timestamp is its received timestamp
+when non-zero, otherwise its received observed timestamp. Log severity is the
+received severity text when present, otherwise the display band derived from
+the received severity number. Log body is the viewer's compact `body_preview`
+display value, not the complete stored tagged body. Use `query` when complete
+stored log fields are needed.
+
 ## Configuring Your OpenTelemetry SDK
 
 Point your app's OTLP exporter at the viewer. Send to `http://localhost:4318` (HTTP) or `http://localhost:4317` (gRPC).

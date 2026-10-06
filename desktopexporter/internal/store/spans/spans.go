@@ -514,6 +514,23 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 	return salvaged, nil
 }
 
+// GetTrace returns the compact, untruncated overview for one trace. The query
+// computes exact nanosecond strings and reads every span in one operation.
+func GetTrace(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage, error) {
+	query, err := queries.Render(queries.GetTrace, nil)
+	if err != nil {
+		return nil, fmt.Errorf("GetTrace: %w: %w", ErrSpansStoreInternal, err)
+	}
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, traceID).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("GetTrace: %w", ErrTraceIDNotFound)
+		}
+		return nil, fmt.Errorf("GetTrace: %w: %w", ErrSpansStoreInternal, err)
+	}
+	return json.RawMessage(raw), nil
+}
+
 // GetTraceOTLP returns every stored span for traceID as one standard OTLP JSON
 // document. The SQL owns reconstruction so callers receive the stored signal,
 // not the search and display projection. Callers must transport the returned
