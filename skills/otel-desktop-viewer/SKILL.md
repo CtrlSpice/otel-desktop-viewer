@@ -147,6 +147,7 @@ FROM spans AS s
 CROSS JOIN unnest(s.attribute_ids) AS owned(attribute_id)
 JOIN attributes AS a ON a.id = owned.attribute_id
 WHERE s.start_time >= epoch_ns(current_timestamp - INTERVAL '1 hour')
+  AND s.start_time <= epoch_ns(current_timestamp)
 GROUP BY a.key, value_kind
 ORDER BY owning_span_count DESC, a.key, value_kind"
 ```
