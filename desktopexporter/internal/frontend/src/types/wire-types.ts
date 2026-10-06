@@ -438,9 +438,6 @@ export type JsonMetricData = {
   aggregationTemporalityCode: number | null
   aggregationTemporality: string | null
   isMonotonic: boolean
-  /** Derived diagnostic: at least one occurrence omitted Resource or Scope
-   * attributes, so the retained identity tuple may be incomplete. */
-  identityIncomplete: boolean
   resourceDroppedAttributesCount: number
   resource: JsonResourceData
   scopeName: string
@@ -545,8 +542,6 @@ export type JsonMetricSummary = {
   // non-Sums).
   isMonotonic: boolean | null
   serviceName: string
-  /** Derived diagnostic over every retained occurrence of this exact Metric. */
-  identityIncomplete: boolean
   // seriesCount/dataPointCount/lastSeen all come from left joins, but the
   // search time-condition guarantees every filtered stream has at least
   // one in-window datapoint, so all three CTEs always produce a row.

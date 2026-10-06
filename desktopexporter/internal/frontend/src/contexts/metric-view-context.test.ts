@@ -104,7 +104,6 @@ function makeCumulativeSumMetric(): MetricData {
     aggregationTemporalityCode: 2,
     aggregationTemporality: 'Cumulative',
     isMonotonic: true,
-    identityIncomplete: false,
     resourceDroppedAttributesCount: 0,
     resource: EMPTY_RESOURCE,
     scopeName: EMPTY_SCOPE.name,

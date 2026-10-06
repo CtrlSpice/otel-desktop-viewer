@@ -130,7 +130,6 @@ function metricWithDatapoints(
     aggregationTemporality: metricType === 'Gauge' ? null : 'Delta',
     aggregationTemporalityCode: metricType === 'Gauge' ? null : 1,
     isMonotonic: null,
-    identityIncomplete: false,
     resourceDroppedAttributesCount: 0,
     resource: EMPTY_RESOURCE,
     scopeName: EMPTY_SCOPE.name,

@@ -38,7 +38,6 @@ const metricResults = [
     aggregationTemporalityCode: 2,
     isMonotonic: true,
     serviceName: 'checkout',
-    identityIncomplete: false,
     seriesCount: 1,
     seriesCardinality: 1,
     dataPointCount: 2,

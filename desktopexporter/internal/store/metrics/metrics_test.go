@@ -2459,7 +2459,6 @@ func TestMetricSeries_ResourceOnlyDiffersByHostNameSplits(t *testing.T) {
 	require.Len(t, summaries, 2)
 	for _, summary := range summaries {
 		assert.Equal(t, float64(1), summary["seriesCount"])
-		assert.Equal(t, false, summary["identityIncomplete"])
 	}
 }
 
@@ -2713,8 +2712,6 @@ func TestMetricSeries_DroppedResourceCountPreservesPayloadWithoutSplittingSeries
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
 	assert.Equal(t, float64(1), summaries[0]["seriesCount"])
-	assert.Equal(t, true, summaries[0]["identityIncomplete"],
-		"a dropped Resource attribute count must report incomplete identity")
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
 			store.BoundedTimeRange(0, time.Now().UnixNano()+int64(time.Hour)),
@@ -2723,7 +2720,6 @@ func TestMetricSeries_DroppedResourceCountPreservesPayloadWithoutSplittingSeries
 	require.NoError(t, err)
 	var metric map[string]any
 	require.NoError(t, json.Unmarshal(raw, &metric))
-	assert.Equal(t, true, metric["identityIncomplete"])
 	assert.Equal(t, float64(3), metric["resourceDroppedAttributesCount"],
 		"top-level metadata comes from the latest representative ingest")
 	topResource, ok := metric["resource"].(map[string]any)
@@ -2747,30 +2743,6 @@ func TestMetricSeries_DroppedResourceCountPreservesPayloadWithoutSplittingSeries
 	}
 	assert.Equal(t, "checkout", attributeValues["service.name"])
 	assert.Equal(t, "checkout-7f9c", attributeValues["service.instance.id"])
-}
-
-func TestMetricIdentityIncompleteIncludesScopeDroppedAttributes(t *testing.T) {
-	t.Parallel()
-	s, ctx := storetest.New(t)
-	md := buildInstanceMetrics(t, nil, 0, time.Now().UnixNano())
-	md.ResourceMetrics().At(0).ScopeMetrics().At(0).Scope().SetDroppedAttributesCount(4)
-	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
-	}))
-
-	summaries := searchMetricsAll(t, s, ctx)
-	require.Len(t, summaries, 1)
-	assert.Equal(t, true, summaries[0]["identityIncomplete"])
-
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
-			store.BoundedTimeRange(0, time.Now().UnixNano()+int64(time.Hour)),
-			0, nil, nil, 0, 0, 0, nil, "", nil, 0)
-	})
-	require.NoError(t, err)
-	var metric map[string]any
-	require.NoError(t, json.Unmarshal(raw, &metric))
-	assert.Equal(t, true, metric["identityIncomplete"])
 }
 
 func TestMetricDetailRetainsIdentityResourceOutsideDatapointWindow(t *testing.T) {

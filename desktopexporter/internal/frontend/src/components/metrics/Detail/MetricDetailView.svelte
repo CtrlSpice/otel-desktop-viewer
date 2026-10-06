@@ -94,16 +94,6 @@
       tabPanelID={METRIC_DETAIL_PANEL_ID}
     />
 
-    {#if metric.identityIncomplete}
-      <div
-        class="detail-view__identity-warning alert alert-warning"
-        role="alert"
-      >
-        This metric's identity may be incomplete because at least one received
-        occurrence reported dropped Resource or Scope attributes.
-      </div>
-    {/if}
-
     <div
       class="detail-view__scroll"
       id={METRIC_DETAIL_PANEL_ID}
@@ -275,10 +265,6 @@
 
   .detail-view--empty {
     @apply items-center justify-center;
-  }
-
-  .detail-view__identity-warning {
-    @apply m-2 w-auto py-2 text-sm;
   }
 
   /* Single vertical scroll viewport for both sections. min-h-0 lets

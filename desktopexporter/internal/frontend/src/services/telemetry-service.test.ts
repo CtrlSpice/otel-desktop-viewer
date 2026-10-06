@@ -64,7 +64,6 @@ function metricResult(overrides: Partial<JsonMetricData> = {}): JsonMetricData {
     aggregationTemporalityCode: null,
     aggregationTemporality: null,
     isMonotonic: false,
-    identityIncomplete: false,
     resourceDroppedAttributesCount: 0,
     resource: { attributes: [], droppedAttributesCount: 0 },
     scopeName: '',
@@ -264,7 +263,6 @@ describe('telemetryAPI.getMetric', () => {
     stubRpcResult(
       metricResult({
         unit: 'bytes',
-        identityIncomplete: true,
         scopeSchemaUrl: 'https://example.test/scope/1.0',
         window: {
           requested: { startNs: null, endNs: null },
@@ -276,7 +274,6 @@ describe('telemetryAPI.getMetric', () => {
     expect(metric).not.toBeNull()
     expect(metric!.name).toBe('test.gauge')
     expect(metric!.scopeSchemaUrl).toBe('https://example.test/scope/1.0')
-    expect(metric!.identityIncomplete).toBe(true)
     expect(metric!.timeseries).toEqual([])
     expect(metric!.window).toEqual({
       requested: { startNs: null, endNs: null },

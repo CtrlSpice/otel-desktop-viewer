@@ -75,7 +75,6 @@ function makeSummary(metricType: MetricType): MetricSummary {
     aggregationTemporalityCode: metricType === 'Gauge' ? null : 2,
     isMonotonic: metricType === 'Sum' ? true : null,
     serviceName: 'checkout-api',
-    identityIncomplete: false,
     seriesCount: 1,
     seriesCardinality: 1,
     dataPointCount: 4,
@@ -99,7 +98,6 @@ function makeMetric(
     aggregationTemporality: metricType === 'Gauge' ? null : 'Cumulative',
     aggregationTemporalityCode: metricType === 'Gauge' ? null : 2,
     isMonotonic: metricType === 'Sum' ? true : null,
-    identityIncomplete: false,
     resourceDroppedAttributesCount: 0,
     resource: EMPTY_RESOURCE,
     scopeName: '',
@@ -223,27 +221,6 @@ function rawSeriesCalls() {
 }
 
 describe('MetricsPage aggregate fetching', () => {
-  it('warns when dropped Resource or Scope attributes make identity incomplete', async () => {
-    searchMetricSummaries.mockResolvedValue([
-      { ...makeSummary('Gauge'), identityIncomplete: true },
-    ])
-    getStats.mockResolvedValue(makeStats())
-    getMetric.mockResolvedValue({
-      ...makeMetric('Gauge'),
-      identityIncomplete: true,
-    })
-    getMetricAggregate.mockResolvedValue({
-      aggregate: null,
-      scalarAggregate: null,
-    })
-    setTestUrl('/metrics/metric-1')
-    renderWithContexts(MetricsPage)
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      "This metric's identity may be incomplete because at least one received occurrence reported dropped Resource or Scope attributes."
-    )
-  })
-
   it('uses an unbounded detail request and its effective window for aggregates', async () => {
     await renderSelected('Histogram')
     const detail = getMetric.mock.calls.find(args => args[3] !== 0)

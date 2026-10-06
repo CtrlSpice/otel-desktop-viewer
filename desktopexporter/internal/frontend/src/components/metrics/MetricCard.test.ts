@@ -19,7 +19,6 @@ function makeMetric(overrides: Partial<MetricSummary> = {}): MetricSummary {
     aggregationTemporalityCode: null,
     isMonotonic: null,
     serviceName: 'orders-service',
-    identityIncomplete: false,
     seriesCount: 3,
     seriesCardinality: 3,
     dataPointCount: 120,
