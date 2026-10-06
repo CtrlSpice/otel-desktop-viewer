@@ -17,6 +17,11 @@ var traceSummaryFields = []string{
 	"errorCount",
 }
 
+var filteredTraceSummaryFields = append(
+	append([]string(nil), traceSummaryFields...),
+	"matchedSpans",
+)
+
 func newTracesCommand(client *http.Client, now func() time.Time) *cobra.Command {
 	options := telemetrySearchOptions{}
 	var jsonOutput bool
@@ -36,11 +41,15 @@ func newTracesCommand(client *http.Client, now func() time.Time) *cobra.Command 
 			if err != nil {
 				return err
 			}
-			result, err := requestTelemetrySearch(cmd.Context(), client, options.Endpoint, "searchTraces", query, traceSummaryFields)
+			fields := traceSummaryFields
+			if options.Service != "" {
+				fields = filteredTraceSummaryFields
+			}
+			result, err := requestTelemetrySearch(cmd.Context(), client, options.Endpoint, "searchTraces", query, fields)
 			if err != nil {
 				return err
 			}
-			return writeTelemetrySearchResult(cmd.OutOrStdout(), result, traceSummaryFields, jsonOutput)
+			return writeTelemetrySearchResult(cmd.OutOrStdout(), result, fields, jsonOutput)
 		},
 	}
 	addTelemetrySearchFlags(cmd, &options, &jsonOutput)

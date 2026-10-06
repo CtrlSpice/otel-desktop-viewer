@@ -59,12 +59,19 @@ func TestResolveTelemetrySearchWindowsAndErrors(t *testing.T) {
 }
 
 func TestTracesCommandPreservesSummaryFieldsInTableAndJSON(t *testing.T) {
-	const response = `[{"traceID":"0123456789abcdef0123456789abcdef","hasRootSpan":true,"rootSpan":{"serviceName":"checkout","name":"POST /checkout"},"startTime":"1790928000123456789","durationNs":"9007199254740993","spanCount":4,"errorCount":1}]`
-	requests := make(chan queryRPCRequest, 2)
+	const summary = `{"traceID":"0123456789abcdef0123456789abcdef","hasRootSpan":true,"rootSpan":{"serviceName":"checkout","name":"POST /checkout"},"startTime":"1790928000123456789","durationNs":"9007199254740993","spanCount":4,"errorCount":1}`
+	const matchedSpans = `[{"traceID":"0123456789abcdef0123456789abcdef","spanID":"00000000000000a1"},{"traceID":"0123456789abcdef0123456789abcdef","spanID":"00000000000000a2"}]`
+	const unfilteredResponse = `[` + summary + `]`
+	filteredResponse := `[` + summary[:len(summary)-1] + `,"matchedSpans":` + matchedSpans + `}]`
+	requests := make(chan queryRPCRequest, 3)
 	viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var rpcRequest queryRPCRequest
 		require.NoError(t, json.NewDecoder(request.Body).Decode(&rpcRequest))
 		requests <- rpcRequest
+		response := unfilteredResponse
+		if rpcRequest.Params["query"] != nil {
+			response = filteredResponse
+		}
 		_, err := writer.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":` + response + `}`))
 		require.NoError(t, err)
 	}))
@@ -77,10 +84,10 @@ func TestTracesCommandPreservesSummaryFieldsInTableAndJSON(t *testing.T) {
 	cmd.SetErr(&output)
 	cmd.SetArgs([]string{"--endpoint", viewer.URL, "--service", "checkout", "--limit", "25"})
 	require.NoError(t, cmd.Execute())
-	for _, field := range traceSummaryFields {
-		assert.Contains(t, output.String(), field)
-	}
-	assert.Contains(t, output.String(), "9007199254740993")
+	const tableOutput = "traceID                           hasRootSpan  rootSpan                                            startTime            durationNs        spanCount  errorCount  matchedSpans                                                                                                                                           \n" +
+		"--------------------------------  -----------  --------------------------------------------------  -------------------  ----------------  ---------  ----------  -------------------------------------------------------------------------------------------------------------------------------------------------------\n" +
+		"0123456789abcdef0123456789abcdef  true         {\"name\":\"POST /checkout\",\"serviceName\":\"checkout\"}  1790928000123456789  9007199254740993  4          1           [{\"spanID\":\"00000000000000a1\",\"traceID\":\"0123456789abcdef0123456789abcdef\"},{\"spanID\":\"00000000000000a2\",\"traceID\":\"0123456789abcdef0123456789abcdef\"}]\n"
+	assert.Equal(t, tableOutput, output.String())
 
 	request := <-requests
 	assert.Equal(t, "searchTraces", request.Method)
@@ -94,14 +101,38 @@ func TestTracesCommandPreservesSummaryFieldsInTableAndJSON(t *testing.T) {
 	cmd = newTracesCommand(http.DefaultClient, func() time.Time { return fixedNow })
 	cmd.SetOut(&output)
 	cmd.SetErr(&output)
+	cmd.SetArgs([]string{"--endpoint", viewer.URL, "--service", "checkout", "--json"})
+	require.NoError(t, cmd.Execute())
+	assert.Equal(t, filteredResponse+"\n", output.String())
+	<-requests
+
+	output.Reset()
+	cmd = newTracesCommand(http.DefaultClient, func() time.Time { return fixedNow })
+	cmd.SetOut(&output)
+	cmd.SetErr(&output)
 	cmd.SetArgs([]string{"--endpoint", viewer.URL, "--json"})
 	require.NoError(t, cmd.Execute())
-	assert.Equal(t, response+"\n", output.String())
+	assert.Equal(t, unfilteredResponse+"\n", output.String())
 	<-requests
 }
 
 func TestTracesCommandTruncationEmptyErrorsCancellationAndHelp(t *testing.T) {
-	t.Run("truncation", func(t *testing.T) {
+	t.Run("filtered JSON lookahead", func(t *testing.T) {
+		viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			_, _ = writer.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":[` +
+				`{"traceID":"1","hasRootSpan":false,"rootSpan":null,"startTime":"1","durationNs":null,"spanCount":1,"errorCount":0,"matchedSpans":[{"traceID":"1","spanID":"0000000000000001"}]},` +
+				`{"traceID":"2","hasRootSpan":false,"rootSpan":null,"startTime":"2","durationNs":null,"spanCount":1,"errorCount":0,"matchedSpans":[{"traceID":"2","spanID":"0000000000000002"}]}]}`))
+		}))
+		defer viewer.Close()
+		cmd := newTracesCommand(http.DefaultClient, time.Now)
+		var output bytes.Buffer
+		cmd.SetOut(&output)
+		cmd.SetArgs([]string{"--endpoint", viewer.URL, "--service", "checkout", "--limit", "1", "--json"})
+		require.NoError(t, cmd.Execute())
+		assert.Equal(t, `[{"traceID":"1","hasRootSpan":false,"rootSpan":null,"startTime":"1","durationNs":null,"spanCount":1,"errorCount":0,"matchedSpans":[{"traceID":"1","spanID":"0000000000000001"}]}]`+"\n", output.String())
+	})
+
+	t.Run("table truncation", func(t *testing.T) {
 		viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 			_, _ = writer.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":[` +
 				`{"traceID":"1","hasRootSpan":false,"rootSpan":null,"startTime":"1","durationNs":null,"spanCount":1,"errorCount":0},` +
@@ -165,4 +196,46 @@ func TestTracesCommandTruncationEmptyErrorsCancellationAndHelp(t *testing.T) {
 			assert.Contains(t, output.String(), text)
 		}
 	})
+}
+
+func TestRequestTelemetrySearchRequiresOneCompleteJSONRPCResponse(t *testing.T) {
+	const summary = `{"traceID":"1","hasRootSpan":false,"rootSpan":null,"startTime":"1790928000123456789","durationNs":9007199254740993,"spanCount":1,"errorCount":0}`
+	validResponse := `{"jsonrpc":"2.0","id":1,"result":[` + summary + `]}`
+
+	tests := []struct {
+		name     string
+		response string
+		wantErr  string
+	}{
+		{name: "malformed trailing data", response: validResponse + ` trailing`, wantErr: "decode viewer response: trailing data"},
+		{name: "second JSON value", response: validResponse + ` {"jsonrpc":"2.0"}`, wantErr: "decode viewer response: additional JSON value"},
+		{name: "trailing whitespace", response: validResponse + " \n\t\r"},
+		{name: "ordinary response", response: validResponse},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				_, err := writer.Write([]byte(test.response))
+				require.NoError(t, err)
+			}))
+			defer viewer.Close()
+
+			result, err := requestTelemetrySearch(
+				context.Background(), viewer.Client(), viewer.URL, "searchTraces",
+				telemetrySearchQuery{Limit: 25}, traceSummaryFields,
+			)
+			if test.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), test.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Len(t, result.Summaries, 1)
+			assert.Equal(t, summary, string(result.Summaries[0]))
+			require.Len(t, result.Rows, 1)
+			assert.Equal(t, json.Number("9007199254740993"), result.Rows[0][4])
+		})
+	}
 }

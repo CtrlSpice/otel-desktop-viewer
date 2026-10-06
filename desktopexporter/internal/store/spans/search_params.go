@@ -28,8 +28,14 @@ type searchTracesParams struct {
 	// From is the shared FROM/JOIN chain for span search, so the summary
 	// query and the matched_spans CTE in search_spans stay in step.
 	From string
-	// Where is the predicate, "true" when there are no criteria.
-	Where string
+	// EligibilityWhere selects spans within the requested time range that also
+	// match the optional query. Their trace IDs select complete stored traces.
+	EligibilityWhere string
+	// MatchCTEs, MatchJoin and MatchProjection add computed matching-span
+	// identities only when a query predicate is present.
+	MatchCTEs       string
+	MatchJoin       string
+	MatchProjection string
 	// Order is assembled from an allowlisted summary expression and direction.
 	Order string
 	// Limit is empty for the existing unbounded search and "limit ?" when
