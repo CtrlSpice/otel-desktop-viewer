@@ -1,0 +1,168 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/otelcol"
+)
+
+type telemetryRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f telemetryRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+func TestResolveTelemetrySearchWindowsAndErrors(t *testing.T) {
+	now := time.Date(2026, 10, 2, 9, 30, 0, 123456789, time.FixedZone("offset", -7*60*60))
+	query, err := resolveTelemetrySearch(telemetrySearchOptions{Since: time.Hour, Limit: 25}, false, now)
+	require.NoError(t, err)
+	assert.Equal(t, strconv.FormatInt(now.Add(-time.Hour).UnixNano(), 10), *query.StartTime)
+	assert.Equal(t, strconv.FormatInt(now.UnixNano(), 10), *query.EndTime)
+
+	query, err = resolveTelemetrySearch(telemetrySearchOptions{
+		Since: time.Hour, Start: "2026-10-02T08:00:00.000000001Z",
+		End: "2026-10-02T09:00:00.999999999+01:00", Limit: 7,
+	}, false, now)
+	require.NoError(t, err)
+	assert.Equal(t, "1790928000000000001", *query.StartTime)
+	assert.Equal(t, "1790928000999999999", *query.EndTime)
+
+	for _, tc := range []struct {
+		name         string
+		options      telemetrySearchOptions
+		sinceChanged bool
+		message      string
+	}{
+		{"since conflict", telemetrySearchOptions{Since: time.Hour, Start: "2026-10-02T08:00:00Z", Limit: 25}, true, "cannot be combined"},
+		{"zero since", telemetrySearchOptions{Limit: 25}, false, "greater than zero"},
+		{"zero limit", telemetrySearchOptions{Since: time.Hour}, false, "greater than zero"},
+		{"bad start", telemetrySearchOptions{Since: time.Hour, Start: "yesterday", Limit: 25}, false, "use RFC3339"},
+		{"reverse range", telemetrySearchOptions{Since: time.Hour, Start: "2026-10-02T09:00:00Z", End: "2026-10-02T08:00:00Z", Limit: 25}, false, "must not be after"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := resolveTelemetrySearch(tc.options, tc.sinceChanged, now)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.message)
+		})
+	}
+}
+
+func TestTracesCommandPreservesSummaryFieldsInTableAndJSON(t *testing.T) {
+	const response = `[{"traceID":"0123456789abcdef0123456789abcdef","hasRootSpan":true,"rootSpan":{"serviceName":"checkout","name":"POST /checkout"},"startTime":"1790928000123456789","durationNs":"9007199254740993","spanCount":4,"errorCount":1}]`
+	requests := make(chan queryRPCRequest, 2)
+	viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		var rpcRequest queryRPCRequest
+		require.NoError(t, json.NewDecoder(request.Body).Decode(&rpcRequest))
+		requests <- rpcRequest
+		_, err := writer.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":` + response + `}`))
+		require.NoError(t, err)
+	}))
+	defer viewer.Close()
+
+	fixedNow := time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)
+	cmd := newTracesCommand(func() time.Time { return fixedNow })
+	var output bytes.Buffer
+	cmd.SetOut(&output)
+	cmd.SetErr(&output)
+	cmd.SetArgs([]string{"--endpoint", viewer.URL, "--service", "checkout", "--limit", "25"})
+	require.NoError(t, cmd.Execute())
+	for _, field := range traceSummaryFields {
+		assert.Contains(t, output.String(), field)
+	}
+	assert.Contains(t, output.String(), "9007199254740993")
+
+	request := <-requests
+	assert.Equal(t, "searchTraces", request.Method)
+	assert.Equal(t, float64(26), request.Params["limit"])
+	assert.Equal(t, strconv.FormatInt(fixedNow.Add(-time.Hour).UnixNano(), 10), request.Params["startTime"])
+	assert.Equal(t, strconv.FormatInt(fixedNow.UnixNano(), 10), request.Params["endTime"])
+	condition := request.Params["query"].(map[string]any)["query"].(map[string]any)
+	assert.Equal(t, "checkout", condition["value"])
+
+	output.Reset()
+	cmd = newTracesCommand(func() time.Time { return fixedNow })
+	cmd.SetOut(&output)
+	cmd.SetErr(&output)
+	cmd.SetArgs([]string{"--endpoint", viewer.URL, "--json"})
+	require.NoError(t, cmd.Execute())
+	assert.Equal(t, response+"\n", output.String())
+	<-requests
+}
+
+func TestTracesCommandTruncationEmptyErrorsCancellationAndHelp(t *testing.T) {
+	t.Run("truncation", func(t *testing.T) {
+		viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			_, _ = writer.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":[` +
+				`{"traceID":"1","hasRootSpan":false,"rootSpan":null,"startTime":"1","durationNs":null,"spanCount":1,"errorCount":0},` +
+				`{"traceID":"2","hasRootSpan":false,"rootSpan":null,"startTime":"2","durationNs":null,"spanCount":1,"errorCount":0}]}`))
+		}))
+		defer viewer.Close()
+		cmd := newTracesCommand(time.Now)
+		var output bytes.Buffer
+		cmd.SetOut(&output)
+		cmd.SetArgs([]string{"--endpoint", viewer.URL, "--limit", "1"})
+		require.NoError(t, cmd.Execute())
+		assert.Contains(t, output.String(), "[1 rows shown; more rows available; use --limit to return more]")
+		assert.NotContains(t, output.String(), "  2 ")
+	})
+
+	t.Run("empty", func(t *testing.T) {
+		viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			_, _ = writer.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":[]}`))
+		}))
+		defer viewer.Close()
+		result, err := requestTelemetrySearch(context.Background(), viewer.Client(), viewer.URL, "searchTraces", telemetrySearchQuery{Limit: 25}, traceSummaryFields)
+		require.NoError(t, err)
+		assert.Empty(t, result.Rows)
+		assert.NotNil(t, result.Summaries)
+	})
+
+	t.Run("RPC and transport errors", func(t *testing.T) {
+		viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			_, _ = writer.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"Invalid query"}}`))
+		}))
+		defer viewer.Close()
+		_, err := requestTelemetrySearch(context.Background(), viewer.Client(), viewer.URL, "searchTraces", telemetrySearchQuery{Limit: 25}, traceSummaryFields)
+		require.ErrorContains(t, err, "viewer searchTraces error -32602")
+
+		client := &http.Client{Transport: telemetryRoundTripFunc(func(*http.Request) (*http.Response, error) {
+			return nil, errors.New("connection refused")
+		})}
+		_, err = requestTelemetrySearch(context.Background(), client, "http://viewer.test", "searchTraces", telemetrySearchQuery{Limit: 25}, traceSummaryFields)
+		require.ErrorContains(t, err, "connection refused")
+	})
+
+	t.Run("cancellation", func(t *testing.T) {
+		client := &http.Client{Transport: telemetryRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+			<-request.Context().Done()
+			return nil, request.Context().Err()
+		})}
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err := requestTelemetrySearch(ctx, client, "http://viewer.test", "searchTraces", telemetrySearchQuery{Limit: 25}, traceSummaryFields)
+		require.ErrorIs(t, err, context.Canceled)
+	})
+
+	t.Run("offline help", func(t *testing.T) {
+		root := newCommand(otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer"}})
+		var output bytes.Buffer
+		root.SetOut(&output)
+		root.SetErr(&output)
+		root.SetArgs([]string{"traces", "--help", "--endpoint", "http://127.0.0.1:1"})
+		require.NoError(t, root.Execute())
+		for _, text := range []string{"🔭", "--service", "--since", "default 1h0m0s", "--start", "--end", "--limit", "default 25", "--endpoint", "--json", "checkout"} {
+			assert.Contains(t, output.String(), text)
+		}
+	})
+}
