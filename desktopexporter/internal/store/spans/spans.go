@@ -113,7 +113,7 @@ func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces, f
 	for ri, resourceSpan := range traces.ResourceSpans().All() {
 		resourceIDs[ri] = dict.AddResource(resourceSpan.Resource())
 		for si, scopeSpan := range resourceSpan.ScopeSpans().All() {
-			scopeIDs[scopeKey{ri, si}] = dict.AddScope(scopeSpan.Scope())
+			scopeIDs[scopeKey{ri, si}] = dict.AddScope(scopeSpan.Scope(), scopeSpan.SchemaUrl())
 			for _, span := range scopeSpan.Spans().All() {
 				spanKeys = append(spanKeys, spanKey{
 					trace: duckdb.UUID(span.TraceID()),
@@ -248,7 +248,6 @@ func appendPass(
 					span.Status().Message(),       // StatusMessage VARCHAR
 					serviceName,                   // ServiceName VARCHAR (NOT NULL, '' = unknown)
 					resourceSpan.SchemaUrl(),      // ResourceSchemaURL VARCHAR (batch-level)
-					scopeSpan.SchemaUrl(),         // ScopeSchemaURL VARCHAR (batch-level)
 				)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)

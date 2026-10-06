@@ -57,6 +57,7 @@ type Scope struct {
 	ID           duckdb.UUID
 	Name         string
 	Version      string
+	SchemaURL    string
 	AttributeIDs []duckdb.UUID
 	Dropped      uint32
 }
@@ -107,11 +108,9 @@ func ResourceID(attributeIDs []duckdb.UUID, dropped uint32) duckdb.UUID {
 	return hashID(uuidsKey(attributeIDs), strconv.FormatUint(uint64(dropped), 10))
 }
 
-// ScopeID derives a scope's identity. Name and version participate because two
-// instrumentation libraries with identical (empty) attribute sets are still
-// different scopes.
-func ScopeID(name, version string, attributeIDs []duckdb.UUID, dropped uint32) duckdb.UUID {
-	return hashID(name, version, uuidsKey(attributeIDs), strconv.FormatUint(uint64(dropped), 10))
+// ScopeID derives a scope payload's identity from every retained field.
+func ScopeID(name, version, schemaURL string, attributeIDs []duckdb.UUID, dropped uint32) duckdb.UUID {
+	return hashID(name, version, schemaURL, uuidsKey(attributeIDs), strconv.FormatUint(uint64(dropped), 10))
 }
 
 func uuidsKey(ids []duckdb.UUID) string {
@@ -316,13 +315,14 @@ func (d *Dictionary) AddResource(res pcommon.Resource) duckdb.UUID {
 }
 
 // AddScope records an instrumentation scope and returns its id.
-func (d *Dictionary) AddScope(scope pcommon.InstrumentationScope) duckdb.UUID {
+func (d *Dictionary) AddScope(scope pcommon.InstrumentationScope, schemaURL string) duckdb.UUID {
 	ids := d.AddAttributes(scope.Attributes(), ScopeScope)
-	id := ScopeID(scope.Name(), scope.Version(), ids, scope.DroppedAttributesCount())
+	id := ScopeID(scope.Name(), scope.Version(), schemaURL, ids, scope.DroppedAttributesCount())
 	d.scopes[id] = Scope{
 		ID:           id,
 		Name:         scope.Name(),
 		Version:      scope.Version(),
+		SchemaURL:    schemaURL,
 		AttributeIDs: ids,
 		Dropped:      scope.DroppedAttributesCount(),
 	}
@@ -453,8 +453,8 @@ func (d *Dictionary) flushResources(ctx context.Context, conn driver.Conn) error
 		})
 }
 
-const scopesUpsert = `insert into scopes (id, name, version, attribute_ids, dropped_attributes_count)
-	select unnest(?::varchar[])::uuid, unnest(?::varchar[]), unnest(?::varchar[]), unnest(?::varchar[][])::uuid[], unnest(?::uinteger[])
+const scopesUpsert = `insert into scopes (id, name, version, schema_url, attribute_ids, dropped_attributes_count)
+	select unnest(?::varchar[])::uuid, unnest(?::varchar[]), unnest(?::varchar[]), unnest(?::varchar[]), unnest(?::varchar[][])::uuid[], unnest(?::uinteger[])
 	on conflict (id) do nothing`
 
 func (d *Dictionary) flushScopes(ctx context.Context, conn driver.Conn) error {
@@ -463,16 +463,18 @@ func (d *Dictionary) flushScopes(ctx context.Context, conn driver.Conn) error {
 			ids := make([]string, 0, len(rows))
 			names := make([]string, 0, len(rows))
 			versions := make([]string, 0, len(rows))
+			schemaURLs := make([]string, 0, len(rows))
 			attributeIDs := make([][]string, 0, len(rows))
 			dropped := make([]uint32, 0, len(rows))
 			for _, sc := range rows {
 				ids = append(ids, formatUUID(sc.ID))
 				names = append(names, sc.Name)
 				versions = append(versions, sc.Version)
+				schemaURLs = append(schemaURLs, sc.SchemaURL)
 				attributeIDs = append(attributeIDs, formatUUIDs(sc.AttributeIDs))
 				dropped = append(dropped, sc.Dropped)
 			}
-			return []any{ids, names, versions, attributeIDs, dropped}
+			return []any{ids, names, versions, schemaURLs, attributeIDs, dropped}
 		})
 }
 

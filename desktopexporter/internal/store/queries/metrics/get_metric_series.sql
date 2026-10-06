@@ -102,7 +102,7 @@ report_documents as materialized (
 				'version', sc.version,
 				'attributes', attrs_json(sc.attribute_ids),
 				'droppedAttributesCount', sc.dropped_attributes_count,
-				'schemaUrl', i.scope_schema_url),
+				'schemaUrl', sc.schema_url),
 			'datapoints', to_json(list(d.document order by d.timestamp, d.id))) as document
 	from metric_ingests i
 	join datapoint_documents d on d.metric_ingest_id = i.id
@@ -111,7 +111,7 @@ report_documents as materialized (
 	group by i.id, i.description, i.metadata_ids, r.attribute_ids,
 		r.dropped_attributes_count, i.resource_schema_url,
 		sc.name, sc.version, sc.attribute_ids, sc.dropped_attributes_count,
-		i.scope_schema_url
+		sc.schema_url
 )
 select m.metric_type,
 	cast(json_merge_patch(

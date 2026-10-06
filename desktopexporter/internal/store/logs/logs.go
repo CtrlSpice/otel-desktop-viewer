@@ -101,7 +101,7 @@ func IngestReport(ctx context.Context, conn driver.Conn, logs plog.Logs, flushed
 	for ri, resourceLogs := range logs.ResourceLogs().All() {
 		resourceIDs[ri] = dict.AddResource(resourceLogs.Resource())
 		for si, scopeLogs := range resourceLogs.ScopeLogs().All() {
-			scopeIDs[scopeKey{ri, si}] = dict.AddScope(scopeLogs.Scope())
+			scopeIDs[scopeKey{ri, si}] = dict.AddScope(scopeLogs.Scope(), scopeLogs.SchemaUrl())
 			for _, log := range scopeLogs.LogRecords().All() {
 				logAttrs = append(logAttrs, dict.AddAttributes(log.Attributes(), ingest.ScopeLog))
 			}
@@ -199,7 +199,6 @@ func appendPass(
 					log.EventName(),                 // EventName VARCHAR
 					serviceName,                     // ServiceName VARCHAR (NOT NULL, '' = unknown)
 					resourceLogs.SchemaUrl(),        // ResourceSchemaURL VARCHAR (batch-level)
-					scopeLogs.SchemaUrl(),           // ScopeSchemaURL VARCHAR (batch-level)
 				)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)

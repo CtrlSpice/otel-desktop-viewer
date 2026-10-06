@@ -132,7 +132,7 @@ func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flus
 		for si, scopeMetric := range resourceMetric.ScopeMetrics().All() {
 			scope := scopeMetric.Scope()
 			key := scopeKey{ri, si}
-			scopeIDs[key] = dict.AddScope(scope)
+			scopeIDs[key] = dict.AddScope(scope, scopeMetric.SchemaUrl())
 			_, scopeAttributeIDs[key] = ingest.AttributeSet(scope.Attributes(), ingest.ScopeScope)
 			for _, metric := range scopeMetric.Metrics().All() {
 				if err := ctx.Err(); err != nil {
@@ -292,11 +292,7 @@ func appendPass(
 					ingest.NonNil(metadataIDs), // MetadataIDs UUID[] (NOT NULL; [] when absent)
 					resourceID,                 // ResourceID UUID
 					scopeID,                    // ScopeID UUID
-					// Batch-level, from the OTLP wrappers rather than the
-					// Resource / InstrumentationScope messages, neither of
-					// which carries the field.
 					resourceMetric.SchemaUrl(), // ResourceSchemaURL VARCHAR
-					scopeMetric.SchemaUrl(),    // ScopeSchemaURL VARCHAR
 				); err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 				}

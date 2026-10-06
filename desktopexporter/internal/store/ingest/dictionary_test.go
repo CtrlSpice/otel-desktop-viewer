@@ -74,8 +74,8 @@ func TestAttributeSetIsOrderIndependent(t *testing.T) {
 
 	require.Equal(t, idsOne, idsTwo, "insertion order must not change the array")
 	assert.Equal(t,
-		ingest.ScopeID("otelhttp", "1.0.0", idsOne, 0),
-		ingest.ScopeID("otelhttp", "1.0.0", idsTwo, 0),
+		ingest.ScopeID("otelhttp", "1.0.0", "schema", idsOne, 0),
+		ingest.ScopeID("otelhttp", "1.0.0", "schema", idsTwo, 0),
 		"so the same scope in a different order is still one scope")
 }
 
@@ -148,11 +148,14 @@ func TestScopeIdentityIncludesNameAndVersion(t *testing.T) {
 	_, ids := ingest.AttributeSet(empty, ingest.ScopeScope)
 
 	assert.NotEqual(t,
-		ingest.ScopeID("otelhttp", "1.0.0", ids, 0),
-		ingest.ScopeID("otelsql", "1.0.0", ids, 0))
+		ingest.ScopeID("otelhttp", "1.0.0", "schema", ids, 0),
+		ingest.ScopeID("otelsql", "1.0.0", "schema", ids, 0))
 	assert.NotEqual(t,
-		ingest.ScopeID("otelhttp", "1.0.0", ids, 0),
-		ingest.ScopeID("otelhttp", "1.1.0", ids, 0))
+		ingest.ScopeID("otelhttp", "1.0.0", "schema", ids, 0),
+		ingest.ScopeID("otelhttp", "1.1.0", "schema", ids, 0))
+	assert.NotEqual(t,
+		ingest.ScopeID("otelhttp", "1.0.0", "schema-a", ids, 0),
+		ingest.ScopeID("otelhttp", "1.0.0", "schema-b", ids, 0))
 }
 
 func newStore(t *testing.T) *store.Store {
@@ -181,7 +184,7 @@ func TestFlushIsIdempotent(t *testing.T) {
 		sc := pcommon.NewInstrumentationScope()
 		sc.SetName("otelhttp")
 		sc.SetVersion("1.2.0")
-		d.AddScope(sc)
+		d.AddScope(sc, "")
 
 		d.AddAttributes(attrMap(map[string]string{"http.method": "GET"}), ingest.ScopeSpan)
 		return d
