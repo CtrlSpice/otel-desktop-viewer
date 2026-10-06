@@ -13,13 +13,16 @@ local viewer. It is not an instrumentation recipe or an audit framework.
 This skill requires a build where `otel-desktop-viewer --help` lists `query`.
 If it does not, use the web UI instead of guessing a query command or RPC call.
 
-The current viewer starts with the bare command:
+First try `SHOW TABLES` below against the intended endpoint and reuse that
+viewer if it is running. If no viewer is running, start the long-running viewer
+in a separate terminal or background process, wait until it is ready, and leave
+it running while you query it. The current viewer starts with the bare command:
 
 ```sh
 otel-desktop-viewer
 ```
 
-The query command talks to that running process. It defaults to
+The query command talks to the same running process. It defaults to
 `http://localhost:8000`, returns at most 25 rows, and prints an aligned table.
 Use `--endpoint` for a viewer at another HTTP address, `--limit` for another row
 limit, or `--json` for the result object.
@@ -52,8 +55,7 @@ SELECT
   status_code
 FROM spans
 WHERE start_time >= epoch_ns(current_timestamp - INTERVAL '1 hour')
-ORDER BY start_time DESC
-LIMIT 25"
+ORDER BY start_time DESC"
 ```
 
 `start_time` and `end_time` are stored unsigned integer nanoseconds since the
@@ -78,8 +80,7 @@ SELECT
   end_time
 FROM spans
 WHERE trace_id = '4bf92f3577b34da6a3ce929d0e0e4736'::UUID
-ORDER BY start_time, span_id
-LIMIT 25"
+ORDER BY start_time, span_id"
 
 otel-desktop-viewer query "
 SELECT
@@ -92,8 +93,7 @@ SELECT
   body
 FROM logs
 WHERE trace_id = '4bf92f3577b34da6a3ce929d0e0e4736'::UUID
-ORDER BY effective_timestamp, id
-LIMIT 25"
+ORDER BY effective_timestamp, id"
 ```
 
 A span is identified by `(trace_id, span_id)`; do not join on `span_id` alone.
@@ -111,16 +111,15 @@ count the owning span identities:
 otel-desktop-viewer query "
 SELECT
   a.key,
-  json_extract_string(a.value, '$.kind') AS kind,
+  json_extract_string(a.value, '$.kind') AS value_kind,
   count(DISTINCT struct_pack(trace_id := s.trace_id, span_id := s.span_id))
     AS owning_span_count
 FROM spans AS s
 CROSS JOIN unnest(s.attribute_ids) AS owned(attribute_id)
 JOIN attributes AS a ON a.id = owned.attribute_id
 WHERE s.start_time >= epoch_ns(current_timestamp - INTERVAL '1 hour')
-GROUP BY a.key, kind
-ORDER BY owning_span_count DESC, a.key, kind
-LIMIT 25"
+GROUP BY a.key, value_kind
+ORDER BY owning_span_count DESC, a.key, value_kind"
 ```
 
 This counts recent spans that own each key and received value kind. It does not
