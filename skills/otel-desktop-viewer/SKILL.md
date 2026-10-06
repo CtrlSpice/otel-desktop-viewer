@@ -1,21 +1,21 @@
 ---
 name: otel-desktop-viewer
-description: "Use when a user asks to inspect telemetry already received by OTel Desktop Viewer, including recent spans, correlated logs, or typed span-attribute use, through its bounded read-only query client."
+description: "Use when a user asks to inspect traces, spans, logs, Metrics, or stored OpenTelemetry values already received by OTel Desktop Viewer through its read-only CLI."
 ---
 
 # Inspect OTel Desktop Viewer telemetry
 
 ## Connect to one viewer
 
-Check that the installed build supports the query client:
+Check that the installed build supports the read-only client commands:
 
 ```sh
 otel-desktop-viewer --help
 ```
 
-Continue only when the root help lists `query`. Otherwise, tell the user that
-the installed build does not provide the query command and direct them to the
-web UI.
+Continue only when the root help lists the command needed for the task. If it
+does not, tell the user that the installed build does not provide that command
+and direct them to the web UI.
 
 Use one viewer process for the whole task, including follow-up questions:
 
@@ -37,9 +37,95 @@ Use one viewer process for the whole task, including follow-up questions:
 Never stop or restart an existing viewer. The caller owns the child handle; the
 viewer does not return one.
 
-The query command returns at most 25 rows and prints an aligned table. Use
-`--endpoint` for another HTTP address, `--limit` for another row limit, or
-`--json` for the result object.
+## Choose the narrowest command
+
+Prefer the purpose-built command that answers the question:
+
+| Question | Command |
+| --- | --- |
+| Which traces arrived? | `traces` |
+| What spans and trace-linked logs belong to one trace? | `trace <trace-id>` |
+| What exact data belongs to one span? | `span <span-id>` or `span <trace-id> <span-id>` |
+| Which logs arrived? | `logs` |
+| Which Metrics arrived? | `metrics` |
+| What custom aggregation or stored field is needed? | `query <sql>` |
+
+Use `--json` when another command will consume the result or when exact JSON
+numbers, nulls, and object fields matter. The default table output is for human
+inspection.
+
+## Search traces, logs, and Metrics
+
+The summary commands search the last hour and return at most 25 rows by default:
+
+```sh
+otel-desktop-viewer traces --service checkout --since 30m
+otel-desktop-viewer logs --service checkout --since 30m
+otel-desktop-viewer metrics --service checkout --since 30m --json
+```
+
+All three commands accept `--endpoint`, `--service`, `--since`, `--start`,
+`--end`, `--limit`, and `--json`. `--start` and `--end` accept inclusive RFC3339
+timestamps with nanoseconds. Do not combine an explicitly supplied `--since`
+with `--start` or `--end`.
+
+An empty result is successful. Before saying telemetry is absent, check the
+endpoint, time window, service name, and whether the producer exported that
+signal.
+
+`traces` returns compact trace summaries. When `--service` is present, the
+summary also reports how many spans matched that service; the trace itself can
+contain spans from other services.
+
+`logs` returns compact log summaries. `logRef` is a database-local reference,
+not a received OTel field.
+
+`metrics --json` includes `metricRef`, the exact UUID text from `metrics.id`.
+The viewer generates it; OTLP does not provide it. It is valid only for that
+database. Pass it unchanged and do not parse it. The human-readable Metric table
+omits this reference.
+
+## Inspect one trace or span
+
+Use a 32-character hexadecimal trace ID returned by `traces`. A dashed UUID is
+also accepted:
+
+```sh
+otel-desktop-viewer trace 4bf92f3577b34da6a3ce929d0e0e4736
+otel-desktop-viewer trace 4bf92f35-77b3-4da6-a3ce-929d0e0e4736 --json
+```
+
+`trace` returns every compact stored span and every log carrying that trace ID.
+Trace start is the minimum received span start timestamp. Trace duration is the
+maximum received span end timestamp minus that start. Span offsets and durations
+are computed from received nanosecond timestamps and returned as exact decimal
+strings. A log timestamp uses its received timestamp unless that value is zero,
+then it uses the received observed timestamp. The displayed severity uses
+received text when present and otherwise a label derived from the received enum
+number. The body is a compact preview; use `span` or `query` for complete stored
+log data.
+
+A span ID alone can occur in more than one trace. The command returns one exact
+span, a not-found result, or bounded summaries of every match; it never chooses
+between traces:
+
+```sh
+otel-desktop-viewer span 000000000000002a
+otel-desktop-viewer span 4bf92f3577b34da6a3ce929d0e0e4736 000000000000002a --json
+```
+
+Use the qualified form after an ambiguous result. It returns the full span,
+typed resource, scope, span, event, and link attributes, and logs carrying both
+that trace ID and span ID. Those logs are exact span correlations. Trace-only
+logs are available from `trace` or `query` instead. `--limit` changes only the
+number of summaries returned for an ambiguous standalone span ID.
+
+## Run custom read-only SQL
+
+`query` runs one read-only DuckDB statement against the existing viewer. It
+returns at most 25 rows and prints aligned columns by default. Use `--endpoint`
+for another HTTP address, `--limit` for another row limit, or `--json` for the
+result object.
 
 ## Inspect the installed schema
 
@@ -50,12 +136,16 @@ otel-desktop-viewer query --help
 otel-desktop-viewer query 'SHOW TABLES'
 otel-desktop-viewer query 'DESCRIBE spans'
 otel-desktop-viewer query 'DESCRIBE logs'
+otel-desktop-viewer query 'DESCRIBE metrics'
+otel-desktop-viewer query 'DESCRIBE metric_series'
+otel-desktop-viewer query 'DESCRIBE metric_datapoints'
 otel-desktop-viewer query 'DESCRIBE attributes'
 otel-desktop-viewer query "SELECT function_name FROM duckdb_functions() WHERE function_type = 'macro' AND function_name IN ('span_id_wire', 'trace_id_wire') ORDER BY function_name"
 ```
 
-The examples below use the current `spans`, `logs`, and `attributes` tables and
-the registered `trace_id_wire` and `span_id_wire` macros.
+The examples below use schema 21: `spans`, `logs`, `metrics`, `metric_series`,
+`metric_datapoints`, and `attributes`, plus the registered `trace_id_wire` and
+`span_id_wire` macros. Always inspect the installed schema before adapting them.
 
 ## Query recent spans
 
@@ -120,6 +210,53 @@ FROM logs
 WHERE trace_id = '4bf92f3577b34da6a3ce929d0e0e4736'::UUID
 ORDER BY effective_timestamp, id"
 ```
+
+## Query recent Metric datapoints
+
+`metrics.id`, `metric_series.id`, and `metric_datapoints.id` are viewer-assigned,
+database-local references. `metric_datapoints.metric_id` links a datapoint to its
+exact Metric, while `series_id` links it to one Metric and datapoint-attribute
+set. These references preserve associations but are not received OTel fields.
+
+`timestamp` and `start_time` are received unsigned integer nanoseconds.
+`value_type` distinguishes received number datapoints: `Int` uses signed
+`int_value`, while `Double` uses `double_value`. Do not coalesce or cast them to
+one floating-point value. Histogram fields retain their own presence: a null
+`sum`, `min`, or `max` means absent, while zero means present with value zero.
+`aggregation_temporality` is the received signed OTel enum number for Sum,
+Histogram, and ExponentialHistogram. Gauge stores zero as a non-applicable
+placeholder; use `metric_type` before interpreting it.
+
+```sh
+otel-desktop-viewer query --json "
+SELECT
+  m.id::VARCHAR AS metric_ref,
+  ms.id::VARCHAR AS series_ref,
+  m.name,
+  m.metric_type,
+  m.aggregation_temporality,
+  m.is_monotonic,
+  d.timestamp,
+  d.start_time,
+  d.value_type,
+  d.int_value,
+  d.double_value,
+  d.count,
+  d.sum,
+  d.min,
+  d.max
+FROM metrics AS m
+JOIN metric_series AS ms ON ms.metric_id = m.id
+JOIN metric_datapoints AS d
+  ON d.metric_id = m.id AND d.series_id = ms.id
+WHERE d.timestamp >= epoch_ns(current_timestamp - INTERVAL '1 hour')
+  AND d.timestamp <= epoch_ns(current_timestamp)
+ORDER BY d.timestamp DESC, m.name, series_ref"
+```
+
+The query returns stored datapoint fields, not the Metric summary command's
+display values. `metric_ref` and `series_ref` are string projections of stored
+UUID references. The one-hour predicate is a query scope, not a received field.
 
 ## Query recent span attribute use
 
@@ -216,3 +353,6 @@ LIMIT 10"
 - Use `--json` when exact machine-readable values or column types matter. Counts
   and `effective_timestamp` are computed by these queries, not received OTel
   fields.
+- Keep received values separate from computed and display values. In particular,
+  do not present durations, effective timestamps, severity labels, summary
+  counts, relative frequencies, or UUID reference text as received OTel fields.
