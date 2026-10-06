@@ -38,8 +38,10 @@ type queryRPCRequest struct {
 }
 
 type queryRPCResponse struct {
-	Result json.RawMessage `json:"result"`
-	Error  *queryRPCError  `json:"error"`
+	JSONRPC string          `json:"jsonrpc"`
+	ID      json.RawMessage `json:"id"`
+	Result  json.RawMessage `json:"result"`
+	Error   *queryRPCError  `json:"error"`
 }
 
 type queryRPCError struct {
