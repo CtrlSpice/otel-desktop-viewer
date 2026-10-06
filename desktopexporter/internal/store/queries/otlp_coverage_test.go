@@ -13,27 +13,11 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
-// TestSchemaCoversOTLP walks every field OTLP gives us and fails if the schema
-// has nowhere to put it.
+// TestSchemaCoversOTLP verifies that every received OTLP field has a storage
+// location.
 //
-// This exists because two fields were being silently discarded and nothing
-// said so: Span.Flags and SpanLink.Flags were dropped at ingest while logs and
-// datapoints kept theirs, and Metric.Metadata was never read at all. Each was
-// found by hand, by diffing pdata against the tables one type at a time. That
-// is not a thing to do on a schedule, and OTLP keeps adding fields.
-//
-// A dropped field is invisible in the worst way. It does not fail a build, a
-// query, or a round trip -- the value simply never arrives, so the store holds
-// something subtly less than what was sent and every export made from it is
-// wrong in a way that looks fine.
-//
-// Two choices worth stating. Columns come from duckdb_columns() against a
-// schema that was really executed -- the harness creates it and fails the
-// package if any table does not build -- not from parsing the .sql files, so a
-// column that fails to materialise cannot pass. And fields are matched by
-// name, which is loose -- a column named for a field it does not really hold
-// would satisfy this. It catches absence, which is the failure that happened
-// twice, not misuse.
+// Columns come from an executed schema rather than parsed SQL. Name matching
+// detects absent storage but cannot prove that a matching column is used correctly.
 func TestSchemaCoversOTLP(t *testing.T) {
 	db := macroDB(t)
 
@@ -55,27 +39,23 @@ func TestSchemaCoversOTLP(t *testing.T) {
 	// Fields whose value lives in a shape the name cannot find: a different
 	// table, or columns spelled nothing like the field.
 	//
-	// Each entry names the table and column that must exist. That is the whole
-	// point -- an exception that merely skipped the field would turn this test
-	// off for it, which is exactly the bug it is meant to catch. Verified: a
-	// first draft listed Metadata as a comment string, and deleting
-	// metric_ingests.metadata_ids still passed.
+	// Each entry names a table and column that must exist.
 	type storedAt struct{ table, column string }
 	elsewhere := map[string]storedAt{
-		"NumberDataPoint.Exemplars":               {"exemplars", "datapoint_id"},
-		"HistogramDataPoint.Exemplars":            {"exemplars", "datapoint_id"},
-		"ExponentialHistogramDataPoint.Exemplars": {"exemplars", "datapoint_id"},
+		"NumberDataPoint.Exemplars":               {"exemplars", "metric_datapoint_id"},
+		"HistogramDataPoint.Exemplars":            {"exemplars", "metric_datapoint_id"},
+		"ExponentialHistogramDataPoint.Exemplars": {"exemplars", "metric_datapoint_id"},
 		// Field is plural and prefixed; the column is the ordinary one.
 		"Exemplar.FilteredAttributes":            {"exemplars", "attribute_ids"},
-		"HistogramDataPoint.ExplicitBounds":      {"datapoints", "bounds_id"},
-		"ExponentialHistogramDataPoint.Positive": {"datapoints", "positive_bucket_counts"},
-		"ExponentialHistogramDataPoint.Negative": {"datapoints", "negative_bucket_counts"},
+		"HistogramDataPoint.ExplicitBounds":      {"metric_datapoints", "bounds_id"},
+		"ExponentialHistogramDataPoint.Positive": {"metric_datapoints", "positive_bucket_counts"},
+		"ExponentialHistogramDataPoint.Negative": {"metric_datapoints", "negative_bucket_counts"},
 		// The oneof carrying a metric's datapoints. Not a field in its own
-		// right; which arm is set is metric_streams.metric_type.
-		"Metric.Gauge":                {"metric_streams", "metric_type"},
-		"Metric.Sum":                  {"metric_streams", "metric_type"},
-		"Metric.Histogram":            {"metric_streams", "metric_type"},
-		"Metric.ExponentialHistogram": {"metric_streams", "metric_type"},
+		// right; which arm is set is metrics.metric_type.
+		"Metric.Gauge":                {"metrics", "metric_type"},
+		"Metric.Sum":                  {"metrics", "metric_type"},
+		"Metric.Histogram":            {"metrics", "metric_type"},
+		"Metric.ExponentialHistogram": {"metrics", "metric_type"},
 	}
 
 	// Accessors that describe pdata's own plumbing rather than OTLP content.
@@ -106,9 +86,6 @@ func TestSchemaCoversOTLP(t *testing.T) {
 	// is no table to check it against. Listing it here with an excuse would
 	// have hidden that. Filed separately.
 	//
-	// A pdata message can map to more than one table: a Metric's identity is
-	// metric_streams while its per-batch fields (description, metadata) are on
-	// metric_ingests, and both are "stored".
 	cases := []struct {
 		what   string // bare pdata type name, used to key the maps above
 		val    any
@@ -118,11 +95,11 @@ func TestSchemaCoversOTLP(t *testing.T) {
 		{"SpanEvent", ptrace.NewSpanEvent(), []string{"events"}},
 		{"SpanLink", ptrace.NewSpanLink(), []string{"links"}},
 		{"LogRecord", plog.NewLogRecord(), []string{"logs"}},
-		{"NumberDataPoint", pmetric.NewNumberDataPoint(), []string{"datapoints"}},
-		{"HistogramDataPoint", pmetric.NewHistogramDataPoint(), []string{"datapoints"}},
-		{"ExponentialHistogramDataPoint", pmetric.NewExponentialHistogramDataPoint(), []string{"datapoints"}},
+		{"NumberDataPoint", pmetric.NewNumberDataPoint(), []string{"metric_datapoints"}},
+		{"HistogramDataPoint", pmetric.NewHistogramDataPoint(), []string{"metric_datapoints"}},
+		{"ExponentialHistogramDataPoint", pmetric.NewExponentialHistogramDataPoint(), []string{"metric_datapoints"}},
 		{"Exemplar", pmetric.NewExemplar(), []string{"exemplars"}},
-		{"Metric", pmetric.NewMetric(), []string{"metric_streams", "metric_ingests"}},
+		{"Metric", pmetric.NewMetric(), []string{"metrics"}},
 	}
 
 	// Fields OTLP defines that this store does not keep, on purpose.

@@ -3,7 +3,7 @@
  * checked, which AggregationView the user last picked, and whether the
  * optional all-series aggregate line is shown.
  *
- * Stored as a single JSON blob per metric stream id so the user's
+ * Stored as one JSON blob per Metric reference so the user's
  * "how I had this metric set up" travels together. Storage shape:
  *
  *   {
@@ -19,20 +19,7 @@
 
 import type { AggregationView } from './aggregation'
 
-/**
- * Maximum number of timeseries that can be visible (checked) at once
- * for gauge/sum line charts. The legend disables further checkboxes
- * once this many are selected. Histogram metrics are uncapped — the
- * heatmap can show every attribute breakdown at once.
- *
- * 22 is a full F1 grid: 11 teams × 2 cars.
- *
- * Note this is sized for a view that does not exist yet. Today no single
- * stream comes near it: metric_streams identity includes service_name and
- * each team is its own service, so a per-driver metric is 11 separate
- * streams of 2 series rather than one stream of 22. Raising the cap
- * changes nothing observable until those streams merge.
- */
+/** Maximum visible Gauge or Sum series. Histograms are uncapped. */
 export const MAX_VISIBLE_TIMESERIES = 22
 
 /**
@@ -77,7 +64,6 @@ function isBoolean(value: unknown): value is boolean {
   return value === true || value === false
 }
 
-/** Same identity as `metricSummaryKey` / drawer search — metric stream id. */
 /**
  * Storage-format marker. Bumped when a stored view needs repairing rather than
  * merely reading differently.
@@ -86,32 +72,15 @@ const STORAGE_VERSION_KEY = 'metrics:view:storage-version'
 const STORAGE_VERSION = '1'
 
 /**
- * Drop empty visible-key lists written by a bug, once.
- *
- * Per-metric view state used to be seeded in an $effect, which ran after the
- * first render and could therefore run before the series keys had settled. It
- * would then persist `visibleKeys: []` for a metric the user had never touched,
- * and every later visit honoured it: a chart with nothing drawn and every
- * series unticked. Seeding is synchronous now and cannot produce it.
- *
- * An empty list cannot be told from a deliberate one by inspection -- unticking
- * every series is a legitimate thing to do and must survive a reload. So this
- * runs exactly once, guarded by a version marker: entries emptied by the old
- * code are cleared, and anything a user empties afterwards is left alone
- * forever.
- *
- * Only `visibleKeys` is removed; the rest of the stored view (aggregation view,
- * aggregate toggles) is a separate choice and is kept.
+ * One-time repair for empty visible-key lists stored before version 1. Later
+ * empty lists are user choices. Other stored fields remain unchanged.
  */
 export function repairEmptyPersistedVisibleKeys(): void {
   try {
     if (typeof localStorage === 'undefined') return
     if (localStorage.getItem(STORAGE_VERSION_KEY) === STORAGE_VERSION) return
 
-    // Collected first, and read through the Storage API rather than
-    // Object.keys: enumerating a Storage as a plain object is a browser
-    // convenience, not part of the interface, and removing while iterating
-    // shifts every later index.
+    // Collect first because removing entries shifts later Storage indices.
     const storedKeys: string[] = []
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i)
@@ -143,19 +112,18 @@ export function repairEmptyPersistedVisibleKeys(): void {
 
     localStorage.setItem(STORAGE_VERSION_KEY, STORAGE_VERSION)
   } catch {
-    // A storage that throws (private mode, quota) is not worth failing a page
-    // load over. The unrepaired state is the status quo, not a new fault.
+    // Preference repair must not block page load when storage is unavailable.
   }
 }
 
-export function metricViewStorageKey(metricStreamID: string): string {
-  return `${STORAGE_PREFIX}${metricStreamID}`
+export function metricViewStorageKey(metricRef: string): string {
+  return `${STORAGE_PREFIX}${metricRef}`
 }
 
-function loadPersistedView(metricStreamID: string): PersistedMetricView | null {
+function loadPersistedView(metricRef: string): PersistedMetricView | null {
   try {
     if (typeof localStorage === 'undefined') return null
-    const raw = localStorage.getItem(metricViewStorageKey(metricStreamID))
+    const raw = localStorage.getItem(metricViewStorageKey(metricRef))
     if (!raw) return null
     const parsed: unknown = JSON.parse(raw)
     if (!isPersistedMetricViewFields(parsed)) return null
@@ -193,13 +161,13 @@ function serializePersistedView(view: PersistedMetricView): string {
 }
 
 function writePersistedView(
-  metricStreamID: string,
+  metricRef: string,
   view: PersistedMetricView
 ): void {
   try {
     if (typeof localStorage === 'undefined') return
     localStorage.setItem(
-      metricViewStorageKey(metricStreamID),
+      metricViewStorageKey(metricRef),
       serializePersistedView(view)
     )
   } catch {
@@ -225,34 +193,26 @@ function mergePersistedView(
   }
 }
 
-/**
- * Persist the visible-keys list, preserving any existing aggregationView
- * on disk. Call this from checkbox toggles; aggregationView is owned by
- * a different write path and must not be clobbered here.
- */
+/** Persist visible keys without changing other metric-view preferences. */
 export function savePersistedTimeseriesVisible(
-  metricStreamID: string,
+  metricRef: string,
   keys: Iterable<string>
 ): void {
-  const existing = loadPersistedView(metricStreamID)
+  const existing = loadPersistedView(metricRef)
   writePersistedView(
-    metricStreamID,
+    metricRef,
     mergePersistedView(existing, { visibleKeys: [...keys] })
   )
 }
 
-/**
- * Persist the aggregationView, preserving the existing visibleKeys on
- * disk. Mirror of {@link savePersistedTimeseriesVisible} — same read-
- * modify-write discipline so the two writers don't fight.
- */
+/** Persist the aggregation view without changing other metric-view preferences. */
 export function savePersistedAggregationView(
-  metricStreamID: string,
+  metricRef: string,
   aggregationView: AggregationView
 ): void {
-  const existing = loadPersistedView(metricStreamID)
+  const existing = loadPersistedView(metricRef)
   writePersistedView(
-    metricStreamID,
+    metricRef,
     mergePersistedView(existing, {
       aggregationView,
     })
@@ -261,63 +221,50 @@ export function savePersistedAggregationView(
 
 /** Persist whether the optional all-series aggregate line is shown. */
 export function savePersistedShowAllSeriesAggregate(
-  metricStreamID: string,
+  metricRef: string,
   showAllSeriesAggregate: boolean
 ): void {
-  const existing = loadPersistedView(metricStreamID)
+  const existing = loadPersistedView(metricRef)
   writePersistedView(
-    metricStreamID,
+    metricRef,
     mergePersistedView(existing, {
       showAllSeriesAggregate,
     })
   )
 }
 
-/**
- * Read the persisted aggregationView. Returns null when there is no
- * entry, the entry is invalid, or the persisted value isn't in
- * `allowed` (e.g. user previously picked Sum on a metric that's now
- * 1-series). Caller decides the fallback.
- */
+/** Read an allowed persisted aggregation view, or null. */
 export function loadPersistedAggregationView(
-  metricStreamID: string,
+  metricRef: string,
   allowed: readonly AggregationView[]
 ): AggregationView | null {
-  const v = loadPersistedView(metricStreamID)?.aggregationView
+  const v = loadPersistedView(metricRef)?.aggregationView
   if (v === undefined) return null
   return allowed.includes(v) ? v : null
 }
 
 /** Read persisted all-series aggregate toggle. Defaults to false. */
 export function loadPersistedShowAllSeriesAggregate(
-  metricStreamID: string
+  metricRef: string
 ): boolean {
-  return loadPersistedView(metricStreamID)?.showAllSeriesAggregate === true
+  return loadPersistedView(metricRef)?.showAllSeriesAggregate === true
 }
 
 /**
- * Pick visible timeseries keys for the current metric data.
- * Restores persisted keys that still exist; otherwise first N.
+ * Persisted visible keys, or null. This does not require the current metric
+ * response, so callers can request the selected series in advance.
  */
-/**
- * The visible keys a previous visit left behind, or null if there are none.
- *
- * Exposed so a fetch can name the series it needs before it has the response:
- * resolveTimeseriesVisible answers the same question but needs the metric's
- * current keys to fall back on, and that is exactly what the caller does not
- * have yet.
- */
-export function persistedVisibleKeys(metricStreamID: string): string[] | null {
-  return loadPersistedView(metricStreamID)?.visibleKeys ?? null
+export function persistedVisibleKeys(metricRef: string): string[] | null {
+  return loadPersistedView(metricRef)?.visibleKeys ?? null
 }
 
 export function resolveTimeseriesVisible(
   currentKeys: readonly string[],
-  metricStreamID: string,
+  metricRef: string,
   initialVisible: number = DEFAULT_VISIBLE_TIMESERIES,
   maxChecked: number | null = MAX_VISIBLE_TIMESERIES
 ): string[] {
-  const persisted = loadPersistedView(metricStreamID)?.visibleKeys ?? null
+  const persisted = loadPersistedView(metricRef)?.visibleKeys ?? null
   if (persisted !== null) {
     const current = new Set(currentKeys)
     const kept = persisted.filter(k => current.has(k))
@@ -330,7 +277,7 @@ export function resolveTimeseriesVisible(
 export function reconcileTimeseriesVisible(
   visible: ReadonlySet<string>,
   currentKeys: readonly string[],
-  metricStreamID: string,
+  metricRef: string,
   maxChecked: number | null = MAX_VISIBLE_TIMESERIES
 ): string[] {
   const current = new Set(currentKeys)
@@ -340,7 +287,7 @@ export function reconcileTimeseriesVisible(
   if (capped.length > 0 || !hadStale) return capped
   return resolveTimeseriesVisible(
     currentKeys,
-    metricStreamID,
+    metricRef,
     DEFAULT_VISIBLE_TIMESERIES,
     maxChecked
   )

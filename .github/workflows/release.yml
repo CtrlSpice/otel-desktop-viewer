@@ -76,23 +76,7 @@ jobs:
           go-version: '1.26'
       - name: Tidy Go module
         run: go mod tidy
-      # DuckDB is cgo, and its Windows support is a *prebuilt* static library --
-      # duckdb-go-bindings/lib/windows-amd64 -- so the compiler here has to match
-      # the one that archive was built with, not merely be a working gcc.
-      #
-      # C:\mingw64 is that compiler. It ships with the runner image, and it is what
-      # every Windows build has silently used: this workflow installed a UCRT64
-      # toolchain through setup-msys2 and then put `C:\msys64\ucrt64\bin` on PATH,
-      # which is not where setup-msys2 installs and holds no gcc, so cgo fell
-      # through to the next of the five gccs on the image (#324).
-      #
-      # Pointing PATH at the MSYS2 toolchain instead -- the apparent fix -- breaks
-      # the link: its gcc 16.1.0 uses a different TLS model, and libduckdb_static.a
-      # fails on undefined `__emutls_v._ZSt11__once_call`. Measured, not guessed.
-      #
-      # So the accident was benign and the intent was wrong. This names the working
-      # compiler deliberately rather than inheriting it from PATH order, and the
-      # 61s that installed an unusable toolchain goes away.
+      # duckdb-go-bindings' Windows archive requires the C:\mingw64 toolchain (#324).
       - name: Pin the C toolchain cgo uses (Windows)
         if: matrix.os == 'windows-latest'
         run: |
@@ -130,7 +114,7 @@ jobs:
         with:
           distribution: goreleaser-pro
           version: v2.16.0
-          # Use GGOOS/GGOARCH to filter targets with partial.by: target
+          # GGOOS and GGOARCH select the partial target.
           args: release --clean --split ${{ github.event_name == 'workflow_dispatch' && '--snapshot' || '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

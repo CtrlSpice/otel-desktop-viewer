@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { distinguishingResourceAttributes } from './series-labels'
-import type { MetricTimeseries } from '@/types/api-types'
+import type { MetricSeriesViewData } from '@/types/api-types'
 
 const series = (
   key: string,
   resourceAttrs: Array<[string, string]>
-): MetricTimeseries => ({
-  attributesKey: key,
+): MetricSeriesViewData => ({
+  seriesRef: key,
   attributes: [
     { key: 'http.route', value: { kind: 'string', value: '/checkout' } },
   ],

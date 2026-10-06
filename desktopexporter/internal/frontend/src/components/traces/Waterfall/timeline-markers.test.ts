@@ -65,7 +65,7 @@ function log(
   severityNumber = 9
 ): TraceLogSummary {
   return {
-    id,
+    logRef: id,
     spanID,
     timestamp,
     severityText: '',
@@ -230,10 +230,13 @@ describe('timeline marker ownership and colour', () => {
       ],
       [span()]
     )
-    expect(result.bySpanID.get('span-1')?.map(item => item.id)).toEqual([
+    expect(result.bySpanID.get('span-1')?.map(item => item.logRef)).toEqual([
       'owned',
     ])
-    expect(result.unmatched.map(item => item.id)).toEqual(['null', 'dangling'])
+    expect(result.unmatched.map(item => item.logRef)).toEqual([
+      'null',
+      'dangling',
+    ])
   })
 
   it('uses highest received log severity and event-only fallbacks', () => {

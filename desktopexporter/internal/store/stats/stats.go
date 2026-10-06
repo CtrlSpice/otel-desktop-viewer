@@ -51,19 +51,14 @@ func GetStats(ctx context.Context, db *sql.DB, sizeBytes int64, maxSizeBytes int
 				'lastReceived', cast(coalesce(max(nullif(timestamp, 0)), max(observed_timestamp)) as varchar)
 			) from logs),
 			'metrics', (select json_object(
-				-- metricCount is the number of distinct logical streams
-				-- (one per name+unit+type+temporality+monotonic+scope+
-				-- service tuple), so the frontend's "metrics" badge
-				-- shows logical concepts rather than ingest batches.
-				-- metric_ingests is the per-batch table; using its row
-				-- count would inflate by the number of OTLP requests.
-				'metricCount',    (select count(*) from metric_streams),
+				-- The Metric table includes Metrics with no datapoints.
+				'metricCount',    (select count(*) from metrics),
 				'dataPointCount', count(*),
 				-- lastReceived = latest datapoint timestamp observed
 				-- (source recency), not collector wall-clock arrival.
 				-- Mirrors traces/logs which also use source timestamps.
 				'lastReceived',   cast(max(timestamp) as varchar)
-			) from datapoints),
+			) from metric_datapoints),
 			-- Telemetry the store would not write. Empty in the ordinary case,
 			-- so the home page shows the section only when there is something
 			-- to say. Ordered by recency.

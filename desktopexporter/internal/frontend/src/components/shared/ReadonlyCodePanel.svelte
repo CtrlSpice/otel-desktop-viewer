@@ -4,10 +4,7 @@
   import { tags as t } from '@lezer/highlight'
   import { editorColors as c } from '@/components/shared/utils/editor-colors'
 
-  // CodeMirror theme for the readonly code surface. Lives in <script
-  // module> so it's evaluated once per module load, not per component
-  // instance, and so the heavy CodeMirror imports stay tree-shaken
-  // when ReadonlyCodePanel isn't mounted.
+  // Share the CodeMirror theme across component instances.
   const shellColors = {
     subtle: `var(--readonly-code-subtle, ${c.subtle})`,
     gold: `var(--readonly-code-gold, ${c.gold})`,

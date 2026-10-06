@@ -8,7 +8,7 @@ import {
   type MetricViewContext,
 } from '@/contexts/metric-view-context.svelte'
 import type {
-  MetricData,
+  MetricViewData,
   ResourceData,
   ScalarAggregate,
   ScopeData,
@@ -93,9 +93,9 @@ function makeSumDatapointAt(
  * smart default), and the second series unlocks 'sum' / 'avg' so tests have an
  * allowed value that is NOT the default to deep-link to.
  */
-function makeCumulativeSumMetric(): MetricData {
+function makeCumulativeSumMetric(): MetricViewData {
   return {
-    id: 'm1',
+    metricRef: 'm1',
     name: 'http.server.requests',
     description: 'Total inbound requests',
     metadata: [],
@@ -105,9 +105,11 @@ function makeCumulativeSumMetric(): MetricData {
     aggregationTemporality: 'Cumulative',
     isMonotonic: true,
     resourceDroppedAttributesCount: 0,
+    resourceSchemaUrl: '',
     resource: EMPTY_RESOURCE,
     scopeName: EMPTY_SCOPE.name,
     scopeVersion: EMPTY_SCOPE.version,
+    scopeSchemaUrl: '',
     scopeDroppedAttributesCount: 0,
     scope: EMPTY_SCOPE,
     datapointCount: 0,
@@ -126,7 +128,7 @@ function makeCumulativeSumMetric(): MetricData {
     boundsMismatch: null,
     timeseries: [
       {
-        attributesKey: 'route=/a',
+        seriesRef: 'route=/a',
         resource: { attributes: [], droppedAttributesCount: 0 },
         attributes: [{ key: 'route', value: { kind: 'string', value: '/a' } }],
         datapoints: [
@@ -147,7 +149,7 @@ function makeCumulativeSumMetric(): MetricData {
         lastSeenNs: BigInt(BASE_TIMESTAMP_MS + 60_000) * 1_000_000n,
       },
       {
-        attributesKey: 'route=/b',
+        seriesRef: 'route=/b',
         resource: { attributes: [], droppedAttributesCount: 0 },
         attributes: [{ key: 'route', value: { kind: 'string', value: '/b' } }],
         datapoints: [
@@ -216,7 +218,7 @@ function makeRateSelectionMetric() {
 }
 
 type ProbeOptions = {
-  metric?: MetricData
+  metric?: MetricViewData
   seriesDatapoints?: Readonly<Record<string, SumDataPoint[]>>
   scalarAggregate?: ScalarAggregate
 }
@@ -310,11 +312,7 @@ describe('metric effective window', () => {
   })
 })
 
-/**
- * Browser back/forward as the context sees it: the URL changes behind its
- * back, then a popstate announces it. jsdom's own `history.back()` cannot
- * reach a URL that was never pushed, which is exactly the #235 case.
- */
+/** Simulate external browser navigation without adding a history entry. */
 function externalNavigationTo(url: string): void {
   window.history.replaceState(null, '', url)
   window.dispatchEvent(new PopStateEvent('popstate'))
@@ -346,9 +344,6 @@ describe('metric view context aggregation URL sync', () => {
     expect(reportedAggregationView()).toBe('rate')
   })
 
-  // Issue #235: an absent `agg` means nobody wrote one, not 'raw'. Going back
-  // to a URL that predates any aggregation write keeps the smart default --
-  // the state that URL was actually showing -- instead of resetting.
   it('keeps the smart default when the browser goes back to a URL without an aggregation', async () => {
     renderProbe('/metrics/m1?agg=sum')
     expect(reportedAggregationView()).toBe('sum')
@@ -424,9 +419,6 @@ describe('metric view context aggregation URL sync', () => {
     expect(reportedAggregationView()).toBe('rate')
   })
 
-  // The reachable form of #235: the datapoint write pushes a history entry
-  // carrying the aggregation, so Back lands on the param-free URL that came
-  // before it. That URL was showing the smart default, not raw.
   it('spells out raw rather than omitting it', async () => {
     const ctx = renderProbe('/metrics/m1')
 
@@ -438,15 +430,6 @@ describe('metric view context aggregation URL sync', () => {
 })
 
 describe('metric view context visibility seeding', () => {
-  // One visible-series set for every metric shape. It was two -- a metric
-  // seeding the wrong shape's box once left a scalar carrying a frozen
-  // ten-key histogram set, which the aggregate fetch sent as the store's
-  // narrowing parameter and drew an "All" line over ten of its series. With
-  // one box that class is structurally gone, and the hazard inverts: seeding
-  // used to write both boxes back to back, so if that pattern survived the
-  // merge, the histogram branch's empty seed would land second and clobber
-  // the scalar's. A scalar seeing its own keys is therefore also the proof
-  // that exactly one seed was written.
   it("seeds the set with the scalar metric's own keys, unclobbered", () => {
     const ctx = renderProbe('/metrics/m1')
     expect(ctx.isHistogramKind).toBe(false)
@@ -457,7 +440,7 @@ describe('metric view context visibility seeding', () => {
     const metric = makeCumulativeSumMetric()
     metric.timeseries.push({
       ...metric.timeseries[1]!,
-      attributesKey: 'route=/c',
+      seriesRef: 'route=/c',
       attributes: [{ key: 'route', value: { kind: 'string', value: '/c' } }],
     })
     const buckets = [
@@ -494,12 +477,12 @@ describe('metric view context visibility seeding', () => {
     const template = metric.timeseries[0]!
     metric.timeseries = Array.from({ length: 23 }, (_, index) => ({
       ...template,
-      attributesKey: `series-${String(index).padStart(3, '0')}`,
+      seriesRef: `series-${String(index).padStart(3, '0')}`,
     }))
     const persistedKeys = metric.timeseries
       .slice(0, 22)
-      .map(series => series.attributesKey)
-    const storageKey = metricViewStorageKey(metric.id)
+      .map(series => series.seriesRef)
+    const storageKey = metricViewStorageKey(metric.metricRef)
     const persisted = JSON.stringify({ visibleKeys: persistedKeys })
     localStorage.setItem(storageKey, persisted)
 

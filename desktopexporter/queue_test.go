@@ -71,7 +71,7 @@ func TestSendingQueueValidation(t *testing.T) {
 }
 
 // End to end through the async path: ConsumeTraces returns after enqueue, and
-// the span must still come out of a JSON-RPC searchTraces afterwards. This is
+// the span must still come out of a JSON-RPC searchTraceSummaries afterwards. This is
 // the test that fails if the queue swallows batches, if batching mangles the
 // pdata, or if shutdown drops what was still queued.
 func TestQueuedIngestEndToEnd(t *testing.T) {
@@ -101,7 +101,7 @@ func TestQueuedIngestEndToEnd(t *testing.T) {
 	// WaitForResult is false, so ConsumeTraces proved only that the batch was
 	// enqueued; the write happens on the consumer goroutine after the batcher's
 	// flush timeout. Poll the real RPC surface until it lands.
-	searchBody := `{"jsonrpc":"2.0","id":1,"method":"searchTraces","params":["0","9223372036854775807"]}`
+	searchBody := `{"jsonrpc":"2.0","id":1,"method":"searchTraceSummaries","params":["0","9223372036854775807"]}`
 	assert.Eventually(t, func() bool {
 		resp, err := http.Post("http://"+endpoint+"/rpc", "application/json",
 			bytes.NewBufferString(searchBody))

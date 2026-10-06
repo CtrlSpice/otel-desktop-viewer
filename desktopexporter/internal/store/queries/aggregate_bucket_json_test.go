@@ -14,7 +14,7 @@ func TestAggregateBucketJSONUsesBoundsPresenceForRepresentation(t *testing.T) {
 	query := func(bounds, counts, scale, zeroCount, posCounts string) map[string]any {
 		t.Helper()
 		var raw string
-		err := db.QueryRow(`select aggregate_bucket_json(
+		err := db.QueryRow(`select metric_aggregate_bucket_view_json(
 			1::bigint, 0::bigint, 7::ubigint, 3.5::double,
 			` + scale + `, 0.0::double, ` + zeroCount + `,
 			{'offset': 0::integer, 'counts': ` + posCounts + `, 'folded': 0::bigint},

@@ -11,37 +11,19 @@ import type { SyntaxNode } from '@lezer/common'
 import { fieldResolutionIsAmbiguous, resolveField } from './field-resolution'
 import { normalizeDuration, normalizeDurationList } from './duration-query'
 
-// Generate unique ID
 let nextQueryID = 0
 function generateID(): string {
   return `query-${++nextQueryID}`
 }
 
-// One grammar, one parse.
-//
-// This file used to hold a second, hand-written lexer and parser for the
-// query language, alongside the Lezer grammar the editor highlights with.
-// Two implementations of one language drifted exactly the way two
-// implementations drift: the editor accepted `=~` the parser rejected,
-// the parser accepted backticks the editor underlined, a NOT typo the
-// editor flagged was silently submitted as free text. Now the Lezer tree
-// -- the same one CodeMirror builds incrementally on every keystroke --
-// is the only syntax authority, and this file only walks it: syntax
-// errors are error nodes in the tree, semantics (field names, operator
-// compatibility) are checked against the same definitions the
-// completions use.
-
-// Validation error with position info for the linter
+// Walk the same Lezer syntax tree used by CodeMirror.
 export interface ValidationError {
   from: number
   to: number
   message: string
 }
 
-// Shared by the parser and the validator so the editor's underline and the
-// error a submitted query produces say the same thing. Names the fix rather
-// than just the symptom: the overwhelmingly common cause is an unquoted value
-// containing a space.
+// Shared by parsing and validation so submitted and inline errors agree.
 function unexpectedTokenMessage(value: string): string {
   if (!value.trim()) return 'Incomplete expression'
   return (
@@ -50,9 +32,7 @@ function unexpectedTokenMessage(value: string): string {
   )
 }
 
-// Unescape a QuotedString token's text: strip the quotes, resolve the
-// escapes the language supports. Anything else after a backslash is kept
-// as itself, so "\d" survives into regex values.
+// Unsupported escapes keep the escaped character, so "\d" becomes "d".
 function unquote(text: string): string {
   const quote = text[0]
   const body = text.slice(1, text.endsWith(quote) ? -1 : undefined)
@@ -96,9 +76,7 @@ const KEYWORD_SYMBOLS = new Map<string, string>([
   ['NotIn', 'NOT IN'],
 ])
 
-// Which operator a field must allow for a derived operator to be legal.
-// `field = NULL` has always been legal wherever `=` is, so IS NULL rides on
-// =; the negations ride on what they negate.
+// Derived null and regexp operators inherit permission from their base operator.
 const COMPAT_ALIASES = new Map<string, string>([
   ['IS NULL', '='],
   ['IS NOT NULL', '!='],
@@ -196,19 +174,7 @@ function namedChildren(node: SyntaxNode): SyntaxNode[] {
   return out
 }
 
-// A structured query is one that uses the language's *operators*:
-// comparisons, keyword operators, AND/OR. Anything else -- however mangled
-// -- is free text, searched globally. An erroneous *structured* query is an
-// error, never free text: `duration NOT 5` used to be submitted as a global
-// search for the literal string "duration NOT 5", underlined red in the
-// editor and silently wrong on the wire.
-//
-// A Group node deliberately does NOT count. Parentheses are ordinary
-// characters in log bodies and error text -- "(error)", "(500) internal
-// error" -- and the grammar eagerly parses a leading paren as a Group, so
-// counting Groups turned every parenthetical remark into a hard parse
-// error. The old lexer's heuristic was "has an operator or logical token",
-// and this is that rule expressed over the tree.
+// Operators make a query structured. Parentheses alone remain searchable text.
 type TreeSurvey = {
   structured: boolean
   firstError: { from: number; to: number } | null
@@ -330,10 +296,7 @@ function walkExpression(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
     case 'Comparison':
       return walkComparison(ctx, node)
     case 'FreeText':
-      // Reached only when the query is structured elsewhere -- a bare word
-      // sitting inside AND/OR or a group, like `x = 1 AND foo`. The quoting
-      // hint would be wrong here; the word is not a value missing its
-      // quotes, it is a condition missing its operator.
+      // A bare word inside a structured query is missing an operator.
       fail(
         ctx,
         node.from,
@@ -391,8 +354,7 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
   let listItems: string[] | null = null
   let listItemNodes: SyntaxNode[] = []
   if (valueNode.name === 'Null') {
-    // A bare NULL/NIL keyword is the null check; a quoted "NULL" stays the
-    // literal string, which the old parser could not distinguish.
+    // Bare NULL/NIL is a null check; quoted "NULL" is a string.
     if (symbol === '=') symbol = 'IS NULL'
     else if (symbol === '!=') symbol = 'IS NOT NULL'
     else {
@@ -415,10 +377,7 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
         return null
       }
       if (item.name === 'Array') {
-        // The grammar recurses, so [[a],b] parses cleanly -- but the wire
-        // format is a flat list, and the old parser rejected nesting too.
-        // Without this the nested array's raw source text, brackets and
-        // all, would travel as one string element.
+        // The wire format accepts only flat lists.
         fail(ctx, item.from, item.to, 'Arrays cannot be nested')
         return null
       }
@@ -555,9 +514,7 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
   if (!field) return null
 
   if (listItems) {
-    // JSON, not a comma-join: a quoted value may itself contain commas,
-    // which the old "[a,b,c]" serialization corrupted on the way through
-    // the backend's comma split.
+    // JSON preserves commas inside quoted list values.
     value = JSON.stringify(listItems)
   }
 
@@ -568,7 +525,6 @@ function walkComparison(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
   }
 }
 
-// Create Global Text Search Query
 function createGlobalTextSearch(input: string): QueryNode {
   return {
     id: generateID(),
@@ -632,9 +588,7 @@ export function parseSearchRequest(
   return { predicate, limit }
 }
 
-// Existing callers still ask for a predicate alone. Refuse a result modifier
-// rather than silently dropping it; SearchEditor moves to parseSearchRequest
-// when the transport slice starts carrying limits.
+// The predicate-only API rejects result modifiers rather than dropping them.
 export function parseQuery(
   input: string,
   availableFields: FieldDefinition[],

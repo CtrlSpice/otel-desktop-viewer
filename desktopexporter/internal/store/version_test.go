@@ -71,12 +71,7 @@ func TestSchemaInitializationHonorsCancellation(t *testing.T) {
 	assert.Zero(t, schemaMetaTables)
 }
 
-// A file stamped with a different version must be refused, not silently used.
-//
-// This was warn-only through the rewrite, while the schema was still moving.
-// Now it is the thing standing between an incompatible file and the opaque
-// failure it would otherwise produce -- an appender column-count error partway
-// through an ingest, or an index built against a column that is not there.
+// A file stamped with a different version must be refused before ingest or DDL.
 func TestVersionMismatchIsRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "future.db")
 
@@ -192,8 +187,9 @@ func TestPreVersioningDatabaseIsRefused(t *testing.T) {
 		// spans.resource_id / scope_id are NOT NULL FKs, so the owner rows
 		// have to exist first.
 		if _, err := db.Exec(`
-			insert into resources (id, attribute_ids)
-			values ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid, []::uuid[])`); err != nil {
+			insert into resources (id, payload_id, attribute_ids)
+			values ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
+				'dddddddd-dddd-dddd-dddd-dddddddddddd'::uuid, []::uuid[])`); err != nil {
 			return err
 		}
 		if _, err := db.Exec(`
@@ -254,6 +250,52 @@ func TestIncompatibleDatabaseIsRejectedWithoutMutation(t *testing.T) {
 	assert.Equal(t, before, after, "rejecting an incompatible database must not mutate its file")
 }
 
+func TestVersion19DatabaseIsRejectedWithoutMutation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "version-19.db")
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(schema.VersionTableQuery)
+	require.NoError(t, err)
+	_, err = db.Exec(schema.StampVersionQuery, 19)
+	require.NoError(t, err)
+	_, err = db.Exec(`create table telemetry_sample (id uuid primary key, schema_url varchar)`)
+	require.NoError(t, err)
+	_, err = db.Exec(`insert into telemetry_sample values (uuid(), 'https://example.test/resource/v1')`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+	_, err = NewStore(context.Background(), path, zap.NewNop())
+	require.ErrorIs(t, err, ErrSchemaIncompatible)
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, before, after, "rejecting a version-19 database must not rewrite stored telemetry")
+}
+
+func TestVersion17DatabaseIsRejectedWithoutMutation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "version-17.db")
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(schema.VersionTableQuery)
+	require.NoError(t, err)
+	_, err = db.Exec(schema.StampVersionQuery, 17)
+	require.NoError(t, err)
+	_, err = db.Exec(`create table telemetry_sample (id uuid, parent_id uuid, payload blob)`)
+	require.NoError(t, err)
+	_, err = db.Exec(`insert into telemetry_sample values (uuid(), uuid(), ?::blob)`, []byte{0, 1, 2, 255})
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+	_, err = NewStore(context.Background(), path, zap.NewNop())
+	require.ErrorIs(t, err, ErrSchemaIncompatible)
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, before, after, "rejecting a version-17 database must not rewrite stored telemetry")
+}
+
 func TestEmptySchemaMetadataIsRejectedWithoutMutation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "empty-schema-meta.db")
 	db, err := sql.Open("duckdb", path)
@@ -309,7 +351,6 @@ func TestUnversionedTelemetryDatabaseIsRejectedWithoutMutation(t *testing.T) {
 			scope_dropped_attributes_count uinteger`,
 		"logs": `trace_id uuid, observed_timestamp bigint, resource_dropped_attributes_count uinteger,
 			scope_dropped_attributes_count uinteger`,
-		"metric_ingests": `id uuid, stream_id uuid`,
 	} {
 		t.Run(table, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "legacy-empty.db")
@@ -381,7 +422,7 @@ func TestUnrelatedDatabaseInitializes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "unrelated.db")
 	db, err := sql.Open("duckdb", path)
 	require.NoError(t, err)
-	_, err = db.Exec(`create table metrics (id integer)`)
+	_, err = db.Exec(`create table business_metrics (id integer)`)
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
 
@@ -392,7 +433,7 @@ func TestUnrelatedDatabaseInitializes(t *testing.T) {
 
 	var unrelatedTables int
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		return db.QueryRow(`select count(*) from duckdb_tables() where table_name = 'metrics'`).Scan(&unrelatedTables)
+		return db.QueryRow(`select count(*) from duckdb_tables() where table_name = 'business_metrics'`).Scan(&unrelatedTables)
 	}))
 	assert.Equal(t, 1, unrelatedTables)
 }
@@ -423,9 +464,8 @@ func TestCustomSchemaNamesDoNotAffectCompatibilityInspection(t *testing.T) {
 // Check first and the user gets a version message; check afterwards and they get
 // "failed to create index N" with no hint about why.
 //
-// Mutation-checked: moving checkSchemaVersion below the table/index loops in
-// NewStore makes this test fail. An earlier version of this test asserted only
-// the returned compatibility, which survived that mutation and proved nothing.
+// The test uses an incompatible table shape so DDL would fail if the version
+// check ran too late.
 func TestVersionCheckRunsBeforeTableCreation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "order.db")
 

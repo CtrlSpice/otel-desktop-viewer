@@ -16,10 +16,10 @@ func TestMetricSummaryTimePredicateShapes(t *testing.T) {
 		wantDPWhere string
 		wantArgs    []any
 	}{
-		{"unbounded", timerange.TimeRange{}, "exists (select 1 from datapoints d where d.metric_ingest_id = m.id)", "", []any{}},
-		{"end only", timerange.TimeRange{End: &end}, "exists (select 1 from datapoints d where d.metric_ingest_id = m.id and d.timestamp <= time_end)", "where d.timestamp <= time_end", []any{[]uint64{end}}},
-		{"start only", timerange.TimeRange{Start: &start}, "exists (select 1 from datapoints d where d.metric_ingest_id = m.id and d.timestamp >= time_start)", "where d.timestamp >= time_start", []any{[]uint64{start}}},
-		{"bounded", timerange.TimeRange{Start: &start, End: &end}, "exists (select 1 from datapoints d where d.metric_ingest_id = m.id and d.timestamp >= time_start AND d.timestamp <= time_end)", "where d.timestamp >= time_start AND d.timestamp <= time_end", []any{[]uint64{start}, []uint64{end}}},
+		{"unbounded", timerange.TimeRange{}, "exists (select 1 from metric_datapoints d where d.metric_id = s.id)", "", []any{}},
+		{"end only", timerange.TimeRange{End: &end}, "exists (select 1 from metric_datapoints d where d.metric_id = s.id and d.timestamp <= time_end)", "where d.timestamp <= time_end", []any{[]uint64{end}}},
+		{"start only", timerange.TimeRange{Start: &start}, "exists (select 1 from metric_datapoints d where d.metric_id = s.id and d.timestamp >= time_start)", "where d.timestamp >= time_start", []any{[]uint64{start}}},
+		{"bounded", timerange.TimeRange{Start: &start, End: &end}, "exists (select 1 from metric_datapoints d where d.metric_id = s.id and d.timestamp >= time_start AND d.timestamp <= time_end)", "where d.timestamp >= time_start AND d.timestamp <= time_end", []any{[]uint64{start}, []uint64{end}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, where, args, err := buildMetricSQL(nil, tc.timeRange)

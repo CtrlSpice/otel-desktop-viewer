@@ -66,7 +66,7 @@ func TestSpanTimestampsRoundTripAcrossUint64Range(t *testing.T) {
 	}))
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchTraces(ctx, db, store.BoundedTimeRange(uint64(0), ^uint64(0)), nil)
+		return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(uint64(0), ^uint64(0)), nil)
 	})
 	require.NoError(t, err)
 	var summaries []map[string]any
@@ -75,7 +75,7 @@ func TestSpanTimestampsRoundTripAcrossUint64Range(t *testing.T) {
 	require.Equal(t, "18446744073709551615", summaries[0]["durationNs"])
 
 	raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchSpans(ctx, db, hex.EncodeToString(traceID[:]), nil)
+		return spans.GetTraceView(ctx, db, hex.EncodeToString(traceID[:]), nil)
 	})
 	require.NoError(t, err)
 	var trace struct {

@@ -1,20 +1,8 @@
 -- bucket_width_ns: the time-bucket width to reduce a window to, in nanoseconds.
 --
--- Picks the smallest rung of a fixed ladder that divides the window into at
--- most `target_buckets` buckets. The ladder is the one the histogram path
--- already uses (BUCKET_LADDER in histogram-aggregation.ts) so both reductions
--- land on the same boundaries.
---
--- The ladder exists to keep boundaries *stable*. Bucket starts are absolute --
--- floor(timestamp / width) * width -- not measured from the window start, so
--- panning slides data through fixed buckets instead of re-cutting them. If the
--- width were simply span/target it would change with every pan and every point
--- would move; snapping to a rung means only crossing a rung changes anything,
--- which is a visible step rather than continuous churn. Every rung divides its
--- next unit evenly, which is what makes that true.
---
--- Returns NULL when no reduction is wanted, which callers read as "return
--- every datapoint".
+-- Choose the smallest fixed ladder rung producing at most target_buckets.
+-- Absolute floor(timestamp / width) boundaries remain stable while panning.
+-- NULL disables reduction.
 create or replace macro bucket_width_ns(span_ns, target_buckets) as (
     case
         when target_buckets is null or target_buckets <= 0 or span_ns <= 0 then null

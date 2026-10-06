@@ -12,11 +12,11 @@ import (
 	"go.uber.org/zap"
 )
 
-// BenchmarkGetFieldValues measures the per-keystroke cost of span-name value
+// BenchmarkGetFieldValueCompletions measures the per-keystroke cost of span-name value
 // completion. The reference capture holds ~245k spans over a few hundred
 // distinct names, so the bench seeds that shape directly in SQL: ingest is
 // not what is being measured.
-func BenchmarkGetFieldValues(b *testing.B) {
+func BenchmarkGetFieldValueCompletions(b *testing.B) {
 	for _, spanCount := range []int{50_000, 250_000} {
 		b.Run(fmt.Sprintf("spans=%d", spanCount), func(b *testing.B) {
 			ctx := context.Background()
@@ -26,8 +26,9 @@ func BenchmarkGetFieldValues(b *testing.B) {
 			}
 			defer s.Close()
 			err = s.WithDBWrite(func(db *sql.DB) error {
-				if _, err := db.Exec(`insert into resources (id, attribute_ids)
-					values ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', [])`); err != nil {
+				if _, err := db.Exec(`insert into resources (id, payload_id, attribute_ids)
+					values ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+						'dddddddd-dddd-dddd-dddd-dddddddddddd', [])`); err != nil {
 					return err
 				}
 				if _, err := db.Exec(`insert into scopes (id, name, version, attribute_ids)
@@ -56,7 +57,7 @@ func BenchmarkGetFieldValues(b *testing.B) {
 						var raw json.RawMessage
 						err := s.WithDBRead(func(db *sql.DB) error {
 							var qErr error
-							raw, qErr = spans.GetFieldValues(ctx, db, "name", term, 8)
+							raw, qErr = spans.GetFieldValueCompletions(ctx, db, "name", term, 8)
 							return qErr
 						})
 						if err != nil || len(raw) == 0 {

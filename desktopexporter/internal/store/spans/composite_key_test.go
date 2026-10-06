@@ -80,7 +80,7 @@ func TestCompositeKey_TraceFetchDoesNotBorrowAnotherTracesChildren(t *testing.T)
 	require.NoError(t, err)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchSpans(ctx, db, "00000000-0000-0000-0000-0000000000a1", nil)
+		return spans.GetTraceView(ctx, db, "00000000-0000-0000-0000-0000000000a1", nil)
 	})
 	require.NoError(t, err)
 

@@ -134,9 +134,8 @@ func TestSearchEmptyAndNoMatch(t *testing.T) {
 	assert.Empty(t, search(t, s, ctx, "no-such-value-anywhere"))
 }
 
-// A literal % in the box must be a literal, not "match everything". Without
-// escaping, typing % returns the entire dictionary, which looks like a bug and
-// is a slow one.
+// TestSearchEscapesLikeWildcards verifies that literal wildcard characters do
+// not match the complete dictionary.
 func TestSearchEscapesLikeWildcards(t *testing.T) {
 	t.Parallel()
 	s, ctx := setup(t)

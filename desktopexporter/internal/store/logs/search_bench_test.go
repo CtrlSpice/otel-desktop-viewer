@@ -14,7 +14,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func BenchmarkSearchLogsLimit(b *testing.B) {
+func BenchmarkSearchLogSummariesLimit(b *testing.B) {
 	ctx := context.Background()
 	s, err := store.NewStore(ctx, "", zap.NewNop())
 	if err != nil {
@@ -42,7 +42,7 @@ func BenchmarkSearchLogsLimit(b *testing.B) {
 			for b.Loop() {
 				if err := s.WithDBRead(func(db *sql.DB) error {
 					var queryErr error
-					raw, queryErr = logs.SearchWithOptions(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, search.ResultOptions{Limit: &limit, Sort: bc.sort})
+					raw, queryErr = logs.SearchSummariesWithOptions(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, search.ResultOptions{Limit: &limit, Sort: bc.sort})
 					return queryErr
 				}); err != nil {
 					b.Fatal(err)

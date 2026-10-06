@@ -1,8 +1,5 @@
 <script lang="ts" module>
-  /** A row in the mini-legend. Generic on purpose: histogram/gauge
-   *  futures will fill this in their own way (e.g. quantile rows,
-   *  bucket-count rows). The component itself doesn't know about
-   *  metric kinds. */
+  /** Metric-agnostic mini-legend row. */
   export type SelectionLegendRow = {
     /** Stable identity for keyed-each. */
     key: string
@@ -27,19 +24,7 @@
 <script lang="ts">
   import type { AggregateSummaryRow } from '@/components/metrics/utils/aggregation'
   import ChartAggregateSummaryRows from '@/components/metrics/Charts/ChartAggregateSummaryRows.svelte'
-  /*
-   * ChartSelectionLegend: a small floating card showing the timestamp
-   * of a clicked datapoint plus per-series values at that x. Sits in
-   * the corner of a chart (caller positions it via absolute layout).
-   *
-   * Design choices baked in:
-   * - Caller owns positioning. Component is just the card; the chart
-   *   wraps it in an absolute-positioned host.
-   * - pointer-events: none so it never steals hover/click from chart.
-   * - Rows are pre-built by the caller. Component does no lookups, no
-   *   formatting, no key-matching. Keeps it reusable across chart
-   *   types that pick rows very differently.
-   */
+  /* Callers position the card and provide preformatted rows. */
   type Props = {
     /** Pre-formatted timestamp string (e.g. "16:42:18.123 PDT").
      *  Caller decides resolution and timezone so we match whatever

@@ -61,7 +61,7 @@ func NewServer(endpoint string, store *store.Store, logger *zap.Logger, tel *tel
 
 			// Deliberately no WriteTimeout. Go measures it from the end of
 			// header read through the end of the response write, so it caps
-			// *handler execution* too -- and a searchSpans over a large trace
+			// *handler execution* too -- and a getTraceView over a large trace
 			// is unbounded by design. A WriteTimeout here would abort exactly
 			// the slow queries a trace viewer exists to serve, and would do it
 			// by killing the connection with a partial body. Query cost is
@@ -159,16 +159,9 @@ func staticFS() (fs.FS, error) {
 //
 // Everything under assets/ is content-hashed by Vite, so its URL changes
 // whenever its bytes do and it can be cached forever. index.html is the
-// opposite: a stable name whose contents *name* those hashed files. Cache it
-// and someone who upgrades the binary keeps HTML pointing at chunks the new
-// build does not contain -- a blank page and a pile of 404s, cleared only by a
-// hard reload nobody knows to do. no-cache does not mean "do not store", it
-// means "revalidate before use", which is exactly the difference.
-//
-// Nothing was sent before: assets come from an embed.FS, whose files report a
-// zero mod time, and Go deliberately omits Last-Modified when the time is
-// zero. It never synthesises an ETag either. So there was no freshness
-// directive and no validator, and the browser re-fetched all 2MB on every load.
+// opposite: a stable name that references those hashed files. It must be
+// revalidated so upgrades cannot leave it pointing at absent assets. embed.FS
+// supplies no Last-Modified value, so index.html gets an explicit ETag.
 const (
 	immutableCacheControl  = "public, max-age=31536000, immutable"
 	revalidateCacheControl = "no-cache"
@@ -177,10 +170,7 @@ const (
 func spaHandler(fsys fs.FS, logger *zap.Logger) http.Handler {
 	fileServer := http.FileServerFS(fsys)
 
-	// The validator Go will not invent. Computed once: the FS is embedded, so
-	// these bytes cannot change while the process runs. It turns each
-	// revalidation of index.html into a 304 rather than another copy of the
-	// document.
+	// Embedded bytes are immutable, so compute the validator once.
 	indexBytes, indexErr := fs.ReadFile(fsys, "index.html")
 	indexETag := ""
 	if indexErr == nil {
@@ -252,10 +242,8 @@ func (s *Server) rpcHandler(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	// The span covers dispatch *and* encoding. DuckDB builds the response JSON
-	// inside the query, so "query time" and "JSON construction" are not
-	// separable here -- the only clean split is EncodeMessage, which gets its
-	// own child span in sendJSONRPCResponse.
+	// DuckDB builds response JSON inside the query; EncodeMessage is the only
+	// separately measured encoding step.
 	ctx, endRPC := s.tel.RPC(requestCtx, rpcRequest.Method)
 
 	result, err := s.jsonrpcHandler.Handle(ctx, rpcRequest)
@@ -279,11 +267,8 @@ func (s *Server) sendJSONRPCResponse(ctx context.Context, writer http.ResponseWr
 		return 0
 	}
 
-	// Encoding gets its own child span because it is the only cleanly separable
-	// component of serving a request: DuckDB builds the response JSON inside the
-	// SQL query, so query time and JSON-construction time cannot be told apart.
-	// If this span turns out to be trivial, the latency is entirely in the query
-	// and the client.
+	// DuckDB query time includes JSON construction, so only EncodeMessage is
+	// measured separately.
 	endEncode := s.tel.RPCEncode(ctx)
 	bytes, err := jsonrpc2.EncodeMessage(response)
 	endEncode(err)

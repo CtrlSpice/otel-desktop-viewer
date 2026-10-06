@@ -21,7 +21,7 @@ func TestTraceTimePredicateShapes(t *testing.T) {
 		{"bounded", timerange.TimeRange{Start: &start, End: &end}, "s.start_time >= time_start and s.start_time <= time_end", []any{[]uint64{start}, []uint64{end}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, where, args, err := buildTraceSQL(nil, tc.timeRange)
+			_, where, _, args, err := buildTraceSQL(nil, tc.timeRange)
 			require.NoError(t, err)
 			require.Equal(t, tc.wantWhere, where)
 			require.Equal(t, tc.wantArgs, args)

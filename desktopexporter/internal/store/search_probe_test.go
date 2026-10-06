@@ -100,12 +100,7 @@ func TestIDProbeRefusesWhatItCannotGuarantee(t *testing.T) {
 		{"value with spaces", str, &search.Query{FieldOperator: "=", Value: " GET "}, true},
 		{"not-equals", str, &search.Query{FieldOperator: "!=", Value: "GET"}, false},
 		{"contains", str, &search.Query{FieldOperator: "CONTAINS", Value: "GE"}, false},
-		// The literal string "NULL" is an ordinary equality now. It used to
-		// be refused here because the old wire format smuggled the null check
-		// through as `= "NULL"`, and a content-derived id for that would have
-		// matched attributes literally valued NULL. The null check has been
-		// its own IS NULL operator since the grammar unification, so the
-		// refusal would only slow down a legitimate search for the text.
+		// Null checks have dedicated operators, so "NULL" is an ordinary value.
 		{"literal NULL string equality", str, &search.Query{FieldOperator: "=", Value: "NULL"}, true},
 		// The declared type is trusted -- for an attribute field it is the
 		// token ingest wrote, served back by discovery -- so a non-string
@@ -113,10 +108,7 @@ func TestIDProbeRefusesWhatItCannotGuarantee(t *testing.T) {
 		// is "200", exactly what is typed.
 		{"int64 field", &search.FieldDefinition{Name: "http.status_code", Type: "int64"},
 			&search.Query{FieldOperator: "=", Value: "200"}, true},
-		// With no type there is no id to compute, so this must fall back to
-		// the value-comparison form rather than guess a token. Guessing is
-		// what the all-eight-types version did, and it conflated int64 200
-		// with string "200".
+		// Without a type there is no exact ID to compute, so use value comparison.
 		{"untyped field falls back", &search.FieldDefinition{Name: "x"},
 			&search.Query{FieldOperator: "=", Value: "y"}, false},
 		{"unknown type token falls back", &search.FieldDefinition{Name: "x", Type: "decimal"},
@@ -157,7 +149,7 @@ func TestFastPathAgreesWithValueComparison(t *testing.T) {
 		}
 		var n int
 		require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-			raw, err := spans.SearchTraces(ctx, db, BoundedTimeRange(0, 1<<62), query)
+			raw, err := spans.SearchTraceSummaries(ctx, db, BoundedTimeRange(0, 1<<62), query)
 			if err != nil {
 				return err
 			}

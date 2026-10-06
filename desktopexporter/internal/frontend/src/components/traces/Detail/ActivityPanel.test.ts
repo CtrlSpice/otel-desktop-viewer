@@ -17,7 +17,7 @@ const events: EventData[] = [
 
 const logs: TraceLogSummary[] = [
   {
-    id: 'log-1',
+    logRef: 'log-1',
     timestamp: 90n,
     spanID: 'span-1',
     severityText: 'WARN',
@@ -39,7 +39,7 @@ describe('ActivityPanel', () => {
       events,
       logs,
       spanStartTime: 100n,
-      selectedLogID: 'log-1',
+      selectedLogRef: 'log-1',
     })
 
     expect(screen.getByText('Events').closest('summary')).toHaveTextContent('1')

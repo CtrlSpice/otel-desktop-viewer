@@ -37,7 +37,7 @@ func TestAggregationTemporalityNumericIdentityAndWireProjection(t *testing.T) {
 	sm := data.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics()
 	for i, temporality := range temporalities {
 		metric := sm.AppendEmpty()
-		metric.SetName("same.stream")
+		metric.SetName("same.metric")
 		metric.SetUnit("1")
 		sum := metric.SetEmptySum()
 		sum.SetAggregationTemporality(temporality)
@@ -46,7 +46,7 @@ func TestAggregationTemporalityNumericIdentityAndWireProjection(t *testing.T) {
 		dp.SetIntValue(int64(i))
 	}
 	gaugeMetric := sm.AppendEmpty()
-	gaugeMetric.SetName("same.stream")
+	gaugeMetric.SetName("same.metric")
 	gaugeMetric.SetUnit("1")
 	gaugeDP := gaugeMetric.SetEmptyGauge().DataPoints().AppendEmpty()
 	gaugeDP.SetTimestamp(9)
@@ -58,7 +58,7 @@ func TestAggregationTemporalityNumericIdentityAndWireProjection(t *testing.T) {
 	var count, distinctCodes int
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRowContext(ctx, `select count(*), count(distinct aggregation_temporality)
-			from metric_streams where name = 'same.stream'`).Scan(&count, &distinctCodes)
+			from metrics where name = 'same.metric'`).Scan(&count, &distinctCodes)
 	}))
 	assert.Equal(t, len(temporalities)+1, count)
 	assert.Equal(t, len(temporalities), distinctCodes)
@@ -68,13 +68,13 @@ func TestAggregationTemporalityNumericIdentityAndWireProjection(t *testing.T) {
 	})
 	require.NoError(t, err)
 	var summaries []struct {
-		ID                         string          `json:"id"`
+		MetricRef                  string          `json:"metricRef"`
 		MetricType                 string          `json:"metricType"`
 		AggregationTemporalityCode json.RawMessage `json:"aggregationTemporalityCode"`
 		AggregationTemporality     string          `json:"aggregationTemporality"`
 	}
 	require.NoError(t, json.Unmarshal(raw, &summaries))
-	require.Len(t, summaries, len(temporalities)+1, "metric type and unknown codes must remain distinct stream identities")
+	require.Len(t, summaries, len(temporalities)+1, "metric type and unknown codes must remain distinct Metric identities")
 	for _, summary := range summaries {
 		if summary.MetricType == "Gauge" {
 			assert.JSONEq(t, "null", string(summary.AggregationTemporalityCode))
@@ -85,7 +85,7 @@ func TestAggregationTemporalityNumericIdentityAndWireProjection(t *testing.T) {
 			assert.Equal(t, labels[code], summary.AggregationTemporality)
 		}
 		detailRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return metrics.GetMetric(ctx, db, summary.ID, store.BoundedTimeRange(0, 10), 100, nil, nil, 0, 100, 100, nil, "UTC", nil, 100)
+			return metrics.GetMetricView(ctx, db, summary.MetricRef, store.BoundedTimeRange(0, 10), 100, nil, nil, 0, 100, 100, nil, "UTC", nil, 100)
 		})
 		require.NoError(t, err)
 		var detail struct {

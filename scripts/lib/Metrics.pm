@@ -1,24 +1,6 @@
 package Metrics;
 
-# ============================================================================
-# Metrics.pm -- build OTLP metric payloads from sampled shapes.
-#
-# This module is the bridge between Shapes.pm (which produces a list
-# of { t_s, value } pairs) and OTLP.pm (which posts an envelope to
-# the collector). It knows the four metric kinds and how to lay out
-# their datapoint structures.
-#
-# Public functions (all take a final %opts hash for cross-cutting
-# options like temporality, attributes, exemplars):
-#   - gauge_metric(\%spec)       -> $metric_hash
-#   - sum_metric(\%spec)         -> $metric_hash
-#   - histogram_metric(\%spec)   -> $metric_hash
-#   - exphist_metric(\%spec)     -> $metric_hash
-#   - send_metric($endpoint, $service, $metric, %opts)
-#                                -> ($status, $err)
-#
-# Spec shapes are described above each constructor.
-# ============================================================================
+# Build and send OTLP metrics from sampled shapes.
 
 use strict;
 use warnings;
@@ -41,10 +23,10 @@ our @EXPORT_OK = qw(
     sum_metric
     histogram_metric
     exphist_metric
-    gauge_metric_streams
-    sum_metric_streams
-    histogram_metric_streams
-    exphist_metric_streams
+    gauge_metrics
+    sum_metrics
+    histogram_metrics
+    exphist_metrics
     send_metric
     AGG_DELTA
     AGG_CUMULATIVE
@@ -54,30 +36,20 @@ our @EXPORT_OK = qw(
 );
 our %EXPORT_TAGS = ( all => \@EXPORT_OK );
 
-# Aggregation temporality enum from OTLP. UNSPECIFIED is 0 -- the
-# spec says it MUST NOT be used, which is exactly why we send it
-# (to exercise the "fun error" path).
+# UNSPECIFIED intentionally exercises invalid fixture handling.
 use constant {
     AGG_UNSPECIFIED => 0,
     AGG_DELTA       => 1,
     AGG_CUMULATIVE  => 2,
 };
 
-# Time conversion: shapes work in seconds, OTLP wants nanoseconds.
-# Returned as a string so the caller can drop it straight into JSON
-# without sprintf-rounding.
+# OTLP JSON encodes nanosecond timestamps as decimal strings.
 sub s_to_ns {
     my ($s) = @_;
     return sprintf '%.0f', $s * 1_000_000_000;
 }
 
-# ----------------------------------------------------------------------------
-# Datapoint builders (one per kind)
-# ----------------------------------------------------------------------------
-
-# Gauge / Sum share a datapoint shape: a single asDouble value at a
-# single timestamp. Sum adds isMonotonic + temporality at the metric
-# level (not the datapoint level).
+# Gauge and Sum datapoints share the same scalar shape.
 sub _number_datapoint {
     my (%p) = @_;
     my $dp = {
@@ -98,13 +70,7 @@ sub _number_datapoint {
     return $dp;
 }
 
-# Explicit-bound histogram. Caller hands us a value (the "centre" of
-# the distribution at that timestamp) and a fan-out of sample weights;
-# we deal them into the explicit buckets.
-#
-# We approximate a sample distribution by treating the shape value
-# as the *mean* and synthesizing bucketCounts via a triangle around
-# that mean. Cheaper than running real sampling; visually convincing.
+# Approximate a distribution with triangular weights around the input value.
 sub _histogram_datapoint {
     my (%p) = @_;
     my $bounds      = $p{bounds};
@@ -112,14 +78,12 @@ sub _histogram_datapoint {
     my $sample_count = $p{sample_count} // 100;
     my $spread      = $p{spread} // 0.5;   # std-dev as fraction of center
 
-    # Triangle distribution: weight[i] = max(0, 1 - |bucket_mid - center| / width).
-    # We score each bucket (including the +inf overflow) and normalise.
+    # weight[i] = max(0, 1 - |bucket_mid - center| / width).
     my @counts = (0) x (scalar(@$bounds) + 1);
     my $width = $center * $spread;
     $width = 1e-9 if $width <= 0;
 
-    # Bucket midpoints: for buckets 0..N-1 use (lower+upper)/2; for the
-    # overflow bucket (index N), use 1.5 * last_bound as a stand-in.
+    # Use 1.5 * last_bound as the overflow bucket midpoint.
     my @midpoints;
     push @midpoints, $bounds->[0] / 2;   # bucket 0 covers (-inf, bounds[0]]
     for (my $i = 1; $i < @$bounds; $i++) {
@@ -135,7 +99,7 @@ sub _histogram_datapoint {
 
     my $total_w = sum0 @weights;
     if ($total_w <= 0) {
-        # Degenerate: dump everything into the bucket nearest center.
+        # Put a degenerate distribution in the nearest bucket.
         my $best_i = 0; my $best_d = abs($midpoints[0] - $center);
         for (my $i = 1; $i < @midpoints; $i++) {
             my $d = abs($midpoints[$i] - $center);
@@ -164,10 +128,7 @@ sub _histogram_datapoint {
     };
 }
 
-# Exponential histogram. Similar idea but the buckets have
-# exponentially-growing widths controlled by `scale`. We pick an
-# offset such that the center of the distribution lands roughly in
-# the middle of a 9-bucket window, then triangle-distribute.
+# Centre a triangular distribution in an exponential bucket window.
 sub _exphist_datapoint {
     my (%p) = @_;
     my $center       = $p{value};
@@ -176,7 +137,7 @@ sub _exphist_datapoint {
     my $spread       = $p{spread}       // 0.5;
     my $window       = $p{window}       // 9;   # bucket count
 
-    # Bucket i covers [base^i, base^(i+1)) where base = 2^(2^-scale).
+    # Bucket i covers [base^i, base^(i+1)); base = 2^(2^-scale).
     my $base = 2 ** (2 ** -$scale);
     my $center_idx = int(log($center) / log($base));
     my $offset = $center_idx - int($window / 2);
@@ -228,9 +189,7 @@ sub _exphist_datapoint {
     };
 }
 
-# ----------------------------------------------------------------------------
-# Metric constructors (produce the metric-level hash, not the envelope)
-#
+# Metric constructor input:
 # Each takes a spec hash with at minimum:
 #   name        => 'metric.name'
 #   unit        => 's'
@@ -247,7 +206,6 @@ sub _exphist_datapoint {
 #   bounds      => [explicit boundary list]
 # ExpHist additionally:
 #   scale       => integer (default 3)
-# ----------------------------------------------------------------------------
 
 sub _meta {
     my ($spec) = @_;
@@ -275,13 +233,7 @@ sub _datapoints_from_points {
     return \@dps;
 }
 
-# Multi-stream variant: $streams is an arrayref of { attributes => [...],
-# points => [...] } records, one per attribute-distinguished stream. All
-# streams share the same metric-level meta (name, unit, temporality,
-# step, builder-specific extras like bounds/scale) -- the spec carries
-# those once. Each stream's attrs are *merged with* any base attributes
-# on the spec so callers can keep cross-stream tags (e.g. resource hints)
-# in one place.
+# Each stream adds its attributes to the metric's base attributes.
 sub _datapoints_from_streams {
     my ($spec, $streams, $builder, %extra) = @_;
     my $step       = $spec->{step_s} // 60;
@@ -355,27 +307,11 @@ sub exphist_metric {
     };
 }
 
-# ----------------------------------------------------------------------------
-# Multi-stream constructors
-#
-# Same metric kinds, but each takes an arrayref of $streams instead of a
-# single `points` list. Each stream contributes its own attribute set
-# and its own samples, all merged into one dataPoints array. The result
-# is one OTLP metric carrying many attribute-distinguished timeseries --
-# what the frontend renders as a multi-coloured chart with one legend
-# row per stream.
-#
+# Multi-stream constructors accept:
 # Stream record shape:
 #   { attributes => \@otlp_attrs, points => \@{t_s,value}_pairs }
-#
-# Base spec carries the metric-level fields exactly like the
-# single-stream constructors (name, unit, description, step_s,
-# temporality, monotonic, bounds, scale). `attributes` on the base
-# spec, if present, are merged into every stream (useful for tags
-# shared by every datapoint, e.g. service.namespace).
-# ----------------------------------------------------------------------------
 
-sub gauge_metric_streams {
+sub gauge_metrics {
     my ($spec, $streams) = @_;
     return {
         _meta($spec),
@@ -385,7 +321,7 @@ sub gauge_metric_streams {
     };
 }
 
-sub sum_metric_streams {
+sub sum_metrics {
     my ($spec, $streams) = @_;
     return {
         _meta($spec),
@@ -397,7 +333,7 @@ sub sum_metric_streams {
     };
 }
 
-sub histogram_metric_streams {
+sub histogram_metrics {
     my ($spec, $streams) = @_;
     my $bounds = $spec->{bounds} // [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0];
     return {
@@ -413,7 +349,7 @@ sub histogram_metric_streams {
     };
 }
 
-sub exphist_metric_streams {
+sub exphist_metrics {
     my ($spec, $streams) = @_;
     return {
         _meta($spec),
@@ -428,12 +364,6 @@ sub exphist_metric_streams {
     };
 }
 
-# ----------------------------------------------------------------------------
-# Sender
-# ----------------------------------------------------------------------------
-
-# Wraps a metric in the full OTLP envelope and POSTs it. The
-# resource/scope are derived from $service.
 sub send_metric {
     my ($endpoint, $service, $metric, %opts) = @_;
     my $resource = resource_attrs($service, %{ $opts{resource_extra} // {} });
@@ -442,14 +372,7 @@ sub send_metric {
     return send_payload($endpoint, SIGNAL_METRICS, $payload);
 }
 
-# ----------------------------------------------------------------------------
-# Convenience: bucket_dist for callers who want to hand-craft distributions
-# ----------------------------------------------------------------------------
-
-# Build a triangle-shaped bucket count vector summing to ~$total,
-# centered on bucket index $center, width $width buckets, across
-# $n_buckets total. Useful in tests / one-off datapoints where you
-# don't want a full shape.
+# Triangle-shaped bucket counts summing approximately to $total.
 sub bucket_dist {
     my (%p) = @_;
     my $n      = $p{n_buckets} // 11;

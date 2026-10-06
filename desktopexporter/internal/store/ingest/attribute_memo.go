@@ -9,59 +9,21 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 )
 
-// The attribute-set memo: content to (rows, ids), for the duration of the
-// process.
+// The attribute-set memo maps content to rows and IDs for the process lifetime.
 //
-// AttributeSet is a pure function -- a sha256 per label, a sort, and the two
-// slices that come out -- and we ran it once per datapoint. The reference
-// capture's 294,607 datapoints hold 89 distinct label sets, so that is ~208ms
-// and ~238MB of garbage per ingest spent rediscovering 89 answers. The
-// repetition is across batches, not inside them: a batch holds one datapoint
-// per series, so a per-batch memo would have nothing to hit.
+// Repeated attribute sets reuse the pure AttributeSet result across batches.
 //
-// Package-level rather than threaded through the store, which is unusual here
-// and deliberate. FlushedIDs is per-store because it asserts something about
-// one database's contents and has to be invalidated when they change; this
-// asserts that the same bytes hash to the same ids, which is true of every
-// store in the process and can never stop being true. Scoping it per store
-// would buy isolation nothing needs and cost a parameter on three Ingest
-// signatures and their hundred-odd callers.
+// It is process-wide because content-derived IDs are independent of a database.
+// FlushedIDs remains per-store because it records which rows exist there.
 //
-// "Needs no invalidation" is a claim about ids, not about rows, and the
-// difference is the dangerous part. This memo must never be read as "those rows
-// are already in the database" -- retention and SweepOrphans delete dictionary
-// rows the memo still holds ids for, and a memo that skipped re-registering
-// them would leave owner arrays pointing at rows that no longer exist. No
-// error, no failed constraint; the attributes would just stop appearing. What
-// prevents it is that AddAttributes registers the returned rows unconditionally
-// and the insert stays gated on FlushedIDs, which the sweep clears.
-// TestDictionaryIntegrityAcrossClearAndReingest in the store package is the
-// guard: it sweeps span attributes away and re-ingests content whose attributes
-// are byte-identical, so the re-ingest is served from here and must still write
-// the rows back. It predates this memo and was written for exactly this shape
-// of mistake.
-//
-// Memory is bounded and returned: 4095 five-label sets measure 3.65 MB, ~933 B
-// each, and a reset releases all of it.
+// A memo hit still registers its rows with the batch dictionary. SweepOrphans
+// may have deleted them, and only FlushedIDs can skip their insert safely.
 //
 // The returned slices are shared with the memo and with every later caller
-// holding the same set. Nothing mutates them today -- rows are read into the
-// dictionary map, ids go to an appender -- and nothing should start.
-//
-// The trade, measured on an M4 Pro over five-label sets: the repeating shape
-// goes from ~830ns and 808B per call to ~104ns and no allocation, while a
-// stream whose every datapoint carries a unique label set -- a request id, say,
-// which the memo can never serve -- costs ~955ns against ~830ns, about 15%
-// more. That case is accepted rather than detected and switched off. A unique
-// set per datapoint means a new dictionary row per datapoint too, so the write
-// this memo sits in front of grows with the same N it fails on; adding a mode
-// to save 15% of one function there would be tuning the smaller term, and the
-// threshold that decided when to flip it would be one more thing to get
-// wrong.
+// holding the same set and must remain immutable. The fixed cap bounds memory;
+// reaching it resets the memo.
 const (
-	// Distinct sets held before the memo resets. The reference capture needs
-	// 89; the headroom is for label sets we have not seen, not for a
-	// high-cardinality label, which no size defeats.
+	// Distinct sets held before the memo resets.
 	attributeMemoCap = 4096
 )
 
@@ -95,10 +57,8 @@ var attributeMemo = struct {
 
 // fingerprint hashes a set's raw content without formatting or allocating.
 //
-// Reports false when the set holds a Map, Slice or Bytes value. Those reach
-// their string form through fmt, which is neither cheap nor obviously stable to
-// hash against, and datapoint labels are scalars in practice -- so they take
-// the uncached path rather than putting a formatting call on this one.
+// Reports false for Map, Slice, or Bytes values because their canonical string
+// encoding is not available here without allocation.
 //
 // Order-sensitive, because confirmation below walks the map in the same order.
 // A producer that reorders an otherwise identical set gets a miss, not a wrong

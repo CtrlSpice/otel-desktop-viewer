@@ -17,14 +17,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 )
 
-// A regex search must execute, not die in the SQL parser.
-//
-// It died in the SQL parser from the day the operator shipped: the condition
-// builder emitted `x REGEXP y`, and DuckDB's grammar has no infix REGEXP --
-// its regex operators are ~ and !~. No test executed a REGEXP condition
-// against a real database, so the operator was advertised, highlighted, and
-// broken. This test is the one that was missing, and it covers the negation
-// the same way.
+// Regex and negated-regex searches must execute against DuckDB's ~ and !~
+// operators.
 func TestRegexpSearchExecutes(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)

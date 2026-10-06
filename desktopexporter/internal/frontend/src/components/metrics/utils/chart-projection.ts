@@ -1,10 +1,4 @@
-// Projection: backend MetricTimeseries → layerchart-shaped
-// ChartTimeseries. Lives in a plain .ts module (not the chart's
-// <script module>) so the metric view context, which is also a .ts
-// module, can call it -- svelte-check won't resolve exports from
-// .svelte files into a .ts importer.
-
-import type { MetricTimeseries } from '@/types/api-types'
+import type { MetricSeriesViewData } from '@/types/api-types'
 import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
 
 /**
@@ -17,7 +11,7 @@ import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
  * with an unrelated bucket merely because its millisecond coordinate is near.
  */
 export function rateBucketStartForSourceDatapoint(
-  timeseries: Pick<MetricTimeseries, 'datapoints' | 'views'>,
+  timeseries: Pick<MetricSeriesViewData, 'datapoints' | 'views'>,
   datapointID: string
 ): bigint | undefined {
   const datapoint = timeseries.datapoints.find(
@@ -51,44 +45,33 @@ export function rateBucketStartForSourceDatapoint(
 }
 
 /**
- * Project backend-grouped MetricTimeseries into the {date, value}
+ * Project backend-grouped MetricSeriesViewData into the {date, value}
  * shape layerchart wants. The grouping itself is already done -- the
- * backend emits one MetricTimeseries per (metric, attribute-set), and
+ * backend emits one MetricSeriesViewData per (metric, attribute-set), and
  * timeseries arrive ordered "newest activity first" (latest dp
  * timestamp desc). We preserve that order so positional colour
  * assignment in the legend matches the chart line colour 1:1.
  *
- * Datapoints arrive timestamp-desc inside each timeseries, and layerchart's
- * LineChart wants monotonically-increasing x, so this walks each series
- * backwards. It used to build forwards and sort, which re-ordered data the
- * store had already ordered.
+ * Datapoints arrive newest first; layerchart requires increasing timestamps.
  *
  * @returns Projected chart series and their keys. `keys` preserves the input
  * order so callers can seed `visibleKeys` without mapping over the series.
  */
 export function timeseriesToChartTimeseries(
-  timeseries: MetricTimeseries[],
-  /** How to name a series for a human. `attributesKey` is a content-derived id,
-   *  so it identifies a line but cannot label one -- a tooltip showing it reads
+  timeseries: MetricSeriesViewData[],
+  /** How to name a series for a human. `seriesRef` is an opaque id, so it
+   *  identifies a line but cannot label one -- a tooltip showing it reads
    *  as a uuid. Resolving the label needs every series of the metric (to know
    *  which resource attributes distinguish them), which this function is not
    *  always given, so the caller supplies it. */
-  labelFor?: (ts: MetricTimeseries) => string
+  labelFor?: (ts: MetricSeriesViewData) => string
 ) {
   const chartTimeseries: ChartTimeseries[] = []
   const keys: string[] = []
 
   for (const ts of timeseries) {
     const points: ChartPoint[] = []
-    // Walked backwards, because the store sends datapoints newest-first and the
-    // chart wants oldest-first. That order is not incidental -- the datapoint
-    // list and "last seen" both read datapoints[0] as the newest -- so the
-    // chart adapts rather than the wire.
-    //
-    // This used to build the array forwards and then sort it, calling
-    // getTime() twice per comparison on data the store had already ordered:
-    // roughly 23,000 points per Gauge sorted into the order they arrived in,
-    // reversed. Iterating from the end is the same result at no cost.
+    // Reverse traversal preserves wire order while producing oldest-first points.
     for (let i = ts.datapoints.length - 1; i >= 0; i--) {
       const dp = ts.datapoints[i]!
       if (dp.metricType !== 'Gauge' && dp.metricType !== 'Sum') continue
@@ -97,8 +80,6 @@ export function timeseriesToChartTimeseries(
       const value =
         dp.doubleValue ?? (dp.intValue === null ? 0 : Number(dp.intValue))
       points.push({
-        // The store sends epoch milliseconds; dividing the nanosecond BigInt
-        // here cost one division per datapoint for no added precision.
         date: new Date(dp.timestampMs),
         value,
         timestampNs: dp.timestamp,
@@ -111,11 +92,11 @@ export function timeseriesToChartTimeseries(
       })
     }
     chartTimeseries.push({
-      key: ts.attributesKey,
-      label: labelFor?.(ts) ?? ts.attributesKey,
+      key: ts.seriesRef,
+      label: labelFor?.(ts) ?? ts.seriesRef,
       points,
     })
-    keys.push(ts.attributesKey)
+    keys.push(ts.seriesRef)
   }
 
   return { chartTimeseries, keys }

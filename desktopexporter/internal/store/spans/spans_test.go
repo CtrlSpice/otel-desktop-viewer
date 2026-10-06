@@ -106,12 +106,12 @@ func buildTracesForSummaryOrdering(baseTime int64) (ptrace.Traces, string, strin
 		"00000000000000000000000000000003"
 }
 
-// searchTracesAll returns SearchTraces with a wide time range and nil query to get "all" summaries.
-func searchTracesAll(t *testing.T, s *store.Store, ctx context.Context) []traceSummaryJSON {
+// searchTraceSummariesAll returns SearchTraceSummaries with a wide time range and nil query to get "all" summaries.
+func searchTraceSummariesAll(t *testing.T, s *store.Store, ctx context.Context) []traceSummaryJSON {
 	t.Helper()
 	const maxNano = 1<<63 - 1
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchTraces(ctx, db, store.BoundedTimeRange(0, maxNano), nil)
+		return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(0, maxNano), nil)
 	})
 	assert.NoError(t, err)
 	var summaries []traceSummaryJSON
@@ -119,7 +119,7 @@ func searchTracesAll(t *testing.T, s *store.Store, ctx context.Context) []traceS
 	return summaries
 }
 
-func TestSearchTracesNullableTimeRangesExecute(t *testing.T) {
+func TestSearchTraceSummariesNullableTimeRangesExecute(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -143,29 +143,27 @@ func TestSearchTracesNullableTimeRangesExecute(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		timeRange store.TimeRange
-		wantCount float64
-		wantStart string
 	}{
-		{"unbounded", store.TimeRange{}, 3, "100"},
-		{"end only", store.TimeRange{End: &end}, 2, "100"},
-		{"start only", store.TimeRange{Start: &start}, 2, "200"},
-		{"bounded", store.TimeRange{Start: &start, End: &end}, 1, "200"},
+		{"unbounded", store.TimeRange{}},
+		{"end only", store.TimeRange{End: &end}},
+		{"start only", store.TimeRange{Start: &start}},
+		{"bounded", store.TimeRange{Start: &start, End: &end}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-				return spans.SearchTraces(ctx, db, tc.timeRange, nil)
+				return spans.SearchTraceSummaries(ctx, db, tc.timeRange, nil)
 			})
 			require.NoError(t, err)
 			var got []traceSummaryJSON
 			require.NoError(t, json.Unmarshal(raw, &got))
 			require.Len(t, got, 1)
-			require.Equal(t, tc.wantCount, got[0].SpanCount)
-			require.Equal(t, tc.wantStart, got[0].StartTime)
+			require.Equal(t, float64(3), got[0].SpanCount)
+			require.Equal(t, "100", got[0].StartTime)
 		})
 	}
 }
 
-func TestSearchTracesDurationExact(t *testing.T) {
+func TestSearchTraceSummariesDurationExact(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -199,7 +197,7 @@ func TestSearchTracesDurationExact(t *testing.T) {
 		},
 	}
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchTraces(ctx, db, store.BoundedTimeRange(0, 1<<63-1), query)
+		return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(0, 1<<63-1), query)
 	})
 	require.NoError(t, err)
 	var summaries []traceSummaryJSON
@@ -210,7 +208,7 @@ func TestSearchTracesDurationExact(t *testing.T) {
 	query["query"].(map[string]any)["fieldOperator"] = "IN"
 	query["query"].(map[string]any)["value"] = `["9007199254740993ns","1s"]`
 	raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchTraces(ctx, db, store.BoundedTimeRange(0, 1<<63-1), query)
+		return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(0, 1<<63-1), query)
 	})
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(raw, &summaries))
@@ -226,7 +224,7 @@ func TestSearchTracesDurationExact(t *testing.T) {
 			query["query"].(map[string]any)["fieldOperator"] = operator
 			query["query"].(map[string]any)["value"] = value
 			_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-				return spans.SearchTraces(ctx, db, store.BoundedTimeRange(0, 1<<63-1), query)
+				return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(0, 1<<63-1), query)
 			})
 			require.ErrorIs(t, err, spans.ErrInvalidTraceQuery)
 		})
@@ -234,18 +232,98 @@ func TestSearchTracesDurationExact(t *testing.T) {
 }
 
 type traceSummaryJSON struct {
-	TraceID     string        `json:"traceID"`
-	HasRootSpan bool          `json:"hasRootSpan"`
-	RootSpan    *rootSpanJSON `json:"rootSpan"`
-	StartTime   string        `json:"startTime"`  // varchar-encoded int64 ns
-	DurationNs  *string       `json:"durationNs"` // string-encoded int64 ns; max(end) - min(start) over trace
-	SpanCount   float64       `json:"spanCount"`  // JSON number
-	ErrorCount  float64       `json:"errorCount"`
+	TraceID      string             `json:"traceID"`
+	HasRootSpan  bool               `json:"hasRootSpan"`
+	RootSpan     *rootSpanJSON      `json:"rootSpan"`
+	StartTime    string             `json:"startTime"`  // varchar-encoded int64 ns
+	DurationNs   *string            `json:"durationNs"` // string-encoded int64 ns; max(end) - min(start) over trace
+	SpanCount    float64            `json:"spanCount"`  // JSON number
+	ErrorCount   float64            `json:"errorCount"`
+	MatchedSpans *[]matchedSpanJSON `json:"matchedSpans"`
+}
+
+type matchedSpanJSON struct {
+	TraceID string `json:"traceID"`
+	SpanID  string `json:"spanID"`
 }
 
 type rootSpanJSON struct {
 	ServiceName string `json:"serviceName"`
 	Name        string `json:"name"`
+}
+
+func TestSearchTraceSummariesFiltersSelectWholeTracesAndAnnotateMatches(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	const traceID = "00000000000000000000000000000042"
+
+	data := ptrace.NewTraces()
+	addSpan := func(service, spanID, parentID, name string, start, end uint64, status ptrace.StatusCode) {
+		rs := data.ResourceSpans().AppendEmpty()
+		rs.Resource().Attributes().PutStr("service.name", service)
+		span := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		span.SetTraceID(mustDecodeTraceID(traceID))
+		span.SetSpanID(mustDecodeSpanID(spanID))
+		if parentID != "" {
+			span.SetParentSpanID(mustDecodeSpanID(parentID))
+		}
+		span.SetName(name)
+		span.SetStartTimestamp(pcommon.Timestamp(start))
+		span.SetEndTimestamp(pcommon.Timestamp(end))
+		span.Status().SetCode(status)
+	}
+	addSpan("service-a", "0000000000000001", "", "root", 100, 500, ptrace.StatusCodeOk)
+	addSpan("service-b", "0000000000000002", "0000000000000001", "eligible match", 200, 300, ptrace.StatusCodeOk)
+	addSpan("service-a", "0000000000000003", "0000000000000001", "outside error", 50, 80, ptrace.StatusCodeError)
+	addSpan("service-b", "0000000000000004", "0000000000000001", "outside match", 400, 450, ptrace.StatusCodeOk)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, data, s.FlushedIDs())
+	}))
+
+	query := &search.QueryNode{
+		ID: "service-b", Type: "condition", Query: &search.Query{
+			Field: &search.FieldDefinition{
+				Name: "serviceName", SearchScope: "field", Type: "string",
+			},
+			FieldOperator: "=", Value: "service-b",
+		},
+	}
+	searchRange := store.BoundedTimeRange(150, 250)
+	filteredRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.SearchTraceSummaries(ctx, db, searchRange, query)
+	})
+	require.NoError(t, err)
+	var filtered []traceSummaryJSON
+	require.NoError(t, json.Unmarshal(filteredRaw, &filtered))
+	require.Len(t, filtered, 1)
+
+	summary := filtered[0]
+	assert.Equal(t, traceID, summary.TraceID)
+	assert.True(t, summary.HasRootSpan)
+	require.NotNil(t, summary.RootSpan)
+	assert.Equal(t, rootSpanJSON{ServiceName: "service-a", Name: "root"}, *summary.RootSpan)
+	assert.Equal(t, "50", summary.StartTime)
+	require.NotNil(t, summary.DurationNs)
+	assert.Equal(t, "450", *summary.DurationNs)
+	assert.Equal(t, float64(4), summary.SpanCount)
+	assert.Equal(t, float64(1), summary.ErrorCount)
+	require.NotNil(t, summary.MatchedSpans)
+	assert.Equal(t, []matchedSpanJSON{
+		{TraceID: traceID, SpanID: "0000000000000002"},
+		{TraceID: traceID, SpanID: "0000000000000004"},
+	}, *summary.MatchedSpans)
+
+	unfilteredRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.SearchTraceSummaries(ctx, db, searchRange, nil)
+	})
+	require.NoError(t, err)
+	var unfiltered []traceSummaryJSON
+	require.NoError(t, json.Unmarshal(unfilteredRaw, &unfiltered))
+	require.Len(t, unfiltered, 1)
+	require.Nil(t, unfiltered[0].MatchedSpans)
+	summary.MatchedSpans = nil
+	assert.Equal(t, summary, unfiltered[0])
+	assert.NotContains(t, string(unfilteredRaw), `"matchedSpans"`)
 }
 
 // TestTraceSummaryOrdering verifies that trace summaries are ordered by start time (newest first).
@@ -261,7 +339,7 @@ func TestTraceSummaryOrdering(t *testing.T) {
 	})
 	assert.NoError(t, err, "failed to ingest spans")
 
-	summaries := searchTracesAll(t, s, ctx)
+	summaries := searchTraceSummariesAll(t, s, ctx)
 	assert.Len(t, summaries, 3, "expected 3 traces")
 
 	// Order: trace3 (newest) -> trace1 -> trace2 (oldest)
@@ -292,7 +370,7 @@ func TestTraceSummaryLimit(t *testing.T) {
 	}))
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchTracesWithLimit(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, 2)
+		return spans.SearchTraceSummariesWithLimit(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, 2)
 	})
 	require.NoError(t, err)
 	var summaries []traceSummaryJSON
@@ -301,7 +379,7 @@ func TestTraceSummaryLimit(t *testing.T) {
 
 	limit := int64(1)
 	raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchTracesWithOptions(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, search.ResultOptions{
+		return spans.SearchTraceSummariesWithOptions(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, search.ResultOptions{
 			Limit: &limit,
 			Sort:  &search.Sort{Field: "duration", Direction: "desc"},
 		})
@@ -313,7 +391,7 @@ func TestTraceSummaryLimit(t *testing.T) {
 	require.Equal(t, trace2Hex, summaries[0].TraceID, "sort must select the longest trace before applying LIMIT")
 
 	_, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchTracesWithLimit(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, 0)
+		return spans.SearchTraceSummariesWithLimit(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, 0)
 	})
 	require.ErrorIs(t, err, spans.ErrInvalidTraceLimit)
 }
@@ -324,7 +402,7 @@ func TestTraceNotFound(t *testing.T) {
 	s, ctx := storetest.New(t)
 
 	_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchSpans(ctx, db, "00000000-0000-0000-0000-000000000000", nil)
+		return spans.GetTraceView(ctx, db, "00000000-0000-0000-0000-000000000000", nil)
 	})
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, spans.ErrTraceIDNotFound)
@@ -340,20 +418,12 @@ func TestEmptySpans(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	summaries := searchTracesAll(t, s, ctx)
+	summaries := searchTraceSummariesAll(t, s, ctx)
 	assert.Empty(t, summaries)
 }
 
-// TestClearTraces verifies that all traces can be cleared from the store,
-// including child rows, and pins the two-step contract the dictionary
-// introduced: Clear drops the owners, the sweep collects what that orphaned.
-//
-// Clear used to delete the attribute rows it owned, because every attribute row
-// belonged to exactly one span/event/link and "is it still needed?" had an
-// obvious answer. Attributes are now shared across spans, logs and metrics, so
-// Clear cannot answer that question and deliberately leaves them behind --
-// asserting they *survive* is the point, not an omission. ingest.SweepOrphans
-// is the only thing that may delete them.
+// TestClearTraces verifies the two-step delete contract: Clear removes owners
+// and children, then SweepOrphans removes unreferenced shared dictionary rows.
 func TestClearTraces(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -364,7 +434,7 @@ func TestClearTraces(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	summaries := searchTracesAll(t, s, ctx)
+	summaries := searchTraceSummariesAll(t, s, ctx)
 	assert.Len(t, summaries, 1)
 	assert.Greater(t, countRows(t, s, ctx, "select count(*) from events"), 0)
 	assert.Greater(t, countRows(t, s, ctx, "select count(*) from links"), 0)
@@ -383,7 +453,7 @@ func TestClearTraces(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	summaries = searchTracesAll(t, s, ctx)
+	summaries = searchTraceSummariesAll(t, s, ctx)
 	assert.Empty(t, summaries)
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from spans"))
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from events"))
@@ -406,7 +476,7 @@ func TestClearTraces(t *testing.T) {
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from scopes"))
 }
 
-// getTraceTraceID returns the trace ID from SearchSpans JSON (traceID in response is hex string).
+// getTraceTraceID returns the trace ID from GetTraceView JSON (traceID in response is hex string).
 func getTraceTraceID(t *testing.T, raw json.RawMessage) string {
 	t.Helper()
 	var out struct {
@@ -416,7 +486,7 @@ func getTraceTraceID(t *testing.T, raw json.RawMessage) string {
 	return out.TraceID
 }
 
-// getTraceSpansCount returns the number of spans in SearchSpans JSON.
+// getTraceSpansCount returns the number of spans in GetTraceView JSON.
 func getTraceSpansCount(t *testing.T, raw json.RawMessage) int {
 	t.Helper()
 	var out struct {
@@ -426,8 +496,8 @@ func getTraceSpansCount(t *testing.T, raw json.RawMessage) int {
 	return len(out.Spans)
 }
 
-// spanDataFromSearchSpans returns spanData.name and spanID for the i-th span (depth-first order).
-func spanDataFromSearchSpans(t *testing.T, raw json.RawMessage, i int) (name, spanID string) {
+// spanDataFromGetTraceView returns spanData.name and spanID for the i-th span (depth-first order).
+func spanDataFromGetTraceView(t *testing.T, raw json.RawMessage, i int) (name, spanID string) {
 	t.Helper()
 	var out struct {
 		Spans []struct {
@@ -456,7 +526,7 @@ func TestTraceSuite(t *testing.T) {
 
 	t.Run("TraceHierarchicalStructure", func(t *testing.T) {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchSpans(ctx, db, testTraceID, nil)
+			return spans.GetTraceView(ctx, db, testTraceID, nil)
 		})
 		assert.NoError(t, err, "failed to get trace")
 		assert.NotEmpty(t, raw)
@@ -467,13 +537,13 @@ func TestTraceSuite(t *testing.T) {
 		// Depth-first order: root -> child -> grandchild -> great-grandchild -> child-span-2 -> child2-child -> orphaned -> orphaned-child -> orphaned-grandchild
 		names := []string{"root-operation", "child-operation", "grandchild-operation", "great-grandchild-operation", "child-operation-2", "child2-child-operation", "orphaned-operation", "orphaned-child-operation", "orphaned-grandchild-operation"}
 		for i, want := range names {
-			name, _ := spanDataFromSearchSpans(t, raw, i)
+			name, _ := spanDataFromGetTraceView(t, raw, i)
 			assert.Equal(t, want, name, "span index %d", i)
 		}
 	})
 
 	t.Run("TraceSummary", func(t *testing.T) {
-		summaries := searchTracesAll(t, s, ctx)
+		summaries := searchTraceSummariesAll(t, s, ctx)
 		assert.Len(t, summaries, 1, "should have one trace summary")
 
 		summary := summaries[0]
@@ -486,23 +556,23 @@ func TestTraceSuite(t *testing.T) {
 
 	t.Run("TraceNotFound", func(t *testing.T) {
 		_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchSpans(ctx, db, "00000000-0000-0000-0000-000000000000", nil)
+			return spans.GetTraceView(ctx, db, "00000000-0000-0000-0000-000000000000", nil)
 		})
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, spans.ErrTraceIDNotFound)
 	})
 
-	t.Run("SearchSpansAcceptsTraceIDWithoutHyphens", func(t *testing.T) {
+	t.Run("GetTraceViewAcceptsTraceIDWithoutHyphens", func(t *testing.T) {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchSpans(ctx, db, "00000000000000000000000000000099", nil)
+			return spans.GetTraceView(ctx, db, "00000000000000000000000000000099", nil)
 		})
-		assert.NoError(t, err, "SearchSpans with 32-char hex trace ID should succeed")
+		assert.NoError(t, err, "GetTraceView with 32-char hex trace ID should succeed")
 		assert.Equal(t, testTraceID, getTraceTraceID(t, raw))
 	})
 
 	t.Run("AttributeDiscovery", func(t *testing.T) {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.GetTraceAttributes(ctx, db)
+			return spans.GetTraceAttributeDefinitions(ctx, db)
 		})
 		assert.NoError(t, err, "failed to get trace attributes")
 
@@ -544,8 +614,8 @@ func TestTraceSuite(t *testing.T) {
 	})
 }
 
-// TestSearchTraces tests SearchTraces with various query types.
-func TestSearchTraces(t *testing.T) {
+// TestSearchTraceSummaries tests SearchTraceSummaries with various query types.
+func TestSearchTraceSummaries(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -577,7 +647,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -596,7 +666,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -615,7 +685,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -634,7 +704,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -653,7 +723,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -672,7 +742,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -691,7 +761,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -710,7 +780,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -733,7 +803,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -757,7 +827,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -781,7 +851,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -805,7 +875,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -829,7 +899,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -853,7 +923,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -877,7 +947,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -901,7 +971,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -925,7 +995,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -949,7 +1019,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -973,7 +1043,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -993,7 +1063,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -1014,7 +1084,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -1033,7 +1103,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -1052,7 +1122,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -1071,7 +1141,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -1091,7 +1161,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -1111,7 +1181,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -1120,11 +1190,7 @@ func TestSearchTraces(t *testing.T) {
 	})
 
 	t.Run("Field_link.spanID_WireForm", func(t *testing.T) {
-		// link.spanID means the linked *target* (matching the spanID field
-		// in served link JSON), queried in 16-hex wire form. Root span's
-		// link targets 000000000000000a. Before the linked_span_id alias +
-		// wire-form conversion this hit the owner column and errored on
-		// the uuid cast.
+		// link.spanID names the linked target in 16-character wire form.
 		query := map[string]any{
 			"id":   "f8",
 			"type": "condition",
@@ -1135,7 +1201,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err)
 		summaries := parseSummaries(raw)
@@ -1156,7 +1222,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err, "garbage trace ID must not surface a cast error")
 		assert.Empty(t, parseSummaries(raw))
@@ -1173,7 +1239,7 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err, "garbage span ID must not surface a cast error")
 		assert.Empty(t, parseSummaries(raw))
@@ -1190,30 +1256,15 @@ func TestSearchTraces(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(startTime, endTime), query)
 		})
 		assert.NoError(t, err, "garbage link trace ID must not surface a cast error")
 		assert.Empty(t, parseSummaries(raw))
 	})
 }
 
-// TestIngestSpans_LargeBatchStaysConsistent ingests more spans in one call
-// than the flush interval and asserts every span landed with attribute ids
-// that resolve against the dictionary.
-//
-// It deliberately does *not* claim to test the mid-batch flush, because that
-// flush has no observable behaviour to test: it caps appender memory on a
-// pathological batch and nothing more. Nothing reads mid-batch -- ingest holds
-// the store write lock throughout -- and the deferred Close flushes whatever
-// is left, so neutering the interval changes no result this or any other test
-// can see. An earlier version of this test was named for the flush interval
-// and survived exactly that mutation.
-//
-// What it does catch is the two-pass split-brain: the join below fails if the
-// appender wrote an array whose ids never reached the dictionary. The batch is
-// sized from the constant so it stays large relative to the interval -- when
-// the constant was raised from 50 to 500 the hardcoded 51 quietly stopped
-// being a large batch at all.
+// TestIngestSpans_LargeBatchStaysConsistent verifies owner arrays resolve in the
+// dictionary for a batch larger than the flush interval.
 func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -1227,7 +1278,7 @@ func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
 
 	testTraceID := "00000000000000000000000000000099"
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchSpans(ctx, db, testTraceID, nil)
+		return spans.GetTraceView(ctx, db, testTraceID, nil)
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, batchSize, getTraceSpansCount(t, raw))
@@ -1236,12 +1287,7 @@ func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
 	// first one after it -- the boundary is where a split-brain would show.
 	// SpanID for index i is stored as the native integer i+1.
 	//
-	// Attributes are no longer rows owned by a span, so "did this span's
-	// attributes survive the flush?" is now asked by unnesting the span's
-	// attribute_ids and joining the dictionary. The join matters: it fails if the
-	// appender wrote an array whose ids never made it into the dictionary, which
-	// is precisely the split-brain the two-pass ingest could produce if a
-	// mid-batch flush landed between the passes.
+	// Join attribute_ids to the dictionary so dangling IDs fail the assertion.
 	for _, spanIndex := range []int{0, spans.FlushInterval - 1, spans.FlushInterval} {
 		spanID := fmt.Sprintf("%d", spanIndex+1)
 		attrCount := countRows(t, s, ctx, `
@@ -1253,10 +1299,7 @@ func TestIngestSpans_LargeBatchStaysConsistent(t *testing.T) {
 		assert.GreaterOrEqual(t, attrCount, 2, "span %d should have span.index and flush_test attributes", spanIndex)
 	}
 
-	// Resource/scope attributes reached through the first span's resource_id and
-	// scope_id. These used to be re-written once per owning span; they are now
-	// one deduped row each, so the assertion goes through the reference rather
-	// than looking for a span-keyed copy.
+	// Resolve resource and scope attributes through the first span's references.
 	span1ID := "1"
 	resAttr := countRows(t, s, ctx, `
 		select count(*)
@@ -1318,8 +1361,8 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 	assert.Empty(t, rejected)
 }
 
-// TestSearchSpansWith32CharHexTraceID verifies that SearchSpans finds a trace when given the 32-char hex form (no hyphens).
-func TestSearchSpansWith32CharHexTraceID(t *testing.T) {
+// TestGetTraceViewWith32CharHexTraceID verifies that GetTraceView finds a trace when given the 32-char hex form (no hyphens).
+func TestGetTraceViewWith32CharHexTraceID(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -1330,9 +1373,9 @@ func TestSearchSpansWith32CharHexTraceID(t *testing.T) {
 	require.NoError(t, err)
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchSpans(ctx, db, "00000000000000000000000000000099", nil)
+		return spans.GetTraceView(ctx, db, "00000000000000000000000000000099", nil)
 	})
-	assert.NoError(t, err, "SearchSpans with 32-char hex trace ID should succeed")
+	assert.NoError(t, err, "GetTraceView with 32-char hex trace ID should succeed")
 	assert.NotEmpty(t, raw)
 	assert.Equal(t, "00000000000000000000000000000099", getTraceTraceID(t, raw))
 }
@@ -1349,7 +1392,7 @@ func TestDeleteSpansByTraceIDs(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	summaries := searchTracesAll(t, s, ctx)
+	summaries := searchTraceSummariesAll(t, s, ctx)
 	assert.Len(t, summaries, 1)
 	assert.Greater(t, countRows(t, s, ctx, "select count(*) from events"), 0)
 	assert.Greater(t, countRows(t, s, ctx, "select count(*) from links"), 0)
@@ -1362,7 +1405,7 @@ func TestDeleteSpansByTraceIDs(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	summaries = searchTracesAll(t, s, ctx)
+	summaries = searchTraceSummariesAll(t, s, ctx)
 	assert.Empty(t, summaries)
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from events"))
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from links"))
@@ -1393,8 +1436,7 @@ func TestDeleteSpansByTraceIDs_Empty(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// createTestTracesPdataN builds one trace with n spans (one resource/scope). Each span has
-// resource, scope, and span attributes. Used to exercise flushIntervalSpans by ingesting >= 50 spans.
+// createTestTracesPdataN builds one trace with n spans under one resource and scope.
 func createTestTracesPdataN(n int) ptrace.Traces {
 	baseTime := time.Now().UnixNano()
 	tr := ptrace.NewTraces()
@@ -1641,14 +1683,8 @@ func createTestTracePdata() ptrace.Traces {
 	return tr
 }
 
-// TestSpans_ServiceNameDenormStaysConsistent pins down the contract
-// that the spans.service_name column (added as a hot index target for
-// "filter by service" queries) stays in sync with its source-of-truth
-// resource attribute. We ingest a mix of spans -- some with
-// service.name set, some without -- and assert column-vs-attribute
-// equality on every row. A single mismatch means either the ingest
-// path forgot to write the column, or the resource attribute row was
-// dropped, both of which would silently break service filtering.
+// TestSpans_ServiceNameDenormStaysConsistent verifies that the indexed
+// spans.service_name column matches its source resource attribute.
 func TestSpans_ServiceNameDenormStaysConsistent(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -1661,17 +1697,8 @@ func TestSpans_ServiceNameDenormStaysConsistent(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// For every span row, service_name must equal the value the resource
-	// actually carries.
-	//
-	// The path to the source of truth changed: there is no longer a
-	// span-keyed resource attribute row to left-join. It resolves through
-	// resource_id -> resources.attribute_ids -> attributes. The inner join on resources is safe
-	// because spans.resource_id is NOT NULL with an FK -- a span without a
-	// resource cannot exist -- so an inner join here cannot hide a row the
-	// way it would have under the old nullable-owner shape. The scalar subquery
-	// returns NULL when the key is absent, hence the coalesce: spans whose
-	// resource has no service.name must carry '' in the column.
+	// The foreign key makes the resource join total. coalesce maps a missing
+	// service.name attribute to the empty value stored in spans.service_name.
 	var mismatches int
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRowContext(ctx, `
@@ -1700,13 +1727,7 @@ func TestSpans_ServiceNameDenormStaysConsistent(t *testing.T) {
 	assert.Greater(t, joined, 0)
 }
 
-// TestSchemaURLsAreStored pins that the batch-level schema urls survive ingest.
-//
-// They live on the OTLP wrappers -- ResourceSpans.SchemaUrl and
-// ScopeSpans.SchemaUrl -- and NOT on the Resource or InstrumentationScope
-// messages, neither of which has the field. That is why they are columns on
-// spans rather than part of resource or scope identity: the same scope emitted
-// through two pipelines stamping different urls is still one scope.
+// TestSchemaURLsAreStored pins that both wrapper schema URLs survive ingest.
 func TestSchemaURLsAreStored(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -1733,14 +1754,17 @@ func TestSchemaURLsAreStored(t *testing.T) {
 	var gotRes, gotScope string
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRow(
-			`select resource_schema_url, scope_schema_url from spans`,
+			`select r.schema_url, sc.schema_url
+			 from spans sp
+			 join resources r on r.id = sp.resource_id
+			 join scopes sc on sc.id = sp.scope_id`,
 		).Scan(&gotRes, &gotScope)
 	}))
 	assert.Equal(t, resURL, gotRes, "the resource schema url must survive ingest")
 	assert.Equal(t, scopeURL, gotScope, "the scope schema url must survive ingest")
 }
 
-// TestSearchSpansReportsUnplacedSpans covers spans the walk cannot place under
+// TestGetTraceViewReportsUnplacedSpans covers spans the walk cannot place under
 // any root.
 //
 // A span whose parent is absent from the trace is promoted to a root and
@@ -1750,9 +1774,8 @@ func TestSchemaURLsAreStored(t *testing.T) {
 // walk: a span on a cycle never qualifies as a root, and the walk only ever
 // descends into children, so a cycle is unreachable rather than infinite.
 //
-// Unreachable spans were previously dropped in silence, which renders the
-// trace short with nothing saying so. unplacedSpanCount reports them.
-func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
+// unplacedSpanCount reports spans that the tree walk cannot reach.
+func TestGetTraceViewReportsUnplacedSpans(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -1840,7 +1863,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 	}
 	fetch := func(traceHex string, criteria any) walked {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchSpans(ctx, db, traceHex, criteria)
+			return spans.GetTraceView(ctx, db, traceHex, criteria)
 		})
 		require.NoError(t, err)
 		var td struct {
@@ -1955,8 +1978,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 	})
 
 	t.Run("two independent cycles get separate cut points", func(t *testing.T) {
-		// One cyclePoint per cycle, not one for the trace -- otherwise the
-		// second loop is invisible once the first is reported.
+		// Each cycle requires its own reported cut point.
 		w := get(twoCycles)
 		assert.Equal(t, 4, w.placed)
 		assert.Equal(t, 0, w.unplaced)
@@ -1987,8 +2009,7 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 	})
 
 	t.Run("a trace that is entirely a cycle still renders", func(t *testing.T) {
-		// Previously this walked to nothing at all. The self-parenting span is
-		// its own entry, and the walk refuses to revisit it.
+		// The self-parenting span is its own entry and cannot be revisited.
 		w := get(allCycle)
 		assert.Equal(t, 1, w.placed, "the span is shown rather than dropped")
 		assert.Equal(t, 0, w.unplaced)
@@ -1998,18 +2019,8 @@ func TestSearchSpansReportsUnplacedSpans(t *testing.T) {
 	})
 }
 
-// TestSpanAndLinkFlagsRoundTrip pins that a span's flags survive the store.
-//
-// They did not, until they did: logs and metric datapoints stored theirs from
-// the start while spans and links dropped them at ingest, so a span read back
-// was not the span that went in. Flags carry the W3C sampled bit and, for a
-// span, whether the parent context was remote -- exactly the fields anything
-// reconstructing OTLP from this store would need and silently not find.
-//
-// Asserted through SearchSpans rather than by selecting the column, because
-// the column existing is not the claim. The claim is that the value reaches
-// the wire, which means surviving the recursive walk's explicit column list
-// and the JSON macro -- the two places this was actually missing.
+// TestSpanAndLinkFlagsRoundTrip verifies flags survive ingestion and reach the
+// GetTraceView wire response.
 func TestSpanAndLinkFlagsRoundTrip(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -2042,7 +2053,7 @@ func TestSpanAndLinkFlagsRoundTrip(t *testing.T) {
 	}))
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchSpans(ctx, db, traceIDHex, nil)
+		return spans.GetTraceView(ctx, db, traceIDHex, nil)
 	})
 	require.NoError(t, err)
 
@@ -2067,13 +2078,8 @@ func TestSpanAndLinkFlagsRoundTrip(t *testing.T) {
 	assert.Equal(t, linkFlags, got.Links[0].Flags, "link flags must survive too")
 }
 
-// The flags columns existed before they were searchable: stored at ingest,
-// served in the JSON, and absent from both the span and link column
-// allow-lists -- so `flags = 257` was rejected as an unknown field while the
-// value sat in the row. These pin the whole path: parse-side field
-// definitions are the frontend's, but the mapper and SQL are exercised here
-// with the same trees the walker sends.
-func TestSearchTracesByFlags(t *testing.T) {
+// Flags must remain searchable through both span and link field mappings.
+func TestSearchTraceSummariesByFlags(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -2115,7 +2121,7 @@ func TestSearchTracesByFlags(t *testing.T) {
 			},
 		}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(0, 10_000), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(0, 10_000), query)
 		})
 		require.NoError(t, err)
 		var out []map[string]any
@@ -2170,7 +2176,7 @@ func TestSpanIDsRoundTripAtUint64Boundaries(t *testing.T) {
 	require.Equal(t, 1, rep.Count(), "the repeated max ID is a same-batch duplicate")
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchSpans(ctx, db, traceIDHex, nil)
+		return spans.GetTraceView(ctx, db, traceIDHex, nil)
 	})
 	require.NoError(t, err)
 	var out struct {

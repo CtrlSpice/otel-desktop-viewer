@@ -1,8 +1,5 @@
 <script module lang="ts">
-  // Drawer open preference is persisted in localStorage, but each
-  // signal route mounts its own SignalListDrawer. Without this
-  // module-level cache, the panel width transition runs on every
-  // navigation even when open/closed did not change.
+  // Cache the persisted state across route-level drawer remounts.
   let lastOpen: boolean | undefined
 
   /** Skip the width tween when remounting with the same open preference. */
@@ -334,7 +331,6 @@
     navigate('/')
   }
 
-  // --- auto-scroll the virtual list when the selection changes ---
   // Only fires when `selectedID` actually changes (not on items reshuffles),
   // so the user is free to scroll the list independently.
   type VirtualListRef = {

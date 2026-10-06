@@ -32,32 +32,17 @@ var (
 // scopeKey identifies a scope by position: the ri'th resource's si'th scope.
 type scopeKey struct{ ri, si int }
 
+type queryRower interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
 // flushIntervalSpans bounds how many spans accumulate in the appenders before
-// they are pushed to DuckDB. It exists to cap memory on a pathological batch,
-// not to make writes visible sooner -- nothing reads mid-batch, since ingest
-// holds the store write lock throughout.
-//
-// Raised from 50 to 500 on measurement. Each flush is a cgo call into
-// duckdb_appender_flush, and that call is roughly half of ingest time, so
-// flushing more often than memory requires is pure overhead. Measured on
-// 2000-span batches (Apple M4 Pro -- absolute figures are an upper bound, but
-// the shape of the curve is what the choice rests on, and slower hardware moves
-// the knee later, not earlier):
-//
-//	interval   50 -> 15.77 us/span
-//	          100 -> 11.14
-//	          250 ->  8.12
-//	          500 ->  7.13   <- knee
-//	         1000 ->  6.60
-//	   close only ->  6.27
-//
-// Past 500 the remaining 14% buys unbounded appender memory, which is a bad
-// trade for a desktop tool sharing RAM with the user's actual work.
+// they are pushed to DuckDB, limiting memory used by large batches.
 const flushIntervalSpans = 500
 
 // resourceServiceName extracts the service.name resource attribute as a
 // plain string, returning "" when not present. This is the same logic
-// used by the metrics package to denormalize service onto metric_streams,
+// used by the metrics package to denormalize service onto metrics,
 // kept private here so spans doesn't grow a metrics dependency.
 func resourceServiceName(attrs pcommon.Map) string {
 	if v, ok := attrs.Get("service.name"); ok {
@@ -111,9 +96,9 @@ func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces, f
 	var spanKeys []spanKey
 
 	for ri, resourceSpan := range traces.ResourceSpans().All() {
-		resourceIDs[ri] = dict.AddResource(resourceSpan.Resource())
+		resourceIDs[ri] = dict.AddResource(resourceSpan.Resource(), resourceSpan.SchemaUrl()).ID
 		for si, scopeSpan := range resourceSpan.ScopeSpans().All() {
-			scopeIDs[scopeKey{ri, si}] = dict.AddScope(scopeSpan.Scope())
+			scopeIDs[scopeKey{ri, si}] = dict.AddScope(scopeSpan.Scope(), scopeSpan.SchemaUrl())
 			for _, span := range scopeSpan.Spans().All() {
 				spanKeys = append(spanKeys, spanKey{
 					trace: duckdb.UUID(span.TraceID()),
@@ -247,8 +232,6 @@ func appendPass(
 					int32(span.Status().Code()),   // StatusCode INTEGER (received enum code)
 					span.Status().Message(),       // StatusMessage VARCHAR
 					serviceName,                   // ServiceName VARCHAR (NOT NULL, '' = unknown)
-					resourceSpan.SchemaUrl(),      // ResourceSchemaURL VARCHAR (batch-level)
-					scopeSpan.SchemaUrl(),         // ScopeSchemaURL VARCHAR (batch-level)
 				)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)
@@ -323,29 +306,29 @@ func appendPass(
 	return nil
 }
 
-// SearchTraces returns trace summaries in the time range matching the optional criteria.
-func SearchTraces(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any) (json.RawMessage, error) {
-	return searchTraces(ctx, db, timeRange, criteria, search.ResultOptions{})
+// SearchTraceSummaries returns trace summaries in the time range matching the optional criteria.
+func SearchTraceSummaries(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any) (json.RawMessage, error) {
+	return searchTraceSummaries(ctx, db, timeRange, criteria, search.ResultOptions{})
 }
 
-// SearchTracesWithLimit returns at most limit trace summaries.
-func SearchTracesWithLimit(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, limit int64) (json.RawMessage, error) {
-	return searchTraces(ctx, db, timeRange, criteria, search.ResultOptions{Limit: &limit})
+// SearchTraceSummariesWithLimit returns at most limit trace summaries.
+func SearchTraceSummariesWithLimit(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, limit int64) (json.RawMessage, error) {
+	return searchTraceSummaries(ctx, db, timeRange, criteria, search.ResultOptions{Limit: &limit})
 }
 
-func SearchTracesWithOptions(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (json.RawMessage, error) {
-	return searchTraces(ctx, db, timeRange, criteria, options)
+func SearchTraceSummariesWithOptions(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (json.RawMessage, error) {
+	return searchTraceSummaries(ctx, db, timeRange, criteria, options)
 }
 
-func searchTraces(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (json.RawMessage, error) {
-	finalQuery, args, err := searchTracesSQL(timeRange, criteria, options)
+func searchTraceSummaries(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (json.RawMessage, error) {
+	finalQuery, args, err := searchTraceSummariesSQL(timeRange, criteria, options)
 	if err != nil {
 		return nil, err
 	}
 
 	var raw []byte
 	if err := db.QueryRowContext(ctx, finalQuery, args...).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("SearchTraces: %w: %w", ErrSpansStoreInternal, err)
+		return nil, fmt.Errorf("SearchTraceSummaries: %w: %w", ErrSpansStoreInternal, err)
 	}
 	if raw == nil {
 		return json.RawMessage("[]"), nil
@@ -353,22 +336,22 @@ func searchTraces(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange
 	return json.RawMessage(raw), nil
 }
 
-// searchTracesSQL renders the trace-summary query and its bound arguments.
-// Split out for the same reason as searchSpansSQL: so a golden test can pin the
+// searchTraceSummariesSQL renders the trace-summary query and its bound arguments.
+// Split out for the same reason as getTraceViewSQL: so a golden test can pin the
 // rendered text without standing up a store.
-func searchTracesSQL(timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (string, []any, error) {
+func searchTraceSummariesSQL(timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (string, []any, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
 		searchTree, err = search.ParseQueryTree(criteria)
 		if err != nil {
-			return "", nil, fmt.Errorf("SearchTraces: %w: %w", ErrInvalidTraceQuery, err)
+			return "", nil, fmt.Errorf("SearchTraceSummaries: %w: %w", ErrInvalidTraceQuery, err)
 		}
 	}
 
-	cteSQL, whereClause, args, err := buildTraceSQL(searchTree, timeRange)
+	cteSQL, eligibilityWhere, queryWhere, args, err := buildTraceSQL(searchTree, timeRange)
 	if err != nil {
-		return "", nil, fmt.Errorf("SearchTraces: %w: %w", ErrInvalidTraceQuery, err)
+		return "", nil, fmt.Errorf("SearchTraceSummaries: %w: %w", ErrInvalidTraceQuery, err)
 	}
 
 	// service_name comes from spans.service_name (denormalized at
@@ -390,21 +373,47 @@ func searchTracesSQL(timeRange timerange.TimeRange, criteria any, options search
 	limitClause := ""
 	if options.Limit != nil {
 		if *options.Limit < 1 {
-			return "", nil, fmt.Errorf("SearchTraces: limit must be positive: %w", ErrInvalidTraceLimit)
+			return "", nil, fmt.Errorf("SearchTraceSummaries: limit must be positive: %w", ErrInvalidTraceLimit)
 		}
 		limitClause = "\n\t\t\tlimit ?"
 		args = append(args, *options.Limit)
 	}
 
-	finalQuery, err := queries.Render(queries.SearchTraces, searchTracesParams{
-		CTEs:  cteSQL,
-		From:  spanSearchFrom,
-		Where: whereClause,
-		Order: orderBy,
-		Limit: limitClause,
+	matchCTEs := ""
+	matchJoin := ""
+	matchProjection := ""
+	if searchTree != nil {
+		matchCTEs = fmt.Sprintf(`
+		query_matches as materialized (
+			select distinct s.trace_id, s.span_id, s.start_time
+			%s
+			join selected_trace_ids selected on selected.trace_id = s.trace_id
+			where %s
+		),
+		matched_span_lists as (
+			select trace_id as matched_trace_id, list(json_object(
+				'traceID', replace(trace_id::varchar, '-', ''),
+				'spanID', span_id_wire(span_id)
+			) order by start_time, span_id) as matched_spans
+			from query_matches
+			group by trace_id
+		),`, spanSearchFrom, queryWhere)
+		matchJoin = "\n\t\tjoin matched_span_lists matches on matches.matched_trace_id = sub.trace_id"
+		matchProjection = ",\n\t\t\t'matchedSpans', to_json(matches.matched_spans)"
+	}
+
+	finalQuery, err := queries.Render(queries.SearchTraceSummaries, searchTraceSummariesParams{
+		CTEs:             cteSQL,
+		From:             spanSearchFrom,
+		EligibilityWhere: eligibilityWhere,
+		MatchCTEs:        matchCTEs,
+		MatchJoin:        matchJoin,
+		MatchProjection:  matchProjection,
+		Order:            orderBy,
+		Limit:            limitClause,
 	})
 	if err != nil {
-		return "", nil, fmt.Errorf("SearchTraces: %w: %w", ErrSpansStoreInternal, err)
+		return "", nil, fmt.Errorf("SearchTraceSummaries: %w: %w", ErrSpansStoreInternal, err)
 	}
 
 	return finalQuery, args, nil
@@ -439,27 +448,13 @@ func traceSummaryOrderBy(sortOption *search.Sort) (string, error) {
 	return fmt.Sprintf("%s %s %s, trace_id asc", expression, direction, nulls), nil
 }
 
-// SearchSpans returns spans for a single trace, optionally filtered by search criteria.
-// When criteria is nil, all spans for the trace are returned (replacing GetTrace).
-// When criteria is provided, only matching spans are returned (replacing SearchTraceSpans).
-// SearchSpans fetches one whole trace.
+// GetTraceView returns a whole trace with matching spans annotated when criteria
+// is provided.
 //
-// Two queries, and only ever one of them for a well-formed trace. The ordinary
-// walk cannot reach a span whose parent chain forms a cycle -- nothing outside
-// a cycle points into it -- so recovering those spans needs a second walk that
-// picks its own entry point and carries its ancestry to avoid spinning.
-//
-// That second walk was first written as more CTEs on this query, which cost a
-// reproducible ~8% on every trace fetch (32.5ms to 35.2ms, three interleaved
-// rounds) to find something on almost no traces: zero unreachable spans across
-// 122,224 in a real capture. Here the healthy path is untouched, and a trace
-// pays for salvage only by being broken.
-//
-// The count comes back as its own column rather than being parsed out of the
-// response, so the branch costs a scanned integer instead of unmarshalling
-// 171KB.
-func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) (json.RawMessage, error) {
-	query, args, err := searchSpansSQL(traceID, criteria)
+// The ordinary tree walk reports unreachable spans. A non-zero count triggers
+// the cycle-aware query, which chooses entry points and tracks ancestry.
+func GetTraceView(ctx context.Context, db *sql.DB, traceID string, criteria any) (json.RawMessage, error) {
+	query, args, err := getTraceViewSQL(traceID, criteria)
 	if err != nil {
 		return nil, err
 	}
@@ -467,18 +462,16 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 	var raw []byte
 	var unplaced int64
 	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw, &unplaced); err != nil {
-		return nil, fmt.Errorf("SearchSpans: %w: %w", ErrSpansStoreInternal, err)
+		return nil, fmt.Errorf("GetTraceView: %w: %w", ErrSpansStoreInternal, err)
 	}
 	if raw == nil {
-		return nil, fmt.Errorf("SearchSpans: %w", ErrTraceIDNotFound)
+		return nil, fmt.Errorf("GetTraceView: %w", ErrTraceIDNotFound)
 	}
 	if unplaced == 0 {
 		return json.RawMessage(raw), nil
 	}
 
-	// Something is stranded. Re-run with the cycle-aware walk, which returns
-	// the whole trace again rather than a fragment to merge -- simpler, and
-	// affordable precisely because it is the rare path.
+	// Re-run the whole trace with the cycle-aware walk.
 	salvaged, err := salvageSpans(ctx, db, traceID, criteria)
 	if err != nil {
 		// The ordinary result is still correct as far as it goes, and short a
@@ -486,6 +479,61 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 		return json.RawMessage(raw), nil
 	}
 	return salvaged, nil
+}
+
+// GetTraceOverview returns the compact, untruncated overview for one trace. The query
+// computes exact nanosecond strings and reads every span in one operation.
+func GetTraceOverview(ctx context.Context, db queryRower, traceID string) (json.RawMessage, error) {
+	query, err := queries.Render(queries.GetTraceOverview, nil)
+	if err != nil {
+		return nil, fmt.Errorf("GetTraceOverview: %w: %w", ErrSpansStoreInternal, err)
+	}
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, traceID).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("GetTraceOverview: %w", ErrTraceIDNotFound)
+		}
+		return nil, fmt.Errorf("GetTraceOverview: %w: %w", ErrSpansStoreInternal, err)
+	}
+	return json.RawMessage(raw), nil
+}
+
+// GetSpanSummaries returns at most limit stable summary rows for one span ID,
+// together with the exact number of matching composite identities.
+func GetSpanSummaries(ctx context.Context, db queryRower, spanID uint64, limit int64) (json.RawMessage, int64, error) {
+	query, err := queries.Render(queries.GetSpanSummaries, nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("GetSpanSummaries: %w: %w", ErrSpansStoreInternal, err)
+	}
+	var raw []byte
+	var matchCount int64
+	if err := db.QueryRowContext(ctx, query, []uint64{spanID}, limit).Scan(&raw, &matchCount); err != nil {
+		return nil, 0, fmt.Errorf("GetSpanSummaries: %w: %w", ErrSpansStoreInternal, err)
+	}
+	if raw == nil {
+		raw = []byte("[]")
+	}
+	return json.RawMessage(raw), matchCount, nil
+}
+
+// GetSpan returns full stored detail for one composite trace and span identity.
+// A missing exact pair returns a nil result without an error.
+func GetSpan(ctx context.Context, db queryRower, traceID string, spanID uint64) (json.RawMessage, error) {
+	query, err := queries.Render(queries.GetSpan, nil)
+	if err != nil {
+		return nil, fmt.Errorf("GetSpan: %w: %w", ErrSpansStoreInternal, err)
+	}
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, traceID, []uint64{spanID}).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("GetSpan: %w: %w", ErrSpansStoreInternal, err)
+	}
+	if raw == nil {
+		return nil, nil
+	}
+	return json.RawMessage(raw), nil
 }
 
 // GetTraceOTLP returns every stored span for traceID as one standard OTLP JSON
@@ -525,14 +573,10 @@ func salvageSpans(ctx context.Context, db *sql.DB, traceID string, criteria any)
 	return json.RawMessage(raw), nil
 }
 
-// searchSpansSQL renders the trace-fetch query and its bound arguments.
-//
-// Split out from SearchSpans so the SQL is reachable without a database. That
-// is what lets a golden test assert the rendered text, which in turn is what
-// makes moving these query bodies into .sql files provable as a no-op rather
-// than merely believed to be one.
-func searchSpansSQL(traceID string, criteria any) (string, []any, error) {
-	return renderSpansQuery(queries.SearchSpans, traceID, criteria)
+// getTraceViewSQL renders the trace-fetch query and its bound arguments for
+// execution and golden tests.
+func getTraceViewSQL(traceID string, criteria any) (string, []any, error) {
+	return renderSpansQuery(queries.GetTraceView, traceID, criteria)
 }
 
 // renderSpansQuery renders either trace-fetch query. Both take identical
@@ -544,13 +588,13 @@ func renderSpansQuery(name queries.Name, traceID string, criteria any) (string, 
 		var err error
 		searchTree, err = search.ParseQueryTree(criteria)
 		if err != nil {
-			return "", nil, fmt.Errorf("SearchSpans: %w: %w", ErrInvalidTraceQuery, err)
+			return "", nil, fmt.Errorf("GetTraceView: %w: %w", ErrInvalidTraceQuery, err)
 		}
 	}
 
 	cteSQL, whereClause, args, err := buildSpanSQL(searchTree, traceID)
 	if err != nil {
-		return "", nil, fmt.Errorf("SearchSpans: %w: %w", ErrInvalidTraceQuery, err)
+		return "", nil, fmt.Errorf("GetTraceView: %w: %w", ErrInvalidTraceQuery, err)
 	}
 
 	// The recursive CTE always walks the full trace tree (filtered by trace_id only)
@@ -571,45 +615,23 @@ func renderSpansQuery(name queries.Name, traceID string, criteria any) (string, 
 		matchedExpr = "case when ms.span_id is not null then true else false end"
 	}
 
-	// The recursion carries only what the walk needs -- six narrow columns --
-	// and the payload is joined back on once, in the `tree` CTE. Materialising
-	// all 17 span columns through every recursion level was the single largest
-	// avoidable cost here: copied at each depth, thrown away at every level but
-	// the last.
-	//
-	// `tree` exists so the trace's span set is defined in exactly one place.
-	// Without it the payload gets re-derived four separate times after the
-	// recursion (span_attrs, resource_data, scope_data, and the final
-	// projection), which is easy to get subtly out of step. Measured at no
-	// performance difference -- DuckDB already materialises a recursive CTE once
-	// and reuses it across references, and the re-derivations were PK-indexed
-	// joins over a few thousand rows. Kept for the structure, not the speed.
-	query, err := queries.Render(name, searchSpansParams{
+	// The recursion carries only traversal columns. The tree CTE joins the
+	// payload once and defines one span set for every downstream projection.
+	query, err := queries.Render(name, getTraceViewParams{
 		CTEs:        cteSQL,
 		MatchedCTE:  matchedCTE,
 		MatchedExpr: matchedExpr,
 		MatchedJoin: matchedJoin,
 	})
 	if err != nil {
-		return "", nil, fmt.Errorf("SearchSpans: %w: %w", ErrSpansStoreInternal, err)
+		return "", nil, fmt.Errorf("GetTraceView: %w: %w", ErrSpansStoreInternal, err)
 	}
 
 	return query, args, nil
 }
 
-// GetTraceAttributes returns every attribute name/scope/type this store knows
-// about, for the search field dropdowns. These used to be an indexed join from
-// attributes to spans over a window; with attributes deduped into a dictionary,
-// honouring a window would
-// mean unnesting every span's array and joining back -- on the interactive path
-// that populates a dropdown. The dictionary is small and already bounded by
-// retention, so it answers directly. The semantics become "keys this store
-// knows about" rather than "keys in this window", which is the better answer
-// for a dropdown anyway.
-//
-// This is why scope is part of dictionary identity: without it, attributeScope
-// could not be produced without the unnest this exists to avoid.
-func GetTraceAttributes(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
+// GetTraceAttributeDefinitions returns attribute definitions across retained traces.
+func GetTraceAttributeDefinitions(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
 	return traceAttributeKeys(ctx, db)
 }
 
@@ -633,7 +655,7 @@ var fieldValueQueries = map[string]string{
 	`,
 }
 
-// GetFieldValues returns distinct values of one completable span column
+// GetFieldValueCompletions returns distinct values of one completable span column
 // matching term, most frequent first, as a JSON string array. Backs value
 // completion in the search box.
 //
@@ -642,24 +664,39 @@ var fieldValueQueries = map[string]string{
 // values by frequency, which is what the empty value position wants. limit is
 // clamped by the caller. A field not in the allowlist is an error rather than
 // an empty result, so a typo in a caller shows up as one.
-func GetFieldValues(ctx context.Context, db *sql.DB, field, term string, limit int64) (json.RawMessage, error) {
+func GetFieldValueCompletions(ctx context.Context, db *sql.DB, field, term string, limit int64) (json.RawMessage, error) {
 	query, ok := fieldValueQueries[field]
 	if !ok {
-		return nil, fmt.Errorf("GetFieldValues: %w: field %q has no value completion", ErrInvalidTraceQuery, field)
+		return nil, fmt.Errorf("GetFieldValueCompletions: %w: field %q has no value completion", ErrInvalidTraceQuery, field)
 	}
 	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(term)
 	var raw []byte
 	if err := db.QueryRowContext(ctx, query, escaped, limit).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("GetFieldValues: %w: %w", ErrSpansStoreInternal, err)
+		return nil, fmt.Errorf("GetFieldValueCompletions: %w: %w", ErrSpansStoreInternal, err)
 	}
 	return json.RawMessage(raw), nil
 }
 
-// GetAttributesByTraceID returns the same store-wide key list as
-// GetTraceAttributes. Narrowing to one trace would cost the unnest described
-// there; both callers populate the same dropdown.
-func GetAttributesByTraceID(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage, error) {
-	return traceAttributeKeys(ctx, db)
+func GetTraceAttributeDefinitionsByTraceID(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage, error) {
+	query := `
+		select cast(to_json(list(json_object('name', sub.key, 'attributeScope', sub.scope,
+			'type', sub.type) order by sub.key, sub.scope, sub.type)) as varchar) as attributes
+		from (
+			select distinct a.key, 'resource' as scope, json_extract_string(a.value, '$.kind') as type from spans s join resources r on r.id = s.resource_id, unnest(r.attribute_ids) t(aid) join attributes a on a.id = t.aid where s.trace_id = ?::uuid
+			union select distinct a.key, 'scope', json_extract_string(a.value, '$.kind') from spans s join scopes sc on sc.id = s.scope_id, unnest(sc.attribute_ids) t(aid) join attributes a on a.id = t.aid where s.trace_id = ?::uuid
+			union select distinct a.key, 'span', json_extract_string(a.value, '$.kind') from spans s, unnest(s.attribute_ids) t(aid) join attributes a on a.id = t.aid where s.trace_id = ?::uuid
+			union select distinct a.key, 'event', json_extract_string(a.value, '$.kind') from events e, unnest(e.attribute_ids) t(aid) join attributes a on a.id = t.aid where e.trace_id = ?::uuid
+			union select distinct a.key, 'link', json_extract_string(a.value, '$.kind') from links l, unnest(l.attribute_ids) t(aid) join attributes a on a.id = t.aid where l.trace_id = ?::uuid
+		) sub
+	`
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, traceID, traceID, traceID, traceID, traceID).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("GetTraceAttributeDefinitionsByTraceID: %w: %w", ErrSpansStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
 }
 
 func traceAttributeKeys(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
@@ -676,7 +713,7 @@ func traceAttributeKeys(ctx context.Context, db *sql.DB) (json.RawMessage, error
 	`
 	var raw []byte
 	if err := db.QueryRowContext(ctx, query).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("GetTraceAttributes: %w: %w", ErrSpansStoreInternal, err)
+		return nil, fmt.Errorf("GetTraceAttributeDefinitions: %w: %w", ErrSpansStoreInternal, err)
 	}
 	if raw == nil {
 		return json.RawMessage("[]"), nil
@@ -722,10 +759,17 @@ func DeleteSpansByTraceIDs(ctx context.Context, db *sql.DB, traceIDs []any) erro
 	return nil
 }
 
-func buildTraceSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (cteSQL string, whereSQL string, args []any, err error) {
+func buildTraceSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (cteSQL string, eligibilityWhere string, queryWhere string, args []any, err error) {
 	timeCondition, timeParams := search.TimePredicate("s.start_time", timeRange.Start, timeRange.End)
 	timeCondition = strings.ReplaceAll(timeCondition, " AND ", " and ")
-	return search.BuildSearchSQL(queryNode, traceFieldMapper(), timeCondition, timeParams)
+	cteSQL, eligibilityWhere, args, err = search.BuildSearchSQL(queryNode, traceFieldMapper(), timeCondition, timeParams)
+	if err != nil || queryNode == nil {
+		return cteSQL, eligibilityWhere, "", args, err
+	}
+	// Keep the time parameters in the discarded CTE so generated query
+	// parameter names retain the same indexes as eligibilityWhere.
+	_, queryWhere, _, err = search.BuildSearchSQL(queryNode, traceFieldMapper(), "", timeParams)
+	return cteSQL, eligibilityWhere, queryWhere, args, err
 }
 
 // Two idioms compare a trace id in this file, and they are not
@@ -784,9 +828,8 @@ func buildSpanSQL(queryNode *search.QueryNode, traceID string) (cteSQL string, w
 
 // spanSearchFrom is the FROM clause every span search predicate is written
 // against. resources and scopes are joined in unconditionally because
-// resource.* and scope.* search fields now resolve through them rather than
-// through denormalized columns on spans; both are inner joins, since
-// resource_id and scope_id are NOT NULL.
+// resource.* and scope.* search fields resolve through them. Both are inner
+// joins because resource_id and scope_id are NOT NULL.
 const spanSearchFrom = `from search_params, spans s
 		join resources r on r.id = s.resource_id
 		join scopes sc on sc.id = s.scope_id`
@@ -831,8 +874,7 @@ var eventColumns = map[string]struct{}{
 
 // A child reaches its owning span by the pair that identifies one. Matching on
 // span_id alone would pull in another trace's events wherever two traces happen
-// to share a span id -- which the composite key now permits, because a span id
-// is only unique within its trace.
+// to share a span id, which OTLP permits because it is unique only within a trace.
 const (
 	eventOwner = "e.trace_id = s.trace_id and e.span_id = s.span_id"
 	linkOwner  = "l.trace_id = s.trace_id and l.span_id = s.span_id"
@@ -982,27 +1024,14 @@ func mapTraceFieldExpression(field *search.FieldDefinition) (search.ResolvedExpr
 	return search.Text(field.Name), nil
 }
 
-// mapTraceAttributeExpressions turns "attribute foo.bar, in scope X" into a
-// predicate.
-//
-// The scope parameter the old form carried is gone: scope is implied by which
-// owner's array is unnested, and an owner's array only ever holds ids of its own
-// kind. One param per field instead of two.
+// mapTraceAttributeExpressions resolves an attribute against the owner array
+// implied by its scope.
 //
 // Event and link attributes need an EXISTS, because the question is whether
 // *any* event or link on the span matches. A span's own attributes are on its
 // own row, so those stay a plain attr_value lookup.//
-// Resource and scope predicates are **hoisted into the owner table** rather
-// than evaluated per row. The obvious form, `attr_value(r.attribute_ids, k)
-// {COND}`, is correlated: it unnests and joins the dictionary once per span.
-// Measured on 200k spans over 24 resources, exact match on service.name:
-//
-//	attr_value(r.attribute_ids, k) per span      60.59 ms
-//	resource_id in (select ... from resources)    2.14 ms
-//
-// 28x, because the subquery runs once over ~24 rows and the outer predicate is
-// then an indexed equality on resource_id (idx_spans_resource). {COND} is
-// embedded so it lands inside the subquery, where the small scan is.
+// Resource and scope predicates run against their owner tables, then use the
+// resulting IDs to filter spans.
 func mapTraceAttributeExpressions(field *search.FieldDefinition, query *search.Query, params *[]search.NamedParam) ([]search.ResolvedExpression, error) {
 	kind, mode, err := search.AttributeKind(field.Type)
 	if err != nil {
@@ -1105,13 +1134,6 @@ func mapTraceGlobalExpressions() ([]search.ResolvedExpression, error) {
 		"CAST(sc.version AS VARCHAR) {COND}",
 		"exists(select 1 from events e where " + eventOwner + " and CAST(e.name AS VARCHAR) {COND})",
 		"exists(select 1 from links l where " + linkOwner + " and (replace(l.linked_trace_id::varchar, '-', '') {COND} or CAST(l.trace_state AS VARCHAR) {COND} or span_id_wire(l.linked_span_id) {COND}))",
-		// Free-text search over attributes now takes three clauses where it used
-		// to take one. Under the old schema every attribute a span could reach
-		// -- its own, its resource's, its scope's, and every event's and link's
-		// -- carried that span_id, so a single `where a.span_id = s.span_id`
-		// covered all five. The dictionary keeps them in five separate arrays on
-		// four tables, so the coverage has to be spelled out.
-		//
 		// Resource, scope and span attributes are on the span's own row, so
 		// concatenating those three arrays is one unnest. Events and links are
 		// separate rows and need their own EXISTS.

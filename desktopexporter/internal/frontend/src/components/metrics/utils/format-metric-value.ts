@@ -1,31 +1,5 @@
-/**
- * Format a numeric metric value for compact display on chart axes,
- * tooltips, and legend cells. Uses SI prefixes at both ends of the
- * magnitude range so we get useful labels without scientific
- * notation:
- *
- *     1234567   ->  1.23M
- *        1234   ->  1.23k
- *         123   ->  123
- *           0.5 ->  500m
- *           0.0004 -> 400µ
- *           0.0000007 -> 700n
- *
- * Why not just lean on `Intl.NumberFormat({ notation: 'compact' })`?
- * Intl handles big numbers fine ('1.2M') but for sub-unit values it
- * either rounds to 0 or falls back to scientific notation. For a
- * debugging tool that shows things like "0.0004 errors/sec" we want
- * a friendly "400µ" instead.
- *
- * Negatives mirror the positive logic. Zero is rendered without a
- * prefix. NaN / Infinity stringify directly so callers don't have
- * to special-case them.
- */
+/** Compact SI formatting for axes, tooltips, and legends, including sub-unit values. */
 
-// SI prefix table. Ordered so we can binary-search by magnitude in
-// each direction. Each entry is { divisor, suffix }. The "1" entry
-// is the no-prefix case and acts as the boundary between positive
-// and negative prefixes.
 const BIG_PREFIXES: ReadonlyArray<{ divisor: number; suffix: string }> = [
   { divisor: 1e12, suffix: 'T' },
   { divisor: 1e9, suffix: 'G' },
@@ -33,8 +7,7 @@ const BIG_PREFIXES: ReadonlyArray<{ divisor: number; suffix: string }> = [
   { divisor: 1e3, suffix: 'k' },
 ]
 
-// Greek mu (U+03BC) is preferred over micro sign (U+00B5) by Unicode;
-// renders the same in every monospace + sans font we ship with.
+// Use Greek mu (U+03BC), Unicode's preferred micro prefix character.
 const SMALL_PREFIXES: ReadonlyArray<{ divisor: number; suffix: string }> = [
   { divisor: 1e-3, suffix: 'm' },
   { divisor: 1e-6, suffix: 'µ' },
@@ -43,11 +16,7 @@ const SMALL_PREFIXES: ReadonlyArray<{ divisor: number; suffix: string }> = [
 ]
 
 export type FormatMetricValueOptions = {
-  /**
-   * Maximum significant digits in the mantissa. 3 keeps labels at
-   * "1.23k" / "400µ" width, which fits axis tick spacing cleanly.
-   * Bump to 4 for tooltips if you want a bit more precision.
-   */
+  /** Maximum significant digits in the mantissa; defaults to 3. */
   maxSignificantDigits?: number
 }
 
@@ -58,19 +27,12 @@ export type FormatMetricValuePlainOptions = FormatMetricValueOptions & {
   maxFractionDigits?: number
 }
 
-/**
- * Strip trailing zeros + trailing decimal point from a fixed-precision
- * string. "1.230" -> "1.23"; "1.000" -> "1"; "100" -> "100".
- */
 function trimTrailingZeros(s: string): string {
   if (!s.includes('.')) return s
   return s.replace(/\.?0+$/, '')
 }
 
 function formatMantissa(value: number, sigDigits: number): string {
-  // toPrecision keeps the mantissa narrow regardless of magnitude;
-  // then we strip cosmetic trailing zeros. (Intl handles this too,
-  // but its compact notation isn't available below ~1.)
   return trimTrailingZeros(value.toPrecision(sigDigits))
 }
 
@@ -101,16 +63,10 @@ export function formatMetricValue(
     }
   }
 
-  // Smaller than 1p: still useful to see *something* rather than "0".
-  // Falls back to default toPrecision (will use exponential for very
-  // small numbers); rare enough that it doesn't justify another prefix
-  // table entry.
+  // Preserve values below 1p with exponential notation rather than rounding to zero.
   return sign + formatMantissa(abs, sigDigits)
 }
 
-/** Plain decimal + optional OTLP unit for detail rows. Avoids SI
- *  suffixes (m, k) and scientific notation in contexts where the axis
- *  does not disambiguate scale. Charts keep {@link formatMetricValue}. */
 /** Rate slope (Δrate/Δt) with optional OTLP unit suffix. */
 export function formatRateSlopeValue(
   value: number | null | undefined,
@@ -124,6 +80,7 @@ export function formatRateSlopeValue(
   return `${formatted} ${trimmed}/s²`
 }
 
+/** Plain decimal with an optional OTLP unit for detail rows. */
 export function formatMetricValuePlain(
   value: number | null | undefined,
   options: FormatMetricValuePlainOptions = {}

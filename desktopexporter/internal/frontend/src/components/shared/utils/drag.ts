@@ -1,24 +1,4 @@
-/**
- * The mechanics every drag handle needs, and nothing about what a drag means.
- *
- * @remarks
- * Three handles in this app resize things -- the panel split, the waterfall's
- * columns, the signal list drawer -- and each had grown its own version of
- * this, complete in different places. The panel split suppressed text
- * selection; the columns did not, so dragging one selected span names as it
- * went and the cursor flipped to an I-beam over every label it crossed. None
- * opted out of touch scrolling.
- *
- * What is shared here is the *input device*: a pointer is down and moving.
- * What each caller keeps is the meaning -- a fraction of a container, pixels
- * across weighted columns, one element's width -- along with its own clamping
- * and persistence. A helper that also took those would need a mode flag per
- * caller, which is three implementations in one file rather than three files,
- * and then a change to one caller's clamping can break another's.
- *
- * So the interface is a pixel delta. Pixels are what a pointer produces;
- * everything past that is the caller's business.
- */
+/** Shared pointer-drag mechanics; callers interpret and clamp the pixel delta. */
 
 export type DragOptions = {
   /** Which axis the delta is measured along. */

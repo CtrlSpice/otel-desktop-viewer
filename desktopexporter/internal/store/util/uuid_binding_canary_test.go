@@ -11,19 +11,8 @@ import (
 )
 
 // UUIDList casts twice -- bind as varchar[], convert to uuid in SQL -- because
-// the driver cannot bind a uuid list directly. This pins that limitation so we
-// find out when it lifts, rather than carrying the workaround forever on the
-// strength of a comment nobody re-checks.
-//
-// If this test starts failing, that is good news: read the failure message. It
-// means the driver has gained the behaviour we wanted, and UUIDList can drop to
-// `select unnest(?::uuid[])`.
-//
-// Pinning current behaviour is normally an anti-pattern, since it cements
-// whatever the code happens to do. It earns its place here because the
-// behaviour being pinned is a *third-party* limitation we route around, and
-// because one half of it fails silently -- which is the half that would
-// otherwise cost someone a long afternoon.
+// the driver cannot bind a uuid list directly. If this canary fails, verify the
+// driver now supports `select unnest(?::uuid[])` and remove the workaround.
 func TestDriverStillCannotBindUUIDLists(t *testing.T) {
 	db, err := sql.Open("duckdb", "")
 	require.NoError(t, err)
@@ -80,8 +69,7 @@ func TestDriverStillCannotBindUUIDLists(t *testing.T) {
 // away, as an id that matches nothing. The explicit cast is what makes DuckDB
 // format it as hex text.
 //
-// Pinned for the same reason as the binding limitation: it is a third-party
-// behaviour we route around, and it fails silently.
+// This canary keeps the explicit read cast tied to the driver's behavior.
 func TestDriverStillReturnsRawBytesForUnscastUUIDs(t *testing.T) {
 	db, err := sql.Open("duckdb", "")
 	require.NoError(t, err)

@@ -18,8 +18,6 @@
 
 import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
 
-// --- 1. Types + shape predicates --------------------------------------
-
 /**
  * How to render a multi-series numeric metric on the chart. Applies
  * to both Sum and Gauge metrics (Gauges only offer 'raw' and 'avg';
@@ -105,17 +103,6 @@ export function isCumulativeTemporality(temporality: string): boolean {
  * restart; a non-monotonic cumulative Sum is allowed to fall for real,
  * so every decrease would be reported as a reset and the rate would be
  * fiction.
- *
- * This tested temporality alone while the availability rule tested both,
- * so a non-monotonic cumulative Sum defaulted to a view its own menu did
- * not offer. Nothing rejected the mismatch: the tab bar rendered with no
- * tab active, and every row's sparkline drew nothing, because the rate of
- * a series' first bucket is null by definition and those series had only
- * the one bucket.
- *
- * `_seriesCount` is kept in the signature though unused — callers already
- * wire it, and it is cheap future-proofing if the rule ever needs it
- * (e.g. only default to Rate when seriesCount >= 2).
  */
 export function defaultAggregationViewFor(
   metricType: string,
@@ -174,10 +161,6 @@ export function availableAggregationViews(
   }
   return out
 }
-
-// --- 2. Building blocks -----------------------------------------------
-
-// --- 4. Cross-timeseries aggregation (Selected / Other / All) --------
 
 /** Stable synthetic keys for the aggregate lines. */
 export const AGG_KEY_SELECTED = '__agg:selected__'
@@ -334,8 +317,6 @@ export function resampleSeriesToBucketCenters(
     points: lastWithData >= 0 ? resampled.slice(0, lastWithData + 1) : [],
   }
 }
-
-// --- 5. Series stats -------------------------------------------------
 
 /** Which stat badges to show on a single series row. */
 export type SeriesStat = 'min' | 'max' | 'avg' | 'total'

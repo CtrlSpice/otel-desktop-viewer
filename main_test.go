@@ -59,14 +59,11 @@ func resolveConfig(t *testing.T, o configOptions) (*otelcol.Config, error) {
 // builds the telemetry component at startup, so resolving and validating the
 // collector config says nothing at all about the telemetry block.
 //
-// Mutation-checked, so its reach is known rather than assumed:
+// This validates the block's shape and enum values. Exporter protocol and
+// endpoint values are validated only when the collector starts.
 //
 //	level: detailed -> level: bogus        caught
 //	protocol: grpc  -> protocol: nonsense  NOT caught
-//
-// So this covers the block's shape and its enum values, but the declarative
-// config does not validate exporter protocol or endpoint values at config time;
-// a typo there surfaces when the collector starts, not here.
 func validateServiceTelemetry(t *testing.T, o configOptions) error {
 	t.Helper()
 
@@ -103,9 +100,9 @@ func TestCollectorURIsResolve(t *testing.T) {
 		require.NoError(t, cfg.Validate())
 	})
 
-	t.Run("telemetry self", func(t *testing.T) {
+	t.Run("telemetry external", func(t *testing.T) {
 		o := testOptions()
-		o.selfTelemetry = true
+		o.selfTelemetryEndpoint = "http://localhost:4327"
 
 		cfg, err := resolveConfig(t, o)
 		require.NoError(t, err)
@@ -113,53 +110,43 @@ func TestCollectorURIsResolve(t *testing.T) {
 	})
 }
 
-// The composed service::telemetry block must unmarshal cleanly into
-// otelconftelemetry's config. The bug this guards against is the two halves
-// drifting apart -- the exporter asking to instrument itself while the service
-// hands it noop providers, or vice versa -- and only this reaches the telemetry
-// schema at all.
+// The exporter and service telemetry settings must enable or disable together.
 func TestServiceTelemetryValidates(t *testing.T) {
 	t.Run("off", func(t *testing.T) {
 		require.NoError(t, validateServiceTelemetry(t, testOptions()))
 	})
 
-	t.Run("self", func(t *testing.T) {
+	t.Run("external", func(t *testing.T) {
 		o := testOptions()
-		o.selfTelemetry = true
+		o.selfTelemetryEndpoint = "http://localhost:4327"
 		require.NoError(t, validateServiceTelemetry(t, o))
 	})
 }
 
-// The exporter must actually be told to instrument itself. Composing the
-// service::telemetry block alone would give the exporter working providers
-// while leaving its own Telemetry field at the default, so it would emit
-// nothing.
-func TestSelfTelemetrySetsExporterMode(t *testing.T) {
-	off := telemetryURIs(testOptions(), "localhost:4317")
+// The exporter must enable its own instrumentation as well as the providers.
+func TestExternalTelemetrySetsExporterMode(t *testing.T) {
+	off := telemetryURIs(testOptions())
 	assert.NotContains(t, strings.Join(off, "\n"), "exporters::desktop::telemetry",
 		"exporter telemetry should be left at its default when the flag is off")
 
 	o := testOptions()
-	o.selfTelemetry = true
-	on := strings.Join(telemetryURIs(o, "localhost:4317"), "\n")
+	o.selfTelemetryEndpoint = "http://localhost:4327"
+	on := strings.Join(telemetryURIs(o), "\n")
 
-	assert.Contains(t, on, "exporters::desktop::telemetry: self")
-	assert.Contains(t, on, "http://localhost:4317",
-		"self telemetry should target this process's own OTLP receiver")
+	assert.Contains(t, on, "exporters::desktop::telemetry: enabled")
+	assert.Contains(t, on, "extensions::duckdb::telemetry: enabled")
 }
 
 // Off must keep metrics at level none. Without it the collector's default
 // config stands up a Pull (Prometheus) reader, so the default build would open
 // a metrics endpoint nobody asked for.
 func TestTelemetryOffKeepsMetricsNone(t *testing.T) {
-	uris := telemetryURIs(testOptions(), "localhost:4317")
+	uris := telemetryURIs(testOptions())
 	require.Len(t, uris, 1)
 	assert.Equal(t, `yaml:service::telemetry::metrics::level: none`, uris[0])
 }
 
-// Batching must actually be in the pipeline. The exporter's sending queue no
-// longer batches, so if the processor is missing from the pipelines nothing
-// batches at all -- every client request becomes its own appender transaction.
+// The batch processor must be present because the sending queue does not batch.
 func TestPipelinesBatch(t *testing.T) {
 	joined := strings.Join(collectorURIs(testOptions()), "\n")
 
@@ -178,27 +165,21 @@ func TestPipelinesBatch(t *testing.T) {
 	require.NoError(t, cfg.Validate())
 }
 
-// The OTLP target must follow --grpc and --host rather than being hardcoded,
-// or self-telemetry silently goes nowhere on a non-default port.
-func TestSelfTelemetryFollowsGRPCEndpoint(t *testing.T) {
+// The external OTLP target is independent of this viewer's own gRPC receiver.
+func TestSelfTelemetryEndpointConfiguresBothSignalsExactly(t *testing.T) {
 	o := testOptions()
-	o.selfTelemetry = true
+	o.selfTelemetryEndpoint = "http://collector.example:4327"
 	o.grpcPort = 15317
 	o.host = "127.0.0.1"
 
 	joined := strings.Join(collectorURIs(o), "\n")
-	assert.Contains(t, joined, "http://127.0.0.1:15317")
+	assert.Contains(t, joined, `receivers::otlp::protocols::grpc::endpoint: "127.0.0.1:15317"`)
+	assert.Equal(t, 2, strings.Count(joined, `endpoint: "http://collector.example:4327"`),
+		"traces and metrics must use the exact supplied endpoint")
 }
 
-// TestStartupFailureIsNotAnsweredWithUsage covers the difference between "you
-// typed the command wrong" and "the collector could not start".
-//
-// Cobra cannot tell them apart on its own: by default any error out of RunE
-// gets the full flag listing and a second printing of the error. The common
-// way this binary exits non-zero is someone upgrading across a schema change,
-// and the sentence telling them what to do was landing under a screen of
-// flags. Flags are parsed before RunE, so silencing there keeps usage for the
-// case usage is actually for.
+// TestStartupFailureIsNotAnsweredWithUsage distinguishes command errors from
+// collector startup failures. Usage remains enabled until flag parsing succeeds.
 func TestStartupFailureIsNotAnsweredWithUsage(t *testing.T) {
 	// The same settings main() builds. A bare struct has no config providers,
 	// and NewCollector answers that with log.Fatal -- which takes the test
@@ -224,19 +205,17 @@ func TestStartupFailureIsNotAnsweredWithUsage(t *testing.T) {
 		cmd.SetErr(&out)
 		err := cmd.Execute()
 		require.Error(t, err)
-		assert.Contains(t, out.String(), "Usage:",
+		assert.Contains(t, out.String(), "USAGE",
 			"a mistyped flag is exactly what usage exists to explain")
 	})
 
-	// Asserting that RunE *arms* the silencing, not merely that the command
-	// does not carry it. An earlier version of this test only checked the
-	// latter, which is the default -- it passed with the fix reverted, and said
-	// nothing at all.
+	// RunE must enable usage silencing; its initial value alone proves nothing.
 	t.Run("reaching RunE arms the silencing", func(t *testing.T) {
 		cmd := newCommand(set)
 		require.False(t, cmd.SilenceUsage,
 			"not on the command, or a mistyped flag would be silenced too")
-		require.False(t, cmd.SilenceErrors)
+		require.True(t, cmd.SilenceErrors,
+			"the process boundary prints returned errors once")
 
 		// Run with flags that parse but a config that cannot start, so RunE is
 		// entered and fails. What it did to the command on the way in is the
@@ -250,23 +229,13 @@ func TestStartupFailureIsNotAnsweredWithUsage(t *testing.T) {
 		assert.True(t, cmd.SilenceUsage,
 			"RunE must silence usage: past flag parsing, a failure is not a usage mistake")
 		assert.True(t, cmd.SilenceErrors)
-		assert.NotContains(t, out.String(), "Usage:",
+		assert.NotContains(t, out.String(), "USAGE",
 			"a startup failure must not be answered with the flag listing")
 	})
 }
 
-// TestComponentModuleVersionsMatchGoMod keeps the versions this binary reports
-// for its components in step with the ones it is actually built against.
-//
-// components.go carries them as literal strings and is labelled generated, but
-// there is no manifest to regenerate it from -- it is hand-maintained, and a
-// dependency bump touches go.mod without touching it. That is how the receiver
-// and processor came to report v0.157.0 in a binary built against v0.158.0:
-// `otel-desktop-viewer components` named a version that was not there, and
-// nothing noticed for a whole release cycle.
-//
-// Reading go.mod rather than hardcoding the expected version, so this asserts
-// agreement rather than becoming a third place to update.
+// TestComponentModuleVersionsMatchGoMod checks reported component versions
+// against the dependency versions the binary uses.
 func TestComponentModuleVersionsMatchGoMod(t *testing.T) {
 	gomod, err := os.ReadFile("go.mod")
 	require.NoError(t, err)

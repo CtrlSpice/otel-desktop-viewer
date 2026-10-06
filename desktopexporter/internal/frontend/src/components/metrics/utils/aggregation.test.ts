@@ -11,12 +11,6 @@ import {
 import type { ChartPoint } from '@/types/metric-chart-types'
 
 describe('the default aggregation view agrees with the offered ones', () => {
-  // The two rules disagreed on exactly one shape, and the disagreement was
-  // invisible where it mattered: f1.driver.championship_points is a Sum,
-  // Cumulative, non-monotonic. It defaulted to 'rate' while its own menu
-  // offered only raw / sum / avg, so no tab rendered as active and every row
-  // sparkline drew nothing -- the rate of a series' first bucket is null by
-  // definition, and each of those series had exactly one bucket.
   const metricCases: {
     name: string
     metricType: string

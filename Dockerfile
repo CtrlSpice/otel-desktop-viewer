@@ -8,7 +8,7 @@ RUN npm run build
 
 FROM golang:1.26 AS golang
 
-# Install build and runtime dependencies for CGO
+# CGO build and runtime dependencies.
 RUN apt-get update && apt-get install -y \
     gcc g++ git \
     ca-certificates \
@@ -22,24 +22,21 @@ RUN go mod download
 
 COPY . .
 
-# Embed the UI built in the frontend stage (not committed static/)
+# Embed the frontend-stage UI.
 RUN rm -rf desktopexporter/internal/server/static/*
 COPY --from=frontend /frontend/dist/ desktopexporter/internal/server/static/
 
 RUN go build -o otel-desktop-viewer .
 
-# Full image (not slim): the duckdb-go cgo runtime needs the complete
-# library surface, which slim variants have broken before.
+# duckdb-go requires libraries absent from slim images.
 FROM debian:13
 
-# Copy runtime dependencies from build stage
+# Runtime dependencies.
 COPY --from=golang /usr/lib/*/libstdc++.so.6* /usr/lib/
 COPY --from=golang /etc/ssl/certs /etc/ssl/certs
 
-# Copy the built application
 COPY --from=golang /app/otel-desktop-viewer /root/otel-desktop-viewer
 
-# Add metadata labels
 LABEL org.opencontainers.image.title="OpenTelemetry Desktop Viewer"
 LABEL org.opencontainers.image.description="A desktop application for viewing and analyzing OpenTelemetry traces, metrics, and logs locally"
 LABEL org.opencontainers.image.vendor="CtrlSpice"

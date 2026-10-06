@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"database/sql/driver"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,13 +15,22 @@ import (
 	"testing/fstest"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.uber.org/zap"
 )
 
 func setupServer(t *testing.T) (*httptest.Server, func()) {
+	t.Helper()
+	testServer, _, teardown := setupServerWithStore(t)
+	return testServer, teardown
+}
+
+func setupServerWithStore(t *testing.T) (*httptest.Server, *store.Store, func()) {
 	t.Helper()
 	str, err := store.NewStore(context.Background(), "", zap.NewNop())
 	require.NoError(t, err)
@@ -28,11 +38,76 @@ func setupServer(t *testing.T) (*httptest.Server, func()) {
 	require.NoError(t, err)
 	testServer := httptest.NewServer(s.server.Handler)
 
-	return testServer, func() {
+	return testServer, str, func() {
 		testServer.Close()
 		_ = s.Shutdown(context.Background())
 		str.Close()
 	}
+}
+
+func TestSearchTraceSummariesPublicRPCReturnsWholeTraceAndMatchedSpans(t *testing.T) {
+	testServer, str, teardown := setupServerWithStore(t)
+	defer teardown()
+
+	traceID := [16]byte{15: 1}
+	data := ptrace.NewTraces()
+	addSpan := func(service string, spanID, parentID byte, start, end uint64, status ptrace.StatusCode) {
+		rs := data.ResourceSpans().AppendEmpty()
+		rs.Resource().Attributes().PutStr("service.name", service)
+		span := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		span.SetTraceID(traceID)
+		span.SetSpanID([8]byte{7: spanID})
+		if parentID != 0 {
+			span.SetParentSpanID([8]byte{7: parentID})
+		}
+		span.SetName(service)
+		span.SetStartTimestamp(pcommon.Timestamp(start))
+		span.SetEndTimestamp(pcommon.Timestamp(end))
+		span.Status().SetCode(status)
+	}
+	addSpan("service-a", 1, 0, 100, 500, ptrace.StatusCodeOk)
+	addSpan("service-b", 2, 1, 200, 300, ptrace.StatusCodeOk)
+	addSpan("service-a", 3, 1, 50, 80, ptrace.StatusCodeError)
+	require.NoError(t, str.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(context.Background(), conn, data, str.FlushedIDs())
+	}))
+
+	requestBody := `{"jsonrpc":"2.0","id":1,"method":"searchTraceSummaries","params":{` +
+		`"startTime":"150","endTime":"250","query":{"id":"service-b","type":"condition","query":{` +
+		`"field":{"name":"serviceName","searchScope":"field","type":"string"},` +
+		`"fieldOperator":"=","value":"service-b"}},"limit":2}}`
+	response, err := http.Post(testServer.URL+"/rpc", "application/json", strings.NewReader(requestBody))
+	require.NoError(t, err)
+	defer response.Body.Close()
+	require.Equal(t, http.StatusOK, response.StatusCode)
+
+	var rpcResponse struct {
+		Result json.RawMessage `json:"result"`
+	}
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&rpcResponse))
+	var summaries []struct {
+		TraceID      string `json:"traceID"`
+		HasRootSpan  bool   `json:"hasRootSpan"`
+		StartTime    string `json:"startTime"`
+		DurationNs   string `json:"durationNs"`
+		SpanCount    int    `json:"spanCount"`
+		ErrorCount   int    `json:"errorCount"`
+		MatchedSpans []struct {
+			TraceID string `json:"traceID"`
+			SpanID  string `json:"spanID"`
+		} `json:"matchedSpans"`
+	}
+	require.NoError(t, json.Unmarshal(rpcResponse.Result, &summaries))
+	require.Len(t, summaries, 1)
+	assert.Equal(t, "00000000000000000000000000000001", summaries[0].TraceID)
+	assert.True(t, summaries[0].HasRootSpan)
+	assert.Equal(t, "50", summaries[0].StartTime)
+	assert.Equal(t, "450", summaries[0].DurationNs)
+	assert.Equal(t, 3, summaries[0].SpanCount)
+	assert.Equal(t, 1, summaries[0].ErrorCount)
+	require.Len(t, summaries[0].MatchedSpans, 1)
+	assert.Equal(t, "00000000000000000000000000000001", summaries[0].MatchedSpans[0].TraceID)
+	assert.Equal(t, "0000000000000002", summaries[0].MatchedSpans[0].SpanID)
 }
 
 func TestIndexHandler(t *testing.T) {
@@ -193,13 +268,8 @@ func TestStartBindConflict(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestStaticCacheHeaders covers the two populations the embedded frontend
-// splits into, and the one mistake that would be expensive.
-//
-// Nothing was sent before this: assets are served from an embed.FS, whose files
-// report a zero mod time, and Go omits Last-Modified when the time is zero and
-// never synthesises an ETag. No freshness directive, no validator, so the
-// browser re-fetched the whole 2MB frontend on every page load.
+// TestStaticCacheHeaders verifies immutable caching for hashed assets and
+// revalidation for index.html.
 func TestStaticCacheHeaders(t *testing.T) {
 	fsys := fstest.MapFS{
 		"index.html":              &fstest.MapFile{Data: []byte("<!doctype html><div id=app>")},
@@ -223,9 +293,7 @@ func TestStaticCacheHeaders(t *testing.T) {
 		}
 	})
 
-	// The dangerous one. index.html has a stable name and its contents name the
-	// hashed files, so caching it hands an upgraded binary's user stale HTML
-	// pointing at chunks that no longer exist.
+	// index.html must not remain stale across an application upgrade.
 	t.Run("index.html is never immutable", func(t *testing.T) {
 		for _, target := range []string{"/", "/traces", "/index.html"} {
 			resp := get(target)
@@ -236,12 +304,7 @@ func TestStaticCacheHeaders(t *testing.T) {
 		}
 	})
 
-	// Relied on rather than implemented: since Go 1.23, serveError deletes
-	// Cache-Control, Etag, Last-Modified and Content-Encoding on the error
-	// path, because a caller may have set them for the success case. Without
-	// that, a request for an asset that does not exist would be answered with
-	// a year-long immutable 404 -- and a later build that adds the file could
-	// not dislodge it. Asserted because the whole prefix rule leans on it.
+	// Go's file server must remove success cache headers from 404 responses.
 	t.Run("a missing asset is not cached", func(t *testing.T) {
 		resp := get("/assets/never-existed-000000.js")
 		require.Equal(t, http.StatusNotFound, resp.StatusCode)

@@ -1,32 +1,13 @@
 /*
- * MetricViewContext: per-metric reactive state that BOTH the chart
- * view (main) and the detail view (Fields/Series) need to read
- * and, in some cases, write. Modeled on time-context.svelte.ts:
- * the page calls `createMetricViewContext(...)` once at mount,
- * children call `getMetricViewContext()` to read derivations and
- * invoke methods.
- *
- * Design:
- *   - One `$state` cell holds the only mutable per-metric values
- *     (selection, expansion, active histogram tab, legend visibility).
- *   - Everything else is `$derived` from (metric, that cell, time
- *     window). No second source of truth.
- *   - Histogram heatmap / summary are derived client-side from the same
- *     getMetric payload as Gauge/Sum (no bucket-series RPC).
- *   - `$effect` is used for: (1) reset per-metric view state when the
- *     metric identity changes; (2) seed / reconcile legend visibility.
- *     Everywhere else is pure derivation.
- *
- * The factory takes a getter for the current `metric` rather than a
- * value, so the context object's identity stays stable for the page
- * lifetime even as the user navigates between metrics. (The
- * underlying `selectedMetric` cell lives on MetricsPage.)
+ * Shared chart and detail state for one metric view. Mutable choices live in
+ * one state cell; computed values derive from that state and the current metric.
+ * The metric getter keeps the context identity stable across navigation.
  */
 import { createContext, untrack } from 'svelte'
 import { SvelteSet } from 'svelte/reactivity'
 import type {
-  MetricData,
-  MetricTimeseries,
+  MetricViewData,
+  MetricSeriesViewData,
   AggregateBucket,
   MetricType,
   DataPoint,
@@ -131,61 +112,19 @@ import {
 const [getMetricViewContext, setMetricViewContext] =
   createContext<MetricViewContext>()
 
-// How many points per series the line chart is willing to draw.
 const CHART_POINTS_PER_SERIES = 2000
 
-/**
- * How many time buckets to ask the store to reduce a window to.
- *
- * Buckets, not points -- which is the distinction this constant used to lose.
- * It was defined as CHART_POINTS_PER_SERIES, but the store's M4 election keeps
- * up to four points per bucket (first, last, min, max), so asking for 2,000
- * buckets shipped up to 8,000 points per series and the client then ran LTTB to
- * compress them back down to 2,000.
- *
- * That second pass was not merely wasted work. M4 elects those four points
- * precisely so the drawn line is identical to the line through every datapoint;
- * LTTB picks the visually significant ones and drops the rest, including the
- * extremes M4 kept on purpose. The compression undid the guarantee the
- * reduction existed to provide.
- *
- * One reduction, in the store, sized so its output is what the chart draws.
- */
+/** Store buckets, each contributing up to four chart points. */
 export const METRIC_BUCKET_TARGET = CHART_POINTS_PER_SERIES / 4
 
-/**
- * How many buckets the Sum / Average / Rate views aggregate onto.
- *
- * A chart-resolution number, and deliberately not METRIC_BUCKET_TARGET: the
- * election thins a line while keeping its shape, these bucket it for a
- * different chart. The store's ladder rounds this down to a nameable width, so
- * it is a ceiling rather than an exact count.
- */
+/** Maximum store buckets for Sum, Average and Rate views. */
 export const SCALAR_VIEW_BUCKETS = 120
 
-/**
- * How wide a row sparkline is drawn, in px.
- *
- * Exported so the reduction and the box it is drawn into cannot drift apart:
- * TimeseriesPanel sizes the SVG from this, and SPARKLINE_BUCKETS is derived
- * from it below.
- */
+/** Row sparkline width in pixels. */
 export const SPARKLINE_WIDTH_PX = 128
 
-/**
- * How many buckets to reduce a series to for its row sparkline.
- *
- * Half the pixel width, because the store keeps each bucket's min and its max
- * -- two points per bucket, so the row receives about one point per pixel.
- *
- * A third resolution, and deliberately neither of the other two. The row used
- * to be handed the charting points: up to METRIC_BUCKET_TARGET * 4 of them, a
- * budget sized for a chart hundreds of pixels wide, drawn into this box at
- * roughly fifteen points per pixel, for every series in the panel.
- */
+/** Sparkline buckets, each contributing minimum and maximum points. */
 export const SPARKLINE_BUCKETS = SPARKLINE_WIDTH_PX / 2
-
-// --- Types --------------------------------------------------------
 
 export type HistogramTab = 'heatmap' | 'quantiles' | 'histogram'
 
@@ -234,8 +173,7 @@ type HistogramAggregationResult = {
 }
 
 export interface MetricViewContext {
-  // -- Metric identity / shape --
-  readonly metric: MetricData | undefined
+  readonly metric: MetricViewData | undefined
   readonly metricType: MetricType
   readonly temporality: string
   readonly temporalityCode: number | null
@@ -244,14 +182,13 @@ export interface MetricViewContext {
   readonly isUnsafeTemporality: boolean
   readonly totalDatapointCount: number
 
-  // -- Selection / view state --
   readonly selectedDatapointID: string | null
   /** Where the current datapoint selection came from. Chart clicks
    *  drive the plot overlay only; detail-pane scroll/expand waits for
    *  unified routing. */
   readonly selectionSource: 'chart' | 'detail' | null
   readonly expandedDatapoints: SvelteSet<string>
-  /** Per-timeseries expansion (keyed by attributesKey). Used by the
+  /** Per-timeseries expansion (keyed by seriesRef). Used by the
    * TimeseriesPanel to reveal an inline datapoints table under a
    * row. Independent of expandedDatapoints (which keys per-datapoint
    * exemplar expansion within SeriesDatapointList). */
@@ -260,11 +197,7 @@ export interface MetricViewContext {
   readonly histogramScope: HistogramScope
   readonly selectedDatapoint: DataPoint | undefined
 
-  // -- Gauge/Sum chart wiring --
-  /** Series keys the metric carries, in store order. Deliberately keys rather
-   *  than projected points: the only question asked of it is whether the metric
-   *  has any scalar series at all, and projecting every one of them -- checked
-   *  or not -- would be a lot of work for a boolean. */
+  /** Series keys in store order, without chart-point projection. */
   readonly gaugeSumSeriesKeys: readonly string[]
   readonly gaugeSumLegendTimeseries: LegendTimeseries[]
   /** Exact timestamp of the displayed selected point. Raw views use the source
@@ -275,7 +208,6 @@ export interface MetricViewContext {
    *  selection dot in the right series's color. */
   readonly selectedSeriesKey: string | null
 
-  // -- Sum-view wiring (Sum metrics only; Gauge ignores these) --
   /** Current view selection: 'raw' | 'sum' | 'avg' | 'rate'. */
   readonly aggregationView: AggregationView
   /** Which view options the dropdown should offer (varies by metric
@@ -307,35 +239,13 @@ export interface MetricViewContext {
    * series' output points. Only populated in raw mode. */
   readonly sumResetIndicesByKey: ResetIndicesByKey
 
-  // -- Histogram chart wiring --
   readonly histogramLegendTimeseries: LegendTimeseries[]
   readonly histogramTimeseriesCount: number
-  /** The series the user has checked in the legend. One set for every metric
-   *  shape -- it was gaugeSumVisible and histogramVisible, split so a stale
-   *  selection in the inactive box could not leak into the aggregate fetch;
-   *  with a single box there is no inactive box to go stale. Shapes that have
-   *  no legend filter never seed it: ask hasSeriesFilter before reading an
-   *  empty set as "the user unchecked everything". */
+  /** Series checked in the legend. Empty means none for filterable metrics. */
   readonly visibleSeries: SvelteSet<string>
-  /**
-   * The datapoints a series actually carries, as sent, or undefined until they
-   * have been fetched.
-   *
-   * Separate from `metric.timeseries[].datapoints`, which for a reduced
-   * histogram are the store's merged buckets. The chart is free to draw a
-   * reduction; the list is not free to show one, because the list is the answer
-   * to "what did my service send". Fetched per series on expansion rather than
-   * with the metric, since it is the one place that needs every row.
-   */
-  /**
-   * Reset and seed this metric's view state, synchronously.
-   *
-   * Called by the page in the same statement that assigns the metric, so the
-   * visible set, colours and sub-view are in place before anything renders.
-   * As an effect this ran after the first render, so the chart built once for
-   * the outgoing metric's state and again for the incoming one.
-   */
-  seedForMetric(metric: MetricData | undefined): void
+  /** Resets and seeds view state before the metric renders. */
+  seedForMetric(metric: MetricViewData | undefined): void
+  /** Received series datapoints, or undefined until fetched. */
   seriesDatapoints(seriesKey: string): DataPoint[] | undefined
   readonly heatmapBucketSeries: HistogramSlicePoint[] | null
   readonly bucketSeriesError: BucketSeriesError | null
@@ -345,20 +255,7 @@ export interface MetricViewContext {
   readonly histogramChartError: BucketSeriesError | null
   readonly activeHistogramDp:
     HistogramDataPoint | ExponentialHistogramDataPoint | undefined
-  /**
-   * The selected column's exact bounds in nanoseconds, for the page to fetch.
-   *
-   * Two primitives rather than one object, so that a recomputation which lands
-   * on the same column does not look like a change. The heatmap array gets a
-   * new identity on every aggregate response -- a legend toggle is enough -- and
-   * an object literal would take the fetch with it, blanking the panel and
-   * asking again for a column that never moved.
-   *
-   * End is inclusive and one nanosecond short of the next column's start: the
-   * store filters `timestamp >= start and timestamp <= end` while it cuts
-   * buckets half-open, so passing the next boundary pulls that column's first
-   * reading in too and counts it in both.
-   */
+  /** Selected column bounds. End is one nanosecond before the next column. */
   readonly heatmapColumnStartNs: bigint | null
   readonly heatmapColumnEndNs: bigint | null
   /** Quantile line key (e.g. `"0.95"`) when selection came from a quantile chart point click. */
@@ -369,15 +266,14 @@ export interface MetricViewContext {
   readonly quantileColorByKey: TimeseriesColorByKey
   readonly activeQuantileOverlays: SvelteSet<string>
 
-  // -- Detail view wiring --
-  readonly filteredTimeseries: MetricData['timeseries']
+  readonly filteredTimeseries: MetricViewData['timeseries']
   /** Checked timeseries → colour from the stem-rotated pool. Unchecked rows
    *  have no entry; their checkbox uses neutral. */
   readonly timeseriesColorByKey: TimeseriesColorByKey
   /** Stem-rotated 10-colour pool (`pool[0]` = metric-type stem). */
   readonly timeseriesChartColors: string[]
   readonly legendFilterActive: boolean
-  /** Sparkline points per Series tab row, keyed by `attributesKey`, reduced by
+  /** Sparkline points per Series tab row, keyed by `seriesRef`, reduced by
    *  the store to the row's own width. Reflects the current AggregationView
    *  (the rate buckets in rate view, the sparkline reduction otherwise).
    *  Covers every candidate series, not just visible ones -- an unchecked row
@@ -391,7 +287,6 @@ export interface MetricViewContext {
   /** Which stat badges TimeseriesPanel should render for this metric/view. */
   readonly availableSeriesStatBadges: readonly SeriesStat[]
 
-  // -- Methods --
   /** Toggle per-timeseries expansion (TimeseriesPanel chevron). */
   toggleTimeseriesExpanded(key: string): void
   setActiveHistogramTab(tab: HistogramTab): void
@@ -425,12 +320,10 @@ export interface MetricViewContext {
   setActiveQuantileOverlay(quantileKey: string): void
 }
 
-// --- Factory ------------------------------------------------------
-
 /**
  * Turn the store's aggregate buckets into the slice shape the heatmap draws.
  *
- * A rename, not a computation: every number is already merged. The store owns
+ * Every number is already merged. The store owns
  * scale alignment, zero-threshold folding and the vector sums, so this only
  * maps field names and widens the counts to numbers.
  */
@@ -447,15 +340,12 @@ export function aggregateToSlices(
       min: b.min,
       max: b.max,
     }
-    // Explicit bounds or exponential, never both. Reading only the exponential
-    // fields left every explicit-bounds histogram with empty arrays and an
-    // empty chart, while its totals and quantiles were right -- which is why it
-    // looked like a rendering problem rather than a missing branch.
+    // Explicit and exponential bucket fields are mutually exclusive.
     if (b.explicitBounds !== undefined || b.bucketCounts !== undefined) {
       return {
         kind: 'histogram' as const,
         timestamp: BigInt(b.timestamp),
-        attributesKey: '',
+        seriesRef: '',
         bounds: b.explicitBounds ?? [],
         counts: b.bucketCounts ?? [],
         totals,
@@ -465,7 +355,7 @@ export function aggregateToSlices(
     return {
       kind: 'expHistogram' as const,
       timestamp: BigInt(b.timestamp),
-      attributesKey: '',
+      seriesRef: '',
       scale: b.scale ?? 0,
       zeroThreshold: b.zeroThreshold ?? 0,
       zeroCount: b.zeroCount ?? 0,
@@ -480,44 +370,20 @@ export function aggregateToSlices(
 }
 
 export function createMetricViewContext(
-  getMetric: () => MetricData | undefined,
-  /**
-   * The store's cross-series aggregate for the current legend selection.
-   *
-   * A getter rather than something fetched here: this context is a derivation
-   * layer over a metric and owes its predictability to not doing IO. The page
-   * owns the fetch, this owns what the numbers mean.
-   */
+  getMetric: () => MetricViewData | undefined,
+  /** Store-computed aggregate for the current legend selection. */
   getAggregate: () => AggregateBucket[] | null = () => null,
   /** The same merge over a single bucket spanning the window. */
   getAggregateSummary: () => AggregateBucket | null = () => null,
-  /**
-   * The store's cross-series fold for a scalar metric: the checked pool and the
-   * full pool, on the same bucket grid the per-series views use.
-   *
-   * A getter for the same reason the histogram aggregate is one -- it depends
-   * on the legend selection, so the page refetches it while this layer only
-   * decides what the numbers mean.
-   */
+  /** Store-computed scalar folds for checked and full series pools. */
   getScalarAggregate: () => ScalarAggregate | null = () => null,
-  /** Unreduced datapoints for one series, once the page has fetched them. */
+  /** Received datapoints for one series, once fetched. */
   getSeriesDatapoints: (seriesKey: string) => DataPoint[] | undefined = () =>
     undefined,
-  /**
-   * Each series merged over the selected heatmap column's time range, once the
-   * page has fetched it.
-   *
-   * A separate fetch because the column and the per-series lines are drawn at
-   * different resolutions and neither can be pinned to the other -- the heatmap
-   * wants a column per few pixels, the quantile lines want enough points not to
-   * step. Reading the per-series bucket that starts where the column starts
-   * looks right and is not: a column spans several of them.
-   */
-  getColumnDistribution: () => MetricData | undefined = () => undefined
+  /** Per-series merges over the selected heatmap column, once fetched. */
+  getColumnDistribution: () => MetricViewData | undefined = () => undefined
 ): MetricViewContext {
-  // The ONE per-metric mutable cell. Reset by the effect below when
-  // the metric identity changes; otherwise written only by methods
-  // on this context.
+  // The only mutable per-metric state cell.
   const view = $state<MetricViewState>({
     selectedDatapointID: null,
     // Explicitly chosen series, independent of any datapoint selection.
@@ -531,11 +397,6 @@ export function createMetricViewContext(
     selectedQuantileKey: null,
     visibleSeries: new SvelteSet<string>(),
     timeseriesColorByKey: new Map<string, string>(),
-    // Aggregation-view state. `aggregationView` defaults to 'raw' (Gauge metrics never
-    // touch this); the per-metric reset effect re-derives the smart
-    // default from (temporality, isMonotonic) when the user navigates
-    // between metrics. When histograms grow their own overlays we'll add
-    // histogram-specific state next to this, not generalize prematurely.
     aggregationView: 'raw',
     showAllSeriesAggregate: false,
     showSelectionStatOverlays: true,
@@ -544,31 +405,12 @@ export function createMetricViewContext(
     ]),
   })
 
-  // --- URL <-> metric sub-view sync ---------------------------------
-  //
-  // The selected metric lives in the path (`/metrics/<id>`, owned by
-  // MetricsPage); these four item-scoped query params carry the sub-view so a
-  // shared snapshot link and the browser back/forward buttons restore it:
-  //   agg=<aggregationView>   htab=<activeHistogramTab>
-  //   hscope=<histogramScope> dp=<selectedDatapointID>
-  // Tab/datapoint picks push a history entry (navigational); aggregation/scope
-  // adjustments replace (silent). The heatmap/quantile bucket selection stays
-  // transient (not a stable datapoint id) and is out of the URL this iteration.
-  //
-  // Reconciliation mirrors time-context's snapshot pattern: the view and the
-  // URL legitimately disagree when the aggregation is a smart default or a
-  // localStorage restore (those are never written to the URL), so the router
-  // subscription compares the URL against the last sub-view we wrote/applied
-  // -- not against the live view. Only a mismatch there is an external change
-  // (back/forward, shared link, another module stripping our params).
+  // The route stores stable sub-view choices; heatmap column selection is transient.
+  // Compare route changes with this snapshot because defaults need not be in the URL.
 
-  // The metric sub-view currently frozen in the URL. Null until the
-  // per-metric effect first applies the URL.
   let urlMetricViewSnapshot: MetricViewQuery | null = null
 
-  // What seeding resolved the aggregation to for the current metric
-  // (persisted choice, else the smart default). This is the state a URL with
-  // no `agg` was showing, so it is what an absent param restores.
+  // An absent `agg` restores the seeded aggregation.
   let seededAggregationView: AggregationView = 'raw'
 
   type PendingUrlDatapoint = { id: string; seriesKey: string }
@@ -606,9 +448,7 @@ export function createMetricViewContext(
     )
   }
 
-  /** Parse the current URL, admitting an unknown datapoint only while its
-   * validated series has not loaded. Known datapoints must belong to the URL's
-   * series; legacy datapoint-only links remain valid. */
+  /** Parse the route while allowing a datapoint whose named series is loading. */
   function parseMetricUrl(): ParsedMetricUrl {
     const routeQuery = readRoute().query
     const parsed = parseMetricViewQuery(routeQuery, metricParseContext())
@@ -665,25 +505,14 @@ export function createMetricViewContext(
     }
     return {
       kind: 'timeseries',
-      // 'raw' is written out like any other value. Omitting it made "the user
-      // chose raw" and "nobody ever wrote an aggregation" the same URL, and
-      // nothing downstream could tell them apart (#235).
+      // Write raw explicitly so it differs from an absent aggregation choice.
       agg: view.aggregationView,
       dp: datapointID,
       series: selectedSeriesKey,
     }
   }
 
-  /**
-   * Applies the URL's metric sub-view to the view state.
-   *
-   * An absent `agg` (`q.agg` is pre-validated: null when missing or invalid)
-   * restores what seeding resolved for this metric, because that is the state
-   * the URL was showing before anything wrote an aggregation to it. It used to
-   * mean 'raw', which was only ever right by accident: every write now spells
-   * the aggregation out, so a param-free URL is one the app never wrote, and
-   * going back to it returns to the metric's default rather than to raw (#235).
-   */
+  /** Applies the validated route sub-view; absent `agg` restores the seeded value. */
   function applyMetricUrlToView(parsed = parseMetricUrl()): void {
     const q = parsed.query
     urlMetricViewSnapshot = q
@@ -755,17 +584,12 @@ export function createMetricViewContext(
     setMetricViewQuery(q, mode)
   }
 
-  // -- Pure derivations of `metric` --
-  // From the stream row, which carries it whether or not any datapoint came
-  // back. Reading it off the first series' first datapoint was a fallback for a
-  // response shape that predates the field, and it would answer 'Empty' for a
-  // metric whose datapoints were narrowed away -- which now happens by design.
   const metricType = $derived.by(
     (): MetricType => getMetric()?.metricType ?? 'Empty'
   )
 
   function* allDatapoints(
-    m: MetricData | undefined
+    m: MetricViewData | undefined
   ): IterableIterator<DataPoint> {
     if (!m) return
     for (const ts of m.timeseries) {
@@ -784,11 +608,7 @@ export function createMetricViewContext(
     }
   }
 
-  /** Cached selection lookup over reduced chart rows plus fetched raw rows.
-   * Rebuilt only when either source changes; every selection, URL, and pruning
-   * check after that is O(1), even for a raw series with hundreds of thousands
-   * of datapoints. Raw rows are indexed last so the detail source wins if the
-   * reduced response retained the same id. */
+  /** Selection index over chart rows and fetched received rows. Received rows win. */
   const selectableDatapointIndex = $derived.by(() => {
     const datapointByID = new Map<string, DataPoint>()
     const seriesKeyByDatapointID = new Map<string, string>()
@@ -799,7 +619,7 @@ export function createMetricViewContext(
 
     if (m) {
       for (const ts of m.timeseries) {
-        const seriesKey = ts.attributesKey
+        const seriesKey = ts.seriesRef
         seriesKeys.add(seriesKey)
 
         for (const datapoint of ts.datapoints) {
@@ -867,80 +687,37 @@ export function createMetricViewContext(
     return temporalityCode !== 1 && temporalityCode !== 2
   })
 
-  // What the window holds, which is what the reader is asking. Summing the
-  // datapoints that arrived answered "how much did I receive": narrowing ships
-  // them only for the series being drawn, and the reduction thins those, so on
-  // a 22-series Gauge the header read 5,908 of 19,319.
+  // Use the store's window count because the response may narrow or reduce datapoints.
   const totalDatapointCount = $derived(getMetric()?.datapointCount ?? 0)
 
-  // -- Gauge/Sum chart + legend --
-
-  /**
-   * The series keys, without projecting any points.
-   *
-   * Cheap on purpose, and separate from gaugeSumGroups for that reason: the
-   * per-metric reset effect needs the keys in order to seed the visible set and
-   * the colours, and it must not have to build the chart to get them.
-   */
+  /** Series keys used to seed visibility without projecting chart points. */
   const gaugeSumKeys = $derived.by((): string[] => {
     const m = getMetric()
     if (!m || (metricType !== 'Gauge' && metricType !== 'Sum')) return []
-    return m.timeseries.map(ts => ts.attributesKey)
+    return m.timeseries.map(ts => ts.seriesRef)
   })
 
-  /**
-   * Chart points per series, built once the metric's view state has been seeded.
-   *
-   * The gate is what stops every selection drawing the chart twice. Assigning
-   * selectedMetric invalidates this derivation, so the chart rendered
-   * immediately -- with the *previous* metric's visible set and colours -- and
-   * then the per-metric reset effect ran, wrote visibleSeries, the aggregation
-   * view and the colour assignments, and the whole pipeline ran again. Both
-   * passes projected every datapoint into a Date and rebuilt every path.
-   *
-   * Measured on a 22-series Gauge: 46 path writes for 23 lines, 63,115 Date
-   * constructions for ~23,600 datapoints, and two blocking tasks of 1,246 ms
-   * each -- identical, because it was the same work twice.
-   *
-   * Waiting for the seed costs one cheap empty render and saves an expensive
-   * wasted one. The output of that first pass was never seen: it was replaced in
-   * the same beat by the second.
-   */
+  /** Scalar series metadata and on-demand chart-point projection. */
   const gaugeSumGroups = $derived.by(() => {
     const m = getMetric()
     const scalar = metricType === 'Gauge' || metricType === 'Sum'
     const source = m && scalar ? m.timeseries : []
 
-    // Resolved once for the whole metric: which resource attributes tell the
-    // series apart is a question about the set, not about any one of them.
     const labelByKey = seriesLabelsByKey(source)
-    const labelFor = (ts: MetricTimeseries) =>
-      labelByKey.get(ts.attributesKey) ?? ts.attributesKey
+    const labelFor = (ts: MetricSeriesViewData) =>
+      labelByKey.get(ts.seriesRef) ?? ts.seriesRef
 
     return {
-      /** The unprojected series, for questions answerable from datapoint
-       *  counts and timestamps without building chart points. */
       timeseries: source,
-      keys: source.map(ts => ts.attributesKey),
-      /** Key and label only -- what the store's own per-bucket views need,
-       *  since those are keyed by series and carry their own points. */
+      keys: source.map(ts => ts.seriesRef),
       labels: source.map(ts => ({
-        key: ts.attributesKey,
+        key: ts.seriesRef,
         label: labelFor(ts),
       })),
-      /**
-       * The visible series as chart points, in the order the store sent them --
-       * the legend assigns colour positionally, so a projected list must not
-       * reorder it.
-       *
-       * No client-side thinning: the store's M4 election is the reduction, and
-       * it is sized so its output is what the chart draws. Nor any memo: the
-       * store now ships datapoints only for the series being drawn, so the
-       * series this skips are empty anyway.
-       */
+      /** Project visible series in store order without further thinning. */
       projectVisible: (visible: { has: (key: string) => boolean }) =>
         timeseriesToChartTimeseries(
-          source.filter(ts => visible.has(ts.attributesKey)),
+          source.filter(ts => visible.has(ts.seriesRef)),
           labelFor
         ).chartTimeseries,
     }
@@ -951,31 +728,16 @@ export function createMetricViewContext(
     if (!m) return []
     const distinguishing = distinguishingResourceAttributes(m.timeseries)
     return m.timeseries.map(ts => ({
-      key: ts.attributesKey,
+      key: ts.seriesRef,
       attributes: [
         ...ts.attributes,
-        ...(distinguishing.get(ts.attributesKey) ?? []),
+        ...(distinguishing.get(ts.seriesRef) ?? []),
       ],
     }))
   })
 
-  // -- Sum view transformations --
-  //
-  // Two modes:
-  //   - Raw (aggregationView === 'raw'): per-series lines, visibility-filtered.
-  //     Same as before; the chart gets N lines for the checked series.
-  //   - Aggregated (sum/avg/rate): up to 2 cross-timeseries aggregate
-  //     lines (Selected, All), folded by the store. Collapse rules:
-  //     selected empty → one "All" line; selected covers all → one
-  //     "Total" line; otherwise 2.
-
   /**
    * The store's per-bucket answer for one view, as chart points.
-   *
-   * A projection of the `views` the response carries -- no bucketing, no
-   * differencing, no reset detection. All three used to happen here, over chart
-   * points that had already been through the M4 election, on a grid derived
-   * from each series' own first and last point.
    *
    * An empty bucket reads differently per view, which is why the store sends
    * null rather than zero. Sum and Rate mean "nothing happened in this window",
@@ -1016,13 +778,7 @@ export function createMetricViewContext(
     return out
   }
 
-  /**
-   * The store's sparkline reduction as chart points.
-   *
-   * A projection and nothing more -- the reduction is min and max per bucket,
-   * done in SQL. Each point keeps the timestamp its sample actually occurred
-   * at rather than its bucket's start, so a spike leans the way it happened.
-   */
+  /** Projects store-reduced sparkline samples at their received timestamps. */
   function sparklinePoints(points: SparklinePoint[] | null): ChartPoint[] {
     if (!points) return []
     return points.map(p => ({
@@ -1041,7 +797,7 @@ export function createMetricViewContext(
     const m = getMetric()
     const resets: ResetIndicesByKey = new Map()
     if (!m) return { series: [], resets }
-    const byKey = new Map(m.timeseries.map(ts => [ts.attributesKey, ts.views]))
+    const byKey = new Map(m.timeseries.map(ts => [ts.seriesRef, ts.views]))
     const out: ChartTimeseries[] = []
     for (const s of series) {
       const views = byKey.get(s.key) ?? null
@@ -1056,82 +812,37 @@ export function createMetricViewContext(
     return { series: out, resets }
   }
 
-  /** Per-series lines for the visibility-filtered set.
-   *
-   *  - In Raw / Sum / Avg views: pass through unchanged. The raw
-   *    cumulative climb (or untouched gauge sample) is what the user
-   *    wants alongside the cross-series aggregate.
-   *  - In Rate view: convert each visible series into its own
-   *    per-series rate (Prometheus's `rate()` for one series).
-   *    Otherwise the cumulative raw lines dwarf the aggregate-rate
-   *    lines and the rate looks flat. Per-series rate keeps every
-   *    line in the same units (events/sec) so the y-axis fits
-   *    naturally and you can see *which* series is contributing to
-   *    the aggregate rate. Bucket count is shared with the
-   *    aggregate so step boundaries line up. */
+  /** Visible raw series, or store-computed per-series rates in Rate view. */
   const rawTransformed = $derived.by((): TransformedSeries => {
     if (gaugeSumGroups.keys.length === 0)
       return {
         series: [],
         resets: new Map<string, number[]>(),
       }
-    // Rate draws the store's per-series buckets, which are keyed by series and
-    // carry their own points, so this branch projects nothing: only the key and
-    // label travel.
     if (view.aggregationView === 'rate') {
       return seriesFromViews(
         gaugeSumGroups.labels.filter(s => view.visibleSeries.has(s.key)),
         'rate'
       )
     }
-    // Raw / Sum / Avg all draw the series as it was sampled: Sum and Avg are
-    // cross-series aggregations, and neither means anything applied to one
-    // series.
+    // Sum and Average are cross-series views; per-series lines stay raw.
     return {
       series: gaugeSumGroups.projectVisible(view.visibleSeries),
       resets: new Map<string, number[]>(),
     }
   })
 
-  /** Sparkline points for each Series tab row (`attributesKey`).
-   *
-   *  Runs over EVERY candidate series, not just the visible ones, so an
-   *  unchecked row still gets a shape: the sparkline is the affordance that
-   *  tells the reader which row is worth checking, so withholding it from the
-   *  rows they have not chosen yet defeats it.
-   *
-   *  Both branches are server-reduced and bounded by the row's own width, which
-   *  is a different budget from the chart's: CHART_POINTS_PER_SERIES into a
-   *  128px box is roughly fifteen points per pixel.
-   *
-   *  Source follows the current aggregationView:
-   *    - 'rate'                  → the store's rate buckets, the same numbers
-   *                                the main chart's per-series rate draws.
-   *    - 'raw' / 'sum' / 'avg'   → the store's sparkline reduction: min and max
-   *                                per bucket, so a spike survives at this size
-   *                                where an average would flatten it. Sum/Avg
-   *                                are cross-series aggregations that don't
-   *                                apply per row, so a row's own line stays in
-   *                                raw units.
-   *
-   *  Histogram metrics return an empty map — TimeseriesPanel renders
-   *  a placeholder slot for histogram rows until per-series sparkbar
-   *  data is wired up. */
+  /** Store-reduced row sparklines for every scalar series. Rate view uses rate buckets. */
   const sparklinePointsByKey = $derived.by(
     (): ReadonlyMap<string, readonly ChartPoint[]> => {
       if (isHistogramKind) return new Map()
-      // Unsafe temporality means we can't tell whether the values
-      // are running totals or per-interval counts -- the same numbers
-      // mean two very different lines depending on which it is. The
-      // main chart blanks itself + shows the temporality callout
-      // for the same reason; row projections should follow that lead
-      // rather than guessing.
+      // Unsafe temporality cannot distinguish running totals from interval counts.
       if (isUnsafeTemporality) return new Map()
       const out = new Map<string, readonly ChartPoint[]>()
       const rate = view.aggregationView === 'rate'
       for (const ts of getMetric()?.timeseries ?? []) {
         out.set(
-          ts.attributesKey,
+          ts.seriesRef,
           rate ? viewPoints(ts.views, 'rate') : sparklinePoints(ts.sparkline)
         )
       }
@@ -1143,24 +854,12 @@ export function createMetricViewContext(
     const out = new Map<string, SeriesStats>()
     if (isHistogramKind || isUnsafeTemporality) return out
 
-    // Raw, Sum and Avg all leave a row's own line in raw units -- Sum and Avg
-    // are cross-series aggregations, and neither means anything applied to one
-    // series -- so all three read the store's stats. Those are computed over
-    // every datapoint in the window rather than the reduced ones the client
-    // holds, which is the only way to get them right: an avg taken over
-    // reduced points is the mean of a sample, and a total is short by the
-    // reduction factor. `total` is offered as a badge for Sum + Delta + raw.
-    //
-    // Rate is the exception, and for a reason rather than by omission: a rate
-    // row is a transform of the series, not the series in different units, so
-    // its stats have to describe the transform. The store computes them over
-    // the drawn rate line -- gap zeros included -- so the badge and the shape
-    // above it come from one expression of the drawing rules.
+    // Raw, Sum and Average use whole-window source stats; Rate uses rate-line stats.
     if (view.aggregationView === 'rate') {
       for (const ts of getMetric()?.timeseries ?? []) {
         const rs = ts.rateStats
         if (!rs) continue
-        out.set(ts.attributesKey, { min: rs.min, max: rs.max, avg: rs.avg })
+        out.set(ts.seriesRef, { min: rs.min, max: rs.max, avg: rs.avg })
       }
       return out
     }
@@ -1168,7 +867,7 @@ export function createMetricViewContext(
     for (const ts of getMetric()?.timeseries ?? []) {
       const st = ts.stats
       if (!st) continue
-      out.set(ts.attributesKey, {
+      out.set(ts.seriesRef, {
         min: st.min,
         max: st.max,
         avg: st.avg,
@@ -1187,17 +886,7 @@ export function createMetricViewContext(
     })
   })
 
-  /** Aggregated mode: Selected + All cross-timeseries lines, as the store
-   *  folded them, in their display order.
-   *
-   *  The collapse rules stay here because they are labelling, not arithmetic:
-   *  nothing checked draws All by itself; everything checked makes Selected and
-   *  All the same line, which is drawn once as Total; otherwise both.
-   *
-   *  The pools themselves come off the wire, folded over every datapoint on the
-   *  same absolute grid the per-series views use -- so the aggregate and the
-   *  lines beneath it share an x-axis by construction rather than by both
-   *  guessing the same bucket count. */
+  /** Store-folded Selected and All lines. Equal pools render once as Total. */
   const aggregatedTransformed = $derived.by((): AggregateResult => {
     const pools = getScalarAggregate()
     if (!pools) return { lines: [], presentKeys: [] }
@@ -1208,8 +897,7 @@ export function createMetricViewContext(
 
     const checkedCount = view.visibleSeries.size
     const total = gaugeSumGroups.keys.length
-    // Selected covering everything means the two lines are identical; drawing
-    // both would just stack them.
+    // Empty selection shows All; full selection shows the same pool as Total.
     if (checkedCount === 0 || checkedCount === total) {
       const key = checkedCount === 0 ? AGG_KEY_ALL : AGG_KEY_TOTAL
       const label = checkedCount === 0 ? 'All' : 'Total'
@@ -1235,11 +923,7 @@ export function createMetricViewContext(
     return { lines, presentKeys }
   })
 
-  /** Which aggregate line keys are present (for legend + color slots).
-   *  Suppressed when N=1 because the "All series" aggregate would just
-   *  be a duplicate of the single raw line. With 0–1 checked, omit
-   *  Selected — only All (or Total when every series is checked).
-   *  All is omitted unless the user has toggled it on. */
+  /** Aggregate legend keys after duplicate-line and visibility rules. */
   const aggregatePresentKeys = $derived.by((): AggregateLineKey[] => {
     if (view.aggregationView === 'raw') return []
     if (gaugeSumGroups.keys.length < 2) return []
@@ -1256,15 +940,12 @@ export function createMetricViewContext(
   /** Show the optional all-series aggregate toggle in the chart control bar. */
   const showAllSeriesAggregateToggleVisible = $derived.by((): boolean => {
     if (view.aggregationView === 'raw') return false
-    // Keys alone answer this -- it is a count of checkboxes, not of points.
     const keys = gaugeSumGroups.keys
     if (keys.length < 2) return false
     let selectedCount = 0
     for (const key of keys) {
       if (view.visibleSeries.has(key)) selectedCount++
     }
-    // All series checked → aggregate collapses to Total; nothing extra
-    // to toggle.
     return selectedCount !== keys.length
   })
 
@@ -1282,8 +963,7 @@ export function createMetricViewContext(
     })
   })
 
-  /** The effective store window. Null endpoints mean an unbounded request found
-   * no data, so there is deliberately no chart domain to manufacture. */
+  /** Effective store window. Null endpoints mean there is no chart domain. */
   const chartDataTimeRange = $derived.by(
     (): { startMs: number; endMs: number } | undefined => {
       const effective = getMetric()?.window.effective
@@ -1301,22 +981,7 @@ export function createMetricViewContext(
     }
   )
 
-  /** Final post-view series the chart actually plots.
-   *
-   *  - Raw mode: per-series visibility-filtered lines.
-   *  - Aggregated + fewer than 2 timeseries on the metric: raw only
-   *    (aggregate menu options are hidden anyway).
-   *  - Aggregated + 0–1 checked: checked raw lines + All (or Total
-   *    when all are checked). No Selected aggregate — it duplicates
-   *    the lone raw line. Check a second series to add Selected.
-   *  - Aggregated + 2+ checked: raw lines + Selected; All only when
-   *    toggled on via showAllSeriesAggregate.
-   *
-   *  Raw lines are placed first so aggregates draw on top in the
-   *  chart's natural render order. When aggregates are present, raw
-   *  series are resampled onto the aggregate bucket-center grid so
-   *  bisect-x tooltips and highlight dots share one x axis instead of
-   *  flickering between scrape timestamps and bucket midpoints. */
+  /** Display series with raw lines first and aggregates aligned to their bucket grid. */
   const transformedGaugeSumChartTimeseries = $derived.by(
     (): ChartTimeseries[] => {
       if (view.aggregationView === 'raw') return rawTransformed.series
@@ -1339,7 +1004,7 @@ export function createMetricViewContext(
     }
   )
 
-  /** Reset markers — only relevant in raw mode. */
+  /** Reset markers are shown only in raw mode. */
   const sumResetIndicesByKey = $derived.by((): ResetIndicesByKey => {
     if (view.aggregationView !== 'raw') return new Map()
     return rawTransformed.resets
@@ -1358,7 +1023,6 @@ export function createMetricViewContext(
     )
   })
 
-  // -- Selection-derived values --
   const selectedDatapoint = $derived.by((): DataPoint | undefined => {
     const id = view.selectedDatapointID
     return id === null
@@ -1378,24 +1042,19 @@ export function createMetricViewContext(
     const owner =
       selectableDatapointIndex.seriesKeyByDatapointID.get(datapointID)
     const series = getMetric()?.timeseries.find(
-      candidate => candidate.attributesKey === owner
+      candidate => candidate.seriesRef === owner
     )
     return series
       ? (rateBucketStartForSourceDatapoint(series, datapointID) ?? null)
       : null
   })
 
-  /** Attributes key of the timeseries that owns `selectedDatapoint`, or
-   *  `null` when nothing is selected. The chart uses this to draw a
-   *  colored dot on the selection rule at the selected series's value,
-   *  and to flag which row in the mini-legend is "the one you picked"
-   *  vs. aggregates shown alongside for comparison. */
+  /** Series owning the selected datapoint, or the explicitly selected series. */
   const selectedSeriesKey = $derived.by((): string | null => {
     const m = getMetric()
     if (!m) return null
 
-    // A selected datapoint is the more specific answer and wins: it names both
-    // the series and the point within it.
+    // An exact datapoint selection takes precedence over a series selection.
     const id = view.selectedDatapointID
     if (id !== null) {
       const owner = selectableDatapointIndex.seriesKeyByDatapointID.get(id)
@@ -1407,7 +1066,7 @@ export function createMetricViewContext(
     // still there, and the user still lands on it.
     if (view.selectedSeriesKey !== null) {
       const known = m.timeseries.some(
-        ts => ts.attributesKey === view.selectedSeriesKey
+        ts => ts.seriesRef === view.selectedSeriesKey
       )
       if (known) return view.selectedSeriesKey
     }
@@ -1428,7 +1087,6 @@ export function createMetricViewContext(
       : undefined
   })
 
-  // -- Histogram chart wiring --
   const latestHistogramDp = $derived.by(() => {
     const m = getMetric()
     if (!m || !isHistogramKind) return undefined
@@ -1450,12 +1108,9 @@ export function createMetricViewContext(
     (): HistogramTimeseriesGroup[] => {
       const m = getMetric()
       if (!m || !isHistogramKind) return []
-      // The store's count over the window, not a walk of what arrived. A
-      // narrowed-out series ships no datapoints at all, so counting them
-      // labelled it "0" beside a sparkline visibly full of data -- reading as a
-      // series that had stopped rather than one this response did not carry.
+      // Use the store's window count because datapoints may be narrowed out.
       return m.timeseries.map(ts => ({
-        key: ts.attributesKey,
+        key: ts.seriesRef,
         attributes: ts.attributes,
         pointCount: ts.datapointCount,
       }))
@@ -1480,11 +1135,7 @@ export function createMetricViewContext(
       return { ...empty, error: err, aggregatedError: err }
     }
 
-    // Bounds that changed mid-window. The store refuses those merges and says
-    // how many, because the alternative -- a chart with holes in it -- reads as
-    // an exporter that stopped reporting rather than one that was
-    // reconfigured. Reported only when nothing survived, so a window that
-    // merged most of its buckets still draws them.
+    // Report incompatible bounds only when no merged buckets survived.
     const mismatch = m.boundsMismatch
     if (mismatch && m.timeseries.every(ts => ts.datapoints.length === 0)) {
       const err = histogramAggregationErrorToBucketSeriesError({
@@ -1497,19 +1148,10 @@ export function createMetricViewContext(
       return { ...empty, error: err, aggregatedError: err }
     }
 
-    // One slice per store bucket. The store has already bucketed, merged and
-    // resolved temporality; re-doing any of that here was the 3s of blocked
-    // main thread on every histogram selection, and got Cumulative wrong.
+    // The store has already bucketed, merged and resolved temporality.
     const perAttribute = seriesBucketsToSlices(m.timeseries)
 
-    // The cross-series merge comes from the store, which aligned scales,
-    // folded the zero threshold and summed the vectors. Merging it again here
-    // would be the same arithmetic in a second language -- the duplication
-    // that produced #351, where the two implementations disagreed about where
-    // the zero region ended.
-    //
-    // Null while a fetch is in flight, or when nothing is selected. Both are
-    // "no columns to draw" rather than an error.
+    // Null means the aggregate is loading or no series is selected.
     const heatmapResult = aggregateToSlices(getAggregate())
     const summary = getAggregateSummary()
     const summaryResult = summary ? aggregateToSlices([summary])[0]! : null
@@ -1523,16 +1165,6 @@ export function createMetricViewContext(
     }
   })
 
-  // Badge counts the rows this series contributed to the window, from the same
-  // source as the inline expanded table in TimeseriesPanel and the Gauge/Sum
-  // branch above.
-  //
-  // For a reduced histogram those rows are the store's merged buckets, not raw
-  // datapoints -- the comment here claimed "raw" and went on claiming it after
-  // the merge moved into SQL, because both are `ts.datapoints` and neither the
-  // type nor the shape changed underneath it. MetricData.datapointCount is what
-  // holds the window's real total; on the reference capture the two read 3,094
-  // and 17,076.
   const histogramLegendTimeseries = $derived.by((): LegendTimeseries[] => {
     const m = getMetric()
     if (!m) return []
@@ -1556,7 +1188,7 @@ export function createMetricViewContext(
       if (!m || !summary || temporalityCode === null) return undefined
       return histogramSliceToChartDatapoint(
         summary,
-        `${m.id}:aggregated`,
+        `${m.metricRef}:aggregated`,
         temporality,
         temporalityCode
       )
@@ -1603,21 +1235,8 @@ export function createMetricViewContext(
   const heatmapColumnStartNs = $derived(view.selectedHistogramBucketStart)
 
   /**
-   * Where the selected column ends, exclusive.
-   *
-   * The next column's own start, not the selected start plus a width. Columns
-   * are cut in local time, so they are not all the same number of nanoseconds
-   * wide: a local day is 23, 24 or 25 hours across a DST transition. Taking a
-   * width -- the smallest gap, say -- and adding it would fetch 23 hours of a
-   * 25-hour column and silently lose the other two, which is the very defect
-   * this fetch exists to remove.
-   *
-   * The last column has no next one, so it borrows the preceding gap. That is
-   * an approximation only for a trailing column mid-transition, and it errs by
-   * ending early rather than reaching into a column that does not exist.
-   *
-   * A lone column has no gap to borrow at all and falls back to the window's
-   * end, which is what a single column spans by definition.
+   * Selected column end. Uses the next start because local-time columns vary
+   * across DST; the final column uses the preceding gap or the window end.
    */
   const heatmapColumnEndNs = $derived.by((): bigint | null => {
     const startNs = view.selectedHistogramBucketStart
@@ -1647,10 +1266,7 @@ export function createMetricViewContext(
       if (view.selectedHistogramBucketStart === null) return null
       const merged = heatmapBucketSeries
       if (!merged || merged.length === 0) return null
-      // Null until the column arrives, deliberately. The wide response is on
-      // hand and answering from it would fill the panel instantly with the
-      // wrong third of the column -- a fast answer to a question nobody asked.
-      // An empty panel for one round trip is the honest reading.
+      // Wait for the exact selected-column response.
       const column = getColumnDistribution()
       if (!column) return null
       const columnSlices = seriesBucketsToSlices(column.timeseries)
@@ -1659,9 +1275,7 @@ export function createMetricViewContext(
         columnSlices,
         merged,
         view.selectedHistogramBucketStart,
-        // Always the set: all-visible holds every key, none-visible is empty.
-        // Returning null for "all" gave one state two encodings and put the
-        // burden of telling empty from absent on every consumer.
+        // All-visible contains every key; none-visible is empty.
         view.visibleSeries
       )
     }
@@ -1696,13 +1310,7 @@ export function createMetricViewContext(
     return map
   })
 
-  // -- Detail-view wiring (legend filter coupling) --
-  //
-  // Whether this metric shape has a legend to filter with at all. Only
-  // Gauge/Sum and the two histogram kinds seed a selection; anything else has
-  // no filter, which is different from having an empty one. An empty selection
-  // means "the user unchecked everything" and hides all series -- so a shape
-  // that never seeds must be asked about separately, or it reads as that.
+  // An empty set means no visible series only for metric shapes with a legend.
   const hasSeriesFilter = $derived(
     metricType === 'Gauge' || metricType === 'Sum' || isHistogramKind
   )
@@ -1716,7 +1324,7 @@ export function createMetricViewContext(
     if (!m) return []
     const filter = visibleDpCanonicalKeys
     if (filter === null) return m.timeseries
-    return m.timeseries.filter(ts => filter.has(ts.attributesKey))
+    return m.timeseries.filter(ts => filter.has(ts.seriesRef))
   })
 
   const legendOrderKeys = $derived.by((): string[] => {
@@ -1751,8 +1359,7 @@ export function createMetricViewContext(
     assignedColorPool = [...pool]
   }
 
-  /** Seed assignments when visible keys exist but the map is empty (e.g.
-   *  telemetry arrived after the metric-reset effect ran with no keys). */
+  /** Ensure every visible series has a colour assignment. */
   function ensureColorAssignments(
     visible: ReadonlySet<string>,
     legendKeys: readonly string[]
@@ -1761,13 +1368,7 @@ export function createMetricViewContext(
       replaceColorAssignments(new Map())
       return
     }
-    // Important: we cannot short-circuit on `view.timeseriesColorByKey.size > 0`.
-    // On a metric switch, effect (2b) can fire before effect (1) has re-seeded
-    // the colour map, so the map is non-empty but full of the *previous*
-    // metric's keys. A size-only check would skip the reseed and leave the new
-    // metric's series rendering neutral (visible-but-uncoloured) until the
-    // next toggle. Only short-circuit when every currently-visible key already
-    // has a colour assignment.
+    // A non-empty map may still contain assignments for a different metric.
     let allAssigned = true
     for (const key of visible) {
       if (!view.timeseriesColorByKey.has(key)) {
@@ -1776,38 +1377,15 @@ export function createMetricViewContext(
       }
     }
     if (allAssigned) return
-    // The shape's own pool, not a fixed 22. seedColorAssignments indexes into
-    // it positionally, so the pool's size decides the hue -- and a histogram
-    // draws from a legend-sized palette everywhere else (timeseriesChartColors,
-    // and the toggle path when it grows one). Building a 22-slot palette here
-    // gave a histogram's series different colours depending on which branch of
-    // this same if/else ran, so a reconcile that added one series could restain
-    // the ones already on screen. The sibling branch above already passes
-    // timeseriesChartColors; this is the same pool for the same reason.
+    // Use the same shape-specific pool as every other assignment path.
     replaceColorAssignments(
       seedColorAssignments(timeseriesChartColors, visible, legendKeys)
     )
   }
 
-  /**
-   * Reset and seed every per-metric view choice, synchronously, for a metric
-   * that has just arrived.
-   *
-   * Called by the page in the same statement that assigns the metric, before
-   * anything renders. It used to be an $effect, which meant it ran *after* the
-   * first render: the chart built once with the outgoing metric's visible set
-   * and colours, this wrote the incoming metric's, and the chart built again.
-   * Both passes projected every datapoint and rebuilt every path. Measured on a
-   * 22-series Gauge: 46 path writes for 23 lines, 63,115 Date constructions for
-   * ~23,600 datapoints, and two identical 1,246 ms blocking tasks.
-   *
-   * Histogram visibility is seeded here too, from the metric's own series keys.
-   * It had its own effect waiting for those keys to "arrive", which is a
-   * distinction that only existed because this ran late -- the keys are in the
-   * metric the moment it does.
-   */
-  function seedForMetric(m: MetricData | undefined) {
-    const streamID = m?.id
+  /** Reset and seed every per-metric choice synchronously before rendering. */
+  function seedForMetric(m: MetricViewData | undefined) {
+    const metricRef = m?.metricRef
 
     pendingUrlDatapoint = null
     rejectedUrlDatapoint = null
@@ -1820,13 +1398,9 @@ export function createMetricViewContext(
     view.activeHistogramTab = 'heatmap'
     view.histogramScope = 'window'
 
-    // Sum view + overlays reset per metric. Persisted choice wins when
-    // it's still allowed for this metric's current shape; otherwise we
-    // fall back to the smart default (cumulative Sum → Rate, else Raw).
-    // Gauge metrics never read aggregationView, so the value here is don't-care
-    // for them; the menu component checks metricType before rendering.
-    const persistedAggregationView = streamID
-      ? loadPersistedAggregationView(streamID, availableAggregationViewsList)
+    // Use an allowed persisted view, otherwise the metric's default.
+    const persistedAggregationView = metricRef
+      ? loadPersistedAggregationView(metricRef, availableAggregationViewsList)
       : null
     const defaultAggregation = defaultAggregationViewFor(
       metricType,
@@ -1834,10 +1408,7 @@ export function createMetricViewContext(
       isMonotonic,
       gaugeSumKeys.length
     )
-    // Clamped to what this metric actually offers. The persisted value is
-    // already validated against the same list; the default was not, so the two
-    // rules only had to disagree once to seed a view the user could neither see
-    // selected nor switch away from. 'raw' is in the list unconditionally.
+    // `raw` is always available when the computed default is not.
     seededAggregationView =
       persistedAggregationView ??
       (availableAggregationViewsList.includes(defaultAggregation)
@@ -1845,33 +1416,23 @@ export function createMetricViewContext(
         : 'raw')
     view.aggregationView = seededAggregationView
     view.showSelectionStatOverlays = true
-    view.showAllSeriesAggregate = streamID
-      ? loadPersistedShowAllSeriesAggregate(streamID)
+    view.showAllSeriesAggregate = metricRef
+      ? loadPersistedShowAllSeriesAggregate(metricRef)
       : false
     view.activeQuantileOverlays = new SvelteSet([
       DEFAULT_ACTIVE_HISTOGRAM_QUANTILE_KEY,
     ])
 
-    // One visible-series set, seeded by the metric's shape. The two-box
-    // version wrote gaugeSumVisible and histogramVisible back to back; with a
-    // single box that would be "last write wins", so the branch happens here,
-    // once, and exactly one seed is computed and written.
-    //
-    // The shapes keep their different defaults on purpose: a scalar legend
-    // seeds up to MAX_VISIBLE_TIMESERIES and stays capped there; a histogram
-    // seeds DEFAULT_VISIBLE_TIMESERIES with no cap, because its aggregate is
-    // merged from whatever is checked and a cap would silently change the
-    // merge. Read from the metric rather than isHistogramKind so this does not
-    // depend on a derived having settled.
+    // Scalars cap visible series; histogram selection remains uncapped.
     const histIsHistogram =
       m?.metricType === 'Histogram' || m?.metricType === 'ExponentialHistogram'
     if (histIsHistogram) {
-      const histKeys = m ? m.timeseries.map(ts => ts.attributesKey) : []
+      const histKeys = m ? m.timeseries.map(ts => ts.seriesRef) : []
       const histVisible = new SvelteSet(
-        streamID && histKeys.length > 0
+        metricRef && histKeys.length > 0
           ? resolveTimeseriesVisible(
               histKeys,
-              streamID,
+              metricRef,
               DEFAULT_VISIBLE_TIMESERIES,
               null
             )
@@ -1889,8 +1450,8 @@ export function createMetricViewContext(
     } else {
       const gsKeys = gaugeSumKeys
       const gsVisible = new SvelteSet(
-        streamID
-          ? resolveTimeseriesVisible(gsKeys, streamID)
+        metricRef
+          ? resolveTimeseriesVisible(gsKeys, metricRef)
           : gsKeys.slice(0, MAX_VISIBLE_TIMESERIES)
       )
       view.visibleSeries = gsVisible
@@ -1902,30 +1463,14 @@ export function createMetricViewContext(
       replaceColorAssignments(seedColorAssignments(pool, gsVisible, gsKeys))
     }
 
-    // URL > the per-metric defaults set above, so a shared deep link (or
-    // back/forward into this metric) restores the sub-view, validated against
-    // the metric that just loaded.
-    //
-    // No untrack needed any more: this is a plain call from the fetch, not a
-    // reactive scope, so reading the router query here cannot make a
-    // time-window write re-trigger the whole per-metric reset.
+    // A valid route sub-view overrides seeded defaults.
     applyMetricUrlToView()
   }
 
-  // -- Effects (the only mutating side-channels) --
-
-  // (1b) Re-apply the sub-view when the URL's metric params disagree with the
-  // last sub-view we wrote or applied (the snapshot) — i.e. browser
-  // back/forward, a shared link landing on the current metric, or another
-  // module stripping our params. Comparing against the snapshot (not the live
-  // view) keeps unrelated query writes (e.g. the time window) from clobbering
-  // a smart-default aggregation that was never mirrored to the URL, while our
-  // own writes are skipped as a no-op echo.
+  // Apply external route changes without echoing this context's writes.
   $effect(() => {
     const unsubscribe = subscribeToRoute(() => {
-      // subscribeToRoute invokes synchronously on registration. Keep those
-      // reads out of this effect so cache updates cannot masquerade as route
-      // changes by recreating the subscription.
+      // Registration invokes synchronously; keep callback reads untracked.
       untrack(() => {
         const parsed = parseMetricUrl()
         const fromUrl = parsed.query
@@ -1941,9 +1486,7 @@ export function createMetricViewContext(
     return unsubscribe
   })
 
-  // (2b) Same metric stream, new telemetry: prune attribute keys that have
-  // gone away and colour any that have appeared. Polling can add or drop series
-  // within a stream; seeding cannot see those, because it runs once per metric.
+  // Remap colours when the theme or shape-specific palette changes.
   $effect(() => {
     const nextPool = timeseriesChartColors
     if (
@@ -1964,26 +1507,16 @@ export function createMetricViewContext(
 
   $effect(() => {
     const m = getMetric()
-    const streamID = m?.id
-    if (!streamID) return
+    const metricRef = m?.metricRef
+    if (!metricRef) return
 
     if (metricType === 'Gauge' || metricType === 'Sum') {
       const keys = gaugeSumGroups.keys
       void keys.join('\0')
-      // Effect (1) may have run before gaugeSumGroups.keys settled (metric
-      // selection + data flow are not synchronous), leaving an empty
-      // visible set against non-empty keys. Re-resolve from persisted
-      // / defaults so the user doesn't have to reload to see a colour on
-      // a single-default-series chart.
-      // Reconcile only. The initial seed happens in seedForMetric, before this
-      // ever runs, so there is no "visible set is empty against non-empty keys"
-      // case left to repair -- that condition existed because seeding was an
-      // effect that could land after the keys did. Same for the URL: it is
-      // applied against the metric's own series, which are known at seed time.
       const next = reconcileTimeseriesVisible(
         view.visibleSeries,
         keys,
-        streamID
+        metricRef
       )
 
       if (!visibleKeyListsEqual(view.visibleSeries, next)) {
@@ -2005,7 +1538,7 @@ export function createMetricViewContext(
     const next = reconcileTimeseriesVisible(
       view.visibleSeries,
       keys,
-      streamID,
+      metricRef,
       null
     )
     if (!visibleKeyListsEqual(view.visibleSeries, next)) {
@@ -2019,9 +1552,7 @@ export function createMetricViewContext(
     }
   })
 
-  // Resolve a raw-only URL datapoint exactly once, after its named series has
-  // produced a loaded array. An empty/missing result rejects this URL attempt;
-  // later cache churn cannot resurrect it until navigation leaves and returns.
+  // Resolve a route datapoint once its named received series has loaded.
   $effect(() => {
     const pending = pendingUrlDatapoint
     if (!pending) return
@@ -2059,15 +1590,7 @@ export function createMetricViewContext(
     if (view.selectionSource !== 'chart') view.selectionSource = 'detail'
   })
 
-  // (2c) Auto-clear selection when its owning timeseries goes hidden.
-  //
-  // The datapoints panel scopes what's shown by the visible set, so a
-  // selectedDatapointID pointing at a hidden timeseries becomes an
-  // orphan: invisible in the list, but still wired up to chart markers,
-  // detail pane, etc. Snap it to null whenever its timeseries is no
-  // longer in the visible set. One set for all four metric kinds; the
-  // shapes that never seed it are excluded by hasSeriesFilter, not by
-  // consulting a different set.
+  // Clear an exact selection when its datapoint disappears or its series is hidden.
   $effect(() => {
     const id = view.selectedDatapointID
     if (id === null) return
@@ -2077,8 +1600,6 @@ export function createMetricViewContext(
 
     const owner = selectableDatapointIndex.seriesKeyByDatapointID.get(id)
     if (owner === undefined) {
-      // Stale id (data refresh dropped the datapoint). Clear so the
-      // detail pane doesn't render against ghost data.
       view.selectedDatapointID = null
       view.selectionSource = null
       return
@@ -2093,12 +1614,7 @@ export function createMetricViewContext(
     }
   })
 
-  // (3) Coerce the current AggregationView back to the smart default when it
-  // leaves the available set. Triggers on series-count changes (e.g.
-  // polling drops the metric from N=5 to N=1, hiding Sum/Avg) and on
-  // shape changes (rare, but defensible). Reads availableAggregationViewsList
-  // reactively; only writes when there's a real mismatch so we don't
-  // fight the user's choice.
+  // Replace an aggregation choice that the current metric no longer supports.
   $effect(() => {
     const allowed = availableAggregationViewsList
     if (allowed.includes(view.aggregationView)) return
@@ -2109,14 +1625,11 @@ export function createMetricViewContext(
       gaugeSumGroups.keys.length
     )
     view.aggregationView = next
-    // Persist the coerced value too: otherwise localStorage keeps the
-    // stale (now-invalid) choice and we re-coerce on every load until
-    // the user touches the menu.
-    const streamID = getMetric()?.id
-    if (streamID) savePersistedAggregationView(streamID, next)
+    // Persist the replacement so the invalid choice is not restored.
+    const metricRef = getMetric()?.metricRef
+    if (metricRef) savePersistedAggregationView(metricRef, next)
   })
 
-  // -- Methods --
   function toggleTimeseriesExpanded(key: string) {
     if (view.expandedTimeseries.has(key)) {
       view.expandedTimeseries.delete(key)
@@ -2138,16 +1651,15 @@ export function createMetricViewContext(
 
   function setAggregationView(next: AggregationView) {
     view.aggregationView = next
-    const streamID = getMetric()?.id
-    if (streamID) savePersistedAggregationView(streamID, next)
-    // localStorage still remembers it per metric.
+    const metricRef = getMetric()?.metricRef
+    if (metricRef) savePersistedAggregationView(metricRef, next)
     writeMetricUrl('replace')
   }
 
   function setShowAllSeriesAggregate(next: boolean) {
     view.showAllSeriesAggregate = next
-    const streamID = getMetric()?.id
-    if (streamID) savePersistedShowAllSeriesAggregate(streamID, next)
+    const metricRef = getMetric()?.metricRef
+    if (metricRef) savePersistedShowAllSeriesAggregate(metricRef, next)
   }
 
   function setActiveQuantileOverlay(quantileKey: string) {
@@ -2159,7 +1671,7 @@ export function createMetricViewContext(
   }
 
   function toggleTimeseriesVisible(key: string, checked: boolean) {
-    const streamID = getMetric()?.id
+    const metricRef = getMetric()?.metricRef
     let pool = timeseriesChartColors
     const assigned = new Map(view.timeseriesColorByKey)
     if (checked) {
@@ -2181,14 +1693,14 @@ export function createMetricViewContext(
     if (checked) next.add(key)
     else next.delete(key)
     view.visibleSeries = next
-    if (streamID) savePersistedTimeseriesVisible(streamID, next)
+    if (metricRef) savePersistedTimeseriesVisible(metricRef, next)
   }
 
   function clearAllTimeseriesVisible() {
     replaceColorAssignments(new Map())
-    const streamID = getMetric()?.id
+    const metricRef = getMetric()?.metricRef
     view.visibleSeries = new SvelteSet()
-    if (streamID) savePersistedTimeseriesVisible(streamID, view.visibleSeries)
+    if (metricRef) savePersistedTimeseriesVisible(metricRef, view.visibleSeries)
   }
 
   function onDatapointClick(dp: DataPoint) {
@@ -2235,7 +1747,7 @@ export function createMetricViewContext(
     if (isAggregateLineKey(seriesKey)) return
     const m = getMetric()
     if (!m) return
-    const ts = m.timeseries.find(t => t.attributesKey === seriesKey)
+    const ts = m.timeseries.find(t => t.seriesRef === seriesKey)
     if (!ts?.datapoints.some(datapoint => datapoint.id === datapointID)) return
 
     pendingUrlDatapoint = null

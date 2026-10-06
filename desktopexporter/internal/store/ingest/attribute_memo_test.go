@@ -85,11 +85,11 @@ func TestAttributeMemoSharesScopeFreeIDs(t *testing.T) {
 	attrs := mapOf(func(m pcommon.Map) { m.PutStr("http.method", "GET") })
 
 	_, spanIDs := AttributeSet(attrs, ScopeSpan)
-	_, logIDs := AttributeSet(attrs, ScopeLog)
+	_, logRefs := AttributeSet(attrs, ScopeLog)
 	_, spanAgain := AttributeSet(attrs, ScopeSpan)
 
 	require.Len(t, spanIDs, 1)
-	assert.Equal(t, spanIDs[0], logIDs[0],
+	assert.Equal(t, spanIDs[0], logRefs[0],
 		"scope is derived from the owner, so identical values share one row")
 	assert.Equal(t, spanIDs, spanAgain,
 		"and the warm read must return the same canonical answer")
@@ -130,9 +130,8 @@ func TestAttributeMemoConfirmsOnCollision(t *testing.T) {
 	assert.NotEqual(t, theirsIDs, ids, "pod=b's ids must never answer for pod=a")
 }
 
-// TestAttributeMemoHitsRepeatedSets is the case the change rests on: the
-// reference capture's 294,607 datapoints hold 89 distinct label sets, so all
-// but the first 89 derivations should be served from the memo.
+// TestAttributeMemoHitsRepeatedSets verifies that only the first occurrence of
+// each distinct label set requires derivation.
 func TestAttributeMemoHitsRepeatedSets(t *testing.T) {
 	ResetAttributeMemo()
 	t.Cleanup(ResetAttributeMemo)

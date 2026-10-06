@@ -6,11 +6,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGetTraceLogsSQLBindsTraceID(t *testing.T) {
+func TestGetTraceLogSummariesSQLBindsTraceID(t *testing.T) {
 	t.Parallel()
 	hostile := `00000000-0000-0000-0000-000000000099' or true --`
 
-	query, args, err := getTraceLogsSQL(hostile)
+	query, args, err := getTraceLogSummariesSQL(hostile)
 	require.NoError(t, err)
 	require.Equal(t, []any{hostile}, args)
 	require.NotContains(t, query, hostile)

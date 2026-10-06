@@ -40,7 +40,7 @@ func TestGetLogOTLP(t *testing.T) {
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return logs.Ingest(ctx, conn, received, s.FlushedIDs())
 	}))
-	primaryID := lookupLogID(t, s, ctx, "primary.event")
+	primaryID := lookupLogRef(t, s, ctx, "primary.event")
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return logs.GetLogOTLP(ctx, db, primaryID)
@@ -121,7 +121,7 @@ func TestValidateLogOTLPRejectsInvalidWireShapes(t *testing.T) {
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return logs.Ingest(ctx, conn, otlpLogFixture(), s.FlushedIDs())
 	}))
-	primaryID := lookupLogID(t, s, ctx, "primary.event")
+	primaryID := lookupLogRef(t, s, ctx, "primary.event")
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return logs.GetLogOTLP(ctx, db, primaryID)
 	})
@@ -145,7 +145,7 @@ func TestGetLogOTLPBoundLookupAndAbsentCorrelation(t *testing.T) {
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return logs.Ingest(ctx, conn, otlpLogFixture(), s.FlushedIDs())
 	}))
-	secondaryID := lookupLogID(t, s, ctx, "secondary.event")
+	secondaryID := lookupLogRef(t, s, ctx, "secondary.event")
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return logs.GetLogOTLP(ctx, db, secondaryID)
@@ -171,11 +171,11 @@ func TestGetLogOTLPBoundLookupAndAbsentCorrelation(t *testing.T) {
 
 func TestGetLogOTLPNotFound(t *testing.T) {
 	s, ctx := storetest.New(t)
-	for _, logID := range []string{"00000000-0000-0000-0000-000000000000", "not-a-log-id"} {
+	for _, logRef := range []string{"00000000-0000-0000-0000-000000000000", "not-a-log-id"} {
 		_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.GetLogOTLP(ctx, db, logID)
+			return logs.GetLogOTLP(ctx, db, logRef)
 		})
-		assert.ErrorIs(t, err, logs.ErrLogIDNotFound)
+		assert.ErrorIs(t, err, logs.ErrLogRefNotFound)
 	}
 }
 
@@ -184,7 +184,7 @@ func TestGetLogOTLPRejectsStoredSQLNull(t *testing.T) {
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return logs.Ingest(ctx, conn, otlpLogFixture(), s.FlushedIDs())
 	}))
-	primaryID := lookupLogID(t, s, ctx, "primary.event")
+	primaryID := lookupLogRef(t, s, ctx, "primary.event")
 
 	err := s.WithDBRead(func(db *sql.DB) error {
 		if _, err := db.ExecContext(ctx, `update logs set severity_text = null where id = ?::uuid`, primaryID); err != nil {
@@ -202,7 +202,7 @@ func TestGetLogOTLPRejectsDanglingAttribute(t *testing.T) {
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return logs.Ingest(ctx, conn, otlpLogFixture(), s.FlushedIDs())
 	}))
-	primaryID := lookupLogID(t, s, ctx, "primary.event")
+	primaryID := lookupLogRef(t, s, ctx, "primary.event")
 
 	err := s.WithDBRead(func(db *sql.DB) error {
 		if _, err := db.ExecContext(ctx, `
@@ -217,7 +217,7 @@ func TestGetLogOTLPRejectsDanglingAttribute(t *testing.T) {
 	assert.ErrorContains(t, err, "stored OTel value is SQL NULL")
 }
 
-func lookupLogID(t testing.TB, s *store.Store, ctx context.Context, eventName string) string {
+func lookupLogRef(t testing.TB, s *store.Store, ctx context.Context, eventName string) string {
 	t.Helper()
 	var id string
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
@@ -417,15 +417,15 @@ func BenchmarkGetLogOTLP(b *testing.B) {
 	require.NoError(b, s.WithConn(func(conn driver.Conn) error {
 		return logs.Ingest(ctx, conn, data, s.FlushedIDs())
 	}))
-	logID := lookupLogID(b, s, ctx, "benchmark")
+	logRef := lookupLogRef(b, s, ctx, "benchmark")
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return logs.GetLogOTLP(ctx, db, logID)
+		return logs.GetLogOTLP(ctx, db, logRef)
 	})
 	require.NoError(b, err)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return logs.GetLogOTLP(ctx, db, logID)
+			return logs.GetLogOTLP(ctx, db, logRef)
 		}); err != nil {
 			b.Fatal(err)
 		}

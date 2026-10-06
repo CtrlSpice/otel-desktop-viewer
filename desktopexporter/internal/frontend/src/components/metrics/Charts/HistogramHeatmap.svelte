@@ -43,13 +43,7 @@
   const timeContext = getTimeContext()
   const ctx = getMetricViewContext()
 
-  // The fetch was lifted up to MetricViewContext so the Heatmap and
-  // Aggregated tabs can share one bucket-series request. This component is
-  // now purely a renderer: parent supplies `points`, and the parent owns
-  // loading / error / temporality-callout states.
-  //
-  // selectedTimestamp + onSelect: click toggles column selection on the
-  // heatmap tab (see MetricViewContext.onHeatmapSelect).
+  // The context owns fetching and state; this component only renders points.
   type Props = {
     points: HistogramSlicePoint[]
     height?: number
@@ -211,7 +205,6 @@
     }
   }
 
-  // --- Cell sizing ---
   //
   // Fluid columns: fill available width when sparse, scale down to 8px min,
   // then scroll horizontally when even 8px columns overflow.

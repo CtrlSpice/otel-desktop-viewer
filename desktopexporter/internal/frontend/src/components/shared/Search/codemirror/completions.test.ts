@@ -6,11 +6,6 @@ import { queryLanguage } from './query-language'
 import { getFieldsBySignal } from '@/constants/fields'
 import { OPERATORS, type FieldDefinition } from '@/search/model'
 
-// The completion source decides everything from the Lezer tree plus a little
-// position logic, and until now had no tests -- every regression in it was
-// found by driving the running app. These construct real editor states, so
-// what is pinned is what the editor actually asks.
-
 const fields = getFieldsBySignal('traces')
 const source = createQueryCompletionSource(() => fields)
 
@@ -185,9 +180,6 @@ describe('field positions', () => {
 })
 
 describe('operator positions', () => {
-  // A bare field name parses as FreeText, not a Comparison, so before this
-  // the operator branch was unreachable until an operator had already been
-  // typed -- by which point suggesting one is too late (#413).
   it('offers operators once a field name is complete and followed by a space', () => {
     expect(labels('name ')).toEqual(
       expect.arrayContaining(['=', '!=', 'CONTAINS'])
@@ -243,8 +235,6 @@ describe('operator positions', () => {
   })
 
   it('replaces the whole word when accepting a field mid-name', () => {
-    // Anchored [from, to] across the word: accepting `name` at na|me used to
-    // keep the tail and produce "nameme".
     const r = complete('name = x', 2)
     expect(r).not.toBeNull()
     expect(r!.from).toBe(0)
@@ -355,7 +345,6 @@ describe('review findings', () => {
   })
 })
 
-// The three completion edges from the second #405 review (issue #406).
 describe('array quote and group edges', () => {
   it('offers nothing right after a closed quoted item', () => {
     // `["Ok"|` -- the only valid next characters are `,` or `]`; anything

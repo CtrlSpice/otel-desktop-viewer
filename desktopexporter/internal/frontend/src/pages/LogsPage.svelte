@@ -5,16 +5,10 @@
     compareByTimestampField,
   } from '@/utils/compare'
 
-  // --- Sort ---
-
   export type LogSortColumn = 'timestamp' | 'severity' | 'service' | 'body'
   export type LogSortDirection = 'asc' | 'desc'
 
-  // The list page now operates on LogSummary (the card-shaped
-  // projection); full LogData for the detail pane is fetched on
-  // demand. serviceName is denormalized onto the summary, so we
-  // sort against it directly instead of digging through resource
-  // attributes.
+  // Summaries include serviceName, so sorting does not require full log data.
   function compareLogs(
     a: LogSummary,
     b: LogSummary,
@@ -30,7 +24,11 @@
             ? compareByStringField(a, b, l => l.bodyPreview)
             : compareByStringField(a, b, l => l.serviceName)
 
-    return cmp !== 0 ? (dir === 'asc' ? cmp : -cmp) : a.id.localeCompare(b.id)
+    return cmp !== 0
+      ? dir === 'asc'
+        ? cmp
+        : -cmp
+      : a.logRef.localeCompare(b.logRef)
   }
 </script>
 
@@ -69,7 +67,7 @@
 
   const page = createSignalListPage<LogSummary, LogSortColumn>({
     signal: 'logs',
-    getItemID: log => log.id,
+    getItemID: log => log.logRef,
     initialSort: { column: 'timestamp', direction: 'desc' },
     preserveMissingSelection: true,
     compare: compareLogs,
@@ -78,7 +76,7 @@
         timeContext.selection,
         Date.now()
       )
-      const results = await telemetryAPI.searchLogs(
+      const results = await telemetryAPI.searchLogSummaries(
         startTime,
         endTime,
         undefined
@@ -105,10 +103,7 @@
     },
   })
 
-  // selectedLogID is the user's pick from the list (the LogSummary `id`),
-  // read from the route path. The detail fetcher round-trips to getLog(id) for
-  // the full LogData on demand, with a debounce that keeps held-arrow keyboard
-  // nav from firing a request per row.
+  // Debouncing avoids a detail request for every row during keyboard navigation.
   const detailFetcher = createDebouncedDetailFetcher<string, LogData>({
     fetch: id => telemetryAPI.getLog(id),
     keysEqual: (a, b) => a === b,
@@ -122,33 +117,21 @@
     detailFetcher.key = page.selectedID
   })
 
-  function selectLog(logID: string) {
-    page.selectItem(logID)
+  function selectLog(logRef: string) {
+    page.selectItem(logRef)
   }
 
-  // Refresh reloads the list, and the open record has to come with it.
-  //
-  // Traces and metrics get this for free: their detail effects read the
-  // selected summary *object*, and reloading the list replaces that object,
-  // so the effect re-runs. This page keys on the log id instead -- a string a
-  // reload does not change -- so the detail pane would keep whatever it
-  // fetched the first time.
-  //
-  // Today nothing visible turns on that, because a log record never changes
-  // after it is written, so a refetch returns identical bytes. But that is a
-  // property of the data, not of this page, and it is not stated anywhere the
-  // next person to touch this will look. Refreshing explicitly costs one
-  // request on a button the user pressed, and removes the need to know it.
+  // The stable log ID does not retrigger the detail fetch when the list reloads.
   function handleRefresh() {
     page.handleRefresh()
     detailFetcher.refresh()
   }
 
-  async function handleDeleteLog(logID: string) {
+  async function handleDeleteLog(logRef: string) {
     actionError = null
     try {
-      await telemetryAPI.deleteLogByID(logID)
-      if (page.selectedID === logID) {
+      await telemetryAPI.deleteLogsByRefs(logRef)
+      if (page.selectedID === logRef) {
         navigateToItem('logs', null, 'replace')
       }
       await page.runListFetch()
@@ -179,7 +162,7 @@
     refreshPulse={page.refreshPulse}
     refreshAsideTip={page.refreshAsideTip}
     loading={page.loading}
-    itemKey={l => l.id}
+    itemKey={l => l.logRef}
   >
     {#snippet drawerChromeToolbar()}
       <DrawerSearchPanel
@@ -256,7 +239,7 @@
         onNext={() => page.selectByOffset(1)}
         onLast={page.selectLast}
         onDelete={page.selectedSummary
-          ? () => handleDeleteLog(page.selectedSummary!.id)
+          ? () => handleDeleteLog(page.selectedSummary!.logRef)
           : undefined}
       />
     {/snippet}

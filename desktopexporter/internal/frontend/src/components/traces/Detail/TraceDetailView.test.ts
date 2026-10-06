@@ -165,7 +165,7 @@ describe('TraceDetailView tabs', () => {
   it('uses one Activity count and opens separate event and log groups', () => {
     const logs: TraceLogSummary[] = [
       {
-        id: 'log-1',
+        logRef: 'log-1',
         timestamp: 5n,
         spanID: 'child-span',
         severityText: 'INFO',
@@ -187,7 +187,7 @@ describe('TraceDetailView tabs', () => {
         ],
       }),
       logs,
-      selectedLogID: 'log-1',
+      selectedLogRef: 'log-1',
     })
 
     expect(screen.queryByRole('tab', { name: /Events/ })).toBeNull()

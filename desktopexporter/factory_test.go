@@ -116,10 +116,8 @@ func TestExporterStartRejectsMultipleExtensions(t *testing.T) {
 	require.NoError(t, exp.Shutdown(ctx))
 }
 
-// All three signal exporters start independently against one extension, and the
-// extension's viewer serves while they run. This replaces the old
-// sharedcomponent singleton tests: sharing is now by lookup, so there is no
-// construction-order coupling left to protect.
+// All three signal exporters resolve the same extension-owned store while its
+// viewer is running.
 func TestExportersShareExtensionStore(t *testing.T) {
 	ctx := context.Background()
 	set := testExporterSettings(t)

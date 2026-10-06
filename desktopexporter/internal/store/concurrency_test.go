@@ -90,7 +90,7 @@ func TestConcurrentIngestQueryAndRetention(t *testing.T) {
 			defer wg.Done()
 			for time.Now().Before(deadline) {
 				err := s.WithDBRead(func(db *sql.DB) error {
-					_, err := spans.SearchTraces(ctx, db, BoundedTimeRange(0, time.Now().UnixNano()), nil)
+					_, err := spans.SearchTraceSummaries(ctx, db, BoundedTimeRange(0, time.Now().UnixNano()), nil)
 					return err
 				})
 				if err != nil {
@@ -152,7 +152,7 @@ func TestConcurrentCloseAndRead(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < 50; j++ {
 				err := s.WithDBRead(func(db *sql.DB) error {
-					_, err := spans.SearchTraces(ctx, db, BoundedTimeRange(0, time.Now().UnixNano()), nil)
+					_, err := spans.SearchTraceSummaries(ctx, db, BoundedTimeRange(0, time.Now().UnixNano()), nil)
 					return err
 				})
 				if err != nil && !errors.Is(err, ErrStoreConnectionClosed) {
@@ -192,16 +192,8 @@ func buildWideTraces(seq uint64, n int) ptrace.Traces {
 	return tr
 }
 
-// TestReadsRunDuringIngest is the behaviour this locking scheme exists for.
-//
-// Ingest holds mu for reading rather than writing, so a query issued while a
-// batch is being appended is served rather than queued. Before the split, a
-// reader waited out the whole batch: measured at 159ms behind a 50,000-span
-// batch, to perform 0.2ms of work.
-//
-// Asserted as a bound on the worst read rather than a speedup ratio, because a
-// ratio against a moving baseline is a flaky test. The bound is loose enough
-// for a loaded CI box and still far below the time one batch takes to append.
+// TestReadsRunDuringIngest verifies that queries are served while a batch is
+// appended. The bound is relative to batch time to tolerate slower CI hosts.
 func TestReadsRunDuringIngest(t *testing.T) {
 	s, ctx, teardown := setupStore(t)
 	defer teardown()

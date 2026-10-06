@@ -14,7 +14,7 @@ import (
 
 var updateGolden = flag.Bool("update-golden", false, "rewrite the golden SQL files")
 
-// The two shapes searchSpansSQL renders. A search predicate adds the
+// The two shapes getTraceViewSQL renders. A search predicate adds the
 // matched_spans CTE, its join and the per-span matched expression; without one
 // they collapse to empty strings and a literal `true`. Every other input feeds
 // bound parameters rather than the text, so these two cover the rendered SQL.
@@ -40,29 +40,19 @@ var goldenCases = []struct {
 	}},
 }
 
-// TestSearchSpansSQLGolden pins the rendered SQL byte for byte.
+// TestGetTraceViewSQLGolden pins the rendered SQL byte for byte.
 //
-// It exists for one job: the query bodies are moving out of Go string literals
-// into embedded .sql files rendered through text/template, and that move is
-// only worth making if it provably changes nothing. A diff here after the move
-// means the relocation was not a relocation.
-//
-// It is deliberately a text comparison rather than an execution test. The store
-// tests already prove the queries return the right rows; what they cannot tell
-// you is whether a refactor quietly changed the SQL in a way that happens to
-// produce the same answer on the fixtures.
+// This text comparison detects rendered SQL changes that fixture-based
+// execution tests may not expose.
 //
 // Regenerate with: go test ./internal/store/spans/ -run Golden -update-golden
-func TestSearchSpansSQLGolden(t *testing.T) {
-	// Both trace-fetch queries, because they are separate templates now: the
-	// hot path, and the cycle-aware variant it falls back to. They share their
-	// parameters and their search-predicate plumbing, so an edit meant for both
-	// can silently land in only one.
+func TestGetTraceViewSQLGolden(t *testing.T) {
+	// Cover both the hot path and its cycle-aware fallback templates.
 	for _, q := range []struct {
 		prefix string
 		name   queries.Name
 	}{
-		{"search_spans", queries.SearchSpans},
+		{"get_trace_view", queries.GetTraceView},
 		{"salvage_spans", queries.SalvageSpans},
 	} {
 		for _, tc := range goldenCases {
@@ -86,13 +76,11 @@ func TestSearchSpansSQLGolden(t *testing.T) {
 	}
 }
 
-// TestSearchSpansSQLBindsTraceID guards the half the golden files cannot: that
-// the trace id travels as a bound argument rather than being interpolated into
-// the text. A golden file would look identical either way, since the id is not
-// in it -- which is the point.
-func TestSearchSpansSQLBindsTraceID(t *testing.T) {
+// TestGetTraceViewSQLBindsTraceID verifies the bound argument that golden SQL
+// files cannot observe.
+func TestGetTraceViewSQLBindsTraceID(t *testing.T) {
 	t.Parallel()
-	query, args, err := searchSpansSQL("00000000000000000000000000000099", nil)
+	query, args, err := getTraceViewSQL("00000000000000000000000000000099", nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, args)
 	require.Equal(t, "00000000000000000000000000000099", args[0])
@@ -100,15 +88,15 @@ func TestSearchSpansSQLBindsTraceID(t *testing.T) {
 		"trace id must be bound, not interpolated")
 }
 
-// Same contract as the searchSpans golden, for the trace-summary query. Its two
+// Same contract as the getTraceView golden, for the trace-summary query. Its two
 // shapes are the same two: a search predicate is either present or it is not.
-func TestSearchTracesSQLGolden(t *testing.T) {
+func TestSearchTraceSummariesSQLGolden(t *testing.T) {
 	for _, tc := range goldenCases {
 		t.Run(tc.name, func(t *testing.T) {
-			query, _, err := searchTracesSQL(store.BoundedTimeRange(0, 1<<62), tc.criteria, search.ResultOptions{})
+			query, _, err := searchTraceSummariesSQL(store.BoundedTimeRange(0, 1<<62), tc.criteria, search.ResultOptions{})
 			require.NoError(t, err)
 
-			path := filepath.Join("testdata", "search_traces_"+tc.name+".sql")
+			path := filepath.Join("testdata", "search_trace_summaries_"+tc.name+".sql")
 			if *updateGolden {
 				require.NoError(t, os.MkdirAll("testdata", 0o755))
 				require.NoError(t, os.WriteFile(path, []byte(query), 0o644))
@@ -122,10 +110,10 @@ func TestSearchTracesSQLGolden(t *testing.T) {
 	}
 }
 
-func TestSearchTracesSQLBindsLimit(t *testing.T) {
+func TestSearchTraceSummariesSQLBindsLimit(t *testing.T) {
 	t.Parallel()
 	limit := int64(3)
-	query, args, err := searchTracesSQL(store.BoundedTimeRange(0, 1<<62), nil, search.ResultOptions{Limit: &limit})
+	query, args, err := searchTraceSummariesSQL(store.BoundedTimeRange(0, 1<<62), nil, search.ResultOptions{Limit: &limit})
 	require.NoError(t, err)
 	require.Equal(t, limit, args[len(args)-1])
 	require.Contains(t, query, "limit ?")

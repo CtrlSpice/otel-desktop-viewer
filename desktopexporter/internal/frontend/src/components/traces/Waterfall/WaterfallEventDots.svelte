@@ -51,10 +51,7 @@
     @apply absolute top-1/2 -translate-x-1/2 -translate-y-1/2;
   }
 
-  /* Dot uses the bar colour mixed toward a per-theme target colour
-     (`--waterfall-tick-mix-target`) by `--waterfall-tick-mix-strength`.
-     Today all themes lighten toward white; flip the target to black to
-     darken instead (saturation dip vs highlight). */
+  /* Mix the bar colour toward the theme's event-marker target. */
   .event-marker--dot {
     @apply rounded-full border-0 pointer-events-none;
     width: var(--waterfall-bar-height, 0.875rem);

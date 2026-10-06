@@ -5,7 +5,7 @@ import {
 } from './chart-projection'
 import type {
   GaugeDataPoint,
-  MetricTimeseries,
+  MetricSeriesViewData,
   SumDataPoint,
 } from '@/types/api-types'
 
@@ -25,7 +25,7 @@ describe('timeseriesToChartTimeseries', () => {
     }
     const timeseries = [
       {
-        attributesKey: 'series-a',
+        seriesRef: 'series-a',
         attributes: [],
         resource: { attributes: [], droppedAttributesCount: 0 },
         datapoints: [datapoint],
@@ -36,7 +36,7 @@ describe('timeseriesToChartTimeseries', () => {
         rateStats: null,
         sparkline: null,
       },
-    ] satisfies MetricTimeseries[]
+    ] satisfies MetricSeriesViewData[]
 
     const [line] = timeseriesToChartTimeseries(timeseries).chartTimeseries
 
@@ -64,7 +64,7 @@ describe('timeseriesToChartTimeseries', () => {
     }
     const timeseries = [
       {
-        attributesKey: 'series-a',
+        seriesRef: 'series-a',
         attributes: [],
         resource: { attributes: [], droppedAttributesCount: 0 },
         datapoints: [datapoint],
@@ -75,7 +75,7 @@ describe('timeseriesToChartTimeseries', () => {
         rateStats: null,
         sparkline: null,
       },
-    ] satisfies MetricTimeseries[]
+    ] satisfies MetricSeriesViewData[]
 
     const [line] = timeseriesToChartTimeseries(timeseries).chartTimeseries
 
@@ -87,7 +87,7 @@ describe('timeseriesToChartTimeseries', () => {
     const base = 1_700_000_000_000_000_000n
     const timeseries = [
       {
-        attributesKey: 'series-a',
+        seriesRef: 'series-a',
         attributes: [],
         resource: { attributes: [], droppedAttributesCount: 0 },
         datapoints: [
@@ -123,7 +123,7 @@ describe('timeseriesToChartTimeseries', () => {
         rateStats: null,
         sparkline: null,
       },
-    ] satisfies MetricTimeseries[]
+    ] satisfies MetricSeriesViewData[]
 
     const [line] = timeseriesToChartTimeseries(timeseries).chartTimeseries
 
@@ -141,7 +141,7 @@ describe('timeseriesToChartTimeseries', () => {
   it('maps an exact same-ms raw identity onto its synthetic rate bucket', () => {
     const base = 1_700_000_000_000_000_000n
     const series = {
-      attributesKey: 'series-a',
+      seriesRef: 'series-a',
       attributes: [],
       resource: { attributes: [], droppedAttributesCount: 0 },
       datapoints: [
@@ -225,7 +225,7 @@ describe('timeseriesToChartTimeseries', () => {
       ],
       rateStats: { min: 2, max: 4, avg: 3 },
       sparkline: null,
-    } satisfies MetricTimeseries
+    } satisfies MetricSeriesViewData
 
     expect(rateBucketStartForSourceDatapoint(series, 'later')).toBe(base + 600n)
     expect(rateBucketStartForSourceDatapoint(series, 'middle')).toBe(

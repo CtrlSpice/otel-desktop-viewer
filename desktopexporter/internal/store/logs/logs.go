@@ -35,34 +35,19 @@ var (
 	ErrInvalidLogQuery   = errors.New("invalid log search query")
 	ErrInvalidLogLimit   = errors.New("invalid log search limit")
 	ErrLogsStoreInternal = errors.New("logs store internal error")
-	ErrLogIDNotFound     = errors.New("log ID not found")
+	ErrLogRefNotFound    = errors.New("log ID not found")
 )
 
 // flushIntervalLogs bounds how many log records accumulate in the appenders before
-// they are pushed to DuckDB. It exists to cap memory on a pathological batch,
-// not to make writes visible sooner -- nothing reads mid-batch, since ingest
-// holds the store write lock throughout.
-//
-// Raised from 100 to 500 on measurement. Each flush is a cgo call into
-// duckdb_appender_flush, and that call is roughly half of ingest time, so
-// flushing more often than memory requires is pure overhead. Measured on
-// 2000-span batches (Apple M4 Pro -- absolute figures are an upper bound, but
-// the shape of the curve is what the choice rests on, and slower hardware moves
-// the knee later, not earlier):
-//
-//	interval   50 -> 15.77 us/span
-//	          100 -> 11.14
-//	          250 ->  8.12
-//	          500 ->  7.13   <- knee
-//	         1000 ->  6.60
-//	   close only ->  6.27
-//
-// Past 500 the remaining 14% buys unbounded appender memory, which is a bad
-// trade for a desktop tool sharing RAM with the user's actual work.
+// they are pushed to DuckDB, limiting memory used by large batches.
 const flushIntervalLogs = 500
 
 // scopeKey identifies a scope by position: the ri'th resource's si'th scope.
 type scopeKey struct{ ri, si int }
+
+type queryRower interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
 
 // Ingest ingests log records from pdata into the logs table.
 // The caller must hold any required lock on the connection.
@@ -99,9 +84,9 @@ func IngestReport(ctx context.Context, conn driver.Conn, logs plog.Logs, flushed
 	var logAttrs [][]duckdb.UUID
 
 	for ri, resourceLogs := range logs.ResourceLogs().All() {
-		resourceIDs[ri] = dict.AddResource(resourceLogs.Resource())
+		resourceIDs[ri] = dict.AddResource(resourceLogs.Resource(), resourceLogs.SchemaUrl()).ID
 		for si, scopeLogs := range resourceLogs.ScopeLogs().All() {
-			scopeIDs[scopeKey{ri, si}] = dict.AddScope(scopeLogs.Scope())
+			scopeIDs[scopeKey{ri, si}] = dict.AddScope(scopeLogs.Scope(), scopeLogs.SchemaUrl())
 			for _, log := range scopeLogs.LogRecords().All() {
 				logAttrs = append(logAttrs, dict.AddAttributes(log.Attributes(), ingest.ScopeLog))
 			}
@@ -198,8 +183,6 @@ func appendPass(
 					uint32(log.Flags()),             // Flags UINTEGER
 					log.EventName(),                 // EventName VARCHAR
 					serviceName,                     // ServiceName VARCHAR (NOT NULL, '' = unknown)
-					resourceLogs.SchemaUrl(),        // ResourceSchemaURL VARCHAR (batch-level)
-					scopeLogs.SchemaUrl(),           // ScopeSchemaURL VARCHAR (batch-level)
 				)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)
@@ -247,17 +230,17 @@ var fieldValueQueries = map[string]string{
 	`,
 }
 
-// GetFieldValues returns distinct values of one completable log column
-// matching term, most frequent first. Same contract as spans.GetFieldValues.
-func GetFieldValues(ctx context.Context, db *sql.DB, field, term string, limit int64) (json.RawMessage, error) {
+// GetFieldValueCompletions returns distinct values of one completable log column
+// matching term, most frequent first. Same contract as spans.GetFieldValueCompletions.
+func GetFieldValueCompletions(ctx context.Context, db *sql.DB, field, term string, limit int64) (json.RawMessage, error) {
 	query, ok := fieldValueQueries[field]
 	if !ok {
-		return nil, fmt.Errorf("GetFieldValues: %w: field %q has no value completion", ErrInvalidLogQuery, field)
+		return nil, fmt.Errorf("GetFieldValueCompletions: %w: field %q has no value completion", ErrInvalidLogQuery, field)
 	}
 	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(term)
 	var raw []byte
 	if err := db.QueryRowContext(ctx, query, escaped, limit).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("GetFieldValues: %w: %w", ErrLogsStoreInternal, err)
+		return nil, fmt.Errorf("GetFieldValueCompletions: %w: %w", ErrLogsStoreInternal, err)
 	}
 	return json.RawMessage(raw), nil
 }
@@ -274,19 +257,19 @@ func GetFieldValues(ctx context.Context, db *sql.DB, field, term string, limit i
 //
 // `bodyPreview` is server-truncated by the body_preview macro.
 func Search(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any) (json.RawMessage, error) {
-	return searchLogs(ctx, db, timeRange, criteria, search.ResultOptions{})
+	return searchLogSummaries(ctx, db, timeRange, criteria, search.ResultOptions{})
 }
 
 // SearchWithLimit returns at most limit log summaries.
 func SearchWithLimit(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, limit int64) (json.RawMessage, error) {
-	return searchLogs(ctx, db, timeRange, criteria, search.ResultOptions{Limit: &limit})
+	return searchLogSummaries(ctx, db, timeRange, criteria, search.ResultOptions{Limit: &limit})
 }
 
-func SearchWithOptions(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (json.RawMessage, error) {
-	return searchLogs(ctx, db, timeRange, criteria, options)
+func SearchSummariesWithOptions(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (json.RawMessage, error) {
+	return searchLogSummaries(ctx, db, timeRange, criteria, options)
 }
 
-func searchLogs(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (json.RawMessage, error) {
+func searchLogSummaries(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (json.RawMessage, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -315,7 +298,7 @@ func searchLogs(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, 
 		limitClause = "\n\t\t\tlimit ?"
 		args = append(args, *options.Limit)
 	}
-	finalQuery, err := queries.Render(queries.SearchLogs, searchLogsParams{
+	finalQuery, err := queries.Render(queries.SearchLogSummaries, searchLogSummariesParams{
 		CTEs:  cteSQL,
 		From:  logSearchFrom,
 		Where: whereWithTime,
@@ -359,66 +342,63 @@ func logSummaryOrderBy(sortOption *search.Sort) (string, error) {
 
 // Get returns the full LogData for a single log identified by its
 // tool-minted UUID. Used by the log-detail pane after a user clicks
-// a card from Search results. Returns ErrLogIDNotFound when no log
+// a card from Search results. Returns ErrLogRefNotFound when no log
 // matches.
-func Get(ctx context.Context, db *sql.DB, logID string) (json.RawMessage, error) {
-	// One row, three attribute arrays, no CTEs: attrs_json resolves each array
-	// against the dictionary in place. This replaced a log_attrs CTE that
-	// grouped the log's attribute rows by scope and was left-joined back three
-	// times under different aliases.
+func Get(ctx context.Context, db *sql.DB, logRef string) (json.RawMessage, error) {
+	// attrs_json resolves each of the row's three attribute arrays in place.
 	query, err := queries.Render(queries.GetLog, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	var raw []byte
-	if err := db.QueryRowContext(ctx, query, logID).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(ctx, query, logRef).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("Get: %w", ErrLogIDNotFound)
+			return nil, fmt.Errorf("Get: %w", ErrLogRefNotFound)
 		}
 		return nil, fmt.Errorf("Get: %w: %w", ErrLogsStoreInternal, err)
 	}
 	if raw == nil {
-		return nil, fmt.Errorf("Get: %w", ErrLogIDNotFound)
+		return nil, fmt.Errorf("Get: %w", ErrLogRefNotFound)
 	}
 	return json.RawMessage(raw), nil
 }
 
-// GetLogOTLP returns the stored log identified by logID as one standard OTLP
+// GetLogOTLP returns the stored log identified by logRef as one standard OTLP
 // JSON document. Callers must transport the returned bytes unchanged: parsing
 // and re-encoding in JavaScript loses negative zero.
-func GetLogOTLP(ctx context.Context, db *sql.DB, logID string) (json.RawMessage, error) {
+func GetLogOTLP(ctx context.Context, db *sql.DB, logRef string) (json.RawMessage, error) {
 	query, err := queries.Render(queries.GetLogOTLP, nil)
 	if err != nil {
 		return nil, fmt.Errorf("GetLogOTLP: %w: %w", ErrLogsStoreInternal, err)
 	}
 
 	var raw []byte
-	if err := db.QueryRowContext(ctx, query, logID).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(ctx, query, logRef).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("GetLogOTLP: %w", ErrLogIDNotFound)
+			return nil, fmt.Errorf("GetLogOTLP: %w", ErrLogRefNotFound)
 		}
 		return nil, fmt.Errorf("GetLogOTLP: %w: %w", ErrLogsStoreInternal, err)
 	}
 	if raw == nil {
-		return nil, fmt.Errorf("GetLogOTLP: %w", ErrLogIDNotFound)
+		return nil, fmt.Errorf("GetLogOTLP: %w", ErrLogRefNotFound)
 	}
 	return json.RawMessage(raw), nil
 }
 
-// GetTraceLogs returns every lightweight log summary carrying traceID. The
+// GetTraceLogSummaries returns every lightweight log summary carrying traceID. The
 // trace boundary is the complete correlation boundary: timestamps only order
 // rows, and nullable or dangling span IDs remain in the result for callers to
 // classify. Full body and attribute detail remains owned by Get.
-func GetTraceLogs(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage, error) {
-	query, args, err := getTraceLogsSQL(traceID)
+func GetTraceLogSummaries(ctx context.Context, db queryRower, traceID string) (json.RawMessage, error) {
+	query, args, err := getTraceLogSummariesSQL(traceID)
 	if err != nil {
 		return nil, err
 	}
 
 	var raw []byte
 	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("GetTraceLogs: %w: %w", ErrLogsStoreInternal, err)
+		return nil, fmt.Errorf("GetTraceLogSummaries: %w: %w", ErrLogsStoreInternal, err)
 	}
 	if raw == nil {
 		return json.RawMessage("[]"), nil
@@ -426,26 +406,43 @@ func GetTraceLogs(ctx context.Context, db *sql.DB, traceID string) (json.RawMess
 	return json.RawMessage(raw), nil
 }
 
-func getTraceLogsSQL(traceID string) (string, []any, error) {
-	query, err := queries.Render(queries.GetTraceLogs, nil)
+// GetSpanLogs returns every full log row associated with one exact composite
+// span identity. The result is complete and uses one bulk query.
+func GetSpanLogs(ctx context.Context, db queryRower, traceID string, spanID uint64) (json.RawMessage, error) {
+	query, err := queries.Render(queries.GetSpanLogs, nil)
+	if err != nil {
+		return nil, fmt.Errorf("GetSpanLogs: %w: %w", ErrLogsStoreInternal, err)
+	}
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, traceID, []uint64{spanID}).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("GetSpanLogs: %w: %w", ErrLogsStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+func getTraceLogSummariesSQL(traceID string) (string, []any, error) {
+	query, err := queries.Render(queries.GetTraceLogSummaries, nil)
 	if err != nil {
 		return "", nil, err
 	}
 	return query, []any{traceID}, nil
 }
 
-// GetLogAttributes returns every log-side attribute name/scope/type this store
-// knows about. See spans.GetTraceAttributes for why the dictionary answers this
+// GetLogAttributeDefinitions returns every log-side attribute name/scope/type this store
+// knows about. See spans.GetTraceAttributeDefinitions for why the dictionary answers this
 // directly instead of unnesting every log in a window.
-func GetLogAttributes(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
-	query, err := queries.Render(queries.GetLogAttributes, nil)
+func GetLogAttributeDefinitions(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
+	query, err := queries.Render(queries.GetLogAttributeDefinitions, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	var raw []byte
 	if err := db.QueryRowContext(ctx, query).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("GetLogAttributes: %w: %w", ErrLogsStoreInternal, err)
+		return nil, fmt.Errorf("GetLogAttributeDefinitions: %w: %w", ErrLogsStoreInternal, err)
 	}
 	if raw == nil {
 		return json.RawMessage("[]"), nil
@@ -470,18 +467,18 @@ func Clear(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-// DeleteLogsByIDs deletes multiple logs by their IDs.
-func DeleteLogsByIDs(ctx context.Context, db *sql.DB, logIDs []any) error {
-	if len(logIDs) == 0 {
+// DeleteLogsByRefs deletes multiple logs by their IDs.
+func DeleteLogsByRefs(ctx context.Context, db *sql.DB, logRefs []any) error {
+	if len(logRefs) == 0 {
 		return nil
 	}
-	ids := util.ToStringList(logIDs)
+	ids := util.ToStringList(logRefs)
 	childQueries := []string{
 		`delete from logs where id in (select id from uuid_list(?))`,
 	}
 	for _, q := range childQueries {
 		if _, err := db.ExecContext(ctx, q, ids); err != nil {
-			return fmt.Errorf("DeleteLogsByIDs: %w: %w", ErrLogsStoreInternal, err)
+			return fmt.Errorf("DeleteLogsByRefs: %w: %w", ErrLogsStoreInternal, err)
 		}
 	}
 	return nil
@@ -584,9 +581,8 @@ func mapLogFieldExpression(field *search.FieldDefinition) (search.ResolvedExpres
 	}
 }
 
-// mapLogAttributeExpressions resolves an attribute by key against whichever
-// array its scope names. The scope parameter the old form carried is gone:
-// scope is implied by which array is searched.
+// mapLogAttributeExpressions resolves an attribute against the array named by
+// its scope.
 //
 // Resource and scope predicates are hoisted into the owner table -- see
 // spans.mapTraceAttributeExpressions for the measurement that motivates it.
@@ -663,8 +659,7 @@ func mapLogGlobalExpressions() ([]search.ResolvedExpression, error) {
 		"CAST(l.event_name AS VARCHAR) {COND}",
 		"CAST(sc.name AS VARCHAR) {COND}",
 		"CAST(sc.version AS VARCHAR) {COND}",
-		// The log's own attributes plus its resource's and scope's -- the three
-		// sets that used to share one log_id in the attributes table.
+		// Search the log, resource, and scope attribute arrays.
 		`EXISTS(
 			SELECT 1
 			FROM unnest(l.attribute_ids || r.attribute_ids || sc.attribute_ids) AS t(aid)
@@ -677,13 +672,11 @@ func mapLogGlobalExpressions() ([]search.ResolvedExpression, error) {
 	}), nil
 }
 
-// searchLogsParams are the fragments Search assembles into
-// queries/logs/search_logs.sql.
+// searchLogSummariesParams are the fragments Search assembles into
+// queries/logs/search_log_summaries.sql.
 //
-// Every field is a SQL fragment. The body-preview length used to be here too,
-// as a number interpolated into the query; it is a body_preview macro now, so
-// nothing in this struct is a *value* -- values travel as bound arguments.
-type searchLogsParams struct {
+// Every field is a SQL fragment; values travel as bound arguments.
+type searchLogSummariesParams struct {
 	CTEs  string
 	From  string
 	Where string

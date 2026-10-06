@@ -13,7 +13,7 @@ import {
   type QueryNode,
 } from '@/search/model'
 import type {
-  JsonMetricData,
+  JsonMetricViewData,
   JsonLogData,
   JsonTraceLogSummary,
   JsonTraceData,
@@ -21,15 +21,11 @@ import type {
 } from '@/types/wire-types'
 import { parseDuration } from '@/utils/time'
 import { parseQuery } from '@/components/shared/Search/queryParser'
-
-// The backend signals not-found with JSON-RPC errors (one convention across
-// all signals; see internal/server/errors.go). getMetric's callers expect
-// MetricData | null, so the service translates exactly one code -- -32003,
-// metric not found -- back to null. These tests pin that translation.
+import type { ReceivedHistogramDataPoint } from '@/types/api-types'
 
 type StubRpcResponse<T> = {
-  jsonrpc: '2.0'
-  id: number
+  jsonrpc?: unknown
+  id?: unknown
   result?: T
   error?: { code: number; message: string }
 }
@@ -37,21 +33,27 @@ type StubRpcResponse<T> = {
 function stubRpcResponse<T>(body: StubRpcResponse<T>) {
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => body,
+    vi.fn().mockImplementation(async (_url, init: RequestInit) => {
+      const request = JSON.parse(String(init.body)) as { id: number }
+      const responseBody = 'id' in body ? body : { ...body, id: request.id }
+      return {
+        ok: true,
+        json: async () => responseBody,
+      }
     })
   )
 }
 
 function stubRpcResult<T>(result: T) {
-  stubRpcResponse({ jsonrpc: '2.0', id: 1, result })
+  stubRpcResponse({ jsonrpc: '2.0', result })
 }
 
-function metricResult(overrides: Partial<JsonMetricData> = {}): JsonMetricData {
+function metricResult(
+  overrides: Partial<JsonMetricViewData> = {}
+): JsonMetricViewData {
   return {
     lastSeenNs: null,
-    id: 'some-stream',
+    metricRef: 'some-metric',
     name: 'test.gauge',
     description: '',
     metadata: [],
@@ -59,10 +61,12 @@ function metricResult(overrides: Partial<JsonMetricData> = {}): JsonMetricData {
     metricType: 'Gauge',
     aggregationTemporalityCode: null,
     aggregationTemporality: null,
-    isMonotonic: false,
+    isMonotonic: null,
     resourceDroppedAttributesCount: 0,
+    resourceSchemaUrl: '',
     resource: { attributes: [], droppedAttributesCount: 0 },
     scopeName: '',
+    scopeSchemaUrl: '',
     scopeVersion: '',
     scopeDroppedAttributesCount: 0,
     scope: { name: '', version: '', attributes: [], droppedAttributesCount: 0 },
@@ -81,6 +85,67 @@ function metricResult(overrides: Partial<JsonMetricData> = {}): JsonMetricData {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
+
+describe('JSON-RPC response identity', () => {
+  it('accepts a successful response with the numeric request ID', async () => {
+    stubRpcResult('cleared')
+
+    await expect(telemetryAPI.clearTraces()).resolves.toBe('cleared')
+  })
+
+  it('preserves an RPC error with the numeric request ID', async () => {
+    stubRpcResponse({
+      jsonrpc: '2.0',
+      error: { code: -32009, message: 'Invalid request' },
+    })
+
+    await expect(telemetryAPI.clearTraces()).rejects.toMatchObject({
+      name: 'JsonRpcError',
+      code: -32009,
+      message: 'Invalid request',
+    })
+  })
+
+  it.each([
+    ['missing', undefined],
+    ['wrong', '1.0'],
+    ['null', null],
+  ])('rejects a %s JSON-RPC version', async (_case, jsonrpc) => {
+    stubRpcResponse({ jsonrpc, result: 'cleared' })
+
+    await expect(telemetryAPI.clearTraces()).rejects.toThrow(
+      `Invalid JSON-RPC version: ${String(jsonrpc)}`
+    )
+  })
+
+  it.each([
+    ['missing', undefined],
+    ['wrong numeric', -1],
+    ['null', null],
+    ['matching digits as a string', '0'],
+  ])('rejects a %s response ID', async (_case, id) => {
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    stubRpcResponse({ jsonrpc: '2.0', id, result: 'cleared' })
+
+    await expect(telemetryAPI.clearTraces()).rejects.toThrow(
+      'JSON-RPC response ID does not match request ID'
+    )
+  })
+
+  it('rejects an invalid ID before handling an RPC error', async () => {
+    stubRpcResponse({
+      jsonrpc: '2.0',
+      id: null,
+      error: { code: -32009, message: 'Invalid request' },
+    })
+
+    await expect(telemetryAPI.clearTraces()).rejects.toMatchObject({
+      name: 'Error',
+      message: 'JSON-RPC response ID does not match request ID',
+    })
+  })
 })
 
 describe('request cancellation', () => {
@@ -107,7 +172,7 @@ describe('request cancellation', () => {
     const controller = new AbortController()
 
     await expect(
-      telemetryAPI.searchSpans('trace-1', undefined, controller.signal)
+      telemetryAPI.getTraceView('trace-1', undefined, controller.signal)
     ).rejects.toBeInstanceOf(RequestAbortedError)
     expect(fetchMock).toHaveBeenCalledWith(
       '/rpc',
@@ -119,7 +184,7 @@ describe('request cancellation', () => {
 describe('telemetryAPI.getLog', () => {
   it('revives an int64 body value as bigint', async () => {
     const result: JsonLogData = {
-      id: 'log-1',
+      logRef: 'log-1',
       timestamp: '100',
       observedTimestamp: '101',
       traceID: null,
@@ -150,11 +215,11 @@ describe('telemetryAPI.getLog', () => {
   })
 })
 
-describe('telemetryAPI.getTraceLogs', () => {
+describe('telemetryAPI.getTraceLogSummaries', () => {
   it('revives exact timestamps and preserves nullable span IDs', async () => {
     const result: JsonTraceLogSummary[] = [
       {
-        id: 'log-1',
+        logRef: 'log-1',
         timestamp: '9223372036854775807',
         spanID: null,
         severityText: 'INFO',
@@ -166,48 +231,50 @@ describe('telemetryAPI.getTraceLogs', () => {
     ]
     stubRpcResult(result)
 
-    await expect(telemetryAPI.getTraceLogs('trace-1')).resolves.toEqual([
-      { ...result[0], timestamp: 9_223_372_036_854_775_807n },
-    ])
+    await expect(telemetryAPI.getTraceLogSummaries('trace-1')).resolves.toEqual(
+      [{ ...result[0], timestamp: 9_223_372_036_854_775_807n }]
+    )
   })
 })
 
-describe('telemetryAPI.getMetric', () => {
+describe('telemetryAPI.getMetricView', () => {
   it('returns null when the backend reports metric not found (-32003)', async () => {
     stubRpcResponse({
       jsonrpc: '2.0',
-      id: 1,
       error: { code: -32003, message: 'Metric not found' },
     })
     await expect(
-      telemetryAPI.getMetric('some-stream', 0n, 1n)
+      telemetryAPI.getMetricView('some-metric', 0n, 1n)
     ).resolves.toBeNull()
   })
 
   it('rethrows JSON-RPC errors other than metric not found', async () => {
     stubRpcResponse({
       jsonrpc: '2.0',
-      id: 1,
-      error: { code: -32009, message: 'Invalid metric stream ID' },
+      error: { code: -32009, message: 'Invalid Metric reference' },
     })
-    const call = telemetryAPI.getMetric('not-a-stream', 0n, 1n)
+    const call = telemetryAPI.getMetricView('not-a-metric', 0n, 1n)
     await expect(call).rejects.toBeInstanceOf(JsonRpcError)
     await expect(call).rejects.toMatchObject({ code: -32009 })
   })
 
-  it('parses a successful result into MetricData', async () => {
+  it('parses a successful result into MetricViewData', async () => {
     stubRpcResult(
       metricResult({
         unit: 'bytes',
+        resourceSchemaUrl: 'https://example.test/resource/1.0',
+        scopeSchemaUrl: 'https://example.test/scope/1.0',
         window: {
           requested: { startNs: null, endNs: null },
           effective: { startNs: '10', endNs: '20' },
         },
       })
     )
-    const metric = await telemetryAPI.getMetric('some-stream', 0n, 1n)
+    const metric = await telemetryAPI.getMetricView('some-metric', 0n, 1n)
     expect(metric).not.toBeNull()
     expect(metric!.name).toBe('test.gauge')
+    expect(metric!.resourceSchemaUrl).toBe('https://example.test/resource/1.0')
+    expect(metric!.scopeSchemaUrl).toBe('https://example.test/scope/1.0')
     expect(metric!.timeseries).toEqual([])
     expect(metric!.window).toEqual({
       requested: { startNs: null, endNs: null },
@@ -223,7 +290,7 @@ describe('telemetryAPI.getMetric', () => {
         metricType: 'Gauge',
         timeseries: [
           {
-            attributesKey: 'series-1',
+            seriesRef: 'series-1',
             attributes: [],
             resource: { attributes: [], droppedAttributesCount: 0 },
             datapoints: [
@@ -319,7 +386,7 @@ describe('telemetryAPI.getMetric', () => {
       })
     )
 
-    const metric = await telemetryAPI.getMetric('some-stream', 0n, 1n)
+    const metric = await telemetryAPI.getMetricView('some-metric', 0n, 1n)
     expect(metric!.timeseries[0]!.datapoints[0]).toMatchObject({
       intValue: null,
     })
@@ -380,7 +447,7 @@ describe('telemetryAPI.getMetric', () => {
     const wire = metricResult({
       timeseries: [
         {
-          attributesKey: 'series-1',
+          seriesRef: 'series-1',
           attributes: [],
           resource: { attributes: [], droppedAttributesCount: 0 },
           datapoints: [
@@ -483,7 +550,7 @@ describe('telemetryAPI.getMetric', () => {
     })
     stubRpcResult(wire)
 
-    const metric = await telemetryAPI.getMetric('some-stream', 0n, 1n)
+    const metric = await telemetryAPI.getMetricView('some-metric', 0n, 1n)
     const datapoints = metric!.timeseries[0]!.datapoints
 
     expect(datapoints[0]).toMatchObject({
@@ -549,7 +616,7 @@ describe('telemetryAPI.getMetric', () => {
         metricType: 'Histogram',
         timeseries: [
           {
-            attributesKey: 'series-1',
+            seriesRef: 'series-1',
             attributes: [],
             resource: { attributes: [], droppedAttributesCount: 0 },
             datapoints: [
@@ -581,7 +648,7 @@ describe('telemetryAPI.getMetric', () => {
       })
     )
 
-    const metric = await telemetryAPI.getMetric('some-stream', 0n, 2n)
+    const metric = await telemetryAPI.getMetricView('some-metric', 0n, 2n)
     const [absent, zero] = metric!.timeseries[0]!.datapoints
     expect(absent).toMatchObject({ sum: null, min: null, max: null })
     expect(zero).toMatchObject({ sum: 0, min: 0, max: 0 })
@@ -619,7 +686,7 @@ describe('telemetryAPI.getMetric', () => {
       })
     )
 
-    const value = (await telemetryAPI.getMetric('some-stream', 0n, 1n))!
+    const value = (await telemetryAPI.getMetricView('some-metric', 0n, 1n))!
       .metadata[0]!.value
     expect(value).toMatchObject({ kind: 'map' })
     if (value.kind !== 'map') throw new Error('Expected a map value')
@@ -670,7 +737,7 @@ describe('telemetryAPI.getMetric', () => {
       })
     )
 
-    const metadata = (await telemetryAPI.getMetric('some-stream', 0n, 1n))!
+    const metadata = (await telemetryAPI.getMetricView('some-metric', 0n, 1n))!
       .metadata
     expect(metadata[0]!.hasConflict).toBe(true)
     expect(metadata[1]!.hasConflict).toBe(true)
@@ -681,7 +748,283 @@ describe('telemetryAPI.getMetric', () => {
   })
 })
 
-describe('telemetryAPI.getMetricAggregate', () => {
+describe('exact received metric API', () => {
+  it('decodes exact identity and computed series summaries', async () => {
+    stubRpcResult({
+      metricRef: 'metric-1',
+      name: 'requests',
+      description: '',
+      unit: '1',
+      metadata: [],
+      metricType: 'Sum',
+      aggregationTemporalityCode: 2,
+      isMonotonic: true,
+      resource: {
+        droppedAttributesCount: 0,
+        schemaUrl: '',
+        attributes: [
+          {
+            key: 'nested',
+            value: {
+              kind: 'map',
+              value: [
+                {
+                  key: 'limit',
+                  value: { kind: 'int64', value: '9007199254740993' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      scope: {
+        name: 'sdk',
+        version: '1',
+        attributes: [],
+        droppedAttributesCount: 0,
+        schemaUrl: 'scope-schema',
+      },
+      series: [
+        {
+          seriesRef: 'series-1',
+          attributes: [],
+          datapointCount: '18446744073709551615',
+          firstDatapointTimestamp: '1',
+          lastDatapointTimestamp: null,
+        },
+      ],
+    })
+
+    const metric = await telemetryAPI.getMetric('metric-1')
+    expect(metric).toMatchObject({
+      metricRef: 'metric-1',
+      aggregationTemporalityCode: 2,
+      isMonotonic: true,
+    })
+    expect(metric!.series[0]).toMatchObject({
+      datapointCount: 18446744073709551615n,
+      firstDatapointTimestamp: 1n,
+      lastDatapointTimestamp: null,
+    })
+    expect(metric!.resource.attributes[0]!.value).toMatchObject({
+      kind: 'map',
+      value: [
+        { key: 'limit', value: { kind: 'int64', value: 9007199254740993n } },
+      ],
+    })
+  })
+
+  it('decodes exact histogram values, all exemplars, and optional presence', async () => {
+    stubRpcResult({
+      metricRef: 'metric-1',
+      name: 'latency',
+      description: 'received report',
+      unit: 'ms',
+      metadata: [],
+      metricType: 'Histogram',
+      aggregationTemporalityCode: 1,
+      resource: {
+        attributes: [],
+        droppedAttributesCount: 2,
+        schemaUrl: 'resource-schema',
+      },
+      scope: {
+        name: 'sdk',
+        version: '1',
+        attributes: [],
+        droppedAttributesCount: 3,
+        schemaUrl: 'scope-schema',
+      },
+      seriesRef: 'series-1',
+      attributes: [],
+      datapoints: [
+        {
+          datapointID: 'point-1',
+          timestamp: '18446744073709551615',
+          startTime: '0',
+          flags: 1,
+          count: '18446744073709551615',
+          sum: 0,
+          max: '0x8000000000000000',
+          bucketCounts: ['18446744073709551615'],
+          explicitBounds: ['0x7ff0000000000000'],
+          exemplars: [
+            {
+              timestamp: '9',
+              valueType: 'Int',
+              intValue: '-9223372036854775808',
+              doubleValue: null,
+              traceID: null,
+              spanID: null,
+              filteredAttributes: [],
+            },
+            {
+              timestamp: '10',
+              valueType: 'Double',
+              intValue: null,
+              doubleValue: '0x8000000000000000',
+              traceID: '00000000000000000000000000000001',
+              spanID: '0000000000000001',
+              filteredAttributes: [],
+            },
+          ],
+        },
+      ],
+    })
+
+    const selected = await telemetryAPI.getMetricSeries(
+      'metric-1',
+      'series-1',
+      null,
+      18446744073709551615n
+    )
+    const point = selected!.datapoints[0]! as ReceivedHistogramDataPoint
+    expect(point).toMatchObject({
+      timestamp: 18446744073709551615n,
+      count: 18446744073709551615n,
+      sum: 0,
+      bucketCounts: [18446744073709551615n],
+    })
+    expect('min' in point).toBe(false)
+    expect(Object.is(point.max, -0)).toBe(true)
+    expect(point.exemplars).toHaveLength(2)
+    expect(point.exemplars[0]).toMatchObject({
+      intValue: -9223372036854775808n,
+    })
+    expect(Object.is(point.exemplars[1]!.doubleValue, -0)).toBe(true)
+  })
+
+  it('decodes every received number union arm', async () => {
+    stubRpcResult({
+      metricRef: 'metric-1',
+      name: 'counter',
+      description: '',
+      unit: '1',
+      metadata: [],
+      metricType: 'Sum',
+      aggregationTemporalityCode: 2,
+      isMonotonic: false,
+      resource: { attributes: [], droppedAttributesCount: 0, schemaUrl: '' },
+      scope: {
+        name: '',
+        version: '',
+        attributes: [],
+        droppedAttributesCount: 0,
+        schemaUrl: '',
+      },
+      seriesRef: 'series-1',
+      attributes: [],
+      datapoints: [
+        {
+          datapointID: 'i',
+          timestamp: '1',
+          startTime: '0',
+          flags: 0,
+          exemplars: [],
+          valueType: 'Int',
+          intValue: '9223372036854775807',
+          doubleValue: null,
+        },
+        {
+          datapointID: 'd',
+          timestamp: '2',
+          startTime: '0',
+          flags: 0,
+          exemplars: [],
+          valueType: 'Double',
+          intValue: null,
+          doubleValue: '0x7ff8000000000001',
+        },
+        {
+          datapointID: 'e',
+          timestamp: '3',
+          startTime: '0',
+          flags: 0,
+          exemplars: [],
+          valueType: 'Empty',
+          intValue: null,
+          doubleValue: null,
+        },
+      ],
+    })
+
+    const selected = await telemetryAPI.getMetricSeries(
+      'metric-1',
+      'series-1',
+      null,
+      null
+    )
+    const points = selected!.datapoints
+    expect(points[0]).toMatchObject({
+      valueType: 'Int',
+      intValue: 9223372036854775807n,
+    })
+    expect(
+      Number.isNaN((points[1] as { doubleValue: number }).doubleValue)
+    ).toBe(true)
+    expect(points[2]).toMatchObject({
+      valueType: 'Empty',
+      intValue: null,
+      doubleValue: null,
+    })
+  })
+
+  it('decodes received exponential histogram buckets without chart fields', async () => {
+    stubRpcResult({
+      metricRef: 'metric-1',
+      name: 'distribution',
+      description: '',
+      unit: '1',
+      metadata: [],
+      metricType: 'ExponentialHistogram',
+      aggregationTemporalityCode: 1,
+      resource: { attributes: [], droppedAttributesCount: 0, schemaUrl: '' },
+      scope: {
+        name: '',
+        version: '',
+        attributes: [],
+        droppedAttributesCount: 0,
+        schemaUrl: '',
+      },
+      seriesRef: 'series-1',
+      attributes: [],
+      datapoints: [
+        {
+          datapointID: 'point-1',
+          timestamp: '1',
+          startTime: '0',
+          flags: 0,
+          exemplars: [],
+          count: '18446744073709551615',
+          scale: -10,
+          zeroCount: '9007199254740993',
+          zeroThreshold: '0x8000000000000000',
+          positive: {
+            offset: -2,
+            bucketCounts: ['1', '18446744073709551615'],
+          },
+          negative: { offset: 3, bucketCounts: [] },
+        },
+      ],
+    })
+
+    const selected = await telemetryAPI.getMetricSeries(
+      'metric-1',
+      'series-1',
+      0n,
+      1n
+    )
+    expect(selected!.datapoints[0]).toMatchObject({
+      count: 18446744073709551615n,
+      scale: -10,
+      zeroCount: 9007199254740993n,
+      positive: { offset: -2, bucketCounts: [1n, 18446744073709551615n] },
+      negative: { offset: 3, bucketCounts: [] },
+    })
+  })
+})
+
+describe('telemetryAPI.getMetricAggregateView', () => {
   it('decodes aggregate doubles while preserving omitted extents', async () => {
     stubRpcResult({
       aggregate: [
@@ -698,8 +1041,8 @@ describe('telemetryAPI.getMetricAggregate', () => {
       scalarAggregate: null,
     })
 
-    const result = await telemetryAPI.getMetricAggregate(
-      'some-stream',
+    const result = await telemetryAPI.getMetricAggregateView(
+      'some-metric',
       0n,
       1n,
       1,
@@ -727,7 +1070,7 @@ describe('attribute discovery', () => {
       },
     ])
 
-    const [field] = await telemetryAPI.getTraceAttributes()
+    const [field] = await telemetryAPI.getTraceAttributeDefinitions()
 
     expect(field).toMatchObject({
       name: 'items',
@@ -743,7 +1086,7 @@ describe('attribute discovery', () => {
   })
 })
 
-describe('telemetryAPI.searchTraces', () => {
+describe('telemetryAPI.searchTraceSummaries', () => {
   it('promotes wire timestamps and durations to bigint values', async () => {
     const summaries: JsonTraceSummary[] = [
       {
@@ -758,13 +1101,50 @@ describe('telemetryAPI.searchTraces', () => {
     ]
     stubRpcResult(summaries)
 
-    await expect(telemetryAPI.searchTraces(0n, 1n)).resolves.toMatchObject([
+    await expect(
+      telemetryAPI.searchTraceSummaries(0n, 1n)
+    ).resolves.toMatchObject([
       {
         traceID: 'trace-1',
         startTime: 1700000000000000000n,
         durationNs: 12345n,
       },
     ])
+  })
+
+  it('preserves optional matching span identities', async () => {
+    const matchedSpans = [
+      {
+        traceID: '00000000000000000000000000000001',
+        spanID: '0000000000000002',
+      },
+    ]
+    stubRpcResult([
+      {
+        traceID: '00000000000000000000000000000001',
+        hasRootSpan: true,
+        rootSpan: { serviceName: 'service-a', name: 'root' },
+        startTime: '1',
+        durationNs: '10',
+        spanCount: 2,
+        errorCount: 1,
+        matchedSpans,
+      },
+      {
+        traceID: '00000000000000000000000000000002',
+        hasRootSpan: false,
+        rootSpan: null,
+        startTime: '2',
+        durationNs: null,
+        spanCount: 1,
+        errorCount: 0,
+      },
+    ] satisfies JsonTraceSummary[])
+
+    const summaries = await telemetryAPI.searchTraceSummaries(0n, 10n)
+
+    expect(summaries[0]?.matchedSpans).toEqual(matchedSpans)
+    expect(summaries[1]).not.toHaveProperty('matchedSpans')
   })
 
   it('preserves native bigint string parsing and nullable durations', async () => {
@@ -789,7 +1169,9 @@ describe('telemetryAPI.searchTraces', () => {
       },
     ] satisfies JsonTraceSummary[])
 
-    await expect(telemetryAPI.searchTraces(0n, 1n)).resolves.toMatchObject([
+    await expect(
+      telemetryAPI.searchTraceSummaries(0n, 1n)
+    ).resolves.toMatchObject([
       { startTime: -9_223_372_036_854_775_808n, durationNs: null },
       { startTime: 16n, durationNs: 12n },
     ])
@@ -808,21 +1190,13 @@ describe('telemetryAPI.searchTraces', () => {
       },
     ])
 
-    await expect(telemetryAPI.searchTraces(0n, 1n)).rejects.toThrow(
+    await expect(telemetryAPI.searchTraceSummaries(0n, 1n)).rejects.toThrow(
       'Invalid bigint wire value: expected string, got boolean'
     )
   })
 })
 
-// searchSpans ships a compressed wire shape -- resource and scope as
-// references into top-level maps, times as an offset plus a duration, no
-// per-span traceID -- and this service is the single place it is decoded.
-//
-// That makes these the only tests standing between a decoding bug and every
-// view silently rendering wrong data: the waterfall, the detail panel and the
-// search results all read the rehydrated SpanData and none of them can tell
-// that a resource was mismatched or a timestamp reconstructed wrongly.
-describe('telemetryAPI.searchSpans rehydration', () => {
+describe('telemetryAPI.getTraceView rehydration', () => {
   const wire = {
     traceID: 'abc123',
     traceStart: '1700000000000000000',
@@ -922,13 +1296,11 @@ describe('telemetryAPI.searchSpans rehydration', () => {
 
   async function fetchTrace() {
     stubRpcResult<JsonTraceData>(wire)
-    return telemetryAPI.searchSpans('abc123')
+    return telemetryAPI.getTraceView('abc123')
   }
 
   it('resolves each span against its own resource, not the first one', async () => {
     const trace = await fetchTrace()
-    // Two spans, two different resources -- a decoder that ignored `r` would
-    // still look plausible if every span shared one.
     expect(trace.spans[0].spanData.resource.attributes[0].value).toEqual({
       kind: 'string',
       value: 'checkout',
@@ -953,8 +1325,7 @@ describe('telemetryAPI.searchSpans rehydration', () => {
     expect(trace.spans[0].spanData.startTime).toBe(base)
     expect(trace.spans[0].spanData.endTime).toBe(base + 5_000_000n)
 
-    // The child starts 1.2s in and lasts 3ms: end is start + dur, not
-    // baseline + dur, which is the mistake the shape invites.
+    // End time is relative to the span start, not the trace baseline.
     expect(trace.spans[1].spanData.startTime).toBe(base + 1_200_000_000n)
     expect(trace.spans[1].spanData.endTime).toBe(base + 1_203_000_000n)
   })
@@ -980,9 +1351,7 @@ describe('telemetryAPI.searchSpans rehydration', () => {
       ...wire,
       spans: [wire.spans[0], { ...wire.spans[0], depth: 1 }],
     })
-    const trace = await telemetryAPI.searchSpans('abc123')
-    // Copying would rebuild client-side the duplication the wire format
-    // exists to remove.
+    const trace = await telemetryAPI.getTraceView('abc123')
     expect(trace.spans[0].spanData.resource).toBe(
       trace.spans[1].spanData.resource
     )
@@ -995,10 +1364,6 @@ describe('telemetryAPI.searchSpans rehydration', () => {
     )
   })
 
-  // unplacedSpanCount and the per-span salvaged/cyclePoint flags are what the
-  // UI reads to warn about a trace with a broken parent chain. A decoder that
-  // dropped or defaulted these wrongly would make a malformed trace look
-  // healthy, or an ordinary trace look broken.
   it('preserves unplacedSpanCount when the wire reports zero', async () => {
     const trace = await fetchTrace()
     expect(trace.unplacedSpanCount).toBe(0)
@@ -1006,7 +1371,7 @@ describe('telemetryAPI.searchSpans rehydration', () => {
 
   it('preserves unplacedSpanCount when the wire reports spans stranded on a cycle', async () => {
     stubRpcResult<JsonTraceData>({ ...wire, unplacedSpanCount: 3 })
-    const trace = await telemetryAPI.searchSpans('abc123')
+    const trace = await telemetryAPI.getTraceView('abc123')
     expect(trace.unplacedSpanCount).toBe(3)
   })
 
@@ -1048,7 +1413,7 @@ describe('telemetryAPI.searchSpans rehydration', () => {
         },
       ],
     })
-    const trace = await telemetryAPI.searchSpans('abc123')
+    const trace = await telemetryAPI.getTraceView('abc123')
 
     const recovered = trace.spans.find(s => s.spanData.spanID === 'cccc')!
     expect(recovered.salvaged).toBe(true)
@@ -1058,7 +1423,6 @@ describe('telemetryAPI.searchSpans rehydration', () => {
     expect(cyclePoint.salvaged).toBe(true)
     expect(cyclePoint.cyclePoint).toBe(true)
 
-    // The two healthy spans from the base fixture are untouched.
     expect('salvaged' in trace.spans[0]).toBe(false)
     expect('salvaged' in trace.spans[1]).toBe(false)
   })
@@ -1070,7 +1434,7 @@ describe('telemetryAPI metric bigint boundary', () => {
     const result = metricResult({
       timeseries: [
         {
-          attributesKey: 'series-1',
+          seriesRef: 'series-1',
           attributes: [],
           resource: { attributes: [], droppedAttributesCount: 0 },
           datapoints: [],
@@ -1097,7 +1461,7 @@ describe('telemetryAPI metric bigint boundary', () => {
     delete result.timeseries[0]!.lastSeenNs
     stubRpcResult(result)
 
-    const metric = await telemetryAPI.getMetric('some-stream', 0n, 1n)
+    const metric = await telemetryAPI.getMetricView('some-metric', 0n, 1n)
     expect(metric!.lastSeenNs).toBeNull()
     expect(metric!.timeseries[0]!.lastSeenNs).toBeNull()
     expect(metric!.timeseries[0]!.views![0]!.bucketStart).toBe(
@@ -1107,49 +1471,40 @@ describe('telemetryAPI metric bigint boundary', () => {
   })
 })
 
-// What the client puts on the wire, which nothing else here looks at.
-//
-// Every test above stubs fetch and reads the response, so all of them pass
-// whether the request carried named parameters, positional ones, or nothing
-// recognisable at all. That blindness has cost twice already: deleteMetricStream
-// was registered under a plural name it does not take, and `params: {}` was
-// rejected for every method with nothing to name. Both reached a running server
-// before anyone noticed, because a green suite said nothing about the request.
-//
-// So these pin the request instead of the response. They are deliberately exact
-// -- a full deep-equal on params rather than a check that some key is present --
-// because the failures worth catching are a renamed key, an extra key, and a
-// silent return to positional arrays, and a loose assertion sees none of them.
 function captureRequest() {
-  const fetchMock = vi.fn().mockResolvedValue({
-    ok: true,
-    json: async () => ({ jsonrpc: '2.0', id: 1, result: [] }),
-  })
+  const fetchMock = vi
+    .fn()
+    .mockImplementation(async (_url, init: RequestInit) => {
+      const request = JSON.parse(String(init.body)) as { id: number }
+      return {
+        ok: true,
+        json: async () => ({ jsonrpc: '2.0', id: request.id, result: [] }),
+      }
+    })
   vi.stubGlobal('fetch', fetchMock)
   return () => JSON.parse(fetchMock.mock.calls[0][1].body)
 }
 
 describe('request parameters', () => {
-  // Named methods, with the exact object each one is expected to send.
   const named = [
     [
-      'searchAttributes',
-      () => telemetryAPI.searchAttributes('http'),
+      'searchAttributeMatches',
+      () => telemetryAPI.searchAttributeMatches('http'),
       { term: 'http' },
     ],
     [
-      'getAttributesByTraceID',
-      () => telemetryAPI.getAttributesByTraceID('abc'),
+      'getTraceAttributeDefinitionsByTraceID',
+      () => telemetryAPI.getTraceAttributeDefinitionsByTraceID('abc'),
       { traceID: 'abc' },
     ],
     [
-      'searchTraces',
-      () => telemetryAPI.searchTraces(2n, 5n),
+      'searchTraceSummaries',
+      () => telemetryAPI.searchTraceSummaries(2n, 5n),
       { startTime: '2', endTime: '5' },
     ],
     [
-      'searchLogs',
-      () => telemetryAPI.searchLogs(2n, 5n),
+      'searchLogSummaries',
+      () => telemetryAPI.searchLogSummaries(2n, 5n),
       { startTime: '2', endTime: '5' },
     ],
     [
@@ -1163,14 +1518,14 @@ describe('request parameters', () => {
       { traceID: 'abc' },
     ],
     [
-      'getTraceLogs',
-      () => telemetryAPI.getTraceLogs('abc'),
+      'getTraceLogSummaries',
+      () => telemetryAPI.getTraceLogSummaries('abc'),
       { traceID: 'abc' },
     ],
     [
-      'deleteMetricStream',
-      () => telemetryAPI.deleteMetricStream('s1'),
-      { streamID: 's1' },
+      'deleteMetric',
+      () => telemetryAPI.deleteMetric('s1'),
+      { metricRef: 's1' },
     ],
   ] as const
 
@@ -1186,29 +1541,15 @@ describe('request parameters', () => {
     }
   )
 
-  // searchSpans is separate: it returns an object rather than an array, so the
-  // shared stub's `result: []` would fail to rehydrate before the assertion runs.
-  it('searchSpans sends its traceID by name', async () => {
+  it('getTraceView sends its traceID by name', async () => {
     const sent = captureRequest()
-    await telemetryAPI.searchSpans('abc123').catch(() => {})
+    await telemetryAPI.getTraceView('abc123').catch(() => {})
     expect(sent().params).toEqual({ traceID: 'abc123' })
   })
 
-  // The reason the ternaries went. An omitted query must be an absent key --
-  // not null, and not a third array slot -- because the store reads a present
-  // `query` as a filter to apply and would return a narrowed result for a
-  // search the user never typed.
-  //
-  // Note what this does *not* pin: `named` dropping undefined keys is not
-  // observable here, because JSON.stringify omits undefined-valued keys anyway.
-  // Deleting that filter leaves the wire bytes identical, so no test at this
-  // level can fail on it. The filter earns its place by making the intent
-  // explicit and the return type honest, not by changing the request. The
-  // distinction that does survive serialisation is null and [] -- both real
-  // values, both sent -- which is what the getMetric tests cover.
   it('omits query entirely when no query tree is supplied', async () => {
     const sent = captureRequest()
-    await telemetryAPI.searchTraces(2n, 5n).catch(() => {})
+    await telemetryAPI.searchTraceSummaries(2n, 5n).catch(() => {})
     expect('query' in sent().params).toBe(false)
   })
 
@@ -1224,7 +1565,7 @@ describe('request parameters', () => {
     } satisfies QueryNode
 
     const sent = captureRequest()
-    await telemetryAPI.searchTraces(2n, 5n, tree).catch(() => {})
+    await telemetryAPI.searchTraceSummaries(2n, 5n, tree).catch(() => {})
     const params = sent().params
     expect(Object.keys(params).sort()).toEqual([
       'endTime',
@@ -1253,7 +1594,7 @@ describe('request parameters', () => {
     } satisfies QueryNode
 
     const sent = captureRequest()
-    await telemetryAPI.searchTraces(2n, 5n, tree).catch(() => {})
+    await telemetryAPI.searchTraceSummaries(2n, 5n, tree).catch(() => {})
     expect(sent().params.query).toEqual({
       id: 'duration-boundary',
       type: 'condition',
@@ -1282,7 +1623,7 @@ describe('request parameters', () => {
       if (!tree) throw new Error('Expected an attribute query')
       const sent = captureRequest()
 
-      await telemetryAPI.searchTraces(2n, 5n, tree).catch(() => {})
+      await telemetryAPI.searchTraceSummaries(2n, 5n, tree).catch(() => {})
 
       expect(sent().params.query.query.field.name).toBe(name)
     }
@@ -1298,7 +1639,7 @@ describe('request parameters', () => {
       if (!tree) throw new Error('Expected an explicit attribute query')
       const sent = captureRequest()
 
-      await telemetryAPI.searchLogs(2n, 5n, tree).catch(() => {})
+      await telemetryAPI.searchLogSummaries(2n, 5n, tree).catch(() => {})
 
       expect(sent().params.query.query).toMatchObject({
         field: {
@@ -1315,7 +1656,9 @@ describe('request parameters', () => {
 
   it('includes a trace result limit without requiring a query tree', async () => {
     const sent = captureRequest()
-    await telemetryAPI.searchTraces(2n, 5n, undefined, 250).catch(() => {})
+    await telemetryAPI
+      .searchTraceSummaries(2n, 5n, undefined, 250)
+      .catch(() => {})
     expect(sent().params).toEqual({
       startTime: '2',
       endTime: '5',
@@ -1326,8 +1669,8 @@ describe('request parameters', () => {
   it.each([
     [
       'logs',
-      () => telemetryAPI.searchLogs(2n, 5n, undefined, 250),
-      'searchLogs',
+      () => telemetryAPI.searchLogSummaries(2n, 5n, undefined, 250),
+      'searchLogSummaries',
     ],
     [
       'metrics',
@@ -1355,21 +1698,21 @@ describe('request parameters', () => {
     [
       'traces',
       () =>
-        telemetryAPI.searchTraces(2n, 5n, undefined, 25, {
+        telemetryAPI.searchTraceSummaries(2n, 5n, undefined, 25, {
           field: 'duration',
           direction: 'desc',
         }),
-      'searchTraces',
+      'searchTraceSummaries',
       'duration',
     ],
     [
       'logs',
       () =>
-        telemetryAPI.searchLogs(2n, 5n, undefined, 25, {
+        telemetryAPI.searchLogSummaries(2n, 5n, undefined, 25, {
           field: 'severity',
           direction: 'asc',
         }),
-      'searchLogs',
+      'searchLogSummaries',
       'severity',
     ],
     [
@@ -1397,16 +1740,18 @@ describe('request parameters', () => {
     }
   )
 
-  // The deliberate exceptions. parseIDParams reads the whole params array as
-  // the id list, so wrapping it in an object would nest the array a level
-  // deeper and delete nothing.
+  // These methods accept the ID list as positional params.
   it.each([
     [
       'deleteSpansByTraceID',
       () => telemetryAPI.deleteTraces(['a', 'b']),
       ['a', 'b'],
     ],
-    ['deleteLogByID', () => telemetryAPI.deleteLogByID('log-1'), ['log-1']],
+    [
+      'deleteLogsByRefs',
+      () => telemetryAPI.deleteLogsByRefs('log-1'),
+      ['log-1'],
+    ],
   ])(
     '%s stays positional, because its params are the ids',
     async (method, invoke, expected) => {
@@ -1418,12 +1763,19 @@ describe('request parameters', () => {
     }
   )
 
-  // Methods with nothing to name send no params at all, rather than an empty
-  // object or an empty array.
   it.each([
-    ['getTraceAttributes', () => telemetryAPI.getTraceAttributes()],
-    ['getLogAttributes', () => telemetryAPI.getLogAttributes()],
-    ['getMetricAttributes', () => telemetryAPI.getMetricAttributes()],
+    [
+      'getTraceAttributeDefinitions',
+      () => telemetryAPI.getTraceAttributeDefinitions(),
+    ],
+    [
+      'getLogAttributeDefinitions',
+      () => telemetryAPI.getLogAttributeDefinitions(),
+    ],
+    [
+      'getMetricAttributeDefinitions',
+      () => telemetryAPI.getMetricAttributeDefinitions(),
+    ],
     ['clearTraces', () => telemetryAPI.clearTraces()],
     ['clearLogs', () => telemetryAPI.clearLogs()],
     ['clearMetrics', () => telemetryAPI.clearMetrics()],
@@ -1436,18 +1788,21 @@ describe('request parameters', () => {
   })
 
   it.each([
-    ['searchTraces', () => telemetryAPI.searchTraces(null, null)],
-    ['searchLogs', () => telemetryAPI.searchLogs(null, null)],
+    [
+      'searchTraceSummaries',
+      () => telemetryAPI.searchTraceSummaries(null, null),
+    ],
+    ['searchLogSummaries', () => telemetryAPI.searchLogSummaries(null, null)],
     [
       'searchMetricSummaries',
       () => telemetryAPI.searchMetricSummaries(null, null),
     ],
-    ['getMetric', () => telemetryAPI.getMetric('stream-1', null, null)],
+    ['getMetricView', () => telemetryAPI.getMetricView('metric-1', null, null)],
     [
-      'getMetricAggregate',
+      'getMetricAggregateView',
       () =>
-        telemetryAPI.getMetricAggregate(
-          'stream-1',
+        telemetryAPI.getMetricAggregateView(
+          'metric-1',
           null,
           null,
           10,
@@ -1466,17 +1821,25 @@ describe('request parameters', () => {
   })
 
   it.each([
-    ['searchTraces', () => telemetryAPI.searchTraces(null, 5n)],
-    ['searchLogs', () => telemetryAPI.searchLogs(null, 5n)],
+    ['searchTraceSummaries', () => telemetryAPI.searchTraceSummaries(null, 5n)],
+    ['searchLogSummaries', () => telemetryAPI.searchLogSummaries(null, 5n)],
     [
       'searchMetricSummaries',
       () => telemetryAPI.searchMetricSummaries(null, 5n),
     ],
-    ['getMetric', () => telemetryAPI.getMetric('stream-1', null, 5n)],
+    ['getMetricView', () => telemetryAPI.getMetricView('metric-1', null, 5n)],
     [
-      'getMetricAggregate',
+      'getMetricAggregateView',
       () =>
-        telemetryAPI.getMetricAggregate('stream-1', null, 5n, 10, null, [], 0),
+        telemetryAPI.getMetricAggregateView(
+          'metric-1',
+          null,
+          5n,
+          10,
+          null,
+          [],
+          0
+        ),
     ],
   ])(
     '%s preserves an independently unbounded start',
@@ -1491,17 +1854,25 @@ describe('request parameters', () => {
   )
 
   it.each([
-    ['searchTraces', () => telemetryAPI.searchTraces(2n, null)],
-    ['searchLogs', () => telemetryAPI.searchLogs(2n, null)],
+    ['searchTraceSummaries', () => telemetryAPI.searchTraceSummaries(2n, null)],
+    ['searchLogSummaries', () => telemetryAPI.searchLogSummaries(2n, null)],
     [
       'searchMetricSummaries',
       () => telemetryAPI.searchMetricSummaries(2n, null),
     ],
-    ['getMetric', () => telemetryAPI.getMetric('stream-1', 2n, null)],
+    ['getMetricView', () => telemetryAPI.getMetricView('metric-1', 2n, null)],
     [
-      'getMetricAggregate',
+      'getMetricAggregateView',
       () =>
-        telemetryAPI.getMetricAggregate('stream-1', 2n, null, 10, null, [], 0),
+        telemetryAPI.getMetricAggregateView(
+          'metric-1',
+          2n,
+          null,
+          10,
+          null,
+          [],
+          0
+        ),
     ],
   ])('%s preserves an independently unbounded end', async (method, invoke) => {
     const sent = captureRequest()
@@ -1512,11 +1883,11 @@ describe('request parameters', () => {
     })
   })
 
-  it('getMetric sends the final named parameter contract exactly', async () => {
+  it('getMetricView sends the final named parameter contract exactly', async () => {
     const sent = captureRequest()
     await telemetryAPI
-      .getMetric(
-        'stream-1',
+      .getMetricView(
+        'metric-1',
         2n,
         5n,
         10,
@@ -1532,45 +1903,70 @@ describe('request parameters', () => {
       )
       .catch(() => {})
     expect(sent().params).toEqual({
-      streamID: 'stream-1',
+      metricRef: 'metric-1',
       startTime: '2',
       endTime: '5',
       targetBuckets: 10,
-      seriesIDs: ['series-1'],
+      seriesRefs: ['series-1'],
       quantiles: [0.5],
       tzOffsetNs: 7,
       viewBuckets: 8,
       sparklineBuckets: 9,
-      selectedSeriesIDs: ['selected-1'],
+      selectedSeriesRefs: ['selected-1'],
       tzName: 'America/New_York',
-      datapointSeriesIDs: ['datapoints-1'],
+      datapointSeriesRefs: ['datapoints-1'],
       datapointSeriesLimit: 3,
+    })
+  })
+
+  it('getMetric sends only the Metric reference', async () => {
+    const sent = captureRequest()
+    await telemetryAPI.getMetric('metric-1').catch(() => {})
+    expect(sent()).toMatchObject({
+      method: 'getMetric',
+      params: { metricRef: 'metric-1' },
+    })
+  })
+
+  it('getMetricSeries sends references and nullable unsigned nanosecond bounds', async () => {
+    const sent = captureRequest()
+    await telemetryAPI
+      .getMetricSeries('metric-1', 'series-1', null, 18446744073709551615n)
+      .catch(() => {})
+    expect(sent()).toMatchObject({
+      method: 'getMetricSeries',
+      params: {
+        metricRef: 'metric-1',
+        seriesRef: 'series-1',
+        startTime: null,
+        endTime: '18446744073709551615',
+      },
     })
   })
 
   it('preserves omitted, empty, and null series selections', async () => {
     const omitted = captureRequest()
-    await telemetryAPI.getMetric('stream-1', 2n, 5n).catch(() => {})
-    expect('seriesIDs' in omitted().params).toBe(false)
+    await telemetryAPI.getMetricView('metric-1', 2n, 5n).catch(() => {})
+    expect('seriesRefs' in omitted().params).toBe(false)
 
     const empty = captureRequest()
     await telemetryAPI
-      .getMetric('stream-1', 2n, 5n, undefined, [])
+      .getMetricView('metric-1', 2n, 5n, undefined, [])
       .catch(() => {})
-    expect(empty().params.seriesIDs).toEqual([])
+    expect(empty().params.seriesRefs).toEqual([])
 
     const unfiltered = captureRequest()
     await telemetryAPI
-      .getMetricAggregate('stream-1', 2n, 5n, 10, null, [], 0)
+      .getMetricAggregateView('metric-1', 2n, 5n, 10, null, [], 0)
       .catch(() => {})
-    expect(unfiltered().params.seriesIDs).toBeNull()
+    expect(unfiltered().params.seriesRefs).toBeNull()
   })
 
-  it('getMetricAggregate sends the final named parameter contract exactly', async () => {
+  it('getMetricAggregateView sends the final named parameter contract exactly', async () => {
     const sent = captureRequest()
     await telemetryAPI
-      .getMetricAggregate(
-        'stream-1',
+      .getMetricAggregateView(
+        'metric-1',
         2n,
         5n,
         10,
@@ -1583,15 +1979,15 @@ describe('request parameters', () => {
       )
       .catch(() => {})
     expect(sent().params).toEqual({
-      streamID: 'stream-1',
+      metricRef: 'metric-1',
       startTime: '2',
       endTime: '5',
       targetBuckets: 10,
-      seriesIDs: ['series-1'],
+      seriesRefs: ['series-1'],
       quantiles: [0.95],
       tzOffsetNs: 7,
       viewBuckets: 8,
-      selectedSeriesIDs: ['selected-1'],
+      selectedSeriesRefs: ['selected-1'],
       tzName: 'UTC',
     })
   })
@@ -1599,7 +1995,7 @@ describe('request parameters', () => {
   it('serializes exact bigint bounds without converting them through number', async () => {
     const sent = captureRequest()
     await telemetryAPI
-      .searchTraces(18_446_744_073_709_551_615n, 0n)
+      .searchTraceSummaries(18_446_744_073_709_551_615n, 0n)
       .catch(() => {})
 
     expect(sent().params).toEqual({

@@ -24,8 +24,7 @@ func captureShapedSets(n int) []pcommon.Map {
 	return sets
 }
 
-// BenchmarkAttributeSetCaptureShape is the shape the change is justified by:
-// the same 89 sets reporting over and over, which is what a metrics session is.
+// BenchmarkAttributeSetCaptureShape measures repeated resolution of 89 label sets.
 func BenchmarkAttributeSetCaptureShape(b *testing.B) {
 	sets := captureShapedSets(89)
 	ingest.ResetAttributeMemo()

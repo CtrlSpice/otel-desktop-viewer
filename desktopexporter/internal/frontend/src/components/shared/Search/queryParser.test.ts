@@ -432,9 +432,7 @@ describe('queryParser value normalization', () => {
     expect(valueOf(input)).toBe('GET')
   })
 
-  // Backticks are not a quote style. The old hand-written lexer accepted
-  // them; the grammar never did, so the editor underlined what the parser
-  // accepted. The grammar is the language now, and it has two quote styles.
+  // The grammar supports single and double quotes, not backticks.
   it('backticks are rejected, not treated as quotes', () => {
     expect(() => parseQuery('http.method = `GET`', fields)).toThrow()
   })
@@ -454,9 +452,6 @@ describe('queryParser value normalization', () => {
 })
 
 describe('unquoted multi-word values', () => {
-  // The regression this file exists for. `service.name = Red Bull Racing`
-  // used to parse as `Red` and silently drop the rest, returning confidently
-  // wrong results.
   it('rejects rather than silently truncating', () => {
     expect(() => parseQuery('service.name = Red Bull Racing', fields)).toThrow(
       /Unexpected "Bull"/
@@ -473,8 +468,6 @@ describe('unquoted multi-word values', () => {
     expect(valueOf('service.name = "Red Bull Racing"')).toBe('Red Bull Racing')
   })
 
-  // The editor underlines it and a submitted query errors: the two agree.
-  // They did not before -- validateQuery reported it, parseQuery did not.
   it('is reported identically by the validator and the parser', () => {
     const input = 'service.name = Red Bull Racing'
     const errors = validateQuery(input, fields)
@@ -585,8 +578,6 @@ describe('LIMIT modifier syntax', () => {
   })
 })
 
-// The contract the Lezer unification changed, pinned. Each of these was
-// either impossible or silently wrong under the hand-written parser.
 describe('unified grammar contract', () => {
   it('preserves exact native integer list spellings and rejects fractions', () => {
     const query = expectCondition(
@@ -710,9 +701,6 @@ describe('unified grammar contract', () => {
   })
 
   it('a NOT typo is an error, never a silent free-text search', () => {
-    // The old parser submitted this as a global text search for the literal
-    // string, while the editor underlined it as an error. The two now agree
-    // that a query using the language and failing to parse is an error.
     expect(() => parseQuery('body NOT 5', contractFields)).toThrow()
     expect(validateQuery('body NOT 5', contractFields).length).toBeGreaterThan(
       0
@@ -720,10 +708,7 @@ describe('unified grammar contract', () => {
   })
 
   it('URLs work as unquoted values, up to an equals sign', () => {
-    // ':' '/' '?' '&' are all value characters now (the old lexer stopped at
-    // ':'). '=' cannot be: with no-space comparisons like http.method=GET in
-    // the language, an '=' inside an unquoted value would be indistinguishable
-    // from the operator. A URL with query parameters needs quotes.
+    // '=' separates no-space comparisons, so URLs with query parameters need quotes.
     const q = expectCondition(
       parseQuery('body = http://example.com/x', contractFields)
     )
@@ -941,12 +926,7 @@ describe('native integer scalar operands', () => {
   })
 })
 
-// Words that merely start with a keyword must stay words. AND/OR are
-// specialized from Word -- exact-text match -- rather than standalone tokens,
-// because a token above Word in the precedence list overrides longest-match
-// in Lezer: "orders" lexed as Or + "ders", and every value, field, or free
-// text beginning with "or"/"and"/"in"/"not" shattered. Found live, not by
-// unit tests, because no fixture value happened to start with a keyword.
+// Exact keyword specialization prevents prefixes such as "orders" splitting.
 describe('keyword-prefixed words', () => {
   it.each([
     ['body = orders', 'orders'],
@@ -977,8 +957,6 @@ describe('keyword-prefixed words', () => {
   })
 })
 
-// Review findings on the unification, pinned. Each of these was a regression
-// or a silent misbehavior the reviewer caught before merge.
 describe('review findings', () => {
   it('parenthetical free text is a global search, not an error', () => {
     // The grammar eagerly parses a leading "(" as a Group; counting Groups

@@ -300,7 +300,7 @@ func TestMacros_DownscaleExpBuckets(t *testing.T) {
 	// Compose with sum_bucket_vectors: downscale stream A from scale 1 to
 	// scale 0, then merge with stream B (already at scale 0). Verify the
 	// merged bucket counts. Quantiles of a merged result are covered end to
-	// end in metrics_test (TestGetMetric_QuantileHandWorked), through the
+	// end in metrics_test (TestGetMetricView_QuantileHandWorked), through the
 	// aggregate path; the per-bucket assertions above prove downscale's
 	// correctness.
 	t.Run("composes with sum_bucket_vectors", func(t *testing.T) {
@@ -690,17 +690,10 @@ func TestMacros_SumBucketVectors(t *testing.T) {
 		assert.False(t, v.Valid, "indexing a NULL result should be NULL")
 	})
 
-	// The end-to-end case that merged two streams and took p50 of the sum
-	// now lives in metrics_test (TestGetMetric_QuantileHandWorked, "aggregate
-	// p50 over merged series"), where it runs through the real aggregate
-	// path instead of composing macros by hand.
 }
 
 func TestMacros_Idempotent(t *testing.T) {
-	// Re-running every macro through CREATE OR REPLACE must succeed without
-	// "already exists" errors. This is the protection against the historical
-	// DuckDB quirk where some CREATE statements weren't idempotent and had
-	// to be tolerated at the bootstrap layer.
+	// CREATE OR REPLACE must make every macro safe to execute again.
 	db := macroDB(t)
 	for i, q := range queries.Macros() {
 		_, err := db.Exec(q.SQL)

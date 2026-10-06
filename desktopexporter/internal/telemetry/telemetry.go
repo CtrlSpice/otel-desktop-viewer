@@ -1,20 +1,13 @@
 // Package telemetry carries the exporter's self-observability: the spans and
 // instruments it emits about its own ingest, queries, and retention.
 //
-// The tool is an OpenTelemetry viewer, so it measures itself the way it expects
-// its users to measure their services -- with real telemetry rather than ad-hoc
-// timing logs. Point it at its own OTLP endpoint and it renders its own query
-// spans.
+// The viewer CLI can export these traces and metrics to an external OTLP
+// endpoint.
 //
 // Disabled is the default. A disabled Telemetry uses noop providers rather than
 // nil checks, so call sites are unconditional and cost a virtual call when off.
-// Two reasons for the default: a local tool should not spend cycles observing
-// itself unless asked, and self-export creates a feedback loop -- ingesting your
-// own spans emits spans about that ingest. The loop converges rather than
-// explodes (a batch of self-spans produces one more span), but it is noise, and
-// it distorts the very ingest numbers you would be measuring. Hence
-// InstrumentIngest, which the exporter uses to suppress ingest spans while
-// self-exporting.
+// Self-export suppresses ingest instrumentation to avoid a feedback loop and
+// distorted ingest measurements.
 package telemetry
 
 import (
@@ -153,13 +146,8 @@ func (t *Telemetry) RPC(ctx context.Context, method string) (context.Context, fu
 // RPCEncode starts a child span around serialising one JSON-RPC response. The
 // returned func ends the span; pass it the encoding error, or nil.
 //
-// This is the one part of serving a request that can be attributed on its own.
-// DuckDB builds the response JSON inside the SQL query, so query time and
-// JSON-construction time are not separable -- EncodeMessage is the clean split.
-// Finding it trivial is the useful outcome: it says the latency lives entirely
-// in the query and the client, not in our serialisation.
-//
-// No context is returned because nothing nests inside the span.
+// DuckDB includes JSON construction in query time, so EncodeMessage is the only
+// separately attributable encoding step. Nothing nests inside this span.
 func (t *Telemetry) RPCEncode(ctx context.Context) func(error) {
 	_, span := t.tracer.Start(ctx, "desktopexporter.rpc.encode")
 	return func(err error) {

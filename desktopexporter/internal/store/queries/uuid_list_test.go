@@ -12,13 +12,8 @@ import (
 // form the store renders and the dashless wire form the JSON-RPC layer serves
 // -- and reject anything that is neither.
 //
-// Lives here rather than in util because the macro is created by this package's
-// DDL; the util version silently tested nothing once the idiom moved out of a
-// Go string and into SQL.
-// The uuid placeholder contract, pinned against a real database because the
-// interesting behaviour is DuckDB's, not ours: both id spellings the API serves
-// must delete, and a malformed id must raise rather than report a successful
-// no-op.
+// This test uses a real database because uuid_list is defined by package DDL and
+// its casting behaviour belongs to DuckDB.
 func TestUUIDListRejectsMalformedIDs(t *testing.T) {
 	db := freshDB(t)
 	_, err := db.Exec(`create table t (id uuid)`)

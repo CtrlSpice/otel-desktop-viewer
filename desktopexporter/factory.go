@@ -11,7 +11,7 @@ import (
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 )
 
-// Creates a factory for the Desktop Exporter
+// NewFactory creates a factory for the desktop exporter.
 func NewFactory() exporter.Factory {
 	return exporter.NewFactory(
 		metadata.Type,
@@ -22,7 +22,7 @@ func NewFactory() exporter.Factory {
 	)
 }
 
-// Create default configurations
+// createDefaultConfig returns the default exporter configuration.
 func createDefaultConfig() component.Config {
 	return &Config{
 		Telemetry:    TelemetryDisabled,
@@ -30,11 +30,8 @@ func createDefaultConfig() component.Config {
 	}
 }
 
-// newSignalExporter validates config and builds the write-only exporter one
-// signal pipeline will own. No shared state is constructed here: the store,
-// server, and retention belong to the duckdb extension, which each instance
-// resolves independently in Start. That is why the sharedcomponent machinery
-// that used to live in this file is gone -- there is nothing left to share.
+// newSignalExporter validates config and builds one signal pipeline's
+// write-only exporter. Start resolves the store from the DuckDB extension.
 func newSignalExporter(config component.Config, set exporter.Settings) (*desktopExporter, *Config, error) {
 	if config == nil {
 		return nil, nil, errors.New("nil config")

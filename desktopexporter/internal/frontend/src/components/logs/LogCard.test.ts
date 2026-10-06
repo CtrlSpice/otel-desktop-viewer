@@ -10,7 +10,7 @@ import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
 function makeLog(overrides: Partial<LogSummary> = {}): LogSummary {
   return {
-    id: 'log-1',
+    logRef: 'log-1',
     timestamp: 1_700_000_000_123_456_789n,
     severityText: 'ERROR',
     severityNumber: 17,
@@ -74,7 +74,7 @@ describe('LogCard', () => {
 
   it('calls onclick with the log id when clicked', async () => {
     const onclick = vi.fn()
-    renderCard({ log: makeLog({ id: 'log-42' }), onclick })
+    renderCard({ log: makeLog({ logRef: 'log-42' }), onclick })
     await userEvent.click(screen.getByRole('button'))
     expect(onclick).toHaveBeenCalledWith('log-42')
   })

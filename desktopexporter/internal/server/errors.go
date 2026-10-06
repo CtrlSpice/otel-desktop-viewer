@@ -18,25 +18,25 @@ import (
 // returns the matching *NotFound error below -- never a null result. The
 // frontend service layer decides how each surfaces in the UI.
 const (
-	ErrCodeTraceNotFound   = -32001
-	ErrCodeLogNotFound     = -32002
-	ErrCodeMetricNotFound  = -32003
-	ErrCodeInvalidTraceID  = -32004
-	ErrCodeInvalidLogID    = -32005
-	ErrCodeInvalidQuery    = -32007
-	ErrCodeInvalidStreamID = -32009
-	ErrCodeRequestCanceled = -32010
+	ErrCodeTraceNotFound    = -32001
+	ErrCodeLogNotFound      = -32002
+	ErrCodeMetricNotFound   = -32003
+	ErrCodeInvalidTraceID   = -32004
+	ErrCodeInvalidLogRef    = -32005
+	ErrCodeInvalidQuery     = -32007
+	ErrCodeInvalidMetricRef = -32009
+	ErrCodeRequestCanceled  = -32010
 )
 
 // Custom JSON-RPC errors
 var (
-	ErrTraceNotFound   = jsonrpc2.NewError(ErrCodeTraceNotFound, "Trace not found")
-	ErrLogsNotFound    = jsonrpc2.NewError(ErrCodeLogNotFound, "Log not found")
-	ErrMetricNotFound  = jsonrpc2.NewError(ErrCodeMetricNotFound, "Metric not found")
-	ErrInvalidTraceID  = jsonrpc2.NewError(ErrCodeInvalidTraceID, "Invalid trace ID")
-	ErrInvalidLogID    = jsonrpc2.NewError(ErrCodeInvalidLogID, "Invalid log ID")
-	ErrInvalidQuery    = jsonrpc2.NewError(ErrCodeInvalidQuery, "Invalid query")
-	ErrInvalidStreamID = jsonrpc2.NewError(ErrCodeInvalidStreamID, "Invalid metric stream ID")
+	ErrTraceNotFound    = jsonrpc2.NewError(ErrCodeTraceNotFound, "Trace not found")
+	ErrLogsNotFound     = jsonrpc2.NewError(ErrCodeLogNotFound, "Log not found")
+	ErrMetricNotFound   = jsonrpc2.NewError(ErrCodeMetricNotFound, "Metric not found")
+	ErrInvalidTraceID   = jsonrpc2.NewError(ErrCodeInvalidTraceID, "Invalid trace ID")
+	ErrInvalidLogRef    = jsonrpc2.NewError(ErrCodeInvalidLogRef, "Invalid log reference")
+	ErrInvalidQuery     = jsonrpc2.NewError(ErrCodeInvalidQuery, "Invalid query")
+	ErrInvalidMetricRef = jsonrpc2.NewError(ErrCodeInvalidMetricRef, "Invalid Metric reference")
 
 	// ErrRequestCanceled covers a query abandoned by the caller -- the UI
 	// navigating away mid-poll, or a browser tab closing. DuckDB surfaces the
@@ -59,9 +59,9 @@ func mapStoreError(err error) error {
 		return ErrRequestCanceled
 	case errors.Is(err, spans.ErrTraceIDNotFound):
 		return ErrTraceNotFound
-	case errors.Is(err, logs.ErrLogIDNotFound):
+	case errors.Is(err, logs.ErrLogRefNotFound):
 		return ErrLogsNotFound
-	case errors.Is(err, metrics.ErrStreamIDNotFound):
+	case errors.Is(err, metrics.ErrMetricIDNotFound):
 		return ErrMetricNotFound
 	case errors.Is(err, spans.ErrInvalidTraceQuery), errors.Is(err, logs.ErrInvalidLogQuery),
 		errors.Is(err, metrics.ErrInvalidMetricQuery), errors.Is(err, search.ErrInvalidQuery):

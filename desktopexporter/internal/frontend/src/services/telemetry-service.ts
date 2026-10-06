@@ -1,20 +1,23 @@
-// Telemetry Service - JSON-RPC API client for OpenTelemetry Desktop Viewer
-
 import type {
   TraceData,
   TraceSummary,
   LogData,
   LogSummary,
   TraceLogSummary,
-  MetricData,
-  MetricTimeseries,
+  MetricViewData,
+  MetricSeriesViewData,
   MetricSummary,
   Stats,
   Exemplar,
   DataPoint,
   ScalarAggregate,
   ScalarViewBucket,
-  MetricAggregateEnvelope,
+  MetricAggregateViewData,
+  ExactMetric,
+  ExactMetricSeries,
+  ReceivedNumberDataPoint,
+  ReceivedHistogramDataPoint,
+  ReceivedExponentialHistogramDataPoint,
   AggregateBucket,
 } from '@/types/api-types'
 import type {
@@ -25,9 +28,9 @@ import type {
   JsonLogData,
   JsonLogSummary,
   JsonTraceLogSummary,
-  JsonMetricData,
+  JsonMetricViewData,
   JsonMetricSummary,
-  JsonMetricTimeseries,
+  JsonMetricSeriesViewData,
   JsonStats,
   JsonTraceData,
   JsonTraceSummary,
@@ -36,7 +39,12 @@ import type {
   JsonAttributeMatch,
   JsonAttribute,
   JsonAttributeValue,
-  JsonMetricAggregateEnvelope,
+  JsonMetricAggregateViewData,
+  JsonExactMetric,
+  JsonExactMetricSeries,
+  JsonReceivedNumberDataPoint,
+  JsonReceivedHistogramDataPoint,
+  JsonReceivedExponentialHistogramDataPoint,
   JsonScalarAggregate,
   JsonScalarViewBucket,
   JsonAggregateBucket,
@@ -50,7 +58,6 @@ import {
   type QueryNode,
 } from '@/search/model'
 
-// JSON-RPC Client
 type JsonRpcParamValue =
   | string
   | number
@@ -81,9 +88,7 @@ interface JsonRpcResponse {
   id: number
 }
 
-// Error subclass that preserves the JSON-RPC error code so callers can
-// pattern-match on it to render a specific callout instead of a generic
-// failure UI.
+/** Preserves the JSON-RPC code for error-specific UI. */
 export class JsonRpcError extends Error {
   code: number
   constructor(code: number, message: string) {
@@ -98,7 +103,6 @@ export type SearchSort = {
   direction: 'asc' | 'desc'
 }
 
-// Custom error codes minted by the backend (internal/server/errors.go).
 const ERR_CODE_METRIC_NOT_FOUND = -32003
 
 /** An absolute query bound in Unix nanoseconds, or null when unbounded. */
@@ -212,9 +216,7 @@ function attributesFromJSON(attributes: JsonAttribute[]): Attribute[] {
   }))
 }
 
-/** Thrown when a request is abandoned. Callers that supersede their own
- *  requests should swallow this rather than surfacing it as an error -- the
- *  result was discarded on purpose. */
+/** Thrown when a superseded request is abandoned. */
 export class RequestAbortedError extends Error {
   constructor() {
     super('Request aborted')
@@ -222,7 +224,7 @@ export class RequestAbortedError extends Error {
   }
 }
 
-/** True when a rejection is just an abandoned request. */
+/** Returns whether a rejection represents an abandoned request. */
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Classifies arbitrary caught or rejected values by identity without assuming Error.
 export function isAbortError(err: unknown): boolean {
   return (
@@ -231,36 +233,15 @@ export function isAbortError(err: unknown): boolean {
   )
 }
 
-// Named parameters, built by describing them rather than by placing them.
-//
-// The server accepts params as an object as well as an array, and an object
-// is what these calls want: JSON-RPC positional params have no notion of a
-// hole, so sending the fifth argument meant also sending the first four --
-// placeholders, defaults chosen to mean "ignore me", and a trailing trim to
-// undo the ones nobody asked for. None of that described metrics. It described
-// counting.
-//
-// `named` drops the keys the caller never supplied and keeps everything else,
-// which is the entire mechanism. The distinction it must preserve is that
-// `undefined` means "not supplied" while `null` and `[]` are real values a
-// caller can mean -- for seriesIDs those are three different requests: every
-// series, every series, and no series respectively.
+// Omit unsupplied keys while preserving null and empty-array values.
 function named(params: JsonRpcNamedParams): JsonRpcNamedParams {
   return Object.fromEntries(
     Object.entries(params).filter(([, value]) => value !== undefined)
   )
 }
 
-// Generic JSON-RPC transport. T is a compile-time assertion of the wire
-// shape (see wire-types.ts), not runtime validation -- the backend is
-// trusted to serve what its projections declare.
-//
-// `signal` is what makes server-side cancellation reachable. The backend
-// already tears a running DuckDB query down when the request context is
-// cancelled, but without a signal here the fetch survives navigation, so the
-// query runs to completion holding the store's read lock for a result nobody
-// will read. Aborting the fetch closes the connection, which cancels
-// request.Context(), which interrupts the query.
+// T asserts the trusted backend wire shape at compile time; it does not validate it.
+// Aborting fetch cancels the server request context and its DuckDB query.
 async function callRPC<T>(
   method: string,
   params?: JsonRpcParams,
@@ -294,6 +275,13 @@ async function callRPC<T>(
 
   const data: JsonRpcResponse = await response.json()
 
+  if (data.jsonrpc !== request.jsonrpc) {
+    throw new Error(`Invalid JSON-RPC version: ${String(data.jsonrpc)}`)
+  }
+  if (data.id !== request.id) {
+    throw new Error('JSON-RPC response ID does not match request ID')
+  }
+
   if (data.error) {
     throw new JsonRpcError(data.error.code, data.error.message)
   }
@@ -304,9 +292,6 @@ async function callRPC<T>(
   return data.result as T
 }
 
-// Data Transformation Functions
-
-// Helper functions to deserialize timestamps
 function traceSummaryFromJSON(json: JsonTraceSummary): TraceSummary {
   return {
     ...json,
@@ -330,20 +315,7 @@ function traceSummariesFromJSON(json: JsonTraceSummary[]): TraceSummary[] {
   return json.map(traceSummaryFromJSON)
 }
 
-// Rehydrates the compressed searchSpans wire shape into the SpanData the views
-// expect: references resolved against the response's resource and scope maps,
-// times reconstructed from the trace baseline, traceID reattached.
-//
-// Every compression the wire format applies is undone here, at one boundary, so
-// no view knows the transport changed. That was worth doing deliberately -- the
-// waterfall, the detail panel and the search results all read SpanData, and
-// pushing `r`/`s` lookups into each of them would have spread the wire format
-// across the app for no benefit.
-//
-// Resolved resources and scopes are *shared*, not copied: all 4,891 spans of a
-// trace point at the same 23 resource objects. They are read-only downstream,
-// and copying them per span would rebuild client-side exactly the duplication
-// the wire format just removed.
+// Decodes compressed spans and shares each resolved resource and scope object.
 function traceDataFromJSON(json: JsonTraceData): TraceData {
   const traceStart = bigintFromWire(json.traceStart)
   const resources = Object.fromEntries(
@@ -362,9 +334,6 @@ function traceDataFromJSON(json: JsonTraceData): TraceData {
   return {
     traceID: json.traceID,
     unplacedSpanCount: json.unplacedSpanCount,
-    // events is coalesced to [] server-side and matched is always
-    // emitted (literal true when no search criteria), so no fallbacks;
-    // links rides the spanData spread untouched.
     spans: json.spans.map(spanNode => {
       const { r, s, start, dur, ...rest } = spanNode.spanData
       const startTime = traceStart + BigInt(start)
@@ -400,9 +369,6 @@ function traceDataFromJSON(json: JsonTraceData): TraceData {
   }
 }
 
-// Summary projection returned by searchLogs. Lightweight -- only
-// promote the one bigint field (timestamp); the rest are plain
-// primitives on the wire.
 function logSummaryFromJSON(json: JsonLogSummary): LogSummary {
   return {
     ...json,
@@ -420,8 +386,6 @@ function traceLogSummariesFromJSON(
   return json.map(log => ({ ...log, timestamp: bigintFromWire(log.timestamp) }))
 }
 
-// Full log row returned by getLog(id). Promotes both timestamp
-// columns; everything else matches the wire shape.
 function logDataFromJSON(json: JsonLogData): LogData {
   return {
     ...json,
@@ -540,15 +504,11 @@ function dataPointFromJSON(json: JsonDataPoint): DataPoint {
   }
 }
 
-// MetricTimeseries owns the attribute set for its group (lifted out
-// of the per-dp objects on the wire). The reviver itself has no
-// BigInts to promote at the timeseries level -- attributesKey is a
-// plain string and attributes are already plain string/string/string
-// trios -- so it's just a recursive call into the timeseries'
-// datapoints to revive their timestamp BigInts.
-function timeseriesFromJSON(json: JsonMetricTimeseries): MetricTimeseries {
+function timeseriesFromJSON(
+  json: JsonMetricSeriesViewData
+): MetricSeriesViewData {
   return {
-    attributesKey: json.attributesKey,
+    seriesRef: json.seriesRef,
     attributes: attributesFromJSON(json.attributes),
     resource: {
       ...json.resource,
@@ -583,10 +543,7 @@ function timeseriesFromJSON(json: JsonMetricTimeseries): MetricTimeseries {
   }
 }
 
-/** Bucket starts ride as strings for the same reason every other ns timestamp
- *  does, and are promoted here so nothing downstream handles two encodings of
- *  one idea. Shared by the per-series views and the cross-series pools, which
- *  is the payoff of giving the pools the same bucket shape. */
+/** Decodes nanosecond bucket starts and scalar values at the wire boundary. */
 function scalarViewBucketsFromJSON(
   json: JsonScalarViewBucket[]
 ): ScalarViewBucket[] {
@@ -602,7 +559,7 @@ function scalarViewBucketsFromJSON(
 
 function aggregateBucketsFromJSON(
   json: JsonAggregateBucket[] | null
-): MetricAggregateEnvelope['aggregate'] {
+): MetricAggregateViewData['aggregate'] {
   if (!json) return null
   return json.map(bucket => {
     const { sum, min, max, explicitBounds, zeroThreshold, quantiles, ...rest } =
@@ -634,7 +591,7 @@ function scalarAggregateFromJSON(
   }
 }
 
-function metricDataFromJSON(json: JsonMetricData): MetricData {
+function metricViewDataFromJSON(json: JsonMetricViewData): MetricViewData {
   const {
     aggregate: _aggregate,
     scalarAggregate: _scalarAggregate,
@@ -667,6 +624,159 @@ function metricDataFromJSON(json: JsonMetricData): MetricData {
   }
 }
 
+function exactMetricIdentityFromJSON<
+  T extends JsonExactMetric | JsonExactMetricSeries,
+>(json: T) {
+  return {
+    ...json,
+    metadata: attributesFromJSON(json.metadata),
+    resource: {
+      ...json.resource,
+      attributes: attributesFromJSON(json.resource.attributes),
+    },
+    scope: {
+      ...json.scope,
+      attributes: attributesFromJSON(json.scope.attributes),
+    },
+  }
+}
+
+function exactMetricFromJSON(json: JsonExactMetric): ExactMetric {
+  return {
+    ...exactMetricIdentityFromJSON(json),
+    series: json.series.map(series => ({
+      ...series,
+      attributes: attributesFromJSON(series.attributes),
+      datapointCount: bigintFromWire(series.datapointCount),
+      firstDatapointTimestamp: nullableBigintFromWire(
+        series.firstDatapointTimestamp
+      ),
+      lastDatapointTimestamp: nullableBigintFromWire(
+        series.lastDatapointTimestamp
+      ),
+    })),
+  }
+}
+
+function receivedNumberDataPointFromJSON(
+  json: JsonReceivedNumberDataPoint
+): ReceivedNumberDataPoint {
+  const base = {
+    datapointID: json.datapointID,
+    timestamp: bigintFromWire(json.timestamp),
+    startTime: bigintFromWire(json.startTime),
+    flags: json.flags,
+    exemplars: json.exemplars.map(exemplarFromJSON),
+  }
+  switch (json.valueType) {
+    case 'Int':
+      return {
+        ...base,
+        valueType: 'Int',
+        intValue: bigintFromWire(json.intValue),
+        doubleValue: null,
+      }
+    case 'Double':
+      return {
+        ...base,
+        valueType: 'Double',
+        intValue: null,
+        doubleValue: doubleFromWire(json.doubleValue),
+      }
+    case 'Empty':
+      return {
+        ...base,
+        valueType: 'Empty',
+        intValue: null,
+        doubleValue: null,
+      }
+  }
+}
+
+function receivedHistogramDataPointFromJSON(
+  json: JsonReceivedHistogramDataPoint
+): ReceivedHistogramDataPoint {
+  const decoded: ReceivedHistogramDataPoint = {
+    datapointID: json.datapointID,
+    timestamp: bigintFromWire(json.timestamp),
+    startTime: bigintFromWire(json.startTime),
+    flags: json.flags,
+    exemplars: json.exemplars.map(exemplarFromJSON),
+    count: bigintFromWire(json.count),
+    bucketCounts: json.bucketCounts.map(bigintFromWire),
+    explicitBounds: json.explicitBounds.map(doubleFromWire),
+  }
+  if (json.sum !== undefined) decoded.sum = doubleFromWire(json.sum)
+  if (json.min !== undefined) decoded.min = doubleFromWire(json.min)
+  if (json.max !== undefined) decoded.max = doubleFromWire(json.max)
+  return decoded
+}
+
+function receivedExponentialHistogramDataPointFromJSON(
+  json: JsonReceivedExponentialHistogramDataPoint
+): ReceivedExponentialHistogramDataPoint {
+  const decoded: ReceivedExponentialHistogramDataPoint = {
+    datapointID: json.datapointID,
+    timestamp: bigintFromWire(json.timestamp),
+    startTime: bigintFromWire(json.startTime),
+    flags: json.flags,
+    exemplars: json.exemplars.map(exemplarFromJSON),
+    count: bigintFromWire(json.count),
+    scale: json.scale,
+    zeroCount: bigintFromWire(json.zeroCount),
+    zeroThreshold: doubleFromWire(json.zeroThreshold),
+    positive: {
+      offset: json.positive.offset,
+      bucketCounts: json.positive.bucketCounts.map(bigintFromWire),
+    },
+    negative: {
+      offset: json.negative.offset,
+      bucketCounts: json.negative.bucketCounts.map(bigintFromWire),
+    },
+  }
+  if (json.sum !== undefined) decoded.sum = doubleFromWire(json.sum)
+  if (json.min !== undefined) decoded.min = doubleFromWire(json.min)
+  if (json.max !== undefined) decoded.max = doubleFromWire(json.max)
+  return decoded
+}
+
+function receivedMetricDatapointsFromJSON(json: JsonExactMetricSeries) {
+  let datapoints: ExactMetricSeries['datapoints']
+  switch (json.metricType) {
+    case 'Gauge':
+    case 'Sum':
+      datapoints = json.datapoints.map(point =>
+        receivedNumberDataPointFromJSON(point as JsonReceivedNumberDataPoint)
+      )
+      break
+    case 'Histogram':
+      datapoints = json.datapoints.map(point =>
+        receivedHistogramDataPointFromJSON(
+          point as JsonReceivedHistogramDataPoint
+        )
+      )
+      break
+    case 'ExponentialHistogram':
+      datapoints = json.datapoints.map(point =>
+        receivedExponentialHistogramDataPointFromJSON(
+          point as JsonReceivedExponentialHistogramDataPoint
+        )
+      )
+      break
+  }
+  return datapoints
+}
+
+function exactMetricSeriesFromJSON(
+  json: JsonExactMetricSeries
+): ExactMetricSeries {
+  return {
+    ...exactMetricIdentityFromJSON(json),
+    attributes: attributesFromJSON(json.attributes),
+    datapoints: receivedMetricDatapointsFromJSON(json),
+  }
+}
+
 function metricSummaryFromJSON(json: JsonMetricSummary): MetricSummary {
   return {
     ...json,
@@ -694,8 +804,6 @@ function statsFromJSON(json: JsonStats): Stats {
       ...json.metrics,
       lastReceived: nullableBigintFromWire(json.metrics.lastReceived),
     },
-    // Defaulted rather than required: a store written before rejections
-    // existed serves stats without the field.
     rejections: (json.rejections ?? []).map(r => ({
       ...r,
       samples: r.samples ?? [],
@@ -705,9 +813,6 @@ function statsFromJSON(json: JsonStats): Stats {
   }
 }
 
-// API Methods
-
-// Export typed methods for each RPC call with built-in conversion
 export let telemetryAPI = {
   // Value-first discovery: given text the user can see, which attribute keys
   // hold it. Cross-signal by nature -- the dictionary it reads is shared by
@@ -717,74 +822,82 @@ export let telemetryAPI = {
   // once per field per completion session with a generous limit; the editor
   // filters the list client-side per keystroke, so this does not round-trip
   // while typing. The server allowlists which fields answer.
-  getFieldValues: async (
+  getFieldValueCompletions: async (
     signal: string,
     field: string,
     term: string,
     limit: number
   ): Promise<string[]> => {
     const rawData = await callRPC<string[]>(
-      'getFieldValues',
+      'getFieldValueCompletions',
       named({ signal, field, term, limit })
     )
     return Array.isArray(rawData) ? rawData : []
   },
 
-  searchAttributes: async (term: string): Promise<JsonAttributeMatch[]> => {
+  searchAttributeMatches: async (
+    term: string
+  ): Promise<JsonAttributeMatch[]> => {
     if (!term.trim()) return []
     const rawData = await callRPC<JsonAttributeMatch[]>(
-      'searchAttributes',
+      'searchAttributeMatches',
       named({ term })
     )
     if (!Array.isArray(rawData)) {
-      console.warn('searchAttributes: Expected array, got:', rawData)
+      console.warn('searchAttributeMatches: Expected array, got:', rawData)
       return []
     }
     return rawData
   },
 
-  // Trace methods
-  getTraceAttributes: async (): Promise<FieldDefinition[]> => {
-    const rawData =
-      await callRPC<JsonAttributeDefinition[]>('getTraceAttributes')
+  getTraceAttributeDefinitions: async (): Promise<FieldDefinition[]> => {
+    const rawData = await callRPC<JsonAttributeDefinition[]>(
+      'getTraceAttributeDefinitions'
+    )
 
-    // Validate that we received an array
     if (!Array.isArray(rawData)) {
-      console.warn('getTraceAttributes: Expected array, got:', rawData)
+      console.warn(
+        'getTraceAttributeDefinitions: Expected array, got:',
+        rawData
+      )
       return []
     }
 
-    // Convert backend attribute data to FieldDefinition objects
     const converted = convertAttributesToFieldDefinitions(rawData)
     return converted
   },
 
-  getAttributesByTraceID: async (
+  getTraceAttributeDefinitionsByTraceID: async (
     traceID: string
   ): Promise<FieldDefinition[]> => {
     const rawData = await callRPC<JsonAttributeDefinition[]>(
-      'getAttributesByTraceID',
+      'getTraceAttributeDefinitionsByTraceID',
       named({ traceID })
     )
     if (!Array.isArray(rawData)) {
-      console.warn('getAttributesByTraceID: Expected array, got:', rawData)
+      console.warn(
+        'getTraceAttributeDefinitionsByTraceID: Expected array, got:',
+        rawData
+      )
       return []
     }
     return convertAttributesToFieldDefinitions(rawData)
   },
 
-  getLogAttributes: async (): Promise<FieldDefinition[]> => {
-    const rawData = await callRPC<JsonAttributeDefinition[]>('getLogAttributes')
+  getLogAttributeDefinitions: async (): Promise<FieldDefinition[]> => {
+    const rawData = await callRPC<JsonAttributeDefinition[]>(
+      'getLogAttributeDefinitions'
+    )
 
     if (!Array.isArray(rawData)) {
-      console.warn('getLogAttributes: Expected array, got:', rawData)
+      console.warn('getLogAttributeDefinitions: Expected array, got:', rawData)
       return []
     }
 
     return convertAttributesToFieldDefinitions(rawData)
   },
 
-  searchTraces: async (
+  searchTraceSummaries: async (
     startTime: QueryTimeBound,
     endTime: QueryTimeBound,
     queryTree?: QueryNode,
@@ -795,7 +908,7 @@ export let telemetryAPI = {
     const endTimeNs = serializeNanoseconds(endTime)
 
     const rawData = await callRPC<JsonTraceSummary[]>(
-      'searchTraces',
+      'searchTraceSummaries',
       named({
         startTime: startTimeNs,
         endTime: endTimeNs,
@@ -807,16 +920,13 @@ export let telemetryAPI = {
     return traceSummariesFromJSON(rawData)
   },
 
-  // signal is plumbed here first because searchSpans is the heaviest query
-  // and the one most often abandoned -- clicking through traces supersedes it
-  // repeatedly.
-  searchSpans: async (
+  getTraceView: async (
     traceID: string,
     queryTree?: QueryNode,
     signal?: AbortSignal
   ): Promise<TraceData> => {
     const rawData = await callRPC<JsonTraceData>(
-      'searchSpans',
+      'getTraceView',
       named({
         traceID,
         query: queryTree && convertQueryTreeForBackend(queryTree),
@@ -826,12 +936,12 @@ export let telemetryAPI = {
     return traceDataFromJSON(rawData)
   },
 
-  getTraceLogs: async (
+  getTraceLogSummaries: async (
     traceID: string,
     signal?: AbortSignal
   ): Promise<TraceLogSummary[]> => {
     const rawData = await callRPC<JsonTraceLogSummary[]>(
-      'getTraceLogs',
+      'getTraceLogSummaries',
       named({ traceID }),
       signal
     )
@@ -842,12 +952,7 @@ export let telemetryAPI = {
   deleteTraces: (traceIDs: string[]) =>
     callRPC<JsonDeleteResult>('deleteSpansByTraceID', traceIDs),
 
-  // Log methods
-  //
-  // searchLogs returns LogSummary[] -- a card-shaped projection
-  // without bodies/attributes/etc. Use getLog(id) to fetch the
-  // full LogData for one row when the detail pane opens.
-  searchLogs: async (
+  searchLogSummaries: async (
     startTime: QueryTimeBound,
     endTime: QueryTimeBound,
     queryTree?: QueryNode,
@@ -857,7 +962,7 @@ export let telemetryAPI = {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
     const rawData = await callRPC<JsonLogSummary[]>(
-      'searchLogs',
+      'searchLogSummaries',
       named({
         startTime: startTimeNs,
         endTime: endTimeNs,
@@ -869,16 +974,15 @@ export let telemetryAPI = {
     return logSummariesFromJSON(rawData)
   },
 
-  getLog: async (logID: string): Promise<LogData> => {
-    const rawData = await callRPC<JsonLogData>('getLog', named({ logID }))
+  getLog: async (logRef: string): Promise<LogData> => {
+    const rawData = await callRPC<JsonLogData>('getLog', named({ logRef }))
     return logDataFromJSON(rawData)
   },
 
-  deleteLogByID: (logID: string) =>
-    callRPC<JsonDeleteResult>('deleteLogByID', [logID]),
+  deleteLogsByRefs: (logRef: string) =>
+    callRPC<JsonDeleteResult>('deleteLogsByRefs', [logRef]),
   clearLogs: () => callRPC<string>('clearLogs', undefined),
 
-  // Metric methods
   searchMetricSummaries: async (
     startTime: QueryTimeBound,
     endTime: QueryTimeBound,
@@ -901,73 +1005,13 @@ export let telemetryAPI = {
     return metricSummariesFromJSON(rawData)
   },
 
-  getMetric: async (
-    streamID: string,
-    startTime: QueryTimeBound,
-    endTime: QueryTimeBound,
-    /** How many time buckets to reduce the window to. Omit for every
-     *  datapoint. The store keeps up to four points per bucket -- first, last,
-     *  smallest, largest -- so the drawn line is the same as it would be with
-     *  every point, and it ignores this entirely for histograms, which need
-     *  merging rather than sampling. */
-    targetBuckets?: number,
-    /** Restrict the response to these series. Omit for all of them. The store
-     *  narrows before reducing, so asking for two of ten costs two. */
-    seriesIDs?: string[],
-    /** Quantiles to compute per histogram datapoint, keyed by the quantile in
-     *  the response. Omit to skip the work. */
-    quantiles?: readonly number[],
-    /** The viewer's UTC offset in nanoseconds, so bucket boundaries fall where
-     *  the reader's calendar puts them. Omit for UTC. */
-    tzOffsetNs?: number,
-    /** Resolution for the Sum / Average / Rate views, which bucket for a
-     *  different chart than the election thins for. Omit for none. */
-    viewBuckets?: number,
-    /** Resolution for the per-row sparklines: buckets, each contributing its
-     *  min and its max, so this is half the sparkline's pixel width. A third
-     *  question again -- the election thins for the main chart, the views
-     *  bucket for another, this fits a list row. Omit for none. */
-    sparklineBuckets?: number,
-    /** Which series are checked for the scalar Selected pool. */
-    selectedSeriesIDs?: string[],
-    /** The IANA zone bucket boundaries should follow. */
-    tzName?: string,
-    /** Which series should carry their datapoints -- almost the whole payload.
-     *  Every series still arrives with its row, stats, view buckets and
-     *  sparkline. Omit to leave it to `datapointSeriesLimit`; pass an empty
-     *  array to ask for none. */
-    datapointSeriesIDs?: string[],
-    /** How many series carry datapoints when they cannot be named, in the
-     *  response's own order. For the first visit to a metric, where the visible
-     *  set is chosen from the response being fetched. */
-    datapointSeriesLimit?: number
-  ): Promise<MetricData | null> => {
-    const startTimeNs = serializeNanoseconds(startTime)
-    const endTimeNs = serializeNanoseconds(endTime)
-    // Not-found arrives as a JSON-RPC error (one wire convention across all
-    // signals); translate it to null here so callers keep a simple contract.
+  getMetric: async (metricRef: string): Promise<ExactMetric | null> => {
     try {
-      const rawData = await callRPC<JsonMetricData>(
+      const rawData = await callRPC<JsonExactMetric>(
         'getMetric',
-        named({
-          streamID,
-          startTime: startTimeNs,
-          endTime: endTimeNs,
-          targetBuckets,
-          // null and [] are different requests: null (or absent) means every
-          // series, [] means none. Only undefined is dropped.
-          seriesIDs,
-          quantiles,
-          tzOffsetNs,
-          viewBuckets,
-          sparklineBuckets,
-          selectedSeriesIDs,
-          tzName,
-          datapointSeriesIDs,
-          datapointSeriesLimit,
-        })
+        named({ metricRef })
       )
-      return metricDataFromJSON(rawData)
+      return exactMetricFromJSON(rawData)
     } catch (error) {
       if (
         error instanceof JsonRpcError &&
@@ -979,50 +1023,130 @@ export let telemetryAPI = {
     }
   },
 
-  /** The cross-series aggregate alone, for when only the legend selection
-   *  changed. Per-series quantiles are additive and come with the metric; this
-   *  is the part that depends on which series are visible, so it is the part
-   *  worth refetching on a toggle. */
-  getMetricAggregate: async (
-    streamID: string,
+  getMetricSeries: async (
+    metricRef: string,
+    seriesRef: string,
+    startTime: QueryTimeBound,
+    endTime: QueryTimeBound
+  ): Promise<ExactMetricSeries | null> => {
+    try {
+      const rawData = await callRPC<JsonExactMetricSeries>(
+        'getMetricSeries',
+        named({
+          metricRef,
+          seriesRef,
+          startTime: serializeNanoseconds(startTime),
+          endTime: serializeNanoseconds(endTime),
+        })
+      )
+      return exactMetricSeriesFromJSON(rawData)
+    } catch (error) {
+      if (
+        error instanceof JsonRpcError &&
+        error.code === ERR_CODE_METRIC_NOT_FOUND
+      ) {
+        return null
+      }
+      throw error
+    }
+  },
+
+  getMetricView: async (
+    metricRef: string,
     startTime: QueryTimeBound,
     endTime: QueryTimeBound,
-    targetBuckets: number,
-    /** Narrows what the query sees at all, so it decides what the histogram
-     *  merge folds. Null for a scalar metric: its All pool must keep folding
-     *  every series, and narrowing here would redefine the answer rather than
-     *  trim the payload. */
-    seriesIDs: string[] | null,
-    quantiles: readonly number[],
-    tzOffsetNs: number,
-    viewBuckets = 0,
-    /** Which series are checked, for the scalar Selected pool.
-     *
-     *  Deliberately not `seriesIDs`. That one narrows what the store returns;
-     *  this one names a pool and narrows nothing. Narrowing a scalar would not
-     *  trim the payload, it would redefine the answer -- "All" folded over a
-     *  narrowed set means "all of the checked ones". */
-    selectedSeriesIDs?: string[],
-    /** The zone the buckets follow, as in getMetric -- and it must be the same
-     *  one, or the pooled lines are cut on different boundaries than the
-     *  per-series lines beneath them. */
-    tzName?: string
-  ): Promise<MetricAggregateEnvelope | null> => {
+    /** Time buckets for scalar reduction. Omit for every datapoint. */
+    targetBuckets?: number,
+    /** Restrict the response to these series. Omit for all series. */
+    seriesRefs?: string[],
+    /** Quantiles to compute per histogram datapoint, keyed by the quantile in
+     *  the response. Omit to skip the work. */
+    quantiles?: readonly number[],
+    /** The viewer's UTC offset in nanoseconds, so bucket boundaries fall where
+     *  the reader's calendar puts them. Omit for UTC. */
+    tzOffsetNs?: number,
+    /** Resolution for Sum, Average and Rate views. Omit for none. */
+    viewBuckets?: number,
+    /** Sparkline buckets, each contributing its minimum and maximum. */
+    sparklineBuckets?: number,
+    /** Which series are checked for the scalar Selected pool. */
+    selectedSeriesRefs?: string[],
+    /** The IANA zone bucket boundaries should follow. */
+    tzName?: string,
+    /** Series that include datapoints. Omit to use `datapointSeriesLimit`; an
+     *  empty array requests none. */
+    datapointSeriesRefs?: string[],
+    /** Number of leading series that include datapoints when refs are omitted. */
+    datapointSeriesLimit?: number
+  ): Promise<MetricViewData | null> => {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
+    // Not-found arrives as a JSON-RPC error (one wire convention across all
+    // signals); translate it to null here so callers keep a simple contract.
     try {
-      const raw = await callRPC<JsonMetricAggregateEnvelope | null>(
-        'getMetricAggregate',
+      const rawData = await callRPC<JsonMetricViewData>(
+        'getMetricView',
         named({
-          streamID,
+          metricRef,
           startTime: startTimeNs,
           endTime: endTimeNs,
           targetBuckets,
-          seriesIDs,
+          // null and [] are different requests: null (or absent) means every
+          // series, [] means none. Only undefined is dropped.
+          seriesRefs,
           quantiles,
           tzOffsetNs,
           viewBuckets,
-          selectedSeriesIDs: selectedSeriesIDs ?? null,
+          sparklineBuckets,
+          selectedSeriesRefs,
+          tzName,
+          datapointSeriesRefs,
+          datapointSeriesLimit,
+        })
+      )
+      return metricViewDataFromJSON(rawData)
+    } catch (error) {
+      if (
+        error instanceof JsonRpcError &&
+        error.code === ERR_CODE_METRIC_NOT_FOUND
+      ) {
+        return null
+      }
+      throw error
+    }
+  },
+
+  /** Fetches cross-series values that depend on the legend selection. */
+  getMetricAggregateView: async (
+    metricRef: string,
+    startTime: QueryTimeBound,
+    endTime: QueryTimeBound,
+    targetBuckets: number,
+    /** Series included in a histogram merge. Null keeps every scalar series. */
+    seriesRefs: string[] | null,
+    quantiles: readonly number[],
+    tzOffsetNs: number,
+    viewBuckets = 0,
+    /** Series included in the scalar Selected pool without narrowing All. */
+    selectedSeriesRefs?: string[],
+    /** Bucket time zone. It must match the per-series view. */
+    tzName?: string
+  ): Promise<MetricAggregateViewData | null> => {
+    const startTimeNs = serializeNanoseconds(startTime)
+    const endTimeNs = serializeNanoseconds(endTime)
+    try {
+      const raw = await callRPC<JsonMetricAggregateViewData | null>(
+        'getMetricAggregateView',
+        named({
+          metricRef,
+          startTime: startTimeNs,
+          endTime: endTimeNs,
+          targetBuckets,
+          seriesRefs,
+          quantiles,
+          tzOffsetNs,
+          viewBuckets,
+          selectedSeriesRefs: selectedSeriesRefs ?? null,
           tzName,
         })
       )
@@ -1042,23 +1166,24 @@ export let telemetryAPI = {
     }
   },
 
-  getMetricAttributes: async (): Promise<FieldDefinition[]> => {
+  getMetricAttributeDefinitions: async (): Promise<FieldDefinition[]> => {
     const rawData = await callRPC<JsonAttributeDefinition[]>(
-      'getMetricAttributes'
+      'getMetricAttributeDefinitions'
     )
 
     if (!Array.isArray(rawData)) {
-      console.warn('getMetricAttributes: Expected array, got:', rawData)
+      console.warn(
+        'getMetricAttributeDefinitions: Expected array, got:',
+        rawData
+      )
       return []
     }
 
     return convertAttributesToFieldDefinitions(rawData)
   },
 
-  // Takes a bare stream id, not an array: metrics address a stream by a single
-  // uuid everywhere (see getMetric), unlike deleteLogByID / deleteTraces.
-  deleteMetricStream: (streamID: string) =>
-    callRPC<string>('deleteMetricStream', named({ streamID })),
+  deleteMetric: (metricRef: string) =>
+    callRPC<string>('deleteMetric', named({ metricRef })),
   clearMetrics: () => callRPC<string>('clearMetrics', undefined),
 
   // Stats methods

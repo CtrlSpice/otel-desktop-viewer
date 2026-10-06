@@ -1,14 +1,13 @@
 import type { FieldDefinition, SearchSignal } from '@/search/model'
 import { telemetryAPI } from './telemetry-service'
 
-// Function to get dynamic attributes
 export async function getDynamicAttributes(
   signal: SearchSignal
 ): Promise<FieldDefinition[]> {
   switch (signal) {
     case 'traces':
       try {
-        const attributes = await telemetryAPI.getTraceAttributes()
+        const attributes = await telemetryAPI.getTraceAttributeDefinitions()
         return attributes
       } catch (error) {
         console.warn('Failed to load dynamic attributes:', error)
@@ -17,7 +16,7 @@ export async function getDynamicAttributes(
 
     case 'logs':
       try {
-        const attributes = await telemetryAPI.getLogAttributes()
+        const attributes = await telemetryAPI.getLogAttributeDefinitions()
         return attributes
       } catch (error) {
         console.warn('Failed to load dynamic log attributes:', error)
@@ -26,7 +25,7 @@ export async function getDynamicAttributes(
 
     case 'metrics':
       try {
-        const attributes = await telemetryAPI.getMetricAttributes()
+        const attributes = await telemetryAPI.getMetricAttributeDefinitions()
         return attributes
       } catch (error) {
         console.warn('Failed to load dynamic metric attributes:', error)

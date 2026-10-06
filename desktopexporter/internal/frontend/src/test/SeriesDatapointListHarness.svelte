@@ -5,7 +5,7 @@
     type MetricViewContext,
   } from '@/contexts/metric-view-context.svelte'
   import SeriesDatapointList from '@/components/metrics/Detail/SeriesDatapointList.svelte'
-  import type { DataPoint, MetricData } from '@/types/api-types'
+  import type { DataPoint, MetricViewData } from '@/types/api-types'
 
   type Props = {
     datapoints: DataPoint[]
@@ -15,17 +15,19 @@
   }
   let { datapoints, unit = '1', expandDatapointID, oncontext }: Props = $props()
 
-  let metric = $derived<MetricData>({
-    id: 'metric-list-harness',
+  let metric = $derived<MetricViewData>({
+    metricRef: 'metric-list-harness',
     name: 'metric-list-harness',
     description: '',
     metadata: [],
     unit,
     metricType: datapoints[0]?.metricType ?? 'Empty',
     resourceDroppedAttributesCount: 0,
+    resourceSchemaUrl: '',
     resource: { attributes: [], droppedAttributesCount: 0 },
     scopeName: '',
     scopeVersion: '',
+    scopeSchemaUrl: '',
     scopeDroppedAttributesCount: 0,
     scope: {
       name: '',
@@ -35,7 +37,7 @@
     },
     timeseries: [
       {
-        attributesKey: 'series-1',
+        seriesRef: 'series-1',
         attributes: [],
         resource: { attributes: [], droppedAttributesCount: 0 },
         // The component receives the separately fetched, unreduced rows.

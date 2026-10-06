@@ -1,8 +1,8 @@
 # Contributing
 
-Thanks for stopping by. Bug reports, documentation, interface polish, backend work, and thoughtful experiments are all welcome.
+Bug reports, documentation, interface work, and backend changes are welcome.
 
-Please read our [Code of Conduct](CODE_OF_CONDUCT.md) first. We want contributing to feel as approachable as the application.
+Please read the [Code of Conduct](CODE_OF_CONDUCT.md) first.
 
 ## Contribution principles
 
@@ -14,9 +14,9 @@ Please read our [Code of Conduct](CODE_OF_CONDUCT.md) first. We want contributin
 
 ### AI tools and coding agents
 
-AI tools and coding agents are welcome when a contributor supervises them closely and keeps them within the agreed scope. Agent-assisted work is welcome when it is well-behaved: the contributor reviews and understands every change, brings product and architecture decisions to maintainers, controls generated output, and includes focused tests for every behavioral change. Focused tests are required for agent-assisted contributions.
+AI tools and coding agents are allowed. Contributors must review and understand their output, keep it within the agreed scope, and test every behavioral change.
 
-The contributor owns the pull request, review discussion, corrections, and follow-through regardless of which tools produced the first draft.
+The contributor remains responsible for the pull request and review follow-up.
 
 ## Choosing work
 
@@ -29,14 +29,14 @@ If you are looking for a first contribution, open an issue and say hello. Small 
 
 ### Before substantial work
 
-Maintainers use open issues to understand problems and gather context. Agreement on an implementation approach is a separate step. Before starting a substantial user-facing, architectural, data-model, persistence, or cross-cutting change:
+Before starting a substantial user-facing, architectural, data-model, persistence, or cross-cutting change:
 
 - Comment on the issue with the approach you intend to take.
 - Wait for maintainer agreement on the direction.
 - Surface important product and architectural trade-offs in the discussion.
 - Use `Fixes #...` or `Closes #...` after the implementation matches the agreed scope.
 
-Ask when the boundary is unclear. Maintainers may defer or close substantial pull requests that began without alignment, including completed implementations. A completed implementation carries no guarantee of merge.
+Ask when the boundary is unclear. Maintainers may defer or close substantial pull requests that began without agreement, even if implementation is complete.
 
 ## Prerequisites
 
@@ -59,7 +59,7 @@ This installs frontend packages and the Chromium build used by Playwright access
 
 ## Development workflow
 
-The app is a custom OpenTelemetry Collector binary plus a Svelte 5 UI. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full picture.
+The app is a custom OpenTelemetry Collector binary with a Svelte 5 UI. See [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ### Quick start with sample data
 
@@ -175,7 +175,7 @@ Every behavioral change requires focused automated tests at the nearest useful b
 - Cover meaningful edge cases and state transitions alongside the main path.
 - Follow the structure and conventions of nearby tests.
 
-Run the broad suite in addition to the focused tests. Generated assets and incidental execution coverage provide build evidence; targeted tests establish the behavior under review. When the current harness lacks a useful test seam, include that seam in the change and discuss the approach with a maintainer before submitting the pull request.
+Run the broad suite after focused tests. If the current harness lacks a useful test seam, add one and discuss it with a maintainer before opening the pull request.
 
 For interface work, verify both visual presentation and assistive access in the running application. Preserve the established visual language and include screenshots or short recordings with a text description for visible changes. Check the relevant responsive layouts, themes, zoom behavior, keyboard operation, focus management, screen-reader names, visible alternatives for audio feedback, reduced-motion behavior, and loading, empty, and error states.
 

@@ -19,7 +19,7 @@ import (
 )
 
 type traceLogSummaryJSON struct {
-	ID             string  `json:"id"`
+	LogRef         string  `json:"logRef"`
 	Timestamp      string  `json:"timestamp"`
 	SpanID         *string `json:"spanID"`
 	SeverityText   string  `json:"severityText"`
@@ -29,7 +29,7 @@ type traceLogSummaryJSON struct {
 	BodyPreview    string  `json:"bodyPreview"`
 }
 
-func TestGetTraceLogsPreservesTraceScopedRowsAndOrder(t *testing.T) {
+func TestGetTraceLogSummariesPreservesTraceScopedRowsAndOrder(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 	traceID := mustDecodeTraceIDLogs("00000000000000000000000000000099")
@@ -105,7 +105,7 @@ func TestGetTraceLogsPreservesTraceScopedRowsAndOrder(t *testing.T) {
 	}))
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return logs.GetTraceLogs(ctx, db, "00000000000000000000000000000099")
+		return logs.GetTraceLogSummaries(ctx, db, "00000000000000000000000000000099")
 	})
 	require.NoError(t, err)
 
@@ -121,9 +121,9 @@ func TestGetTraceLogsPreservesTraceScopedRowsAndOrder(t *testing.T) {
 	require.Equal(t, "cart.updated", got[1].EventName)
 	require.Equal(t, "missing-span", got[1].BodyPreview)
 	require.Empty(t, got[0].EventName)
-	require.Equal(t, "00000000-0000-0000-0000-000000000010", got[2].ID)
+	require.Equal(t, "00000000-0000-0000-0000-000000000010", got[2].LogRef)
 	require.Equal(t, "tie-b", got[2].BodyPreview)
-	require.Equal(t, "00000000-0000-0000-0000-0000000000ff", got[3].ID)
+	require.Equal(t, "00000000-0000-0000-0000-0000000000ff", got[3].LogRef)
 	require.Equal(t, "tie-a", got[3].BodyPreview)
 	for _, entry := range got {
 		require.NotEqual(t, "same-span-other-trace", entry.BodyPreview)
@@ -133,7 +133,7 @@ func TestGetTraceLogsPreservesTraceScopedRowsAndOrder(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &shape))
 	for _, entry := range shape {
 		require.Len(t, entry, 8)
-		for _, key := range []string{"id", "timestamp", "spanID", "severityText", "severityNumber", "serviceName", "eventName", "bodyPreview"} {
+		for _, key := range []string{"logRef", "timestamp", "spanID", "severityText", "severityNumber", "serviceName", "eventName", "bodyPreview"} {
 			require.Contains(t, entry, key)
 		}
 		require.NotContains(t, entry, "body")
@@ -142,13 +142,13 @@ func TestGetTraceLogsPreservesTraceScopedRowsAndOrder(t *testing.T) {
 	}
 
 	empty, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return logs.GetTraceLogs(ctx, db, "00000000000000000000000000000097")
+		return logs.GetTraceLogSummaries(ctx, db, "00000000000000000000000000000097")
 	})
 	require.NoError(t, err)
 	require.JSONEq(t, `[]`, string(empty))
 }
 
-func TestGetTraceLogsIgnoresSearchTimeRangeAndHasNoDefaultLimit(t *testing.T) {
+func TestGetTraceLogSummariesIgnoresSearchTimeRangeAndHasNoDefaultLimit(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 	traceID := mustDecodeTraceIDLogs("00000000000000000000000000000096")
@@ -175,7 +175,7 @@ func TestGetTraceLogsIgnoresSearchTimeRangeAndHasNoDefaultLimit(t *testing.T) {
 	require.Len(t, searchResult, 2)
 
 	complete, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return logs.GetTraceLogs(ctx, db, "00000000000000000000000000000096")
+		return logs.GetTraceLogSummaries(ctx, db, "00000000000000000000000000000096")
 	})
 	require.NoError(t, err)
 	var traceResult []traceLogSummaryJSON
@@ -185,14 +185,14 @@ func TestGetTraceLogsIgnoresSearchTimeRangeAndHasNoDefaultLimit(t *testing.T) {
 	require.Equal(t, "10100", traceResult[100].Timestamp)
 }
 
-func TestGetTraceLogsHonorsCanceledContext(t *testing.T) {
+func TestGetTraceLogSummariesHonorsCanceledContext(t *testing.T) {
 	t.Parallel()
 	s, _ := storetest.New(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return logs.GetTraceLogs(ctx, db, "00000000000000000000000000000099")
+		return logs.GetTraceLogSummaries(ctx, db, "00000000000000000000000000000099")
 	})
 	require.ErrorIs(t, err, context.Canceled)
 }

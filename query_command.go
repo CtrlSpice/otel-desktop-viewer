@@ -1,0 +1,290 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strconv"
+	"strings"
+	"unicode"
+
+	"github.com/rivo/uniseg"
+	"github.com/spf13/cobra"
+)
+
+const queryDefaultLimit uint64 = 25
+
+type queryColumn struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+type queryResult struct {
+	Columns   []queryColumn `json:"columns"`
+	Rows      [][]any       `json:"rows"`
+	Truncated bool          `json:"truncated"`
+}
+
+type queryRPCRequest struct {
+	JSONRPC string         `json:"jsonrpc"`
+	ID      int            `json:"id"`
+	Method  string         `json:"method"`
+	Params  map[string]any `json:"params"`
+}
+
+type queryRPCResponse struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      json.RawMessage `json:"id"`
+	Result  json.RawMessage `json:"result"`
+	Error   *queryRPCError  `json:"error"`
+}
+
+type queryRPCError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+func decodeQueryResult(raw json.RawMessage) (queryResult, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return queryResult{}, err
+	}
+	if fields == nil {
+		return queryResult{}, errors.New("result must be an object")
+	}
+
+	columnsRaw, ok := fields["columns"]
+	if !ok {
+		return queryResult{}, errors.New("missing columns")
+	}
+	var columnValues []json.RawMessage
+	if isJSONNull(columnsRaw) {
+		return queryResult{}, errors.New("columns must be an array")
+	}
+	if err := json.Unmarshal(columnsRaw, &columnValues); err != nil {
+		return queryResult{}, fmt.Errorf("decode columns: %w", err)
+	}
+	columns := make([]queryColumn, len(columnValues))
+	for i, rawColumn := range columnValues {
+		var columnFields map[string]json.RawMessage
+		if err := json.Unmarshal(rawColumn, &columnFields); err != nil || columnFields == nil {
+			return queryResult{}, fmt.Errorf("decode columns[%d]: must be an object", i)
+		}
+		name, nameOK := columnFields["name"]
+		columnType, typeOK := columnFields["type"]
+		if !nameOK || !typeOK {
+			return queryResult{}, fmt.Errorf("decode columns[%d]: missing name or type", i)
+		}
+		if isJSONNull(name) || isJSONNull(columnType) {
+			return queryResult{}, fmt.Errorf("decode columns[%d]: name and type must be strings", i)
+		}
+		if err := json.Unmarshal(name, &columns[i].Name); err != nil {
+			return queryResult{}, fmt.Errorf("decode columns[%d].name: %w", i, err)
+		}
+		if err := json.Unmarshal(columnType, &columns[i].Type); err != nil {
+			return queryResult{}, fmt.Errorf("decode columns[%d].type: %w", i, err)
+		}
+	}
+
+	rowsRaw, ok := fields["rows"]
+	if !ok {
+		return queryResult{}, errors.New("missing rows")
+	}
+	var rowValues []json.RawMessage
+	if isJSONNull(rowsRaw) {
+		return queryResult{}, errors.New("rows must be an array")
+	}
+	if err := json.Unmarshal(rowsRaw, &rowValues); err != nil {
+		return queryResult{}, fmt.Errorf("decode rows: %w", err)
+	}
+	rows := make([][]any, len(rowValues))
+	for i, rawRow := range rowValues {
+		if isJSONNull(rawRow) {
+			return queryResult{}, fmt.Errorf("decode rows[%d]: must be an array", i)
+		}
+		decoder := json.NewDecoder(bytes.NewReader(rawRow))
+		decoder.UseNumber()
+		if err := decoder.Decode(&rows[i]); err != nil {
+			return queryResult{}, fmt.Errorf("decode rows[%d]: %w", i, err)
+		}
+		if len(rows[i]) != len(columns) {
+			return queryResult{}, fmt.Errorf("decode rows[%d]: got %d values for %d columns", i, len(rows[i]), len(columns))
+		}
+	}
+
+	truncatedRaw, ok := fields["truncated"]
+	if !ok {
+		return queryResult{}, errors.New("missing truncated")
+	}
+	var truncated bool
+	if isJSONNull(truncatedRaw) {
+		return queryResult{}, errors.New("truncated must be a boolean")
+	}
+	if err := json.Unmarshal(truncatedRaw, &truncated); err != nil {
+		return queryResult{}, fmt.Errorf("decode truncated: %w", err)
+	}
+
+	return queryResult{Columns: columns, Rows: rows, Truncated: truncated}, nil
+}
+
+func isJSONNull(raw json.RawMessage) bool {
+	return bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
+}
+
+func newQueryCommand(client *http.Client) *cobra.Command {
+	var endpoint string
+	var limit uint64
+	var jsonOutput bool
+
+	cmd := &cobra.Command{
+		Use:   "query <sql>",
+		Short: "🔎 Run SQL against a running viewer",
+		Long: "🔎 Run one read-only DuckDB query against the existing viewer process. " +
+			"Results use aligned columns by default; --json emits the JSON result.",
+		Example: "  otel-desktop-viewer query 'SHOW TABLES'\n" +
+			"  otel-desktop-viewer query 'DESCRIBE spans'\n" +
+			"  otel-desktop-viewer query 'SELECT service_name, count(*) FROM spans GROUP BY service_name' --limit 50\n" +
+			"  otel-desktop-viewer query 'SELECT count(*) FROM logs' --json",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cmd.SilenceUsage = true
+			cmd.SilenceErrors = true
+
+			raw, result, err := requestQuery(cmd.Context(), client, endpoint, args[0], limit)
+			if err != nil {
+				return err
+			}
+			if jsonOutput {
+				if _, err := cmd.OutOrStdout().Write(raw); err != nil {
+					return err
+				}
+				_, err = io.WriteString(cmd.OutOrStdout(), "\n")
+				return err
+			}
+			_, err = io.WriteString(cmd.OutOrStdout(), formatQueryColumns(result))
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&endpoint, "endpoint", "http://localhost:8000", "Running viewer HTTP endpoint")
+	cmd.Flags().Uint64Var(&limit, "limit", queryDefaultLimit, "Maximum rows to return")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit the JSON result instead of columns")
+	return cmd
+}
+
+func requestQuery(
+	ctx context.Context,
+	client *http.Client,
+	endpoint string,
+	statement string,
+	limit uint64,
+) (json.RawMessage, queryResult, error) {
+	raw, err := requestViewerRPC(ctx, client, endpoint, "query", map[string]any{"sql": statement, "limit": limit})
+	if err != nil {
+		return nil, queryResult{}, err
+	}
+	result, err := decodeQueryResult(raw)
+	if err != nil {
+		return nil, queryResult{}, fmt.Errorf("decode query result: %w", err)
+	}
+	return raw, result, nil
+}
+
+func formatQueryColumns(result queryResult) string {
+	if len(result.Columns) == 0 {
+		return ""
+	}
+
+	widths := make([]int, len(result.Columns))
+	headers := make([]string, len(result.Columns))
+	for i, column := range result.Columns {
+		headers[i] = escapeQueryDisplay(column.Name)
+		widths[i] = queryDisplayWidth(headers[i])
+	}
+
+	rows := make([][]string, len(result.Rows))
+	for rowIndex, row := range result.Rows {
+		rows[rowIndex] = make([]string, len(result.Columns))
+		for columnIndex := range result.Columns {
+			value := "NULL"
+			if columnIndex < len(row) && row[columnIndex] != nil {
+				value = formatQueryValue(row[columnIndex])
+			}
+			value = escapeQueryDisplay(value)
+			rows[rowIndex][columnIndex] = value
+			widths[columnIndex] = max(widths[columnIndex], queryDisplayWidth(value))
+		}
+	}
+
+	var output strings.Builder
+	writeLine := func(values []string) {
+		for i, value := range values {
+			if i > 0 {
+				output.WriteString("  ")
+			}
+			output.WriteString(value)
+			output.WriteString(strings.Repeat(" ", widths[i]-queryDisplayWidth(value)))
+		}
+		output.WriteByte('\n')
+	}
+	writeLine(headers)
+	underlines := make([]string, len(widths))
+	for i, width := range widths {
+		underlines[i] = strings.Repeat("-", width)
+	}
+	writeLine(underlines)
+	for _, row := range rows {
+		writeLine(row)
+	}
+	if result.Truncated {
+		fmt.Fprintf(&output, "[%d rows shown; more rows available; use --limit to return more]\n", len(result.Rows))
+	}
+	return output.String()
+}
+
+func formatQueryValue(value any) string {
+	switch value := value.(type) {
+	case string:
+		return value
+	case bool:
+		return strconv.FormatBool(value)
+	case json.Number:
+		return value.String()
+	default:
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return fmt.Sprint(value)
+		}
+		return string(encoded)
+	}
+}
+
+func escapeQueryDisplay(value string) string {
+	var escaped strings.Builder
+	for _, r := range value {
+		switch r {
+		case '\n':
+			escaped.WriteString(`\n`)
+		case '\r':
+			escaped.WriteString(`\r`)
+		case '\t':
+			escaped.WriteString(`\t`)
+		case '\x1b':
+			escaped.WriteString(`\u001b`)
+		default:
+			if unicode.IsControl(r) {
+				fmt.Fprintf(&escaped, `\u%04x`, r)
+			} else {
+				escaped.WriteRune(r)
+			}
+		}
+	}
+	return escaped.String()
+}
+
+func queryDisplayWidth(value string) int {
+	return uniseg.StringWidth(value)
+}

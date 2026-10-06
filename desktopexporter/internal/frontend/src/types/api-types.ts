@@ -5,6 +5,11 @@ export type RootSpan = {
   name: string
 }
 
+export type MatchedSpan = {
+  traceID: string
+  spanID: string
+}
+
 export type TraceSummary = {
   traceID: string
   // hasRootSpan makes the orphaned-trace state explicit so callers
@@ -17,6 +22,8 @@ export type TraceSummary = {
   durationNs: bigint | null
   spanCount: number
   errorCount: number
+  /** Computed identities of matching spans; present only for filtered searches. */
+  matchedSpans?: MatchedSpan[]
 }
 
 export type TraceData = {
@@ -126,7 +133,7 @@ export type LinkData = {
 }
 
 export type LogData = {
-  id: string
+  logRef: string
   timestamp: bigint
   observedTimestamp: bigint
   traceID: string | null
@@ -143,10 +150,10 @@ export type LogData = {
 }
 
 // LogSummary is the lightweight card-shaped projection returned by
-// the searchLogs JSON-RPC method. Full LogData (with body, attributes,
-// resource, scope, etc) is fetched on demand via getLog(id).
+// the searchLogSummaries JSON-RPC method. Full LogData (with body, attributes,
+// resource, scope, etc) is fetched on demand via getLog(logRef).
 //
-// `id` is a tool-minted UUID -- in the wire payload because the UI
+// `logRef` is a tool-minted UUID -- in the wire payload because the UI
 // needs a handle for keying, selection, and the detail fetch, but it
 // must never be rendered to users (logs have no source-derived id).
 //
@@ -158,7 +165,7 @@ export type LogData = {
 // Full body, traceID, and spanID are available on LogData
 // (fetched on demand for the detail pane).
 export type LogSummary = {
-  id: string
+  logRef: string
   timestamp: bigint
   severityText: string
   severityNumber: number
@@ -191,13 +198,13 @@ export type Exemplar = ExemplarBase &
   )
 
 // One measurement sample. Attributes do not live here -- they belong
-// to the parent MetricTimeseries, which is what makes a sample "this
+// to the parent MetricSeriesViewData, which is what makes a sample "this
 // timeseries' sample" rather than just "a sample of this metric." This
 // matches the OTel data model (Metric -> Timeseries -> NumberDataPoint).
 //
 // Anything we'd describe as "metadata about how the tool grouped this
-// sample" (e.g. attributesKey) is also a timeseries-level concept and
-// lives on MetricTimeseries, not here.
+// sample" (e.g. seriesRef) is also a timeseries-level concept and
+// lives on MetricSeriesViewData, not here.
 type BaseDataPoint = {
   id: string
   timestamp: bigint
@@ -254,10 +261,7 @@ export type HistogramDataPoint = BaseDataPoint & {
   explicitBounds: number[]
   aggregationTemporalityCode: number
   aggregationTemporality: string
-  /** Quantiles computed by the store for this bucket, keyed by the quantile
-   *  (`"0.5"`). Null when none were requested. Read rather than recomputed:
-   *  deriving them here walked every bucket of every series once per quantile
-   *  and cost seconds on the main thread. */
+  /** Store-computed quantiles keyed by value (`"0.5"`); null when not requested. */
   quantiles?: Record<string, number | null> | null
 }
 
@@ -283,10 +287,7 @@ export type ExponentialHistogramDataPoint = BaseDataPoint & {
   negativeBucketCounts: bigint[]
   aggregationTemporalityCode: number
   aggregationTemporality: string
-  /** Quantiles computed by the store for this bucket, keyed by the quantile
-   *  (`"0.5"`). Null when none were requested. Read rather than recomputed:
-   *  deriving them here walked every bucket of every series once per quantile
-   *  and cost seconds on the main thread. */
+  /** Store-computed quantiles keyed by value (`"0.5"`); null when not requested. */
   quantiles?: Record<string, number | null> | null
 }
 
@@ -296,19 +297,8 @@ export type DataPoint =
   | HistogramDataPoint
   | ExponentialHistogramDataPoint
 
-// A MetricTimeseries is one (metric, attribute-set) pair: the OTel
-// SDK spec calls this a "metric point" / "timeseries" within a metric
-// stream. All datapoints inside share the same `attributes` (that's
-// what makes them one timeseries). `attributesKey` is the backend's
-// canonical "key=value|..." identity for this attribute set -- a stable
-// id the frontend uses to drive the legend, the chart's per-line
-// keying, and the per-timeseries colour assignment.
-//
-// (Naming note: the SDK spec uses "metric stream" for the whole named
-// series produced by a View -- which corresponds to our `MetricData` /
-// `metric_streams` table. The per-attribute series within it is the
-// "timeseries" / "metric point". We use "timeseries" everywhere in the
-// type layer to avoid colliding with the spec's "metric stream".)
+// A MetricSeriesViewData is one Metric and attribute-set pair. All datapoints
+// share the same attributes. `seriesRef` is its database-local reference.
 //
 // Timeseries arrive ordered "newest activity first" (latest dp
 // timestamp desc); datapoints inside a timeseries arrive
@@ -339,14 +329,11 @@ export type SeriesRateStats = {
   avg: number
 }
 
-export type MetricTimeseries = {
-  /** Series id -- stable across restarts, unique per (stream, originating
-   *  resource attributes, datapoint labels). */
-  attributesKey: string
+export type MetricSeriesViewData = {
+  /** Database-local series reference. */
+  seriesRef: string
   attributes: Attributes
-  /** Identifying originating resource attributes for this series. The resource
-   *  shape is reused, but droppedAttributesCount is always zero because dropped
-   *  count is per-ingest diagnostic metadata rather than series identity. */
+  /** Resource associated with the parent Metric. */
   resource: ResourceData
   datapoints: DataPoint[]
   /** Min / max / avg / sum over *every* datapoint in the window, computed by
@@ -366,39 +353,22 @@ export type MetricTimeseries = {
   views: ScalarViewBucket[] | null
   /** Extremes of the drawn rate line; null when there is no rate to draw. */
   rateStats: SeriesRateStats | null
-  /** This series' shape at list-row resolution, reduced by the store to min and
-   *  max per bucket.
-   *
-   *  Separate from `datapoints` because it answers a separate question: what
-   *  does this line look like in 128 pixels? The row used to draw the charting
-   *  points -- up to 2,000 of them -- into that box, about fifteen per pixel,
-   *  for every series in the panel.
-   *
-   *  Present for unchecked series too. Null for histograms. */
+  /** Store-reduced row sparkline with min and max per bucket. Present for
+   *  unchecked series; null for histograms. */
   sparkline: SparklinePoint[] | null
 }
 
-/** Both cross-series pools, as the store folded them.
- *
- *  Same bucket shape as {@link ScalarViewBucket}, deliberately: the chart
- *  projects a pool through the same function it projects a per-series view
- *  with, rather than learning a second format for the same idea.
- *
- *  `all` never narrows with the selection -- that is what makes it "all" --
- *  while `selected` follows the checkboxes and is empty when nothing is
- *  checked, which the chart draws as "All alone". */
 /** What the store refused to merge because its inputs carried different
- *  explicit bounds. There is no rescale that reconciles two boundary sets, so
- *  the merge cannot be done -- but doing nothing quietly leaves a hole that
- *  reads as absent data, which for an exporter that reconfigured its histogram
- *  mid-window is the finding itself. */
+ *  explicit bounds. Boundary sets cannot be rescaled safely. */
 export type BoundsMismatch = {
   seriesBuckets: number
   aggregateBuckets: number
 }
 
 export type ScalarAggregate = {
+  /** Checked series; empty when none are checked. */
   selected: ScalarViewBucket[]
+  /** Every series, independent of selection. */
   all: ScalarViewBucket[]
 }
 
@@ -414,9 +384,9 @@ export type AggregateBucket = Omit<
   quantiles: Record<string, number | null> | null
 }
 
-/** What getMetricAggregate resolves to: one envelope serving both metric
+/** What getMetricAggregateView resolves to: one envelope serving both metric
  *  shapes, each field null on the shape it does not apply to. */
-export type MetricAggregateEnvelope = {
+export type MetricAggregateViewData = {
   aggregate: AggregateBucket[] | null
   scalarAggregate: ScalarAggregate | null
 }
@@ -440,26 +410,30 @@ type OptionalMetricTemporality =
       aggregationTemporalityCode: number | null
     }
 
-export type MetricData = {
+export type MetricViewData = {
   /** The window's most recent datapoint across every series. */
   lastSeenNs: bigint | null
-  id: string
+  metricRef: string
   name: string
   description: string
   /** OTLP Metric.metadata: describes the instrument, not any one series. */
   metadata: Attributes
   unit: string
-  /** Stream-level type from metric_streams (getMetric only). */
+  /** Metric type from metrics (getMetricView only). */
   metricType?: MetricType
-  /** Stream-level monotonic flag; null except Sum. */
+  /** Metric monotonic flag; null except Sum. */
   isMonotonic?: boolean | null
   resourceDroppedAttributesCount: number
+  /** Latest received ResourceMetrics schema URL for this Metric. */
+  resourceSchemaUrl: string
   resource: ResourceData
   scopeName: string
   scopeVersion: string
+  /** Received ScopeMetrics schema URL; part of InstrumentationScope identity. */
+  scopeSchemaUrl: string
   scopeDroppedAttributesCount: number
   scope: ScopeData
-  timeseries: MetricTimeseries[]
+  timeseries: MetricSeriesViewData[]
   /** How many datapoints the window holds, which is not necessarily how many
    *  were returned. Equal until the store starts reducing what it sends. */
   datapointCount: number
@@ -472,15 +446,114 @@ export type MetricData = {
   }
 } & OptionalMetricTemporality
 
+export type ExactMetricResource = {
+  attributes: Attributes
+  droppedAttributesCount: number
+  schemaUrl: string
+}
+
+export type ExactMetricScope = {
+  name: string
+  version: string
+  attributes: Attributes
+  droppedAttributesCount: number
+  schemaUrl: string
+}
+
+type ExactMetricIdentityBase = {
+  metricRef: string
+  name: string
+  description: string
+  unit: string
+  metadata: Attributes
+  resource: ExactMetricResource
+  scope: ExactMetricScope
+}
+
+export type ExactMetricIdentity = ExactMetricIdentityBase &
+  (
+    | { metricType: 'Gauge' }
+    | {
+        metricType: 'Sum'
+        aggregationTemporalityCode: number
+        isMonotonic: boolean
+      }
+    | {
+        metricType: 'Histogram' | 'ExponentialHistogram'
+        aggregationTemporalityCode: number
+      }
+  )
+
+export type MetricSeriesSummary = {
+  seriesRef: string
+  attributes: Attributes
+  /** Computed count of retained datapoints in this series. */
+  datapointCount: bigint
+  /** Computed earliest received datapoint timestamp, or null with no points. */
+  firstDatapointTimestamp: bigint | null
+  /** Computed latest received datapoint timestamp, or null with no points. */
+  lastDatapointTimestamp: bigint | null
+}
+
+export type ExactMetric = ExactMetricIdentity & {
+  series: MetricSeriesSummary[]
+}
+
+type ReceivedDataPointBase = {
+  datapointID: string
+  timestamp: bigint
+  startTime: bigint
+  flags: number
+  exemplars: Exemplar[]
+}
+
+export type ReceivedNumberDataPoint = ReceivedDataPointBase &
+  (
+    | { valueType: 'Int'; intValue: bigint; doubleValue: null }
+    | { valueType: 'Double'; intValue: null; doubleValue: number }
+    | { valueType: 'Empty'; intValue: null; doubleValue: null }
+  )
+
+export type ReceivedHistogramDataPoint = ReceivedDataPointBase & {
+  count: bigint
+  sum?: number
+  min?: number
+  max?: number
+  bucketCounts: bigint[]
+  explicitBounds: number[]
+}
+
+export type ReceivedExponentialHistogramDataPoint = ReceivedDataPointBase & {
+  count: bigint
+  sum?: number
+  min?: number
+  max?: number
+  scale: number
+  zeroCount: bigint
+  zeroThreshold: number
+  positive: { offset: number; bucketCounts: bigint[] }
+  negative: { offset: number; bucketCounts: bigint[] }
+}
+
+export type ExactMetricSeries = ExactMetricIdentity & {
+  seriesRef: string
+  attributes: Attributes
+  datapoints: (
+    | ReceivedNumberDataPoint
+    | ReceivedHistogramDataPoint
+    | ReceivedExponentialHistogramDataPoint
+  )[]
+}
+
 // Sparkline point shape used by detail charts (not the drawer summary).
 export type SparklinePoint = {
   timestamp: bigint
   value: number
 }
 
-// Metric summary for sidebar cards (one row per metric stream).
+// Metric summary for sidebar cards.
 export type MetricSummary = {
-  id: string
+  metricRef: string
   name: string
   description: string
   unit: string
@@ -492,7 +565,7 @@ export type MetricSummary = {
   // Distinct attribute sets (timeseries) seen in the queried window.
   seriesCount: number
   seriesCardinality: number
-  // In-range datapoints for this metric stream.
+  // In-range datapoints for this Metric.
   dataPointCount: number
   /** @derived Most recent Gauge/Sum value by timestamp in the requested
    * window. SQL coalesces double/int sources into an IEEE-754 metric-unit
@@ -504,7 +577,7 @@ export type MetricSummary = {
 }
 
 export function metricSummaryKey(s: MetricSummary): string {
-  return s.id
+  return s.metricRef
 }
 
 // Stats types (homepage summary cards)
@@ -547,11 +620,6 @@ export type Stats = {
   rejections: Rejection[]
 }
 
-// Discriminated union for search results.
-// `queryTree` is the parsed query that produced these results (undefined when no search active).
-// The logs variant carries LogSummary[] -- the lightweight card-shaped
-// projection. Full LogData for a single row is fetched on demand via
-// the getLog(id) JSON-RPC method.
 export type SearchResultEvent =
   | {
       signal: 'traces'

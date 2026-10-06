@@ -3,13 +3,9 @@ package store
 // Referential integrity for the attribute dictionary.
 //
 // Every owner holds a uuid[] of attribute ids, and DuckDB cannot put a foreign
-// key into a LIST. So the one relationship the schema most depends on is the one
-// relationship it cannot enforce. Under the previous schema this was an FK;
-// these tests are what replaced it.
+// key into a LIST. These tests enforce that relationship.
 //
-// The failure mode is why they exist: a dangling reference produces no error
-// anywhere. attrs_json simply joins nothing, the attribute disappears from the
-// UI, and the first sign of trouble is a user asking where their data went.
+// A dangling reference produces no database error; attrs_json omits it.
 
 import (
 	"context"
@@ -40,10 +36,10 @@ var ownerArrays = []struct{ table, column, scope string }{
 	{"events", "attribute_ids", ingest.ScopeEvent},
 	{"links", "attribute_ids", ingest.ScopeLink},
 	{"logs", "attribute_ids", ingest.ScopeLog},
-	{"datapoints", "attribute_ids", ingest.ScopeDatapoint},
+	{"metric_datapoints", "attribute_ids", ingest.ScopeDatapoint},
 	{"metric_series", "attribute_ids", ingest.ScopeDatapoint},
 	{"exemplars", "attribute_ids", ingest.ScopeExemplar},
-	{"metric_ingests", "metadata_ids", ingest.ScopeMetricMetadata},
+	{"metrics", "metadata_ids", ingest.ScopeMetricMetadata},
 	{"resources", "attribute_ids", ingest.ScopeResource},
 	{"scopes", "attribute_ids", ingest.ScopeScope},
 }
@@ -81,9 +77,7 @@ func countIn(t *testing.T, s *Store, query string) int {
 	return n
 }
 
-// sharedResource is the same resource for all three signals, so the store ends
-// up with one resources row referenced from spans, logs and metric_ingests --
-// the cross-signal sharing the dictionary exists to make possible.
+// sharedResource is the same Resource for all three signals.
 func sharedResource(res pcommon.Resource) {
 	res.Attributes().PutStr("service.name", "checkout")
 	res.Attributes().PutStr("host.name", "pod-a")
@@ -172,6 +166,51 @@ func ingestAll(t *testing.T, s *Store, seed byte) {
 	}))
 }
 
+func TestResourceSchemaURLIdentityIsSharedAcrossSignals(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s, err := NewStore(ctx, "", zap.NewNop())
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+
+	const sharedURL = "https://example.test/resource/shared"
+	traces := integrityTraces(31)
+	traces.ResourceSpans().At(0).SetSchemaUrl(sharedURL)
+	logData := integrityLogs(32)
+	logData.ResourceLogs().At(0).SetSchemaUrl(sharedURL)
+	metricData := integrityMetrics(33)
+	metricData.ResourceMetrics().At(0).SetSchemaUrl(sharedURL)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+	}))
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, logData, s.FlushedIDs())
+	}))
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, metricData, s.FlushedIDs())
+	}))
+
+	other := integrityTraces(34)
+	other.ResourceSpans().At(0).SetSchemaUrl("https://example.test/resource/other")
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, other, s.FlushedIDs())
+	}))
+
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		var resources, payloads, sharedOwners int
+		require.NoError(t, db.QueryRow(`select count(*), count(distinct payload_id) from resources`).Scan(&resources, &payloads))
+		require.NoError(t, db.QueryRow(`select count(*) from resources r
+			where r.schema_url = ?
+			  and exists (select 1 from spans s where s.resource_id = r.id)
+			  and exists (select 1 from logs l where l.resource_id = r.id)
+			  and exists (select 1 from metrics m where m.resource_id = r.id)`, sharedURL).Scan(&sharedOwners))
+		assert.Equal(t, 2, resources)
+		assert.Equal(t, 1, payloads, "schema URL must not alter the Resource payload identity")
+		assert.Equal(t, 1, sharedOwners, "equal payload and URL must share one exact Resource row")
+		return nil
+	}))
+}
+
 func TestDistinctResourcePayloadsStayAttachedAcrossSignals(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -207,7 +246,7 @@ func TestDistinctResourcePayloadsStayAttachedAcrossSignals(t *testing.T) {
 		}{
 			{"span", `select json_extract_string(a.value, '$.value') from spans s join resources r on r.id = s.resource_id, unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id where a.key = 'deployment.environment.name'`, "trace-env"},
 			{"log", `select json_extract_string(a.value, '$.value') from logs l join resources r on r.id = l.resource_id, unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id where a.key = 'deployment.environment.name'`, "log-env"},
-			{"metric", `select json_extract_string(a.value, '$.value') from metric_ingests m join resources r on r.id = m.resource_id, unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id where a.key = 'deployment.environment.name'`, "metric-env"},
+			{"metric", `select json_extract_string(a.value, '$.value') from metrics m join resources r on r.id = m.resource_id, unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id where a.key = 'deployment.environment.name'`, "metric-env"},
 		} {
 			var got string
 			require.NoError(t, db.QueryRow(tc.query).Scan(&got), tc.name)
@@ -224,15 +263,11 @@ func sweep(t *testing.T, s *Store) {
 	}))
 }
 
-// The headline case: clear a signal, sweep away what it orphaned, then ingest
-// the same content again. Everything the second ingest references must exist.
+// Clear a signal, sweep its orphans, then re-ingest the same content. Every new
+// owner reference must resolve.
 //
-// This is the guard for any future scheme that skips re-writing dictionary rows
-// it believes are already present -- a per-store flush cache being the obvious
-// one. Such a cache would remember the ids written before the Clear, skip them
-// on re-ingest, and leave every new owner array pointing at rows the sweep had
-// already deleted. No error, no failed constraint; the attributes would simply
-// stop appearing. This test fails loudly instead.
+// This guards caches that skip known dictionary IDs after SweepOrphans has
+// deleted their rows.
 func TestDictionaryIntegrityAcrossClearAndReingest(t *testing.T) {
 	ctx := context.Background()
 	s, err := NewStore(ctx, "", zap.NewNop())
@@ -250,7 +285,7 @@ func TestDictionaryIntegrityAcrossClearAndReingest(t *testing.T) {
 		`select count(*) from resources r
 		 where exists (select 1 from spans s where s.resource_id = r.id)
 		   and exists (select 1 from logs l where l.resource_id = r.id)
-		   and exists (select 1 from metric_ingests mi where mi.resource_id = r.id)`),
+		   and exists (select 1 from metrics m where m.resource_id = r.id)`),
 		"the one resource row must be referenced from spans, logs and metrics alike")
 
 	before := countIn(t, s, `select count(*) from attributes`)
@@ -266,7 +301,7 @@ func TestDictionaryIntegrityAcrossClearAndReingest(t *testing.T) {
 	assert.Equal(t, 1, countIn(t, s, `select count(*) from resources`),
 		"the resource is still referenced by logs and metrics, so the sweep must keep it")
 	assert.Equal(t, 1, countIn(t, s, `
-		select count(*) from metric_ingests m, unnest(m.metadata_ids) t(id)
+		select count(*) from metrics m, unnest(m.metadata_ids) t(id)
 		join attributes a on a.id = t.id`),
 		"live metric metadata must survive a sweep triggered by clearing another signal")
 	assert.Zero(t, countIn(t, s, `
@@ -336,19 +371,8 @@ func TestDictionaryIntegrityAfterRetention(t *testing.T) {
 	assertNoDanglingRefs(t, s, "after retention")
 }
 
-// The cache's own contract, separate from the integrity it must not break.
-//
-// The middle assertion is the whole optimisation: a second batch of identical
-// content adds no new ids, so its dictionary flush issues no SQL at all. That is
-// what removes the ~2.3ms fixed per-batch cost, and it is why small batches went
-// from 2.7x slower than the pre-dictionary schema to 2.1x faster.
-//
-// The final stretch pins the sweep's precise invalidation, not just that it
-// invalidates something: clearing traces orphans the span/event/link
-// attributes, but the resource, scope, and the log/metric attributes stay
-// referenced, so those ids must survive in the cache. A sweep that fell back
-// to forgetting everything would also make `after` smaller than `first` --
-// only the `Positive` assertion on `after` tells the two apart.
+// Identical content adds no cache IDs. A trace clear invalidates only deleted
+// span, event, and link IDs while retaining live shared IDs.
 func TestFlushedIDsPopulatesAndClears(t *testing.T) {
 	ctx := context.Background()
 	s, err := NewStore(ctx, "", zap.NewNop())
@@ -392,7 +416,7 @@ func TestSweepInvalidatesDeletedMetricMetadata(t *testing.T) {
 	ingestAll(t, s, 1)
 	before := s.FlushedIDs().Len()
 	require.Equal(t, 1, countIn(t, s, `
-		select count(*) from metric_ingests m, unnest(m.metadata_ids) t(id)
+		select count(*) from metrics m, unnest(m.metadata_ids) t(id)
 		join attributes a on a.id = t.id`))
 
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
@@ -404,7 +428,7 @@ func TestSweepInvalidatesDeletedMetricMetadata(t *testing.T) {
 	assert.Less(t, afterSweep, before, "deleted metric dictionary ids must leave the cache")
 	assert.Positive(t, afterSweep, "live trace and log dictionary ids must remain cached")
 	assert.Zero(t, countIn(t, s, `
-		select count(*) from metric_ingests m, unnest(m.metadata_ids) t(id)
+		select count(*) from metrics m, unnest(m.metadata_ids) t(id)
 		join attributes a on a.id = t.id`),
 		"metadata with no metric ingest owner must be collected")
 
@@ -413,16 +437,15 @@ func TestSweepInvalidatesDeletedMetricMetadata(t *testing.T) {
 	}))
 	assertNoDanglingRefs(t, s, "after re-ingesting swept metric metadata")
 	assert.Equal(t, 1, countIn(t, s, `
-		select count(*) from metric_ingests m, unnest(m.metadata_ids) t(id)
+		select count(*) from metrics m, unnest(m.metadata_ids) t(id)
 		join attributes a on a.id = t.id`),
 		"re-ingest must restore metadata removed by the sweep")
 	assert.Equal(t, before, s.FlushedIDs().Len(),
 		"re-ingest must restore the metric dictionary ids without forgetting live signal ids")
 }
 
-// A store must never consult another store's set. Two stores are two databases;
-// ids written to one say nothing about the other, and skipping on that basis
-// would leave dangling references. This is the bug the first prototype hit.
+// Each store must use its own cache; IDs present in one database say nothing
+// about another.
 func TestFlushedIDsAreNotSharedBetweenStores(t *testing.T) {
 	ctx := context.Background()
 	a, err := NewStore(ctx, "", zap.NewNop())

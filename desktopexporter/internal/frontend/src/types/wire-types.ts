@@ -1,9 +1,4 @@
-// Wire types: the JSON shapes the backend actually serves, verified against
-// the DuckDB json_object projections in internal/store/{spans,logs,metrics,
-// stats} and the JSON-RPC handler. These deliberately duplicate the domain
-// types in api-types.ts rather than deriving from them -- the wire contract
-// should only change when the backend changes, not when a frontend type is
-// edited.
+// JSON shapes served by the backend. These remain independent of domain types.
 //
 // Received 64-bit integers ride as decimal strings because JSON numbers would
 // clip them past 2^53. The service revivers promote timestamps, integer metric
@@ -43,13 +38,16 @@ export type JsonScopeData = {
   droppedAttributesCount: number
 }
 
-// --- Traces ---
-
 export type JsonRootSpan = {
   // nullif(service_name, '') in the summary projection: an empty service
   // name arrives as JSON null, not ''.
   serviceName: string | null
   name: string
+}
+
+export type JsonMatchedSpan = {
+  traceID: string
+  spanID: string
 }
 
 export type JsonTraceSummary = {
@@ -61,6 +59,8 @@ export type JsonTraceSummary = {
   durationNs: string | null
   spanCount: number
   errorCount: number
+  /** Computed identities of matching spans; present only for filtered searches. */
+  matchedSpans?: JsonMatchedSpan[]
 }
 
 export type JsonEventData = {
@@ -81,31 +81,13 @@ export type JsonLinkData = {
   attributes: JsonAttribute[]
 }
 
-// The searchSpans wire shape is compressed in three ways, all resolved at the
-// service boundary so nothing downstream sees them:
-//
-//   - resource and scope are references (`r`, `s`) into the response's
-//     top-level maps rather than a full copy per span. The reference trace
-//     holds 23 distinct resources and 1 scope across 5,735 spans, where the
-//     repeated objects were over half the payload.
-//   - times are `start` (offset from the response's traceStart) and `dur`,
-//     rather than two 19-digit absolute nanosecond strings. Offset and
-//     duration are also what a waterfall bar is: a position and a width.
-//   - traceID is gone; it is at the response root, and a single-trace response
-//     repeated it once per span.
-//
-// Together these took the reference trace from 6.90 MB to 2.92 MB.
+// Spans reference top-level resources and scopes, use baseline-relative times,
+// and inherit traceID from the response root. The service resolves this shape.
 export type JsonSpanData = {
   traceState: string
   spanID: string
   parentSpanID: string | null
-  /**
-   * W3C trace flags, plus the bit saying whether the parent context was remote.
-   *
-   * Stored and sent because it is part of the span: dropping it meant a span
-   * read back out of the store was not the span that went in, and logs and
-   * metric datapoints had always kept theirs.
-   */
+  /** Received W3C trace flags, including the remote-parent bit. */
   flags: number
   name: string
   /** Authoritative received OTLP SpanKind int32. */
@@ -184,10 +166,8 @@ export type JsonTraceData = {
   spans: JsonSpanNode[]
 }
 
-// --- Logs ---
-
 export type JsonLogSummary = {
-  id: string
+  logRef: string
   timestamp: string
   severityText: string
   severityNumber: number
@@ -201,7 +181,7 @@ export type JsonTraceLogSummary = JsonLogSummary & {
 }
 
 export type JsonLogData = {
-  id: string
+  logRef: string
   timestamp: string
   observedTimestamp: string
   traceID: string | null
@@ -217,10 +197,7 @@ export type JsonLogData = {
   attributes: JsonAttribute[]
 }
 
-// --- Metrics ---
-
-// Same closed set as MetricType in api-types.ts, duplicated deliberately
-// so the wire contract stays fully self-contained.
+// Same closed set as MetricType, kept independent for the wire contract.
 export type JsonMetricType =
   'Empty' | 'Gauge' | 'Sum' | 'Histogram' | 'ExponentialHistogram'
 
@@ -354,28 +331,11 @@ export type JsonSeriesRateStats = {
   avg: JsonDouble
 }
 
-export type JsonMetricTimeseries = {
-  /**
-   * The series id: content-derived from (stream, originating resource
-   * attributes, datapoint labels).
-   *
-   * Was the canonical "key=value|..." rendering of the labels, which could not
-   * survive series splitting by resource -- two replicas of one service have
-   * byte-identical labels and so produced colliding keys. It is also stable
-   * across restarts and retention, which the old key was not, so it can be put
-   * in a URL.
-   */
-  attributesKey: string
+export type JsonMetricSeriesViewData = {
+  /** Generated database-local series reference. */
+  seriesRef: string
   attributes: JsonAttribute[]
-  /**
-   * Identifying originating resource attributes for this series.
-   *
-   * Load-bearing once series split by resource: when two replicas produce
-   * identical labels, this is the only thing that tells them apart. The reused
-   * resource shape always carries droppedAttributesCount 0: dropped count is
-   * exact only on JsonMetricData.resource, which describes the representative
-   * ingest selected for the response.
-   */
+  /** Resource associated with the parent Metric. */
   resource: JsonResourceData
   datapoints: JsonDataPoint[]
   /** Server-computed stats over the whole window; null for histograms. */
@@ -408,20 +368,18 @@ export type JsonSparklinePoint = {
   value: JsonDouble
 }
 
-export type JsonMetricData = {
+export type JsonMetricViewData = {
   /** The window's most recent datapoint across every series, ns as a string.
    *  Independent of which series shipped datapoints. */
   lastSeenNs: string | null
-  id: string
+  metricRef: string
   name: string
   // Coalesced server-side ('' for a stream with no ingests in the window).
   description: string
   /**
    * OTLP Metric.metadata: an attribute map describing the instrument itself,
-   * not the labels that identify a series. Coalesced to [] server-side.
-   *
-   * Read from the same representative ingest description comes from, since
-   * both are per-batch rather than part of stream identity.
+   * not the labels that identify a series. This is the latest received value.
+   * Coalesced to [] server-side.
    */
   metadata: JsonAttribute[]
   unit: string
@@ -430,14 +388,17 @@ export type JsonMetricData = {
   // metricType, so its derived label is null rather than "Unspecified".
   aggregationTemporalityCode: number | null
   aggregationTemporality: string | null
-  isMonotonic: boolean
+  isMonotonic: boolean | null
   resourceDroppedAttributesCount: number
+  /** Latest received ResourceMetrics schema URL for this Metric. */
+  resourceSchemaUrl: string
   resource: JsonResourceData
   scopeName: string
   scopeVersion: string
+  scopeSchemaUrl: string
   scopeDroppedAttributesCount: number
   scope: JsonScopeData
-  timeseries: JsonMetricTimeseries[]
+  timeseries: JsonMetricSeriesViewData[]
   /** The selected series merged into one histogram per time bucket -- what a
    *  heatmap draws and what a window summary describes. Null when the metric is
    *  not a histogram, or when no merge happened, so a client can tell that
@@ -482,14 +443,114 @@ export type JsonScalarAggregate = {
   all: JsonScalarViewBucket[]
 }
 
-/** What getMetricAggregate returns: one envelope serving both metric shapes,
+/** What getMetricAggregateView returns: one envelope serving both metric shapes,
  *  each field null or empty on the shape it does not apply to. */
-export type JsonMetricAggregateEnvelope = {
+export type JsonMetricAggregateViewData = {
   aggregate: JsonAggregateBucket[] | null
   scalarAggregate: JsonScalarAggregate | null
 }
 
-/** @derived Cross-series histogram view computed by get_metric.sql. The store
+export type JsonExactMetricResource = {
+  attributes: JsonAttribute[]
+  droppedAttributesCount: number
+  schemaUrl: string
+}
+
+export type JsonExactMetricScope = {
+  name: string
+  version: string
+  attributes: JsonAttribute[]
+  droppedAttributesCount: number
+  schemaUrl: string
+}
+
+type JsonExactMetricIdentityBase = {
+  metricRef: string
+  name: string
+  description: string
+  unit: string
+  metadata: JsonAttribute[]
+  resource: JsonExactMetricResource
+  scope: JsonExactMetricScope
+}
+
+export type JsonExactMetricIdentity = JsonExactMetricIdentityBase &
+  (
+    | { metricType: 'Gauge' }
+    | {
+        metricType: 'Sum'
+        aggregationTemporalityCode: number
+        isMonotonic: boolean
+      }
+    | {
+        metricType: 'Histogram' | 'ExponentialHistogram'
+        aggregationTemporalityCode: number
+      }
+  )
+
+export type JsonMetricSeriesSummary = {
+  seriesRef: string
+  attributes: JsonAttribute[]
+  /** Computed count of retained datapoints in this series. */
+  datapointCount: string
+  /** Computed earliest received datapoint timestamp, or null with no points. */
+  firstDatapointTimestamp: string | null
+  /** Computed latest received datapoint timestamp, or null with no points. */
+  lastDatapointTimestamp: string | null
+}
+
+export type JsonExactMetric = JsonExactMetricIdentity & {
+  series: JsonMetricSeriesSummary[]
+}
+
+type JsonReceivedDataPointBase = {
+  datapointID: string
+  timestamp: string
+  startTime: string
+  flags: number
+  exemplars: JsonExemplar[]
+}
+
+export type JsonReceivedNumberDataPoint = JsonReceivedDataPointBase &
+  (
+    | { valueType: 'Int'; intValue: string; doubleValue: null }
+    | { valueType: 'Double'; intValue: null; doubleValue: JsonDouble }
+    | { valueType: 'Empty'; intValue: null; doubleValue: null }
+  )
+
+export type JsonReceivedHistogramDataPoint = JsonReceivedDataPointBase & {
+  count: string
+  sum?: JsonDouble
+  min?: JsonDouble
+  max?: JsonDouble
+  bucketCounts: string[]
+  explicitBounds: JsonDouble[]
+}
+
+export type JsonReceivedExponentialHistogramDataPoint =
+  JsonReceivedDataPointBase & {
+    count: string
+    sum?: JsonDouble
+    min?: JsonDouble
+    max?: JsonDouble
+    scale: number
+    zeroCount: string
+    zeroThreshold: JsonDouble
+    positive: { offset: number; bucketCounts: string[] }
+    negative: { offset: number; bucketCounts: string[] }
+  }
+
+export type JsonExactMetricSeries = JsonExactMetricIdentity & {
+  seriesRef: string
+  attributes: JsonAttribute[]
+  datapoints: (
+    | JsonReceivedNumberDataPoint
+    | JsonReceivedHistogramDataPoint
+    | JsonReceivedExponentialHistogramDataPoint
+  )[]
+}
+
+/** @derived Cross-series histogram view computed by get_metric_view.sql. The store
  * differences cumulative inputs or adds delta inputs within each time bucket,
  * then adds aligned series vectors. Timestamps/start times are epoch ns decimal
  * text. Counts are JSON numbers for charting and can approximate integers past
@@ -521,7 +582,7 @@ export type JsonAggregateBucket = {
 }
 
 export type JsonMetricSummary = {
-  id: string
+  metricRef: string
   name: string
   // Left-joined from stream_description; null when absent.
   description: string | null
@@ -530,7 +591,7 @@ export type JsonMetricSummary = {
   aggregationTemporalityCode: number | null
   aggregationTemporality: string | null
   // Explicitly nulled by the projection for every type except Sum --
-  // unlike getMetric, which serves the raw stream column (false for
+  // unlike getMetricView, which serves the raw stream column (false for
   // non-Sums).
   isMonotonic: boolean | null
   serviceName: string
@@ -549,8 +610,6 @@ export type JsonMetricSummary = {
   lastValue: JsonDouble | null
   lastSeen: string
 }
-
-// --- Stats ---
 
 export type JsonTraceStats = {
   traceCount: number
@@ -598,27 +657,13 @@ export type JsonStats = {
   rejections: JsonRejection[]
 }
 
-// --- Attribute discovery (getTraceAttributes / getLogAttributes /
-// getMetricAttributes / getAttributesByTraceID) ---
-
 // Actual received root OTel kinds. The frontend's FieldType uses 'boolean'
 // for the wire spelling 'bool', translated at the service boundary.
 export type JsonAttributeType =
   'string' | 'int64' | 'double' | 'bool' | 'bytes' | 'empty' | 'array' | 'map'
 
-// Union across the discovery endpoints: traces serve resource/scope/span/
-// event/link, logs serve resource/scope/log, metrics serve resource/scope/
-// datapoint/exemplar.
-//
-// datapoint and exemplar arrived with the attribute dictionary. Before it,
-// metric discovery deliberately stopped at the per-batch resource and scope
-// rows: reaching datapoint labels meant a second join through a table where
-// they were 82% of the rows, on the interactive path that fills the search
-// dropdowns. Reading them from the dictionary is the same `select distinct`,
-// so they are now both discoverable and searchable.
-//
-// Note the scope is the *owner kind*, not the storage location -- an attribute
-// id implies its scope because scope is part of the content hash.
+// Union across all discovery endpoints. Scope is the owner kind, not the storage
+// location. Attribute ID implies scope because scope is part of the content hash.
 export type JsonAttributeScope =
   | 'resource'
   | 'scope'
@@ -636,7 +681,7 @@ export type JsonAttributeDefinition = {
   type: JsonAttributeType
 }
 
-// searchAttributes: value-first discovery.
+// searchAttributeMatches: value-first discovery.
 //
 // The getXAttributes methods answer "which keys exist" so a dropdown can be
 // filled. This answers the opposite question -- "I can see this text, which key
@@ -652,18 +697,12 @@ export type JsonAttributeMatch = JsonAttributeDefinition & {
   sampleValues: JsonAttributeValue[]
 }
 
-// --- Mutation results ---
-
-// deleteSpansByTraceID / deleteLogByID.
+// deleteSpansByTraceID / deleteLogsByRefs.
 // `count` is the number of IDs accepted, not rows removed.
 export type JsonDeleteResult = {
   message: string
   count: number
 }
-
-// --- Request direction (frontend -> backend): the query-tree shape
-// search.ParseQueryTree unmarshals on the Go side
-// (internal/store/search/search_tree.go) ---
 
 export type JsonQueryField = {
   // name/type are omitted for global search; attributeScope only

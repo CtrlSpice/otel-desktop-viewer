@@ -173,9 +173,7 @@ func TestBuildOperatorCondition(t *testing.T) {
 			expectedParams: []NamedParam{{"value_2", []any{"test1", "test2", "test3"}}},
 		},
 		{
-			// The null check arrives as its own operator now. It used to be
-			// inferred from the sentinel value "NULL", which made the literal
-			// string unsearchable -- see the case below this pair.
+			// Null checks use dedicated operators rather than a sentinel value.
 			name:           "IS NULL operator",
 			expression:     "Name",
 			operator:       "IS NULL",
@@ -192,9 +190,7 @@ func TestBuildOperatorCondition(t *testing.T) {
 			expectedParams: nil,
 		},
 		{
-			// A value that happens to be the string NULL is just a value. The
-			// old sentinel turned this into IS NULL, so a log body reading
-			// "NULL" could never be searched for.
+			// The literal string NULL remains an ordinary equality value.
 			name:           "the literal string NULL is searchable",
 			expression:     "Name",
 			operator:       "=",
@@ -203,9 +199,7 @@ func TestBuildOperatorCondition(t *testing.T) {
 			expectedParams: []NamedParam{{"value_2", "NULL"}},
 		},
 		{
-			// DuckDB's regex operators are ~ and !~; infix REGEXP does not
-			// exist in its grammar, which kept every regex search failing at
-			// the SQL parser from the day the operator shipped.
+			// DuckDB uses ~ and !~ rather than infix REGEXP.
 			name:           "REGEXP maps to the ~ operator",
 			expression:     "Name",
 			operator:       "REGEXP",
@@ -222,8 +216,7 @@ func TestBuildOperatorCondition(t *testing.T) {
 			expectedParams: []NamedParam{{"value_2", "foo.*"}},
 		},
 		{
-			// JSON arrays are the wire format now, so a quoted element may
-			// contain the comma the legacy split corrupted on.
+			// A JSON array element may contain a comma.
 			name:           "JSON array value with an embedded comma",
 			expression:     "Name",
 			operator:       "IN",
@@ -1020,11 +1013,8 @@ func TestJSONValueArrayPredicateKeepsAbsentArraysOutOfNegativeMatches(t *testing
 	}, params)
 }
 
-// A named-field mapper that returns several expressions must produce valid
-// SQL. No shipping mapper does this yet, which is exactly why it needs a pin:
-// the first one to try would have hit the old code path that joined the
-// top-level condition list with a bare space -- syntactically invalid SQL
-// discovered at query time by whichever user typed the right search.
+// TestMultiExpressionNamedFieldJoinsWithAND verifies that a named field mapped
+// to several expressions produces one valid conjunction.
 func TestMultiExpressionNamedFieldJoinsWithAND(t *testing.T) {
 	node := &QueryNode{
 		Type: "condition",

@@ -74,14 +74,14 @@ func TestAttributeSetIsOrderIndependent(t *testing.T) {
 
 	require.Equal(t, idsOne, idsTwo, "insertion order must not change the array")
 	assert.Equal(t,
-		ingest.ScopeID("otelhttp", "1.0.0", idsOne, 0),
-		ingest.ScopeID("otelhttp", "1.0.0", idsTwo, 0),
+		ingest.ScopeID("otelhttp", "1.0.0", "schema", idsOne, 0),
+		ingest.ScopeID("otelhttp", "1.0.0", "schema", idsTwo, 0),
 		"so the same scope in a different order is still one scope")
 }
 
 func resourceID(attrs pcommon.Map, dropped uint32) duckdb.UUID {
 	_, ids := ingest.AttributeSet(attrs, ingest.ScopeResource)
-	return ingest.ResourceID(ids, dropped)
+	return ingest.ResourcePayloadID(ids, dropped)
 }
 
 func TestResourceIdentityIncludesCompletePayload(t *testing.T) {
@@ -109,6 +109,22 @@ func TestResourceIdentityIncludesDroppedCount(t *testing.T) {
 	attrs := attrMap(map[string]string{"service.name": "checkout"})
 	assert.NotEqual(t, resourceID(attrs, 0), resourceID(attrs, 1),
 		"dropped attributes are part of the received payload")
+}
+
+func TestResourceIdentitySeparatesPayloadFromSchemaURL(t *testing.T) {
+	t.Parallel()
+	d := ingest.NewDictionary(nil)
+	resource := pcommon.NewResource()
+	resource.Attributes().PutStr("service.name", "checkout")
+	resource.SetDroppedAttributesCount(3)
+
+	first := d.AddResource(resource, "https://example.test/resource/v1")
+	second := d.AddResource(resource, "https://example.test/resource/v2")
+
+	assert.Equal(t, first.PayloadID, second.PayloadID,
+		"schema URL is not part of the Resource payload identity")
+	assert.NotEqual(t, first.ID, second.ID,
+		"each Resource payload and schema URL pair needs an exact row")
 }
 
 func TestResourceIdentityPreservesTypeAndPresence(t *testing.T) {
@@ -148,11 +164,14 @@ func TestScopeIdentityIncludesNameAndVersion(t *testing.T) {
 	_, ids := ingest.AttributeSet(empty, ingest.ScopeScope)
 
 	assert.NotEqual(t,
-		ingest.ScopeID("otelhttp", "1.0.0", ids, 0),
-		ingest.ScopeID("otelsql", "1.0.0", ids, 0))
+		ingest.ScopeID("otelhttp", "1.0.0", "schema", ids, 0),
+		ingest.ScopeID("otelsql", "1.0.0", "schema", ids, 0))
 	assert.NotEqual(t,
-		ingest.ScopeID("otelhttp", "1.0.0", ids, 0),
-		ingest.ScopeID("otelhttp", "1.1.0", ids, 0))
+		ingest.ScopeID("otelhttp", "1.0.0", "schema", ids, 0),
+		ingest.ScopeID("otelhttp", "1.1.0", "schema", ids, 0))
+	assert.NotEqual(t,
+		ingest.ScopeID("otelhttp", "1.0.0", "schema-a", ids, 0),
+		ingest.ScopeID("otelhttp", "1.0.0", "schema-b", ids, 0))
 }
 
 func newStore(t *testing.T) *store.Store {
@@ -163,9 +182,7 @@ func newStore(t *testing.T) *store.Store {
 	return s
 }
 
-// Flush writes the dictionary, and flushing the same content twice must not
-// duplicate anything -- that is the whole point of content-derived ids plus
-// `on conflict do nothing`.
+// TestFlushIsIdempotent verifies content-derived IDs and conflict handling.
 func TestFlushIsIdempotent(t *testing.T) {
 	t.Parallel()
 	s := newStore(t)
@@ -176,12 +193,12 @@ func TestFlushIsIdempotent(t *testing.T) {
 		res := pcommon.NewResource()
 		res.Attributes().PutStr("service.name", "checkout")
 		res.Attributes().PutStr("host.name", "pod-a")
-		d.AddResource(res)
+		d.AddResource(res, "")
 
 		sc := pcommon.NewInstrumentationScope()
 		sc.SetName("otelhttp")
 		sc.SetVersion("1.2.0")
-		d.AddScope(sc)
+		d.AddScope(sc, "")
 
 		d.AddAttributes(attrMap(map[string]string{"http.method": "GET"}), ingest.ScopeSpan)
 		return d
@@ -218,7 +235,7 @@ func TestFlushPreservesDistinctResourcePayloadsAcrossBatches(t *testing.T) {
 		res.Attributes().PutStr("service.instance.id", "checkout-1")
 		res.Attributes().PutStr("region", region)
 		res.SetDroppedAttributesCount(dropped)
-		return d.AddResource(res)
+		return d.AddResource(res, "").ID
 	}
 
 	first := ingest.NewDictionary(s.FlushedIDs())
@@ -295,7 +312,7 @@ func TestFlushedArraysReferenceRealAttributes(t *testing.T) {
 	res := pcommon.NewResource()
 	res.Attributes().PutStr("service.name", "checkout")
 	res.Attributes().PutInt("process.pid", 4242)
-	d.AddResource(res)
+	d.AddResource(res, "")
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return d.Flush(ctx, conn)

@@ -6,15 +6,12 @@
   import { themeSignal } from '@/state/theme.svelte'
   import { recordsForSpan, type TimelineRecord } from './timeline-markers'
 
-  // --- Shared types ---
-
   export type TraceBounds = {
     start: bigint
     end: bigint
     duration: bigint
   }
 
-  // --- Categorical coloring ---
   //
   // Categorical key per span: span.name in single-service traces, service
   // name in multi-service traces. Error spans are coloured by a separate
@@ -62,8 +59,6 @@
     return { start, end, duration: end - start }
   }
 
-  // --- Bar layout (ns → %) ---
-
   function getOffsetPercent(
     traceStart: bigint,
     traceDuration: bigint,
@@ -81,16 +76,12 @@
     return Math.max(0.3, Number((spanDuration * 10000n) / traceDuration) / 100)
   }
 
-  // --- Span-derived fields ---
-
   function isErrorSpan(span: SpanData): boolean {
     return (
       span.statusCodeValue === 2 ||
       span.events.some(e => e.name === 'exception')
     )
   }
-
-  // --- Tree gutter connectors (helpers composed in computeTreeMeta) ---
 
   type DepthList = readonly { depth: number }[]
 
@@ -139,8 +130,6 @@
         spans[i].depth === 0 ? [] : ancestorContinuationFlags(spans, i),
     }))
   }
-
-  // --- Row model for the grid ---
 
   function categoricalKeyFor(
     span: SpanData,
@@ -259,8 +248,6 @@
   const WATERFALL_ROW_HEIGHT_PX = 28
   const GRID_PAGE_STEP = 8
 
-  // --- Visibility from collapse state (pure) ---
-
   /** Walk ancestors via the parent map; true if any ancestor is in the collapsed set. */
   // Iterative with a visited set, because parentSpanID is reported data, not
   // verified structure: a salvaged trace (see cyclePoint) can make two spans
@@ -298,8 +285,6 @@
       ])
     )
   }
-
-  // --- Props & derived data ---
 
   type Props = {
     spans: SpanNode[]
@@ -391,7 +376,6 @@
     if (nextErrorSpanID) onSelectSpan(nextErrorSpanID)
   }
 
-  // --- Column widths (resizable) ---
   import {
     flex,
     initialWidths,
@@ -570,8 +554,6 @@
     )
   )
 
-  // --- Search match annotation ---
-
   let matchedIDs = $derived(
     new Set(spans.filter(n => n.matched).map(n => n.spanData.spanID))
   )
@@ -601,23 +583,14 @@
     computeAncestorsOfMatched(matchedIDs, parentBySpanID)
   )
 
-  // --- Expand/collapse ---
-
-  /** Span IDs whose descendant rows are hidden (`visibility: collapse` on child `<tr>`s). */
-  // Collapse state has exactly three writers, all of them reader gestures on
-  // this tree: the row toggle, the keyboard arrows, and the collapse-all
-  // button. Nothing else writes it -- not a resize, not a refetch, not a
-  // search, not selecting a span. Every prior variant of "the waterfall
-  // collapsed itself" (#348, #230) came from something other than the reader
-  // holding a pen.
+  /**
+   * Span IDs collapsed by row toggles, keyboard arrows, or collapse-all.
+   * Refetches, searches, selections, and resizes must not write this state.
+   */
   let traceID = $derived(spans[0]?.spanData.traceID ?? '')
   let userCollapsed = $derived(collapsedForTrace(traceID))
 
-  // Search is a lens over the reader's state, not a mutation of it. While a
-  // search is active the tree takes the search's shape -- branches with no
-  // match fold away -- and toggles made during the search live in an overlay
-  // scoped to this response. Clearing the search puts the reader's own
-  // arrangement back exactly, because it was never touched.
+  // Search uses a response-scoped overlay so clearing it restores user state.
   let searchCollapsedParents = $derived.by((): Set<string> | null =>
     searchActive
       ? computeSearchCollapsedParents(
@@ -630,8 +603,7 @@
   )
   let searchOverrides = $state(new Map<string, boolean>())
   $effect(() => {
-    // A new response is a new match set, so the overlay resets with it. This
-    // writes only the overlay -- the reader's own set is not in reach.
+    // A new response has a new match set and therefore a new overlay.
     void spans
     searchOverrides = new Map()
   })
@@ -673,11 +645,7 @@
     return out
   })
 
-  // Two verbs, not a toggle. A toggle labelled by the current state only
-  // offers expand-all once every last parent is collapsed, so from any mixed
-  // arrangement there was no way to open everything. Each of these is
-  // idempotent -- invoking it in a state it already produced writes the same
-  // state again, which is a no-op worth exactly nothing to prevent.
+  // Separate idempotent verbs support mixed collapse states.
   function setAll(collapsed: boolean) {
     if (searchCollapsedParents) {
       const next = new Map<string, boolean>()
@@ -729,12 +697,7 @@
     return visibleRows.findIndex(row => row.spanNode.spanData.spanID === spanID)
   }
 
-  // A scroll, not an edit. This used to expand every collapsed ancestor of
-  // the selected span, which meant collapsing a branch that contained the
-  // selection quietly undid itself. If the reader closed the branch, the
-  // selected row being inside it is not a reason to open it again -- so a
-  // hidden selection scrolls to the nearest visible ancestor instead, and the
-  // detail panel shows the span either way.
+  // Preserve collapsed branches; scroll hidden selections to a visible ancestor.
   async function revealAndScrollToSpan(
     spanID: string,
     smoothScroll = true
@@ -767,8 +730,6 @@
   $effect(() => {
     if (!selectedSpanID) lastScrolledSelection = null
   })
-
-  // --- Focus & keyboard on the grid ---
 
   let gridHostEl = $state<HTMLDivElement | null>(null)
 

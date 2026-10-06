@@ -68,7 +68,7 @@ func TestSpanNumericEnumsRoundTripAndRemainSearchable(t *testing.T) {
 	}))
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchSpans(ctx, db, "0000000000000000000000000000002a", nil)
+		return spans.GetTraceView(ctx, db, "0000000000000000000000000000002a", nil)
 	})
 	require.NoError(t, err)
 	var detail struct {
@@ -105,7 +105,7 @@ func TestSpanNumericEnumsRoundTripAndRemainSearchable(t *testing.T) {
 			FieldOperator: "=", Value: fmt.Sprint(tc.value),
 		}}
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-			return spans.SearchTraces(ctx, db, store.BoundedTimeRange(0, 10), query)
+			return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(0, 10), query)
 		})
 		require.NoError(t, err)
 		var summaries []map[string]any
@@ -114,7 +114,7 @@ func TestSpanNumericEnumsRoundTripAndRemainSearchable(t *testing.T) {
 	}
 
 	raw, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchTraces(ctx, db, store.BoundedTimeRange(0, 10), nil)
+		return spans.SearchTraceSummaries(ctx, db, store.BoundedTimeRange(0, 10), nil)
 	})
 	require.NoError(t, err)
 	var summaries []map[string]any

@@ -39,7 +39,7 @@ func TestMetricTimestampsRoundTripAcrossUint64Range(t *testing.T) {
 
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		rows, err := db.QueryContext(ctx, `select d.timestamp, d.start_time, e.timestamp
-			from datapoints d join exemplars e on e.datapoint_id = d.id order by d.timestamp`)
+			from metric_datapoints d join exemplars e on e.metric_datapoint_id = d.id order by d.timestamp`)
 		if err != nil {
 			return err
 		}
@@ -64,8 +64,9 @@ func TestMetricTimestampsRoundTripAcrossUint64Range(t *testing.T) {
 	require.Equal(t, "18446744073709551615", summaries[0]["lastSeen"])
 
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.TimeRange{},
+		return metrics.GetMetricView(ctx, db, summaries[0]["metricRef"].(string), store.TimeRange{},
 			0, nil, nil, 0, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	require.Contains(t, string(raw), `"timestamp":"18446744073709551615"`)

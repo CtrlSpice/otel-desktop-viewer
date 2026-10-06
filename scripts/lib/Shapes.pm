@@ -1,39 +1,6 @@
 package Shapes;
 
-# ============================================================================
-# Shapes.pm -- generator functions for synthetic time-series values.
-#
-# Why this module exists:
-#   Realistic-looking telemetry needs realistic-looking shapes:
-#   diurnal traffic, slow upward creep, sudden incidents, noise on
-#   top of everything. Rather than hand-coding each metric's data,
-#   we build it from a small library of shape functions that compose.
-#
-# What you get (FP-shaped: every constructor returns a function):
-#   - make_rng($seed)                      -> \&rand_fn        (deterministic [0,1))
-#   - diurnal({ amplitude, baseline, period_s, phase_s })
-#                                          -> \&shape_fn       (t_s -> value)
-#   - sawtooth({ amplitude, baseline, period_s })
-#                                          -> \&shape_fn
-#   - incident({ baseline, peak, start_s, ramp_s, hold_s, recovery_s })
-#                                          -> \&shape_fn
-#   - creep({ baseline, slope_per_s })     -> \&shape_fn
-#   - constant($value)                     -> \&shape_fn
-#   - noisy($shape, $fraction, $rng)       -> \&shape_fn       (wraps a shape)
-#   - clamp($shape, $min, $max)            -> \&shape_fn
-#   - compose(@shapes)                     -> \&shape_fn       (sum)
-#   - sample($shape, $start_s, $end_s, $step_s)
-#                                          -> \@points         ({ t_s, value })
-#
-# The whole point of this module: complex behaviour by composing
-# small functions. e.g. a noisy diurnal load with a slow creep is
-#
-#     compose(diurnal({...}), creep({...}))
-#       |> noisy(0.05, $rng)
-#
-# (Perl 5 doesn't have a pipe operator; you write that as
-#  noisy(compose(diurnal({...}), creep({...})), 0.05, $rng) )
-# ============================================================================
+# Composable generators for synthetic time-series values.
 
 use strict;
 use warnings;
@@ -61,22 +28,7 @@ our @EXPORT_OK = qw(
 );
 our %EXPORT_TAGS = ( all => \@EXPORT_OK );
 
-# ----------------------------------------------------------------------------
-# Deterministic RNG
-# ----------------------------------------------------------------------------
-
-# A 32-bit linear congruential generator (Numerical Recipes
-# constants). Tiny, fast, and crucially has its own state -- so we
-# can reproduce the exact same data across runs by passing the same
-# seed. Perl's built-in srand/rand uses a global state, which would
-# conflict with anything else in the process; a closure-scoped LCG
-# keeps our determinism local.
-#
-# Why 32 bits and not 64: Perl's integer arithmetic silently promotes
-# to floating point on overflow, so a 64-bit LCG saturates to
-# all-ones after one multiply. Staying inside 32 bits sidesteps that
-# entirely. Quality is fine for fake telemetry; it'd be wrong for
-# anything cryptographic.
+# Closure-scoped 32-bit LCG; 64-bit multiplication would promote to double.
 sub make_rng {
     my ($seed) = @_;
     $seed //= 42;
@@ -89,12 +41,7 @@ sub make_rng {
     };
 }
 
-# ----------------------------------------------------------------------------
-# Atomic shapes (constructors that return a t -> value function)
-# ----------------------------------------------------------------------------
-
-# Sinusoidal. Peaks once per period_s, troughs half a period later.
-# Phase shifts the curve right by phase_s seconds.
+# Sinusoid shifted right by phase_s seconds.
 sub diurnal {
     my ($p) = @_;
     my $amp     = $p->{amplitude} // 1;
@@ -107,9 +54,7 @@ sub diurnal {
     };
 }
 
-# Linear ramp from 0 to amplitude over period_s, then resets.
-# Useful for queue-depth-style metrics or for >24h axis testing where
-# you want an obvious visual repeat-every-N-hours pattern.
+# Linear ramp from 0 to amplitude, resetting every period_s.
 sub sawtooth {
     my ($p) = @_;
     my $amp    = $p->{amplitude} // 1;
@@ -122,10 +67,7 @@ sub sawtooth {
     };
 }
 
-# An incident: quiet baseline, sharp ramp up to peak over ramp_s,
-# hold at peak for hold_s, decay back over recovery_s. start_s is
-# where the ramp begins (in the t coordinate the shape will be called
-# with).
+# Ramp from baseline to peak, hold, then recover to baseline.
 sub incident {
     my ($p) = @_;
     my $base     = $p->{baseline}    // 0;
@@ -152,8 +94,7 @@ sub incident {
     };
 }
 
-# Slow linear drift. Use to model "memory grows 100 KB/s" or the
-# slow background trend underneath a diurnal pattern.
+# Linear drift.
 sub creep {
     my ($p) = @_;
     my $base  = $p->{baseline}     // 0;
@@ -164,22 +105,12 @@ sub creep {
     };
 }
 
-# Constant value. Boring on its own; useful as a baseline you
-# compose noise onto.
 sub constant {
     my ($v) = @_;
     return sub { return $v };
 }
 
-# ----------------------------------------------------------------------------
-# Higher-order shapes (functions that take and return shapes)
-# ----------------------------------------------------------------------------
-
-# Wrap a shape with multiplicative noise. The fraction is the rough
-# +/- swing as a proportion of the underlying value (0.05 = +/- 5%).
-# Approximates a normal distribution by averaging four uniforms
-# (cheap CLT) -- not statistically rigorous, just less obviously
-# uniform than a single rand() would look.
+# Multiplicative noise from the mean of four uniform draws.
 sub noisy {
     my ($shape, $fraction, $rng) = @_;
     $fraction //= 0.05;
@@ -191,9 +122,6 @@ sub noisy {
     };
 }
 
-# Clamp a shape's output to [min, max]. Useful after composing
-# several shapes that could in principle produce a negative request
-# count.
 sub clamp {
     my ($shape, $min, $max) = @_;
     return sub {
@@ -205,14 +133,7 @@ sub clamp {
     };
 }
 
-# Sum N shapes pointwise. The bread-and-butter composition: any
-# realistic-looking metric is "background + diurnal + occasional
-# incident + noise", and that's just compose(constant, diurnal,
-# incident) wrapped in noisy().
-#
-# FP detail: this returns a closure that captures @shapes by ref via
-# the lexical -- so the returned function keeps working even after
-# the caller's @shapes goes out of scope.
+# Sum shapes pointwise.
 sub compose {
     my @shapes = @_;
     return sub {
@@ -221,18 +142,7 @@ sub compose {
     };
 }
 
-# ----------------------------------------------------------------------------
-# Sampling
-# ----------------------------------------------------------------------------
-
-# Walk a shape across [start_s, end_s] at step_s intervals, producing
-# a list of { t_s => ..., value => ... } records. This is the only
-# place that turns a shape function back into concrete data; metric
-# constructors consume the result.
-#
-# Returns a list (not a listref) so callers can `map` over it
-# directly. Caller pays a copy if they want to store it -- fine for
-# our scale (a few thousand points max).
+# Sample the inclusive interval and return a list of {t_s, value} records.
 sub sample {
     my ($shape, $start_s, $end_s, $step_s) = @_;
     my @out;

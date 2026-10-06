@@ -21,16 +21,12 @@ import (
 // the object form work: a named request is reordered into the positional array
 // the handlers already read, so nothing downstream changes shape.
 //
-// The names are not invented here. Each is the name the same value already
-// carries in the Go store signature and in the TypeScript client -- streamID,
-// targetBuckets, tzOffsetNs -- and several were already spelled out in this
-// file's own error messages. Spelling follows the wire, which emits traceID
-// and spanID, so a caller passes back the name it was given.
+// Names match the Go store signatures and wire fields.
 //
 // Adding a parameter means appending here as well, and a test walks every
 // method to catch a list that has fallen behind its handler's bounds.
 //
-// deleteSpansByTraceID and deleteLogByID are deliberately
+// deleteSpansByTraceID and deleteLogsByRefs are deliberately
 // absent. They are variadic -- parseIDParams reads the whole params array as
 // the list of ids, so ["a","b"] is two ids rather than one parameter holding
 // two. There is no position to give a name to, and modelling them as a single
@@ -38,43 +34,45 @@ import (
 // named call to them is refused with a message saying so, which is the honest
 // answer.
 var methodParamNames = map[string][]string{
-	"searchTraces":          {"startTime", "endTime", "query", "limit", "sort"},
-	"searchSpans":           {"traceID", "query"},
-	"searchLogs":            {"startTime", "endTime", "query", "limit", "sort"},
-	"getTraceLogs":          {"traceID"},
-	"getLog":                {"logID"},
+	"searchTraceSummaries":  {"startTime", "endTime", "query", "limit", "sort"},
+	"getTraceView":          {"traceID", "query"},
+	"getTraceOverview":      {"traceID"},
+	"getSpan":               {"spanID", "traceID", "limit"},
+	"searchLogSummaries":    {"startTime", "endTime", "query", "limit", "sort"},
+	"getTraceLogSummaries":  {"traceID"},
+	"getLog":                {"logRef"},
 	"searchMetricSummaries": {"startTime", "endTime", "query", "limit", "sort"},
-	"getMetric": {
-		"streamID", "startTime", "endTime", "targetBuckets", "seriesIDs",
+	"getMetric":             {"metricRef"},
+	"getMetricSeries":       {"metricRef", "seriesRef", "startTime", "endTime"},
+	"getMetricView": {
+		"metricRef", "startTime", "endTime", "targetBuckets", "seriesRefs",
 		"quantiles", "tzOffsetNs", "viewBuckets",
-		"sparklineBuckets", "selectedSeriesIDs", "tzName",
-		"datapointSeriesIDs", "datapointSeriesLimit",
+		"sparklineBuckets", "selectedSeriesRefs", "tzName",
+		"datapointSeriesRefs", "datapointSeriesLimit",
 	},
-	"getMetricAggregate": {
-		"streamID", "startTime", "endTime", "targetBuckets", "seriesIDs",
+	"getMetricAggregateView": {
+		"metricRef", "startTime", "endTime", "targetBuckets", "seriesRefs",
 		"quantiles", "tzOffsetNs", "viewBuckets",
-		"selectedSeriesIDs", "tzName",
+		"selectedSeriesRefs", "tzName",
 	},
-	"searchAttributes":       {"term"},
-	"getFieldValues":         {"signal", "field", "term", "limit"},
-	"getAttributesByTraceID": {"traceID"},
-	"getTraceSpanCount":      {"traceID"},
-	"deleteMetricStream":     {"streamID"},
-	"query":                  {"sql", "limit"},
+	"searchAttributeMatches":                {"term"},
+	"getFieldValueCompletions":              {"signal", "field", "term", "limit"},
+	"getTraceAttributeDefinitionsByTraceID": {"traceID"},
+	"getTraceSpanCount":                     {"traceID"},
+	"deleteMetric":                          {"metricRef"},
+	"query":                                 {"sql", "limit"},
 }
 
 // normalizeParams rewrites object-form params into the positional array form.
 //
 // Array params and absent params pass through untouched.
 //
-// Two decisions worth stating. A gap between named parameters becomes an
+// A gap between named parameters becomes an
 // explicit null rather than a shorter array, because the handlers gate
 // optional parameters on `len(params) >= n && params[n-1] != nil` and a
 // shorter array would silently drop everything after the gap. And an unknown
 // name is an error rather than being ignored: a caller who misspells
-// `startTime` should be told, not handed results for a window they did not
-// ask for. Unknown names are the single most likely mistake here, and
-// silence is the worst possible answer to it.
+// `startTime` must not receive results for a different window.
 func normalizeParams(method string, raw json.RawMessage) (json.RawMessage, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
@@ -253,18 +251,18 @@ func parseSearchOptions(params []any) (search.ResultOptions, error) {
 	}, nil
 }
 
-// getMetricParams holds the common metric request plus detail-only fields.
-type getMetricParams struct {
-	streamID             string
+// getMetricViewParams holds the common chart request plus detail-only fields.
+type getMetricViewParams struct {
+	metricRef            string
 	timeRange            store.TimeRange
 	targetBuckets        int64
-	seriesIDs            []string
+	seriesRefs           []string
 	quantiles            []float64
 	tzOffsetNs           int64
 	viewBuckets          int64
 	sparklineBuckets     int64
-	selectedSeriesIDs    []string
-	datapointSeriesIDs   []string
+	selectedSeriesRefs   []string
+	datapointSeriesRefs  []string
 	datapointSeriesLimit int64
 	tzName               string
 }
@@ -348,42 +346,42 @@ func parseOptionalString(params []any, index int) (string, error) {
 	return value, nil
 }
 
-func parseGetMetricParams(raw json.RawMessage, aggregateOnly bool) (getMetricParams, error) {
+func parseGetMetricViewParams(raw json.RawMessage, aggregateOnly bool) (getMetricViewParams, error) {
 	maxParams := 13
 	if aggregateOnly {
 		maxParams = 10
 	}
 	params, err := decodePositionalParams(raw, 3, maxParams)
 	if err != nil {
-		return getMetricParams{}, err
+		return getMetricViewParams{}, err
 	}
-	streamID, err := parseIDParam(params[0], ErrInvalidStreamID, normalizeUUID)
+	metricRef, err := parseIDParam(params[0], ErrInvalidMetricRef, normalizeUUID)
 	if err != nil {
-		return getMetricParams{}, err
+		return getMetricViewParams{}, err
 	}
 	timeRange, err := parseTimeRange(params[1], params[2])
 	if err != nil {
-		return getMetricParams{}, err
+		return getMetricViewParams{}, err
 	}
 	targetBuckets, err := parseOptionalNonNegativeInt(params, 3, "targetBuckets")
 	if err != nil {
-		return getMetricParams{}, err
+		return getMetricViewParams{}, err
 	}
-	seriesIDs, err := parseOptionalStringList(params, 4)
+	seriesRefs, err := parseOptionalStringList(params, 4)
 	if err != nil {
-		return getMetricParams{}, err
+		return getMetricViewParams{}, err
 	}
 	quantiles, err := parseOptionalQuantiles(params, 5)
 	if err != nil {
-		return getMetricParams{}, err
+		return getMetricViewParams{}, err
 	}
 	tzOffsetNs, err := parseOptionalInt(params, 6, "tzOffsetNs")
 	if err != nil {
-		return getMetricParams{}, err
+		return getMetricViewParams{}, err
 	}
 	viewBuckets, err := parseOptionalNonNegativeInt(params, 7, "viewBuckets")
 	if err != nil {
-		return getMetricParams{}, err
+		return getMetricViewParams{}, err
 	}
 
 	selectedSeriesIndex, tzNameIndex := 9, 10
@@ -393,41 +391,67 @@ func parseGetMetricParams(raw json.RawMessage, aggregateOnly bool) (getMetricPar
 	} else {
 		sparklineBuckets, err = parseOptionalNonNegativeInt(params, 8, "sparklineBuckets")
 		if err != nil {
-			return getMetricParams{}, err
+			return getMetricViewParams{}, err
 		}
 	}
-	selectedSeriesIDs, err := parseOptionalStringList(params, selectedSeriesIndex)
+	selectedSeriesRefs, err := parseOptionalStringList(params, selectedSeriesIndex)
 	if err != nil {
-		return getMetricParams{}, err
+		return getMetricViewParams{}, err
 	}
 	tzName, err := parseOptionalString(params, tzNameIndex)
 	if err != nil {
-		return getMetricParams{}, err
+		return getMetricViewParams{}, err
 	}
 
-	var datapointSeriesIDs []string
+	var datapointSeriesRefs []string
 	var datapointSeriesLimit int64
 	if !aggregateOnly {
-		datapointSeriesIDs, err = parseOptionalStringList(params, 11)
+		datapointSeriesRefs, err = parseOptionalStringList(params, 11)
 		if err != nil {
-			return getMetricParams{}, err
+			return getMetricViewParams{}, err
 		}
 		datapointSeriesLimit, err = parseOptionalNonNegativeInt(params, 12, "datapointSeriesLimit")
 		if err != nil {
-			return getMetricParams{}, err
+			return getMetricViewParams{}, err
 		}
 	}
 
-	return getMetricParams{
-		streamID: streamID, timeRange: timeRange, targetBuckets: targetBuckets,
-		seriesIDs: seriesIDs, quantiles: quantiles, tzOffsetNs: tzOffsetNs,
+	return getMetricViewParams{
+		metricRef: metricRef, timeRange: timeRange, targetBuckets: targetBuckets,
+		seriesRefs: seriesRefs, quantiles: quantiles, tzOffsetNs: tzOffsetNs,
 		viewBuckets: viewBuckets, sparklineBuckets: sparklineBuckets,
-		selectedSeriesIDs: selectedSeriesIDs, datapointSeriesIDs: datapointSeriesIDs,
+		selectedSeriesRefs: selectedSeriesRefs, datapointSeriesRefs: datapointSeriesRefs,
 		datapointSeriesLimit: datapointSeriesLimit, tzName: tzName,
 	}, nil
 }
 
-// getFieldValues returns distinct values of one completable column, for
+type getMetricSeriesParams struct {
+	metricRef string
+	seriesRef string
+	timeRange store.TimeRange
+}
+
+func parseGetMetricSeriesParams(raw json.RawMessage) (getMetricSeriesParams, error) {
+	params, err := decodePositionalParams(raw, 4, 4)
+	if err != nil {
+		return getMetricSeriesParams{}, err
+	}
+	metricRef, err := parseIDParam(params[0], ErrInvalidMetricRef, normalizeUUID)
+	if err != nil {
+		return getMetricSeriesParams{}, err
+	}
+	seriesRef, err := parseIDParam(params[1], ErrInvalidMetricRef, normalizeUUID)
+	if err != nil {
+		return getMetricSeriesParams{}, err
+	}
+	timeRange, err := parseTimeRange(params[2], params[3])
+	if err != nil {
+		return getMetricSeriesParams{}, err
+	}
+	return getMetricSeriesParams{metricRef: metricRef, seriesRef: seriesRef, timeRange: timeRange}, nil
+}
+
+// getFieldValueCompletions returns distinct values of one completable column, for
 // value completion in the search box. Which fields complete is decided by
 // each signal package's allowlist, so an unknown field is an invalid-params
 // answer rather than an empty list -- a typo should look like one. The limit
@@ -469,9 +493,7 @@ func parseFieldValuesParams(raw json.RawMessage) (fieldValuesParams, error) {
 // parseIDParams unmarshals a request's params as a non-empty array of entity
 // IDs, validating and normalizing each element with the given normalize
 // function. A malformed array returns ErrInvalidParams; a malformed element
-// returns invalidIDErr (the signal-specific -3200x code). Previously these
-// params went straight into SQL, where a non-string or non-UUID value became
-// a DB cast error reported as a generic internal error.
+// returns invalidIDErr (the signal-specific -3200x code).
 func parseIDParams(raw json.RawMessage, invalidIDErr error, normalize func(string) (string, error)) ([]any, error) {
 	var params []any
 	if err := decodeParams(raw, &params); err != nil {
@@ -498,7 +520,7 @@ func parseIDParams(raw json.RawMessage, invalidIDErr error, normalize func(strin
 }
 
 // parseIDParam validates and normalizes a single entity ID param (read
-// paths: searchSpans, getTraceLogs, getLog, getMetric, getAttributesByTraceID,
+// paths: getTraceView, getTraceLogSummaries, getLog, getMetric, getTraceAttributeDefinitionsByTraceID,
 // getTraceSpanCount). Like parseIDParams, a bad value returns the
 // signal-specific -3200x code instead of reaching SQL as a cast error.
 func parseIDParam(param any, invalidIDErr error, normalize func(string) (string, error)) (string, error) {
@@ -554,8 +576,7 @@ func normalizeUUID(s string) (string, error) {
 // parseTimestampParam reads a whole number sent either as a JSON string or as
 // a JSON number.
 //
-// Strings were the original and only accepted form, for a real reason:
-// nanosecond timestamps are around 1.8e18, and JSON numbers decoded into `any`
+// Nanosecond timestamps are around 1.8e18, and JSON numbers decoded into `any`
 // become float64, which is exact only to 2^53. Three of four realistic
 // timestamps lose precision that way -- by up to 65ns -- which would move a
 // query boundary silently rather than failing.
@@ -566,9 +587,7 @@ func normalizeUUID(s string) (string, error) {
 // reaching this function with one means the decoder was bypassed and the
 // precision is already gone.
 //
-// The error says which parameter and what was wrong with it. The bare
-// "invalid params" this used to return gave a caller nothing to act on, which
-// costs time even when the caller can read this file.
+// Errors identify the parameter and invalid value.
 func parseTimestampParam(param any, paramName string) (int64, error) {
 	var text string
 	switch v := param.(type) {

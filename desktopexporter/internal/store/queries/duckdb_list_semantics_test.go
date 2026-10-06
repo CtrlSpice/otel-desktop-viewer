@@ -13,15 +13,9 @@ import (
 // list_slice clamps an out-of-range *end* and does not clamp an out-of-range
 // *start*: a start below 1 yields an empty list. Two macros here compute slice
 // bounds arithmetically from an offset that can be negative, so which of those
-// two rules applies decides whether counts survive or silently disappear --
-// and it is not the kind of difference that shows up in review. A comment in
-// fold_below_cutoff asserted the opposite for a while; the code was saved by a
-// guard elsewhere rather than by the behaviour it claimed.
+// two rules applies decides whether counts survive.
 //
-// This is a characterisation test: it is not asserting that DuckDB is right,
-// only recording what it does, so an upgrade that changes it fails here with
-// an explanation rather than somewhere downstream as a wrong histogram. If it
-// ever fails, read the two macros below before touching this file.
+// This characterisation test records DuckDB behavior the macros depend on.
 func TestListSliceBoundsAreAsymmetric(t *testing.T) {
 	db := macroDB(t)
 

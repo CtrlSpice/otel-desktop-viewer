@@ -7,24 +7,24 @@ import type { Stats } from '@/types/api-types'
 
 const {
   getStats,
-  searchTraces,
-  searchLogs,
+  searchTraceSummaries,
+  searchLogSummaries,
   getLog,
   searchMetricSummaries,
-  getMetric,
-  getTraceAttributes,
-  getLogAttributes,
-  getMetricAttributes,
+  getMetricView,
+  getTraceAttributeDefinitions,
+  getLogAttributeDefinitions,
+  getMetricAttributeDefinitions,
 } = vi.hoisted(() => ({
   getStats: vi.fn(),
-  searchTraces: vi.fn(),
-  searchLogs: vi.fn(),
+  searchTraceSummaries: vi.fn(),
+  searchLogSummaries: vi.fn(),
   getLog: vi.fn(),
   searchMetricSummaries: vi.fn(),
-  getMetric: vi.fn(),
-  getTraceAttributes: vi.fn(),
-  getLogAttributes: vi.fn(),
-  getMetricAttributes: vi.fn(),
+  getMetricView: vi.fn(),
+  getTraceAttributeDefinitions: vi.fn(),
+  getLogAttributeDefinitions: vi.fn(),
+  getMetricAttributeDefinitions: vi.fn(),
 }))
 
 vi.mock('@/services/telemetry-service', async importOriginal => {
@@ -35,14 +35,14 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
     telemetryAPI: {
       ...actual.telemetryAPI,
       getStats,
-      searchTraces,
-      searchLogs,
+      searchTraceSummaries,
+      searchLogSummaries,
       getLog,
       searchMetricSummaries,
-      getMetric,
-      getTraceAttributes,
-      getLogAttributes,
-      getMetricAttributes,
+      getMetricView,
+      getTraceAttributeDefinitions,
+      getLogAttributeDefinitions,
+      getMetricAttributeDefinitions,
     },
   }
 })
@@ -65,14 +65,14 @@ const EMPTY_STATS: Stats = {
 beforeEach(() => {
   vi.clearAllMocks()
   getStats.mockResolvedValue(EMPTY_STATS)
-  searchTraces.mockResolvedValue([])
-  searchLogs.mockResolvedValue([])
+  searchTraceSummaries.mockResolvedValue([])
+  searchLogSummaries.mockResolvedValue([])
   getLog.mockResolvedValue(null)
   searchMetricSummaries.mockResolvedValue([])
-  getMetric.mockResolvedValue(null)
-  getTraceAttributes.mockResolvedValue([])
-  getLogAttributes.mockResolvedValue([])
-  getMetricAttributes.mockResolvedValue([])
+  getMetricView.mockResolvedValue(null)
+  getTraceAttributeDefinitions.mockResolvedValue([])
+  getLogAttributeDefinitions.mockResolvedValue([])
+  getMetricAttributeDefinitions.mockResolvedValue([])
 })
 
 describe('App real-page composition', () => {
@@ -81,7 +81,7 @@ describe('App real-page composition', () => {
     render(App)
 
     await screen.findByText('No traces in this time range')
-    expect(searchTraces).toHaveBeenCalled()
+    expect(searchTraceSummaries).toHaveBeenCalled()
 
     navigate('/metrics/metric-1')
     await screen.findByText('No metrics in this time range')
@@ -89,7 +89,7 @@ describe('App real-page composition', () => {
 
     navigate('/logs/log-1')
     await screen.findByText('No logs in this time range')
-    expect(searchLogs).toHaveBeenCalled()
+    expect(searchLogSummaries).toHaveBeenCalled()
 
     navigate('/unknown')
     await screen.findByRole('heading', {

@@ -18,7 +18,7 @@ const traceResults = [
 
 const logResults = [
   {
-    id: 'log-1',
+    logRef: 'log-1',
     timestamp: 4n,
     severityText: 'INFO',
     severityNumber: 9,
@@ -29,7 +29,7 @@ const logResults = [
 
 const metricResults = [
   {
-    id: 'metric-1',
+    metricRef: 'metric-1',
     name: 'orders',
     description: 'Orders placed',
     unit: '{order}',
@@ -75,10 +75,10 @@ afterEach(() => {
 
 describe('search dispatch', () => {
   it('runs trace search and retains its result identity', async () => {
-    const searchTraces = vi
-      .spyOn(telemetryAPI, 'searchTraces')
+    const searchTraceSummaries = vi
+      .spyOn(telemetryAPI, 'searchTraceSummaries')
       .mockResolvedValue(traceResults)
-    const searchLogs = vi.spyOn(telemetryAPI, 'searchLogs')
+    const searchLogSummaries = vi.spyOn(telemetryAPI, 'searchLogSummaries')
     const searchMetrics = vi.spyOn(telemetryAPI, 'searchMetricSummaries')
 
     await expect(
@@ -89,15 +89,21 @@ describe('search dispatch', () => {
       queryTree,
       updateSeq: 11,
     })
-    expect(searchTraces).toHaveBeenCalledWith(10n, 20n, queryTree, 25, sort)
-    expect(searchLogs).not.toHaveBeenCalled()
+    expect(searchTraceSummaries).toHaveBeenCalledWith(
+      10n,
+      20n,
+      queryTree,
+      25,
+      sort
+    )
+    expect(searchLogSummaries).not.toHaveBeenCalled()
     expect(searchMetrics).not.toHaveBeenCalled()
   })
 
   it('runs log search and retains its result identity', async () => {
-    const searchTraces = vi.spyOn(telemetryAPI, 'searchTraces')
-    const searchLogs = vi
-      .spyOn(telemetryAPI, 'searchLogs')
+    const searchTraceSummaries = vi.spyOn(telemetryAPI, 'searchTraceSummaries')
+    const searchLogSummaries = vi
+      .spyOn(telemetryAPI, 'searchLogSummaries')
       .mockResolvedValue(logResults)
     const searchMetrics = vi.spyOn(telemetryAPI, 'searchMetricSummaries')
 
@@ -109,14 +115,20 @@ describe('search dispatch', () => {
       queryTree,
       updateSeq: 12,
     })
-    expect(searchLogs).toHaveBeenCalledWith(10n, 20n, queryTree, 50, sort)
-    expect(searchTraces).not.toHaveBeenCalled()
+    expect(searchLogSummaries).toHaveBeenCalledWith(
+      10n,
+      20n,
+      queryTree,
+      50,
+      sort
+    )
+    expect(searchTraceSummaries).not.toHaveBeenCalled()
     expect(searchMetrics).not.toHaveBeenCalled()
   })
 
   it('runs metric search and retains its result identity', async () => {
-    const searchTraces = vi.spyOn(telemetryAPI, 'searchTraces')
-    const searchLogs = vi.spyOn(telemetryAPI, 'searchLogs')
+    const searchTraceSummaries = vi.spyOn(telemetryAPI, 'searchTraceSummaries')
+    const searchLogSummaries = vi.spyOn(telemetryAPI, 'searchLogSummaries')
     const searchMetrics = vi
       .spyOn(telemetryAPI, 'searchMetricSummaries')
       .mockResolvedValue(metricResults)
@@ -130,27 +142,27 @@ describe('search dispatch', () => {
       updateSeq: 13,
     })
     expect(searchMetrics).toHaveBeenCalledWith(10n, 20n, queryTree, 75, sort)
-    expect(searchTraces).not.toHaveBeenCalled()
-    expect(searchLogs).not.toHaveBeenCalled()
+    expect(searchTraceSummaries).not.toHaveBeenCalled()
+    expect(searchLogSummaries).not.toHaveBeenCalled()
   })
 
   it('propagates the selected search error', async () => {
     const error = new Error('search unavailable')
-    const searchTraces = vi
-      .spyOn(telemetryAPI, 'searchTraces')
+    const searchTraceSummaries = vi
+      .spyOn(telemetryAPI, 'searchTraceSummaries')
       .mockRejectedValue(error)
-    const searchLogs = vi.spyOn(telemetryAPI, 'searchLogs')
+    const searchLogSummaries = vi.spyOn(telemetryAPI, 'searchLogSummaries')
     const searchMetrics = vi.spyOn(telemetryAPI, 'searchMetricSummaries')
 
     await expect(runSearch(traceContext, 14)).rejects.toBe(error)
-    expect(searchTraces).toHaveBeenCalledWith(
+    expect(searchTraceSummaries).toHaveBeenCalledWith(
       10n,
       20n,
       undefined,
       undefined,
       undefined
     )
-    expect(searchLogs).not.toHaveBeenCalled()
+    expect(searchLogSummaries).not.toHaveBeenCalled()
     expect(searchMetrics).not.toHaveBeenCalled()
   })
 })

@@ -15,7 +15,7 @@ function explicitPoint(
   return {
     kind: 'histogram',
     timestamp,
-    attributesKey: '',
+    seriesRef: '',
     bounds,
     counts,
     totals: {
@@ -37,7 +37,7 @@ function exponentialPoint(
   return {
     kind: 'expHistogram',
     timestamp,
-    attributesKey: '',
+    seriesRef: '',
     scale: 1,
     zeroThreshold,
     zeroCount,

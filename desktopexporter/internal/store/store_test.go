@@ -146,7 +146,7 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			assert.NoError(t, err, "metrics table should exist and accept data")
 
 			// Verify data was inserted correctly
-			summariesRaw, err := spans.SearchTraces(ctx, s.db, BoundedTimeRange(0, 1<<63-1), nil)
+			summariesRaw, err := spans.SearchTraceSummaries(ctx, s.db, BoundedTimeRange(0, 1<<63-1), nil)
 			assert.NoError(t, err, "should be able to retrieve trace summaries")
 			var summaries []map[string]any
 			assert.NoError(t, json.Unmarshal(summariesRaw, &summaries))
@@ -175,7 +175,7 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			assert.NotNil(t, s.conn, "duckdb connection should be reestablished")
 
 			// Verify data after reopening
-			summariesRaw, err = spans.SearchTraces(ctx, s.db, BoundedTimeRange(0, 1<<63-1), nil)
+			summariesRaw, err = spans.SearchTraceSummaries(ctx, s.db, BoundedTimeRange(0, 1<<63-1), nil)
 			assert.NoError(t, err, "should be able to retrieve trace summaries after reopening")
 			assert.NoError(t, json.Unmarshal(summariesRaw, &summaries))
 
@@ -224,61 +224,52 @@ func TestStoreIndexesCreated(t *testing.T) {
 	assert.Equal(t, len(queries.Indexes()), count, "index count should match IndexCreationQueries")
 }
 
-// TestStoreConstraintsEnforced verifies that inline CHECK constraints on the datapoints and
-// attributes tables are enforced by the database. It checks that inserting a row that violates
-// chk_metric_type_valid is rejected.
-func TestStoreConstraintsEnforced(t *testing.T) {
+func TestStoreForeignKeysEnforced(t *testing.T) {
 	ctx := context.Background()
 	s, err := NewStore(ctx, "", zap.NewNop())
 	require.NoError(t, err)
 	defer s.Close()
 
-	// chk_metric_type_valid rejects unknown metric_type values. The
-	// FK chain is now stream -> ingest -> datapoint; we have to seed
-	// both parent rows before the chk_metric_type_valid violation will
-	// fire on the datapoint insert.
 	_, err = s.db.ExecContext(ctx, `
-		insert into metric_streams
-			(id, name, unit, metric_type, aggregation_temporality,
-			 is_monotonic, scope_name, scope_version, service_name)
-		values (gen_random_uuid(), 'test', '', 'Gauge', 0, false, '', '', '')
-	`)
-	require.NoError(t, err, "inserting a metric_streams row should succeed")
-
-	var streamID string
-	require.NoError(t, s.db.QueryRowContext(ctx,
-		"select id::varchar from metric_streams where name = 'test'").Scan(&streamID))
-
-	// metric_ingests now references resources and scopes instead of carrying
-	// its own dropped counts, and both FKs are NOT NULL -- so the parent rows
-	// have to exist before the ingest row can.
-	_, err = s.db.ExecContext(ctx, `
-		insert into resources (id, attribute_ids)
-		values ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid, []::uuid[])`)
+		insert into resources (id, payload_id, attribute_ids)
+		values ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
+			'dddddddd-dddd-dddd-dddd-dddddddddddd'::uuid, []::uuid[])`)
 	require.NoError(t, err, "inserting a resources row should succeed")
 	_, err = s.db.ExecContext(ctx, `
 		insert into scopes (id, name, version, attribute_ids)
 		values ('ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, '', '', []::uuid[])`)
 	require.NoError(t, err, "inserting a scopes row should succeed")
-
 	_, err = s.db.ExecContext(ctx, `
-		insert into metric_ingests (id, stream_id, description, resource_id, scope_id)
-		values (gen_random_uuid(), ?::uuid, '',
+		insert into resources (id, payload_id, attribute_ids)
+		values ('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid,
+			'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, []::uuid[])`)
+	require.NoError(t, err)
+	_, err = s.db.ExecContext(ctx, `
+		insert into metrics
+			(id, resource_id, resource_payload_id, scope_id, name, metric_type)
+		values (gen_random_uuid(),
 			'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
-			'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)
-	`, streamID)
-	require.NoError(t, err, "inserting a metric_ingests row should succeed")
-
-	var ingestID string
-	require.NoError(t, s.db.QueryRowContext(ctx,
-		"select id::varchar from metric_ingests where stream_id = ?::uuid", streamID).Scan(&ingestID))
+			'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid,
+			'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, 'mismatched', 'Gauge')`)
+	require.Error(t, err, "a Metric payload key must belong to its exact Resource row")
 
 	_, err = s.db.ExecContext(ctx, `
-		insert into datapoints
-			(id, stream_id, series_id, metric_ingest_id, metric_type, timestamp, start_time, flags, attribute_ids)
-		values (gen_random_uuid(), ?::uuid, ?::uuid, ?::uuid, 'InvalidType', 0, 0, 0, []::uuid[])
-	`, streamID, ingestID)
-	assert.Error(t, err, "inserting a datapoint with invalid metric_type should violate chk_metric_type_valid")
+		insert into metrics (id, resource_id, resource_payload_id, scope_id, name, metric_type)
+		values (gen_random_uuid(),
+			'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
+			'dddddddd-dddd-dddd-dddd-dddddddddddd'::uuid,
+			'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, 'test', 'Gauge')`)
+	require.NoError(t, err)
+
+	var metricID string
+	require.NoError(t, s.db.QueryRowContext(ctx,
+		"select id::varchar from metrics where name = 'test'").Scan(&metricID))
+
+	_, err = s.db.ExecContext(ctx, `
+		insert into metric_datapoints (id, metric_id, series_id, timestamp, attribute_ids)
+		values (gen_random_uuid(), ?::uuid,
+			'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 0, []::uuid[])`, metricID)
+	assert.Error(t, err, "a datapoint must reference an existing series")
 }
 
 // TestStorePersistentReopenIdempotent verifies that reopening a persistent store does not fail

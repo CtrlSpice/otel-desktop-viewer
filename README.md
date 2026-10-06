@@ -2,10 +2,10 @@
 
 <p align="center">
   Hello there.
-  <img src="docs/lulu.png" alt="Lulu the First — a pink axolotl striking a heroic pose while gazing at a field of stars through a telescope" width="480">
+  <img src="docs/lulu.png" alt="Lulu the First, a pink axolotl striking a heroic pose while gazing at a field of stars through a telescope" width="480">
 </p>
 
-`otel-desktop-viewer` is a CLI tool for exploring your OpenTelemetry traces, metrics, and logs locally. Built in Go on top of the [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector), with a DuckDB backend and a Svelte web UI.
+`otel-desktop-viewer` is a local OpenTelemetry viewer. It uses the [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector), DuckDB, and Svelte.
 
 ~~Also, it has a dark mode~~  
 Y'all.  
@@ -23,6 +23,9 @@ It has **two** dark modes now.
   - [Via Docker](#via-docker)
 - [Docker Compose](#docker-compose)
 - [Command Line Options](#command-line-options)
+- [Observe the Viewer](#observe-the-viewer)
+- [Query a Running Viewer](#query-a-running-viewer)
+- [Search Telemetry from the CLI](#search-telemetry-from-the-cli)
 - [Configuring Your OpenTelemetry SDK](#configuring-your-opentelemetry-sdk)
 - [Example With `otel-cli`](#example-with-otel-cli)
 - [Agent Usage Skill](#agent-usage-skill)
@@ -48,11 +51,11 @@ It has **two** dark modes now.
 
 ## Getting Started
 
-Pick your preferred install method. Once it's running, the UI is at `localhost:8000` with OTLP receivers on `localhost:4317` (gRPC) and `localhost:4318` (HTTP).
+Once running, the UI is at `localhost:8000`. The OTLP receivers listen on `localhost:4317` (gRPC) and `localhost:4318` (HTTP).
 
 #### Via Homebrew Cask
 
-Easiest install on macOS.
+On macOS:
 
 ```bash
 brew tap ctrlspice/otel-desktop-viewer
@@ -84,7 +87,7 @@ tar xzf otel-desktop-viewer_darwin_arm64.tar.gz
 
 #### Via apt / dnf (Linux)
 
-`.deb` and `.rpm` packages for Linux, published to [GemFury](https://gemfury.com/) with each stable release.
+Stable releases include `.deb` and `.rpm` packages on [GemFury](https://gemfury.com/).
 
 **Debian / Ubuntu:**
 
@@ -111,7 +114,7 @@ sudo dnf install otel-desktop-viewer
 
 #### Via `go install`
 
-Building from source? You'll need Go with CGO enabled.
+Building from source requires Go and CGO.
 
 ```bash
 go version
@@ -157,9 +160,9 @@ gcc --version        # or cc --version
    g++ --version
    ```
 
-**On Linux/macOS**: Usually fine if the checks above pass.
+**On Linux/macOS**: the checks above are sufficient.
 
-`@latest` resolves to the newest **stable** tag on the Go module proxy — not alpha/beta releases. Pin a version explicitly (e.g. `@v0.3.0`) or use a [GitHub Release](#via-github-releases) binary to avoid compiling locally.
+`@latest` resolves to the newest **stable** tag on the Go module proxy, not an alpha or beta release. Pin a version such as `@v0.3.0`, or use a [GitHub Release](#via-github-releases) binary to avoid compiling locally.
 
 ```bash
 # install the CLI tool
@@ -178,7 +181,7 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 
 #### Via Docker
 
-You can run otel-desktop-viewer using Docker without installing Go or building locally.
+Docker does not require a local Go installation.
 
 Pull from GitHub Container Registry (auto-selects your architecture):
 
@@ -229,6 +232,10 @@ services:
 
 Telemetry is stored in memory by default. Use `--db` to persist to a file.
 
+The bare command runs the viewer in the foreground. Keep it running while using the UI or client commands.
+
+Automation should reuse an existing viewer. If none is available, start `otel-desktop-viewer --open-browser=false` as a managed child and wait for its HTTP endpoint. Stop it only if you started it.
+
 ```bash
 Flags:
       --browser-port int     Port for the web UI and JSON-RPC API (default 8000)
@@ -240,6 +247,8 @@ Flags:
       --host string          Host for OTLP receivers and the web UI (default localhost)
       --http int             OTLP HTTP listen port (default 4318)
       --open-browser         Open the browser on launch (default true)
+      --self-telemetry-endpoint string
+                             Export the viewer's own traces and metrics to this OTLP/gRPC endpoint
   -h, --help                 help for otel-desktop-viewer
   -v, --version              version for otel-desktop-viewer
 ```
@@ -247,6 +256,79 @@ Flags:
 ```bash
 otel-desktop-viewer --db ./telemetry.duckdb --db-max-size 4GB
 ```
+
+## Observe the Viewer
+
+Run another viewer to receive the observed viewer's own traces and metrics:
+
+```bash
+otel-desktop-viewer --grpc 4327 --http 4328 --browser-port 8001
+```
+
+Then start the observed viewer in another terminal:
+
+```bash
+otel-desktop-viewer --self-telemetry-endpoint http://localhost:4327
+```
+
+Omitting `--self-telemetry-endpoint` keeps self-telemetry off. The endpoint is external to the observed viewer. The monitoring endpoint must remain running through observed viewer shutdown. The caller owns starting, stopping, and waiting for both foreground processes.
+
+## Query a Running Viewer
+
+Start the viewer with the bare command, then query it from another terminal:
+
+```bash
+otel-desktop-viewer query 'SHOW TABLES'
+otel-desktop-viewer query 'SELECT service_name, count(*) FROM spans GROUP BY service_name' --limit 50
+```
+
+The `query` command runs read-only SQL against the viewer at `http://localhost:8000`. It returns up to 25 rows as aligned columns by default. Use `--endpoint` for another viewer address, `--limit` for another row limit, or `--json` for the JSON result.
+
+## Search Telemetry from the CLI
+
+With the viewer running, search its trace, log, or metric summaries from another terminal:
+
+```bash
+otel-desktop-viewer traces --service checkout --since 30m
+otel-desktop-viewer logs --since 1h --limit 50
+otel-desktop-viewer metrics --start 2026-10-02T08:00:00Z --end 2026-10-02T09:00:00Z --json
+```
+
+These commands use `http://localhost:8000`, search the last hour, and return up to 25 summaries. Use `--endpoint`, `--service`, `--since`, `--start`, `--end`, `--limit`, or `--json` to change those defaults.
+
+In `metrics --json`, `metricRef` is the exact UUID text from `metrics.id`. The viewer generates it; OTLP does not provide it. It is valid only for that database. Pass it unchanged and do not parse it.
+
+Inspect every compact span and trace-linked log row for one trace:
+
+```bash
+otel-desktop-viewer trace 0123456789abcdef0123456789abcdef
+otel-desktop-viewer trace 0123456789abcdef0123456789abcdef --json
+```
+
+Table and JSON output contain the same untruncated fields. Trace start is
+`min(spans.start_time)`. Trace duration is
+`max(spans.end_time) - min(spans.start_time)`. Span offset and duration are
+calculated from received nanosecond timestamps and returned as exact decimal
+strings. Logs use the received timestamp unless it is zero, then use the
+received observed timestamp. Severity uses received text when present;
+otherwise it uses the display band derived from the received number. The body
+is the compact `body_preview`. Use `query` for complete stored log fields.
+
+Inspect one span with full typed detail and every log associated with that exact
+trace and span ID:
+
+```bash
+otel-desktop-viewer span 000000000000002a
+otel-desktop-viewer span 0123456789abcdef0123456789abcdef 000000000000002a --json
+```
+
+A standalone span ID returns a not-found result, one exact span, or stable span
+summaries when the ID occurs in multiple traces. The default limit is 25; use
+`--limit` to request more or fewer. Ambiguous summaries include both IDs, the
+exact match count, and whether more rows are available. It never chooses between
+duplicate span IDs from different traces. The qualified form selects only the
+requested trace and span pair. Both not-found forms are successful structured
+results.
 
 ## Configuring Your OpenTelemetry SDK
 
@@ -316,7 +398,7 @@ export OTEL_CONFIG_FILE=/path/to/otel-config.yaml
 
 ## Example With `otel-cli`
 
-If you have [`otel-cli`](https://github.com/equinix-labs/otel-cli) installed, it is a great way to send rich test traces from shell scripts. otel-cli supports span kinds, attributes, events, trace propagation, and background spans—much more than a single `exec` wrapper.
+[`otel-cli`](https://github.com/equinix-labs/otel-cli) can send test traces from shell scripts, including attributes, events, propagated context, and background spans.
 
 Start the desktop viewer in one terminal:
 
@@ -331,20 +413,20 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 ```
 
-**Quick span** — wrap any command:
+**Quick span:** wrap any command:
 
 ```bash
 otel-cli exec --service my-service --name "check the archive" curl -s -o /dev/null https://archive.org/
 ```
 
-**Chained spans** — otel-cli propagates context automatically:
+**Chained spans:** otel-cli propagates context automatically:
 
 ```bash
 otel-cli exec --kind producer --service demo --name produce -- \
   otel-cli exec --kind consumer --service demo --name consume sleep 0.2
 ```
 
-**Rich trace** — background span, events, attributes, and linked child spans:
+**Rich trace:** background span, events, attributes, and linked child spans:
 
 ```bash
 sockdir=$(mktemp -d)
@@ -389,11 +471,12 @@ The [OTel Desktop Viewer skill](skills/otel-desktop-viewer/SKILL.md) gives codin
 
 ## Implementation
 
-The CLI is a custom OpenTelemetry Collector distribution. A `desktop` exporter:
+The CLI is a custom OpenTelemetry Collector distribution. Its `desktop` exporter writes telemetry to the store owned by the `duckdb` extension. The extension:
 
-- ingests traces, metrics, and logs into **DuckDB** (in-memory by default, optional on-disk persistence via `--db`)
 - exposes data through a **JSON-RPC** API at `POST /rpc`
 - serves a **Svelte** web UI embedded in the binary via [`go:embed`](https://go.dev/embed/)
+
+DuckDB runs in memory by default. Use `--db` for file-backed storage.
 
 See [ARCHITECTURE.md](docs/ARCHITECTURE.md) for a full system overview.
 

@@ -17,6 +17,7 @@ type Item = { id: string; name: string }
 function searchResult(id: string, name: string): LogSummary & Item {
   return {
     id,
+    logRef: id,
     name,
     timestamp: 0n,
     severityText: '',

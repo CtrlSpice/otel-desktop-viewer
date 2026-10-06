@@ -41,7 +41,6 @@
   import type { SearchEditorAPI } from './search-editor-api'
   import type { SortDirection } from '@/contexts/signal-list-page.svelte'
 
-  // --- types ---
   type SearchEditorProps = {
     signal: SearchSignal
     sortValue: TSortColumn
@@ -59,11 +58,8 @@
     headerActions?: Snippet
   }
 
-  // --- helpers ---
-
   const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
-  // --- context ---
   let {
     signal,
     sortValue,
@@ -84,14 +80,12 @@
 
   const timeContext = getTimeContext()
 
-  // --- state: editor ---
   let editorContainer = $state<HTMLDivElement | null>(null)
   let editorView: EditorView | null = null
   let searchError = $state<string | null>(null)
   let alive = true
   const placeholderCompartment = new Compartment()
 
-  // --- state: filter popover ---
   let activeFilterID = $state<string | null>(null)
   let filterPopoverEl = $state<HTMLDivElement | null>(null)
 
@@ -99,22 +93,17 @@
     activeFilterID ? (filters.find(f => f.id === activeFilterID) ?? null) : null
   )
 
-  // --- state: help dialog ---
   let helpDialogElement = $state<HTMLDialogElement | null>(null)
   let helpDialogOpen = $state(false)
   let helpLastFocusedElement = $state<HTMLElement | null>(null)
   let prevBodyOverflow = $state<string | null>(null)
   const supportsClosedBy = 'closedBy' in HTMLDialogElement.prototype
 
-  // --- state: available fields (static + dynamic attributes) ---
   let availableFields = $state<FieldDefinition[]>([])
 
-  // --- derived ---
   let signalLabel = $derived(capitalize(signal))
   let staticFieldsList = $derived([...getStaticFieldsForSearch(signal)])
   let placeholderText = $derived(`search ${signal}...`)
-
-  // --- effects ---
 
   $effect(() => {
     editorView?.dispatch({
@@ -196,8 +185,6 @@
       }
     }
   })
-
-  // --- handlers ---
 
   /** Build a SearchContext from the current component state. */
   function currentSearchContext(): SearchContext {
@@ -313,8 +300,6 @@
     onSearchError?.(searchError)
   })
 
-  // --- lifecycle ---
-
   onMount(() => {
     ensureTooltipStyles()
 
@@ -323,7 +308,7 @@
 
     // One cache for the whole editor session, shared by both value sources.
     const fieldValueCache = createFieldValueCache(
-      telemetryAPI.getFieldValues,
+      telemetryAPI.getFieldValueCompletions,
       signal
     )
 
@@ -338,7 +323,7 @@
           override: [
             createQueryCompletionSource(() => availableFields, signal),
             createValueDiscoverySource(
-              telemetryAPI.searchAttributes,
+              telemetryAPI.searchAttributeMatches,
               () => availableFields,
               fieldValueCache
             ),

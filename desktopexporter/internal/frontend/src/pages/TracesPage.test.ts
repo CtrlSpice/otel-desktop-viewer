@@ -12,34 +12,20 @@ import type {
 import type { QueryNode } from '@/search/model'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
-// TracesPage is the only place the unplaced-span warning banner is rendered
-// -- the singular/plural copy and the `unplacedSpanCount > 0` gate both live
-// inline in its template, not in an extracted helper. Mounting the whole
-// page (with telemetryAPI stubbed) is the cheapest seam that actually
-// exercises that markup: pulling the copy logic out into a testable
-// function would be a production change the task asked us not to make, and
-// nothing smaller than the page owns this conditional.
-//
-// The heavy pieces underneath (DrawerSearchPanel's CodeMirror editor, the
-// virtual list) already mount successfully in jsdom elsewhere in this suite
-// without special stand-ins (see DrawerSearchPanel.test.ts and
-// SignalListDrawer.test.ts), so nothing extra is mocked here beyond the
-// three telemetryAPI calls TracesPage itself drives.
-
 const {
-  searchTraces,
+  searchTraceSummaries,
   getStats,
-  searchSpans,
-  getTraceLogs,
-  getTraceAttributes,
+  getTraceView,
+  getTraceLogSummaries,
+  getTraceAttributeDefinitions,
   clearTraces,
   deleteTraces,
 } = vi.hoisted(() => ({
-  searchTraces: vi.fn(),
+  searchTraceSummaries: vi.fn(),
   getStats: vi.fn(),
-  searchSpans: vi.fn(),
-  getTraceLogs: vi.fn(),
-  getTraceAttributes: vi.fn(),
+  getTraceView: vi.fn(),
+  getTraceLogSummaries: vi.fn(),
+  getTraceAttributeDefinitions: vi.fn(),
   clearTraces: vi.fn(),
   deleteTraces: vi.fn(),
 }))
@@ -51,11 +37,11 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
     ...actual,
     telemetryAPI: {
       ...actual.telemetryAPI,
-      searchTraces,
+      searchTraceSummaries,
       getStats,
-      searchSpans,
-      getTraceLogs,
-      getTraceAttributes,
+      getTraceView,
+      getTraceLogSummaries,
+      getTraceAttributeDefinitions,
       clearTraces,
       deleteTraces,
     },
@@ -141,7 +127,7 @@ function makeTraceLog(
   overrides: Partial<TraceLogSummary> = {}
 ): TraceLogSummary {
   return {
-    id: 'log-1',
+    logRef: 'log-1',
     timestamp: 2n,
     spanID: 'root',
     severityText: 'INFO',
@@ -164,27 +150,25 @@ function deferred<T>() {
 }
 
 async function renderSelectedTrace(unplacedSpanCount: number) {
-  searchTraces.mockResolvedValue([makeTraceSummary()])
+  searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
   getStats.mockResolvedValue(makeStats())
-  searchSpans.mockResolvedValue(makeTraceData(unplacedSpanCount))
+  getTraceView.mockResolvedValue(makeTraceData(unplacedSpanCount))
   setTestUrl('/traces/trace-1')
   renderWithContexts(TracesPage)
-  // Wait for the detail fetch to land -- the waterfall's root row is proof
-  // traceData is populated and the banner conditional has had its chance to
-  // run, without coupling the wait to the banner itself.
+  // Wait on detail content rather than coupling this helper to the banner.
   await waitFor(() =>
     expect(document.querySelector('tr[data-span-id="root"]')).not.toBeNull()
   )
 }
 
 beforeEach(() => {
-  searchTraces.mockReset()
+  searchTraceSummaries.mockReset()
   getStats.mockReset()
-  searchSpans.mockReset()
-  getTraceLogs.mockReset()
-  getTraceLogs.mockResolvedValue([])
-  getTraceAttributes.mockReset()
-  getTraceAttributes.mockResolvedValue([])
+  getTraceView.mockReset()
+  getTraceLogSummaries.mockReset()
+  getTraceLogSummaries.mockResolvedValue([])
+  getTraceAttributeDefinitions.mockReset()
+  getTraceAttributeDefinitions.mockResolvedValue([])
   clearTraces.mockReset()
   clearTraces.mockResolvedValue(undefined)
   deleteTraces.mockReset()
@@ -200,8 +184,8 @@ function normalizedText(el: HTMLElement): string {
 describe('TracesPage unplaced spans banner', () => {
   it('queries the list with null bounds for the default All selection', async () => {
     await renderSelectedTrace(0)
-    expect(searchTraces).toHaveBeenCalledWith(null, null)
-    expect(getTraceLogs).toHaveBeenCalledWith(
+    expect(searchTraceSummaries).toHaveBeenCalledWith(null, null)
+    expect(getTraceLogSummaries).toHaveBeenCalledWith(
       'trace-1',
       expect.any(AbortSignal)
     )
@@ -242,7 +226,7 @@ describe('TracesPage trace detail lifecycle', () => {
     ]
     const logs: TraceLogSummary[] = [
       {
-        id: 'log-1',
+        logRef: 'log-1',
         timestamp: 2n,
         spanID: 'root',
         severityText: 'INFO',
@@ -252,10 +236,10 @@ describe('TracesPage trace detail lifecycle', () => {
         bodyPreview: '',
       },
     ]
-    searchTraces.mockResolvedValue([makeTraceSummary()])
+    searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
     getStats.mockResolvedValue(makeStats())
-    searchSpans.mockResolvedValue(trace)
-    getTraceLogs.mockResolvedValue(logs)
+    getTraceView.mockResolvedValue(trace)
+    getTraceLogSummaries.mockResolvedValue(logs)
     setTestUrl('/traces/trace-1?span=root&log=log-1')
 
     renderWithContexts(TracesPage)
@@ -279,10 +263,10 @@ describe('TracesPage trace detail lifecycle', () => {
         droppedAttributesCount: 0,
       },
     ]
-    searchTraces.mockResolvedValue([makeTraceSummary()])
+    searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
     getStats.mockResolvedValue(makeStats())
-    searchSpans.mockResolvedValue(trace)
-    getTraceLogs.mockResolvedValue([makeTraceLog()])
+    getTraceView.mockResolvedValue(trace)
+    getTraceLogSummaries.mockResolvedValue([makeTraceLog()])
     setTestUrl('/traces/trace-1?span=root&event=0&log=log-1')
 
     renderWithContexts(TracesPage)
@@ -293,10 +277,10 @@ describe('TracesPage trace detail lifecycle', () => {
   })
 
   it('preserves a resolved log when a competing numeric event is stale', async () => {
-    searchTraces.mockResolvedValue([makeTraceSummary()])
+    searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
     getStats.mockResolvedValue(makeStats())
-    searchSpans.mockResolvedValue(makeTraceData(0))
-    getTraceLogs.mockResolvedValue([makeTraceLog()])
+    getTraceView.mockResolvedValue(makeTraceData(0))
+    getTraceLogSummaries.mockResolvedValue([makeTraceLog()])
     setTestUrl('/traces/trace-1?span=root&event=99&log=log-1')
 
     renderWithContexts(TracesPage)
@@ -307,10 +291,12 @@ describe('TracesPage trace detail lifecycle', () => {
   })
 
   it('removes both competing selectors when neither resolves', async () => {
-    searchTraces.mockResolvedValue([makeTraceSummary()])
+    searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
     getStats.mockResolvedValue(makeStats())
-    searchSpans.mockResolvedValue(makeTraceData(0))
-    getTraceLogs.mockResolvedValue([makeTraceLog({ spanID: 'other-span' })])
+    getTraceView.mockResolvedValue(makeTraceData(0))
+    getTraceLogSummaries.mockResolvedValue([
+      makeTraceLog({ spanID: 'other-span' }),
+    ])
     setTestUrl('/traces/trace-1?span=root&event=99&log=log-1')
 
     renderWithContexts(TracesPage)
@@ -319,12 +305,12 @@ describe('TracesPage trace detail lifecycle', () => {
   })
 
   it('removes a selected log that is not owned by the selected span', async () => {
-    searchTraces.mockResolvedValue([makeTraceSummary()])
+    searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
     getStats.mockResolvedValue(makeStats())
-    searchSpans.mockResolvedValue(makeTraceData(0))
-    getTraceLogs.mockResolvedValue([
+    getTraceView.mockResolvedValue(makeTraceData(0))
+    getTraceLogSummaries.mockResolvedValue([
       {
-        id: 'dangling-log',
+        logRef: 'dangling-log',
         timestamp: 2n,
         spanID: 'missing-span',
         severityText: '',
@@ -344,12 +330,12 @@ describe('TracesPage trace detail lifecycle', () => {
   it.each(['1junk', '1.5', '-1', '9007199254740992', ''])(
     'removes malformed event %j without clearing a valid log selection',
     async malformedEvent => {
-      searchTraces.mockResolvedValue([makeTraceSummary()])
+      searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
       getStats.mockResolvedValue(makeStats())
-      searchSpans.mockResolvedValue(makeTraceData(0))
-      getTraceLogs.mockResolvedValue([
+      getTraceView.mockResolvedValue(makeTraceData(0))
+      getTraceLogSummaries.mockResolvedValue([
         {
-          id: 'log-1',
+          logRef: 'log-1',
           timestamp: 2n,
           spanID: 'root',
           severityText: '',
@@ -371,7 +357,7 @@ describe('TracesPage trace detail lifecycle', () => {
 
   it('hides old detail and its delete action while the next trace loads', async () => {
     const nextDetail = deferred<TraceData>()
-    searchTraces.mockResolvedValue([
+    searchTraceSummaries.mockResolvedValue([
       makeTraceSummary(),
       makeTraceSummary({
         traceID: 'trace-2',
@@ -379,7 +365,7 @@ describe('TracesPage trace detail lifecycle', () => {
       }),
     ])
     getStats.mockResolvedValue(makeStats())
-    searchSpans.mockImplementation((traceID: string) =>
+    getTraceView.mockImplementation((traceID: string) =>
       traceID === 'trace-1'
         ? Promise.resolve(makeTraceData(0))
         : nextDetail.promise
@@ -411,20 +397,20 @@ describe('TracesPage trace detail lifecycle', () => {
   it('ignores a pending trace success after switching traces', async () => {
     const firstDetail = deferred<TraceData>()
     const nextDetail = deferred<TraceData>()
-    searchTraces.mockResolvedValue([
+    searchTraceSummaries.mockResolvedValue([
       makeTraceSummary(),
       makeTraceSummary({ traceID: 'trace-2' }),
     ])
     getStats.mockResolvedValue(makeStats())
-    searchSpans.mockImplementation((traceID: string) =>
+    getTraceView.mockImplementation((traceID: string) =>
       traceID === 'trace-1' ? firstDetail.promise : nextDetail.promise
     )
     setTestUrl('/traces/trace-1?span=old-span')
     renderWithContexts(TracesPage)
-    await waitFor(() => expect(searchSpans).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(getTraceView).toHaveBeenCalledTimes(1))
 
     await fireEvent.click(screen.getByText('trace-2').closest('button')!)
-    await waitFor(() => expect(searchSpans).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(getTraceView).toHaveBeenCalledTimes(2))
     firstDetail.resolve(makeTraceData(0, 'trace-1', 'old-span'))
 
     await waitFor(() =>
@@ -443,11 +429,11 @@ describe('TracesPage trace detail lifecycle', () => {
     async outcome => {
       const pendingDetail = deferred<TraceData>()
       let detailSignal: AbortSignal | undefined
-      searchTraces
+      searchTraceSummaries
         .mockResolvedValueOnce([makeTraceSummary()])
         .mockResolvedValueOnce([])
       getStats.mockResolvedValue(makeStats())
-      searchSpans.mockImplementation(
+      getTraceView.mockImplementation(
         (
           _traceID: string,
           _queryTree: QueryNode | undefined,
@@ -485,7 +471,7 @@ describe('TracesPage trace detail lifecycle', () => {
   )
 
   it('silently aborts an outstanding detail request when unmounted', async () => {
-    searchTraces.mockResolvedValue([makeTraceSummary()])
+    searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
     getStats.mockResolvedValue(makeStats())
 
     let detailSignal: AbortSignal | undefined
@@ -502,7 +488,7 @@ describe('TracesPage trace detail lifecycle', () => {
       },
     })
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
-    searchSpans.mockImplementation(
+    getTraceView.mockImplementation(
       (
         _traceID: string,
         _queryTree: QueryNode | undefined,
@@ -540,7 +526,7 @@ describe('TracesPage trace detail lifecycle', () => {
       const error = new Error(`${failedBranch} failed`)
       let spansSignal: AbortSignal | undefined
       let logsSignal: AbortSignal | undefined
-      searchTraces.mockResolvedValue([
+      searchTraceSummaries.mockResolvedValue([
         makeTraceSummary(),
         makeTraceSummary({
           traceID: 'trace-2',
@@ -548,7 +534,7 @@ describe('TracesPage trace detail lifecycle', () => {
         }),
       ])
       getStats.mockResolvedValue(makeStats())
-      searchSpans.mockImplementation(
+      getTraceView.mockImplementation(
         (
           traceID: string,
           _queryTree: QueryNode | undefined,
@@ -561,7 +547,7 @@ describe('TracesPage trace detail lifecycle', () => {
             : pendingSpans.promise
         }
       )
-      getTraceLogs.mockImplementation(
+      getTraceLogSummaries.mockImplementation(
         (traceID: string, signal: AbortSignal) => {
           if (traceID === 'trace-2') return Promise.resolve([])
           logsSignal = signal
@@ -614,10 +600,10 @@ describe('TracesPage trace detail lifecycle', () => {
   )
 
   it('reports ordinary detail request failures', async () => {
-    searchTraces.mockResolvedValue([makeTraceSummary()])
+    searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
     getStats.mockResolvedValue(makeStats())
     const error = new Error('detail failed')
-    searchSpans.mockRejectedValue(error)
+    getTraceView.mockRejectedValue(error)
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     setTestUrl('/traces/trace-1?span=span-1')
