@@ -1,10 +1,10 @@
--- metric_streams stores one exact OTel Metric. Resource and Scope payloads are
+-- metrics stores one exact OTel Metric. Resource and Scope payloads are
 -- referenced through their shared tables; description and metadata are received
 -- Metric fields but do not participate in identity.
 -- service_name is a derived search/display projection of Resource attributes.
 -- metric_type preserves which descriptor fields are present; zero and false
 -- fill fields that do not apply to that Metric type.
-create table if not exists metric_streams (
+create table if not exists metrics (
 		id uuid primary key,
 		resource_id uuid not null,
 		resource_payload_id uuid not null,

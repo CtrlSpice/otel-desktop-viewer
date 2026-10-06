@@ -8,7 +8,7 @@ import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
 function makeLog(overrides: Partial<LogData> = {}): LogData {
   return {
-    id: 'log-1',
+    logRef: 'log-1',
     timestamp: 1_700_000_000_000_000_000n,
     observedTimestamp: 1_700_000_000_000_000_000n,
     traceID: 'trace-abc',

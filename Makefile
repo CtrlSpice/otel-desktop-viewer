@@ -25,21 +25,7 @@ format-go-check:
 		echo "These files need gofmt:"; echo "$$unformatted"; exit 1; \
 	fi
 
-# Reapply the macro DDL to an existing database file.
-#
-# Macros live in the DuckDB catalog, so a .db file keeps whatever definitions it
-# was last opened with. NewStore re-runs `create or replace` on every open, so
-# the app self-heals -- but a file inspected straight from the duckdb CLI can
-# show a stale macro, or none at all if it predates one. That is a confusing
-# thing to debug cold, and the fix is to reapply them.
-#
-# Reads the _order manifest rather than globbing the directory: DuckDB binds a
-# macro body when the macro is created, so exp_buckets must follow
-# exp_pos_buckets, and alphabetical order does not respect that.
-#
-# The files carry no trailing semicolons (one statement per file, so they read
-# cleanly), hence the echo between them.
-#
+# Reapply macro DDL in dependency order to a DuckDB catalog.
 #   make refresh-macros DB=path/to.db
 .PHONY: refresh-macros
 refresh-macros:
@@ -101,19 +87,7 @@ dev-go: kill-port
 build-ts:
 	cd desktopexporter/internal/frontend && npm run build && rm -rf ../../internal/server/static/* && cp -r dist/* ../../internal/server/static/
 
-# The built bundle is committed, so it can fall out of step with the sources
-# and with package-lock.json -- and nothing noticed. A dependency bump changes
-# the output without touching a single source file, so the lockfile and the
-# bundle disagree from the moment it merges, and the drift lands in whichever
-# unrelated PR next runs build-ts.
-#
-# Vite's output is reproducible: same sources and same lockfile give
-# byte-identical files, hashed names included. So a rebuild that differs from
-# what is committed means what is committed is stale, and that is a check
-# rather than a guess.
-#
-# .gitkeep is excluded because it is ours -- it keeps the directory in git and
-# build-ts's globs never touch it.
+# Verify that the committed bundle matches the frontend sources and lockfile.
 .PHONY: build-ts-check
 build-ts-check:
 	cd desktopexporter/internal/frontend && npm run build
@@ -159,12 +133,7 @@ build: build-ts build-go
 run: build-ts
 	go run . --browser-port 8000
 
-# Runs the primary local quality gate. CI also checks generated parser output,
-# guarded store access, and platform builds. The format checks run first because
-# they cost seconds and the test suites cost minutes -- and because the
-# formatting gap is what actually bit: prettier is part of the frontend CI job,
-# `format-ts` only rewrites files, and nothing local ran `format:check`, so seven
-# unformatted files went out across several commits before CI caught them.
+# Run cheap formatting checks before the test suites.
 .PHONY: test
 test: format-go-check format-ts-check lint-ts validate-ts validate-playwright build-ts-check test-go test-ts test-a11y
 

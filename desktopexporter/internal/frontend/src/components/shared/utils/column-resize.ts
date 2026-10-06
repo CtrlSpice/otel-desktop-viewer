@@ -5,24 +5,8 @@ import { startDrag, type DragHandle } from './drag'
  * for drags, and reconciliation for a column set that changes.
  *
  * @remarks
- * Everything here works in ids, never positions. The column set is about
- * to become user-configurable, and a position is a fact about one
- * particular set: add a column before another and every index shifts,
- * every stored width lands on the wrong column. An id survives.
- *
- * The engine owns no state and does not know which columns exist -- it
- * lays out whatever spec list it is handed. Which columns are in that
- * list is the caller's (eventually, a setting's) business; nothing here
- * can tell "the user hid this column" from "it never existed", which is
- * what keeps that setting cheap to build.
- *
- * Drags cascade rather than absorb. The old behaviour took space only
- * from the immediate neighbour and stopped dead when it hit its minimum,
- * with slack sitting unused two columns over. Here the shrink side gives
- * space nearest-first until the drag is satisfied or everyone is at
- * their minimum; the grow side is always the single column nearest the
- * bar. Total width is conserved by construction: exactly what is taken
- * is given.
+  * Widths use stable column ids. Drags shrink neighbours nearest-first and
+  * conserve total width; the column nearest the bar receives all growth.
  */
 
 export type ColumnSpec = {
@@ -121,13 +105,8 @@ export function fitWidths(
 }
 
 /**
- * Merge a stored layout with the live column set: surviving ids keep
- * their stored widths (clamped to their min), stale ids vanish, new ids
- * get the share a fresh layout would give them, and the result is
- * renormalized to the container.
- *
- * This is the one operation both loads and column-set changes need --
- * the future add/remove-columns setting calls exactly this.
+ * Merge stored widths with the live column set, dropping stale IDs and sizing
+ * new IDs before fitting the result to the container.
  */
 export function reconcileWidths(
   specs: ColumnSpec[],

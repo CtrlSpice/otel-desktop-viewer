@@ -1,32 +1,7 @@
 <script lang="ts">
   /*
-   * One stacked field of a detail panel, laid out so it survives arbitrary
-   * attribute names.
-   *
-   * The key/type header and value are deliberately separate blocks. This keeps
-   * a long key legible while reserving the full detail-pane width for its value.
-   *
-   * The alternative was a fixed key column, and real data rules it out: a k8s
-   * annotation key like
-   * `k8s.pod.annotations.kubectl.kubernetes.io/last-applied-configuration`
-   * measures 473px, so a column sized to hold it leaves negative room for
-   * values in a 390px pane. Its only escape is truncating keys, and a key you
-   * cannot read is a field you cannot identify. This layout degrades the other
-   * way: the longer the content, the more rows stack, until every row is
-   * stacked -- which is just the safe layout, reached gradually.
-   *
-   * Keys wrap and are never clamped, for the same reason: identifying the
-   * field is the precondition for reading it.
-   *
-   * Values clamp to three lines and offer the rest on a button. Values used to
-   * be cut to one line with an ellipsis, which cut mid-token -- a trace id
-   * sliced through its hex -- at a point that moved with the pane width.
-   * Wrapping without a limit is worse: one stack trace buries every field
-   * under it, and this panel exists to be scanned.
-   *
-   * The control is a button rather than the text itself, because clicking the
-   * text fights selecting and copying, which is the other thing people do with
-   * these values.
+   * Keys remain fully readable. Values clamp to three measured lines and use a
+   * separate button so text selection and copying still work.
    */
   import type { Snippet } from 'svelte'
 

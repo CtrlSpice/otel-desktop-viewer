@@ -37,9 +37,7 @@
   import { createOrderedChartKeyboardCursor } from '@/components/metrics/utils/chart-keyboard-state.svelte'
   import type { HistogramChartDataPoint } from '@/components/metrics/utils/histogram-aggregation'
 
-  // lo/hi are the numeric bucket bounds; they may be -Infinity, +Infinity, or
-  // (for an exact exp-histogram zero bucket) both 0. Used to position quantile
-  // markers within their bar.
+  // lo/hi position quantile markers and may be infinite or both zero.
   type Bucket = {
     key: string
     label: string
@@ -82,7 +80,6 @@
   let plotAreaHeight = $state(0)
   let pinnedBucketKey = $state<string | null>(null)
 
-  // Hardcoded for now; the plan defers configurable quantiles to a future pass.
   // Keys must match Go's strconv.FormatFloat(q, 'f', -1, 64) output.
   const QUANTILE_LABELS = [
     { key: '0.5', label: 'p50' },
@@ -91,8 +88,7 @@
   ] as const
   type QuantileKey = (typeof QUANTILE_LABELS)[number]['key']
 
-  // The store's quantiles for this datapoint. Not computed here: that walked
-  // the bucket list once per quantile for numbers already in the response.
+  // Quantiles are computed by the store.
   let quantiles = $derived({
     '0.5': datapoint.quantiles?.['0.5'] ?? null,
     '0.95': datapoint.quantiles?.['0.95'] ?? null,
@@ -386,7 +382,6 @@
   // = secondary.
   let barColor = $derived(metricTypeSeriesColor(datapoint.metricType))
 
-  // --- Bar width clamping ---
   //
   // BarChart with no width hint stretches bars to fill the container; for
   // ExpHistograms with 30+ buckets that yields hairline bars, and for
@@ -488,8 +483,6 @@
     togglePinnedBucket(bucket)
   }
 
-  // --- Tooltip helpers ---
-
   function formatBucketRange(b: Bucket): string {
     const { lo, hi } = b
     const u = unit ? ` ${unit}` : ''
@@ -513,13 +506,7 @@
     return v.toPrecision(4).replace(/\.?0+$/, '')
   }
 
-  // Denominator is the sum of the bars actually drawn, not datapoint.count.
-  // For ExponentialHistogram we currently render zero + positive buckets
-  // only -- a non-zero negativeCount would make stats.count larger than
-  // what the chart shows and "% of total" would never reach 100%, even
-  // when one rendered bar holds every visible observation. Summing the
-  // visible buckets keeps the percentages internally consistent with the
-  // chart in front of the user.
+  // Percentages use rendered buckets because negative exponential buckets are hidden.
   let visibleTotal = $derived.by(() => {
     let t = 0
     for (const b of buckets) t += b.count

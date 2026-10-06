@@ -24,15 +24,15 @@ func TestNamedParamsMatchPositional(t *testing.T) {
 		named      string
 		positional string
 	}{
-		{"searchTraces",
+		{"searchTraceSummaries",
 			`{"startTime":"1","endTime":"2"}`, `["1","2"]`},
-		{"searchSpans",
+		{"getTraceView",
 			`{"traceID":"abc"}`, `["abc"]`},
 		{"getLog",
-			`{"logID":"L1"}`, `["L1"]`},
+			`{"logRef":"L1"}`, `["L1"]`},
 		{"getSpan",
 			`{"limit":25,"traceID":"T1","spanID":"S1"}`, `["S1","T1",25]`},
-		{"searchAttributes",
+		{"searchAttributeMatches",
 			`{"term":"http"}`, `["http"]`},
 		{"query",
 			`{"limit":5,"sql":"select 1"}`, `["select 1",5]`},
@@ -42,20 +42,20 @@ func TestNamedParamsMatchPositional(t *testing.T) {
 			`{"endTime":null,"seriesRef":"s","metricRef":"m","startTime":"1"}`,
 			`["m","s","1",null]`},
 		// Order in the object must not matter.
-		{"searchLogs",
+		{"searchLogSummaries",
 			`{"endTime":"2","startTime":"1"}`, `["1","2"]`},
 		// The wide one, fully populated, in a deliberately shuffled order.
 		{"getMetricView",
-			`{"tzName":"UTC","metricID":"s","startTime":"1","endTime":"2",
-			  "targetBuckets":10,"seriesIDs":["a"],"quantiles":[0.5],
+			`{"tzName":"UTC","metricRef":"s","startTime":"1","endTime":"2",
+			  "targetBuckets":10,"seriesRefs":["a"],"quantiles":[0.5],
 			  "tzOffsetNs":0,"viewBuckets":5,
-			  "sparklineBuckets":6,"selectedSeriesIDs":["b"],
-			  "datapointSeriesIDs":["c"],"datapointSeriesLimit":7}`,
+			  "sparklineBuckets":6,"selectedSeriesRefs":["b"],
+			  "datapointSeriesRefs":["c"],"datapointSeriesLimit":7}`,
 			`["s","1","2",10,["a"],[0.5],0,5,6,["b"],"UTC",["c"],7]`},
 		{"getMetricAggregateView",
-			`{"tzName":"UTC","metricID":"s","startTime":"1","endTime":"2",
-			  "targetBuckets":10,"seriesIDs":["a"],"quantiles":[0.5],
-			  "tzOffsetNs":0,"viewBuckets":5,"selectedSeriesIDs":["b"]}`,
+			`{"tzName":"UTC","metricRef":"s","startTime":"1","endTime":"2",
+			  "targetBuckets":10,"seriesRefs":["a"],"quantiles":[0.5],
+			  "tzOffsetNs":0,"viewBuckets":5,"selectedSeriesRefs":["b"]}`,
 			`["s","1","2",10,["a"],[0.5],0,5,["b"],"UTC"]`},
 	}
 
@@ -76,23 +76,23 @@ func TestMetricNamedParamContracts(t *testing.T) {
 	require.Equal(t, []string{"metricRef"}, methodParamNames["getMetric"])
 	require.Equal(t, []string{"metricRef", "seriesRef", "startTime", "endTime"}, methodParamNames["getMetricSeries"])
 	require.Equal(t, []string{
-		"metricID", "startTime", "endTime", "targetBuckets", "seriesIDs",
+		"metricRef", "startTime", "endTime", "targetBuckets", "seriesRefs",
 		"quantiles", "tzOffsetNs", "viewBuckets", "sparklineBuckets",
-		"selectedSeriesIDs", "tzName", "datapointSeriesIDs", "datapointSeriesLimit",
+		"selectedSeriesRefs", "tzName", "datapointSeriesRefs", "datapointSeriesLimit",
 	}, methodParamNames["getMetricView"])
 	require.Equal(t, []string{
-		"metricID", "startTime", "endTime", "targetBuckets", "seriesIDs",
-		"quantiles", "tzOffsetNs", "viewBuckets", "selectedSeriesIDs", "tzName",
+		"metricRef", "startTime", "endTime", "targetBuckets", "seriesRefs",
+		"quantiles", "tzOffsetNs", "viewBuckets", "selectedSeriesRefs", "tzName",
 	}, methodParamNames["getMetricAggregateView"])
 }
 
 func TestNamedParamsGapsBecomeNull(t *testing.T) {
-	// targetBuckets is skipped, seriesIDs is not. A shorter array would drop
-	// seriesIDs entirely; the handler gates optional params on
+	// targetBuckets is skipped, seriesRefs is not. A shorter array would drop
+	// seriesRefs entirely; the handler gates optional params on
 	// `len(params) >= n && params[n-1] != nil`, so the gap must be an
 	// explicit null and the array must stay long enough to reach it.
 	got, err := normalizeParams("getMetricView", json.RawMessage(
-		`{"metricID":"s","startTime":"1","endTime":"2","seriesIDs":["a"]}`))
+		`{"metricRef":"s","startTime":"1","endTime":"2","seriesRefs":["a"]}`))
 	require.NoError(t, err)
 
 	var out []any
@@ -103,7 +103,7 @@ func TestNamedParamsGapsBecomeNull(t *testing.T) {
 }
 
 func TestNamedSearchLimitLeavesNullQueryGap(t *testing.T) {
-	for _, method := range []string{"searchTraces", "searchLogs", "searchMetricSummaries"} {
+	for _, method := range []string{"searchTraceSummaries", "searchLogSummaries", "searchMetricSummaries"} {
 		t.Run(method, func(t *testing.T) {
 			got, err := normalizeParams(method, json.RawMessage(
 				`{"startTime":"1","endTime":"2","limit":5}`))
@@ -114,7 +114,7 @@ func TestNamedSearchLimitLeavesNullQueryGap(t *testing.T) {
 }
 
 func TestNamedSearchSortLeavesEarlierGapsNull(t *testing.T) {
-	for _, method := range []string{"searchTraces", "searchLogs", "searchMetricSummaries"} {
+	for _, method := range []string{"searchTraceSummaries", "searchLogSummaries", "searchMetricSummaries"} {
 		t.Run(method, func(t *testing.T) {
 			got, err := normalizeParams(method, json.RawMessage(
 				`{"startTime":"1","endTime":"2","sort":{"field":"name","direction":"asc"}}`))
@@ -127,7 +127,7 @@ func TestNamedSearchSortLeavesEarlierGapsNull(t *testing.T) {
 func TestNamedParamsRejectUnknownNames(t *testing.T) {
 	// Silence here would hand back results for a window the caller did not
 	// ask for, which is worse than any error.
-	_, err := normalizeParams("searchTraces", json.RawMessage(
+	_, err := normalizeParams("searchTraceSummaries", json.RawMessage(
 		`{"startTime":"1","endTime":"2","statTime":"3"}`))
 	require.Error(t, err)
 	require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
@@ -138,7 +138,7 @@ func TestNamedParamsRejectUnknownNames(t *testing.T) {
 func TestPositionalParamsPassThroughUntouched(t *testing.T) {
 	// The frontend sends arrays and must be unaffected, byte for byte.
 	for _, raw := range []string{`["1","2"]`, `[]`, `null`, ``} {
-		got, err := normalizeParams("searchTraces", json.RawMessage(raw))
+		got, err := normalizeParams("searchTraceSummaries", json.RawMessage(raw))
 		require.NoError(t, err)
 		require.Equal(t, json.RawMessage(raw), got)
 	}
@@ -153,12 +153,12 @@ func TestEveryMethodHasParamNames(t *testing.T) {
 	// as the id list, so there is no position that means one thing.
 	unnamed := map[string]bool{
 		"clearTraces": true, "clearLogs": true, "clearMetrics": true,
-		"getStats":             true,
-		"getTraceAttributes":   true,
-		"getLogAttributes":     true,
-		"getMetricAttributes":  true,
-		"deleteSpansByTraceID": true,
-		"deleteLogByID":        true,
+		"getStats":                      true,
+		"getTraceAttributeDefinitions":  true,
+		"getLogAttributeDefinitions":    true,
+		"getMetricAttributeDefinitions": true,
+		"deleteSpansByTraceID":          true,
+		"deleteLogsByRefs":              true,
 	}
 	for _, m := range dispatchedMethods() {
 		if unnamed[m] {
@@ -193,7 +193,7 @@ func dispatchedMethods() []string {
 // with an explanation beats a silent no-op.
 func TestVariadicMethodsRefuseNamedParams(t *testing.T) {
 	for _, method := range []string{
-		"deleteSpansByTraceID", "deleteLogByID",
+		"deleteSpansByTraceID", "deleteLogsByRefs",
 	} {
 		t.Run(method, func(t *testing.T) {
 			_, err := normalizeParams(method, json.RawMessage(`{"traceIDs":["a","b"]}`))
@@ -209,25 +209,23 @@ func TestVariadicMethodsRefuseNamedParams(t *testing.T) {
 	}
 }
 
-// TestDeleteMetricStreamTakesOneID guards the singular/plural slip this
-// nearly shipped with: the method takes a bare id, not a list.
+// TestDeleteMetricStreamTakesOneID verifies that the method takes a bare ID,
+// not a list.
 func TestDeleteMetricStreamTakesOneID(t *testing.T) {
-	got, err := normalizeParams("deleteMetricStream", json.RawMessage(`{"streamID":"s1"}`))
+	got, err := normalizeParams("deleteMetric", json.RawMessage(`{"metricRef":"s1"}`))
 	require.NoError(t, err)
 	require.JSONEq(t, `["s1"]`, string(got))
 
-	_, err = normalizeParams("deleteMetricStream", json.RawMessage(`{"streamIDs":["s1"]}`))
+	_, err = normalizeParams("deleteMetric", json.RawMessage(`{"metricRefs":["s1"]}`))
 	require.Error(t, err, "the plural name must not silently work")
 }
 
 // TestEmptyObjectMeansNoParams covers the shape that has no name to look up.
 //
 // `params: {}` is an ordinary way to call a method that takes nothing, and it
-// must not depend on the method appearing in the name table -- getStats has no
-// entry and never will. Found by calling getStats after the table went in, not
-// by any test above, which is why it is a test now.
+// must not depend on the method appearing in the name table.
 func TestEmptyObjectMeansNoParams(t *testing.T) {
-	for _, method := range []string{"getStats", "clearTraces", "searchTraces"} {
+	for _, method := range []string{"getStats", "clearTraces", "searchTraceSummaries"} {
 		for _, raw := range []string{`{}`, ` { } `} {
 			got, err := normalizeParams(method, json.RawMessage(raw))
 			require.NoError(t, err, "%s with %q", method, raw)
@@ -279,38 +277,38 @@ func TestParseSearchParams(t *testing.T) {
 }
 
 func TestParseGetMetricViewParamsLayouts(t *testing.T) {
-	metricID := "00000000-0000-0000-0000-000000000001"
-	detailRaw := json.RawMessage(fmt.Sprintf(`[%q,null,20,4,[],[0.5],-3600,8,9,["selected"],"Europe/London",[],10]`, metricID))
+	metricRef := "00000000-0000-0000-0000-000000000001"
+	detailRaw := json.RawMessage(fmt.Sprintf(`[%q,null,20,4,[],[0.5],-3600,8,9,["selected"],"Europe/London",[],10]`, metricRef))
 	detail, err := parseGetMetricViewParams(detailRaw, false)
 	require.NoError(t, err)
-	assert.Equal(t, metricID, detail.metricID)
-	assert.NotNil(t, detail.seriesIDs)
-	assert.Empty(t, detail.seriesIDs)
+	assert.Equal(t, metricRef, detail.metricRef)
+	assert.NotNil(t, detail.seriesRefs)
+	assert.Empty(t, detail.seriesRefs)
 	assert.Equal(t, []float64{0.5}, detail.quantiles)
 	assert.Equal(t, int64(-3600), detail.tzOffsetNs)
 	assert.Equal(t, int64(9), detail.sparklineBuckets)
-	assert.Equal(t, []string{"selected"}, detail.selectedSeriesIDs)
+	assert.Equal(t, []string{"selected"}, detail.selectedSeriesRefs)
 	assert.Equal(t, "Europe/London", detail.tzName)
-	assert.NotNil(t, detail.datapointSeriesIDs)
-	assert.Empty(t, detail.datapointSeriesIDs)
+	assert.NotNil(t, detail.datapointSeriesRefs)
+	assert.Empty(t, detail.datapointSeriesRefs)
 	assert.Equal(t, int64(10), detail.datapointSeriesLimit)
 
-	aggregateRaw := json.RawMessage(fmt.Sprintf(`[%q,10,null,4,null,null,null,8,["selected"],"UTC"]`, metricID))
+	aggregateRaw := json.RawMessage(fmt.Sprintf(`[%q,10,null,4,null,null,null,8,["selected"],"UTC"]`, metricRef))
 	aggregate, err := parseGetMetricViewParams(aggregateRaw, true)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"selected"}, aggregate.selectedSeriesIDs)
+	assert.Equal(t, []string{"selected"}, aggregate.selectedSeriesRefs)
 	assert.Equal(t, "UTC", aggregate.tzName)
 	assert.Zero(t, aggregate.sparklineBuckets)
-	assert.Nil(t, aggregate.datapointSeriesIDs)
+	assert.Nil(t, aggregate.datapointSeriesRefs)
 }
 
 func TestParseGetMetricSeriesParams(t *testing.T) {
-	metricID := "00000000-0000-0000-0000-000000000001"
-	seriesID := "00000000-0000-0000-0000-000000000002"
-	got, err := parseGetMetricSeriesParams(json.RawMessage(fmt.Sprintf(`[%q,%q,null,"18446744073709551615"]`, metricID, seriesID)))
+	metricRef := "00000000-0000-0000-0000-000000000001"
+	seriesRef := "00000000-0000-0000-0000-000000000002"
+	got, err := parseGetMetricSeriesParams(json.RawMessage(fmt.Sprintf(`[%q,%q,null,"18446744073709551615"]`, metricRef, seriesRef)))
 	require.NoError(t, err)
-	assert.Equal(t, metricID, got.metricID)
-	assert.Equal(t, seriesID, got.seriesID)
+	assert.Equal(t, metricRef, got.metricRef)
+	assert.Equal(t, seriesRef, got.seriesRef)
 	assert.Nil(t, got.timeRange.Start)
 	require.NotNil(t, got.timeRange.End)
 	assert.Equal(t, uint64(math.MaxUint64), *got.timeRange.End)
@@ -364,8 +362,8 @@ func TestParseFieldValuesParamsClampsLimit(t *testing.T) {
 	}
 }
 
-// TestTimestampParamsAcceptNumbersWithoutLosingPrecision covers the trap that
-// numeric timestamps used to fall into.
+// TestTimestampParamsAcceptNumbersWithoutLosingPrecision verifies exact numeric
+// timestamp decoding.
 //
 // A nanosecond timestamp is around 1.8e18, far past float64's exact-integer
 // limit of 2^53. Decoded the ordinary way, three of four realistic timestamps

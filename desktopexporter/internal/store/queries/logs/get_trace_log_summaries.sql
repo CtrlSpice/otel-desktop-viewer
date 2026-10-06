@@ -1,5 +1,5 @@
 select cast(coalesce(to_json(list(json_object(
-	'id',             l.id,
+	'logRef',         l.id,
 	'timestamp',      cast(coalesce(nullif(l.timestamp, 0), l.observed_timestamp) as varchar),
 	'spanID',         span_id_wire(l.span_id),
 	'severityText',   l.severity_text,

@@ -71,7 +71,7 @@ export type FieldDefinition =
       /** If set, search autocomplete offers these literals after the operator. */
       enumValues?: readonly string[]
       /** If set, the store serves this field's distinct values through
-       * getFieldValues, and autocomplete offers them -- in the value position
+       * getFieldValueCompletions, and autocomplete offers them -- in the value position
        * and from bare text. The server allowlists the same names; the two
        * lists change together. */
       discoverableValues?: true

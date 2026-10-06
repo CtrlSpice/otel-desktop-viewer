@@ -34,37 +34,13 @@ type Store struct {
 	conn   driver.Conn
 	dbPath string // empty means in-memory mode
 
-	// mu orders access to both handles. The write lock is shared by appender
-	// writes (WithConn), pool mutations (WithDBWrite), and Close, so those are
-	// mutually exclusive even though they run on different connections. Reads
-	// (WithDBRead) run concurrently with each other and never overlap a write.
-	//
-	// Not reentrant: never call a locking Store method from inside a WithConn,
-	// WithDBRead, or WithDBWrite callback.
-	// mu orders access to db and conn. Read-held by queries *and by ingest*,
-	// write-held by pool mutations and Close.
-	//
-	// Ingest holding the read lock is the point. Appending on the dedicated
-	// connection and querying on the pool are two DuckDB connections to one
-	// database, and DuckDB's MVCC serves a reader alongside a writer without
-	// help from us -- verified by running pooled SELECTs against a continuous
-	// 20k-span appender ingest with no lock at all: 1,225 reads, no failures,
-	// no races. Excluding readers for the duration of a batch was therefore
-	// costing latency to buy nothing, and the cost scaled with batch size: a
-	// reader waited 159ms behind a 50,000-span batch to perform 0.2ms of work.
-	//
-	// What still must be exclusive is ingest against *pool mutations* -- clear,
-	// delete, retention prune and checkpoint -- and that is what the write lock
-	// now means. The sharpest reason is the orphan sweep: ingest inserts
-	// dictionary rows before flushing the owner rows that reference them, so a
-	// sweep interleaved in that window would delete rows the in-flight batch is
-	// about to point at. No error, no failed constraint, just attributes
-	// quietly missing.
+	// mu protects db and conn. Queries and ingest hold it for reading so they
+	// may overlap. Pool mutations and Close hold it for writing and exclude
+	// ingest; otherwise a sweep could delete dictionary rows before ingest writes
+	// their owners. Store locking methods are not reentrant.
 	mu sync.RWMutex
 
-	// ingestMu serializes ingest against itself. mu cannot: two ingest calls
-	// both hold it for reading, and a DuckDB appender belongs to the one
-	// connection that made it.
+	// ingestMu serializes appender use on the dedicated ingest connection.
 	ingestMu sync.Mutex
 
 	// flushed records which dictionary rows this store has already written, so
@@ -126,9 +102,7 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 
 	db := sql.OpenDB(connector)
 
-	// Idle connections are kept rather than dropped: we hold no connection-local
-	// temporary state, so reusing them is safe, and steady-state UI polling would
-	// otherwise reopen DuckDB connections on every request.
+	// Keep idle connections because queries hold no connection-local state.
 	db.SetMaxOpenConns(maxPoolConns)
 	db.SetMaxIdleConns(maxPoolConns)
 	db.SetConnMaxIdleTime(5 * time.Minute)
@@ -148,7 +122,7 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 	if err != nil {
 		return nil, err
 	}
-	// 1) Create types - ignore "already exists" errors
+	// Create types; DuckDB has no IF NOT EXISTS for these statements.
 	for _, stmt := range queries.Types() {
 		if _, err = db.ExecContext(ctx, stmt.SQL); err != nil {
 			if !strings.Contains(err.Error(), "already exists") {
@@ -157,39 +131,33 @@ func NewStore(ctx context.Context, dbPath string, logger *zap.Logger) (*Store, e
 		}
 	}
 
-	// 2) Create and stamp the version metadata only for a verified fresh store.
+	// Stamp version metadata only for a verified fresh store.
 	if err := initializeSchemaVersion(ctx, db, shouldStamp); err != nil {
 		return nil, err
 	}
 
-	// 3) Create the tables for our signals
+	// Create signal tables.
 	for _, stmt := range queries.Tables() {
 		if _, err = db.ExecContext(ctx, stmt.SQL); err != nil {
 			return nil, fmt.Errorf("%w while creating table %s: %w", ErrStoreInitFailed, stmt.Name, err)
 		}
 	}
 
-	// 4) Create indexes - queries use IF NOT EXISTS so reopening is safe
+	// Create indexes. Queries use IF NOT EXISTS so reopening is safe.
 	for _, stmt := range queries.Indexes() {
 		if _, err = db.ExecContext(ctx, stmt.SQL); err != nil {
 			return nil, fmt.Errorf("%w while creating index %s: %w", ErrStoreInitFailed, stmt.Name, err)
 		}
 	}
 
-	// 5) Create macros - queries use CREATE OR REPLACE so reopening is safe
+	// Create macros. Queries use CREATE OR REPLACE so reopening is safe.
 	for _, stmt := range queries.Macros() {
 		if _, err = db.ExecContext(ctx, stmt.SQL); err != nil {
 			return nil, fmt.Errorf("%w while creating macro %s: %w", ErrStoreInitFailed, stmt.Name, err)
 		}
 	}
 
-	// 6) Warm the dictionary flush cache from whatever is already on disk.
-	// Without this, a persistent --db reopened with its dictionary intact
-	// would still re-insert every attribute, resource and scope until enough
-	// batches had flushed to refill an empty in-process cache -- exactly the
-	// fixed per-batch cost FlushedIDs exists to remove, paid again on every
-	// restart. Loads every id ever stored, which is bounded the same way the
-	// on-disk dictionary itself is: by retention.
+	// Warm the dictionary cache with every retained ID.
 	flushed, err := ingest.LoadFlushedIDs(ctx, db)
 	if err != nil {
 		return nil, fmt.Errorf("%w while warming the dictionary flush cache: %w", ErrStoreInitFailed, err)

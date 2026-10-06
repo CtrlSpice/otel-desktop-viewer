@@ -24,10 +24,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-// collector receives exported metrics the same way the viewer's own receiver
-// does: pmetricotlp.RegisterGRPCServer, the registration otlpreceiver uses at
-// otlp.go:105, whose Export is handed a decoded pmetricotlp.ExportRequest. The
-// decode is pdata's, not ours -- this type only keeps what arrives.
+// collector stores metrics decoded by pdata's OTLP gRPC server.
 type collector struct {
 	pmetricotlp.UnimplementedGRPCServer
 	batches []pmetric.Metrics
@@ -40,26 +37,9 @@ func (c *collector) Export(_ context.Context, req pmetricotlp.ExportRequest) (pm
 	return pmetricotlp.NewExportResponse(), nil
 }
 
-// TestCumulativeMergeAgainstTheOtelSDK is the independence check the merge was
-// missing.
-//
-// Every other test of this path builds its cumulative datapoints from our own
-// understanding of what cumulative means -- fixtures we wrote, or real deltas we
-// accumulated ourselves. A shared misreading survives all of them: the merge and
-// the fixture would be wrong the same way and agree. Cumulative is also OTLP's
-// default, so it is the temporality most services actually send, and a subtly
-// wrong merge yields plausible quantiles rather than an error.
-//
-// Here the running totals come from the OpenTelemetry Go SDK, encoded by its own
-// OTLP exporter, and decoded by pdata's gRPC server -- the same registration the
-// viewer's receiver uses. The glue below keeps what arrives and does no
-// arithmetic, so no code of ours produces or interprets the cumulative values
-// under test. Agreement therefore means our reading of cumulative matches an
-// implementation written by people who never saw this query.
-//
-// The observations are chosen so the answer is known independently of both: the
-// second collection's values, and only those, are what a merge across the window
-// must report.
+// TestCumulativeMergeAgainstTheOtelSDK verifies cumulative merging against
+// running totals produced by the OpenTelemetry Go SDK. Only observations from
+// the second collection contribute to the expected window delta.
 func TestCumulativeMergeAgainstTheOtelSDK(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -93,16 +73,14 @@ func TestCumulativeMergeAgainstTheOtelSDK(t *testing.T) {
 	require.NoError(t, err)
 	attrs := otelmetric.WithAttributes(attribute.String("route", "/checkout"))
 
-	// First collection: the baseline a window-spanning merge cannot see, because
-	// last-minus-first subtracts it.
+	// The first collection establishes the cumulative baseline.
 	firstCycle := []float64{0.5, 0.7, 2.0}
 	for _, v := range firstCycle {
 		hist.Record(ctx, v, attrs)
 	}
 	require.NoError(t, provider.ForceFlush(ctx))
 
-	// Second collection: the observations the merge must recover exactly. Spread
-	// across every bucket including the overflow, so a mistake in any one shows.
+	// The second collection covers every explicit bucket and the overflow bucket.
 	secondCycle := []float64{0.5, 3.0, 7.0, 7.5, 50.0}
 	for _, v := range secondCycle {
 		hist.Record(ctx, v, attrs)
@@ -110,11 +88,7 @@ func TestCumulativeMergeAgainstTheOtelSDK(t *testing.T) {
 	require.NoError(t, provider.ForceFlush(ctx))
 	require.NoError(t, provider.Shutdown(ctx))
 
-	// At least one batch per forced collection, plus whatever Shutdown flushes.
-	// The extra one is harmless and worth allowing rather than suppressing: it
-	// carries the same running totals as the collection before it, since nothing
-	// was recorded in between, so last-minus-first is unchanged. Real services
-	// send exactly this on exit.
+	// Shutdown may emit an unchanged cumulative batch after the forced collections.
 	require.GreaterOrEqual(t, len(sink.batches), 2, "one batch per collection")
 
 	s, storeCtx := storetest.New(t)
@@ -132,7 +106,7 @@ func TestCumulativeMergeAgainstTheOtelSDK(t *testing.T) {
 	// One bucket over everything, so the merge is last-minus-first across both
 	// collections.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricView(storeCtx, db, summaries[0]["id"].(string), store.TimeRange{},
+		return metrics.GetMetricView(storeCtx, db, summaries[0]["metricRef"].(string), store.TimeRange{},
 			1, nil, nil, 0, 0, 0, nil, "", nil, 0)
 
 	})
@@ -143,8 +117,7 @@ func TestCumulativeMergeAgainstTheOtelSDK(t *testing.T) {
 	require.Len(t, dps, 1, "one bucket is one merged datapoint")
 	merged := dps[0].(map[string]any)
 
-	// What the second collection alone contains, computed here from the values
-	// rather than read from either side.
+	// Compute the expected delta independently from the recorded values.
 	wantCounts := make([]uint64, len(bounds)+1)
 	wantSum := 0.0
 	for _, v := range secondCycle {

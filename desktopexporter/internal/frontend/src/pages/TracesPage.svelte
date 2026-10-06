@@ -118,7 +118,7 @@
         timeContext.selection,
         Date.now()
       )
-      const results = await telemetryAPI.searchTraces(startTime, endTime)
+      const results = await telemetryAPI.searchTraceSummaries(startTime, endTime)
       const s = await telemetryAPI.getStats()
       baselineStats = s.traces
       polledStats = s.traces
@@ -153,7 +153,7 @@
   let selectedSpanID = $derived(routeContext.route.query[SPAN_PARAM] ?? null)
   let selectedEventRaw = $derived(routeContext.route.query[EVENT_PARAM])
   let selectedEventIndex = $derived(parseEventIndex(selectedEventRaw))
-  let selectedLogID = $derived(routeContext.route.query[LOG_PARAM] ?? null)
+  let selectedLogRef = $derived(routeContext.route.query[LOG_PARAM] ?? null)
   let traceData = $state<TraceData | null>(null)
   let traceLogs = $state<TraceLogSummary[]>([])
   let detailLoading = $state(false)
@@ -184,12 +184,14 @@
     if (index >= span.events.length) return null
     return index
   })
-  let resolvedLogID = $derived.by((): string | null => {
-    const logID = selectedLogID
+  let resolvedLogRef = $derived.by((): string | null => {
+    const logRef = selectedLogRef
     const span = selectedSpan
-    if (!logID || !span) return null
-    return traceLogs.some(log => log.id === logID && log.spanID === span.spanID)
-      ? logID
+    if (!logRef || !span) return null
+    return traceLogs.some(
+      log => log.logRef === logRef && log.spanID === span.spanID
+    )
+      ? logRef
       : null
   })
 
@@ -198,17 +200,17 @@
     if (detailLoading || currentTraceData === null) return
 
     if (resolvedEventIndex !== null) {
-      if (selectedLogID !== null) setEventInQuery(resolvedEventIndex)
+      if (selectedLogRef !== null) setEventInQuery(resolvedEventIndex)
       return
     }
 
-    if (resolvedLogID !== null) {
-      if (raw !== undefined) setLogInQuery(resolvedLogID)
+    if (resolvedLogRef !== null) {
+      if (raw !== undefined) setLogInQuery(resolvedLogRef)
       return
     }
 
     if (raw !== undefined) setEventInQuery(null)
-    else if (selectedLogID !== null) setLogInQuery(null)
+    else if (selectedLogRef !== null) setLogInQuery(null)
   })
 
   $effect(() => {
@@ -236,7 +238,7 @@
     if (record.kind === 'event') {
       selectSpanEvent(spanID, record.eventIndex, 'push')
     } else {
-      selectSpanLog(spanID, record.log.id, 'push')
+      selectSpanLog(spanID, record.log.logRef, 'push')
     }
   }
 
@@ -248,10 +250,7 @@
     }
   }
 
-  // Each fetch supersedes the last: clicking down a trace list abandons the
-  // previous searchSpans, and without aborting it the query keeps running
-  // server-side holding the store's read lock for a result we have already
-  // thrown away.
+  // Abort superseded detail queries so they release the store read lock.
   let detailFetch: AbortController | null = null
 
   onDestroy(() => detailFetch?.abort())
@@ -272,8 +271,8 @@
     try {
       detailLoading = true
       const [result, logs] = await Promise.all([
-        telemetryAPI.searchSpans(traceID, queryTree, fetchCtl.signal),
-        telemetryAPI.getTraceLogs(traceID, fetchCtl.signal),
+        telemetryAPI.getTraceView(traceID, queryTree, fetchCtl.signal),
+        telemetryAPI.getTraceLogSummaries(traceID, fetchCtl.signal),
       ])
       if (detailFetch !== fetchCtl) return
       traceData = result
@@ -450,7 +449,7 @@
         salvaged={selectedNode?.salvaged ?? false}
         cyclePoint={selectedNode?.cyclePoint ?? false}
         selectedEventIndex={resolvedEventIndex}
-        selectedLogID={resolvedLogID}
+        selectedLogRef={resolvedLogRef}
         logs={selectedSpanLogs}
       />
     {/snippet}

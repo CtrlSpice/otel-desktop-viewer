@@ -43,9 +43,9 @@ otlp_attributes.sql
 otlp_resource.sql
 otlp_scope.sql
 otlp_document_text.sql
-datapoint_json.sql
+metric_datapoint_view_json.sql
 exemplar_json.sql
-timeseries_json.sql
+metric_series_view_json.sql
 series_stats_json.sql
 event_json.sql
 link_json.sql
@@ -53,7 +53,7 @@ span_data_json.sql
 exp_zero_cutoff.sql
 diff_bucket_vectors.sql
 bucket_extents.sql
-aggregate_bucket_json.sql
+metric_aggregate_bucket_view_json.sql
 bucket_width_ns.sql
 samples_from_arrays.sql
 merge_samples.sql

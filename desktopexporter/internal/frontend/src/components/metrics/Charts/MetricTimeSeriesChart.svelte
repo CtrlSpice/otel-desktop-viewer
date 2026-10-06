@@ -141,10 +141,7 @@
      *  an id and remain inspectable but read-only. */
     onChartPointClick?: (seriesKey: string, datapointID: string) => void
     onClearSelection?: () => void
-    /** Per-series stats from the store, for the selected-series overlay.
-     *  The chart used to fold its own from the drawn points, whose average is
-     *  the mean of a reduced sample; these describe the window (raw views) or
-     *  the drawn transform (rate view), matching the row badges. */
+    /** Store-computed selected-series stats for the source window or rate line. */
     seriesStats?: ReadonlyMap<string, SeriesStats>
   }
 
@@ -168,30 +165,16 @@
 
   const timeContext = getTimeContext()
 
-  /* One scale instance per chart, not a fresh one per render.
-   *
-   * LineChart runs whatever it is given through createChartScale, which
-   * returns scale.copy() -- so this is a template, never shared mutable
-   * state, and one instance is safe. As an inline `xScale={scaleTime()}`
-   * prop it minted a new d3 scale object on every re-render of this
-   * component, and a new scale identity invalidates every Spline in the
-   * chart: each one rebuilds its path, walking every point.
-   *
-   * Instance scope rather than module scope deliberately. Module scope would
-   * share one object across every chart on the page, which is exactly the
-   * shared-mutable-state hazard the copy() protects against -- and relying on
-   * that copy for correctness rather than only for performance. */
+  /* One scale template per chart; LineChart copies it before use. */
   const xScale = scaleTime()
 
-  /* Constant, so it is built once rather than per render. Passed inline it
-   * was a fresh object literal each time, which invalidates the tooltip
-   * context downstream for a value that never changes. */
+  /* Stable identity avoids invalidating the tooltip context. */
   const tooltipContext = { mode: 'bisect-x' } as const
 
   // Build the layerchart series array on the fly. Each entry carries
   // its own pre-grouped data so we don't re-traverse on every chart
   // re-render. Colour is looked up via the caller-provided `colorByKey`
-  // map (keyed by attributesKey), not by position in this prop's array --
+  // map (keyed by seriesRef), not by position in this prop's array --
   // so toggling visibility never shifts a line's colour and the legend
   // swatch always matches the chart line for the same key.
   /** Per-series Spline props for cross-series aggregate lines.

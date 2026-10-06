@@ -6,14 +6,14 @@ import {
 import type { HistogramSlicePoint } from './histogram-aggregation'
 
 function slice(
-  attributesKey: string,
+  seriesRef: string,
   timestampNs: bigint,
   p95: number
 ): HistogramSlicePoint {
   return {
     kind: 'histogram',
     timestamp: timestampNs,
-    attributesKey,
+    seriesRef,
     bounds: [1, 5, 10],
     counts: [10, 0, 0, 0],
     totals: { count: 10, sum: 5, min: 0.1, max: 0.9 },
@@ -121,15 +121,8 @@ describe('quantileChartPointSelection', () => {
 })
 
 describe('quantilePointSelectionAt', () => {
-  // The bug this replaced: the caller passed every per-series slice in the
-  // window and the lookup matched on the clicked timestamp. A column is wider
-  // than a per-series bucket, so that match found the column's *first* bucket
-  // and reported it as the column. Slices now arrive already merged over the
-  // column, and are read by series key alone.
   it('reads one slice per series without matching timestamps', () => {
-    // Deliberately stamped away from the clicked timestamp: the store stamps a
-    // single-bucket merge at the data's own start, which is not the column
-    // boundary the reader clicked.
+    // Store-merged slices use the data start, not the selected column boundary.
     const columnSlices = [
       slice('pod=a', COLUMN_START + 7n, 42),
       slice('pod=b', COLUMN_START + 9n, 99),

@@ -8,9 +8,7 @@ import (
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 )
 
-// Config represents the exporter config settings. The store, viewer endpoint,
-// and retention cap moved to the duckdb extension's config -- this exporter
-// only writes, so only write-side settings remain.
+// Config holds write-side exporter settings.
 type Config struct {
 	// Telemetry controls the exporter's own instrumentation -- the spans and
 	// metrics it emits about its own ingest, queries and retention. Emission
@@ -31,44 +29,23 @@ type Config struct {
 	// ingest numbers you would be measuring.
 	Telemetry string `mapstructure:"telemetry"`
 
-	// SendingQueue decouples OTLP receipt from the DuckDB write: batches are
-	// enqueued and a consumer goroutine drains them into the store. Enabled by
-	// default (see defaultSendingQueue for the tuning and its rationale);
-	// disable with `sending_queue: {enabled: false}` to restore the synchronous
-	// write path, where the client blocks on -- and sees the error from -- the
-	// store write.
+	// SendingQueue decouples OTLP receipt from DuckDB writes. Disable it with
+	// `sending_queue: {enabled: false}` to make clients wait for each write.
 	SendingQueue configoptional.Optional[exporterhelper.QueueBatchConfig] `mapstructure:"sending_queue"`
 }
 
-// defaultSendingQueue tunes the exporter queue for a single local DuckDB
-// writer rather than a remote backend:
+// defaultSendingQueue configures one ordered local DuckDB writer:
 //
-//   - NumConsumers 1: the store serializes writers behind one appender
-//     connection anyway, so extra consumers would only contend for its write
-//     lock. One consumer makes the serialization explicit and keeps batches
-//     arriving in order.
-//   - WaitForResult false: the OTLP client is released as soon as the batch is
-//     enqueued instead of waiting out the store write -- and, during ingest
-//     bursts, the wait for the store's write lock behind other batches. The
-//     trade: a failed write is no longer the client's problem; it surfaces in
-//     the exporter's own logs and telemetry instead.
+//   - NumConsumers 1 matches the store's single appender connection.
+//   - WaitForResult false releases clients after enqueue; write failures are
+//     reported through exporter logs and telemetry.
 //   - BlockOnOverflow true: a full queue applies backpressure to the client
-//     instead of rejecting data. For a tool whose whole job is showing you
-//     your telemetry, quietly shedding it under load is the worst failure
-//     mode; the client SDK's own export timeout bounds the blocking.
-//   - Sized in items (spans / datapoints / records), because request count
-//     says nothing about how much work or memory a batch represents.
-//   - No batching here. Batching is the batch processor's job (configured in
-//     main.go's composed pipeline), so there is exactly one buffer in front of
-//     the store rather than two with independent flush timers and different
-//     overflow behaviour. Merged batches still mean fewer, larger appender
-//     transactions, and let ingest resolve each distinct attribute set once
-//     per merged batch rather than once per client request.
+//     instead of dropping data; the client export timeout bounds the wait.
+//   - Capacity is measured in telemetry items, not request count.
+//   - The batch processor owns batching, leaving one buffer before the store.
 //
-// Deliberately no retry (exporterhelper.WithRetry): a local DuckDB write
-// failure is not transient the way a network export failure is, and replaying
-// a partially applied batch would collide with already-written primary keys
-// and fail forever.
+// Local DuckDB write failures are not retried because a partial write may
+// already have committed rows with the same primary keys.
 func defaultSendingQueue() configoptional.Optional[exporterhelper.QueueBatchConfig] {
 	return configoptional.Some(exporterhelper.QueueBatchConfig{
 		NumConsumers:    1,
@@ -82,28 +59,9 @@ func defaultSendingQueue() configoptional.Optional[exporterhelper.QueueBatchConf
 
 // IngestTimeout bounds a single batch write.
 //
-// This is a backstop against a hung write, not a latency control. A write that
-// stalls holds the store's write lock, and every reader takes that lock -- so a
-// wedged ingest freezes the UI permanently rather than degrading it. The
-// deadline guarantees the lock is always released.
-//
-// Sizing, and the caveat that matters: the measurements behind it were taken on
-// an Apple M4 Pro, which is fast. They are an *upper bound* on performance, so
-// they cannot be used directly to justify a lower bound like this one.
-//
-// Measured there: ~25us/span, so the batch processor's 20k send_batch_max_size
-// is ~500ms of work. Budgeting an order of magnitude for slower hardware -- an
-// older laptop, a loaded machine, a cold disk-backed store, a VM with one core
-// -- puts a worst-case legitimate batch at ~5s. 30s is ~6x that, which is the
-// margin to reason about; the ~60x implied by the M4 figure is not real.
-//
-// It is deliberately far above the working range because tripping it is
-// harmful: appenders flush every flushIntervalSpans (500) records, so a batch
-// cut short is *partially* applied, and the queue runs without retry. A
-// deadline that fires means silent partial data loss, which is worse than a
-// slow write. Note that raising the flush interval widened that partial-write
-// window tenfold, which argues for keeping this deadline generous rather than
-// tightening it.
+// This is a backstop for a hung write, not a latency target. It is deliberately
+// generous because a timeout can leave a batch partially applied and the queue
+// does not retry.
 const IngestTimeout = 30 * time.Second
 
 // Telemetry modes.
@@ -124,7 +82,7 @@ func (cfg *Config) InstrumentIngest() bool {
 	return cfg.Telemetry == TelemetryEnabled
 }
 
-// Validate checks if the exporter configuration is valid
+// Validate checks whether the exporter configuration is valid.
 func (cfg *Config) Validate() error {
 	switch cfg.Telemetry {
 	case "", TelemetryDisabled, TelemetryEnabled, TelemetrySelf:

@@ -13,7 +13,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func BenchmarkSearchTracesLimit(b *testing.B) {
+func BenchmarkSearchTraceSummariesLimit(b *testing.B) {
 	ctx := context.Background()
 	s, err := store.NewStore(ctx, "", zap.NewNop())
 	if err != nil {
@@ -41,7 +41,7 @@ func BenchmarkSearchTracesLimit(b *testing.B) {
 			for b.Loop() {
 				if err := s.WithDBRead(func(db *sql.DB) error {
 					var queryErr error
-					raw, queryErr = spans.SearchTracesWithOptions(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, search.ResultOptions{Limit: &limit, Sort: bc.sort})
+					raw, queryErr = spans.SearchTraceSummariesWithOptions(ctx, db, store.BoundedTimeRange(0, 1<<63-1), nil, search.ResultOptions{Limit: &limit, Sort: bc.sort})
 					return queryErr
 				}); err != nil {
 					b.Fatal(err)

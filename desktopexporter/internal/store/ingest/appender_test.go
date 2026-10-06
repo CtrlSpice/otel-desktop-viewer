@@ -59,23 +59,10 @@ func TestNewAppenders_ErrorPath(t *testing.T) {
 }
 
 // TestFlushAppenders_MakesDataVisible verifies that FlushAppenders (not Close)
-// makes appended rows visible: we append a log row, flush, query without ever
-// calling Close, and assert the row and its attribute references are present.
+// makes an appended log row and its attribute references visible.
 //
-// Reworked for the attribute dictionary. This test used to append the log's
-// attribute rows through a second appender on `attributes` (via the deleted
-// ingest.IngestAttributes) and assert they were visible. That is no longer how
-// attributes are written at all: the dictionary is flushed with SQL inserts
-// carrying `on conflict do nothing`, because the appender has no conflict
-// handling and a repeated attribute would fail the whole chunk. What rides the
-// appender now is the owner's inline attribute_ids array.
-//
-// So the shape mirrors logs.Ingest exactly -- dictionary first, appender second
-// -- and the assertion moves accordingly: the appender-written array must be
-// visible after Flush and must resolve against the dictionary. Note that logs
-// carries NOT NULL FKs to resources and scopes, so the dictionary flush is
-// load-bearing here rather than incidental: without it the appender's own flush
-// would fail the FK, which is itself a check that the two halves agree.
+// The dictionary is flushed before the owner appender. The appended
+// attribute_ids array must resolve against those dictionary rows.
 func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -99,16 +86,11 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 	logAttrIDs := dict.AddAttributes(logAttrs, ingest.ScopeLog)
 	require.Len(t, logAttrIDs, 2)
 
-	// The appender is deliberately NOT closed inside this callback, and that is
-	// the whole design of the test. Close flushes on its way out, so a
-	// `defer CloseAppenders` here would publish the row even if FlushAppenders
-	// did nothing -- confirmed by neutering FlushAppenders, which this test
-	// passed until the close moved out. Reads cannot nest inside WithConn
-	// (Store's locks are not reentrant), so the appender is held across two
-	// WithConn calls instead: append and flush, read, then close. Both calls
-	// get the same dedicated appender connection, so the handle stays valid.
+	// Keep the appender open so Close cannot make the row visible. Reads cannot
+	// nest inside WithConn, so the dedicated connection retains the appender
+	// across append, read, and close calls.
 	tables := []string{"logs"}
-	logID := duckdb.UUID(uuid.New())
+	logRef := duckdb.UUID(uuid.New())
 	var appenders map[string]*duckdb.Appender
 
 	err := s.WithConn(func(conn driver.Conn) error {
@@ -123,7 +105,7 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 		}
 
 		if err := appenders["logs"].AppendRow(
-			logID,
+			logRef,
 			int64(0), int64(0), // Timestamp, ObservedTimestamp
 			nil, nil, // TraceID, SpanID
 			"INFO", int32(9), // SeverityText, SeverityNumber
@@ -148,11 +130,11 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 		}))
 	}()
 
-	logIDStr := uuid.UUID(logID).String()
+	logRefStr := uuid.UUID(logRef).String()
 
 	var logCount int
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		return db.QueryRowContext(ctx, "select count(*) from logs where id = ?", logIDStr).Scan(&logCount)
+		return db.QueryRowContext(ctx, "select count(*) from logs where id = ?", logRefStr).Scan(&logCount)
 	}))
 	assert.Equal(t, 1, logCount, "log row must be visible after Flush without Close")
 
@@ -165,7 +147,7 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 			select count(*)
 			from (select unnest(attribute_ids) as id from logs where id = ?) x
 			join attributes a on a.id = x.id
-		`, logIDStr).Scan(&resolved)
+		`, logRefStr).Scan(&resolved)
 	}))
 	assert.Equal(t, 2, resolved, "attribute_ids written by the appender must resolve against the dictionary")
 
@@ -179,7 +161,7 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 			from (select unnest(attribute_ids) as id from logs where id = ?) x
 			join attributes a on a.id = x.id
 			where a.id = ?
-		`, logIDStr, flushAttrID).Scan(&key, &value)
+		`, logRefStr, flushAttrID).Scan(&key, &value)
 	}))
 	assert.Equal(t, "flush_attr", key)
 	assert.JSONEq(t, `{"kind":"string","value":"ok"}`, value)

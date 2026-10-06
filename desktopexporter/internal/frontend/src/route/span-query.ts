@@ -92,25 +92,25 @@ export function selectSpanEvent(
 /** Selects a span-owned log on the current trace route. */
 export function selectSpanLog(
   spanID: string,
-  logID: string,
+  logRef: string,
   mode: HistoryMode = 'push'
 ): void {
   const query = withQueryPatch(readRoute().query, {
     [SPAN_PARAM]: spanID,
     [EVENT_PARAM]: null,
-    [LOG_PARAM]: logID,
+    [LOG_PARAM]: logRef,
   })
   navigateCurrentRoute(query, mode)
 }
 
 /** Sets or clears the selected span-owned log and clears event selection. */
 export function setLogInQuery(
-  logID: string | null,
+  logRef: string | null,
   mode: HistoryMode = 'replace'
 ): void {
   const query = withQueryPatch(readRoute().query, {
     [EVENT_PARAM]: null,
-    [LOG_PARAM]: logID,
+    [LOG_PARAM]: logRef,
   })
   navigateCurrentRoute(query, mode)
 }

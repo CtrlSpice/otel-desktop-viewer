@@ -18,9 +18,7 @@ func TestAllDDLExecutes(t *testing.T) {
 	for _, stmt := range queries.Types() {
 		db.Exec(stmt.SQL) // "already exists" is fine
 	}
-	// Naming the failing file beats naming its index: the whole point of the
-	// move was that "table query 4" made you count entries to find out what
-	// broke.
+	// Report the failing statement by name rather than list position.
 	for _, group := range [][]queries.Statement{
 		queries.Tables(), queries.Indexes(), queries.Macros(),
 	} {
@@ -56,10 +54,10 @@ func TestNativeUnsignedColumnTypesAndNullability(t *testing.T) {
 		{"logs", "span_id", "UBIGINT", "YES"},
 		{"logs", "timestamp", "UBIGINT", "YES"},
 		{"logs", "observed_timestamp", "UBIGINT", "YES"},
-		{"datapoints", "timestamp", "UBIGINT", "YES"},
-		{"datapoints", "start_time", "UBIGINT", "YES"},
+		{"metric_datapoints", "timestamp", "UBIGINT", "YES"},
+		{"metric_datapoints", "start_time", "UBIGINT", "YES"},
 		{"exemplars", "id", "UUID", "NO"},
-		{"exemplars", "datapoint_id", "UUID", "NO"},
+		{"exemplars", "metric_datapoint_id", "UUID", "NO"},
 		{"exemplars", "trace_id", "UUID", "YES"},
 		{"exemplars", "span_id", "UBIGINT", "YES"},
 		{"exemplars", "timestamp", "UBIGINT", "YES"},

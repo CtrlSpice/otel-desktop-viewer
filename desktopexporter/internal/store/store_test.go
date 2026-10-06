@@ -146,7 +146,7 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			assert.NoError(t, err, "metrics table should exist and accept data")
 
 			// Verify data was inserted correctly
-			summariesRaw, err := spans.SearchTraces(ctx, s.db, BoundedTimeRange(0, 1<<63-1), nil)
+			summariesRaw, err := spans.SearchTraceSummaries(ctx, s.db, BoundedTimeRange(0, 1<<63-1), nil)
 			assert.NoError(t, err, "should be able to retrieve trace summaries")
 			var summaries []map[string]any
 			assert.NoError(t, json.Unmarshal(summariesRaw, &summaries))
@@ -175,7 +175,7 @@ func runStoreTests(t *testing.T, tests []storeTest) {
 			assert.NotNil(t, s.conn, "duckdb connection should be reestablished")
 
 			// Verify data after reopening
-			summariesRaw, err = spans.SearchTraces(ctx, s.db, BoundedTimeRange(0, 1<<63-1), nil)
+			summariesRaw, err = spans.SearchTraceSummaries(ctx, s.db, BoundedTimeRange(0, 1<<63-1), nil)
 			assert.NoError(t, err, "should be able to retrieve trace summaries after reopening")
 			assert.NoError(t, json.Unmarshal(summariesRaw, &summaries))
 
@@ -245,7 +245,7 @@ func TestStoreForeignKeysEnforced(t *testing.T) {
 			'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, []::uuid[])`)
 	require.NoError(t, err)
 	_, err = s.db.ExecContext(ctx, `
-		insert into metric_streams
+		insert into metrics
 			(id, resource_id, resource_payload_id, scope_id, name, metric_type)
 		values (gen_random_uuid(),
 			'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
@@ -254,7 +254,7 @@ func TestStoreForeignKeysEnforced(t *testing.T) {
 	require.Error(t, err, "a Metric payload key must belong to its exact Resource row")
 
 	_, err = s.db.ExecContext(ctx, `
-		insert into metric_streams (id, resource_id, resource_payload_id, scope_id, name, metric_type)
+		insert into metrics (id, resource_id, resource_payload_id, scope_id, name, metric_type)
 		values (gen_random_uuid(),
 			'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
 			'dddddddd-dddd-dddd-dddd-dddddddddddd'::uuid,
@@ -263,10 +263,10 @@ func TestStoreForeignKeysEnforced(t *testing.T) {
 
 	var streamID string
 	require.NoError(t, s.db.QueryRowContext(ctx,
-		"select id::varchar from metric_streams where name = 'test'").Scan(&streamID))
+		"select id::varchar from metrics where name = 'test'").Scan(&streamID))
 
 	_, err = s.db.ExecContext(ctx, `
-		insert into datapoints (id, stream_id, series_id, timestamp, attribute_ids)
+		insert into metric_datapoints (id, metric_id, series_id, timestamp, attribute_ids)
 		values (gen_random_uuid(), ?::uuid,
 			'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 0, []::uuid[])`, streamID)
 	assert.Error(t, err, "a datapoint must reference an existing series")

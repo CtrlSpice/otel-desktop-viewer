@@ -131,9 +131,9 @@ func TestAttributeDiscoveryOrderIsTotal(t *testing.T) {
 		name string
 		get  func(context.Context, *sql.DB) (json.RawMessage, error)
 	}{
-		{"traces", spans.GetTraceAttributes},
-		{"logs", logs.GetLogAttributes},
-		{"metrics", metrics.GetMetricAttributes},
+		{"traces", spans.GetTraceAttributeDefinitions},
+		{"logs", logs.GetLogAttributeDefinitions},
+		{"metrics", metrics.GetMetricAttributeDefinitions},
 	}
 
 	for _, ep := range endpoints {

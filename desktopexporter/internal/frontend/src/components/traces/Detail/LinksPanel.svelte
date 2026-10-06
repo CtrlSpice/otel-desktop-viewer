@@ -15,9 +15,6 @@
   let { links }: Props = $props()
 
   function linkFieldCount(link: LinkData): number {
-    // trace id, span id, trace state -- the three rows that always render.
-    // This read 2 and undercounted by one for every link ever shown; the
-    // trace-state row was never accounted for.
     let n = 3
     n += link.attributes.length
     if (link.droppedAttributesCount > 0) n++

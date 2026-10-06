@@ -70,18 +70,18 @@ func TestAttributeDefinitionsStayWithinRequestedTrace(t *testing.T) {
 
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		for i, id := range traceIDs {
-			raw, err := spans.GetAttributesByTraceID(ctx, db, id.String())
+			raw, err := spans.GetTraceAttributeDefinitionsByTraceID(ctx, db, id.String())
 			require.NoError(t, err)
 			var got []definition
 			require.NoError(t, json.Unmarshal(raw, &got))
 			assert.ElementsMatch(t, expected[i], got)
 		}
 		for _, id := range []pcommon.TraceID{emptyTraceID, {4}} {
-			raw, err := spans.GetAttributesByTraceID(ctx, db, id.String())
+			raw, err := spans.GetTraceAttributeDefinitionsByTraceID(ctx, db, id.String())
 			require.NoError(t, err)
 			assert.JSONEq(t, "[]", string(raw))
 		}
-		raw, err := spans.GetTraceAttributes(ctx, db)
+		raw, err := spans.GetTraceAttributeDefinitions(ctx, db)
 		require.NoError(t, err)
 		var got []definition
 		require.NoError(t, json.Unmarshal(raw, &got))

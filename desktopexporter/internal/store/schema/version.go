@@ -104,7 +104,7 @@ package schema
 // Version 17 stores received span kind, span status code, and metric
 // aggregation temporality as their signed int32 protocol values. Version 16
 // rows contain derived labels, which cannot recover unknown numeric values.
-// Version 18 makes metric_streams identify one exact OTel Metric from complete
+// Version 18 makes each stored Metric identify one exact OTel Metric from complete
 // Resource attributes, the complete InstrumentationScope tuple, and the
 // identifying Metric descriptor fields. It also removes the now-redundant
 // Resource owner from metric_series and gives streams and series generated,
@@ -115,7 +115,8 @@ package schema
 // Version 20 moves Resource schema URL into the shared Resource row and
 // separates exact Resource lookup from the Resource payload key used by Metric
 // identity. Spans, logs, and Metrics reference the shared exact row.
-const Version = 20
+// Version 21 gives Metric storage and its parent references their current names.
+const Version = 21
 
 // VersionTableQuery creates the version table.
 //
@@ -147,7 +148,7 @@ const (
 		from duckdb_columns() where schema_name = current_schema() and table_name = 'schema_meta'`
 	TelemetryTableExistsQuery = `select count(*) from (
 		select table_name from duckdb_columns()
-		where schema_name = current_schema() and table_name in ('spans', 'logs', 'metric_ingests', 'metric_streams')
+		where schema_name = current_schema() and table_name in ('spans', 'logs')
 		group by table_name
 		having (table_name = 'spans'
 			and count(*) filter (where column_name in ('trace_id', 'span_id')) = 2
@@ -157,9 +158,5 @@ const (
 			and count(*) filter (where column_name in ('trace_id', 'observed_timestamp')) = 2
 			and count(*) filter (where column_name in ('resource_id', 'resource_dropped_attributes_count')) = 1
 			and count(*) filter (where column_name in ('scope_id', 'scope_dropped_attributes_count')) = 1)
-		or (table_name = 'metric_ingests'
-			and count(*) filter (where column_name in ('id', 'stream_id')) = 2)
-		or (table_name = 'metric_streams'
-			and count(*) filter (where column_name in ('id', 'name')) = 2)
 	)`
 )

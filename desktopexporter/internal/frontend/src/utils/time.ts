@@ -446,8 +446,6 @@ export function getLocalTimezoneName(): string {
   }
 }
 
-// --- Duration formatting & parsing ---
-
 import type { TraceSummary } from '@/types/api-types'
 
 /** Nanoseconds of trace coverage for list display/sort (server-precomputed). */
@@ -552,8 +550,6 @@ export function getOffset(
   let offsetNs = point - startTime
   return Math.floor(Number((offsetNs * 100n) / totalNs))
 }
-
-// --- Recent time ranges (localStorage persistence) ---
 
 const RECENT_STORAGE_KEY = 'datetime-filter-recent'
 

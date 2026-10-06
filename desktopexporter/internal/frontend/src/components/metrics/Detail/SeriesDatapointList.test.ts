@@ -436,8 +436,7 @@ describe('SeriesDatapointList pagination and keyboard access', () => {
     await waitFor(() =>
       expect(datapointRow('dp-5000')).toHaveAttribute('aria-selected', 'true')
     )
-    // Rendering the destination page reads its visible rows. A linear lookup
-    // would add another 5,000 reads before that render.
+    // A linear lookup would read all 5,000 preceding IDs.
     expect(idReads).toBeLessThan(1_000)
   })
 

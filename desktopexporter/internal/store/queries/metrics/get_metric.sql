@@ -8,7 +8,7 @@ with selected_metric as materialized (
 		sc.name as scope_name, sc.version as scope_version,
 		sc.attribute_ids as scope_attribute_ids, sc.schema_url as scope_schema_url,
 		sc.dropped_attributes_count as scope_dropped_attributes_count
-	from metric_streams m
+	from metrics m
 	join resources r on r.id = m.resource_id
 	join scopes sc on sc.id = m.scope_id
 	where m.id = ?::uuid
@@ -19,8 +19,8 @@ series_catalogue as materialized (
 		min(d.timestamp)::varchar as first_datapoint_timestamp,
 		max(d.timestamp)::varchar as last_datapoint_timestamp
 	from metric_series ms
-	join selected_metric m on m.id = ms.stream_id
-	left join datapoints d on d.series_id = ms.id
+	join selected_metric m on m.id = ms.metric_id
+	left join metric_datapoints d on d.series_id = ms.id
 	group by ms.id, ms.attribute_ids
 )
 select m.metric_type,

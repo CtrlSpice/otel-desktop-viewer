@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type {
   DataPoint,
   HistogramDataPoint,
-  MetricTimeseries,
+  MetricSeriesViewData,
 } from '@/types/api-types'
 import {
   HEATMAP_BUCKET_TARGET,
@@ -41,11 +41,11 @@ describe('isHistogramAggregationError', () => {
 })
 
 function metricSeries(
-  attributesKey: string,
+  seriesRef: string,
   datapoints: DataPoint[]
-): MetricTimeseries {
+): MetricSeriesViewData {
   return {
-    attributesKey,
+    seriesRef,
     attributes: [],
     resource: { attributes: [], droppedAttributesCount: 0 },
     datapoints,
@@ -60,13 +60,13 @@ function metricSeries(
 
 function histSlice(
   timestamp: bigint,
-  attributesKey: string,
+  seriesRef: string,
   counts: number[]
 ): HistogramSlicePoint {
   return {
     kind: 'histogram',
     timestamp,
-    attributesKey,
+    seriesRef,
     bounds: [1, 2, 5, 10],
     counts,
     totals: {
@@ -143,7 +143,7 @@ describe('buildVisibleSeriesQuantileChartTimeseries', () => {
 })
 
 describe('buildPerSeriesQuantileSeries', () => {
-  it('emits one line per visible attributesKey', () => {
+  it('emits one line per visible seriesRef', () => {
     const perAttribute: HistogramSlicePoint[] = [
       histSlice(ts1, 'host=a', [0, 50, 50, 0, 0]),
       histSlice(ts1, 'host=b', [0, 30, 50, 20, 0]),
@@ -157,10 +157,7 @@ describe('buildPerSeriesQuantileSeries', () => {
 })
 
 describe('HEATMAP_BUCKET_TARGET', () => {
-  // Pinned literally because it is a request parameter: the store's ladder
-  // turns it into a bucket width, and changing it changes what every histogram
-  // response contains. It is deliberately not derived from the plot width --
-  // see the constant's own note for why that was both wrong and self-defeating.
+  // This request parameter controls the store's bucket width.
   it('is the resolution a histogram asks the store for', () => {
     expect(HEATMAP_BUCKET_TARGET).toBe(100)
   })
@@ -255,7 +252,7 @@ describe('seriesBucketsToSlices', () => {
     expect(slices).toHaveLength(2)
     expect(slices.map(s => s.timestamp)).toEqual([ts1, ts2])
     expect(slices.map(s => s.sourceDatapointID)).toEqual(['a', 'b'])
-    expect(slices.every(s => s.attributesKey === 'driver=ALO')).toBe(true)
+    expect(slices.every(s => s.seriesRef === 'driver=ALO')).toBe(true)
     expect(slices[0]!.totals.count).toBe(3)
     expect(slices[1]!.totals.count).toBe(1)
   })

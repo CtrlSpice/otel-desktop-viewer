@@ -114,11 +114,8 @@ func TestBisectingWrite_AttemptsRangesInOrder(t *testing.T) {
 	assert.Equal(t, []int{0, 1, 2, 3}, order)
 }
 
-// Both ways an item can be refused arrive through the same list, in walk order.
-//
-// Pre-rejected items used to be tallied on by the caller after the fact, so a
-// batch refused for two different reasons reported the count from one place and
-// the reason from the other -- and neither recorded which items they were.
+// TestBisectingWrite_PreRejectedAndDiscoveredMergeInOrder verifies that both
+// rejection paths produce one ordered item list with every reason retained.
 func TestBisectingWrite_PreRejectedAndDiscoveredMergeInOrder(t *testing.T) {
 	t.Parallel()
 	preRejected := map[int]error{1: errAlready, 5: errAlready}

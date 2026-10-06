@@ -13,7 +13,7 @@
  *   (1px border each side of `.page-layout__detail-chrome`, 2px padding each
  *   side of `.pane-header`) = 342px. 22rem is the clean value above it.
  *   If `--pane-tab-min` ever moves, this floor must move with it.
- * - The default is the width the drawer has always had.
+ * - The default matches the signal drawer's standard width.
  * - The ceiling is the layout's, not the content's -- content has no upper
  *   bound (Kubernetes names run arbitrarily long). It is what a 1440px
  *   viewport leaves after the main pane's floor (28rem) and the other

@@ -45,7 +45,7 @@ func setupServerWithStore(t *testing.T) (*httptest.Server, *store.Store, func())
 	}
 }
 
-func TestSearchTracesPublicRPCReturnsWholeTraceAndMatchedSpans(t *testing.T) {
+func TestSearchTraceSummariesPublicRPCReturnsWholeTraceAndMatchedSpans(t *testing.T) {
 	testServer, str, teardown := setupServerWithStore(t)
 	defer teardown()
 
@@ -72,7 +72,7 @@ func TestSearchTracesPublicRPCReturnsWholeTraceAndMatchedSpans(t *testing.T) {
 		return spans.Ingest(context.Background(), conn, data, str.FlushedIDs())
 	}))
 
-	requestBody := `{"jsonrpc":"2.0","id":1,"method":"searchTraces","params":{` +
+	requestBody := `{"jsonrpc":"2.0","id":1,"method":"searchTraceSummaries","params":{` +
 		`"startTime":"150","endTime":"250","query":{"id":"service-b","type":"condition","query":{` +
 		`"field":{"name":"serviceName","searchScope":"field","type":"string"},` +
 		`"fieldOperator":"=","value":"service-b"}},"limit":2}}`
@@ -268,13 +268,8 @@ func TestStartBindConflict(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestStaticCacheHeaders covers the two populations the embedded frontend
-// splits into, and the one mistake that would be expensive.
-//
-// Nothing was sent before this: assets are served from an embed.FS, whose files
-// report a zero mod time, and Go omits Last-Modified when the time is zero and
-// never synthesises an ETag. No freshness directive, no validator, so the
-// browser re-fetched the whole 2MB frontend on every page load.
+// TestStaticCacheHeaders verifies immutable caching for hashed assets and
+// revalidation for index.html.
 func TestStaticCacheHeaders(t *testing.T) {
 	fsys := fstest.MapFS{
 		"index.html":              &fstest.MapFile{Data: []byte("<!doctype html><div id=app>")},
@@ -298,9 +293,7 @@ func TestStaticCacheHeaders(t *testing.T) {
 		}
 	})
 
-	// The dangerous one. index.html has a stable name and its contents name the
-	// hashed files, so caching it hands an upgraded binary's user stale HTML
-	// pointing at chunks that no longer exist.
+	// index.html must not remain stale across an application upgrade.
 	t.Run("index.html is never immutable", func(t *testing.T) {
 		for _, target := range []string{"/", "/traces", "/index.html"} {
 			resp := get(target)
@@ -311,12 +304,7 @@ func TestStaticCacheHeaders(t *testing.T) {
 		}
 	})
 
-	// Relied on rather than implemented: since Go 1.23, serveError deletes
-	// Cache-Control, Etag, Last-Modified and Content-Encoding on the error
-	// path, because a caller may have set them for the success case. Without
-	// that, a request for an asset that does not exist would be answered with
-	// a year-long immutable 404 -- and a later build that adds the file could
-	// not dislodge it. Asserted because the whole prefix rule leans on it.
+	// Go's file server must remove success cache headers from 404 responses.
 	t.Run("a missing asset is not cached", func(t *testing.T) {
 		resp := get("/assets/never-existed-000000.js")
 		require.Equal(t, http.StatusNotFound, resp.StatusCode)

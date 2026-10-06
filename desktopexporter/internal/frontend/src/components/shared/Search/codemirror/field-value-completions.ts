@@ -11,29 +11,7 @@ import type { FieldDefinition } from '@/search/model'
 import type { FieldValueCache } from './field-value-cache'
 import { resolveField } from '../field-resolution'
 
-/**
- * Value completion for plain-column fields: `name = ` offers the names the
- * store actually holds (#412), and any field marked `discoverableValues`
- * works the same way. Also completes items inside an `IN [...]` array, where
- * each item completes independently of the ones already listed.
- *
- * @remarks
- * These are columns, not attributes, so the dictionary-backed value
- * discovery cannot see them; a dedicated RPC serves them instead. The server
- * allowlists the same fields the definitions mark; the two change together.
- *
- * One fetch, then local filtering. The store query scans every span row per
- * call (a contains-match cannot use an index, and frequency ordering must
- * count everything before it can rank), measured at ~11ms per call on a 245k
- * span store -- fine once, not fine per keystroke. So the source fetches the
- * top names by frequency a single time and hands CodeMirror a `validFor`
- * regex, which filters the same list client-side as the user types. Fuzzy
- * matching locally is also better than ILIKE remotely: `chkpay` finds
- * `checkout/pay`.
- *
- * The limit is the one trade: a name outside the top `FETCH_LIMIT` by
- * frequency is not in the dropdown. It can still be typed.
- */
+/** Completes allowlisted column values and items inside `IN [...]`. */
 
 /** Options handed to CodeMirror per open. It renders the list eagerly, so
  *  this caps DOM size while leaving local filtering plenty to match into. */
@@ -75,17 +53,12 @@ export function createFieldValueSource(
       comparison.getChild('Operator') ?? comparison.getChild('KeywordOperator')
     if (!op || context.pos <= op.to) return null
 
-    // The operator has to be one this field accepts, or completion helps
-    // write an expression the linter immediately flags -- `name IN [` was
-    // offering span names while being underlined as invalid, since name
-    // takes no array operator.
+    // Do not offer values for an operator the field rejects.
     const opText = context.state.sliceDoc(op.from, op.to).toUpperCase()
     const accepted = def.operators.some(o => o.symbol.toUpperCase() === opText)
     if (!accepted) return null
 
-    // An array operator needs its brackets. Offering bare values after
-    // `unit IN ` completes into `unit IN {errors}`, which does not parse, so
-    // the bracket is offered instead -- one keystroke to the values.
+    // Array operators offer the opening bracket before their values.
     const isArrayOp = opText === 'IN' || opText === 'NOT IN'
 
     // The value region: everything after the operator. When the user has
@@ -112,9 +85,7 @@ export function createFieldValueSource(
             label: '[',
             type: 'text',
             detail: `list of ${def.name} values`,
-            // Reopens completion on the values inside: accepting a bracket
-            // and then facing a closed dropdown makes the suggestion look
-            // like it led nowhere.
+            // Reopen completion for the first array item.
             apply: (view, _completion, applyFrom, applyTo) => {
               view.dispatch({
                 changes: { from: applyFrom, to: applyTo, insert: '[' },
@@ -160,8 +131,7 @@ export function createFieldValueSource(
     try {
       names = await cache.values(def.name)
     } catch {
-      // Completion is a convenience; typing still works without it. The
-      // cache evicts the failed fetch itself, so the next trigger retries.
+      // The cache evicts failures so a later trigger can retry.
       return null
     }
     if (context.aborted || names.length === 0) return null

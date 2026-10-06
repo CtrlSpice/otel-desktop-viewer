@@ -135,9 +135,7 @@ export function heatmapColumnSelectionAt(
   if (idx < 0) return null
 
   const slice = series[idx]!
-  // The store's numbers. Computing them here meant rebuilding this bucket's
-  // list and walking it once per quantile, for a value the response already
-  // carried.
+  // Use store-computed quantiles from the selected bucket.
   const quantiles: Record<string, number | null> = {}
   for (const { key } of QUANTILE_LABELS) {
     quantiles[key] = slice.quantiles?.[key] ?? null
@@ -153,21 +151,13 @@ export function heatmapColumnSelectionAt(
 /**
  * Where a selected heatmap column ends, exclusive by one nanosecond.
  *
- * The next column's own start, not the selected start plus a width. Columns are
- * cut in local time, so they are not all the same number of nanoseconds wide: a
- * local day is 23, 24 or 25 hours across a DST transition. Deriving a single
- * width -- the smallest gap, say -- and adding it would fetch 23 hours of a
- * 25-hour column and silently lose the other two, which is the defect fetching
- * the column exists to remove.
+ * Uses the next column's start because local-time columns vary across DST.
  *
  * One nanosecond short because the store filters `timestamp >= start and
  * timestamp <= end` while it cuts buckets half-open; ending on the next
  * boundary pulls that column's first reading in and counts it in both columns.
  *
- * The last column has no next one and borrows the preceding gap, which errs by
- * ending early rather than reaching into a column that does not exist. A lone
- * column has no gap to borrow and takes the window's end, which is what a single
- * column spans by definition.
+ * The last column borrows the preceding gap; a lone column uses the window end.
  */
 export function heatmapColumnEndNs(
   columnStarts: readonly bigint[],

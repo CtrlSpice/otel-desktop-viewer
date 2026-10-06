@@ -32,7 +32,7 @@ const (
 	ScopeExemplar  = "exemplar"
 	// Metric.metadata: an attribute map on the metric itself, distinct from
 	// the datapoint labels that identify a series. Deliberately absent from
-	// the discovery allowlist in get_metric_attributes.sql, so it is stored
+	// the discovery allowlist in get_metric_attribute_definitions.sql, so it is stored
 	// and displayed without becoming a search field.
 	ScopeMetricMetadata = "metadata"
 )
@@ -65,20 +65,8 @@ type Scope struct {
 
 // hashID derives a 16-byte id from length-prefixed parts.
 //
-// Length prefixes rather than a separator: joining on a delimiter lets a value
-// containing that delimiter collide with a different split of the same bytes.
-// Prefixing each part with its byte length makes the encoding unambiguous, so
-// there is no separator to escape and no encoding decision left to revisit.
-//
-// sha256 truncated to 16 bytes, to fit a UUID. Width is the only real lever on
-// collisions and 128 bits is far past where it matters: the birthday bound is
-// ~1.5e-27 at a million distinct entries, against fleet studies finding ~1% of
-// DIMMs see an uncorrectable error per year. The machine underneath is orders
-// of magnitude likelier to corrupt this than the hash is.
-//
-// Not salted, deliberately: the id must be a pure function of content or the
-// same attribute arriving in two batches would get two ids and nothing would
-// dedupe.
+// Length prefixes make part boundaries unambiguous. The unsalted SHA-256 digest
+// is truncated to UUID width so identical content keeps one stable ID.
 func hashID(parts ...string) duckdb.UUID {
 	h := sha256.New()
 	for _, p := range parts {
@@ -147,14 +135,8 @@ func uuidString(id duckdb.UUID) string {
 // AttributeSet turns an attribute map into dictionary rows plus the sorted,
 // deduped id array an owner stores.
 //
-// Sorted by id, not by key. Ids are unique per distinct entry, so sorting on
-// them is a total order needing no tie-break -- whereas sorting by key is only
-// a total order if keys are unique, which pcommon.Map's mutation API enforces
-// but the type itself does not check. Nothing is lost: array order never
-// reaches the wire, because the read path orders by key in SQL.
-//
-// Deduping is a guard that should never fire; if it ever did, [A,A,B] and [A,B]
-// would hash to different resources and scopes.
+// IDs provide a total order independent of map insertion order. Duplicate IDs
+// are removed so resource and scope identity depends on attribute content.
 func AttributeSet(attrs pcommon.Map, scope string) ([]Attribute, []duckdb.UUID) {
 	if attrs.Len() == 0 {
 		return nil, nil
@@ -178,8 +160,7 @@ func AttributeSet(attrs pcommon.Map, scope string) ([]Attribute, []duckdb.UUID) 
 	return rows, ids
 }
 
-// attributeSetUncached is the derivation itself, unchanged by the memo in front
-// of it -- which is what lets a test assert the two agree on arbitrary input.
+// attributeSetUncached derives rows and IDs without the memo.
 func attributeSetUncached(attrs pcommon.Map, scope string) ([]Attribute, []duckdb.UUID) {
 	rows := make([]Attribute, 0, attrs.Len())
 	for k, v := range attrs.All() {
@@ -224,10 +205,6 @@ func uuidLess(a, b duckdb.UUID) bool {
 
 // Dictionary accumulates the distinct attributes, resources and scopes seen
 // while walking one OTLP request, then writes them in three statements.
-//
-// Deduping in Go first is what keeps the write bounded by *distinct* entries
-// rather than by signal count: the reference capture's 723,692 attribute rows
-// are 267 distinct entries.
 type Dictionary struct {
 	attributes map[duckdb.UUID]Attribute
 	resources  map[duckdb.UUID]Resource
@@ -288,23 +265,8 @@ func BoundsID(bounds []float64) duckdb.UUID {
 
 // AddBounds records one explicit-bounds vector and returns its id.
 //
-// A nil vector is normalised to an empty one before it is stored. A histogram
-// whose observations all land in a single bucket carries no bounds at all --
-// legal OTLP, and what the OpenTelemetry demo emits -- and pcommon renders
-// that empty Float64Slice as nil rather than as an empty slice, because AsRaw
-// appends onto a nil destination and appending nothing to nil leaves nil.
-// Stored as-is, that nil arrives at the driver as a nil element of the
-// [][]float64 bound to a double[][] parameter, which dereferences it: a panic
-// inside ingest, so the process dies instead of the batch being rejected.
-//
-// The sibling arrays are safe already, but incidentally rather than by
-// intent: formatUUIDs allocates with make and so returns an empty slice for
-// nil input, and NonNil states the same invariant for the appender's uuid[]
-// columns. Bounds are the one vector handed to the driver with no rendering
-// step in between, so nothing normalised them on the way past.
-//
-// Identity is unchanged by this: BoundsID hashes a count prefix followed by
-// that many values, so nil and empty have always produced the same id.
+// Nil bounds are stored as an empty vector because nil elements in the bound
+// double[][] panic in the driver. BoundsID gives nil and empty the same ID.
 func (d *Dictionary) AddBounds(bounds []float64) duckdb.UUID {
 	id := BoundsID(bounds)
 	if _, ok := d.bounds[id]; !ok {
@@ -379,15 +341,11 @@ func (d *Dictionary) Flush(ctx context.Context, conn driver.Conn) error {
 // rows the cache has not seen, bail out if nothing is left, execute, and mark
 // only once that execution has actually succeeded.
 //
-// That ordering is the one thing that matters here and it used to be retyped
-// three times, once per table. Marking before a successful exec -- or
-// unconditionally -- would tell the cache a row exists that was never
-// written, which is exactly the undetectable failure FlushedIDs documents:
-// nothing catches it until an owner's array points at a row that silently
-// never made it in.
+// Marking before a successful exec would leave the cache claiming an absent
+// row exists.
 //
 // query must be `unnest`-shaped over the parallel arrays buildArgs returns,
-// the same idiom metrics.go uses for the metric_streams upsert: one bound
+// the same idiom metrics.go uses for the metrics upsert: one bound
 // argument per column, so the statement text is fixed regardless of how many
 // rows are in m.
 func flushRows[T any](
@@ -410,9 +368,7 @@ func flushRows[T any](
 	return nil
 }
 
-// attributesUpsert is static, unlike the per-batch `values (...), (...), ...`
-// text it replaced: the arrays vary, the query never does, so DuckDB can
-// actually prepare it once instead of replanning on every distinct row count.
+// attributesUpsert has fixed text; only its bound arrays vary by batch.
 const attributesUpsert = `insert into attributes (id, key, value)
 	select unnest(?::varchar[])::uuid, unnest(?::varchar[]), unnest(?::json[])
 	on conflict (id) do nothing`
@@ -563,7 +519,7 @@ func formatUUID(id duckdb.UUID) string {
 // removed.
 //
 // duckdb.UUID and uuid.UUID are both plain [16]byte, so the conversion is
-// direct -- same idiom metrics.go's decodeStreamID uses for a uuid column
+// direct -- same idiom metrics.go's decodeMetricID uses for a uuid column
 // scanned as text.
 func parseUUID(s string) (duckdb.UUID, error) {
 	id, err := uuid.Parse(s)

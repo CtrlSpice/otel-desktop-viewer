@@ -17,13 +17,12 @@ builds:
       - darwin
     goarch:
       - amd64
-    # Sets binary timestamp to commit time for reproducible builds
+    # Reproducible binary timestamp.
     mod_timestamp: "{{ .CommitTimestamp }}"
-    # Removes file paths from binary for security and portability
+    # Remove local file paths from the binary.
     flags:
       - -trimpath
-    # -s -w: strips debug info
-    # -X: injects version, commit, and date into binary
+    # Strip debug info and inject build metadata.
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
 
@@ -76,7 +75,6 @@ builds:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{ .CommitDate }}
 
 archives:
-  # Main archive with all platforms
   - id: otel-desktop-viewer-archive
     ids:
       - macos_amd64
@@ -91,7 +89,7 @@ archives:
         formats: ['zip']
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
   
-  # Separate archive for Homebrew (macOS and Linux)
+  # Homebrew excludes Windows.
   - id: homebrew-archive
     ids:
       - macos_amd64
@@ -140,15 +138,7 @@ changelog:
 
 release:
   name_template: "v{{ .Version }}"
-  # Goreleaser builds the notes from commit subjects, which is fine for a list
-  # of changes and useless for the one thing a reader needs before upgrading.
-  # The store refuses a database written by a different schema version rather
-  # than guessing at its shape, so an upgrade that crosses one is a stop, not a
-  # migration -- and that belongs above the commits, not somewhere inside them.
-  #
-  # The first paragraph is evergreen: it states the rule, which holds for every
-  # release. The second names the version this one breaks with and should be
-  # updated or dropped when the next release does not cross a schema change.
+  # Update the second paragraph when release schema compatibility changes.
   header: |
     ## Before you upgrade
 
@@ -244,4 +234,3 @@ gemfury:
     formats:
       - deb
       - rpm
-

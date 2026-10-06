@@ -82,7 +82,7 @@
     salvaged?: boolean
     cyclePoint?: boolean
     selectedEventIndex?: number | null
-    selectedLogID?: string | null
+    selectedLogRef?: string | null
     logs?: TraceLogSummary[]
     /** Empty: show all Fields rows. Non-empty: only selected search fields / attributes. */
     columnFilter?: FieldDefinition[]
@@ -93,14 +93,12 @@
     salvaged = false,
     cyclePoint = false,
     selectedEventIndex = null,
-    selectedLogID = null,
+    selectedLogRef = null,
     logs = [],
     columnFilter = [],
   }: Props = $props()
 
   let timeContext = getTimeContext()
-
-  // --- Derived span data ---
 
   let isRoot = $derived(!span?.parentSpanID)
   let durationLabel = $derived(
@@ -119,13 +117,11 @@
       span.statusCodeValue !== 2
   )
 
-  // --- Tab state ---
-
   type Tab = 'fields' | 'activity' | 'links'
   let activeTab = $state<Tab>('fields')
 
   $effect(() => {
-    if (selectedEventIndex !== null || selectedLogID !== null) {
+    if (selectedEventIndex !== null || selectedLogRef !== null) {
       activeTab = 'activity'
     }
   })
@@ -522,7 +518,7 @@
             {logs}
             spanStartTime={span.startTime}
             {selectedEventIndex}
-            {selectedLogID}
+            {selectedLogRef}
           />
         {/if}
       {:else if activeTab === 'links'}
@@ -569,9 +565,7 @@
     background: color-mix(in srgb, var(--color-error) 12%, transparent);
   }
 
-  /* Preflight makes svg block-level, which broke the line after the icon.
-     :global because the svg is rendered by the icon component, out of reach
-     of scoped selectors. Baseline nudge matches how the glyph banner sits. */
+  /* The icon component's SVG is outside scoped selectors. */
   .detail-view__paradox :global(svg) {
     display: inline-block;
     vertical-align: -0.125em;

@@ -87,8 +87,6 @@ describe('ResizablePanels rem default', () => {
 
 describe('ResizablePanels stored splits', () => {
   it('clamps an out-of-range stored split instead of reverting to default', async () => {
-    // Saved on a wide window, loaded on a narrow one: the old behaviour
-    // rejected the value wholesale and silently reset the split.
     localStorage.setItem('split', '0.95')
     render(ResizablePanels, {
       leftPanel,

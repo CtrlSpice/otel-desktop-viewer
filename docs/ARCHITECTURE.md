@@ -1,15 +1,16 @@
-# otel-desktop-viewer Architecture
+# otel-desktop-viewer architecture
 
-otel-desktop-viewer is a custom [OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-collector) distribution built from two custom components: a **`desktop` exporter** that writes OTLP traces, metrics, and logs into storage, and a **`duckdb` extension** that owns the **DuckDB** store and serves a **Svelte 5** web UI over **HTTP + JSON-RPC**.
-
-The design optimizes for local development: easy install, minimal moving parts, fast analytical queries over telemetry, and a UI for exploring all three signals.
+otel-desktop-viewer is a custom OpenTelemetry Collector distribution. A
+`desktop` exporter writes traces, metrics, and logs to DuckDB. A `duckdb`
+extension owns the database, HTTP server, retention loop, and embedded Svelte
+UI.
 
 ## System overview
 
 ```mermaid
 flowchart TB
   subgraph ingest [Ingestion]
-    SDK[OTel SDK / Collector / test apps] -->|OTLP gRPC :4317 or HTTP :4318| OTLP[otlp receiver]
+    SDK[OTel SDK or Collector] -->|OTLP gRPC :4317 or HTTP :4318| OTLP[otlp receiver]
     OTLP --> Batch[batch processor]
     Batch --> Desktop[desktop exporter]
     Desktop --> Spans[spans.Ingest]
@@ -21,533 +22,348 @@ flowchart TB
   end
 
   subgraph serve [Serving]
-    Browser[Browser] -->|GET /| Static[Embedded static assets]
+    Browser[Browser] -->|GET /| Static[Embedded assets]
     Browser -->|POST /rpc| RPC[JSON-RPC handler]
-    RPC --> Query[Search / get SQL]
-    Query --> DuckDB
-    Query -->|json.RawMessage| RPC
-    RPC -->|JSON| Browser
+    RPC --> Queries[SQL queries]
+    Queries --> DuckDB
   end
 
-  DuckDBExt[duckdb extension] -->|starts before any pipeline| HTTP[HTTP server :8000]
-  DuckDBExt -->|owns| DuckDB
-  Desktop -->|resolves store via host.GetExtensions| DuckDBExt
+  DuckDBExt[duckdb extension] --> DuckDB
+  DuckDBExt --> HTTP[HTTP server :8000]
   HTTP --> Static
   HTTP --> RPC
 ```
 
-The `desktop` exporter writes; it does not own the store. Ownership of the DuckDB database, the HTTP server, and the retention loop lives in a separate `duckdb` extension, which the collector starts before any pipeline component and stops after — exactly the lifetime the store needs. Each signal's exporter instance finds the shared store by looking it up in the collector's extensions map at `Start`.
-
-**Default ports**
-
 | Port | Purpose |
-|------|---------|
+| --- | --- |
 | 4317 | OTLP gRPC |
 | 4318 | OTLP HTTP |
-| 8000 | Web UI + JSON-RPC (`POST /rpc`) |
-| 3001 | Vite dev server (frontend only; proxies `/rpc` → 8000) |
+| 8000 | Web UI and JSON-RPC |
+| 3001 | Vite development server |
+
+## Components
+
+The binary uses these Collector components:
+
+| Kind | Component |
+| --- | --- |
+| Receiver | `otlp` |
+| Processor | `batch` |
+| Exporter | `desktop` |
+| Extension | `duckdb` |
+
+The default pipelines are:
+
+```text
+traces:  otlp -> batch -> desktop
+metrics: otlp -> batch -> desktop
+logs:    otlp -> batch -> desktop
+```
+
+The batch processor sends at 8,192 items or after 1 second. The exporter uses a
+blocking sending queue with one consumer. Each write has a 30-second ingest
+deadline.
+
+The `duckdb` extension starts before pipeline components and stops after them.
+It opens the store, starts the HTTP server and retention loop, then exposes the
+store through the Collector extension map. Each exporter resolves that shared
+store during `Start`.
+
+Shutdown stops retention, stops HTTP serving, and closes the store. Store close
+uses the shutdown context rather than waiting indefinitely for readers.
 
 ## Repository layout
 
-```
+```text
 otel-desktop-viewer/
-├── main.go                    # CLI entry; builds inline collector config from flags
-├── main_others.go / main_windows.go
-├── components.go              # OCB-generated component registry
-├── desktopexporter/           # Custom exporter package (write-only)
-│   ├── factory.go             # Exporter factory
-│   ├── exporter.go            # pushTraces / pushMetrics / pushLogs; resolves the store from the duckdb extension
-│   ├── duckdbextension/       # Owns the store, HTTP server, and retention loop
-│   └── internal/
-│       ├── server/            # HTTP server, JSON-RPC, embedded static assets
-│       ├── store/             # DuckDB store, schema, ingest, search, query
-│       └── frontend/          # Svelte 5 + Vite UI
-├── scripts/                   # OTLP seed scripts for local dev
-├── Makefile                   # Build, run, dev, test targets
-└── docs/ARCHITECTURE.md
+|-- main.go
+|-- components.go
+|-- desktopexporter/
+|   |-- exporter.go
+|   |-- duckdbextension/
+|   `-- internal/
+|       |-- server/
+|       |-- store/
+|       `-- frontend/
+|-- scripts/
+|-- Makefile
+`-- docs/
 ```
 
-The root module builds the collector binary. The frontend builds into `desktopexporter/internal/server/static/` for production embed.
+The frontend build is committed under
+`desktopexporter/internal/server/static/` and embedded with `go:embed`.
 
-## Collector binary
+## Store ownership
 
-Built with the [OpenTelemetry Collector Builder (OCB)](https://github.com/open-telemetry/opentelemetry-collector/tree/main/cmd/builder). Generated files (`main.go`, `components.go`) should not be edited by hand except where already customized. The distribution currently builds against **collector v0.158.0 / v1.64.0** (`go.mod`); `components.go` also records module versions in `ReceiverModules` / `ProcessorModules` / `ExtensionModules` metadata strings (keep these in sync when bumping). Requires **Go 1.26**.
+`store.Store` has two DuckDB handles:
 
-**Registered components** (`components.go`):
+| Handle | Access | Purpose |
+| --- | --- | --- |
+| `driver.Conn` | `WithConn` | Ingest appenders |
+| `*sql.DB` | `WithDBRead`, `WithDBWrite` | Queries, deletion, retention, checkpointing |
 
-| Kind | Component | Used in default config? |
-|------|-----------|---------------------------|
-| Receiver | `otlp` (HTTP + gRPC) | Yes |
-| Exporter | `desktop` | Yes |
-| Processor | `batch` | Yes, wired into all three default pipelines |
-| Extension | `duckdb` (`desktopexporter/duckdbextension`) | Yes; owns the store, the HTTP server, and retention |
+`WithConn` serializes ingest calls and takes the store read lock. Queries may run
+at the same time as ingest. `WithDBWrite` excludes ingest and queries while a
+pool mutation runs.
 
-**Default pipelines** (built from CLI flags in `main.go`):
+DuckDB appenders buffer rows until a flush or close. A query can therefore lag
+ingest by one batch. Dictionary rows may become visible before their owner rows,
+but read queries join from owners to dictionary entries and do not expose
+unowned values.
 
+Callers never receive the raw `*sql.DB`. Production code runs database work
+inside a store closure so lock ownership covers the full operation.
+
+## Schema
+
+Schema objects live in `desktopexporter/internal/store/queries/ddl/`. Each
+directory has an `_order` manifest because tables, indexes, and macros have
+creation dependencies. Store startup verifies that every embedded DDL file is
+listed exactly once.
+
+The current schema version is 21. Store startup validates `schema_meta` before
+running DDL. A mismatched, malformed, or unversioned telemetry database is
+rejected without modification. The store does not migrate or reset databases.
+
+### Tables
+
+| Table | Stored data |
+| --- | --- |
+| `attributes` | Distinct typed attribute values |
+| `resources` | Received Resource payloads |
+| `scopes` | Received InstrumentationScope payloads |
+| `spans` | Span records |
+| `events` | Span events |
+| `links` | Span links |
+| `logs` | Log records |
+| `metrics` | One exact OTel Metric identity |
+| `metric_series` | One series for a Metric and datapoint attribute set |
+| `metric_datapoints` | Gauge, Sum, Histogram, and ExponentialHistogram datapoints |
+| `histogram_bounds` | Deduplicated explicit histogram bounds |
+| `exemplars` | Metric exemplars |
+| `ingest_rejections` | Refused record diagnostics |
+
+`metrics.id` and `metric_series.id` are viewer-generated UUIDs. Public APIs call
+them `metricRef` and `seriesRef`. They are scoped to one database and are not
+received OTel identifiers.
+
+Metric identity includes the complete Resource payload key, complete Scope,
+Scope schema URL, name, unit, type, temporality where applicable, and
+monotonicity where applicable. Description and metadata remain received Metric
+fields but do not identify a Metric. `service_name` is a derived search and
+display field from Resource attributes.
+
+`metric_series` identifies one Metric plus one datapoint attribute set.
+`metric_datapoints` keeps both `metric_id` and `series_id`, along with the exact
+attribute IDs needed to render the datapoint.
+
+### Values and precision
+
+Attributes, log bodies, and Metric metadata use recursive tagged JSON. Every
+value is `{kind,value}`.
+
+- int64 values use decimal strings.
+- finite doubles use JSON numbers.
+- negative zero and non-finite doubles use exact IEEE-754 bit text.
+- arrays preserve order.
+- maps use sorted entry lists, preserving duplicate keys.
+- empty values use `null` inside the tagged value.
+
+Received OTLP timestamps use DuckDB `UBIGINT`. Span kind, span status code, and
+Metric aggregation temporality use signed `INTEGER`, including unknown values.
+The API returns numeric codes with derived display labels.
+
+Histogram and ExponentialHistogram `sum`, `min`, and `max` are nullable. NULL
+means absent; zero means present zero. Histogram counts and bucket vectors use
+unsigned 64-bit storage.
+
+Optional parent, correlation, exemplar, and link target IDs remain NULL when
+absent. The store does not invent zero IDs.
+
+### Attributes
+
+The attribute dictionary is keyed by a 128-bit prefix of SHA-256 over the key
+and canonical tagged value. Owners store sorted UUID arrays. Identical typed
+values deduplicate across owner categories.
+
+DuckDB cannot enforce foreign keys into UUID arrays. Ingest writes dictionary
+rows before owner rows. Store tests check for dangling references.
+
+`ingest.SweepOrphans` removes dictionary entries with no owners. Clear operations
+sweep immediately. Retention sweeps before measuring and after each prune round.
+Single-entity deletes leave cleanup to the next clear or retention sweep.
+
+Cross-signal correlation fields are not foreign keys. Logs and exemplars can
+arrive before a span, after it, or without it. Link target IDs may point outside
+the stored trace set.
+
+## Ingest
+
+Ingest reads OpenTelemetry pdata directly. It does not build intermediate Go
+domain objects.
+
+Each request uses two passes:
+
+1. Encode and hash attributes, then resolve Resource, Scope, Metric, and series
+   identities.
+2. Append spans, logs, Metric datapoints, exemplars, events, and links.
+
+The dictionary and identity tables use inserts with conflict handling. High
+volume owner tables use DuckDB appenders.
+
+## Query layer
+
+Read queries are `.sql` files under `queries/spans`, `queries/logs`, and
+`queries/metrics`. `go:embed` loads them at startup. `text/template` inserts only
+named SQL fragments; values use bound parameters.
+
+The query registry checks that every file has one Go name and every Go name has
+one file. Golden tests cover rendered SQL.
+
+Queries produce JSON with DuckDB functions and return `json.RawMessage`. The Go
+server forwards those bytes without response structs or re-encoding.
+
+Shared JSON shapes and numeric encoders live in SQL macros. Ordered arrays use
+`to_json(list(value order by key))` so response order is explicit.
+
+## Search
+
+The frontend sends a query tree. Signal-specific mappers convert supported
+fields and operators to parameterized SQL.
+
+Built-in fields keep their native types. Received attribute keys keep exact
+case and spelling. Explicit attribute references include owner scope, key, and
+stored kind, for example:
+
+```text
+attr(span, "attempts", int64) > 2
 ```
-traces:  otlp → batch → desktop
-metrics: otlp → batch → desktop
-logs:    otlp → batch → desktop
-```
 
-`batch` merges on `send_batch_size: 8192` or a `1s` timeout, whichever comes first — sized so the exporter's own ingest deadline stays meaningful (see Lifecycle, below) and so light, interactive traffic still lands within a second rather than waiting for a merge threshold it will never reach.
-
-**CLI flags**
-
-| Flag | Default | Purpose |
-|------|---------|---------|
-| `--http` | 4318 | OTLP HTTP listen port |
-| `--grpc` | 4317 | OTLP gRPC listen port |
-| `--browser-port` | 8000 | UI + JSON-RPC port (`duckdb` extension's `endpoint`) |
-| `--host` | localhost | Bind address for all endpoints |
-| `--db` | *(empty)* | DuckDB file path; empty = in-memory |
-| `--db-max-size` | *(empty)* | Store size cap (e.g. `512MB`, `2GB`); oldest telemetry pruned when exceeded. `0` disables pruning. Defaults to 512 MB in-memory, 2 GB on disk. |
-| `--open-browser` | true | Open UI on startup |
-| `--self-telemetry-endpoint` | *(empty)* | Export the viewer's own traces and metrics to this OTLP/gRPC endpoint. Empty means off. Sets both the `desktop` exporter's and the `duckdb` extension's telemetry mode to `enabled`; both signals use the supplied endpoint exactly. |
-
-Configuration is injected as inline YAML resolver URIs at startup. There is no `--config` file path exposed by the CLI today, though the underlying collector supports YAML providers.
-
-Self-telemetry uses another viewer as the monitoring endpoint. Run both viewers in the foreground in separate terminals:
-
-```bash
-otel-desktop-viewer --grpc 4327 --http 4328 --browser-port 8001
-otel-desktop-viewer --self-telemetry-endpoint http://localhost:4327
-```
-
-The first command starts the monitoring viewer and the second starts the observed viewer. The monitoring endpoint must remain running through observed viewer shutdown. The caller owns starting, stopping, and waiting for both foreground processes.
-
-## Desktop exporter and DuckDB extension
-
-Ownership of the store split from the exporter into a separate collector **extension**. The `desktop` exporter is now write-only: it has no state of its own beyond a store reference, resolved at startup. The `duckdb` extension (`desktopexporter/duckdbextension/`) owns:
-
-1. A **DuckDB store** (`internal/store`)
-2. An **HTTP server** (`internal/server`) that serves the UI and JSON-RPC
-3. The **retention loop**
-
-This split exists because the collector starts extensions before any pipeline component and shuts them down after (documented ordering of `service.Start` / `service.Shutdown`), which is exactly the lifetime the store needs: up before the first ingest, alive until the last queued write has drained. It also replaces a hand-rolled `sharedcomponent` package that used to give the three signal exporters one instance to share per config — that package is gone; sharing now happens through the extensions map instead of through shared construction.
-
-Trace, metrics, and logs exporters are still created separately by the collector factory, and each is an **independent `desktopExporter` instance** with no state shared between them at construction time. What they share is the extension: at `Start`, each walks `host.GetExtensions()` for anything satisfying a small `storeHost` interface (`Store() *store.Store`) and keeps that pointer. Exactly one store-owning extension must be configured — none is a startup error telling the operator to add `duckdb` under `extensions`, and more than one is also rejected rather than picking a target by map iteration order.
-
-**Ingest path** (`exporter.go`):
-
-```
-OTLP pdata → batch processor → exporterhelper sending queue → pushTraces|pushMetrics|pushLogs → store.WithConn → spans|metrics|logs.Ingest
-```
-
-Ingest writes directly from OpenTelemetry pdata into DuckDB appenders. There are no intermediate Go domain structs between OTLP and storage. The exporter's own `sending_queue` is enabled by default (one consumer, `BlockOnOverflow`, no batching of its own — batching is the `batch` processor's job) so OTLP receipt is decoupled from the DuckDB write; disabling it restores a synchronous path where the client blocks on, and sees the error from, the store write. Each push imposes an `IngestTimeout` of 30s as a backstop against a hung write holding the store's write lock indefinitely, not as a latency control — deliberately far above the working range, because tripping it means a batch is cut short mid-flush.
-
-**Lifecycle**: the `duckdb` extension's `Start` opens the store, builds the HTTP server, and — if a retention cap applies — starts the retention loop; `Shutdown` reverses that order: cancel the retention loop and wait for it, shut down the HTTP server and wait for its serve goroutine, then close the store. Closing the store takes its write lock, which would otherwise wait on any in-flight reader past the collector's shutdown deadline; the extension bounds that close by `ctx` and logs a warning rather than hang; an unclosed store loses at most its WAL, which DuckDB replays on next open. The exporter's own `Start` is comparatively trivial: it just resolves the shared store from the extensions map. Ingest paths check `ctx.Err()` before work and on every record (metrics pass 1 included); `CloseAppenders` on exit flushes buffered rows.
-
-**Retention**: `--db-max-size` sets a byte cap on stored telemetry, applied to the `duckdb` extension's config. When usage exceeds the cap, the oldest traces, logs, and metrics are pruned by a loop that runs every 30 seconds. `getStats` reports current usage and the configured cap alongside signal counts.
-
-## Storage (DuckDB)
-
-**Engine**: DuckDB via `github.com/duckdb/duckdb-go/v2` (CGO required).
-
-**Connection model**: `store.Store` holds two handles to one DuckDB database, ordered by a `sync.RWMutex` plus a second mutex that serializes ingest against itself.
-
-- `conn` — a dedicated `driver.Conn` from `connector.Connect`, used only by ingest. DuckDB appenders are bound to the connection that created them, so ingest cannot run on the pool.
-- `db` — a `*sql.DB` pool from `sql.OpenDB`, used by every query and by the delete/checkpoint paths. The pool is capped via `SetMaxOpenConns`, because each pooled connection is a real DuckDB connection with real memory cost.
-
-Access is chosen by intent, not by handle:
-
-| Method | Lock | Handle | Used by |
-|--------|------|--------|---------|
-| `WithConn` | `ingestMu`, then read | `conn` | ingest (appenders) |
-| `WithDBWrite` | write | `db` | clear, delete, retention prune + checkpoint |
-| `WithDBRead` | read | `db` | all queries |
-
-The write lock means "no ingest and no queries", and belongs to pool mutations alone. Ingest takes the *read* lock, so queries run alongside a batch being appended; `ingestMu` is what keeps two ingest calls off one appender connection, which the read lock cannot do.
-
-Ingest reading rather than writing is deliberate. Appending on `conn` and querying on `db` are two DuckDB connections to one database, and DuckDB's MVCC serves a reader alongside a writer unaided — verified by running pooled `SELECT`s against a continuous 20,000-span appender ingest with no lock at all: 1,225 reads, no failures, no races. Excluding readers for a batch's duration bought nothing and cost latency in proportion to batch size; a reader waited 159ms behind a 50,000-span batch to perform 0.2ms of work.
-
-Pool mutations must still exclude ingest, and the sharpest reason is the orphan sweep: ingest inserts dictionary rows before flushing the owner rows that reference them, so a sweep landing in that window would delete rows the in-flight batch is about to point at. No error and no failed constraint, since no foreign key reaches into a `uuid[]` — the attributes would simply stop appearing.
-
-What this does **not** guarantee: a query does not see rows that an in-flight ingest has appended but not yet flushed. DuckDB appenders buffer client-side and become visible on flush — automatically at the chunk threshold, or on `Flush`/`Close` at the end of each ingest call. Under load the UI can lag ingest by up to one batch. That is a visibility window, not a lost write. Queries running alongside ingest widens that window rather than changing its nature: a read can now land mid-batch, and can see dictionary rows whose owners have not flushed. Benign for queries, which join owner→attributes; the one visible effect is that the attribute-key dropdown may list a key a moment before its spans appear.
-
-`EnforceRetention` takes the write lock once per prune round rather than across a whole pass, so queries interleave between rounds instead of blocking for up to three checkpoints.
-
-`Store` exposes no accessor for its `*sql.DB`. Handing out the pool would let a caller query after the lock released, which is the ordering these methods exist to enforce, so every caller — production and test alike — passes a closure to `WithDBRead` or `WithDBWrite`. CI enforces this: a `.DB()` call outside `_test.go` files fails the `go-checks` job.
-
-### Schema
-
-Schema lives in `desktopexporter/internal/store/queries/ddl/` as one `.sql` file per object — `types/`, `tables/`, `indexes/`, `macros/` — applied in order on store creation. The order is read at init from an `_order` manifest file in each directory (`queries/ddl_order.go`), one filename per line, rather than a directory walk: creation order is load-bearing (a table must follow the tables it references; a macro must follow the macros it calls), so it has to be written down somewhere a directory listing can't silently reshuffle, and a file nobody sequenced fails loudly at startup instead of sorting itself into the middle of the schema. `store/schema` retains only `version.go`, whose queries run *before* this DDL to decide whether running it is safe at all.
-
-**Core tables**
-
-| Table | Role |
-|-------|------|
-| `attributes` | Scope-free dictionary of distinct `(key, canonical tagged JSON value)` rows, keyed by a content hash |
-| `resources` | Deduped received resource payloads, shared across all three signals; `seq` is the wire key |
-| `scopes` | Deduped instrumentation scopes; `seq` is the wire key |
-| `spans` | Span records; `resource_id`, `scope_id`, `attribute_ids`, plus `service_name` denormalized from `service.name` |
-| `events` | Span events (normalized) |
-| `links` | Span links (normalized) |
-| `logs` | Log records; same reference columns as `spans` |
-| `metric_streams` | Canonical identity for one exact OTel Metric: Resource attributes, InstrumentationScope, Scope schema URL, and applicable descriptor fields |
-| `metric_series` | One row per chart line, identified by its exact metric stream and datapoint attributes |
-| `metric_ingests` | One row per OTLP batch arrival for a stream (description, `resource_id`, `scope_id`) |
-| `datapoints` | All metric data points in one table; `metric_type` discriminates gauge/sum/histogram/exponential histogram; `series_id` names the line |
-| `exemplars` | Metric exemplars (normalized); separate nullable `double_value` / `int_value` arms preserve the OTLP oneof |
-
-Received numeric enums are stored as signed DuckDB `INTEGER` values, without
-closed-domain checks: `spans.kind`, `spans.status_code`, and
-`metric_streams.aggregation_temporality` retain the protocol int32 exactly,
-including zero and unknown positive or negative values. Metric temporality is
-part of stream identity where the metric type defines it. Other types use code
-zero as a non-applicable placeholder, distinguished from a received Unspecified
-value by `metric_type`. SQL responses
-carry the authoritative numeric code beside a derived display label. The label
-is `Unspecified`/`Internal`/`Server`/`Client`/`Producer`/`Consumer` for known
-span kinds, `Unset`/`Ok`/`Error` for known status codes, and
-`Unspecified`/`Delta`/`Cumulative` for known temporalities; unknowns render as
-`Unknown (<code>)`. Log `severity_number` remains its independently received
-numeric identity.
-
-**Design themes**
-
-- **IDs and timestamps use their native widths in DuckDB.** OpenTelemetry 16-byte trace IDs and viewer-internal IDs are UUIDs; 8-byte span IDs and OTLP's unsigned 64-bit nanosecond timestamps are UBIGINT. Signed measurements remain BIGINT. JSON-RPC responses and search comparisons use OTLP **wire form** (dash-less lowercase hex: 32 chars for trace IDs, 16 for span IDs), while timestamps cross JSON precision boundaries as decimal strings.
-- **Attributes are a content-addressed dictionary.** One row per distinct `(key, canonical tagged JSON value)` for the whole database, with `id = sha256(...)` truncated to 16 bytes and computed in Go at unwrap. Every owner holds an inline `uuid[]`, deduped and sorted by id. Because identity is the content, ingest knows every id before it writes and needs no read-back, and repeat writes are `on conflict (id) do nothing`.
-- **Resources preserve received payload identity.** A resource id hashes its canonical sorted typed attribute ids plus `droppedAttributesCount`. Identical payloads dedupe across signals and batches; changed attributes, typed values, presence, or dropped count produce distinct rows so every span, log, and metric ingest retains its exact received resource. Resource and scope schema URLs belong to their OTLP wrappers and do not participate.
-- **Metric streams preserve exact OTel identity.** Stream and series ids are generated database-local UUIDs. Exact unique keys cover canonical Resource attribute ids, InstrumentationScope name, version and attribute ids, Scope schema URL, the applicable Metric descriptor fields, and each series' datapoint attribute ids. Resource or Scope identity changes split the stream; received dropped counts do not, because they are payload metadata. `metric_ingests.resource_id` and `scope_id` still preserve the exact received payload for every ingest. Retention keeps identity rows so reingestion resolves the same ids.
-- **Dictionary identity is independent of owner scope.** The same key and received value has one row whether it belongs to a resource, scope, span, event, link, log, datapoint, exemplar, or metric metadata. Discovery derives the owner category from the arrays that reference an id, so placement stays queryable without duplicating dictionary content.
-- **OTel values use one recursive tagged JSON representation.** Every root and nested value is `{kind,value}`. Empty uses `null`; strings and padded-base64 bytes use JSON strings; booleans use JSON booleans; int64 uses a decimal string; ordinary finite doubles and positive zero use JSON numbers; negative zero, infinities, and NaNs use `0x` plus 16 lowercase IEEE-754 bit hex digits. Arrays preserve order. Maps use sorted `{key,value}` entry lists rather than JSON objects, which preserves duplicate keys and makes map order nonsemantic. Log bodies use the same representation. Native IDs, timestamps, status/severity, and metric measurements remain typed columns.
-- **Normalized nested data.** Events, links, and exemplars live in separate tables—not nested arrays or DuckDB UNION types.
-- **Metric numeric values keep their domain across JSON.** Received doubles remain native DuckDB `DOUBLE` values. Ordinary finite values except negative zero cross the wire as compact JSON numbers; negative zero and non-finite values cross as quoted `0x` plus 16 hexadecimal IEEE-754 bits and are decoded once in the frontend service. Received signed integers and unsigned counts cross as decimal strings and become `bigint`. Optional histogram doubles use JSON `null` only for absence. Calculated metric doubles use the same valid-JSON encoding, but arithmetic may already have changed their IEEE-754 bits and the encoding does not make them received source values.
-- **Exemplar values keep their OTLP type.** Doubles and signed 64-bit integers occupy separate nullable columns; both NULL means the source exemplar had no value. The wire carries an explicit `valueType` and follows the metric numeric representation above.
-- **Histogram optional statistics keep presence.** Histogram and exponential-histogram `sum`, `min`, and `max` are received optional doubles. SQL NULL and JSON `null` mean absent; a numeric zero means the sender supplied zero. A merged sum is available only when every contributing interval has a sum. Merged `min` and `max` are separate bucket-derived display projections, not replacements for the received fields.
-- **Empty IDs never become synthetic zero strings.** Optional parent, log, exemplar, and link target IDs are SQL NULL and JSON `null`. A span's own ID is required for its identity, so an empty one is refused through the ingest diagnostics path instead of being stored as zero.
-- **Single `datapoints` table.** Type-specific columns use NULLs for irrelevant fields; `metric_type` + CHECK constraints enforce the discriminated union. Columnar compression makes sparse rows cheap.
-- **`metric_streams` + `metric_ingests`.** Exact OTel Metric identity is deduplicated across batches. The Scope schema URL participates in that identity; description, metadata, Resource schema URL, and received Resource/Scope dropped counts remain associated with each ingest without changing it.
-- **No referential integrity on array elements.** DuckDB cannot declare a foreign key into a `LIST`, so nothing at the engine level stops an `attribute_ids` entry pointing at a missing dictionary row. This is a knowing trade for the dedupe: it becomes ingest's responsibility, and store-level consistency tests assert no dangling references survive a `Clear` → ingest cycle. `resources` / `scopes` are reached by a real FK; only the arrays are unenforced.
-- **Two kinds of reference, and the difference is deliberate.** Foreign keys are declared where a row genuinely cannot exist without its parent: `spans`/`logs` → `resources`/`scopes`, `events`/`links` → `spans`, `metric_series`/`metric_ingests`/`datapoints` → `metric_streams`, `exemplars` → `datapoints`. Those are what constrain table creation order.
-
-  Cross-signal references are **not** foreign keys and must not become them: `logs.trace_id`, `logs.span_id`, `exemplars.trace_id`, `exemplars.span_id`, and `links.linked_trace_id` / `links.linked_span_id` (the linked target, as distinct from owning `links.trace_id` / `links.span_id`, whose pair is a real FK). They point at spans with nothing enforcing the span exists.
-
-  That is required, not an oversight. Signals arrive independently and out of order: a log is written the moment it is received, and the span it belongs to may arrive in a later batch, be dropped by sampling, or never be sent at all. A foreign key would reject perfectly good telemetry on arrival — and would do so most often for partial or failed traces, which is exactly what someone opens this tool to look at. So logs and exemplars impose no creation ordering against spans, and none should be inferred from the fact that they reference them.
-
-  Guarded by a test that reads the DDL, because no ingest test would catch a regression: they all write complete traces, where the referenced span happens to exist.
-- **Orphans are swept, not cascaded.** Since no FK covers the arrays, the `Clear` and delete-by-id paths leave dictionary rows behind rather than reference-counting them. `ingest.SweepOrphans` builds the live id set by unnesting every owner and deletes what nothing references. It runs from two places. The `clearTraces` / `clearLogs` / `clearMetrics` handlers sweep in the same write-locked closure as the truncate, so clearing a signal actually reclaims its share of the dictionary — this cannot be left to retention, which is size-driven and does not run at all when the cap is disabled, so the orphans would survive until restart. Retention sweeps too, once before its first size measurement and again at the end of each prune round, since the prunes are what create orphans. The invariant that buys: **no round deletes real telemetry to make room for rows nothing references** — which matters because orphans count toward the size the cap is compared against.
-
-The per-id delete paths (`deleteSpansByTraceID`, `deleteSpanByID`, `deleteLogByID`, `deleteMetricStream`) deliberately do **not** sweep — deleting one trace would otherwise pay for a full unnest of every owner table — so their orphans wait for the next clear or retention round.
-- **`service_name` stays denormalized** on `spans` and `logs` even though resources are now deduped. With ~24 resource rows the join is cheap, but this is the hottest filter in span search and a column scan still beats a join plus an array unnest.
-- **Indexes are equality-only, by engine constraint.** DuckDB's ART indexes serve equality and `IN` on a single column — never multicolumn predicates, ranges, joins, aggregation or sorting — and min-max zonemaps are maintained automatically for every column. So the explicit time-column and multicolumn indexes were dropped: they cost every write and, measured alternating to avoid cache bias, made no difference to reads. A `LIST` column cannot be indexed or FK'd at all, which is why `metric_series` exists — it turns a chart's grouping key from an unindexable array into one indexable `uuid`.
-- **Depth is computed at query time** via recursive CTEs when building trace waterfalls—not stored on ingest.
-- **OTLP trace export reconstructs the normalized signal in SQL.** It selects every stored span with the requested trace ID, including cycles, orphans, and disconnected components; selection does not depend on the UI search filters or parent reachability. Each span keeps its own resource, scope, and schema grouping, so the result can contain multiple `resourceSpans` blocks. Stored attributes remain tagged JSON until export. The converter records their node relationships first, assigns numeric sort paths to one depth at a time, emits local JSON fragments, and assembles them once. This replaced approaches that repeatedly copied completed subtrees or used one recursive SQL step per opening and closing fragment. Received keys are unchanged. Go only binds parameters, scans the compact JSON text, and handles errors.
-- **The schema is versioned.** Schema 13 introduced recursive tagged JSON in the scope-free attribute dictionary and log bodies; the current schema is 18. Store opening inspects the catalog and validates `schema_meta` before application DDL runs, so malformed metadata, a version mismatch, or a pre-versioning database with telemetry is refused without mutating the file. There is no migration or automatic reset.
-
-### Ingest
-
-Ingest is **two-pass**, and per OTLP request costs three small inserts and no reads regardless of span count:
-
-1. Walk the hierarchy, canonically encode each received attribute as recursive tagged JSON, hash `(key, encoded value)` into a scope-free id, dedupe rows in a Go map, and build each owner's sorted `uuid[]`.
-2. Insert `attributes` **first**, then `resources` / `scopes`. Ordering is deliberate: no FK can enforce it, and a crash between the two leaves collectable orphans rather than a resource referencing rows that do not exist.
-3. Open the appenders and walk again, appending owners with their arrays.
-
-| Signal | Package | Notes |
-|--------|---------|-------|
-| Traces | `store/spans` | Flushes appenders every 500 spans |
-| Metrics | `store/metrics` | Stream find-or-insert, series resolve, then datapoints/exemplars |
-| Logs | `store/logs` | Flushes appenders every 500 records |
-
-The dictionary inserts cannot use an appender: appenders have no conflict handling, and a constraint violation errors at flush and takes the whole chunk with it. The high-volume tables have no dedupe requirement and keep the appender.
-
-`store/ingest/` holds the shared pieces: `dictionary.go` (hashing and id construction), `flushed.go` (a per-store cache of ids already written, so a repeat batch skips the insert entirely — invalidated in the one function that deletes dictionary rows), `attribute_memo.go`, and `sweep.go`.
-
-`attribute_memo.go` caches attribute-set *derivation* — content encoded and hashed to dictionary rows plus an id array — process-wide rather than per store, for the duration of the process. It is a different cache from `flushed.go` and sits in front of it: deriving the same label set is a pure function whose answer can never go stale, so unlike `FlushedIDs` it needs no invalidation when rows are deleted, only when the memo's own fixed capacity (4096 distinct sets) is reached, at which point it resets wholesale rather than evicting entry-by-entry. It pays off on the repetition across batches — a stream reporting the same handful of label sets on every interval — and costs a little on a set it can never serve, such as a high-cardinality label that mints a new set every datapoint.
-
-## Query layer and API
-
-### SQL as files, rendered through text/template
-
-Every read-path query is a `.sql` file under `queries/{spans,logs,metrics}/`, embedded via `go:embed` and parsed once at package init into a `text/template`. `queries.Render(name, data)` fills in the named conditional fragments and returns the final SQL string; `data` is normally a struct whose fields are those fragments, named rather than positional, so adding or reordering one cannot silently change which fragment lands where. `Option("missingkey=error")` makes a misspelled field fail loudly at render instead of writing `<no value>` into the query, and every embedded file is checked against the registry of query names in both directions at startup, so a renamed file cannot leave a dangling reference and an orphaned file cannot sit unnoticed. Golden tests in the signal packages pin the rendered text byte for byte, which is what makes editing these files safe. This replaced hundreds of lines of positional `fmt.Sprintf` assembly, which could not be syntax-highlighted, could not be pasted into a DuckDB shell, and made the order of `%s` verbs against a trailing argument list load-bearing in a way that a swapped pair still produced SQL that parsed.
-
-### JSON rows from DuckDB
-
-Query functions build JSON in SQL using `json_object`, `to_json(list(...))`, etc., and scan each result row into `json.RawMessage`. The JSON-RPC layer forwards these bytes without Go response structs.
-
-Ordered aggregation is `to_json(list(x order by k))` rather than `json_group_array`, which is a macro and therefore rejects `ORDER BY` inside it. Attribute arrays are ordered by key on the read path, which is also what makes the JSON deterministic — the previous output followed scan order with no `ORDER BY` anywhere, so it was never actually order-stable.
-
-**Shared shapes live in SQL macros** (`queries.Macros()`, created in the `_order` sequence described under Schema above), layered the way the histogram math already was: leaf helpers (`attrs_json`, `has_attr`, `trace_id_wire`, `span_id_wire`), then component objects (`resource_json`, `scope_json`, `attribute_def_json`). `attrs_json(ids)` forwards each stored tagged value into the wire response and replaced the same unnest-and-join fragment repeated across spans, logs and metrics.
-
-**Why**: Response shape is defined once in SQL. No duplicate struct tags, no scan-then-marshal step. The frontend is the primary consumer.
-
-**Trade-off**: Response structure is not statically typed in Go; it lives in SQL strings, and macros are invisible to Go tooling — a typo surfaces at runtime, which is what the macro unit tests exist for.
-
-### Metric aggregation
-
-`get_metric_view.sql` is where metric aggregation lives — entirely in SQL, computed once per request rather than shipped as raw datapoints for the frontend to reduce. For the time window and target resolution a caller asks for, one query does:
-
-- **M4 reduction** for Gauge and Sum series: the earliest, latest, smallest, and largest datapoint per series per bucket, which draws a chart line identical to the one every point would draw (the extremes of each pixel column are always kept) rather than a sampled approximation.
-- **Histogram merge** for Histogram and ExponentialHistogram series: bucket counts are added (Delta) or differenced against the previous reading (Cumulative) rather than sampled, because a histogram datapoint carries counts, not a point on a line — sampling one would discard the observations in the rest.
-- **Quantiles**, computed per requested percentile per bucket from the merged histogram, rather than shipping raw bucket vectors for the client to reduce.
-- **Scalar views** (Sum / Average / Rate) on a resolution distinct from both the chart reduction and the per-row sparkline, aggregated on a shared absolute-time grid so toggling which series are visible cannot re-cut the buckets underneath the chart.
-- **Sparklines**, a third, coarser resolution sized for a ~128px row rather than a full-width chart.
-- **Cross-series pools** ("Selected" and "All"), folding checked series or every series in the stream into one aggregate line, computed from the same per-series view rows so the pooled line aligns with the per-series lines drawn beneath it.
-
-Received metric integers keep their OTel domains across the detail path. NumberDataPoint `as_int` is signed int64 in `BIGINT`; Histogram and ExponentialHistogram counts and bucket vectors are unsigned uint64 in `UBIGINT`/`UBIGINT[]`. `datapoint_json` sends these values as exact decimal text, and `telemetry-service.ts` revives them once to `bigint`/`bigint[]`. Detail rows format those exact values directly. Scalar chart coordinates and histogram chart/heatmap slices explicitly convert the exact source to JavaScript `number`; that display projection is the approximation boundary and does not replace or mutate the decoded datapoint.
-
-Cumulative scalar Sum deltas are calculated fields, not received OTel fields. Their source is the current and preceding datapoint in one series, ordered by received nanosecond timestamp and then datapoint id. Integer/integer and exactly representable integral mixed transitions compare and subtract as signed 128-bit `HUGEINT` whenever the double value and resulting difference fit that domain; the result is an exact, unit-preserving delta transported as decimal text and decoded to frontend `bigint`. Pure double transitions, mixed transitions outside that exact integer domain, and exact operands whose difference exceeds signed 128-bit range use `DOUBLE` and remain frontend `number`. A decrease returns the current value only for a monotonic Sum reset; a non-monotonic Sum keeps the signed difference. The first point and points following an empty numeric arm have no calculated interval. Rates convert exact deltas to `DOUBLE` in SQL and divide by elapsed seconds, yielding the metric unit per second; chart coordinates convert them to JavaScript `number`. Those rate and chart values are binary64 display projections and do not replace the exact calculated delta or either received value arm.
-
-The reduction products above are derived UI views, not received OTel fields. Their sources are the received measurements and counts in the requested window; their formulas are the SQL operations named above, their time coordinates are epoch milliseconds or nanosecond bucket starts as documented by their types, and scalar values, rates, quantiles and chart coordinates use IEEE-754 numbers. Histogram differences, downscales, folds and merges use signed 128-bit `HUGEINT` intermediates so every uint64 input and derived totals above `MaxUint64` remain exact. Per-series reduced counts use decimal-string transport and frontend `bigint`; the cross-series aggregate enters the existing approximate chart-number wire shape. An aggregate beyond `HUGEINT` fails the query rather than wrapping or clipping.
-
-**Exemplars are capped in two independent directions.** Per datapoint, at most 5 exemplars are listed, ranked by distance from either extreme of the datapoint's own exemplar values (so the set spans the range rather than clustering at one end); a datapoint carries `exemplarCount` only when its actual count exceeds what was listed, so its absence can be read as "nothing was withheld." Mixed integer/double ranking uses a DOUBLE ordering key plus a HUGEINT tie-break, preserving exact order between adjacent integers above JavaScript's safe range. Empty and non-finite values sort after finite values. Per bucket, at most 2 exemplar-bearing datapoints are retained as carriers — again ranked from both ends, this time by how far their exemplars reach — so a bucket a few pixels wide caps at six datapoints total (four from M4 plus up to two exemplar carriers) rather than costing as much as the densest stream that landed in it.
-
-### Search
-
-The frontend builds a **query tree** (`src/components/shared/Search/queryTree.ts`). `store/search/search_tree.go` walks the tree and generates SQL with:
-
-- Positional parameter binding (ordered param list)
-- `{COND}` placeholders for composable WHERE fragments
-- `{RAW}` for array containment checks
-- Signal-specific field mappers in `spans`, `logs`, and `metrics` packages
-- Mapper-resolved operand modes for text, native signed integers, durations, wire IDs, OTel arrays, and already-complete predicates
-
-The mapper is authoritative for native field semantics: browser-supplied `Field.Type` cannot turn a native field into another operand category. Dynamic attribute kinds are different: when supplied they are validated against the received OTel kind set and bound as a real kind predicate; callers that omit the kind retain cross-kind text matching for compatibility. Attribute scalar comparisons remain text-bound rather than casting tagged payloads according to a client hint.
-
-Built-in span durations have their own mapper-selected mode. Scalar and `IN`/`NOT IN` list operands use the existing string wire shape, then normalize exactly to signed-int64 nanoseconds with non-negative duration syntax and half-up fractional-nanosecond rounding. The browser mirrors the diagnostics, but the server repeats validation for direct callers. Dynamic attributes also named `duration` remain text operands.
-
-Global search casts scalar fields to strings and searches attribute key/value pairs through the dictionary.
-
-**Attribute equality takes a fast path.** An attribute id is a pure function of `(key, canonical tagged value)`, so an equality search can compute the id it wants before the query runs: `ingest.IDProbe` emits `list_contains(attribute_ids, '<id>'::uuid)` and the predicate never joins the dictionary at all (2.67 ms → 0.13 ms on the reference capture). It is narrow on purpose and falls back to the correct-but-slower value comparison for anything it cannot reconstruct byte-exactly, including unsupported kinds, operators other than `=`, and null checks.
-
-The `attr_id` / `attr_frame` SQL macros reimplement the same hash independently. They are deliberately kept **off** the correctness path — used only to audit that stored ids match their content — because one implementation writing and reading with a second one checking is what makes the check meaningful. Putting the macro in search predicates would turn a Go/SQL divergence into search silently returning nothing.
-
-Attribute *discovery* joins dictionary ids back through owner arrays to recover owner scope and extracts the received root kind from tagged JSON. `store/attributes` also answers value-first lookup: given text a user can see in the UI, return the keys and owner scopes that hold it across all three signals.
-
-Received OTel attribute keys are resolved by exact string identity in structured search: casing and every key character are preserved, and keys that differ only by case remain distinct. Built-in application fields retain their case-insensitive names and take precedence over bare attributes with a colliding name. Attribute completion inserts `attr(scope, "exact.key", stored-kind)`, for example `attr(span, "attempts", int64) > 2`. This reference selects the received owner scope, key, and stored kind; it is not a cast. Stored kinds are `string`, `int64`, `double`, `bool`, `bytes`, `empty`, `array`, and `map`. A manually typed bare attribute name remains shorthand only while it identifies one unique tuple; otherwise the editor requires the explicit form. The complete identity is carried in query text and survives copy/paste even when discovery has no current row. Search text itself is not persisted and starts empty after reload.
-
-### HTTP server
-
-`internal/server/server.go`:
-
-| Route | Handler |
-|-------|---------|
-| `POST /rpc` | JSON-RPC 2.0 (`golang.org/x/exp/jsonrpc2`); request bodies capped at 1 MB |
-| `GET /*` | Embedded static files; extension-less unknown paths fall back to `index.html` for client-side routing |
-
-CORS allows any origin (`http://*`, `https://*`), which is what lets the Vite dev server on port 3001 reach `/rpc` without a proxy configured per environment — the tradeoff is acceptable because the server binds to `localhost` by default and carries no auth.
-
-**Static assets**
-
-- Embedded via `//go:embed static` after `make build-ts` (which wipes `server/static/` before copying, so stale hashed assets do not accumulate)
-- The root `Dockerfile` builds the frontend in a Node stage before `go build`, so `docker build` embeds the current UI without a local `make build-ts`
-- Frontend iteration uses the Vite dev server (`make dev-ts` on port 3001), which proxies `/rpc` to the Go server
-
-### JSON-RPC methods
-
-| Method | Purpose |
-|--------|---------|
-| `searchTraces` | Trace summaries for list view |
-| `searchSpans` | Full trace with spans, events, links, attributes |
-| `getTraceSpanCount` | Span count for a trace |
-| `getTraceAttributes` | Attribute key discovery, served from the dictionary (search autocomplete) |
-| `searchAttributes` | Value-first discovery: given text, the fields that would find it |
-| `getAttributesByTraceID` | Attribute key discovery for one trace |
-| `searchLogs` / `getLog` | Log list and detail |
-| `getTraceLogs` | Complete lightweight log summaries for one trace |
-| `getLogAttributes` | Attribute discovery for logs |
-| `searchMetricSummaries` | Metric stream list |
-| `getMetric` | Exact Metric identity and a series catalogue with computed retained-point count and first/last received datapoint timestamps |
-| `getMetricSeries` | Exact retained received datapoints for one Metric series and time window, grouped by their owning received Metric reports |
-| `getMetricView` | Chart detail and time series for one Metric in a time window |
-| `getMetricAggregateView` | Re-fetch just the cross-series aggregate envelope (and, for a histogram, the merged quantiles) for a new legend selection, without re-shipping the per-series payload `getMetricView` already returned |
-| `getMetricAttributes` | Attribute discovery for metrics |
-| `getStats` | Signal counts plus store `sizeBytes` / `maxSizeBytes` (used for polling and retention UI) |
-| `clearTraces` / `clearLogs` / `clearMetrics` | Delete all data for a signal |
-| `deleteSpansByTraceID` | Delete one or more traces by ID (batch param) |
-| `deleteSpanByID` / `deleteLogByID` | Delete one or more spans or logs by ID (batch param) |
-| `deleteMetricStream` | Delete one metric stream and its cascade (single ID, not a batch) |
-
-Time-bearing RPCs accept `startTime` and `endTime` independently as decimal nanosecond strings/numbers or JSON `null`; `null` means that endpoint is unbounded. Frontend picker, URL, persisted, and display timestamps remain integer Unix milliseconds. The shared time-selection adapter converts those values exactly with `BigInt(milliseconds) * 1_000_000n`; query service methods then accept only `bigint | null` absolute Unix nanoseconds and serialize non-null bounds as decimal strings. Attribute-key discovery (`getTraceAttributes`, `getLogAttributes`, `getMetricAttributes`) is dictionary-wide and takes no parameters. `getMetricSeries`, `getMetricView`, and `getMetricAggregateView` do not take a fitting flag: nullable bounds are the request itself. Metric view detail reports both `window.requested` and `window.effective`, each with nullable `startNs` / `endNs` strings. The effective window preserves concrete requested endpoints and fills each missing endpoint from the filtered data extent; an endpoint remains null when an empty result cannot supply it. The frontend promotes those strings to `bigint | null`, and follow-up aggregate view requests use the detail response's concrete effective bounds so every metric grid is cut from the same stable window. Trace detail span starts remain response offsets from the trace start and are not absolute query bounds.
-
-`getTraceLogs(traceID)` is the storage/API boundary for trace-log correlation. It validates the trace ID through the same identity contract as `searchSpans`, binds the normalized value, and uses the existing `logs.trace_id` index to return every log carrying that trace ID. Correlation is composite: a `spanID` has meaning only inside the requested trace, so the response preserves it in nullable OTLP wire form and does not join away trace-only logs or logs whose referenced span is absent. The result is not clipped by the global Logs time range and has no silent cap. It is ordered oldest first by effective timestamp (source timestamp unless absent or zero, then observed timestamp), then by the tool-minted log ID. Each row contains only the existing lightweight log-card fields plus `spanID`; recursively tagged bodies, attributes, resource, and scope remain owned by `getLog(id)` rather than being duplicated into correlation summaries.
-
-Domain errors map to JSON-RPC error codes in `internal/server/errors.go`. The API has one not-found convention: requesting a specific entity that does not exist returns an error (`-32001` trace, `-32002` log, `-32003` metric), never a `null` result. `getMetricView` distinguishes an unknown Metric (`-32003`) from a known Metric with no datapoints in the requested window (valid `MetricViewData` with an empty `timeseries`). `getMetric` and `getMetricSeries` also return `-32003` when the requested generated database-local identity does not exist. Invalid ID *params* return dedicated codes rather than surfacing as internal errors on read and delete paths. `deleteMetricStream` takes a single ID rather than a batch, unlike the span and log delete methods; the store's delete cascade remains keyed on `stream_id`. Deleting a stream that does not exist is a no-op, not an error — the cascade is a series of unconditional `DELETE`s, and the UI relies on that when a list poll races a delete. IDs embedded in search query trees (`traceID`, `spanID`, `link.*`, etc.) compare in OTLP wire form: values are dash-stripped and lowercased, columns are converted to the same wire shape, and malformed input returns empty results instead of `-32603` cast errors. The frontend service layer (`telemetry-service.ts`) translates metric not-found errors to `null` for its typed callers.
-
-| Code | Meaning |
-|------|---------|
-| `-32001` | Trace not found (`searchSpans`, `getTraceSpanCount`, …) |
-| `-32002` | Log not found (`getLog`) |
-| `-32003` | Metric or selected Metric series not found (`getMetric`, `getMetricSeries`, `getMetricView`) |
-| `-32004` | Invalid trace ID param |
-| `-32005` | Invalid log ID param |
-| `-32007` | Invalid search query tree |
-| `-32008` | Invalid span ID param |
-| `-32009` | Invalid metric stream ID param |
-| `-32010` | Request canceled (the caller went away mid-query — a UI navigation or a closed tab — surfaced as its own code so cancellation is not logged as an internal error) |
+Attribute equality can calculate the dictionary ID before querying and use
+`list_contains(attribute_ids, ?::uuid)`. Other operators join the dictionary and
+compare the stored value.
+
+## Metric views
+
+`get_metric_view.sql` computes chart data:
+
+- M4 reduction for Gauge and Sum series;
+- Delta and Cumulative histogram merges;
+- requested quantiles;
+- Sum, Average, and Rate views;
+- sparklines;
+- `Selected` and `All` cross-series aggregates.
+
+Exact received integers and counts remain decimal text on the wire and become
+frontend `bigint` values. Derived chart values use JavaScript numbers. See
+[metric-resolution.md](metric-resolution.md) for the full contract.
+
+## HTTP and JSON-RPC
+
+The server exposes two routes:
+
+| Route | Purpose |
+| --- | --- |
+| `POST /rpc` | JSON-RPC 2.0, with a 1 MB request limit |
+| `GET /*` | Embedded frontend and client-route fallback |
+
+The server binds to `localhost` by default. CORS accepts HTTP and HTTPS origins
+so the Vite development server can call `/rpc`.
+
+### Methods
+
+| Method | Result |
+| --- | --- |
+| `query` | Read-only SQL rows |
+| `searchTraceSummaries` | Trace list summaries |
+| `getTraceOverview` | Compact spans and trace-linked log summaries |
+| `getTraceView` | Full trace display data |
+| `getSpan` | One exact span with associated logs |
+| `getTraceSpanCount` | Span count for one trace |
+| `searchLogSummaries` | Log list summaries |
+| `getTraceLogSummaries` | Log summaries carrying one trace ID |
+| `getLog` | One complete normalized log |
+| `searchMetricSummaries` | Metric list summaries |
+| `getMetric` | Exact Metric identity and series catalogue |
+| `getMetricSeries` | Exact retained datapoints for one series and window |
+| `getMetricView` | Chart data for one Metric and window |
+| `getMetricAggregateView` | Cross-series aggregate data |
+| `getTraceAttributeDefinitions` | Trace attribute definitions |
+| `getTraceAttributeDefinitionsByTraceID` | Attribute definitions for one trace |
+| `getLogAttributeDefinitions` | Log attribute definitions |
+| `getMetricAttributeDefinitions` | Metric attribute definitions |
+| `searchAttributeMatches` | Attribute fields matching text |
+| `getFieldValueCompletions` | Completion values for one field |
+| `getStats` | Signal counts and store size |
+| `clearTraces`, `clearLogs`, `clearMetrics` | Delete one signal |
+| `deleteSpansByTraceID` | Delete traces by received trace ID |
+| `deleteLogsByRefs` | Delete logs by viewer references |
+| `deleteMetric` | Delete one Metric by viewer reference |
+
+Named and positional parameters share one validation path. Time bounds use
+nullable decimal nanosecond strings. `null` means unbounded.
+
+Requests for missing entities return signal-specific errors. Invalid received
+IDs and invalid viewer references return separate parameter errors. Caller
+cancellation maps to `-32010` rather than an internal error.
 
 ## Frontend
 
-**Location**: `desktopexporter/internal/frontend/`
+The Svelte 5 frontend uses TypeScript, Vite, Tailwind CSS, DaisyUI, bits-ui,
+CodeMirror, and layerchart.
 
-### Stack
-
-| Layer | Choice |
-|-------|--------|
-| Framework | Svelte 5 (runes: `$state`, `$derived`, `$effect`) |
-| Build | Vite 8 |
-| Routing | First-party (History API, `src/route/`) |
-| Styling | Tailwind CSS 4 + DaisyUI 5 |
-| Components | bits-ui |
-| Search UI | CodeMirror 6 + Lezer grammar (`src/components/shared/Search/codemirror/`) |
-| Charts | layerchart |
-| Tests | Vitest (unit, component, context) + svelte-check in CI |
-
-### Routing
-
-`App.svelte`:
+Routes are:
 
 | Route | Page |
-|-------|------|
-| `/` | Home — onboarding, OTLP setup snippets, stats |
-| `/traces`, `/traces/{id}` | Trace list, waterfall, span detail |
-| `/logs`, `/logs/{id}` | Log list and detail |
-| `/metrics`, `/metrics/{id}` | Metric summaries, charts, detail panels |
+| --- | --- |
+| `/` | Home and connection help |
+| `/traces`, `/traces/{traceID}` | Trace list and detail |
+| `/logs`, `/logs/{logRef}` | Log list and detail |
+| `/metrics`, `/metrics/{metricRef}` | Metric list and detail |
 
-Selection and sub-view state (span, metric datapoint/tab, time window) live in the URL via `src/route/`. The server serves `index.html` for extension-less client routes on hard load and refresh.
+Page-local state and Svelte context modules own routing, time selection, list
+state, and Metric presentation state. URL updates use explicit push or replace
+history modes.
 
-Time state is a discriminated union: All is `{type: 'all'}`, finite rolling presets store a duration, and custom/recent selections store concrete millisecond bounds. Shared All links use `?time=all`; bounded links use `start` / `end` and omit `time`. A URL with no valid time state may restore localStorage, while an explicit epoch start remains a bounded custom range rather than being reinterpreted as All.
+`telemetry-service.ts` is the wire boundary. It sends JSON-RPC requests,
+validates runtime payloads, converts exact integer text to `bigint`, decodes
+tagged values, and maps wire types to domain types.
 
-Every URL write takes an explicit `HistoryMode` (`'push' | 'replace'`, defined in `src/route/router.ts`): navigation — selecting an item, switching signals, picking a tab — pushes so the back button retraces steps; adjustments — aggregation, scope, time window — replace so history isn't flooded. The mode flows through all layers (router → query modules → contexts) without re-encoding.
+Metric aggregation remains in SQL. The frontend chooses tabs, colours, visible
+series, chart coordinates, and selected datapoints. Legend changes request only
+the aggregate envelope.
 
-### State management
+The UI polls `getStats` every 3 seconds on signal pages and every 5 seconds on
+the home page. There is no push channel.
 
-No global store library. State uses Svelte **context modules** (`.svelte.ts`) and page-local `$state`:
+## Trace view wire format
 
-| Module | Scope |
-|--------|-------|
-| `contexts/route-context.svelte.ts` | Reactive view of the current URL (path + query) |
-| `contexts/time-context.svelte.ts` | App-wide time range and timezone |
-| `contexts/metric-view-context.svelte.ts` | Per-metrics-page chart aggregation, heatmaps, legend |
-| `contexts/signal-list-page.svelte.ts` | Shared list-page orchestration (fetch, sort, selection); a factory each page holds directly rather than a context |
-| `state/theme.svelte.ts` | DaisyUI theme via `data-theme` |
+`getTraceView` sends Resources and Scopes once in top-level maps. Spans refer to
+them by sequence key. Sequence values are stable within one database and are not
+reused after deletion.
 
-Each signal page owns list/selection state locally, through the factory above.
+The response stores one absolute `traceStart`. Each span carries a start offset
+and duration. `traceStart` is the minimum span start in the response, which
+handles traces without roots and clock skew between hosts.
 
-Timezone is a browser preference stored as `time-tz`. It may follow the
-machine, use UTC, or name an IANA timezone such as `America/New_York`. All query
-ranges remain Unix timestamps; the selected zone controls wall-clock formatting
-and is also sent with metric requests so calendar-aligned bucket boundaries
-follow the same clock, including daylight-saving transitions.
+The frontend replaces a trace as one unit per fetch. It does not merge offsets
+from responses with different baselines.
 
-### UI layout pattern
+## Development
 
-Three-pane model via `PageLayout.svelte` and `SignalListDrawer.svelte`:
-
-1. **Drawer** — navigation, search toolbar, virtualized list
-2. **Main** — waterfall (traces), chart/table (metrics), or log stream
-3. **Detail** — span/log/metric inspector (optional resizable split)
-
-### API client
-
-`services/telemetry-service.ts` posts JSON-RPC requests to `/rpc`. Wire payloads are typed in `types/wire-types.ts` (`Json*` interfaces); revivers convert them to domain types in `types/api-types.ts`. Search queries are sent as query trees. UI selections are converted from integer milliseconds to exact `bigint` nanoseconds before entering the service, while response-derived metric windows and heatmap bounds remain exact `bigint` values; the service serializes both sources as decimal nanosecond strings for the backend.
-
-Tagged attribute values and log bodies are revived once at this service boundary. Decimal int64 strings become `bigint`; exceptional-double bit strings become native JavaScript numbers; arrays and duplicate-preserving map entry lists recurse without flattening. The same pass derives conflict metadata for repeated map or top-level keys with distinct typed values, which detail views render as local warnings rather than changing OTel status or rejecting the record.
-
-**Metrics**: Aggregation is not a frontend concern. `get_metric_view.sql` (see Metric aggregation, above) computes the M4-reduced or histogram-merged series, quantiles, Sum/Average/Rate views, sparklines, and cross-series pools; the response already carries them. `metric-view-context.svelte.ts` and its helpers in `components/metrics/utils/` derive presentation state from that payload — which histogram tab is active, heatmap column/row layout and color scale, legend visibility and selection, chart projections — not the numbers themselves. Toggling the legend selection re-fetches only the aggregate envelope via `getMetricAggregateView`, since per-series quantiles are already in hand and only the cross-series fold depends on which series are checked. The separate `getMetric` and `getMetricSeries` methods expose exact received identity and retained received datapoints without chart reduction, representative metadata, computed chart fields, exemplar caps, or OTLP wrappers. `GetMetricOTLP` remains a store-only export path.
-
-### Real-time updates
-
-The UI **polls** `getStats` on an interval to detect new data and show refresh affordances: every 3 seconds on trace, log, and metric pages; every 5 seconds on home. There is no WebSocket push channel.
-
-## Data flows
-
-### Write path (ingest)
-
-```
-App / SDK
-  → OTLP (gRPC or HTTP)
-  → otlp receiver
-  → batch processor (merges on size or a 1s timeout)
-  → desktop exporter (sending queue → pushTraces|pushMetrics|pushLogs)
-  → store resolved from the duckdb extension → spans|metrics|logs.Ingest
-  → pass 1: encode/hash tagged attributes → insert dictionary, then resources/scopes
-  → pass 2: DuckDB appenders (owners carrying uuid[] references)
-```
-
-### Read path (traces example)
-
-```
-TracesPage
-  → telemetryAPI.searchTraces(startNs, endNs, queryTree)
-  → POST /rpc searchTraces
-  → spans.SearchTraces (SQL + search tree → []json.RawMessage)
-  → Trace list rendered
-
-User selects trace
-  → searchSpans(traceID)
-  → Full trace JSON with depth CTE, events, links, attributes
-  → traceDataFromJSON rehydrates the compressed wire shape
-  → Waterfall + detail panels
-
-Independent OTLP export
-  → spans.GetTraceOTLP(traceID)
-  → SQL selects every stored span with that trace ID
-  → SQL restores OTLP resource/scope groups and serializes tagged values
-  → compact OTLP JSON bytes returned unchanged
-```
-
-### Wire format
-
-`searchSpans` does not repeat data that is constant across the response.
-
-Attribute values and log bodies use the recursive `{kind,value}` wire shape described under Storage. SQL forwards the stored JSON directly; Go continues to scan and return `json.RawMessage` rather than constructing an outbound value model.
-
-- **Resources and scopes are sent once**, as top-level maps keyed by the store-stable `resources.seq` / `scopes.seq`, with each span carrying short `r` and `s` references. On the reference trace that is 23 resources and 1 scope against 4,891 spans that previously carried a full copy each — over half the payload. The keys are sequence values rather than response-local indices precisely so a client can cache "resource 7" across fetches and across signals; sequences are never reused after retention deletes a row, so a cached entry can go missing but never go wrong.
-- **Times are an offset plus a duration.** The root carries `traceStart` as absolute nanoseconds; each span carries `start` (offset from it) and `dur`. Not two offsets: an end-offset inherits the trace's full magnitude however brief the span, while a duration stays small. It is also what a waterfall bar is — a position and a width.
-- **`traceID` is not repeated** in `spanData`; it is at the response root.
-
-`traceStart` is `min(start_time)` across the response, not the root span's start: clock skew across hosts means a child can legitimately report an earlier start than its parent, and a trace may have no root at all.
-
-**This imposes one constraint on the frontend**: it must keep replacing the trace wholesale per fetch. Anything that merged spans incrementally into an existing view would mix offsets computed against two different baselines.
-
-The whole shape is absorbed at `traceDataFromJSON` in `telemetry-service.ts`, so `SpanData` and every view are unaware the transport changed. Resolved resources are shared by reference rather than copied, so the client does not rebuild the duplication the wire format removes.
-
-### Dev workflow
-
-```
-Terminal 1: make dev-go     # Go server on :8000, seeds sample data
-Terminal 2: make dev-ts     # Vite on :3001, proxies /rpc → :8000
+```text
+Terminal 1: make dev-go
+Terminal 2: make dev-ts
 Browser:    http://localhost:3001
 ```
 
-Or run production-like: `make build && ./otel-desktop-viewer` (embedded assets, opens browser on :8000).
-
-## Key design decisions
-
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Storage | DuckDB | Columnar OLAP; fast filters and aggregations on local telemetry |
-| Schema | Normalized tables | Query events, links, datapoints independently; avoid UNION/MAP pain |
-| Metric identity | `metric_streams` + `metric_ingests` | Dedupe exact Resource, InstrumentationScope, Scope schema URL, and Metric descriptor identity; preserve per-ingest payload metadata |
-| Metric series | `metric_series`, generated id with exact uniqueness on `(stream_id, datapoint_attribute_ids)` | Preserves exact Metric and datapoint-attribute identity without splitting on dropped-count metadata; gives a chart line a database-local stable id a URL can name |
-| Datapoints | Single table with NULLs | Simpler than per-type tables; columnar NULL compression |
-| Attributes | Scope-free `(key, tagged JSON value)` dictionary + `uuid[]` on owners | Preserves received recursive kinds and duplicate map keys while deduping identical content across owner categories |
-| Attribute ids | sha256 truncated to 128 bits | Fits `uuid`; birthday bound is far below the machine's own error rate. Audited by an independent SQL macro rather than trusted |
-| Store ownership | `duckdb` extension, not the `desktop` exporter | Matches the collector's extension lifecycle (up before any pipeline, down after) to the lifetime the store actually needs |
-| Ingest | pdata → DuckDB appenders | No intermediate Go structs |
-| API responses | JSON rows from SQL | SQL is the single source of truth for response shape |
-| Transport | JSON-RPC over HTTP | One endpoint; typed methods; no REST surface |
-| Frontend updates | Polling `getStats` | Simple; sufficient for local dev viewer |
-| Span depth | Query-time recursive CTE | Handles orphan spans finding parents in later batches |
-
-## Not implemented (yet)
-
-These appear in older notes or collector capabilities but are **not** part of the current architecture:
-
-- WebSocket push / live tail
-- `--config` YAML file exposed on the CLI (inline flag-built config only)
-- `exporterhelper.WithRetry()` on the desktop exporter — a local DuckDB write failure is not transient the way a network export failure is, and replaying a partially applied batch would collide with already-written primary keys
+Use `make build && ./otel-desktop-viewer` for an embedded production build.
 
 ## Related files
 
-**Backend entry and wiring**: `main.go`, `components.go`, `desktopexporter/factory.go`, `desktopexporter/exporter.go`, `desktopexporter/duckdbextension/`
-
-**Server and API**: `desktopexporter/internal/server/server.go`, `jsonrpc_handler.go`, `errors.go`
-
-**Storage**: `desktopexporter/internal/store/store.go`, `queries/` (all SQL: `ddl/` plus the read path), `schema/version.go`, `spans/`, `metrics/`, `logs/`, `search/search_tree.go`
-
-**Frontend**: `desktopexporter/internal/frontend/src/App.svelte`, `pages/`, `services/telemetry-service.ts`, `types/wire-types.ts`, `contexts/`
-
-**Tooling**: `Makefile`, `Dockerfile`, `.goreleaser.yaml`
+- Collector wiring: `main.go`, `components.go`, `desktopexporter/exporter.go`
+- Store owner: `desktopexporter/duckdbextension/`
+- Server: `desktopexporter/internal/server/`
+- Storage: `desktopexporter/internal/store/`
+- Frontend: `desktopexporter/internal/frontend/`
+- Build and release: `Makefile`, `Dockerfile`, `.goreleaser.yaml`

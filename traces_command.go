@@ -45,7 +45,7 @@ func newTracesCommand(client *http.Client, now func() time.Time) *cobra.Command 
 			if options.Service != "" {
 				fields = filteredTraceSummaryFields
 			}
-			result, err := requestTelemetrySearch(cmd.Context(), client, options.Endpoint, "searchTraces", query, fields)
+			result, err := requestTelemetrySearch(cmd.Context(), client, options.Endpoint, "searchTraceSummaries", query, fields)
 			if err != nil {
 				return err
 			}

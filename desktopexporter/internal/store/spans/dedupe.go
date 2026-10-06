@@ -29,10 +29,8 @@ type spanKey struct {
 // skipAlreadyStored returns the ordinals the store already holds, or which
 // repeat an earlier ordinal in this batch. The first occurrence is kept.
 //
-// Bisection would find these anyway, but only by failing: every row bad means
-// 2n-1 transactions, measured at ~1ms per span, so replaying a large capture
-// spends minutes discovering one row at a time what one indexed lookup answers
-// at once.
+// Probing first avoids using transaction bisection to discover duplicates one
+// row at a time.
 func skipAlreadyStored(ctx context.Context, conn driver.Conn, keys []spanKey) (map[int]error, error) {
 	if len(keys) == 0 {
 		return nil, nil

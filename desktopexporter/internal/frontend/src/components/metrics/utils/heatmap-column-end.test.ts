@@ -11,11 +11,7 @@ describe('heatmapColumnEndNs', () => {
     expect(heatmapColumnEndNs(starts, 30n * S, WINDOW_END)).toBe(60n * S - 1n)
   })
 
-  // Columns are cut in local time, so a local day is 23, 24 or 25 hours of real
-  // time across a DST transition. Deriving one width and adding it -- the
-  // smallest gap being the obvious choice -- would fetch 23 hours of the
-  // 25-hour column and lose the other two, silently, which is the same
-  // partial-column defect this whole fetch exists to remove.
+  // Local-time columns vary across DST and must use adjacent boundaries.
   it('follows uneven columns across a DST transition', () => {
     const spring = 0n // 23h day
     const normal = 23n * HOUR // 24h day
@@ -25,7 +21,6 @@ describe('heatmapColumnEndNs', () => {
 
     expect(heatmapColumnEndNs(starts, spring, WINDOW_END)).toBe(normal - 1n)
     expect(heatmapColumnEndNs(starts, normal, WINDOW_END)).toBe(autumn - 1n)
-    // The 25-hour one: a minimum-gap width would have ended it 2 hours early.
     expect(heatmapColumnEndNs(starts, autumn, WINDOW_END)).toBe(after - 1n)
     expect(heatmapColumnEndNs(starts, autumn, WINDOW_END)).not.toBe(
       autumn + 23n * HOUR - 1n

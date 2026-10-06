@@ -13,7 +13,7 @@
     logs: TraceLogSummary[]
     spanStartTime: bigint
     selectedEventIndex?: number | null
-    selectedLogID?: string | null
+    selectedLogRef?: string | null
   }
 
   let {
@@ -21,28 +21,28 @@
     logs,
     spanStartTime,
     selectedEventIndex = null,
-    selectedLogID = null,
+    selectedLogRef = null,
   }: Props = $props()
 
   const timeContext = getTimeContext()
 
-  function logOpen(logID: string, index: number): boolean {
-    if (selectedLogID !== null) return logID === selectedLogID
+  function logOpen(logRef: string, index: number): boolean {
+    if (selectedLogRef !== null) return logRef === selectedLogRef
     return selectedEventIndex === null && events.length === 0 && index === 0
   }
 
-  function openLog(event: MouseEvent, logID: string) {
+  function openLog(event: MouseEvent, logRef: string) {
     if (!isPlainLeftClick(event)) return
     event.preventDefault()
-    navigateToItem('logs', logID, 'push')
+    navigateToItem('logs', logRef, 'push')
   }
 
   $effect(() => {
-    const logID = selectedLogID
-    if (logID === null) return
+    const logRef = selectedLogRef
+    if (logRef === null) return
     void tick().then(() => {
       document
-        .getElementById(`span-log-${logID}`)
+        .getElementById(`span-log-${logRef}`)
         ?.scrollIntoView?.({ block: 'nearest' })
     })
   })
@@ -55,13 +55,13 @@
 </FieldGroup>
 
 <FieldGroup label="Logs" count={logs.length} detail open>
-  {#each logs as log, index (log.id)}
-    <div id={`span-log-${log.id}`}>
+  {#each logs as log, index (log.logRef)}
+    <div id={`span-log-${log.logRef}`}>
       <FieldGroup
         label={log.eventName || 'Log'}
         badge={formatSignedDuration(log.timestamp - spanStartTime)}
         detail
-        open={logOpen(log.id, index)}
+        open={logOpen(log.logRef, index)}
       >
         <table class="detail-fields w-full" aria-label="Log summary">
           <tbody>
@@ -117,8 +117,8 @@
         </table>
         <a
           class="activity-panel__open-log link link-primary"
-          href={itemHref('logs', log.id)}
-          onclick={event => openLog(event, log.id)}>Open log</a
+          href={itemHref('logs', log.logRef)}
+          onclick={event => openLog(event, log.logRef)}>Open log</a
         >
       </FieldGroup>
     </div>

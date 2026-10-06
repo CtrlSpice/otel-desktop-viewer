@@ -8,7 +8,7 @@ import (
 )
 
 var logSummaryFields = []string{
-	"id",
+	"logRef",
 	"timestamp",
 	"severityText",
 	"severityNumber",
@@ -35,7 +35,7 @@ func newLogsCommand(client *http.Client, now func() time.Time) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := requestTelemetrySearch(cmd.Context(), client, options.Endpoint, "searchLogs", query, logSummaryFields)
+			result, err := requestTelemetrySearch(cmd.Context(), client, options.Endpoint, "searchLogSummaries", query, logSummaryFields)
 			if err != nil {
 				return err
 			}

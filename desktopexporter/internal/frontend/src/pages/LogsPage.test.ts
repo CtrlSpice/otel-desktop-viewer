@@ -5,25 +5,11 @@ import LogsPage from './LogsPage.svelte'
 import type { LogSummary, LogData, Stats } from '@/types/api-types'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
-// Refresh has to reach the detail pane, not just the list.
-//
-// Traces and metrics get this for free: their detail effects read the
-// selected summary *object*, so reloading the list replaces that object and
-// the effect re-runs. This page keys its fetcher on the log id -- a string a
-// reload does not change -- so the wiring has to be explicit, and explicit
-// wiring is exactly the kind that gets dropped in a refactor without anything
-// failing.
-//
-// Nothing user-visible turns on it today, because a log record never changes
-// after it is written and a refetch returns identical bytes. That is a
-// property of the data rather than of this page, which is the reason to pin
-// the behaviour rather than rely on it.
-
-const { searchLogs, getLog, getStats, getLogAttributes } = vi.hoisted(() => ({
-  searchLogs: vi.fn(),
+const { searchLogSummaries, getLog, getStats, getLogAttributeDefinitions } = vi.hoisted(() => ({
+  searchLogSummaries: vi.fn(),
   getLog: vi.fn(),
   getStats: vi.fn(),
-  getLogAttributes: vi.fn(),
+  getLogAttributeDefinitions: vi.fn(),
 }))
 
 vi.mock('@/services/telemetry-service', async importOriginal => {
@@ -33,17 +19,17 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
     ...actual,
     telemetryAPI: {
       ...actual.telemetryAPI,
-      searchLogs,
+      searchLogSummaries,
       getLog,
       getStats,
-      getLogAttributes,
+      getLogAttributeDefinitions,
     },
   }
 })
 
 function makeLogSummary(): LogSummary {
   return {
-    id: 'log-1',
+    logRef: 'log-1',
     timestamp: 1_700_000_000_000_000_000n,
     severityText: 'ERROR',
     severityNumber: 17,
@@ -54,7 +40,7 @@ function makeLogSummary(): LogSummary {
 
 function makeLogData(body: string): LogData {
   return {
-    id: 'log-1',
+    logRef: 'log-1',
     timestamp: 1_700_000_000_000_000_000n,
     observedTimestamp: 1_700_000_000_000_000_000n,
     traceID: null,
@@ -87,15 +73,15 @@ function makeStats(): Stats {
 }
 
 beforeEach(() => {
-  searchLogs.mockReset()
+  searchLogSummaries.mockReset()
   getLog.mockReset()
   getStats.mockReset()
-  getLogAttributes.mockReset()
-  getLogAttributes.mockResolvedValue([])
+  getLogAttributeDefinitions.mockReset()
+  getLogAttributeDefinitions.mockResolvedValue([])
 })
 
 async function renderSelectedLog() {
-  searchLogs.mockResolvedValue([makeLogSummary()])
+  searchLogSummaries.mockResolvedValue([makeLogSummary()])
   getStats.mockResolvedValue(makeStats())
   getLog.mockResolvedValue(makeLogData('payment declined'))
   setTestUrl('/logs/log-1')
@@ -106,7 +92,7 @@ async function renderSelectedLog() {
 describe('LogsPage refresh', () => {
   it('queries the list with null bounds for the default All selection', async () => {
     await renderSelectedLog()
-    expect(searchLogs).toHaveBeenCalledWith(null, null, undefined)
+    expect(searchLogSummaries).toHaveBeenCalledWith(null, null, undefined)
   })
 
   it('refetches the open record, not just the list', async () => {
@@ -115,33 +101,30 @@ describe('LogsPage refresh', () => {
     const refresh = screen.getByRole('button', { name: /refresh/i })
     refresh.click()
 
-    // The list reloads -- that part was never in doubt.
-    await waitFor(() => expect(searchLogs.mock.calls.length).toBeGreaterThan(1))
-    // And so does the record the user is looking at.
+    await waitFor(() => expect(searchLogSummaries.mock.calls.length).toBeGreaterThan(1))
     await waitFor(() => expect(getLog).toHaveBeenCalledTimes(2))
   })
 
   it('does not refetch a record nobody has selected', async () => {
-    searchLogs.mockResolvedValue([makeLogSummary()])
+    searchLogSummaries.mockResolvedValue([makeLogSummary()])
     getStats.mockResolvedValue(makeStats())
     getLog.mockResolvedValue(makeLogData('payment declined'))
     setTestUrl('/logs')
     renderWithContexts(LogsPage)
-    await waitFor(() => expect(searchLogs).toHaveBeenCalled())
+    await waitFor(() => expect(searchLogSummaries).toHaveBeenCalled())
 
     const refresh = screen.getByRole('button', { name: /refresh/i })
     refresh.click()
 
-    await waitFor(() => expect(searchLogs.mock.calls.length).toBeGreaterThan(1))
-    // refresh() is a no-op on a null key, and must stay one: a detail fetch
-    // with nothing selected would race the pane's empty state.
+    await waitFor(() => expect(searchLogSummaries.mock.calls.length).toBeGreaterThan(1))
+    // A detail fetch with no selection would race the pane's empty state.
     expect(getLog).not.toHaveBeenCalled()
   })
 })
 
 describe('LogsPage direct selection outside the list range', () => {
   it('keeps the requested ID and renders its fetched detail', async () => {
-    searchLogs.mockResolvedValue([])
+    searchLogSummaries.mockResolvedValue([])
     getStats.mockResolvedValue(makeStats())
     getLog.mockResolvedValue(makeLogData('outside current range'))
     setTestUrl('/logs/log-1?start=1&end=2')

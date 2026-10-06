@@ -1,17 +1,5 @@
 <script module lang="ts">
-  /*
-   * SignalBadges: the single source of truth for the badge cluster
-   * we render on each signal type's drawer card AND its detail
-   * pane header. If the trace card adds a "warn" badge tomorrow,
-   * the trace pane header gets it for free.
-   *
-   * The component is discriminated by `signal` and takes only the
-   * primitive facts it needs to render — not the full summary or
-   * detail data type. Callers translate from whatever they have on
-   * hand (MetricSummary, MetricViewData + view ctx, SpanData[], …) into
-   * the small shape this component expects. Keeps the component
-   * decoupled from data sources and easy to use anywhere.
-   */
+  /* Shared drawer-card and detail-header badges from primitive signal facts. */
   import type { MetricType } from '@/types/api-types'
   import { metricTypeCardBadge } from '@/components/metrics/utils/metric-type'
   import {

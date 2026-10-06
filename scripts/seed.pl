@@ -1,6 +1,5 @@
 #!/usr/bin/env perl
 
-# ============================================================================
 # seed.pl -- populate the OTel Desktop Viewer with synthetic telemetry.
 #
 # Usage:
@@ -11,23 +10,8 @@
 #   ./scripts/seed.pl --all --endpoint http://...        # custom endpoint
 #   ./scripts/seed.pl --metrics --seed 7                 # deterministic
 #
-# Signals: --metrics, --traces, --logs, --all.
-#
-# Realism: metrics are built from composable shape functions (see
-# lib/Shapes.pm) covering diurnal load, creep, incidents, sawtooth, and
-# Unspecified-temporality fun-errors. Traces cover simple multi-child
-# trees, an error trace, a deep hierarchy, orphan spans/subtrees, and a
-# ~40-span multi-service order flow. Logs span every severity level.
-#
-# Trace <-> log correlation: --traces records a few real (trace, span)
-# ids to a small handoff file (see $CORRELATION_FILE); --logs reads it so
-# a handful of log records point at spans that actually exist, exercising
-# the UI's log -> trace deep link. Within a single --all run the file is
-# written then immediately re-read; across the separate `populate-traces`
-# / `populate-logs` make targets (distinct processes) it still bridges
-# because traces always runs first. Logs fall back to random ids when no
-# handoff file is present (or when it is stale -- see CORRELATION_MAX_AGE).
-# ============================================================================
+# --traces writes correlation IDs for --logs; stale or missing handoffs use
+# random IDs.
 
 use strict;
 use warnings;
@@ -43,10 +27,6 @@ use Shapes  qw(:all);
 use Metrics qw(:all);
 use Traces  qw(:all);
 use Logs    qw(:all);
-
-# ----------------------------------------------------------------------------
-# Options
-# ----------------------------------------------------------------------------
 
 my $endpoint = $ENV{OTLP_ENDPOINT} || 'http://localhost:4318';
 my $seed     = 42;
@@ -69,21 +49,14 @@ unless ($do_metrics || $do_traces || $do_logs) {
     die "Pick at least one of: --metrics --traces --logs --all\n";
 }
 
-# Seed Perl's global RNG so trace/log ids (and the correlation pick) are
-# reproducible under --seed. Metrics use their own closure-scoped LCG
-# (Shapes::make_rng), so this is independent of metric data.
+# Seed trace IDs, log IDs, and correlation selection independently of metric data.
 srand($seed);
 
-# now_s is the script's "wall clock zero". Every shape's t=0 maps to
-# (now_s - duration), so the most recent datapoint lands at now_s.
-# now_ns is the same instant in OTLP nanoseconds; trace/log timings are
-# integer ns offsets back from it. Perl keeps this as a 64-bit IV
-# (~1.8e18 < the ~9.2e18 IV ceiling) as long as we use integer literals.
+# now_s anchors metric shapes; now_ns preserves trace and log offsets as int64.
 my $now_s  = time;
 my $now_ns = $now_s * 1_000_000_000;
 
-# Nanosecond scale factors for trace/log time math. Integer literals so
-# the products stay 64-bit IVs (no float, no precision loss).
+# Integer factors keep timestamp arithmetic out of floating point.
 use constant {
     NS_PER_MS   => 1_000_000,
     NS_PER_SEC  => 1_000_000_000,
@@ -91,29 +64,16 @@ use constant {
     NS_PER_HOUR => 3600 * 1_000_000_000,
 };
 
-# Where --traces drops the (trace, span) handoff for --logs to pick up.
-# Lives in the system temp dir; overwritten on each --traces run.
+# Cross-process trace/log correlation handoff.
 my $CORRELATION_FILE = File::Spec->catfile(File::Spec->tmpdir, 'otv-seed-correlation.json');
 
-# A handoff is only trusted for this many seconds. The populate-traces ->
-# populate-logs make targets fire seconds apart, so a generous window
-# bridges them while still ignoring a leftover file from a long-ago run
-# (whose traces have since been cleared) -- which would otherwise stamp
-# logs with dead trace ids.
+# Ignore handoffs whose traces may no longer be retained.
 use constant CORRELATION_MAX_AGE => 600;
 
-# ----------------------------------------------------------------------------
 # Metric scenarios
-#
-# Each scenario is a small lambda that returns ($service, $metric).
-# Keeping them as functions (not data) means each scenario can pick
-# its own shape composition, RNG draw, and attribute fan-out without
-# trying to cram everything into a config schema.
-# ----------------------------------------------------------------------------
+# Each scenario returns ($service, $metric).
 
-# Helper: shift a sample's t_s (which is "seconds from t=0 of the
-# scenario") to absolute Unix epoch seconds. Shapes don't know about
-# wall clock; metrics do.
+# Convert scenario-relative seconds to Unix epoch seconds.
 sub _absolute {
     my ($end_s, $duration_s, @points) = @_;
     my $start = $end_s - $duration_s;
@@ -124,7 +84,7 @@ sub _scenarios {
     my ($rng) = @_;
 
     return (
-        # ----- Gauge: classic CPU diurnal across last 4h, 30s step -----
+        # CPU diurnal gauge: 4h at 30s intervals.
         sub {
             my $duration = 4 * 3600;
             my $shape = clamp(noisy(
@@ -144,31 +104,24 @@ sub _scenarios {
             }));
         },
 
-        # ----- Gauge: multi-series CPU utilisation, 8 cores on one host,
-        #       last 4h, 30s step. Each core gets its own diurnal phase
-        #       offset and noise draw so they wobble independently; two
-        #       cores carry a heavier baseline (think "pinned worker
-        #       threads") and one gets a mid-window incident bump. Good
-        #       for exercising per-series toggles + the All / Selected
-        #       aggregate lines on a Gauge. -----
+        # Per-core gauge: 8 series with distinct phases and one incident.
         sub {
             my $duration = 4 * 3600;
             my $step     = 30;
             my @cores;
             for my $i (0 .. 7) {
-                # Heavier baseline on cores 0-1 (the "pinned" pair),
-                # lighter idle baseline on the rest.
+                # Cores 0-1 have a heavier baseline.
                 my $base = ($i < 2) ? 0.55 : 0.30;
                 my @parts = (
                     constant($base),
                     diurnal({
                         amplitude => 0.12,
                         period_s  => 86400,
-                        # Spread phases so cores don't all peak together.
+                        # Stagger peaks by core.
                         phase_s   => -2 * 3600 + $i * 600,
                     }),
                 );
-                # One core takes a mid-window load spike.
+                # Core 3 has a mid-window spike.
                 if ($i == 3) {
                     push @parts, incident({
                         baseline   => 0,
@@ -189,7 +142,7 @@ sub _scenarios {
                     points => \@pts,
                 };
             }
-            return ('worker-pool', gauge_metric_streams({
+            return ('worker-pool', gauge_metrics({
                 name        => 'system.cpu.utilization.per_core',
                 unit        => '1',
                 description => 'Per-core CPU utilisation on worker-01',
@@ -197,7 +150,7 @@ sub _scenarios {
             }, \@cores));
         },
 
-        # ----- Gauge: memory creep + small noise, last 6h -----
+        # Memory creep gauge: 6h.
         sub {
             my $duration = 6 * 3600;
             my $shape = noisy(
@@ -217,7 +170,7 @@ sub _scenarios {
             }));
         },
 
-        # ----- Gauge: queue depth with two clear incidents in last 2h -----
+        # Queue depth gauge: 2h with two incidents.
         sub {
             my $duration = 2 * 3600;
             my $shape = clamp(noisy(
@@ -237,17 +190,10 @@ sub _scenarios {
             }));
         },
 
-        # ----- Sum (cumulative monotonic): request count, 30min, fan-out
-        #       across method × route × status_class (30 streams). Each
-        #       stream gets its own diurnal-modulated rate; the higher-
-        #       traffic routes have larger baselines, and one stream gets
-        #       a noticeable bump so a couple of legend rows stand out
-        #       from the baseline pack. Cumulative => each stream runs
-        #       its own accumulator independently. -----
+        # Cumulative request count: method x route x status class (30 streams).
         sub {
             my $duration = 30 * 60;
             my $step     = 60;
-            # (method, baseline_rps, share_of_5xx, route_weight)
             my @methods = (
                 { name => 'GET',  base => 90, err_pct => 0.012 },
                 { name => 'POST', base => 35, err_pct => 0.028 },
@@ -269,12 +215,10 @@ sub _scenarios {
             for my $m (@methods) {
                 for my $r (@routes) {
                     for my $s (@statuses) {
-                        # Effective per-second rate for this stream.
+                        # Per-stream request rate.
                         my $share = $s->{name} eq '5xx' ? $m->{err_pct} : (1 - $m->{err_pct});
                         my $rps   = $m->{base} * $r->{weight} * $share;
 
-                        # Per-stream shape: own baseline + diurnal phase
-                        # offset (route-derived) + independent noise draw.
                         my $rate = noisy(
                             compose(
                                 constant($rps),
@@ -289,9 +233,7 @@ sub _scenarios {
                         );
                         my @raw = sample($rate, 0, $duration, $step);
 
-                        # Cumulative accumulator. Each stream starts at a
-                        # different running total so the chart isn't all
-                        # bunched at the same y-intercept.
+                        # Give each cumulative stream a distinct initial total.
                         my $running = int(1_000 + $rps * 600);
                         my @pts;
                         for my $p (@raw) {
@@ -314,7 +256,7 @@ sub _scenarios {
                 }
             }
 
-            return ('api-gateway', sum_metric_streams({
+            return ('api-gateway', sum_metrics({
                 name        => 'http.server.request.count',
                 unit        => '{requests}',
                 description => 'Total HTTP requests received, by method/route/status',
@@ -324,20 +266,14 @@ sub _scenarios {
             }, \@streams));
         },
 
-        # ----- Sum (delta): error count per minute, last hour, fan-out
-        #       across service × error_class (12 streams). Most streams
-        #       are quiet noise; two get clear incident spikes so the
-        #       chart has both a busy "everything's fine" baseline and
-        #       a couple of obvious offenders. Delta semantics: each
-        #       point is the count *in* that minute, not running total. -----
+        # Delta error count: service x error class (12 streams), including spikes.
         sub {
             my $duration = 60 * 60;
             my $step     = 60;
             my @services = qw(api-gateway payment-service notification-service shipping-service);
             my @classes  = qw(5xx timeout dependency);   # error class
 
-            # Pick two (service, class) pairs to spike. Indices into the
-            # 4 × 3 = 12 grid; the rest get plain noisy baselines.
+            # Two service/class pairs spike.
             my %spikes = (
                 'payment-service|timeout'    => {
                     peak => 18, start_s => 1500, ramp_s => 60, hold_s => 240, recovery_s => 480,
@@ -350,9 +286,7 @@ sub _scenarios {
             my @streams;
             for my $svc (@services) {
                 for my $cls (@classes) {
-                    # Per-stream baseline: 5xx is loudest, timeout
-                    # moderate, dependency rare. Scale by service so the
-                    # payment-service is twitchier than shipping.
+                    # Baseline varies by error class and service.
                     my $base = ($cls eq '5xx'     ? 3
                               : $cls eq 'timeout' ? 1.5
                               :                     0.7);
@@ -389,7 +323,7 @@ sub _scenarios {
                 }
             }
 
-            return ('api-gateway', sum_metric_streams({
+            return ('api-gateway', sum_metrics({
                 name        => 'http.server.error.count',
                 unit        => '{errors}',
                 description => 'Server-side errors per interval, by service/class',
@@ -399,12 +333,7 @@ sub _scenarios {
             }, \@streams));
         },
 
-        # ----- Sum: UNSPECIFIED temporality -- exercises the fun error.
-        # Rising counter (creep) on purpose: with Unspecified, a viewer
-        # cannot decide whether the values are running totals or
-        # per-interval counts. Reading [14000, 14060, 14120, ...] as
-        # Cumulative -> ~60 events/min; as Delta -> ~14000 events/min.
-        # Two-orders-of-magnitude gap. Make the ambiguity visible.
+        # UNSPECIFIED sum with values that differ sharply under Delta and Cumulative.
         sub {
             my $duration = 30 * 60;
             my $shape = noisy(
@@ -426,9 +355,7 @@ sub _scenarios {
             }));
         },
 
-        # ----- Histogram (delta): HTTP request duration, 90 minutes,
-        #       1-min step, 3 routes (3 streams). Mid-window latency spike
-        #       on /orders. -----
+        # Delta duration histogram: 3 routes over 90 minutes; /orders spikes.
         sub {
             my $duration = 90 * 60;
             my $step     = 60;
@@ -456,8 +383,6 @@ sub _scenarios {
                     ), 0.001, undef),
                 },
             );
-            # Combine all streams into one metric (one dataPoints array
-            # with attribute-distinguished dps per timestamp).
             my @all_points;
             for my $r (@routes) {
                 my @pts = _absolute($now_s, $duration, sample($r->{shape}, 0, $duration, $step));
@@ -468,7 +393,7 @@ sub _scenarios {
                     ] }
                 } @pts;
             }
-            # Build datapoints by hand because each one carries different attrs.
+            # Each datapoint carries route-specific attributes.
             my @dps;
             for my $p (@all_points) {
                 push @dps, Metrics::_histogram_datapoint(
@@ -493,7 +418,7 @@ sub _scenarios {
             return ('api-gateway', $metric);
         },
 
-        # ----- Histogram: UNSPECIFIED temporality (single stream, short) -----
+        # Histogram with UNSPECIFIED temporality.
         sub {
             my $duration = 30 * 60;
             my $shape = clamp(noisy(constant(0.12), 0.1, $rng), 0.001, undef);
@@ -509,7 +434,7 @@ sub _scenarios {
             }));
         },
 
-        # ----- Sawtooth gauge over 48h to exercise date-aware axis labels -----
+        # 48h sawtooth gauge for date-aware axes.
         sub {
             my $duration = 48 * 3600;
             my $shape = noisy(
@@ -526,7 +451,7 @@ sub _scenarios {
             }));
         },
 
-        # ----- Exponential histogram (delta) -----
+        # Delta exponential histogram.
         sub {
             my $duration = 60 * 60;
             my $step     = 60;
@@ -552,7 +477,7 @@ sub _scenarios {
             }));
         },
 
-        # ----- Exponential histogram: UNSPECIFIED -----
+        # Exponential histogram with UNSPECIFIED temporality.
         sub {
             my $duration = 30 * 60;
             my $shape = clamp(noisy(constant(220), 0.1, $rng), 5, undef);
@@ -570,10 +495,6 @@ sub _scenarios {
     );
 }
 
-# ----------------------------------------------------------------------------
-# Drivers (one per signal kind)
-# ----------------------------------------------------------------------------
-
 sub run_metrics {
     my $rng = make_rng($seed);
     print "Sending metrics to $endpoint/v1/metrics ...\n";
@@ -584,7 +505,7 @@ sub run_metrics {
         my ($service, $metric) = $scn->();
         my ($status, $err) = send_metric($endpoint, $service, $metric);
         my $kind = (keys %{ { map { $_ => 1 } qw(gauge sum histogram exponentialHistogram) } })[0];
-        # Find which kind key is present for the printed line.
+        # Find the metric kind for status output.
         for my $k (qw(gauge sum histogram exponentialHistogram)) {
             if (exists $metric->{$k}) { $kind = $k; last }
         }
@@ -601,14 +522,8 @@ sub run_metrics {
     print "Done. Sent ", scalar(@scenarios), " metrics.\n";
 }
 
-# ----------------------------------------------------------------------------
 # Trace <-> log correlation handoff
-#
-# --traces writes a small JSON array of { trace_id, span_id, service,
-# name } for representative entry spans; --logs reads it so some records
-# point at real spans. Best-effort: a failure to write/read just means
-# logs fall back to random ids (the deep link then lands on "not found").
-# ----------------------------------------------------------------------------
+# Best-effort array of {trace_id, span_id, service, name}.
 
 sub _write_correlation {
     my ($entries) = @_;
@@ -621,7 +536,7 @@ sub _write_correlation {
 
 sub _read_correlation {
     return [] unless -f $CORRELATION_FILE;
-    # Ignore a stale handoff: its traces may no longer be in the store.
+    # Its traces may no longer be retained.
     my $age = time - (stat _)[9];
     return [] if $age > CORRELATION_MAX_AGE;
     open my $fh, '<', $CORRELATION_FILE or return [];
@@ -632,7 +547,6 @@ sub _read_correlation {
     return (ref $parsed eq 'ARRAY') ? $parsed : [];
 }
 
-# ----------------------------------------------------------------------------
 # Trace assembly
 #
 # A trace is a list of "rows" (one per span). Each row is a hashref:
@@ -641,16 +555,13 @@ sub _read_correlation {
 # key/parent are *logical* names we map to generated span ids, events is
 # [[name, off_ms, \@attrs], ...] and links is [[tid, sid, \@attrs], ...].
 #
-# Parents named but never defined as their own row get a synthetic span
-# id with no span -- that's exactly how an orphan is modelled.
-# ----------------------------------------------------------------------------
+# An undefined parent name creates an orphan parent ID.
 
 sub _assemble {
     my ($tid, $rows, %opt) = @_;
     my $base = $opt{base_ns} // $now_ns;
 
-    # Generate ids for every defined span, then back-fill ids for any
-    # parent that is referenced but never defined (the orphan case).
+    # Generate IDs for spans and referenced orphan parents.
     my %sid;
     $sid{ $_->{key} } = span_id() for @$rows;
     for my $r (@$rows) {
@@ -694,9 +605,7 @@ sub _assemble {
     } @order ];
 }
 
-# Simple root-plus-children trace with events and a couple of synthetic
-# links. Mirrors the old shell send_trace: an error trace flips the root
-# status, swaps in an exception event, and errors the first child.
+# Root with children, events, links, and optional error status.
 sub _simple_trace {
     my (%o) = @_;
     my $service   = $o{service};
@@ -763,9 +672,7 @@ sub _simple_trace {
     };
 }
 
-# README screenshot trace: loadgenerator -> loadgenerator -> frontend,
-# all "sample-HTTP POST" to /api/cart, two hours ago. Sub-millisecond
-# timings preserved via fractional-ms offsets.
+# Screenshot fixture with fractional-millisecond offsets.
 sub _sample_loadgenerator_trace {
     my $tid  = trace_id();
     my $base = $now_ns - 2 * NS_PER_HOUR;
@@ -794,8 +701,7 @@ sub _sample_loadgenerator_trace {
     };
 }
 
-# Deep single-trace hierarchy (server -> client -> db -> ...), good for
-# exercising the waterfall depth.
+# Deep hierarchy fixture for waterfall depth.
 sub _deep_hierarchy_trace {
     my $tid = trace_id();
     my $svc = 'deep-stack-service';
@@ -828,7 +734,7 @@ sub _deep_hierarchy_trace {
     return { label => "$svc/checkout-flow (depth 5)", groups => $groups };
 }
 
-# Root plus spans whose parentSpanId never appears in the batch -> orphans.
+# Orphan fixture: parentSpanId values absent from the batch.
 sub _orphan_spans_trace {
     my $tid = trace_id();
     my $svc = 'orphan-lab';
@@ -853,11 +759,7 @@ sub _orphan_spans_trace {
     return { label => "$svc/partial-batch", groups => $groups };
 }
 
-# Two spans carrying the same span id -- a sender reusing ids, which is what
-# a replayed capture or a fixture numbering spans per trace looks like. The
-# store keeps the first and refuses the second, and says so on the home page
-# rather than dropping the batch. _assemble keys span ids by `key`, so two
-# rows sharing one produce two spans with one id.
+# Duplicate-ID fixture: two rows share one _assemble key and span ID.
 sub _duplicate_span_id_trace {
     my $tid = trace_id();
     my $svc = 'replay-lab';
@@ -878,8 +780,7 @@ sub _duplicate_span_id_trace {
     return { label => "$svc/duplicate-span-id", groups => $groups };
 }
 
-# No true root: the head's parent is absent, but the head has its own
-# children -> a subtree dangling under a missing parent.
+# Orphan-subtree fixture: the head has a missing parent and two children.
 sub _orphan_subtree_trace {
     my $tid = trace_id();
     my $svc = 'orphan-subtree-lab';
@@ -901,9 +802,7 @@ sub _orphan_subtree_trace {
     return { label => "$svc/subtree-under-missing-parent", groups => $groups };
 }
 
-# ~40-span e-commerce order flow across 8 services: parallel branches,
-# nested db work, and an error subtree in payment. The root (api-gateway)
-# is offered up for log correlation.
+# Multi-service order fixture with parallel branches and a payment error.
 sub _large_multiservice_trace {
     my $tid = trace_id();
     my %versions = (
@@ -972,8 +871,7 @@ sub _large_multiservice_trace {
         { svc => 'shipping-service', key => 'ship_label',    parent => 'ship_schedule', name => 'label/generate-pdf',       s => 1122, e => 1170 },
     );
     my $groups = _assemble($tid, \@rows, versions => \%versions, add_layer => 1);
-    # Offer one entry span per service so same-service log correlation has
-    # a real target across the whole order flow (not just the gateway).
+    # Correlate logs with one entry span per service.
     my @correlate;
     for my $pick (
         [ 'api-gateway',          'POST /api/v2/orders'       ],
@@ -994,8 +892,6 @@ sub _large_multiservice_trace {
     };
 }
 
-# Find the span id of a named span within a service's group. Used to
-# surface specific multi-service spans for log correlation.
 sub _find_span_id {
     my ($groups, $service, $name) = @_;
     for my $g (@$groups) {
@@ -1052,15 +948,8 @@ sub run_traces {
     print "Done. Sent ", scalar(@traces), " traces.\n";
 }
 
-# ----------------------------------------------------------------------------
 # Log scenarios
-#
-# Each spec is a flat hashref consumed by run_logs. `correlate => 1` asks
-# run_logs to stamp a real (trace, span) id from the handoff file onto the
-# record (preferring a trace from the same service so the deep link lands
-# somewhere sensible); without a handoff file those records get random
-# ids instead.
-# ----------------------------------------------------------------------------
+# correlate => 1 prefers a same-service handoff and otherwise uses random IDs.
 
 sub _log_scenarios {
     return (
@@ -1116,8 +1005,7 @@ sub _log_scenarios {
     );
 }
 
-# Pick a correlation entry for a service: prefer one emitted by the same
-# service so the deep link lands on a same-service trace; otherwise any.
+# Prefer a correlation entry from the same service.
 sub _pick_correlation {
     my ($correlation, $service) = @_;
     return undef unless @$correlation;
@@ -1138,8 +1026,7 @@ sub run_logs {
         $i++;
         my $t_ns = $now_ns - $spec->{mins} * NS_PER_MIN;
 
-        # Resolve correlation: real ids from the handoff file when asked
-        # and available, random ids when asked but no traces were seeded.
+        # Fall back to random IDs when no correlation handoff is available.
         my ($trace_id, $span_id);
         if ($spec->{correlate}) {
             if (my $hit = _pick_correlation($correlation, $spec->{svc})) {
@@ -1170,10 +1057,6 @@ sub run_logs {
     }
     print "Done. Sent ", scalar(@specs), " log records.\n";
 }
-
-# ----------------------------------------------------------------------------
-# Dispatch
-# ----------------------------------------------------------------------------
 
 run_metrics() if $do_metrics;
 run_traces()  if $do_traces;

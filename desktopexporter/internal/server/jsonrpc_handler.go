@@ -104,18 +104,18 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 	req.Params = normalized
 
 	switch req.Method {
-	case "searchTraces":
-		return h.searchTraces(ctx, req)
-	case "searchSpans":
-		return h.searchSpans(ctx, req)
-	case "getTrace":
-		return h.getTrace(ctx, req)
+	case "searchTraceSummaries":
+		return h.searchTraceSummaries(ctx, req)
+	case "getTraceView":
+		return h.getTraceView(ctx, req)
+	case "getTraceOverview":
+		return h.getTraceOverview(ctx, req)
 	case "getSpan":
 		return h.getSpan(ctx, req)
-	case "searchLogs":
-		return h.searchLogs(ctx, req)
-	case "getTraceLogs":
-		return h.getTraceLogs(ctx, req)
+	case "searchLogSummaries":
+		return h.searchLogSummaries(ctx, req)
+	case "getTraceLogSummaries":
+		return h.getTraceLogSummaries(ctx, req)
 	case "getLog":
 		return h.getLog(ctx, req)
 	case "searchMetricSummaries":
@@ -134,24 +134,24 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.clearLogs(ctx)
 	case "clearMetrics":
 		return h.clearMetrics(ctx)
-	case "deleteMetricStream":
-		return h.deleteMetricStream(ctx, req)
+	case "deleteMetric":
+		return h.deleteMetric(ctx, req)
 	case "deleteSpansByTraceID":
 		return h.deleteSpansByTraceID(ctx, req)
-	case "deleteLogByID":
-		return h.deleteLogByID(ctx, req)
-	case "getTraceAttributes":
-		return h.getTraceAttributes(ctx, req)
-	case "getLogAttributes":
-		return h.getLogAttributes(ctx, req)
-	case "getMetricAttributes":
-		return h.getMetricAttributes(ctx, req)
-	case "getFieldValues":
-		return h.getFieldValues(ctx, req)
-	case "searchAttributes":
-		return h.searchAttributes(ctx, req)
-	case "getAttributesByTraceID":
-		return h.getAttributesByTraceID(ctx, req)
+	case "deleteLogsByRefs":
+		return h.deleteLogsByRefs(ctx, req)
+	case "getTraceAttributeDefinitions":
+		return h.getTraceAttributeDefinitions(ctx, req)
+	case "getLogAttributeDefinitions":
+		return h.getLogAttributeDefinitions(ctx, req)
+	case "getMetricAttributeDefinitions":
+		return h.getMetricAttributeDefinitions(ctx, req)
+	case "getFieldValueCompletions":
+		return h.getFieldValueCompletions(ctx, req)
+	case "searchAttributeMatches":
+		return h.searchAttributeMatches(ctx, req)
+	case "getTraceAttributeDefinitionsByTraceID":
+		return h.getTraceAttributeDefinitionsByTraceID(ctx, req)
 	case "getStats":
 		return h.getStats(ctx)
 	case "getTraceSpanCount":
@@ -189,17 +189,17 @@ func (h *JSONRPCHandler) query(ctx context.Context, req *jsonrpc2.Request) (any,
 	return nil, fmt.Errorf("query failed: %v: %w", err, ErrInvalidQuery)
 }
 
-func (h *JSONRPCHandler) searchTraces(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) searchTraceSummaries(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	params, err := parseSearchParams(req.Params)
 	if err != nil {
 		return nil, err
 	}
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchTracesWithOptions(ctx, db, params.timeRange, params.query, params.options)
+		return spans.SearchTraceSummariesWithOptions(ctx, db, params.timeRange, params.query, params.options)
 	})
 }
 
-func (h *JSONRPCHandler) searchSpans(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) getTraceView(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	params, err := decodePositionalParams(req.Params, 1, 2)
 	if err != nil {
 		return nil, err
@@ -215,7 +215,7 @@ func (h *JSONRPCHandler) searchSpans(ctx context.Context, req *jsonrpc2.Request)
 	}
 
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.SearchSpans(ctx, db, traceID, query)
+		return spans.GetTraceView(ctx, db, traceID, query)
 	})
 }
 
@@ -261,13 +261,13 @@ type compactTraceLog struct {
 	Body      string  `json:"body"`
 }
 
-func (h *JSONRPCHandler) getTrace(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) getTraceOverview(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	traceID, err := parseSingleIDParam(req.Params, ErrInvalidTraceID, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
 	return handlerSnapshotRead(ctx, h, func(db *sql.Tx) (compactTraceResult, error) {
-		traceRaw, err := spans.GetTrace(ctx, db, traceID)
+		traceRaw, err := spans.GetTraceOverview(ctx, db, traceID)
 		if err != nil {
 			return compactTraceResult{}, err
 		}
@@ -275,7 +275,7 @@ func (h *JSONRPCHandler) getTrace(ctx context.Context, req *jsonrpc2.Request) (a
 		if err := json.Unmarshal(traceRaw, &result); err != nil {
 			return compactTraceResult{}, err
 		}
-		logsRaw, err := logs.GetTraceLogs(ctx, db, traceID)
+		logsRaw, err := logs.GetTraceLogSummaries(ctx, db, traceID)
 		if err != nil {
 			return compactTraceResult{}, err
 		}
@@ -457,23 +457,23 @@ func (h *JSONRPCHandler) clearTraces(ctx context.Context) (any, error) {
 	return h.clearSignal(ctx, spans.Clear, "Traces cleared successfully")
 }
 
-func (h *JSONRPCHandler) searchLogs(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) searchLogSummaries(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	params, err := parseSearchParams(req.Params)
 	if err != nil {
 		return nil, err
 	}
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return logs.SearchWithOptions(ctx, db, params.timeRange, params.query, params.options)
+		return logs.SearchSummariesWithOptions(ctx, db, params.timeRange, params.query, params.options)
 	})
 }
 
-func (h *JSONRPCHandler) getTraceLogs(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) getTraceLogSummaries(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	traceID, err := parseSingleIDParam(req.Params, ErrInvalidTraceID, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return logs.GetTraceLogs(ctx, db, traceID)
+		return logs.GetTraceLogSummaries(ctx, db, traceID)
 	})
 }
 
@@ -484,12 +484,12 @@ func (h *JSONRPCHandler) clearLogs(ctx context.Context) (any, error) {
 // getLog returns the full LogData for a single log row identified by
 // its tool-minted UUID (the same id returned in Search summaries).
 func (h *JSONRPCHandler) getLog(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	logID, err := parseSingleIDParam(req.Params, ErrInvalidLogID, normalizeUUID)
+	logRef, err := parseSingleIDParam(req.Params, ErrInvalidLogRef, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return logs.Get(ctx, db, logID)
+		return logs.Get(ctx, db, logRef)
 	})
 }
 
@@ -504,12 +504,12 @@ func (h *JSONRPCHandler) searchMetricSummaries(ctx context.Context, req *jsonrpc
 }
 
 func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	metricID, err := parseSingleIDParam(req.Params, ErrInvalidStreamID, normalizeUUID)
+	metricRef, err := parseSingleIDParam(req.Params, ErrInvalidMetricRef, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, metricID)
+		return metrics.GetMetric(ctx, db, metricRef)
 	})
 }
 
@@ -519,7 +519,7 @@ func (h *JSONRPCHandler) getMetricSeries(ctx context.Context, req *jsonrpc2.Requ
 		return nil, err
 	}
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricSeries(ctx, db, args.metricID, args.seriesID, args.timeRange)
+		return metrics.GetMetricSeries(ctx, db, args.metricRef, args.seriesRef, args.timeRange)
 	})
 }
 
@@ -529,9 +529,9 @@ func (h *JSONRPCHandler) getMetricView(ctx context.Context, req *jsonrpc2.Reques
 		return nil, err
 	}
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricView(ctx, db, args.metricID, args.timeRange,
-			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs, args.viewBuckets, args.sparklineBuckets, args.selectedSeriesIDs, args.tzName,
-			args.datapointSeriesIDs, args.datapointSeriesLimit)
+		return metrics.GetMetricView(ctx, db, args.metricRef, args.timeRange,
+			args.targetBuckets, args.seriesRefs, args.quantiles, args.tzOffsetNs, args.viewBuckets, args.sparklineBuckets, args.selectedSeriesRefs, args.tzName,
+			args.datapointSeriesRefs, args.datapointSeriesLimit)
 	})
 }
 
@@ -561,19 +561,19 @@ func (h *JSONRPCHandler) clearSignal(
 	return successMessage, nil
 }
 
-// deleteMetricStream deletes one metric stream and everything hanging off it.
-// It takes a single ID rather than an array like deleteLogByID and
+// deleteMetric deletes one metric stream and everything hanging off it.
+// It takes a single ID rather than an array like deleteLogsByRefs and
 // deleteSpansByTraceID: metrics identify a stream by one UUID everywhere else
 // in this handler (see getMetric), and the delete cascade in the store is keyed
-// on a single stream_id.
-func (h *JSONRPCHandler) deleteMetricStream(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	streamID, err := parseSingleIDParam(req.Params, ErrInvalidStreamID, normalizeUUID)
+// on a single metric_id.
+func (h *JSONRPCHandler) deleteMetric(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	metricRef, err := parseSingleIDParam(req.Params, ErrInvalidMetricRef, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
 
 	if err := h.store.WithDBWrite(func(db *sql.DB) error {
-		return metrics.DeleteMetricStream(ctx, db, streamID)
+		return metrics.DeleteMetric(ctx, db, metricRef)
 	}); err != nil {
 		return nil, h.handleStoreError(ctx, err)
 	}
@@ -600,26 +600,26 @@ func (h *JSONRPCHandler) deleteSpansByTraceID(ctx context.Context, req *jsonrpc2
 	}, nil
 }
 
-// deleteLogByID deletes one or more specific logs by their IDs.
-func (h *JSONRPCHandler) deleteLogByID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	logIDs, err := parseIDParams(req.Params, ErrInvalidLogID, normalizeUUID)
+// deleteLogsByRefs deletes one or more specific logs by their IDs.
+func (h *JSONRPCHandler) deleteLogsByRefs(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	logRefs, err := parseIDParams(req.Params, ErrInvalidLogRef, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
 
 	if err := h.store.WithDBWrite(func(db *sql.DB) error {
-		return logs.DeleteLogsByIDs(ctx, db, logIDs)
+		return logs.DeleteLogsByRefs(ctx, db, logRefs)
 	}); err != nil {
 		return nil, h.handleStoreError(ctx, err)
 	}
 
 	return map[string]any{
 		"message": "Logs deleted successfully",
-		"count":   len(logIDs),
+		"count":   len(logRefs),
 	}, nil
 }
 
-// searchAttributes answers "which attribute keys hold this text?" across every
+// searchAttributeMatches answers "which attribute keys hold this text?" across every
 // signal at once, from the dictionary alone.
 //
 // Deliberately not scoped to a signal or a time window, unlike the
@@ -628,7 +628,7 @@ func (h *JSONRPCHandler) deleteLogByID(ctx context.Context, req *jsonrpc2.Reques
 // signal would mean unnesting owner arrays to find out which signals reference
 // a row, which is the cost this avoids. The scope on each result says which
 // signals can carry it.
-func (h *JSONRPCHandler) searchAttributes(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) searchAttributeMatches(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	term, err := parseSingleStringParam(req.Params)
 	if err != nil {
 		return nil, err
@@ -638,7 +638,7 @@ func (h *JSONRPCHandler) searchAttributes(ctx context.Context, req *jsonrpc2.Req
 	})
 }
 
-func (h *JSONRPCHandler) getFieldValues(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) getFieldValueCompletions(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	params, err := parseFieldValuesParams(req.Params)
 	if err != nil {
 		return nil, err
@@ -648,9 +648,9 @@ func (h *JSONRPCHandler) getFieldValues(ctx context.Context, req *jsonrpc2.Reque
 	// Handle's dispatch cases out of this file by pattern, and a case-shaped
 	// signal dispatch would show up in it as three phantom methods.
 	bySignal := map[string]func(context.Context, *sql.DB, string, string, int64) (json.RawMessage, error){
-		"traces":  spans.GetFieldValues,
-		"logs":    logs.GetFieldValues,
-		"metrics": metrics.GetFieldValues,
+		"traces":  spans.GetFieldValueCompletions,
+		"logs":    logs.GetFieldValueCompletions,
+		"metrics": metrics.GetFieldValueCompletions,
 	}
 	get, ok := bySignal[params.signal]
 	if !ok {
@@ -662,28 +662,28 @@ func (h *JSONRPCHandler) getFieldValues(ctx context.Context, req *jsonrpc2.Reque
 	})
 }
 
-func (h *JSONRPCHandler) getTraceAttributes(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) getTraceAttributeDefinitions(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	if err := validateNoParams(req.Params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.GetTraceAttributes(ctx, db)
+		return spans.GetTraceAttributeDefinitions(ctx, db)
 	})
 }
 
-func (h *JSONRPCHandler) getLogAttributes(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) getLogAttributeDefinitions(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	if err := validateNoParams(req.Params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return logs.GetLogAttributes(ctx, db)
+		return logs.GetLogAttributeDefinitions(ctx, db)
 	})
 }
 
 // getMetricAggregateView takes the common metric chart parameters, viewBuckets,
-// selectedSeriesIDs and tzName, and returns only the cross-series aggregate.
+// selectedSeriesRefs and tzName, and returns only the cross-series aggregate.
 // Separate method rather than a flag on getMetricView:
 // the two are fetched on different triggers -- metric selection versus legend
 // selection -- so they are different requests, not one request in two modes.
@@ -693,30 +693,30 @@ func (h *JSONRPCHandler) getMetricAggregateView(ctx context.Context, req *jsonrp
 		return nil, err
 	}
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricAggregateView(ctx, db, args.metricID, args.timeRange,
-			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs,
-			args.viewBuckets, args.selectedSeriesIDs, args.tzName)
+		return metrics.GetMetricAggregateView(ctx, db, args.metricRef, args.timeRange,
+			args.targetBuckets, args.seriesRefs, args.quantiles, args.tzOffsetNs,
+			args.viewBuckets, args.selectedSeriesRefs, args.tzName)
 	})
 }
 
-func (h *JSONRPCHandler) getMetricAttributes(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) getMetricAttributeDefinitions(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	if err := validateNoParams(req.Params); err != nil {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricAttributes(ctx, db)
+		return metrics.GetMetricAttributeDefinitions(ctx, db)
 	})
 }
 
-func (h *JSONRPCHandler) getAttributesByTraceID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+func (h *JSONRPCHandler) getTraceAttributeDefinitionsByTraceID(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	traceID, err := parseSingleIDParam(req.Params, ErrInvalidTraceID, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
 
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.GetAttributesByTraceID(ctx, db, traceID)
+		return spans.GetTraceAttributeDefinitionsByTraceID(ctx, db, traceID)
 	})
 }
 

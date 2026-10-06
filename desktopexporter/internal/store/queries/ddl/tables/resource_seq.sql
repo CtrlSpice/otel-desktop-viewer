@@ -1,4 +1,2 @@
--- seq is the short, store-stable key the wire format uses instead of a
--- 36-char uuid. Sequence values are never reused, so a client cache can
--- miss but never be wrong.
+-- Store-stable wire key. Sequence values are never reused.
 create sequence if not exists resource_seq

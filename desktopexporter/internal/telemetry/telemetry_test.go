@@ -38,7 +38,7 @@ func TestDisabledIsSafeToCall(t *testing.T) {
 		require.NotNil(t, end)
 		assert.NotPanics(t, func() { end(2048, nil) })
 
-		_, end = tel.RPC(ctx, "getTrace")
+		_, end = tel.RPC(ctx, "getTraceOverview")
 		assert.NotPanics(t, func() { end(0, boom) })
 	})
 
@@ -84,7 +84,7 @@ func TestNewDisabledIsSafeToCall(t *testing.T) {
 		_, endIngest := tel.Ingest(context.Background(), "traces", 1)
 		endIngest(nil)
 
-		_, endRPC := tel.RPC(context.Background(), "getTrace")
+		_, endRPC := tel.RPC(context.Background(), "getTraceOverview")
 		endRPC(1, nil)
 
 		tel.RPCEncode(context.Background())(nil)

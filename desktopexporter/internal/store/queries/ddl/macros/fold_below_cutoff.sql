@@ -1,42 +1,14 @@
--- fold_below_cutoff: after scale/offset alignment of an exponential
--- histogram aggregate, fold any leading buckets whose index is <= cutoff
--- into a single "folded" total. The folded value is intended to be added
--- back into zero_count by the caller, completing the zero_threshold
--- reconciliation step described in the histogram-trend-chart plan.
---
--- Returns {counts: hugeint[], offset: bigint, folded: hugeint}. Where the
--- inputs trigger a no-op, folded is 0 and counts/offset pass through:
+-- Fold buckets with index <= cutoff into {counts, offset, folded}.
+-- The following inputs return unchanged counts/offset and folded = 0:
 -- - counts is NULL or empty
--- - cutoff is NULL (signals "no zero_threshold to apply")
--- - cutoff < offset_ (no buckets sit at or below the threshold)
---
--- drop_n is capped by len(counts) so a wildly-high cutoff folds the whole
--- array rather than producing nonsense slices. list_slice in DuckDB is
--- 1-indexed and end-inclusive.
---
--- An earlier version of this note said both calls "clamp gracefully on
--- out-of-range indices". That is only true at the top: list_slice clamps an
--- over-long end, but a start below 1 returns an empty list rather than
--- clamping to the first element -- slice([1,2,3], -1, 2) is []. Silently, so
--- the counts would simply vanish.
---
--- What keeps that unreachable here is the `cutoff < offset_` guard above, not
--- list_slice's tolerance: it means the else branch only ever runs with
--- cutoff >= offset_, so cutoff - offset_ + 1 >= 1 and the start is >= 2.
--- Relax that guard and this needs a greatest(..., 0), the way
--- downscale_exp_buckets does. Checked: no input loses counts, including
--- cutoff far below offset and far above it.
+-- - cutoff is NULL
+-- - cutoff < offset_
+-- list_slice is 1-based; the cutoff guard keeps its start positive.
 create or replace macro fold_below_cutoff(counts, offset_, cutoff) as (
 		case
 			when counts is null or len(counts) = 0 or cutoff is null or cutoff < offset_
 				then {'counts': counts, 'offset': offset_, 'folded': 0::hugeint}
-			-- The drop count is repeated three times rather than bound once in
-			-- a CTE. That reads worse, and it is deliberate: a subquery inside
-			-- a macro cannot be used from a lambda --
-			-- "subqueries in lambda expressions are not supported" -- which
-			-- rules the macro out of exactly the list_transform composition the
-			-- merge needs. Verified equivalent to the CTE form across all 663
-			-- offset/cutoff/array combinations before the swap.
+			-- Repeat drop_n because DuckDB forbids subqueries in lambda expressions.
 			else {
 				'counts': list_slice(counts, least(cutoff - offset_ + 1, len(counts)) + 1, len(counts)),
 				'offset': offset_ + least(cutoff - offset_ + 1, len(counts)),

@@ -1,11 +1,5 @@
 <script lang="ts">
-  // Renders an unsafe metric temporality. For code 0, the OTel proto enum says
-  // "MUST not be used", so the spec does the comedic heavy lifting.
-  // Subtle Mufasa "you must never go there, Simba" energy on the
-  // detail panel; just a quiet text label in the spark slot.
-  //
-  // Both unsafe conditions share this chart slot, but unknown codes must keep
-  // their own identity instead of inheriting the protocol's code-0 warning.
+  // Code 0 uses the OTel "MUST not be used" warning; unknown codes stay distinct.
 
   type Props = {
     size?: 'mini' | 'full'
@@ -15,10 +9,6 @@
 
   let { size = 'full', temporalityCode, temporalityLabel }: Props = $props()
 
-  // Deep-link to the proto enum line. Pinned to main: this enum has
-  // been stable since the metrics proto was finalised and is unlikely
-  // to move. If the line drifts, the link still lands on the file --
-  // the comment ("MUST not be used") is what's doing the work.
   const SPEC_URL =
     'https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/metrics/v1/metrics.proto#L286'
 </script>
@@ -47,13 +37,7 @@
     unspecifiedTemporality
   </span>
 {:else}
-  <!--
-    Single ASCII vignette. white-space: pre + monospace + horizontal
-    scroll on narrow panes preserves the alignment exactly. The
-    headline is gone (the art carries the spec quote); the caption
-    underneath echoes the punchline and links to the proto enum line
-    so the diagnostic is one click from the source of truth.
-  -->
+  <!-- The preformatted image scrolls horizontally to preserve alignment. -->
   <div
     class="callout-full"
     role="img"

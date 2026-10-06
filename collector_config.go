@@ -39,30 +39,13 @@ func collectorURIs(o configOptions) []string {
 		`yaml:extensions::duckdb::db_max_size: "` + o.dbMaxSize + `"`,
 		`yaml:service::extensions: [duckdb]`,
 		// Batching happens here rather than in the exporter's sending queue.
-		// send_batch_max_size bounds a merged batch, which is what makes the
-		// exporter's IngestTimeout a meaningful deadline: without a ceiling no
-		// timeout can tell "large" from "stuck".
-		//
-		// timeout is a maximum wait, not a per-batch delay: whichever of size or
-		// time fires first wins. It therefore only binds when traffic is too
-		// light to reach send_batch_size, which is exactly interactive
-		// debugging -- there it is the lag between a request happening and its
-		// trace appearing.
-		//
-		// 1s is the compromise. At the reference capture's ~3,100 spans/sec,
-		// reaching 8192 takes ~2.6s, so during replay the timeout still governs
-		// and produces ~3,100-span batches -- 5x larger than 200ms did, which
-		// means 5x fewer appender transactions and, after the dedupe rewrite,
-		// each distinct resource resolved 5x fewer times. The cost is a 1s
-		// worst-case lag when debugging a single request at a time.
+		// send_batch_max_size bounds each write; timeout limits display latency
+		// when traffic is too light to fill a batch.
 		`yaml:processors::batch::send_batch_size: 8192`,
 		`yaml:processors::batch::send_batch_max_size: 20000`,
 		`yaml:processors::batch::timeout: 1s`,
-		// The exporter must still be declared even though all of its store
-		// config moved to the extension: pipelines reference `desktop`, and a
-		// config with no exporters section is rejected outright. The empty map
-		// means "with defaults", exactly like writing `desktop:` in a config
-		// file.
+		// Pipelines require the desktop exporter declaration. An empty map uses
+		// its defaults.
 		`yaml:exporters::desktop: {}`,
 		`yaml:service::pipelines::traces::receivers: [otlp]`,
 		`yaml:service::pipelines::traces::processors: [batch]`,
@@ -85,10 +68,8 @@ func collectorURIs(o configOptions) []string {
 //
 // An endpoint points both the metric readers and the span processors at the
 // same external OTLP gRPC receiver.
-// The explicit readers list matters even though the config would validate
-// without it: otelconftelemetry's default config already carries a Pull
-// (Prometheus) reader, so raising the level without replacing that reader would
-// publish metrics on a Prometheus endpoint rather than sending them to us.
+// The explicit readers list replaces the default Prometheus reader so metrics
+// are sent to the configured OTLP endpoint.
 func telemetryURIs(o configOptions) []string {
 	if o.selfTelemetryEndpoint == "" {
 		return []string{`yaml:service::telemetry::metrics::level: none`}

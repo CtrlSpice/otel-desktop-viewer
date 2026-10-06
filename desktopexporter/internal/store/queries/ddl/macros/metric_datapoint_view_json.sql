@@ -1,33 +1,13 @@
--- datapoint_json: one datapoint in wire shape, whatever its metric type.
+-- metric_datapoint_view_json: one datapoint in wire shape, whatever its metric type.
 --
--- Takes the row as a struct, so the caller passes `d` rather than sixteen
--- columns in an order that has to stay right. exemplars and quantiles arrive as
--- arguments instead of being read inside: exemplars is a correlated lookup and
--- quantiles is a correlated per-row value, and a macro that reaches for a table binds that
--- reference when the macro is created -- which couples macro creation order to
--- table creation order and is what ruled out attr_dict as a table macro.
---
--- Keeping both out means this is a pure function of its arguments, testable
--- against literals, and the two things it cannot know stay the caller's job.
---
--- Gauge and Sum merge common fields with their type-specific fields. Histogram
--- branches are complete objects because their optional nulls must survive.
-create or replace macro datapoint_json(d, exemplars, exemplar_count, quantiles) as (
-		-- exemplarCount rides in an outer patch rather than the object below,
-		-- so that it can be *absent* rather than zero.
-		--
-		-- It answers "were any exemplars withheld", and the answer is no for
-		-- almost every datapoint that will ever exist -- the reference corpus
-		-- contains no exemplars at all. Emitting it unconditionally cost 6.6% of
-		-- a zero-exemplar response, which is a poor trade in a change whose
-		-- whole subject is payload. A null in a merge patch deletes the key
-		-- (RFC 7386), so the common case pays nothing and the client reads
-		-- absence as "you have them all".
+-- Exemplars and quantiles are arguments to avoid correlated table reads.
+-- Histogram branches preserve NULL received optional statistics.
+create or replace macro metric_datapoint_view_json(d, exemplars, exemplar_count, quantiles) as (
+		-- exemplarCount is absent unless exemplars were withheld. RFC 7386
+		-- removes the key when this patch value is NULL.
 		json_merge_patch(
 		case d.metric_type
-			-- These branches are complete objects rather than merge patches:
-			-- RFC 7386 deletes null patch members, while null here is the wire
-			-- representation of an absent received optional statistic.
+			-- Complete objects retain NULL received optional statistics.
 			when 'Histogram' then json_merge_patch(json_object(
 				'id', d.id,
 				'metricType', d.metric_type,
@@ -50,8 +30,7 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, quantiles) 
 					when 0 then 'Unspecified' when 1 then 'Delta' when 2 then 'Cumulative'
 					else 'Unknown (' || d.aggregation_temporality::varchar || ')' end
 			), json_object(
-				-- This patch preserves the existing quantile wire rule without
-				-- touching null received statistics already in the target object.
+				-- Add quantiles without deleting NULL received statistics.
 				'quantiles', json_merge_patch(json('{}'), quantiles)
 			))
 			when 'ExponentialHistogram' then json_merge_patch(json_object(
@@ -85,8 +64,7 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, quantiles) 
 					'id', d.id,
 					'metricType', d.metric_type,
 					'timestamp', d.timestamp::varchar,
-					-- The same instant in epoch milliseconds, as a number. Epoch ms
-					-- remains inside float64's exact-integer range.
+					-- Epoch milliseconds remain exact in float64.
 					'timestampMs', d.timestamp // 1000000,
 					'startTime', d.start_time::varchar,
 					'flags', d.flags,
@@ -95,9 +73,7 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, quantiles) 
 				case d.metric_type
 				when 'Gauge' then json_object(
 					'doubleValue', double_wire_json(d.double_value),
-					-- Received NumberDataPoint.as_int is signed int64. Decimal text
-					-- preserves its exact value through JSON; the frontend revives it
-					-- to bigint before any display-only chart projection.
+					-- Decimal text preserves received signed int64 exactly.
 					'intValue', d.int_value::varchar,
 					'valueType', d.value_type
 				)
@@ -110,12 +86,8 @@ create or replace macro datapoint_json(d, exemplars, exemplar_count, quantiles) 
 					'aggregationTemporality', case d.aggregation_temporality
 						when 0 then 'Unspecified' when 1 then 'Delta' when 2 then 'Cumulative'
 						else 'Unknown (' || d.aggregation_temporality::varchar || ')' end,
-					-- Activity since the previous reading of this series, and
-					-- whether the counter restarted in between. Null on the first
-					-- datapoint of a series, which describes no interval.
-					--
-					-- Cumulative only: a Delta Sum's value already *is* the
-					-- interval's activity, so differencing it would be wrong.
+					-- Cumulative activity since the previous reading; NULL for the
+					-- first reading. Delta values already represent interval activity.
 					'delta', case when d.aggregation_temporality = 2 then
 						case when d.delta_int is not null
 							then to_json(d.delta_int::varchar)

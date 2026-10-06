@@ -14,9 +14,9 @@ spans.sql
 events.sql
 links.sql
 logs.sql
-metric_streams.sql
+metrics.sql
 metric_series.sql
 histogram_bounds.sql
-datapoints.sql
+metric_datapoints.sql
 exemplars.sql
 ingest_rejections.sql

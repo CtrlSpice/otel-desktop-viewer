@@ -212,9 +212,9 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	require.NotContains(t, tied[0].(map[string]any), "delta")
 	require.Contains(t, tied[1].(map[string]any), "delta")
 
-	streamID := findMetricID(t, s, ctx, "test.counter")
+	metricID := findMetricRef(t, s, ctx, "test.counter")
 	withViews, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricView(ctx, db, streamID, store.BoundedTimeRange(0, 300),
+		return metrics.GetMetricView(ctx, db, metricID, store.BoundedTimeRange(0, 300),
 			0, nil, nil, 0, 2, 2, nil, "", nil, 0)
 
 	})
@@ -267,7 +267,7 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	// Non-finite observations are excluded from arithmetic, so the finite points
 	// span a delta of two. Detail still carries every received value through the
 	// hexadecimal double wire form where JSON numbers cannot represent it.
-	nonfiniteID := findMetricID(t, s, ctx, "test.nonfinite")
+	nonfiniteID := findMetricRef(t, s, ctx, "test.nonfinite")
 	nonfiniteRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetricView(ctx, db, nonfiniteID, store.BoundedTimeRange(0, 700),
 			0, nil, nil, 0, 0, 0, nil, "", nil, 0)

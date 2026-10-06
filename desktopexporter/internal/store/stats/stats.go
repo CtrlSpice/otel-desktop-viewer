@@ -52,13 +52,13 @@ func GetStats(ctx context.Context, db *sql.DB, sizeBytes int64, maxSizeBytes int
 			) from logs),
 			'metrics', (select json_object(
 				-- The Metric table includes Metrics with no datapoints.
-				'metricCount',    (select count(*) from metric_streams),
+				'metricCount',    (select count(*) from metrics),
 				'dataPointCount', count(*),
 				-- lastReceived = latest datapoint timestamp observed
 				-- (source recency), not collector wall-clock arrival.
 				-- Mirrors traces/logs which also use source timestamps.
 				'lastReceived',   cast(max(timestamp) as varchar)
-			) from datapoints),
+			) from metric_datapoints),
 			-- Telemetry the store would not write. Empty in the ordinary case,
 			-- so the home page shows the section only when there is something
 			-- to say. Ordered by recency.

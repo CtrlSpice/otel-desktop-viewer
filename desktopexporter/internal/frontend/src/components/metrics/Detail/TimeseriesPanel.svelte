@@ -12,7 +12,7 @@
     SPARKLINE_WIDTH_PX,
   } from '@/contexts/metric-view-context.svelte'
   import type { LegendTimeseries as PanelTimeseries } from '@/types/metric-chart-types'
-  import type { MetricTimeseries } from '@/types/api-types'
+  import type { MetricSeriesViewData } from '@/types/api-types'
   import { MAX_VISIBLE_TIMESERIES } from '@/components/metrics/utils/metric-timeseries-visible'
   import { formatMetricValue } from '@/components/metrics/utils/format-metric-value'
   import type { SeriesStat } from '@/components/metrics/utils/aggregation'
@@ -38,10 +38,10 @@
   )
   let visibleKeys = $derived(ctx.visibleSeries)
 
-  let timeseriesByKey = $derived.by((): Map<string, MetricTimeseries> => {
+  let timeseriesByKey = $derived.by((): Map<string, MetricSeriesViewData> => {
     const m = ctx.metric
     if (!m) return new Map()
-    return new Map(m.timeseries.map(ts => [ts.attributesKey, ts]))
+    return new Map(m.timeseries.map(ts => [ts.seriesRef, ts]))
   })
 
   let capReached = $derived(
@@ -122,7 +122,7 @@
   }
 
   $effect(() => {
-    void ctx.metric?.id
+    void ctx.metric?.metricRef
     expandedDatapointSections.clear()
   })
 

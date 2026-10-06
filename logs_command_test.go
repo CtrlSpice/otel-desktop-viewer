@@ -46,7 +46,7 @@ func TestLogsCommandPreservesSummaryFieldsFiltersAndResolvesTimeOnce(t *testing.
 	assert.Contains(t, output.String(), "1790928000123456789")
 
 	request := <-requests
-	assert.Equal(t, "searchLogs", request.Method)
+	assert.Equal(t, "searchLogSummaries", request.Method)
 	assert.Equal(t, float64(26), request.Params["limit"])
 	assert.Equal(t, strconv.FormatInt(fixedNow.Add(-time.Hour).UnixNano(), 10), request.Params["startTime"])
 	assert.Equal(t, strconv.FormatInt(fixedNow.UnixNano(), 10), request.Params["endTime"])
@@ -75,11 +75,11 @@ func TestLogsCommandLimitsEmptyErrorsCancellationAndHelp(t *testing.T) {
 			_, _ = writer.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":` + response + `}`))
 		}))
 		defer viewer.Close()
-		result, err := requestTelemetrySearch(context.Background(), viewer.Client(), viewer.URL, "searchLogs", telemetrySearchQuery{Limit: 1}, logSummaryFields)
+		result, err := requestTelemetrySearch(context.Background(), viewer.Client(), viewer.URL, "searchLogSummaries", telemetrySearchQuery{Limit: 1}, logSummaryFields)
 		require.NoError(t, err)
 		assert.True(t, result.Truncated)
 		assert.Len(t, result.Summaries, 1)
-		result, err = requestTelemetrySearch(context.Background(), viewer.Client(), viewer.URL, "searchLogs", telemetrySearchQuery{Limit: 1}, logSummaryFields)
+		result, err = requestTelemetrySearch(context.Background(), viewer.Client(), viewer.URL, "searchLogSummaries", telemetrySearchQuery{Limit: 1}, logSummaryFields)
 		require.NoError(t, err)
 		assert.Empty(t, result.Summaries)
 	})
@@ -94,7 +94,7 @@ func TestLogsCommandLimitsEmptyErrorsCancellationAndHelp(t *testing.T) {
 		client := &http.Client{Transport: telemetryRoundTripFunc(func(*http.Request) (*http.Response, error) {
 			return nil, context.DeadlineExceeded
 		})}
-		_, err := requestTelemetrySearch(context.Background(), client, "http://viewer.test", "searchLogs", telemetrySearchQuery{Limit: 25}, logSummaryFields)
+		_, err := requestTelemetrySearch(context.Background(), client, "http://viewer.test", "searchLogSummaries", telemetrySearchQuery{Limit: 25}, logSummaryFields)
 		require.ErrorIs(t, err, context.DeadlineExceeded)
 	})
 
@@ -105,7 +105,7 @@ func TestLogsCommandLimitsEmptyErrorsCancellationAndHelp(t *testing.T) {
 		})}
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		_, err := requestTelemetrySearch(ctx, client, "http://viewer.test", "searchLogs", telemetrySearchQuery{Limit: 25}, logSummaryFields)
+		_, err := requestTelemetrySearch(ctx, client, "http://viewer.test", "searchLogSummaries", telemetrySearchQuery{Limit: 25}, logSummaryFields)
 		require.ErrorIs(t, err, context.Canceled)
 	})
 

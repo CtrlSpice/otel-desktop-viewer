@@ -16,7 +16,7 @@
   let { datapoints, unit = '1', expandDatapointID, oncontext }: Props = $props()
 
   let metric = $derived<MetricViewData>({
-    id: 'metric-list-harness',
+    metricRef: 'metric-list-harness',
     name: 'metric-list-harness',
     description: '',
     metadata: [],
@@ -37,7 +37,7 @@
     },
     timeseries: [
       {
-        attributesKey: 'series-1',
+        seriesRef: 'series-1',
         attributes: [],
         resource: { attributes: [], droppedAttributesCount: 0 },
         // The component receives the separately fetched, unreduced rows.

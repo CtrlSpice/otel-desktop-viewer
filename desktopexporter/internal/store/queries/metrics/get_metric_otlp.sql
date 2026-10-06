@@ -1,11 +1,11 @@
 -- Reconstruct one retained Metric and its ResourceMetrics/ScopeMetrics wrappers.
 with selected_stream as materialized (
-	select * from metric_streams where id = try_cast(? as uuid)
+	select * from metrics where id = try_cast(? as uuid)
 ),
 selected_datapoints as materialized (
 	select d.*
-	from datapoints d
-	join selected_stream s on s.id = d.stream_id
+	from metric_datapoints d
+	join selected_stream s on s.id = d.metric_id
 ),
 used_attribute_ids as materialized (
 	select unnest(r.attribute_ids) as id
@@ -19,7 +19,7 @@ used_attribute_ids as materialized (
 	select unnest(d.attribute_ids) from selected_datapoints d
 	union
 	select unnest(e.attribute_ids)
-	from exemplars e join selected_datapoints d on d.id = e.datapoint_id
+	from exemplars e join selected_datapoints d on d.id = e.metric_datapoint_id
 ),
 attribute_batch_input as materialized (
 	select
@@ -44,7 +44,7 @@ converted_attributes as materialized (
 	), []::struct(id uuid, value json)[]) as values
 ),
 exemplar_documents_unaggregated as materialized (
-	select e.datapoint_id, e.timestamp, e.id,
+	select e.metric_datapoint_id, e.timestamp, e.id,
 		json_merge_patch(
 			json_object(
 				'filteredAttributes', otlp_attributes(e.attribute_ids, (select values from converted_attributes)),
@@ -59,12 +59,12 @@ exemplar_documents_unaggregated as materialized (
 			case when e.span_id is null then json('{}') else json_object('spanId', span_id_wire(e.span_id)) end
 		) as document
 	from exemplars e
-	join selected_datapoints d on d.id = e.datapoint_id
+	join selected_datapoints d on d.id = e.metric_datapoint_id
 ),
 exemplar_documents as materialized (
-	select datapoint_id, list(document order by timestamp, id) as documents
+	select metric_datapoint_id, list(document order by timestamp, id) as documents
 	from exemplar_documents_unaggregated
-	group by datapoint_id
+	group by metric_datapoint_id
 ),
 datapoint_documents as materialized (
 	select d.id, d.timestamp,
@@ -132,7 +132,7 @@ datapoint_documents as materialized (
 	from selected_datapoints d
 	cross join selected_stream s
 	left join histogram_bounds hb on hb.id = d.bounds_id
-	left join exemplar_documents e on e.datapoint_id = d.id
+	left join exemplar_documents e on e.metric_datapoint_id = d.id
 ),
 grouped_metrics as materialized (
 	select s.resource_id, r.schema_url as resource_schema_url,

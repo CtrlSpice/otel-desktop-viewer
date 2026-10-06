@@ -28,7 +28,7 @@ function mixedMarker(): TimelineMarker {
         id: 'log:log-1',
         timestamp: 51n,
         log: {
-          id: 'log-1',
+          logRef: 'log-1',
           spanID: 'span-1',
           timestamp: 51n,
           severityText: 'ERROR',

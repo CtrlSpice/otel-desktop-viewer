@@ -158,13 +158,7 @@
                 />
               {/if}
               {#if metric.lastSeenNs !== null}
-                <!-- The window's most recent datapoint, from the
-                     store. Reading timeseries[0].datapoints[0]
-                     relied on that series having shipped its
-                     datapoints, which narrowing no longer
-                     guarantees: name a persisted selection that
-                     excludes the most recent series and the
-                     field simply disappeared. -->
+                <!-- Metric-wide value; narrowed responses may omit its source series. -->
                 <MetricField
                   fieldName="last seen"
                   fieldValue={formatTimestamp(

@@ -75,7 +75,7 @@ export function recordsForSpan(
   )
   const logRecords: TimelineRecord[] = logs.map(log => ({
     kind: 'log',
-    id: `log:${log.id}`,
+    id: `log:${log.logRef}`,
     timestamp: log.timestamp,
     log,
   }))

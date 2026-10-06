@@ -19,7 +19,7 @@ export async function runSearch(
     case 'traces':
       return {
         signal: 'traces',
-        results: await telemetryAPI.searchTraces(
+        results: await telemetryAPI.searchTraceSummaries(
           ctx.startTime,
           ctx.endTime,
           queryTree,
@@ -32,7 +32,7 @@ export async function runSearch(
     case 'logs':
       return {
         signal: 'logs',
-        results: await telemetryAPI.searchLogs(
+        results: await telemetryAPI.searchLogSummaries(
           ctx.startTime,
           ctx.endTime,
           queryTree,

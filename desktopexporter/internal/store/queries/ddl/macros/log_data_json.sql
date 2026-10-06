@@ -2,7 +2,7 @@
 -- Single-log and span-correlated reads share it so their fields cannot drift.
 create or replace macro log_data_json(l, resource, scope, resource_schema_url, scope_schema_url) as (
     json_object(
-        'id', l.id,
+        'logRef', l.id,
         'timestamp', l.timestamp::varchar,
         'observedTimestamp', l.observed_timestamp::varchar,
         'traceID', trace_id_wire(l.trace_id),

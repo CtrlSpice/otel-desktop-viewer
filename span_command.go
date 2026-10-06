@@ -88,7 +88,7 @@ type spanLink struct {
 }
 
 type spanLog struct {
-	ID                     string          `json:"id"`
+	LogRef                 string          `json:"logRef"`
 	Timestamp              string          `json:"timestamp"`
 	ObservedTimestamp      string          `json:"observedTimestamp"`
 	TraceID                string          `json:"traceID"`

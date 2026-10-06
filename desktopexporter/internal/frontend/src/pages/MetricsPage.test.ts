@@ -15,29 +15,20 @@ import type {
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 import { navigateCurrentRoute, readRoute, withQueryPatch } from '@/route'
 
-// A legend toggle fetches the aggregate at two grids: a bucketed one for the
-// heatmap, and a whole-window collapse for the summary distribution. Only a
-// histogram has the second. A Gauge or Sum has no bucket vectors to merge, so
-// the store prunes that chain outright (aggregateViewShapeFor) and the projection
-// answers a literal null -- asking for it spends a round trip and a full query
-// plan to be told so.
-//
-// The store side of that contract is pinned in Go by TestGetMetricAggregateView.
-// This is the client side: that it asks for the second grid only when the
-// metric can answer.
+// Only histograms request the whole-window bucket merge.
 
 const {
   searchMetricSummaries,
   getStats,
   getMetricView,
   getMetricAggregateView,
-  getMetricAttributes,
+  getMetricAttributeDefinitions,
 } = vi.hoisted(() => ({
   searchMetricSummaries: vi.fn(),
   getStats: vi.fn(),
   getMetricView: vi.fn(),
   getMetricAggregateView: vi.fn(),
-  getMetricAttributes: vi.fn(),
+  getMetricAttributeDefinitions: vi.fn(),
 }))
 
 vi.mock('@/services/telemetry-service', async importOriginal => {
@@ -51,7 +42,7 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
       getStats,
       getMetricView,
       getMetricAggregateView,
-      getMetricAttributes,
+      getMetricAttributeDefinitions,
     },
   }
 })
@@ -66,7 +57,7 @@ const EMPTY_SCOPE = {
 
 function makeSummary(metricType: MetricType): MetricSummary {
   return {
-    id: 'metric-1',
+    metricRef: 'metric-1',
     name: 'demo.metric',
     description: '',
     unit: 'ms',
@@ -89,7 +80,7 @@ function makeMetric(
 ): MetricViewData {
   return {
     lastSeenNs: 1_700_000_000_000_000_000n,
-    id: 'metric-1',
+    metricRef: 'metric-1',
     name: 'demo.metric',
     description: '',
     metadata: [],
@@ -108,7 +99,7 @@ function makeMetric(
     scope: EMPTY_SCOPE,
     timeseries: [
       {
-        attributesKey: 'route=/checkout',
+        seriesRef: 'route=/checkout',
         attributes: [],
         resource: EMPTY_RESOURCE,
         datapoints,
@@ -183,8 +174,8 @@ beforeEach(() => {
   getStats.mockReset()
   getMetricView.mockReset()
   getMetricAggregateView.mockReset()
-  getMetricAttributes.mockReset()
-  getMetricAttributes.mockResolvedValue([])
+  getMetricAttributeDefinitions.mockReset()
+  getMetricAttributeDefinitions.mockResolvedValue([])
 })
 
 afterEach(() => {
@@ -203,8 +194,7 @@ async function renderSelected(metricType: MetricType) {
   })
   setTestUrl('/metrics/metric-1')
   renderWithContexts(MetricsPage)
-  // The aggregate fetch is debounced behind the detail landing; wait for the
-  // detail first so the wait below is for the debounce, not the round trip.
+  // The aggregate fetch is debounced until after detail loading.
   await waitFor(() => expect(getMetricView).toHaveBeenCalled())
   await waitFor(() => expect(getMetricAggregateView).toHaveBeenCalled(), {
     timeout: 3000,
@@ -268,7 +258,7 @@ describe('MetricsPage aggregate fetching', () => {
     // Let any debounced follow-up land before asserting absence.
     await new Promise(r => setTimeout(r, 400))
     expect(wholeWindowCalls()).toHaveLength(0)
-    // The bucketed call still happens -- the scalar pools ride on it.
+    // Scalar aggregates use the bucketed call.
     expect(getMetricAggregateView.mock.calls.length).toBeGreaterThan(0)
   })
 
@@ -290,7 +280,7 @@ describe('MetricsPage chart control keyboard navigation', () => {
     const template = metric.timeseries[0]!
     metric.timeseries = Array.from({ length: 11 }, (_, index) => ({
       ...template,
-      attributesKey: `series-${index}`,
+      seriesRef: `series-${index}`,
     }))
 
     searchMetricSummaries.mockResolvedValue([

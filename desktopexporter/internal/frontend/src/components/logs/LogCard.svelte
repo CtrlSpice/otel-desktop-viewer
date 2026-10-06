@@ -24,7 +24,7 @@
 </script>
 
 <SignalCard
-  id={log.id}
+  id={log.logRef}
   {selected}
   title={serviceTitle}
   description={bodyPreview || undefined}
