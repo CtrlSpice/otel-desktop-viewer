@@ -44,10 +44,11 @@ type Attribute struct {
 	Value string
 }
 
-// Resource is one deduped resource payload: an attribute set plus its dropped
-// count.
+// Resource is one exact Resource payload and schema URL.
 type Resource struct {
 	ID           duckdb.UUID
+	PayloadID    duckdb.UUID
+	SchemaURL    string
 	AttributeIDs []duckdb.UUID
 	Dropped      uint32
 }
@@ -99,13 +100,23 @@ func AttributeID(key, value string) duckdb.UUID {
 	return hashID(key, value)
 }
 
-// ResourceID derives the identity of one received resource payload. Attribute
+// ResourcePayloadID derives the identity of one received resource payload. Attribute
 // ids are canonical typed (key, value) identities sorted by AttributeSet, so
 // map insertion order does not matter while absent attributes, empty values,
 // and values of different OTel types remain distinct. The dropped count is
 // payload too: it records attributes the sender could not include.
-func ResourceID(attributeIDs []duckdb.UUID, dropped uint32) duckdb.UUID {
+func ResourcePayloadID(attributeIDs []duckdb.UUID, dropped uint32) duckdb.UUID {
 	return hashID(uuidsKey(attributeIDs), strconv.FormatUint(uint64(dropped), 10))
+}
+
+// ResourceID adds the Resource wrapper's schema URL to its payload identity.
+func ResourceID(payloadID duckdb.UUID, schemaURL string) duckdb.UUID {
+	return hashID(uuidString(payloadID), schemaURL)
+}
+
+type ResourceRef struct {
+	ID        duckdb.UUID
+	PayloadID duckdb.UUID
 }
 
 // ScopeID derives a scope payload's identity from every retained field.
@@ -305,13 +316,17 @@ func (d *Dictionary) AddBounds(bounds []float64) duckdb.UUID {
 	return id
 }
 
-// AddResource records a resource and returns its id.
-func (d *Dictionary) AddResource(res pcommon.Resource) duckdb.UUID {
+// AddResource records an exact Resource and returns its exact and payload ids.
+func (d *Dictionary) AddResource(res pcommon.Resource, schemaURL string) ResourceRef {
 	ids := d.AddAttributes(res.Attributes(), ScopeResource)
 	dropped := res.DroppedAttributesCount()
-	id := ResourceID(ids, dropped)
-	d.resources[id] = Resource{ID: id, AttributeIDs: ids, Dropped: dropped}
-	return id
+	payloadID := ResourcePayloadID(ids, dropped)
+	id := ResourceID(payloadID, schemaURL)
+	d.resources[id] = Resource{
+		ID: id, PayloadID: payloadID, SchemaURL: schemaURL,
+		AttributeIDs: ids, Dropped: dropped,
+	}
+	return ResourceRef{ID: id, PayloadID: payloadID}
 }
 
 // AddScope records an instrumentation scope and returns its id.
@@ -434,22 +449,27 @@ func (d *Dictionary) flushBounds(ctx context.Context, conn driver.Conn) error {
 		})
 }
 
-const resourcesUpsert = `insert into resources (id, attribute_ids, dropped_attributes_count)
-	select unnest(?::varchar[])::uuid, unnest(?::varchar[][])::uuid[], unnest(?::uinteger[])
+const resourcesUpsert = `insert into resources (id, payload_id, schema_url, attribute_ids, dropped_attributes_count)
+	select unnest(?::varchar[])::uuid, unnest(?::varchar[])::uuid,
+	       unnest(?::varchar[]), unnest(?::varchar[][])::uuid[], unnest(?::uinteger[])
 	on conflict (id) do nothing`
 
 func (d *Dictionary) flushResources(ctx context.Context, conn driver.Conn) error {
 	return flushRows(ctx, conn, d.flushed, d.resources, resourcesUpsert, "resources",
 		func(rows map[duckdb.UUID]Resource) []any {
 			ids := make([]string, 0, len(rows))
+			payloadIDs := make([]string, 0, len(rows))
+			schemaURLs := make([]string, 0, len(rows))
 			attributeIDs := make([][]string, 0, len(rows))
 			dropped := make([]uint32, 0, len(rows))
 			for _, r := range rows {
 				ids = append(ids, formatUUID(r.ID))
+				payloadIDs = append(payloadIDs, formatUUID(r.PayloadID))
+				schemaURLs = append(schemaURLs, r.SchemaURL)
 				attributeIDs = append(attributeIDs, formatUUIDs(r.AttributeIDs))
 				dropped = append(dropped, r.Dropped)
 			}
-			return []any{ids, attributeIDs, dropped}
+			return []any{ids, payloadIDs, schemaURLs, attributeIDs, dropped}
 		})
 }
 

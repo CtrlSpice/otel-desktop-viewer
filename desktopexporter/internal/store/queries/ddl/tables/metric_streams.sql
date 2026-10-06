@@ -7,8 +7,8 @@
 create table if not exists metric_streams (
 		id uuid primary key,
 		resource_id uuid not null,
+		resource_payload_id uuid not null,
 		scope_id uuid not null,
-		resource_schema_url varchar not null default '',
 		name varchar not null,
 		description varchar not null default '',
 		unit varchar not null default '',
@@ -19,6 +19,6 @@ create table if not exists metric_streams (
 		aggregation_temporality integer not null default 0,
 		is_monotonic boolean not null default false,
 		service_name varchar not null default '',
-		foreign key (resource_id) references resources(id),
+		foreign key (resource_id, resource_payload_id) references resources(id, payload_id),
 		foreign key (scope_id) references scopes(id)
 	)

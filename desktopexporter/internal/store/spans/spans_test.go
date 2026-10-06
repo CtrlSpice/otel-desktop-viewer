@@ -1805,8 +1805,10 @@ func TestSchemaURLsAreStored(t *testing.T) {
 	var gotRes, gotScope string
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRow(
-			`select sp.resource_schema_url, sc.schema_url
-			 from spans sp join scopes sc on sc.id = sp.scope_id`,
+			`select r.schema_url, sc.schema_url
+			 from spans sp
+			 join resources r on r.id = sp.resource_id
+			 join scopes sc on sc.id = sp.scope_id`,
 		).Scan(&gotRes, &gotScope)
 	}))
 	assert.Equal(t, resURL, gotRes, "the resource schema url must survive ingest")

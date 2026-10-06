@@ -192,8 +192,9 @@ func TestPreVersioningDatabaseIsRefused(t *testing.T) {
 		// spans.resource_id / scope_id are NOT NULL FKs, so the owner rows
 		// have to exist first.
 		if _, err := db.Exec(`
-			insert into resources (id, attribute_ids)
-			values ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid, []::uuid[])`); err != nil {
+			insert into resources (id, payload_id, attribute_ids)
+			values ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
+				'dddddddd-dddd-dddd-dddd-dddddddddddd'::uuid, []::uuid[])`); err != nil {
 			return err
 		}
 		if _, err := db.Exec(`
@@ -252,6 +253,29 @@ func TestIncompatibleDatabaseIsRejectedWithoutMutation(t *testing.T) {
 	after, err := os.ReadFile(path)
 	require.NoError(t, err)
 	assert.Equal(t, before, after, "rejecting an incompatible database must not mutate its file")
+}
+
+func TestVersion19DatabaseIsRejectedWithoutMutation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "version-19.db")
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(schema.VersionTableQuery)
+	require.NoError(t, err)
+	_, err = db.Exec(schema.StampVersionQuery, 19)
+	require.NoError(t, err)
+	_, err = db.Exec(`create table metric_streams (id uuid primary key, resource_schema_url varchar)`)
+	require.NoError(t, err)
+	_, err = db.Exec(`insert into metric_streams values (uuid(), 'https://example.test/resource/v1')`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+	_, err = NewStore(context.Background(), path, zap.NewNop())
+	require.ErrorIs(t, err, ErrSchemaIncompatible)
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, before, after, "rejecting a version-19 database must not rewrite stored telemetry")
 }
 
 func TestVersion17DatabaseIsRejectedWithoutMutation(t *testing.T) {

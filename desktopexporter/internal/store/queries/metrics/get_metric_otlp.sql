@@ -135,14 +135,16 @@ datapoint_documents as materialized (
 	left join exemplar_documents e on e.datapoint_id = d.id
 ),
 grouped_metrics as materialized (
-	select s.resource_id, s.resource_schema_url, s.scope_id, sc.schema_url as scope_schema_url,
+	select s.resource_id, r.schema_url as resource_schema_url,
+		s.scope_id, sc.schema_url as scope_schema_url,
 		s.description, s.metadata_ids, s.name, s.unit, s.metric_type,
 		s.aggregation_temporality, s.is_monotonic,
 		coalesce(list(d.document order by d.timestamp, d.id) filter (where d.id is not null), []::json[]) as datapoints
 	from selected_stream s
+	join resources r on r.id = s.resource_id
 	join scopes sc on sc.id = s.scope_id
 	left join datapoint_documents d on true
-	group by s.resource_id, s.resource_schema_url, s.scope_id, sc.schema_url,
+	group by s.resource_id, r.schema_url, s.scope_id, sc.schema_url,
 		s.description, s.metadata_ids, s.name, s.unit, s.metric_type,
 		s.aggregation_temporality, s.is_monotonic
 ),

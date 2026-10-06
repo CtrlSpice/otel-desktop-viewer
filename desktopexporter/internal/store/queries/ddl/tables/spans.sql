@@ -36,10 +36,6 @@ create table if not exists spans (
 		-- happier with a plain string column than with nullable typed
 		-- pointers, which it doesn't accept directly.
 		service_name varchar not null default '',
-		-- Resource schema URL belongs to the ResourceSpans wrapper and is not
-		-- part of Resource identity. Scope schema URL is reached through
-		-- scope_id because it participates in instrumentation Scope identity.
-		resource_schema_url varchar not null default '',
 		-- Composite, because a span id is only required to be unique within
 		-- its trace. Global uniqueness is a property of random 8-byte
 		-- generation, not a guarantee, and keying on span_id alone rejected

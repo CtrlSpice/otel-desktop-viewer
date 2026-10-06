@@ -111,7 +111,7 @@ func IngestReport(ctx context.Context, conn driver.Conn, traces ptrace.Traces, f
 	var spanKeys []spanKey
 
 	for ri, resourceSpan := range traces.ResourceSpans().All() {
-		resourceIDs[ri] = dict.AddResource(resourceSpan.Resource())
+		resourceIDs[ri] = dict.AddResource(resourceSpan.Resource(), resourceSpan.SchemaUrl()).ID
 		for si, scopeSpan := range resourceSpan.ScopeSpans().All() {
 			scopeIDs[scopeKey{ri, si}] = dict.AddScope(scopeSpan.Scope(), scopeSpan.SchemaUrl())
 			for _, span := range scopeSpan.Spans().All() {
@@ -247,7 +247,6 @@ func appendPass(
 					int32(span.Status().Code()),   // StatusCode INTEGER (received enum code)
 					span.Status().Message(),       // StatusMessage VARCHAR
 					serviceName,                   // ServiceName VARCHAR (NOT NULL, '' = unknown)
-					resourceSpan.SchemaUrl(),      // ResourceSchemaURL VARCHAR (batch-level)
 				)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrSpansStoreInternal, err)

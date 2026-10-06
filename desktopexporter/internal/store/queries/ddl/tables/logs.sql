@@ -15,10 +15,6 @@ create table if not exists logs (
 		event_name varchar,
 		-- See the matching service_name column on spans for rationale.
 		service_name varchar not null default '',
-		-- Resource schema URL belongs to the ResourceLogs wrapper and is not
-		-- part of Resource identity. Scope schema URL is reached through
-		-- scope_id because it participates in instrumentation Scope identity.
-		resource_schema_url varchar not null default '',
 		foreign key (resource_id) references resources(id),
 		foreign key (scope_id) references scopes(id)
 	)

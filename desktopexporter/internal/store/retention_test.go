@@ -14,6 +14,7 @@ import (
 // on spans and logs, so every fixture needs a real row to point at.
 const (
 	seedResourceID = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+	seedPayloadID  = "dddddddd-dddd-dddd-dddd-dddddddddddd"
 	seedScopeID    = "ffffffff-ffff-ffff-ffff-ffffffffffff"
 )
 
@@ -21,8 +22,9 @@ const (
 func seedOwners(t *testing.T, s *Store) {
 	t.Helper()
 	_, err := s.db.Exec(`
-		insert into resources (id, attribute_ids) values (?::uuid, []::uuid[])
-		on conflict do nothing`, seedResourceID)
+		insert into resources (id, payload_id, attribute_ids)
+		values (?::uuid, ?::uuid, []::uuid[])
+		on conflict do nothing`, seedResourceID, seedPayloadID)
 	require.NoError(t, err)
 	_, err = s.db.Exec(`
 		insert into scopes (id, name, version, attribute_ids)
@@ -125,9 +127,10 @@ func seedLogs(t *testing.T, s *Store, n int) {
 func seedDatapoints(t *testing.T, s *Store, streamID, _ string, n int, startTime int64) {
 	t.Helper()
 	seedOwners(t, s)
-	_, err := s.db.Exec(`insert into metric_streams (id, resource_id, scope_id, name, metric_type)
-		values (?, ?::uuid, ?::uuid, 'metric-' || ?, 'Gauge') on conflict do nothing`,
-		streamID, seedResourceID, seedScopeID, streamID)
+	_, err := s.db.Exec(`insert into metric_streams
+		(id, resource_id, resource_payload_id, scope_id, name, metric_type)
+		values (?, ?::uuid, ?::uuid, ?::uuid, 'metric-' || ?, 'Gauge') on conflict do nothing`,
+		streamID, seedResourceID, seedPayloadID, seedScopeID, streamID)
 	require.NoError(t, err)
 	// datapoints.series_id is a NOT NULL foreign key, so the series has to
 	// exist before its points. One series per stream is enough here -- these

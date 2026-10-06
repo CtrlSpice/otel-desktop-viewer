@@ -170,6 +170,51 @@ func ingestAll(t *testing.T, s *Store, seed byte) {
 	}))
 }
 
+func TestResourceSchemaURLIdentityIsSharedAcrossSignals(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s, err := NewStore(ctx, "", zap.NewNop())
+	require.NoError(t, err)
+	t.Cleanup(func() { s.Close() })
+
+	const sharedURL = "https://example.test/resource/shared"
+	traces := integrityTraces(31)
+	traces.ResourceSpans().At(0).SetSchemaUrl(sharedURL)
+	logData := integrityLogs(32)
+	logData.ResourceLogs().At(0).SetSchemaUrl(sharedURL)
+	metricData := integrityMetrics(33)
+	metricData.ResourceMetrics().At(0).SetSchemaUrl(sharedURL)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, traces, s.FlushedIDs())
+	}))
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return logs.Ingest(ctx, conn, logData, s.FlushedIDs())
+	}))
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, metricData, s.FlushedIDs())
+	}))
+
+	other := integrityTraces(34)
+	other.ResourceSpans().At(0).SetSchemaUrl("https://example.test/resource/other")
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, other, s.FlushedIDs())
+	}))
+
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		var resources, payloads, sharedOwners int
+		require.NoError(t, db.QueryRow(`select count(*), count(distinct payload_id) from resources`).Scan(&resources, &payloads))
+		require.NoError(t, db.QueryRow(`select count(*) from resources r
+			where r.schema_url = ?
+			  and exists (select 1 from spans s where s.resource_id = r.id)
+			  and exists (select 1 from logs l where l.resource_id = r.id)
+			  and exists (select 1 from metric_streams m where m.resource_id = r.id)`, sharedURL).Scan(&sharedOwners))
+		assert.Equal(t, 2, resources)
+		assert.Equal(t, 1, payloads, "schema URL must not alter the Resource payload identity")
+		assert.Equal(t, 1, sharedOwners, "equal payload and URL must share one exact Resource row")
+		return nil
+	}))
+}
+
 func TestDistinctResourcePayloadsStayAttachedAcrossSignals(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

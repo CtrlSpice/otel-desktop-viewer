@@ -460,7 +460,9 @@ func TestExactMetricSeriesPreservesMetricOwnership(t *testing.T) {
 	}
 
 	metricIDs, err := readStore(s, func(db *sql.DB) ([]string, error) {
-		rows, err := db.QueryContext(ctx, `select id::varchar from metric_streams where name = 'owned.gauge' order by resource_schema_url`)
+		rows, err := db.QueryContext(ctx, `select m.id::varchar from metric_streams m
+			join resources r on r.id = m.resource_id
+			where m.name = 'owned.gauge' order by r.schema_url`)
 		if err != nil {
 			return nil, err
 		}
@@ -505,6 +507,102 @@ func TestExactMetricSeriesPreservesMetricOwnership(t *testing.T) {
 		require.Len(t, datapoints, 1)
 		require.Equal(t, fmt.Sprint((i+1)*100), datapoints[0].(map[string]any)["timestamp"])
 	}
+}
+
+func TestResourceSchemaURLChangesKeepMetricIdentity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "resource-schema-url.db")
+	ctx := context.Background()
+
+	appendMetric := func(batch pmetric.Metrics, resourceSchemaURL, scopeSchemaURL, description string, timestamp pcommon.Timestamp) {
+		rm := batch.ResourceMetrics().AppendEmpty()
+		rm.SetSchemaUrl(resourceSchemaURL)
+		rm.Resource().Attributes().PutStr("service.name", "checkout")
+		rm.Resource().SetDroppedAttributesCount(2)
+		sm := rm.ScopeMetrics().AppendEmpty()
+		sm.SetSchemaUrl(scopeSchemaURL)
+		sm.Scope().SetName("sdk")
+		sm.Scope().SetVersion("1")
+		sm.Scope().SetDroppedAttributesCount(3)
+		metric := sm.Metrics().AppendEmpty()
+		metric.SetName("requests")
+		metric.SetDescription(description)
+		metric.Metadata().PutStr("report", description)
+		point := metric.SetEmptyGauge().DataPoints().AppendEmpty()
+		point.SetTimestamp(timestamp)
+		point.Attributes().PutStr("route", "/checkout")
+		point.SetIntValue(int64(timestamp))
+	}
+
+	ingestBatch := func(t *testing.T, s *store.Store, batch pmetric.Metrics) {
+		t.Helper()
+		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+			return metrics.Ingest(ctx, conn, batch, s.FlushedIDs())
+		}))
+	}
+
+	s, err := store.NewStore(ctx, path, zap.NewNop())
+	require.NoError(t, err)
+	first := pmetric.NewMetrics()
+	appendMetric(first, "resource-a", "scope-a", "first", 1)
+	appendMetric(first, "resource-b", "scope-a", "second", 2)
+	ingestBatch(t, s, first)
+
+	second := pmetric.NewMetrics()
+	appendMetric(second, "resource-c", "scope-a", "third", 3)
+	ingestBatch(t, s, second)
+	require.NoError(t, s.Close())
+
+	s, err = store.NewStore(ctx, path, zap.NewNop())
+	require.NoError(t, err)
+	defer s.Close()
+	third := pmetric.NewMetrics()
+	appendMetric(third, "resource-d", "scope-a", "fourth", 4)
+	ingestBatch(t, s, third)
+
+	var metricID string
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		var metricsCount, seriesCount, datapointCount, resourceCount, payloadCount int
+		if err := db.QueryRow(`select count(*), min(id::varchar) from metric_streams where name = 'requests'`).Scan(&metricsCount, &metricID); err != nil {
+			return err
+		}
+		if err := db.QueryRow(`select count(*) from metric_series`).Scan(&seriesCount); err != nil {
+			return err
+		}
+		if err := db.QueryRow(`select count(*) from datapoints`).Scan(&datapointCount); err != nil {
+			return err
+		}
+		if err := db.QueryRow(`select count(*), count(distinct payload_id) from resources`).Scan(&resourceCount, &payloadCount); err != nil {
+			return err
+		}
+		require.Equal(t, 1, metricsCount)
+		require.Equal(t, 1, seriesCount)
+		require.Equal(t, 4, datapointCount)
+		require.Equal(t, 4, resourceCount)
+		require.Equal(t, 1, payloadCount)
+		return nil
+	}))
+
+	discoveryRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, metricID)
+	})
+	require.NoError(t, err)
+	var discovery map[string]any
+	require.NoError(t, json.Unmarshal(discoveryRaw, &discovery))
+	assert.Equal(t, "fourth", discovery["description"])
+	assert.Equal(t, "resource-d", discovery["resource"].(map[string]any)["schemaUrl"])
+
+	otlp, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetricOTLP(ctx, db, metricID)
+	})
+	require.NoError(t, err)
+	assert.Contains(t, string(otlp), `"schemaUrl":"resource-d"`)
+	assert.NotContains(t, string(otlp), `"schemaUrl":"resource-a"`)
+
+	differentScope := pmetric.NewMetrics()
+	appendMetric(differentScope, "resource-e", "scope-b", "different scope", 5)
+	ingestBatch(t, s, differentScope)
+	require.Equal(t, 2, countRows(t, s, ctx, `select count(*) from metric_streams where name = 'requests'`),
+		"Scope schema URL remains part of Metric identity")
 }
 
 type optionalHistogramStatistic struct {
@@ -1848,7 +1946,7 @@ func TestMetricIdentityUniqueIndexes(t *testing.T) {
 	}))
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		_, err := db.Exec(`insert into metric_streams
-			select uuid(), resource_id, scope_id, resource_schema_url, name, description,
+			select uuid(), resource_id, resource_payload_id, scope_id, name, description,
 				unit, metadata_ids, metric_type, aggregation_temporality, is_monotonic, service_name
 			from metric_streams where name = 'gauge_metric'`)
 		require.ErrorContains(t, err, "Duplicate key")

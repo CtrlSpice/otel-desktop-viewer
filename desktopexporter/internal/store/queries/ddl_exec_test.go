@@ -136,7 +136,8 @@ func TestSequencesAssignShortKeys(t *testing.T) {
 		"22222222-2222-2222-2222-222222222222",
 		"33333333-3333-3333-3333-333333333333",
 	} {
-		_, err = db.Exec(`insert into resources (id, attribute_ids) values (?::uuid, ['11111111-1111-1111-1111-111111111111']::uuid[])`, id)
+		_, err = db.Exec(`insert into resources (id, payload_id, attribute_ids)
+			values (?::uuid, gen_random_uuid(), ['11111111-1111-1111-1111-111111111111']::uuid[])`, id)
 		require.NoError(t, err)
 	}
 

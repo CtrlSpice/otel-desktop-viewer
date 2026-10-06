@@ -6,7 +6,8 @@ with input as (
 		list_extract(?::ubigint[], 1) as time_end
 ),
 selected_metric as materialized (
-	select m.*, r.attribute_ids as resource_attribute_ids,
+	select m.*, r.schema_url as resource_schema_url,
+		r.attribute_ids as resource_attribute_ids,
 		r.dropped_attributes_count as resource_dropped_attributes_count,
 		sc.name as scope_name, sc.version as scope_version,
 		sc.attribute_ids as scope_attribute_ids, sc.schema_url as scope_schema_url,

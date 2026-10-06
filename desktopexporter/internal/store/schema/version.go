@@ -112,7 +112,10 @@ package schema
 // Version 19 stores each Metric on one row with direct Resource and Scope
 // references. Metric description, metadata, and Resource schema URL live on
 // that row. Datapoints reference the Metric directly.
-const Version = 19
+// Version 20 moves Resource schema URL into the shared Resource row and
+// separates exact Resource lookup from the Resource payload key used by Metric
+// identity. Spans, logs, and Metrics reference the shared exact row.
+const Version = 20
 
 // VersionTableQuery creates the version table.
 //

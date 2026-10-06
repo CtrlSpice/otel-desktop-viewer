@@ -116,6 +116,7 @@ func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flus
 	// rows, resolving to 89 distinct sets across 294,607 datapoints.
 	dict := ingest.NewDictionary(flushed)
 	resourceIDs := map[int]duckdb.UUID{}
+	resourcePayloadIDs := map[int]duckdb.UUID{}
 	scopeIDs := map[scopeKey]duckdb.UUID{}
 
 	// One id array per datapoint, in walk order, handed to collectSeries below.
@@ -124,7 +125,9 @@ func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flus
 	for ri, resourceMetric := range m.ResourceMetrics().All() {
 		resource := resourceMetric.Resource()
 		serviceName := serviceNameFromAttrs(resource.Attributes())
-		resourceIDs[ri] = dict.AddResource(resource)
+		resourceRef := dict.AddResource(resource, resourceMetric.SchemaUrl())
+		resourceIDs[ri] = resourceRef.ID
+		resourcePayloadIDs[ri] = resourceRef.PayloadID
 		for si, scopeMetric := range resourceMetric.ScopeMetrics().All() {
 			scope := scopeMetric.Scope()
 			key := scopeKey{ri, si}
@@ -139,8 +142,8 @@ func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flus
 					preRejected[ordinal] = fmt.Errorf("%w: %s", ErrUnsupportedMetricType, metric.Type())
 				}
 				_, metadataIDs := ingest.AttributeSet(metric.Metadata(), ingest.ScopeMetricMetadata)
-				identity := streamIdentityFromMetric(metric, resourceIDs[ri], scopeIDs[key])
-				identity.ResourceSchemaURL = resourceMetric.SchemaUrl()
+				identity := streamIdentityFromMetric(
+					metric, resourceIDs[ri], resourcePayloadIDs[ri], scopeIDs[key])
 				identity.Description = metric.Description()
 				identity.MetadataIDs = metadataIDs
 				identity.ServiceName = serviceName
@@ -210,7 +213,8 @@ func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flus
 	// them forward again so pass 2 reads them by position too. Neither this walk
 	// nor pass 2 hashes a label set: datapoints are the highest-volume path in
 	// the store, and one derivation each is all they get.
-	dpIdents, collectedSeries, err := collectSeries(ctx, m, identities, identityIndexes, resourceIDs, scopeIDs, dpAttrIDs)
+	dpIdents, collectedSeries, err := collectSeries(ctx, m, identities, identityIndexes,
+		resourceIDs, resourcePayloadIDs, scopeIDs, dpAttrIDs)
 	if err != nil {
 		return ingest.Rejected{}, err
 	}
@@ -224,7 +228,8 @@ func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flus
 	// Pass 2: append, retrying in halves so a bad metric costs only itself.
 	return ingest.BisectingWrite(ctx, countMetrics(m), preRejected, func(lo, hi int) error {
 		return ingest.InTransaction(ctx, conn, func() error {
-			return appendPass(ctx, conn, m, identities, identityIndexes, resourceIDs, scopeIDs, dpIdents,
+			return appendPass(ctx, conn, m, identities, identityIndexes,
+				resourceIDs, resourcePayloadIDs, scopeIDs, dpIdents,
 				func(ordinal int) bool {
 					_, rejected := preRejected[ordinal]
 					return !rejected && ordinal >= lo && ordinal < hi
@@ -242,6 +247,7 @@ func appendPass(
 	streamIDs []streamIdentity,
 	streamIndexes map[streamLookupKey]int,
 	resourceIDs map[int]duckdb.UUID,
+	resourcePayloadIDs map[int]duckdb.UUID,
 	scopeIDs map[scopeKey]duckdb.UUID,
 	dpIdents []dpIdentity,
 	keep func(ordinal int) bool,
@@ -261,6 +267,7 @@ func appendPass(
 	metricOrdinal := 0
 	for ri, resourceMetric := range m.ResourceMetrics().All() {
 		resourceID := resourceIDs[ri]
+		resourcePayloadID := resourcePayloadIDs[ri]
 		for si, scopeMetric := range resourceMetric.ScopeMetrics().All() {
 			key := scopeKey{ri, si}
 			scopeID := scopeIDs[key]
@@ -276,7 +283,7 @@ func appendPass(
 					continue
 				}
 
-				identity := streamIdentityFromMetric(metric, resourceID, scopeID)
+				identity := streamIdentityFromMetric(metric, resourceID, resourcePayloadID, scopeID)
 				streamIndex, ok := streamIndexes[identity.lookupKey()]
 				if !ok {
 					return fmt.Errorf("Ingest: %w: stream id missing for identity %+v", ErrMetricsStoreInternal, identity)
@@ -405,6 +412,7 @@ func collectSeries(
 	streamIDs []streamIdentity,
 	streamIndexes map[streamLookupKey]int,
 	resourceIDs map[int]duckdb.UUID,
+	resourcePayloadIDs map[int]duckdb.UUID,
 	scopeIDs map[scopeKey]duckdb.UUID,
 	dpAttrIDs [][]duckdb.UUID,
 ) ([]dpIdentity, []seriesRow, error) {
@@ -420,7 +428,8 @@ func collectSeries(
 				if err := ctx.Err(); err != nil {
 					return nil, nil, err
 				}
-				identity := streamIdentityFromMetric(metric, resourceIDs[ri], scopeIDs[key])
+				identity := streamIdentityFromMetric(
+					metric, resourceIDs[ri], resourcePayloadIDs[ri], scopeIDs[key])
 				streamIndex, ok := streamIndexes[identity.lookupKey()]
 				if !ok {
 					return nil, nil, fmt.Errorf("collectSeries: %w: stream id missing for identity %+v",
@@ -593,8 +602,8 @@ type streamIdentity struct {
 	Existed                bool
 	ExistenceKnown         bool
 	ResourceID             duckdb.UUID
+	ResourcePayloadID      duckdb.UUID
 	ScopeID                duckdb.UUID
-	ResourceSchemaURL      string
 	Name                   string
 	Description            string
 	Unit                   string
@@ -606,7 +615,7 @@ type streamIdentity struct {
 }
 
 type streamLookupKey struct {
-	resourceID             duckdb.UUID
+	resourcePayloadID      duckdb.UUID
 	scopeID                duckdb.UUID
 	name                   string
 	unit                   string
@@ -617,7 +626,7 @@ type streamLookupKey struct {
 
 func (s streamIdentity) lookupKey() streamLookupKey {
 	return streamLookupKey{
-		resourceID:             s.ResourceID,
+		resourcePayloadID:      s.ResourcePayloadID,
 		scopeID:                s.ScopeID,
 		name:                   s.Name,
 		unit:                   s.Unit,
@@ -635,13 +644,13 @@ func resolveStreamIDs(
 ) error {
 	ordinals := make([]int32, 0, len(identities))
 	resourceIDs := make([]string, 0, len(identities))
+	resourcePayloadIDs := make([]string, 0, len(identities))
 	scopeIDs := make([]string, 0, len(identities))
 	names := make([]string, 0, len(identities))
 	units := make([]string, 0, len(identities))
 	types := make([]string, 0, len(identities))
 	temporalities := make([]int32, 0, len(identities))
 	monotonics := make([]bool, 0, len(identities))
-	resourceSchemaURLs := make([]string, 0, len(identities))
 	descriptions := make([]string, 0, len(identities))
 	metadataIDs := make([][]string, 0, len(identities))
 	serviceNames := make([]string, 0, len(identities))
@@ -651,31 +660,31 @@ func resolveStreamIDs(
 		}
 		ordinals = append(ordinals, int32(i))
 		resourceIDs = append(resourceIDs, ingest.FormatUUID(identity.ResourceID))
+		resourcePayloadIDs = append(resourcePayloadIDs, ingest.FormatUUID(identity.ResourcePayloadID))
 		scopeIDs = append(scopeIDs, ingest.FormatUUID(identity.ScopeID))
 		names = append(names, identity.Name)
 		units = append(units, identity.Unit)
 		types = append(types, identity.MetricType)
 		temporalities = append(temporalities, identity.AggregationTemporality)
 		monotonics = append(monotonics, isMonotonicToBool(identity.IsMonotonic))
-		resourceSchemaURLs = append(resourceSchemaURLs, identity.ResourceSchemaURL)
 		descriptions = append(descriptions, identity.Description)
 		metadataIDs = append(metadataIDs, uuidStrings(identity.MetadataIDs))
 		serviceNames = append(serviceNames, identity.ServiceName)
 	}
 
-	keyArgs := []any{resourceIDs, scopeIDs, names, units, types, temporalities, monotonics}
+	keyArgs := []any{resourcePayloadIDs, scopeIDs, names, units, types, temporalities, monotonics}
 	selectArgs, err := appendNamedValues(nil, prepareArg, append([]any{ordinals}, keyArgs...)...)
 	if err != nil {
 		return fmt.Errorf("Ingest: %w: prep stream select: %w", ErrMetricsStoreInternal, err)
 	}
 	const selectSQL = `select w.ordinal::bigint, s.id::varchar from metric_streams s join (
 		select unnest(?::integer[]) as ordinal,
-		       unnest(?::varchar[])::uuid as resource_id,
+		       unnest(?::varchar[])::uuid as resource_payload_id,
 		       unnest(?::varchar[])::uuid as scope_id,
 		       unnest(?::varchar[]) as name, unnest(?::varchar[]) as unit,
 		       unnest(?::varchar[]) as metric_type, unnest(?::integer[]) as aggregation_temporality,
 		       unnest(?::boolean[]) as is_monotonic
-	) w on s.resource_id = w.resource_id and s.scope_id = w.scope_id and s.name = w.name
+	) w on s.resource_payload_id = w.resource_payload_id and s.scope_id = w.scope_id and s.name = w.name
 	   and s.unit = w.unit and s.metric_type = w.metric_type
 	   and s.aggregation_temporality = w.aggregation_temporality
 	   and s.is_monotonic = w.is_monotonic`
@@ -718,29 +727,30 @@ func resolveStreamIDs(
 	for i := range identities {
 		identities[i].ExistenceKnown = true
 	}
-	insertArgs, err := appendNamedValues(nil, prepareArg, append(keyArgs,
-		resourceSchemaURLs, descriptions, metadataIDs, serviceNames)...)
+	insertArgs, err := appendNamedValues(nil, prepareArg,
+		resourceIDs, resourcePayloadIDs, scopeIDs, names, units, types,
+		temporalities, monotonics, descriptions, metadataIDs, serviceNames)
 	if err != nil {
 		return fmt.Errorf("Ingest: %w: prep stream insert: %w", ErrMetricsStoreInternal, err)
 	}
-	const insertSQL = `insert into metric_streams (id, resource_id, scope_id, name, unit, metric_type, aggregation_temporality, is_monotonic, resource_schema_url, description, metadata_ids, service_name)
-		 select uuid(), w.resource_id, w.scope_id, w.name, w.unit, w.metric_type,
-		        w.aggregation_temporality, w.is_monotonic, w.resource_schema_url,
+	const insertSQL = `insert into metric_streams (id, resource_id, resource_payload_id, scope_id, name, unit, metric_type, aggregation_temporality, is_monotonic, description, metadata_ids, service_name)
+		 select uuid(), w.resource_id, w.resource_payload_id, w.scope_id, w.name, w.unit, w.metric_type,
+		        w.aggregation_temporality, w.is_monotonic,
 		        w.description, w.metadata_ids, w.service_name
 		 from (
 			select unnest(?::varchar[])::uuid as resource_id,
+			       unnest(?::varchar[])::uuid as resource_payload_id,
 			       unnest(?::varchar[])::uuid as scope_id,
 			       unnest(?::varchar[]) as name, unnest(?::varchar[]) as unit,
 			       unnest(?::varchar[]) as metric_type, unnest(?::integer[]) as aggregation_temporality,
 			       unnest(?::boolean[]) as is_monotonic,
-			       unnest(?::varchar[]) as resource_schema_url,
 			       unnest(?::varchar[]) as description,
 			       list_transform(unnest(?::varchar[][]), x -> x::uuid) as metadata_ids,
 			       unnest(?::varchar[]) as service_name
 		 ) w
 		 where not exists (
 			select 1 from metric_streams s
-			where s.resource_id = w.resource_id and s.scope_id = w.scope_id and s.name = w.name
+			where s.resource_payload_id = w.resource_payload_id and s.scope_id = w.scope_id and s.name = w.name
 			  and s.unit = w.unit and s.metric_type = w.metric_type
 			  and s.aggregation_temporality = w.aggregation_temporality
 			  and s.is_monotonic = w.is_monotonic
@@ -757,18 +767,18 @@ func resolveStreamIDs(
 		streamIDs = append(streamIDs, ingest.FormatUUID(identity.ID))
 	}
 	updateArgs, err := appendNamedValues(nil, prepareArg,
-		streamIDs, resourceSchemaURLs, descriptions, metadataIDs, serviceNames)
+		streamIDs, resourceIDs, descriptions, metadataIDs, serviceNames)
 	if err != nil {
 		return fmt.Errorf("Ingest: %w: prep stream update: %w", ErrMetricsStoreInternal, err)
 	}
 	const updateSQL = `update metric_streams s set
-		resource_schema_url = w.resource_schema_url,
+		resource_id = w.resource_id,
 		description = w.description,
 		metadata_ids = w.metadata_ids,
 		service_name = w.service_name
 	from (
 		select unnest(?::varchar[])::uuid as id,
-		       unnest(?::varchar[]) as resource_schema_url,
+		       unnest(?::varchar[])::uuid as resource_id,
 		       unnest(?::varchar[]) as description,
 		       list_transform(unnest(?::varchar[][]), x -> x::uuid) as metadata_ids,
 		       unnest(?::varchar[]) as service_name
@@ -813,7 +823,7 @@ func cleanupProvisionalIdentities(
 			continue
 		}
 		args, err := appendNamedValues(nil, prepareArg,
-			ingest.FormatUUID(identity.ResourceID), ingest.FormatUUID(identity.ScopeID),
+			ingest.FormatUUID(identity.ResourcePayloadID), ingest.FormatUUID(identity.ScopeID),
 			identity.Name, identity.Unit, identity.MetricType,
 			identity.AggregationTemporality, isMonotonicToBool(identity.IsMonotonic))
 		if err != nil {
@@ -822,7 +832,7 @@ func cleanupProvisionalIdentities(
 			continue
 		}
 		_, err = dconn.ExecContext(ctx, `delete from metric_streams s
-			where s.resource_id = ?::uuid and s.scope_id = ?::uuid
+			where s.resource_payload_id = ?::uuid and s.scope_id = ?::uuid
 			  and s.name = ? and s.unit = ? and s.metric_type = ?
 			  and s.aggregation_temporality = ? and s.is_monotonic = ?
 			  and not exists (select 1 from metric_series ms where ms.stream_id = s.id)`, args)
@@ -848,12 +858,12 @@ func serviceNameFromAttrs(attrs pcommon.Map) string {
 // distinguishes non-applicable stored placeholders from received values.
 func streamIdentityFromMetric(
 	metric pmetric.Metric,
-	resourceID, scopeID duckdb.UUID,
+	resourceID, resourcePayloadID, scopeID duckdb.UUID,
 ) streamIdentity {
 	id := streamIdentity{
-		ResourceID: resourceID,
-		ScopeID:    scopeID,
-		Name:       metric.Name(), Unit: metric.Unit(), MetricType: metric.Type().String(),
+		ResourceID: resourceID, ResourcePayloadID: resourcePayloadID,
+		ScopeID: scopeID,
+		Name:    metric.Name(), Unit: metric.Unit(), MetricType: metric.Type().String(),
 	}
 	switch metric.Type() {
 	case pmetric.MetricTypeSum:

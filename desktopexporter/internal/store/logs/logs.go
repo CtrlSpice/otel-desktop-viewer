@@ -99,7 +99,7 @@ func IngestReport(ctx context.Context, conn driver.Conn, logs plog.Logs, flushed
 	var logAttrs [][]duckdb.UUID
 
 	for ri, resourceLogs := range logs.ResourceLogs().All() {
-		resourceIDs[ri] = dict.AddResource(resourceLogs.Resource())
+		resourceIDs[ri] = dict.AddResource(resourceLogs.Resource(), resourceLogs.SchemaUrl()).ID
 		for si, scopeLogs := range resourceLogs.ScopeLogs().All() {
 			scopeIDs[scopeKey{ri, si}] = dict.AddScope(scopeLogs.Scope(), scopeLogs.SchemaUrl())
 			for _, log := range scopeLogs.LogRecords().All() {
@@ -198,7 +198,6 @@ func appendPass(
 					uint32(log.Flags()),             // Flags UINTEGER
 					log.EventName(),                 // EventName VARCHAR
 					serviceName,                     // ServiceName VARCHAR (NOT NULL, '' = unknown)
-					resourceLogs.SchemaUrl(),        // ResourceSchemaURL VARCHAR (batch-level)
 				)
 				if err != nil {
 					return fmt.Errorf("Ingest: %w: %w", ErrLogsStoreInternal, err)

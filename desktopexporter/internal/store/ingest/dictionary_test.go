@@ -81,7 +81,7 @@ func TestAttributeSetIsOrderIndependent(t *testing.T) {
 
 func resourceID(attrs pcommon.Map, dropped uint32) duckdb.UUID {
 	_, ids := ingest.AttributeSet(attrs, ingest.ScopeResource)
-	return ingest.ResourceID(ids, dropped)
+	return ingest.ResourcePayloadID(ids, dropped)
 }
 
 func TestResourceIdentityIncludesCompletePayload(t *testing.T) {
@@ -109,6 +109,22 @@ func TestResourceIdentityIncludesDroppedCount(t *testing.T) {
 	attrs := attrMap(map[string]string{"service.name": "checkout"})
 	assert.NotEqual(t, resourceID(attrs, 0), resourceID(attrs, 1),
 		"dropped attributes are part of the received payload")
+}
+
+func TestResourceIdentitySeparatesPayloadFromSchemaURL(t *testing.T) {
+	t.Parallel()
+	d := ingest.NewDictionary(nil)
+	resource := pcommon.NewResource()
+	resource.Attributes().PutStr("service.name", "checkout")
+	resource.SetDroppedAttributesCount(3)
+
+	first := d.AddResource(resource, "https://example.test/resource/v1")
+	second := d.AddResource(resource, "https://example.test/resource/v2")
+
+	assert.Equal(t, first.PayloadID, second.PayloadID,
+		"schema URL is not part of the Resource payload identity")
+	assert.NotEqual(t, first.ID, second.ID,
+		"each Resource payload and schema URL pair needs an exact row")
 }
 
 func TestResourceIdentityPreservesTypeAndPresence(t *testing.T) {
@@ -179,7 +195,7 @@ func TestFlushIsIdempotent(t *testing.T) {
 		res := pcommon.NewResource()
 		res.Attributes().PutStr("service.name", "checkout")
 		res.Attributes().PutStr("host.name", "pod-a")
-		d.AddResource(res)
+		d.AddResource(res, "")
 
 		sc := pcommon.NewInstrumentationScope()
 		sc.SetName("otelhttp")
@@ -221,7 +237,7 @@ func TestFlushPreservesDistinctResourcePayloadsAcrossBatches(t *testing.T) {
 		res.Attributes().PutStr("service.instance.id", "checkout-1")
 		res.Attributes().PutStr("region", region)
 		res.SetDroppedAttributesCount(dropped)
-		return d.AddResource(res)
+		return d.AddResource(res, "").ID
 	}
 
 	first := ingest.NewDictionary(s.FlushedIDs())
@@ -298,7 +314,7 @@ func TestFlushedArraysReferenceRealAttributes(t *testing.T) {
 	res := pcommon.NewResource()
 	res.Attributes().PutStr("service.name", "checkout")
 	res.Attributes().PutInt("process.pid", 4242)
-	d.AddResource(res)
+	d.AddResource(res, "")
 
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return d.Flush(ctx, conn)

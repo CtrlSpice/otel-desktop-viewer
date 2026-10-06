@@ -231,18 +231,33 @@ func TestStoreForeignKeysEnforced(t *testing.T) {
 	defer s.Close()
 
 	_, err = s.db.ExecContext(ctx, `
-		insert into resources (id, attribute_ids)
-		values ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid, []::uuid[])`)
+		insert into resources (id, payload_id, attribute_ids)
+		values ('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
+			'dddddddd-dddd-dddd-dddd-dddddddddddd'::uuid, []::uuid[])`)
 	require.NoError(t, err, "inserting a resources row should succeed")
 	_, err = s.db.ExecContext(ctx, `
 		insert into scopes (id, name, version, attribute_ids)
 		values ('ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, '', '', []::uuid[])`)
 	require.NoError(t, err, "inserting a scopes row should succeed")
-
 	_, err = s.db.ExecContext(ctx, `
-		insert into metric_streams (id, resource_id, scope_id, name, metric_type)
+		insert into resources (id, payload_id, attribute_ids)
+		values ('cccccccc-cccc-cccc-cccc-cccccccccccc'::uuid,
+			'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, []::uuid[])`)
+	require.NoError(t, err)
+	_, err = s.db.ExecContext(ctx, `
+		insert into metric_streams
+			(id, resource_id, resource_payload_id, scope_id, name, metric_type)
 		values (gen_random_uuid(),
 			'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
+			'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid,
+			'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, 'mismatched', 'Gauge')`)
+	require.Error(t, err, "a Metric payload key must belong to its exact Resource row")
+
+	_, err = s.db.ExecContext(ctx, `
+		insert into metric_streams (id, resource_id, resource_payload_id, scope_id, name, metric_type)
+		values (gen_random_uuid(),
+			'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'::uuid,
+			'dddddddd-dddd-dddd-dddd-dddddddddddd'::uuid,
 			'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, 'test', 'Gauge')`)
 	require.NoError(t, err)
 

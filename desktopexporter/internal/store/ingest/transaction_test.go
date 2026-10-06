@@ -80,7 +80,8 @@ func TestInTransaction_RollbackDiscardsWrites(t *testing.T) {
 		txErr := ingest.InTransaction(ctx, conn, func() error {
 			exec := conn.(driver.ExecerContext)
 			if _, e := exec.ExecContext(ctx,
-				`insert into resources (id, attribute_ids) values (gen_random_uuid(), [])`, nil); e != nil {
+				`insert into resources (id, payload_id, attribute_ids)
+					 values (gen_random_uuid(), gen_random_uuid(), [])`, nil); e != nil {
 				return e
 			}
 			return sentinel

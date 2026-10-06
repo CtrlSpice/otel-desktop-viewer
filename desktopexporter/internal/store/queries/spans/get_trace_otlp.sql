@@ -42,7 +42,7 @@ converted_attributes as materialized (
 span_documents as (
 	select
 		s.resource_id,
-		s.resource_schema_url,
+		r.schema_url as resource_schema_url,
 		s.scope_id,
 		sc.schema_url as scope_schema_url,
 		s.start_time,
@@ -88,6 +88,7 @@ span_documents as (
 			case when s.parent_span_id is null then json('{}') else json_object('parentSpanId', span_id_wire(s.parent_span_id)) end
 		) as document
 	from selected s
+	join resources r on r.id = s.resource_id
 	join scopes sc on sc.id = s.scope_id
 ),
 scope_groups as (

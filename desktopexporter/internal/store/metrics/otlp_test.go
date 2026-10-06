@@ -279,9 +279,9 @@ func TestGetMetricOTLPRejectsUnsupportedMetricTypes(t *testing.T) {
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		_, err := db.ExecContext(ctx, `
 			insert into metric_streams
-				(id, resource_id, scope_id, resource_schema_url, name, description, unit,
+				(id, resource_id, resource_payload_id, scope_id, name, description, unit,
 				 metadata_ids, metric_type, aggregation_temporality, is_monotonic, service_name)
-			select uuid(), resource_id, scope_id, resource_schema_url, name, description, unit,
+			select uuid(), resource_id, resource_payload_id, scope_id, name, description, unit,
 				metadata_ids, 'FutureMetric', aggregation_temporality, is_monotonic, service_name
 			from metric_streams where name = 'future-metric'`)
 		return err
