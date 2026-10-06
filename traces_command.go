@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -16,13 +17,13 @@ var traceSummaryFields = []string{
 	"errorCount",
 }
 
-func newTracesCommand(now func() time.Time) *cobra.Command {
+func newTracesCommand(client *http.Client, now func() time.Time) *cobra.Command {
 	options := telemetrySearchOptions{}
 	var jsonOutput bool
 	cmd := &cobra.Command{
 		Use:   "traces",
-		Short: "🔭 Search trace summaries in the running viewer",
-		Long: "🔭 Search existing trace summaries in the running viewer. " +
+		Short: "🧵 Search traces in a running viewer",
+		Long: "🧵 Search existing trace summaries in the running viewer. " +
 			"The default window is the last hour; output uses aligned columns unless --json is set.",
 		Example: "  otel-desktop-viewer traces\n" +
 			"  otel-desktop-viewer traces --service checkout --since 30m\n" +
@@ -35,7 +36,7 @@ func newTracesCommand(now func() time.Time) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := requestTelemetrySearch(cmd.Context(), queryHTTPClient, options.Endpoint, "searchTraces", query, traceSummaryFields)
+			result, err := requestTelemetrySearch(cmd.Context(), client, options.Endpoint, "searchTraces", query, traceSummaryFields)
 			if err != nil {
 				return err
 			}

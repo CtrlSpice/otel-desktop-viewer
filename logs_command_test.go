@@ -30,7 +30,7 @@ func TestLogsCommandPreservesSummaryFieldsFiltersAndResolvesTimeOnce(t *testing.
 
 	fixedNow := time.Date(2026, 10, 2, 9, 0, 0, 987654321, time.UTC)
 	clockCalls := 0
-	cmd := newLogsCommand(func() time.Time {
+	cmd := newLogsCommand(http.DefaultClient, func() time.Time {
 		clockCalls++
 		return fixedNow
 	})
@@ -54,7 +54,7 @@ func TestLogsCommandPreservesSummaryFieldsFiltersAndResolvesTimeOnce(t *testing.
 	assert.Equal(t, "checkout", condition["value"])
 
 	output.Reset()
-	cmd = newLogsCommand(func() time.Time { return fixedNow })
+	cmd = newLogsCommand(http.DefaultClient, func() time.Time { return fixedNow })
 	cmd.SetOut(&output)
 	cmd.SetErr(&output)
 	cmd.SetArgs([]string{"--endpoint", viewer.URL, "--json"})
@@ -85,7 +85,7 @@ func TestLogsCommandLimitsEmptyErrorsCancellationAndHelp(t *testing.T) {
 	})
 
 	t.Run("malformed arguments", func(t *testing.T) {
-		cmd := newLogsCommand(time.Now)
+		cmd := newLogsCommand(http.DefaultClient, time.Now)
 		cmd.SetArgs([]string{"--since", "0s"})
 		require.ErrorContains(t, cmd.Execute(), "--since must be greater than zero")
 	})

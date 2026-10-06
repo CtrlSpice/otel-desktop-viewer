@@ -17,8 +17,6 @@ import (
 
 const queryDefaultLimit uint64 = 25
 
-var queryHTTPClient = http.DefaultClient
-
 type queryColumn struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
@@ -47,14 +45,14 @@ type queryRPCError struct {
 	Message string `json:"message"`
 }
 
-func newQueryCommand() *cobra.Command {
+func newQueryCommand(client *http.Client) *cobra.Command {
 	var endpoint string
 	var limit uint64
 	var jsonOutput bool
 
 	cmd := &cobra.Command{
 		Use:   "query <sql>",
-		Short: "🔎 Run read-only SQL against the running viewer",
+		Short: "🔎 Run SQL against a running viewer",
 		Long: "🔎 Run one read-only DuckDB query against the existing viewer process. " +
 			"Results use aligned columns by default; --json emits the JSON result.",
 		Example: "  otel-desktop-viewer query 'SHOW TABLES'\n" +
@@ -66,7 +64,7 @@ func newQueryCommand() *cobra.Command {
 			cmd.SilenceUsage = true
 			cmd.SilenceErrors = true
 
-			raw, result, err := requestQuery(cmd.Context(), queryHTTPClient, endpoint, args[0], limit)
+			raw, result, err := requestQuery(cmd.Context(), client, endpoint, args[0], limit)
 			if err != nil {
 				return err
 			}

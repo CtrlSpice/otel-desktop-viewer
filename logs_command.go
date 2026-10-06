@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -15,12 +16,12 @@ var logSummaryFields = []string{
 	"bodyPreview",
 }
 
-func newLogsCommand(now func() time.Time) *cobra.Command {
+func newLogsCommand(client *http.Client, now func() time.Time) *cobra.Command {
 	options := telemetrySearchOptions{}
 	var jsonOutput bool
 	cmd := &cobra.Command{
 		Use:   "logs",
-		Short: "🪵 Search log summaries in the running viewer",
+		Short: "🪵 Search logs in a running viewer",
 		Long: "🪵 Search existing log summaries in the running viewer. " +
 			"The default window is the last hour; output uses aligned columns unless --json is set.",
 		Example: "  otel-desktop-viewer logs\n" +
@@ -34,7 +35,7 @@ func newLogsCommand(now func() time.Time) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := requestTelemetrySearch(cmd.Context(), queryHTTPClient, options.Endpoint, "searchLogs", query, logSummaryFields)
+			result, err := requestTelemetrySearch(cmd.Context(), client, options.Endpoint, "searchLogs", query, logSummaryFields)
 			if err != nil {
 				return err
 			}
