@@ -170,7 +170,7 @@ func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flus
 		return driver.DefaultParameterConverter.ConvertValue(v)
 	}
 	defer func() {
-		if cleanupArmed {
+		if cleanupArmed && (err != nil || rejected.Count() != 0) {
 			err = errors.Join(err, cleanupProvisionalIdentities(
 				context.WithoutCancel(ctx), dconn, prepareArg, flushed, identities, seriesRows))
 		}
@@ -178,13 +178,13 @@ func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flus
 
 	// Attribute rows must exist before the stream identities that reference
 	// them. DuckDB cannot enforce foreign keys into the UUID arrays.
+	cleanupArmed = true
 	if err := dict.Flush(ctx, conn); err != nil {
 		return ingest.Rejected{}, fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 	}
 	if err := resolveStreamIDs(ctx, dconn, prepareArg, identities); err != nil {
 		return ingest.Rejected{}, err
 	}
-	cleanupArmed = true
 
 	// Pass 2: open the appenders and walk the request again, writing
 	// metric_ingests and datapoints. We resolve each metric's stream_id by
@@ -386,23 +386,23 @@ type dpIdentity struct {
 
 // seriesRow is a metric_series row awaiting insert.
 type seriesRow struct {
-	id      duckdb.UUID
-	stream  duckdb.UUID
-	attrs   []duckdb.UUID
-	existed bool
+	id             duckdb.UUID
+	stream         duckdb.UUID
+	attrs          []duckdb.UUID
+	existed        bool
+	existenceKnown bool
 }
 
-func (r seriesRow) sameKey(other seriesRow) bool {
-	return r.stream == other.stream && slices.Equal(r.attrs, other.attrs)
-}
-
-func findSeriesRow(rows []seriesRow, row seriesRow) int {
-	for i := range rows {
-		if rows[i].sameKey(row) {
-			return i
-		}
+func seriesKey(row seriesRow) string {
+	// UUID strings have a fixed width, so concatenation is an exact in-memory
+	// lookup key. It is not stored or exposed as the series ID.
+	var key strings.Builder
+	key.Grow(36 * (len(row.attrs) + 1))
+	key.WriteString(ingest.FormatUUID(row.stream))
+	for _, id := range row.attrs {
+		key.WriteString(ingest.FormatUUID(id))
 	}
-	return -1
+	return key.String()
 }
 
 // collectSeries walks every datapoint in the batch, in the same order pass 2
@@ -423,6 +423,7 @@ func collectSeries(
 ) ([]dpIdentity, []seriesRow, error) {
 	idents := make([]dpIdentity, 0, len(dpAttrIDs))
 	var rows []seriesRow
+	rowIndexes := make(map[string]int)
 	cur := 0
 
 	for ri, resourceMetric := range m.ResourceMetrics().All() {
@@ -452,10 +453,12 @@ func collectSeries(
 					ids := dpAttrIDs[cur]
 					cur++
 					row := seriesRow{stream: streamID, attrs: ids}
-					rowIndex := findSeriesRow(rows, row)
-					if rowIndex < 0 {
+					rowKey := seriesKey(row)
+					rowIndex, ok := rowIndexes[rowKey]
+					if !ok {
 						rowIndex = len(rows)
 						rows = append(rows, row)
+						rowIndexes[rowKey] = rowIndex
 					}
 					idents = append(idents, dpIdentity{seriesIndex: rowIndex, attrs: ids})
 				})
@@ -589,6 +592,9 @@ func insertSeries(
 	if err := resolveRows(true, false); err != nil {
 		return err
 	}
+	for i := range rows {
+		rows[i].existenceKnown = true
+	}
 	if _, err := dconn.ExecContext(ctx, q, args); err != nil {
 		return fmt.Errorf("Ingest: %w: %w", ErrMetricsStoreInternal, err)
 	}
@@ -602,6 +608,7 @@ func insertSeries(
 type streamIdentity struct {
 	ID                     duckdb.UUID
 	Existed                bool
+	ExistenceKnown         bool
 	ResourceAttributeIDs   []duckdb.UUID
 	Name                   string
 	Unit                   string
@@ -724,6 +731,9 @@ func resolveStreamIDs(
 	if err := resolveRows(true, false); err != nil {
 		return err
 	}
+	for i := range identities {
+		identities[i].ExistenceKnown = true
+	}
 	insertArgs, err := appendNamedValues(nil, prepareArg, append(keyArgs, serviceNames)...)
 	if err != nil {
 		return fmt.Errorf("Ingest: %w: prep stream insert: %w", ErrMetricsStoreInternal, err)
@@ -764,50 +774,46 @@ func cleanupProvisionalIdentities(
 	identities []streamIdentity,
 	seriesRows []seriesRow,
 ) error {
-	var provisionalSeries []duckdb.UUID
 	for _, row := range seriesRows {
-		if !row.existed && row.id != (duckdb.UUID{}) {
-			provisionalSeries = append(provisionalSeries, row.id)
-		}
-	}
-	var provisionalStreams []duckdb.UUID
-	for _, identity := range identities {
-		if !identity.Existed && identity.ID != (duckdb.UUID{}) {
-			provisionalStreams = append(provisionalStreams, identity.ID)
-		}
-	}
-
-	removed := int64(0)
-	for _, deletion := range []struct {
-		ids []duckdb.UUID
-		sql string
-	}{
-		{provisionalSeries, `delete from metric_series s
-			where s.id in (select unnest(?::varchar[])::uuid)
-			  and not exists (select 1 from datapoints d where d.series_id = s.id)`},
-		{provisionalStreams, `delete from metric_streams s
-			where s.id in (select unnest(?::varchar[])::uuid)
-			  and not exists (select 1 from metric_ingests mi where mi.stream_id = s.id)`},
-	} {
-		if len(deletion.ids) == 0 {
+		if !row.existenceKnown || row.existed {
 			continue
 		}
-		args, err := appendNamedValues(nil, prepareArg, uuidStrings(deletion.ids))
+		args, err := appendNamedValues(nil, prepareArg,
+			ingest.FormatUUID(row.stream), uuidStrings(row.attrs))
 		if err != nil {
 			return fmt.Errorf("cleanupProvisionalIdentities: %w: %w", ErrMetricsStoreInternal, err)
 		}
-		result, err := dconn.ExecContext(ctx, deletion.sql, args)
+		_, err = dconn.ExecContext(ctx, `delete from metric_series s
+			where s.stream_id = ?::uuid
+			  and s.attribute_ids = list_transform(?::varchar[], x -> x::uuid)
+			  and not exists (select 1 from datapoints d where d.series_id = s.id)`, args)
 		if err != nil {
 			return fmt.Errorf("cleanupProvisionalIdentities: %w: %w", ErrMetricsStoreInternal, err)
 		}
-		n, err := result.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("cleanupProvisionalIdentities: %w: %w", ErrMetricsStoreInternal, err)
-		}
-		removed += n
 	}
-	if removed == 0 {
-		return nil
+	for _, identity := range identities {
+		if !identity.ExistenceKnown || identity.Existed {
+			continue
+		}
+		args, err := appendNamedValues(nil, prepareArg,
+			uuidStrings(identity.ResourceAttributeIDs), identity.Name, identity.Unit,
+			identity.MetricType, identity.AggregationTemporality,
+			isMonotonicToBool(identity.IsMonotonic), identity.ScopeName,
+			identity.ScopeVersion, identity.ScopeSchemaURL,
+			uuidStrings(identity.ScopeAttributeIDs))
+		if err != nil {
+			return fmt.Errorf("cleanupProvisionalIdentities: %w: %w", ErrMetricsStoreInternal, err)
+		}
+		_, err = dconn.ExecContext(ctx, `delete from metric_streams s
+			where s.resource_attribute_ids = list_transform(?::varchar[], x -> x::uuid)
+			  and s.name = ? and s.unit = ? and s.metric_type = ?
+			  and s.aggregation_temporality = ? and s.is_monotonic = ?
+			  and s.scope_name = ? and s.scope_version = ? and s.scope_schema_url = ?
+			  and s.scope_attribute_ids = list_transform(?::varchar[], x -> x::uuid)
+			  and not exists (select 1 from metric_ingests mi where mi.stream_id = s.id)`, args)
+		if err != nil {
+			return fmt.Errorf("cleanupProvisionalIdentities: %w: %w", ErrMetricsStoreInternal, err)
+		}
 	}
 	return ingest.SweepOrphansConn(ctx, dconn, flushed)
 }
