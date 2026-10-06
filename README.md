@@ -230,6 +230,10 @@ services:
 
 Telemetry is stored in memory by default. Use `--db` to persist to a file.
 
+The bare command runs the viewer in the foreground until it receives a signal. Keep it running while you use the UI or client commands; people can run client commands from another terminal.
+
+Automation should reuse an existing viewer when one is available. Otherwise, spawn `otel-desktop-viewer --open-browser=false` as a managed child, retain its process handle, wait for the configured viewer HTTP endpoint (by default `http://localhost:8000`) to accept connections, and then run client commands. Terminate and wait for the child only if you started it; never stop a viewer you do not own.
+
 ```bash
 Flags:
       --browser-port int     Port for the web UI and JSON-RPC API (default 8000)

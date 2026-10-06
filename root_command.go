@@ -120,6 +120,15 @@ func writeRootHelpTo(cmd *cobra.Command, writer io.Writer) {
 
 View OpenTelemetry data locally or inspect a running viewer.
 
+The bare command runs the viewer in the foreground until it receives a signal.
+Client commands require a running viewer.
+
+For automation, reuse an existing viewer. Otherwise, start
+  %s --open-browser=false
+as a managed child. Retain its process handle, wait for the configured viewer
+HTTP endpoint to accept connections, then terminate and wait for the child only
+if you started it. Never stop a viewer you did not start.
+
 USAGE
   %s [flags]
   %s <command> [flags]
@@ -143,7 +152,7 @@ VIEWER FLAGS
 GLOBAL FLAGS
   -h, --help      Help for this command
   -v, --version   Version for %s
-`, cmd.CommandPath(), cmd.CommandPath(), cmd.CommandPath(), cmd.CommandPath())
+`, cmd.CommandPath(), cmd.CommandPath(), cmd.CommandPath(), cmd.CommandPath(), cmd.CommandPath())
 }
 
 func writeCommandHelp(cmd *cobra.Command, _ []string) {

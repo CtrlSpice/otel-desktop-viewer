@@ -19,6 +19,15 @@ const expectedRootHelp = `otel-desktop-viewer
 
 View OpenTelemetry data locally or inspect a running viewer.
 
+The bare command runs the viewer in the foreground until it receives a signal.
+Client commands require a running viewer.
+
+For automation, reuse an existing viewer. Otherwise, start
+  otel-desktop-viewer --open-browser=false
+as a managed child. Retain its process handle, wait for the configured viewer
+HTTP endpoint to accept connections, then terminate and wait for the child only
+if you started it. Never stop a viewer you did not start.
+
 USAGE
   otel-desktop-viewer [flags]
   otel-desktop-viewer <command> [flags]
