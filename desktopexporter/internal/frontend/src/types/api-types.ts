@@ -297,19 +297,8 @@ export type DataPoint =
   | HistogramDataPoint
   | ExponentialHistogramDataPoint
 
-// A MetricSeriesViewData is one (metric, attribute-set) pair: the OTel
-// SDK spec calls this a "metric point" / "timeseries" within a metric
-// stream. All datapoints inside share the same `attributes` (that's
-// what makes them one timeseries). `seriesRef` is the backend's
-// canonical "key=value|..." identity for this attribute set -- a stable
-// id the frontend uses to drive the legend, the chart's per-line
-// keying, and the per-timeseries colour assignment.
-//
-// (Naming note: the SDK spec uses "metric stream" for the whole named
-// series produced by a View -- which corresponds to our `MetricViewData` /
-// `metrics` table. The per-attribute series within it is the
-// "timeseries" / "metric point". We use "timeseries" everywhere in the
-// type layer to avoid colliding with the spec's "metric stream".)
+// A MetricSeriesViewData is one Metric and attribute-set pair. All datapoints
+// share the same attributes. `seriesRef` is its database-local reference.
 //
 // Timeseries arrive ordered "newest activity first" (latest dp
 // timestamp desc); datapoints inside a timeseries arrive
@@ -430,9 +419,9 @@ export type MetricViewData = {
   /** OTLP Metric.metadata: describes the instrument, not any one series. */
   metadata: Attributes
   unit: string
-  /** Stream-level type from metrics (getMetricView only). */
+  /** Metric type from metrics (getMetricView only). */
   metricType?: MetricType
-  /** Stream-level monotonic flag; null except Sum. */
+  /** Metric monotonic flag; null except Sum. */
   isMonotonic?: boolean | null
   resourceDroppedAttributesCount: number
   /** Latest received ResourceMetrics schema URL for this Metric. */
@@ -562,7 +551,7 @@ export type SparklinePoint = {
   value: number
 }
 
-// Metric summary for sidebar cards (one row per metric stream).
+// Metric summary for sidebar cards.
 export type MetricSummary = {
   metricRef: string
   name: string
@@ -576,7 +565,7 @@ export type MetricSummary = {
   // Distinct attribute sets (timeseries) seen in the queried window.
   seriesCount: number
   seriesCardinality: number
-  // In-range datapoints for this metric stream.
+  // In-range datapoints for this Metric.
   dataPointCount: number
   /** @derived Most recent Gauge/Sum value by timestamp in the requested
    * window. SQL coalesces double/int sources into an IEEE-754 metric-unit

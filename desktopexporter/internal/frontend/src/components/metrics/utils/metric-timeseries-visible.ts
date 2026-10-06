@@ -3,7 +3,7 @@
  * checked, which AggregationView the user last picked, and whether the
  * optional all-series aggregate line is shown.
  *
- * Stored as a single JSON blob per metric stream id so the user's
+ * Stored as one JSON blob per Metric reference so the user's
  * "how I had this metric set up" travels together. Storage shape:
  *
  *   {

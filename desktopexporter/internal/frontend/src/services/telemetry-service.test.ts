@@ -53,7 +53,7 @@ function metricResult(
 ): JsonMetricViewData {
   return {
     lastSeenNs: null,
-    metricRef: 'some-stream',
+    metricRef: 'some-metric',
     name: 'test.gauge',
     description: '',
     metadata: [],
@@ -244,16 +244,16 @@ describe('telemetryAPI.getMetricView', () => {
       error: { code: -32003, message: 'Metric not found' },
     })
     await expect(
-      telemetryAPI.getMetricView('some-stream', 0n, 1n)
+      telemetryAPI.getMetricView('some-metric', 0n, 1n)
     ).resolves.toBeNull()
   })
 
   it('rethrows JSON-RPC errors other than metric not found', async () => {
     stubRpcResponse({
       jsonrpc: '2.0',
-      error: { code: -32009, message: 'Invalid metric stream ID' },
+      error: { code: -32009, message: 'Invalid Metric reference' },
     })
-    const call = telemetryAPI.getMetricView('not-a-stream', 0n, 1n)
+    const call = telemetryAPI.getMetricView('not-a-metric', 0n, 1n)
     await expect(call).rejects.toBeInstanceOf(JsonRpcError)
     await expect(call).rejects.toMatchObject({ code: -32009 })
   })
@@ -270,7 +270,7 @@ describe('telemetryAPI.getMetricView', () => {
         },
       })
     )
-    const metric = await telemetryAPI.getMetricView('some-stream', 0n, 1n)
+    const metric = await telemetryAPI.getMetricView('some-metric', 0n, 1n)
     expect(metric).not.toBeNull()
     expect(metric!.name).toBe('test.gauge')
     expect(metric!.resourceSchemaUrl).toBe('https://example.test/resource/1.0')
@@ -386,7 +386,7 @@ describe('telemetryAPI.getMetricView', () => {
       })
     )
 
-    const metric = await telemetryAPI.getMetricView('some-stream', 0n, 1n)
+    const metric = await telemetryAPI.getMetricView('some-metric', 0n, 1n)
     expect(metric!.timeseries[0]!.datapoints[0]).toMatchObject({
       intValue: null,
     })
@@ -550,7 +550,7 @@ describe('telemetryAPI.getMetricView', () => {
     })
     stubRpcResult(wire)
 
-    const metric = await telemetryAPI.getMetricView('some-stream', 0n, 1n)
+    const metric = await telemetryAPI.getMetricView('some-metric', 0n, 1n)
     const datapoints = metric!.timeseries[0]!.datapoints
 
     expect(datapoints[0]).toMatchObject({
@@ -648,7 +648,7 @@ describe('telemetryAPI.getMetricView', () => {
       })
     )
 
-    const metric = await telemetryAPI.getMetricView('some-stream', 0n, 2n)
+    const metric = await telemetryAPI.getMetricView('some-metric', 0n, 2n)
     const [absent, zero] = metric!.timeseries[0]!.datapoints
     expect(absent).toMatchObject({ sum: null, min: null, max: null })
     expect(zero).toMatchObject({ sum: 0, min: 0, max: 0 })
@@ -686,7 +686,7 @@ describe('telemetryAPI.getMetricView', () => {
       })
     )
 
-    const value = (await telemetryAPI.getMetricView('some-stream', 0n, 1n))!
+    const value = (await telemetryAPI.getMetricView('some-metric', 0n, 1n))!
       .metadata[0]!.value
     expect(value).toMatchObject({ kind: 'map' })
     if (value.kind !== 'map') throw new Error('Expected a map value')
@@ -737,7 +737,7 @@ describe('telemetryAPI.getMetricView', () => {
       })
     )
 
-    const metadata = (await telemetryAPI.getMetricView('some-stream', 0n, 1n))!
+    const metadata = (await telemetryAPI.getMetricView('some-metric', 0n, 1n))!
       .metadata
     expect(metadata[0]!.hasConflict).toBe(true)
     expect(metadata[1]!.hasConflict).toBe(true)
@@ -1042,7 +1042,7 @@ describe('telemetryAPI.getMetricAggregateView', () => {
     })
 
     const result = await telemetryAPI.getMetricAggregateView(
-      'some-stream',
+      'some-metric',
       0n,
       1n,
       1,
@@ -1457,7 +1457,7 @@ describe('telemetryAPI metric bigint boundary', () => {
     delete result.timeseries[0]!.lastSeenNs
     stubRpcResult(result)
 
-    const metric = await telemetryAPI.getMetricView('some-stream', 0n, 1n)
+    const metric = await telemetryAPI.getMetricView('some-metric', 0n, 1n)
     expect(metric!.lastSeenNs).toBeNull()
     expect(metric!.timeseries[0]!.lastSeenNs).toBeNull()
     expect(metric!.timeseries[0]!.views![0]!.bucketStart).toBe(
@@ -1775,12 +1775,12 @@ describe('request parameters', () => {
       'searchMetricSummaries',
       () => telemetryAPI.searchMetricSummaries(null, null),
     ],
-    ['getMetricView', () => telemetryAPI.getMetricView('stream-1', null, null)],
+    ['getMetricView', () => telemetryAPI.getMetricView('metric-1', null, null)],
     [
       'getMetricAggregateView',
       () =>
         telemetryAPI.getMetricAggregateView(
-          'stream-1',
+          'metric-1',
           null,
           null,
           10,
@@ -1805,12 +1805,12 @@ describe('request parameters', () => {
       'searchMetricSummaries',
       () => telemetryAPI.searchMetricSummaries(null, 5n),
     ],
-    ['getMetricView', () => telemetryAPI.getMetricView('stream-1', null, 5n)],
+    ['getMetricView', () => telemetryAPI.getMetricView('metric-1', null, 5n)],
     [
       'getMetricAggregateView',
       () =>
         telemetryAPI.getMetricAggregateView(
-          'stream-1',
+          'metric-1',
           null,
           5n,
           10,
@@ -1838,12 +1838,12 @@ describe('request parameters', () => {
       'searchMetricSummaries',
       () => telemetryAPI.searchMetricSummaries(2n, null),
     ],
-    ['getMetricView', () => telemetryAPI.getMetricView('stream-1', 2n, null)],
+    ['getMetricView', () => telemetryAPI.getMetricView('metric-1', 2n, null)],
     [
       'getMetricAggregateView',
       () =>
         telemetryAPI.getMetricAggregateView(
-          'stream-1',
+          'metric-1',
           2n,
           null,
           10,
@@ -1865,7 +1865,7 @@ describe('request parameters', () => {
     const sent = captureRequest()
     await telemetryAPI
       .getMetricView(
-        'stream-1',
+        'metric-1',
         2n,
         5n,
         10,
@@ -1881,7 +1881,7 @@ describe('request parameters', () => {
       )
       .catch(() => {})
     expect(sent().params).toEqual({
-      metricRef: 'stream-1',
+      metricRef: 'metric-1',
       startTime: '2',
       endTime: '5',
       targetBuckets: 10,
@@ -1924,18 +1924,18 @@ describe('request parameters', () => {
 
   it('preserves omitted, empty, and null series selections', async () => {
     const omitted = captureRequest()
-    await telemetryAPI.getMetricView('stream-1', 2n, 5n).catch(() => {})
+    await telemetryAPI.getMetricView('metric-1', 2n, 5n).catch(() => {})
     expect('seriesRefs' in omitted().params).toBe(false)
 
     const empty = captureRequest()
     await telemetryAPI
-      .getMetricView('stream-1', 2n, 5n, undefined, [])
+      .getMetricView('metric-1', 2n, 5n, undefined, [])
       .catch(() => {})
     expect(empty().params.seriesRefs).toEqual([])
 
     const unfiltered = captureRequest()
     await telemetryAPI
-      .getMetricAggregateView('stream-1', 2n, 5n, 10, null, [], 0)
+      .getMetricAggregateView('metric-1', 2n, 5n, 10, null, [], 0)
       .catch(() => {})
     expect(unfiltered().params.seriesRefs).toBeNull()
   })
@@ -1944,7 +1944,7 @@ describe('request parameters', () => {
     const sent = captureRequest()
     await telemetryAPI
       .getMetricAggregateView(
-        'stream-1',
+        'metric-1',
         2n,
         5n,
         10,
@@ -1957,7 +1957,7 @@ describe('request parameters', () => {
       )
       .catch(() => {})
     expect(sent().params).toEqual({
-      metricRef: 'stream-1',
+      metricRef: 'metric-1',
       startTime: '2',
       endTime: '5',
       targetBuckets: 10,

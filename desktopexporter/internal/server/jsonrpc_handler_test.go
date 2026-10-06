@@ -1247,8 +1247,7 @@ func TestDeleteParamValidation(t *testing.T) {
 // TestReadPathIDValidation covers the single-ID validation on the methods that
 // take one ID rather than an array: a malformed ID returns the signal-specific
 // code instead of reaching SQL and surfacing as a cast error dressed up as
-// ErrInternal. Mostly reads, plus deleteMetric, which is single-ID
-// because metrics address a stream by one uuid (see the handler comment).
+// ErrInternal. Mostly reads, plus the single-reference deleteMetric method.
 func TestReadPathIDValidation(t *testing.T) {
 	handler := setupHandler(t)
 	ctx := context.Background()
@@ -1262,10 +1261,10 @@ func TestReadPathIDValidation(t *testing.T) {
 		{"getLog", []string{"not-a-log-id"}, ErrInvalidLogRef},
 		{"getMetric", []string{"not-a-metric-id"}, ErrInvalidMetricRef},
 		{"getMetricSeries", []any{"00000000-0000-0000-0000-000000000001", "not-a-series-id", nil, nil}, ErrInvalidMetricRef},
-		{"getMetricView", []string{"not-a-stream-id", "0", "1"}, ErrInvalidMetricRef},
+		{"getMetricView", []string{"not-a-metric-ref", "0", "1"}, ErrInvalidMetricRef},
 		{"getTraceAttributeDefinitionsByTraceID", []string{"not-a-trace-id"}, ErrInvalidTraceID},
 		{"getTraceSpanCount", []string{"not-a-trace-id"}, ErrInvalidTraceID},
-		{"deleteMetric", []string{"not-a-stream-id"}, ErrInvalidMetricRef},
+		{"deleteMetric", []string{"not-a-metric-ref"}, ErrInvalidMetricRef},
 	}
 	for _, tc := range cases {
 		t.Run(tc.method, func(t *testing.T) {
@@ -1399,7 +1398,7 @@ func TestDeleteSpansByTraceID(t *testing.T) {
 	assert.Len(t, summaries, 0, "trace should be gone after delete")
 }
 
-func TestDeleteLogByID(t *testing.T) {
+func TestDeleteLogsByRefs(t *testing.T) {
 	handler := setupHandlerWithData(t)
 	ctx := context.Background()
 
@@ -1435,28 +1434,28 @@ func TestDeleteMetric(t *testing.T) {
 	require.True(t, ok)
 	var summaries []map[string]any
 	require.NoError(t, json.Unmarshal(raw, &summaries))
-	require.NotEmpty(t, summaries, "fixture must provide at least one metric stream")
+	require.NotEmpty(t, summaries, "fixture must provide at least one Metric")
 	metricRef, ok := summaries[0]["metricRef"].(string)
 	require.True(t, ok)
 	before := len(summaries)
 
 	result, err := handler.Handle(ctx, createRequest("deleteMetric", []string{metricRef}))
 	assert.NoError(t, err)
-	assert.Equal(t, "Metric stream deleted successfully", result)
+	assert.Equal(t, "Metric deleted successfully", result)
 
-	// The stream is gone from search, and only that stream went with it.
+	// Only the deleted Metric disappears from search.
 	searchResult, err = handler.Handle(ctx, createRequest("searchMetricSummaries", []string{"0", maxNano}))
 	require.NoError(t, err)
 	raw, ok = searchResult.(json.RawMessage)
 	require.True(t, ok)
 	require.NoError(t, json.Unmarshal(raw, &summaries))
-	assert.Len(t, summaries, before-1, "exactly one stream should be gone")
+	assert.Len(t, summaries, before-1, "exactly one Metric should be gone")
 	for _, s := range summaries {
-		assert.NotEqual(t, metricRef, s["metricRef"], "deleted stream must not reappear")
+		assert.NotEqual(t, metricRef, s["metricRef"], "deleted Metric must not reappear")
 	}
 }
 
-// TestDeleteMetricNotFound covers deleting a stream that does not exist.
+// TestDeleteMetricNotFound covers deleting a Metric that does not exist.
 // The cascade is a series of unconditional DELETEs, so this is a no-op rather
 // than an error -- the UI relies on that when a poll races a delete.
 func TestDeleteMetricNotFound(t *testing.T) {
@@ -1465,7 +1464,7 @@ func TestDeleteMetricNotFound(t *testing.T) {
 	result, err := handler.Handle(context.Background(),
 		createRequest("deleteMetric", []string{"00000000-0000-0000-0000-0000000000ff"}))
 	assert.NoError(t, err)
-	assert.Equal(t, "Metric stream deleted successfully", result)
+	assert.Equal(t, "Metric deleted successfully", result)
 }
 
 // assertAttributeDiscovery unmarshals an attribute-discovery result and checks
@@ -1735,10 +1734,10 @@ func TestGetMetricView(t *testing.T) {
 			"not-found must use the shared error convention, not a null result")
 	})
 
-	// A known stream queried over a window with no datapoints is NOT a
+	// A known Metric queried over a window with no datapoints is NOT a
 	// not-found: it returns valid MetricViewData with an empty timeseries list.
-	// Only an unknown stream ID gets ErrMetricNotFound (see subtest above).
-	t.Run("Known Stream, Empty Window", func(t *testing.T) {
+	// Only an unknown Metric reference gets ErrMetricNotFound.
+	t.Run("Known Metric, Empty Window", func(t *testing.T) {
 		handler := setupHandlerWithMetrics(t)
 
 		summaryReq := createRequest("searchMetricSummaries", []string{
@@ -1760,7 +1759,7 @@ func TestGetMetricView(t *testing.T) {
 		result, err := handler.Handle(context.Background(), req)
 
 		require.NoError(t, err,
-			"an empty window on a known stream must not be treated as not-found")
+			"an empty window on a known Metric must not be treated as not-found")
 		raw, ok := result.(json.RawMessage)
 		require.True(t, ok, "Expected json.RawMessage, got %T", result)
 		var metric map[string]any
@@ -1945,7 +1944,7 @@ func TestMetricHandlersAcceptEveryParameter(t *testing.T) {
 	maxTime := strconv.FormatInt(1<<63-1, 10)
 
 	detail := []any{
-		metricRef,        // 1 stream
+		metricRef,        // 1 Metric
 		"0",              // 2 start
 		maxTime,          // 3 end
 		"100",            // 4 targetBuckets
@@ -1960,7 +1959,7 @@ func TestMetricHandlersAcceptEveryParameter(t *testing.T) {
 		"10",             // 13 datapointSeriesLimit
 	}
 	aggregate := []any{
-		metricRef,        // 1 stream
+		metricRef,        // 1 Metric
 		"0",              // 2 start
 		maxTime,          // 3 end
 		"100",            // 4 targetBuckets

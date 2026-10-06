@@ -158,7 +158,7 @@ func TestValidateMetricOTLPRejectsInvalidWireShapes(t *testing.T) {
 	}
 }
 
-func TestGetMetricOTLPStreamOwnershipAndEmptyValues(t *testing.T) {
+func TestGetMetricOTLPOwnershipAndEmptyValues(t *testing.T) {
 	s, ctx := storetest.New(t)
 	for i, owner := range []string{"first", "first", "second"} {
 		batch := pmetric.NewMetrics()
@@ -180,7 +180,7 @@ func TestGetMetricOTLPStreamOwnershipAndEmptyValues(t *testing.T) {
 			sm.Scope().SetDroppedAttributesCount(4)
 		}
 		metric := sm.Metrics().AppendEmpty()
-		metric.SetName("same-stream")
+		metric.SetName("same-metric")
 		metric.SetDescription(owner)
 		metric.Metadata().PutStr("metadata.owner", owner)
 		dp := metric.SetEmptyGauge().DataPoints().AppendEmpty()
@@ -194,10 +194,10 @@ func TestGetMetricOTLPStreamOwnershipAndEmptyValues(t *testing.T) {
 	}
 	other := pmetric.NewMetrics()
 	otherRM := other.ResourceMetrics().AppendEmpty()
-	otherRM.Resource().Attributes().PutStr("owner", "other-stream")
+	otherRM.Resource().Attributes().PutStr("owner", "other-metric")
 	otherSM := otherRM.ScopeMetrics().AppendEmpty()
 	otherMetric := otherSM.Metrics().AppendEmpty()
-	otherMetric.SetName("same-stream")
+	otherMetric.SetName("same-metric")
 	otherMetric.SetUnit("other")
 	otherMetric.SetDescription("must-not-leak")
 	otherMetric.SetEmptyGauge().DataPoints().AppendEmpty().SetTimestamp(999)
@@ -209,7 +209,7 @@ func TestGetMetricOTLPStreamOwnershipAndEmptyValues(t *testing.T) {
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRowContext(ctx, `select m.id::varchar from metrics m
 			join scopes sc on sc.id = m.scope_id
-			where m.name = 'same-stream' and m.unit = '' and sc.schema_url = 'scope-first'`).Scan(&id)
+			where m.name = 'same-metric' and m.unit = '' and sc.schema_url = 'scope-first'`).Scan(&id)
 	}))
 	raw := getMetricOTLP(t, s, ctx, id)
 	text := string(raw)

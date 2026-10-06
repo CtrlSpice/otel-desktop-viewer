@@ -1,5 +1,5 @@
 {{.CTEs}},
-		filtered_streams as (
+		filtered_metrics as (
 			select s.*
 			{{.From}}
 			where {{.Where}}
@@ -7,19 +7,19 @@
 		metric_latest_dp as (
 			select d.metric_id, max(d.timestamp) as last_dp_ts
 			from metric_datapoints d
-			inner join filtered_streams fs on d.metric_id = fs.id, search_params
+			inner join filtered_metrics fm on d.metric_id = fm.id, search_params
 			{{.DatapointWhere}}
 			group by d.metric_id
 		),
-		candidate_streams as (
-			select fs.*
-			from filtered_streams fs
-			left join metric_latest_dp sldp on sldp.metric_id = fs.id
+		candidate_metrics as (
+			select fm.*
+			from filtered_metrics fm
+			left join metric_latest_dp mldp on mldp.metric_id = fm.id
 			{{if .CandidateOrder}}order by {{.CandidateOrder}}{{.CandidateLimit}}{{end}}
 		),
 		filtered_dps as (
 			select d.* from metric_datapoints d
-			inner join candidate_streams fs on d.metric_id = fs.id, search_params
+			inner join candidate_metrics fm on d.metric_id = fm.id, search_params
 			{{.DatapointWhere}}
 		),
 		-- series_count is window-scoped; series_cardinality covers all retained
@@ -32,7 +32,7 @@
 		metric_series_cardinality as (
 			select metric_id, count(distinct series_id) as series_cardinality
 			from metric_datapoints
-			where metric_id in (select id from candidate_streams)
+			where metric_id in (select id from candidate_metrics)
 			group by metric_id
 		),
 		metric_datapoint_count as (
@@ -45,31 +45,31 @@
 				d.metric_id,
 				arg_max(coalesce(d.double_value, d.int_value), d.timestamp) as last_value
 			from filtered_dps d
-			inner join candidate_streams fs on fs.id = d.metric_id
-			where fs.metric_type in ('Gauge', 'Sum')
+			inner join candidate_metrics fm on fm.id = d.metric_id
+			where fm.metric_type in ('Gauge', 'Sum')
 			group by d.metric_id
 		),
 		summary_rows as (
 			select
-				fs.id,
-				fs.name,
-				fs.description,
-				fs.unit,
-				fs.metric_type,
-				fs.aggregation_temporality,
-				fs.is_monotonic,
-				fs.service_name,
-				ssc.series_count,
-				coalesce(ssx.series_cardinality, 0) as series_cardinality,
-				sdc.datapoint_count,
-				slv.last_value,
-				sldp.last_dp_ts
-			from candidate_streams fs
-			left join metric_latest_dp sldp on sldp.metric_id = fs.id
-			left join metric_series_count ssc on ssc.metric_id = fs.id
-			left join metric_series_cardinality ssx on ssx.metric_id = fs.id
-			left join metric_datapoint_count sdc on sdc.metric_id = fs.id
-			left join metric_last_value slv on slv.metric_id = fs.id
+				fm.id,
+				fm.name,
+				fm.description,
+				fm.unit,
+				fm.metric_type,
+				fm.aggregation_temporality,
+				fm.is_monotonic,
+				fm.service_name,
+				msc.series_count,
+				coalesce(msc_all.series_cardinality, 0) as series_cardinality,
+				mdc.datapoint_count,
+				mlv.last_value,
+				mldp.last_dp_ts
+			from candidate_metrics fm
+			left join metric_latest_dp mldp on mldp.metric_id = fm.id
+			left join metric_series_count msc on msc.metric_id = fm.id
+			left join metric_series_cardinality msc_all on msc_all.metric_id = fm.id
+			left join metric_datapoint_count mdc on mdc.metric_id = fm.id
+			left join metric_last_value mlv on mlv.metric_id = fm.id
 		),
 		selected_summaries as (
 			select *

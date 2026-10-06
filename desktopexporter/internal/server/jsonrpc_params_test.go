@@ -209,9 +209,9 @@ func TestVariadicMethodsRefuseNamedParams(t *testing.T) {
 	}
 }
 
-// TestDeleteMetricStreamTakesOneID verifies that the method takes a bare ID,
+// TestDeleteMetricTakesOneRef verifies that the method takes a bare reference,
 // not a list.
-func TestDeleteMetricStreamTakesOneID(t *testing.T) {
+func TestDeleteMetricTakesOneRef(t *testing.T) {
 	got, err := normalizeParams("deleteMetric", json.RawMessage(`{"metricRef":"s1"}`))
 	require.NoError(t, err)
 	require.JSONEq(t, `["s1"]`, string(got))

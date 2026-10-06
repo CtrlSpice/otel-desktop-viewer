@@ -261,14 +261,14 @@ func TestStoreForeignKeysEnforced(t *testing.T) {
 			'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid, 'test', 'Gauge')`)
 	require.NoError(t, err)
 
-	var streamID string
+	var metricID string
 	require.NoError(t, s.db.QueryRowContext(ctx,
-		"select id::varchar from metrics where name = 'test'").Scan(&streamID))
+		"select id::varchar from metrics where name = 'test'").Scan(&metricID))
 
 	_, err = s.db.ExecContext(ctx, `
 		insert into metric_datapoints (id, metric_id, series_id, timestamp, attribute_ids)
 		values (gen_random_uuid(), ?::uuid,
-			'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 0, []::uuid[])`, streamID)
+			'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid, 0, []::uuid[])`, metricID)
 	assert.Error(t, err, "a datapoint must reference an existing series")
 }
 

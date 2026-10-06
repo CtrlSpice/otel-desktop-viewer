@@ -561,11 +561,9 @@ func (h *JSONRPCHandler) clearSignal(
 	return successMessage, nil
 }
 
-// deleteMetric deletes one metric stream and everything hanging off it.
-// It takes a single ID rather than an array like deleteLogsByRefs and
-// deleteSpansByTraceID: metrics identify a stream by one UUID everywhere else
-// in this handler (see getMetric), and the delete cascade in the store is keyed
-// on a single metric_id.
+// deleteMetric deletes one Metric and its dependent rows.
+// It takes one Metric reference because the store cascade is keyed by one
+// metric_id.
 func (h *JSONRPCHandler) deleteMetric(ctx context.Context, req *jsonrpc2.Request) (any, error) {
 	metricRef, err := parseSingleIDParam(req.Params, ErrInvalidMetricRef, normalizeUUID)
 	if err != nil {
@@ -578,7 +576,7 @@ func (h *JSONRPCHandler) deleteMetric(ctx context.Context, req *jsonrpc2.Request
 		return nil, h.handleStoreError(ctx, err)
 	}
 
-	return "Metric stream deleted successfully", nil
+	return "Metric deleted successfully", nil
 }
 
 // deleteSpansByTraceID deletes all spans for one or more traces.

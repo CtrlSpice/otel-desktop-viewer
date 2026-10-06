@@ -1129,10 +1129,10 @@ func metricSummaryOrderBy(sortOption *search.Sort) (candidateOrder, summaryOrder
 		early     bool
 	}
 	spec, ok := map[string]metricSortSpec{
-		"lastSeen":       {candidate: "sldp.last_dp_ts", summary: "last_dp_ts", early: true},
-		"name":           {candidate: "fs.name", summary: "name", early: true},
-		"metricType":     {candidate: "fs.metric_type", summary: "metric_type", early: true},
-		"serviceName":    {candidate: "fs.service_name", summary: "service_name", early: true},
+		"lastSeen":       {candidate: "mldp.last_dp_ts", summary: "last_dp_ts", early: true},
+		"name":           {candidate: "fm.name", summary: "name", early: true},
+		"metricType":     {candidate: "fm.metric_type", summary: "metric_type", early: true},
+		"serviceName":    {candidate: "fm.service_name", summary: "service_name", early: true},
 		"description":    {summary: "coalesce(description, '')"},
 		"dataPointCount": {summary: "coalesce(datapoint_count, 0)"},
 		"seriesCount":    {summary: "coalesce(series_count, 0)"},
@@ -1141,7 +1141,7 @@ func metricSummaryOrderBy(sortOption *search.Sort) (candidateOrder, summaryOrder
 		return "", "", false, fmt.Errorf("unsupported metric sort field %q: %w", field, search.ErrInvalidSort)
 	}
 	if spec.early {
-		candidateOrder = fmt.Sprintf("%s %s nulls last, fs.id asc", spec.candidate, direction)
+		candidateOrder = fmt.Sprintf("%s %s nulls last, fm.id asc", spec.candidate, direction)
 	}
 	summaryOrder = fmt.Sprintf("%s %s nulls last, id asc", spec.summary, direction)
 	return candidateOrder, summaryOrder, spec.early, nil

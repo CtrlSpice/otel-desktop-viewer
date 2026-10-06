@@ -79,7 +79,7 @@ const (
 	GetMetricSeries Name = "metrics/get_metric_series.sql"
 	// GetMetricView returns the chart/UI projection for one Metric.
 	GetMetricView Name = "metrics/get_metric_view.sql"
-	// GetMetricOTLP reconstructs one stored metric stream as standard OTLP JSON,
+	// GetMetricOTLP reconstructs one stored Metric as standard OTLP JSON,
 	// without applying UI aggregation or time-window rules.
 	GetMetricOTLP Name = "metrics/get_metric_otlp.sql"
 	// GetMetricAttributeDefinitions lists the attribute keys metrics carry.
@@ -96,7 +96,7 @@ const (
 	// GetLogAttributeDefinitions lists the attribute keys logs carry.
 	GetLogAttributeDefinitions Name = "logs/get_log_attribute_definitions.sql"
 
-	// SearchMetricSummaries lists metric streams for the metrics list view.
+	// SearchMetricSummaries lists Metrics for the metrics list view.
 	SearchMetricSummaries Name = "metrics/search_summaries.sql"
 	// SearchLogSummaries lists log summaries for the logs list view.
 	SearchLogSummaries Name = "logs/search_log_summaries.sql"

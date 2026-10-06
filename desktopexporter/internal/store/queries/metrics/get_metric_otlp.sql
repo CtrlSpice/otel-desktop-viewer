@@ -1,20 +1,20 @@
 -- Reconstruct one retained Metric and its ResourceMetrics/ScopeMetrics wrappers.
-with selected_stream as materialized (
+with selected_metric as materialized (
 	select * from metrics where id = try_cast(? as uuid)
 ),
 selected_datapoints as materialized (
 	select d.*
 	from metric_datapoints d
-	join selected_stream s on s.id = d.metric_id
+	join selected_metric s on s.id = d.metric_id
 ),
 used_attribute_ids as materialized (
 	select unnest(r.attribute_ids) as id
-	from selected_stream s join resources r on r.id = s.resource_id
+	from selected_metric s join resources r on r.id = s.resource_id
 	union
 	select unnest(sc.attribute_ids)
-	from selected_stream s join scopes sc on sc.id = s.scope_id
+	from selected_metric s join scopes sc on sc.id = s.scope_id
 	union
-	select unnest(s.metadata_ids) from selected_stream s
+	select unnest(s.metadata_ids) from selected_metric s
 	union
 	select unnest(d.attribute_ids) from selected_datapoints d
 	union
@@ -130,7 +130,7 @@ datapoint_documents as materialized (
 			else null::json
 		end as document
 	from selected_datapoints d
-	cross join selected_stream s
+	cross join selected_metric s
 	left join histogram_bounds hb on hb.id = d.bounds_id
 	left join exemplar_documents e on e.metric_datapoint_id = d.id
 ),
@@ -140,7 +140,7 @@ grouped_metrics as materialized (
 		s.description, s.metadata_ids, s.name, s.unit, s.metric_type,
 		s.aggregation_temporality, s.is_monotonic,
 		coalesce(list(d.document order by d.timestamp, d.id) filter (where d.id is not null), []::json[]) as datapoints
-	from selected_stream s
+	from selected_metric s
 	join resources r on r.id = s.resource_id
 	join scopes sc on sc.id = s.scope_id
 	left join datapoint_documents d on true
@@ -190,6 +190,6 @@ select s.metric_type,
 			'resourceMetrics', coalesce(list(r.document order by r.resource_id, r.resource_schema_url)
 				filter (where r.document is not null), []::json[])))
 	end as document
-from selected_stream s
+from selected_metric s
 left join resource_documents r on true
 group by s.metric_type

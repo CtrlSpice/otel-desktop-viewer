@@ -380,7 +380,7 @@ func findSummary(t *testing.T, summaries []map[string]any, name string) map[stri
 	return nil
 }
 
-// getMetricFullByName resolves a stream id via SearchSummaries and fetches
+// getMetricFullByName resolves a Metric reference via SearchSummaries and fetches
 // full MetricViewData via GetMetricView (timeseries, datapoints, resource, scope).
 func getMetricFullByName(t *testing.T, s *store.Store, ctx context.Context, name string) map[string]any {
 	return getMetricFullByNameInRange(t, s, ctx, name, store.BoundedTimeRange(0, maxNano))
@@ -1459,12 +1459,12 @@ func metricDatapoints(m map[string]any) []any {
 }
 
 // deleteByIdentity is a thin test helper that resolves the exact OTel
-// identity to a stream UUID via metrics and then calls
+// identity to a Metric reference and then calls
 // DeleteMetric. The production JSON-RPC layer does the same
 // resolve-then-delete pattern; we replicate it here so the existing
 // test cases stay readable without needing to spell out metricIDs.
-// deleteByIdentity resolves an identity tuple to a stream UUID and deletes that
-// stream. Both steps run in one write-lock window so the resolved ID cannot be
+// deleteByIdentity resolves an identity tuple to a Metric reference and deletes
+// it. Both steps run in one write-lock window so the resolved ID cannot be
 // pruned out from under the delete.
 func deleteByIdentity(t *testing.T, ctx context.Context, s *store.Store, name, unit, metricType, aggTemporality, isMonotonic, scopeName, scopeVersion, serviceName string) error {
 	t.Helper()
@@ -1502,11 +1502,11 @@ func deleteByIdentity(t *testing.T, ctx context.Context, s *store.Store, name, u
 	})
 }
 
-// TestDeleteMetricStream covers the per-stream cascade. Each subtest
-// ingests a fixture, resolves an identity tuple to a stream UUID, calls
+// TestDeleteMetric covers the per-Metric cascade. Each subtest
+// ingests a fixture, resolves an identity tuple to a Metric reference, calls
 // DeleteMetric, and checks that (a) every row backing that Metric
 // is gone and (b) nothing else was touched.
-func TestDeleteMetricStream(t *testing.T) {
+func TestDeleteMetric(t *testing.T) {
 	t.Parallel()
 	t.Run("removes a single Gauge by name+unit+scope+service", func(t *testing.T) {
 		s, ctx := storetest.New(t)
@@ -1726,7 +1726,7 @@ func TestDeleteMetricStream(t *testing.T) {
 		assert.Greater(t, attrBefore, 0)
 
 		// The dictionary rows those ids point at, before the delete. They must
-		// survive the cascade -- other streams may still reference them -- and
+		// survive the cascade -- other Metrics may still reference them -- and
 		// only go when the sweep proves them unreferenced.
 		dictBefore := countRows(t, s, ctx, `select count(*) from attributes`)
 		assert.Greater(t, dictBefore, 0)
@@ -1751,10 +1751,10 @@ func TestDeleteMetricStream(t *testing.T) {
 			)`, "histogram_metric"))
 		// The cascade deliberately does NOT touch the dictionary: attribute,
 		// resource and scope rows are shared across every signal, so "is this
-		// one still in use" is not a question a stream-scoped delete can
+		// one still in use" is not a question a Metric-scoped delete can
 		// answer. It stays whole here...
 		assert.Equal(t, dictBefore, countRows(t, s, ctx, `select count(*) from attributes`),
-			"a stream delete must not remove shared dictionary rows")
+			"a Metric delete must not remove shared dictionary rows")
 
 		// ...and the sweep is what collects whatever the delete orphaned.
 		require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
@@ -1763,7 +1763,7 @@ func TestDeleteMetricStream(t *testing.T) {
 		// The other four fixture metrics still reference the same resource and
 		// scope, so the sweep must NOT take those rows -- shared content
 		// survives as long as one owner remains. What it does take is anything
-		// only the deleted stream reached.
+		// only the deleted Metric reached.
 		assert.Equal(t, 0, countRows(t, s, ctx,
 			`select count(*) from attributes a
 			 where not exists (select 1 from resources r, unnest(r.attribute_ids) t(aid) where t.aid = a.id)
@@ -1774,13 +1774,13 @@ func TestDeleteMetricStream(t *testing.T) {
 			   and not exists (select 1 from exemplars e, unnest(e.attribute_ids) t(aid) where t.aid = a.id)`),
 			"the sweep must leave no unreferenced dictionary row behind")
 		assert.Greater(t, countRows(t, s, ctx, `select count(*) from resources`), 0,
-			"the resource is still referenced by the four surviving streams")
+			"the resource is still referenced by the four surviving Metrics")
 	})
 }
 
-// TestMetricStreams_FindOrInsertIdempotent verifies that repeated exact Metrics
+// TestMetrics_FindOrInsertIdempotent verifies that repeated exact Metrics
 // resolve to stable Metric and series references.
-func TestMetricStreams_FindOrInsertIdempotent(t *testing.T) {
+func TestMetrics_FindOrInsertIdempotent(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -1797,11 +1797,11 @@ func TestMetricStreams_FindOrInsertIdempotent(t *testing.T) {
 		"distinct logical metrics should not multiply across batches")
 	assert.Equal(t, 5*batches, countRows(t, s, ctx, `select count(*) from metric_datapoints`))
 
-	gaugeStreamRows := countRows(t, s, ctx,
+	gaugeMetricRows := countRows(t, s, ctx,
 		`select count(distinct d.metric_id) from metric_datapoints d
 		 join metrics m on m.id = d.metric_id
 		 where m.name = 'gauge_metric'`)
-	assert.Equal(t, 1, gaugeStreamRows,
+	assert.Equal(t, 1, gaugeMetricRows,
 		"all gauge_metric ingests must share one metric_id")
 
 	// Sanity: cross-table referential integrity holds.
@@ -1812,9 +1812,9 @@ func TestMetricStreams_FindOrInsertIdempotent(t *testing.T) {
 	assert.Equal(t, 0, orphanDatapoints, "no datapoint may dangle after dedup")
 }
 
-// TestMetricStreams_DistinctIdentitiesStayDistinct verifies that changing any
+// TestMetrics_DistinctIdentitiesStayDistinct verifies that changing any
 // identifying field produces a distinct metric row.
-func TestMetricStreams_DistinctIdentitiesStayDistinct(t *testing.T) {
+func TestMetrics_DistinctIdentitiesStayDistinct(t *testing.T) {
 	t.Parallel()
 	mk := func(t *testing.T, mutate func(m pmetric.Metric, sm pmetric.ScopeMetrics, rm pmetric.ResourceMetrics)) pmetric.Metrics {
 		t.Helper()
@@ -1881,12 +1881,12 @@ func TestMetricStreams_DistinctIdentitiesStayDistinct(t *testing.T) {
 
 			assert.Equal(t, 2, countRows(t, s, ctx,
 				`select count(*) from metrics`),
-				"changing %s should produce a distinct stream", tc.name)
+				"changing %s should produce a distinct Metric", tc.name)
 		})
 	}
 }
 
-func TestMetricStreams_NonIdentifyingVariantsReuseIdentity(t *testing.T) {
+func TestMetrics_NonIdentifyingVariantsReuseIdentity(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 	makeBatch := func(variant bool) pmetric.Metrics {
@@ -1951,7 +1951,7 @@ func TestMetricIdentityUniqueIndexes(t *testing.T) {
 	}))
 }
 
-// TestMetricStreams_ServiceNameDenormStaysConsistent verifies the
+// TestMetrics_ServiceNameDenormStaysConsistent verifies the
 // invariant that justifies denormalizing service.name as a column
 // alongside its source-of-truth attribute row: for every metrics
 // row, the column value must equal the resource attribute value that
@@ -1959,7 +1959,7 @@ func TestMetricIdentityUniqueIndexes(t *testing.T) {
 // and dropping the attribute, or by ingesting two batches with
 // inconsistent service names for the same identity), this test will
 // catch it.
-func TestMetricStreams_ServiceNameDenormStaysConsistent(t *testing.T) {
+func TestMetrics_ServiceNameDenormStaysConsistent(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 
@@ -2118,7 +2118,7 @@ func TestExpHistogramZeroThresholdRoundTrip(t *testing.T) {
 // makeMergedHistogramFixture builds a pmetric.Metrics with one
 // Histogram metric (Delta temporality) containing the given datapoints. Used
 // by the merged quantile series tests so each subtest can compose its
-// own scenario (multi-stream, multi-timestamp, bounds mismatch) without
+// own scenario (multi-Metric, multi-timestamp, bounds mismatch) without
 // perturbing the shared createTestMetricsPdata fixture.
 func makeMergedHistogramFixture(name string, dps []histTestDP) pmetric.Metrics {
 	return makeHistogramFixtureT(name, pmetric.AggregationTemporalityDelta, dps)
@@ -2355,7 +2355,7 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 }
 
 // TestSearchSummaries_CardFields verifies the slim summary projection used
-// by drawer cards: stream id, series count, scalar last value, last seen.
+// by drawer cards: Metric reference, series count, scalar last value, last seen.
 func TestSearchSummaries_CardFields(t *testing.T) {
 	t.Parallel()
 	t.Run("Gauge", func(t *testing.T) {
@@ -2736,7 +2736,7 @@ func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 		return ids
 	}
 	assert.NotEqual(t, metricIDs(summaries), metricIDs(searchMetricsAll(t, other, otherCtx)),
-		"a fresh store generates its own stream IDs")
+		"a fresh store generates its own Metric references")
 	var fresh []string
 	require.NoError(t, other.WithDBRead(func(db *sql.DB) error {
 		rows, err := db.Query(`select id::varchar from metric_series order by 1`)
@@ -2808,7 +2808,7 @@ func TestExactMetricAndSeriesIDsSurvivePersistentReopen(t *testing.T) {
 
 // buildInstanceMetrics emits one gauge from one instance, optionally with extra
 // resource attributes bolted on -- the shape a collector processor produces
-// when it starts resolving metadata partway through a stream.
+// when it starts resolving metadata partway through a Metric's lifetime.
 func buildInstanceMetrics(t *testing.T, extra map[string]string, dropped uint32, base int64) pmetric.Metrics {
 	t.Helper()
 	md := pmetric.NewMetrics()
@@ -6429,7 +6429,7 @@ func TestGetMetricView_ColumnWindowMergesTheWholeColumn(t *testing.T) {
 
 // TestHistogramBoundsAreStoredOnce pins the bounds dictionary: the vector is a
 // property of the instrument, so a series reporting all session writes it one
-// time, however many datapoints arrive -- and a stream whose bounds genuinely
+// time, however many datapoints arrive -- and a Metric whose bounds genuinely
 // change mid-flight gets a second row, not a collision, because OTel only
 // makes fixed bounds a practice, never a promise.
 func TestHistogramBoundsAreStoredOnce(t *testing.T) {
@@ -6444,7 +6444,7 @@ func TestHistogramBoundsAreStoredOnce(t *testing.T) {
 		b := boundsA
 		counts := []uint64{1, 2, 3, 4}
 		if i >= 30 {
-			// The pathological case: the SDK was reconfigured mid-stream.
+			// The SDK was reconfigured after 30 datapoints.
 			b = boundsB
 			counts = []uint64{1, 2, 3, 4, 5}
 		}
@@ -6520,7 +6520,7 @@ func TestSeriesCountsAreWindowAndLifetime(t *testing.T) {
 	s, ctx := storetest.New(t)
 
 	base := time.Date(2026, 5, 24, 12, 0, 0, 0, time.UTC)
-	// Twelve series on the stream; only three of them report in the first
+	// Twelve series on the Metric; only three of them report in the first
 	// minute, which is the window the narrow search below asks about.
 	var dps []sumTestDP
 	for i := range 12 {
@@ -6558,7 +6558,7 @@ func TestSeriesCountsAreWindowAndLifetime(t *testing.T) {
 	assert.Equal(t, float64(3), narrow["seriesCount"],
 		"three series reported in this minute, so that is what the window count says")
 	assert.Equal(t, float64(12), narrow["seriesCardinality"],
-		"the stream still has twelve series; narrowing the window did not delete nine")
+		"the Metric still has twelve series; narrowing the window did not delete nine")
 }
 
 // TestIngest_SingleBucketHistogram verifies the valid OTLP shape with one
