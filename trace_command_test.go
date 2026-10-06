@@ -66,6 +66,13 @@ func TestTraceCommandRejectsMalformedIDBeforeTransport(t *testing.T) {
 	require.ErrorContains(t, cmd.Execute(), "invalid trace ID")
 }
 
+func TestFormatTraceDetailKeepsNegativeReceivedDurationsExact(t *testing.T) {
+	result, err := decodeTraceDetail(json.RawMessage(`{"trace":{"traceID":"0123456789abcdef0123456789abcdef","traceStart":"0","resources":{},"spans":[{"spanData":{"spanID":"1","parentSpanID":null,"name":"broken","kindCode":0,"kind":"Unspecified","start":"0","dur":"-5","r":0,"statusCode":"Unset"}}]},"logs":[]}`))
+	require.NoError(t, err)
+	output := formatTraceDetail(result)
+	require.Contains(t, output, "-5")
+}
+
 func traceRPCServer(t *testing.T, result json.RawMessage) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

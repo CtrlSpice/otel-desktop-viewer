@@ -133,19 +133,19 @@ func decodeTraceDetail(raw json.RawMessage) (traceDetailResult, error) {
 
 func formatTraceDetail(result traceDetailResult) string {
 	spanRows := make([][]any, len(result.Trace.Spans))
-	traceEnd := new(big.Int)
+	var traceEnd *big.Int
 	for i, span := range result.Trace.Spans {
 		start := addDecimal(result.Trace.TraceStart, span.SpanData.Start)
 		end := addDecimal(start, span.SpanData.Duration)
-		if parsed, ok := new(big.Int).SetString(end, 10); ok && parsed.Cmp(traceEnd) > 0 {
-			traceEnd.Set(parsed)
+		if parsed, ok := new(big.Int).SetString(end, 10); ok && (traceEnd == nil || parsed.Cmp(traceEnd) > 0) {
+			traceEnd = parsed
 		}
 		spanRows[i] = []any{start, span.SpanData.Duration, span.SpanData.StatusCode,
 			resourceService(result.Trace.Resources, span.SpanData.Resource), span.SpanData.KindCode,
 			span.SpanData.Kind, span.SpanData.Name, span.SpanData.SpanID, nullableString(span.SpanData.ParentSpanID)}
 	}
 	duration := "0"
-	if start, ok := new(big.Int).SetString(result.Trace.TraceStart, 10); ok && traceEnd.Cmp(start) >= 0 {
+	if start, ok := new(big.Int).SetString(result.Trace.TraceStart, 10); ok && traceEnd != nil {
 		duration = new(big.Int).Sub(traceEnd, start).String()
 	}
 
