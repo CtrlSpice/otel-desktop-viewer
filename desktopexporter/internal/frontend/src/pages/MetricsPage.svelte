@@ -204,7 +204,9 @@
   let expandedSeriesSnapshot = new Set<string>()
   let seriesDatapointsMetricID = $derived.by(() => {
     const summaryID = page.selectedSummary?.metricRef
-    return summaryID && selectedMetric?.metricRef === summaryID ? summaryID : null
+    return summaryID && selectedMetric?.metricRef === summaryID
+      ? summaryID
+      : null
   })
 
   // Per-series distributions for the selected heatmap column.
@@ -603,7 +605,9 @@
           undefined,
           tzName(),
           // Include datapoints only for drawn series; keep all series metadata.
-          datapointSeries ?? persistedVisibleKeys(summary.metricRef) ?? undefined,
+          datapointSeries ??
+            persistedVisibleKeys(summary.metricRef) ??
+            undefined,
           DEFAULT_VISIBLE_TIMESERIES
         )) ?? undefined
       // A slower earlier request must not overwrite a newer answer.

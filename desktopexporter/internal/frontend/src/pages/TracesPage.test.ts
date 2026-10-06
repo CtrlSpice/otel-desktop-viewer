@@ -294,7 +294,9 @@ describe('TracesPage trace detail lifecycle', () => {
     searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
     getStats.mockResolvedValue(makeStats())
     getTraceView.mockResolvedValue(makeTraceData(0))
-    getTraceLogSummaries.mockResolvedValue([makeTraceLog({ spanID: 'other-span' })])
+    getTraceLogSummaries.mockResolvedValue([
+      makeTraceLog({ spanID: 'other-span' }),
+    ])
     setTestUrl('/traces/trace-1?span=root&event=99&log=log-1')
 
     renderWithContexts(TracesPage)

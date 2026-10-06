@@ -504,7 +504,9 @@ function dataPointFromJSON(json: JsonDataPoint): DataPoint {
   }
 }
 
-function timeseriesFromJSON(json: JsonMetricSeriesViewData): MetricSeriesViewData {
+function timeseriesFromJSON(
+  json: JsonMetricSeriesViewData
+): MetricSeriesViewData {
   return {
     seriesRef: json.seriesRef,
     attributes: attributesFromJSON(json.attributes),
@@ -833,7 +835,9 @@ export let telemetryAPI = {
     return Array.isArray(rawData) ? rawData : []
   },
 
-  searchAttributeMatches: async (term: string): Promise<JsonAttributeMatch[]> => {
+  searchAttributeMatches: async (
+    term: string
+  ): Promise<JsonAttributeMatch[]> => {
     if (!term.trim()) return []
     const rawData = await callRPC<JsonAttributeMatch[]>(
       'searchAttributeMatches',
@@ -847,11 +851,15 @@ export let telemetryAPI = {
   },
 
   getTraceAttributeDefinitions: async (): Promise<FieldDefinition[]> => {
-    const rawData =
-      await callRPC<JsonAttributeDefinition[]>('getTraceAttributeDefinitions')
+    const rawData = await callRPC<JsonAttributeDefinition[]>(
+      'getTraceAttributeDefinitions'
+    )
 
     if (!Array.isArray(rawData)) {
-      console.warn('getTraceAttributeDefinitions: Expected array, got:', rawData)
+      console.warn(
+        'getTraceAttributeDefinitions: Expected array, got:',
+        rawData
+      )
       return []
     }
 
@@ -867,14 +875,19 @@ export let telemetryAPI = {
       named({ traceID })
     )
     if (!Array.isArray(rawData)) {
-      console.warn('getTraceAttributeDefinitionsByTraceID: Expected array, got:', rawData)
+      console.warn(
+        'getTraceAttributeDefinitionsByTraceID: Expected array, got:',
+        rawData
+      )
       return []
     }
     return convertAttributesToFieldDefinitions(rawData)
   },
 
   getLogAttributeDefinitions: async (): Promise<FieldDefinition[]> => {
-    const rawData = await callRPC<JsonAttributeDefinition[]>('getLogAttributeDefinitions')
+    const rawData = await callRPC<JsonAttributeDefinition[]>(
+      'getLogAttributeDefinitions'
+    )
 
     if (!Array.isArray(rawData)) {
       console.warn('getLogAttributeDefinitions: Expected array, got:', rawData)
@@ -1159,7 +1172,10 @@ export let telemetryAPI = {
     )
 
     if (!Array.isArray(rawData)) {
-      console.warn('getMetricAttributeDefinitions: Expected array, got:', rawData)
+      console.warn(
+        'getMetricAttributeDefinitions: Expected array, got:',
+        rawData
+      )
       return []
     }
 
