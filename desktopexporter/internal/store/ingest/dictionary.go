@@ -107,52 +107,6 @@ func ResourceID(attributeIDs []duckdb.UUID, dropped uint32) duckdb.UUID {
 	return hashID(uuidsKey(attributeIDs), strconv.FormatUint(uint64(dropped), 10))
 }
 
-// MetricStreamID derives the compact reference for one exact OTel Metric
-// identity. The stored tuple remains authoritative; callers must compare it on
-// conflict so a hash collision is an error rather than a merge.
-func MetricStreamID(
-	resourceAttributeIDs []duckdb.UUID,
-	scopeName, scopeVersion, scopeSchemaURL string,
-	scopeAttributeIDs []duckdb.UUID,
-	metricName, unit, metricType string,
-	temporality *int32,
-	monotonicity *bool,
-) duckdb.UUID {
-	temporalityPresence, temporalityValue := "absent", ""
-	if temporality != nil {
-		temporalityPresence = "present"
-		temporalityValue = strconv.FormatInt(int64(*temporality), 10)
-	}
-	monotonicityPresence, monotonicityValue := "absent", ""
-	if monotonicity != nil {
-		monotonicityPresence = "present"
-		monotonicityValue = strconv.FormatBool(*monotonicity)
-	}
-	return hashID(
-		"metric-stream-v1",
-		uuidsKey(resourceAttributeIDs),
-		scopeName, scopeVersion, scopeSchemaURL, uuidsKey(scopeAttributeIDs),
-		metricName, unit, metricType,
-		temporalityPresence, temporalityValue,
-		monotonicityPresence, monotonicityValue,
-	)
-}
-
-// MetricSeriesID derives a timeseries' identity from its exact parent Metric
-// identity and datapoint attribute set.
-//
-// Content-derived like the rest, which is what makes it usable in a URL --
-// the same series gets the same id across restarts and re-ingests, so a link
-// survives in a way one built on a minted datapoint id cannot.
-//
-// Resource droppedAttributesCount is diagnostic payload metadata, not an
-// originating attribute, so it deliberately does not participate. Two metric
-// ingests may therefore retain distinct resource payload rows while sharing a
-// semantic series when only their dropped counts differ.
-func MetricSeriesID(streamID duckdb.UUID, attributeIDs []duckdb.UUID) duckdb.UUID {
-	return hashID("metric-series-v1", formatUUID(streamID), uuidsKey(attributeIDs))
-}
-
 // ScopeID derives a scope's identity. Name and version participate because two
 // instrumentation libraries with identical (empty) attribute sets are still
 // different scopes.

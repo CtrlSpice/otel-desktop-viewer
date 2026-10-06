@@ -107,7 +107,8 @@ package schema
 // Version 18 makes metric_streams identify one exact OTel Metric from complete
 // Resource attributes, the complete InstrumentationScope tuple, and the
 // identifying Metric descriptor fields. It also removes the now-redundant
-// Resource owner from metric_series and changes both content-derived IDs.
+// Resource owner from metric_series and gives streams and series generated,
+// database-scoped IDs resolved through their exact stored keys.
 const Version = 18
 
 // VersionTableQuery creates the version table.

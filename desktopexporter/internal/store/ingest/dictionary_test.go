@@ -54,40 +54,6 @@ func TestHashFramingIsUnambiguous(t *testing.T) {
 		ingest.AttributeID("k", "a|b=c"))
 }
 
-func TestMetricIdentityIDsHavePinnedVersionOneEncoding(t *testing.T) {
-	t.Parallel()
-	resource := pcommon.NewMap()
-	resource.PutStr("service.name", "checkout")
-	resource.PutStr("host.name", "pod-a")
-	_, resourceIDs := ingest.AttributeSet(resource, ingest.ScopeResource)
-	scope := pcommon.NewMap()
-	scope.PutStr("build", "blue")
-	_, scopeIDs := ingest.AttributeSet(scope, ingest.ScopeScope)
-	datapoint := pcommon.NewMap()
-	datapoint.PutStr("http.route", "/checkout")
-	_, datapointIDs := ingest.AttributeSet(datapoint, ingest.ScopeDatapoint)
-
-	temporality := int32(-2147483648)
-	monotonic := true
-	streamID := ingest.MetricStreamID(
-		resourceIDs,
-		"otelhttp", "1.2.0", "https://scope.example/v1", scopeIDs,
-		"http.server.duration", "ms", "Sum", &temporality, &monotonic,
-	)
-	assert.Equal(t, "6539510a-b14f-faa7-0b45-af73024b3d46", ingest.FormatUUID(streamID))
-	assert.Equal(t, "93d3807d-5158-f963-02b7-e9d19e275ff2",
-		ingest.FormatUUID(ingest.MetricSeriesID(streamID, datapointIDs)))
-
-	// Applicability has its own encoding. A Gauge's absent temporality and
-	// monotonicity cannot collide with received zero/false values.
-	zero := int32(0)
-	falseValue := false
-	gaugeID := ingest.MetricStreamID(resourceIDs, "otelhttp", "1.2.0",
-		"https://scope.example/v1", scopeIDs, "http.server.duration", "ms", "Gauge", nil, nil)
-	assert.NotEqual(t, gaugeID, ingest.MetricStreamID(resourceIDs, "otelhttp", "1.2.0",
-		"https://scope.example/v1", scopeIDs, "http.server.duration", "ms", "Gauge", &zero, &falseValue))
-}
-
 // Arrays are sorted by id and deduped, so two maps with the same content
 // produce byte-identical arrays regardless of insertion order -- which is what
 // makes resource and scope dedupe work at all.

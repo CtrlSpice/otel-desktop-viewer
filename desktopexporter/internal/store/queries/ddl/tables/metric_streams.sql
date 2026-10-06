@@ -1,7 +1,8 @@
 -- metric_streams is the canonical identity for one exact OTel Metric.
--- The primary key is a versioned content ID over complete Resource attributes,
--- the complete InstrumentationScope tuple, and the identifying Metric
--- descriptor fields. Ingest compares this stored tuple on every ID conflict.
+-- The primary key is an opaque UUID generated when this exact identity first
+-- appears in this database. Ingest finds it again by comparing complete
+-- Resource attributes, the complete InstrumentationScope tuple, and the
+-- identifying Metric descriptor fields.
 -- Resource and Scope schema/dropped-count payload variants remain on
 -- metric_ingests; only ScopeMetrics.schema_url participates in identity.
 -- service_name is a derived search/display projection of Resource attributes.

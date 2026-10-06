@@ -1702,31 +1702,32 @@ func TestMetricStreams_NonIdentifyingVariantsReuseIdentity(t *testing.T) {
 	assert.Contains(t, text, `"schemaUrl":"resource-schema"`)
 }
 
-func TestMetricStreams_ContentIDCollisionFailsIngest(t *testing.T) {
+func TestMetricIdentityUniqueIndexes(t *testing.T) {
 	t.Parallel()
-	s, ctx := storetest.New(t)
-	batch := pmetric.NewMetrics()
-	rm := batch.ResourceMetrics().AppendEmpty()
-	rm.Resource().Attributes().PutStr("service.name", "svc")
-	sm := rm.ScopeMetrics().AppendEmpty()
-	sm.Scope().SetName("scope")
-	metric := sm.Metrics().AppendEmpty()
-	metric.SetName("requests")
-	metric.SetEmptyGauge()
-	_, resourceAttrs := ingest.AttributeSet(rm.Resource().Attributes(), ingest.ScopeResource)
-	_, scopeAttrs := ingest.AttributeSet(sm.Scope().Attributes(), ingest.ScopeScope)
-	id := ingest.MetricStreamID(resourceAttrs, "scope", "", "", scopeAttrs,
-		"requests", "", "Gauge", nil, nil)
+	s, _ := storetest.New(t)
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		_, err := db.Exec(`insert into metric_streams
-			(id, resource_attribute_ids, name, unit, metric_type, scope_name, scope_attribute_ids)
-			values (?::uuid, [], 'requests', 'wrong-unit', 'Gauge', 'scope', [])`, ingest.FormatUUID(id))
-		return err
+		const stream = `insert into metric_streams
+			(id, name, metric_type, resource_attribute_ids, scope_attribute_ids)
+			values (uuid(), 'requests', 'Gauge', ?::uuid[], ?::uuid[])`
+		for _, attrs := range []string{"[]", "[00000000-0000-0000-0000-000000000001]", "[00000000-0000-0000-0000-000000000001,00000000-0000-0000-0000-000000000002]"} {
+			_, err := db.Exec(stream, attrs, "[]")
+			require.NoError(t, err)
+			_, err = db.Exec(stream, attrs, "[]")
+			require.ErrorContains(t, err, "Duplicate key")
+		}
+		_, err := db.Exec(stream, "[]", "[00000000-0000-0000-0000-000000000001]")
+		require.NoError(t, err, "Scope attributes must split otherwise identical metrics")
+		const series = `insert into metric_series
+			select uuid(), id, []::uuid[] from metric_streams`
+		_, err = db.Exec(series)
+		require.NoError(t, err)
+		_, err = db.Exec(series)
+		require.ErrorContains(t, err, "Duplicate key")
+		_, err = db.Exec(`insert into metric_series select uuid(), id,
+			['00000000-0000-0000-0000-000000000001'::uuid] from metric_streams`)
+		require.NoError(t, err, "Datapoint attributes must split series within each metric")
+		return nil
 	}))
-	err := s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, batch, s.FlushedIDs())
-	})
-	require.ErrorContains(t, err, "metric stream content ID collision")
 }
 
 // TestMetricStreams_ServiceNameDenormStaysConsistent verifies the
@@ -2462,14 +2463,8 @@ func TestMetricSeries_ResourceOnlyDiffersByHostNameSplits(t *testing.T) {
 	}
 }
 
-// A series id has to survive re-ingest, restarts and retention, because it is
-// what a shared URL names.
-//
-// This is the property the old wire format could not offer: metric links could
-// only reference a datapoint id, which is minted per row and deleted by
-// retention, so a pasted link degraded silently to "no selection". A
-// content-derived id from the exact Metric stream and datapoint attributes is
-// the same every time the same series arrives.
+// A series id has to survive re-ingest and retention within one persisted
+// database, because it is what a shared URL names.
 func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -2538,8 +2533,8 @@ func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 		sort.Strings(ids)
 		return ids
 	}
-	assert.Equal(t, streamIDs(summaries), streamIDs(searchMetricsAll(t, other, otherCtx)),
-		"the same exact identities in a fresh store must have the same stream IDs")
+	assert.NotEqual(t, streamIDs(summaries), streamIDs(searchMetricsAll(t, other, otherCtx)),
+		"a fresh store generates its own stream IDs")
 	var fresh []string
 	require.NoError(t, other.WithDBRead(func(db *sql.DB) error {
 		rows, err := db.Query(`select id::varchar from metric_series order by 1`)
@@ -2556,7 +2551,7 @@ func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 		}
 		return rows.Err()
 	}))
-	assert.Equal(t, first, fresh, "the same exact identities in a fresh store must have the same series IDs")
+	assert.NotEqual(t, first, fresh, "a fresh store generates its own series IDs")
 }
 
 func TestExactMetricAndSeriesIDsSurvivePersistentReopen(t *testing.T) {

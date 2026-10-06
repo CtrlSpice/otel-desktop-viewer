@@ -17,8 +17,10 @@ idx_logs_resource.sql
 idx_logs_scope.sql
 idx_metric_streams_name.sql
 idx_metric_streams_service.sql
+idx_metric_streams_identity.sql
 idx_metric_ingests_stream.sql
 idx_metric_ingests_resource.sql
 idx_datapoints_series.sql
 idx_metric_series_stream.sql
+idx_metric_series_identity.sql
 idx_exemplars_datapoint.sql
