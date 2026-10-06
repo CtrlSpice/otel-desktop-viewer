@@ -233,9 +233,9 @@ WHERE d.timestamp >= epoch_ns(current_timestamp - INTERVAL '1 hour')
 ORDER BY d.timestamp DESC, m.name, series_ref"
 ```
 
-These stored datapoint fields are not Metric-summary display values.
-`metric_ref` and `series_ref` project stored UUID references as strings. The
-one-hour predicate is query scope, not received.
+These are stored fields, not Metric-summary display values. `metric_ref` and
+`series_ref` are computed text projections of stored UUIDs. The one-hour
+predicate is query scope, not received.
 
 ## Query recent span attribute use
 
