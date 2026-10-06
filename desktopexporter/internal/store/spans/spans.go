@@ -366,7 +366,7 @@ func searchTracesSQL(timeRange timerange.TimeRange, criteria any, options search
 		}
 	}
 
-	cteSQL, whereClause, args, err := buildTraceSQL(searchTree, timeRange)
+	cteSQL, eligibilityWhere, queryWhere, args, err := buildTraceSQL(searchTree, timeRange)
 	if err != nil {
 		return "", nil, fmt.Errorf("SearchTraces: %w: %w", ErrInvalidTraceQuery, err)
 	}
@@ -396,12 +396,38 @@ func searchTracesSQL(timeRange timerange.TimeRange, criteria any, options search
 		args = append(args, *options.Limit)
 	}
 
+	matchCTEs := ""
+	matchJoin := ""
+	matchProjection := ""
+	if searchTree != nil {
+		matchCTEs = fmt.Sprintf(`
+		query_matches as materialized (
+			select distinct s.trace_id, s.span_id, s.start_time
+			%s
+			join selected_trace_ids selected on selected.trace_id = s.trace_id
+			where %s
+		),
+		matched_span_lists as (
+			select trace_id as matched_trace_id, list(json_object(
+				'traceID', replace(trace_id::varchar, '-', ''),
+				'spanID', span_id_wire(span_id)
+			) order by start_time, span_id) as matched_spans
+			from query_matches
+			group by trace_id
+		),`, spanSearchFrom, queryWhere)
+		matchJoin = "\n\t\tjoin matched_span_lists matches on matches.matched_trace_id = sub.trace_id"
+		matchProjection = ",\n\t\t\t'matchedSpans', to_json(matches.matched_spans)"
+	}
+
 	finalQuery, err := queries.Render(queries.SearchTraces, searchTracesParams{
-		CTEs:  cteSQL,
-		From:  spanSearchFrom,
-		Where: whereClause,
-		Order: orderBy,
-		Limit: limitClause,
+		CTEs:             cteSQL,
+		From:             spanSearchFrom,
+		EligibilityWhere: eligibilityWhere,
+		MatchCTEs:        matchCTEs,
+		MatchJoin:        matchJoin,
+		MatchProjection:  matchProjection,
+		Order:            orderBy,
+		Limit:            limitClause,
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("SearchTraces: %w: %w", ErrSpansStoreInternal, err)
@@ -722,10 +748,17 @@ func DeleteSpansByTraceIDs(ctx context.Context, db *sql.DB, traceIDs []any) erro
 	return nil
 }
 
-func buildTraceSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (cteSQL string, whereSQL string, args []any, err error) {
+func buildTraceSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (cteSQL string, eligibilityWhere string, queryWhere string, args []any, err error) {
 	timeCondition, timeParams := search.TimePredicate("s.start_time", timeRange.Start, timeRange.End)
 	timeCondition = strings.ReplaceAll(timeCondition, " AND ", " and ")
-	return search.BuildSearchSQL(queryNode, traceFieldMapper(), timeCondition, timeParams)
+	cteSQL, eligibilityWhere, args, err = search.BuildSearchSQL(queryNode, traceFieldMapper(), timeCondition, timeParams)
+	if err != nil || queryNode == nil {
+		return cteSQL, eligibilityWhere, "", args, err
+	}
+	// Keep the time parameters in the discarded CTE so generated query
+	// parameter names retain the same indexes as eligibilityWhere.
+	_, queryWhere, _, err = search.BuildSearchSQL(queryNode, traceFieldMapper(), "", timeParams)
+	return cteSQL, eligibilityWhere, queryWhere, args, err
 }
 
 // Two idioms compare a trace id in this file, and they are not

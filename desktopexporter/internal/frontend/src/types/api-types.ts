@@ -5,6 +5,11 @@ export type RootSpan = {
   name: string
 }
 
+export type MatchedSpan = {
+  traceID: string
+  spanID: string
+}
+
 export type TraceSummary = {
   traceID: string
   // hasRootSpan makes the orphaned-trace state explicit so callers
@@ -17,6 +22,8 @@ export type TraceSummary = {
   durationNs: bigint | null
   spanCount: number
   errorCount: number
+  /** Computed identities of matching spans; present only for filtered searches. */
+  matchedSpans?: MatchedSpan[]
 }
 
 export type TraceData = {

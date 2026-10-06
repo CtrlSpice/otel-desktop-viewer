@@ -1,4 +1,12 @@
 {{.CTEs}},
+		eligible_spans as materialized (
+			select distinct s.trace_id
+			{{.From}}
+			where {{.EligibilityWhere}}
+		),
+		selected_trace_ids as materialized (
+			select trace_id from eligible_spans
+		),{{.MatchCTEs}}
 		trace_summaries as (
 			select distinct on (s.trace_id)
 				s.trace_id,
@@ -9,8 +17,8 @@
 				max(s.end_time) over (partition by s.trace_id) as trace_end_time,
 				count(*) over (partition by s.trace_id) as span_count,
 				count(case when s.status_code = 2 then 1 end) over (partition by s.trace_id) as error_count
-			{{.From}}
-			where {{.Where}}
+			from spans s
+			join selected_trace_ids selected on selected.trace_id = s.trace_id
 			order by
 				s.trace_id,
 				case when s.parent_span_id is null then 0 else 1 end
@@ -35,7 +43,7 @@
 				else null
 			end,
 			'spanCount',    sub.span_count,
-			'errorCount',   sub.error_count
+			'errorCount',   sub.error_count{{.MatchProjection}}
 		) order by {{.Order}}
 		)), '[]') as varchar) as summaries
-		from selected_summaries sub
+		from selected_summaries sub{{.MatchJoin}}
