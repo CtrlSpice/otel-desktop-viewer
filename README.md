@@ -24,6 +24,7 @@ It has **two** dark modes now.
 - [Docker Compose](#docker-compose)
 - [Command Line Options](#command-line-options)
 - [Query a Running Viewer](#query-a-running-viewer)
+- [Search Telemetry from the CLI](#search-telemetry-from-the-cli)
 - [Configuring Your OpenTelemetry SDK](#configuring-your-opentelemetry-sdk)
 - [Example With `otel-cli`](#example-with-otel-cli)
 - [Chart Palettes](docs/chart-palettes.md)
@@ -258,6 +259,18 @@ otel-desktop-viewer query 'SELECT service_name, count(*) FROM spans GROUP BY ser
 ```
 
 The `query` command runs read-only SQL against the viewer at `http://localhost:8000`. It returns up to 25 rows as aligned columns by default. Use `--endpoint` for another viewer address, `--limit` for another row limit, or `--json` for the JSON result.
+
+## Search Telemetry from the CLI
+
+With the viewer running, search its trace, log, or metric summaries from another terminal:
+
+```bash
+otel-desktop-viewer traces --service checkout --since 30m
+otel-desktop-viewer logs --since 1h --limit 50
+otel-desktop-viewer metrics --start 2026-10-02T08:00:00Z --end 2026-10-02T09:00:00Z --json
+```
+
+These commands use the viewer at `http://localhost:8000`, search the last hour, and return up to 25 summaries as aligned columns by default. Use `--endpoint` for another viewer address, `--service` to select one service, `--since` or `--start` and `--end` for the time window, `--limit` for another result limit, or `--json` for JSON.
 
 ## Configuring Your OpenTelemetry SDK
 
