@@ -46,9 +46,8 @@ func (h *JSONRPCHandler) handleStoreError(ctx context.Context, err error) error 
 	return mapped
 }
 
-// storeRead runs a query that returns a value, under the store's read lock.
-// Every read path in this file goes through here so no handler reaches the
-// pool unordered against ingest and retention.
+// storeRead runs a query that returns a value under the store's read lock.
+// The lock excludes pool mutation and close; ingest may run concurrently.
 func storeRead[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error) {
 	var out T
 	err := s.WithDBRead(func(db *sql.DB) error {
@@ -59,8 +58,35 @@ func storeRead[T any](s *store.Store, fn func(db *sql.DB) (T, error)) (T, error)
 	return out, err
 }
 
+func storeSnapshotRead[T any](ctx context.Context, s *store.Store, fn func(tx *sql.Tx) (T, error)) (T, error) {
+	return storeRead(s, func(db *sql.DB) (T, error) {
+		var zero T
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return zero, err
+		}
+		defer tx.Rollback()
+		result, err := fn(tx)
+		if err != nil {
+			return zero, err
+		}
+		if err := tx.Commit(); err != nil {
+			return zero, err
+		}
+		return result, nil
+	})
+}
+
 func handlerRead[T any](ctx context.Context, h *JSONRPCHandler, fn func(db *sql.DB) (T, error)) (any, error) {
 	result, err := storeRead(h.store, fn)
+	if err != nil {
+		return nil, h.handleStoreError(ctx, err)
+	}
+	return result, nil
+}
+
+func handlerSnapshotRead[T any](ctx context.Context, h *JSONRPCHandler, fn func(tx *sql.Tx) (T, error)) (any, error) {
+	result, err := storeSnapshotRead(ctx, h.store, fn)
 	if err != nil {
 		return nil, h.handleStoreError(ctx, err)
 	}
@@ -240,7 +266,7 @@ func (h *JSONRPCHandler) getTrace(ctx context.Context, req *jsonrpc2.Request) (a
 	if err != nil {
 		return nil, err
 	}
-	return handlerRead(ctx, h, func(db *sql.DB) (compactTraceResult, error) {
+	return handlerSnapshotRead(ctx, h, func(db *sql.Tx) (compactTraceResult, error) {
 		traceRaw, err := spans.GetTrace(ctx, db, traceID)
 		if err != nil {
 			return compactTraceResult{}, err
@@ -358,7 +384,7 @@ func (h *JSONRPCHandler) getSpan(ctx context.Context, req *jsonrpc2.Request) (an
 		limit = parsed
 	}
 
-	return handlerRead(ctx, h, func(db *sql.DB) (any, error) {
+	return handlerSnapshotRead(ctx, h, func(db *sql.Tx) (any, error) {
 		traceID := requestedTraceID
 		if traceID == nil {
 			summaries, matchCount, err := spans.GetSpanSummaries(ctx, db, spanValue, limit+1)

@@ -32,6 +32,10 @@ var (
 // scopeKey identifies a scope by position: the ri'th resource's si'th scope.
 type scopeKey struct{ ri, si int }
 
+type queryRower interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
 // flushIntervalSpans bounds how many spans accumulate in the appenders before
 // they are pushed to DuckDB. It exists to cap memory on a pathological batch,
 // not to make writes visible sooner -- nothing reads mid-batch, since ingest
@@ -514,7 +518,7 @@ func SearchSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) 
 
 // GetTrace returns the compact, untruncated overview for one trace. The query
 // computes exact nanosecond strings and reads every span in one operation.
-func GetTrace(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage, error) {
+func GetTrace(ctx context.Context, db queryRower, traceID string) (json.RawMessage, error) {
 	query, err := queries.Render(queries.GetTrace, nil)
 	if err != nil {
 		return nil, fmt.Errorf("GetTrace: %w: %w", ErrSpansStoreInternal, err)
@@ -531,7 +535,7 @@ func GetTrace(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage,
 
 // GetSpanSummaries returns at most limit stable summary rows for one span ID,
 // together with the exact number of matching composite identities.
-func GetSpanSummaries(ctx context.Context, db *sql.DB, spanID uint64, limit int64) (json.RawMessage, int64, error) {
+func GetSpanSummaries(ctx context.Context, db queryRower, spanID uint64, limit int64) (json.RawMessage, int64, error) {
 	query, err := queries.Render(queries.GetSpanSummaries, nil)
 	if err != nil {
 		return nil, 0, fmt.Errorf("GetSpanSummaries: %w: %w", ErrSpansStoreInternal, err)
@@ -549,7 +553,7 @@ func GetSpanSummaries(ctx context.Context, db *sql.DB, spanID uint64, limit int6
 
 // GetSpan returns full stored detail for one composite trace and span identity.
 // A missing exact pair returns a nil result without an error.
-func GetSpan(ctx context.Context, db *sql.DB, traceID string, spanID uint64) (json.RawMessage, error) {
+func GetSpan(ctx context.Context, db queryRower, traceID string, spanID uint64) (json.RawMessage, error) {
 	query, err := queries.Render(queries.GetSpan, nil)
 	if err != nil {
 		return nil, fmt.Errorf("GetSpan: %w: %w", ErrSpansStoreInternal, err)

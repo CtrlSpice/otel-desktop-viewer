@@ -64,6 +64,10 @@ const flushIntervalLogs = 500
 // scopeKey identifies a scope by position: the ri'th resource's si'th scope.
 type scopeKey struct{ ri, si int }
 
+type queryRower interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
 // Ingest ingests log records from pdata into the logs table.
 // The caller must hold any required lock on the connection.
 //
@@ -408,7 +412,7 @@ func GetLogOTLP(ctx context.Context, db *sql.DB, logID string) (json.RawMessage,
 // trace boundary is the complete correlation boundary: timestamps only order
 // rows, and nullable or dangling span IDs remain in the result for callers to
 // classify. Full body and attribute detail remains owned by Get.
-func GetTraceLogs(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage, error) {
+func GetTraceLogs(ctx context.Context, db queryRower, traceID string) (json.RawMessage, error) {
 	query, args, err := getTraceLogsSQL(traceID)
 	if err != nil {
 		return nil, err
@@ -426,7 +430,7 @@ func GetTraceLogs(ctx context.Context, db *sql.DB, traceID string) (json.RawMess
 
 // GetSpanLogs returns every full log row associated with one exact composite
 // span identity. The result is complete and uses one bulk query.
-func GetSpanLogs(ctx context.Context, db *sql.DB, traceID string, spanID uint64) (json.RawMessage, error) {
+func GetSpanLogs(ctx context.Context, db queryRower, traceID string, spanID uint64) (json.RawMessage, error) {
 	query, err := queries.Render(queries.GetSpanLogs, nil)
 	if err != nil {
 		return nil, fmt.Errorf("GetSpanLogs: %w: %w", ErrLogsStoreInternal, err)

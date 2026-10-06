@@ -730,6 +730,64 @@ func TestGetTraceValidatesIDAndContext(t *testing.T) {
 	require.ErrorIs(t, err, ErrRequestCanceled)
 }
 
+func TestDetailSnapshotExcludesConcurrentIngest(t *testing.T) {
+	handler := setupHandlerWithData(t)
+	ctx := context.Background()
+
+	result, err := storeSnapshotRead(ctx, handler.store, func(tx *sql.Tx) (struct {
+		logCount, spanMatchCount int64
+	}, error) {
+		if _, err := spans.GetTrace(ctx, tx, testTraceIDHex); err != nil {
+			return struct{ logCount, spanMatchCount int64 }{}, err
+		}
+		if _, matchCount, err := spans.GetSpanSummaries(ctx, tx, 1, 2); err != nil || matchCount != 1 {
+			return struct{ logCount, spanMatchCount int64 }{}, errors.Join(err, fmt.Errorf("initial span match count: %d", matchCount))
+		}
+
+		if err := handler.store.WithConn(func(conn driver.Conn) error {
+			if err := logs.Ingest(ctx, conn, buildTestLogs(), handler.store.FlushedIDs()); err != nil {
+				return err
+			}
+			duplicate := buildTestTraces()
+			duplicate.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).SetTraceID(
+				pcommon.TraceID{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2},
+			)
+			return spans.Ingest(ctx, conn, duplicate, handler.store.FlushedIDs())
+		}); err != nil {
+			return struct{ logCount, spanMatchCount int64 }{}, err
+		}
+
+		logsRaw, err := logs.GetTraceLogs(ctx, tx, testTraceIDHex)
+		if err != nil {
+			return struct{ logCount, spanMatchCount int64 }{}, err
+		}
+		var traceLogs []json.RawMessage
+		if err := json.Unmarshal(logsRaw, &traceLogs); err != nil {
+			return struct{ logCount, spanMatchCount int64 }{}, err
+		}
+		_, matchCount, err := spans.GetSpanSummaries(ctx, tx, 1, 2)
+		return struct{ logCount, spanMatchCount int64 }{int64(len(traceLogs)), matchCount}, err
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, result.logCount)
+	require.EqualValues(t, 1, result.spanMatchCount)
+
+	require.NoError(t, handler.store.WithDBRead(func(db *sql.DB) error {
+		logsRaw, err := logs.GetTraceLogs(ctx, db, testTraceIDHex)
+		if err != nil {
+			return err
+		}
+		var traceLogs []json.RawMessage
+		if err := json.Unmarshal(logsRaw, &traceLogs); err != nil {
+			return err
+		}
+		_, matchCount, err := spans.GetSpanSummaries(ctx, db, 1, 2)
+		require.Len(t, traceLogs, 2)
+		require.EqualValues(t, 2, matchCount)
+		return err
+	}))
+}
+
 func TestCompactTraceLogsPreservesNullAndDanglingSpanIDs(t *testing.T) {
 	logs, err := compactTraceLogs(json.RawMessage(`[
 		{"timestamp":"18446744073709551615","spanID":null,"severityText":"","severityNumber":9,"serviceName":"api","eventName":"","bodyPreview":"preview"},
