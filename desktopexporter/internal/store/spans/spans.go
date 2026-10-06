@@ -738,11 +738,26 @@ func GetFieldValues(ctx context.Context, db *sql.DB, field, term string, limit i
 	return json.RawMessage(raw), nil
 }
 
-// GetAttributesByTraceID returns the same store-wide key list as
-// GetTraceAttributes. Narrowing to one trace would cost the unnest described
-// there; both callers populate the same dropdown.
 func GetAttributesByTraceID(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage, error) {
-	return traceAttributeKeys(ctx, db)
+	query := `
+		select cast(to_json(list(json_object('name', sub.key, 'attributeScope', sub.scope,
+			'type', sub.type) order by sub.key, sub.scope, sub.type)) as varchar) as attributes
+		from (
+			select distinct a.key, 'resource' as scope, json_extract_string(a.value, '$.kind') as type from spans s join resources r on r.id = s.resource_id, unnest(r.attribute_ids) t(aid) join attributes a on a.id = t.aid where s.trace_id = ?::uuid
+			union select distinct a.key, 'scope', json_extract_string(a.value, '$.kind') from spans s join scopes sc on sc.id = s.scope_id, unnest(sc.attribute_ids) t(aid) join attributes a on a.id = t.aid where s.trace_id = ?::uuid
+			union select distinct a.key, 'span', json_extract_string(a.value, '$.kind') from spans s, unnest(s.attribute_ids) t(aid) join attributes a on a.id = t.aid where s.trace_id = ?::uuid
+			union select distinct a.key, 'event', json_extract_string(a.value, '$.kind') from events e, unnest(e.attribute_ids) t(aid) join attributes a on a.id = t.aid where e.trace_id = ?::uuid
+			union select distinct a.key, 'link', json_extract_string(a.value, '$.kind') from links l, unnest(l.attribute_ids) t(aid) join attributes a on a.id = t.aid where l.trace_id = ?::uuid
+		) sub
+	`
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, traceID, traceID, traceID, traceID, traceID).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("GetAttributesByTraceID: %w: %w", ErrSpansStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
 }
 
 func traceAttributeKeys(ctx context.Context, db *sql.DB) (json.RawMessage, error) {
