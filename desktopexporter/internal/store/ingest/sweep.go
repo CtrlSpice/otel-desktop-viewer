@@ -31,17 +31,15 @@ type ExecContext interface {
 // LIST, so there is no anti-join to run and no refcount to consult. The live set
 // has to be rebuilt by unnesting every owner array.
 //
-// UNION rather than UNION ALL: the whole point is a distinct set, and letting
-// DuckDB dedupe during the union is cheaper than materialising ~10^6 duplicate
-// ids and deduping at the end.
+// UNION produces the distinct live set before deletion.
 const liveAttributeIDs = `
 	select unnest(attribute_ids) as id from spans
 	union select unnest(attribute_ids) from events
 	union select unnest(attribute_ids) from links
 	union select unnest(attribute_ids) from logs
-	union select unnest(attribute_ids) from datapoints
+	union select unnest(attribute_ids) from metric_datapoints
 	union select unnest(attribute_ids) from metric_series
-	union select unnest(metadata_ids) from metric_streams
+	union select unnest(metadata_ids) from metrics
 	union select unnest(attribute_ids) from exemplars
 	union select unnest(attribute_ids) from resources
 	union select unnest(attribute_ids) from scopes`
@@ -70,12 +68,12 @@ var sweepQueries = []string{
 	`delete from resources where id not in (
 		select resource_id from spans
 		union select resource_id from logs
-		union select resource_id from metric_streams
+		union select resource_id from metrics
 	) returning id::varchar`,
 	`delete from scopes where id not in (
 		select scope_id from spans
 		union select scope_id from logs
-		union select scope_id from metric_streams
+		union select scope_id from metrics
 	) returning id::varchar`,
 
 	`delete from attributes where id not in (` + liveAttributeIDs + `) returning id::varchar`,
@@ -86,44 +84,19 @@ var sweepQueries = []string{
 	// points at. bounds_id is nullable (only explicit-bucket histograms carry
 	// one), hence the is-not-null guard on the live set.
 	`delete from histogram_bounds where id not in (
-		select bounds_id from datapoints where bounds_id is not null
+		select bounds_id from metric_datapoints where bounds_id is not null
 	) returning id::varchar`,
 }
 
 // SweepOrphans deletes dictionary, resource and scope rows nothing references.
 //
-// It runs eagerly rather than lazily, and that is deliberate. Retention is
-// size-driven: it measures the database and prunes the oldest telemetry until it
-// fits. Orphaned rows count toward that measurement, so deferring the sweep
-// means garbage inflates the number, retention deletes real spans to make room,
-// and the garbage survives while the data does not. Worst in memory mode, where
-// the measure is live heap.
-//
-// Callers: the three Clear paths, and retention -- once before its first size
-// check (so pre-existing garbage can never be what pushes the store over the
-// cap) and once at the end of every round (the prunes are what create the
-// orphans).
+// Retention sweeps before measuring so orphaned rows cannot trigger deletion of
+// live telemetry, and after pruning to collect newly orphaned rows.
 //
 // flushed may be nil when no store-level cache is in play.
 //
-// This is the only function that deletes dictionary rows, which is what makes
-// a "these ids exist" cache safe at all -- so invalidation belongs here rather
-// than at the call sites, where it would be four places to get it right
-// instead of one. Each statement's `returning id` means this can invalidate
-// precisely: only the ids a delete actually removed come out of FlushedIDs,
-// so a resource still referenced by logs after traces are cleared stays
-// marked, and the next batch that repeats it skips the insert exactly as
-// before the sweep ran.
-//
-// That precision is deliberately not trusted blindly. If collecting the
-// returned ids fails partway -- a query error, a scan error -- this falls
-// back to flushed.Forget(), which drops the whole cache rather than a partial
-// one. The asymmetry is intentional: being coarse is always safe, since a
-// forgotten-but-still-live row just gets re-inserted and conflicts for free.
-// Being precise but incomplete is not safe -- it leaves a stale "this row
-// exists" entry for an id whose row is actually gone, an owner ends up
-// referencing a deleted row, no FK can catch it, attrs_json silently joins
-// nothing, and the attribute vanishes from the UI with no error anywhere.
+// Returned IDs invalidate FlushedIDs precisely. Any query or scan failure
+// clears the whole cache because retaining a deleted ID is unsafe.
 func SweepOrphans(ctx context.Context, exec ExecContext, flushed *FlushedIDs) error {
 	var removed []duckdb.UUID
 	for _, q := range sweepQueries {

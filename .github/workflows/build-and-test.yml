@@ -1,7 +1,3 @@
-# This workflow builds and tests the OpenTelemetry Desktop Viewer
-# It ensures the application builds successfully on all supported platforms
-# and runs the test suite for the desktopexporter component.
-
 name: Build and Test
 
 on: 
@@ -10,18 +6,7 @@ on:
 permissions:
   contents: read
 
-# Only the newest commit on a branch is worth building. Without this, pushing a
-# follow-up while a run is in flight leaves both going: the older one finishes
-# against code nobody will look at, and on a three-platform matrix that is real
-# runner time -- the Windows job alone runs 5-8 minutes.
-#
-# It also fixes a subtler problem. actions/setup-go caches GOMODCACHE and
-# GOCACHE keyed on go.sum, and GitHub caches are immutable: the first run to
-# finish saves the key, and any run that started before that save restores
-# nothing and then fails to save ("another job may be creating this cache").
-# Overlapping runs therefore both miss, and on Windows a miss is ~110s of
-# recompiling DuckDB's C++. Serialising the branch means the cache is written
-# once and hit thereafter.
+# Cancel superseded branch runs and serialize setup-go cache writes.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -51,23 +36,7 @@ jobs:
       with:
         go-version: '1.26'
 
-    # DuckDB is cgo, and its Windows support is a *prebuilt* static library --
-    # duckdb-go-bindings/lib/windows-amd64 -- so the compiler here has to match
-    # the one that archive was built with, not merely be a working gcc.
-    #
-    # C:\mingw64 is that compiler. It ships with the runner image, and it is what
-    # every Windows build has silently used: this workflow installed a UCRT64
-    # toolchain through setup-msys2 and then put `C:\msys64\ucrt64\bin` on PATH,
-    # which is not where setup-msys2 installs and holds no gcc, so cgo fell
-    # through to the next of the five gccs on the image (#324).
-    #
-    # Pointing PATH at the MSYS2 toolchain instead -- the apparent fix -- breaks
-    # the link: its gcc 16.1.0 uses a different TLS model, and libduckdb_static.a
-    # fails on undefined `__emutls_v._ZSt11__once_call`. Measured, not guessed.
-    #
-    # So the accident was benign and the intent was wrong. This names the working
-    # compiler deliberately rather than inheriting it from PATH order, and the
-    # 61s that installed an unusable toolchain goes away.
+    # duckdb-go-bindings' Windows archive requires the C:\mingw64 toolchain (#324).
     - name: Pin the C toolchain cgo uses (Windows)
       if: matrix.os == 'windows-latest'
       run: |
@@ -97,18 +66,11 @@ jobs:
       run: go build -o otel-desktop-viewer
       if: matrix.os != 'windows-latest'
 
-    # ./... from the repo root, not from desktopexporter. Scoping it to the
-    # subdirectory left the root package -- the CLI, its flag wiring and the
-    # composed collector config -- untested by anything. main_test.go stopped
-    # compiling when a collector bump removed xconfmap.Validate, and nothing
-    # reported it: seven tests, including the ones covering the flags a release
-    # ships, were silently absent for a whole dependency cycle.
+    # Include the root CLI package and desktopexporter packages.
     - name: Go Tests
       run: go test ./...
 
-  # Go source checks that need no CGO and no DuckDB toolchain, so they run once
-  # on Linux rather than across the build matrix (which includes Windows, where
-  # this shell syntax differs).
+  # These source checks need neither CGO nor the platform matrix.
   go-checks:
     runs-on: ubuntu-latest
 
@@ -120,14 +82,10 @@ jobs:
       with:
         go-version: '1.26'
 
-    # The frontend job gates Prettier; this is the Go equivalent.
     - name: Format check (gofmt)
       run: make format-go-check
 
-    # Guards the store's concurrency model: production code must reach DuckDB
-    # through Store.WithConn, WithDBRead, or WithDBWrite so access is ordered
-    # against ingest, retention, and Close. A raw *sql.DB handed to a caller
-    # escapes that ordering, which is what issue #238 fixed.
+    # Production DuckDB access must remain ordered by Store methods.
     - name: No unguarded store access outside tests
       run: |
         if grep -rn --include='*.go' '\.DB()' desktopexporter/ | grep -v '_test\.go'; then
@@ -154,10 +112,7 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
-    # The query-language parser is generated from query.grammar and committed.
-    # An edit to the grammar without regeneration would leave the editor
-    # parsing yesterday's language -- exactly the split-brain the grammar
-    # unification removed. Regenerate and require a clean diff.
+    # The committed parser must match query.grammar.
     - name: Generated parser matches the grammar
       run: |
         npm run generate:grammar
@@ -195,11 +150,7 @@ jobs:
         if-no-files-found: ignore
         retention-days: 14
 
-    # The built bundle is committed and served by the Go binary, so it can go
-    # stale without any source file changing -- a dependency bump alone is
-    # enough. Nothing caught that, and the drift would surface inside whichever
-    # unrelated PR next ran build-ts. Runs from the repo root because the
-    # comparison spans both the frontend and the embedded copy.
+    # The committed bundle must match the frontend sources and lockfile.
     - name: Built assets are current
       working-directory: ${{ github.workspace }}
       run: make build-ts-check

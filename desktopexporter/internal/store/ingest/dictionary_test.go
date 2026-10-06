@@ -182,9 +182,7 @@ func newStore(t *testing.T) *store.Store {
 	return s
 }
 
-// Flush writes the dictionary, and flushing the same content twice must not
-// duplicate anything -- that is the whole point of content-derived ids plus
-// `on conflict do nothing`.
+// TestFlushIsIdempotent verifies content-derived IDs and conflict handling.
 func TestFlushIsIdempotent(t *testing.T) {
 	t.Parallel()
 	s := newStore(t)

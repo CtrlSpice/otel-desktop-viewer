@@ -1,18 +1,8 @@
 // Package attributes answers questions about the attribute dictionary itself,
 // rather than about the signals that reference it.
 //
-// It exists because the dictionary made a new question cheap. Search has always
-// worked key-first ("show me spans where http.method = GET", with the key
-// chosen from a discovery dropdown) or as blind free text ("find GET
-// somewhere"). Neither answers the one people actually start with:
-//
-//	I can see "checkout" in this trace. What field is that?
-//
-// Under the old schema that meant scanning every owner's attribute rows, per
-// signal, three times. The dictionary holds one row per distinct
-// (key, value, type, scope) for the entire database -- 488 rows for a full race
-// capture -- so the same question is one grouped scan of a small table, and it
-// spans traces, logs and metrics at once because they all reference it.
+// The shared dictionary supports value-first discovery across traces, logs,
+// and metrics without scanning each signal separately.
 package attributes
 
 import (
@@ -32,35 +22,32 @@ const maxSampleValues = 3
 
 // searchQuery derives scope from each owner array, then groups matching values.
 //
-// Matching is ILIKE on value *and* key: someone typing "checkout" may be
-// looking at a value they saw in the UI, or half-remembering a key name, and
-// the query cannot tell which. Case-insensitive because this is discovery --
-// the point is to find something you cannot yet name precisely.
+// Matching is case-insensitive across values and keys because callers may have
+// either one.
 //
 // matchCount counts distinct dictionary rows, not owners. It answers "how many
 // different values of this key match", which is what tells you whether you have
 // found one specific thing or a whole family. Owner counts would mean unnesting
 // every array, which is exactly the cost this avoids.
 //
-// Ordered by match count so the busiest key surfaces first, then by name for
-// stability -- an unordered result would reshuffle between identical calls.
+// Results are ordered by match count, then name for stable ties.
 const searchQuery = `
 	with owner_ids(scope, id) as (
 		select 'span', unnest(attribute_ids) from spans
 		union all select 'event', unnest(attribute_ids) from events
 		union all select 'link', unnest(attribute_ids) from links
 		union all select 'log', unnest(attribute_ids) from logs
-		union all select 'datapoint', unnest(attribute_ids) from datapoints
+		union all select 'datapoint', unnest(attribute_ids) from metric_datapoints
 		union all select 'exemplar', unnest(attribute_ids) from exemplars
-		union all select 'metadata', unnest(metadata_ids) from metric_streams
+		union all select 'metadata', unnest(metadata_ids) from metrics
 		union all select 'resource', unnest(r.attribute_ids) from resources r
 			where exists (select 1 from spans s where s.resource_id = r.id)
 				or exists (select 1 from logs l where l.resource_id = r.id)
-				or exists (select 1 from metric_streams m where m.resource_id = r.id)
+				or exists (select 1 from metrics m where m.resource_id = r.id)
 		union all select 'scope', unnest(sc.attribute_ids) from scopes sc
 			where exists (select 1 from spans s where s.scope_id = sc.id)
 				or exists (select 1 from logs l where l.scope_id = sc.id)
-				or exists (select 1 from metric_streams m where m.scope_id = sc.id)
+				or exists (select 1 from metrics m where m.scope_id = sc.id)
 	)
 
 	select cast(coalesce(to_json(list(json_object(

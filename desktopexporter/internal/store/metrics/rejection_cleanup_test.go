@@ -76,7 +76,7 @@ func TestSummaryRejectionPreservesAcceptedEmptyMetrics(t *testing.T) {
 			}))
 			require.Equal(t, 1, rejected.Count())
 			require.ErrorIs(t, rejected.Reason(), metrics.ErrUnsupportedMetricType)
-			ids := metricStreamIDs(t, s, ctx)
+			ids := metricMetricIDs(t, s, ctx)
 			require.Len(t, ids, 4, "every accepted empty Metric must survive cleanup")
 			require.NotContains(t, ids, "unsupported-summary")
 			for name, id := range ids {
@@ -97,7 +97,7 @@ func TestSummaryRejectionPreservesAcceptedEmptyMetrics(t *testing.T) {
 				require.Equal(t, 1, decoded.MetricCount())
 				assert.Zero(t, decoded.DataPointCount())
 			}
-			require.Equal(t, 0, countRows(t, s, ctx, `select count(*) from datapoints`))
+			require.Equal(t, 0, countRows(t, s, ctx, `select count(*) from metric_datapoints`))
 			require.Equal(t, 0, countRows(t, s, ctx, `select count(*) from metric_series`))
 			require.Equal(t, 1, countRows(t, s, ctx, `select count(*) from resources`))
 			require.Equal(t, 1, countRows(t, s, ctx, `select count(*) from scopes`))

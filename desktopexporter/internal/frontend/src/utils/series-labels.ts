@@ -1,5 +1,5 @@
 import type { Attribute } from '@/types/api-types'
-import type { MetricTimeseries } from '@/types/api-types'
+import type { MetricSeriesViewData } from '@/types/api-types'
 import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
 import {
   attributeValueCanonical,
@@ -33,12 +33,12 @@ import {
  * `Map { seriesA => [host.name=pod-a], seriesB => [host.name=pod-b] }`
  */
 export function distinguishingResourceAttributes(
-  timeseries: MetricTimeseries[]
+  timeseries: MetricSeriesViewData[]
 ): Map<string, Attribute[]> {
   const result = new Map<string, Attribute[]>()
   if (timeseries.length < 2) {
     // A single series has nothing to be distinguished from.
-    for (const ts of timeseries) result.set(ts.attributesKey, [])
+    for (const ts of timeseries) result.set(ts.seriesRef, [])
     return result
   }
 
@@ -67,7 +67,7 @@ export function distinguishingResourceAttributes(
 
   for (const ts of timeseries) {
     result.set(
-      ts.attributesKey,
+      ts.seriesRef,
       (ts.resource?.attributes ?? []).filter(a => varying.has(a.key))
     )
   }
@@ -78,22 +78,22 @@ export function distinguishingResourceAttributes(
  * How a reader identifies each series: its own labels, plus whatever resource
  * attributes tell it apart from its siblings when the metric spans several.
  *
- * Everything user-facing resolves through here. `attributesKey` is an opaque
+ * Everything user-facing resolves through here. `seriesRef` is an opaque
  * database-scoped id, so it is the right key for a map and the wrong thing to
  * put in a tooltip.
  */
 export function seriesLabelsByKey(
-  timeseries: MetricTimeseries[]
+  timeseries: MetricSeriesViewData[]
 ): Map<string, string> {
   const distinguishing = distinguishingResourceAttributes(timeseries)
   const out = new Map<string, string>()
   for (const ts of timeseries) {
     const attrs = dedupeAttributes([
       ...ts.attributes,
-      ...(distinguishing.get(ts.attributesKey) ?? []),
+      ...(distinguishing.get(ts.seriesRef) ?? []),
     ])
     out.set(
-      ts.attributesKey,
+      ts.seriesRef,
       attrs.length === 0
         ? 'default series'
         : attrs.map(a => `${a.key}: ${attributeValueLabel(a.value)}`).join(' ')

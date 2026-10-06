@@ -5,20 +5,7 @@ import { EditorState } from '@codemirror/state'
 import { EditorView, keymap, type KeyBinding } from '@codemirror/view'
 import { createQueryKeymap } from './keymap'
 
-/**
- * Enter has two jobs in this editor and they conflict: accept the highlighted
- * completion, or submit the query.
- *
- * @remarks
- * Before these bindings were chained it only ever submitted. The submit command
- * returns true unconditionally, so it always won and CodeMirror's own
- * acceptCompletion never got a turn — suggestions could only be taken with the
- * mouse, which is not how anyone uses a search box.
- *
- * These assert the wiring through CodeMirror's public keymap facet. The submit
- * command itself performs no layout work, so a detached EditorView is enough to
- * exercise it with the real command contract.
- */
+/** Test the real CodeMirror keymap contract without DOM layout. */
 
 function bindings(onSubmit = () => {}): readonly KeyBinding[] {
   const state = EditorState.create({

@@ -17,23 +17,7 @@ jobs:
       with:
         go-version: '1.26'
 
-    # DuckDB is cgo, and its Windows support is a *prebuilt* static library --
-    # duckdb-go-bindings/lib/windows-amd64 -- so the compiler here has to match
-    # the one that archive was built with, not merely be a working gcc.
-    #
-    # C:\mingw64 is that compiler. It ships with the runner image, and it is what
-    # every Windows build has silently used: this workflow installed a UCRT64
-    # toolchain through setup-msys2 and then put `C:\msys64\ucrt64\bin` on PATH,
-    # which is not where setup-msys2 installs and holds no gcc, so cgo fell
-    # through to the next of the five gccs on the image (#324).
-    #
-    # Pointing PATH at the MSYS2 toolchain instead -- the apparent fix -- breaks
-    # the link: its gcc 16.1.0 uses a different TLS model, and libduckdb_static.a
-    # fails on undefined `__emutls_v._ZSt11__once_call`. Measured, not guessed.
-    #
-    # So the accident was benign and the intent was wrong. This names the working
-    # compiler deliberately rather than inheriting it from PATH order, and the
-    # 61s that installed an unusable toolchain goes away.
+    # duckdb-go-bindings' Windows archive requires the C:\mingw64 toolchain (#324).
     - name: Pin the C toolchain cgo uses (Windows)
       run: |
         $bin = 'C:\mingw64\bin'
@@ -56,16 +40,13 @@ jobs:
 
     - name: Test go install
       run: |
-        # Test that the module can be installed via go install
         go install github.com/CtrlSpice/otel-desktop-viewer@latest
-        # Verify the binary was installed and works
         otel-desktop-viewer.exe --version
-        # Test running the app (without browser)
         $process = Start-Process -FilePath "otel-desktop-viewer.exe" -ArgumentList "--open-browser=false" -PassThru
         try {
             Wait-Process -InputObject $process -Timeout 20
         } catch {
-            # Timeout is expected - the app is running successfully
+            # A timeout means the server remained running.
             Write-Host "App started successfully (timeout after 20s is expected)"
             Stop-Process -InputObject $process -Force
         }

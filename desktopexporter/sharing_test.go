@@ -20,13 +20,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
-// Deleting sharedcomponent removed the guarantee that all three signal
-// pipelines got one exporter instance. What has to hold instead is weaker but
-// sufficient: three independent exporters resolving the *same* store, so the
-// store's own RWMutex still serializes every writer.
-//
-// If this ever fails, each pipeline has its own DuckDB and the mutex is
-// guarding nothing.
+// Independent signal exporters must resolve the same store so its locks order
+// every writer.
 func TestAllSignalsResolveTheSameStore(t *testing.T) {
 	ctx := context.Background()
 	host, _ := startTestExtension(t)
@@ -92,10 +87,8 @@ func metricBatch(name string, n int) pmetric.Metrics {
 	return md
 }
 
-// Hammer all three signals through their own queues while the viewer is being
-// read over RPC. Every writer is a different exporter instance and a different
-// queue consumer goroutine, all funnelling into one store -- which is exactly
-// the arrangement sharedcomponent used to make impossible. Run under -race.
+// Drive all signal queues while reading through RPC to exercise their shared
+// store under -race.
 func TestConcurrentSignalsShareOneStore(t *testing.T) {
 	ctx := context.Background()
 	set := testExporterSettings(t)

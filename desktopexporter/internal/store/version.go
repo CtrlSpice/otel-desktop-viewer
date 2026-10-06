@@ -14,15 +14,8 @@ import (
 // ErrSchemaIncompatible is returned when the database on disk was written by a
 // different schema than this build understands.
 //
-// Enforcement, not a warning. The check spent the rewrite in warn-only mode
-// because the schema was still moving and hard failure would have meant
-// deleting the dev database on every iteration. It is now what stops an
-// incompatible file being opened and failing later as something opaque: an
-// appender column-count error partway through an ingest, or "failed to create
-// index 4" against a column that does not exist.
-//
-// There is no migration. The remedy is to delete the file or point --db
-// somewhere else, which is what the message says.
+// The store rejects incompatible files before running application DDL. There
+// is no migration; callers must delete the file or select another database.
 var ErrSchemaIncompatible = errors.New("database schema is incompatible with this build")
 
 // schemaInitializationMu keeps concurrent first opens in this process from
@@ -38,8 +31,8 @@ const (
 	// brand new and has just been stamped with it.
 	SchemaOK SchemaCompatibility = iota
 
-	// SchemaPreVersioning means the file holds data but carries no version
-	// stamp: it was written before versioning existed, so its shape is unknown.
+	// SchemaPreVersioning means the file holds data without a version stamp, so
+	// its shape is unknown.
 	SchemaPreVersioning
 
 	// SchemaMismatch means the file is stamped with a different version.

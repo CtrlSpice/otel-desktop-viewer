@@ -39,7 +39,7 @@ func TestGetMetricOTLP(t *testing.T) {
 		}))
 	}
 
-	ids := metricStreamIDs(t, s, ctx)
+	ids := metricMetricIDs(t, s, ctx)
 	for _, name := range []string{"otlp.gauge", "otlp.sum", "otlp.histogram", "otlp.exponential"} {
 		t.Run(name, func(t *testing.T) {
 			raw := getMetricOTLP(t, s, ctx, ids[name])
@@ -142,7 +142,7 @@ func TestValidateMetricOTLPRejectsInvalidWireShapes(t *testing.T) {
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn, otlpMetricFixture(), s.FlushedIDs())
 	}))
-	ids := metricStreamIDs(t, s, ctx)
+	ids := metricMetricIDs(t, s, ctx)
 	gaugeText := string(getMetricOTLP(t, s, ctx, ids["otlp.gauge"]))
 	sumText := string(getMetricOTLP(t, s, ctx, ids["otlp.sum"]))
 
@@ -158,7 +158,7 @@ func TestValidateMetricOTLPRejectsInvalidWireShapes(t *testing.T) {
 	}
 }
 
-func TestGetMetricOTLPStreamOwnershipAndEmptyValues(t *testing.T) {
+func TestGetMetricOTLPOwnershipAndEmptyValues(t *testing.T) {
 	s, ctx := storetest.New(t)
 	for i, owner := range []string{"first", "first", "second"} {
 		batch := pmetric.NewMetrics()
@@ -180,7 +180,7 @@ func TestGetMetricOTLPStreamOwnershipAndEmptyValues(t *testing.T) {
 			sm.Scope().SetDroppedAttributesCount(4)
 		}
 		metric := sm.Metrics().AppendEmpty()
-		metric.SetName("same-stream")
+		metric.SetName("same-metric")
 		metric.SetDescription(owner)
 		metric.Metadata().PutStr("metadata.owner", owner)
 		dp := metric.SetEmptyGauge().DataPoints().AppendEmpty()
@@ -194,10 +194,10 @@ func TestGetMetricOTLPStreamOwnershipAndEmptyValues(t *testing.T) {
 	}
 	other := pmetric.NewMetrics()
 	otherRM := other.ResourceMetrics().AppendEmpty()
-	otherRM.Resource().Attributes().PutStr("owner", "other-stream")
+	otherRM.Resource().Attributes().PutStr("owner", "other-metric")
 	otherSM := otherRM.ScopeMetrics().AppendEmpty()
 	otherMetric := otherSM.Metrics().AppendEmpty()
-	otherMetric.SetName("same-stream")
+	otherMetric.SetName("same-metric")
 	otherMetric.SetUnit("other")
 	otherMetric.SetDescription("must-not-leak")
 	otherMetric.SetEmptyGauge().DataPoints().AppendEmpty().SetTimestamp(999)
@@ -207,9 +207,9 @@ func TestGetMetricOTLPStreamOwnershipAndEmptyValues(t *testing.T) {
 
 	var id string
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		return db.QueryRowContext(ctx, `select m.id::varchar from metric_streams m
+		return db.QueryRowContext(ctx, `select m.id::varchar from metrics m
 			join scopes sc on sc.id = m.scope_id
-			where m.name = 'same-stream' and m.unit = '' and sc.schema_url = 'scope-first'`).Scan(&id)
+			where m.name = 'same-metric' and m.unit = '' and sc.schema_url = 'scope-first'`).Scan(&id)
 	}))
 	raw := getMetricOTLP(t, s, ctx, id)
 	text := string(raw)
@@ -233,7 +233,7 @@ func TestGetMetricOTLPStreamOwnershipAndEmptyValues(t *testing.T) {
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn, empty, s.FlushedIDs())
 	}))
-	emptyID := metricStreamIDs(t, s, ctx)["empty-occurrence"]
+	emptyID := metricMetricIDs(t, s, ctx)["empty-occurrence"]
 	emptyRaw := getMetricOTLP(t, s, ctx, emptyID)
 	assert.Contains(t, string(emptyRaw), `"dataPoints":[]`)
 	assert.Contains(t, string(emptyRaw), `"attributes":[]`)
@@ -248,7 +248,7 @@ func TestGetMetricOTLPNotFound(t *testing.T) {
 		_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 			return metrics.GetMetricOTLP(ctx, db, id)
 		})
-		assert.ErrorIs(t, err, metrics.ErrStreamIDNotFound)
+		assert.ErrorIs(t, err, metrics.ErrMetricIDNotFound)
 	}
 }
 
@@ -266,7 +266,7 @@ func TestGetMetricOTLPRejectsUnsupportedMetricTypes(t *testing.T) {
 	}))
 	require.Equal(t, 1, rejected.Count())
 	require.ErrorIs(t, rejected.Reason(), metrics.ErrUnsupportedMetricType)
-	require.Empty(t, metricStreamIDs(t, s, ctx))
+	require.Empty(t, metricMetricIDs(t, s, ctx))
 
 	gauge := pmetric.NewMetrics()
 	gm := gauge.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
@@ -278,17 +278,17 @@ func TestGetMetricOTLPRejectsUnsupportedMetricTypes(t *testing.T) {
 
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		_, err := db.ExecContext(ctx, `
-			insert into metric_streams
+			insert into metrics
 				(id, resource_id, resource_payload_id, scope_id, name, description, unit,
 				 metadata_ids, metric_type, aggregation_temporality, is_monotonic, service_name)
 			select uuid(), resource_id, resource_payload_id, scope_id, name, description, unit,
 				metadata_ids, 'FutureMetric', aggregation_temporality, is_monotonic, service_name
-			from metric_streams where name = 'future-metric'`)
+			from metrics where name = 'future-metric'`)
 		return err
 	}))
 	var summaryID string
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		return db.QueryRowContext(ctx, `select id::varchar from metric_streams where metric_type = 'FutureMetric'`).Scan(&summaryID)
+		return db.QueryRowContext(ctx, `select id::varchar from metrics where metric_type = 'FutureMetric'`).Scan(&summaryID)
 	}))
 	_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetricOTLP(ctx, db, summaryID)
@@ -298,9 +298,9 @@ func TestGetMetricOTLPRejectsUnsupportedMetricTypes(t *testing.T) {
 
 func TestGetMetricOTLPRejectsStoredNullAndInvalidOneof(t *testing.T) {
 	for name, mutation := range map[string]string{
-		"SQL null":      `update datapoints set timestamp = null`,
-		"invalid oneof": `update datapoints set value_type = 'Int', int_value = null`,
-		"unknown oneof": `update datapoints set value_type = 'FutureValue'`,
+		"SQL null":      `update metric_datapoints set timestamp = null`,
+		"invalid oneof": `update metric_datapoints set value_type = 'Int', int_value = null`,
+		"unknown oneof": `update metric_datapoints set value_type = 'FutureValue'`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, ctx := storetest.New(t)
@@ -313,7 +313,7 @@ func TestGetMetricOTLPRejectsStoredNullAndInvalidOneof(t *testing.T) {
 			require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 				return metrics.Ingest(ctx, conn, data, s.FlushedIDs())
 			}))
-			id := metricStreamIDs(t, s, ctx)["guard"]
+			id := metricMetricIDs(t, s, ctx)["guard"]
 			err := s.WithDBRead(func(db *sql.DB) error {
 				if _, err := db.ExecContext(ctx, mutation); err != nil {
 					return err
@@ -411,11 +411,11 @@ func otlpMetricFixture() pmetric.Metrics {
 	return data
 }
 
-func metricStreamIDs(t testing.TB, s *store.Store, ctx context.Context) map[string]string {
+func metricMetricIDs(t testing.TB, s *store.Store, ctx context.Context) map[string]string {
 	t.Helper()
 	ids := map[string]string{}
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		rows, err := db.QueryContext(ctx, `select name, id::varchar from metric_streams`)
+		rows, err := db.QueryContext(ctx, `select name, id::varchar from metrics`)
 		if err != nil {
 			return err
 		}
@@ -614,7 +614,7 @@ func BenchmarkGetMetricOTLP(b *testing.B) {
 			}))
 			var id string
 			require.NoError(b, s.WithDBRead(func(db *sql.DB) error {
-				return db.QueryRowContext(ctx, `select id::varchar from metric_streams`).Scan(&id)
+				return db.QueryRowContext(ctx, `select id::varchar from metrics`).Scan(&id)
 			}))
 			raw := getMetricOTLP(b, s, ctx, id)
 			decoded, err := (&pmetric.JSONUnmarshaler{}).UnmarshalMetrics(raw)

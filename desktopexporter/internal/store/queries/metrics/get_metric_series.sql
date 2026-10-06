@@ -12,18 +12,18 @@ selected_metric as materialized (
 		sc.name as scope_name, sc.version as scope_version,
 		sc.attribute_ids as scope_attribute_ids, sc.schema_url as scope_schema_url,
 		sc.dropped_attributes_count as scope_dropped_attributes_count
-	from metric_streams m
+	from metrics m
 	join resources r on r.id = m.resource_id
 	join scopes sc on sc.id = m.scope_id, input i
 	where m.id = i.metric_id
 ),
 selected_series as materialized (
 	select s.* from metric_series s, input i
-	where s.id = i.series_id and s.stream_id = i.metric_id
+	where s.id = i.series_id and s.metric_id = i.metric_id
 ),
 selected_datapoints as materialized (
 	select d.*, hb.bounds as explicit_bounds
-	from datapoints d
+	from metric_datapoints d
 	join selected_series s on s.id = d.series_id
 	left join histogram_bounds hb on hb.id = d.bounds_id,
 		input i
@@ -31,11 +31,11 @@ selected_datapoints as materialized (
 	  and (i.time_end is null or d.timestamp <= i.time_end)
 ),
 exemplar_documents as materialized (
-	select e.datapoint_id,
+	select e.metric_datapoint_id,
 		to_json(list(exemplar_json(e) order by e.timestamp, e.id)) as documents
 	from exemplars e
-	join selected_datapoints d on d.id = e.datapoint_id
-	group by e.datapoint_id
+	join selected_datapoints d on d.id = e.metric_datapoint_id
+	group by e.metric_datapoint_id
 ),
 datapoint_documents as materialized (
 	select d.id, d.timestamp,
@@ -93,7 +93,7 @@ datapoint_documents as materialized (
 		end as document
 	from selected_datapoints d
 	cross join selected_metric m
-	left join exemplar_documents e on e.datapoint_id = d.id
+	left join exemplar_documents e on e.metric_datapoint_id = d.id
 )
 select m.metric_type,
 	cast(json_merge_patch(
@@ -126,4 +126,4 @@ select m.metric_type,
 			else json('{}')
 		end) as varchar) as document
 from selected_metric m
-join selected_series s on s.stream_id = m.id
+join selected_series s on s.metric_id = m.id

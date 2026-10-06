@@ -329,25 +329,25 @@ func searchRangeParams(tc rpcNullableRangeCase) any {
 	return map[string]any{"startTime": tc.start, "endTime": tc.end, "limit": 1}
 }
 
-func metricRangeParams(metricID string, tc rpcNullableRangeCase) any {
+func metricRangeParams(metricRef string, tc rpcNullableRangeCase) any {
 	if !tc.named {
-		return []any{metricID, tc.start, tc.end}
+		return []any{metricRef, tc.start, tc.end}
 	}
 	// viewBuckets exercises all optional null holes between the range and a
 	// later named parameter.
 	return map[string]any{
-		"metricID": metricID, "startTime": tc.start, "endTime": tc.end,
+		"metricRef": metricRef, "startTime": tc.start, "endTime": tc.end,
 		"viewBuckets": 0,
 	}
 }
 
 const testTraceIDHex = "00000000000000000000000000000001"
 
-func TestSearchTraces(t *testing.T) {
+func TestSearchTraceSummaries(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {
 		handler := setupHandler(t)
 
-		req := createRequest("searchTraces", []string{"0", strconv.FormatInt(1<<63-1, 10)})
+		req := createRequest("searchTraceSummaries", []string{"0", strconv.FormatInt(1<<63-1, 10)})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -361,7 +361,7 @@ func TestSearchTraces(t *testing.T) {
 	t.Run("With Data", func(t *testing.T) {
 		handler := setupHandlerWithData(t)
 
-		req := createRequest("searchTraces", []string{"0", strconv.FormatInt(1<<63-1, 10)})
+		req := createRequest("searchTraceSummaries", []string{"0", strconv.FormatInt(1<<63-1, 10)})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -369,7 +369,7 @@ func TestSearchTraces(t *testing.T) {
 		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
 		var summaries []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &summaries))
-		require.Len(t, summaries, 1, "searchTraces should return the ingested trace")
+		require.Len(t, summaries, 1, "searchTraceSummaries should return the ingested trace")
 		assert.Equal(t, testTraceIDHex, summaries[0]["traceID"])
 	})
 
@@ -385,7 +385,7 @@ func TestSearchTraces(t *testing.T) {
 				"value":         "not-a-trace",
 			},
 		}
-		req := createRequest("searchTraces", []any{"0", strconv.FormatInt(1<<63-1, 10), query})
+		req := createRequest("searchTraceSummaries", []any{"0", strconv.FormatInt(1<<63-1, 10), query})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err, "garbage trace ID in search must not surface -32603")
@@ -400,7 +400,7 @@ func TestSearchTraces(t *testing.T) {
 		handler := setupHandlerWithData(t)
 
 		maxTime := strconv.FormatInt(1<<63-1, 10)
-		result, err := handler.Handle(context.Background(), createRequest("searchTraces", []any{"0", maxTime, nil, 1}))
+		result, err := handler.Handle(context.Background(), createRequest("searchTraceSummaries", []any{"0", maxTime, nil, 1}))
 		require.NoError(t, err)
 		raw, ok := result.(json.RawMessage)
 		require.True(t, ok)
@@ -408,7 +408,7 @@ func TestSearchTraces(t *testing.T) {
 		require.NoError(t, json.Unmarshal(raw, &summaries))
 		require.Len(t, summaries, 1)
 
-		result, err = handler.Handle(context.Background(), createRequest("searchTraces", []any{"0", maxTime, nil, 0}))
+		result, err = handler.Handle(context.Background(), createRequest("searchTraceSummaries", []any{"0", maxTime, nil, 0}))
 		assert.Nil(t, result)
 		assert.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
 	})
@@ -421,13 +421,13 @@ func TestSearchHandlersAcceptNullableBoundsPositionallyAndByName(t *testing.T) {
 		name   string
 		assert func(*testing.T, json.RawMessage)
 	}{
-		{"searchTraces", func(t *testing.T, raw json.RawMessage) {
+		{"searchTraceSummaries", func(t *testing.T, raw json.RawMessage) {
 			var got []map[string]any
 			require.NoError(t, json.Unmarshal(raw, &got))
 			require.Len(t, got, 1)
 			require.Equal(t, testTraceIDHex, got[0]["traceID"])
 		}},
-		{"searchLogs", func(t *testing.T, raw json.RawMessage) {
+		{"searchLogSummaries", func(t *testing.T, raw json.RawMessage) {
 			var got []map[string]any
 			require.NoError(t, json.Unmarshal(raw, &got))
 			require.Len(t, got, 1)
@@ -459,11 +459,11 @@ func TestSearchHandlersAcceptNullableBoundsPositionallyAndByName(t *testing.T) {
 	}
 }
 
-func TestSearchSpans(t *testing.T) {
+func TestGetTraceView(t *testing.T) {
 	handler := setupHandlerWithData(t)
 
 	t.Run("Found", func(t *testing.T) {
-		req := createRequest("searchSpans", []string{testTraceIDHex})
+		req := createRequest("getTraceView", []string{testTraceIDHex})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -477,7 +477,7 @@ func TestSearchSpans(t *testing.T) {
 	})
 
 	t.Run("Not Found", func(t *testing.T) {
-		req := createRequest("searchSpans", []string{"00000000-0000-0000-0000-000000000099"})
+		req := createRequest("getTraceView", []string{"00000000-0000-0000-0000-000000000099"})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.Error(t, err)
@@ -495,7 +495,7 @@ func TestClearTraces(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "Traces cleared successfully", result)
 
-	searchReq := createRequest("searchTraces", []string{"0", strconv.FormatInt(1<<63-1, 10)})
+	searchReq := createRequest("searchTraceSummaries", []string{"0", strconv.FormatInt(1<<63-1, 10)})
 	searchResult, searchErr := handler.Handle(context.Background(), searchReq)
 	assert.NoError(t, searchErr)
 	raw, ok := searchResult.(json.RawMessage)
@@ -505,11 +505,11 @@ func TestClearTraces(t *testing.T) {
 	assert.Len(t, summaries, 0)
 }
 
-func TestSearchLogs(t *testing.T) {
+func TestSearchLogSummaries(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {
 		handler := setupHandler(t)
 
-		req := createRequest("searchLogs", []string{"0", strconv.FormatInt(1<<63-1, 10)})
+		req := createRequest("searchLogSummaries", []string{"0", strconv.FormatInt(1<<63-1, 10)})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -523,7 +523,7 @@ func TestSearchLogs(t *testing.T) {
 	t.Run("With Data", func(t *testing.T) {
 		handler := setupHandlerWithData(t)
 
-		req := createRequest("searchLogs", []string{"0", strconv.FormatInt(1<<63-1, 10)})
+		req := createRequest("searchLogSummaries", []string{"0", strconv.FormatInt(1<<63-1, 10)})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -531,15 +531,13 @@ func TestSearchLogs(t *testing.T) {
 		assert.True(t, ok, "Expected json.RawMessage, got %T", result)
 		var entries []map[string]any
 		assert.NoError(t, json.Unmarshal(raw, &entries))
-		require.Len(t, entries, 1, "searchLogs should return the ingested log")
-		// searchLogs now returns LogSummary (lightweight) with
-		// bodyPreview rather than the full body; getLog returns
-		// the full LogData on demand. Verify both shapes here.
+		require.Len(t, entries, 1, "searchLogSummaries should return the ingested log")
+		// The summary carries bodyPreview; getLog carries the complete body.
 		assert.Equal(t, "test log message", entries[0]["bodyPreview"])
 
-		logID, ok := entries[0]["id"].(string)
+		logRef, ok := entries[0]["logRef"].(string)
 		require.True(t, ok, "summary should carry an id for detail fetch")
-		getReq := createRequest("getLog", []string{logID})
+		getReq := createRequest("getLog", []string{logRef})
 		getResult, getErr := handler.Handle(context.Background(), getReq)
 		assert.NoError(t, getErr)
 		getRaw, ok := getResult.(json.RawMessage)
@@ -561,7 +559,7 @@ func TestSearchLogs(t *testing.T) {
 				"value":         "zz-definitely-not-hex",
 			},
 		}
-		req := createRequest("searchLogs", []any{"0", strconv.FormatInt(1<<63-1, 10), query})
+		req := createRequest("searchLogSummaries", []any{"0", strconv.FormatInt(1<<63-1, 10), query})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err, "garbage span ID in search must not surface -32603")
@@ -576,7 +574,7 @@ func TestSearchLogs(t *testing.T) {
 		handler := setupHandlerWithData(t)
 		maxTime := strconv.FormatInt(1<<63-1, 10)
 
-		result, err := handler.Handle(context.Background(), createRequest("searchLogs", []any{"0", maxTime, nil, 1}))
+		result, err := handler.Handle(context.Background(), createRequest("searchLogSummaries", []any{"0", maxTime, nil, 1}))
 		require.NoError(t, err)
 		raw, ok := result.(json.RawMessage)
 		require.True(t, ok)
@@ -584,17 +582,17 @@ func TestSearchLogs(t *testing.T) {
 		require.NoError(t, json.Unmarshal(raw, &entries))
 		require.Len(t, entries, 1)
 
-		result, err = handler.Handle(context.Background(), createRequest("searchLogs", []any{"0", maxTime, nil, 0}))
+		result, err = handler.Handle(context.Background(), createRequest("searchLogSummaries", []any{"0", maxTime, nil, 0}))
 		assert.Nil(t, result)
 		assert.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
 	})
 }
 
-func TestGetTraceLogs(t *testing.T) {
+func TestGetTraceLogSummaries(t *testing.T) {
 	t.Run("Valid", func(t *testing.T) {
 		handler := setupHandlerWithData(t)
 
-		result, err := handler.Handle(context.Background(), createRequest("getTraceLogs", map[string]any{
+		result, err := handler.Handle(context.Background(), createRequest("getTraceLogSummaries", map[string]any{
 			"traceID": testTraceIDHex,
 		}))
 		require.NoError(t, err)
@@ -611,7 +609,7 @@ func TestGetTraceLogs(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {
 		handler := setupHandler(t)
 
-		result, err := handler.Handle(context.Background(), createRequest("getTraceLogs", []string{
+		result, err := handler.Handle(context.Background(), createRequest("getTraceLogSummaries", []string{
 			"00000000000000000000000000000002",
 		}))
 		require.NoError(t, err)
@@ -621,7 +619,7 @@ func TestGetTraceLogs(t *testing.T) {
 	t.Run("Malformed trace ID", func(t *testing.T) {
 		handler := setupHandler(t)
 
-		result, err := handler.Handle(context.Background(), createRequest("getTraceLogs", []string{"not-a-trace-id"}))
+		result, err := handler.Handle(context.Background(), createRequest("getTraceLogSummaries", []string{"not-a-trace-id"}))
 		require.Nil(t, result)
 		require.Equal(t, ErrInvalidTraceID, err)
 	})
@@ -629,7 +627,7 @@ func TestGetTraceLogs(t *testing.T) {
 	t.Run("Empty trace ID", func(t *testing.T) {
 		handler := setupHandler(t)
 
-		result, err := handler.Handle(context.Background(), createRequest("getTraceLogs", []string{""}))
+		result, err := handler.Handle(context.Background(), createRequest("getTraceLogSummaries", []string{""}))
 		require.Nil(t, result)
 		require.Equal(t, ErrInvalidTraceID, err)
 	})
@@ -637,7 +635,7 @@ func TestGetTraceLogs(t *testing.T) {
 	t.Run("Missing trace ID", func(t *testing.T) {
 		handler := setupHandler(t)
 
-		result, err := handler.Handle(context.Background(), createRequest("getTraceLogs", []string{}))
+		result, err := handler.Handle(context.Background(), createRequest("getTraceLogSummaries", []string{}))
 		require.Nil(t, result)
 		require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams)
 	})
@@ -645,7 +643,7 @@ func TestGetTraceLogs(t *testing.T) {
 
 func TestGetTraceReturnsOnlyCompactOverviewFields(t *testing.T) {
 	handler := setupHandlerWithData(t)
-	result, err := handler.Handle(context.Background(), createRequest("getTrace", map[string]any{"traceID": testTraceIDHex}))
+	result, err := handler.Handle(context.Background(), createRequest("getTraceOverview", map[string]any{"traceID": testTraceIDHex}))
 	require.NoError(t, err)
 	overview, ok := result.(compactTraceResult)
 	require.True(t, ok, "expected compactTraceResult, got %T", result)
@@ -699,7 +697,7 @@ func TestGetTraceComputesExactUnsignedTimingAndStableOrder(t *testing.T) {
 		return spans.Ingest(context.Background(), conn, traces, s.FlushedIDs())
 	}))
 
-	result, err := NewJSONRPCHandler(s, zap.NewNop()).Handle(context.Background(), createRequest("getTrace", []string{"00000000000000000000000000000003"}))
+	result, err := NewJSONRPCHandler(s, zap.NewNop()).Handle(context.Background(), createRequest("getTraceOverview", []string{"00000000000000000000000000000003"}))
 	require.NoError(t, err)
 	overview := result.(compactTraceResult)
 	require.Equal(t, "18446744073709550615", overview.Trace.StartTime)
@@ -715,17 +713,17 @@ func TestGetTraceComputesExactUnsignedTimingAndStableOrder(t *testing.T) {
 
 func TestGetTraceValidatesIDAndContext(t *testing.T) {
 	handler := setupHandler(t)
-	result, err := handler.Handle(context.Background(), createRequest("getTrace", []string{"not-a-trace-id"}))
+	result, err := handler.Handle(context.Background(), createRequest("getTraceOverview", []string{"not-a-trace-id"}))
 	require.Nil(t, result)
 	require.Equal(t, ErrInvalidTraceID, err)
 
-	result, err = handler.Handle(context.Background(), createRequest("getTrace", []string{"00000000000000000000000000000002"}))
+	result, err = handler.Handle(context.Background(), createRequest("getTraceOverview", []string{"00000000000000000000000000000002"}))
 	require.Nil(t, result)
 	require.ErrorIs(t, err, ErrTraceNotFound)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	result, err = setupHandlerWithData(t).Handle(ctx, createRequest("getTrace", []string{testTraceIDHex}))
+	result, err = setupHandlerWithData(t).Handle(ctx, createRequest("getTraceOverview", []string{testTraceIDHex}))
 	require.Nil(t, result)
 	require.ErrorIs(t, err, ErrRequestCanceled)
 }
@@ -737,7 +735,7 @@ func TestDetailSnapshotExcludesConcurrentIngest(t *testing.T) {
 	result, err := storeSnapshotRead(ctx, handler.store, func(tx *sql.Tx) (struct {
 		logCount, spanMatchCount int64
 	}, error) {
-		if _, err := spans.GetTrace(ctx, tx, testTraceIDHex); err != nil {
+		if _, err := spans.GetTraceOverview(ctx, tx, testTraceIDHex); err != nil {
 			return struct{ logCount, spanMatchCount int64 }{}, err
 		}
 		if _, matchCount, err := spans.GetSpanSummaries(ctx, tx, 1, 2); err != nil || matchCount != 1 {
@@ -757,7 +755,7 @@ func TestDetailSnapshotExcludesConcurrentIngest(t *testing.T) {
 			return struct{ logCount, spanMatchCount int64 }{}, err
 		}
 
-		logsRaw, err := logs.GetTraceLogs(ctx, tx, testTraceIDHex)
+		logsRaw, err := logs.GetTraceLogSummaries(ctx, tx, testTraceIDHex)
 		if err != nil {
 			return struct{ logCount, spanMatchCount int64 }{}, err
 		}
@@ -773,7 +771,7 @@ func TestDetailSnapshotExcludesConcurrentIngest(t *testing.T) {
 	require.EqualValues(t, 1, result.spanMatchCount)
 
 	require.NoError(t, handler.store.WithDBRead(func(db *sql.DB) error {
-		logsRaw, err := logs.GetTraceLogs(ctx, db, testTraceIDHex)
+		logsRaw, err := logs.GetTraceLogSummaries(ctx, db, testTraceIDHex)
 		if err != nil {
 			return err
 		}
@@ -1049,8 +1047,8 @@ func TestSearchSortParams(t *testing.T) {
 		method string
 		field  string
 	}{
-		{method: "searchTraces", field: "duration"},
-		{method: "searchLogs", field: "severity"},
+		{method: "searchTraceSummaries", field: "duration"},
+		{method: "searchLogSummaries", field: "severity"},
 		{method: "searchMetricSummaries", field: "dataPointCount"},
 	}
 	for _, tc := range valid {
@@ -1080,7 +1078,7 @@ func TestSearchSortParams(t *testing.T) {
 	t.Run("rejects invalid direction", func(t *testing.T) {
 		handler := setupHandler(t)
 
-		result, err := handler.Handle(context.Background(), createRequest("searchTraces", []any{
+		result, err := handler.Handle(context.Background(), createRequest("searchTraceSummaries", []any{
 			"0", maxTime, nil, 1,
 			map[string]any{"field": "duration", "direction": "descending"},
 		}))
@@ -1091,7 +1089,7 @@ func TestSearchSortParams(t *testing.T) {
 	t.Run("rejects malformed object", func(t *testing.T) {
 		handler := setupHandler(t)
 
-		result, err := handler.Handle(context.Background(), createRequest("searchTraces", []any{
+		result, err := handler.Handle(context.Background(), createRequest("searchTraceSummaries", []any{
 			"0", maxTime, nil, 1,
 			map[string]any{"field": "duration"},
 		}))
@@ -1100,11 +1098,11 @@ func TestSearchSortParams(t *testing.T) {
 	})
 }
 
-func TestGetTraceAttributes(t *testing.T) {
+func TestGetTraceAttributeDefinitions(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {
 		handler := setupHandler(t)
 
-		req := createRequest("getTraceAttributes", []any{})
+		req := createRequest("getTraceAttributeDefinitions", []any{})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -1116,7 +1114,7 @@ func TestGetTraceAttributes(t *testing.T) {
 	t.Run("With Data", func(t *testing.T) {
 		handler := setupHandlerWithData(t)
 
-		req := createRequest("getTraceAttributes", []any{})
+		req := createRequest("getTraceAttributeDefinitions", []any{})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.NoError(t, err)
@@ -1144,7 +1142,7 @@ func TestGetTraceAttributes(t *testing.T) {
 	t.Run("Invalid Parameters", func(t *testing.T) {
 		handler := setupHandler(t)
 
-		req := createRequest("getTraceAttributes", []string{"123"})
+		req := createRequest("getTraceAttributeDefinitions", []string{"123"})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.Error(t, err)
@@ -1155,7 +1153,7 @@ func TestGetTraceAttributes(t *testing.T) {
 	t.Run("Invalid Parameter Types", func(t *testing.T) {
 		handler := setupHandler(t)
 
-		req := createRequest("getTraceAttributes", []string{"pumpkin", "pie"})
+		req := createRequest("getTraceAttributeDefinitions", []string{"pumpkin", "pie"})
 		result, err := handler.Handle(context.Background(), req)
 
 		assert.Error(t, err)
@@ -1174,7 +1172,7 @@ func TestDeleteParamValidation(t *testing.T) {
 		invalidErr error
 	}{
 		{"deleteSpansByTraceID", ErrInvalidTraceID},
-		{"deleteLogByID", ErrInvalidLogID},
+		{"deleteLogsByRefs", ErrInvalidLogRef},
 	}
 
 	for _, tc := range cases {
@@ -1249,8 +1247,7 @@ func TestDeleteParamValidation(t *testing.T) {
 // TestReadPathIDValidation covers the single-ID validation on the methods that
 // take one ID rather than an array: a malformed ID returns the signal-specific
 // code instead of reaching SQL and surfacing as a cast error dressed up as
-// ErrInternal. Mostly reads, plus deleteMetricStream, which is single-ID
-// because metrics address a stream by one uuid (see the handler comment).
+// ErrInternal. Mostly reads, plus the single-reference deleteMetric method.
 func TestReadPathIDValidation(t *testing.T) {
 	handler := setupHandler(t)
 	ctx := context.Background()
@@ -1260,14 +1257,14 @@ func TestReadPathIDValidation(t *testing.T) {
 		params     any
 		invalidErr error
 	}{
-		{"searchSpans", []string{"not-a-trace-id"}, ErrInvalidTraceID},
-		{"getLog", []string{"not-a-log-id"}, ErrInvalidLogID},
-		{"getMetric", []string{"not-a-metric-id"}, ErrInvalidStreamID},
-		{"getMetricSeries", []any{"00000000-0000-0000-0000-000000000001", "not-a-series-id", nil, nil}, ErrInvalidStreamID},
-		{"getMetricView", []string{"not-a-stream-id", "0", "1"}, ErrInvalidStreamID},
-		{"getAttributesByTraceID", []string{"not-a-trace-id"}, ErrInvalidTraceID},
+		{"getTraceView", []string{"not-a-trace-id"}, ErrInvalidTraceID},
+		{"getLog", []string{"not-a-log-id"}, ErrInvalidLogRef},
+		{"getMetric", []string{"not-a-metric-id"}, ErrInvalidMetricRef},
+		{"getMetricSeries", []any{"00000000-0000-0000-0000-000000000001", "not-a-series-id", nil, nil}, ErrInvalidMetricRef},
+		{"getMetricView", []string{"not-a-metric-ref", "0", "1"}, ErrInvalidMetricRef},
+		{"getTraceAttributeDefinitionsByTraceID", []string{"not-a-trace-id"}, ErrInvalidTraceID},
 		{"getTraceSpanCount", []string{"not-a-trace-id"}, ErrInvalidTraceID},
-		{"deleteMetricStream", []string{"not-a-stream-id"}, ErrInvalidStreamID},
+		{"deleteMetric", []string{"not-a-metric-ref"}, ErrInvalidMetricRef},
 	}
 	for _, tc := range cases {
 		t.Run(tc.method, func(t *testing.T) {
@@ -1289,11 +1286,11 @@ func TestMethodNotFound(t *testing.T) {
 	assert.Equal(t, jsonrpc2.ErrMethodNotFound, err)
 }
 
-// TestSearchLogsInvalidParams ensures searchLogs with wrong param count returns ErrInvalidParams.
-func TestSearchLogsInvalidParams(t *testing.T) {
+// TestSearchLogSummariesInvalidParams ensures searchLogSummaries with wrong param count returns ErrInvalidParams.
+func TestSearchLogSummariesInvalidParams(t *testing.T) {
 	handler := setupHandler(t)
 
-	req := createRequest("searchLogs", []string{"0"}) // only one param
+	req := createRequest("searchLogSummaries", []string{"0"}) // only one param
 	result, err := handler.Handle(context.Background(), req)
 	assert.Error(t, err)
 	assert.Nil(t, result)
@@ -1345,7 +1342,7 @@ func TestClearLogs(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "Logs cleared successfully", result)
 
-	searchResult, err := handler.Handle(ctx, createRequest("searchLogs", []string{"0", strconv.FormatInt(1<<63-1, 10)}))
+	searchResult, err := handler.Handle(ctx, createRequest("searchLogSummaries", []string{"0", strconv.FormatInt(1<<63-1, 10)}))
 	assert.NoError(t, err)
 	raw, ok := searchResult.(json.RawMessage)
 	require.True(t, ok)
@@ -1392,7 +1389,7 @@ func TestDeleteSpansByTraceID(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, 1, response["count"])
 
-	searchResult, err := handler.Handle(ctx, createRequest("searchTraces", []string{"0", strconv.FormatInt(1<<63-1, 10)}))
+	searchResult, err := handler.Handle(ctx, createRequest("searchTraceSummaries", []string{"0", strconv.FormatInt(1<<63-1, 10)}))
 	assert.NoError(t, err)
 	raw, ok := searchResult.(json.RawMessage)
 	require.True(t, ok)
@@ -1401,32 +1398,32 @@ func TestDeleteSpansByTraceID(t *testing.T) {
 	assert.Len(t, summaries, 0, "trace should be gone after delete")
 }
 
-func TestDeleteLogByID(t *testing.T) {
+func TestDeleteLogsByRefs(t *testing.T) {
 	handler := setupHandlerWithData(t)
 	ctx := context.Background()
 
-	searchResult, err := handler.Handle(ctx, createRequest("searchLogs", []string{"0", strconv.FormatInt(1<<63-1, 10)}))
+	searchResult, err := handler.Handle(ctx, createRequest("searchLogSummaries", []string{"0", strconv.FormatInt(1<<63-1, 10)}))
 	require.NoError(t, err)
 	raw, ok := searchResult.(json.RawMessage)
 	require.True(t, ok)
 	var entries []map[string]any
 	require.NoError(t, json.Unmarshal(raw, &entries))
 	require.Len(t, entries, 1)
-	logID, ok := entries[0]["id"].(string)
+	logRef, ok := entries[0]["logRef"].(string)
 	require.True(t, ok)
 
-	result, err := handler.Handle(ctx, createRequest("deleteLogByID", []string{logID}))
+	result, err := handler.Handle(ctx, createRequest("deleteLogsByRefs", []string{logRef}))
 	assert.NoError(t, err)
 	response, ok := result.(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, 1, response["count"])
 
-	getResult, err := handler.Handle(ctx, createRequest("getLog", []string{logID}))
+	getResult, err := handler.Handle(ctx, createRequest("getLog", []string{logRef}))
 	assert.Nil(t, getResult)
 	assert.Equal(t, ErrLogsNotFound, err, "deleted log should be gone")
 }
 
-func TestDeleteMetricStream(t *testing.T) {
+func TestDeleteMetric(t *testing.T) {
 	handler := setupHandlerWithMetrics(t)
 	ctx := context.Background()
 
@@ -1437,37 +1434,37 @@ func TestDeleteMetricStream(t *testing.T) {
 	require.True(t, ok)
 	var summaries []map[string]any
 	require.NoError(t, json.Unmarshal(raw, &summaries))
-	require.NotEmpty(t, summaries, "fixture must provide at least one metric stream")
-	streamID, ok := summaries[0]["id"].(string)
+	require.NotEmpty(t, summaries, "fixture must provide at least one Metric")
+	metricRef, ok := summaries[0]["metricRef"].(string)
 	require.True(t, ok)
 	before := len(summaries)
 
-	result, err := handler.Handle(ctx, createRequest("deleteMetricStream", []string{streamID}))
+	result, err := handler.Handle(ctx, createRequest("deleteMetric", []string{metricRef}))
 	assert.NoError(t, err)
-	assert.Equal(t, "Metric stream deleted successfully", result)
+	assert.Equal(t, "Metric deleted successfully", result)
 
-	// The stream is gone from search, and only that stream went with it.
+	// Only the deleted Metric disappears from search.
 	searchResult, err = handler.Handle(ctx, createRequest("searchMetricSummaries", []string{"0", maxNano}))
 	require.NoError(t, err)
 	raw, ok = searchResult.(json.RawMessage)
 	require.True(t, ok)
 	require.NoError(t, json.Unmarshal(raw, &summaries))
-	assert.Len(t, summaries, before-1, "exactly one stream should be gone")
+	assert.Len(t, summaries, before-1, "exactly one Metric should be gone")
 	for _, s := range summaries {
-		assert.NotEqual(t, streamID, s["id"], "deleted stream must not reappear")
+		assert.NotEqual(t, metricRef, s["metricRef"], "deleted Metric must not reappear")
 	}
 }
 
-// TestDeleteMetricStreamNotFound covers deleting a stream that does not exist.
+// TestDeleteMetricNotFound covers deleting a Metric that does not exist.
 // The cascade is a series of unconditional DELETEs, so this is a no-op rather
 // than an error -- the UI relies on that when a poll races a delete.
-func TestDeleteMetricStreamNotFound(t *testing.T) {
+func TestDeleteMetricNotFound(t *testing.T) {
 	handler := setupHandlerWithMetrics(t)
 
 	result, err := handler.Handle(context.Background(),
-		createRequest("deleteMetricStream", []string{"00000000-0000-0000-0000-0000000000ff"}))
+		createRequest("deleteMetric", []string{"00000000-0000-0000-0000-0000000000ff"}))
 	assert.NoError(t, err)
-	assert.Equal(t, "Metric stream deleted successfully", result)
+	assert.Equal(t, "Metric deleted successfully", result)
 }
 
 // assertAttributeDiscovery unmarshals an attribute-discovery result and checks
@@ -1491,11 +1488,11 @@ func assertAttributeDiscovery(t *testing.T, result any) {
 	t.Errorf("service.name resource attribute not found in %s", string(raw))
 }
 
-func TestGetLogAttributes(t *testing.T) {
+func TestGetLogAttributeDefinitions(t *testing.T) {
 	t.Run("With Data", func(t *testing.T) {
 		handler := setupHandlerWithData(t)
 
-		result, err := handler.Handle(context.Background(), createRequest("getLogAttributes", []any{}))
+		result, err := handler.Handle(context.Background(), createRequest("getLogAttributeDefinitions", []any{}))
 		assert.NoError(t, err)
 		assertAttributeDiscovery(t, result)
 	})
@@ -1503,17 +1500,17 @@ func TestGetLogAttributes(t *testing.T) {
 	t.Run("Invalid Parameters", func(t *testing.T) {
 		handler := setupHandler(t)
 
-		result, err := handler.Handle(context.Background(), createRequest("getLogAttributes", []string{"123"}))
+		result, err := handler.Handle(context.Background(), createRequest("getLogAttributeDefinitions", []string{"123"}))
 		assert.Nil(t, result)
 		assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
 	})
 }
 
-func TestGetMetricAttributes(t *testing.T) {
+func TestGetMetricAttributeDefinitions(t *testing.T) {
 	t.Run("With Data", func(t *testing.T) {
 		handler := setupHandlerWithMetrics(t)
 
-		result, err := handler.Handle(context.Background(), createRequest("getMetricAttributes", []any{}))
+		result, err := handler.Handle(context.Background(), createRequest("getMetricAttributeDefinitions", []any{}))
 		assert.NoError(t, err)
 		assertAttributeDiscovery(t, result)
 	})
@@ -1521,17 +1518,17 @@ func TestGetMetricAttributes(t *testing.T) {
 	t.Run("Invalid Parameters", func(t *testing.T) {
 		handler := setupHandler(t)
 
-		result, err := handler.Handle(context.Background(), createRequest("getMetricAttributes", []string{"123"}))
+		result, err := handler.Handle(context.Background(), createRequest("getMetricAttributeDefinitions", []string{"123"}))
 		assert.Nil(t, result)
 		assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
 	})
 }
 
-func TestGetAttributesByTraceID(t *testing.T) {
+func TestGetTraceAttributeDefinitionsByTraceID(t *testing.T) {
 	t.Run("With Data", func(t *testing.T) {
 		handler := setupHandlerWithData(t)
 
-		result, err := handler.Handle(context.Background(), createRequest("getAttributesByTraceID", []string{testTraceIDHex}))
+		result, err := handler.Handle(context.Background(), createRequest("getTraceAttributeDefinitionsByTraceID", []string{testTraceIDHex}))
 		assert.NoError(t, err)
 		assertAttributeDiscovery(t, result)
 	})
@@ -1539,7 +1536,7 @@ func TestGetAttributesByTraceID(t *testing.T) {
 	t.Run("Invalid Parameters", func(t *testing.T) {
 		handler := setupHandler(t)
 
-		result, err := handler.Handle(context.Background(), createRequest("getAttributesByTraceID", []any{42}))
+		result, err := handler.Handle(context.Background(), createRequest("getTraceAttributeDefinitionsByTraceID", []any{42}))
 		assert.Nil(t, result)
 		assert.Equal(t, ErrInvalidTraceID, err)
 	})
@@ -1630,7 +1627,7 @@ func TestSearchMetricSummaries(t *testing.T) {
 		assert.Equal(t, "test-svc", summaries[0]["serviceName"])
 		assert.Equal(t, "Gauge", summaries[0]["metricType"])
 		assert.Equal(t, "bytes", summaries[0]["unit"])
-		assert.NotEmpty(t, summaries[0]["id"])
+		assert.NotEmpty(t, summaries[0]["metricRef"])
 		assert.NotNil(t, summaries[0]["seriesCount"])
 		assert.NotNil(t, summaries[0]["lastValue"])
 	})
@@ -1693,12 +1690,12 @@ func TestGetMetricView(t *testing.T) {
 		var summaries []map[string]any
 		require.NoError(t, json.Unmarshal(summaryRaw, &summaries))
 		require.Len(t, summaries, 1)
-		streamID, ok := summaries[0]["id"].(string)
+		metricRef, ok := summaries[0]["metricRef"].(string)
 		require.True(t, ok)
-		require.NotEmpty(t, streamID)
+		require.NotEmpty(t, metricRef)
 
 		req := createRequest("getMetricView", []any{
-			streamID, "0", strconv.FormatInt(1<<63-1, 10),
+			metricRef, "0", strconv.FormatInt(1<<63-1, 10),
 		})
 		result, err := handler.Handle(context.Background(), req)
 
@@ -1716,7 +1713,7 @@ func TestGetMetricView(t *testing.T) {
 		require.Len(t, timeseries, 1, "should have one timeseries")
 		ts, _ := timeseries[0].(map[string]any)
 		require.NotNil(t, ts, "timeseries must be a JSON object")
-		assert.Contains(t, ts, "attributesKey", "timeseries should expose its grouping key")
+		assert.Contains(t, ts, "seriesRef", "timeseries should expose its grouping key")
 		assert.Contains(t, ts, "attributes", "timeseries should own its attribute set")
 		dps, _ := ts["datapoints"].([]any)
 		assert.Len(t, dps, 1, "should have one datapoint inside the timeseries")
@@ -1737,10 +1734,10 @@ func TestGetMetricView(t *testing.T) {
 			"not-found must use the shared error convention, not a null result")
 	})
 
-	// A known stream queried over a window with no datapoints is NOT a
+	// A known Metric queried over a window with no datapoints is NOT a
 	// not-found: it returns valid MetricViewData with an empty timeseries list.
-	// Only an unknown stream ID gets ErrMetricNotFound (see subtest above).
-	t.Run("Known Stream, Empty Window", func(t *testing.T) {
+	// Only an unknown Metric reference gets ErrMetricNotFound.
+	t.Run("Known Metric, Empty Window", func(t *testing.T) {
 		handler := setupHandlerWithMetrics(t)
 
 		summaryReq := createRequest("searchMetricSummaries", []string{
@@ -1753,16 +1750,16 @@ func TestGetMetricView(t *testing.T) {
 		var summaries []map[string]any
 		require.NoError(t, json.Unmarshal(summaryRaw, &summaries))
 		require.Len(t, summaries, 1)
-		streamID, ok := summaries[0]["id"].(string)
+		metricRef, ok := summaries[0]["metricRef"].(string)
 		require.True(t, ok)
 
 		// Test data is timestamped time.Now(); the window [0, 1] ns is
 		// guaranteed to miss it.
-		req := createRequest("getMetricView", []any{streamID, "0", "1"})
+		req := createRequest("getMetricView", []any{metricRef, "0", "1"})
 		result, err := handler.Handle(context.Background(), req)
 
 		require.NoError(t, err,
-			"an empty window on a known stream must not be treated as not-found")
+			"an empty window on a known Metric must not be treated as not-found")
 		raw, ok := result.(json.RawMessage)
 		require.True(t, ok, "Expected json.RawMessage, got %T", result)
 		var metric map[string]any
@@ -1783,14 +1780,14 @@ func TestGetMetricAndSeries(t *testing.T) {
 	var summaries []map[string]any
 	require.NoError(t, json.Unmarshal(summaryResult.(json.RawMessage), &summaries))
 	require.Len(t, summaries, 1)
-	metricID := summaries[0]["id"].(string)
+	metricRef := summaries[0]["metricRef"].(string)
 
 	discoveryResult, err := handler.Handle(context.Background(), createRequest(
-		"getMetric", map[string]any{"metricRef": metricID}))
+		"getMetric", map[string]any{"metricRef": metricRef}))
 	require.NoError(t, err)
 	var discovery map[string]any
 	require.NoError(t, json.Unmarshal(discoveryResult.(json.RawMessage), &discovery))
-	require.Equal(t, metricID, discovery["metricRef"])
+	require.Equal(t, metricRef, discovery["metricRef"])
 	require.Equal(t, "test.gauge", discovery["name"])
 	require.Equal(t, "Gauge", discovery["metricType"])
 	require.Equal(t, "A test gauge", discovery["description"])
@@ -1804,18 +1801,18 @@ func TestGetMetricAndSeries(t *testing.T) {
 
 	seriesResult, err := handler.Handle(context.Background(), createRequest(
 		"getMetricSeries", map[string]any{
-			"metricRef": metricID, "seriesRef": seriesSummary["seriesRef"],
+			"metricRef": metricRef, "seriesRef": seriesSummary["seriesRef"],
 			"startTime": nil, "endTime": nil,
 		}))
 	require.NoError(t, err)
 	var selected map[string]any
 	require.NoError(t, json.Unmarshal(seriesResult.(json.RawMessage), &selected))
-	require.Equal(t, metricID, selected["metricRef"])
+	require.Equal(t, metricRef, selected["metricRef"])
 	require.Equal(t, seriesSummary["seriesRef"], selected["seriesRef"])
 	require.Len(t, selected["datapoints"].([]any), 1)
 
 	emptyResult, err := handler.Handle(context.Background(), createRequest(
-		"getMetricSeries", []any{metricID, seriesSummary["seriesRef"], "0", "1"}))
+		"getMetricSeries", []any{metricRef, seriesSummary["seriesRef"], "0", "1"}))
 	require.NoError(t, err)
 	var empty map[string]any
 	require.NoError(t, json.Unmarshal(emptyResult.(json.RawMessage), &empty))
@@ -1826,7 +1823,7 @@ func TestGetMetricAndSeries(t *testing.T) {
 	require.Nil(t, missingResult)
 	require.Equal(t, ErrMetricNotFound, err)
 	missingSeriesResult, err := handler.Handle(context.Background(), createRequest(
-		"getMetricSeries", []any{metricID, "00000000-0000-0000-0000-000000000000", nil, nil}))
+		"getMetricSeries", []any{metricRef, "00000000-0000-0000-0000-000000000000", nil, nil}))
 	require.Nil(t, missingSeriesResult)
 	require.Equal(t, ErrMetricNotFound, err)
 }
@@ -1840,12 +1837,12 @@ func TestMetricHandlersAcceptNullableBoundsPositionallyAndByName(t *testing.T) {
 	var summaries []map[string]any
 	require.NoError(t, json.Unmarshal(summaryResult.(json.RawMessage), &summaries))
 	require.Len(t, summaries, 1)
-	streamID := summaries[0]["id"].(string)
+	metricRef := summaries[0]["metricRef"].(string)
 
 	for _, tc := range rpcNullableRangeCases() {
 		t.Run("getMetric/"+tc.name, func(t *testing.T) {
 			result, err := handler.Handle(context.Background(), createRequest(
-				"getMetricView", metricRangeParams(streamID, tc)))
+				"getMetricView", metricRangeParams(metricRef, tc)))
 			require.NoError(t, err)
 			var got map[string]any
 			require.NoError(t, json.Unmarshal(result.(json.RawMessage), &got))
@@ -1872,7 +1869,7 @@ func TestMetricHandlersAcceptNullableBoundsPositionallyAndByName(t *testing.T) {
 
 		t.Run("getMetricAggregateView/"+tc.name, func(t *testing.T) {
 			result, err := handler.Handle(context.Background(), createRequest(
-				"getMetricAggregateView", metricRangeParams(streamID, tc)))
+				"getMetricAggregateView", metricRangeParams(metricRef, tc)))
 			require.NoError(t, err)
 			require.JSONEq(t,
 				`{"aggregate":null,"scalarAggregate":{"selected":[],"all":[]}}`,
@@ -1881,14 +1878,14 @@ func TestMetricHandlersAcceptNullableBoundsPositionallyAndByName(t *testing.T) {
 	}
 }
 
-// searchAttributes is the value-first counterpart to the getXAttributes
+// searchAttributeMatches is the value-first counterpart to the getXAttributes
 // discovery methods: given text seen in the UI, which keys hold it. It takes no
 // time range and no signal, because the dictionary it reads is shared by all
 // three.
-func TestSearchAttributes(t *testing.T) {
+func TestSearchAttributeMatches(t *testing.T) {
 	call := func(t *testing.T, handler *JSONRPCHandler, params any) []map[string]any {
 		t.Helper()
-		result, err := handler.Handle(context.Background(), createRequest("searchAttributes", params))
+		result, err := handler.Handle(context.Background(), createRequest("searchAttributeMatches", params))
 		require.NoError(t, err)
 		raw, ok := result.(json.RawMessage)
 		require.True(t, ok, "expected json.RawMessage, got %T", result)
@@ -1926,7 +1923,7 @@ func TestSearchAttributes(t *testing.T) {
 		handler := setupHandler(t)
 
 		for _, params := range []any{[]string{}, []string{"a", "b"}, []int{1}} {
-			_, err := handler.Handle(context.Background(), createRequest("searchAttributes", params))
+			_, err := handler.Handle(context.Background(), createRequest("searchAttributeMatches", params))
 			assert.Error(t, err, "params %v", params)
 		}
 	})
@@ -1943,34 +1940,34 @@ func TestMetricHandlersAcceptEveryParameter(t *testing.T) {
 	var summaries []map[string]any
 	require.NoError(t, json.Unmarshal(summaryResult.(json.RawMessage), &summaries))
 	require.NotEmpty(t, summaries)
-	streamID := summaries[0]["id"].(string)
+	metricRef := summaries[0]["metricRef"].(string)
 	maxTime := strconv.FormatInt(1<<63-1, 10)
 
 	detail := []any{
-		streamID,         // 1 stream
+		metricRef,        // 1 Metric
 		"0",              // 2 start
 		maxTime,          // 3 end
 		"100",            // 4 targetBuckets
-		[]any{},          // 5 seriesIDs
+		[]any{},          // 5 seriesRefs
 		[]any{0.5, 0.95}, // 6 quantiles
 		"0",              // 7 tzOffsetNs
 		"120",            // 8 viewBuckets
 		"64",             // 9 sparklineBuckets
-		[]any{},          // 10 selectedSeriesIDs
+		[]any{},          // 10 selectedSeriesRefs
 		"Europe/London",  // 11 tzName
-		[]any{},          // 12 datapointSeriesIDs
+		[]any{},          // 12 datapointSeriesRefs
 		"10",             // 13 datapointSeriesLimit
 	}
 	aggregate := []any{
-		streamID,         // 1 stream
+		metricRef,        // 1 Metric
 		"0",              // 2 start
 		maxTime,          // 3 end
 		"100",            // 4 targetBuckets
-		[]any{},          // 5 seriesIDs
+		[]any{},          // 5 seriesRefs
 		[]any{0.5, 0.95}, // 6 quantiles
 		"0",              // 7 tzOffsetNs
 		"120",            // 8 viewBuckets
-		[]any{},          // 9 selectedSeriesIDs
+		[]any{},          // 9 selectedSeriesRefs
 		"Europe/London",  // 10 tzName
 	}
 
@@ -1997,7 +1994,7 @@ func TestMetricHandlersAcceptEveryParameter(t *testing.T) {
 func TestAttributeMethodsAcceptNoParams(t *testing.T) {
 	handler := setupHandler(t)
 
-	for _, method := range []string{"getTraceAttributes", "getLogAttributes", "getMetricAttributes"} {
+	for _, method := range []string{"getTraceAttributeDefinitions", "getLogAttributeDefinitions", "getMetricAttributeDefinitions"} {
 		t.Run(method, func(t *testing.T) {
 			result, err := handler.Handle(context.Background(), &jsonrpc2.Request{
 				Method: method,
@@ -2028,10 +2025,10 @@ func TestAttributeMethodsAcceptNoParams(t *testing.T) {
 	}
 }
 
-// getFieldValues is the search box's value-completion source. Its guards are
+// getFieldValueCompletions is the search box's value-completion source. Its guards are
 // what keep an allowlist an allowlist, so they are pinned rather than left to
 // the named-params table walk, which only checks the method has a name list.
-func TestGetFieldValues(t *testing.T) {
+func TestGetFieldValueCompletions(t *testing.T) {
 	handler := setupHandlerWithData(t)
 	ctx := context.Background()
 
@@ -2046,13 +2043,13 @@ func TestGetFieldValues(t *testing.T) {
 
 	t.Run("serves an allowlisted field", func(t *testing.T) {
 		result, err := handler.Handle(ctx,
-			createRequest("getFieldValues", []any{"traces", "name", "", 10}))
+			createRequest("getFieldValueCompletions", []any{"traces", "name", "", 10}))
 		require.NoError(t, err)
 		assert.NotEmpty(t, decode(t, result))
 	})
 
 	t.Run("named params reach the same place", func(t *testing.T) {
-		result, err := handler.Handle(ctx, createRequest("getFieldValues",
+		result, err := handler.Handle(ctx, createRequest("getFieldValueCompletions",
 			map[string]any{
 				"signal": "traces", "field": "name", "term": "", "limit": 10,
 			}))
@@ -2065,7 +2062,7 @@ func TestGetFieldValues(t *testing.T) {
 		// worth. The clamp is the only thing standing between a completion
 		// keystroke and a full column dump.
 		result, err := handler.Handle(ctx,
-			createRequest("getFieldValues", []any{"traces", "name", "", 100000}))
+			createRequest("getFieldValueCompletions", []any{"traces", "name", "", 100000}))
 		require.NoError(t, err)
 		assert.LessOrEqual(t, len(decode(t, result)), 500)
 	})
@@ -2073,7 +2070,7 @@ func TestGetFieldValues(t *testing.T) {
 	t.Run("clamps a limit below one", func(t *testing.T) {
 		for _, limit := range []any{0, -5} {
 			result, err := handler.Handle(ctx,
-				createRequest("getFieldValues", []any{"traces", "name", "", limit}))
+				createRequest("getFieldValueCompletions", []any{"traces", "name", "", limit}))
 			require.NoError(t, err, "limit %v", limit)
 			assert.Len(t, decode(t, result), 1, "limit %v", limit)
 		}
@@ -2083,13 +2080,13 @@ func TestGetFieldValues(t *testing.T) {
 		// statusMessage is a real span column, deliberately not completable:
 		// the allowlist is a boundary, not a convenience.
 		_, err := handler.Handle(ctx,
-			createRequest("getFieldValues", []any{"traces", "statusMessage", "", 10}))
+			createRequest("getFieldValueCompletions", []any{"traces", "statusMessage", "", 10}))
 		require.Error(t, err)
 	})
 
 	t.Run("refuses an unknown signal", func(t *testing.T) {
 		_, err := handler.Handle(ctx,
-			createRequest("getFieldValues", []any{"spans", "name", "", 10}))
+			createRequest("getFieldValueCompletions", []any{"spans", "name", "", 10}))
 		require.Error(t, err)
 	})
 
@@ -2106,7 +2103,7 @@ func TestGetFieldValues(t *testing.T) {
 		}
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
-				_, err := handler.Handle(ctx, createRequest("getFieldValues", tc.params))
+				_, err := handler.Handle(ctx, createRequest("getFieldValueCompletions", tc.params))
 				assert.Equal(t, jsonrpc2.ErrInvalidParams, err)
 			})
 		}

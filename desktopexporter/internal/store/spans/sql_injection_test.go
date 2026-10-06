@@ -16,28 +16,17 @@ var injectionPayloads = []string{
 	`" or ""="`,
 	`\' or 1=1`,
 	`x') or (select count(*) from attributes) > 0 --`,
-	// text/template renders data as text and never re-parses it, so this is
-	// inert -- but assert it rather than trust it, since the query bodies now
-	// go through a template where they previously went through Sprintf.
+	// Template syntax in data must remain inert after rendering.
 	`{{.MatchedJoin}}`,
 	`{{template "x"}}`,
 }
 
-// TestSearchSpansSQLBindsHostileInput is the regression test for the property
-// that makes this query safe: caller-controlled text becomes a bound argument,
-// never SQL text.
+// TestGetTraceViewSQLBindsHostileInput verifies that caller-controlled text
+// becomes a bound argument rather than SQL text.
 //
-// Worth pinning explicitly now that the query body is rendered by
-// text/template. text/template does not escape anything -- that is html
-// /template -- so it offers no protection of its own and never did; the
-// protection is that values travel in args. The template change is neutral to
-// that, and this test is what says so out loud rather than leaving the next
-// reader to work it out.
-//
-// The `{{...}}` payloads cover the one genuinely new question: template data is
-// rendered, not re-parsed, so a fragment containing template syntax cannot
-// cause a second round of expansion.
-func TestSearchSpansSQLBindsHostileInput(t *testing.T) {
+// text/template does not escape SQL. Safety depends on keeping values in bound
+// arguments, and template syntax in a value must not trigger another expansion.
+func TestGetTraceViewSQLBindsHostileInput(t *testing.T) {
 	t.Parallel()
 	for _, payload := range injectionPayloads {
 		t.Run(payload, func(t *testing.T) {
@@ -60,7 +49,7 @@ func TestSearchSpansSQLBindsHostileInput(t *testing.T) {
 				},
 			}
 
-			query, args, err := searchSpansSQL("00000000000000000000000000000099", criteria)
+			query, args, err := getTraceViewSQL("00000000000000000000000000000099", criteria)
 			require.NoError(t, err)
 
 			require.NotContains(t, query, payload,

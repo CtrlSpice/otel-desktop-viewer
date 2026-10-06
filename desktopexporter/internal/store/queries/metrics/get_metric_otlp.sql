@@ -1,25 +1,25 @@
 -- Reconstruct one retained Metric and its ResourceMetrics/ScopeMetrics wrappers.
-with selected_stream as materialized (
-	select * from metric_streams where id = try_cast(? as uuid)
+with selected_metric as materialized (
+	select * from metrics where id = try_cast(? as uuid)
 ),
 selected_datapoints as materialized (
 	select d.*
-	from datapoints d
-	join selected_stream s on s.id = d.stream_id
+	from metric_datapoints d
+	join selected_metric s on s.id = d.metric_id
 ),
 used_attribute_ids as materialized (
 	select unnest(r.attribute_ids) as id
-	from selected_stream s join resources r on r.id = s.resource_id
+	from selected_metric s join resources r on r.id = s.resource_id
 	union
 	select unnest(sc.attribute_ids)
-	from selected_stream s join scopes sc on sc.id = s.scope_id
+	from selected_metric s join scopes sc on sc.id = s.scope_id
 	union
-	select unnest(s.metadata_ids) from selected_stream s
+	select unnest(s.metadata_ids) from selected_metric s
 	union
 	select unnest(d.attribute_ids) from selected_datapoints d
 	union
 	select unnest(e.attribute_ids)
-	from exemplars e join selected_datapoints d on d.id = e.datapoint_id
+	from exemplars e join selected_datapoints d on d.id = e.metric_datapoint_id
 ),
 attribute_batch_input as materialized (
 	select
@@ -44,7 +44,7 @@ converted_attributes as materialized (
 	), []::struct(id uuid, value json)[]) as values
 ),
 exemplar_documents_unaggregated as materialized (
-	select e.datapoint_id, e.timestamp, e.id,
+	select e.metric_datapoint_id, e.timestamp, e.id,
 		json_merge_patch(
 			json_object(
 				'filteredAttributes', otlp_attributes(e.attribute_ids, (select values from converted_attributes)),
@@ -59,12 +59,12 @@ exemplar_documents_unaggregated as materialized (
 			case when e.span_id is null then json('{}') else json_object('spanId', span_id_wire(e.span_id)) end
 		) as document
 	from exemplars e
-	join selected_datapoints d on d.id = e.datapoint_id
+	join selected_datapoints d on d.id = e.metric_datapoint_id
 ),
 exemplar_documents as materialized (
-	select datapoint_id, list(document order by timestamp, id) as documents
+	select metric_datapoint_id, list(document order by timestamp, id) as documents
 	from exemplar_documents_unaggregated
-	group by datapoint_id
+	group by metric_datapoint_id
 ),
 datapoint_documents as materialized (
 	select d.id, d.timestamp,
@@ -130,9 +130,9 @@ datapoint_documents as materialized (
 			else null::json
 		end as document
 	from selected_datapoints d
-	cross join selected_stream s
+	cross join selected_metric s
 	left join histogram_bounds hb on hb.id = d.bounds_id
-	left join exemplar_documents e on e.datapoint_id = d.id
+	left join exemplar_documents e on e.metric_datapoint_id = d.id
 ),
 grouped_metrics as materialized (
 	select s.resource_id, r.schema_url as resource_schema_url,
@@ -140,7 +140,7 @@ grouped_metrics as materialized (
 		s.description, s.metadata_ids, s.name, s.unit, s.metric_type,
 		s.aggregation_temporality, s.is_monotonic,
 		coalesce(list(d.document order by d.timestamp, d.id) filter (where d.id is not null), []::json[]) as datapoints
-	from selected_stream s
+	from selected_metric s
 	join resources r on r.id = s.resource_id
 	join scopes sc on sc.id = s.scope_id
 	left join datapoint_documents d on true
@@ -190,6 +190,6 @@ select s.metric_type,
 			'resourceMetrics', coalesce(list(r.document order by r.resource_id, r.resource_schema_url)
 				filter (where r.document is not null), []::json[])))
 	end as document
-from selected_stream s
+from selected_metric s
 left join resource_documents r on true
 group by s.metric_type

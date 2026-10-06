@@ -17,7 +17,7 @@ import (
 )
 
 func TestLogsCommandPreservesSummaryFieldsFiltersAndResolvesTimeOnce(t *testing.T) {
-	const response = `[{"id":"018f0000-0000-7000-8000-000000000001","timestamp":"1790928000123456789","severityText":"ERROR","severityNumber":17,"serviceName":"checkout","bodyPreview":"card declined"}]`
+	const response = `[{"logRef":"018f0000-0000-7000-8000-000000000001","timestamp":"1790928000123456789","severityText":"ERROR","severityNumber":17,"serviceName":"checkout","bodyPreview":"card declined"}]`
 	requests := make(chan queryRPCRequest, 2)
 	viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var rpcRequest queryRPCRequest
@@ -46,7 +46,7 @@ func TestLogsCommandPreservesSummaryFieldsFiltersAndResolvesTimeOnce(t *testing.
 	assert.Contains(t, output.String(), "1790928000123456789")
 
 	request := <-requests
-	assert.Equal(t, "searchLogs", request.Method)
+	assert.Equal(t, "searchLogSummaries", request.Method)
 	assert.Equal(t, float64(26), request.Params["limit"])
 	assert.Equal(t, strconv.FormatInt(fixedNow.Add(-time.Hour).UnixNano(), 10), request.Params["startTime"])
 	assert.Equal(t, strconv.FormatInt(fixedNow.UnixNano(), 10), request.Params["endTime"])
@@ -66,7 +66,7 @@ func TestLogsCommandPreservesSummaryFieldsFiltersAndResolvesTimeOnce(t *testing.
 func TestLogsCommandLimitsEmptyErrorsCancellationAndHelp(t *testing.T) {
 	t.Run("truncation and empty", func(t *testing.T) {
 		responses := []string{
-			`[{"id":"1","timestamp":"1","severityText":"INFO","severityNumber":9,"serviceName":"svc","bodyPreview":"one"},{"id":"2","timestamp":"2","severityText":"INFO","severityNumber":9,"serviceName":"svc","bodyPreview":"two"}]`,
+			`[{"logRef":"1","timestamp":"1","severityText":"INFO","severityNumber":9,"serviceName":"svc","bodyPreview":"one"},{"logRef":"2","timestamp":"2","severityText":"INFO","severityNumber":9,"serviceName":"svc","bodyPreview":"two"}]`,
 			`[]`,
 		}
 		viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
@@ -75,11 +75,11 @@ func TestLogsCommandLimitsEmptyErrorsCancellationAndHelp(t *testing.T) {
 			_, _ = writer.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":` + response + `}`))
 		}))
 		defer viewer.Close()
-		result, err := requestTelemetrySearch(context.Background(), viewer.Client(), viewer.URL, "searchLogs", telemetrySearchQuery{Limit: 1}, logSummaryFields)
+		result, err := requestTelemetrySearch(context.Background(), viewer.Client(), viewer.URL, "searchLogSummaries", telemetrySearchQuery{Limit: 1}, logSummaryFields)
 		require.NoError(t, err)
 		assert.True(t, result.Truncated)
 		assert.Len(t, result.Summaries, 1)
-		result, err = requestTelemetrySearch(context.Background(), viewer.Client(), viewer.URL, "searchLogs", telemetrySearchQuery{Limit: 1}, logSummaryFields)
+		result, err = requestTelemetrySearch(context.Background(), viewer.Client(), viewer.URL, "searchLogSummaries", telemetrySearchQuery{Limit: 1}, logSummaryFields)
 		require.NoError(t, err)
 		assert.Empty(t, result.Summaries)
 	})
@@ -94,7 +94,7 @@ func TestLogsCommandLimitsEmptyErrorsCancellationAndHelp(t *testing.T) {
 		client := &http.Client{Transport: telemetryRoundTripFunc(func(*http.Request) (*http.Response, error) {
 			return nil, context.DeadlineExceeded
 		})}
-		_, err := requestTelemetrySearch(context.Background(), client, "http://viewer.test", "searchLogs", telemetrySearchQuery{Limit: 25}, logSummaryFields)
+		_, err := requestTelemetrySearch(context.Background(), client, "http://viewer.test", "searchLogSummaries", telemetrySearchQuery{Limit: 25}, logSummaryFields)
 		require.ErrorIs(t, err, context.DeadlineExceeded)
 	})
 
@@ -105,7 +105,7 @@ func TestLogsCommandLimitsEmptyErrorsCancellationAndHelp(t *testing.T) {
 		})}
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		_, err := requestTelemetrySearch(ctx, client, "http://viewer.test", "searchLogs", telemetrySearchQuery{Limit: 25}, logSummaryFields)
+		_, err := requestTelemetrySearch(ctx, client, "http://viewer.test", "searchLogSummaries", telemetrySearchQuery{Limit: 25}, logSummaryFields)
 		require.ErrorIs(t, err, context.Canceled)
 	})
 

@@ -3,15 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/svelte'
 import UnspecifiedTemporalityCallout from './UnspecifiedTemporalityCallout.svelte'
 
-// The callout is ASCII art in a <pre>, which makes it the one component in
-// this tree where whitespace is content rather than layout. Nothing rendered
-// it until now, so a formatter, a stray trim, or an editor stripping trailing
-// spaces on save could silently misalign Lulu's telescope and no gate would
-// notice -- svelte-check compiles it happily either way.
-//
-// The assertions below are deliberately about characters, not appearance:
-// where a line begins, what sits at its end, how many lines there are. That
-// is what "the art still lines up" reduces to in a test.
+// Whitespace is content inside the ASCII-art <pre>, so tests assert characters.
 
 function renderFull() {
   return render(UnspecifiedTemporalityCallout, {
@@ -35,25 +27,17 @@ describe('UnspecifiedTemporalityCallout, full', () => {
     expect(asciiBlocks()).toHaveLength(3)
   })
 
-  // Narrower than it looks, and worth stating so nobody trusts it for more
-  // than it does. HTML drops a single newline immediately after a <pre> start
-  // tag, so `<pre>╭` and `<pre>\n╭` reach the DOM identically -- verified by
-  // mutation, which this test cannot fail on. What it does catch is a second
-  // blank line, which survives that rule and pushes every panel down a row.
+  // HTML drops one newline after a <pre> start tag; this catches extra blank lines.
   it('starts each panel on its first line, with no blank line above the art', () => {
     renderFull()
     for (const block of asciiBlocks()) {
       expect(block.startsWith('\n')).toBe(false)
-      // The art itself may be indented -- one panel is inset by eight spaces
-      // on purpose -- so the invariant is that the top border is on line one,
-      // not that the block opens with a corner.
+      // A panel may be indented, but its top border stays on line one.
       expect(block.split('\n')[0]).toContain('╭')
     }
   })
 
-  // Trailing spaces pad the right-hand border of the speech boxes. They are
-  // invisible in a diff and the first thing a "helpful" trim removes, which
-  // would ragged the box edges.
+  // Trailing spaces align the speech-box borders.
   it('keeps the trailing spaces that pad the box edges', () => {
     renderFull()
     const padded = asciiBlocks()
@@ -62,16 +46,12 @@ describe('UnspecifiedTemporalityCallout, full', () => {
     expect(padded.length).toBeGreaterThanOrEqual(6)
   })
 
-  // Every rule and border in a panel is drawn to one width, so the box only
-  // reads as a box while the lines agree. Checking the top rule against its
-  // matching bottom corner catches a line that lost or gained characters.
   it('draws each panel to a consistent width', () => {
     renderFull()
     for (const block of asciiBlocks()) {
       const lines = block.split('\n')
       const top = lines.find(l => l.includes('╭'))!
       expect(top).toMatch(/╭─+╮?/)
-      // The panel is many lines of art, not a collapsed single line.
       expect(lines.length).toBeGreaterThan(4)
     }
   })
@@ -96,8 +76,6 @@ describe('UnspecifiedTemporalityCallout, full', () => {
 })
 
 describe('UnspecifiedTemporalityCallout, mini', () => {
-  // The spark slot gets a label and no art: the same fact, sized for a place
-  // where a vignette would not fit.
   it('renders a bare label with no ascii', () => {
     render(UnspecifiedTemporalityCallout, {
       props: {

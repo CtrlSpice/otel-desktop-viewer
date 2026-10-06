@@ -88,7 +88,7 @@ func traceRPCServer(t *testing.T, result json.RawMessage) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var rpc queryRPCRequest
 		require.NoError(t, json.NewDecoder(request.Body).Decode(&rpc))
-		require.Equal(t, "getTrace", rpc.Method)
+		require.Equal(t, "getTraceOverview", rpc.Method)
 		require.Equal(t, "0123456789abcdef0123456789abcdef", rpc.Params["traceID"])
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = writer.Write(append(append([]byte(`{"jsonrpc":"2.0","id":1,"result":`), result...), '}'))

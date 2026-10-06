@@ -88,7 +88,7 @@ type spanLink struct {
 }
 
 type spanLog struct {
-	ID                     string          `json:"id"`
+	LogRef                 string          `json:"logRef"`
 	Timestamp              string          `json:"timestamp"`
 	ObservedTimestamp      string          `json:"observedTimestamp"`
 	TraceID                string          `json:"traceID"`
@@ -270,7 +270,7 @@ func formatFoundSpan(result spanCommandResult) (string, error) {
 	logRows := make([][]any, len(logs))
 	for i, log := range logs {
 		bodyKind, bodyValue := compactTaggedValue(log.Body)
-		logRows[i] = []any{log.ID, log.Timestamp, log.ObservedTimestamp, log.TraceID, nullableString(log.SpanID), log.SeverityText, log.SeverityNumber,
+		logRows[i] = []any{log.LogRef, log.Timestamp, log.ObservedTimestamp, log.TraceID, nullableString(log.SpanID), log.SeverityText, log.SeverityNumber,
 			attributeValue(log.Resource.Attributes, "service.name"), log.EventName, bodyKind, bodyValue, log.Flags, log.DroppedAttributesCount,
 			log.ResourceSchemaURL, log.ScopeSchemaURL, log.Scope.Name, log.Scope.Version, log.Resource.DroppedAttributesCount, log.Scope.DroppedAttributesCount,
 			compactAttributes(log.Attributes), compactAttributes(log.Resource.Attributes), compactAttributes(log.Scope.Attributes)}
@@ -283,7 +283,7 @@ func formatFoundSpan(result spanCommandResult) (string, error) {
 		"\nSPAN ATTRIBUTES\n" + formatAttributes(span.Attributes) +
 		fmt.Sprintf("\nEVENTS (%d)\n", len(span.Events)) + detailTable([]string{"timestamp", "name", "droppedAttributes", "attributes"}, eventRows) +
 		fmt.Sprintf("\nLINKS (%d)\n", len(span.Links)) + detailTable([]string{"traceID", "spanID", "traceState", "flags", "droppedAttributes", "attributes"}, linkRows) +
-		fmt.Sprintf("\nCORRELATED LOGS (%d)\n", len(logs)) + detailTable([]string{"id", "timestamp", "observedTimestamp", "traceID", "spanID", "severityText", "severityNumber", "service", "eventName", "bodyKind", "body", "flags", "droppedAttributes", "resourceSchemaURL", "scopeSchemaURL", "scopeName", "scopeVersion", "resourceDropped", "scopeDropped", "attributes", "resourceAttributes", "scopeAttributes"}, logRows), nil
+		fmt.Sprintf("\nCORRELATED LOGS (%d)\n", len(logs)) + detailTable([]string{"logRef", "timestamp", "observedTimestamp", "traceID", "spanID", "severityText", "severityNumber", "service", "eventName", "bodyKind", "body", "flags", "droppedAttributes", "resourceSchemaURL", "scopeSchemaURL", "scopeName", "scopeVersion", "resourceDropped", "scopeDropped", "attributes", "resourceAttributes", "scopeAttributes"}, logRows), nil
 }
 
 func decodeExactJSON(raw json.RawMessage, target any) error {

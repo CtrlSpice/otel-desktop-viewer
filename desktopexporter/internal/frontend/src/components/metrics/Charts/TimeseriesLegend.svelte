@@ -7,10 +7,6 @@
   import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
   import { attributeValueLabel } from '@/components/shared/attribute-label'
 
-  // Currently not mounted anywhere -- TimeseriesPanel.svelte hosts the
-  // live legend rows. Kept in sync with that component's colour wiring
-  // so reviving this component doesn't bring back the old hardcoded
-  // palette by accident.
   const ctx = getMetricViewContext()
 
   type Props = {

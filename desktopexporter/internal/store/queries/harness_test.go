@@ -11,19 +11,8 @@ import (
 
 // One DuckDB for the tests in this package that only read.
 //
-// Most tests here evaluate a macro against literal arguments -- downscaling a
-// bucket array, slicing a list, folding counts. They never write a row, so the
-// database they run against is a constant: types and macros installed, tables
-// empty. Building that per test was thirteen copies of the same preamble, and
-// the copies had already drifted -- some loaded Types before Macros, some
-// discarded the error from Types, and setupMacroDB installed macros but not
-// types, which is why the files needing both hand-rolled it instead of calling
-// it.
-//
-// The split is by what a test does to the database, not by what it costs.
-// Sharing is safe for the readers because DuckDB evaluating a scalar macro
-// touches nothing another test can observe. It is not safe for the two tests
-// that write -- see freshDB.
+// Read-only macro tests share the initialized schema. Tests that mutate the
+// database use freshDB.
 var sharedDB *sql.DB
 
 func TestMain(m *testing.M) {
@@ -75,11 +64,6 @@ func macroDB(t *testing.T) *sql.DB {
 }
 
 // freshDB is a private database for a test that writes.
-//
-// Two tests in this package do: one inserts into attributes and resources to
-// exercise the orphan sweep, the other creates a table called `t`. Both would
-// be visible to unrelated tests on the shared handle, and `t` would collide
-// outright with a second test doing the same.
 func freshDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("duckdb", "")

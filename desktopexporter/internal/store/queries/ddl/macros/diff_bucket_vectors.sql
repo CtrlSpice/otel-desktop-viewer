@@ -1,28 +1,6 @@
--- diff_bucket_vectors: element-wise a - b over two aligned bucket arrays.
---
--- The cumulative counterpart to sum_bucket_vectors. A cumulative histogram
--- datapoint is a running total, so the activity within a time bucket is the
--- last datapoint minus the first -- not the sum, which would multiply-count
--- everything.
---
--- Both arrays must already share an origin; align with downscale_exp_buckets
--- and pad_left_to_offset first. Missing trailing elements read as zero, so a
--- bucket present in one and absent in the other is treated as the zero it is.
---
--- Returns NULL if any element would go negative. That is the counter-reset
--- signal: the caller falls back to the later slice, because after a restart
--- the later value *is* the activity. Distinguishing "reset" from "could not
--- align" matters -- conflating them reports a running total as though it were
--- a delta.
---
--- Both sides are cast to HUGEINT before subtracting, because bucket
--- counts are UBIGINT and an unsigned subtraction raises rather than going
--- negative: "Overflow in subtraction of UINT64 (0 - 1)". The negative check
--- below could therefore never fire on the very inputs it exists for -- a reset
--- came back as a query error instead of a fallback. DuckDB also evaluates both
--- arms of the surrounding CASE, so this was reachable for Delta histograms
--- too, which never wanted a difference at all. HUGEINT covers the complete
--- received uint64 domain and the signed reset sentinel without narrowing.
+-- Element-wise a - b over aligned arrays; missing trailing elements are zero.
+-- NULL signals a negative result, so callers can treat the later vector as a
+-- reset. HUGEINT covers uint64 inputs and negative reset detection exactly.
 create or replace macro diff_bucket_vectors(a, b) as (
     case
         when a is null then null

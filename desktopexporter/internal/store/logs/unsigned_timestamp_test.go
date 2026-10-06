@@ -63,7 +63,7 @@ func TestLogTimestampsRoundTripAndSearchAcrossUint64Range(t *testing.T) {
 		FieldOperator: "=",
 		Value:         "18446744073709551615",
 	}}
-	searchLogs := func(query *search.QueryNode) []logSummaryJSON {
+	searchLogSummaries := func(query *search.QueryNode) []logSummaryJSON {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 			if query == nil {
 				return logs.Search(ctx, db, store.BoundedTimeRange(uint64(0), ^uint64(0)), nil)
@@ -75,15 +75,15 @@ func TestLogTimestampsRoundTripAndSearchAcrossUint64Range(t *testing.T) {
 		require.NoError(t, json.Unmarshal(raw, &got))
 		return got
 	}
-	require.Len(t, searchLogs(query), 1)
+	require.Len(t, searchLogSummaries(query), 1)
 	query = &search.QueryNode{Type: "condition", Query: &search.Query{
 		Field:         &search.FieldDefinition{Name: "timestamp", SearchScope: "field"},
 		FieldOperator: "IN",
 		Value:         `["9223372036854775808","18446744073709551615"]`,
 	}}
-	require.Len(t, searchLogs(query), 2)
+	require.Len(t, searchLogSummaries(query), 2)
 
-	all := searchLogs(nil)
+	all := searchLogSummaries(nil)
 	require.Equal(t, "18446744073709551615", all[0].Timestamp)
 	require.Equal(t, "18446744073709551615", all[1].Timestamp)
 }

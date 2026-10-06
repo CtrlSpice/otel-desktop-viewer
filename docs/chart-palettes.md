@@ -11,7 +11,7 @@ The chart palette has six families with five approved swatches each. Charts inte
 <details>
 <summary>How the ramps were constructed</summary>
 
-The literal swatch table is the shipped source of truth. The construction work used OKLab, where distance between two colours is the Euclidean distance `sqrt((dL)^2 + (da)^2 + (db)^2)`. Ramps sample evenly along a fitted OKLab line; before interpolation, out-of-gamut endpoints have chroma reduced while preserving lightness and hue direction. Rounded measured output is not full-precision source data, and this recipe describes deliberate adjustments rather than a formula that regenerates every retained hex.
+The shipped swatch table is authoritative. The palette uses OKLab distance: `sqrt((dL)^2 + (da)^2 + (db)^2)`. Each ramp samples a fitted OKLab line. Out-of-gamut endpoints lose chroma while keeping their lightness and hue direction. The recipe does not reproduce every retained hex exactly.
 
 | Adjustment | Applied recipe |
 | --- | --- |

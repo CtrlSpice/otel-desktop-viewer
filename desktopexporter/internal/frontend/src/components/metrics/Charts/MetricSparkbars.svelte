@@ -24,11 +24,7 @@
 </script>
 
 {#if sparkData.length >= 1}
-  <!-- Disable tooltip/highlight contexts: see MetricSparkline for the
-       full rationale. The drawer is a list view, not an analysis surface.
-       bandPadding=0.3 (was 0.1) widens the gap between bars; with sparks
-       at ~96px wide and only 5-9 buckets, the previous setting gave a
-       chunky "brick wall" silhouette. More gap = bars feel like bars. -->
+  <!-- Drawer sparklines are non-interactive; spacing keeps narrow bars distinct. -->
   <BarChart
     data={sparkData}
     x="index"

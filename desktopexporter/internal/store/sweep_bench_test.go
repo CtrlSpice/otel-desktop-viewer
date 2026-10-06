@@ -58,7 +58,7 @@ func BenchmarkSweepOrphansMetricMetadata(b *testing.B) {
 			if err := s.WithDBRead(func(db *sql.DB) error {
 				return db.QueryRow(`
 					select count(*)
-					from metric_streams, unnest(metadata_ids)`).Scan(&metadataRefs)
+					from metrics, unnest(metadata_ids)`).Scan(&metadataRefs)
 			}); err != nil {
 				b.Fatal(err)
 			}

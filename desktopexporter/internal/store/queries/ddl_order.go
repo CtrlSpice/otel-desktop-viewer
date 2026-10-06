@@ -15,7 +15,7 @@ import (
 //
 //	spans, logs        -> resources, scopes
 //	events, links      -> spans
-//	metric_streams     -> resources, scopes
+//	metrics     -> resources, scopes
 //	datapoints         -> metric_series, histogram_bounds
 //	exemplars          -> datapoints
 //

@@ -71,12 +71,7 @@ func TestSchemaInitializationHonorsCancellation(t *testing.T) {
 	assert.Zero(t, schemaMetaTables)
 }
 
-// A file stamped with a different version must be refused, not silently used.
-//
-// This was warn-only through the rewrite, while the schema was still moving.
-// Now it is the thing standing between an incompatible file and the opaque
-// failure it would otherwise produce -- an appender column-count error partway
-// through an ingest, or an index built against a column that is not there.
+// A file stamped with a different version must be refused before ingest or DDL.
 func TestVersionMismatchIsRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "future.db")
 
@@ -263,9 +258,9 @@ func TestVersion19DatabaseIsRejectedWithoutMutation(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Exec(schema.StampVersionQuery, 19)
 	require.NoError(t, err)
-	_, err = db.Exec(`create table metric_streams (id uuid primary key, resource_schema_url varchar)`)
+	_, err = db.Exec(`create table telemetry_sample (id uuid primary key, schema_url varchar)`)
 	require.NoError(t, err)
-	_, err = db.Exec(`insert into metric_streams values (uuid(), 'https://example.test/resource/v1')`)
+	_, err = db.Exec(`insert into telemetry_sample values (uuid(), 'https://example.test/resource/v1')`)
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
 
@@ -286,9 +281,9 @@ func TestVersion17DatabaseIsRejectedWithoutMutation(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Exec(schema.StampVersionQuery, 17)
 	require.NoError(t, err)
-	_, err = db.Exec(`create table metric_ingests (id uuid, stream_id uuid, payload blob)`)
+	_, err = db.Exec(`create table telemetry_sample (id uuid, parent_id uuid, payload blob)`)
 	require.NoError(t, err)
-	_, err = db.Exec(`insert into metric_ingests values (uuid(), uuid(), ?::blob)`, []byte{0, 1, 2, 255})
+	_, err = db.Exec(`insert into telemetry_sample values (uuid(), uuid(), ?::blob)`, []byte{0, 1, 2, 255})
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
 
@@ -356,7 +351,6 @@ func TestUnversionedTelemetryDatabaseIsRejectedWithoutMutation(t *testing.T) {
 			scope_dropped_attributes_count uinteger`,
 		"logs": `trace_id uuid, observed_timestamp bigint, resource_dropped_attributes_count uinteger,
 			scope_dropped_attributes_count uinteger`,
-		"metric_ingests": `id uuid, stream_id uuid`,
 	} {
 		t.Run(table, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "legacy-empty.db")
@@ -428,7 +422,7 @@ func TestUnrelatedDatabaseInitializes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "unrelated.db")
 	db, err := sql.Open("duckdb", path)
 	require.NoError(t, err)
-	_, err = db.Exec(`create table metrics (id integer)`)
+	_, err = db.Exec(`create table business_metrics (id integer)`)
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
 
@@ -439,7 +433,7 @@ func TestUnrelatedDatabaseInitializes(t *testing.T) {
 
 	var unrelatedTables int
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		return db.QueryRow(`select count(*) from duckdb_tables() where table_name = 'metrics'`).Scan(&unrelatedTables)
+		return db.QueryRow(`select count(*) from duckdb_tables() where table_name = 'business_metrics'`).Scan(&unrelatedTables)
 	}))
 	assert.Equal(t, 1, unrelatedTables)
 }
@@ -470,9 +464,8 @@ func TestCustomSchemaNamesDoNotAffectCompatibilityInspection(t *testing.T) {
 // Check first and the user gets a version message; check afterwards and they get
 // "failed to create index N" with no hint about why.
 //
-// Mutation-checked: moving checkSchemaVersion below the table/index loops in
-// NewStore makes this test fail. An earlier version of this test asserted only
-// the returned compatibility, which survived that mutation and proved nothing.
+// The test uses an incompatible table shape so DDL would fail if the version
+// check ran too late.
 func TestVersionCheckRunsBeforeTableCreation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "order.db")
 

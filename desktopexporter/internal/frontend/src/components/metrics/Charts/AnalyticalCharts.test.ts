@@ -121,7 +121,7 @@ function metricWithDatapoints(
   datapoints: GaugeDataPoint[] | HistogramDataPoint[]
 ): MetricViewData {
   return {
-    id: 'metric-1',
+    metricRef: 'metric-1',
     name: 'test.metric',
     description: 'test metric',
     metadata: [],
@@ -147,7 +147,7 @@ function metricWithDatapoints(
     boundsMismatch: null,
     timeseries: [
       {
-        attributesKey: 'series-a',
+        seriesRef: 'series-a',
         resource: EMPTY_RESOURCE,
         attributes: [],
         datapoints,
@@ -700,7 +700,7 @@ describe('HistogramHeatmap keyboard model', () => {
     const point: HistogramSlicePoint = {
       kind: 'histogram',
       timestamp: BASE_NS,
-      attributesKey: '',
+      seriesRef: '',
       bounds: [1, 2],
       counts: [1, 2, 3],
       totals: { count: 6, sum: 0, min: 0, max: 2 },
@@ -729,7 +729,7 @@ describe('HistogramHeatmap keyboard model', () => {
           BASE_NS +
           BigInt(index) * 1_000_000n +
           BigInt(index === 1 ? 900 : 100),
-        attributesKey: '',
+        seriesRef: '',
         bounds: [1.001, 1.002, 1.003],
         counts: [index, index + 1, index + 2, index + 3],
         totals: { count: 1, sum: 0, min: 0, max: 1 },
@@ -788,7 +788,7 @@ describe('HistogramHeatmap keyboard model', () => {
       {
         kind: 'histogram',
         timestamp: BASE_NS + 100n,
-        attributesKey: '',
+        seriesRef: '',
         bounds: [1.001, 1.002, 1.003],
         counts: [5, 0, 0, 0],
         totals: { count: 5, sum: 0, min: 0, max: 1 },
@@ -796,7 +796,7 @@ describe('HistogramHeatmap keyboard model', () => {
       {
         kind: 'histogram',
         timestamp: BASE_NS + 900n,
-        attributesKey: '',
+        seriesRef: '',
         bounds: [1.001, 1.002, 1.003],
         counts: [0, 0, 0, 7],
         totals: { count: 7, sum: 0, min: 1, max: 2 },
@@ -838,7 +838,7 @@ describe('HistogramHeatmap keyboard model', () => {
     const point: HistogramSlicePoint = {
       kind: 'histogram',
       timestamp: BASE_NS,
-      attributesKey: '',
+      seriesRef: '',
       bounds: [1, 2],
       counts: [0, 0, 0],
       totals: { count: 0, sum: 0, min: 0, max: 0 },
@@ -861,7 +861,7 @@ describe('HistogramHeatmap keyboard model', () => {
     const point: HistogramSlicePoint = {
       kind: 'histogram',
       timestamp: BASE_NS,
-      attributesKey: '',
+      seriesRef: '',
       bounds: [],
       counts: [9],
       totals: { count: 9, sum: 0, min: 0, max: 0 },

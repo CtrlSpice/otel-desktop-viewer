@@ -106,7 +106,6 @@ describe('WaterfallView bigint domain geometry', () => {
   })
 })
 
-/** a → b → c → d → e → f: deep enough that the old heuristic collapsed it. */
 function deepTree(): SpanNode[] {
   return [
     spanNode('a', null, 0),
@@ -360,18 +359,12 @@ describe('WaterfallView collapse ownership', () => {
     resetCollapseStoreForTests()
   })
 
-  // The old default was a heuristic: collapse any parent at depth 4 or with a
-  // dozen descendants. Two reports guessed independently that the tree was
-  // reacting to its own size, and both were right.
   it('opens fully expanded, however deep the trace', async () => {
     renderTree()
     await tick()
     expect(rowIDs()).toEqual(ALL_IDS)
   })
 
-  // #348. The set used to be assigned by an effect that re-ran whenever the
-  // spans array changed identity, so any re-render threw the reader's
-  // arrangement away.
   it("keeps the reader's collapse when the spans array changes identity", async () => {
     const { rerender } = renderTree()
     await tick()
@@ -414,8 +407,6 @@ describe('WaterfallView collapse ownership', () => {
     await collapseRow('c')
     expect(rowIDs()).toEqual(['a', 'b', 'c'])
 
-    // A fresh response arrives while the selection still points into the
-    // closed branch -- the exact shape that used to undo the collapse.
     await rerender({
       componentProps: {
         spans: deepTree(),
@@ -478,9 +469,6 @@ describe('WaterfallView collapse ownership', () => {
     expect(rowIDs()).toEqual(ALL_IDS)
   })
 
-  // The gap the old toggle had: its label followed the current state, so from
-  // a mixed arrangement it only ever offered collapse-all, and there was no
-  // way to open everything short of collapsing everything first.
   it('expand-all works from a mixed arrangement', async () => {
     renderTree()
     await tick()

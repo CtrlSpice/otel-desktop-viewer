@@ -1,42 +1,12 @@
 // Package queries holds every piece of SQL the store runs, as files.
 //
-// Two kinds live here, and the split is by what the SQL does rather than by
-// which signal runs it:
+// DDL files define ordered types, tables, indexes, and macros. Signal
+// directories contain one file per read query. Ingest remains in the signal
+// packages because it walks pdata and drives appenders.
 //
-//   - ddl/ is structure: types, tables, indexes and macros, run once when a
-//     store is opened. Ordered, because tables reference each other.
-//   - spans/, logs/, metrics/ are the read path: one file per query.
-//
-// Ingest stays in the signal packages. It is Go walking pdata and driving
-// appenders, not SQL, and moving it here would separate it from the types it
-// unwraps for no gain.
-//
-// # Why files rather than Go string literals
-//
-// The DDL was ~700 lines of backticked strings in four Go slices, and the read
-// queries ran to hundreds of lines assembled by positional fmt.Sprintf. Neither
-// could be syntax-highlighted, neither could be pasted into a DuckDB shell
-// against a live database, and reading a Sprintf'd query meant counting %s
-// verbs against a trailing argument list to work out which fragment landed
-// where -- where getting the order wrong swapped a join for an expression and
-// still produced SQL that parsed.
-//
-// As files they open in a SQL editor, they diff cleanly, and the conditional
-// fragments are named template fields instead of positions. Each object's
-// rationale travels with it as SQL comments rather than as Go comments one
-// indirection away.
-//
-// # What is checked, and when
-//
-// Templates are invisible to Go tooling, so a misspelled field is a runtime
-// error rather than a compile error. Four things push back. Every template is
-// parsed at package init, so a syntax error is a startup panic, not a
-// first-request surprise. Option("missingkey=error") makes a bad field fail
-// loudly at render instead of writing "<no value>" into the SQL. Every file is
-// checked against the registry in both directions, so a renamed file cannot
-// leave a dangling reference and an orphaned file cannot sit unnoticed. And the
-// golden tests in the signal packages pin the rendered text byte for byte,
-// which is what makes editing these files safe.
+// Templates are parsed at package initialization with missing keys rejected.
+// Registry checks cover embedded files in both directions, and golden tests pin
+// rendered query text.
 package queries
 
 import (
@@ -54,10 +24,6 @@ import (
 var files embed.FS
 
 // Statement is one DDL object: the SQL, plus the file it came from.
-//
-// The name exists for error messages. The previous form reported "failed to
-// create table 4", which meant counting entries in a Go slice to find out what
-// had actually failed.
 type Statement struct {
 	Name string
 	SQL  string
@@ -86,29 +52,22 @@ func ddl(kind string, names []string) []Statement {
 type Name string
 
 const (
-	// SearchSpans fetches one whole trace: the recursive tree walk, its
+	// GetTraceView fetches one whole trace: the recursive tree walk, its
 	// payload, and the resource/scope maps the wire format references.
-	SearchSpans Name = "spans/search_spans.sql"
-	// GetTrace returns the compact span rows and exact timing summary used by
+	GetTraceView Name = "spans/get_trace_view.sql"
+	// GetTraceOverview returns the compact span rows and exact timing summary used by
 	// the trace command. It deliberately omits full span detail.
-	GetTrace Name = "spans/get_trace.sql"
+	GetTraceOverview Name = "spans/get_trace_overview.sql"
 	// GetSpanSummaries returns bounded summary rows for one exact span ID.
 	GetSpanSummaries Name = "spans/get_span_summaries.sql"
 	// GetSpan returns one full span selected by its composite identity.
 	GetSpan Name = "spans/get_span.sql"
 
-	// SalvageSpans is SearchSpans plus a second, cycle-aware walk that
-	// recovers spans the ordinary walk cannot reach.
-	//
-	// A separate query rather than more CTEs on SearchSpans because the
-	// salvage machinery costs a reproducible ~8% on every trace fetch, and it
-	// finds something on almost none of them: zero spans across 122,224 in a
-	// real capture. SearchSpans returns the count of what it could not place,
-	// and only a non-zero count sends the caller here.
+	// SalvageSpans adds a cycle-aware walk for spans GetTraceView cannot reach.
 	SalvageSpans Name = "spans/salvage_spans.sql"
 
-	// SearchTraces lists trace summaries for the trace list view.
-	SearchTraces Name = "spans/search_traces.sql"
+	// SearchTraceSummaries lists trace summaries for the trace list view.
+	SearchTraceSummaries Name = "spans/search_trace_summaries.sql"
 	// GetTraceOTLP reconstructs every stored span for one trace as standard
 	// OTLP JSON, without applying UI search or tree-reachability rules.
 	GetTraceOTLP Name = "spans/get_trace_otlp.sql"
@@ -120,36 +79,36 @@ const (
 	GetMetricSeries Name = "metrics/get_metric_series.sql"
 	// GetMetricView returns the chart/UI projection for one Metric.
 	GetMetricView Name = "metrics/get_metric_view.sql"
-	// GetMetricOTLP reconstructs one stored metric stream as standard OTLP JSON,
+	// GetMetricOTLP reconstructs one stored Metric as standard OTLP JSON,
 	// without applying UI aggregation or time-window rules.
 	GetMetricOTLP Name = "metrics/get_metric_otlp.sql"
-	// GetMetricAttributes lists the attribute keys metrics carry.
-	GetMetricAttributes Name = "metrics/get_metric_attributes.sql"
+	// GetMetricAttributeDefinitions lists the attribute keys metrics carry.
+	GetMetricAttributeDefinitions Name = "metrics/get_metric_attribute_definitions.sql"
 
 	// GetLog returns one log record with its attributes resolved.
 	GetLog Name = "logs/get_log.sql"
 	// GetLogOTLP reconstructs one stored log record as standard OTLP JSON.
 	GetLogOTLP Name = "logs/get_log_otlp.sql"
-	// GetTraceLogs returns lightweight summaries for every log in one trace.
-	GetTraceLogs Name = "logs/get_trace_logs.sql"
+	// GetTraceLogSummaries returns lightweight summaries for every log in one trace.
+	GetTraceLogSummaries Name = "logs/get_trace_log_summaries.sql"
 	// GetSpanLogs returns full logs associated with one composite span identity.
 	GetSpanLogs Name = "logs/get_span_logs.sql"
-	// GetLogAttributes lists the attribute keys logs carry.
-	GetLogAttributes Name = "logs/get_log_attributes.sql"
+	// GetLogAttributeDefinitions lists the attribute keys logs carry.
+	GetLogAttributeDefinitions Name = "logs/get_log_attribute_definitions.sql"
 
-	// SearchMetricSummaries lists metric streams for the metrics list view.
+	// SearchMetricSummaries lists Metrics for the metrics list view.
 	SearchMetricSummaries Name = "metrics/search_summaries.sql"
-	// SearchLogs lists log summaries for the logs list view.
-	SearchLogs Name = "logs/search_logs.sql"
+	// SearchLogSummaries lists log summaries for the logs list view.
+	SearchLogSummaries Name = "logs/search_log_summaries.sql"
 )
 
 // queryNames is every read-path query. Kept beside the constants so adding one
 // without registering it is a visible omission rather than a silent one.
 var queryNames = []Name{
-	SearchSpans, SalvageSpans, SearchTraces, GetTrace, GetSpanSummaries, GetSpan, GetTraceOTLP,
-	GetMetric, GetMetricSeries, GetMetricView, GetMetricOTLP, GetMetricAttributes,
-	GetLog, GetLogOTLP, GetTraceLogs, GetSpanLogs, GetLogAttributes,
-	SearchMetricSummaries, SearchLogs,
+	GetTraceView, SalvageSpans, SearchTraceSummaries, GetTraceOverview, GetSpanSummaries, GetSpan, GetTraceOTLP,
+	GetMetric, GetMetricSeries, GetMetricView, GetMetricOTLP, GetMetricAttributeDefinitions,
+	GetLog, GetLogOTLP, GetTraceLogSummaries, GetSpanLogs, GetLogAttributeDefinitions,
+	SearchMetricSummaries, SearchLogSummaries,
 }
 
 // Names returns every registered read-path query, so callers that need to

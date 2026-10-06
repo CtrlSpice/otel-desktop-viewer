@@ -1,7 +1,7 @@
 import type {
   ExponentialHistogramDataPoint,
   HistogramDataPoint,
-  MetricTimeseries,
+  MetricSeriesViewData,
 } from '@/types/api-types'
 import type { ChartPoint, ChartTimeseries } from '@/types/metric-chart-types'
 
@@ -20,7 +20,7 @@ export type HistogramSlicePoint =
       kind: 'histogram'
       timestamp: bigint
       sourceDatapointID?: string
-      attributesKey: string
+      seriesRef: string
       bounds: number[]
       counts: number[]
       totals: HistogramTotals
@@ -31,7 +31,7 @@ export type HistogramSlicePoint =
       kind: 'expHistogram'
       timestamp: bigint
       sourceDatapointID?: string
-      attributesKey: string
+      seriesRef: string
       scale: number
       zeroThreshold: number
       zeroCount: number
@@ -114,37 +114,15 @@ export function localOffsetNs(timestampNs: bigint): bigint {
   return BigInt(-new Date(ms).getTimezoneOffset()) * 60n * 1_000_000_000n
 }
 
-/**
- * Keep the slices whose series are visible.
- *
- * visibleKeys is always a set, never null. "Everything is visible" is a set
- * holding every key, not a separate encoding -- collapsing that to null gave
- * one state two representations, and made an empty set (a user who unticked
- * every series) look interchangeable with "no filter" to anyone reading a
- * signature. It was a fast path that escaped into the type.
- */
+/** Keep slices whose series are visible. Empty means no visible series. */
 function filterVisibleSlices(
   slices: HistogramSlicePoint[],
   visibleKeys: Set<string>
 ): HistogramSlicePoint[] {
-  return slices.filter(s => visibleKeys.has(s.attributesKey))
+  return slices.filter(s => visibleKeys.has(s.seriesRef))
 }
 
-/**
- * How many time buckets to ask the store for when drawing a histogram.
- *
- * A data decision, deliberately not a pixel one. It used to be derived from the
- * plot's measured width, which made the size of the pane decide how much data
- * was computed. It also did not work: it sized columns for 6px cells while the
- * renderer draws a minimum of 8 (MIN_HEATMAP_CELL_PX), so the count it chose to
- * fit the width overflowed it anyway.
- *
- * Pixels belong to the renderer, which handles both ends already: cells stretch
- * to fill when they fit, and clamp and scroll when they do not.
- *
- * 100 against the ladder in bucket_width_ns gives the 1-minute rung on a
- * 90-minute session -- about 90 buckets, filling a pane ~712px wide.
- */
+/** Store bucket target for histogram views. Rendering handles cell sizing. */
 export const HEATMAP_BUCKET_TARGET = 100
 
 export const DEFAULT_HISTOGRAM_QUANTILES = [0.5, 0.95, 0.99] as const
@@ -186,18 +164,7 @@ export function quantileLabelForKey(quantileKey: string): string {
   return QUANTILE_LABELS.find(q => q.key === quantileKey)?.label ?? quantileKey
 }
 
-/**
- * The store's quantile for this bucket.
- *
- * A lookup, not a computation. This used to rebuild the bucket list from the
- * datapoint and walk it, once per quantile per series per bucket -- ~2,700 full
- * quantile computations for one render of the reference metric, and 3,068 ms in
- * a single blocking task, against 10 ms of JSON parsing and 66 ms of DOM work
- * for the same click.
- *
- * The store has computed these since the quantile macros landed. Nothing read
- * them, so the cost was paid twice and the fast copy was the unused one.
- */
+/** Looks up the store-computed quantile for this bucket. */
 export function sliceQuantileValue(
   slice: HistogramSlicePoint,
   quantile: number
@@ -263,7 +230,7 @@ export function buildVisibleSeriesQuantileChartTimeseries(
 }
 
 export function seriesBucketsToSlices(
-  timeseries: MetricTimeseries[]
+  timeseries: MetricSeriesViewData[]
 ): HistogramSlicePoint[] {
   const out: HistogramSlicePoint[] = []
   for (const ts of timeseries) {
@@ -287,7 +254,7 @@ export function seriesBucketsToSlices(
           kind: 'histogram',
           timestamp: dp.timestamp,
           sourceDatapointID: dp.id,
-          attributesKey: ts.attributesKey,
+          seriesRef: ts.seriesRef,
           bounds: dp.explicitBounds ?? [],
           counts: dp.bucketCounts.map(Number),
           totals,
@@ -299,7 +266,7 @@ export function seriesBucketsToSlices(
         kind: 'expHistogram',
         timestamp: dp.timestamp,
         sourceDatapointID: dp.id,
-        attributesKey: ts.attributesKey,
+        seriesRef: ts.seriesRef,
         scale: dp.scale ?? 0,
         zeroThreshold: dp.zeroThreshold ?? 0,
         zeroCount: Number(dp.zeroCount),
@@ -326,9 +293,9 @@ export function buildPerSeriesQuantileSeries(
   const visible = filterVisibleSlices(perAttributeSlices, visibleKeys)
   const byKey = new Map<string, HistogramSlicePoint[]>()
   for (const slice of visible) {
-    const list = byKey.get(slice.attributesKey)
+    const list = byKey.get(slice.seriesRef)
     if (list) list.push(slice)
-    else byKey.set(slice.attributesKey, [slice])
+    else byKey.set(slice.seriesRef, [slice])
   }
 
   const out: ChartTimeseries[] = []
@@ -372,11 +339,6 @@ export function histogramSliceToChartDatapoint(
   temporality: string,
   temporalityCode: number
 ): HistogramChartDataPoint {
-  // The store's own min and max. Deriving them here rebuilt the bucket list
-  // from scale and offsets and took its extents -- the same computation the
-  // store already does in projected_dps and aggregate_bucket_json, in a second
-  // language, and the two disagreed: the whole-window view drew a value axis of
-  // 0.046-0.126 for a series spanning 0.126 to 189.
   const normalized = slice
   const base = {
     id,

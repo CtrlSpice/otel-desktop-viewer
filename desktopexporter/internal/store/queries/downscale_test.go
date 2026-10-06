@@ -9,19 +9,11 @@ import (
 )
 
 // TestDownscaleExpBuckets pins what downscaling an exponential histogram
-// produces, by value rather than by comparison.
-//
-// It used to be checked against its own previous implementation, which stopped
-// being possible when that implementation was replaced: the old form filtered
-// the whole input once per output bucket and was quadratic in bucket count.
-// The replacement takes each output bucket's inputs as a contiguous slice,
-// which is only correct because position -> bucket is monotonic. These cases
-// are worked by hand so the property is pinned to arithmetic and not to
-// whichever formulation happens to be in the file.
+// produces against hand-worked values.
 //
 // The clamped ends are the part worth testing. Only the first and last output
-// buckets can be partial -- every bucket between them is exactly 2^levels wide
-// -- so an off-by-one in the bounds shows up at the edges and nowhere else,
+// buckets can be partial; every bucket between them is exactly 2^levels wide,
+// so an off-by-one in the bounds shows up at the edges,
 // which is why several cases below start at an offset that does not divide
 // evenly.
 func TestDownscaleExpBuckets(t *testing.T) {
@@ -107,10 +99,7 @@ func TestDownscaleExpBuckets(t *testing.T) {
 	}
 }
 
-// Total count is conserved: downscaling merges buckets, it never invents or
-// drops observations. Cheap to assert over many shapes, and it catches a whole
-// class of bounds error that hand-written cases can miss -- a slice that skips
-// an input or counts one twice changes the sum.
+// Downscaling must conserve the total count across varied shapes.
 func TestDownscaleConservesTotal(t *testing.T) {
 	db := macroDB(t)
 

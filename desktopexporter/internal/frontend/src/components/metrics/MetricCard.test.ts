@@ -10,7 +10,7 @@ import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
 function makeMetric(overrides: Partial<MetricSummary> = {}): MetricSummary {
   return {
-    id: 'metric-1',
+    metricRef: 'metric-1',
     name: 'http.server.duration',
     description: 'Duration of HTTP server requests',
     unit: 'ms',
@@ -100,7 +100,7 @@ describe('MetricCard', () => {
 
   it('calls onclick with the metric id when clicked', async () => {
     const onclick = vi.fn()
-    renderCard({ metric: makeMetric({ id: 'metric-42' }), onclick })
+    renderCard({ metric: makeMetric({ metricRef: 'metric-42' }), onclick })
     await userEvent.click(screen.getByRole('button'))
     expect(onclick).toHaveBeenCalledWith('metric-42')
   })

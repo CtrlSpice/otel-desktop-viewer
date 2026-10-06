@@ -20,19 +20,12 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 )
 
-// storeHost is what the exporter needs from the extensions map: something that
-// owns the shared store. Declared consumer-side so the exporter is coupled to
-// the capability, not to the duckdb extension's package or type name --
-// anything in host.GetExtensions() exposing Store() qualifies.
+// storeHost is the extension capability required by the exporter.
 type storeHost interface {
 	Store() *store.Store
 }
 
-// desktopExporter writes one signal's batches into the shared store. It owns
-// nothing else: the store, the viewer server, and retention live in the duckdb
-// extension, which the collector starts before -- and shuts down after -- any
-// pipeline component. Each signal's exporter is an independent instance;
-// sharing happens through the extension lookup, not through shared construction.
+// desktopExporter writes one signal's batches to the extension-owned store.
 type desktopExporter struct {
 	tel *telemetry.Telemetry
 
@@ -82,16 +75,10 @@ func (e *desktopExporter) Start(_ context.Context, host component.Host) error {
 	return nil
 }
 
-// The three push paths each wrap ingest in a span carrying the batch's item
-// count, so throughput is measurable per signal. The span covers WithConn, not
-// just the write, because acquiring the store's write lock is part of what
-// makes ingest slow when it contends with queries.
+// Each push path measures the full WithConn call and its telemetry item count.
 //
-// Each also imposes IngestTimeout. The incoming context is not a useful
-// deadline here: with the sending queue enabled the batcher starts a fresh
-// context.Background() per merged batch (it must -- the client's request has
-// already completed), so nothing upstream bounds the write. See IngestTimeout
-// for why the bound exists and why it is set so far above the working range.
+// Each path applies IngestTimeout because queued batches use a fresh context
+// after the client request has completed.
 func withIngestTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(ctx, IngestTimeout)
 }

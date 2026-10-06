@@ -63,7 +63,7 @@ export type LayerChartTooltipClickDetail<TData> = {
  */
 export type ChartTimeseries = {
   /** Stable per-timeseries id. The canonical "key=value|..." string
-   * from MetricTimeseries.attributesKey. The legend uses the same
+   * from MetricSeriesViewData.seriesRef. The legend uses the same
    * key, so checking/unchecking maps 1:1. */
   key: string
   /** Human label for the layerchart series. The chart's tooltip
@@ -82,10 +82,8 @@ export type ChartTimeseries = {
  * (a colour from the stem-rotated pool); unchecked rows use neutral.
  */
 export type LegendTimeseries = {
-  /** Stable identifier for this series, used as the bind key. This is
-   * `MetricTimeseries.attributesKey`, which is now the opaque database-local
-   * series id rather than a rendering of the labels. The same id covers Gauge/Sum, Histogram and
-   * ExponentialHistogram, so one legend implementation serves all of them. */
+  /** Database-local `MetricSeriesViewData.seriesRef`, used as the bind key for
+   * Gauge, Sum, Histogram, and ExponentialHistogram series. */
   key: string
   /** Attributes that distinguish this timeseries from siblings. May
    * be empty for a metric whose datapoints carry no attributes.

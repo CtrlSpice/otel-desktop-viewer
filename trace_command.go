@@ -64,7 +64,7 @@ func newTraceCommand(client *http.Client) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			raw, err := requestViewerRPC(cmd.Context(), client, endpoint, "getTrace", map[string]any{"traceID": traceID})
+			raw, err := requestViewerRPC(cmd.Context(), client, endpoint, "getTraceOverview", map[string]any{"traceID": traceID})
 			if err != nil {
 				return err
 			}
@@ -77,7 +77,7 @@ func newTraceCommand(client *http.Client) *cobra.Command {
 			}
 			result, err := decodeTrace(raw)
 			if err != nil {
-				return fmt.Errorf("decode viewer getTrace result: %w", err)
+				return fmt.Errorf("decode viewer getTraceOverview result: %w", err)
 			}
 			_, err = io.WriteString(cmd.OutOrStdout(), formatTrace(result))
 			return err

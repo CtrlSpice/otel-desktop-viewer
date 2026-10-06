@@ -141,10 +141,7 @@ function idPatternCompletions(
     from: word.from,
     to: word.to,
     options,
-    // The options are whole conditions built around the typed hex, so they
-    // must not be re-filtered against it: CodeMirror's fuzzy matcher scores
-    // "spanID = <hex>" so poorly against the bare hex that the suggestions
-    // never rendered at all.
+    // Whole-condition options must not be filtered against the bare hex.
     filter: false,
   }
 }
@@ -166,11 +163,7 @@ export function createQueryCompletionSource(
       const idHit = idPatternCompletions(context)
       if (idHit) return idHit
 
-      // A bare field name is not a Comparison yet -- `name` parses as
-      // FreeText, so the operator branch below is unreachable until an
-      // operator has already been typed, which is too late to suggest one.
-      // Once the name is complete and followed by a space, the only thing
-      // that can come next is an operator, so offer them here too.
+      // A completed top-level field remains FreeText until an operator is typed.
       const opHit = topLevelOperatorCompletions(context, getFields(), signal)
       if (opHit) return opHit
     }
@@ -183,8 +176,7 @@ export function createQueryCompletionSource(
 
       // Still in or at end of field name → complete field names, not operators.
       if (field && pos <= field.to) {
-        // Replace through the end of the word: accepting mid-name used to
-        // keep the tail, so `na|me` accepted as name became "name me".
+        // Replace the full field token when accepting mid-name.
         return fieldCompletions(
           context,
           getFields(),
@@ -275,12 +267,7 @@ export function createQueryCompletionSource(
       }
     }
 
-    // A finished expression continues with AND, OR, or a result limit --
-    // this is the branch that makes the logical operators actually appear.
-    // The comparison-scoped branch above only fires while the cursor still
-    // resolves inside the Comparison node, which one space past the value it
-    // no longer does; the fallthrough used to offer field names there, which
-    // the grammar cannot accept after a complete condition.
+    // A finished expression continues with AND, OR, or a result limit.
     {
       const partial = context.matchBefore(/[A-Za-z]*/)
       const before = context.state.sliceDoc(
@@ -354,13 +341,7 @@ export function createQueryCompletionSource(
       }
     }
 
-    // Typing the first word of a new condition: what precedes the word is
-    // empty, an open paren, or a logical operator. This used to be decided
-    // by a block of regexes over the raw text -- including a second spelling
-    // of the whole operator list, which is the same split-brain the grammar
-    // unification removed -- and every other context that block served is
-    // now answered from the tree above. AND/OR are matched as whole words;
-    // "operand" does not end with the operator AND.
+    // A new condition starts at input start, an open group, or a logical operator.
     const word = context.matchBefore(/[\w.]+/)
     if (word) {
       const before = context.state.sliceDoc(0, word.from).trim()
@@ -373,13 +354,9 @@ export function createQueryCompletionSource(
       }
     }
 
-    // Right after "AND " or "OR ", before any letters are typed: the
-    // cursor resolves into the AndExpression/OrExpression parent, not the
-    // And/Or token, so the node-name branch above never sees it. What
-    // precedes the cursor tells the truth directly.
+    // After AND/OR whitespace, the cursor resolves to the parent expression.
     if (!word) {
-      // Trailing open parens are transparent: `AND (` is the same "a
-      // condition starts here" position as `AND `.
+      // Trailing open groups still begin a condition.
       const before = context.state
         .sliceDoc(0, context.pos)
         .replace(/[(\s]+$/, '')
@@ -428,12 +405,7 @@ function topLevelOperatorCompletions(
   fields: FieldDefinition[],
   signal?: SearchSignal
 ): CompletionResult | null {
-  // An unterminated string swallows the guard this function relies on: the
-  // error-recovered Comparison node ends before the trailing space, so the
-  // cursor resolves outside it and a field name inside the value -- typing
-  // `x = "error: name ` -- looks exactly like a field awaiting an operator.
-  // A string is unterminated for as long as it is being typed, so this is
-  // the common case, not a corner.
+  // Error recovery can place the cursor outside an unterminated string's comparison.
   if (inOpenString(context.state.sliceDoc(0, context.pos))) return null
 
   const source = context.state.sliceDoc(0, context.pos)
@@ -499,10 +471,7 @@ function fieldCompletions(
       section: attribute
         ? `${attribute.attributeScope} / ${attribute.name}`
         : 'Fields',
-      // Accepting a field inserts the trailing space that ends it, which is
-      // also what makes the operator list fire: picking `name` should leave
-      // the cursor somewhere the next suggestion is waiting, not somewhere
-      // the user has to guess that a space is expected.
+      // The trailing space opens operator completion.
       apply: `${attribute ? formatAttributeFieldReference(attribute) : field.name} `,
     })
   }
@@ -545,11 +514,7 @@ function operatorCompletions(
   return {
     from: from ?? context.pos,
     options,
-    // Keep the list open and filtering while an operator is being typed.
-    // Without this the dropdown closed on the first keystroke: the result
-    // was anchored at the cursor with nothing marking further typing as a
-    // continuation, so "C" on the way to CONTAINS dismissed the list that
-    // had just offered it.
+    // Keep filtering while an operator is typed.
     validFor: /^[\w=!<>~^$]*$/,
   }
 }

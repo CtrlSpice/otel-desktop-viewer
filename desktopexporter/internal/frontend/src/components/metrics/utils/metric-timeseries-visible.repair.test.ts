@@ -12,16 +12,7 @@ import {
   savePersistedTimeseriesVisible,
 } from '@/components/metrics/utils/metric-timeseries-visible'
 
-/*
- * The repair exists because the old $effect-based seeding could persist
- * `visibleKeys: []` for a metric nobody had touched -- it ran after the first
- * render, so it could write before the series keys had settled. Every later
- * visit then honoured it and drew nothing.
- *
- * An empty list written on purpose is indistinguishable from one written by
- * that bug, so the repair is one-shot: it clears what is there now, and never
- * looks again.
- */
+// The version 1 repair must not erase later empty selections.
 describe('repairEmptyPersistedVisibleKeys', () => {
   const keys = ['a', 'b', 'c']
 

@@ -70,11 +70,8 @@ func ingestReport(t *testing.T, s *store.Store, tr ptrace.Traces) (ingest.Reject
 	return rep, err
 }
 
-// One bad span costs itself, not the batch.
-//
-// The appender only discovers a constraint violation at flush, and a failed
-// flush discards its whole buffer, so a duplicate id used to throw away every
-// good span beside it. 600 spans carrying one duplicate must store 599.
+// TestIngest_OneDuplicateDoesNotCostTheBatch verifies that one duplicate span
+// is rejected without discarding valid spans in the same appender buffer.
 func TestIngest_OneDuplicateDoesNotCostTheBatch(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)

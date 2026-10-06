@@ -21,9 +21,7 @@ const (
 	pruneFraction = 0.10
 
 	// maxPruneRounds bounds the prune-measure loop within one enforcement
-	// pass. Deleted bytes don't map linearly to rows, so a round can
-	// under-deliver; three compounding rounds (~27%) is plenty for one pass,
-	// and the next pass picks up from there.
+	// pass because deleted bytes do not map linearly to rows.
 	maxPruneRounds = 3
 )
 
@@ -99,10 +97,6 @@ func (s *Store) EnforceRetention(ctx context.Context, maxBytes int64) error {
 	// sweeping before any prune -- but not before the measurement that decides
 	// whether to prune at all.
 	//
-	// This used to sweep unconditionally, which meant a store sitting at 1% of
-	// its cap still ran three anti-joins and dropped the dictionary cache every
-	// 30 seconds, under the write lock, to protect against a prune that was
-	// never going to happen.
 	fits, err := s.sweepIfOverCap(ctx, maxBytes)
 	if err != nil {
 		return err
@@ -228,10 +222,8 @@ func (s *Store) pruneOldestSpans(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 
-	// Children are matched by (trace_id, span_id), the pair that identifies a
-	// span. Matching on span_id alone deleted the children of a *newer* span
-	// in a different trace that happened to share the id -- which the
-	// composite key permits, since a span id is only unique within its trace.
+	// Children use the full span identity because span IDs are unique only
+	// within a trace.
 	for _, q := range []string{
 		`delete from links where (trace_id, span_id) in
 			(select trace_id, span_id from spans where start_time <= (select unnest(?::ubigint[])))`,
@@ -274,15 +266,15 @@ func (s *Store) pruneOldestLogs(ctx context.Context, db *sql.DB) error {
 // resolves the same database-local IDs.
 func (s *Store) pruneOldestDatapoints(ctx context.Context, db *sql.DB) error {
 	cutoff, ok, err := s.pruneCutoff(ctx, db,
-		`select quantile_disc(timestamp, ?) from datapoints`)
+		`select quantile_disc(timestamp, ?) from metric_datapoints`)
 	if err != nil || !ok {
 		return err
 	}
 
-	doomed := `(select id from datapoints where timestamp <= (select unnest(?::ubigint[])))`
+	doomed := `(select id from metric_datapoints where timestamp <= (select unnest(?::ubigint[])))`
 	for _, q := range []string{
-		`delete from exemplars where datapoint_id in ` + doomed,
-		`delete from datapoints where timestamp <= (select unnest(?::ubigint[]))`,
+		`delete from exemplars where metric_datapoint_id in ` + doomed,
+		`delete from metric_datapoints where timestamp <= (select unnest(?::ubigint[]))`,
 	} {
 		if _, err := db.ExecContext(ctx, q, []uint64{cutoff}); err != nil {
 			return fmt.Errorf("pruneOldestDatapoints: %w: %w", ErrRetentionInternal, err)

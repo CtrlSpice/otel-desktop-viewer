@@ -213,10 +213,7 @@ func buildCondition(query *Query, conditions *[]string, params *[]NamedParam, ma
 	// A mapper may return several expressions for one condition. For a
 	// global search they are alternatives -- the value may live in any of
 	// those places -- so they join with OR. For a named field they are
-	// requirements and join with AND. Appending them unjoined was the old
-	// behaviour, and it was a trap: BuildSearchSQL later joined the top-level
-	// list with a bare space, so the first named-field mapper to return two
-	// expressions would have produced syntactically invalid SQL.
+	// requirements and join with AND.
 	if len(sqlConditions) > 1 {
 		joiner := " AND "
 		if field.SearchScope == "global" {
@@ -312,10 +309,8 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 		expression = strings.ReplaceAll(expression, rawToken, rawParamName)
 	}
 
-	// IS NULL / IS NOT NULL arrive as explicit operators. They used to be
-	// inferred from the sentinel value "NULL", which made the literal string
-	// "NULL" unsearchable -- a quoted "NULL" in a query was indistinguishable
-	// from the null check by the time it reached this function.
+	// Null checks are explicit operators; the literal string "NULL" remains a
+	// searchable value.
 	if operator == "IS NULL" || operator == "IS NOT NULL" {
 		if hasPlaceholder {
 			return strings.ReplaceAll(expression, condToken, operator), nil
@@ -362,11 +357,8 @@ func BuildOperatorCondition(resolved ResolvedExpression, query *Query, params *[
 	case "=", "!=", ">", ">=", "<", "<=":
 		*params = append(*params, NamedParam{paramName, bindValue})
 		operatorString = operator + " " + paramName
-	// DuckDB has no infix REGEXP -- `x REGEXP y` is a parser error, which
-	// made every regex search fail from the day the operator shipped, and no
-	// test executed one to notice. ~ and !~ are DuckDB's native full-match
-	// regex operators; !~ on a NULL value yields NULL and excludes the row,
-	// the same shape NOT LIKE gives NOT CONTAINS.
+	// DuckDB uses ~ and !~ as full-match regex operators. !~ on NULL yields
+	// NULL and excludes the row, matching NOT LIKE behavior.
 	case "REGEXP":
 		*params = append(*params, NamedParam{paramName, bindValue})
 		operatorString = "~ " + paramName
@@ -858,11 +850,8 @@ func BuildSearchSQL(queryNode *QueryNode, mapper FieldMapper, timeCondition stri
 	}
 
 	if len(conditions) > 0 && timeCondition != "" {
-		// One condition or one group reaches here as exactly one string --
-		// buildCondition and buildGroup each append a single joined element --
-		// so a multi-element list means a caller bug. Join defensively with
-		// AND rather than the bare space this once was, which produced
-		// syntactically invalid SQL the first time anything appended two.
+		// buildCondition and buildGroup normally append one joined element.
+		// Joining defensively keeps a multi-element list valid.
 		whereSQL = "(" + strings.Join(conditions, " AND ") + ") AND " + timeCondition
 	} else if len(conditions) > 0 {
 		whereSQL = "(" + strings.Join(conditions, " AND ") + ")"

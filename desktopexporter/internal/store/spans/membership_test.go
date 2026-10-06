@@ -21,7 +21,7 @@ func TestSpanMembershipExecutionAndExistentialSemantics(t *testing.T) {
 	}))
 	const traceID = "00000000000000000000000000000099"
 
-	searchSpans := func(name, operator, value string) json.RawMessage {
+	getTraceView := func(name, operator, value string) json.RawMessage {
 		t.Helper()
 		query := &search.QueryNode{Type: "condition", Query: &search.Query{
 			Field:         &search.FieldDefinition{Name: name, SearchScope: "field"},
@@ -31,7 +31,7 @@ func TestSpanMembershipExecutionAndExistentialSemantics(t *testing.T) {
 		var raw json.RawMessage
 		require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 			var err error
-			raw, err = spans.SearchSpans(ctx, db, traceID, query)
+			raw, err = spans.GetTraceView(ctx, db, traceID, query)
 			return err
 		}))
 		return raw
@@ -57,32 +57,32 @@ func TestSpanMembershipExecutionAndExistentialSemantics(t *testing.T) {
 	}
 
 	t.Run("duration list", func(t *testing.T) {
-		raw := searchSpans("duration", "IN", `["1s"]`)
+		raw := getTraceView("duration", "IN", `["1s"]`)
 		assert.Equal(t, []string{"root-operation"}, matchedNames(raw))
 	})
 
 	t.Run("nullable NOT IN excludes SQL null", func(t *testing.T) {
-		raw := searchSpans("parentSpanID", "NOT IN", `["not-a-span"]`)
+		raw := getTraceView("parentSpanID", "NOT IN", `["not-a-span"]`)
 		assert.Len(t, matchedNames(raw), 8, "the root has a SQL-null parent and must not match")
 	})
 
 	t.Run("multi-event NOT IN stays existential", func(t *testing.T) {
-		raw := searchSpans("event.name", "NOT IN", `["root-event-1"]`)
+		raw := getTraceView("event.name", "NOT IN", `["root-event-1"]`)
 		assert.ElementsMatch(t, []string{"root-operation", "child-operation"}, matchedNames(raw), "another event on the same span satisfies NOT IN")
 	})
 
 	t.Run("wire ID list malformed value matches nothing", func(t *testing.T) {
-		raw := searchSpans("spanID", "IN", `["not-a-span"]`)
+		raw := getTraceView("spanID", "IN", `["not-a-span"]`)
 		assert.Empty(t, matchedNames(raw))
 	})
 
 	t.Run("received numeric enum lists", func(t *testing.T) {
-		assert.Equal(t, []string{"root-operation"}, matchedNames(searchSpans("kindCode", "IN", `["2"]`)))
+		assert.Equal(t, []string{"root-operation"}, matchedNames(getTraceView("kindCode", "IN", `["2"]`)))
 		assert.Equal(t, []string{
 			"child-operation",
 			"great-grandchild-operation",
 			"orphaned-grandchild-operation",
-		}, matchedNames(searchSpans("statusCodeValue", "IN", `["2"]`)))
+		}, matchedNames(getTraceView("statusCodeValue", "IN", `["2"]`)))
 	})
 
 	t.Run("all mapper modes execute with NOT IN", func(t *testing.T) {
@@ -95,7 +95,7 @@ func TestSpanMembershipExecutionAndExistentialSemantics(t *testing.T) {
 			{"duration", `["99ns"]`},
 			{"spanID", `["ffffffffffffffff"]`},
 		} {
-			assert.NotEmpty(t, searchSpans(tc.name, "NOT IN", tc.value), tc.name)
+			assert.NotEmpty(t, getTraceView(tc.name, "NOT IN", tc.value), tc.name)
 		}
 	})
 }

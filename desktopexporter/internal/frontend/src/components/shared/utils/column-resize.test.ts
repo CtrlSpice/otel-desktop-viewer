@@ -11,11 +11,6 @@ import {
   type ColumnWidths,
 } from './column-resize'
 
-/* These tests are the cascade's specification, written before the
- * implementation. The column set is about to become user-configurable,
- * so everything here works in ids, never positions, and the add/remove
- * cases are part of the spec from day one. */
-
 const abc = [flex('a', 100, 1), flex('b', 100, 1), flex('c', 100, 1)]
 
 function total(w: ColumnWidths): number {
@@ -120,8 +115,6 @@ describe('container refit', () => {
 })
 
 describe('reconcile against a stored layout', () => {
-  // The operation a column setting calls on every add/remove, and the
-  // same one that runs on load against whatever an older session stored.
   it('keeps a surviving id at its stored width', () => {
     const w = reconcileWidths(abc, { a: 300, b: 150, c: 150 }, 600)
     expect(w).toEqual({ a: 300, b: 150, c: 150 })

@@ -12,7 +12,7 @@ import (
 )
 
 var metricSummaryFields = []string{
-	"id",
+	"metricRef",
 	"name",
 	"description",
 	"unit",
@@ -92,11 +92,7 @@ func metricSummariesForCLI(summaries []json.RawMessage) ([]json.RawMessage, erro
 			if fieldIndex > 0 {
 				output.WriteByte(',')
 			}
-			outputField := field
-			if field == "id" {
-				outputField = "metricRef"
-			}
-			encodedField, err := json.Marshal(outputField)
+			encodedField, err := json.Marshal(field)
 			if err != nil {
 				return nil, err
 			}

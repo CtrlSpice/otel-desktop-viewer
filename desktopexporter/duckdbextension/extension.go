@@ -2,13 +2,9 @@
 // serves it: the DuckDB database, the frontend HTTP server, and the retention
 // loop that keeps the store under its size cap.
 //
-// It is an extension rather than part of the exporter because the collector
-// starts extensions before any pipeline component and shuts them down after
-// (service.Start / service.Shutdown document the order), which is exactly the
-// lifetime the store needs: up before the first ingest, alive until the last
-// queued write has drained. It also gives the three signal exporters one
-// instance to share by lookup through host.GetExtensions(), replacing the
-// hand-rolled sharedcomponent workaround.
+// The collector starts extensions before pipelines and stops them afterward,
+// keeping the store alive until queued writes drain. Signal exporters share it
+// through host.GetExtensions().
 //
 // The exporter finds this extension by interface, not by type name: anything in
 // the extensions map exposing `Store() *store.Store` qualifies.

@@ -172,9 +172,7 @@
       let saved = localStorage.getItem(storageKey)
       if (saved) {
         let parsed = parseFloat(saved)
-        // Clamped, not rejected: a split saved on a wide window used to
-        // be discarded wholesale on a narrow one, silently reverting to
-        // the default. The nearest legal split is what the person meant.
+        // Clamp persisted splits to the current viewport bounds.
         if (!isNaN(parsed)) {
           leftWidth = Math.max(
             effectiveMinLeft,

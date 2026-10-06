@@ -2,44 +2,16 @@
 		with recursive
 		search_params as (select try_cast(? as uuid) as trace_id, ? as attr_key_1, ? as attr_kind_2, ? as value_3),
 
-		-- This trace's spans, isolated once, before the walk begins.
-		--
-		-- The recursive arm below runs once per level of the tree, and a
-		-- recursive CTE cannot use an index on its working table: DuckDB
-		-- re-joins whatever relation the arm names on every iteration. Naming
-		-- `spans` there means each level hash-joins the entire table, so the
-		-- cost of fetching one trace tracks how much telemetry the store holds
-		-- rather than how big the trace is -- a point lookup priced as a scan.
-		-- Measured on a 2.3M-span store, fetching a 159-span trace 14 levels
-		-- deep: 54ms naming `spans`, 5ms naming this CTE, same rows out.
-		--
-		-- `materialized` is the load-bearing word. Without it DuckDB is free to
-		-- inline the definition into each reference, which puts the full-table
-		-- scan back exactly where it was removed from.
+		-- Materialize the trace subset so each recursive level avoids rejoining
+		-- the complete spans table.
 		trace_spans as materialized (
 			select s.trace_id, s.span_id, s.parent_span_id, s.start_time
 			from spans s, search_params
 			where s.trace_id = search_params.trace_id
 		),
 
-		-- Sibling order, decided once, before the walk.
-		--
-		-- A span's rank among its siblings is a property of the trace, not of
-		-- the traversal: it depends only on parent and start time, both known
-		-- before the first row is walked. Computing it with a window inside
-		-- the recursive arm instead re-runs a WINDOW operator once per level
-		-- of the tree, paying full operator setup each time to rank a handful
-		-- of siblings, and that cost is set by tree depth rather than by
-		-- anything the query is being asked for.
-		--
-		-- It dominated. Profiled on a 122k-span store fetching a 159-span
-		-- trace 14 levels deep, WINDOW was 27.9ms of a 46ms query -- against
-		-- 0.8ms for the sequential scan over all 117,618 spans. Ranking once
-		-- here leaves a single WINDOW over the trace's own rows.
-		--
-		-- Traversal order is unchanged, and that is checked rather than
-		-- assumed: same rows, same depths, and the md5 of the span ids in
-		-- sort_path order is identical either way.
+		-- Rank roots and siblings once; window functions inside the recursive arm
+		-- would run at every tree level.
 		ranked as materialized (
 			select t.*,
 				row_number() over (
@@ -81,31 +53,14 @@
 		))
 		),
 
-		-- Spans the walk above could not reach, recovered best-effort.
-		--
-		-- Unreachable means the span's parent is present but the span is not
-		-- descended from any root, which -- with one parent per span -- means
-		-- it sits on a cycle. Nothing outside points into a cycle, so there is
-		-- no edge to follow in; an entry has to be chosen.
-		--
-		-- Every unreached span is seeded as its own entry rather than
-		-- identifying stranded components first, which would need real graph
-		-- work for no gain: a span reached from several entries is deduped
-		-- below, keeping the one from the earliest entry. For a lone A<->B
-		-- cycle that yields A at depth 0 and B beneath it, which is the shape
-		-- a reader can actually follow.
+		-- Seed each unreachable cycle member, then keep its earliest placement.
 		salvage_seed as materialized (
 			select r.*, row_number() over (order by r.start_time, r.span_id) as entry_rank
 			from ranked r
 			where r.span_id not in (select span_id from spans_tree)
 		),
 
-		-- The walk that may enter a cycle, so it carries its own ancestry and
-		-- refuses to revisit. relative_path mirrors the normal walk's complete
-		-- sibling path: depth alone would group grandchildren after every sibling,
-		-- but the frontend needs each subtree contiguous to recover display parents.
-		-- DuckDB has no CYCLE clause; this is the pattern its docs prescribe for
-		-- traversing a graph that may contain one.
+		-- Track ancestry to stop cycles. relative_path keeps each subtree contiguous.
 		salvage_walk as (
 			select sd.span_id, sd.parent_span_id, sd.trace_id, sd.start_time,
 				sd.entry_rank, 0 as depth, []::bigint[] as relative_path,
@@ -133,16 +88,8 @@
 			) = 1
 		),
 
-		-- The two walks, unioned, with the flags the UI needs.
-		--
-		-- cycle_point marks a retained display cut: it is a display root of a
-		-- salvaged chain whose reported parent turns up further down that same
-		-- chain. It does not identify which parent assignment is wrong. The
-		-- entry match is load-bearing: an earlier
-		-- descendant can also become a display root, but its parent belongs to
-		-- another salvaged chain and did not close this walk. Sorting salvaged
-		-- trees after every real root keeps them out of the way of a trace that
-		-- is otherwise fine.
+		-- cycle_point marks a display root whose reported parent appears later in
+		-- the same salvage chain. Salvaged trees sort after normal roots.
 		walked as (
 			select trace_id, span_id, parent_span_id, start_time, depth, sort_path,
 				false as salvaged, false as cycle_point
@@ -161,7 +108,7 @@
 			from salvaged sv
 		),
 
-		-- The walk's result joined back to its payload, once.
+		-- Join traversed IDs to payloads once.
 		tree as materialized (
 			select st.depth, st.sort_path, st.salvaged, st.cycle_point,
 				s.span_id, s.parent_span_id, s.trace_id, s.trace_state, s.name, s.kind,
@@ -173,27 +120,7 @@
 			join spans s on s.trace_id = st.trace_id and s.span_id = st.span_id
 		),
 
-		-- The attributes this trace references, as one MAP, probed by the three
-		-- CTEs below.
-		--
-		-- Narrowed to the ids actually referenced, not the whole dictionary,
-		-- and that is the difference between an optimisation and a liability.
-		-- Building over every row costs the same as the group-by form it
-		-- replaced once the dictionary is large, because the cost tracks total
-		-- store content rather than the trace being fetched. Measured on a
-		-- 5,735-span trace:
-		--
-		--	dictionary rows      whole-dict map      narrowed map
-		--	1,286                0.036s / 0.118s     0.035s / 0.117s
-		--	101,286              0.065s / 0.179s     0.036s / 0.118s
-		--
-		-- A season of F1 telemetry reaches ~1,286 distinct attributes, where
-		-- the two are indistinguishable. A web service with a url.path per
-		-- request reaches the second row on its first afternoon, and there the
-		-- unnarrowed form gives back everything the map was for.
-		--
-		-- The trace's own working set is small and stays small: 73 distinct
-		-- attributes for that 5,735-span trace.
+		-- Build one map containing only attribute IDs referenced by this trace.
 		dict_map as materialized (
 			select map(list(id), list({
 				'k': key,
@@ -212,19 +139,7 @@
 			)
 		),
 
-		-- These three resolve attribute arrays by probing dict_map rather than
-		-- by calling attrs_json, and that is deliberate.
-		--
-		-- attrs_json is a correlated subquery, which the planner materialises
-		-- once per row in a per-row projection over a large table: 149ms for
-		-- 4,868 spans. Rewriting it as unnest + join + group by brought that to
-		-- 33ms but explodes each owner's array into rows only to collapse it
-		-- again, and spends heavily on parallelism to do it -- 0.35s of CPU for
-		-- 50ms of wall time on the whole query.
-		--
-		-- Probing a prebuilt map is both faster and cheaper: 37-40ms wall at
-		-- 0.19s CPU. attrs_mapped orders by (key, id) exactly as attrs_json
-		-- does, so the rendered JSON is byte-identical to both earlier forms.
+		-- Resolve each owner by map probe; attrs_mapped preserves (key, id) order.
 		span_attrs as (
 			select ts.trace_id, ts.span_id as id, attrs_mapped(ts.attribute_ids, dm.m) as attrs
 			from tree ts, dict_map dm
@@ -267,10 +182,7 @@
 			group by l.trace_id, l.span_id
 		),
 
-		-- Resource and scope JSON is built once per *distinct owner*, which is
-		-- the entire point of deduping them. Inlining resource_json/scope_json
-		-- in the per-span projection re-resolved the same 24 resources 4,891
-		-- times and cost two ~150ms operators.
+		-- Build resource and scope JSON once per distinct owner.
 		resource_data as (
 			select r.id, r.seq, resource_json(r.attribute_ids, r.dropped_attributes_count) as obj
 			from resources r
@@ -284,32 +196,18 @@
 			where sc.id in (select scope_id from tree)
 		),
 
-		-- The baseline every span offset is measured from.
-		--
-		-- min(start_time), not the root span's start: clocks across hosts are
-		-- not synchronised, so a child can legitimately report an earlier start
-		-- than its parent, and min() is also indifferent to whether the trace
-		-- has a root at all -- which matters, since a trace whose parent is
-		-- missing is displayed as rooted anyway.
-		-- Counted once and referenced twice: the response carries it for the
-		-- client, and it comes back as its own column so the caller can branch
-		-- without parsing. Written as two inline subqueries it was evaluated
-		-- twice, which measured at ~11ms on a 245k-span store -- not the free
-		-- subtraction of two materialised counts it looks like.
+		-- Count spans still unreachable after salvage.
 		unplaced_count as (
 			select (select count(*) from trace_spans) - (select count(*) from tree) as n
 		),
 
 		trace_start as (
+			-- Cross-host clock skew can place a child before its parent.
 			select min(start_time) as t from tree
 		),
 
 		ordered_spans as (
-			-- salvaged/cyclePoint ride an outer merge patch rather than the
-			-- object itself, so they cost nothing on the overwhelming majority
-			-- of traces where nothing is salvaged. Emitting two false booleans
-			-- per span would put ~30 bytes on every row of a 5,735-span trace
-			-- to describe a condition that almost never holds.
+			-- Omit salvage fields from normal spans.
 			select json_merge_patch(
 				json_object(
 					'spanData', span_data_json(
@@ -339,35 +237,16 @@
 				then null
 			else cast(json_object(
 				'traceID', trace_id_wire((select trace_id from search_params)),
-				-- Absolute ns as a string; only this one needs the full
-				-- magnitude, and only the detail panel reads it, as
-				-- BigInt(traceStart) + BigInt(start).
+				-- Absolute nanoseconds as decimal text; span starts are offsets from it.
 				'traceStart', (select t from trace_start)::varchar,
-				-- Each distinct resource and scope once, keyed by seq. On the
-				-- reference trace this is 24 resources and 1 scope against
-				-- 5,735 spans that previously carried a full copy each,
-				-- which was over half the response.
+				-- Distinct resources and scopes keyed by sequence reference.
 				'resources', coalesce((select json_group_object(seq::varchar, obj) from resource_data), json('{}')),
 				'scopes', coalesce((select json_group_object(seq::varchar, obj) from scope_data), json('{}')),
-				-- Spans the walk could not place under any root.
-				--
-				-- A span becomes a root when its parent is absent from the
-				-- trace, so anything left unreached still has a parent present
-				-- -- which, with at most one parent per span, means it sits on
-				-- a cycle. Malformed input rather than anything OTLP permits,
-				-- and it cannot hang the walk, because a cycle member never
-				-- qualifies as a root and the walk only ever descends into
-				-- children. It is dropped instead, and dropping it silently is
-				-- the part worth fixing: the trace renders short with nothing
-				-- saying so.
-				--
-				-- Free to compute: both counts are already materialised.
+				-- Any remaining unreachable span indicates a salvage defect.
 				'unplacedSpanCount', (select n from unplaced_count),
 				'spans', coalesce(to_json(list(span_json order by sort_path)), json('[]'))
 			) as varchar)
 		end as trace,
-		-- Same shape as search_spans so one scan path serves both. After
-		-- salvage this should be 0; anything left is a span even the
-		-- cycle-aware walk could not reach, which would be a bug worth seeing.
+		-- Keep the get_trace_view result shape; salvage should leave zero unplaced.
 		(select n from unplaced_count) as unplaced
 		from ordered_spans

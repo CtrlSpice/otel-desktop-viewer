@@ -17,15 +17,7 @@ import {
   clampPanelRem as clamp,
 } from './panel-width'
 
-/**
- * The shared panel rules under the drawer's own names. The bounds are wider
- * above the default than below it (22 / 28 / 40) on purpose: #345 was a
- * complaint that the list could not get *wider*, so that is where the room
- * is. The floor is inherited from the detail pane's tab strip -- stricter
- * than the list itself needs, which beats the 14rem this store first
- * shipped with, a width that truncated the service name and duration.
- * Derivations live in `panel-width.ts`.
- */
+/** Shared panel bounds under the drawer's public names. */
 export const DEFAULT_DRAWER_WIDTH_REM = PANEL_DEFAULT_REM
 export const MIN_DRAWER_WIDTH_REM = PANEL_MIN_REM
 export const MAX_DRAWER_WIDTH_REM = PANEL_MAX_REM
@@ -37,9 +29,7 @@ function load(): number {
   const raw = localStorage.getItem(STORAGE_KEY)
   if (raw === null) return DEFAULT_DRAWER_WIDTH_REM
   const parsed = Number.parseFloat(raw)
-  // A stored value can be anything -- hand-edited, or written by a build with
-  // different bounds -- so it is clamped rather than trusted, and a
-  // non-number falls back rather than rendering a drawer of width NaN.
+  // localStorage is untrusted; reject non-numbers and clamp stale values.
   return Number.isFinite(parsed) ? clamp(parsed) : DEFAULT_DRAWER_WIDTH_REM
 }
 

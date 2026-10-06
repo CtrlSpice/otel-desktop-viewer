@@ -1,12 +1,3 @@
-// Span-tree helpers for the waterfall, and the search-driven collapse shape.
-//
-// A depth/subtree auto-collapse heuristic used to live here (collapse any
-// parent at depth 4 or with 12 descendants). It was written when the waterfall
-// rendered every row; the list is virtualised now, so the cost it avoided is
-// gone, and what remained was a guess about which parts of a trace the reader
-// cared about -- reported twice, both times as the view collapsing on its own.
-// Traces open fully expanded, and collapsing is the reader's to do.
-
 import type { SpanData, SpanNode } from '@/types/api-types'
 
 export interface StructuralMaps {
@@ -75,13 +66,7 @@ function hasRelevantDescendant(
   sid: string,
   children: ReadonlyMap<string, readonly string[]>,
   relevant: ReadonlySet<string>,
-  // Unlike ancestorIdsOf, this guard cannot fire through the current call
-  // site, and a mutation test confirms it: single-parent graphs only form
-  // disjoint simple loops, the walk starts only from matched spans, and a
-  // matched span is always in `relevant` -- so any lap of a cycle is stopped
-  // at the entry one step before revisiting. The guard exists so termination
-  // is a property of this function rather than an invariant every future
-  // caller must know about.
+  // Keep termination local when reported parent relationships contain cycles.
   seen: Set<string> = new Set()
 ): boolean {
   if (seen.has(sid)) return false

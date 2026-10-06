@@ -90,7 +90,7 @@ func TestTracesCommandPreservesSummaryFieldsInTableAndJSON(t *testing.T) {
 	assert.Equal(t, tableOutput, output.String())
 
 	request := <-requests
-	assert.Equal(t, "searchTraces", request.Method)
+	assert.Equal(t, "searchTraceSummaries", request.Method)
 	assert.Equal(t, float64(26), request.Params["limit"])
 	assert.Equal(t, strconv.FormatInt(fixedNow.Add(-time.Hour).UnixNano(), 10), request.Params["startTime"])
 	assert.Equal(t, strconv.FormatInt(fixedNow.UnixNano(), 10), request.Params["endTime"])
@@ -153,7 +153,7 @@ func TestTracesCommandTruncationEmptyErrorsCancellationAndHelp(t *testing.T) {
 			_, _ = writer.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":[]}`))
 		}))
 		defer viewer.Close()
-		result, err := requestTelemetrySearch(context.Background(), viewer.Client(), viewer.URL, "searchTraces", telemetrySearchQuery{Limit: 25}, traceSummaryFields)
+		result, err := requestTelemetrySearch(context.Background(), viewer.Client(), viewer.URL, "searchTraceSummaries", telemetrySearchQuery{Limit: 25}, traceSummaryFields)
 		require.NoError(t, err)
 		assert.Empty(t, result.Rows)
 		assert.NotNil(t, result.Summaries)
@@ -164,13 +164,13 @@ func TestTracesCommandTruncationEmptyErrorsCancellationAndHelp(t *testing.T) {
 			_, _ = writer.Write([]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"Invalid query"}}`))
 		}))
 		defer viewer.Close()
-		_, err := requestTelemetrySearch(context.Background(), viewer.Client(), viewer.URL, "searchTraces", telemetrySearchQuery{Limit: 25}, traceSummaryFields)
-		require.ErrorContains(t, err, "viewer searchTraces error -32602")
+		_, err := requestTelemetrySearch(context.Background(), viewer.Client(), viewer.URL, "searchTraceSummaries", telemetrySearchQuery{Limit: 25}, traceSummaryFields)
+		require.ErrorContains(t, err, "viewer searchTraceSummaries error -32602")
 
 		client := &http.Client{Transport: telemetryRoundTripFunc(func(*http.Request) (*http.Response, error) {
 			return nil, errors.New("connection refused")
 		})}
-		_, err = requestTelemetrySearch(context.Background(), client, "http://viewer.test", "searchTraces", telemetrySearchQuery{Limit: 25}, traceSummaryFields)
+		_, err = requestTelemetrySearch(context.Background(), client, "http://viewer.test", "searchTraceSummaries", telemetrySearchQuery{Limit: 25}, traceSummaryFields)
 		require.ErrorContains(t, err, "connection refused")
 	})
 
@@ -181,7 +181,7 @@ func TestTracesCommandTruncationEmptyErrorsCancellationAndHelp(t *testing.T) {
 		})}
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		_, err := requestTelemetrySearch(ctx, client, "http://viewer.test", "searchTraces", telemetrySearchQuery{Limit: 25}, traceSummaryFields)
+		_, err := requestTelemetrySearch(ctx, client, "http://viewer.test", "searchTraceSummaries", telemetrySearchQuery{Limit: 25}, traceSummaryFields)
 		require.ErrorIs(t, err, context.Canceled)
 	})
 
@@ -222,7 +222,7 @@ func TestRequestTelemetrySearchRequiresOneCompleteJSONRPCResponse(t *testing.T) 
 			defer viewer.Close()
 
 			result, err := requestTelemetrySearch(
-				context.Background(), viewer.Client(), viewer.URL, "searchTraces",
+				context.Background(), viewer.Client(), viewer.URL, "searchTraceSummaries",
 				telemetrySearchQuery{Limit: 25}, traceSummaryFields,
 			)
 			if test.wantErr != "" {
@@ -242,7 +242,7 @@ func TestRequestTelemetrySearchRequiresOneCompleteJSONRPCResponse(t *testing.T) 
 
 func TestRequestTelemetrySearchRequiresMatchingJSONRPCIdentity(t *testing.T) {
 	const result = `"result":[{"value":9007199254740993,"nullable":null}]`
-	methods := []string{"searchTraces", "searchLogs", "searchMetricSummaries"}
+	methods := []string{"searchTraceSummaries", "searchLogSummaries", "searchMetricSummaries"}
 	tests := []struct {
 		name     string
 		response string

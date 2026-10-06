@@ -7,9 +7,9 @@ import { TRACE_COLUMN_DEFAULTS } from '@/constants/fields'
 
 vi.mock('@/services/telemetry-service', () => ({
   telemetryAPI: {
-    getTraceAttributes: vi.fn().mockResolvedValue([]),
-    getLogAttributes: vi.fn().mockResolvedValue([]),
-    getMetricAttributes: vi.fn().mockResolvedValue([]),
+    getTraceAttributeDefinitions: vi.fn().mockResolvedValue([]),
+    getLogAttributeDefinitions: vi.fn().mockResolvedValue([]),
+    getMetricAttributeDefinitions: vi.fn().mockResolvedValue([]),
   },
 }))
 

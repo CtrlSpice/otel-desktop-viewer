@@ -1,92 +1,30 @@
 
 		with input as (
-			select ?::uuid as stream_id,
+			select ?::uuid as metric_id,
 				list_extract(?::ubigint[], 1) as time_start,
 				list_extract(?::ubigint[], 1) as time_end,
 				?::bigint as target_buckets,
-				-- Which series the caller cares about. Null means all of them;
-				-- an empty list means none.
-				--
-				-- Bound as varchar[] and cast in SQL rather than as a uuid list:
-				-- the driver corrupts a bound []duckdb.UUID silently, matching
-				-- nothing (see the uuid_binding canary in store/util).
+				-- NULL means all series; [] means none. Bind as text because the
+				-- driver corrupts bound []duckdb.UUID values.
 				?::varchar[] as series_ids,
-				-- Which quantiles to compute per histogram datapoint. Empty skips the
-				-- work entirely, so a caller drawing no overlays pays nothing.
-				--
-				-- Computed here rather than shipped as bucket vectors for the client
-				-- to reduce: three numbers per series per bucket instead of a
-				-- forty-element array, and one implementation of the arithmetic.
+				-- Histogram quantiles; [] skips quantile computation.
 				?::double[] as quantiles,
-				-- The viewer's UTC offset in nanoseconds, so bucket boundaries fall
-				-- where the reader's calendar says a day breaks rather than where the
-				-- epoch does. 0 aligns to UTC, which is what a caller that does not
-				-- care should send.
-				--
-				-- A query parameter, not URL state: it comes from a user preference,
-				-- so a shared link renders in the recipient's calendar rather than
-				-- the sender's.
+				-- Viewer UTC offset in nanoseconds; 0 aligns buckets to UTC.
 				?::bigint as tz_offset_ns,
-				-- How many buckets the Sum / Average / Rate views aggregate onto.
-				--
-				-- Deliberately not target_buckets. The election's job is to keep
-				-- the line's shape while thinning it; the view's job is chart
-				-- resolution for a different chart. Welding them would make a
-				-- change to one silently retune the other.
+				-- Sum, Average, and Rate resolution, independent of target_buckets.
 				?::bigint as view_buckets,
-				-- How many buckets a row's sparkline reduces to.
-				--
-				-- A third resolution, and deliberately not either of the two above.
-				-- The election thins a line while keeping its shape for a chart
-				-- hundreds of pixels wide; the views bucket for a different chart;
-				-- this one fits a 128px box in a list row. Welding any two of them
-				-- together makes a change to one silently retune the other.
-				--
-				-- Half the pixel width, because the reduction emits two points per
-				-- bucket (see sparkline_extrema).
+				-- Sparkline resolution; extrema emit at most two points per bucket.
 				?::bigint as sparkline_buckets,
-				-- Which series the reader has checked.
-				--
-				-- Distinct from series_ids, which narrows what the response
-				-- carries at all. This narrows nothing: it names the pool the
-				-- Selected aggregate folds, while the All aggregate keeps folding
-				-- every series in the stream. Null means nothing is checked, which
-				-- is a real state -- the All line then stands alone -- rather than
-				-- shorthand for all of them.
+				-- Series in the Selected aggregate; NULL means none selected.
 				?::varchar[] as selected_series_ids,
-				-- Which series carry their datapoints.
-				--
-				-- The third narrowing parameter, and the narrowest: series_ids
-				-- drops a series from the response entirely, selected_series_ids
-				-- names an aggregate's pool, and this one decides only which
-				-- series ship the heavy half. Every series keeps its row, its
-				-- attributes, its stats, its view buckets and its sparkline
-				-- whatever this says -- the panel lists unchecked series, and the
-				-- All aggregate folds them.
-				--
-				-- Worth the separation because datapoints are almost the entire
-				-- payload: 1,553 KB of a 1,647 KB response on a 22-series Gauge,
-				-- against 184 KB of view buckets and 18 KB of sparklines.
-				-- The viewer's IANA zone, so each bucket takes the offset in
-				-- force at its own moment rather than one captured at request
-				-- time. Null keeps the tz_offset_ns above as the only answer,
-				-- which is what a caller that names no zone gets.
+				-- IANA zone for per-bucket offsets; NULL uses tz_offset_ns.
 				?::varchar as tz_name,
 				?::varchar[] as datapoint_series_ids,
-				-- How many series carry datapoints when the caller cannot name
-				-- them, in the response's own order.
-				--
-				-- A caller opening a metric for the first time has no list to
-				-- send: it chooses its visible series from the response, so it
-				-- cannot name them in the request that fetches it. Its rule is
-				-- "the first N", and the response is ordered by latest activity,
-				-- so the same rule is expressible here. 0 means no limit.
-				--
-				-- Ignored when datapoint_series_ids is given, which is the case
-				-- where the caller does know.
+				-- Datapoint-series limit in response order; 0 means unlimited and
+				-- datapoint_series_ids takes precedence.
 				?::bigint as datapoint_series_limit
 		),
-		stream as (
+		selected_metric as (
 			select s.*, r.schema_url as resource_schema_url,
 				r.attribute_ids as resource_attribute_ids,
 				r.dropped_attributes_count as resource_dropped_attributes_count,
@@ -94,82 +32,34 @@
 				sc.attribute_ids as scope_attribute_ids,
 				sc.schema_url as scope_schema_url,
 				sc.dropped_attributes_count as scope_dropped_attributes_count
-			from metric_streams s
+			from metrics s
 			join resources r on r.id = s.resource_id
 			join scopes sc on sc.id = s.scope_id, input
-			where s.id = input.stream_id
+			where s.id = input.metric_id
 		),
-		-- Datapoints inherit Metric descriptor fields from their parent Metric.
+		-- Attach parent Metric descriptor fields to datapoints.
 		filtered_dps as (
-			-- bounds_id resolves to the vector here, under the name the rest
-			-- of the query has always read, so the dictionary is invisible
-			-- past this point. The join is a primary-key lookup against a
-			-- table with one row per distinct instrument configuration.
+			-- Resolve the shared bounds vector once at the datapoint boundary.
 			select d.* exclude (bounds_id),
 				hb.bounds as explicit_bounds,
-				-- The offset this row's bucket is shifted by: the viewer's zone
-				-- resolved at this instant, or the single offset the caller sent
-				-- when it named no zone.
+				-- Per-instant zone offset, falling back to the fixed caller offset.
 				coalesce(tz_offset_ns_at(d.timestamp, input.tz_name),
 				         input.tz_offset_ns) as tz_shift,
 				s.metric_type as metric_type,
 				s.aggregation_temporality as aggregation_temporality,
 				s.is_monotonic as is_monotonic
-			from datapoints d
+			from metric_datapoints d
 			left join histogram_bounds hb on hb.id = d.bounds_id,
-				input, stream s
-			where d.stream_id = input.stream_id
+				input, selected_metric s
+			where d.metric_id = input.metric_id
 			  {{.TimeFilter}}
-			  -- Narrowing here rather than after the merge: the reduction and
-			  -- every alignment stage downstream then run over only the series
-			  -- asked for, instead of merging series the caller will discard.
-			  -- NULL means "no filter", an empty list means "no series". Those
-			  -- are different questions and the client already distinguishes
-			  -- them: its visible-key set is empty when a user has unticked
-			  -- every series, and absent when the concept does not apply.
-			  -- Collapsing empty to "all" would render every series at the
-			  -- exact moment the user asked for none.
+			  -- Filter before reduction. NULL means no filter; [] means no series.
 			  and (input.series_ids is null
 			       or list_contains(input.series_ids, d.series_id::varchar))
 		),
-		-- The dp_attrs_agg and exemplar_attrs CTEs are gone: attrs_json
-		-- resolves each row's id array in place, so there is nothing to
-		-- pre-aggregate and join back.
-		-- Exemplars are capped twice, because they grow the response in two
-		-- independent directions and neither had a ceiling.
-		--
-		-- This is the per-datapoint one: how many an SDK attached to a single
-		-- reading. OTel sets no limit, and listing them all made the response
-		-- grow with a number the viewer does not control -- measured at 5%%
-		-- exemplar density, going from one per datapoint to 64 took the
-		-- response from 1.7 MB to 14.6 MB while the datapoints drawn never
-		-- changed. Exemplars are a link to a trace, and a reader following one
-		-- link from a point does not need every trace that touched it.
-		-- Both caps below rank by distance from either extreme, so what survives
-		-- spans the range rather than clustering.
-		--
-		-- Keeping a prefix in time order was the obvious thing and the wrong
-		-- one: someone following an exemplar is chasing the slow request, or the
-		-- one that returned nothing, and time order hands them whichever
-		-- happened first. Ranking from both ends at once -- least(rank ascending,
-		-- rank descending) -- takes the extremes first and works inward, so a cap
-		-- of two is exactly the lowest and the highest, and a cap of five is the
-		-- three most extreme from one end and two from the other.
-		--
-		-- It is the same reasoning M4 already applies to the readings themselves:
-		-- a bucket keeps its min and its max because those are the points that
-		-- say something. Grafana samples exemplars by value for the same reason,
-		-- though it takes only the high end.
-		--
-		-- Non-finite and missing values sort last rather than winning: DuckDB
-		-- orders NaN above every number, so a single NaN exemplar would otherwise
-		-- take the high slot in every bucket it appeared in.
-		-- A DOUBLE primary key preserves native double ordering; the HUGEINT
-		-- tie-break keeps adjacent int64 values distinct where DOUBLE cannot.
-		-- Finite doubles that can tie an int64 are exactly representable as
-		-- HUGEINT, while wider doubles need no tie-break because they cannot tie
-		-- any stored integer. Empty and non-finite values retain the old null-last
-		-- treatment.
+		-- Rank exemplars from both value extremes. Non-finite and absent values
+		-- sort last. DOUBLE orders mixed numeric values; HUGEINT distinguishes
+		-- adjacent int64 values that DOUBLE cannot represent separately.
 		exemplars_valued as (
 			select e.*,
 				case
@@ -183,102 +73,46 @@
 					)
 				end as value_order
 			from exemplars e
-			where e.datapoint_id in (select id from filtered_dps)
+			where e.metric_datapoint_id in (select id from filtered_dps)
 		),
 		exemplars_ranked as (
 			select e.*,
-				row_number() over (partition by e.datapoint_id
+				row_number() over (partition by e.metric_datapoint_id
 				                   order by e.from_end, e.id) as rn
 			from (
 				select e.*,
 					least(
-						row_number() over (partition by e.datapoint_id
+						row_number() over (partition by e.metric_datapoint_id
 							order by e.value_order asc nulls last, e.id),
-						row_number() over (partition by e.datapoint_id
+						row_number() over (partition by e.metric_datapoint_id
 							order by e.value_order desc nulls last, e.id)
 					) as from_end
 				from exemplars_valued e
 			) e
 		),
 
-		-- How far each datapoint's exemplars reach in either direction, so the
-		-- carrier cap below can rank datapoints the same way.
+		-- Value extents used to rank exemplar-bearing datapoints.
 		exemplar_extents as (
-			select datapoint_id,
+			select metric_datapoint_id,
 				min(value_order) as low,
 				max(value_order) as high
 			from exemplars_ranked
-			group by datapoint_id
+			group by metric_datapoint_id
 		),
 		exemplars_agg as (
-			-- Ordered, and totally: (timestamp, id) so two exemplars sharing an
-			-- instant still arrive in one order. json_group_array is a macro and
-			-- rejects ORDER BY, hence the list form.
-			select e.datapoint_id,
-				-- Five: a reader following a link out of one reading wants a
-				-- handful to choose from, not every trace that touched it.
+			-- (timestamp, id) gives total order; json_group_array rejects ORDER BY.
+			select e.metric_datapoint_id,
+				-- Retain at most five exemplars per datapoint.
 				to_json(list(exemplar_json(e) order by e.timestamp, e.id)
 				        filter (where e.rn <= 5)) as exemplars,
-				-- How many the datapoint actually holds. A cap that says
-				-- nothing is indistinguishable from a stream that sent five,
-				-- and quietly losing trace links is a poor showing from a tool
-				-- people open to find them. Counted before the filter, in the
-				-- same pass, so the client can say "5 of 64" rather than "5".
+				-- Count before capping so the wire reports withheld exemplars.
 				count(*) as exemplar_count
 			from exemplars_ranked e
-			group by e.datapoint_id
+			group by e.metric_datapoint_id
 		),
-		-- One row per series id. The datapoint attribute set itself is owned by
-		-- the series (lifted out of the per-dp objects), and the dp objects inside
-		-- are pure OTLP
-		-- measurement payloads: timestamp, type-specific value fields,
-		-- exemplars, flags. attrs_canonical is the grouping key; we
-		-- coalesce NULL (no-attrs case) to "" so all attribute-less
-		-- points collapse into one timeseries rather than scattering.
-		--
-		-- attributes_sample picks any one datapoint's attributes from
-		-- this timeseries. Within a timeseries they're identical by
-		-- construction -- exact uniqueness binds series_id to one stream id and
-		-- datapoint attribute-id set, so the array cannot vary inside a group.
-		--
-		-- any_value wraps the *array*, not the resolved JSON. Written the
-		-- other way round the macro sits inside the aggregate, so it runs once
-		-- per datapoint and every result but one is thrown away. attrs_json is
-		-- a correlated subquery, which makes that expensive in the worst way:
-		-- measured on one stream of the reference capture, 220,913 datapoints
-		-- collapsing to 220 series,
-		--
-		--	any_value(attrs_json(ids))   0.687s wall, 7.20s CPU
-		--	attrs_json(any_value(ids))   0.021s wall, 0.05s CPU
-		--
-		-- 33x wall and 141x CPU, for identical output. Aggregate first, then
-		-- resolve once per group.
-		-- M4 reduction: at most four datapoints per series per time bucket --
-		-- the earliest, the latest, the smallest and the largest.
-		--
-		-- Chosen over the client's LTTB because for a chart of a given width
-		-- the line drawn from these points is *identical* to the line drawn
-		-- from every point: the extremes of each pixel column are always
-		-- present, so nothing that would have been visible is dropped. LTTB
-		-- preserves shape but is a sample -- a spike survives only if its
-		-- triangle is large enough.
-		--
-		-- Skipped entirely when target_buckets is null, which is the default:
-		-- reduction is opt-in, and a caller that wants every datapoint still
-		-- gets every datapoint.
-		-- Columns, not subqueries. bucket_width_ns filters a list with a
-		-- lambda, and a subquery passed as an argument is inlined into that
-		-- lambda body, where DuckDB rejects it: "subqueries in lambda
-		-- expressions are not supported". Reading from `input` as a relation
-		-- keeps the arguments plain.
-		-- The extent the filtered data occupies and the span the reduction
-		-- divides. Each missing requested endpoint is filled independently from
-		-- this extent; concrete endpoints remain unchanged.
-		--
-		-- +1 because both ends are inclusive: a stream with a single datapoint
-		-- spans one nanosecond, not zero, and a zero span would divide to a
-		-- zero-width bucket. An empty filtered extent leaves an unresolved null
-		-- endpoint null, and therefore disables reduction safely.
+		-- M4 retains each bucket's earliest, latest, minimum, and maximum scalar
+		-- datapoints. NULL target_buckets disables reduction. The inclusive span
+		-- adds 1ns so one datapoint still occupies a non-zero window.
 		data_extent as (
 			select min(timestamp) as min_ts, max(timestamp) as max_ts
 			from filtered_dps
@@ -298,71 +132,36 @@
 		),
 		reduction as (
 			select case
-				-- Gauge and Sum sample; histograms merge (see hist_merged).
-				-- Sampling a histogram is not a reduction,
-				-- it is data loss: each datapoint carries bucket *counts*, so
-				-- keeping four per bucket discards the observations in all the
-				-- rest. Measured on the reference stream, sampling took 275,196
-				-- observations down to 729 -- quantiles and heatmap alike would
-				-- be fiction, with nothing to indicate it.
-				--
-				-- The correct reduction for a histogram is a merge: add counts
-				-- for Delta, last-minus-first for Cumulative. Until that exists,
-				-- histograms return every datapoint however small a resolution
-				-- is asked for. Slow beats wrong.
+				-- Gauge and Sum elect scalar points; histograms merge counts.
 				when s.metric_type in ('Gauge', 'Sum')
 					then bucket_width_ns(rs.span_ns, i.target_buckets)
-				-- Histograms reduce by merging. Delta adds bucket counts;
-				-- Cumulative subtracts the first of the bucket from the last,
-				-- because each datapoint is a running total and adding them
-				-- would count every observation once per datapoint.
+				-- Delta histograms add activity; Cumulative histograms difference
+				-- consecutive running totals before adding.
 				when s.metric_type in ('Histogram', 'ExponentialHistogram')
 				     and s.aggregation_temporality in (1, 2)
 					then bucket_width_ns(rs.span_ns, i.target_buckets)
 			end as width_ns
-			-- reduction_span as a relation, not a scalar subquery: the comment
-			-- above applies to it for the same reason it applies to the window.
-			from input i, stream s, reduction_span rs
+			-- Keep lambda arguments relational; DuckDB rejects subqueries in lambdas.
+			from input i, selected_metric s, reduction_span rs
 		),
 
-		-- Is this a histogram merge or a scalar election? They share the
-		-- bucketing above and diverge here.
+		-- Histogram merge and scalar election share bucket boundaries.
 		reduction_kind as (
 			select case
 				when (select width_ns from reduction) is null then 'none'
 				when s.metric_type in ('Histogram', 'ExponentialHistogram') then 'merge'
 				else 'elect'
 			end as kind
-			from stream s
+			from selected_metric s
 		),
 
-		-- Bucket starts are absolute, not measured from the window: floor by
-		-- the width so panning slides data through fixed buckets rather than
-		-- re-cutting them on every request.
-		-- Shift into the viewer's local time, floor, shift back -- the same
-		-- three steps histogramBucketStart takes in TypeScript.
-		--
-		-- floor_div rather than //: integer division truncates toward zero, so
-		-- a pre-epoch timestamp would floor the wrong way and land a datapoint
-		-- one bucket late. The client comment flags the identical hazard for
-		-- BigInt division.
+		-- Shift to local time, floor on the absolute grid, then shift to UTC.
+		-- floor_div handles negative pre-epoch timestamps correctly.
 		bucketed_dps as (
 			select d.*,
 				case
-					-- One bucket is a different request, not a smaller number of
-					-- them. A window summary asks a single question about the
-					-- whole span, and the ladder cannot answer it: it snaps to a
-					-- nameable width and the flooring below is absolute, so a
-					-- span beginning mid-rung straddles two or three buckets and
-					-- the caller reading the first describes a fragment. Measured
-					-- on a 100-minute span: three buckets, of which the first
-					-- held 38% of the observations under its own p50.
-					--
-					-- Absolute boundaries are right for a chart -- columns stay
-					-- put while the reader pans -- and wrong for a summary, which
-					-- has no neighbours to stay aligned with. So the summary
-					-- groups on a constant and takes the data's own start as its
-					-- point on the time axis.
+					-- A one-bucket summary covers the whole window rather than one
+					-- absolute ladder interval.
 					when (select target_buckets from input) = 1
 						then coalesce((select min_ts from data_extent), d.timestamp)
 					else
@@ -377,31 +176,9 @@
 			where (select width_ns from reduction) is not null
 		),
 
-		-- Per-interval activity for a cumulative scalar series.
-		--
-		-- Each datapoint of a Cumulative Sum is a running total, so the activity
-		-- in an interval is the difference from the previous datapoint of the
-		-- same series. The first datapoint has no predecessor and produces no
-		-- interval -- N readings describe N-1 intervals, which is what the null
-		-- check drops.
-		--
-		-- A fall means the counter restarted between the two readings. The
-		-- convention (Prometheus rate(), and the TypeScript this replaces) is to
-		-- treat the current reading as the increment since the restart: the
-		-- prior counter is gone, so it is the best reference available. The reset
-		-- is reported rather than smoothed away, so the chart can mark it instead
-		-- of drawing a cliff.
-		--
-		-- Computed before any reduction, which is the half the client could not
-		-- do: it differenced *chart points*, which have already been through the
-		-- M4 election, so its "previous point" was frequently not the previous
-		-- datapoint and the delta silently spanned the gap.
-		--
-		-- isfinite for the same reason bucket_elected uses it: DuckDB orders NaN
-		-- above infinity, and one NaN poisons every difference after it. A NaN
-		-- the instrument really sent is still visible in the datapoint list,
-		-- which is fetched unreduced -- the chart drops what it cannot draw, the
-		-- record keeps what arrived.
+		-- Difference cumulative values before reduction. The first reading has no
+		-- interval; after a reset, the current value is the interval activity.
+		-- Non-finite doubles remain in the datapoint response but not arithmetic.
 		scalar_sequence as (
 			select d.series_id, d.id, d.timestamp, d.tz_shift,
 				d.metric_type, d.is_monotonic,
@@ -414,14 +191,11 @@
 				end as exact_integer
 			from filtered_dps d
 			where d.metric_type in ('Gauge', 'Sum')
-			  -- Empty arms stay in the sequence as interval barriers. Non-finite
-			  -- doubles remain excluded from scalar arithmetic.
+			  -- Empty arms break intervals; non-finite doubles skip arithmetic.
 			  and (d.int_value is not null or d.double_value is null
 			       or isfinite(d.double_value))
 		),
-		-- Views and sparklines aggregate numeric observations only. Empty arms stay
-		-- solely in scalar_sequence so they break lag intervals without becoming
-		-- samples or null chart extrema.
+		-- Views and sparklines use numeric observations only.
 		scalar_dps as (
 			select * from scalar_sequence
 			where int_value is not null or double_value is not null
@@ -478,12 +252,7 @@
 			from scalar_lagged l
 			where prev_id is not null
 		),
-		-- id rides through so consumers join on the row itself. Joining on
-		-- (series, timestamp) had two failure modes with duplicate timestamps,
-		-- which OTLP permits: the lag ran in an arbitrary order among the
-		-- duplicates, and the join fanned out -- each duplicate matched every
-		-- delta at its instant, so the response carried the same datapoint
-		-- more than once.
+		-- Join deltas by datapoint ID because OTLP permits duplicate timestamps.
 		scalar_deltas as (
 			select series_id,
 				id,
@@ -512,39 +281,9 @@
 			from scalar_compared
 		),
 
-		-- The grid the scalar views aggregate on.
-		--
-		-- Absolute boundaries from the ladder, not span/N measured from each
-		-- series' own first and last point. That per-series origin is what made
-		-- two lines' "bucket 3" cover different intervals; the client's
-		-- sharedBucketCount papers over it by handing both paths the same bucket
-		-- *count*, and its comment concedes that only lines up because the
-		-- series happen to share a scrape cadence.
-		-- How often this stream reports, so a grid never divides finer than the
-		-- data arrives.
-		--
-		-- A ladder rung is chosen from the span and a bucket count, and knows
-		-- nothing about cadence -- so asking for 120 buckets of a series that
-		-- reported 31 times gives buckets narrower than the gaps between
-		-- readings. scalar_view_spine then emits every one of them, and Sum and
-		-- Rate draw an empty bucket as the zero it honestly is. Measured on
-		-- blue_flags: 31 datapoints across 65 buckets, 40 of them empty, the
-		-- line crossing between zero and non-zero 28 times. That sawtooth is
-		-- the resolution beating against the cadence, and it is indistinguishable
-		-- from a series that really did stop and start.
-		--
-		-- Median twice, and both times deliberately. Per series, because a mean
-		-- gap is dragged upwards by one outage -- a single ten-minute pause in a
-		-- one-second stream would coarsen the whole chart -- while the median
-		-- answers "how often does this normally report". Then across series,
-		-- because the grid is shared: one chatty or one silent series should not
-		-- set the width for the rest. A stream's series are usually one exporter
-		-- on one interval, so in the ordinary case these agree anyway.
-		--
-		-- Stream-wide rather than per-visible-series on purpose. The grid is
-		-- independent of the legend, so toggling a series cannot re-cut the
-		-- buckets underneath the chart, and the pooled lines keep their shape
-		-- when the selection changes.
+		-- Use a shared absolute grid no finer than the Metric's median reporting
+		-- cadence. Per-series medians ignore outages; the median across series
+		-- prevents one series setting the grid. Legend changes do not alter it.
 		series_gaps as (
 			select d.series_id,
 				d.timestamp::hugeint - lag(d.timestamp) over (
@@ -561,25 +300,11 @@
 				group by series_id
 			)
 		),
-		-- reduction_span as a relation, not a scalar subquery: bucket_width_ns
-		-- filters a list with a lambda, and a subquery argument is inlined into
-		-- that lambda body where DuckDB rejects it. The reduction CTE above
-		-- takes the same care for the same reason.
+		-- Keep bucket_width_ns arguments relational; DuckDB rejects subqueries
+		-- in lambda expressions.
 		scalar_view_grid as (
-			-- Never more buckets than the stream has reporting intervals.
-			--
-			-- The floor is applied to the bucket *count*, not to the width the
-			-- ladder returns. Taking the coarser of two widths would hand back a
-			-- number that is not a rung -- a 30.5-second bucket, whose boundaries
-			-- no reader can name -- and the ladder exists precisely so they can.
-			-- Capping the count instead lets the ladder answer as it always
-			-- does, one rung coarser.
-			--
-			-- It also keeps zero meaning zero: a caller asking for no views sends
-			-- 0, least() holds it at 0, and bucket_width_ns still returns null.
-			-- Flooring the width lost that, because greatest() ignores nulls
-			-- rather than propagating them, and "no grid" became a real grid to
-			-- divide by.
+			-- Cap bucket count by reporting intervals, then select a ladder rung.
+			-- A requested count of 0 must still produce NULL width.
 			select bucket_width_ns(rs.span_ns,
 				case when c.cadence_ns is null or c.cadence_ns <= 0
 					then i.view_buckets
@@ -606,14 +331,7 @@
 			left join scalar_deltas sd
 				on sd.id = d.id
 		),
-		-- Each series' own first and last populated bucket.
-		--
-		-- Per series, not per response: a series that started late should not
-		-- carry empty buckets for time before it existed, nor a series that
-		-- stopped trail them afterwards. The boundaries stay shared -- only the
-		-- extent differs -- so two series still line up where they overlap.
-		-- Measured on the local lattice, since that is what the spine steps
-		-- along. A local day is one width wide whatever the UTC clock did.
+		-- Trim leading and trailing empty buckets per series on the local grid.
 		scalar_view_extent as (
 			select series_id,
 				min(bucket_local) as first_bucket,
@@ -621,18 +339,8 @@
 			from scalar_view_bucketed
 			group by series_id
 		),
-		-- Every bucket between those ends, including the ones nothing landed in.
-		--
-		-- Interior gaps are information: a Sum or Rate of zero across an outage
-		-- is the answer, and a chart that joined the two sides would draw
-		-- straight through it. Leading and trailing empties are not, which is
-		-- what the extent above trims.
-		--
-		-- Stepped in local time and converted back per bucket, so a day stays a
-		-- day across a DST transition rather than the 24 UTC hours a uniform
-		-- stride would lay down. Distinct because the spring-forward gap has
-		-- local instants that never occur: the range still generates them and
-		-- two of them can convert onto one real bucket.
+		-- Preserve interior gaps. Step in local time, convert each bucket to UTC,
+		-- and deduplicate skipped DST instants that map to one bucket.
 		scalar_view_spine as (
 			select distinct series_id, bucket_start
 			from (
@@ -646,25 +354,8 @@
 				from scalar_view_extent e, scalar_view_grid g
 			)
 		),
-		-- One row per (series, bucket), carrying every view's answer.
-		--
-		-- An empty bucket comes out null rather than zero, and that falls out of
-		-- SQL rather than being arranged: sum and avg over no rows are null. It
-		-- is exactly the distinction the views need -- Sum and Rate read a gap
-		-- as zero activity, Average has to skip it, because the mean of nothing
-		-- is not nought. Emitting 0 here would bake one view's reading into all
-		-- three. sample_count rides along so "no samples" stays legible.
-		--
-		-- All four are computed rather than the caller naming a view: they are
-		-- aggregate functions over rows already grouped, so the extra ones cost
-		-- almost nothing, and switching tabs then needs no round trip. The
-		-- selection-dependent pooled lines are a different matter -- those
-		-- recompute when the legend changes, as the histogram aggregate does.
-		--
-		-- Only rate differences a cumulative counter. Summing across series at
-		-- time t means adding the running totals; delta-converting first would
-		-- turn Sum into "events in this window" and Average into "mean
-		-- increment" -- useful numbers, but not the ones those labels promise.
+		-- One row per (series, bucket). Empty Sum/Rate buckets draw zero; Average
+		-- remains NULL. Only Rate uses cumulative differences.
 		scalar_view_agg as (
 			select sp.series_id,
 				sp.bucket_start,
@@ -672,10 +363,7 @@
 				sum(b.value) as value_sum,
 				avg(b.value) as value_avg,
 				sum(b.delta) / ((select width_ns from scalar_view_grid) / 1e9) as rate,
-				-- Did the counter restart inside this bucket? The rate view marks
-				-- it, because a restart is the one place the number understates
-				-- what happened and the chart should say so rather than draw a
-				-- plausible dip.
+				-- Mark any cumulative-counter reset within the bucket.
 				coalesce(bool_or(b.is_reset), false) as has_reset
 			from scalar_view_spine sp
 			left join scalar_view_bucketed b
@@ -683,21 +371,14 @@
 			   and b.bucket_start = sp.bucket_start
 			group by sp.series_id, sp.bucket_start
 		),
-		-- The rate line as it is drawn. An empty bucket draws a zero, a bucket
-		-- with samples but no rate -- a series' first -- draws nothing; these
-		-- are the chart's reading of the buckets, stated once here so the two
-		-- numbers derived from the drawn line (slope, badge extremes) cannot
-		-- drift from what is on screen.
+		-- Empty buckets draw zero; a first sampled bucket without rate is omitted.
 		scalar_view_drawn as (
 			select series_id, bucket_start,
 				case when sample_count = 0 then 0 else rate end as drawn_rate
 			from scalar_view_agg
 			where sample_count = 0 or rate is not null
 		),
-		-- Slope of the segment arriving at each drawn point: Δrate over the
-		-- seconds since the previous drawn point. Across a gap the previous
-		-- drawn point is the gap's zero, which is exactly the segment the chart
-		-- draws. The first drawn point has no arriving segment.
+		-- Incoming segment slope = delta rate / elapsed seconds.
 		scalar_view_slope as (
 			select series_id, bucket_start,
 				(drawn_rate - lag(drawn_rate) over w)
@@ -705,9 +386,7 @@
 			from scalar_view_drawn
 			window w as (partition by series_id order by bucket_start)
 		),
-		-- Extremes of the drawn line, for the rate view's row badges. Gap zeros
-		-- included, because the chart shows them: an outage pulls the minimum
-		-- to the floor the reader sees.
+		-- Rate stats include drawn gap zeros.
 		scalar_rate_stats as (
 			select series_id,
 				json_object('min', double_wire_json(min(drawn_rate)),
@@ -733,29 +412,8 @@
 			group by a.series_id
 		),
 
-		-- The cross-series aggregate: a pool of series folded into one line.
-		--
-		-- Two pools, because the chart draws up to two such lines -- the series
-		-- the reader has checked, and every series on the metric. The rules that
-		-- turn those into "Selected + All", a lone "All", or a single "Total" are
-		-- labelling decisions and stay with the view that draws them.
-		--
-		-- Folded from scalar_view_agg rather than from datapoints, which is what
-		-- puts the pooled line on the same boundaries as the per-series view
-		-- lines drawn beneath it: those rows are already one per (series, bucket)
-		-- on the shared absolute grid. A pool that derived its own grid from its
-		-- own extent would align with them only when every series happened to
-		-- share a scrape cadence.
-		--
-		--   sum   the pool's values added. For a cumulative counter that means
-		--         adding running totals, which is what "sum across series at time
-		--         t" says; delta-converting first would answer a different
-		--         question.
-		--   avg   a pooled mean -- every sample in the bucket over the count of
-		--         them -- not the mean of per-series means, which would weight a
-		--         sparse series the same as a dense one.
-		--   rate  the per-series rates added. Each is already sum(delta)/width, so
-		--         their sum is the pool's deltas over that same width.
+		-- Fold all-series and selected-series pools on the per-series grid.
+		-- Sum adds values, Average weights every sample, and Rate adds rates.
 		scalar_pool_rows as (
 			select 'all' as pool, a.* from scalar_view_agg a
 			union all by name
@@ -764,17 +422,8 @@
 			where i.selected_series_ids is not null
 			  and list_contains(i.selected_series_ids, a.series_id::varchar)
 		),
-		-- No spine of its own, and no trimming of its own. Both are already done:
-		-- scalar_view_spine gives every series a row for each bucket in its own
-		-- span, empty ones included, and trims the leading and trailing empties
-		-- off each end. Folding those rows therefore keeps every interior gap --
-		-- a series that stopped reporting mid-window still contributes its empty
-		-- buckets to the pool -- and inherits the trim at both ends.
-		--
-		-- A second spine over the pool's own extent would add only the buckets no
-		-- series in the pool covered at all, which is not an outage but a stretch
-		-- of time the pool did not exist for. Emitting zeros there would invent
-		-- observations.
+		-- Inherit per-series spines so interior gaps remain and absent pool extents
+		-- do not become invented zero observations.
 		scalar_pool_agg as (
 			select pool,
 				bucket_start,
@@ -786,8 +435,7 @@
 			from scalar_pool_rows
 			group by pool, bucket_start
 		),
-		-- Same bucket shape the per-series views use, so the client projects both
-		-- through one function instead of learning a second wire format.
+		-- Match the per-series bucket shape.
 		scalar_pool_drawn as (
 			select pool, bucket_start,
 				case when sample_count = 0 then 0 else rate end as drawn_rate
@@ -826,27 +474,9 @@
 				on sl.pool = a.pool and sl.bucket_start = a.bucket_start
 		),
 
-		-- The shape of one series at sparkline resolution.
-		--
-		-- A separate reduction because it answers a separate question: what does
-		-- this line look like in 128 pixels? The election sizes a line for a chart
-		-- hundreds of pixels wide, which is fifteen points per pixel here.
-		--
-		-- min and max per bucket rather than an average, because a sparkline's one
-		-- job is shape, and averaging erases the spike that makes a row worth
-		-- clicking. That is also why this is not read off the views above: their
-		-- avg is the right answer for an axis-bearing chart and the wrong one for
-		-- an 18px glyph whose only purpose is to say "something happened here".
-		--
-		-- No spine. The views build one because an empty bucket is an answer there
-		-- (zero activity for Sum and Rate, no answer for Average); here it is only
-		-- a gap in a shape, and at this size a straight segment across it says the
-		-- same thing as a hole. Emitting just the buckets that have samples keeps
-		-- this to a group-by.
+		-- Sparkline reduction keeps min/max shape without an empty-bucket spine.
 		sparkline_grid as (
-			-- Capped on the cadence like the view grid, and for the same reason:
-			-- a row's shape should show the series, not the sampling rate of the
-			-- grid drawn over it.
+			-- Do not bucket more finely than the Metric's cadence.
 			select bucket_width_ns(rs.span_ns,
 				case when c.cadence_ns is null or c.cadence_ns <= 0
 					then i.sparkline_buckets
@@ -866,23 +496,14 @@
 				d.timestamp,
 				d.value
 			from scalar_dps d
-			-- A caller asking for no sparklines gets a null width from the ladder,
-			-- and without this filter that is not the same as no sparkline: a null
-			-- bucket_start is still a group, so every datapoint in the series falls
-			-- into one of them and the row comes back with a two-point line
-			-- spanning the whole window. bucketed_dps guards the election for the
-			-- same reason.
+			-- NULL width disables sparklines rather than forming one NULL group.
 			where (select width_ns from sparkline_grid) is not null
 		),
-		-- Two points per bucket, each keeping the timestamp it actually occurred
-		-- at rather than the bucket's start: drawn in time order, a spike leans
-		-- the way it happened instead of being squared off to a boundary.
+		-- Keep each extremum's actual timestamp.
 		sparkline_extrema as (
 			select series_id,
 				bucket_start,
-				-- Tie-broken for the reason bucket_elected is: a flat bucket has
-				-- many rows at its minimum, and choosing among them arbitrarily
-				-- makes the same request draw a different line.
+				-- Timestamp tie-breaks keep flat buckets deterministic.
 				arg_min(timestamp, (value, timestamp)) as min_ts,
 				min(value) as min_value,
 				arg_max(timestamp, (value, timestamp)) as max_ts,
@@ -890,9 +511,7 @@
 			from sparkline_bucketed
 			group by series_id, bucket_start
 		),
-		-- union, not union all: a bucket holding a single sample -- or a flat one
-		-- -- elects the same row as both its min and its max, and the set operator
-		-- drops the duplicate rather than making the path double back on itself.
+		-- UNION removes duplicate min/max points from flat buckets.
 		sparkline_points as (
 			select series_id, min_ts as timestamp, min_value as value
 			from sparkline_extrema
@@ -900,8 +519,7 @@
 			select series_id, max_ts as timestamp, max_value as value
 			from sparkline_extrema
 		),
-		-- Histogram series produce nothing here: scalar_dps is Gauge and Sum only,
-		-- so the left join in the projection leaves their sparkline null.
+		-- Histogram series have NULL sparklines.
 		sparkline_agg as (
 			select series_id,
 				to_json(list(json_object(
@@ -912,26 +530,12 @@
 			group by series_id
 		),
 
-		-- isfinite: DuckDB orders NaN above infinity, so one NaN sample would
-		-- win max() and elect itself as its bucket's representative, displacing
-		-- a real value. It cannot be charted either way, so it is excluded from
-		-- the election rather than allowed to win it.
+		-- Exclude non-finite values from scalar min/max election.
 		bucket_elected as (
 			select
 				series_id,
 				bucket_start,
-				-- Ties broken by id, so the election is a function of the data
-				-- alone. arg_min(id, value) otherwise leaves the choice to
-				-- whichever row the aggregate saw first, and ties are the common
-				-- case rather than the exception: a gauge sitting at zero, or a
-				-- counter that did not move, gives a bucket many rows sharing its
-				-- minimum. The same request then returns a different set of
-				-- datapoints each time -- same stats, same first and last point,
-				-- a different count -- which is indefensible for a store whose
-				-- answers people compare across refreshes.
-				--
-				-- (value, id) is a struct, and DuckDB orders structs field by
-				-- field: "smallest value, and among those the smallest id".
+				-- ID tie-breaks make first/last/min/max election deterministic.
 				arg_min(id, (timestamp, id)) as first_id,
 				arg_max(id, (timestamp, id)) as last_id,
 				arg_min(id, (coalesce(double_value, int_value), id))
@@ -942,28 +546,8 @@
 			group by series_id, bucket_start
 		),
 
-		-- The exemplar-bearing datapoints a bucket keeps, and the second of the
-		-- two caps.
-		--
-		-- Exemplars are the link from a metric to a trace, and election is
-		-- driven by *value*, so the datapoints holding them are mostly not the
-		-- ones M4 keeps. Dropping them outright would gut trace correlation on
-		-- exactly the dense streams this reduction exists for -- which is why
-		-- they are retained at all.
-		--
-		-- "They are sparse by construction, so keeping all of them costs
-		-- little" was the previous reasoning, and it was an assumption about
-		-- other people's SDK config rather than a property of this query. A
-		-- stream that samples aggressively breaks it: at 100%% density the
-		-- retention returned all 20,000 datapoints of a window that reduces to
-		-- 4,585, a 9.4 MB response, with the reduction not merely degraded but
-		-- entirely defeated. A bucket is a few pixels wide, and a reader
-		-- following a link out of one of them does not need fifty to choose
-		-- from.
-		-- Which exemplar-bearing datapoints a bucket keeps, ranked from both
-		-- ends as above: the one whose exemplars reach lowest and the one whose
-		-- reach highest. The join replaces an existence test, since a datapoint
-		-- has an extent exactly when it carries an exemplar.
+		-- Retain exemplar-bearing datapoints from both value extremes so scalar
+		-- election does not remove all trace links.
 		exemplar_carriers as (
 			select id from (
 				select id,
@@ -978,56 +562,26 @@
 								order by x.high desc nulls last, b.id)
 						) as from_end
 					from bucketed_dps b
-					join exemplar_extents x on x.datapoint_id = b.id
+					join exemplar_extents x on x.metric_datapoint_id = b.id
 				)
 			)
-			-- Two, against the election's four. Exemplars are navigation, not
-			-- data -- nothing draws them -- so they should cost less than the
-			-- readings, and the lowest and highest out of a few-pixel column is
-			-- choice enough. This is what puts a ceiling on the response: a
-			-- bucket now yields at most six datapoints instead of unboundedly
-			-- many, so the worst case is 1.5x the reduction budget rather than
-			-- the whole window.
-			--
-			-- Note this bounds the datapoints kept *because* they carry
-			-- exemplars. An elected datapoint that happens to carry one is
-			-- retained on its own merits and ships its exemplars too, so a
-			-- bucket can hold up to six carriers in all.
+			-- At most two extra carriers plus the four elected datapoints.
 			where rn <= 2
 		),
 
-		-- The ids that survive: the elected four per bucket, plus that bucket's
-		-- capped exemplar carriers.
+		-- Retain elected scalar points and capped exemplar carriers.
 		retained_ids as (
 			select unnest([first_id, last_id, min_id, max_id]) as id from bucket_elected
 			union
 			select id from exemplar_carriers
 		),
 
-		-- Histogram merge, Delta only.
-		--
-		-- Adding bucket counts is exact: each datapoint covers its own
-		-- interval, so a merged histogram yields the same quantiles and the
-		-- same heatmap column as the datapoints it replaces. There is no
-		-- fidelity trade here, only arithmetic -- which is why histograms merge
-		-- rather than being sampled like scalars.
-		--
-		-- Exponential histograms need aligning first. Two histograms only add
-		-- directly if they share a scale and an offset, and an SDK downscales a
-		-- stream mid-flight as the observed range widens. So: downscale each to
-		-- the coarsest scale in its bucket, left-pad each to the smallest
-		-- offset, then add. On a stream whose scale never moves -- which is the
-		-- common case, and the whole reference corpus -- every downscale is a
-		-- no-op and costs nothing.
+		-- Merge histogram activity exactly. Exponential buckets first downscale
+		-- to the coarsest scale and left-pad to the smallest offset.
 		hist_scaled as (
 			select b.*,
-				-- Delta aligns within the bucket, which is all it compares. A
-				-- cumulative reading is differenced against the one before it,
-				-- and that neighbour is in the previous bucket whenever a bucket
-				-- holds one datapoint -- so the whole series has to share a scale
-				-- or the subtraction spans two different bucket layouts. The cost
-				-- is resolution: a cumulative series aligns to its coarsest
-				-- scale rather than each bucket's.
+				-- Cumulative series share one scale because differences cross buckets;
+				-- Delta series align within each bucket.
 				case when b.aggregation_temporality = 2
 					then min(b.scale) over (partition by b.series_id)
 					else min(b.scale) over (partition by b.series_id, b.bucket_start)
@@ -1043,12 +597,9 @@
 					h.scale - h.target_scale) as neg_d
 			from hist_scaled h
 		),
-		-- Only arrays holding buckets get a say in the alignment point: an
-		-- empty array's offset points at no data, and letting it win the
-		-- minimum pads the result out to an index nothing occupies.
+		-- Empty arrays do not influence alignment offsets.
 		hist_aligned as (
 			select d.*,
-				-- Partitioned like target_scale above, and for the same reason.
 				case when d.aggregation_temporality = 2
 					then min(case when len(d.pos_d.counts) > 0 then d.pos_d.offset end)
 						over (partition by d.series_id)
@@ -1071,13 +622,7 @@
 					coalesce(a.neg_target_offset, a.neg_d.offset)) as neg_p
 			from hist_aligned a
 		),
-		-- Each reading against the one before it, for a cumulative series.
-		--
-		-- The scalar path does exactly this (scalar_lagged, scalar_deltas) and
-		-- for the same reason: a running total says what has happened since the
-		-- series began, so the activity in an interval is a difference between
-		-- consecutive readings -- which is a property of the pair, not of the
-		-- bucket either happens to fall in.
+		-- Previous cumulative reading for interval activity.
 		hist_lagged as (
 			select p.*,
 				lag(p.count) over w as prev_count,
@@ -1089,17 +634,8 @@
 			from hist_padded p
 			window w as (partition by p.series_id order by p.timestamp, p.id)
 		),
-		-- A cumulative reading becomes its own interval's activity; a Delta
-		-- reading already is one and passes through. After this the two
-		-- temporalities are the same thing and the merge just adds them.
-		--
-		-- One reset rule, applied per datapoint to every field of the row: a
-		-- fall means the counter restarted, and the later value is the activity
-		-- since the restart. Clamping the scalars and the vectors separately let
-		-- one row claim more observations than its buckets held.
-		--
-		-- A series' first reading measures no interval and is dropped, as
-		-- scalar_deltas drops its own -- N readings describe N-1 intervals.
+		-- Convert Cumulative readings to interval activity. A reset uses the later
+		-- row for every field; the first reading has no interval and is dropped.
 		hist_activity as (
 			select l.* exclude (
 					count, sum, zero_count, bucket_counts, pos_p, neg_p,
@@ -1136,60 +672,22 @@
 			select
 				p.series_id,
 				p.bucket_start,
-				-- A real datapoint id, not a synthetic one: the last of the
-				-- bucket. Keeps ?dp= links and datapoint selection working
-				-- against something that exists.
+				-- Use the latest real datapoint ID for selection links.
 				arg_max(p.id, (p.timestamp, p.id)) as id,
-				-- The series' labels, which the merge would otherwise drop.
-				--
-				-- projected_dps unions this branch with filtered_dps `by name`,
-				-- so a column missing here is not an error -- it arrives as
-				-- NULL. attrs_json(NULL) is [], so every merged histogram series
-				-- came back with no attributes and the legend labelled all
-				-- twenty-one of them "default series".
-				--
-				-- any_value is exact rather than arbitrary: series_id includes the
-				-- datapoint attribute ids, so the array cannot vary within a group.
+				-- series_id guarantees one attribute_ids value per group.
 				any_value(p.attribute_ids) as attribute_ids,
-				-- The bucket this row *is*, not the newest datapoint that went
-				-- into it.
-				--
-				-- max(timestamp) put every merged row on a constituent's clock,
-				-- so rows the store had grouped into one 30-second bucket came
-				-- back on timestamps 5 seconds apart, and two series merged over
-				-- the same bucket disagreed about when it was. The row is the
-				-- bucket; its timestamp should say which one.
-				--
-				-- Safe because this path only runs when there is a reduction:
-				-- bucketed_dps filters on width_ns being non-null, so
-				-- bucket_start is never null here. The unreduced path returns
-				-- real datapoints and keeps their own timestamps, which is
-				-- right -- nothing was merged.
-				--
-				-- start_time stays the earliest constituent's rather than
-				-- becoming bucket_start: it is OTLP's "when did this
-				-- observation period begin", and the earliest is the honest
-				-- answer for a group. Only the point on the time axis is the
-				-- bucket's.
+				-- timestamp is the bucket start; start_time is the earliest received
+				-- observation-period start among constituents.
 				p.bucket_start as timestamp,
 				min(p.start_time) as start_time,
 				any_value(p.metric_type) as metric_type,
 				any_value(p.aggregation_temporality) as aggregation_temporality,
 				any_value(p.flags) as flags,
 				any_value(p.is_monotonic) as is_monotonic,
-				-- Adds, whatever the temporality. hist_activity has already
-				-- turned each cumulative reading into its own interval's
-				-- activity, so both shapes arrive here as per-datapoint
-				-- quantities and a bucket is their total.
-				--
-				-- Differencing within the bucket instead reported zero for any
-				-- bucket holding one reading -- which is every bucket once the
-				-- requested width reaches the reporting cadence, and the caller
-				-- asks for a bucket count rather than a width.
+				-- hist_activity has already normalized both temporalities to activity.
 				sum(p.count) as count,
 				case when count(p.sum) = count(*) then sum(p.sum) end as sum,
-				-- Explicit bounds: identical across the group or the merge is
-				-- meaningless, and there is no rescale that reconciles them.
+				-- Explicit bounds must match exactly within the group.
 				any_value(p.explicit_bounds) as explicit_bounds,
 				count(distinct p.explicit_bounds::varchar) as distinct_bounds,
 				sum_bucket_vectors(list(p.bucket_counts)) as bucket_counts,
@@ -1204,27 +702,8 @@
 			group by p.series_id, p.bucket_start
 		),
 
-		-- Reconcile the merged zero threshold with the merged buckets.
-		--
-		-- hist_merged takes the largest zero_threshold of the group, because a
-		-- merged histogram cannot claim to resolve values that one of its inputs
-		-- did not. That leaves the input with the *smaller* threshold contributing
-		-- buckets covering (its T, the merged T] -- a range the merged threshold
-		-- now declares empty. Those buckets have to move into zero_count, or the
-		-- datapoint says one thing in zero_threshold and another in its arrays.
-		--
-		-- Two CTEs rather than one because SQL cannot reference a select alias
-		-- from the same select list, and calling the macro once per output column
-		-- would evaluate it six times.
-		--
-		-- Explicit-bounds histograms fall through untouched: they carry no zero
-		-- threshold, exp_zero_cutoff returns NULL for a null or non-positive one,
-		-- and fold_below_cutoff treats a NULL cutoff as "fold nothing". No branch
-		-- on metric_type is needed.
-		--
-		-- Mirrors mergeExpHistogramStreams in histogram-merge.ts, which computes
-		-- the same cutoff for both signs from the same (threshold, scale) and adds
-		-- both folded totals into zero_count.
+		-- Fold buckets below the largest merged zero threshold into zero_count.
+		-- Separate CTEs compute each fold once before unpacking its fields.
 		hist_folds as (
 			select m.*,
 				zero_fold(m.positive_bucket_counts, m.positive_bucket_offset,
@@ -1245,19 +724,7 @@
 			from hist_folds f
 		),
 
-		-- What the projection reads. Merging replaces a bucket's datapoints
-		-- with one merged datapoint; electing keeps real rows and filters them
-		-- by retained_ids; no reduction passes everything through.
-		--
-		-- `union all by name` matches columns by name rather than position, so
-		-- the two branches do not have to agree on column order -- which they
-		-- would silently get wrong.
-		-- The scalar rows, carrying the per-interval activity computed above.
-		--
-		-- A left join: the first datapoint of each series has no predecessor and
-		-- therefore no delta, and a NaN reading was dropped from scalar_dps
-		-- entirely. Both arrive here as null, which is the honest answer -- "no
-		-- interval" rather than a zero that would read as "no activity".
+		-- Add scalar interval activity. First and non-finite readings have NULL delta.
 		filtered_with_deltas as (
 			select d.*, sd.delta_int, sd.delta_double, sd.is_reset as is_reset
 			from filtered_dps d
@@ -1272,9 +739,7 @@
 				m.id, m.series_id, m.timestamp, m.start_time,
 				m.metric_type, m.aggregation_temporality, m.flags,
 				m.count, m.sum,
-				-- Bucket-derived, because a merge cannot carry min and max
-				-- through: they describe individual observations, and the
-				-- merged buckets are what is left of them.
+				-- Derive extents from merged buckets, not received observations.
 				(bucket_extents(case
 					when m.metric_type = 'Histogram'
 						then hist_buckets(m.explicit_bounds, m.bucket_counts)
@@ -1294,35 +759,17 @@
 				m.negative_bucket_offset, m.negative_bucket_counts,
 				null::double as double_value, null::bigint as int_value,
 				null::varchar as value_type, m.is_monotonic,
-				-- Histograms have no scalar to difference.
+				-- Histograms have no scalar delta.
 				null::hugeint as delta_int, null::double as delta_double,
 				null::boolean as is_reset
 			from hist_folded m
-			-- A bucket whose datapoints disagree about explicit bounds cannot be
-			-- merged; there is no rescale that reconciles two boundary sets, the
-			-- way downscale_exp_buckets reconciles two scales. So the row is
-			-- dropped -- and counted, by bounds_mismatch below, because a
-			-- silently missing bucket is indistinguishable from a gap in the
-			-- data. The reader is debugging an exporter; a histogram that
-			-- changed its boundaries mid-window is a finding, not noise.
+			-- Drop and report buckets with incompatible explicit bounds.
 			where m.distinct_bounds <= 1
 		),
 
-		-- Series in the order the response lists them: latest activity first,
-		-- ties broken by id. The same ordering the projection applies, so "the
-		-- first N series" means the same thing on both sides of the wire.
+		-- Response series order: latest activity first, then series ID.
 		datapoint_series_rank as (
-			-- Ranked over projected_dps, which is what the response is ordered
-			-- by. filtered_dps holds raw datapoints, and on the merge path the
-			-- projection replaces their timestamps with bucket starts -- so the
-			-- two disagreed about which series are "most recent" exactly when a
-			-- histogram was reduced. Measured on a 21-series histogram: three of
-			-- the ten series the client checks by default arrived with no
-			-- datapoints, while three it does not draw were shipped theirs.
-			--
-			-- max(timestamp) desc, series_id matches timeseries_agg's
-			-- "order by t.latest_ts desc, t.attrs_key", so "the first N" now
-			-- names one set of series on both sides of the wire.
+			-- Rank projected timestamps so reduced histogram ordering matches the wire.
 			select series_id,
 				row_number() over (
 					order by max(timestamp) desc, series_id::varchar
@@ -1330,8 +777,7 @@
 			from projected_dps
 			group by series_id
 		),
-		-- Which series ship datapoints. A named list wins; failing that a limit
-		-- applies; failing both, every series does.
+		-- Named series override the limit; otherwise 0 means all series.
 		datapoint_series_allowed as (
 			select r.series_id
 			from datapoint_series_rank r, input i
@@ -1344,13 +790,7 @@
 			end
 		),
 
-		-- What the window holds for each series, which is not what the response
-		-- carries for it: datapoints are narrowed to the series being drawn, and
-		-- reduced besides. Counted over filtered_dps, before either.
-		--
-		-- A legend that counted the datapoints it received answered "how much did
-		-- I receive" while the reader was asking "how much is there", and a
-		-- narrowed-out series read as one that had stopped reporting.
+		-- Full-window count and latest timestamp before reduction and narrowing.
 		series_window_counts as (
 			select series_id,
 				count(*) as datapoint_count,
@@ -1361,73 +801,28 @@
 		ts_dps_agg as (
 			select
 				d.series_id,
-				-- The series id is the key, and the only key. It is
-				-- generated for one exact Metric stream and datapoint attribute set,
-				-- with exact uniqueness making it stable across re-ingests. That
-				-- stability makes it safe in a URL within this database,
-				-- unlike a datapoint id that retention eventually deletes.
+				-- Stable database-local series reference for URLs and grouping.
 				d.series_id::varchar as attrs_key,
 				attrs_json(any_value(d.attribute_ids)) as attributes_sample,
 				max(d.timestamp) as latest_ts,
-				-- Stats over every datapoint in the window, not over whatever
-				-- subset a chart ends up drawing.
-				--
-				-- The client computes these from its chart points, which are
-				-- thinned to CHART_POINTS_PER_SERIES before it sees them -- so
-				-- the average is the mean of an arbitrary sample, and the total
-				-- offered for delta sums is short by roughly the thinning
-				-- factor. Both are wrong today and get wronger under any
-				-- server-side reduction, which deliberately keeps extremes.
-				--
-				-- coalesce(double_value, int_value): a datapoint carries one or
-				-- the other by metric type, and value_type says which. Both are
-				-- null for histogram datapoints, so these come back null there
-				-- and the histogram path ignores them -- it has its own totals.
+				-- Scalar stats cover the full window. Histogram scalar values are NULL.
 				count(coalesce(d.double_value, d.int_value)) as value_count,
 				min(coalesce(d.double_value, d.int_value)) as value_min,
 				max(coalesce(d.double_value, d.int_value)) as value_max,
 				sum(coalesce(d.double_value, d.int_value)) as value_sum
-			-- Grouping on a fixed-width, indexable column instead of rebuilding
-		-- and hashing a LIST per row. Measured on 294,607 datapoints: 5.0ms
-		-- by the array against 0.9ms by a single uuid.
+			-- Group on the fixed-width indexed series ID.
 		from projected_dps d
 			group by d.series_id
 		),
 
-		-- The datapoints the caller is actually sent, shaped for the wire.
-		--
-		-- Separate from the stats above because the two answer different
-		-- questions over different rows. Stats describe the window, so they run
-		-- over every datapoint; this describes the sample drawn from it, so it
-		-- runs over the ones that survive the election and the narrowing.
-		--
-		-- Split rather than expressed as one aggregate with a FILTER, because
-		-- the filter prunes the aggregate's input but not the projection feeding
-		-- it: datapoint_json was evaluated for every row and 82% of the results
-		-- were then discarded. Measured on a 22-series Gauge, 19,319 datapoints
-		-- in and 3,598 kept: 283ms building all of them against 168ms building
-		-- the ones that ship.
+		-- Build wire JSON only for datapoints surviving reduction and narrowing.
 		shipped_dps as (
 			select d.* from projected_dps d
 			left join retained_ids r on r.id = d.id
 			where ((select kind from reduction_kind) <> 'elect' or r.id is not null)
 			  and d.series_id in (select series_id from datapoint_series_allowed)
 		),
-		-- Per-datapoint quantiles, computed relationally instead of inside
-		-- datapoint_json.
-		--
-		-- The macro used to call hist_quantiles per row, and that macro's body
-		-- is a subquery: an unnest of the bucket list plus a window over it.
-		-- A scalar macro whose body is a subquery costs a whole sub-plan per
-		-- evaluation, so three quantiles across N shipped datapoints built 3N
-		-- miniature plans to add up 160 integers each -- measured at 2,000
-		-- rows: 246ms as the macro, 12ms as this chain. In-situ, three
-		-- quantiles added 74ms to an explicit-bounds GetMetric and 42ms to an
-		-- exponential one.
-		--
-		-- Both flavours reduce to "build {lo, hi, cnt} buckets, walk them":
-		-- hist_buckets and exp_buckets are pure list ops, and the two walkers
-		-- differed only in interpolation kernel, chosen per row below.
+		-- Compute requested quantiles relationally with one bucket walk per datapoint.
 		dp_qsrc as (
 			select d.id,
 				case when d.metric_type = 'Histogram'
@@ -1441,8 +836,7 @@
 			where d.metric_type in ('Histogram', 'ExponentialHistogram')
 			  and len((select quantiles from input)) > 0
 		),
-		-- One unnest, one windowed accumulation per datapoint -- the walk the
-		-- macro rebuilt per quantile happens exactly once per row here.
+		-- One unnest and cumulative count per datapoint.
 		dp_q_acc as (
 			select b.id, b.is_linear, u.b.lo as lo, u.b.hi as hi, u.b.cnt as cnt, u.i as i,
 				coalesce(sum(u.b.cnt) over (partition by b.id order by u.i
@@ -1452,10 +846,7 @@
 				sum(u.b.cnt) over (partition by b.id) as n
 			from dp_qsrc b, unnest(b.buckets) with ordinality u(b, i)
 		),
-		-- First bucket whose running total crosses the target, per (row, q).
-		-- cnt > 0 keeps a quantile out of empty buckets, which matters at the
-		-- leading zero bucket exp_buckets always emits -- same reasoning the
-		-- macro documented.
+		-- First non-empty bucket whose cumulative count crosses q * n.
 		dp_q_picked as (
 			select a.id, qq.q,
 				case when a.is_linear
@@ -1465,13 +856,8 @@
 			from dp_q_acc a, (select unnest((select quantiles from input)) as q) qq
 			where a.n > 0 and a.cnt > 0 and a.acc >= qq.q * a.n
 		),
-		-- The wire object, keys in request order. Built from ordered lists via
-		-- map rather than json_group_object: that aggregate follows input
-		-- order, which is nondeterministic under parallelism -- the old macro
-		-- actually shipped its keys in varying order, harmless only because
-		-- the client looks them up by name. The left join is what keeps an
-		-- empty histogram emitting every requested key, valued null, exactly
-		-- as the macro's guards did.
+		-- Preserve request key order with ordered lists. Empty histograms emit each
+		-- requested key with NULL value.
 		dp_quantiles as (
 			select t.id, to_json(map(
 				list(t.q::varchar order by t.qi),
@@ -1483,41 +869,23 @@
 		),
 		ts_dps_json as (
 			select d.series_id,
-				to_json(list(datapoint_json(
+				to_json(list(metric_datapoint_view_json(
 					d,
-					coalesce((select exemplars from exemplars_agg where exemplars_agg.datapoint_id = d.id), json('[]')),
-					coalesce((select exemplar_count from exemplars_agg where exemplars_agg.datapoint_id = d.id), 0),
+					coalesce((select exemplars from exemplars_agg where exemplars_agg.metric_datapoint_id = d.id), json('[]')),
+					coalesce((select exemplar_count from exemplars_agg where exemplars_agg.metric_datapoint_id = d.id), 0),
 					dq.quantiles
 				) order by d.timestamp desc, d.id)) as datapoints
 			from shipped_dps d
 			left join dp_quantiles dq on dq.id = d.id
 			group by d.series_id
 		),
-		-- Pack each timeseries into the wire shape and order them so
-		-- the most recently active timeseries sorts first -- mirrors
-		-- the "newest first" feel of the old flat datapoint list,
-		-- which is what the detail panel's legend reads top-down.
-		-- Empty list (no dps in window) collapses to '[]' via the
-		-- outer coalesce.
-		-- Each series carries its parent Metric's Resource attributes in
-		-- a Resource-shaped projection whose dropped count is synthetic zero. It
-		-- deliberately does not claim to be one complete received payload.
-		--
-		-- Not optional once series split by resource: two replicas of one
-		-- service produce byte-identical attribute sets, so the resource is the
-		-- only thing that tells them apart. Without it the legend shows two
-		-- entries a user cannot distinguish, which is worse than the single
-		-- merged line the split replaced.
-		--
-		-- Each series uses its parent Metric's exact Resource payload.
+		-- Pack series newest first with their exact parent Metric Resource payload.
 		timeseries_agg as (
-			select to_json(list(timeseries_json(
+			select to_json(list(metric_series_view_json(
 				t.attrs_key,
 				t.attributes_sample,
 				resource_json(s.resource_attribute_ids, s.resource_dropped_attributes_count),
-				-- Empty rather than null for a series that shipped none: the field
-				-- means "the datapoints you were sent", and every series has an
-				-- answer to that even when the answer is none.
+				-- [] means this series shipped no datapoints.
 				coalesce(tj.datapoints, json('[]')),
 				series_stats_json(t.value_count, t.value_min, t.value_max, t.value_sum),
 				swc.datapoint_count,
@@ -1525,64 +893,24 @@
 				srs.rate_stats,
 				sv.views,
 				sp.sparkline
-			-- attrs_key breaks ties, and the tie is the common case rather
-			-- than the exception: series of one metric are usually reported
-			-- together, so they share a latest_ts. DuckDB's sort is not
-			-- stable, so without a second key the same request returns the
-			-- series in a different order each time -- verified by calling
-			-- getMetric twice against an unchanged store and getting two
-			-- orderings. The UI keys legend rows and colour assignment on
-			-- this list, so that reshuffles a chart between refreshes.
-			--
-			-- attrs_key is the series id: unique within the metric, so the
-			-- order is now total and deterministic.
+			-- Series ID makes equal latest timestamps deterministic.
 			) order by t.latest_ts desc, t.attrs_key)) as timeseries
 			from ts_dps_agg t
-			-- Left: a series narrowed out of the datapoint list has no row here.
+			-- Narrowed series have no datapoint JSON row.
 			left join ts_dps_json tj on tj.series_id = t.series_id
 			join metric_series ms on ms.id = t.series_id
-			cross join stream s
-			-- Left: a histogram series has no scalar views, and a scalar series
-			-- with nothing in the window has no buckets either.
+			cross join selected_metric s
+			-- Histograms and empty scalar series have no scalar views.
 			left join scalar_views_agg sv on sv.series_id = t.series_id
-			-- Left for the same two reasons as the views, and unlike them it is
-			-- sent for every series the response carries rather than only the ones
-			-- the user has checked. The panel draws a sparkline on unchecked rows
-			-- too: it is the affordance that tells you which row is worth checking,
-			-- so withholding it from the rows you have not chosen yet defeats it.
+			-- Sparklines are returned for every scalar series, including unchecked rows.
 			left join sparkline_agg sp on sp.series_id = t.series_id
-			-- Left for the reason the views are: histograms have no rate line.
+			-- Histograms have no rate stats.
 			left join scalar_rate_stats srs on srs.series_id = t.series_id
-			-- Inner in effect: every series in ts_dps_agg came from filtered_dps.
+			-- Every aggregated series has a window-count row.
 			left join series_window_counts swc on swc.series_id = t.series_id
 		),
-		-- The cross-series aggregate: the selected series merged into one
-		-- histogram per time bucket, which is what a heatmap draws and what a
-		-- window summary describes.
-		--
-		-- Same five steps as the per-series chain above -- common scale,
-		-- aligned offsets, pad, sum, fold -- partitioned by bucket alone
-		-- rather than by (series, bucket). It runs on the reduced set, one row
-		-- per series per bucket, not on raw datapoints, which is why it costs
-		-- ~14ms where the scan that precedes it costs ~140ms.
-		--
-		-- Temporality is already resolved by hist_folded: Delta summed, and
-		-- Cumulative reduced to last-minus-first. Either way each row is
-		-- "activity in this bucket", so summing across series is right for
-		-- both without branching again.
-		--
-		-- Histograms only. Summing gauges across series would be arithmetic
-		-- nobody asked for.
-		-- Buckets the per-series merge already refused. A series that could not
-		-- be merged along the time axis cannot contribute across series either,
-		-- and a cross-series total missing one of its series is not a total.
-		--
-		-- The check below in agg_merged cannot see this: hist_merged collapses a
-		-- bucket's bounds with any_value before this point, so by the time the
-		-- cross-series count(distinct explicit_bounds) runs there is one value
-		-- left per row whatever the datapoints underneath disagreed about. That
-		-- check catches series disagreeing with *each other*; this catches the
-		-- disagreement that was already flattened inside one.
+		-- Merge reduced histogram series by bucket for heatmaps and summaries.
+		-- Exclude any bucket already refused by a per-series bounds mismatch.
 		agg_refused_buckets as (
 			select distinct bucket_start
 			from hist_folded
@@ -1620,11 +948,7 @@
 		agg_merged as (
 			select
 				p.bucket_start,
-				-- The bucket, for the same reason hist_merged uses it: this row
-				-- is a merge across every selected series in one bucket, so no
-				-- single constituent's timestamp describes it. Both halves of
-				-- the response have to agree on this, or the heatmap's columns
-				-- and the per-series rows beneath them sit on different clocks.
+				-- Cross-series rows use the shared bucket start as timestamp.
 				p.bucket_start as timestamp,
 				min(p.start_time) as start_time,
 				sum(p.count) as count,
@@ -1636,26 +960,15 @@
 				sum_bucket_vectors(list(p.pos_p)) as positive_bucket_counts,
 				any_value(coalesce(p.neg_agg_offset, 0)) as negative_bucket_offset,
 				sum_bucket_vectors(list(p.neg_p)) as negative_bucket_counts,
-				-- Explicit-bounds histograms keep their data here, not in the
-				-- exponential vectors above, and merging only those left four of
-				-- the five histograms in the reference capture aggregating to
-				-- empty buckets with correct totals -- a chart of nothing.
-				--
-				-- Summed, not diffed: hist_folded already resolved temporality
-				-- per series, so every row arriving here is activity within its
-				-- bucket whichever way it was recorded.
+				-- hist_folded has normalized both temporalities to bucket activity.
 				sum_bucket_vectors(list(p.bucket_counts)) as bucket_counts,
 				any_value(p.explicit_bounds) as explicit_bounds,
-				-- Bounds cannot be reconciled the way scales can: there is no
-				-- rescale that turns one set of boundaries into another. So a
-				-- disagreement is reported rather than merged, the same guard
-				-- hist_merged applies along the time axis.
+				-- Explicit bounds must match across series.
 				count(distinct p.explicit_bounds::varchar) as distinct_bounds
 			from agg_padded p
 			group by p.bucket_start
 		),
-		-- Same reconciliation the per-series merge needs: taking the largest
-		-- zero threshold leaves buckets underneath it that belong in zero_count.
+		-- Fold buckets below the merged zero threshold into zero_count.
 		agg_folds as (
 			select m.*,
 				zero_fold(m.positive_bucket_counts, m.positive_bucket_offset,
@@ -1664,30 +977,20 @@
 					m.zero_threshold, m.scale) as neg_fold
 			from agg_merged m
 		),
-		-- How many merges were refused because their inputs disagreed about
-		-- explicit bounds: (series, bucket) rows on the per-series axis, and
-		-- buckets on the cross-series one. Reported rather than inferred -- the
-		-- client cannot tell a dropped bucket from a bucket that never had data.
+		-- Report refused per-series and cross-series explicit-bounds merges.
 		bounds_mismatch as (
 			select
 				(select count(*) from hist_folded where distinct_bounds > 1)
 					as series_buckets,
-				-- Both routes to a refused cross-series merge: a contributing
-				-- series that could not merge within itself, and series that
-				-- could each merge but disagree with one another.
+				-- Include both per-series and cross-series incompatibilities.
 				(select count(*) from agg_refused_buckets)
 				+ (select count(*) from agg_folds where distinct_bounds > 1)
 					as aggregate_buckets
 		),
-		-- The merged buckets' quantiles, same chain as dp_quantiles above and
-		-- for the same reason. Keyed by bucket_start; the exponential inputs
-		-- are the folded structs and the fold-adjusted zero count, exactly
-		-- what aggregate_bucket_json hands its exp branch.
+		-- Aggregate quantiles use the same relational bucket walk as datapoints.
 		agg_qsrc as (
 			select f.bucket_start,
-				-- A non-NULL list identifies an explicit histogram. The list may be
-				-- empty: that is the valid one-catch-all-bucket representation, not an
-				-- exponential histogram with its bucket vectors missing.
+				-- Non-NULL bounds identify explicit histograms; [] is one catch-all bucket.
 				case when f.explicit_bounds is not null
 					then hist_buckets(f.explicit_bounds, f.bucket_counts)
 					else exp_buckets(f.scale,
@@ -1727,7 +1030,7 @@
 			group by t.bucket_start
 		),
 		aggregate_agg as (
-			select to_json(list(aggregate_bucket_json(
+			select to_json(list(metric_aggregate_bucket_view_json(
 				f.timestamp, f.start_time, f.count, f.sum, f.scale,
 				f.zero_threshold, f.zero_count, f.pos_fold, f.neg_fold,
 				f.explicit_bounds, f.bucket_counts,
@@ -1735,16 +1038,13 @@
 			) order by f.bucket_start)) as aggregate
 			from agg_folds f
 			left join agg_quantiles aq on aq.bucket_start = f.bucket_start
-			-- A bucket whose series disagree about bounds cannot be merged.
-			-- Dropping it is what the time-axis merge does too; showing a sum
-			-- across incompatible layouts would be a plausible chart of nothing.
+			-- Do not merge incompatible explicit bounds.
 			where f.distinct_bounds <= 1
 		)
-		-- A Metric with no datapoints in the window still produces a row with
-		-- empty timeseries. Only an unknown Metric yields zero rows.
+		-- Known Metrics return a row even when the window has no datapoints.
 		select cast(json_object(
 {{- if not .AggregateOnly}}
-			'id', s.id, 'name', s.name, 'description', s.description, 'unit', s.unit,
+			'metricRef', s.id, 'name', s.name, 'description', s.description, 'unit', s.unit,
 			'metadata', attrs_json(s.metadata_ids),
 			'metricType', s.metric_type,
 			'aggregationTemporalityCode', case
@@ -1770,15 +1070,9 @@
 			),
 			'timeseries', coalesce((select timeseries from timeseries_agg), json('[]')),
 {{- end}}
-			-- Null rather than [] when there is nothing to aggregate, so the
-			-- client can tell "no histogram merge happened" from "merged to
-			-- nothing".
+			-- NULL means no histogram merge; [] means a merge with no output buckets.
 			'aggregate', {{if .NoHistogramMerge}}null{{else}}(select aggregate from aggregate_agg){{end}},
-			-- The cross-series lines for a scalar metric, in the same bucket shape
-			-- the per-series views use. `selected` is empty when nothing is
-			-- checked, which the chart reads as "draw All alone" rather than as an
-			-- error. Both are present for histograms too and are empty there --
-			-- scalar_dps is Gauge and Sum only, so nothing reaches the fold.
+			-- Scalar pools use the per-series bucket shape. Histograms emit empty pools.
 			'scalarAggregate', {{if .NoScalarPools}}json_object(
 				'selected', json('[]'),
 				'all', json('[]')
@@ -1786,24 +1080,12 @@
 				'selected', coalesce((select selected from scalar_pools_json), json('[]')),
 				'all', coalesce((select all_series from scalar_pools_json), json('[]'))
 			){{end}}{{if not .AggregateOnly}},
-			-- How many datapoints the window actually holds, as opposed to how
-			-- many came back. Equal today; the moment the server reduces what it
-			-- returns, the difference is what the UI needs in order to say so.
-			-- The window's most recent datapoint, whatever the response carries.
-			-- Read off the extent rather than the first series' first datapoint,
-			-- which is only the right answer while that series happens to be one
-			-- of the ones shipped.
+			-- Full-window latest timestamp and datapoint count before reduction.
 			'lastSeenNs', (select max_ts from data_extent)::varchar,
 			'datapointCount', coalesce((select sum(dp_count) from (
 				select count(*) as dp_count from filtered_dps group by series_id
 			)), 0),
-			-- The requested bounds and the effective bounds the reduction uses.
-			--
-			-- Reported rather than left to be inferred: a client drawing its axis
-			-- by scanning the timestamps it got back, which are bucket starts,
-			-- would derive the window from the very reduction it is describing.
-			-- Null when nothing was refused, so the client tests one field
-			-- rather than two counts it would have to know to compare to zero.
+			-- NULL boundsMismatch means no histogram merge was refused.
 			'boundsMismatch', (
 				select case when series_buckets > 0 or aggregate_buckets > 0
 					then json_object(
@@ -1824,4 +1106,4 @@
 			)
 {{- end}}
 		) as varchar) as metric
-		from stream s
+		from selected_metric s

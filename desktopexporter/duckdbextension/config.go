@@ -6,9 +6,7 @@ import (
 	"strings"
 )
 
-// Config holds the settings for the shared DuckDB store and the viewer it
-// serves. These lived on the exporter before the store moved here; the exporter
-// now only writes.
+// Config holds settings for the shared DuckDB store and viewer.
 type Config struct {
 	// Endpoint defines the host and port where we serve our frontend app.
 	Endpoint string `mapstructure:"endpoint"`

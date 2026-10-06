@@ -13,33 +13,7 @@ import {
   type AttributeField,
 } from '../attribute-field-reference'
 
-/**
- * Value-first completion: the user types text they can see in the UI, and the
- * editor offers the field expressions that would find it.
- *
- * @remarks
- * The existing completion source is key-first — it knows the field names and
- * offers them, so you can only search for something whose key you already know.
- * That is the wrong way round for the commonest question: *I can see `checkout`
- * in this trace, which field is that?*
- *
- * This answers it by asking the attribute dictionary, which holds one row per
- * distinct (key, value, type, scope) for the whole store and is therefore small
- * enough to grep on a keystroke. Typing `checkout` offers
- * `service.name = "checkout-api"` and `http.route = "/checkout"`, across traces,
- * logs and metrics at once.
- *
- * Deliberately additive: it only fires where the key-first source has nothing
- * useful to say, so it can never displace a field-name completion.
- *
- * It is also filtered to the fields this editor actually accepts. The
- * dictionary is shared by every signal, so a raw lookup for "Mercedes" returns
- * `f1.team` (a datapoint label) alongside `service.name` (a resource
- * attribute) — and offering the first in the traces box produces an expression
- * the linter immediately flags as `Unknown field`, because spans cannot be
- * filtered by a metric label. Suggesting something and then underlining it is
- * worse than not suggesting it.
- */
+/** Value-first completion filtered to fields accepted by this editor. */
 
 /** How many suggestions to show. Enough to choose from, few enough to scan. */
 const MAX_SUGGESTIONS = 8
@@ -124,7 +98,7 @@ function fieldSupportsExactMatch(
 /**
  * Creates an async completion source backed by value-first discovery.
  *
- * @param search - dictionary lookup, normally telemetryAPI.searchAttributes
+ * @param search - dictionary lookup, normally telemetryAPI.searchAttributeMatches
  * @returns a CodeMirror completion source
  */
 export function createValueDiscoverySource(
@@ -140,17 +114,7 @@ export function createValueDiscoverySource(
     const word = context.matchBefore(/[\w.\-/]+/)
     if (!word || word.text.length < MIN_TERM_LENGTH) return null
 
-    // The word must start a fresh expression: at the beginning of the input,
-    // after AND/OR, or after an opening bracket. Anything else means the user
-    // is mid-comparison and has already named a field, where key-first
-    // completion is correct and this must stay out of the way.
-    //
-    // This single check is the whole gate. An earlier version also bailed when
-    // the syntax tree put the cursor inside a Comparison node, which read as
-    // the safety net -- but mutation testing showed removing it changed no
-    // behaviour, because reaching a Comparison always means something precedes
-    // the word. The redundant guard is gone rather than left to look
-    // load-bearing to whoever next touches this.
+    // Value-first completion only starts a fresh expression.
     const before = context.state.sliceDoc(0, word.from).trim()
     if (
       before !== '' &&
@@ -164,9 +128,7 @@ export function createValueDiscoverySource(
     try {
       matches = await search(word.text)
     } catch {
-      // Discovery is a convenience. If the store is unreachable or the query
-      // fails, the key-first completions still work and the user can still
-      // type; surfacing an error here would be worse than showing nothing.
+      // Discovery failure must not block typing or key-first completion.
       return null
     }
     if (context.aborted) return null

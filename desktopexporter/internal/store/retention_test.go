@@ -62,15 +62,14 @@ func TestPruneOldestSignalsMakeProgressWithSmallTables(t *testing.T) {
 
 	seedSpans(t, s, 2)
 	seedLogs(t, s, 2)
-	const streamID = "11111111-1111-1111-1111-111111111111"
-	const ingestID = "22222222-2222-2222-2222-222222222222"
-	seedDatapoints(t, s, streamID, ingestID, 2, 0)
+	const metricID = "11111111-1111-1111-1111-111111111111"
+	seedDatapoints(t, s, metricID, 2, 0)
 
 	require.NoError(t, s.pruneOldestSpans(ctx, s.db))
 	require.NoError(t, s.pruneOldestLogs(ctx, s.db))
 	require.NoError(t, s.pruneOldestDatapoints(ctx, s.db))
 
-	for _, table := range []string{"spans", "logs", "datapoints"} {
+	for _, table := range []string{"spans", "logs", "metric_datapoints"} {
 		var count int
 		require.NoError(t, s.db.QueryRow(`select count(*) from `+table).Scan(&count))
 		require.Equal(t, 1, count, table)
@@ -81,12 +80,8 @@ func TestPruneOldestSignalsMakeProgressWithSmallTables(t *testing.T) {
 // referencing one fat attribute of its own so pruning visibly moves the size
 // measurement.
 //
-// The attribute has to be per-span now. Under the old owner-keyed schema a
-// single fat row per span was written n times; in the dictionary the same
-// content collapses to one row, so a shared attribute would pad the store by
-// 500 bytes total and the size assertions would measure nothing. Making each
-// distinct also means the sweep has real garbage to collect after pruning,
-// which is what the orphan assertions below check.
+// Each span gets a distinct large attribute so pruning changes store size and
+// leaves real dictionary garbage for the sweep.
 func seedSpans(t *testing.T, s *Store, n int) {
 	t.Helper()
 	seedOwners(t, s)
@@ -124,26 +119,26 @@ func seedLogs(t *testing.T, s *Store, n int) {
 }
 
 // seedDatapoints inserts n datapoints with timestamp = startTime + i * 1ms.
-func seedDatapoints(t *testing.T, s *Store, streamID, _ string, n int, startTime int64) {
+func seedDatapoints(t *testing.T, s *Store, metricID string, n int, startTime int64) {
 	t.Helper()
 	seedOwners(t, s)
-	_, err := s.db.Exec(`insert into metric_streams
+	_, err := s.db.Exec(`insert into metrics
 		(id, resource_id, resource_payload_id, scope_id, name, metric_type)
 		values (?, ?::uuid, ?::uuid, ?::uuid, 'metric-' || ?, 'Gauge') on conflict do nothing`,
-		streamID, seedResourceID, seedPayloadID, seedScopeID, streamID)
+		metricID, seedResourceID, seedPayloadID, seedScopeID, metricID)
 	require.NoError(t, err)
 	// datapoints.series_id is a NOT NULL foreign key, so the series has to
-	// exist before its points. One series per stream is enough here -- these
+	// exist before its points. One series per Metric is enough here; these
 	// tests are about pruning by time, not about series identity.
 	_, err = s.db.Exec(`
-		insert into metric_series (id, stream_id, attribute_ids)
+		insert into metric_series (id, metric_id, attribute_ids)
 		values (?::uuid, ?::uuid, []::uuid[]) on conflict do nothing`,
-		streamID, streamID)
+		metricID, metricID)
 	require.NoError(t, err)
 	_, err = s.db.Exec(`
-		insert into datapoints (id, stream_id, series_id, timestamp, double_value, value_type, attribute_ids)
+		insert into metric_datapoints (id, metric_id, series_id, timestamp, double_value, value_type, attribute_ids)
 		select uuid(), ?::uuid, ?::uuid, ? + range * 1000000, range, 'double', []::uuid[]
-		from range(?)`, streamID, streamID, startTime, n)
+		from range(?)`, metricID, metricID, startTime, n)
 	require.NoError(t, err)
 }
 
@@ -194,13 +189,13 @@ func TestEnforceRetentionPrunesOldest(t *testing.T) {
 	const n = 10000
 	seedSpans(t, s, n)
 	seedLogs(t, s, n)
-	seedDatapoints(t, s, "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222", n, 0)
+	seedDatapoints(t, s, "11111111-1111-1111-1111-111111111111", n, 0)
 
 	// A cap of 1 byte is unreachable: enforcement should prune its bounded
 	// number of rounds and stop, not loop forever.
 	require.NoError(t, s.EnforceRetention(ctx, 1))
 
-	for _, table := range []string{"spans", "logs", "datapoints"} {
+	for _, table := range []string{"spans", "logs", "metric_datapoints"} {
 		remaining := count(t, s, table)
 		assert.Less(t, remaining, int64(n), "%s should have been pruned", table)
 		assert.Positive(t, remaining, "%s should not have been emptied", table)
@@ -213,11 +208,8 @@ func TestEnforceRetentionPrunesOldest(t *testing.T) {
 
 	// The dictionary invariant, in both directions.
 	//
-	// Nothing enforces this: DuckDB cannot put a foreign key into a LIST, so
-	// the relationship that used to be FK-checked is now ingest's and the
-	// sweep's responsibility. Retention runs SweepOrphans at the end of every
-	// round, so by the time enforcement returns there must be no attribute row
-	// that nothing points at...
+	// DuckDB cannot put a foreign key into a LIST, so ingest and SweepOrphans
+	// enforce the relationship. No unreferenced attribute may remain.
 	var orphans int64
 	require.NoError(t, s.db.QueryRow(`
 		select count(*) from attributes a
@@ -241,31 +233,29 @@ func TestEnforceRetentionRetainsGeneratedMetricIdentity(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	const oldStream = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-	const oldIngest = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
-	const liveStream = "cccccccc-cccc-cccc-cccc-cccccccccccc"
-	const liveIngest = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+	const oldMetric = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	const liveMetric = "cccccccc-cccc-cccc-cccc-cccccccccccc"
 
-	// One stream whose datapoints are all ancient, one with recent data far
+	// One Metric has only ancient datapoints; one has recent data far
 	// enough ahead that pruning rounds never reach it.
-	seedDatapoints(t, s, oldStream, oldIngest, 1000, 0)
-	seedDatapoints(t, s, liveStream, liveIngest, 9000, 1_000_000_000_000)
+	seedDatapoints(t, s, oldMetric, 1000, 0)
+	seedDatapoints(t, s, liveMetric, 9000, 1_000_000_000_000)
 
 	require.NoError(t, s.EnforceRetention(ctx, 1))
 
-	var oldStreams, oldSeries, liveStreams int64
-	require.NoError(t, s.db.QueryRow(`select count(*) from metric_streams where id = ?::uuid`, oldStream).Scan(&oldStreams))
-	require.NoError(t, s.db.QueryRow(`select count(*) from metric_series where id = ?::uuid`, oldStream).Scan(&oldSeries))
-	require.NoError(t, s.db.QueryRow(`select count(*) from metric_streams where id = ?::uuid`, liveStream).Scan(&liveStreams))
+	var oldMetrics, oldSeries, liveMetrics int64
+	require.NoError(t, s.db.QueryRow(`select count(*) from metrics where id = ?::uuid`, oldMetric).Scan(&oldMetrics))
+	require.NoError(t, s.db.QueryRow(`select count(*) from metric_series where id = ?::uuid`, oldMetric).Scan(&oldSeries))
+	require.NoError(t, s.db.QueryRow(`select count(*) from metrics where id = ?::uuid`, liveMetric).Scan(&liveMetrics))
 
-	assert.Equal(t, int64(1), oldStreams, "generated stream id must survive full pruning")
+	assert.Equal(t, int64(1), oldMetrics, "generated Metric reference must survive full pruning")
 	assert.Equal(t, int64(1), oldSeries, "generated series id must survive full pruning")
-	assert.Equal(t, int64(1), liveStreams, "stream with surviving datapoints must remain")
+	assert.Equal(t, int64(1), liveMetrics, "Metric with surviving datapoints must remain")
 
-	var activeStreams, activeSeries int64
-	require.NoError(t, s.db.QueryRow(`select count(distinct stream_id) from datapoints`).Scan(&activeStreams))
-	require.NoError(t, s.db.QueryRow(`select count(distinct series_id) from datapoints`).Scan(&activeSeries))
-	assert.Equal(t, int64(1), activeStreams, "retained identity-only streams must not count as active")
+	var activeMetrics, activeSeries int64
+	require.NoError(t, s.db.QueryRow(`select count(distinct metric_id) from metric_datapoints`).Scan(&activeMetrics))
+	require.NoError(t, s.db.QueryRow(`select count(distinct series_id) from metric_datapoints`).Scan(&activeSeries))
+	assert.Equal(t, int64(1), activeMetrics, "retained identity-only Metrics must not count as active")
 	assert.Equal(t, int64(1), activeSeries, "retained identity-only series must not count as active")
 }
 
@@ -293,15 +283,9 @@ func TestEnforceRetentionUnderCap(t *testing.T) {
 	assert.Equal(t, int64(1000), count(t, s, "spans"), "store under the cap must not be pruned")
 }
 
-// TestSweepIfOverCapCollectsGarbage pins the guarantee sweepIfOverCap exists
-// for: orphaned dictionary rows count toward the size the cap is compared
-// against, so when the store is over, the orphans are collected *before* any
-// prune decision is taken. Otherwise retention deletes real telemetry to make
-// room for rows nothing references -- the garbage survives and the data does
-// not.
-//
-// Asserting on the resulting size would not catch a regression here, because
-// pruning also shrinks the store. Asserting that the live spans survived does.
+// TestSweepIfOverCapCollectsGarbage verifies that orphaned dictionary rows are
+// swept before pruning live telemetry. Both operations reduce store size, so
+// the assertion checks that live spans survive.
 func TestSweepIfOverCapCollectsGarbage(t *testing.T) {
 	ctx := context.Background()
 	s, err := NewStore(ctx, "", zap.NewNop())
@@ -327,10 +311,8 @@ func TestSweepIfOverCapCollectsGarbage(t *testing.T) {
 		"sweeping must not touch live telemetry")
 }
 
-// TestSweepIfOverCapSkipsSweepUnderCap is the other half, and the behaviour
-// change: a store comfortably inside its cap does no work at all. It used to
-// sweep unconditionally on every retention tick, which also dropped the
-// dictionary cache every 30 seconds for no reason.
+// TestSweepIfOverCapSkipsSweepUnderCap verifies that an under-cap store does
+// no sweep work.
 func TestSweepIfOverCapSkipsSweepUnderCap(t *testing.T) {
 	ctx := context.Background()
 	s, err := NewStore(ctx, "", zap.NewNop())
@@ -349,11 +331,8 @@ func TestSweepIfOverCapSkipsSweepUnderCap(t *testing.T) {
 		"under the cap there is nothing to protect against, so the sweep must not run")
 }
 
-// Pruning an old span must not take the children of a newer span in another
-// trace that shares its span id -- which the composite key permits, since a
-// span id is only unique within its trace. Matching children on span_id alone
-// did exactly that: the old trace's ids matched the new trace's events and
-// links, and retention destroyed them under a living parent.
+// Pruning an old span must preserve children of a newer span in another trace
+// that shares its span ID.
 func TestEnforceRetentionPrunesChildrenByTraceAndSpan(t *testing.T) {
 	ctx := context.Background()
 	s, err := NewStore(ctx, "", zap.NewNop())

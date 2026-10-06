@@ -1,27 +1,6 @@
 package Traces;
 
-# ============================================================================
-# Traces.pm -- build OTLP trace payloads (spans, events, links) and POST them.
-#
-# This is the trace-side analogue of Metrics.pm: it knows how to shape
-# spans into OTLP's resourceSpans/scopeSpans envelope and hand the result
-# to OTLP::send_payload. A single trace can span multiple services, so
-# send_trace accepts a list of *resource groups* (one per service) that
-# all share the same trace id -- the multi-service waterfall the UI loves.
-#
-# Public surface:
-#   - trace_id()                 -> 32 lowercase hex chars (OTLP trace id)
-#   - span_id()                  -> 16 lowercase hex chars (OTLP span id)
-#   - span(\%spec)               -> a span hashref
-#   - event($name, $t_ns, \@attrs)        -> a span event hashref
-#   - span_link($tid, $sid, \@attrs)      -> a span link hashref
-#   - send_trace($endpoint, \@resource_groups) -> ($status, $err)
-#
-# A resource group is: { service => 'name', version => '1.0.0'?, spans => [...] }
-#
-# FP note: everything except send_trace is a pure data transform. ids are
-# the one impurity (they read the RNG), kept tiny and obvious.
-# ============================================================================
+# Build and send OTLP trace payloads, including multi-service traces.
 
 use strict;
 use warnings;
@@ -72,22 +51,13 @@ use constant {
     STATUS_ERROR => 2,
 };
 
-# Nanoseconds since epoch as a decimal string (JSON-safe 64-bit). Trace
-# timings are integer ns; %d preserves Perl's 64-bit IV exactly, whereas
-# %.0f would route through a double and lose the low digits (ns values
-# are ~1.8e18, well past a double's 2^52 exact-integer range).
+# %d preserves integer nanoseconds beyond double's exact 2^52 range.
 sub s_to_ns {
     my ($ns) = @_;
     return sprintf '%d', $ns;
 }
 
-# ----------------------------------------------------------------------------
-# Id generation
-# ----------------------------------------------------------------------------
-
-# Random lowercase hex of the given byte length (2 hex chars per byte).
-# Uses Perl's global rand, which seed.pl seeds once per process via
-# srand, so a --seed run is reproducible.
+# seed.pl seeds the global RNG, making generated IDs reproducible.
 sub _hex {
     my ($bytes) = @_;
     return join '', map { sprintf '%02x', int(rand 256) } 1 .. $bytes;
@@ -96,13 +66,7 @@ sub _hex {
 sub trace_id { _hex(16) }   # 16 bytes -> 32 hex chars
 sub span_id  { _hex(8)  }   #  8 bytes -> 16 hex chars
 
-# ----------------------------------------------------------------------------
-# Span / event / link builders
-# ----------------------------------------------------------------------------
-
-# Build one span. Required: trace_id, span_id, name, start_ns, end_ns.
-# Optional: parent_span_id, kind (default INTERNAL), status (default OK),
-# attributes (arrayref), events (arrayref), links (arrayref).
+# Required: trace_id, span_id, name, start_ns, and end_ns.
 sub span {
     my ($spec) = @_;
     my $s = {
@@ -121,7 +85,6 @@ sub span {
     return $s;
 }
 
-# Build a span event: a named, timestamped marker with attributes.
 sub event {
     my ($name, $t_ns, $attrs) = @_;
     return {
@@ -131,9 +94,7 @@ sub event {
     };
 }
 
-# Build a span link: a pointer to another (trace_id, span_id) with
-# attributes. The target need not exist in the store -- the UI renders
-# the link either way (and now deep-links to /traces/<id>).
+# Link targets need not exist in the store.
 sub span_link {
     my ($tid, $sid, $attrs) = @_;
     return {
@@ -143,14 +104,7 @@ sub span_link {
     };
 }
 
-# ----------------------------------------------------------------------------
-# Transport
-# ----------------------------------------------------------------------------
-
-# POST a (possibly multi-service) trace. Each resource group becomes one
-# resourceSpans entry; they all share whatever trace id the caller stamped
-# on the spans. We bypass OTLP::envelope here because envelope() models a
-# single resource+scope, while a cross-service trace needs several.
+# Each resource group becomes one resourceSpans entry.
 sub send_trace {
     my ($endpoint, $resource_groups) = @_;
     my @resource_spans;

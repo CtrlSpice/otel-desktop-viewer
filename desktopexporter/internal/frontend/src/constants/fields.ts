@@ -5,8 +5,6 @@ import {
   type SearchSignal,
 } from '@/search/model'
 
-// --- Column visibility (shared across signal tables) ---
-
 export type ColumnCategory = 'pinned' | 'flexible' | 'detail'
 
 export type ColumnVisibility = {
