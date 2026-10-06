@@ -199,8 +199,16 @@ func requestTelemetrySearch(
 	}
 
 	var rpcResponse queryRPCResponse
-	if err := json.NewDecoder(response.Body).Decode(&rpcResponse); err != nil {
+	decoder := json.NewDecoder(response.Body)
+	if err := decoder.Decode(&rpcResponse); err != nil {
 		return telemetrySearchResult{}, fmt.Errorf("decode viewer response: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return telemetrySearchResult{}, fmt.Errorf("decode viewer response: additional JSON value")
+		}
+		return telemetrySearchResult{}, fmt.Errorf("decode viewer response: trailing data: %w", err)
 	}
 	if rpcResponse.Error != nil {
 		return telemetrySearchResult{}, fmt.Errorf("viewer %s error %d: %s", method, rpcResponse.Error.Code, rpcResponse.Error.Message)

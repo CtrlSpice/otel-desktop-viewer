@@ -166,3 +166,45 @@ func TestTracesCommandTruncationEmptyErrorsCancellationAndHelp(t *testing.T) {
 		}
 	})
 }
+
+func TestRequestTelemetrySearchRequiresOneCompleteJSONRPCResponse(t *testing.T) {
+	const summary = `{"traceID":"1","hasRootSpan":false,"rootSpan":null,"startTime":"1790928000123456789","durationNs":9007199254740993,"spanCount":1,"errorCount":0}`
+	validResponse := `{"jsonrpc":"2.0","id":1,"result":[` + summary + `]}`
+
+	tests := []struct {
+		name     string
+		response string
+		wantErr  string
+	}{
+		{name: "malformed trailing data", response: validResponse + ` trailing`, wantErr: "decode viewer response: trailing data"},
+		{name: "second JSON value", response: validResponse + ` {"jsonrpc":"2.0"}`, wantErr: "decode viewer response: additional JSON value"},
+		{name: "trailing whitespace", response: validResponse + " \n\t\r"},
+		{name: "ordinary response", response: validResponse},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				_, err := writer.Write([]byte(test.response))
+				require.NoError(t, err)
+			}))
+			defer viewer.Close()
+
+			result, err := requestTelemetrySearch(
+				context.Background(), viewer.Client(), viewer.URL, "searchTraces",
+				telemetrySearchQuery{Limit: 25}, traceSummaryFields,
+			)
+			if test.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), test.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Len(t, result.Summaries, 1)
+			assert.Equal(t, summary, string(result.Summaries[0]))
+			require.Len(t, result.Rows, 1)
+			assert.Equal(t, json.Number("9007199254740993"), result.Rows[0][4])
+		})
+	}
+}
