@@ -81,6 +81,19 @@
 			where fs.metric_type in ('Gauge', 'Sum')
 			group by d.stream_id
 		),
+		-- Dropped Resource or Scope attributes mean the retained identity tuple
+		-- is incomplete. The counts are payload diagnostics rather than identity
+		-- fields, so inspect every ingest represented by the exact Metric.
+		stream_identity_incomplete as (
+			select mi.stream_id,
+				bool_or(r.dropped_attributes_count > 0
+				        or sc.dropped_attributes_count > 0) as identity_incomplete
+			from metric_ingests mi
+			join resources r on r.id = mi.resource_id
+			join scopes sc on sc.id = mi.scope_id
+			where mi.stream_id in (select id from candidate_streams)
+			group by mi.stream_id
+		),
 		summary_rows as (
 			select
 				fs.id,
@@ -91,6 +104,7 @@
 				fs.aggregation_temporality,
 				fs.is_monotonic,
 				fs.service_name,
+				coalesce(sii.identity_incomplete, false) as identity_incomplete,
 				ssc.series_count,
 				coalesce(ssx.series_cardinality, 0) as series_cardinality,
 				sdc.datapoint_count,
@@ -103,6 +117,7 @@
 			left join stream_series_cardinality ssx on ssx.stream_id = fs.id
 			left join stream_datapoint_count sdc on sdc.stream_id = fs.id
 			left join stream_last_value slv on slv.stream_id = fs.id
+			left join stream_identity_incomplete sii on sii.stream_id = fs.id
 		),
 		selected_summaries as (
 			select *
@@ -132,6 +147,7 @@
 				else null
 			end,
 			'serviceName', sub.service_name,
+			'identityIncomplete', sub.identity_incomplete,
 			'seriesCount', sub.series_count,
 			'seriesCardinality', sub.series_cardinality,
 			'dataPointCount', sub.datapoint_count,

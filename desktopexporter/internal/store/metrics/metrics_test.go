@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -24,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.uber.org/zap"
 )
 
 const maxNano = 1<<63 - 1
@@ -94,7 +96,7 @@ func mustDecodeSpanIDMetrics(s string) [8]byte {
 // createTestMetricsPdataN builds pmetric.Metrics with n gauge metrics (one resource/scope).
 // Each metric has resource and scope attributes. Used to exercise flushIntervalMetrics by ingesting >= 100 metrics.
 func createTestMetricsPdataN(n int) pmetric.Metrics {
-	base := time.Now().UnixNano()
+	base := int64(1_700_000_000_000_000_000)
 	metrics := pmetric.NewMetrics()
 	rm := metrics.ResourceMetrics().AppendEmpty()
 	rm.Resource().Attributes().PutStr("service.name", "test-service")
@@ -2457,6 +2459,7 @@ func TestMetricSeries_ResourceOnlyDiffersByHostNameSplits(t *testing.T) {
 	require.Len(t, summaries, 2)
 	for _, summary := range summaries {
 		assert.Equal(t, float64(1), summary["seriesCount"])
+		assert.Equal(t, false, summary["identityIncomplete"])
 	}
 }
 
@@ -2555,6 +2558,56 @@ func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 		return rows.Err()
 	}))
 	assert.Equal(t, first, fresh, "the same exact identities in a fresh store must have the same series IDs")
+}
+
+func TestExactMetricAndSeriesIDsSurvivePersistentReopen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "metric-identity.db")
+	ctx := context.Background()
+	open := func() *store.Store {
+		s, err := store.NewStore(ctx, path, zap.NewNop())
+		require.NoError(t, err)
+		return s
+	}
+	readIDs := func(s *store.Store, table string) []string {
+		var ids []string
+		require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+			rows, err := db.Query(`select id::varchar from ` + table + ` order by 1`)
+			if err != nil {
+				return err
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var id string
+				if err := rows.Scan(&id); err != nil {
+					return err
+				}
+				ids = append(ids, id)
+			}
+			return rows.Err()
+		}))
+		return ids
+	}
+
+	first := open()
+	require.NoError(t, first.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t), first.FlushedIDs())
+	}))
+	streamIDs := readIDs(first, "metric_streams")
+	seriesIDs := readIDs(first, "metric_series")
+	require.Len(t, streamIDs, 2)
+	require.Len(t, seriesIDs, 2)
+	require.NoError(t, first.Close())
+
+	reopened := open()
+	assert.Equal(t, streamIDs, readIDs(reopened, "metric_streams"))
+	assert.Equal(t, seriesIDs, readIDs(reopened, "metric_series"))
+	require.NoError(t, reopened.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, buildTwoReplicaMetrics(t), reopened.FlushedIDs())
+	}))
+	assert.Equal(t, streamIDs, readIDs(reopened, "metric_streams"))
+	assert.Equal(t, seriesIDs, readIDs(reopened, "metric_series"))
+	assert.Equal(t, 12, countRows(t, reopened, ctx, `select count(*) from datapoints`))
+	require.NoError(t, reopened.Close())
 }
 
 // buildInstanceMetrics emits one gauge from one instance, optionally with extra
@@ -2660,6 +2713,8 @@ func TestMetricSeries_DroppedResourceCountPreservesPayloadWithoutSplittingSeries
 	summaries := searchMetricsAll(t, s, ctx)
 	require.Len(t, summaries, 1)
 	assert.Equal(t, float64(1), summaries[0]["seriesCount"])
+	assert.Equal(t, true, summaries[0]["identityIncomplete"],
+		"a dropped Resource attribute count must report incomplete identity")
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
 			store.BoundedTimeRange(0, time.Now().UnixNano()+int64(time.Hour)),
@@ -2668,6 +2723,7 @@ func TestMetricSeries_DroppedResourceCountPreservesPayloadWithoutSplittingSeries
 	require.NoError(t, err)
 	var metric map[string]any
 	require.NoError(t, json.Unmarshal(raw, &metric))
+	assert.Equal(t, true, metric["identityIncomplete"])
 	assert.Equal(t, float64(3), metric["resourceDroppedAttributesCount"],
 		"top-level metadata comes from the latest representative ingest")
 	topResource, ok := metric["resource"].(map[string]any)
@@ -2691,6 +2747,86 @@ func TestMetricSeries_DroppedResourceCountPreservesPayloadWithoutSplittingSeries
 	}
 	assert.Equal(t, "checkout", attributeValues["service.name"])
 	assert.Equal(t, "checkout-7f9c", attributeValues["service.instance.id"])
+}
+
+func TestMetricIdentityIncompleteIncludesScopeDroppedAttributes(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	md := buildInstanceMetrics(t, nil, 0, time.Now().UnixNano())
+	md.ResourceMetrics().At(0).ScopeMetrics().At(0).Scope().SetDroppedAttributesCount(4)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+	}))
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+	assert.Equal(t, true, summaries[0]["identityIncomplete"])
+
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
+			store.BoundedTimeRange(0, time.Now().UnixNano()+int64(time.Hour)),
+			0, nil, nil, 0, 0, 0, nil, "", nil, 0)
+	})
+	require.NoError(t, err)
+	var metric map[string]any
+	require.NoError(t, json.Unmarshal(raw, &metric))
+	assert.Equal(t, true, metric["identityIncomplete"])
+}
+
+func TestHistogramSelectionIsPartitionedByExactScopeIdentity(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	md := pmetric.NewMetrics()
+	rm := md.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "checkout")
+	for i, fixture := range []struct {
+		schema string
+		build  string
+		count  uint64
+	}{{"scope-blue", "blue", 3}, {"scope-green", "green", 7}} {
+		sm := rm.ScopeMetrics().AppendEmpty()
+		sm.SetSchemaUrl(fixture.schema)
+		sm.Scope().SetName("otelhttp")
+		sm.Scope().SetVersion("1.2.0")
+		sm.Scope().Attributes().PutStr("build", fixture.build)
+		metric := sm.Metrics().AppendEmpty()
+		metric.SetName("http.server.duration")
+		metric.SetUnit("ms")
+		histogram := metric.SetEmptyHistogram()
+		histogram.SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
+		dp := histogram.DataPoints().AppendEmpty()
+		dp.SetTimestamp(pcommon.Timestamp(1_700_000_000_000_000_000 + i))
+		dp.SetCount(fixture.count)
+		dp.SetSum(float64(fixture.count))
+		dp.ExplicitBounds().FromRaw([]float64{1})
+		dp.BucketCounts().FromRaw([]uint64{fixture.count, 0})
+	}
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+	}))
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 2)
+	wantCounts := map[string]uint64{"scope-blue": 3, "scope-green": 7}
+	for _, summary := range summaries {
+		assert.EqualValues(t, 1, summary["seriesCount"])
+		assert.EqualValues(t, 1, summary["dataPointCount"])
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetric(ctx, db, summary["id"].(string),
+				store.BoundedTimeRange(0, maxNano), 0, nil, nil, 0, 0, 0, nil, "", nil, 0)
+		})
+		require.NoError(t, err)
+		var metric map[string]any
+		require.NoError(t, json.Unmarshal(raw, &metric))
+		schemaURL := metric["scopeSchemaUrl"].(string)
+		want, ok := wantCounts[schemaURL]
+		require.True(t, ok)
+		timeseries := metric["timeseries"].([]any)
+		require.Len(t, timeseries, 1)
+		points := timeseries[0].(map[string]any)["datapoints"].([]any)
+		require.Len(t, points, 1)
+		assert.Equal(t, want, metricWireUint64(t, points[0].(map[string]any)["count"]))
+	}
 }
 
 // TestExpHistogramMerge_FoldsBucketsBelowMergedZeroThreshold is the first

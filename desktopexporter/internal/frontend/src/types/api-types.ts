@@ -460,6 +460,8 @@ export type MetricData = {
   metricType?: MetricType
   /** Stream-level monotonic flag; null except Sum. */
   isMonotonic?: boolean | null
+  /** At least one occurrence omitted Resource or Scope identity attributes. */
+  identityIncomplete: boolean
   resourceDroppedAttributesCount: number
   resource: ResourceData
   scopeName: string
@@ -498,6 +500,8 @@ export type MetricSummary = {
   aggregationTemporalityCode: number | null
   isMonotonic: boolean | null
   serviceName: string
+  /** At least one occurrence omitted Resource or Scope identity attributes. */
+  identityIncomplete: boolean
   // Distinct attribute sets (timeseries) seen in the queried window.
   seriesCount: number
   seriesCardinality: number

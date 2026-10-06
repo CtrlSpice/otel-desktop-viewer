@@ -22,6 +22,7 @@
     metadata: [],
     unit,
     metricType: datapoints[0]?.metricType ?? 'Empty',
+    identityIncomplete: false,
     resourceDroppedAttributesCount: 0,
     resource: { attributes: [], droppedAttributesCount: 0 },
     scopeName: '',

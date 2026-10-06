@@ -1820,6 +1820,18 @@
 				when 0 then 'Unspecified' when 1 then 'Delta' when 2 then 'Cumulative'
 				else 'Unknown (' || s.aggregation_temporality::varchar || ')' end end,
 			'isMonotonic', s.is_monotonic,
+			-- True when any retained occurrence reports omitted Resource or Scope
+			-- attributes. The counts do not split identity, but they mean the
+			-- complete originating identity was not received.
+			'identityIncomplete', exists(
+				select 1
+				from metric_ingests mi
+				join resources ir on ir.id = mi.resource_id
+				join scopes isc on isc.id = mi.scope_id
+				where mi.stream_id = s.id
+				  and (ir.dropped_attributes_count > 0
+				       or isc.dropped_attributes_count > 0)
+			),
 			'resourceDroppedAttributesCount', coalesce((select resource_dropped from representative_owners), 0),
 			'resource', coalesce(
 				(select resource_json(resource_attribute_ids, resource_dropped) from representative_owners),
