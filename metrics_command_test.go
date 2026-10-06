@@ -18,7 +18,7 @@ import (
 
 func TestMetricsCommandPreservesSummaryFieldsFiltersAndResolvesTimeOnce(t *testing.T) {
 	const response = `[{"id":"018f0000-0000-7000-8000-000000000002","name":"http.server.duration","description":"request duration","unit":"ms","metricType":"Sum","aggregationTemporalityCode":null,"aggregationTemporality":null,"isMonotonic":true,"serviceName":"checkout","seriesCount":3,"seriesCardinality":7,"dataPointCount":9007199254740993,"lastValue":12.500,"lastSeen":"1790928000123456789"}]`
-	const cliJSON = `[{"streamRef":"018f0000-0000-7000-8000-000000000002","name":"http.server.duration","description":"request duration","unit":"ms","metricType":"Sum","aggregationTemporalityCode":null,"aggregationTemporality":null,"isMonotonic":true,"serviceName":"checkout","seriesCount":3,"seriesCardinality":7,"dataPointCount":9007199254740993,"lastValue":12.500,"lastSeen":"1790928000123456789"}]`
+	const cliJSON = `[{"metricRef":"018f0000-0000-7000-8000-000000000002","name":"http.server.duration","description":"request duration","unit":"ms","metricType":"Sum","aggregationTemporalityCode":null,"aggregationTemporality":null,"isMonotonic":true,"serviceName":"checkout","seriesCount":3,"seriesCardinality":7,"dataPointCount":9007199254740993,"lastValue":12.500,"lastSeen":"1790928000123456789"}]`
 	requests := make(chan queryRPCRequest, 2)
 	viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var rpcRequest queryRPCRequest
@@ -122,7 +122,7 @@ func TestMetricsCommandLimitsEmptyErrorsCancellationAndHelp(t *testing.T) {
 		root.SetErr(&output)
 		root.SetArgs([]string{"metrics", "--help", "--endpoint", "http://127.0.0.1:1"})
 		require.NoError(t, root.Execute())
-		for _, text := range []string{"📈", "--service", "--since", "default 1h0m0s", "--start", "--end", "--limit", "default 25", "--endpoint", "--json", "checkout", "streamRef"} {
+		for _, text := range []string{"📈", "--service", "--since", "default 1h0m0s", "--start", "--end", "--limit", "default 25", "--endpoint", "--json", "checkout", "metricRef"} {
 			assert.Contains(t, output.String(), text)
 		}
 	})

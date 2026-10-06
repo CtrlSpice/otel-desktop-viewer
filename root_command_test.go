@@ -115,7 +115,7 @@ func TestCommandHelpSnapshotsAreOffline(t *testing.T) {
 		{name: "query", args: []string{"query", "--help"}, expected: expectedQueryHelp},
 		{name: "traces", args: []string{"traces", "--help"}, expected: expectedTelemetryHelp("traces", "🧵", "trace")},
 		{name: "logs", args: []string{"logs", "--help"}, expected: expectedTelemetryHelp("logs", "🪵", "log")},
-		{name: "metrics", args: []string{"metrics", "--help"}, expected: expectedTelemetryHelp("metrics", "📈", "metric", "JSON identifies a viewer-assigned metric stream with the opaque streamRef field.")},
+		{name: "metrics", args: []string{"metrics", "--help"}, expected: expectedTelemetryHelp("metrics", "📈", "metric", "JSON identifies a viewer-assigned Metric with the opaque metricRef field.")},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			started := false

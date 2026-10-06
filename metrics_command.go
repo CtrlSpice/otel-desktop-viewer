@@ -38,7 +38,7 @@ func newMetricsCommand(client *http.Client, now func() time.Time) *cobra.Command
 		Short: "📈 Search metrics in a running viewer",
 		Long: "📈 Search existing metric summaries in the running viewer. " +
 			"The default window is the last hour; output uses aligned columns unless --json is set. " +
-			"JSON identifies a viewer-assigned metric stream with the opaque streamRef field.",
+			"JSON identifies a viewer-assigned Metric with the opaque metricRef field.",
 		Example: "  otel-desktop-viewer metrics\n" +
 			"  otel-desktop-viewer metrics --service checkout --since 30m\n" +
 			"  otel-desktop-viewer metrics --start 2026-10-02T08:00:00Z --end 2026-10-02T09:00:00Z --json",
@@ -94,7 +94,7 @@ func metricSummariesForCLI(summaries []json.RawMessage) ([]json.RawMessage, erro
 			}
 			outputField := field
 			if field == "id" {
-				outputField = "streamRef"
+				outputField = "metricRef"
 			}
 			encodedField, err := json.Marshal(outputField)
 			if err != nil {
