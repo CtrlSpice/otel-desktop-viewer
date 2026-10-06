@@ -84,6 +84,7 @@ func newRootCommand(
 		newSpanCommand(client),
 		newLogsCommand(client, now),
 		newMetricsCommand(client, now),
+		newSkillsCommand(),
 	}
 	for _, command := range commands {
 		command.SetHelpFunc(writeCommandHelp)
@@ -150,6 +151,7 @@ COMMANDS
   span      🧵 Inspect one span
   logs      🪵 Search logs in a running viewer
   metrics   📈 Search metrics in a running viewer
+  skills    🧩 Print the agent usage guide
 
 VIEWER FLAGS
       --host string          Address used by viewer/OTLP receivers (default "localhost")
