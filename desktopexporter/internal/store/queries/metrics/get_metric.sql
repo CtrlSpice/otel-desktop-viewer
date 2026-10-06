@@ -103,10 +103,9 @@
 		-- the stream so the per-type JSON projection below doesn't need
 		-- a per-row join.
 		-- resource_id rides along for the per-batch resource of each datapoint.
-		-- It is not the series grouping key because it also includes the
-		-- resource's dropped count. Series identity uses the originating resource
-		-- attributes instead, so attribute changes split a series while a
-		-- dropped-count-only change does not. A join rather than a denormalized
+		-- It is not the series grouping key because the exact Metric parent already
+		-- carries Resource identity and resource_id also includes dropped count.
+		-- A join rather than a denormalized
 		-- column on datapoints: it is a primary-key lookup from metric_ingest_id,
 		-- and datapoints is the largest table here.
 		filtered_dps as (
@@ -1412,8 +1411,8 @@
 			select
 				d.series_id,
 				-- The series id is the key, and the only key. It is
-				-- content-derived from (stream, originating resource attributes,
-				-- labels), so it preserves OTLP metric identity and is stable
+				-- content-derived from (exact Metric stream, datapoint attributes),
+				-- so it preserves OTel series identity and is stable
 				-- across re-ingests. That stability makes it safe in a URL,
 				-- unlike a datapoint id that retention eventually deletes.
 				-- resource_id need not be a second grouping key: exact payloads
@@ -1552,7 +1551,7 @@
 		-- which is what the detail panel's legend reads top-down.
 		-- Empty list (no dps in window) collapses to '[]' via the
 		-- outer coalesce.
-		-- Each series carries its identifying originating resource attributes in
+		-- Each series carries its parent Metric's Resource attributes in
 		-- a Resource-shaped projection whose dropped count is synthetic zero. It
 		-- deliberately does not claim to be one complete received payload.
 		--
@@ -1574,7 +1573,7 @@
 				-- count, so projecting that count would make an arbitrary value look
 				-- constant for the series. Exact dropped count remains top-level from
 				-- the representative metric_ingest.
-				resource_json(r.attribute_ids, 0),
+				resource_json(s.resource_attribute_ids, 0),
 				-- Empty rather than null for a series that shipped none: the field
 				-- means "the datapoints you were sent", and every series has an
 				-- answer to that even when the answer is none.
@@ -1601,7 +1600,7 @@
 			-- Left: a series narrowed out of the datapoint list has no row here.
 			left join ts_dps_json tj on tj.series_id = t.series_id
 			join metric_series ms on ms.id = t.series_id
-			join resources r on r.id = ms.resource_id
+			cross join stream s
 			-- Left: a histogram series has no scalar views, and a scalar series
 			-- with nothing in the window has no buckets either.
 			left join scalar_views_agg sv on sv.series_id = t.series_id
@@ -1827,9 +1826,11 @@
 				json_object('attributes', json('[]'), 'droppedAttributesCount', 0)
 			),
 			'scopeName', s.scope_name, 'scopeVersion', s.scope_version,
+			'scopeSchemaUrl', s.scope_schema_url,
 			'scopeDroppedAttributesCount', coalesce((select scope_dropped from representative_owners), 0),
 			'scope', coalesce(
-				(select scope_json(s.scope_name, s.scope_version, scope_attribute_ids, scope_dropped) from representative_owners),
+				scope_json(s.scope_name, s.scope_version, s.scope_attribute_ids,
+					coalesce((select scope_dropped from representative_owners), 0)),
 				json_object('name', s.scope_name, 'version', s.scope_version,
 				            'attributes', json('[]'), 'droppedAttributesCount', 0)
 			),

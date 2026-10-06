@@ -1194,7 +1194,7 @@ func metricDatapoints(m map[string]any) []any {
 	return out
 }
 
-// deleteByIdentity is a thin test helper that resolves the 8-field OTel
+// deleteByIdentity is a thin test helper that resolves the exact OTel
 // identity to a stream UUID via metric_streams and then calls
 // DeleteMetricStream. The production JSON-RPC layer does the same
 // resolve-then-delete pattern; we replicate it here so the existing
@@ -1527,7 +1527,7 @@ func TestDeleteMetricStream(t *testing.T) {
 
 // TestMetricStreams_FindOrInsertIdempotent verifies the contract that
 // matters most for the normalized identity layer: ingesting the same
-// 8-field stream identity across N independent OTLP batches collapses
+// exact stream identity across N independent OTLP batches collapses
 // to exactly one metric_streams row. Per-batch context (description,
 // dropped counts) lives on metric_ingests, so we expect N ingest rows
 // but only one stream row, and every datapoint / attribute / exemplar
@@ -1577,13 +1577,13 @@ func TestMetricStreams_FindOrInsertIdempotent(t *testing.T) {
 
 // TestMetricStreams_DistinctIdentitiesStayDistinct guards the inverse
 // of the dedup contract: two metrics that differ in any one of the
-// eight identity fields must produce two metric_streams rows, even when
+// identifying fields must produce two metric_streams rows, even when
 // the rest of the tuple matches. We change one field at a time and
 // assert each change yields a fresh stream so a future "be permissive"
 // regression won't silently merge two semantically distinct streams.
 func TestMetricStreams_DistinctIdentitiesStayDistinct(t *testing.T) {
 	t.Parallel()
-	mk := func(t *testing.T, mutate func(m pmetric.Metric, scope pcommon.InstrumentationScope, res pcommon.Resource)) pmetric.Metrics {
+	mk := func(t *testing.T, mutate func(m pmetric.Metric, sm pmetric.ScopeMetrics, rm pmetric.ResourceMetrics)) pmetric.Metrics {
 		t.Helper()
 		md := pmetric.NewMetrics()
 		rm := md.ResourceMetrics().AppendEmpty()
@@ -1598,26 +1598,37 @@ func TestMetricStreams_DistinctIdentitiesStayDistinct(t *testing.T) {
 		m.Sum().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 		dp := m.Sum().DataPoints().AppendEmpty()
 		dp.SetIntValue(1)
-		mutate(m, sm.Scope(), rm.Resource())
+		mutate(m, sm, rm)
 		return md
 	}
 
 	cases := []struct {
 		name   string
-		mutate func(m pmetric.Metric, scope pcommon.InstrumentationScope, res pcommon.Resource)
+		mutate func(m pmetric.Metric, sm pmetric.ScopeMetrics, rm pmetric.ResourceMetrics)
 	}{
-		{"name", func(m pmetric.Metric, _ pcommon.InstrumentationScope, _ pcommon.Resource) { m.SetName("requests_v2") }},
-		{"unit", func(m pmetric.Metric, _ pcommon.InstrumentationScope, _ pcommon.Resource) { m.SetUnit("ms") }},
-		{"temporality", func(m pmetric.Metric, _ pcommon.InstrumentationScope, _ pcommon.Resource) {
+		{"name", func(m pmetric.Metric, _ pmetric.ScopeMetrics, _ pmetric.ResourceMetrics) { m.SetName("requests_v2") }},
+		{"unit", func(m pmetric.Metric, _ pmetric.ScopeMetrics, _ pmetric.ResourceMetrics) { m.SetUnit("ms") }},
+		{"type", func(m pmetric.Metric, _ pmetric.ScopeMetrics, _ pmetric.ResourceMetrics) { m.SetEmptyGauge() }},
+		{"temporality", func(m pmetric.Metric, _ pmetric.ScopeMetrics, _ pmetric.ResourceMetrics) {
 			m.Sum().SetAggregationTemporality(pmetric.AggregationTemporalityDelta)
 		}},
-		{"is_monotonic", func(m pmetric.Metric, _ pcommon.InstrumentationScope, _ pcommon.Resource) {
+		{"is_monotonic", func(m pmetric.Metric, _ pmetric.ScopeMetrics, _ pmetric.ResourceMetrics) {
 			m.Sum().SetIsMonotonic(false)
 		}},
-		{"scope_name", func(_ pmetric.Metric, sc pcommon.InstrumentationScope, _ pcommon.Resource) { sc.SetName("scope-b") }},
-		{"scope_version", func(_ pmetric.Metric, sc pcommon.InstrumentationScope, _ pcommon.Resource) { sc.SetVersion("v2") }},
-		{"service_name", func(_ pmetric.Metric, _ pcommon.InstrumentationScope, res pcommon.Resource) {
-			res.Attributes().PutStr("service.name", "svc-b")
+		{"scope_name", func(_ pmetric.Metric, sm pmetric.ScopeMetrics, _ pmetric.ResourceMetrics) {
+			sm.Scope().SetName("scope-b")
+		}},
+		{"scope_version", func(_ pmetric.Metric, sm pmetric.ScopeMetrics, _ pmetric.ResourceMetrics) {
+			sm.Scope().SetVersion("v2")
+		}},
+		{"scope_schema_url", func(_ pmetric.Metric, sm pmetric.ScopeMetrics, _ pmetric.ResourceMetrics) {
+			sm.SetSchemaUrl("schema-b")
+		}},
+		{"scope_attribute", func(_ pmetric.Metric, sm pmetric.ScopeMetrics, _ pmetric.ResourceMetrics) {
+			sm.Scope().Attributes().PutStr("build", "blue")
+		}},
+		{"resource_attribute", func(_ pmetric.Metric, _ pmetric.ScopeMetrics, rm pmetric.ResourceMetrics) {
+			rm.Resource().Attributes().PutStr("host.name", "pod-b")
 		}},
 	}
 
@@ -1626,7 +1637,7 @@ func TestMetricStreams_DistinctIdentitiesStayDistinct(t *testing.T) {
 			s, ctx := storetest.New(t)
 
 			err := s.WithConn(func(conn driver.Conn) error {
-				return metrics.Ingest(ctx, conn, mk(t, func(pmetric.Metric, pcommon.InstrumentationScope, pcommon.Resource) {}), s.FlushedIDs())
+				return metrics.Ingest(ctx, conn, mk(t, func(pmetric.Metric, pmetric.ScopeMetrics, pmetric.ResourceMetrics) {}), s.FlushedIDs())
 			})
 			require.NoError(t, err)
 
@@ -1640,6 +1651,80 @@ func TestMetricStreams_DistinctIdentitiesStayDistinct(t *testing.T) {
 				"changing %s should produce a distinct stream", tc.name)
 		})
 	}
+}
+
+func TestMetricStreams_NonIdentifyingVariantsReuseIdentity(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	makeBatch := func(variant bool) pmetric.Metrics {
+		md := pmetric.NewMetrics()
+		rm := md.ResourceMetrics().AppendEmpty()
+		rm.Resource().Attributes().PutStr("service.name", "svc")
+		sm := rm.ScopeMetrics().AppendEmpty()
+		sm.Scope().SetName("scope")
+		metric := sm.Metrics().AppendEmpty()
+		metric.SetName("requests")
+		metric.SetDescription("first")
+		metric.Metadata().PutStr("owner", "first")
+		metric.SetEmptyGauge().DataPoints().AppendEmpty().SetIntValue(1)
+		if variant {
+			rm.SetSchemaUrl("resource-schema")
+			rm.Resource().SetDroppedAttributesCount(7)
+			sm.Scope().SetDroppedAttributesCount(9)
+			metric.SetDescription("second")
+			metric.Metadata().PutStr("owner", "second")
+		}
+		return md
+	}
+	for _, variant := range []bool{false, true} {
+		require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+			return metrics.Ingest(ctx, conn, makeBatch(variant), s.FlushedIDs())
+		}))
+	}
+	assert.Equal(t, 1, countRows(t, s, ctx, `select count(*) from metric_streams`))
+	assert.Equal(t, 2, countRows(t, s, ctx, `select count(*) from metric_ingests`))
+	assert.Equal(t, 2, countRows(t, s, ctx, `select count(*) from resources`))
+	assert.Equal(t, 2, countRows(t, s, ctx, `select count(*) from scopes`))
+	assert.Equal(t, 1, countRows(t, s, ctx, `select count(*) from metric_series`))
+	var streamID string
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		return db.QueryRow(`select id::varchar from metric_streams`).Scan(&streamID)
+	}))
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetricOTLP(ctx, db, streamID)
+	})
+	require.NoError(t, err)
+	text := string(raw)
+	assert.Contains(t, text, `"description":"first"`)
+	assert.Contains(t, text, `"description":"second"`)
+	assert.Contains(t, text, `"schemaUrl":"resource-schema"`)
+}
+
+func TestMetricStreams_ContentIDCollisionFailsIngest(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	batch := pmetric.NewMetrics()
+	rm := batch.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "svc")
+	sm := rm.ScopeMetrics().AppendEmpty()
+	sm.Scope().SetName("scope")
+	metric := sm.Metrics().AppendEmpty()
+	metric.SetName("requests")
+	metric.SetEmptyGauge()
+	_, resourceAttrs := ingest.AttributeSet(rm.Resource().Attributes(), ingest.ScopeResource)
+	_, scopeAttrs := ingest.AttributeSet(sm.Scope().Attributes(), ingest.ScopeScope)
+	id := ingest.MetricStreamID(resourceAttrs, "scope", "", "", scopeAttrs,
+		"requests", "", "Gauge", nil, nil)
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		_, err := db.Exec(`insert into metric_streams
+			(id, resource_attribute_ids, name, unit, metric_type, scope_name, scope_attribute_ids)
+			values (?::uuid, [], 'requests', 'wrong-unit', 'Gauge', 'scope', [])`, ingest.FormatUUID(id))
+		return err
+	}))
+	err := s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, batch, s.FlushedIDs())
+	})
+	require.ErrorContains(t, err, "metric stream content ID collision")
 }
 
 // TestMetricStreams_ServiceNameDenormStaysConsistent verifies the
@@ -1666,11 +1751,9 @@ func TestMetricStreams_ServiceNameDenormStaysConsistent(t *testing.T) {
 	// array. Resolve it directly so the test asserts the stored source of truth.
 	mismatches := countRows(t, s, ctx, `
 		select count(*) from metric_streams s
-		join metric_ingests mi on mi.stream_id = s.id
-		join resources r on r.id = mi.resource_id
 		where s.service_name <> coalesce((
 			select json_extract_string(a.value, '$.value')
-			from unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id
+			from unnest(s.resource_attribute_ids) t(id) join attributes a on a.id = t.id
 			where a.key = 'service.name'
 		), '')
 	`)
@@ -2244,9 +2327,9 @@ func TestMetricSearch_DatapointAndExemplarLabels(t *testing.T) {
 // Two replicas of one service, emitting the same instrument with the same
 // labels, must be two series -- not one interleaved line.
 //
-// metric_streams identifies a stream by service_name rather than by resource,
-// deliberately, so a counter survives a pod restart. Nothing downstream then
-// re-introduced the resource, so replicas collapsed together: SDKs put
+// The old metric_streams identity used service_name rather than the complete
+// Resource. Nothing downstream then re-introduced the Resource, so replicas
+// collapsed together: SDKs put
 // host.name and k8s.pod.name on the *resource*, which made this the common
 // shape in any replicated deployment rather than an exotic one. Prometheus
 // would show two series here; we showed one, silently averaging two machines.
@@ -2309,42 +2392,21 @@ func TestMetricSeries_SplitByResource(t *testing.T) {
 	assert.Equal(t, 2, countRows("resources"),
 		"distinct resource payloads must produce distinct resource rows")
 
-	// One logical stream: that part is correct and must stay correct, or a pod
-	// restart would fragment the timeseries.
 	summaries := searchMetricsAll(t, s, ctx)
-	require.Len(t, summaries, 1, "two replicas are still one metric stream")
-	assert.Equal(t, float64(2), summaries[0]["seriesCount"],
-		"the summary must report two series, agreeing with the detail view")
-
-	streamID, ok := summaries[0]["id"].(string)
-	require.True(t, ok)
-
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(0, time.Now().UnixNano()+int64(time.Hour)), 0, nil, nil, 0, 0, 0, nil, "", nil, 0)
-	})
-	require.NoError(t, err)
-	var metric map[string]any
-	require.NoError(t, json.Unmarshal(raw, &metric))
-
-	ts, _ := metric["timeseries"].([]any)
-	require.Len(t, ts, 2, "one series per replica, not one merged line")
-
-	// Each carries its own three points -- a merge would produce one series of
-	// six, which is the shape that silently averaged two machines together.
-	keys := map[string]bool{}
-	for _, entry := range ts {
-		e := entry.(map[string]any)
-		dps, _ := e["datapoints"].([]any)
-		assert.Len(t, dps, 3, "each replica keeps its own datapoints")
-		keys[e["attributesKey"].(string)] = true
+	require.Len(t, summaries, 2, "each Resource identifies a separate OTel Metric")
+	for _, summary := range summaries {
+		assert.Equal(t, float64(1), summary["seriesCount"])
+		streamID := summary["id"].(string)
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(0, time.Now().UnixNano()+int64(time.Hour)), 0, nil, nil, 0, 0, 0, nil, "", nil, 0)
+		})
+		require.NoError(t, err)
+		var metric map[string]any
+		require.NoError(t, json.Unmarshal(raw, &metric))
+		ts := metric["timeseries"].([]any)
+		require.Len(t, ts, 1)
+		assert.Len(t, ts[0].(map[string]any)["datapoints"].([]any), 3)
 	}
-
-	// And they must be distinguishable. The labels are identical by
-	// construction, so a key derived from labels alone collides -- which would
-	// render two indistinguishable legend entries, strictly worse than the
-	// single merged line it replaced.
-	assert.Len(t, keys, 2,
-		"series keys must differ, or the split produces two identical legend entries")
 }
 
 // Resource attributes are part of OTLP metric identity. Two payloads that
@@ -2392,9 +2454,10 @@ func TestMetricSeries_ResourceOnlyDiffersByHostNameSplits(t *testing.T) {
 		"distinct received resource payloads must remain distinct")
 
 	summaries := searchMetricsAll(t, s, ctx)
-	require.Len(t, summaries, 1)
-	assert.Equal(t, float64(2), summaries[0]["seriesCount"],
-		"the resource difference is part of OTLP metric identity")
+	require.Len(t, summaries, 2)
+	for _, summary := range summaries {
+		assert.Equal(t, float64(1), summary["seriesCount"])
+	}
 }
 
 // A series id has to survive re-ingest, restarts and retention, because it is
@@ -2403,8 +2466,8 @@ func TestMetricSeries_ResourceOnlyDiffersByHostNameSplits(t *testing.T) {
 // This is the property the old wire format could not offer: metric links could
 // only reference a datapoint id, which is minted per row and deleted by
 // retention, so a pasted link degraded silently to "no selection". A
-// content-derived id from the stream, originating resource attributes, and
-// datapoint labels is the same every time the same series arrives.
+// content-derived id from the exact Metric stream and datapoint attributes is
+// the same every time the same series arrives.
 func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -2445,24 +2508,53 @@ func TestMetricSeries_IDsAreStableAcrossReingest(t *testing.T) {
 	// And the id the wire serves is the id in the table, or a URL built from
 	// one could not be resolved back to the other.
 	summaries := searchMetricsAll(t, s, ctx)
-	require.Len(t, summaries, 1)
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string), store.BoundedTimeRange(0,
-			time.Now().UnixNano()+int64(time.Hour)),
-			0, nil, nil, 0, 0, 0, nil, "", nil, 0)
-
-	})
-	require.NoError(t, err)
-	var metric map[string]any
-	require.NoError(t, json.Unmarshal(raw, &metric))
-
+	require.Len(t, summaries, 2)
 	var served []string
-	for _, entry := range metric["timeseries"].([]any) {
-		served = append(served, entry.(map[string]any)["attributesKey"].(string))
+	for _, summary := range summaries {
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetric(ctx, db, summary["id"].(string), store.BoundedTimeRange(0,
+				time.Now().UnixNano()+int64(time.Hour)), 0, nil, nil, 0, 0, 0, nil, "", nil, 0)
+		})
+		require.NoError(t, err)
+		var metric map[string]any
+		require.NoError(t, json.Unmarshal(raw, &metric))
+		served = append(served, metric["timeseries"].([]any)[0].(map[string]any)["attributesKey"].(string))
 	}
 	sort.Strings(served)
 	assert.Equal(t, first, served,
 		"the key on the wire must be the series id, so a link resolves back to a row")
+
+	other, otherCtx := storetest.New(t)
+	require.NoError(t, other.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(otherCtx, conn, buildTwoReplicaMetrics(t), other.FlushedIDs())
+	}))
+	streamIDs := func(rows []map[string]any) []string {
+		ids := make([]string, 0, len(rows))
+		for _, row := range rows {
+			ids = append(ids, row["id"].(string))
+		}
+		sort.Strings(ids)
+		return ids
+	}
+	assert.Equal(t, streamIDs(summaries), streamIDs(searchMetricsAll(t, other, otherCtx)),
+		"the same exact identities in a fresh store must have the same stream IDs")
+	var fresh []string
+	require.NoError(t, other.WithDBRead(func(db *sql.DB) error {
+		rows, err := db.Query(`select id::varchar from metric_series order by 1`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			fresh = append(fresh, id)
+		}
+		return rows.Err()
+	}))
+	assert.Equal(t, first, fresh, "the same exact identities in a fresh store must have the same series IDs")
 }
 
 // buildInstanceMetrics emits one gauge from one instance, optionally with extra
@@ -2496,9 +2588,8 @@ func buildInstanceMetrics(t *testing.T, extra map[string]string, dropped uint32,
 	return md
 }
 
-// Adding resource attributes changes the received OTLP Resource and therefore
-// metric identity. The coarser metric_streams row still groups both payloads
-// for navigation, while metric_series keeps their points separate.
+// Adding Resource attributes changes the OTel Metric identity, so navigation
+// and series selection must both keep the payloads separate.
 func TestMetricSeries_SplitsWhenResourcePayloadChanges(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -2529,24 +2620,9 @@ func TestMetricSeries_SplitsWhenResourcePayloadChanges(t *testing.T) {
 		"resource attributes participate in OTLP metric series identity")
 
 	summaries := searchMetricsAll(t, s, ctx)
-	require.Len(t, summaries, 1)
-	assert.Equal(t, float64(2), summaries[0]["seriesCount"],
-		"the summary must report both resource-specific series")
-
-	streamID, ok := summaries[0]["id"].(string)
-	require.True(t, ok)
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(0, time.Now().UnixNano()+int64(time.Hour)), 0, nil, nil, 0, 0, 0, nil, "", nil, 0)
-	})
-	require.NoError(t, err)
-	var metric map[string]any
-	require.NoError(t, json.Unmarshal(raw, &metric))
-
-	ts, _ := metric["timeseries"].([]any)
-	require.Len(t, ts, 2, "one line per received resource payload")
-	for _, entry := range ts {
-		dps, _ := entry.(map[string]any)["datapoints"].([]any)
-		assert.Len(t, dps, 3, "each resource-specific series keeps its own batch")
+	require.Len(t, summaries, 2)
+	for _, summary := range summaries {
+		assert.Equal(t, float64(1), summary["seriesCount"])
 	}
 }
 

@@ -442,6 +442,7 @@ export type JsonMetricData = {
   resource: JsonResourceData
   scopeName: string
   scopeVersion: string
+  scopeSchemaUrl: string
   scopeDroppedAttributesCount: number
   scope: JsonScopeData
   timeseries: JsonMetricTimeseries[]

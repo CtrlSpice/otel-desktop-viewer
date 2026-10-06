@@ -206,22 +206,21 @@ func TestGetMetricOTLPStreamOwnershipAndEmptyValues(t *testing.T) {
 
 	var id string
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		return db.QueryRowContext(ctx, `select id::varchar from metric_streams where name = 'same-stream' and unit = ''`).Scan(&id)
+		return db.QueryRowContext(ctx, `select id::varchar from metric_streams where name = 'same-stream' and unit = '' and scope_schema_url = 'scope-first'`).Scan(&id)
 	}))
 	raw := getMetricOTLP(t, s, ctx, id)
 	text := string(raw)
 	assert.NotContains(t, text, "must-not-leak")
-	for _, owner := range []string{"first", "second"} {
-		assert.Contains(t, text, `"description":"`+owner+`"`)
-		assert.Contains(t, text, `"schemaUrl":"resource-`+owner+`"`)
-		assert.Contains(t, text, `"schemaUrl":"scope-`+owner+`"`)
-		assert.Contains(t, text, `"stringValue":"`+owner+`"`)
-	}
+	assert.Contains(t, text, `"description":"first"`)
+	assert.Contains(t, text, `"schemaUrl":"resource-first"`)
+	assert.Contains(t, text, `"schemaUrl":"scope-first"`)
+	assert.Contains(t, text, `"stringValue":"first"`)
+	assert.NotContains(t, text, `"description":"second"`)
 	decoded, err := (&pmetric.JSONUnmarshaler{}).UnmarshalMetrics(raw)
 	require.NoError(t, err)
-	assert.Equal(t, 2, decoded.ResourceMetrics().Len())
-	assert.Equal(t, 2, decoded.MetricCount())
-	assert.Equal(t, 3, decoded.DataPointCount())
+	assert.Equal(t, 1, decoded.ResourceMetrics().Len())
+	assert.Equal(t, 1, decoded.MetricCount())
+	assert.Equal(t, 2, decoded.DataPointCount())
 	assert.Equal(t, raw, getMetricOTLP(t, s, ctx, id))
 
 	empty := pmetric.NewMetrics()

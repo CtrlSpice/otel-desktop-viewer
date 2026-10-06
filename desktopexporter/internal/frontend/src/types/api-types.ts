@@ -464,6 +464,8 @@ export type MetricData = {
   resource: ResourceData
   scopeName: string
   scopeVersion: string
+  /** Received ScopeMetrics schema URL; part of InstrumentationScope identity. */
+  scopeSchemaUrl: string
   scopeDroppedAttributesCount: number
   scope: ScopeData
   timeseries: MetricTimeseries[]

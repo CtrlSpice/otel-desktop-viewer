@@ -104,7 +104,11 @@ package schema
 // Version 17 stores received span kind, span status code, and metric
 // aggregation temporality as their signed int32 protocol values. Version 16
 // rows contain derived labels, which cannot recover unknown numeric values.
-const Version = 17
+// Version 18 makes metric_streams identify one exact OTel Metric from complete
+// Resource attributes, the complete InstrumentationScope tuple, and the
+// identifying Metric descriptor fields. It also removes the now-redundant
+// Resource owner from metric_series and changes both content-derived IDs.
+const Version = 18
 
 // VersionTableQuery creates the version table.
 //

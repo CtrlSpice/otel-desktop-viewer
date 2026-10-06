@@ -102,6 +102,7 @@ function makeMetric(
     resource: EMPTY_RESOURCE,
     scopeName: '',
     scopeVersion: '',
+    scopeSchemaUrl: '',
     scopeDroppedAttributesCount: 0,
     scope: EMPTY_SCOPE,
     timeseries: [

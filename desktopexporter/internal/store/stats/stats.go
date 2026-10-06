@@ -51,7 +51,7 @@ func GetStats(ctx context.Context, db *sql.DB, sizeBytes int64, maxSizeBytes int
 				'lastReceived', cast(coalesce(max(nullif(timestamp, 0)), max(observed_timestamp)) as varchar)
 			) from logs),
 			'metrics', (select json_object(
-				-- metricCount is the number of distinct logical streams
+				-- metricCount is the number of exact known OTel Metric identities
 				-- (one per name+unit+type+temporality+monotonic+scope+
 				-- service tuple), so the frontend's "metrics" badge
 				-- shows logical concepts rather than ingest batches.

@@ -213,6 +213,7 @@
           count={metric.scope.attributes.length +
             (metric.scope.name ? 1 : 0) +
             (metric.scope.version ? 1 : 0) +
+            (metric.scopeSchemaUrl ? 1 : 0) +
             (metric.scopeDroppedAttributesCount > 0 ? 1 : 0)}
           detail
           bind:open={scopeOpen}
@@ -227,6 +228,11 @@
               {#if metric.scope.version}<MetricField
                   fieldName="version"
                   fieldValue={metric.scope.version}
+                  fieldType="string"
+                />{/if}
+              {#if metric.scopeSchemaUrl}<MetricField
+                  fieldName="schema URL"
+                  fieldValue={metric.scopeSchemaUrl}
                   fieldType="string"
                 />{/if}
               {#if metric.scopeDroppedAttributesCount > 0}

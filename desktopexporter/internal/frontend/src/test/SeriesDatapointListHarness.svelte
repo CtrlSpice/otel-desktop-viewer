@@ -26,6 +26,7 @@
     resource: { attributes: [], droppedAttributesCount: 0 },
     scopeName: '',
     scopeVersion: '',
+    scopeSchemaUrl: '',
     scopeDroppedAttributesCount: 0,
     scope: {
       name: '',

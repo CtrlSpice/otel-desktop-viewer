@@ -254,6 +254,29 @@ func TestIncompatibleDatabaseIsRejectedWithoutMutation(t *testing.T) {
 	assert.Equal(t, before, after, "rejecting an incompatible database must not mutate its file")
 }
 
+func TestVersion17DatabaseIsRejectedWithoutMutation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "version-17.db")
+	db, err := sql.Open("duckdb", path)
+	require.NoError(t, err)
+	_, err = db.Exec(schema.VersionTableQuery)
+	require.NoError(t, err)
+	_, err = db.Exec(schema.StampVersionQuery, 17)
+	require.NoError(t, err)
+	_, err = db.Exec(`create table metric_ingests (id uuid, stream_id uuid, payload blob)`)
+	require.NoError(t, err)
+	_, err = db.Exec(`insert into metric_ingests values (uuid(), uuid(), ?::blob)`, []byte{0, 1, 2, 255})
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	before, err := os.ReadFile(path)
+	require.NoError(t, err)
+	_, err = NewStore(context.Background(), path, zap.NewNop())
+	require.ErrorIs(t, err, ErrSchemaIncompatible)
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, before, after, "rejecting a version-17 database must not rewrite stored telemetry")
+}
+
 func TestEmptySchemaMetadataIsRejectedWithoutMutation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "empty-schema-meta.db")
 	db, err := sql.Open("duckdb", path)

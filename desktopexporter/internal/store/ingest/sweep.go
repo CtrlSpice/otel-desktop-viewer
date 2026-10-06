@@ -26,7 +26,7 @@ type ExecContext interface {
 //
 // This is the price of the dictionary: DuckDB cannot put a foreign key into a
 // LIST, so there is no anti-join to run and no refcount to consult. The live set
-// has to be rebuilt by unnesting all ten owner arrays.
+// has to be rebuilt by unnesting every owner array.
 //
 // UNION rather than UNION ALL: the whole point is a distinct set, and letting
 // DuckDB dedupe during the union is cheaper than materialising ~10^6 duplicate
@@ -38,6 +38,8 @@ const liveAttributeIDs = `
 	union select unnest(attribute_ids) from logs
 	union select unnest(attribute_ids) from datapoints
 	union select unnest(attribute_ids) from metric_series
+	union select unnest(resource_attribute_ids) from metric_streams
+	union select unnest(scope_attribute_ids) from metric_streams
 	union select unnest(metadata_ids) from metric_ingests
 	union select unnest(attribute_ids) from exemplars
 	union select unnest(attribute_ids) from resources
@@ -68,7 +70,6 @@ var sweepQueries = []string{
 		select resource_id from spans
 		union select resource_id from logs
 		union select resource_id from metric_ingests
-		union select resource_id from metric_series
 	) returning id::varchar`,
 	`delete from scopes where id not in (
 		select scope_id from spans

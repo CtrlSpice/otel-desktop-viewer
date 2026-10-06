@@ -135,9 +135,9 @@ func seedDatapoints(t *testing.T, s *Store, streamID, ingestID string, n int, st
 	// exist before its points. One series per stream is enough here -- these
 	// tests are about pruning by time, not about series identity.
 	_, err = s.db.Exec(`
-		insert into metric_series (id, stream_id, resource_id, attribute_ids)
-		values (?::uuid, ?::uuid, ?::uuid, []::uuid[]) on conflict do nothing`,
-		streamID, streamID, seedResourceID)
+		insert into metric_series (id, stream_id, attribute_ids)
+		values (?::uuid, ?::uuid, []::uuid[]) on conflict do nothing`,
+		streamID, streamID)
 	require.NoError(t, err)
 	_, err = s.db.Exec(`
 		insert into datapoints (id, stream_id, series_id, metric_ingest_id, timestamp, double_value, value_type, attribute_ids)

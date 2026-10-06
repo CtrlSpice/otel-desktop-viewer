@@ -1,30 +1,15 @@
--- metric_streams is the canonical identity for a logical OTel metric.
--- Modeled after VictoriaMetrics's IndexDB pattern: every identity-bearing
--- query (Search, GetMetric, DeleteMetricStream, quantile/bucket series)
--- joins this table by surrogate UUID instead of reconstructing identity
--- from per-batch metric rows.
---
--- The UNIQUE constraint on the 8-field tuple is what makes ingest's
--- find-or-insert correct: two OTLP batches that describe the same
--- logical stream produce the same id, so all their datapoints live
--- under one identity.
---
--- service_name is part of identity (two metrics that share name+unit+...
--- but come from different services are different streams) and also acts
--- as the denormalized "filter by service" column for SearchSummaries.
---
--- All eight identity columns are NOT NULL with zero (aggregation temporality),
--- empty-string (varchars), or false (is_monotonic) defaults representing "not
--- applicable" (Gauge has no temporality/monotonicity, Histogram has
--- no monotonicity, etc.). This is a deliberate workaround for
--- DuckDB's standard-SQL behavior that treats two NULL values as
--- distinct in a UNIQUE constraint, which would defeat the
--- find-or-insert dedupe at ingest. The semantic distinction between
--- enum zero and "not applicable" is borne by metric_type alone --
--- readers know that a Gauge's is_monotonic is N/A regardless of the
--- stored value.
+-- metric_streams is the canonical identity for one exact OTel Metric.
+-- The primary key is a versioned content ID over complete Resource attributes,
+-- the complete InstrumentationScope tuple, and the identifying Metric
+-- descriptor fields. Ingest compares this stored tuple on every ID conflict.
+-- Resource and Scope schema/dropped-count payload variants remain on
+-- metric_ingests; only ScopeMetrics.schema_url participates in identity.
+-- service_name is a derived search/display projection of Resource attributes.
+-- Placeholder zero/false descriptor values are non-applicable according to
+-- metric_type and do not represent received values for Gauge or Summary.
 create table if not exists metric_streams (
 		id uuid primary key,
+		resource_attribute_ids uuid[] not null default [],
 		name varchar not null,
 		unit varchar not null default '',
 		metric_type varchar not null,
@@ -34,6 +19,7 @@ create table if not exists metric_streams (
 		is_monotonic boolean not null default false,
 		scope_name varchar not null default '',
 		scope_version varchar not null default '',
+		scope_schema_url varchar not null default '',
+		scope_attribute_ids uuid[] not null default [],
 		service_name varchar not null default '',
-		unique (name, unit, metric_type, aggregation_temporality, is_monotonic, scope_name, scope_version, service_name)
 	)

@@ -108,6 +108,7 @@ function makeCumulativeSumMetric(): MetricData {
     resource: EMPTY_RESOURCE,
     scopeName: EMPTY_SCOPE.name,
     scopeVersion: EMPTY_SCOPE.version,
+    scopeSchemaUrl: '',
     scopeDroppedAttributesCount: 0,
     scope: EMPTY_SCOPE,
     datapointCount: 0,

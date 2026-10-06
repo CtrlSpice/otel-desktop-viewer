@@ -67,6 +67,7 @@ function metricResult(overrides: Partial<JsonMetricData> = {}): JsonMetricData {
     resourceDroppedAttributesCount: 0,
     resource: { attributes: [], droppedAttributesCount: 0 },
     scopeName: '',
+    scopeSchemaUrl: '',
     scopeVersion: '',
     scopeDroppedAttributesCount: 0,
     scope: { name: '', version: '', attributes: [], droppedAttributesCount: 0 },
@@ -262,6 +263,7 @@ describe('telemetryAPI.getMetric', () => {
     stubRpcResult(
       metricResult({
         unit: 'bytes',
+        scopeSchemaUrl: 'https://example.test/scope/1.0',
         window: {
           requested: { startNs: null, endNs: null },
           effective: { startNs: '10', endNs: '20' },
@@ -271,6 +273,7 @@ describe('telemetryAPI.getMetric', () => {
     const metric = await telemetryAPI.getMetric('some-stream', 0n, 1n)
     expect(metric).not.toBeNull()
     expect(metric!.name).toBe('test.gauge')
+    expect(metric!.scopeSchemaUrl).toBe('https://example.test/scope/1.0')
     expect(metric!.timeseries).toEqual([])
     expect(metric!.window).toEqual({
       requested: { startNs: null, endNs: null },
