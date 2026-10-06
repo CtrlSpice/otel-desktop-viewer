@@ -63,7 +63,7 @@ function metricResult(overrides: Partial<JsonMetricData> = {}): JsonMetricData {
     metricType: 'Gauge',
     aggregationTemporalityCode: null,
     aggregationTemporality: null,
-    isMonotonic: false,
+    isMonotonic: null,
     resourceDroppedAttributesCount: 0,
     resource: { attributes: [], droppedAttributesCount: 0 },
     scopeName: '',

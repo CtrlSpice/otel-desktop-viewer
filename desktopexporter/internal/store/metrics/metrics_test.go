@@ -2784,6 +2784,51 @@ func TestMetricDetailRetainsIdentityResourceOutsideDatapointWindow(t *testing.T)
 	assert.Empty(t, metric["timeseries"])
 }
 
+func TestMetricDetailProjectsMonotonicityOnlyForSum(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	md := pmetric.NewMetrics()
+	sm := md.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty()
+	const timestamp = pcommon.Timestamp(100)
+
+	gauge := sm.Metrics().AppendEmpty()
+	gauge.SetName("gauge")
+	gauge.SetEmptyGauge().DataPoints().AppendEmpty().SetTimestamp(timestamp)
+
+	sum := sm.Metrics().AppendEmpty()
+	sum.SetName("sum")
+	sumData := sum.SetEmptySum()
+	sumData.SetIsMonotonic(true)
+	sumData.DataPoints().AppendEmpty().SetTimestamp(timestamp)
+
+	histogram := sm.Metrics().AppendEmpty()
+	histogram.SetName("histogram")
+	histogram.SetEmptyHistogram().DataPoints().AppendEmpty().SetTimestamp(timestamp)
+
+	exponential := sm.Metrics().AppendEmpty()
+	exponential.SetName("exponential")
+	exponential.SetEmptyExponentialHistogram().DataPoints().AppendEmpty().SetTimestamp(timestamp)
+
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+	}))
+
+	for _, summary := range searchMetricsAll(t, s, ctx) {
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetric(ctx, db, summary["id"].(string),
+				store.BoundedTimeRange(101, 102), 0, nil, nil, 0, 0, 0, nil, "", nil, 0)
+		})
+		require.NoError(t, err)
+		var metric map[string]any
+		require.NoError(t, json.Unmarshal(raw, &metric))
+		if summary["name"] == "sum" {
+			assert.Equal(t, true, metric["isMonotonic"])
+		} else {
+			assert.Nil(t, metric["isMonotonic"], "%s monotonicity is not applicable", summary["name"])
+		}
+	}
+}
+
 func TestHistogramSelectionIsPartitionedByExactScopeIdentity(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)

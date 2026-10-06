@@ -363,14 +363,13 @@ export type JsonSeriesRateStats = {
 
 export type JsonMetricTimeseries = {
   /**
-   * The series id: content-derived from (stream, originating resource
-   * attributes, datapoint labels).
+   * The generated database-local series id.
    *
    * Was the canonical "key=value|..." rendering of the labels, which could not
    * survive series splitting by resource -- two replicas of one service have
    * byte-identical labels and so produced colliding keys. It is also stable
    * across restarts and retention, which the old key was not, so it can be put
-   * in a URL.
+   * in a URL while the database retains the series.
    */
   attributesKey: string
   attributes: JsonAttribute[]
@@ -437,7 +436,7 @@ export type JsonMetricData = {
   // metricType, so its derived label is null rather than "Unspecified".
   aggregationTemporalityCode: number | null
   aggregationTemporality: string | null
-  isMonotonic: boolean
+  isMonotonic: boolean | null
   resourceDroppedAttributesCount: number
   resource: JsonResourceData
   scopeName: string

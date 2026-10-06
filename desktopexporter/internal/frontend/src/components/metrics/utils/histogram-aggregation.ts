@@ -319,7 +319,7 @@ export function buildPerSeriesQuantileSeries(
   perAttributeSlices: HistogramSlicePoint[],
   quantile: number,
   visibleKeys: Set<string>,
-  /** Series id -> how a reader names it. Ids are content-derived, so without
+  /** Series id -> how a reader names it. Ids are opaque, so without
    *  this a legend entry reads as a uuid. */
   labelByKey?: ReadonlyMap<string, string>
 ): ChartTimeseries[] {

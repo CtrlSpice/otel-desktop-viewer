@@ -286,8 +286,8 @@
 		--
 		-- attributes_sample picks any one datapoint's attributes from
 		-- this timeseries. Within a timeseries they're identical by
-		-- construction -- series_id is content-derived from the exact stream id
-		-- and datapoint attribute ids, so the array cannot vary inside a group.
+		-- construction -- exact uniqueness binds series_id to one stream id and
+		-- datapoint attribute-id set, so the array cannot vary inside a group.
 		--
 		-- any_value wraps the *array*, not the resolved JSON. Written the
 		-- other way round the macro sits inside the aggregate, so it runs once
@@ -1410,9 +1410,9 @@
 			select
 				d.series_id,
 				-- The series id is the key, and the only key. It is
-				-- content-derived from (exact Metric stream, datapoint attributes),
-				-- so it preserves OTel series identity and is stable
-				-- across re-ingests. That stability makes it safe in a URL,
+				-- generated for one exact Metric stream and datapoint attribute set,
+				-- with exact uniqueness making it stable across re-ingests. That
+				-- stability makes it safe in a URL within this database,
 				-- unlike a datapoint id that retention eventually deletes.
 				-- resource_id need not be a second grouping key: exact payloads
 				-- remain on metric_ingests, while dropped count is not a series
@@ -1818,7 +1818,7 @@
 				else case s.aggregation_temporality
 				when 0 then 'Unspecified' when 1 then 'Delta' when 2 then 'Cumulative'
 				else 'Unknown (' || s.aggregation_temporality::varchar || ')' end end,
-			'isMonotonic', s.is_monotonic,
+			'isMonotonic', case when s.metric_type = 'Sum' then s.is_monotonic else null end,
 			'resourceDroppedAttributesCount', coalesce((select resource_dropped from representative_owners), 0),
 			-- Resource attributes identify the selected Metric and remain available
 			-- even when the requested window has no representative ingest.
