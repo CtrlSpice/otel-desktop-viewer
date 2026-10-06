@@ -28,8 +28,8 @@ import { parseQuery } from '@/components/shared/Search/queryParser'
 // metric not found -- back to null. These tests pin that translation.
 
 type StubRpcResponse<T> = {
-  jsonrpc: '2.0'
-  id: number
+  jsonrpc?: unknown
+  id?: unknown
   result?: T
   error?: { code: number; message: string }
 }
@@ -37,15 +37,19 @@ type StubRpcResponse<T> = {
 function stubRpcResponse<T>(body: StubRpcResponse<T>) {
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => body,
+    vi.fn().mockImplementation(async (_url, init: RequestInit) => {
+      const request = JSON.parse(String(init.body)) as { id: number }
+      const responseBody = 'id' in body ? body : { ...body, id: request.id }
+      return {
+        ok: true,
+        json: async () => responseBody,
+      }
     })
   )
 }
 
 function stubRpcResult<T>(result: T) {
-  stubRpcResponse({ jsonrpc: '2.0', id: 1, result })
+  stubRpcResponse({ jsonrpc: '2.0', result })
 }
 
 function metricResult(overrides: Partial<JsonMetricData> = {}): JsonMetricData {
@@ -81,6 +85,67 @@ function metricResult(overrides: Partial<JsonMetricData> = {}): JsonMetricData {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
+
+describe('JSON-RPC response identity', () => {
+  it('accepts a successful response with the numeric request ID', async () => {
+    stubRpcResult('cleared')
+
+    await expect(telemetryAPI.clearTraces()).resolves.toBe('cleared')
+  })
+
+  it('preserves an RPC error with the numeric request ID', async () => {
+    stubRpcResponse({
+      jsonrpc: '2.0',
+      error: { code: -32009, message: 'Invalid request' },
+    })
+
+    await expect(telemetryAPI.clearTraces()).rejects.toMatchObject({
+      name: 'JsonRpcError',
+      code: -32009,
+      message: 'Invalid request',
+    })
+  })
+
+  it.each([
+    ['missing', undefined],
+    ['wrong', '1.0'],
+    ['null', null],
+  ])('rejects a %s JSON-RPC version', async (_case, jsonrpc) => {
+    stubRpcResponse({ jsonrpc, result: 'cleared' })
+
+    await expect(telemetryAPI.clearTraces()).rejects.toThrow(
+      `Invalid JSON-RPC version: ${String(jsonrpc)}`
+    )
+  })
+
+  it.each([
+    ['missing', undefined],
+    ['wrong numeric', -1],
+    ['null', null],
+    ['matching digits as a string', '0'],
+  ])('rejects a %s response ID', async (_case, id) => {
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    stubRpcResponse({ jsonrpc: '2.0', id, result: 'cleared' })
+
+    await expect(telemetryAPI.clearTraces()).rejects.toThrow(
+      'JSON-RPC response ID does not match request ID'
+    )
+  })
+
+  it('rejects an invalid ID before handling an RPC error', async () => {
+    stubRpcResponse({
+      jsonrpc: '2.0',
+      id: null,
+      error: { code: -32009, message: 'Invalid request' },
+    })
+
+    await expect(telemetryAPI.clearTraces()).rejects.toMatchObject({
+      name: 'Error',
+      message: 'JSON-RPC response ID does not match request ID',
+    })
+  })
 })
 
 describe('request cancellation', () => {
@@ -176,7 +241,6 @@ describe('telemetryAPI.getMetric', () => {
   it('returns null when the backend reports metric not found (-32003)', async () => {
     stubRpcResponse({
       jsonrpc: '2.0',
-      id: 1,
       error: { code: -32003, message: 'Metric not found' },
     })
     await expect(
@@ -187,7 +251,6 @@ describe('telemetryAPI.getMetric', () => {
   it('rethrows JSON-RPC errors other than metric not found', async () => {
     stubRpcResponse({
       jsonrpc: '2.0',
-      id: 1,
       error: { code: -32009, message: 'Invalid metric stream ID' },
     })
     const call = telemetryAPI.getMetric('not-a-stream', 0n, 1n)
@@ -1156,10 +1219,15 @@ describe('telemetryAPI metric bigint boundary', () => {
 // because the failures worth catching are a renamed key, an extra key, and a
 // silent return to positional arrays, and a loose assertion sees none of them.
 function captureRequest() {
-  const fetchMock = vi.fn().mockResolvedValue({
-    ok: true,
-    json: async () => ({ jsonrpc: '2.0', id: 1, result: [] }),
-  })
+  const fetchMock = vi
+    .fn()
+    .mockImplementation(async (_url, init: RequestInit) => {
+      const request = JSON.parse(String(init.body)) as { id: number }
+      return {
+        ok: true,
+        json: async () => ({ jsonrpc: '2.0', id: request.id, result: [] }),
+      }
+    })
   vi.stubGlobal('fetch', fetchMock)
   return () => JSON.parse(fetchMock.mock.calls[0][1].body)
 }
