@@ -68,10 +68,6 @@ export type SpanData = {
   links: LinkData[]
   resource: ResourceData
   scope: ScopeData
-  /** Received ResourceSpans schema URL when supplied by trace detail. */
-  resourceSchemaURL?: string
-  /** Received ScopeSpans schema URL when supplied by trace detail. */
-  scopeSchemaURL?: string
 
   droppedAttributesCount: number
   droppedEventsCount: number

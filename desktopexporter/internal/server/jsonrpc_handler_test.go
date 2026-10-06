@@ -622,91 +622,106 @@ func TestGetTraceLogs(t *testing.T) {
 	})
 }
 
-func TestGetTraceDetail(t *testing.T) {
+func TestGetTraceReturnsOnlyCompactOverviewFields(t *testing.T) {
 	handler := setupHandlerWithData(t)
+	result, err := handler.Handle(context.Background(), createRequest("getTrace", map[string]any{"traceID": testTraceIDHex}))
+	require.NoError(t, err)
+	overview, ok := result.(compactTraceResult)
+	require.True(t, ok, "expected compactTraceResult, got %T", result)
+	require.Equal(t, testTraceIDHex, overview.Trace.TraceID)
+	require.EqualValues(t, len(overview.Spans), overview.Trace.SpanCount)
+	require.Equal(t, len(overview.Logs), overview.Trace.LogCount)
+	require.NotEmpty(t, overview.Trace.StartTime)
+	require.NotEmpty(t, overview.Trace.DurationNs)
+	require.NotEmpty(t, overview.Spans)
+	require.Equal(t, "pumpkin.pie", overview.Spans[0].Service)
+	require.Len(t, overview.Logs, 1)
+	require.Equal(t, "INFO", overview.Logs[0].Severity)
+	require.Equal(t, "test log message", overview.Logs[0].Body)
 
-	t.Run("named params return complete span and logs", func(t *testing.T) {
-		result, err := handler.Handle(context.Background(), createRequest("getTraceDetail", map[string]any{"traceID": testTraceIDHex}))
-		require.NoError(t, err)
-		var detail struct {
-			Trace struct {
-				TraceID string `json:"traceID"`
-				Spans   []struct {
-					SpanData map[string]json.RawMessage `json:"spanData"`
-				} `json:"spans"`
-			} `json:"trace"`
-			Logs []map[string]json.RawMessage `json:"logs"`
-		}
-		require.NoError(t, json.Unmarshal(result.(json.RawMessage), &detail))
-		require.Equal(t, testTraceIDHex, detail.Trace.TraceID)
-		require.Len(t, detail.Trace.Spans, 1)
-		require.Contains(t, detail.Trace.Spans[0].SpanData, "resourceSchemaURL")
-		require.Contains(t, detail.Trace.Spans[0].SpanData, "scopeSchemaURL")
-		require.Len(t, detail.Logs, 1)
-		for _, field := range []string{"timestamp", "observedTimestamp", "traceID", "spanID", "body", "attributes", "resource", "scope", "resourceSchemaURL", "scopeSchemaURL", "droppedAttributesCount", "flags", "eventName"} {
-			require.Contains(t, detail.Logs[0], field)
-		}
-	})
-
-	t.Run("not found", func(t *testing.T) {
-		result, err := handler.Handle(context.Background(), createRequest("getTraceDetail", []string{"00000000000000000000000000000099"}))
-		require.Nil(t, result)
-		require.Equal(t, ErrTraceNotFound, err)
-	})
-
-	t.Run("malformed trace ID", func(t *testing.T) {
-		result, err := handler.Handle(context.Background(), createRequest("getTraceDetail", []string{"bad"}))
-		require.Nil(t, result)
-		require.Equal(t, ErrInvalidTraceID, err)
-	})
-
-	t.Run("canceled", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
-		result, err := handler.Handle(ctx, createRequest("getTraceDetail", []string{testTraceIDHex}))
-		require.Nil(t, result)
-		require.Equal(t, ErrRequestCanceled, err)
-	})
+	encoded, err := json.Marshal(overview)
+	require.NoError(t, err)
+	var shape map[string]any
+	require.NoError(t, json.Unmarshal(encoded, &shape))
+	require.ElementsMatch(t, []string{"trace", "spans", "logs"}, serverMapKeys(shape))
+	require.ElementsMatch(t, []string{"traceID", "spanCount", "logCount", "startTime", "durationNs"}, serverMapKeys(shape["trace"].(map[string]any)))
+	require.ElementsMatch(t, []string{"spanID", "parentSpanID", "service", "name", "startOffsetNs", "durationNs"}, serverMapKeys(shape["spans"].([]any)[0].(map[string]any)))
+	require.ElementsMatch(t, []string{"timestamp", "spanID", "severity", "service", "eventName", "body"}, serverMapKeys(shape["logs"].([]any)[0].(map[string]any)))
+	require.NotContains(t, string(encoded), "attributes")
+	require.NotContains(t, string(encoded), "severityNumber")
+	require.NotContains(t, string(encoded), "schemaURL")
 }
 
-func TestGetTraceDetailPreservesFullLogWireValuesAndAssociations(t *testing.T) {
-	handler := setupHandlerWithData(t)
-	const body = `{"kind":"map","value":[{"key":"duplicate","value":{"kind":"int64","value":"-9223372036854775808"}},{"key":"duplicate","value":{"kind":"int64","value":"9223372036854775807"}},{"key":"negative-zero","value":{"kind":"double","value":{"bits":"8000000000000000"}}},{"key":"infinity","value":{"kind":"double","value":{"bits":"7ff0000000000000"}}}]}`
-	require.NoError(t, handler.store.WithDBWrite(func(db *sql.DB) error {
-		if _, err := db.Exec(`update logs set
-			timestamp = 18446744073709551615::ubigint,
-			observed_timestamp = 18446744073709551614::ubigint,
-			span_id = null,
-			body = ?::json,
-			resource_schema_url = 'resource-schema',
-			scope_schema_url = 'scope-schema'`, body); err != nil {
-			return err
-		}
-		_, err := db.Exec(`insert into logs select
-			'00000000-0000-0000-0000-000000000099'::uuid,
-			0::ubigint, 1::ubigint, trace_id, 18446744073709551615::ubigint,
-			severity_text, severity_number, body, resource_id, scope_id,
-			attribute_ids, dropped_attributes_count, flags, event_name, service_name,
-			resource_schema_url, scope_schema_url
-			from logs limit 1`)
-		return err
+func TestGetTraceComputesExactUnsignedTimingAndStableOrder(t *testing.T) {
+	s, err := store.NewStore(context.Background(), "", zap.NewNop())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
+	traces := ptrace.NewTraces()
+	rs := traces.ResourceSpans().AppendEmpty()
+	rs.Resource().Attributes().PutStr("service.name", "exact")
+	ss := rs.ScopeSpans().AppendEmpty()
+	traceID := pcommon.TraceID{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3}
+	maximum := ^uint64(0)
+	later := ss.Spans().AppendEmpty()
+	later.SetTraceID(traceID)
+	later.SetSpanID(pcommon.SpanID{0, 0, 0, 0, 0, 0, 0, 2})
+	later.SetName("later")
+	later.SetStartTimestamp(pcommon.Timestamp(maximum - 500))
+	later.SetEndTimestamp(pcommon.Timestamp(maximum - 505))
+	earlier := ss.Spans().AppendEmpty()
+	earlier.SetTraceID(traceID)
+	earlier.SetSpanID(pcommon.SpanID{0, 0, 0, 0, 0, 0, 0, 1})
+	earlier.SetName("earlier")
+	earlier.SetStartTimestamp(pcommon.Timestamp(maximum - 1000))
+	earlier.SetEndTimestamp(pcommon.Timestamp(maximum - 900))
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(context.Background(), conn, traces, s.FlushedIDs())
 	}))
 
-	result, err := handler.Handle(context.Background(), createRequest("getTraceDetail", map[string]any{"traceID": testTraceIDHex}))
+	result, err := NewJSONRPCHandler(s, zap.NewNop()).Handle(context.Background(), createRequest("getTrace", []string{"00000000000000000000000000000003"}))
 	require.NoError(t, err)
-	var detail struct {
-		Logs []map[string]json.RawMessage `json:"logs"`
-	}
-	require.NoError(t, json.Unmarshal(result.(json.RawMessage), &detail))
-	require.Len(t, detail.Logs, 2)
-	require.JSONEq(t, `"00000000000000000000000000000001"`, string(detail.Logs[0]["traceID"]))
-	require.JSONEq(t, `"ffffffffffffffff"`, string(detail.Logs[0]["spanID"]))
-	require.JSONEq(t, `null`, string(detail.Logs[1]["spanID"]))
-	require.JSONEq(t, body, string(detail.Logs[1]["body"]))
-	require.JSONEq(t, `"18446744073709551615"`, string(detail.Logs[1]["timestamp"]))
-	require.JSONEq(t, `"18446744073709551614"`, string(detail.Logs[1]["observedTimestamp"]))
-	require.JSONEq(t, `"resource-schema"`, string(detail.Logs[1]["resourceSchemaURL"]))
-	require.JSONEq(t, `"scope-schema"`, string(detail.Logs[1]["scopeSchemaURL"]))
+	overview := result.(compactTraceResult)
+	require.Equal(t, "18446744073709550615", overview.Trace.StartTime)
+	require.Equal(t, "495", overview.Trace.DurationNs)
+	require.Len(t, overview.Spans, 2)
+	require.Equal(t, "0000000000000001", overview.Spans[0].SpanID)
+	require.Equal(t, "0", overview.Spans[0].StartOffsetNs)
+	require.Equal(t, "100", overview.Spans[0].DurationNs)
+	require.Equal(t, "0000000000000002", overview.Spans[1].SpanID)
+	require.Equal(t, "500", overview.Spans[1].StartOffsetNs)
+	require.Equal(t, "-5", overview.Spans[1].DurationNs)
+}
+
+func TestGetTraceValidatesIDAndContext(t *testing.T) {
+	handler := setupHandler(t)
+	result, err := handler.Handle(context.Background(), createRequest("getTrace", []string{"not-a-trace-id"}))
+	require.Nil(t, result)
+	require.Equal(t, ErrInvalidTraceID, err)
+
+	result, err = handler.Handle(context.Background(), createRequest("getTrace", []string{"00000000000000000000000000000002"}))
+	require.Nil(t, result)
+	require.ErrorIs(t, err, ErrTraceNotFound)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	result, err = setupHandlerWithData(t).Handle(ctx, createRequest("getTrace", []string{testTraceIDHex}))
+	require.Nil(t, result)
+	require.ErrorIs(t, err, ErrRequestCanceled)
+}
+
+func TestCompactTraceLogsPreservesNullAndDanglingSpanIDs(t *testing.T) {
+	logs, err := compactTraceLogs(json.RawMessage(`[
+		{"timestamp":"18446744073709551615","spanID":null,"severityText":"","severityNumber":9,"serviceName":"api","eventName":"","bodyPreview":"preview"},
+		{"timestamp":"18446744073709551614","spanID":"ffffffffffffffff","severityText":"CUSTOM","severityNumber":0,"serviceName":"worker","eventName":"retry","bodyPreview":"dangling"}
+	]`))
+	require.NoError(t, err)
+	require.Len(t, logs, 2)
+	require.Nil(t, logs[0].SpanID)
+	require.Equal(t, "INFO", logs[0].Severity)
+	require.Equal(t, "preview", logs[0].Body)
+	require.NotNil(t, logs[1].SpanID)
+	require.Equal(t, "ffffffffffffffff", *logs[1].SpanID)
+	require.Equal(t, "CUSTOM", logs[1].Severity)
 }
 
 func TestGetSpanResolutionNeverGuesses(t *testing.T) {
@@ -918,6 +933,14 @@ func TestGetSpanReturnsFullExactDetailAndOnlyCompositeLogs(t *testing.T) {
 		require.Contains(t, text, want)
 	}
 	require.NotContains(t, text, "trace-8")
+}
+
+func serverMapKeys(value map[string]any) []string {
+	keys := make([]string, 0, len(value))
+	for key := range value {
+		keys = append(keys, key)
+	}
+	return keys
 }
 
 func TestSearchSortParams(t *testing.T) {
