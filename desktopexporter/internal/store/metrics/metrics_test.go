@@ -2773,6 +2773,37 @@ func TestMetricIdentityIncompleteIncludesScopeDroppedAttributes(t *testing.T) {
 	assert.Equal(t, true, metric["identityIncomplete"])
 }
 
+func TestMetricDetailRetainsIdentityResourceOutsideDatapointWindow(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	timestamp := int64(1_700_000_000_000_000_000)
+	md := buildInstanceMetrics(t, map[string]string{"host.name": "pod-a"}, 0, timestamp)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+	}))
+
+	summaries := searchMetricsAll(t, s, ctx)
+	require.Len(t, summaries, 1)
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetric(ctx, db, summaries[0]["id"].(string),
+			store.BoundedTimeRange(timestamp+1, timestamp+2),
+			0, nil, nil, 0, 0, 0, nil, "", nil, 0)
+	})
+	require.NoError(t, err)
+	var metric map[string]any
+	require.NoError(t, json.Unmarshal(raw, &metric))
+
+	resource := metric["resource"].(map[string]any)
+	attributeValues := map[string]any{}
+	for _, rawAttribute := range resource["attributes"].([]any) {
+		attribute := rawAttribute.(map[string]any)
+		attributeValues[attribute["key"].(string)] = attribute["value"].(map[string]any)["value"]
+	}
+	assert.Equal(t, "checkout", attributeValues["service.name"])
+	assert.Equal(t, "pod-a", attributeValues["host.name"])
+	assert.Empty(t, metric["timeseries"])
+}
+
 func TestHistogramSelectionIsPartitionedByExactScopeIdentity(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)

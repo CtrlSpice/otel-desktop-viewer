@@ -476,6 +476,18 @@ type seriesRow struct {
 	attrs  []duckdb.UUID
 }
 
+func (r seriesRow) equal(other seriesRow) bool {
+	return r.id == other.id && r.stream == other.stream && slices.Equal(r.attrs, other.attrs)
+}
+
+func addSeriesRow(rows map[duckdb.UUID]seriesRow, row seriesRow) error {
+	if prior, ok := rows[row.id]; ok && !prior.equal(row) {
+		return fmt.Errorf("collectSeries: %w: metric series content ID collision", ErrMetricsStoreInternal)
+	}
+	rows[row.id] = row
+	return nil
+}
+
 // collectSeries walks every datapoint in the batch, in the same order pass 2
 // will, and works out which series each belongs to.
 //
@@ -514,7 +526,11 @@ func collectSeries(
 						ErrMetricsStoreInternal, identity)
 				}
 				var overrun bool
+				var collectionErr error
 				eachDatapoint(metric, func(_ pcommon.Map, _ pmetric.ExemplarSlice) {
+					if collectionErr != nil {
+						return
+					}
 					if cur >= len(dpAttrIDs) {
 						overrun = true
 						return
@@ -523,8 +539,15 @@ func collectSeries(
 					cur++
 					sid := ingest.MetricSeriesID(identity.ID, ids)
 					idents = append(idents, dpIdentity{series: sid, attrs: ids})
-					rows[sid] = seriesRow{id: sid, stream: identity.ID, attrs: ids}
+					row := seriesRow{id: sid, stream: identity.ID, attrs: ids}
+					if err := addSeriesRow(rows, row); err != nil {
+						collectionErr = err
+						return
+					}
 				})
+				if collectionErr != nil {
+					return nil, nil, collectionErr
+				}
 				if overrun {
 					return nil, nil, fmt.Errorf("collectSeries: %w: more datapoints than the dictionary walk saw (%d)",
 						ErrMetricsStoreInternal, len(dpAttrIDs))

@@ -1833,10 +1833,10 @@
 				       or isc.dropped_attributes_count > 0)
 			),
 			'resourceDroppedAttributesCount', coalesce((select resource_dropped from representative_owners), 0),
-			'resource', coalesce(
-				(select resource_json(resource_attribute_ids, resource_dropped) from representative_owners),
-				json_object('attributes', json('[]'), 'droppedAttributesCount', 0)
-			),
+			-- Resource attributes identify the selected Metric and remain available
+			-- even when the requested window has no representative ingest.
+			'resource', resource_json(s.resource_attribute_ids,
+				coalesce((select resource_dropped from representative_owners), 0)),
 			'scopeName', s.scope_name, 'scopeVersion', s.scope_version,
 			'scopeSchemaUrl', s.scope_schema_url,
 			'scopeDroppedAttributesCount', coalesce((select scope_dropped from representative_owners), 0),
