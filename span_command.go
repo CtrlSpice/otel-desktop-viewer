@@ -278,6 +278,7 @@ func formatFoundSpan(result spanCommandResult) (string, error) {
 	return "SPAN\n" + spanTable +
 		"\nTIMING AND STATUS\n" + timingTable +
 		"\nRESOURCE ATTRIBUTES\n" + formatAttributes(span.Resource.Attributes) +
+		"\nSCOPE ATTRIBUTES\n" + formatAttributes(span.Scope.Attributes) +
 		"\nSPAN ATTRIBUTES\n" + formatAttributes(span.Attributes) +
 		fmt.Sprintf("\nEVENTS (%d)\n", len(span.Events)) + detailTable([]string{"timestamp", "name", "droppedAttributes", "attributes"}, eventRows) +
 		fmt.Sprintf("\nLINKS (%d)\n", len(span.Links)) + detailTable([]string{"traceID", "spanID", "traceState", "flags", "droppedAttributes", "attributes"}, linkRows) +

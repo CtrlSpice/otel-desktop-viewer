@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -45,13 +46,16 @@ func TestSpanCommandValidationAndOutcomes(t *testing.T) {
 		cmd.SetArgs([]string{"000000000000002a", "--limit", limit})
 		require.Error(t, cmd.Execute())
 	}
+	foundWithScopeAttribute := strings.Replace(foundSpanFixture,
+		`"scope":{"name":"scope","version":"1","attributes":[]`,
+		`"scope":{"name":"scope","version":"1","attributes":[{"key":"scope.key","value":{"kind":"string","value":"scope value"}}]`, 1)
 	for _, tc := range []struct {
 		result string
 		wants  []string
 	}{
 		{`{"status":"notFound","spanID":"000000000000002a","traceID":null}`, []string{"was not found"}},
 		{ambiguousSpanFixture, []string{"SPAN SUMMARIES (2 matches)", "traceID", "spanID", "second", "durationNs"}},
-		{foundSpanFixture, []string{"SPAN\n", "TIMING AND STATUS\n", "RESOURCE ATTRIBUTES\n", "SPAN ATTRIBUTES\n", "EVENTS (1)\n", "LINKS (1)\n", "CORRELATED LOGS (1)\n", "int64", "9223372036854775807", "8000000000000000", "log-resource-schema"}},
+		{foundWithScopeAttribute, []string{"SPAN\n", "TIMING AND STATUS\n", "RESOURCE ATTRIBUTES\n", "SCOPE ATTRIBUTES\n", "scope.key", "scope value", "SPAN ATTRIBUTES\n", "EVENTS (1)\n", "LINKS (1)\n", "CORRELATED LOGS (1)\n", "int64", "9223372036854775807", "8000000000000000", "log-resource-schema"}},
 	} {
 		server := spanRPCServer(t, json.RawMessage(tc.result), map[string]any{"spanID": "000000000000002a", "limit": float64(25)})
 		cmd := newSpanCommand(server.Client())
