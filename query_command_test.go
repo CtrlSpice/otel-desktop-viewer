@@ -242,3 +242,36 @@ func TestFormatQueryColumnsDistinguishesNullEmptyAndEscapesControls(t *testing.T
 	assert.Equal(t, "value  payload            \n-----  -------------------\n       NULL               \né      {\"line\":\"one\\ntwo\"}\n", output)
 	assert.False(t, strings.ContainsRune(output, '\x1b'))
 }
+
+func TestQueryDisplayWidthUsesTerminalCellWidths(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		width int
+	}{
+		{name: "wide CJK cat", value: "猫", width: 2},
+		{name: "wide CJK boundary", value: "界", width: 2},
+		{name: "combining text", value: "e\u0301", width: 1},
+		{name: "family emoji sequence", value: "👨‍👩‍👧‍👦", width: 2},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.width, queryDisplayWidth(test.value))
+		})
+	}
+}
+
+func TestFormatQueryColumnsAlignsUnicodeTerminalCells(t *testing.T) {
+	result := queryResult{
+		Columns: []queryColumn{{Name: "text"}, {Name: "x"}},
+		Rows: [][]any{
+			{"猫", "x"},
+			{"界界", "x"},
+			{"e\u0301", "x"},
+			{"👨‍👩‍👧‍👦", "x"},
+		},
+	}
+
+	assert.Equal(t, "text  x\n----  -\n猫    x\n界界  x\né     x\n👨‍👩‍👧‍👦    x\n", formatQueryColumns(result))
+}

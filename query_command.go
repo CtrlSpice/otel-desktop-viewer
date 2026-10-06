@@ -13,6 +13,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/rivo/uniseg"
 	"github.com/spf13/cobra"
 )
 
@@ -331,11 +332,5 @@ func escapeQueryDisplay(value string) string {
 }
 
 func queryDisplayWidth(value string) int {
-	width := 0
-	for _, r := range value {
-		if !unicode.Is(unicode.Mn, r) && !unicode.Is(unicode.Me, r) {
-			width++
-		}
-	}
-	return width
+	return uniseg.StringWidth(value)
 }
