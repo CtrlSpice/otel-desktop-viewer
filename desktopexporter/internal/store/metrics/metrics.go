@@ -102,6 +102,7 @@ func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flus
 	defer func() { err = ingest.InterruptedContextError(ctx, err) }()
 	var identities []streamIdentity
 	identityIndexes := make(map[streamLookupKey]int)
+	var metricIdentityIndexes []int
 	var seriesRows []seriesRow
 	preRejected := make(map[int]error)
 	cleanupArmed := false
@@ -148,12 +149,15 @@ func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flus
 				identity.MetadataIDs = metadataIDs
 				identity.ServiceName = serviceName
 				identityKey := identity.lookupKey()
-				if index, exists := identityIndexes[identityKey]; exists {
+				index, exists := identityIndexes[identityKey]
+				if exists {
 					identities[index] = identity
 				} else {
-					identityIndexes[identityKey] = len(identities)
+					index = len(identities)
+					identityIndexes[identityKey] = index
 					identities = append(identities, identity)
 				}
+				metricIdentityIndexes = append(metricIdentityIndexes, index)
 				dpAttrIDs = addMetricAttributes(dict, metric, dpAttrIDs)
 			}
 		}
@@ -227,7 +231,7 @@ func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flus
 	}
 	// Pass 2: append, retrying in halves so a bad metric costs only itself.
 	return ingest.BisectingWrite(ctx, countMetrics(m), preRejected, func(lo, hi int) error {
-		return ingest.InTransaction(ctx, conn, func() error {
+		err := ingest.InTransaction(ctx, conn, func() error {
 			return appendPass(ctx, conn, m, identities, identityIndexes,
 				resourceIDs, resourcePayloadIDs, scopeIDs, dpIdents,
 				func(ordinal int) bool {
@@ -235,6 +239,15 @@ func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flus
 					return !rejected && ordinal >= lo && ordinal < hi
 				})
 		})
+		if err == nil {
+			// A committed empty Metric has no series to protect it during cleanup.
+			for ordinal := lo; ordinal < hi; ordinal++ {
+				if _, rejected := preRejected[ordinal]; !rejected {
+					identities[metricIdentityIndexes[ordinal]].Accepted = true
+				}
+			}
+		}
+		return err
 	})
 }
 
@@ -601,6 +614,7 @@ type streamIdentity struct {
 	ID                     duckdb.UUID
 	Existed                bool
 	ExistenceKnown         bool
+	Accepted               bool
 	ResourceID             duckdb.UUID
 	ResourcePayloadID      duckdb.UUID
 	ScopeID                duckdb.UUID
@@ -819,7 +833,7 @@ func cleanupProvisionalIdentities(
 		}
 	}
 	for _, identity := range identities {
-		if !identity.ExistenceKnown || identity.Existed {
+		if !identity.ExistenceKnown || identity.Existed || identity.Accepted {
 			continue
 		}
 		args, err := appendNamedValues(nil, prepareArg,
