@@ -52,6 +52,11 @@ export type JsonRootSpan = {
   name: string
 }
 
+export type JsonMatchedSpan = {
+  traceID: string
+  spanID: string
+}
+
 export type JsonTraceSummary = {
   traceID: string
   hasRootSpan: boolean
@@ -61,6 +66,8 @@ export type JsonTraceSummary = {
   durationNs: string | null
   spanCount: number
   errorCount: number
+  /** Computed identities of matching spans; present only for filtered searches. */
+  matchedSpans?: JsonMatchedSpan[]
 }
 
 export type JsonEventData = {
