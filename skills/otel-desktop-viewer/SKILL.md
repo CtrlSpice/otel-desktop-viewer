@@ -239,18 +239,20 @@ one-hour predicate is query scope, not received.
 
 ## Query recent span attribute use
 
-`attributes` is a dictionary, not telemetry rows. Spans own entries through
-`spans.attribute_ids`. Values are canonical recursive tagged JSON shaped
-`{kind,value}`. For example:
+`attributes` is a canonical `{kind,value}` dictionary. Owner arrays such as
+`spans.attribute_ids` store its database-local IDs. For example:
 
 ```json
 {"kind":"int64","value":"9007199254740993"}
 ```
 
-Here `json_extract_string(a.value, '$.kind')` returns `int64` as `value_kind`.
-The decimal string preserves precision; never cast it to `DOUBLE`. Native SQL
-integers remain integer JSON tokens in `--json`. Join ownership to count span
-identities:
+For exact equality, first find the matching dictionary `id`, then filter owners
+with `list_contains(attribute_ids, '<id>'::UUID)`. Use unnest/join for counts,
+ranges, partial matches, or values without one exact ID.
+
+Below, `value_kind` is `int64` for the example. The decimal string stays exact;
+never cast it to `DOUBLE`. Native SQL integers remain integer JSON tokens in
+`--json`. Join ownership to count span identities:
 
 ```sh
 otel-desktop-viewer query "
@@ -271,12 +273,10 @@ ORDER BY owning_span_count DESC, a.key, value_kind"
 This counts recent spans owning each key and received value kind, excluding
 resource, scope, event, link, log, datapoint, and exemplar owners.
 
-For common values of one exact span-attribute key, replace
-`http.request.method`. The denominator is one-hour scoped spans owning that key,
-not all recent spans or dictionary rows.
-`owning_span_count` is exact; derived `relative_frequency` divides it by that
-denominator using `DOUBLE`. Keep `value_kind` with complete `tagged_value` to
-preserve the received kind and representation.
+For common values, replace `http.request.method`. The denominator is one-hour
+spans owning that key, not all recent spans or dictionary rows. Counts are exact;
+derived `relative_frequency` uses `DOUBLE`. Keep `value_kind` with complete
+`tagged_value` to preserve received kind and representation.
 
 ```sh
 otel-desktop-viewer query --limit 10 "
@@ -321,12 +321,12 @@ LIMIT 10"
 
 ## Interpret results
 
-- No rows is a successful result. Before reporting absence, check endpoint, time
-  predicate, service, trace ID, exact received attribute key, and signal export.
-- A SQL error is not no rows. Run `SHOW TABLES` and `DESCRIBE` on the same viewer,
-  then correct the named table or column.
-- The default limit is 25. Table output reports truncation only when a look-ahead
-  row proves more exist; exactly 25 rows does not prove it.
+- No rows is success. Before reporting absence, verify endpoint, time, service,
+  trace ID, exact key, and signal export.
+- For SQL errors, run `SHOW TABLES` and `DESCRIBE` on the same viewer, then fix the
+  named table or column.
+- A table result is truncated only when a look-ahead row proves more rows exist;
+  exactly 25 rows does not prove it.
 - Keep received, stored, computed, and display values distinct. Durations,
   effective timestamps, severity labels, counts, relative frequencies, and UUID
   reference text are not received OTel fields.
