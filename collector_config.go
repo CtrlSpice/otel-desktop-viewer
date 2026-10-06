@@ -15,10 +15,10 @@ type configOptions struct {
 	db          string
 	dbMaxSize   string
 
-	// selfTelemetry turns on the exporter's own instrumentation and points the
-	// collector's service telemetry back at this process's own OTLP receiver,
-	// so the viewer renders its own spans and metrics.
-	selfTelemetry bool
+	// selfTelemetryEndpoint turns on the viewer's own instrumentation and sends
+	// its traces and metrics to an external OTLP gRPC endpoint. An empty value
+	// keeps viewer telemetry off.
+	selfTelemetryEndpoint string
 }
 
 // collectorURIs builds the yaml config fragments that stand in for a config
@@ -74,33 +74,29 @@ func collectorURIs(o configOptions) []string {
 		`yaml:service::pipelines::logs::processors: [batch]`,
 		`yaml:service::pipelines::logs::exporters: [desktop]`,
 	}
-	return append(URIs, telemetryURIs(o, endpoint(o.grpcPort))...)
+	return append(URIs, telemetryURIs(o)...)
 }
 
-// telemetryURIs composes the service::telemetry block and the exporter's own
-// telemetry mode.
+// telemetryURIs composes the service::telemetry block and enables the viewer's
+// own instrumentation when an external endpoint is configured.
 //
 // Off is the default and keeps metrics at level "none", which is what stops the
 // collector standing up a metrics pipeline for a tool nobody asked to observe.
 //
-// The self mode points both the metric readers and the span processors at this
-// process's own OTLP gRPC receiver, so the viewer renders its own telemetry.
+// An endpoint points both the metric readers and the span processors at the
+// same external OTLP gRPC receiver.
 // The explicit readers list matters even though the config would validate
 // without it: otelconftelemetry's default config already carries a Pull
 // (Prometheus) reader, so raising the level without replacing that reader would
 // publish metrics on a Prometheus endpoint rather than sending them to us.
-//
-// The exporter is put in "self" rather than "enabled" so ingest spans are
-// suppressed -- writing our own telemetry would otherwise emit spans describing
-// that write.
-func telemetryURIs(o configOptions, otlpEndpoint string) []string {
-	if !o.selfTelemetry {
+func telemetryURIs(o configOptions) []string {
+	if o.selfTelemetryEndpoint == "" {
 		return []string{`yaml:service::telemetry::metrics::level: none`}
 	}
-	target := "http://" + otlpEndpoint
+	target := strconv.Quote(o.selfTelemetryEndpoint)
 	return []string{
-		`yaml:exporters::desktop::telemetry: self`,
-		`yaml:extensions::duckdb::telemetry: self`,
+		`yaml:exporters::desktop::telemetry: enabled`,
+		`yaml:extensions::duckdb::telemetry: enabled`,
 		"yaml:" + `
 service:
   telemetry:
