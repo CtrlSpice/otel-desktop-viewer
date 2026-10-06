@@ -155,7 +155,6 @@
 			join resource_data rd on rd.id = ts.resource_id
 			join scope_data scd on scd.id = ts.scope_id
 			left join span_attrs sa on sa.trace_id = ts.trace_id and sa.id = ts.span_id
-			
 			left join event_data ed on ts.trace_id = ed.trace_id and ts.span_id = ed.span_id
 			left join link_data ld on ts.trace_id = ld.trace_id and ts.span_id = ld.span_id
 		)
