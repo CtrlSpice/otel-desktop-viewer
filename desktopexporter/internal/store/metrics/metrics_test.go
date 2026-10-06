@@ -2750,6 +2750,9 @@ func TestMetricDetailRetainsIdentityResourceOutsideDatapointWindow(t *testing.T)
 	s, ctx := storetest.New(t)
 	timestamp := int64(1_700_000_000_000_000_000)
 	md := buildInstanceMetrics(t, map[string]string{"host.name": "pod-a"}, 0, timestamp)
+	sm := md.ResourceMetrics().At(0).ScopeMetrics().At(0)
+	sm.SetSchemaUrl("https://opentelemetry.io/schemas/1.30.0")
+	sm.Scope().Attributes().PutStr("scope.build", "blue")
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
 	}))
@@ -2773,6 +2776,16 @@ func TestMetricDetailRetainsIdentityResourceOutsideDatapointWindow(t *testing.T)
 	}
 	assert.Equal(t, "checkout", attributeValues["service.name"])
 	assert.Equal(t, "pod-a", attributeValues["host.name"])
+	assert.Equal(t, "otelhttp", metric["scopeName"])
+	assert.Equal(t, "1.2.0", metric["scopeVersion"])
+	assert.Equal(t, "https://opentelemetry.io/schemas/1.30.0", metric["scopeSchemaUrl"])
+	scope := metric["scope"].(map[string]any)
+	scopeAttributeValues := map[string]any{}
+	for _, rawAttribute := range scope["attributes"].([]any) {
+		attribute := rawAttribute.(map[string]any)
+		scopeAttributeValues[attribute["key"].(string)] = attribute["value"].(map[string]any)["value"]
+	}
+	assert.Equal(t, "blue", scopeAttributeValues["scope.build"])
 	assert.Empty(t, metric["timeseries"])
 }
 

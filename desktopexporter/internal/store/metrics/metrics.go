@@ -1438,11 +1438,10 @@ const matchIngestByLabel = `m.id in (
 // metricSearchFrom is the FROM clause metric search predicates are written
 // against. Mirrors spans.spanSearchFrom and logs.logSearchFrom.
 //
-// resources and scopes join through metric_ingests, not metric_streams: the
-// stream's scope_name / scope_version are its coarse *identity* (stable across
-// pod restarts, which is what keeps a counter one timeseries), while the
-// resources and scopes rows are the precise per-batch record. Searching
-// resource.* has to mean the latter.
+// resources and scopes join through metric_ingests, not metric_streams. The
+// stream stores the exact identifying Resource and Scope fields, while the
+// resources and scopes rows preserve each received payload, including dropped
+// counts. Searching resource.* and scope.* has to use those received rows.
 const metricSearchFrom = `from search_params, metric_ingests m
 			inner join metric_streams s on s.id = m.stream_id
 			inner join resources r on r.id = m.resource_id
