@@ -833,7 +833,7 @@ func TestGetSpanAmbiguityUsesLookaheadAndExactCount(t *testing.T) {
 	}))
 
 	result, err := handler.Handle(context.Background(), createRequest("getSpan", map[string]any{
-		"spanID": "000000000000002a", "limit": 25,
+		"spanID": "000000000000002a", "limit": 29,
 	}))
 	require.NoError(t, err)
 	ambiguous := result.(spanAmbiguousResult)
@@ -841,9 +841,9 @@ func TestGetSpanAmbiguityUsesLookaheadAndExactCount(t *testing.T) {
 	require.True(t, ambiguous.Truncated)
 	var summaries []map[string]any
 	require.NoError(t, json.Unmarshal(ambiguous.Summaries, &summaries))
-	require.Len(t, summaries, 25)
+	require.Len(t, summaries, 29)
 	require.Equal(t, "0000000000000000000000000000001e", summaries[0]["traceID"])
-	require.Equal(t, "00000000000000000000000000000006", summaries[24]["traceID"])
+	require.Equal(t, "00000000000000000000000000000002", summaries[28]["traceID"])
 }
 
 func TestGetSpanNotFoundValidationAndCancellation(t *testing.T) {
@@ -856,7 +856,7 @@ func TestGetSpanNotFoundValidationAndCancellation(t *testing.T) {
 
 	for _, params := range []any{
 		[]any{}, []any{"0"}, []any{"000000000000000g"}, []any{42}, []any{"0000000000000001", "bad-trace"},
-		[]any{"0000000000000001", nil, 0}, []any{"0000000000000001", nil, 26},
+		[]any{"0000000000000001", nil, 0}, []any{"0000000000000001", nil, math.MaxInt64},
 		map[string]any{"spanID": "0000000000000001", "unknown": "x"},
 	} {
 		result, err = handler.Handle(context.Background(), createRequest("getSpan", params))

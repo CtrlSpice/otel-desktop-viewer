@@ -41,11 +41,18 @@ func TestSpanCommandValidationAndOutcomes(t *testing.T) {
 		require.Error(t, cmd.Execute())
 	}
 	require.Equal(t, "0000000000000000", mustNormalizeSpanID(t, "0000000000000000"))
-	for _, limit := range []string{"0", "-1", "26", "9223372036854775807"} {
+	for _, limit := range []string{"0", "-1", "9223372036854775807"} {
 		cmd := newSpanCommand(http.DefaultClient)
 		cmd.SetArgs([]string{"000000000000002a", "--limit", limit})
 		require.Error(t, cmd.Execute())
 	}
+	server := spanRPCServer(t, json.RawMessage(ambiguousSpanFixture), map[string]any{
+		"spanID": "000000000000002a", "limit": float64(50),
+	})
+	cmd := newSpanCommand(server.Client())
+	cmd.SetArgs([]string{"000000000000002a", "--limit", "50", "--endpoint", server.URL})
+	require.NoError(t, cmd.Execute())
+	server.Close()
 	foundWithScopeAttribute := strings.Replace(foundSpanFixture,
 		`"scope":{"name":"scope","version":"1","attributes":[]`,
 		`"scope":{"name":"scope","version":"1","attributes":[{"key":"scope.key","value":{"kind":"string","value":"scope value"}}]`, 1)
