@@ -17,7 +17,7 @@ import (
 )
 
 func TestMetricsCommandPreservesSummaryFieldsFiltersAndResolvesTimeOnce(t *testing.T) {
-	const response = `[{"id":"018f0000-0000-7000-8000-000000000002","name":"http.server.duration","description":"request duration","unit":"ms","metricType":"Sum","aggregationTemporalityCode":null,"aggregationTemporality":null,"isMonotonic":true,"serviceName":"checkout","seriesCount":3,"seriesCardinality":7,"dataPointCount":9007199254740993,"lastValue":12.500,"lastSeen":"1790928000123456789"}]`
+	const response = `[{"metricRef":"018f0000-0000-7000-8000-000000000002","name":"http.server.duration","description":"request duration","unit":"ms","metricType":"Sum","aggregationTemporalityCode":null,"aggregationTemporality":null,"isMonotonic":true,"serviceName":"checkout","seriesCount":3,"seriesCardinality":7,"dataPointCount":9007199254740993,"lastValue":12.500,"lastSeen":"1790928000123456789"}]`
 	const cliJSON = `[{"metricRef":"018f0000-0000-7000-8000-000000000002","name":"http.server.duration","description":"request duration","unit":"ms","metricType":"Sum","aggregationTemporalityCode":null,"aggregationTemporality":null,"isMonotonic":true,"serviceName":"checkout","seriesCount":3,"seriesCardinality":7,"dataPointCount":9007199254740993,"lastValue":12.500,"lastSeen":"1790928000123456789"}]`
 	requests := make(chan queryRPCRequest, 2)
 	viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -72,7 +72,7 @@ func TestMetricsCommandPreservesSummaryFieldsFiltersAndResolvesTimeOnce(t *testi
 }
 
 func TestMetricsCommandLimitsEmptyErrorsCancellationAndHelp(t *testing.T) {
-	summary := `{"id":"1","name":"requests","description":"","unit":"1","metricType":"Gauge","aggregationTemporalityCode":null,"aggregationTemporality":null,"isMonotonic":null,"serviceName":"svc","seriesCount":1,"seriesCardinality":1,"dataPointCount":1,"lastValue":1,"lastSeen":"1"}`
+	summary := `{"metricRef":"1","name":"requests","description":"","unit":"1","metricType":"Gauge","aggregationTemporalityCode":null,"aggregationTemporality":null,"isMonotonic":null,"serviceName":"svc","seriesCount":1,"seriesCardinality":1,"dataPointCount":1,"lastValue":1,"lastSeen":"1"}`
 	t.Run("truncation and empty", func(t *testing.T) {
 		responses := []string{"[" + summary + "," + summary + "]", `[]`}
 		viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {

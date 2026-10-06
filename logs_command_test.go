@@ -17,7 +17,7 @@ import (
 )
 
 func TestLogsCommandPreservesSummaryFieldsFiltersAndResolvesTimeOnce(t *testing.T) {
-	const response = `[{"id":"018f0000-0000-7000-8000-000000000001","timestamp":"1790928000123456789","severityText":"ERROR","severityNumber":17,"serviceName":"checkout","bodyPreview":"card declined"}]`
+	const response = `[{"logRef":"018f0000-0000-7000-8000-000000000001","timestamp":"1790928000123456789","severityText":"ERROR","severityNumber":17,"serviceName":"checkout","bodyPreview":"card declined"}]`
 	requests := make(chan queryRPCRequest, 2)
 	viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		var rpcRequest queryRPCRequest
@@ -66,7 +66,7 @@ func TestLogsCommandPreservesSummaryFieldsFiltersAndResolvesTimeOnce(t *testing.
 func TestLogsCommandLimitsEmptyErrorsCancellationAndHelp(t *testing.T) {
 	t.Run("truncation and empty", func(t *testing.T) {
 		responses := []string{
-			`[{"id":"1","timestamp":"1","severityText":"INFO","severityNumber":9,"serviceName":"svc","bodyPreview":"one"},{"id":"2","timestamp":"2","severityText":"INFO","severityNumber":9,"serviceName":"svc","bodyPreview":"two"}]`,
+			`[{"logRef":"1","timestamp":"1","severityText":"INFO","severityNumber":9,"serviceName":"svc","bodyPreview":"one"},{"logRef":"2","timestamp":"2","severityText":"INFO","severityNumber":9,"serviceName":"svc","bodyPreview":"two"}]`,
 			`[]`,
 		}
 		viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
