@@ -103,7 +103,7 @@ logs:    otlp → batch → desktop
 | `--db` | *(empty)* | DuckDB file path; empty = in-memory |
 | `--db-max-size` | *(empty)* | Store size cap (e.g. `512MB`, `2GB`); oldest telemetry pruned when exceeded. `0` disables pruning. Defaults to 512 MB in-memory, 2 GB on disk. |
 | `--open-browser` | true | Open UI on startup |
-| `--telemetry` | false | Emit the viewer's own traces and metrics back to its own OTLP receiver, so the collector's operation is visible in its own UI. Sets both the `desktop` exporter's and the `duckdb` extension's telemetry mode to `self`; ingest spans are suppressed in that mode so instrumenting the write does not itself generate more writes to measure. |
+| `--telemetry-endpoint` | *(empty)* | External OTLP gRPC URL for the viewer's own traces and metrics. Empty means off. Sets both the `desktop` exporter's and the `duckdb` extension's telemetry mode to `enabled`; both signals use the supplied endpoint exactly. |
 
 Configuration is injected as inline YAML resolver URIs at startup. There is no `--config` file path exposed by the CLI today, though the underlying collector supports YAML providers.
 

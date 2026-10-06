@@ -75,7 +75,7 @@ func newRootCommand(
 	root.Flags().BoolVar(&openBrowser, "open-browser", openBrowser, "Open viewer after startup")
 	root.Flags().StringVar(&options.db, "db", "", "DuckDB file; omit for memory")
 	root.Flags().StringVar(&options.dbMaxSize, "db-max-size", "", "Maximum telemetry-store size (defaults to 512MB in memory or 2GB with --db; 0 disables pruning)")
-	root.Flags().BoolVar(&options.selfTelemetry, "telemetry", false, "Send viewer telemetry to itself")
+	root.Flags().StringVar(&options.telemetryEndpoint, "telemetry-endpoint", "", "External OTLP gRPC endpoint for viewer telemetry")
 
 	commands := []*cobra.Command{
 		newQueryCommand(client),
@@ -129,6 +129,13 @@ as a managed child. Retain its process handle, wait for the configured viewer
 HTTP endpoint to accept connections, then terminate and wait for the child only
 if you started it. Never stop a viewer you did not start.
 
+To observe the viewer itself, keep a monitoring viewer running:
+  otel-desktop-viewer --grpc 4327 --http 4328 --browser-port 8001
+Then start the observed viewer in another terminal:
+  otel-desktop-viewer --telemetry-endpoint http://localhost:4327
+The monitoring viewer must remain alive through observed viewer shutdown. The
+caller owns starting, stopping, and waiting for both processes.
+
 USAGE
   %s [flags]
   %s <command> [flags]
@@ -147,7 +154,8 @@ VIEWER FLAGS
       --open-browser         Open viewer after startup (default true)
       --db string            DuckDB file; omit for memory
       --db-max-size string   Maximum telemetry-store size (defaults to 512MB in memory or 2GB with --db; 0 disables pruning)
-      --telemetry            Send viewer telemetry to itself
+      --telemetry-endpoint string
+                            External OTLP gRPC endpoint for viewer telemetry
 
 GLOBAL FLAGS
   -h, --help      Help for this command

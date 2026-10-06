@@ -23,6 +23,7 @@ It has **two** dark modes now.
   - [Via Docker](#via-docker)
 - [Docker Compose](#docker-compose)
 - [Command Line Options](#command-line-options)
+- [Observe the Viewer](#observe-the-viewer)
 - [Query a Running Viewer](#query-a-running-viewer)
 - [Search Telemetry from the CLI](#search-telemetry-from-the-cli)
 - [Configuring Your OpenTelemetry SDK](#configuring-your-opentelemetry-sdk)
@@ -245,6 +246,8 @@ Flags:
       --host string          Host for OTLP receivers and the web UI (default localhost)
       --http int             OTLP HTTP listen port (default 4318)
       --open-browser         Open the browser on launch (default true)
+      --telemetry-endpoint string
+                             External OTLP gRPC endpoint for viewer telemetry
   -h, --help                 help for otel-desktop-viewer
   -v, --version              version for otel-desktop-viewer
 ```
@@ -252,6 +255,22 @@ Flags:
 ```bash
 otel-desktop-viewer --db ./telemetry.duckdb --db-max-size 4GB
 ```
+
+## Observe the Viewer
+
+Run another viewer to receive the observed viewer's own traces and metrics:
+
+```bash
+otel-desktop-viewer --grpc 4327 --http 4328 --browser-port 8001
+```
+
+Then start the observed viewer in another terminal:
+
+```bash
+otel-desktop-viewer --telemetry-endpoint http://localhost:4327
+```
+
+The telemetry endpoint is external to the observed viewer. Keep the monitoring viewer alive until the observed viewer has shut down so it can receive final telemetry. The caller owns starting, stopping, and waiting for both processes.
 
 ## Query a Running Viewer
 

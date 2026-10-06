@@ -103,9 +103,9 @@ func TestCollectorURIsResolve(t *testing.T) {
 		require.NoError(t, cfg.Validate())
 	})
 
-	t.Run("telemetry self", func(t *testing.T) {
+	t.Run("telemetry external", func(t *testing.T) {
 		o := testOptions()
-		o.selfTelemetry = true
+		o.telemetryEndpoint = "http://localhost:4327"
 
 		cfg, err := resolveConfig(t, o)
 		require.NoError(t, err)
@@ -123,9 +123,9 @@ func TestServiceTelemetryValidates(t *testing.T) {
 		require.NoError(t, validateServiceTelemetry(t, testOptions()))
 	})
 
-	t.Run("self", func(t *testing.T) {
+	t.Run("external", func(t *testing.T) {
 		o := testOptions()
-		o.selfTelemetry = true
+		o.telemetryEndpoint = "http://localhost:4327"
 		require.NoError(t, validateServiceTelemetry(t, o))
 	})
 }
@@ -134,25 +134,24 @@ func TestServiceTelemetryValidates(t *testing.T) {
 // service::telemetry block alone would give the exporter working providers
 // while leaving its own Telemetry field at the default, so it would emit
 // nothing.
-func TestSelfTelemetrySetsExporterMode(t *testing.T) {
-	off := telemetryURIs(testOptions(), "localhost:4317")
+func TestExternalTelemetrySetsExporterMode(t *testing.T) {
+	off := telemetryURIs(testOptions())
 	assert.NotContains(t, strings.Join(off, "\n"), "exporters::desktop::telemetry",
 		"exporter telemetry should be left at its default when the flag is off")
 
 	o := testOptions()
-	o.selfTelemetry = true
-	on := strings.Join(telemetryURIs(o, "localhost:4317"), "\n")
+	o.telemetryEndpoint = "http://localhost:4327"
+	on := strings.Join(telemetryURIs(o), "\n")
 
-	assert.Contains(t, on, "exporters::desktop::telemetry: self")
-	assert.Contains(t, on, "http://localhost:4317",
-		"self telemetry should target this process's own OTLP receiver")
+	assert.Contains(t, on, "exporters::desktop::telemetry: enabled")
+	assert.Contains(t, on, "extensions::duckdb::telemetry: enabled")
 }
 
 // Off must keep metrics at level none. Without it the collector's default
 // config stands up a Pull (Prometheus) reader, so the default build would open
 // a metrics endpoint nobody asked for.
 func TestTelemetryOffKeepsMetricsNone(t *testing.T) {
-	uris := telemetryURIs(testOptions(), "localhost:4317")
+	uris := telemetryURIs(testOptions())
 	require.Len(t, uris, 1)
 	assert.Equal(t, `yaml:service::telemetry::metrics::level: none`, uris[0])
 }
@@ -178,16 +177,17 @@ func TestPipelinesBatch(t *testing.T) {
 	require.NoError(t, cfg.Validate())
 }
 
-// The OTLP target must follow --grpc and --host rather than being hardcoded,
-// or self-telemetry silently goes nowhere on a non-default port.
-func TestSelfTelemetryFollowsGRPCEndpoint(t *testing.T) {
+// The external OTLP target is independent of this viewer's own gRPC receiver.
+func TestTelemetryEndpointConfiguresBothSignalsExactly(t *testing.T) {
 	o := testOptions()
-	o.selfTelemetry = true
+	o.telemetryEndpoint = "http://collector.example:4327"
 	o.grpcPort = 15317
 	o.host = "127.0.0.1"
 
 	joined := strings.Join(collectorURIs(o), "\n")
-	assert.Contains(t, joined, "http://127.0.0.1:15317")
+	assert.Contains(t, joined, `receivers::otlp::protocols::grpc::endpoint: "127.0.0.1:15317"`)
+	assert.Equal(t, 2, strings.Count(joined, `endpoint: "http://collector.example:4327"`),
+		"traces and metrics must use the exact supplied endpoint")
 }
 
 // TestStartupFailureIsNotAnsweredWithUsage covers the difference between "you
