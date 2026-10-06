@@ -745,13 +745,22 @@ func TestGetSpanResolutionNeverGuesses(t *testing.T) {
 	result, err := handler.Handle(context.Background(), createRequest("getSpan", map[string]any{"spanID": "000000000000002A"}))
 	require.NoError(t, err)
 	ambiguous := result.(spanAmbiguousResult)
-	require.Equal(t, 4, ambiguous.MatchCount)
+	require.EqualValues(t, 4, ambiguous.MatchCount)
+	var summaries []struct {
+		TraceID string `json:"traceID"`
+		SpanID  string `json:"spanID"`
+		Name    string `json:"name"`
+	}
+	require.NoError(t, json.Unmarshal(ambiguous.Summaries, &summaries))
 	require.Equal(t, []string{
 		"00000000000000000000000000000001",
 		"00000000000000000000000000000002",
 		"00000000000000000000000000000003",
 		"00000000000000000000000000000004",
-	}, ambiguous.TraceIDs)
+	}, []string{summaries[0].TraceID, summaries[1].TraceID, summaries[2].TraceID, summaries[3].TraceID})
+	require.Equal(t, "000000000000002a", summaries[0].SpanID)
+	require.Equal(t, "trace-1", summaries[0].Name)
+	require.False(t, ambiguous.Truncated)
 	require.Equal(t, "000000000000002a", ambiguous.SpanID)
 
 	result, err = handler.Handle(context.Background(), createRequest("getSpan", []any{"000000000000002a", "00000000000000000000000000000003"}))
@@ -767,7 +776,7 @@ func TestGetSpanResolutionNeverGuesses(t *testing.T) {
 	}))
 	result, err = handler.Handle(context.Background(), createRequest("getSpan", []any{"000000000000002a"}))
 	require.NoError(t, err)
-	require.Equal(t, 2, result.(spanAmbiguousResult).MatchCount)
+	require.EqualValues(t, 2, result.(spanAmbiguousResult).MatchCount)
 
 	require.NoError(t, handler.store.WithDBWrite(func(db *sql.DB) error {
 		_, err := db.Exec(`delete from spans where trace_id = ?::uuid`, "00000000000000000000000000000002")
@@ -785,6 +794,37 @@ func TestGetSpanResolutionNeverGuesses(t *testing.T) {
 	require.Equal(t, "00000000000000000000000000000009", *missing.TraceID)
 }
 
+func TestGetSpanAmbiguityUsesLookaheadAndExactCount(t *testing.T) {
+	handler := setupHandler(t)
+	data := ptrace.NewTraces()
+	for i := byte(1); i <= 30; i++ {
+		rs := data.ResourceSpans().AppendEmpty()
+		rs.Resource().Attributes().PutStr("service.name", "api")
+		span := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		span.SetTraceID(pcommon.TraceID{15: i})
+		span.SetSpanID(pcommon.SpanID{7: 42})
+		span.SetName(fmt.Sprintf("span-%02d", i))
+		span.SetStartTimestamp(pcommon.Timestamp(i))
+		span.SetEndTimestamp(pcommon.Timestamp(i + 1))
+	}
+	require.NoError(t, handler.store.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(context.Background(), conn, data, handler.store.FlushedIDs())
+	}))
+
+	result, err := handler.Handle(context.Background(), createRequest("getSpan", map[string]any{
+		"spanID": "000000000000002a", "limit": 25,
+	}))
+	require.NoError(t, err)
+	ambiguous := result.(spanAmbiguousResult)
+	require.EqualValues(t, 30, ambiguous.MatchCount)
+	require.True(t, ambiguous.Truncated)
+	var summaries []map[string]any
+	require.NoError(t, json.Unmarshal(ambiguous.Summaries, &summaries))
+	require.Len(t, summaries, 25)
+	require.Equal(t, "0000000000000000000000000000001e", summaries[0]["traceID"])
+	require.Equal(t, "00000000000000000000000000000006", summaries[24]["traceID"])
+}
+
 func TestGetSpanNotFoundValidationAndCancellation(t *testing.T) {
 	handler := setupHandler(t)
 	result, err := handler.Handle(context.Background(), createRequest("getSpan", map[string]any{"spanID": "0000000000000000"}))
@@ -795,6 +835,7 @@ func TestGetSpanNotFoundValidationAndCancellation(t *testing.T) {
 
 	for _, params := range []any{
 		[]any{}, []any{"0"}, []any{"000000000000000g"}, []any{42}, []any{"0000000000000001", "bad-trace"},
+		[]any{"0000000000000001", nil, 0},
 		map[string]any{"spanID": "0000000000000001", "unknown": "x"},
 	} {
 		result, err = handler.Handle(context.Background(), createRequest("getSpan", params))

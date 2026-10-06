@@ -531,20 +531,22 @@ func GetTrace(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage,
 	return json.RawMessage(raw), nil
 }
 
-// GetSpanTraceIDs returns every trace containing spanID in ascending order.
-func GetSpanTraceIDs(ctx context.Context, db *sql.DB, spanID uint64) (json.RawMessage, error) {
-	query, err := queries.Render(queries.GetSpanTraceIDs, nil)
+// GetSpanSummaries returns at most limit stable summary rows for one span ID,
+// together with the exact number of matching composite identities.
+func GetSpanSummaries(ctx context.Context, db *sql.DB, spanID uint64, limit int64) (json.RawMessage, int64, error) {
+	query, err := queries.Render(queries.GetSpanSummaries, nil)
 	if err != nil {
-		return nil, fmt.Errorf("GetSpanTraceIDs: %w: %w", ErrSpansStoreInternal, err)
+		return nil, 0, fmt.Errorf("GetSpanSummaries: %w: %w", ErrSpansStoreInternal, err)
 	}
 	var raw []byte
-	if err := db.QueryRowContext(ctx, query, []uint64{spanID}).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("GetSpanTraceIDs: %w: %w", ErrSpansStoreInternal, err)
+	var matchCount int64
+	if err := db.QueryRowContext(ctx, query, []uint64{spanID}, limit).Scan(&raw, &matchCount); err != nil {
+		return nil, 0, fmt.Errorf("GetSpanSummaries: %w: %w", ErrSpansStoreInternal, err)
 	}
 	if raw == nil {
-		return json.RawMessage("[]"), nil
+		raw = []byte("[]")
 	}
-	return json.RawMessage(raw), nil
+	return json.RawMessage(raw), matchCount, nil
 }
 
 // GetSpan returns full stored detail for one composite trace and span identity.

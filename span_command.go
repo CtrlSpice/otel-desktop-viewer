@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"net/http"
 	"strconv"
@@ -18,11 +19,14 @@ type spanCommandResult struct {
 	Status     string          `json:"status"`
 	SpanID     string          `json:"spanID"`
 	TraceID    *string         `json:"traceID"`
-	MatchCount int             `json:"matchCount"`
-	TraceIDs   []string        `json:"traceIDs"`
+	MatchCount int64           `json:"matchCount"`
+	Summaries  json.RawMessage `json:"summaries"`
+	Truncated  bool            `json:"truncated"`
 	Span       json.RawMessage `json:"span"`
 	Logs       json.RawMessage `json:"logs"`
 }
+
+var spanSummaryFields = []string{"traceID", "spanID", "parentSpanID", "service", "name", "startTime", "durationNs"}
 
 type spanDetail struct {
 	TraceID                string         `json:"traceID"`
@@ -105,16 +109,23 @@ type spanLog struct {
 func newSpanCommand(client *http.Client) *cobra.Command {
 	var endpoint string
 	var jsonOutput bool
+	var limit int64
 	cmd := &cobra.Command{
 		Use:   "span <span-id> | <trace-id> <span-id>",
 		Short: "🧵 Inspect one span",
-		Long:  "🧵 Inspect one span and its exactly correlated logs. A standalone span ID returns every matching trace when the ID is ambiguous; it never guesses.",
+		Long:  "🧵 Inspect one span and its exactly correlated logs. A standalone ambiguous ID returns bounded span summaries; it never guesses.",
 		Example: "  otel-desktop-viewer span 000000000000002a\n" +
 			"  otel-desktop-viewer span 0123456789abcdef0123456789abcdef 000000000000002a --json",
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true
 			cmd.SilenceErrors = true
+			if limit < 1 {
+				return errors.New("--limit must be greater than zero")
+			}
+			if limit == math.MaxInt64 {
+				return errors.New("--limit is too large")
+			}
 
 			var traceID string
 			spanArg := args[0]
@@ -133,6 +144,8 @@ func newSpanCommand(client *http.Client) *cobra.Command {
 			params := map[string]any{"spanID": spanID}
 			if traceID != "" {
 				params["traceID"] = traceID
+			} else {
+				params["limit"] = limit
 			}
 			raw, err := requestViewerRPC(cmd.Context(), client, endpoint, "getSpan", params)
 			if err != nil {
@@ -149,7 +162,7 @@ func newSpanCommand(client *http.Client) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("decode viewer getSpan result: %w", err)
 			}
-			formatted, err := formatSpanCommandResult(cmd, result)
+			formatted, err := formatSpanCommandResult(result)
 			if err != nil {
 				return fmt.Errorf("format viewer getSpan result: %w", err)
 			}
@@ -159,6 +172,7 @@ func newSpanCommand(client *http.Client) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&endpoint, "endpoint", "http://localhost:8000", "Running viewer HTTP endpoint")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Emit the exact span result as JSON instead of sections")
+	cmd.Flags().Int64Var(&limit, "limit", telemetryDefaultLimit, "Maximum summaries to return when a span ID is ambiguous")
 	return cmd
 }
 
@@ -185,7 +199,8 @@ func decodeSpanCommandResult(raw json.RawMessage) (spanCommandResult, error) {
 			return spanCommandResult{}, errors.New("notFound result is missing spanID")
 		}
 	case "ambiguous":
-		if result.SpanID == "" || result.MatchCount != len(result.TraceIDs) || len(result.TraceIDs) < 2 {
+		var summaries []json.RawMessage
+		if result.SpanID == "" || result.MatchCount < 2 || len(result.Summaries) == 0 || json.Unmarshal(result.Summaries, &summaries) != nil || len(summaries) == 0 || int64(len(summaries)) > result.MatchCount || (result.Truncated != (int64(len(summaries)) < result.MatchCount)) {
 			return spanCommandResult{}, errors.New("invalid ambiguous result")
 		}
 	case "found":
@@ -198,7 +213,7 @@ func decodeSpanCommandResult(raw json.RawMessage) (spanCommandResult, error) {
 	return result, nil
 }
 
-func formatSpanCommandResult(cmd *cobra.Command, result spanCommandResult) (string, error) {
+func formatSpanCommandResult(result spanCommandResult) (string, error) {
 	switch result.Status {
 	case "notFound":
 		if result.TraceID == nil {
@@ -206,12 +221,17 @@ func formatSpanCommandResult(cmd *cobra.Command, result spanCommandResult) (stri
 		}
 		return fmt.Sprintf("Span %s was not found in trace %s.\n", result.SpanID, *result.TraceID), nil
 	case "ambiguous":
-		var output strings.Builder
-		fmt.Fprintf(&output, "Span %s occurs in %d traces:\n", result.SpanID, result.MatchCount)
-		for _, traceID := range result.TraceIDs {
-			fmt.Fprintf(&output, "  %s %s %s\n", cmd.CommandPath(), traceID, result.SpanID)
+		var summaries []json.RawMessage
+		if err := json.Unmarshal(result.Summaries, &summaries); err != nil {
+			return "", err
 		}
-		return output.String(), nil
+		rows, err := decodeTelemetryRows(summaries, spanSummaryFields)
+		if err != nil {
+			return "", err
+		}
+		columns := traceColumns(spanSummaryFields...)
+		table := formatQueryColumns(queryResult{Columns: columns, Rows: rows, Truncated: result.Truncated})
+		return fmt.Sprintf("SPAN SUMMARIES (%d matches)\n%s", result.MatchCount, table), nil
 	case "found":
 		return formatFoundSpan(result)
 	default:

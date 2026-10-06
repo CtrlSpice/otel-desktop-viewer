@@ -92,8 +92,8 @@ const (
 	// GetTrace returns the compact span rows and exact timing summary used by
 	// the trace command. It deliberately omits full span detail.
 	GetTrace Name = "spans/get_trace.sql"
-	// GetSpanTraceIDs returns every trace carrying one exact span ID.
-	GetSpanTraceIDs Name = "spans/get_span_trace_ids.sql"
+	// GetSpanSummaries returns bounded summary rows for one exact span ID.
+	GetSpanSummaries Name = "spans/get_span_summaries.sql"
 	// GetSpan returns one full span selected by its composite identity.
 	GetSpan Name = "spans/get_span.sql"
 
@@ -141,7 +141,7 @@ const (
 // queryNames is every read-path query. Kept beside the constants so adding one
 // without registering it is a visible omission rather than a silent one.
 var queryNames = []Name{
-	SearchSpans, SalvageSpans, SearchTraces, GetTrace, GetSpanTraceIDs, GetSpan, GetTraceOTLP,
+	SearchSpans, SalvageSpans, SearchTraces, GetTrace, GetSpanSummaries, GetSpan, GetTraceOTLP,
 	GetMetric, GetMetricOTLP, GetMetricAttributes,
 	GetLog, GetLogOTLP, GetTraceLogs, GetSpanLogs, GetLogAttributes,
 	SearchMetricSummaries, SearchLogs,

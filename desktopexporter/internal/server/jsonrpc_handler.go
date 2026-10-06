@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
+	"math"
 	"strconv"
 	"strings"
 
@@ -304,10 +304,11 @@ type spanNotFoundResult struct {
 }
 
 type spanAmbiguousResult struct {
-	Status     string   `json:"status"`
-	SpanID     string   `json:"spanID"`
-	MatchCount int      `json:"matchCount"`
-	TraceIDs   []string `json:"traceIDs"`
+	Status     string          `json:"status"`
+	SpanID     string          `json:"spanID"`
+	MatchCount int64           `json:"matchCount"`
+	Summaries  json.RawMessage `json:"summaries"`
+	Truncated  bool            `json:"truncated"`
 }
 
 type spanFoundResult struct {
@@ -318,7 +319,7 @@ type spanFoundResult struct {
 }
 
 func (h *JSONRPCHandler) getSpan(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	params, err := decodePositionalParams(req.Params, 1, 2)
+	params, err := decodePositionalParams(req.Params, 1, 3)
 	if err != nil {
 		return nil, err
 	}
@@ -327,35 +328,56 @@ func (h *JSONRPCHandler) getSpan(ctx context.Context, req *jsonrpc2.Request) (an
 		return nil, err
 	}
 	var requestedTraceID *string
-	if len(params) == 2 {
+	if len(params) >= 2 && params[1] != nil {
 		traceID, err := parseIDParam(params[1], ErrInvalidTraceID, normalizeUUID)
 		if err != nil {
 			return nil, err
 		}
 		requestedTraceID = &traceID
 	}
+	limit := int64(25)
+	if len(params) == 3 && params[2] != nil {
+		parsed, err := parseTimestampParam(params[2], "limit")
+		if err != nil || parsed < 1 || parsed == math.MaxInt64 {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		limit = parsed
+	}
 
 	return handlerRead(ctx, h, func(db *sql.DB) (any, error) {
 		traceID := requestedTraceID
 		if traceID == nil {
-			traceIDsRaw, err := spans.GetSpanTraceIDs(ctx, db, spanValue)
+			summaries, matchCount, err := spans.GetSpanSummaries(ctx, db, spanValue, limit+1)
 			if err != nil {
 				return nil, err
 			}
-			var traceIDs []string
-			if err := json.Unmarshal(traceIDsRaw, &traceIDs); err != nil {
+			var rows []json.RawMessage
+			if err := json.Unmarshal(summaries, &rows); err != nil {
 				return nil, err
 			}
-			sort.Strings(traceIDs)
-			switch len(traceIDs) {
+			switch matchCount {
 			case 0:
 				return spanNotFoundResult{Status: "notFound", SpanID: spanID}, nil
 			case 1:
-				traceID = &traceIDs[0]
+				var summary struct {
+					TraceID string `json:"traceID"`
+				}
+				if len(rows) != 1 || json.Unmarshal(rows[0], &summary) != nil || summary.TraceID == "" {
+					return nil, errors.New("invalid span summary result")
+				}
+				traceID = &summary.TraceID
 			default:
+				truncated := int64(len(rows)) > limit
+				if truncated {
+					rows = rows[:limit]
+				}
+				bounded, err := json.Marshal(rows)
+				if err != nil {
+					return nil, err
+				}
 				return spanAmbiguousResult{
 					Status: "ambiguous", SpanID: spanID,
-					MatchCount: len(traceIDs), TraceIDs: traceIDs,
+					MatchCount: matchCount, Summaries: bounded, Truncated: truncated,
 				}, nil
 			}
 		}
