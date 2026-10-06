@@ -84,8 +84,12 @@ GLOBAL FLAGS
   -h, --help   Help for this command
 `
 
-func expectedTelemetryHelp(command, emoji, signal string) string {
-	return emoji + " Search existing " + signal + " summaries in the running viewer. The default window is the last hour; output uses aligned columns unless --json is set.\n\n" +
+func expectedTelemetryHelp(command, emoji, signal string, detail ...string) string {
+	description := emoji + " Search existing " + signal + " summaries in the running viewer. The default window is the last hour; output uses aligned columns unless --json is set."
+	if len(detail) > 0 {
+		description += " " + detail[0]
+	}
+	return description + "\n\n" +
 		"USAGE\n  otel-desktop-viewer " + command + " [flags]\n\n" +
 		"EXAMPLES\n" +
 		"  otel-desktop-viewer " + command + "\n" +
@@ -113,7 +117,7 @@ func TestCommandHelpSnapshotsAreOffline(t *testing.T) {
 		{name: "query", args: []string{"query", "--help"}, expected: expectedQueryHelp},
 		{name: "traces", args: []string{"traces", "--help"}, expected: expectedTelemetryHelp("traces", "🧵", "trace")},
 		{name: "logs", args: []string{"logs", "--help"}, expected: expectedTelemetryHelp("logs", "🪵", "log")},
-		{name: "metrics", args: []string{"metrics", "--help"}, expected: expectedTelemetryHelp("metrics", "📈", "metric")},
+		{name: "metrics", args: []string{"metrics", "--help"}, expected: expectedTelemetryHelp("metrics", "📈", "metric", "JSON identifies a viewer-assigned Metric with the opaque metricRef field.")},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			started := false

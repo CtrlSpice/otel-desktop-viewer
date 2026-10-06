@@ -26,6 +26,12 @@ type Column struct {
 // Execute runs one read-only statement and returns the DuckDB-built JSON
 // response. The caller owns conn and the enclosing Store.WithDBRead boundary.
 func Execute(ctx context.Context, conn *sql.Conn, statement string, limit uint64) (result json.RawMessage, err error) {
+	defer func() {
+		// DuckDB may return an interrupt without the request's cancellation error.
+		if ctxErr := ctx.Err(); err != nil && ctxErr != nil {
+			err = errors.Join(ctxErr, err)
+		}
+	}()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
