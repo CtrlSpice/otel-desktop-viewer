@@ -253,6 +253,9 @@ func newCommand(set otelcol.CollectorSettings) *cobra.Command {
 	rootCmd.Flags().BoolVar(&telemetryFlag, "telemetry", false, "Emit the viewer's own traces and metrics to its own OTLP receiver, so it can be observed in its own UI.")
 	rootCmd.Flags().StringVar(&dbMaxSizeFlag, "db-max-size", "", "Maximum size of the telemetry store (e.g. 512MB, 2GB). The oldest telemetry is pruned once the limit is reached. Use 0 to disable pruning. Defaults to 512MB in in-memory mode and 2GB with a database file.")
 	rootCmd.AddCommand(newQueryCommand())
+	rootCmd.AddCommand(newTracesCommand(time.Now))
+	rootCmd.AddCommand(newLogsCommand(time.Now))
+	rootCmd.AddCommand(newMetricsCommand(time.Now))
 
 	return rootCmd
 }

@@ -767,6 +767,41 @@ describe('telemetryAPI.searchTraces', () => {
     ])
   })
 
+  it('preserves optional matching span identities', async () => {
+    const matchedSpans = [
+      {
+        traceID: '00000000000000000000000000000001',
+        spanID: '0000000000000002',
+      },
+    ]
+    stubRpcResult([
+      {
+        traceID: '00000000000000000000000000000001',
+        hasRootSpan: true,
+        rootSpan: { serviceName: 'service-a', name: 'root' },
+        startTime: '1',
+        durationNs: '10',
+        spanCount: 2,
+        errorCount: 1,
+        matchedSpans,
+      },
+      {
+        traceID: '00000000000000000000000000000002',
+        hasRootSpan: false,
+        rootSpan: null,
+        startTime: '2',
+        durationNs: null,
+        spanCount: 1,
+        errorCount: 0,
+      },
+    ] satisfies JsonTraceSummary[])
+
+    const summaries = await telemetryAPI.searchTraces(0n, 10n)
+
+    expect(summaries[0]?.matchedSpans).toEqual(matchedSpans)
+    expect(summaries[1]).not.toHaveProperty('matchedSpans')
+  })
+
   it('preserves native bigint string parsing and nullable durations', async () => {
     stubRpcResult([
       {

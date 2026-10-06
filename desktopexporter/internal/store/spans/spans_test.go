@@ -143,13 +143,11 @@ func TestSearchTracesNullableTimeRangesExecute(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		timeRange store.TimeRange
-		wantCount float64
-		wantStart string
 	}{
-		{"unbounded", store.TimeRange{}, 3, "100"},
-		{"end only", store.TimeRange{End: &end}, 2, "100"},
-		{"start only", store.TimeRange{Start: &start}, 2, "200"},
-		{"bounded", store.TimeRange{Start: &start, End: &end}, 1, "200"},
+		{"unbounded", store.TimeRange{}},
+		{"end only", store.TimeRange{End: &end}},
+		{"start only", store.TimeRange{Start: &start}},
+		{"bounded", store.TimeRange{Start: &start, End: &end}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
@@ -159,8 +157,8 @@ func TestSearchTracesNullableTimeRangesExecute(t *testing.T) {
 			var got []traceSummaryJSON
 			require.NoError(t, json.Unmarshal(raw, &got))
 			require.Len(t, got, 1)
-			require.Equal(t, tc.wantCount, got[0].SpanCount)
-			require.Equal(t, tc.wantStart, got[0].StartTime)
+			require.Equal(t, float64(3), got[0].SpanCount)
+			require.Equal(t, "100", got[0].StartTime)
 		})
 	}
 }
@@ -234,18 +232,98 @@ func TestSearchTracesDurationExact(t *testing.T) {
 }
 
 type traceSummaryJSON struct {
-	TraceID     string        `json:"traceID"`
-	HasRootSpan bool          `json:"hasRootSpan"`
-	RootSpan    *rootSpanJSON `json:"rootSpan"`
-	StartTime   string        `json:"startTime"`  // varchar-encoded int64 ns
-	DurationNs  *string       `json:"durationNs"` // string-encoded int64 ns; max(end) - min(start) over trace
-	SpanCount   float64       `json:"spanCount"`  // JSON number
-	ErrorCount  float64       `json:"errorCount"`
+	TraceID      string             `json:"traceID"`
+	HasRootSpan  bool               `json:"hasRootSpan"`
+	RootSpan     *rootSpanJSON      `json:"rootSpan"`
+	StartTime    string             `json:"startTime"`  // varchar-encoded int64 ns
+	DurationNs   *string            `json:"durationNs"` // string-encoded int64 ns; max(end) - min(start) over trace
+	SpanCount    float64            `json:"spanCount"`  // JSON number
+	ErrorCount   float64            `json:"errorCount"`
+	MatchedSpans *[]matchedSpanJSON `json:"matchedSpans"`
+}
+
+type matchedSpanJSON struct {
+	TraceID string `json:"traceID"`
+	SpanID  string `json:"spanID"`
 }
 
 type rootSpanJSON struct {
 	ServiceName string `json:"serviceName"`
 	Name        string `json:"name"`
+}
+
+func TestSearchTracesFiltersSelectWholeTracesAndAnnotateMatches(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	const traceID = "00000000000000000000000000000042"
+
+	data := ptrace.NewTraces()
+	addSpan := func(service, spanID, parentID, name string, start, end uint64, status ptrace.StatusCode) {
+		rs := data.ResourceSpans().AppendEmpty()
+		rs.Resource().Attributes().PutStr("service.name", service)
+		span := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		span.SetTraceID(mustDecodeTraceID(traceID))
+		span.SetSpanID(mustDecodeSpanID(spanID))
+		if parentID != "" {
+			span.SetParentSpanID(mustDecodeSpanID(parentID))
+		}
+		span.SetName(name)
+		span.SetStartTimestamp(pcommon.Timestamp(start))
+		span.SetEndTimestamp(pcommon.Timestamp(end))
+		span.Status().SetCode(status)
+	}
+	addSpan("service-a", "0000000000000001", "", "root", 100, 500, ptrace.StatusCodeOk)
+	addSpan("service-b", "0000000000000002", "0000000000000001", "eligible match", 200, 300, ptrace.StatusCodeOk)
+	addSpan("service-a", "0000000000000003", "0000000000000001", "outside error", 50, 80, ptrace.StatusCodeError)
+	addSpan("service-b", "0000000000000004", "0000000000000001", "outside match", 400, 450, ptrace.StatusCodeOk)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, data, s.FlushedIDs())
+	}))
+
+	query := &search.QueryNode{
+		ID: "service-b", Type: "condition", Query: &search.Query{
+			Field: &search.FieldDefinition{
+				Name: "serviceName", SearchScope: "field", Type: "string",
+			},
+			FieldOperator: "=", Value: "service-b",
+		},
+	}
+	searchRange := store.BoundedTimeRange(150, 250)
+	filteredRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.SearchTraces(ctx, db, searchRange, query)
+	})
+	require.NoError(t, err)
+	var filtered []traceSummaryJSON
+	require.NoError(t, json.Unmarshal(filteredRaw, &filtered))
+	require.Len(t, filtered, 1)
+
+	summary := filtered[0]
+	assert.Equal(t, traceID, summary.TraceID)
+	assert.True(t, summary.HasRootSpan)
+	require.NotNil(t, summary.RootSpan)
+	assert.Equal(t, rootSpanJSON{ServiceName: "service-a", Name: "root"}, *summary.RootSpan)
+	assert.Equal(t, "50", summary.StartTime)
+	require.NotNil(t, summary.DurationNs)
+	assert.Equal(t, "450", *summary.DurationNs)
+	assert.Equal(t, float64(4), summary.SpanCount)
+	assert.Equal(t, float64(1), summary.ErrorCount)
+	require.NotNil(t, summary.MatchedSpans)
+	assert.Equal(t, []matchedSpanJSON{
+		{TraceID: traceID, SpanID: "0000000000000002"},
+		{TraceID: traceID, SpanID: "0000000000000004"},
+	}, *summary.MatchedSpans)
+
+	unfilteredRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.SearchTraces(ctx, db, searchRange, nil)
+	})
+	require.NoError(t, err)
+	var unfiltered []traceSummaryJSON
+	require.NoError(t, json.Unmarshal(unfilteredRaw, &unfiltered))
+	require.Len(t, unfiltered, 1)
+	require.Nil(t, unfiltered[0].MatchedSpans)
+	summary.MatchedSpans = nil
+	assert.Equal(t, summary, unfiltered[0])
+	assert.NotContains(t, string(unfilteredRaw), `"matchedSpans"`)
 }
 
 // TestTraceSummaryOrdering verifies that trace summaries are ordered by start time (newest first).
