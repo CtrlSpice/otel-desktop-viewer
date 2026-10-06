@@ -189,12 +189,13 @@ func requestQuery(
 	}
 	base.Path = strings.TrimRight(base.Path, "/") + "/rpc"
 
-	body, err := json.Marshal(queryRPCRequest{
+	rpcRequest := queryRPCRequest{
 		JSONRPC: "2.0",
 		ID:      1,
 		Method:  "query",
 		Params:  map[string]any{"sql": statement, "limit": limit},
-	})
+	}
+	body, err := json.Marshal(rpcRequest)
 	if err != nil {
 		return nil, queryResult{}, fmt.Errorf("encode query request: %w", err)
 	}
@@ -224,6 +225,13 @@ func requestQuery(
 			return nil, queryResult{}, fmt.Errorf("decode viewer response: additional JSON value")
 		}
 		return nil, queryResult{}, fmt.Errorf("decode viewer response: trailing data: %w", err)
+	}
+	if rpcResponse.JSONRPC != rpcRequest.JSONRPC {
+		return nil, queryResult{}, fmt.Errorf("decode viewer response: invalid jsonrpc version %q", rpcResponse.JSONRPC)
+	}
+	var responseID int
+	if len(rpcResponse.ID) == 0 || json.Unmarshal(rpcResponse.ID, &responseID) != nil || responseID != rpcRequest.ID {
+		return nil, queryResult{}, errors.New("decode viewer response: response id does not match request id")
 	}
 	if rpcResponse.Error != nil {
 		return nil, queryResult{}, fmt.Errorf("viewer query error %d: %s", rpcResponse.Error.Code, rpcResponse.Error.Message)

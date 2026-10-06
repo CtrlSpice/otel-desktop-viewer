@@ -162,6 +162,47 @@ func TestRequestQueryRequiresOneCompleteJSONRPCResponse(t *testing.T) {
 	}
 }
 
+func TestRequestQueryRequiresMatchingJSONRPCIdentity(t *testing.T) {
+	result := `"result":{"columns":[{"name":"n","type":"BIGINT"}],"rows":[[9007199254740993]],"truncated":false}`
+	tests := []struct {
+		name     string
+		response string
+		wantErr  string
+	}{
+		{name: "valid response", response: `{"jsonrpc":"2.0","id":1,` + result + `}`},
+		{name: "missing version", response: `{"id":1,` + result + `}`, wantErr: "invalid jsonrpc version"},
+		{name: "wrong version", response: `{"jsonrpc":"1.0","id":1,` + result + `}`, wantErr: "invalid jsonrpc version"},
+		{name: "missing id", response: `{"jsonrpc":"2.0",` + result + `}`, wantErr: "response id does not match request id"},
+		{name: "wrong numeric id", response: `{"jsonrpc":"2.0","id":2,` + result + `}`, wantErr: "response id does not match request id"},
+		{name: "null id", response: `{"jsonrpc":"2.0","id":null,` + result + `}`, wantErr: "response id does not match request id"},
+		{name: "string id", response: `{"jsonrpc":"2.0","id":"1",` + result + `}`, wantErr: "response id does not match request id"},
+		{name: "non-integer numeric id", response: `{"jsonrpc":"2.0","id":1.0,` + result + `}`, wantErr: "response id does not match request id"},
+		{name: "valid error response", response: `{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"query rejected"}}`, wantErr: "viewer query error -32602: query rejected"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				_, err := writer.Write([]byte(test.response))
+				require.NoError(t, err)
+			}))
+			defer viewer.Close()
+
+			raw, decoded, err := requestQuery(context.Background(), viewer.Client(), viewer.URL, "select 1", queryDefaultLimit)
+			if test.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), test.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Contains(t, string(raw), "9007199254740993")
+			require.Len(t, decoded.Rows, 1)
+			assert.Equal(t, json.Number("9007199254740993"), decoded.Rows[0][0])
+		})
+	}
+}
+
 func TestRequestQueryValidatesResultStructure(t *testing.T) {
 	tests := []struct {
 		name    string
