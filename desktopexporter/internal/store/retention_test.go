@@ -262,6 +262,12 @@ func TestEnforceRetentionRetainsGeneratedMetricIdentity(t *testing.T) {
 	assert.Equal(t, int64(1), oldSeries, "generated series id must survive full pruning")
 	assert.Zero(t, oldIngests, "ingest with no remaining datapoints should be swept")
 	assert.Equal(t, int64(1), liveStreams, "stream with surviving datapoints must remain")
+
+	var activeStreams, activeSeries int64
+	require.NoError(t, s.db.QueryRow(`select count(distinct stream_id) from datapoints`).Scan(&activeStreams))
+	require.NoError(t, s.db.QueryRow(`select count(distinct series_id) from datapoints`).Scan(&activeSeries))
+	assert.Equal(t, int64(1), activeStreams, "retained identity-only streams must not count as active")
+	assert.Equal(t, int64(1), activeSeries, "retained identity-only series must not count as active")
 }
 
 func TestEnforceRetentionDisabled(t *testing.T) {

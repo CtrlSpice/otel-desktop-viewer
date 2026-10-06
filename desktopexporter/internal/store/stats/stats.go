@@ -57,7 +57,7 @@ func GetStats(ctx context.Context, db *sql.DB, sizeBytes int64, maxSizeBytes int
 				-- "metrics" badge shows Metrics rather than ingest batches.
 				-- metric_ingests is the per-batch table; using its row
 				-- count would inflate by the number of OTLP requests.
-				'metricCount',    (select count(*) from metric_streams),
+				'metricCount',    count(distinct stream_id),
 				'dataPointCount', count(*),
 				-- lastReceived = latest datapoint timestamp observed
 				-- (source recency), not collector wall-clock arrival.

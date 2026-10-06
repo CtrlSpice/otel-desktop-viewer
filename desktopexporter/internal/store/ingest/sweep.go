@@ -3,7 +3,10 @@ package ingest
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"fmt"
+	"io"
 
 	"github.com/duckdb/duckdb-go/v2"
 )
@@ -132,6 +135,47 @@ func SweepOrphans(ctx context.Context, exec ExecContext, flushed *FlushedIDs) er
 			return fmt.Errorf("SweepOrphans: %w: %w", ErrIngestInternal, err)
 		}
 		removed = append(removed, ids...)
+	}
+	flushed.forgetIDs(removed)
+	return nil
+}
+
+// SweepOrphansConn is the driver.Conn form used by ingestion cleanup before the
+// store releases its write connection. It applies the same sweep and cache
+// invalidation as SweepOrphans.
+func SweepOrphansConn(ctx context.Context, conn driver.Conn, flushed *FlushedIDs) error {
+	queryer, ok := conn.(driver.QueryerContext)
+	if !ok {
+		flushed.Forget()
+		return fmt.Errorf("SweepOrphansConn: %w: connection cannot query", ErrIngestInternal)
+	}
+	var removed []duckdb.UUID
+	for _, q := range sweepQueries {
+		rows, err := queryer.QueryContext(ctx, q, nil)
+		if err != nil {
+			flushed.Forget()
+			return fmt.Errorf("SweepOrphansConn: %w: %w", ErrIngestInternal, err)
+		}
+		for {
+			dest := []driver.Value{nil}
+			err := rows.Next(dest)
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				rows.Close()
+				flushed.Forget()
+				return fmt.Errorf("SweepOrphansConn: %w: %w", ErrIngestInternal, err)
+			}
+			id, err := parseUUID(dest[0].(string))
+			if err != nil {
+				rows.Close()
+				flushed.Forget()
+				return fmt.Errorf("SweepOrphansConn: %w: %w", ErrIngestInternal, err)
+			}
+			removed = append(removed, id)
+		}
+		rows.Close()
 	}
 	flushed.forgetIDs(removed)
 	return nil

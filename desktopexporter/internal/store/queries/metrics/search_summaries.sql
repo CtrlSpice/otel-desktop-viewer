@@ -47,10 +47,11 @@
 		-- datapoint_count, last_value and the time range are all window-scoped
 		-- too -- and it is the one that changes as you pan.
 		--
-		-- series_cardinality is the stream's lifetime total, straight off
-		-- metric_series. Narrow the window on a race and the first drops to
-		-- three while the second stays at twenty-one; neither is wrong, and
-		-- showing only one of them makes the other look like a bug.
+		-- series_cardinality is the stream's retained-data total. Narrow the
+		-- window on a race and the first drops to three while the second stays at
+		-- twenty-one; neither is wrong, and showing only one makes the other look
+		-- like a bug. Identity-only rows retained for stable generated ids do not
+		-- count as active series.
 		--
 		-- Counting series is now counting one indexable column, rather than
 		-- distinct (resource, label-array) pairs.
@@ -59,11 +60,9 @@
 			from filtered_dps
 			group by stream_id
 		),
-		-- One row per series, so this counts a small table rather than
-		-- re-scanning datapoints.
 		stream_series_cardinality as (
-			select stream_id, count(*) as series_cardinality
-			from metric_series
+			select stream_id, count(distinct series_id) as series_cardinality
+			from datapoints
 			where stream_id in (select id from candidate_streams)
 			group by stream_id
 		),

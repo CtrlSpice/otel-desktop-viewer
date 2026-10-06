@@ -2131,6 +2131,10 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 	err := <-errCh
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Empty(t, rejected)
+	for _, table := range []string{"metric_streams", "metric_series", "metric_ingests", "datapoints"} {
+		assert.Equal(t, 0, countRows(t, s, context.Background(), `select count(*) from `+table),
+			"canceled ingest must not leave provisional rows in %s", table)
+	}
 }
 
 // TestSearchSummaries_CardFields verifies the slim summary projection used
