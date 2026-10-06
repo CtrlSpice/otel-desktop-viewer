@@ -1,6 +1,6 @@
 -- log_data_json is the full UI-shaped projection for one stored log row.
 -- Single-log and span-correlated reads share it so their fields cannot drift.
-create or replace macro log_data_json(l, resource, scope) as (
+create or replace macro log_data_json(l, resource, scope, resource_schema_url, scope_schema_url) as (
     json_object(
         'id', l.id,
         'timestamp', l.timestamp::varchar,
@@ -12,8 +12,8 @@ create or replace macro log_data_json(l, resource, scope) as (
         'body', l.body,
         'resource', resource,
         'scope', scope,
-        'resourceSchemaURL', l.resource_schema_url,
-        'scopeSchemaURL', l.scope_schema_url,
+        'resourceSchemaURL', resource_schema_url,
+        'scopeSchemaURL', scope_schema_url,
         'droppedAttributesCount', l.dropped_attributes_count,
         'flags', l.flags,
         'eventName', l.event_name,

@@ -32,6 +32,11 @@ temporality, monotonicity, number alternatives, optional histogram statistics,
 explicit and exponential buckets, and exemplar IDs. It does not export chart
 aggregates, reduced buckets, quantiles, rates, or other UI projections.
 
+`GetMetricOTLP` remains a store-only export path. The public `getMetric` and
+`getMetricSeries` JSON-RPC methods instead return normalized viewer data for
+Metric discovery and one selected series; they do not wrap that data in OTLP
+`resourceMetrics`, `scopeMetrics`, or `metrics` arrays.
+
 SQL converts the distinct stored values used by a result as one batch, while
 keeping each body or attribute value's nodes and output separate. It first
 records every node and its parent, child position, and type. A recursive query

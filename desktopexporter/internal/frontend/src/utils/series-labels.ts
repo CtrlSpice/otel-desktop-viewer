@@ -78,9 +78,9 @@ export function distinguishingResourceAttributes(
  * How a reader identifies each series: its own labels, plus whatever resource
  * attributes tell it apart from its siblings when the metric spans several.
  *
- * Everything user-facing resolves through here. `attributesKey` is a
- * content-derived id -- stable, unique, and completely unreadable -- so it is
- * the right key for a map and the wrong thing to put in a tooltip.
+ * Everything user-facing resolves through here. `attributesKey` is an opaque
+ * database-scoped id, so it is the right key for a map and the wrong thing to
+ * put in a tooltip.
  */
 export function seriesLabelsByKey(
   timeseries: MetricTimeseries[]

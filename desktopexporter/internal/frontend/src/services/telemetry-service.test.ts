@@ -13,7 +13,7 @@ import {
   type QueryNode,
 } from '@/search/model'
 import type {
-  JsonMetricData,
+  JsonMetricViewData,
   JsonLogData,
   JsonTraceLogSummary,
   JsonTraceData,
@@ -21,10 +21,11 @@ import type {
 } from '@/types/wire-types'
 import { parseDuration } from '@/utils/time'
 import { parseQuery } from '@/components/shared/Search/queryParser'
+import type { ReceivedHistogramDataPoint } from '@/types/api-types'
 
 // The backend signals not-found with JSON-RPC errors (one convention across
-// all signals; see internal/server/errors.go). getMetric's callers expect
-// MetricData | null, so the service translates exactly one code -- -32003,
+// all signals; see internal/server/errors.go). getMetricView's callers expect
+// MetricViewData | null, so the service translates exactly one code -- -32003,
 // metric not found -- back to null. These tests pin that translation.
 
 type StubRpcResponse<T> = {
@@ -52,7 +53,9 @@ function stubRpcResult<T>(result: T) {
   stubRpcResponse({ jsonrpc: '2.0', result })
 }
 
-function metricResult(overrides: Partial<JsonMetricData> = {}): JsonMetricData {
+function metricResult(
+  overrides: Partial<JsonMetricViewData> = {}
+): JsonMetricViewData {
   return {
     lastSeenNs: null,
     id: 'some-stream',
@@ -63,10 +66,12 @@ function metricResult(overrides: Partial<JsonMetricData> = {}): JsonMetricData {
     metricType: 'Gauge',
     aggregationTemporalityCode: null,
     aggregationTemporality: null,
-    isMonotonic: false,
+    isMonotonic: null,
     resourceDroppedAttributesCount: 0,
+    resourceSchemaUrl: '',
     resource: { attributes: [], droppedAttributesCount: 0 },
     scopeName: '',
+    scopeSchemaUrl: '',
     scopeVersion: '',
     scopeDroppedAttributesCount: 0,
     scope: { name: '', version: '', attributes: [], droppedAttributesCount: 0 },
@@ -237,14 +242,14 @@ describe('telemetryAPI.getTraceLogs', () => {
   })
 })
 
-describe('telemetryAPI.getMetric', () => {
+describe('telemetryAPI.getMetricView', () => {
   it('returns null when the backend reports metric not found (-32003)', async () => {
     stubRpcResponse({
       jsonrpc: '2.0',
       error: { code: -32003, message: 'Metric not found' },
     })
     await expect(
-      telemetryAPI.getMetric('some-stream', 0n, 1n)
+      telemetryAPI.getMetricView('some-stream', 0n, 1n)
     ).resolves.toBeNull()
   })
 
@@ -253,24 +258,28 @@ describe('telemetryAPI.getMetric', () => {
       jsonrpc: '2.0',
       error: { code: -32009, message: 'Invalid metric stream ID' },
     })
-    const call = telemetryAPI.getMetric('not-a-stream', 0n, 1n)
+    const call = telemetryAPI.getMetricView('not-a-stream', 0n, 1n)
     await expect(call).rejects.toBeInstanceOf(JsonRpcError)
     await expect(call).rejects.toMatchObject({ code: -32009 })
   })
 
-  it('parses a successful result into MetricData', async () => {
+  it('parses a successful result into MetricViewData', async () => {
     stubRpcResult(
       metricResult({
         unit: 'bytes',
+        resourceSchemaUrl: 'https://example.test/resource/1.0',
+        scopeSchemaUrl: 'https://example.test/scope/1.0',
         window: {
           requested: { startNs: null, endNs: null },
           effective: { startNs: '10', endNs: '20' },
         },
       })
     )
-    const metric = await telemetryAPI.getMetric('some-stream', 0n, 1n)
+    const metric = await telemetryAPI.getMetricView('some-stream', 0n, 1n)
     expect(metric).not.toBeNull()
     expect(metric!.name).toBe('test.gauge')
+    expect(metric!.resourceSchemaUrl).toBe('https://example.test/resource/1.0')
+    expect(metric!.scopeSchemaUrl).toBe('https://example.test/scope/1.0')
     expect(metric!.timeseries).toEqual([])
     expect(metric!.window).toEqual({
       requested: { startNs: null, endNs: null },
@@ -382,7 +391,7 @@ describe('telemetryAPI.getMetric', () => {
       })
     )
 
-    const metric = await telemetryAPI.getMetric('some-stream', 0n, 1n)
+    const metric = await telemetryAPI.getMetricView('some-stream', 0n, 1n)
     expect(metric!.timeseries[0]!.datapoints[0]).toMatchObject({
       intValue: null,
     })
@@ -546,7 +555,7 @@ describe('telemetryAPI.getMetric', () => {
     })
     stubRpcResult(wire)
 
-    const metric = await telemetryAPI.getMetric('some-stream', 0n, 1n)
+    const metric = await telemetryAPI.getMetricView('some-stream', 0n, 1n)
     const datapoints = metric!.timeseries[0]!.datapoints
 
     expect(datapoints[0]).toMatchObject({
@@ -644,7 +653,7 @@ describe('telemetryAPI.getMetric', () => {
       })
     )
 
-    const metric = await telemetryAPI.getMetric('some-stream', 0n, 2n)
+    const metric = await telemetryAPI.getMetricView('some-stream', 0n, 2n)
     const [absent, zero] = metric!.timeseries[0]!.datapoints
     expect(absent).toMatchObject({ sum: null, min: null, max: null })
     expect(zero).toMatchObject({ sum: 0, min: 0, max: 0 })
@@ -682,7 +691,7 @@ describe('telemetryAPI.getMetric', () => {
       })
     )
 
-    const value = (await telemetryAPI.getMetric('some-stream', 0n, 1n))!
+    const value = (await telemetryAPI.getMetricView('some-stream', 0n, 1n))!
       .metadata[0]!.value
     expect(value).toMatchObject({ kind: 'map' })
     if (value.kind !== 'map') throw new Error('Expected a map value')
@@ -733,7 +742,7 @@ describe('telemetryAPI.getMetric', () => {
       })
     )
 
-    const metadata = (await telemetryAPI.getMetric('some-stream', 0n, 1n))!
+    const metadata = (await telemetryAPI.getMetricView('some-stream', 0n, 1n))!
       .metadata
     expect(metadata[0]!.hasConflict).toBe(true)
     expect(metadata[1]!.hasConflict).toBe(true)
@@ -744,7 +753,283 @@ describe('telemetryAPI.getMetric', () => {
   })
 })
 
-describe('telemetryAPI.getMetricAggregate', () => {
+describe('exact received metric API', () => {
+  it('decodes exact identity and computed series summaries', async () => {
+    stubRpcResult({
+      metricRef: 'metric-1',
+      name: 'requests',
+      description: '',
+      unit: '1',
+      metadata: [],
+      metricType: 'Sum',
+      aggregationTemporalityCode: 2,
+      isMonotonic: true,
+      resource: {
+        droppedAttributesCount: 0,
+        schemaUrl: '',
+        attributes: [
+          {
+            key: 'nested',
+            value: {
+              kind: 'map',
+              value: [
+                {
+                  key: 'limit',
+                  value: { kind: 'int64', value: '9007199254740993' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      scope: {
+        name: 'sdk',
+        version: '1',
+        attributes: [],
+        droppedAttributesCount: 0,
+        schemaUrl: 'scope-schema',
+      },
+      series: [
+        {
+          seriesRef: 'series-1',
+          attributes: [],
+          datapointCount: '18446744073709551615',
+          firstDatapointTimestamp: '1',
+          lastDatapointTimestamp: null,
+        },
+      ],
+    })
+
+    const metric = await telemetryAPI.getMetric('metric-1')
+    expect(metric).toMatchObject({
+      metricRef: 'metric-1',
+      aggregationTemporalityCode: 2,
+      isMonotonic: true,
+    })
+    expect(metric!.series[0]).toMatchObject({
+      datapointCount: 18446744073709551615n,
+      firstDatapointTimestamp: 1n,
+      lastDatapointTimestamp: null,
+    })
+    expect(metric!.resource.attributes[0]!.value).toMatchObject({
+      kind: 'map',
+      value: [
+        { key: 'limit', value: { kind: 'int64', value: 9007199254740993n } },
+      ],
+    })
+  })
+
+  it('decodes exact histogram values, all exemplars, and optional presence', async () => {
+    stubRpcResult({
+      metricRef: 'metric-1',
+      name: 'latency',
+      description: 'received report',
+      unit: 'ms',
+      metadata: [],
+      metricType: 'Histogram',
+      aggregationTemporalityCode: 1,
+      resource: {
+        attributes: [],
+        droppedAttributesCount: 2,
+        schemaUrl: 'resource-schema',
+      },
+      scope: {
+        name: 'sdk',
+        version: '1',
+        attributes: [],
+        droppedAttributesCount: 3,
+        schemaUrl: 'scope-schema',
+      },
+      seriesRef: 'series-1',
+      attributes: [],
+      datapoints: [
+        {
+          datapointID: 'point-1',
+          timestamp: '18446744073709551615',
+          startTime: '0',
+          flags: 1,
+          count: '18446744073709551615',
+          sum: 0,
+          max: '0x8000000000000000',
+          bucketCounts: ['18446744073709551615'],
+          explicitBounds: ['0x7ff0000000000000'],
+          exemplars: [
+            {
+              timestamp: '9',
+              valueType: 'Int',
+              intValue: '-9223372036854775808',
+              doubleValue: null,
+              traceID: null,
+              spanID: null,
+              filteredAttributes: [],
+            },
+            {
+              timestamp: '10',
+              valueType: 'Double',
+              intValue: null,
+              doubleValue: '0x8000000000000000',
+              traceID: '00000000000000000000000000000001',
+              spanID: '0000000000000001',
+              filteredAttributes: [],
+            },
+          ],
+        },
+      ],
+    })
+
+    const selected = await telemetryAPI.getMetricSeries(
+      'metric-1',
+      'series-1',
+      null,
+      18446744073709551615n
+    )
+    const point = selected!.datapoints[0]! as ReceivedHistogramDataPoint
+    expect(point).toMatchObject({
+      timestamp: 18446744073709551615n,
+      count: 18446744073709551615n,
+      sum: 0,
+      bucketCounts: [18446744073709551615n],
+    })
+    expect('min' in point).toBe(false)
+    expect(Object.is(point.max, -0)).toBe(true)
+    expect(point.exemplars).toHaveLength(2)
+    expect(point.exemplars[0]).toMatchObject({
+      intValue: -9223372036854775808n,
+    })
+    expect(Object.is(point.exemplars[1]!.doubleValue, -0)).toBe(true)
+  })
+
+  it('decodes every received number union arm', async () => {
+    stubRpcResult({
+      metricRef: 'metric-1',
+      name: 'counter',
+      description: '',
+      unit: '1',
+      metadata: [],
+      metricType: 'Sum',
+      aggregationTemporalityCode: 2,
+      isMonotonic: false,
+      resource: { attributes: [], droppedAttributesCount: 0, schemaUrl: '' },
+      scope: {
+        name: '',
+        version: '',
+        attributes: [],
+        droppedAttributesCount: 0,
+        schemaUrl: '',
+      },
+      seriesRef: 'series-1',
+      attributes: [],
+      datapoints: [
+        {
+          datapointID: 'i',
+          timestamp: '1',
+          startTime: '0',
+          flags: 0,
+          exemplars: [],
+          valueType: 'Int',
+          intValue: '9223372036854775807',
+          doubleValue: null,
+        },
+        {
+          datapointID: 'd',
+          timestamp: '2',
+          startTime: '0',
+          flags: 0,
+          exemplars: [],
+          valueType: 'Double',
+          intValue: null,
+          doubleValue: '0x7ff8000000000001',
+        },
+        {
+          datapointID: 'e',
+          timestamp: '3',
+          startTime: '0',
+          flags: 0,
+          exemplars: [],
+          valueType: 'Empty',
+          intValue: null,
+          doubleValue: null,
+        },
+      ],
+    })
+
+    const selected = await telemetryAPI.getMetricSeries(
+      'metric-1',
+      'series-1',
+      null,
+      null
+    )
+    const points = selected!.datapoints
+    expect(points[0]).toMatchObject({
+      valueType: 'Int',
+      intValue: 9223372036854775807n,
+    })
+    expect(
+      Number.isNaN((points[1] as { doubleValue: number }).doubleValue)
+    ).toBe(true)
+    expect(points[2]).toMatchObject({
+      valueType: 'Empty',
+      intValue: null,
+      doubleValue: null,
+    })
+  })
+
+  it('decodes received exponential histogram buckets without chart fields', async () => {
+    stubRpcResult({
+      metricRef: 'metric-1',
+      name: 'distribution',
+      description: '',
+      unit: '1',
+      metadata: [],
+      metricType: 'ExponentialHistogram',
+      aggregationTemporalityCode: 1,
+      resource: { attributes: [], droppedAttributesCount: 0, schemaUrl: '' },
+      scope: {
+        name: '',
+        version: '',
+        attributes: [],
+        droppedAttributesCount: 0,
+        schemaUrl: '',
+      },
+      seriesRef: 'series-1',
+      attributes: [],
+      datapoints: [
+        {
+          datapointID: 'point-1',
+          timestamp: '1',
+          startTime: '0',
+          flags: 0,
+          exemplars: [],
+          count: '18446744073709551615',
+          scale: -10,
+          zeroCount: '9007199254740993',
+          zeroThreshold: '0x8000000000000000',
+          positive: {
+            offset: -2,
+            bucketCounts: ['1', '18446744073709551615'],
+          },
+          negative: { offset: 3, bucketCounts: [] },
+        },
+      ],
+    })
+
+    const selected = await telemetryAPI.getMetricSeries(
+      'metric-1',
+      'series-1',
+      0n,
+      1n
+    )
+    expect(selected!.datapoints[0]).toMatchObject({
+      count: 18446744073709551615n,
+      scale: -10,
+      zeroCount: 9007199254740993n,
+      positive: { offset: -2, bucketCounts: [1n, 18446744073709551615n] },
+      negative: { offset: 3, bucketCounts: [] },
+    })
+  })
+})
+
+describe('telemetryAPI.getMetricAggregateView', () => {
   it('decodes aggregate doubles while preserving omitted extents', async () => {
     stubRpcResult({
       aggregate: [
@@ -761,7 +1046,7 @@ describe('telemetryAPI.getMetricAggregate', () => {
       scalarAggregate: null,
     })
 
-    const result = await telemetryAPI.getMetricAggregate(
+    const result = await telemetryAPI.getMetricAggregateView(
       'some-stream',
       0n,
       1n,
@@ -1195,7 +1480,7 @@ describe('telemetryAPI metric bigint boundary', () => {
     delete result.timeseries[0]!.lastSeenNs
     stubRpcResult(result)
 
-    const metric = await telemetryAPI.getMetric('some-stream', 0n, 1n)
+    const metric = await telemetryAPI.getMetricView('some-stream', 0n, 1n)
     expect(metric!.lastSeenNs).toBeNull()
     expect(metric!.timeseries[0]!.lastSeenNs).toBeNull()
     expect(metric!.timeseries[0]!.views![0]!.bucketStart).toBe(
@@ -1308,7 +1593,7 @@ describe('request parameters', () => {
   // level can fail on it. The filter earns its place by making the intent
   // explicit and the return type honest, not by changing the request. The
   // distinction that does survive serialisation is null and [] -- both real
-  // values, both sent -- which is what the getMetric tests cover.
+  // values, both sent -- which is what the getMetricView tests cover.
   it('omits query entirely when no query tree is supplied', async () => {
     const sent = captureRequest()
     await telemetryAPI.searchTraces(2n, 5n).catch(() => {})
@@ -1545,11 +1830,11 @@ describe('request parameters', () => {
       'searchMetricSummaries',
       () => telemetryAPI.searchMetricSummaries(null, null),
     ],
-    ['getMetric', () => telemetryAPI.getMetric('stream-1', null, null)],
+    ['getMetricView', () => telemetryAPI.getMetricView('stream-1', null, null)],
     [
-      'getMetricAggregate',
+      'getMetricAggregateView',
       () =>
-        telemetryAPI.getMetricAggregate(
+        telemetryAPI.getMetricAggregateView(
           'stream-1',
           null,
           null,
@@ -1575,11 +1860,19 @@ describe('request parameters', () => {
       'searchMetricSummaries',
       () => telemetryAPI.searchMetricSummaries(null, 5n),
     ],
-    ['getMetric', () => telemetryAPI.getMetric('stream-1', null, 5n)],
+    ['getMetricView', () => telemetryAPI.getMetricView('stream-1', null, 5n)],
     [
-      'getMetricAggregate',
+      'getMetricAggregateView',
       () =>
-        telemetryAPI.getMetricAggregate('stream-1', null, 5n, 10, null, [], 0),
+        telemetryAPI.getMetricAggregateView(
+          'stream-1',
+          null,
+          5n,
+          10,
+          null,
+          [],
+          0
+        ),
     ],
   ])(
     '%s preserves an independently unbounded start',
@@ -1600,11 +1893,19 @@ describe('request parameters', () => {
       'searchMetricSummaries',
       () => telemetryAPI.searchMetricSummaries(2n, null),
     ],
-    ['getMetric', () => telemetryAPI.getMetric('stream-1', 2n, null)],
+    ['getMetricView', () => telemetryAPI.getMetricView('stream-1', 2n, null)],
     [
-      'getMetricAggregate',
+      'getMetricAggregateView',
       () =>
-        telemetryAPI.getMetricAggregate('stream-1', 2n, null, 10, null, [], 0),
+        telemetryAPI.getMetricAggregateView(
+          'stream-1',
+          2n,
+          null,
+          10,
+          null,
+          [],
+          0
+        ),
     ],
   ])('%s preserves an independently unbounded end', async (method, invoke) => {
     const sent = captureRequest()
@@ -1615,10 +1916,10 @@ describe('request parameters', () => {
     })
   })
 
-  it('getMetric sends the final named parameter contract exactly', async () => {
+  it('getMetricView sends the final named parameter contract exactly', async () => {
     const sent = captureRequest()
     await telemetryAPI
-      .getMetric(
+      .getMetricView(
         'stream-1',
         2n,
         5n,
@@ -1635,7 +1936,7 @@ describe('request parameters', () => {
       )
       .catch(() => {})
     expect(sent().params).toEqual({
-      streamID: 'stream-1',
+      metricID: 'stream-1',
       startTime: '2',
       endTime: '5',
       targetBuckets: 10,
@@ -1651,28 +1952,53 @@ describe('request parameters', () => {
     })
   })
 
+  it('getMetric sends only the Metric reference', async () => {
+    const sent = captureRequest()
+    await telemetryAPI.getMetric('metric-1').catch(() => {})
+    expect(sent()).toMatchObject({
+      method: 'getMetric',
+      params: { metricRef: 'metric-1' },
+    })
+  })
+
+  it('getMetricSeries sends references and nullable unsigned nanosecond bounds', async () => {
+    const sent = captureRequest()
+    await telemetryAPI
+      .getMetricSeries('metric-1', 'series-1', null, 18446744073709551615n)
+      .catch(() => {})
+    expect(sent()).toMatchObject({
+      method: 'getMetricSeries',
+      params: {
+        metricRef: 'metric-1',
+        seriesRef: 'series-1',
+        startTime: null,
+        endTime: '18446744073709551615',
+      },
+    })
+  })
+
   it('preserves omitted, empty, and null series selections', async () => {
     const omitted = captureRequest()
-    await telemetryAPI.getMetric('stream-1', 2n, 5n).catch(() => {})
+    await telemetryAPI.getMetricView('stream-1', 2n, 5n).catch(() => {})
     expect('seriesIDs' in omitted().params).toBe(false)
 
     const empty = captureRequest()
     await telemetryAPI
-      .getMetric('stream-1', 2n, 5n, undefined, [])
+      .getMetricView('stream-1', 2n, 5n, undefined, [])
       .catch(() => {})
     expect(empty().params.seriesIDs).toEqual([])
 
     const unfiltered = captureRequest()
     await telemetryAPI
-      .getMetricAggregate('stream-1', 2n, 5n, 10, null, [], 0)
+      .getMetricAggregateView('stream-1', 2n, 5n, 10, null, [], 0)
       .catch(() => {})
     expect(unfiltered().params.seriesIDs).toBeNull()
   })
 
-  it('getMetricAggregate sends the final named parameter contract exactly', async () => {
+  it('getMetricAggregateView sends the final named parameter contract exactly', async () => {
     const sent = captureRequest()
     await telemetryAPI
-      .getMetricAggregate(
+      .getMetricAggregateView(
         'stream-1',
         2n,
         5n,
@@ -1686,7 +2012,7 @@ describe('request parameters', () => {
       )
       .catch(() => {})
     expect(sent().params).toEqual({
-      streamID: 'stream-1',
+      metricID: 'stream-1',
       startTime: '2',
       endTime: '5',
       targetBuckets: 10,

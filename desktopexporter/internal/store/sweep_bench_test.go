@@ -14,9 +14,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// sweepBenchmarkMetrics models one recurring instrument reported over many
-// batches. Building it as repeated Metric entries creates the same persisted
-// metric_ingests shape in one setup call, outside the timed sweep loop.
+// sweepBenchmarkMetrics creates Metrics with independently referenced metadata.
 func sweepBenchmarkMetrics(count int) pmetric.Metrics {
 	md := pmetric.NewMetrics()
 	rm := md.ResourceMetrics().AppendEmpty()
@@ -26,7 +24,7 @@ func sweepBenchmarkMetrics(count int) pmetric.Metrics {
 
 	for i := range count {
 		m := sm.Metrics().AppendEmpty()
-		m.SetName("request.duration")
+		m.SetName(fmt.Sprintf("request.duration.%d", i))
 		m.Metadata().PutInt("schema.revision", int64(i%89))
 		dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
 		dp.SetTimestamp(pcommon.Timestamp(i + 1))
@@ -41,7 +39,7 @@ func sweepBenchmarkMetrics(count int) pmetric.Metrics {
 // reaches this path to prove that live rows must remain live.
 func BenchmarkSweepOrphansMetricMetadata(b *testing.B) {
 	for _, count := range []int{100, 1_000, 10_000} {
-		b.Run(fmt.Sprintf("ingests=%d", count), func(b *testing.B) {
+		b.Run(fmt.Sprintf("metrics=%d", count), func(b *testing.B) {
 			ctx := context.Background()
 			s, err := NewStore(ctx, "", zap.NewNop())
 			if err != nil {
@@ -60,7 +58,7 @@ func BenchmarkSweepOrphansMetricMetadata(b *testing.B) {
 			if err := s.WithDBRead(func(db *sql.DB) error {
 				return db.QueryRow(`
 					select count(*)
-					from metric_ingests, unnest(metadata_ids)`).Scan(&metadataRefs)
+					from metric_streams, unnest(metadata_ids)`).Scan(&metadataRefs)
 			}); err != nil {
 				b.Fatal(err)
 			}

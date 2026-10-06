@@ -308,14 +308,14 @@ func searchRangeParams(tc rpcNullableRangeCase) any {
 	return map[string]any{"startTime": tc.start, "endTime": tc.end, "limit": 1}
 }
 
-func metricRangeParams(streamID string, tc rpcNullableRangeCase) any {
+func metricRangeParams(metricID string, tc rpcNullableRangeCase) any {
 	if !tc.named {
-		return []any{streamID, tc.start, tc.end}
+		return []any{metricID, tc.start, tc.end}
 	}
 	// viewBuckets exercises all optional null holes between the range and a
 	// later named parameter.
 	return map[string]any{
-		"streamID": streamID, "startTime": tc.start, "endTime": tc.end,
+		"metricID": metricID, "startTime": tc.start, "endTime": tc.end,
 		"viewBuckets": 0,
 	}
 }
@@ -1183,7 +1183,9 @@ func TestReadPathIDValidation(t *testing.T) {
 	}{
 		{"searchSpans", []string{"not-a-trace-id"}, ErrInvalidTraceID},
 		{"getLog", []string{"not-a-log-id"}, ErrInvalidLogID},
-		{"getMetric", []string{"not-a-stream-id", "0", "1"}, ErrInvalidStreamID},
+		{"getMetric", []string{"not-a-metric-id"}, ErrInvalidStreamID},
+		{"getMetricSeries", []any{"00000000-0000-0000-0000-000000000001", "not-a-series-id", nil, nil}, ErrInvalidStreamID},
+		{"getMetricView", []string{"not-a-stream-id", "0", "1"}, ErrInvalidStreamID},
 		{"getAttributesByTraceID", []string{"not-a-trace-id"}, ErrInvalidTraceID},
 		{"getTraceSpanCount", []string{"not-a-trace-id"}, ErrInvalidTraceID},
 		{"deleteMetricStream", []string{"not-a-stream-id"}, ErrInvalidStreamID},
@@ -1598,7 +1600,7 @@ func TestSearchMetricSummaries(t *testing.T) {
 	})
 }
 
-func TestGetMetric(t *testing.T) {
+func TestGetMetricView(t *testing.T) {
 	t.Run("Found", func(t *testing.T) {
 		handler := setupHandlerWithMetrics(t)
 
@@ -1616,7 +1618,7 @@ func TestGetMetric(t *testing.T) {
 		require.True(t, ok)
 		require.NotEmpty(t, streamID)
 
-		req := createRequest("getMetric", []any{
+		req := createRequest("getMetricView", []any{
 			streamID, "0", strconv.FormatInt(1<<63-1, 10),
 		})
 		result, err := handler.Handle(context.Background(), req)
@@ -1628,7 +1630,7 @@ func TestGetMetric(t *testing.T) {
 		require.NoError(t, json.Unmarshal(raw, &metric))
 		assert.Equal(t, "test.gauge", metric["name"])
 		assert.Equal(t, "bytes", metric["unit"])
-		// MetricData is now grouped by timeseries (per attribute set)
+		// MetricViewData is grouped by timeseries (per attribute set)
 		// rather than a flat datapoint list. Each timeseries owns the
 		// attributes for its group plus the pure-OTLP datapoints.
 		timeseries, _ := metric["timeseries"].([]any)
@@ -1644,7 +1646,7 @@ func TestGetMetric(t *testing.T) {
 	t.Run("Not Found", func(t *testing.T) {
 		handler := setupHandlerWithMetrics(t)
 
-		req := createRequest("getMetric", []any{
+		req := createRequest("getMetricView", []any{
 			"00000000-0000-0000-0000-000000000000",
 			"0", strconv.FormatInt(1<<63-1, 10),
 		})
@@ -1657,7 +1659,7 @@ func TestGetMetric(t *testing.T) {
 	})
 
 	// A known stream queried over a window with no datapoints is NOT a
-	// not-found: it returns valid MetricData with an empty timeseries list.
+	// not-found: it returns valid MetricViewData with an empty timeseries list.
 	// Only an unknown stream ID gets ErrMetricNotFound (see subtest above).
 	t.Run("Known Stream, Empty Window", func(t *testing.T) {
 		handler := setupHandlerWithMetrics(t)
@@ -1677,7 +1679,7 @@ func TestGetMetric(t *testing.T) {
 
 		// Test data is timestamped time.Now(); the window [0, 1] ns is
 		// guaranteed to miss it.
-		req := createRequest("getMetric", []any{streamID, "0", "1"})
+		req := createRequest("getMetricView", []any{streamID, "0", "1"})
 		result, err := handler.Handle(context.Background(), req)
 
 		require.NoError(t, err,
@@ -1694,6 +1696,62 @@ func TestGetMetric(t *testing.T) {
 	})
 }
 
+func TestGetMetricAndSeries(t *testing.T) {
+	handler := setupHandlerWithMetrics(t)
+	summaryResult, err := handler.Handle(context.Background(), createRequest(
+		"searchMetricSummaries", []any{nil, nil}))
+	require.NoError(t, err)
+	var summaries []map[string]any
+	require.NoError(t, json.Unmarshal(summaryResult.(json.RawMessage), &summaries))
+	require.Len(t, summaries, 1)
+	metricID := summaries[0]["id"].(string)
+
+	discoveryResult, err := handler.Handle(context.Background(), createRequest(
+		"getMetric", map[string]any{"metricRef": metricID}))
+	require.NoError(t, err)
+	var discovery map[string]any
+	require.NoError(t, json.Unmarshal(discoveryResult.(json.RawMessage), &discovery))
+	require.Equal(t, metricID, discovery["metricRef"])
+	require.Equal(t, "test.gauge", discovery["name"])
+	require.Equal(t, "Gauge", discovery["metricType"])
+	require.Equal(t, "A test gauge", discovery["description"])
+	require.NotContains(t, discovery, "datapoints")
+	series := discovery["series"].([]any)
+	require.Len(t, series, 1)
+	seriesSummary := series[0].(map[string]any)
+	require.Equal(t, "1", seriesSummary["datapointCount"])
+	require.NotNil(t, seriesSummary["firstDatapointTimestamp"])
+	require.Equal(t, seriesSummary["firstDatapointTimestamp"], seriesSummary["lastDatapointTimestamp"])
+
+	seriesResult, err := handler.Handle(context.Background(), createRequest(
+		"getMetricSeries", map[string]any{
+			"metricRef": metricID, "seriesRef": seriesSummary["seriesRef"],
+			"startTime": nil, "endTime": nil,
+		}))
+	require.NoError(t, err)
+	var selected map[string]any
+	require.NoError(t, json.Unmarshal(seriesResult.(json.RawMessage), &selected))
+	require.Equal(t, metricID, selected["metricRef"])
+	require.Equal(t, seriesSummary["seriesRef"], selected["seriesRef"])
+	require.Len(t, selected["datapoints"].([]any), 1)
+
+	emptyResult, err := handler.Handle(context.Background(), createRequest(
+		"getMetricSeries", []any{metricID, seriesSummary["seriesRef"], "0", "1"}))
+	require.NoError(t, err)
+	var empty map[string]any
+	require.NoError(t, json.Unmarshal(emptyResult.(json.RawMessage), &empty))
+	require.Empty(t, empty["datapoints"])
+
+	missingResult, err := handler.Handle(context.Background(), createRequest(
+		"getMetric", []any{"00000000-0000-0000-0000-000000000000"}))
+	require.Nil(t, missingResult)
+	require.Equal(t, ErrMetricNotFound, err)
+	missingSeriesResult, err := handler.Handle(context.Background(), createRequest(
+		"getMetricSeries", []any{metricID, "00000000-0000-0000-0000-000000000000", nil, nil}))
+	require.Nil(t, missingSeriesResult)
+	require.Equal(t, ErrMetricNotFound, err)
+}
+
 func TestMetricHandlersAcceptNullableBoundsPositionallyAndByName(t *testing.T) {
 	handler := setupHandlerWithMetrics(t)
 
@@ -1708,7 +1766,7 @@ func TestMetricHandlersAcceptNullableBoundsPositionallyAndByName(t *testing.T) {
 	for _, tc := range rpcNullableRangeCases() {
 		t.Run("getMetric/"+tc.name, func(t *testing.T) {
 			result, err := handler.Handle(context.Background(), createRequest(
-				"getMetric", metricRangeParams(streamID, tc)))
+				"getMetricView", metricRangeParams(streamID, tc)))
 			require.NoError(t, err)
 			var got map[string]any
 			require.NoError(t, json.Unmarshal(result.(json.RawMessage), &got))
@@ -1733,9 +1791,9 @@ func TestMetricHandlersAcceptNullableBoundsPositionallyAndByName(t *testing.T) {
 			}, effective)
 		})
 
-		t.Run("getMetricAggregate/"+tc.name, func(t *testing.T) {
+		t.Run("getMetricAggregateView/"+tc.name, func(t *testing.T) {
 			result, err := handler.Handle(context.Background(), createRequest(
-				"getMetricAggregate", metricRangeParams(streamID, tc)))
+				"getMetricAggregateView", metricRangeParams(streamID, tc)))
 			require.NoError(t, err)
 			require.JSONEq(t,
 				`{"aggregate":null,"scalarAggregate":{"selected":[],"all":[]}}`,
@@ -1838,7 +1896,7 @@ func TestMetricHandlersAcceptEveryParameter(t *testing.T) {
 	}
 
 	for method, full := range map[string][]any{
-		"getMetric": detail, "getMetricAggregate": aggregate,
+		"getMetricView": detail, "getMetricAggregateView": aggregate,
 	} {
 		t.Run(method, func(t *testing.T) {
 			for n := 3; n <= len(full); n++ {

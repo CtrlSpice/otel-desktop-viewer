@@ -46,14 +46,16 @@ var methodParamNames = map[string][]string{
 	"getTraceLogs":          {"traceID"},
 	"getLog":                {"logID"},
 	"searchMetricSummaries": {"startTime", "endTime", "query", "limit", "sort"},
-	"getMetric": {
-		"streamID", "startTime", "endTime", "targetBuckets", "seriesIDs",
+	"getMetric":             {"metricRef"},
+	"getMetricSeries":       {"metricRef", "seriesRef", "startTime", "endTime"},
+	"getMetricView": {
+		"metricID", "startTime", "endTime", "targetBuckets", "seriesIDs",
 		"quantiles", "tzOffsetNs", "viewBuckets",
 		"sparklineBuckets", "selectedSeriesIDs", "tzName",
 		"datapointSeriesIDs", "datapointSeriesLimit",
 	},
-	"getMetricAggregate": {
-		"streamID", "startTime", "endTime", "targetBuckets", "seriesIDs",
+	"getMetricAggregateView": {
+		"metricID", "startTime", "endTime", "targetBuckets", "seriesIDs",
 		"quantiles", "tzOffsetNs", "viewBuckets",
 		"selectedSeriesIDs", "tzName",
 	},
@@ -255,9 +257,9 @@ func parseSearchOptions(params []any) (search.ResultOptions, error) {
 	}, nil
 }
 
-// getMetricParams holds the common metric request plus detail-only fields.
-type getMetricParams struct {
-	streamID             string
+// getMetricViewParams holds the common chart request plus detail-only fields.
+type getMetricViewParams struct {
+	metricID             string
 	timeRange            store.TimeRange
 	targetBuckets        int64
 	seriesIDs            []string
@@ -350,42 +352,42 @@ func parseOptionalString(params []any, index int) (string, error) {
 	return value, nil
 }
 
-func parseGetMetricParams(raw json.RawMessage, aggregateOnly bool) (getMetricParams, error) {
+func parseGetMetricViewParams(raw json.RawMessage, aggregateOnly bool) (getMetricViewParams, error) {
 	maxParams := 13
 	if aggregateOnly {
 		maxParams = 10
 	}
 	params, err := decodePositionalParams(raw, 3, maxParams)
 	if err != nil {
-		return getMetricParams{}, err
+		return getMetricViewParams{}, err
 	}
-	streamID, err := parseIDParam(params[0], ErrInvalidStreamID, normalizeUUID)
+	metricID, err := parseIDParam(params[0], ErrInvalidStreamID, normalizeUUID)
 	if err != nil {
-		return getMetricParams{}, err
+		return getMetricViewParams{}, err
 	}
 	timeRange, err := parseTimeRange(params[1], params[2])
 	if err != nil {
-		return getMetricParams{}, err
+		return getMetricViewParams{}, err
 	}
 	targetBuckets, err := parseOptionalNonNegativeInt(params, 3, "targetBuckets")
 	if err != nil {
-		return getMetricParams{}, err
+		return getMetricViewParams{}, err
 	}
 	seriesIDs, err := parseOptionalStringList(params, 4)
 	if err != nil {
-		return getMetricParams{}, err
+		return getMetricViewParams{}, err
 	}
 	quantiles, err := parseOptionalQuantiles(params, 5)
 	if err != nil {
-		return getMetricParams{}, err
+		return getMetricViewParams{}, err
 	}
 	tzOffsetNs, err := parseOptionalInt(params, 6, "tzOffsetNs")
 	if err != nil {
-		return getMetricParams{}, err
+		return getMetricViewParams{}, err
 	}
 	viewBuckets, err := parseOptionalNonNegativeInt(params, 7, "viewBuckets")
 	if err != nil {
-		return getMetricParams{}, err
+		return getMetricViewParams{}, err
 	}
 
 	selectedSeriesIndex, tzNameIndex := 9, 10
@@ -395,16 +397,16 @@ func parseGetMetricParams(raw json.RawMessage, aggregateOnly bool) (getMetricPar
 	} else {
 		sparklineBuckets, err = parseOptionalNonNegativeInt(params, 8, "sparklineBuckets")
 		if err != nil {
-			return getMetricParams{}, err
+			return getMetricViewParams{}, err
 		}
 	}
 	selectedSeriesIDs, err := parseOptionalStringList(params, selectedSeriesIndex)
 	if err != nil {
-		return getMetricParams{}, err
+		return getMetricViewParams{}, err
 	}
 	tzName, err := parseOptionalString(params, tzNameIndex)
 	if err != nil {
-		return getMetricParams{}, err
+		return getMetricViewParams{}, err
 	}
 
 	var datapointSeriesIDs []string
@@ -412,21 +414,47 @@ func parseGetMetricParams(raw json.RawMessage, aggregateOnly bool) (getMetricPar
 	if !aggregateOnly {
 		datapointSeriesIDs, err = parseOptionalStringList(params, 11)
 		if err != nil {
-			return getMetricParams{}, err
+			return getMetricViewParams{}, err
 		}
 		datapointSeriesLimit, err = parseOptionalNonNegativeInt(params, 12, "datapointSeriesLimit")
 		if err != nil {
-			return getMetricParams{}, err
+			return getMetricViewParams{}, err
 		}
 	}
 
-	return getMetricParams{
-		streamID: streamID, timeRange: timeRange, targetBuckets: targetBuckets,
+	return getMetricViewParams{
+		metricID: metricID, timeRange: timeRange, targetBuckets: targetBuckets,
 		seriesIDs: seriesIDs, quantiles: quantiles, tzOffsetNs: tzOffsetNs,
 		viewBuckets: viewBuckets, sparklineBuckets: sparklineBuckets,
 		selectedSeriesIDs: selectedSeriesIDs, datapointSeriesIDs: datapointSeriesIDs,
 		datapointSeriesLimit: datapointSeriesLimit, tzName: tzName,
 	}, nil
+}
+
+type getMetricSeriesParams struct {
+	metricID  string
+	seriesID  string
+	timeRange store.TimeRange
+}
+
+func parseGetMetricSeriesParams(raw json.RawMessage) (getMetricSeriesParams, error) {
+	params, err := decodePositionalParams(raw, 4, 4)
+	if err != nil {
+		return getMetricSeriesParams{}, err
+	}
+	metricID, err := parseIDParam(params[0], ErrInvalidStreamID, normalizeUUID)
+	if err != nil {
+		return getMetricSeriesParams{}, err
+	}
+	seriesID, err := parseIDParam(params[1], ErrInvalidStreamID, normalizeUUID)
+	if err != nil {
+		return getMetricSeriesParams{}, err
+	}
+	timeRange, err := parseTimeRange(params[2], params[3])
+	if err != nil {
+		return getMetricSeriesParams{}, err
+	}
+	return getMetricSeriesParams{metricID: metricID, seriesID: seriesID, timeRange: timeRange}, nil
 }
 
 // getFieldValues returns distinct values of one completable column, for

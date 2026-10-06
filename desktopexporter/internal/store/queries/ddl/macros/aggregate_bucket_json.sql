@@ -26,7 +26,7 @@ create or replace macro aggregate_bucket_json(timestamp_, start_time, count_, su
 				'sum', double_wire_json(sum_),
 				'bucketCounts', counts,
 				'explicitBounds', list_transform(bounds, value -> double_wire_json(value)),
-				-- Precomputed by get_metric.sql's agg_quantiles chain; null when
+				-- Precomputed by get_metric_view.sql's agg_quantiles chain; null when
 				-- no quantiles were requested, as the old guard had it.
 				'quantiles', quantiles
 			), json_object(

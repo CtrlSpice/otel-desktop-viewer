@@ -214,8 +214,9 @@ func TestScalarCounterArithmetic(t *testing.T) {
 
 	streamID := findMetricID(t, s, ctx, "test.counter")
 	withViews, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, streamID, store.BoundedTimeRange(0, 300),
+		return metrics.GetMetricView(ctx, db, streamID, store.BoundedTimeRange(0, 300),
 			0, nil, nil, 0, 2, 2, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	var viewsMetric map[string]any
@@ -268,8 +269,9 @@ func TestScalarCounterArithmetic(t *testing.T) {
 	// hexadecimal double wire form where JSON numbers cannot represent it.
 	nonfiniteID := findMetricID(t, s, ctx, "test.nonfinite")
 	nonfiniteRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, nonfiniteID, store.BoundedTimeRange(0, 700),
+		return metrics.GetMetricView(ctx, db, nonfiniteID, store.BoundedTimeRange(0, 700),
 			0, nil, nil, 0, 0, 0, nil, "", nil, 0)
+
 	})
 	require.NoError(t, err)
 	require.True(t, json.Valid(nonfiniteRaw))

@@ -1,7 +1,9 @@
 select cast(coalesce(to_json(list(log_data_json(
 	l,
 	resource_json(r.attribute_ids, r.dropped_attributes_count),
-	scope_json(sc.name, sc.version, sc.attribute_ids, sc.dropped_attributes_count)
+	scope_json(sc.name, sc.version, sc.attribute_ids, sc.dropped_attributes_count),
+	r.schema_url,
+	sc.schema_url
 ) order by coalesce(nullif(l.timestamp, 0), l.observed_timestamp), l.id)), '[]') as varchar) as logs
 from logs l
 join resources r on r.id = l.resource_id

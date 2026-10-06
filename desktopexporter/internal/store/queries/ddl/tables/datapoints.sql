@@ -10,7 +10,6 @@ create table if not exists datapoints (
 		-- and dropping it would make the labels of a datapoint unreachable
 		-- without a join back through metric_series.
 		series_id uuid not null,
-		metric_ingest_id uuid not null,
 		timestamp ubigint,
 		start_time ubigint,
 		flags uinteger,
@@ -47,8 +46,6 @@ create table if not exists datapoints (
 		-- 294,607 datapoints carry 591,890 attribute rows resolving to 89
 		-- distinct label sets -- 82% of the whole attributes table.
 		attribute_ids uuid[] not null,
-		foreign key (stream_id) references metric_streams(id),
 		foreign key (series_id) references metric_series(id),
-		foreign key (metric_ingest_id) references metric_ingests(id),
 		foreign key (bounds_id) references histogram_bounds(id)
 	)

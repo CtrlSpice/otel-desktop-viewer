@@ -1,12 +1,8 @@
 {{.CTEs}},
-		filtered_ingests as (
-			select m.id, m.stream_id
+		filtered_streams as (
+			select s.*
 			{{.From}}
 			where {{.Where}}
-		),
-		filtered_streams as (
-			select s.* from metric_streams s
-			where s.id in (select distinct stream_id from filtered_ingests)
 		),
 		stream_latest_dp as (
 			select d.stream_id, max(d.timestamp) as last_dp_ts
@@ -26,19 +22,6 @@
 			inner join candidate_streams fs on d.stream_id = fs.id, search_params
 			{{.DatapointWhere}}
 		),
-		ingest_latest_dp as (
-			select metric_ingest_id, max(timestamp) as last_dp_ts
-			from filtered_dps
-			group by metric_ingest_id
-		),
-		stream_description as (
-			select mi.stream_id,
-				arg_max(mi.description, ild.last_dp_ts) as description
-			from metric_ingests mi
-			inner join ingest_latest_dp ild on ild.metric_ingest_id = mi.id
-			where mi.stream_id in (select id from candidate_streams)
-			group by mi.stream_id
-		),
 		-- Two counts, because the card was showing one number that could mean
 		-- either and said which only in a tooltip.
 		--
@@ -47,10 +30,11 @@
 		-- datapoint_count, last_value and the time range are all window-scoped
 		-- too -- and it is the one that changes as you pan.
 		--
-		-- series_cardinality is the stream's lifetime total, straight off
-		-- metric_series. Narrow the window on a race and the first drops to
-		-- three while the second stays at twenty-one; neither is wrong, and
-		-- showing only one of them makes the other look like a bug.
+		-- series_cardinality is the stream's retained-data total. Narrow the
+		-- window on a race and the first drops to three while the second stays at
+		-- twenty-one; neither is wrong, and showing only one makes the other look
+		-- like a bug. Identity-only rows retained for stable generated ids do not
+		-- count as active series.
 		--
 		-- Counting series is now counting one indexable column, rather than
 		-- distinct (resource, label-array) pairs.
@@ -59,11 +43,9 @@
 			from filtered_dps
 			group by stream_id
 		),
-		-- One row per series, so this counts a small table rather than
-		-- re-scanning datapoints.
 		stream_series_cardinality as (
-			select stream_id, count(*) as series_cardinality
-			from metric_series
+			select stream_id, count(distinct series_id) as series_cardinality
+			from datapoints
 			where stream_id in (select id from candidate_streams)
 			group by stream_id
 		),
@@ -85,7 +67,7 @@
 			select
 				fs.id,
 				fs.name,
-				sd.description,
+				fs.description,
 				fs.unit,
 				fs.metric_type,
 				fs.aggregation_temporality,
@@ -98,7 +80,6 @@
 				sldp.last_dp_ts
 			from candidate_streams fs
 			left join stream_latest_dp sldp on sldp.stream_id = fs.id
-			left join stream_description sd on sd.stream_id = fs.id
 			left join stream_series_count ssc on ssc.stream_id = fs.id
 			left join stream_series_cardinality ssx on ssx.stream_id = fs.id
 			left join stream_datapoint_count sdc on sdc.stream_id = fs.id
@@ -117,16 +98,15 @@
 			'metricType', sub.metric_type,
 			-- Code is received OTLP data; label is a display projection.
 			'aggregationTemporalityCode', case
-				when sub.metric_type = 'Gauge' then null
-				else sub.aggregation_temporality end,
+				when sub.metric_type in ('Sum', 'Histogram', 'ExponentialHistogram') then sub.aggregation_temporality
+				else null end,
 			'aggregationTemporality', case
-				when sub.metric_type = 'Gauge' then null
-				else case sub.aggregation_temporality
+				when sub.metric_type in ('Sum', 'Histogram', 'ExponentialHistogram') then case sub.aggregation_temporality
 				when 0 then 'Unspecified'
 				when 1 then 'Delta'
 				when 2 then 'Cumulative'
 				else 'Unknown (' || sub.aggregation_temporality::varchar || ')'
-				end end,
+				end else null end,
 			'isMonotonic', case
 				when sub.metric_type = 'Sum' then sub.is_monotonic
 				else null

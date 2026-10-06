@@ -86,12 +86,12 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 
 	resource := pcommon.NewResource()
 	resource.Attributes().PutStr("service.name", "flush-test")
-	resourceID := dict.AddResource(resource)
+	resourceID := dict.AddResource(resource, "").ID
 
 	scope := pcommon.NewInstrumentationScope()
 	scope.SetName("flush-scope")
 	scope.SetVersion("v1")
-	scopeID := dict.AddScope(scope)
+	scopeID := dict.AddScope(scope, "")
 
 	logAttrs := pcommon.NewMap()
 	logAttrs.PutStr("flush_attr", "ok")
@@ -132,7 +132,6 @@ func TestFlushAppenders_MakesDataVisible(t *testing.T) {
 			ingest.NonNil(logAttrIDs), // AttributeIDs UUID[]
 			uint32(0), uint32(0), "",  // DroppedAttributesCount, Flags, EventName
 			"flush-test", // ServiceName VARCHAR (NOT NULL, '' = unknown)
-			"", "",       // ResourceSchemaURL, ScopeSchemaURL (batch-level, optional)
 		); err != nil {
 			return err
 		}

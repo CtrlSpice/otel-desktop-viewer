@@ -113,8 +113,13 @@ const (
 	// OTLP JSON, without applying UI search or tree-reachability rules.
 	GetTraceOTLP Name = "spans/get_trace_otlp.sql"
 
-	// GetMetric returns one stream's series and datapoints in a time window.
+	// GetMetric returns one exact Metric identity and its series catalogue.
 	GetMetric Name = "metrics/get_metric.sql"
+	// GetMetricSeries returns one exact series' retained received datapoints,
+	// grouped by their owning received Metric reports.
+	GetMetricSeries Name = "metrics/get_metric_series.sql"
+	// GetMetricView returns the chart/UI projection for one Metric.
+	GetMetricView Name = "metrics/get_metric_view.sql"
 	// GetMetricOTLP reconstructs one stored metric stream as standard OTLP JSON,
 	// without applying UI aggregation or time-window rules.
 	GetMetricOTLP Name = "metrics/get_metric_otlp.sql"
@@ -142,7 +147,7 @@ const (
 // without registering it is a visible omission rather than a silent one.
 var queryNames = []Name{
 	SearchSpans, SalvageSpans, SearchTraces, GetTrace, GetSpanSummaries, GetSpan, GetTraceOTLP,
-	GetMetric, GetMetricOTLP, GetMetricAttributes,
+	GetMetric, GetMetricSeries, GetMetricView, GetMetricOTLP, GetMetricAttributes,
 	GetLog, GetLogOTLP, GetTraceLogs, GetSpanLogs, GetLogAttributes,
 	SearchMetricSummaries, SearchLogs,
 }
