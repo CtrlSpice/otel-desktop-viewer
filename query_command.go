@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/rivo/uniseg"
 	"github.com/spf13/cobra"
 )
 
@@ -45,6 +47,93 @@ type queryRPCResponse struct {
 type queryRPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+}
+
+func decodeQueryResult(raw json.RawMessage) (queryResult, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return queryResult{}, err
+	}
+	if fields == nil {
+		return queryResult{}, errors.New("result must be an object")
+	}
+
+	columnsRaw, ok := fields["columns"]
+	if !ok {
+		return queryResult{}, errors.New("missing columns")
+	}
+	var columnValues []json.RawMessage
+	if isJSONNull(columnsRaw) {
+		return queryResult{}, errors.New("columns must be an array")
+	}
+	if err := json.Unmarshal(columnsRaw, &columnValues); err != nil {
+		return queryResult{}, fmt.Errorf("decode columns: %w", err)
+	}
+	columns := make([]queryColumn, len(columnValues))
+	for i, rawColumn := range columnValues {
+		var columnFields map[string]json.RawMessage
+		if err := json.Unmarshal(rawColumn, &columnFields); err != nil || columnFields == nil {
+			return queryResult{}, fmt.Errorf("decode columns[%d]: must be an object", i)
+		}
+		name, nameOK := columnFields["name"]
+		columnType, typeOK := columnFields["type"]
+		if !nameOK || !typeOK {
+			return queryResult{}, fmt.Errorf("decode columns[%d]: missing name or type", i)
+		}
+		if isJSONNull(name) || isJSONNull(columnType) {
+			return queryResult{}, fmt.Errorf("decode columns[%d]: name and type must be strings", i)
+		}
+		if err := json.Unmarshal(name, &columns[i].Name); err != nil {
+			return queryResult{}, fmt.Errorf("decode columns[%d].name: %w", i, err)
+		}
+		if err := json.Unmarshal(columnType, &columns[i].Type); err != nil {
+			return queryResult{}, fmt.Errorf("decode columns[%d].type: %w", i, err)
+		}
+	}
+
+	rowsRaw, ok := fields["rows"]
+	if !ok {
+		return queryResult{}, errors.New("missing rows")
+	}
+	var rowValues []json.RawMessage
+	if isJSONNull(rowsRaw) {
+		return queryResult{}, errors.New("rows must be an array")
+	}
+	if err := json.Unmarshal(rowsRaw, &rowValues); err != nil {
+		return queryResult{}, fmt.Errorf("decode rows: %w", err)
+	}
+	rows := make([][]any, len(rowValues))
+	for i, rawRow := range rowValues {
+		if isJSONNull(rawRow) {
+			return queryResult{}, fmt.Errorf("decode rows[%d]: must be an array", i)
+		}
+		decoder := json.NewDecoder(bytes.NewReader(rawRow))
+		decoder.UseNumber()
+		if err := decoder.Decode(&rows[i]); err != nil {
+			return queryResult{}, fmt.Errorf("decode rows[%d]: %w", i, err)
+		}
+		if len(rows[i]) != len(columns) {
+			return queryResult{}, fmt.Errorf("decode rows[%d]: got %d values for %d columns", i, len(rows[i]), len(columns))
+		}
+	}
+
+	truncatedRaw, ok := fields["truncated"]
+	if !ok {
+		return queryResult{}, errors.New("missing truncated")
+	}
+	var truncated bool
+	if isJSONNull(truncatedRaw) {
+		return queryResult{}, errors.New("truncated must be a boolean")
+	}
+	if err := json.Unmarshal(truncatedRaw, &truncated); err != nil {
+		return queryResult{}, fmt.Errorf("decode truncated: %w", err)
+	}
+
+	return queryResult{Columns: columns, Rows: rows, Truncated: truncated}, nil
+}
+
+func isJSONNull(raw json.RawMessage) bool {
+	return bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
 }
 
 func newQueryCommand() *cobra.Command {
@@ -143,10 +232,8 @@ func requestQuery(
 		return nil, queryResult{}, fmt.Errorf("decode viewer response: missing result")
 	}
 
-	var result queryResult
-	resultDecoder := json.NewDecoder(bytes.NewReader(rpcResponse.Result))
-	resultDecoder.UseNumber()
-	if err := resultDecoder.Decode(&result); err != nil {
+	result, err := decodeQueryResult(rpcResponse.Result)
+	if err != nil {
 		return nil, queryResult{}, fmt.Errorf("decode query result: %w", err)
 	}
 	return rpcResponse.Result, result, nil
@@ -245,11 +332,5 @@ func escapeQueryDisplay(value string) string {
 }
 
 func queryDisplayWidth(value string) int {
-	width := 0
-	for _, r := range value {
-		if !unicode.Is(unicode.Mn, r) && !unicode.Is(unicode.Me, r) {
-			width++
-		}
-	}
-	return width
+	return uniseg.StringWidth(value)
 }
