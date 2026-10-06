@@ -123,9 +123,15 @@ ORDER BY effective_timestamp, id"
 
 `attributes` is a dictionary, not a table of telemetry rows. Spans own entries
 through `spans.attribute_ids`. Each value uses canonical recursive tagged JSON
-with the shape `{kind,value}`, and `value_kind` below reads that received type
-tag. Received `int64` values are stored as decimal strings and must not be cast
-to `DOUBLE`; native SQL integers remain integer JSON tokens in `--json` output.
+with the shape `{kind,value}`. For example:
+
+```json
+{"kind":"int64","value":"9007199254740993"}
+```
+
+For this value, `json_extract_string(a.value, '$.kind')` below returns `int64`
+as `value_kind`. The decimal string preserves exactness; never cast it to
+`DOUBLE`. Native SQL integers remain integer JSON tokens in `--json` output.
 Join the ownership list and count the owning span identities:
 
 ```sh
