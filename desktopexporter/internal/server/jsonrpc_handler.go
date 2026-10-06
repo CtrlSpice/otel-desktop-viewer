@@ -88,8 +88,12 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.searchMetricSummaries(ctx, req)
 	case "getMetric":
 		return h.getMetric(ctx, req)
-	case "getMetricAggregate":
-		return h.getMetricAggregate(ctx, req)
+	case "getMetricSeries":
+		return h.getMetricSeries(ctx, req)
+	case "getMetricView":
+		return h.getMetricView(ctx, req)
+	case "getMetricAggregateView":
+		return h.getMetricAggregateView(ctx, req)
 	case "clearTraces":
 		return h.clearTraces(ctx)
 	case "clearLogs":
@@ -232,12 +236,32 @@ func (h *JSONRPCHandler) searchMetricSummaries(ctx context.Context, req *jsonrpc
 }
 
 func (h *JSONRPCHandler) getMetric(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	args, err := parseGetMetricParams(req.Params, false)
+	metricID, err := parseSingleIDParam(req.Params, ErrInvalidStreamID, normalizeUUID)
 	if err != nil {
 		return nil, err
 	}
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, args.streamID, args.timeRange,
+		return metrics.GetMetric(ctx, db, metricID)
+	})
+}
+
+func (h *JSONRPCHandler) getMetricSeries(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	args, err := parseGetMetricSeriesParams(req.Params)
+	if err != nil {
+		return nil, err
+	}
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetricSeries(ctx, db, args.metricID, args.seriesID, args.timeRange)
+	})
+}
+
+func (h *JSONRPCHandler) getMetricView(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	args, err := parseGetMetricViewParams(req.Params, false)
+	if err != nil {
+		return nil, err
+	}
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
+		return metrics.GetMetricView(ctx, db, args.metricID, args.timeRange,
 			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs, args.viewBuckets, args.sparklineBuckets, args.selectedSeriesIDs, args.tzName,
 			args.datapointSeriesIDs, args.datapointSeriesLimit)
 	})
@@ -390,18 +414,18 @@ func (h *JSONRPCHandler) getLogAttributes(ctx context.Context, req *jsonrpc2.Req
 	})
 }
 
-// getMetricAggregate takes the common metric parameters, viewBuckets,
+// getMetricAggregateView takes the common metric chart parameters, viewBuckets,
 // selectedSeriesIDs and tzName, and returns only the cross-series aggregate.
-// Separate method rather than a flag on getMetric:
+// Separate method rather than a flag on getMetricView:
 // the two are fetched on different triggers -- metric selection versus legend
 // selection -- so they are different requests, not one request in two modes.
-func (h *JSONRPCHandler) getMetricAggregate(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	args, err := parseGetMetricParams(req.Params, true)
+func (h *JSONRPCHandler) getMetricAggregateView(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	args, err := parseGetMetricViewParams(req.Params, true)
 	if err != nil {
 		return nil, err
 	}
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricAggregate(ctx, db, args.streamID, args.timeRange,
+		return metrics.GetMetricAggregateView(ctx, db, args.metricID, args.timeRange,
 			args.targetBuckets, args.seriesIDs, args.quantiles, args.tzOffsetNs,
 			args.viewBuckets, args.selectedSeriesIDs, args.tzName)
 	})

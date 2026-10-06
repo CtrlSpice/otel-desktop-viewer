@@ -11,7 +11,7 @@ const {
   searchLogs,
   getLog,
   searchMetricSummaries,
-  getMetric,
+  getMetricView,
   getTraceAttributes,
   getLogAttributes,
   getMetricAttributes,
@@ -21,7 +21,7 @@ const {
   searchLogs: vi.fn(),
   getLog: vi.fn(),
   searchMetricSummaries: vi.fn(),
-  getMetric: vi.fn(),
+  getMetricView: vi.fn(),
   getTraceAttributes: vi.fn(),
   getLogAttributes: vi.fn(),
   getMetricAttributes: vi.fn(),
@@ -39,7 +39,7 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
       searchLogs,
       getLog,
       searchMetricSummaries,
-      getMetric,
+      getMetricView,
       getTraceAttributes,
       getLogAttributes,
       getMetricAttributes,
@@ -69,7 +69,7 @@ beforeEach(() => {
   searchLogs.mockResolvedValue([])
   getLog.mockResolvedValue(null)
   searchMetricSummaries.mockResolvedValue([])
-  getMetric.mockResolvedValue(null)
+  getMetricView.mockResolvedValue(null)
   getTraceAttributes.mockResolvedValue([])
   getLogAttributes.mockResolvedValue([])
   getMetricAttributes.mockResolvedValue([])

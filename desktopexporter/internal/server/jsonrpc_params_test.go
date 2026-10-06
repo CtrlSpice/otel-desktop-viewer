@@ -34,19 +34,24 @@ func TestNamedParamsMatchPositional(t *testing.T) {
 			`{"term":"http"}`, `["http"]`},
 		{"query",
 			`{"limit":5,"sql":"select 1"}`, `["select 1",5]`},
+		{"getMetric",
+			`{"metricID":"m"}`, `["m"]`},
+		{"getMetricSeries",
+			`{"endTime":null,"seriesID":"s","metricID":"m","startTime":"1"}`,
+			`["m","s","1",null]`},
 		// Order in the object must not matter.
 		{"searchLogs",
 			`{"endTime":"2","startTime":"1"}`, `["1","2"]`},
 		// The wide one, fully populated, in a deliberately shuffled order.
-		{"getMetric",
-			`{"tzName":"UTC","streamID":"s","startTime":"1","endTime":"2",
+		{"getMetricView",
+			`{"tzName":"UTC","metricID":"s","startTime":"1","endTime":"2",
 			  "targetBuckets":10,"seriesIDs":["a"],"quantiles":[0.5],
 			  "tzOffsetNs":0,"viewBuckets":5,
 			  "sparklineBuckets":6,"selectedSeriesIDs":["b"],
 			  "datapointSeriesIDs":["c"],"datapointSeriesLimit":7}`,
 			`["s","1","2",10,["a"],[0.5],0,5,6,["b"],"UTC",["c"],7]`},
-		{"getMetricAggregate",
-			`{"tzName":"UTC","streamID":"s","startTime":"1","endTime":"2",
+		{"getMetricAggregateView",
+			`{"tzName":"UTC","metricID":"s","startTime":"1","endTime":"2",
 			  "targetBuckets":10,"seriesIDs":["a"],"quantiles":[0.5],
 			  "tzOffsetNs":0,"viewBuckets":5,"selectedSeriesIDs":["b"]}`,
 			`["s","1","2",10,["a"],[0.5],0,5,["b"],"UTC"]`},
@@ -66,15 +71,17 @@ func TestNamedParamsMatchPositional(t *testing.T) {
 }
 
 func TestMetricNamedParamContracts(t *testing.T) {
+	require.Equal(t, []string{"metricID"}, methodParamNames["getMetric"])
+	require.Equal(t, []string{"metricID", "seriesID", "startTime", "endTime"}, methodParamNames["getMetricSeries"])
 	require.Equal(t, []string{
-		"streamID", "startTime", "endTime", "targetBuckets", "seriesIDs",
+		"metricID", "startTime", "endTime", "targetBuckets", "seriesIDs",
 		"quantiles", "tzOffsetNs", "viewBuckets", "sparklineBuckets",
 		"selectedSeriesIDs", "tzName", "datapointSeriesIDs", "datapointSeriesLimit",
-	}, methodParamNames["getMetric"])
+	}, methodParamNames["getMetricView"])
 	require.Equal(t, []string{
-		"streamID", "startTime", "endTime", "targetBuckets", "seriesIDs",
+		"metricID", "startTime", "endTime", "targetBuckets", "seriesIDs",
 		"quantiles", "tzOffsetNs", "viewBuckets", "selectedSeriesIDs", "tzName",
-	}, methodParamNames["getMetricAggregate"])
+	}, methodParamNames["getMetricAggregateView"])
 }
 
 func TestNamedParamsGapsBecomeNull(t *testing.T) {
@@ -82,8 +89,8 @@ func TestNamedParamsGapsBecomeNull(t *testing.T) {
 	// seriesIDs entirely; the handler gates optional params on
 	// `len(params) >= n && params[n-1] != nil`, so the gap must be an
 	// explicit null and the array must stay long enough to reach it.
-	got, err := normalizeParams("getMetric", json.RawMessage(
-		`{"streamID":"s","startTime":"1","endTime":"2","seriesIDs":["a"]}`))
+	got, err := normalizeParams("getMetricView", json.RawMessage(
+		`{"metricID":"s","startTime":"1","endTime":"2","seriesIDs":["a"]}`))
 	require.NoError(t, err)
 
 	var out []any
@@ -269,12 +276,12 @@ func TestParseSearchParams(t *testing.T) {
 	assert.Equal(t, &search.Sort{Field: "duration", Direction: "desc"}, got.options.Sort)
 }
 
-func TestParseGetMetricParamsLayouts(t *testing.T) {
-	streamID := "00000000-0000-0000-0000-000000000001"
-	detailRaw := json.RawMessage(fmt.Sprintf(`[%q,null,20,4,[],[0.5],-3600,8,9,["selected"],"Europe/London",[],10]`, streamID))
-	detail, err := parseGetMetricParams(detailRaw, false)
+func TestParseGetMetricViewParamsLayouts(t *testing.T) {
+	metricID := "00000000-0000-0000-0000-000000000001"
+	detailRaw := json.RawMessage(fmt.Sprintf(`[%q,null,20,4,[],[0.5],-3600,8,9,["selected"],"Europe/London",[],10]`, metricID))
+	detail, err := parseGetMetricViewParams(detailRaw, false)
 	require.NoError(t, err)
-	assert.Equal(t, streamID, detail.streamID)
+	assert.Equal(t, metricID, detail.metricID)
 	assert.NotNil(t, detail.seriesIDs)
 	assert.Empty(t, detail.seriesIDs)
 	assert.Equal(t, []float64{0.5}, detail.quantiles)
@@ -286,13 +293,25 @@ func TestParseGetMetricParamsLayouts(t *testing.T) {
 	assert.Empty(t, detail.datapointSeriesIDs)
 	assert.Equal(t, int64(10), detail.datapointSeriesLimit)
 
-	aggregateRaw := json.RawMessage(fmt.Sprintf(`[%q,10,null,4,null,null,null,8,["selected"],"UTC"]`, streamID))
-	aggregate, err := parseGetMetricParams(aggregateRaw, true)
+	aggregateRaw := json.RawMessage(fmt.Sprintf(`[%q,10,null,4,null,null,null,8,["selected"],"UTC"]`, metricID))
+	aggregate, err := parseGetMetricViewParams(aggregateRaw, true)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"selected"}, aggregate.selectedSeriesIDs)
 	assert.Equal(t, "UTC", aggregate.tzName)
 	assert.Zero(t, aggregate.sparklineBuckets)
 	assert.Nil(t, aggregate.datapointSeriesIDs)
+}
+
+func TestParseGetMetricSeriesParams(t *testing.T) {
+	metricID := "00000000-0000-0000-0000-000000000001"
+	seriesID := "00000000-0000-0000-0000-000000000002"
+	got, err := parseGetMetricSeriesParams(json.RawMessage(fmt.Sprintf(`[%q,%q,null,"18446744073709551615"]`, metricID, seriesID)))
+	require.NoError(t, err)
+	assert.Equal(t, metricID, got.metricID)
+	assert.Equal(t, seriesID, got.seriesID)
+	assert.Nil(t, got.timeRange.Start)
+	require.NotNil(t, got.timeRange.End)
+	assert.Equal(t, uint64(math.MaxUint64), *got.timeRange.End)
 }
 
 func TestParseOptionalQuantilesPreservesValuesOrderAndPresence(t *testing.T) {

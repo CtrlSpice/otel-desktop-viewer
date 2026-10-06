@@ -312,7 +312,7 @@ export type DataPoint =
 // keying, and the per-timeseries colour assignment.
 //
 // (Naming note: the SDK spec uses "metric stream" for the whole named
-// series produced by a View -- which corresponds to our `MetricData` /
+// series produced by a View -- which corresponds to our `MetricViewData` /
 // `metric_streams` table. The per-attribute series within it is the
 // "timeseries" / "metric point". We use "timeseries" everywhere in the
 // type layer to avoid colliding with the spec's "metric stream".)
@@ -421,9 +421,9 @@ export type AggregateBucket = Omit<
   quantiles: Record<string, number | null> | null
 }
 
-/** What getMetricAggregate resolves to: one envelope serving both metric
+/** What getMetricAggregateView resolves to: one envelope serving both metric
  *  shapes, each field null on the shape it does not apply to. */
-export type MetricAggregateEnvelope = {
+export type MetricAggregateViewData = {
   aggregate: AggregateBucket[] | null
   scalarAggregate: ScalarAggregate | null
 }
@@ -447,7 +447,7 @@ type OptionalMetricTemporality =
       aggregationTemporalityCode: number | null
     }
 
-export type MetricData = {
+export type MetricViewData = {
   /** The window's most recent datapoint across every series. */
   lastSeenNs: bigint | null
   id: string
@@ -456,7 +456,7 @@ export type MetricData = {
   /** OTLP Metric.metadata: describes the instrument, not any one series. */
   metadata: Attributes
   unit: string
-  /** Stream-level type from metric_streams (getMetric only). */
+  /** Stream-level type from metric_streams (getMetricView only). */
   metricType?: MetricType
   /** Stream-level monotonic flag; null except Sum. */
   isMonotonic?: boolean | null
@@ -482,6 +482,109 @@ export type MetricData = {
     effective: { startNs: bigint | null; endNs: bigint | null }
   }
 } & OptionalMetricTemporality
+
+export type ExactMetricResource = {
+  attributes: Attributes
+}
+
+export type ExactMetricScope = {
+  name: string
+  version: string
+  attributes: Attributes
+  schemaUrl: string
+}
+
+type ExactMetricIdentityBase = {
+  metricID: string
+  name: string
+  unit: string
+  resource: ExactMetricResource
+  scope: ExactMetricScope
+}
+
+export type ExactMetricIdentity = ExactMetricIdentityBase &
+  (
+    | { metricType: 'Gauge' }
+    | {
+        metricType: 'Sum'
+        aggregationTemporalityCode: number
+        isMonotonic: boolean
+      }
+    | {
+        metricType: 'Histogram' | 'ExponentialHistogram'
+        aggregationTemporalityCode: number
+      }
+  )
+
+export type MetricSeriesSummary = {
+  seriesID: string
+  attributes: Attributes
+  /** Computed count of retained datapoints in this series. */
+  datapointCount: bigint
+  /** Computed earliest received datapoint timestamp, or null with no points. */
+  firstDatapointTimestamp: bigint | null
+  /** Computed latest received datapoint timestamp, or null with no points. */
+  lastDatapointTimestamp: bigint | null
+}
+
+export type ExactMetric = ExactMetricIdentity & {
+  series: MetricSeriesSummary[]
+}
+
+type ReceivedDataPointBase = {
+  datapointID: string
+  timestamp: bigint
+  startTime: bigint
+  flags: number
+  exemplars: Exemplar[]
+}
+
+export type ReceivedNumberDataPoint = ReceivedDataPointBase &
+  (
+    | { valueType: 'Int'; intValue: bigint; doubleValue: null }
+    | { valueType: 'Double'; intValue: null; doubleValue: number }
+    | { valueType: 'Empty'; intValue: null; doubleValue: null }
+  )
+
+export type ReceivedHistogramDataPoint = ReceivedDataPointBase & {
+  count: bigint
+  sum?: number
+  min?: number
+  max?: number
+  bucketCounts: bigint[]
+  explicitBounds: number[]
+}
+
+export type ReceivedExponentialHistogramDataPoint = ReceivedDataPointBase & {
+  count: bigint
+  sum?: number
+  min?: number
+  max?: number
+  scale: number
+  zeroCount: bigint
+  zeroThreshold: number
+  positive: { offset: number; bucketCounts: bigint[] }
+  negative: { offset: number; bucketCounts: bigint[] }
+}
+
+export type MetricReport = {
+  reportID: string
+  description: string
+  metadata: Attributes
+  resource: ResourceData & { schemaUrl: string }
+  scope: ScopeData & { schemaUrl: string }
+  datapoints: (
+    | ReceivedNumberDataPoint
+    | ReceivedHistogramDataPoint
+    | ReceivedExponentialHistogramDataPoint
+  )[]
+}
+
+export type ExactMetricSeries = ExactMetricIdentity & {
+  seriesID: string
+  attributes: Attributes
+  reports: MetricReport[]
+}
 
 // Sparkline point shape used by detail charts (not the drawer summary).
 export type SparklinePoint = {

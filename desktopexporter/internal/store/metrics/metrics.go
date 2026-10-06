@@ -1200,9 +1200,9 @@ func GetFieldValues(ctx context.Context, db *sql.DB, field, term string, limit i
 	return json.RawMessage(raw), nil
 }
 
-// GetMetric returns full MetricData for a metric stream in the time window.
-// An unknown streamID returns ErrStreamIDNotFound; a known stream with no
-// datapoints in the window returns valid MetricData with an empty timeseries
+// GetMetricView returns the chart/UI projection for a Metric in the time window.
+// An unknown metricID returns ErrStreamIDNotFound; a known Metric with no
+// datapoints in the window returns valid MetricViewData with an empty timeseries
 // list (the two are distinct: only the former is a "not found").
 // targetBuckets is how many time buckets to reduce the window to; 0 means no
 // reduction, and the caller gets every datapoint. Reduction is opt-in because
@@ -1234,8 +1234,96 @@ func GetFieldValues(ctx context.Context, db *sql.DB, field, term string, limit i
 // and 0 mean every series ships them.
 // A null endpoint is omitted from filtering and derived from the filtered data
 // extent. A concrete endpoint remains the effective endpoint.
-func GetMetric(ctx context.Context, db *sql.DB, streamID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, tzName string, datapointSeriesIDs []string, datapointSeriesLimit int64) (json.RawMessage, error) {
-	return getMetric(ctx, db, getMetricParams{}, streamID, timeRange, targetBuckets, seriesIDs, quantiles, tzOffsetNs, viewBuckets, sparklineBuckets, selectedSeriesIDs, tzName, datapointSeriesIDs, datapointSeriesLimit)
+func GetMetricView(ctx context.Context, db *sql.DB, metricID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, tzName string, datapointSeriesIDs []string, datapointSeriesLimit int64) (json.RawMessage, error) {
+	return getMetricView(ctx, db, getMetricViewParams{}, metricID, timeRange, targetBuckets, seriesIDs, quantiles, tzOffsetNs, viewBuckets, sparklineBuckets, selectedSeriesIDs, tzName, datapointSeriesIDs, datapointSeriesLimit)
+}
+
+// GetMetric returns the exact stored Metric identity and a catalogue of its
+// generated database-local series. Datapoint counts and first/last datapoint
+// timestamps are computed from all retained points; no datapoints are returned.
+func GetMetric(ctx context.Context, db *sql.DB, metricID string) (json.RawMessage, error) {
+	return getReceivedMetric(ctx, db, queries.GetMetric, "GetMetric", metricID)
+}
+
+// GetMetricSeries returns one exact series' retained received datapoints in the
+// requested timestamp window, grouped by the metric_ingests rows that own them.
+func GetMetricSeries(ctx context.Context, db *sql.DB, metricID, seriesID string, timeRange timerange.TimeRange) (json.RawMessage, error) {
+	metricType, err := receivedMetricType(ctx, db, "GetMetricSeries", metricID)
+	if err != nil {
+		return nil, err
+	}
+	query, err := queries.Render(queries.GetMetricSeries, nil)
+	if err != nil {
+		return nil, fmt.Errorf("GetMetricSeries: %w: %w", ErrMetricsStoreInternal, err)
+	}
+	var startTime, endTime any
+	if timeRange.Start != nil {
+		startTime = []uint64{*timeRange.Start}
+	}
+	if timeRange.End != nil {
+		endTime = []uint64{*timeRange.End}
+	}
+	var queriedMetricType string
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, metricID, seriesID, startTime, endTime).Scan(&queriedMetricType, &raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("GetMetricSeries: %w", ErrStreamIDNotFound)
+		}
+		return nil, fmt.Errorf("GetMetricSeries: %w: %w", ErrMetricsStoreInternal, err)
+	}
+	if queriedMetricType != metricType {
+		return nil, fmt.Errorf("GetMetricSeries: %w: Metric type changed during query", ErrMetricsStoreInternal)
+	}
+	if raw == nil || string(raw) == "null" {
+		return nil, fmt.Errorf("GetMetricSeries: %w: query returned null", ErrMetricsStoreInternal)
+	}
+	return json.RawMessage(raw), nil
+}
+
+func receivedMetricType(ctx context.Context, db *sql.DB, operation, metricID string) (string, error) {
+	var metricType string
+	if err := db.QueryRowContext(ctx,
+		`select metric_type from metric_streams where id = ?::uuid`, metricID).Scan(&metricType); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", fmt.Errorf("%s: %w", operation, ErrStreamIDNotFound)
+		}
+		return "", fmt.Errorf("%s: %w: %w", operation, ErrMetricsStoreInternal, err)
+	}
+	if !supportedReceivedMetricType(metricType) {
+		return "", fmt.Errorf("%s: %w: %s", operation, ErrUnsupportedMetricType, metricType)
+	}
+	return metricType, nil
+}
+
+func getReceivedMetric(ctx context.Context, db *sql.DB, queryName queries.Name, operation, metricID string) (json.RawMessage, error) {
+	query, err := queries.Render(queryName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w: %w", operation, ErrMetricsStoreInternal, err)
+	}
+	var metricType string
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, metricID).Scan(&metricType, &raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("%s: %w", operation, ErrStreamIDNotFound)
+		}
+		return nil, fmt.Errorf("%s: %w: %w", operation, ErrMetricsStoreInternal, err)
+	}
+	if !supportedReceivedMetricType(metricType) {
+		return nil, fmt.Errorf("%s: %w: %s", operation, ErrUnsupportedMetricType, metricType)
+	}
+	if raw == nil || string(raw) == "null" {
+		return nil, fmt.Errorf("%s: %w: query returned null", operation, ErrMetricsStoreInternal)
+	}
+	return json.RawMessage(raw), nil
+}
+
+func supportedReceivedMetricType(metricType string) bool {
+	switch metricType {
+	case "Gauge", "Sum", "Histogram", "ExponentialHistogram":
+		return true
+	default:
+		return false
+	}
 }
 
 // GetMetricOTLP returns all retained reports for a metric stream as a standard
@@ -1267,9 +1355,9 @@ func GetMetricOTLP(ctx context.Context, db *sql.DB, streamID string) (json.RawMe
 	return json.RawMessage(raw), nil
 }
 
-// getMetric runs the query in whichever shape params asks for. Both shapes take
+// getMetricView runs the chart query in whichever shape params asks for. Both shapes take
 // the same arguments and the same CTEs; only the projection differs.
-func getMetric(ctx context.Context, db *sql.DB, params getMetricParams, streamID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, tzName string, datapointSeriesIDs []string, datapointSeriesLimit int64) (json.RawMessage, error) {
+func getMetricView(ctx context.Context, db *sql.DB, params getMetricViewParams, metricID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, viewBuckets int64, sparklineBuckets int64, selectedSeriesIDs []string, tzName string, datapointSeriesIDs []string, datapointSeriesLimit int64) (json.RawMessage, error) {
 	// Deduplicate the quantile list, keeping first-occurrence order.
 	//
 	// The quantile CTEs build the wire object with map(), and DuckDB raises
@@ -1296,7 +1384,7 @@ func getMetric(ctx context.Context, db *sql.DB, params getMetricParams, streamID
 	// projection needs come from the metric_streams row directly via
 	// the stream CTE.
 	params.TimeFilter = metricDetailTimeFilter(timeRange)
-	query, err := queries.Render(queries.GetMetric, params)
+	query, err := queries.Render(queries.GetMetricView, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1340,21 +1428,21 @@ func getMetric(ctx context.Context, db *sql.DB, params getMetricParams, streamID
 	if timeRange.End != nil {
 		endTime = []uint64{*timeRange.End}
 	}
-	if err := db.QueryRowContext(ctx, query, streamID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs, viewBuckets, sparklineBuckets, selectedArg, tzArg, datapointArg, datapointSeriesLimit).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(ctx, query, metricID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs, viewBuckets, sparklineBuckets, selectedArg, tzArg, datapointArg, datapointSeriesLimit).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("GetMetric: %w", ErrStreamIDNotFound)
+			return nil, fmt.Errorf("GetMetricView: %w", ErrStreamIDNotFound)
 		}
-		return nil, fmt.Errorf("GetMetric: %w: %w", ErrMetricsStoreInternal, err)
+		return nil, fmt.Errorf("GetMetricView: %w: %w", ErrMetricsStoreInternal, err)
 	}
 	// The projection is a non-null json_object, so a null here means the
 	// query itself misbehaved -- an internal anomaly, not a missing stream.
 	if raw == nil || string(raw) == "null" {
-		return nil, fmt.Errorf("GetMetric: %w: query returned null", ErrMetricsStoreInternal)
+		return nil, fmt.Errorf("GetMetricView: %w: query returned null", ErrMetricsStoreInternal)
 	}
 	return json.RawMessage(raw), nil
 }
 
-// GetMetricAggregate returns only the cross-series aggregate: the selected
+// GetMetricAggregateView returns only the cross-series aggregate: the selected
 // series merged into one histogram per time bucket.
 //
 // Exists as its own call because the two halves of a metric response have
@@ -1382,10 +1470,10 @@ func getMetric(ctx context.Context, db *sql.DB, params getMetricParams, streamID
 //
 // The rule the two share: narrowing decides what is *sent*, never what is
 // *aggregated*.
-func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, viewBuckets int64, selectedSeriesIDs []string, tzName string) (json.RawMessage, error) {
+func GetMetricAggregateView(ctx context.Context, db *sql.DB, metricID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, viewBuckets int64, selectedSeriesIDs []string, tzName string) (json.RawMessage, error) {
 	// Ask SQL for the aggregate shape rather than the whole metric.
 	//
-	// This used to call GetMetric and then unmarshal its response in Go to
+	// This used to call GetMetricView and then unmarshal its response in Go to
 	// keep two fields. That was the store's only place parsing JSON on the way
 	// back out -- everywhere else a query's JSON is passed through untouched --
 	// and it made a legend toggle pay for the entire metric.
@@ -1398,8 +1486,8 @@ func GetMetricAggregate(ctx context.Context, db *sql.DB, streamID string, timeRa
 	// 0 sparkline buckets and an empty datapoint list are still passed, so a
 	// caller reading this does not have to work out that the pruning already
 	// covers them.
-	raw, err := getMetric(ctx, db, aggregateShapeFor(ctx, db, streamID),
-		streamID, timeRange, targetBuckets, seriesIDs, quantiles,
+	raw, err := getMetricView(ctx, db, aggregateViewShapeFor(ctx, db, metricID),
+		metricID, timeRange, targetBuckets, seriesIDs, quantiles,
 		tzOffsetNs, viewBuckets, 0, selectedSeriesIDs, tzName,
 		[]string{}, 0)
 	if err != nil {
@@ -1858,17 +1946,17 @@ func boolValueToIdentityString(v driver.Value, metricType string) string {
 	return ""
 }
 
-// getMetricParams selects which shape of response the projection builds.
+// getMetricViewParams selects which shape of response the projection builds.
 //
 // The CTE definitions are identical either way; only the final json_object
 // changes. DuckDB prunes whatever the projection does not read, so asking for
 // less is not merely a smaller payload -- it is a smaller plan. Measured on a
 // 21-series histogram: the full projection plans in 212ms and runs in 314ms,
 // the aggregate-only one in 67ms and 150ms.
-type getMetricParams struct {
+type getMetricViewParams struct {
 	TimeFilter string
 	// AggregateOnly emits just the cross-series aggregates, which is all
-	// GetMetricAggregate returns. It drops `timeseries` -- the field that
+	// GetMetricAggregateView returns. It drops `timeseries` -- the field that
 	// carries the per-series pipelines and most of the planning cost.
 	AggregateOnly bool
 
@@ -1886,14 +1974,14 @@ type getMetricParams struct {
 	NoScalarPools    bool
 }
 
-// aggregateShapeFor decides which chains a metric's aggregate can possibly
+// aggregateViewShapeFor decides which chains a metric's aggregate can possibly
 // need. A primary-key lookup on metric_streams, measured at 0.09ms, against
 // 120ms saved on a scalar metric.
-func aggregateShapeFor(ctx context.Context, db *sql.DB, streamID string) getMetricParams {
-	p := getMetricParams{AggregateOnly: true}
+func aggregateViewShapeFor(ctx context.Context, db *sql.DB, metricID string) getMetricViewParams {
+	p := getMetricViewParams{AggregateOnly: true}
 	var metricType string
 	err := db.QueryRowContext(ctx,
-		`select metric_type from metric_streams where id = ?::uuid`, streamID).Scan(&metricType)
+		`select metric_type from metric_streams where id = ?::uuid`, metricID).Scan(&metricType)
 	if err != nil {
 		// Unknown shape: ask for both, which is what this call did before the
 		// pruning existed. A stream id that does not resolve fails in the main

@@ -17,7 +17,7 @@ import type {
   ExponentialHistogramDataPoint,
   GaugeDataPoint,
   HistogramDataPoint,
-  MetricData,
+  MetricViewData,
   ResourceData,
   ScopeData,
 } from '@/types/api-types'
@@ -119,7 +119,7 @@ function exponentialHistogramDatapoint(
 function metricWithDatapoints(
   metricType: 'Gauge' | 'Histogram',
   datapoints: GaugeDataPoint[] | HistogramDataPoint[]
-): MetricData {
+): MetricViewData {
   return {
     id: 'metric-1',
     name: 'test.metric',
@@ -165,7 +165,7 @@ function metricWithDatapoints(
 function renderChart(
   component: Component<any>,
   componentProps: Record<string, unknown>,
-  metric: MetricData,
+  metric: MetricViewData,
   oncontext?: (context: MetricViewContext) => void
 ) {
   return render(MetricChartHarness, {

@@ -6,12 +6,12 @@
     createMetricViewContext,
     type MetricViewContext,
   } from '@/contexts/metric-view-context.svelte'
-  import type { DataPoint, MetricData } from '@/types/api-types'
+  import type { DataPoint, MetricViewData } from '@/types/api-types'
 
   type Props = {
     component: Component<any>
     componentProps?: Record<string, unknown>
-    metric: MetricData
+    metric: MetricViewData
     seriesDatapoints?: Readonly<Record<string, DataPoint[]>>
     oncontext?: (context: MetricViewContext) => void
   }

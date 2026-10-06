@@ -4,7 +4,7 @@ Status: proposal. Nothing here is implemented.
 
 ## The problem
 
-`getMetric` returns every datapoint in the window. Measured on a corpus of the
+`getMetricView` returns every datapoint in the window. Measured on a corpus of the
 2026 season to date (13 traces, 50,758 spans, 2,855,384 datapoints):
 
 | metric type | datapoints | streams |
@@ -14,7 +14,7 @@ Status: proposal. Nothing here is implemented.
 | Histogram | 56,473 | 4 |
 | Sum | 13,935 | 5 |
 
-One `getMetric` call against the ExponentialHistogram stream takes **278.8 ms**
+One `getMetricView` call against the ExponentialHistogram stream takes **278.8 ms**
 and returned **44 MB** in an earlier run. `EXPLAIN ANALYZE` puts 183 ms in a
 projection and 122 ms in a scan, both over 200,791 rows — the work is
 proportional to the answer, so this is not the per-row-versus-per-group mistake
@@ -223,9 +223,9 @@ than convenient:
 
 ## Shape of the change
 
-- `getMetric(streamID, start, end, resolution)` — the client knows its chart
+- `getMetricView(metricID, start, end, resolution)` — the client knows its chart
   width; the server cannot.
-- Reduction happens in SQL, in `queries/metrics/get_metric.sql`.
+- Reduction happens in SQL, in `queries/metrics/get_metric_view.sql`.
 - `downsampleLTTB` stays for the case where the server returns full fidelity and
   the client still wants to thin.
 - Wire response gains `datapointCount`, `resolution`, and per-series stats.
@@ -288,7 +288,7 @@ current data while the new response lands.
 ## Exemplars are the thing that breaks
 
 M4 elects points by *value*, and exemplars hang off individual datapoint ids
-(`get_metric.sql`, exemplars_agg). So the datapoints carrying exemplars are
+(`get_metric_view.sql`, exemplars_agg). So the datapoints carrying exemplars are
 mostly not the ones M4 retains, and the exemplar badges and trace links in
 `SeriesDatapointList.svelte` would quietly empty out — on exactly the dense
 streams this reduction targets, and taking trace correlation with them.

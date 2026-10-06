@@ -8,7 +8,7 @@ import {
   type MetricViewContext,
 } from '@/contexts/metric-view-context.svelte'
 import type {
-  MetricData,
+  MetricViewData,
   ResourceData,
   ScalarAggregate,
   ScopeData,
@@ -93,7 +93,7 @@ function makeSumDatapointAt(
  * smart default), and the second series unlocks 'sum' / 'avg' so tests have an
  * allowed value that is NOT the default to deep-link to.
  */
-function makeCumulativeSumMetric(): MetricData {
+function makeCumulativeSumMetric(): MetricViewData {
   return {
     id: 'm1',
     name: 'http.server.requests',
@@ -218,7 +218,7 @@ function makeRateSelectionMetric() {
 }
 
 type ProbeOptions = {
-  metric?: MetricData
+  metric?: MetricViewData
   seriesDatapoints?: Readonly<Record<string, SumDataPoint[]>>
   scalarAggregate?: ScalarAggregate
 }
