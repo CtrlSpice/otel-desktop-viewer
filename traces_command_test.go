@@ -239,3 +239,57 @@ func TestRequestTelemetrySearchRequiresOneCompleteJSONRPCResponse(t *testing.T) 
 		})
 	}
 }
+
+func TestRequestTelemetrySearchRequiresMatchingJSONRPCIdentity(t *testing.T) {
+	const result = `"result":[{"value":9007199254740993,"nullable":null}]`
+	methods := []string{"searchTraces", "searchLogs", "searchMetricSummaries"}
+	tests := []struct {
+		name     string
+		response string
+		wantErr  string
+	}{
+		{name: "valid response", response: `{"jsonrpc":"2.0","id":1,` + result + `}`},
+		{name: "missing version", response: `{"id":1,` + result + `}`, wantErr: "invalid jsonrpc version"},
+		{name: "wrong version", response: `{"jsonrpc":"1.0","id":1,` + result + `}`, wantErr: "invalid jsonrpc version"},
+		{name: "null version", response: `{"jsonrpc":null,"id":1,` + result + `}`, wantErr: "invalid jsonrpc version"},
+		{name: "missing id", response: `{"jsonrpc":"2.0",` + result + `}`, wantErr: "response id does not match request id"},
+		{name: "wrong numeric id", response: `{"jsonrpc":"2.0","id":2,` + result + `}`, wantErr: "response id does not match request id"},
+		{name: "null id", response: `{"jsonrpc":"2.0","id":null,` + result + `}`, wantErr: "response id does not match request id"},
+		{name: "string id", response: `{"jsonrpc":"2.0","id":"1",` + result + `}`, wantErr: "response id does not match request id"},
+		{name: "decimal id", response: `{"jsonrpc":"2.0","id":1.0,` + result + `}`, wantErr: "response id does not match request id"},
+		{name: "exponent id", response: `{"jsonrpc":"2.0","id":1e0,` + result + `}`, wantErr: "response id does not match request id"},
+		{name: "valid error response", response: `{"jsonrpc":"2.0","id":1,"error":{"code":-32602,"message":"query rejected"}}`, wantErr: "error -32602: query rejected"},
+		{name: "empty response", wantErr: "decode viewer response: EOF"},
+	}
+
+	for _, method := range methods {
+		t.Run(method, func(t *testing.T) {
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					viewer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+						_, err := writer.Write([]byte(test.response))
+						require.NoError(t, err)
+					}))
+					defer viewer.Close()
+
+					decoded, err := requestTelemetrySearch(
+						context.Background(), viewer.Client(), viewer.URL, method,
+						telemetrySearchQuery{Limit: 25}, []string{"value", "nullable"},
+					)
+					if test.wantErr != "" {
+						require.Error(t, err)
+						assert.Contains(t, err.Error(), test.wantErr)
+						return
+					}
+
+					require.NoError(t, err)
+					require.Len(t, decoded.Summaries, 1)
+					assert.Equal(t, `{"value":9007199254740993,"nullable":null}`, string(decoded.Summaries[0]))
+					require.Len(t, decoded.Rows, 1)
+					assert.Equal(t, json.Number("9007199254740993"), decoded.Rows[0][0])
+					assert.Nil(t, decoded.Rows[0][1])
+				})
+			}
+		})
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -170,7 +171,7 @@ func requestTelemetrySearch(
 		return telemetrySearchResult{}, fmt.Errorf("invalid viewer endpoint %q", endpoint)
 	}
 	base.Path = strings.TrimRight(base.Path, "/") + "/rpc"
-	body, err := json.Marshal(queryRPCRequest{
+	rpcRequest := queryRPCRequest{
 		JSONRPC: "2.0",
 		ID:      1,
 		Method:  method,
@@ -180,7 +181,8 @@ func requestTelemetrySearch(
 			"query":     telemetryServiceQuery(method, query.Service),
 			"limit":     query.Limit + 1,
 		},
-	})
+	}
+	body, err := json.Marshal(rpcRequest)
 	if err != nil {
 		return telemetrySearchResult{}, fmt.Errorf("encode %s request: %w", method, err)
 	}
@@ -209,6 +211,13 @@ func requestTelemetrySearch(
 			return telemetrySearchResult{}, fmt.Errorf("decode viewer response: additional JSON value")
 		}
 		return telemetrySearchResult{}, fmt.Errorf("decode viewer response: trailing data: %w", err)
+	}
+	if rpcResponse.JSONRPC != rpcRequest.JSONRPC {
+		return telemetrySearchResult{}, fmt.Errorf("decode viewer response: invalid jsonrpc version %q", rpcResponse.JSONRPC)
+	}
+	var responseID int
+	if len(rpcResponse.ID) == 0 || json.Unmarshal(rpcResponse.ID, &responseID) != nil || responseID != rpcRequest.ID {
+		return telemetrySearchResult{}, errors.New("decode viewer response: response id does not match request id")
 	}
 	if rpcResponse.Error != nil {
 		return telemetrySearchResult{}, fmt.Errorf("viewer %s error %d: %s", method, rpcResponse.Error.Code, rpcResponse.Error.Message)
