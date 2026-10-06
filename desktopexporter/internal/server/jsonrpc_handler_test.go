@@ -835,7 +835,7 @@ func TestGetSpanNotFoundValidationAndCancellation(t *testing.T) {
 
 	for _, params := range []any{
 		[]any{}, []any{"0"}, []any{"000000000000000g"}, []any{42}, []any{"0000000000000001", "bad-trace"},
-		[]any{"0000000000000001", nil, 0},
+		[]any{"0000000000000001", nil, 0}, []any{"0000000000000001", nil, 26},
 		map[string]any{"spanID": "0000000000000001", "unknown": "x"},
 	} {
 		result, err = handler.Handle(context.Background(), createRequest("getSpan", params))

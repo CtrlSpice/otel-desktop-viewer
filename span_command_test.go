@@ -40,7 +40,7 @@ func TestSpanCommandValidationAndOutcomes(t *testing.T) {
 		require.Error(t, cmd.Execute())
 	}
 	require.Equal(t, "0000000000000000", mustNormalizeSpanID(t, "0000000000000000"))
-	for _, limit := range []string{"0", "-1", "9223372036854775807"} {
+	for _, limit := range []string{"0", "-1", "26", "9223372036854775807"} {
 		cmd := newSpanCommand(http.DefaultClient)
 		cmd.SetArgs([]string{"000000000000002a", "--limit", limit})
 		require.Error(t, cmd.Execute())

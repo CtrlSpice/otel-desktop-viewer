@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 
@@ -338,7 +337,7 @@ func (h *JSONRPCHandler) getSpan(ctx context.Context, req *jsonrpc2.Request) (an
 	limit := int64(25)
 	if len(params) == 3 && params[2] != nil {
 		parsed, err := parseTimestampParam(params[2], "limit")
-		if err != nil || parsed < 1 || parsed == math.MaxInt64 {
+		if err != nil || parsed < 1 || parsed > 25 {
 			return nil, jsonrpc2.ErrInvalidParams
 		}
 		limit = parsed

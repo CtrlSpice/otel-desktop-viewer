@@ -325,7 +325,7 @@ otel-desktop-viewer span 0123456789abcdef0123456789abcdef 000000000000002a --jso
 A standalone span ID returns a not-found result, one exact span, or up to 25
 stable span summaries when the ID occurs in multiple traces. Ambiguous summaries
 include both IDs, the exact match count, and whether more rows are available;
-use `--limit` to change the summary cap. It never chooses between duplicate span
+use `--limit` to request fewer summaries. It never chooses between duplicate span
 IDs from different traces. The qualified form selects only the requested trace
 and span pair. Both not-found forms are successful structured results.
 

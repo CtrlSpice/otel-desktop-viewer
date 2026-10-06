@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"math/big"
 	"net/http"
 	"strconv"
@@ -123,8 +122,8 @@ func newSpanCommand(client *http.Client) *cobra.Command {
 			if limit < 1 {
 				return errors.New("--limit must be greater than zero")
 			}
-			if limit == math.MaxInt64 {
-				return errors.New("--limit is too large")
+			if limit > telemetryDefaultLimit {
+				return fmt.Errorf("--limit must not exceed %d", telemetryDefaultLimit)
 			}
 
 			var traceID string
