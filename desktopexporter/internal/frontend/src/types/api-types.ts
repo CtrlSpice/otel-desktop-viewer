@@ -347,13 +347,10 @@ export type SeriesRateStats = {
 }
 
 export type MetricTimeseries = {
-  /** Series id -- stable across restarts, unique per (stream, originating
-   *  resource attributes, datapoint labels). */
+  /** Database-local series reference. */
   attributesKey: string
   attributes: Attributes
-  /** Identifying originating resource attributes for this series. The resource
-   *  shape is reused, but droppedAttributesCount is always zero because dropped
-   *  count is per-ingest diagnostic metadata rather than series identity. */
+  /** Resource associated with the parent Metric. */
   resource: ResourceData
   datapoints: DataPoint[]
   /** Min / max / avg / sum over *every* datapoint in the window, computed by
@@ -461,7 +458,7 @@ export type MetricViewData = {
   /** Stream-level monotonic flag; null except Sum. */
   isMonotonic?: boolean | null
   resourceDroppedAttributesCount: number
-  /** Received ResourceMetrics schema URL from the representative ingest. */
+  /** Latest received ResourceMetrics schema URL for this Metric. */
   resourceSchemaUrl: string
   resource: ResourceData
   scopeName: string
@@ -485,19 +482,24 @@ export type MetricViewData = {
 
 export type ExactMetricResource = {
   attributes: Attributes
+  droppedAttributesCount: number
+  schemaUrl: string
 }
 
 export type ExactMetricScope = {
   name: string
   version: string
   attributes: Attributes
+  droppedAttributesCount: number
   schemaUrl: string
 }
 
 type ExactMetricIdentityBase = {
-  metricID: string
+  metricRef: string
   name: string
+  description: string
   unit: string
+  metadata: Attributes
   resource: ExactMetricResource
   scope: ExactMetricScope
 }
@@ -517,7 +519,7 @@ export type ExactMetricIdentity = ExactMetricIdentityBase &
   )
 
 export type MetricSeriesSummary = {
-  seriesID: string
+  seriesRef: string
   attributes: Attributes
   /** Computed count of retained datapoints in this series. */
   datapointCount: bigint
@@ -567,23 +569,14 @@ export type ReceivedExponentialHistogramDataPoint = ReceivedDataPointBase & {
   negative: { offset: number; bucketCounts: bigint[] }
 }
 
-export type MetricReport = {
-  reportID: string
-  description: string
-  metadata: Attributes
-  resource: ResourceData & { schemaUrl: string }
-  scope: ScopeData & { schemaUrl: string }
+export type ExactMetricSeries = ExactMetricIdentity & {
+  seriesRef: string
+  attributes: Attributes
   datapoints: (
     | ReceivedNumberDataPoint
     | ReceivedHistogramDataPoint
     | ReceivedExponentialHistogramDataPoint
   )[]
-}
-
-export type ExactMetricSeries = ExactMetricIdentity & {
-  seriesID: string
-  attributes: Attributes
-  reports: MetricReport[]
 }
 
 // Sparkline point shape used by detail charts (not the drawer summary).

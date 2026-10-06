@@ -121,15 +121,13 @@ func seedLogs(t *testing.T, s *Store, n int) {
 	require.NoError(t, err)
 }
 
-// seedDatapoints inserts n datapoints for the given stream/ingest pair with
-// timestamp = startTime + i * 1ms.
-func seedDatapoints(t *testing.T, s *Store, streamID, ingestID string, n int, startTime int64) {
+// seedDatapoints inserts n datapoints with timestamp = startTime + i * 1ms.
+func seedDatapoints(t *testing.T, s *Store, streamID, _ string, n int, startTime int64) {
 	t.Helper()
-	_, err := s.db.Exec(`insert into metric_streams (id, name, metric_type) values (?, 'metric-' || ?, 'Gauge') on conflict do nothing`, streamID, streamID)
-	require.NoError(t, err)
 	seedOwners(t, s)
-	_, err = s.db.Exec(`insert into metric_ingests (id, stream_id, resource_id, scope_id) values (?, ?, ?::uuid, ?::uuid)`,
-		ingestID, streamID, seedResourceID, seedScopeID)
+	_, err := s.db.Exec(`insert into metric_streams (id, resource_id, scope_id, name, metric_type)
+		values (?, ?::uuid, ?::uuid, 'metric-' || ?, 'Gauge') on conflict do nothing`,
+		streamID, seedResourceID, seedScopeID, streamID)
 	require.NoError(t, err)
 	// datapoints.series_id is a NOT NULL foreign key, so the series has to
 	// exist before its points. One series per stream is enough here -- these
@@ -140,9 +138,9 @@ func seedDatapoints(t *testing.T, s *Store, streamID, ingestID string, n int, st
 		streamID, streamID)
 	require.NoError(t, err)
 	_, err = s.db.Exec(`
-		insert into datapoints (id, stream_id, series_id, metric_ingest_id, timestamp, double_value, value_type, attribute_ids)
-		select uuid(), ?::uuid, ?::uuid, ?::uuid, ? + range * 1000000, range, 'double', []::uuid[]
-		from range(?)`, streamID, streamID, ingestID, startTime, n)
+		insert into datapoints (id, stream_id, series_id, timestamp, double_value, value_type, attribute_ids)
+		select uuid(), ?::uuid, ?::uuid, ? + range * 1000000, range, 'double', []::uuid[]
+		from range(?)`, streamID, streamID, startTime, n)
 	require.NoError(t, err)
 }
 
@@ -252,15 +250,13 @@ func TestEnforceRetentionRetainsGeneratedMetricIdentity(t *testing.T) {
 
 	require.NoError(t, s.EnforceRetention(ctx, 1))
 
-	var oldStreams, oldSeries, oldIngests, liveStreams int64
+	var oldStreams, oldSeries, liveStreams int64
 	require.NoError(t, s.db.QueryRow(`select count(*) from metric_streams where id = ?::uuid`, oldStream).Scan(&oldStreams))
 	require.NoError(t, s.db.QueryRow(`select count(*) from metric_series where id = ?::uuid`, oldStream).Scan(&oldSeries))
-	require.NoError(t, s.db.QueryRow(`select count(*) from metric_ingests where id = ?::uuid`, oldIngest).Scan(&oldIngests))
 	require.NoError(t, s.db.QueryRow(`select count(*) from metric_streams where id = ?::uuid`, liveStream).Scan(&liveStreams))
 
 	assert.Equal(t, int64(1), oldStreams, "generated stream id must survive full pruning")
 	assert.Equal(t, int64(1), oldSeries, "generated series id must survive full pruning")
-	assert.Zero(t, oldIngests, "ingest with no remaining datapoints should be swept")
 	assert.Equal(t, int64(1), liveStreams, "stream with surviving datapoints must remain")
 
 	var activeStreams, activeSeries int64

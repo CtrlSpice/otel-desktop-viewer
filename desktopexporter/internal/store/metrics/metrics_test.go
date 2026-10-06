@@ -415,7 +415,7 @@ func getExactMetricSeriesByName(t *testing.T, s *store.Store, ctx context.Contex
 	require.NoError(t, json.Unmarshal(discoveryRaw, &discovery))
 	series := discovery["series"].([]any)
 	require.Len(t, series, 1)
-	seriesID := series[0].(map[string]any)["seriesID"].(string)
+	seriesID := series[0].(map[string]any)["seriesRef"].(string)
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetricSeries(ctx, db, metricID, seriesID, timeRange)
 	})
@@ -427,16 +427,10 @@ func getExactMetricSeriesByName(t *testing.T, s *store.Store, ctx context.Contex
 
 func exactMetricSeriesDatapoints(t *testing.T, series map[string]any) []any {
 	t.Helper()
-	reports := series["reports"].([]any)
-	var datapoints []any
-	for _, raw := range reports {
-		report := raw.(map[string]any)
-		datapoints = append(datapoints, report["datapoints"].([]any)...)
-	}
-	return datapoints
+	return series["datapoints"].([]any)
 }
 
-func TestExactMetricSeriesPreservesReportOwnershipAndIdentity(t *testing.T) {
+func TestExactMetricSeriesPreservesMetricOwnership(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 	for i, timestamp := range []pcommon.Timestamp{100, 200} {
@@ -465,51 +459,52 @@ func TestExactMetricSeriesPreservesReportOwnershipAndIdentity(t *testing.T) {
 		}))
 	}
 
-	metricID := findMetricID(t, s, ctx, "owned.gauge")
-	discoveryRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, metricID)
+	metricIDs, err := readStore(s, func(db *sql.DB) ([]string, error) {
+		rows, err := db.QueryContext(ctx, `select id::varchar from metric_streams where name = 'owned.gauge' order by resource_schema_url`)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var ids []string
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return nil, err
+			}
+			ids = append(ids, id)
+		}
+		return ids, rows.Err()
 	})
 	require.NoError(t, err)
-	var discovery map[string]any
-	require.NoError(t, json.Unmarshal(discoveryRaw, &discovery))
-	require.NotContains(t, discovery, "description")
-	resourceAttributes := discovery["resource"].(map[string]any)["attributes"].([]any)
-	require.Len(t, resourceAttributes, 1)
-	seriesSummary := discovery["series"].([]any)[0].(map[string]any)
-	require.Equal(t, "2", seriesSummary["datapointCount"])
-	require.Equal(t, "100", seriesSummary["firstDatapointTimestamp"])
-	require.Equal(t, "200", seriesSummary["lastDatapointTimestamp"])
+	require.Len(t, metricIDs, 2)
+	for i, metricID := range metricIDs {
+		discoveryRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetric(ctx, db, metricID)
+		})
+		require.NoError(t, err)
+		var discovery map[string]any
+		require.NoError(t, json.Unmarshal(discoveryRaw, &discovery))
+		require.Equal(t, fmt.Sprintf("report-%d", i), discovery["description"])
+		require.Len(t, discovery["metadata"].([]any), 1)
+		resource := discovery["resource"].(map[string]any)
+		require.Equal(t, fmt.Sprintf("resource-schema-%d", i), resource["schemaUrl"])
+		require.Equal(t, float64(i+1), resource["droppedAttributesCount"])
+		scope := discovery["scope"].(map[string]any)
+		require.Equal(t, float64(i+3), scope["droppedAttributesCount"])
 
-	seriesID := seriesSummary["seriesID"].(string)
-	selectedRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricSeries(ctx, db, metricID, seriesID, store.TimeRange{})
-	})
-	require.NoError(t, err)
-	var selected map[string]any
-	require.NoError(t, json.Unmarshal(selectedRaw, &selected))
-	reports := selected["reports"].([]any)
-	require.Len(t, reports, 2)
-	seen := map[string]string{}
-	for _, raw := range reports {
-		report := raw.(map[string]any)
-		datapoints := report["datapoints"].([]any)
+		seriesSummary := discovery["series"].([]any)[0].(map[string]any)
+		require.Equal(t, "1", seriesSummary["datapointCount"])
+		seriesID := seriesSummary["seriesRef"].(string)
+		selectedRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetricSeries(ctx, db, metricID, seriesID, store.TimeRange{})
+		})
+		require.NoError(t, err)
+		var selected map[string]any
+		require.NoError(t, json.Unmarshal(selectedRaw, &selected))
+		datapoints := selected["datapoints"].([]any)
 		require.Len(t, datapoints, 1)
-		seen[report["description"].(string)] = datapoints[0].(map[string]any)["timestamp"].(string)
-		require.Contains(t, report["resource"].(map[string]any), "schemaUrl")
-		require.Contains(t, report["scope"].(map[string]any), "schemaUrl")
-		require.Len(t, report["metadata"].([]any), 1)
+		require.Equal(t, fmt.Sprint((i+1)*100), datapoints[0].(map[string]any)["timestamp"])
 	}
-	require.Equal(t, map[string]string{"report-0": "100", "report-1": "200"}, seen)
-
-	boundedRaw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricSeries(ctx, db, metricID, seriesID, store.BoundedTimeRange(150, 250))
-	})
-	require.NoError(t, err)
-	var bounded map[string]any
-	require.NoError(t, json.Unmarshal(boundedRaw, &bounded))
-	boundedReports := bounded["reports"].([]any)
-	require.Len(t, boundedReports, 1)
-	require.Equal(t, "report-1", boundedReports[0].(map[string]any)["description"])
 }
 
 type optionalHistogramStatistic struct {
@@ -1387,15 +1382,16 @@ func deleteByIdentity(t *testing.T, ctx context.Context, s *store.Store, name, u
 		"Cumulative": int32(pmetric.AggregationTemporalityCumulative),
 	}[aggTemporality]
 	const q = `
-		select id::varchar from metric_streams
-		where name = ?
-		  and unit = ?
-		  and metric_type = ?
-		  and aggregation_temporality = ?
-		  and is_monotonic = ?
-		  and scope_name = ?
-		  and scope_version = ?
-		  and service_name = ?
+		select m.id::varchar from metric_streams m
+		join scopes sc on sc.id = m.scope_id
+		where m.name = ?
+		  and m.unit = ?
+		  and m.metric_type = ?
+		  and m.aggregation_temporality = ?
+		  and m.is_monotonic = ?
+		  and sc.name = ?
+		  and sc.version = ?
+		  and m.service_name = ?
 		limit 1
 	`
 	return s.WithDBWrite(func(db *sql.DB) error {
@@ -1452,8 +1448,6 @@ func TestDeleteMetricStream(t *testing.T) {
 	t.Run("collapses multiple ingestions of the same logical metric", func(t *testing.T) {
 		s, ctx := storetest.New(t)
 
-		// Three independent batches => three metric_ingests rows for the
-		// same logical Gauge, all sharing one metric_streams row.
 		for i := 0; i < 3; i++ {
 			err := s.WithConn(func(conn driver.Conn) error {
 				return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
@@ -1461,11 +1455,9 @@ func TestDeleteMetricStream(t *testing.T) {
 			assert.NoError(t, err)
 		}
 
-		// SearchSummaries collapses by identity so we still see 5 rows.
 		assert.Len(t, searchSummariesAll(t, s, ctx), 5)
-		// One stream per logical metric (5), 3 ingests per stream (15).
 		assert.Equal(t, 5, countRows(t, s, ctx, `select count(*) from metric_streams`))
-		assert.Equal(t, 15, countRows(t, s, ctx, `select count(*) from metric_ingests`))
+		assert.Equal(t, 15, countRows(t, s, ctx, `select count(*) from datapoints`))
 
 		err := deleteByIdentity(t, ctx, s,
 			"gauge_metric", "bytes", "Gauge",
@@ -1475,9 +1467,8 @@ func TestDeleteMetricStream(t *testing.T) {
 		assert.NoError(t, err)
 
 		assert.Len(t, searchSummariesAll(t, s, ctx), 4)
-		// One stream + its three ingests should be gone.
 		assert.Equal(t, 4, countRows(t, s, ctx, `select count(*) from metric_streams`))
-		assert.Equal(t, 12, countRows(t, s, ctx, `select count(*) from metric_ingests`))
+		assert.Equal(t, 12, countRows(t, s, ctx, `select count(*) from datapoints`))
 		assert.Equal(t, 0, countRows(t, s, ctx,
 			`select count(*) from metric_streams where name = ?`, "gauge_metric"))
 		assert.Equal(t, 0, countRows(t, s, ctx,
@@ -1630,20 +1621,13 @@ func TestDeleteMetricStream(t *testing.T) {
 		exBefore := countRows(t, s, ctx,
 			`select count(*) from exemplars where datapoint_id in (select id from datapoints where stream_id in (select id from metric_streams where name = ?))`,
 			"histogram_metric")
-		// The old query counted attribute rows owned by this stream's ingest
-		// batches -- i.e. its resource and scope attributes. Those are now ids
-		// in the referenced resources / scopes arrays, so the equivalent
-		// question is how many distinct ids the stream's ingests reach.
-		//
-		// Deliberately not the datapoint labels: the histogram fixture's
-		// datapoints carry none, so counting those would assert nothing.
 		attrBefore := countRows(t, s, ctx,
 			`select count(distinct t.aid)
-			 from metric_ingests mi
-			 join resources r on r.id = mi.resource_id
-			 join scopes sc on sc.id = mi.scope_id,
+			 from metric_streams m
+			 join resources r on r.id = m.resource_id
+			 join scopes sc on sc.id = m.scope_id,
 			 unnest(r.attribute_ids || sc.attribute_ids) as t(aid)
-			 where mi.stream_id in (select id from metric_streams where name = ?)`,
+			 where m.name = ?`,
 			"histogram_metric")
 		assert.Greater(t, dpBefore, 0)
 		assert.Greater(t, exBefore, 0)
@@ -1694,7 +1678,7 @@ func TestDeleteMetricStream(t *testing.T) {
 			   and not exists (select 1 from scopes sc, unnest(sc.attribute_ids) t(aid) where t.aid = a.id)
 			   and not exists (select 1 from datapoints d, unnest(d.attribute_ids) t(aid) where t.aid = a.id)
 			   and not exists (select 1 from metric_series ms, unnest(ms.attribute_ids) t(aid) where t.aid = a.id)
-			   and not exists (select 1 from metric_ingests mi, unnest(mi.metadata_ids) t(aid) where t.aid = a.id)
+			   and not exists (select 1 from metric_streams m, unnest(m.metadata_ids) t(aid) where t.aid = a.id)
 			   and not exists (select 1 from exemplars e, unnest(e.attribute_ids) t(aid) where t.aid = a.id)`),
 			"the sweep must leave no unreferenced dictionary row behind")
 		assert.Greater(t, countRows(t, s, ctx, `select count(*) from resources`), 0,
@@ -1702,16 +1686,8 @@ func TestDeleteMetricStream(t *testing.T) {
 	})
 }
 
-// TestMetricStreams_FindOrInsertIdempotent verifies the contract that
-// matters most for the normalized identity layer: ingesting the same
-// exact stream identity across N independent OTLP batches collapses
-// to exactly one metric_streams row. Per-batch context (description,
-// dropped counts) lives on metric_ingests, so we expect N ingest rows
-// but only one stream row, and every datapoint / attribute / exemplar
-// should point at the same stream_id.
-//
-// This test is the find-or-insert mirror of the cascade-delete test:
-// together they pin down the two halves of "identity is canonical."
+// TestMetricStreams_FindOrInsertIdempotent verifies that repeated exact Metrics
+// resolve to stable Metric and series references.
 func TestMetricStreams_FindOrInsertIdempotent(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -1724,23 +1700,15 @@ func TestMetricStreams_FindOrInsertIdempotent(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// createTestMetricsPdata produces five distinct logical metrics.
-	// Across N batches we should still see exactly five stream rows.
 	assert.Equal(t, 5, countRows(t, s, ctx,
 		`select count(*) from metric_streams`),
 		"distinct logical metrics should not multiply across batches")
-	assert.Equal(t, 5*batches, countRows(t, s, ctx,
-		`select count(*) from metric_ingests`),
-		"every batch should add one ingest per metric")
+	assert.Equal(t, 5*batches, countRows(t, s, ctx, `select count(*) from datapoints`))
 
-	// Stream ids should be stable across batches: every datapoint's
-	// stream_id must match a metric_streams row, and every per-batch
-	// metric_ingests row pointing at the same logical metric must
-	// resolve to the same stream_id.
 	gaugeStreamRows := countRows(t, s, ctx,
-		`select count(distinct stream_id) from metric_ingests where stream_id in (
-			select id from metric_streams where name = 'gauge_metric'
-		)`)
+		`select count(distinct d.stream_id) from datapoints d
+		 join metric_streams m on m.id = d.stream_id
+		 where m.name = 'gauge_metric'`)
 	assert.Equal(t, 1, gaugeStreamRows,
 		"all gauge_metric ingests must share one stream_id")
 
@@ -1845,9 +1813,6 @@ func TestMetricStreams_NonIdentifyingVariantsReuseIdentity(t *testing.T) {
 		metric.Metadata().PutStr("owner", "first")
 		metric.SetEmptyGauge().DataPoints().AppendEmpty().SetIntValue(1)
 		if variant {
-			rm.SetSchemaUrl("resource-schema")
-			rm.Resource().SetDroppedAttributesCount(7)
-			sm.Scope().SetDroppedAttributesCount(9)
 			metric.SetDescription("second")
 			metric.Metadata().PutStr("owner", "second")
 		}
@@ -1859,9 +1824,8 @@ func TestMetricStreams_NonIdentifyingVariantsReuseIdentity(t *testing.T) {
 		}))
 	}
 	assert.Equal(t, 1, countRows(t, s, ctx, `select count(*) from metric_streams`))
-	assert.Equal(t, 2, countRows(t, s, ctx, `select count(*) from metric_ingests`))
-	assert.Equal(t, 2, countRows(t, s, ctx, `select count(*) from resources`))
-	assert.Equal(t, 2, countRows(t, s, ctx, `select count(*) from scopes`))
+	assert.Equal(t, 1, countRows(t, s, ctx, `select count(*) from resources`))
+	assert.Equal(t, 1, countRows(t, s, ctx, `select count(*) from scopes`))
 	assert.Equal(t, 1, countRows(t, s, ctx, `select count(*) from metric_series`))
 	var streamID string
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
@@ -1872,34 +1836,28 @@ func TestMetricStreams_NonIdentifyingVariantsReuseIdentity(t *testing.T) {
 	})
 	require.NoError(t, err)
 	text := string(raw)
-	assert.Contains(t, text, `"description":"first"`)
 	assert.Contains(t, text, `"description":"second"`)
-	assert.Contains(t, text, `"schemaUrl":"resource-schema"`)
+	assert.NotContains(t, text, `"description":"first"`)
 }
 
 func TestMetricIdentityUniqueIndexes(t *testing.T) {
 	t.Parallel()
-	s, _ := storetest.New(t)
+	s, ctx := storetest.New(t)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, createTestMetricsPdata(), s.FlushedIDs())
+	}))
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		const stream = `insert into metric_streams
-			(id, name, metric_type, resource_attribute_ids, scope_attribute_ids)
-			values (uuid(), 'requests', 'Gauge', ?::uuid[], ?::uuid[])`
-		for _, attrs := range []string{"[]", "[00000000-0000-0000-0000-000000000001]", "[00000000-0000-0000-0000-000000000001,00000000-0000-0000-0000-000000000002]"} {
-			_, err := db.Exec(stream, attrs, "[]")
-			require.NoError(t, err)
-			_, err = db.Exec(stream, attrs, "[]")
-			require.ErrorContains(t, err, "Duplicate key")
-		}
-		_, err := db.Exec(stream, "[]", "[00000000-0000-0000-0000-000000000001]")
-		require.NoError(t, err, "Scope attributes must split otherwise identical metrics")
-		const series = `insert into metric_series
-			select uuid(), id, []::uuid[] from metric_streams`
-		_, err = db.Exec(series)
-		require.NoError(t, err)
-		_, err = db.Exec(series)
+		_, err := db.Exec(`insert into metric_streams
+			select uuid(), resource_id, scope_id, resource_schema_url, name, description,
+				unit, metadata_ids, metric_type, aggregation_temporality, is_monotonic, service_name
+			from metric_streams where name = 'gauge_metric'`)
+		require.ErrorContains(t, err, "Duplicate key")
+		_, err = db.Exec(`insert into metric_series
+			select uuid(), stream_id, attribute_ids from metric_series limit 1`)
 		require.ErrorContains(t, err, "Duplicate key")
 		_, err = db.Exec(`insert into metric_series select uuid(), id,
-			['00000000-0000-0000-0000-000000000001'::uuid] from metric_streams`)
+			['00000000-0000-0000-0000-000000000001'::uuid]
+			from metric_streams where name = 'gauge_metric'`)
 		require.NoError(t, err, "Datapoint attributes must split series within each metric")
 		return nil
 	}))
@@ -1922,16 +1880,12 @@ func TestMetricStreams_ServiceNameDenormStaysConsistent(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// All five fixture metrics share service.name = test-service.
-	//
-	// The source of truth moved: the resource attribute is no longer a row
-	// owned by the ingest batch, it is an id in the referenced resources row's
-	// array. Resolve it directly so the test asserts the stored source of truth.
 	mismatches := countRows(t, s, ctx, `
 		select count(*) from metric_streams s
+		join resources r on r.id = s.resource_id
 		where s.service_name <> coalesce((
 			select json_extract_string(a.value, '$.value')
-			from unnest(s.resource_attribute_ids) t(id) join attributes a on a.id = t.id
+			from unnest(r.attribute_ids) t(id) join attributes a on a.id = t.id
 			where a.key = 'service.name'
 		), '')
 	`)
@@ -1976,7 +1930,7 @@ func TestClearMetrics(t *testing.T) {
 	metricList = searchMetricsAll(t, s, ctx)
 	assert.Empty(t, metricList)
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from metric_streams"))
-	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from metric_ingests"))
+	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from metric_series"))
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from datapoints"))
 	assert.Equal(t, 0, countRows(t, s, ctx, "select count(*) from exemplars"))
 
@@ -2306,7 +2260,7 @@ func TestIngest_CanceledDuringIngest(t *testing.T) {
 	err := <-errCh
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Empty(t, rejected)
-	for _, table := range []string{"metric_streams", "metric_series", "metric_ingests", "datapoints"} {
+	for _, table := range []string{"metric_streams", "metric_series", "datapoints"} {
 		assert.Equal(t, 0, countRows(t, s, context.Background(), `select count(*) from `+table),
 			"canceled ingest must not leave provisional rows in %s", table)
 	}
@@ -2372,13 +2326,7 @@ func TestSearchSummaries_CardFields(t *testing.T) {
 	})
 }
 
-// Datapoint and exemplar labels are searchable.
-//
-// They were not before the attribute dictionary: metric search runs per
-// metric_ingests row, and reaching datapoint labels from there meant a
-// correlated walk of the largest table in the store. Resolving the dictionary
-// first makes it one array-overlap scan (39.2ms -> 7.7ms on the reference
-// capture), so the coverage gap is now just a gap.
+// Datapoint and exemplar labels are searchable through dictionary IDs.
 func TestMetricSearch_DatapointAndExemplarLabels(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -2853,7 +2801,7 @@ func TestMetricSeries_SplitsWhenResourcePayloadChanges(t *testing.T) {
 	}
 }
 
-func TestMetricSeries_DroppedResourceCountPreservesPayloadWithoutSplittingSeries(t *testing.T) {
+func TestMetricSeries_DroppedResourceCountPreservesExactOwners(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
 	base := time.Now().UnixNano()
@@ -2866,59 +2814,46 @@ func TestMetricSeries_DroppedResourceCountPreservesPayloadWithoutSplittingSeries
 	}
 
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		var resources, series, ingests, ingestResources, joinedIngests int
+		var resources, metricsCount, series int
 		var minDropped, maxDropped uint32
 		require.NoError(t, db.QueryRow(`select count(*) from resources`).Scan(&resources))
+		require.NoError(t, db.QueryRow(`select count(*) from metric_streams`).Scan(&metricsCount))
 		require.NoError(t, db.QueryRow(`select count(*) from metric_series`).Scan(&series))
-		require.NoError(t, db.QueryRow(`select count(*), count(distinct resource_id) from metric_ingests`).Scan(&ingests, &ingestResources))
 		require.NoError(t, db.QueryRow(`
-			select count(*), min(r.dropped_attributes_count), max(r.dropped_attributes_count)
-			from metric_ingests mi join resources r on r.id = mi.resource_id`).Scan(&joinedIngests, &minDropped, &maxDropped))
+			select min(r.dropped_attributes_count), max(r.dropped_attributes_count)
+			from metric_streams m join resources r on r.id = m.resource_id`).Scan(&minDropped, &maxDropped))
 		assert.Equal(t, 2, resources, "dropped-count payloads need distinct resource rows")
-		assert.Equal(t, 1, series, "dropped count is not semantic metric series identity")
-		assert.Equal(t, 2, ingests)
-		assert.Equal(t, 2, ingestResources, "each metric ingest must retain its exact resource reference")
-		assert.Equal(t, 2, joinedIngests)
+		assert.Equal(t, 2, metricsCount)
+		assert.Equal(t, 2, series)
 		assert.Equal(t, uint32(0), minDropped)
 		assert.Equal(t, uint32(3), maxDropped)
 		return nil
 	}))
 
 	summaries := searchMetricsAll(t, s, ctx)
-	require.Len(t, summaries, 1)
-	assert.Equal(t, float64(1), summaries[0]["seriesCount"])
-	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricView(ctx, db, summaries[0]["id"].(string),
-			store.BoundedTimeRange(0, time.Now().UnixNano()+int64(time.Hour)),
-			0, nil, nil, 0, 0, 0, nil, "", nil, 0)
-
-	})
-	require.NoError(t, err)
-	var metric map[string]any
-	require.NoError(t, json.Unmarshal(raw, &metric))
-	assert.Equal(t, float64(3), metric["resourceDroppedAttributesCount"],
-		"top-level metadata comes from the latest representative ingest")
-	topResource, ok := metric["resource"].(map[string]any)
-	require.True(t, ok)
-	assert.Equal(t, float64(3), topResource["droppedAttributesCount"])
-	timeseries := metric["timeseries"].([]any)
-	require.Len(t, timeseries, 1, "chart detail must keep dropped-count-only payloads on one line")
-	series := timeseries[0].(map[string]any)
-	assert.Len(t, series["datapoints"].([]any), 6)
-	seriesResource, ok := series["resource"].(map[string]any)
-	require.True(t, ok)
-	assert.Equal(t, float64(0), seriesResource["droppedAttributesCount"],
-		"series resource exposes identifying attributes without claiming an arbitrary dropped count")
-	assert.Equal(t, topResource["attributes"], seriesResource["attributes"],
-		"series resource must retain the shared originating attributes")
-
-	attributeValues := map[string]any{}
-	for _, rawAttribute := range seriesResource["attributes"].([]any) {
-		attribute := rawAttribute.(map[string]any)
-		attributeValues[attribute["key"].(string)] = attribute["value"].(map[string]any)["value"]
+	require.Len(t, summaries, 2)
+	seenDropped := map[float64]bool{}
+	for _, summary := range summaries {
+		assert.Equal(t, float64(1), summary["seriesCount"])
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetricView(ctx, db, summary["id"].(string),
+				store.BoundedTimeRange(0, time.Now().UnixNano()+int64(time.Hour)),
+				0, nil, nil, 0, 0, 0, nil, "", nil, 0)
+		})
+		require.NoError(t, err)
+		var metric map[string]any
+		require.NoError(t, json.Unmarshal(raw, &metric))
+		dropped := metric["resourceDroppedAttributesCount"].(float64)
+		seenDropped[dropped] = true
+		resource := metric["resource"].(map[string]any)
+		assert.Equal(t, dropped, resource["droppedAttributesCount"])
+		timeseries := metric["timeseries"].([]any)
+		require.Len(t, timeseries, 1)
+		series := timeseries[0].(map[string]any)
+		assert.Len(t, series["datapoints"].([]any), 3)
+		assert.Equal(t, dropped, series["resource"].(map[string]any)["droppedAttributesCount"])
 	}
-	assert.Equal(t, "checkout", attributeValues["service.name"])
-	assert.Equal(t, "checkout-7f9c", attributeValues["service.instance.id"])
+	assert.Equal(t, map[float64]bool{0: true, 3: true}, seenDropped)
 }
 
 func TestMetricViewRetainsIdentityResourceOutsideDatapointWindow(t *testing.T) {
@@ -3009,9 +2944,14 @@ func TestMetricViewProjectsMonotonicityOnlyForSum(t *testing.T) {
 	summaryMetric.SetName("summary")
 	summaryMetric.SetEmptySummary().DataPoints().AppendEmpty().SetTimestamp(timestamp)
 
+	var rejected ingest.Rejected
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, md, s.FlushedIDs())
+		var err error
+		rejected, err = metrics.IngestReport(ctx, conn, md, s.FlushedIDs())
+		return err
 	}))
+	require.Equal(t, 1, rejected.Count())
+	require.ErrorIs(t, rejected.Reason(), metrics.ErrUnsupportedMetricType)
 
 	for _, summary := range searchMetricsAll(t, s, ctx) {
 		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
@@ -3034,20 +2974,7 @@ func TestMetricViewProjectsMonotonicityOnlyForSum(t *testing.T) {
 			assert.Nil(t, metric["aggregationTemporality"], "%s temporality is not applicable", summary["name"])
 		}
 	}
-
-	var summaryID string
-	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		return db.QueryRowContext(ctx, `select id::varchar from metric_streams where name = 'summary'`).Scan(&summaryID)
-	}))
-	_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetric(ctx, db, summaryID)
-	})
-	require.ErrorIs(t, err, metrics.ErrUnsupportedMetricType)
-	_, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricSeries(ctx, db, summaryID,
-			"00000000-0000-0000-0000-000000000000", store.TimeRange{})
-	})
-	require.ErrorIs(t, err, metrics.ErrUnsupportedMetricType)
+	require.Equal(t, 0, countRows(t, s, ctx, `select count(*) from metric_streams where name = 'summary'`))
 }
 
 func TestHistogramSelectionIsPartitionedByExactScopeIdentity(t *testing.T) {
@@ -6897,20 +6824,8 @@ func TestIngest_NilArraysReachingTheAppender(t *testing.T) {
 	})
 }
 
-// TestMetricMetadataRoundTrip pins OTLP's Metric.metadata through the store.
-//
-// It was the last field of any signal that arrived and was discarded: a
-// systematic diff of pdata's getters against the schema found nothing else
-// missing once span and link flags landed. Metadata describes the instrument
-// -- not the labels that identify a series -- so it lives on metric_ingests
-// beside description, which varies per batch for the same reason.
-//
-// The scope matters as much as the value. Metadata attributes go into the
-// dictionary under their own scope, which is deliberately absent from the
-// allowlist in get_metric_attributes.sql: stored and displayed, but never
-// offered as a search field. That exclusion is asserted here, because the
-// allowlist is the only thing keeping it out and a later edit could widen it
-// without anyone noticing.
+// TestMetricMetadataRoundTrip verifies Metric metadata storage, display, and
+// attribute discovery.
 func TestMetricMetadataRoundTrip(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)
@@ -6946,25 +6861,17 @@ func TestMetricMetadataRoundTrip(t *testing.T) {
 		"slo":   {"kind": "string", "value": "99.9"},
 	}, pairs)
 
-	// The datapoint's own label must not have leaked into metadata, and vice
-	// versa: they are different maps under different scopes.
+	// Datapoint labels and Metric metadata have separate attribute scopes.
 	require.NotContains(t, pairs, "route")
 
-	// Stored under its own scope...
 	var n int
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRow(`
-			select count(*) from metric_ingests m, unnest(m.metadata_ids) t(id)
+			select count(*) from metric_streams m, unnest(m.metadata_ids) t(id)
 			join attributes a on a.id = t.id`).Scan(&n)
 	}))
 	require.Equal(t, 2, n, "both metadata attributes belong to the metadata scope")
 
-	// ...and discovery offers it under that scope. This assertion used to be
-	// inverted: discovery deliberately hid metadata because the search mapper
-	// had no case for it, and a discovered-but-unsearchable field would have
-	// been a dropdown entry that errors when picked. The mapper handles the
-	// metadata scope now (see TestSearchSummariesByMetricMetadata), so hiding
-	// it would be the dangling half.
 	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetricAttributes(ctx, db)
 	})
@@ -6980,11 +6887,8 @@ func TestMetricMetadataRoundTrip(t *testing.T) {
 	require.True(t, offered, "metadata keys must be offered as searchable: %v", defs)
 }
 
-// Metric.metadata was stored (metric_ingests.metadata_ids) but reachable by
-// no search: the mapper had no "metadata" scope and the discovery query did
-// not list it, so its keys never appeared in the attribute dropdown and a
-// hand-written condition was rejected. Pins the mapper's both paths -- the
-// IDProbe equality fast path and the attr_value fallback -- plus discovery.
+// TestSearchSummariesByMetricMetadata covers metadata equality, general value
+// matching, and attribute discovery.
 func TestSearchSummariesByMetricMetadata(t *testing.T) {
 	t.Parallel()
 	s, ctx := storetest.New(t)

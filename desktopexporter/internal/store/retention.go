@@ -270,11 +270,8 @@ func (s *Store) pruneOldestLogs(ctx context.Context, db *sql.DB) error {
 }
 
 // pruneOldestDatapoints deletes the oldest fraction of datapoints with their
-// exemplars, then sweeps metric_ingests rows that no longer own any datapoints.
-// Generated stream and series identity rows remain so reingestion resolves the
-// same database-local IDs. The ingest sweep matters:
-// metric_ingests grows by one row per OTLP batch, so leaving orphans behind
-// would let the store creep back over the cap with rows pruning can't touch.
+// exemplars. Generated Metric and series identity rows remain so reingestion
+// resolves the same database-local IDs.
 func (s *Store) pruneOldestDatapoints(ctx context.Context, db *sql.DB) error {
 	cutoff, ok, err := s.pruneCutoff(ctx, db,
 		`select quantile_disc(timestamp, ?) from datapoints`)
@@ -288,18 +285,6 @@ func (s *Store) pruneOldestDatapoints(ctx context.Context, db *sql.DB) error {
 		`delete from datapoints where timestamp <= (select unnest(?::ubigint[]))`,
 	} {
 		if _, err := db.ExecContext(ctx, q, []uint64{cutoff}); err != nil {
-			return fmt.Errorf("pruneOldestDatapoints: %w: %w", ErrRetentionInternal, err)
-		}
-	}
-
-	// Sweep ingest payloads whose datapoints are all gone. Stream and series
-	// identities deliberately survive retention so their generated IDs remain
-	// stable when the same telemetry returns.
-	for _, q := range []string{
-		`delete from metric_ingests mi
-			where not exists (select 1 from datapoints d where d.metric_ingest_id = mi.id)`,
-	} {
-		if _, err := db.ExecContext(ctx, q); err != nil {
 			return fmt.Errorf("pruneOldestDatapoints: %w: %w", ErrRetentionInternal, err)
 		}
 	}

@@ -1,26 +1,24 @@
--- metric_streams is the canonical identity for one exact OTel Metric.
--- The primary key is an opaque UUID generated when this exact identity first
--- appears in this database. Ingest finds it again by comparing complete
--- Resource attributes, the complete InstrumentationScope tuple, and the
--- identifying Metric descriptor fields.
--- Resource and Scope schema/dropped-count payload variants remain on
--- metric_ingests; only ScopeMetrics.schema_url participates in identity.
+-- metric_streams stores one exact OTel Metric. Resource and Scope payloads are
+-- referenced through their shared tables; description and metadata are received
+-- Metric fields but do not participate in identity.
 -- service_name is a derived search/display projection of Resource attributes.
--- Placeholder zero/false descriptor values are non-applicable according to
--- metric_type and do not represent received values for Gauge or Summary.
+-- metric_type preserves which descriptor fields are present; zero and false
+-- fill fields that do not apply to that Metric type.
 create table if not exists metric_streams (
 		id uuid primary key,
-		resource_attribute_ids uuid[] not null default [],
+		resource_id uuid not null,
+		scope_id uuid not null,
+		resource_schema_url varchar not null default '',
 		name varchar not null,
+		description varchar not null default '',
 		unit varchar not null default '',
+		metadata_ids uuid[] not null default [],
 		metric_type varchar not null,
 		-- Received OTLP enum number for Sum/Histogram/ExponentialHistogram.
 		-- Gauge uses zero; metric_type makes that non-applicable value explicit.
 		aggregation_temporality integer not null default 0,
 		is_monotonic boolean not null default false,
-		scope_name varchar not null default '',
-		scope_version varchar not null default '',
-		scope_schema_url varchar not null default '',
-		scope_attribute_ids uuid[] not null default [],
 		service_name varchar not null default '',
+		foreign key (resource_id) references resources(id),
+		foreign key (scope_id) references scopes(id)
 	)

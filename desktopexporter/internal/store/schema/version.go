@@ -109,7 +109,10 @@ package schema
 // identifying Metric descriptor fields. It also removes the now-redundant
 // Resource owner from metric_series and gives streams and series generated,
 // database-scoped IDs resolved through their exact stored keys.
-const Version = 18
+// Version 19 stores each Metric on one row with direct Resource and Scope
+// references. Metric description, metadata, and Resource schema URL live on
+// that row. Datapoints reference the Metric directly.
+const Version = 19
 
 // VersionTableQuery creates the version table.
 //
@@ -141,7 +144,7 @@ const (
 		from duckdb_columns() where schema_name = current_schema() and table_name = 'schema_meta'`
 	TelemetryTableExistsQuery = `select count(*) from (
 		select table_name from duckdb_columns()
-		where schema_name = current_schema() and table_name in ('spans', 'logs', 'metric_ingests')
+		where schema_name = current_schema() and table_name in ('spans', 'logs', 'metric_ingests', 'metric_streams')
 		group by table_name
 		having (table_name = 'spans'
 			and count(*) filter (where column_name in ('trace_id', 'span_id')) = 2
@@ -153,5 +156,7 @@ const (
 			and count(*) filter (where column_name in ('scope_id', 'scope_dropped_attributes_count')) = 1)
 		or (table_name = 'metric_ingests'
 			and count(*) filter (where column_name in ('id', 'stream_id')) = 2)
+		or (table_name = 'metric_streams'
+			and count(*) filter (where column_name in ('id', 'name')) = 2)
 	)`
 )

@@ -1,29 +1,20 @@
--- Reconstruct all retained reports for one metric stream. The bound UUID names
--- a metric_streams row; metric_ingests IDs only associate stored datapoints.
+-- Reconstruct one retained Metric and its ResourceMetrics/ScopeMetrics wrappers.
 with selected_stream as materialized (
 	select * from metric_streams where id = try_cast(? as uuid)
-),
-selected_ingests as materialized (
-	select mi.*
-	from metric_ingests mi
-	join selected_stream s on s.id = mi.stream_id
 ),
 selected_datapoints as materialized (
 	select d.*
 	from datapoints d
 	join selected_stream s on s.id = d.stream_id
-	join selected_ingests i on i.id = d.metric_ingest_id
 ),
 used_attribute_ids as materialized (
 	select unnest(r.attribute_ids) as id
-	from (select distinct resource_id from selected_ingests) owners
-	join resources r on r.id = owners.resource_id
+	from selected_stream s join resources r on r.id = s.resource_id
 	union
 	select unnest(sc.attribute_ids)
-	from (select distinct scope_id from selected_ingests) owners
-	join scopes sc on sc.id = owners.scope_id
+	from selected_stream s join scopes sc on sc.id = s.scope_id
 	union
-	select unnest(i.metadata_ids) from selected_ingests i
+	select unnest(s.metadata_ids) from selected_stream s
 	union
 	select unnest(d.attribute_ids) from selected_datapoints d
 	union
@@ -76,7 +67,7 @@ exemplar_documents as materialized (
 	group by datapoint_id
 ),
 datapoint_documents as materialized (
-	select d.id, d.metric_ingest_id, d.timestamp,
+	select d.id, d.timestamp,
 		case s.metric_type
 			when 'Gauge' then json_merge_patch(
 				json_object(
@@ -144,16 +135,15 @@ datapoint_documents as materialized (
 	left join exemplar_documents e on e.datapoint_id = d.id
 ),
 grouped_metrics as materialized (
-	select i.resource_id, i.resource_schema_url, i.scope_id, sc.schema_url as scope_schema_url,
-		i.description, i.metadata_ids, s.name, s.unit, s.metric_type,
+	select s.resource_id, s.resource_schema_url, s.scope_id, sc.schema_url as scope_schema_url,
+		s.description, s.metadata_ids, s.name, s.unit, s.metric_type,
 		s.aggregation_temporality, s.is_monotonic,
 		coalesce(list(d.document order by d.timestamp, d.id) filter (where d.id is not null), []::json[]) as datapoints
-	from selected_ingests i
-	cross join selected_stream s
-	join scopes sc on sc.id = i.scope_id
-	left join datapoint_documents d on d.metric_ingest_id = i.id
-	group by i.resource_id, i.resource_schema_url, i.scope_id, sc.schema_url,
-		i.description, i.metadata_ids, s.name, s.unit, s.metric_type,
+	from selected_stream s
+	join scopes sc on sc.id = s.scope_id
+	left join datapoint_documents d on true
+	group by s.resource_id, s.resource_schema_url, s.scope_id, sc.schema_url,
+		s.description, s.metadata_ids, s.name, s.unit, s.metric_type,
 		s.aggregation_temporality, s.is_monotonic
 ),
 metric_documents as materialized (

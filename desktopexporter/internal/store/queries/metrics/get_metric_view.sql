@@ -87,18 +87,18 @@
 				?::bigint as datapoint_series_limit
 		),
 		stream as (
-			select s.* from metric_streams s, input
+			select s.*, r.attribute_ids as resource_attribute_ids,
+				r.dropped_attributes_count as resource_dropped_attributes_count,
+				sc.name as scope_name, sc.version as scope_version,
+				sc.attribute_ids as scope_attribute_ids,
+				sc.schema_url as scope_schema_url,
+				sc.dropped_attributes_count as scope_dropped_attributes_count
+			from metric_streams s
+			join resources r on r.id = s.resource_id
+			join scopes sc on sc.id = s.scope_id, input
 			where s.id = input.stream_id
 		),
-		-- Datapoints inherit aggregation_temporality / is_monotonic from
-		-- the stream so the per-type JSON projection below doesn't need
-		-- a per-row join.
-		-- resource_id rides along for the per-batch resource of each datapoint.
-		-- It is not the series grouping key because the exact Metric parent already
-		-- carries Resource identity and resource_id also includes dropped count.
-		-- A join rather than a denormalized
-		-- column on datapoints: it is a primary-key lookup from metric_ingest_id,
-		-- and datapoints is the largest table here.
+		-- Datapoints inherit Metric descriptor fields from their parent Metric.
 		filtered_dps as (
 			-- bounds_id resolves to the vector here, under the name the rest
 			-- of the query has always read, so the dictionary is invisible
@@ -226,55 +226,6 @@
 				count(*) as exemplar_count
 			from exemplars_ranked e
 			group by e.datapoint_id
-		),
-		-- Per-ingest latest datapoint timestamp over the queried window
-		-- -- the recency proxy we use to pick a "representative" ingest
-		-- for description / dropped counts. These per-batch fields can
-		-- drift across ingests; we prefer the most recently-observed
-		-- sender's view (newest data, not newest wall-clock arrival).
-		ingest_latest_dp as (
-			select metric_ingest_id, max(timestamp) as last_dp_ts
-			from filtered_dps
-			group by metric_ingest_id
-		),
-		all_ingest_latest_dp as (
-			select d.metric_ingest_id, max(d.timestamp) as last_dp_ts
-			from datapoints d, input
-			where d.stream_id = input.stream_id
-			group by d.metric_ingest_id
-		),
-		-- Most recent matched ingest is the source of variable-but-
-		-- non-identifying fields (description, dropped counts).
-		representative as (
-			select mi.* from metric_ingests mi
-			inner join all_ingest_latest_dp aild on aild.metric_ingest_id = mi.id
-			left join ingest_latest_dp ild on ild.metric_ingest_id = mi.id
-			-- id breaks the tie: ingests of one batch share the latest datapoint
-			-- timestamp, and an arbitrary pick let description and dropped counts
-			-- differ between two runs of the same request.
-			order by (ild.last_dp_ts is not null) desc,
-			         coalesce(ild.last_dp_ts, aild.last_dp_ts) desc nulls last, mi.id
-			limit 1
-		),
-		-- Resource and scope come from the representative ingest, the same
-		-- row the dropped counts come from.
-		--
-		-- They used to be aggregated over *all* matched ingests with no
-		-- DISTINCT, so a metric with 360 batches emitted 360 duplicate copies
-		-- of each resource attribute while its droppedAttributesCount came
-		-- from one ingest -- an asymmetry that only looked harmless because
-		-- the frontend deduped by key on render. Taking both from the same
-		-- row fixes it, and the dedupe makes it free: every batch from the
-		-- same sender now points at one resources row anyway.
-		representative_owners as (
-			select rep.resource_schema_url,
-			       r.attribute_ids as resource_attribute_ids,
-			       r.dropped_attributes_count as resource_dropped,
-			       sc.attribute_ids as scope_attribute_ids,
-			       sc.dropped_attributes_count as scope_dropped
-			from representative rep
-			join resources r on r.id = rep.resource_id
-			join scopes sc on sc.id = rep.scope_id
 		),
 		-- One row per series id. The datapoint attribute set itself is owned by
 		-- the series (lifted out of the per-dp objects), and the dp objects inside
@@ -1414,9 +1365,6 @@
 				-- with exact uniqueness making it stable across re-ingests. That
 				-- stability makes it safe in a URL within this database,
 				-- unlike a datapoint id that retention eventually deletes.
-				-- resource_id need not be a second grouping key: exact payloads
-				-- remain on metric_ingests, while dropped count is not a series
-				-- identity field.
 				d.series_id::varchar as attrs_key,
 				attrs_json(any_value(d.attribute_ids)) as attributes_sample,
 				max(d.timestamp) as latest_ts,
@@ -1560,19 +1508,12 @@
 		-- entries a user cannot distinguish, which is worse than the single
 		-- merged line the split replaced.
 		--
-		-- The top-level resource is the complete exact payload from the selected
-		-- representative ingest. This series projection is narrower: it describes
-		-- only the originating attributes that identify the line being drawn.
+		-- Each series uses its parent Metric's exact Resource payload.
 		timeseries_agg as (
 			select to_json(list(timeseries_json(
 				t.attrs_key,
 				t.attributes_sample,
-				-- The row supplies the identifying attributes only. resource_id is
-				-- representative when same-attribute payloads differ by dropped
-				-- count, so projecting that count would make an arbitrary value look
-				-- constant for the series. Exact dropped count remains top-level from
-				-- the representative metric_ingest.
-				resource_json(s.resource_attribute_ids, 0),
+				resource_json(s.resource_attribute_ids, s.resource_dropped_attributes_count),
 				-- Empty rather than null for a series that shipped none: the field
 				-- means "the datapoints you were sent", and every series has an
 				-- answer to that even when the answer is none.
@@ -1798,17 +1739,12 @@
 			-- across incompatible layouts would be a plausible chart of nothing.
 			where f.distinct_bounds <= 1
 		)
-		-- Left join: a stream with no datapoints in the window still
-		-- produces a row with empty timeseries and the latest retained owner.
-		-- Only an unknown stream yields zero rows -> sql.ErrNoRows ->
-		-- ErrStreamIDNotFound. The representative-sourced fields are
-		-- coalesced so the wire shape stays non-null for identity-only rows.
+		-- A Metric with no datapoints in the window still produces a row with
+		-- empty timeseries. Only an unknown Metric yields zero rows.
 		select cast(json_object(
 {{- if not .AggregateOnly}}
-			'id', s.id, 'name', s.name, 'description', coalesce(r.description, ''), 'unit', s.unit,
-			-- The metric's own metadata map, from the same representative ingest
-			-- description comes from: both are per-batch and neither is identity.
-			'metadata', coalesce(attrs_json(r.metadata_ids), json('[]')),
+			'id', s.id, 'name', s.name, 'description', s.description, 'unit', s.unit,
+			'metadata', attrs_json(s.metadata_ids),
 			'metricType', s.metric_type,
 			'aggregationTemporalityCode', case
 				when s.metric_type in ('Sum', 'Histogram', 'ExponentialHistogram') then s.aggregation_temporality
@@ -1818,21 +1754,16 @@
 				when 0 then 'Unspecified' when 1 then 'Delta' when 2 then 'Cumulative'
 				else 'Unknown (' || s.aggregation_temporality::varchar || ')' end else null end,
 			'isMonotonic', case when s.metric_type = 'Sum' then s.is_monotonic else null end,
-			'resourceDroppedAttributesCount', coalesce((select resource_dropped from representative_owners), 0),
-			-- Resource schema URL is non-identifying and can vary by ingest, so
-			-- expose the value owned by the same representative as description,
-			-- metadata, Resource attributes and dropped count.
-			'resourceSchemaUrl', coalesce((select resource_schema_url from representative_owners), ''),
-			-- Resource attributes identify the selected Metric and remain available
-			-- even when the requested window has no representative ingest.
+			'resourceDroppedAttributesCount', s.resource_dropped_attributes_count,
+			'resourceSchemaUrl', s.resource_schema_url,
 			'resource', resource_json(s.resource_attribute_ids,
-				coalesce((select resource_dropped from representative_owners), 0)),
+				s.resource_dropped_attributes_count),
 			'scopeName', s.scope_name, 'scopeVersion', s.scope_version,
 			'scopeSchemaUrl', s.scope_schema_url,
-			'scopeDroppedAttributesCount', coalesce((select scope_dropped from representative_owners), 0),
+			'scopeDroppedAttributesCount', s.scope_dropped_attributes_count,
 			'scope', coalesce(
 				scope_json(s.scope_name, s.scope_version, s.scope_attribute_ids,
-					coalesce((select scope_dropped from representative_owners), 0)),
+					s.scope_dropped_attributes_count),
 				json_object('name', s.scope_name, 'version', s.scope_version,
 				            'attributes', json('[]'), 'droppedAttributesCount', 0)
 			),
@@ -1892,4 +1823,4 @@
 			)
 {{- end}}
 		) as varchar) as metric
-		from stream s left join representative r on true
+		from stream s

@@ -7,6 +7,5 @@
 create table if not exists metric_series (
 		id uuid primary key,
 		stream_id uuid not null,
-		attribute_ids uuid[] not null,
-		foreign key (stream_id) references metric_streams(id)
+		attribute_ids uuid[] not null
 	)

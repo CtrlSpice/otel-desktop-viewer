@@ -17,7 +17,6 @@ import type {
   MetricAggregateViewData,
   ExactMetric,
   ExactMetricSeries,
-  MetricReport,
   ReceivedNumberDataPoint,
   ReceivedHistogramDataPoint,
   ReceivedExponentialHistogramDataPoint,
@@ -45,7 +44,6 @@ import type {
   JsonMetricAggregateViewData,
   JsonExactMetric,
   JsonExactMetricSeries,
-  JsonMetricReport,
   JsonReceivedNumberDataPoint,
   JsonReceivedHistogramDataPoint,
   JsonReceivedExponentialHistogramDataPoint,
@@ -691,6 +689,7 @@ function exactMetricIdentityFromJSON<
 >(json: T) {
   return {
     ...json,
+    metadata: attributesFromJSON(json.metadata),
     resource: {
       ...json.resource,
       attributes: attributesFromJSON(json.resource.attributes),
@@ -801,12 +800,9 @@ function receivedExponentialHistogramDataPointFromJSON(
   return decoded
 }
 
-function metricReportFromJSON(
-  metricType: JsonExactMetricSeries['metricType'],
-  json: JsonMetricReport
-): MetricReport {
-  let datapoints: MetricReport['datapoints']
-  switch (metricType) {
+function receivedMetricDatapointsFromJSON(json: JsonExactMetricSeries) {
+  let datapoints: ExactMetricSeries['datapoints']
+  switch (json.metricType) {
     case 'Gauge':
     case 'Sum':
       datapoints = json.datapoints.map(point =>
@@ -828,19 +824,7 @@ function metricReportFromJSON(
       )
       break
   }
-  return {
-    ...json,
-    metadata: attributesFromJSON(json.metadata),
-    resource: {
-      ...json.resource,
-      attributes: attributesFromJSON(json.resource.attributes),
-    },
-    scope: {
-      ...json.scope,
-      attributes: attributesFromJSON(json.scope.attributes),
-    },
-    datapoints,
-  }
+  return datapoints
 }
 
 function exactMetricSeriesFromJSON(
@@ -849,9 +833,7 @@ function exactMetricSeriesFromJSON(
   return {
     ...exactMetricIdentityFromJSON(json),
     attributes: attributesFromJSON(json.attributes),
-    reports: json.reports.map(report =>
-      metricReportFromJSON(json.metricType, report)
-    ),
+    datapoints: receivedMetricDatapointsFromJSON(json),
   }
 }
 
@@ -1089,11 +1071,11 @@ export let telemetryAPI = {
     return metricSummariesFromJSON(rawData)
   },
 
-  getMetric: async (metricID: string): Promise<ExactMetric | null> => {
+  getMetric: async (metricRef: string): Promise<ExactMetric | null> => {
     try {
       const rawData = await callRPC<JsonExactMetric>(
         'getMetric',
-        named({ metricID })
+        named({ metricRef })
       )
       return exactMetricFromJSON(rawData)
     } catch (error) {
@@ -1108,8 +1090,8 @@ export let telemetryAPI = {
   },
 
   getMetricSeries: async (
-    metricID: string,
-    seriesID: string,
+    metricRef: string,
+    seriesRef: string,
     startTime: QueryTimeBound,
     endTime: QueryTimeBound
   ): Promise<ExactMetricSeries | null> => {
@@ -1117,8 +1099,8 @@ export let telemetryAPI = {
       const rawData = await callRPC<JsonExactMetricSeries>(
         'getMetricSeries',
         named({
-          metricID,
-          seriesID,
+          metricRef,
+          seriesRef,
           startTime: serializeNanoseconds(startTime),
           endTime: serializeNanoseconds(endTime),
         })

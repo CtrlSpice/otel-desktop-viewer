@@ -35,9 +35,9 @@ func TestNamedParamsMatchPositional(t *testing.T) {
 		{"query",
 			`{"limit":5,"sql":"select 1"}`, `["select 1",5]`},
 		{"getMetric",
-			`{"metricID":"m"}`, `["m"]`},
+			`{"metricRef":"m"}`, `["m"]`},
 		{"getMetricSeries",
-			`{"endTime":null,"seriesID":"s","metricID":"m","startTime":"1"}`,
+			`{"endTime":null,"seriesRef":"s","metricRef":"m","startTime":"1"}`,
 			`["m","s","1",null]`},
 		// Order in the object must not matter.
 		{"searchLogs",
@@ -71,8 +71,8 @@ func TestNamedParamsMatchPositional(t *testing.T) {
 }
 
 func TestMetricNamedParamContracts(t *testing.T) {
-	require.Equal(t, []string{"metricID"}, methodParamNames["getMetric"])
-	require.Equal(t, []string{"metricID", "seriesID", "startTime", "endTime"}, methodParamNames["getMetricSeries"])
+	require.Equal(t, []string{"metricRef"}, methodParamNames["getMetric"])
+	require.Equal(t, []string{"metricRef", "seriesRef", "startTime", "endTime"}, methodParamNames["getMetricSeries"])
 	require.Equal(t, []string{
 		"metricID", "startTime", "endTime", "targetBuckets", "seriesIDs",
 		"quantiles", "tzOffsetNs", "viewBuckets", "sparklineBuckets",

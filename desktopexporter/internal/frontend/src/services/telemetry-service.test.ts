@@ -756,13 +756,17 @@ describe('telemetryAPI.getMetricView', () => {
 describe('exact received metric API', () => {
   it('decodes exact identity and computed series summaries', async () => {
     stubRpcResult({
-      metricID: 'metric-1',
+      metricRef: 'metric-1',
       name: 'requests',
+      description: '',
       unit: '1',
+      metadata: [],
       metricType: 'Sum',
       aggregationTemporalityCode: 2,
       isMonotonic: true,
       resource: {
+        droppedAttributesCount: 0,
+        schemaUrl: '',
         attributes: [
           {
             key: 'nested',
@@ -782,11 +786,12 @@ describe('exact received metric API', () => {
         name: 'sdk',
         version: '1',
         attributes: [],
+        droppedAttributesCount: 0,
         schemaUrl: 'scope-schema',
       },
       series: [
         {
-          seriesID: 'series-1',
+          seriesRef: 'series-1',
           attributes: [],
           datapointCount: '18446744073709551615',
           firstDatapointTimestamp: '1',
@@ -797,7 +802,7 @@ describe('exact received metric API', () => {
 
     const metric = await telemetryAPI.getMetric('metric-1')
     expect(metric).toMatchObject({
-      metricID: 'metric-1',
+      metricRef: 'metric-1',
       aggregationTemporalityCode: 2,
       isMonotonic: true,
     })
@@ -814,65 +819,58 @@ describe('exact received metric API', () => {
     })
   })
 
-  it('decodes reports, exact histogram values, all exemplars, and optional presence', async () => {
+  it('decodes exact histogram values, all exemplars, and optional presence', async () => {
     stubRpcResult({
-      metricID: 'metric-1',
+      metricRef: 'metric-1',
       name: 'latency',
+      description: 'received report',
       unit: 'ms',
+      metadata: [],
       metricType: 'Histogram',
       aggregationTemporalityCode: 1,
-      resource: { attributes: [] },
-      scope: { name: 'sdk', version: '1', attributes: [], schemaUrl: '' },
-      seriesID: 'series-1',
+      resource: {
+        attributes: [],
+        droppedAttributesCount: 2,
+        schemaUrl: 'resource-schema',
+      },
+      scope: {
+        name: 'sdk',
+        version: '1',
+        attributes: [],
+        droppedAttributesCount: 3,
+        schemaUrl: 'scope-schema',
+      },
+      seriesRef: 'series-1',
       attributes: [],
-      reports: [
+      datapoints: [
         {
-          reportID: 'report-1',
-          description: 'received report',
-          metadata: [],
-          resource: {
-            attributes: [],
-            droppedAttributesCount: 2,
-            schemaUrl: 'resource-schema',
-          },
-          scope: {
-            name: 'sdk',
-            version: '1',
-            attributes: [],
-            droppedAttributesCount: 3,
-            schemaUrl: 'scope-schema',
-          },
-          datapoints: [
+          datapointID: 'point-1',
+          timestamp: '18446744073709551615',
+          startTime: '0',
+          flags: 1,
+          count: '18446744073709551615',
+          sum: 0,
+          max: '0x8000000000000000',
+          bucketCounts: ['18446744073709551615'],
+          explicitBounds: ['0x7ff0000000000000'],
+          exemplars: [
             {
-              datapointID: 'point-1',
-              timestamp: '18446744073709551615',
-              startTime: '0',
-              flags: 1,
-              count: '18446744073709551615',
-              sum: 0,
-              max: '0x8000000000000000',
-              bucketCounts: ['18446744073709551615'],
-              explicitBounds: ['0x7ff0000000000000'],
-              exemplars: [
-                {
-                  timestamp: '9',
-                  valueType: 'Int',
-                  intValue: '-9223372036854775808',
-                  doubleValue: null,
-                  traceID: null,
-                  spanID: null,
-                  filteredAttributes: [],
-                },
-                {
-                  timestamp: '10',
-                  valueType: 'Double',
-                  intValue: null,
-                  doubleValue: '0x8000000000000000',
-                  traceID: '00000000000000000000000000000001',
-                  spanID: '0000000000000001',
-                  filteredAttributes: [],
-                },
-              ],
+              timestamp: '9',
+              valueType: 'Int',
+              intValue: '-9223372036854775808',
+              doubleValue: null,
+              traceID: null,
+              spanID: null,
+              filteredAttributes: [],
+            },
+            {
+              timestamp: '10',
+              valueType: 'Double',
+              intValue: null,
+              doubleValue: '0x8000000000000000',
+              traceID: '00000000000000000000000000000001',
+              spanID: '0000000000000001',
+              filteredAttributes: [],
             },
           ],
         },
@@ -885,8 +883,7 @@ describe('exact received metric API', () => {
       null,
       18446744073709551615n
     )
-    const point = selected!.reports[0]!
-      .datapoints[0]! as ReceivedHistogramDataPoint
+    const point = selected!.datapoints[0]! as ReceivedHistogramDataPoint
     expect(point).toMatchObject({
       timestamp: 18446744073709551615n,
       count: 18446744073709551615n,
@@ -904,65 +901,54 @@ describe('exact received metric API', () => {
 
   it('decodes every received number union arm', async () => {
     stubRpcResult({
-      metricID: 'metric-1',
+      metricRef: 'metric-1',
       name: 'counter',
+      description: '',
       unit: '1',
+      metadata: [],
       metricType: 'Sum',
       aggregationTemporalityCode: 2,
       isMonotonic: false,
-      resource: { attributes: [] },
-      scope: { name: '', version: '', attributes: [], schemaUrl: '' },
-      seriesID: 'series-1',
+      resource: { attributes: [], droppedAttributesCount: 0, schemaUrl: '' },
+      scope: {
+        name: '',
+        version: '',
+        attributes: [],
+        droppedAttributesCount: 0,
+        schemaUrl: '',
+      },
+      seriesRef: 'series-1',
       attributes: [],
-      reports: [
+      datapoints: [
         {
-          reportID: 'report-1',
-          description: '',
-          metadata: [],
-          resource: {
-            attributes: [],
-            droppedAttributesCount: 0,
-            schemaUrl: '',
-          },
-          scope: {
-            name: '',
-            version: '',
-            attributes: [],
-            droppedAttributesCount: 0,
-            schemaUrl: '',
-          },
-          datapoints: [
-            {
-              datapointID: 'i',
-              timestamp: '1',
-              startTime: '0',
-              flags: 0,
-              exemplars: [],
-              valueType: 'Int',
-              intValue: '9223372036854775807',
-              doubleValue: null,
-            },
-            {
-              datapointID: 'd',
-              timestamp: '2',
-              startTime: '0',
-              flags: 0,
-              exemplars: [],
-              valueType: 'Double',
-              intValue: null,
-              doubleValue: '0x7ff8000000000001',
-            },
-            {
-              datapointID: 'e',
-              timestamp: '3',
-              startTime: '0',
-              flags: 0,
-              exemplars: [],
-              valueType: 'Empty',
-              intValue: null,
-              doubleValue: null,
-            },
-          ],
+          datapointID: 'i',
+          timestamp: '1',
+          startTime: '0',
+          flags: 0,
+          exemplars: [],
+          valueType: 'Int',
+          intValue: '9223372036854775807',
+          doubleValue: null,
+        },
+        {
+          datapointID: 'd',
+          timestamp: '2',
+          startTime: '0',
+          flags: 0,
+          exemplars: [],
+          valueType: 'Double',
+          intValue: null,
+          doubleValue: '0x7ff8000000000001',
+        },
+        {
+          datapointID: 'e',
+          timestamp: '3',
+          startTime: '0',
+          flags: 0,
+          exemplars: [],
+          valueType: 'Empty',
+          intValue: null,
+          doubleValue: null,
         },
       ],
     })
@@ -973,7 +959,7 @@ describe('exact received metric API', () => {
       null,
       null
     )
-    const points = selected!.reports[0]!.datapoints
+    const points = selected!.datapoints
     expect(points[0]).toMatchObject({
       valueType: 'Int',
       intValue: 9223372036854775807n,
@@ -990,50 +976,39 @@ describe('exact received metric API', () => {
 
   it('decodes received exponential histogram buckets without chart fields', async () => {
     stubRpcResult({
-      metricID: 'metric-1',
+      metricRef: 'metric-1',
       name: 'distribution',
+      description: '',
       unit: '1',
+      metadata: [],
       metricType: 'ExponentialHistogram',
       aggregationTemporalityCode: 1,
-      resource: { attributes: [] },
-      scope: { name: '', version: '', attributes: [], schemaUrl: '' },
-      seriesID: 'series-1',
+      resource: { attributes: [], droppedAttributesCount: 0, schemaUrl: '' },
+      scope: {
+        name: '',
+        version: '',
+        attributes: [],
+        droppedAttributesCount: 0,
+        schemaUrl: '',
+      },
+      seriesRef: 'series-1',
       attributes: [],
-      reports: [
+      datapoints: [
         {
-          reportID: 'report-1',
-          description: '',
-          metadata: [],
-          resource: {
-            attributes: [],
-            droppedAttributesCount: 0,
-            schemaUrl: '',
+          datapointID: 'point-1',
+          timestamp: '1',
+          startTime: '0',
+          flags: 0,
+          exemplars: [],
+          count: '18446744073709551615',
+          scale: -10,
+          zeroCount: '9007199254740993',
+          zeroThreshold: '0x8000000000000000',
+          positive: {
+            offset: -2,
+            bucketCounts: ['1', '18446744073709551615'],
           },
-          scope: {
-            name: '',
-            version: '',
-            attributes: [],
-            droppedAttributesCount: 0,
-            schemaUrl: '',
-          },
-          datapoints: [
-            {
-              datapointID: 'point-1',
-              timestamp: '1',
-              startTime: '0',
-              flags: 0,
-              exemplars: [],
-              count: '18446744073709551615',
-              scale: -10,
-              zeroCount: '9007199254740993',
-              zeroThreshold: '0x8000000000000000',
-              positive: {
-                offset: -2,
-                bucketCounts: ['1', '18446744073709551615'],
-              },
-              negative: { offset: 3, bucketCounts: [] },
-            },
-          ],
+          negative: { offset: 3, bucketCounts: [] },
         },
       ],
     })
@@ -1044,7 +1019,7 @@ describe('exact received metric API', () => {
       0n,
       1n
     )
-    expect(selected!.reports[0]!.datapoints[0]).toMatchObject({
+    expect(selected!.datapoints[0]).toMatchObject({
       count: 18446744073709551615n,
       scale: -10,
       zeroCount: 9007199254740993n,
@@ -1977,16 +1952,16 @@ describe('request parameters', () => {
     })
   })
 
-  it('getMetric sends only the exact Metric ID', async () => {
+  it('getMetric sends only the Metric reference', async () => {
     const sent = captureRequest()
     await telemetryAPI.getMetric('metric-1').catch(() => {})
     expect(sent()).toMatchObject({
       method: 'getMetric',
-      params: { metricID: 'metric-1' },
+      params: { metricRef: 'metric-1' },
     })
   })
 
-  it('getMetricSeries sends exact IDs and nullable unsigned nanosecond bounds', async () => {
+  it('getMetricSeries sends references and nullable unsigned nanosecond bounds', async () => {
     const sent = captureRequest()
     await telemetryAPI
       .getMetricSeries('metric-1', 'series-1', null, 18446744073709551615n)
@@ -1994,8 +1969,8 @@ describe('request parameters', () => {
     expect(sent()).toMatchObject({
       method: 'getMetricSeries',
       params: {
-        metricID: 'metric-1',
-        seriesID: 'series-1',
+        metricRef: 'metric-1',
+        seriesRef: 'series-1',
         startTime: null,
         endTime: '18446744073709551615',
       },

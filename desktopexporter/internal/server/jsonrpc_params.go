@@ -44,8 +44,8 @@ var methodParamNames = map[string][]string{
 	"getTraceLogs":          {"traceID"},
 	"getLog":                {"logID"},
 	"searchMetricSummaries": {"startTime", "endTime", "query", "limit", "sort"},
-	"getMetric":             {"metricID"},
-	"getMetricSeries":       {"metricID", "seriesID", "startTime", "endTime"},
+	"getMetric":             {"metricRef"},
+	"getMetricSeries":       {"metricRef", "seriesRef", "startTime", "endTime"},
 	"getMetricView": {
 		"metricID", "startTime", "endTime", "targetBuckets", "seriesIDs",
 		"quantiles", "tzOffsetNs", "viewBuckets",

@@ -362,26 +362,10 @@ export type JsonSeriesRateStats = {
 }
 
 export type JsonMetricTimeseries = {
-  /**
-   * The generated database-local series id.
-   *
-   * Was the canonical "key=value|..." rendering of the labels, which could not
-   * survive series splitting by resource -- two replicas of one service have
-   * byte-identical labels and so produced colliding keys. It is also stable
-   * across restarts and retention, which the old key was not, so it can be put
-   * in a URL while the database retains the series.
-   */
+  /** Generated database-local series reference. */
   attributesKey: string
   attributes: JsonAttribute[]
-  /**
-   * Identifying originating resource attributes for this series.
-   *
-   * Load-bearing once series split by resource: when two replicas produce
-   * identical labels, this is the only thing that tells them apart. The reused
-   * resource shape always carries droppedAttributesCount 0: dropped count is
-   * exact only on JsonMetricViewData.resource, which describes the representative
-   * ingest selected for the response.
-   */
+  /** Resource associated with the parent Metric. */
   resource: JsonResourceData
   datapoints: JsonDataPoint[]
   /** Server-computed stats over the whole window; null for histograms. */
@@ -424,10 +408,8 @@ export type JsonMetricViewData = {
   description: string
   /**
    * OTLP Metric.metadata: an attribute map describing the instrument itself,
-   * not the labels that identify a series. Coalesced to [] server-side.
-   *
-   * Read from the same representative ingest description comes from, since
-   * both are per-batch rather than part of stream identity.
+   * not the labels that identify a series. This is the latest received value.
+   * Coalesced to [] server-side.
    */
   metadata: JsonAttribute[]
   unit: string
@@ -438,7 +420,7 @@ export type JsonMetricViewData = {
   aggregationTemporality: string | null
   isMonotonic: boolean | null
   resourceDroppedAttributesCount: number
-  /** Received ResourceMetrics schema URL from the representative ingest. */
+  /** Latest received ResourceMetrics schema URL for this Metric. */
   resourceSchemaUrl: string
   resource: JsonResourceData
   scopeName: string
@@ -500,19 +482,24 @@ export type JsonMetricAggregateViewData = {
 
 export type JsonExactMetricResource = {
   attributes: JsonAttribute[]
+  droppedAttributesCount: number
+  schemaUrl: string
 }
 
 export type JsonExactMetricScope = {
   name: string
   version: string
   attributes: JsonAttribute[]
+  droppedAttributesCount: number
   schemaUrl: string
 }
 
 type JsonExactMetricIdentityBase = {
-  metricID: string
+  metricRef: string
   name: string
+  description: string
   unit: string
+  metadata: JsonAttribute[]
   resource: JsonExactMetricResource
   scope: JsonExactMetricScope
 }
@@ -532,7 +519,7 @@ export type JsonExactMetricIdentity = JsonExactMetricIdentityBase &
   )
 
 export type JsonMetricSeriesSummary = {
-  seriesID: string
+  seriesRef: string
   attributes: JsonAttribute[]
   /** Computed count of retained datapoints in this series. */
   datapointCount: string
@@ -583,23 +570,14 @@ export type JsonReceivedExponentialHistogramDataPoint =
     negative: { offset: number; bucketCounts: string[] }
   }
 
-export type JsonMetricReport = {
-  reportID: string
-  description: string
-  metadata: JsonAttribute[]
-  resource: JsonResourceData & { schemaUrl: string }
-  scope: JsonScopeData & { schemaUrl: string }
+export type JsonExactMetricSeries = JsonExactMetricIdentity & {
+  seriesRef: string
+  attributes: JsonAttribute[]
   datapoints: (
     | JsonReceivedNumberDataPoint
     | JsonReceivedHistogramDataPoint
     | JsonReceivedExponentialHistogramDataPoint
   )[]
-}
-
-export type JsonExactMetricSeries = JsonExactMetricIdentity & {
-  seriesID: string
-  attributes: JsonAttribute[]
-  reports: JsonMetricReport[]
 }
 
 /** @derived Cross-series histogram view computed by get_metric_view.sql. The store

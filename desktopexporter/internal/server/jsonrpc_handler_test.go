@@ -1364,14 +1364,14 @@ func TestGetMetricAndSeries(t *testing.T) {
 	metricID := summaries[0]["id"].(string)
 
 	discoveryResult, err := handler.Handle(context.Background(), createRequest(
-		"getMetric", map[string]any{"metricID": metricID}))
+		"getMetric", map[string]any{"metricRef": metricID}))
 	require.NoError(t, err)
 	var discovery map[string]any
 	require.NoError(t, json.Unmarshal(discoveryResult.(json.RawMessage), &discovery))
-	require.Equal(t, metricID, discovery["metricID"])
+	require.Equal(t, metricID, discovery["metricRef"])
 	require.Equal(t, "test.gauge", discovery["name"])
 	require.Equal(t, "Gauge", discovery["metricType"])
-	require.NotContains(t, discovery, "description")
+	require.Equal(t, "A test gauge", discovery["description"])
 	require.NotContains(t, discovery, "datapoints")
 	series := discovery["series"].([]any)
 	require.Len(t, series, 1)
@@ -1382,26 +1382,22 @@ func TestGetMetricAndSeries(t *testing.T) {
 
 	seriesResult, err := handler.Handle(context.Background(), createRequest(
 		"getMetricSeries", map[string]any{
-			"metricID": metricID, "seriesID": seriesSummary["seriesID"],
+			"metricRef": metricID, "seriesRef": seriesSummary["seriesRef"],
 			"startTime": nil, "endTime": nil,
 		}))
 	require.NoError(t, err)
 	var selected map[string]any
 	require.NoError(t, json.Unmarshal(seriesResult.(json.RawMessage), &selected))
-	require.Equal(t, metricID, selected["metricID"])
-	require.Equal(t, seriesSummary["seriesID"], selected["seriesID"])
-	reports := selected["reports"].([]any)
-	require.Len(t, reports, 1)
-	report := reports[0].(map[string]any)
-	require.Contains(t, report, "reportID")
-	require.Len(t, report["datapoints"].([]any), 1)
+	require.Equal(t, metricID, selected["metricRef"])
+	require.Equal(t, seriesSummary["seriesRef"], selected["seriesRef"])
+	require.Len(t, selected["datapoints"].([]any), 1)
 
 	emptyResult, err := handler.Handle(context.Background(), createRequest(
-		"getMetricSeries", []any{metricID, seriesSummary["seriesID"], "0", "1"}))
+		"getMetricSeries", []any{metricID, seriesSummary["seriesRef"], "0", "1"}))
 	require.NoError(t, err)
 	var empty map[string]any
 	require.NoError(t, json.Unmarshal(emptyResult.(json.RawMessage), &empty))
-	require.Empty(t, empty["reports"])
+	require.Empty(t, empty["datapoints"])
 
 	missingResult, err := handler.Handle(context.Background(), createRequest(
 		"getMetric", []any{"00000000-0000-0000-0000-000000000000"}))

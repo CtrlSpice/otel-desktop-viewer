@@ -15,9 +15,8 @@ import (
 //
 //	spans, logs        -> resources, scopes
 //	events, links      -> spans
-//	metric_series      -> metric_streams
-//	metric_ingests     -> metric_streams, resources, scopes
-//	datapoints         -> metric_streams, metric_series, metric_ingests
+//	metric_streams     -> resources, scopes
+//	datapoints         -> metric_series, histogram_bounds
 //	exemplars          -> datapoints
 //
 // So attributes comes first (it references nothing), then resources and

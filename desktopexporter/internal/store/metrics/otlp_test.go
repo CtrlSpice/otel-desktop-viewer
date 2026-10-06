@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/storetest"
 	"github.com/stretchr/testify/assert"
@@ -206,7 +207,9 @@ func TestGetMetricOTLPStreamOwnershipAndEmptyValues(t *testing.T) {
 
 	var id string
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		return db.QueryRowContext(ctx, `select id::varchar from metric_streams where name = 'same-stream' and unit = '' and scope_schema_url = 'scope-first'`).Scan(&id)
+		return db.QueryRowContext(ctx, `select m.id::varchar from metric_streams m
+			join scopes sc on sc.id = m.scope_id
+			where m.name = 'same-stream' and m.unit = '' and sc.schema_url = 'scope-first'`).Scan(&id)
 	}))
 	raw := getMetricOTLP(t, s, ctx, id)
 	text := string(raw)
@@ -237,11 +240,6 @@ func TestGetMetricOTLPStreamOwnershipAndEmptyValues(t *testing.T) {
 	assert.Contains(t, string(emptyRaw), `"metadata":[]`)
 	_, err = (&pmetric.JSONUnmarshaler{}).UnmarshalMetrics(emptyRaw)
 	require.NoError(t, err)
-	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
-		_, err := db.ExecContext(ctx, `delete from metric_ingests where stream_id = ?::uuid`, emptyID)
-		return err
-	}))
-	assert.JSONEq(t, `{"resourceMetrics":[]}`, string(getMetricOTLP(t, s, ctx, emptyID)))
 }
 
 func TestGetMetricOTLPNotFound(t *testing.T) {
@@ -260,27 +258,39 @@ func TestGetMetricOTLPRejectsUnsupportedMetricTypes(t *testing.T) {
 	m := summary.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
 	m.SetName("unsupported-summary")
 	m.SetEmptySummary()
+	var rejected ingest.Rejected
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
-		return metrics.Ingest(ctx, conn, summary, s.FlushedIDs())
+		var err error
+		rejected, err = metrics.IngestReport(ctx, conn, summary, s.FlushedIDs())
+		return err
 	}))
-	summaryID := metricStreamIDs(t, s, ctx)["unsupported-summary"]
-	_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
-		return metrics.GetMetricOTLP(ctx, db, summaryID)
-	})
-	assert.ErrorIs(t, err, metrics.ErrUnsupportedMetricType)
+	require.Equal(t, 1, rejected.Count())
+	require.ErrorIs(t, rejected.Reason(), metrics.ErrUnsupportedMetricType)
+	require.Empty(t, metricStreamIDs(t, s, ctx))
+
+	gauge := pmetric.NewMetrics()
+	gm := gauge.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	gm.SetName("future-metric")
+	gm.SetEmptyGauge()
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, gauge, s.FlushedIDs())
+	}))
 
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		_, err := db.ExecContext(ctx, `
 			insert into metric_streams
-				(id, name, unit, metric_type, aggregation_temporality, is_monotonic, scope_name, scope_version, service_name)
-			select uuid(), name, unit, 'FutureMetric', aggregation_temporality, is_monotonic, scope_name, scope_version, service_name
-			from metric_streams where name = 'unsupported-summary'`)
+				(id, resource_id, scope_id, resource_schema_url, name, description, unit,
+				 metadata_ids, metric_type, aggregation_temporality, is_monotonic, service_name)
+			select uuid(), resource_id, scope_id, resource_schema_url, name, description, unit,
+				metadata_ids, 'FutureMetric', aggregation_temporality, is_monotonic, service_name
+			from metric_streams where name = 'future-metric'`)
 		return err
 	}))
+	var summaryID string
 	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRowContext(ctx, `select id::varchar from metric_streams where metric_type = 'FutureMetric'`).Scan(&summaryID)
 	}))
-	_, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+	_, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetricOTLP(ctx, db, summaryID)
 	})
 	assert.ErrorIs(t, err, metrics.ErrUnsupportedMetricType)

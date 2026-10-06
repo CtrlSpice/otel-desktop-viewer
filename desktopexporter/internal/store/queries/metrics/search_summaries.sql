@@ -1,12 +1,8 @@
 {{.CTEs}},
-		filtered_ingests as (
-			select m.id, m.stream_id
+		filtered_streams as (
+			select s.*
 			{{.From}}
 			where {{.Where}}
-		),
-		filtered_streams as (
-			select s.* from metric_streams s
-			where s.id in (select distinct stream_id from filtered_ingests)
 		),
 		stream_latest_dp as (
 			select d.stream_id, max(d.timestamp) as last_dp_ts
@@ -25,19 +21,6 @@
 			select d.* from datapoints d
 			inner join candidate_streams fs on d.stream_id = fs.id, search_params
 			{{.DatapointWhere}}
-		),
-		ingest_latest_dp as (
-			select metric_ingest_id, max(timestamp) as last_dp_ts
-			from filtered_dps
-			group by metric_ingest_id
-		),
-		stream_description as (
-			select mi.stream_id,
-				arg_max(mi.description, ild.last_dp_ts) as description
-			from metric_ingests mi
-			inner join ingest_latest_dp ild on ild.metric_ingest_id = mi.id
-			where mi.stream_id in (select id from candidate_streams)
-			group by mi.stream_id
 		),
 		-- Two counts, because the card was showing one number that could mean
 		-- either and said which only in a tooltip.
@@ -84,7 +67,7 @@
 			select
 				fs.id,
 				fs.name,
-				sd.description,
+				fs.description,
 				fs.unit,
 				fs.metric_type,
 				fs.aggregation_temporality,
@@ -97,7 +80,6 @@
 				sldp.last_dp_ts
 			from candidate_streams fs
 			left join stream_latest_dp sldp on sldp.stream_id = fs.id
-			left join stream_description sd on sd.stream_id = fs.id
 			left join stream_series_count ssc on ssc.stream_id = fs.id
 			left join stream_series_cardinality ssx on ssx.stream_id = fs.id
 			left join stream_datapoint_count sdc on sdc.stream_id = fs.id
