@@ -104,6 +104,7 @@ func Ingest(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *i
 func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flushed *ingest.FlushedIDs) (rejected ingest.Rejected, err error) {
 	defer func() { err = ingest.InterruptedContextError(ctx, err) }()
 	var identities []streamIdentity
+	identityIndexes := make(map[streamLookupKey]int)
 	var seriesRows []seriesRow
 	cleanupArmed := false
 
@@ -139,7 +140,9 @@ func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flus
 				}
 				identity := streamIdentityFromMetric(metric, resourceAttributeIDs[ri], scope.Name(), scope.Version(),
 					scopeMetric.SchemaUrl(), scopeAttributeIDs[key], serviceName)
-				if findStreamIdentity(identities, identity) < 0 {
+				identityKey := identity.lookupKey()
+				if _, exists := identityIndexes[identityKey]; !exists {
+					identityIndexes[identityKey] = len(identities)
 					identities = append(identities, identity)
 				}
 				dpAttrIDs = addMetricAttributes(dict, metric, dpAttrIDs)
@@ -201,7 +204,7 @@ func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flus
 	// them forward again so pass 2 reads them by position too. Neither this walk
 	// nor pass 2 hashes a label set: datapoints are the highest-volume path in
 	// the store, and one derivation each is all they get.
-	dpIdents, collectedSeries, err := collectSeries(ctx, m, identities, resourceAttributeIDs, scopeAttributeIDs, dpAttrIDs)
+	dpIdents, collectedSeries, err := collectSeries(ctx, m, identities, identityIndexes, resourceAttributeIDs, scopeAttributeIDs, dpAttrIDs)
 	if err != nil {
 		return ingest.Rejected{}, err
 	}
@@ -215,7 +218,7 @@ func IngestReport(ctx context.Context, conn driver.Conn, m pmetric.Metrics, flus
 	// Pass 2: append, retrying in halves so a bad metric costs only itself.
 	return ingest.BisectingWrite(ctx, countMetrics(m), nil, func(lo, hi int) error {
 		return ingest.InTransaction(ctx, conn, func() error {
-			return appendPass(ctx, conn, m, identities, resourceIDs, scopeIDs, resourceAttributeIDs, scopeAttributeIDs, dpIdents,
+			return appendPass(ctx, conn, m, identities, identityIndexes, resourceIDs, scopeIDs, resourceAttributeIDs, scopeAttributeIDs, dpIdents,
 				func(ordinal int) bool { return ordinal >= lo && ordinal < hi })
 		})
 	})
@@ -228,6 +231,7 @@ func appendPass(
 	conn driver.Conn,
 	m pmetric.Metrics,
 	streamIDs []streamIdentity,
+	streamIndexes map[streamLookupKey]int,
 	resourceIDs map[int]duckdb.UUID,
 	scopeIDs map[scopeKey]duckdb.UUID,
 	resourceAttributeIDs map[int][]duckdb.UUID,
@@ -270,8 +274,8 @@ func appendPass(
 
 				identity := streamIdentityFromMetric(metric, resourceAttributeIDs[ri], scope.Name(), scope.Version(),
 					scopeMetric.SchemaUrl(), scopeAttributeIDs[key], serviceName)
-				streamIndex := findStreamIdentity(streamIDs, identity)
-				if streamIndex < 0 {
+				streamIndex, ok := streamIndexes[identity.lookupKey()]
+				if !ok {
 					return fmt.Errorf("Ingest: %w: stream id missing for identity %+v", ErrMetricsStoreInternal, identity)
 				}
 				streamID := streamIDs[streamIndex].ID
@@ -417,6 +421,7 @@ func collectSeries(
 	ctx context.Context,
 	m pmetric.Metrics,
 	streamIDs []streamIdentity,
+	streamIndexes map[streamLookupKey]int,
 	resourceAttributeIDs map[int][]duckdb.UUID,
 	scopeAttributeIDs map[scopeKey][]duckdb.UUID,
 	dpAttrIDs [][]duckdb.UUID,
@@ -438,8 +443,8 @@ func collectSeries(
 				}
 				identity := streamIdentityFromMetric(metric, resourceAttributeIDs[ri], scope.Name(), scope.Version(),
 					scopeMetric.SchemaUrl(), scopeAttributeIDs[key], serviceName)
-				streamIndex := findStreamIdentity(streamIDs, identity)
-				if streamIndex < 0 {
+				streamIndex, ok := streamIndexes[identity.lookupKey()]
+				if !ok {
 					return nil, nil, fmt.Errorf("collectSeries: %w: stream id missing for identity %+v",
 						ErrMetricsStoreInternal, identity)
 				}
@@ -622,21 +627,41 @@ type streamIdentity struct {
 	ServiceName            string
 }
 
-func (s streamIdentity) sameKey(other streamIdentity) bool {
-	return slices.Equal(s.ResourceAttributeIDs, other.ResourceAttributeIDs) &&
-		s.Name == other.Name && s.Unit == other.Unit && s.MetricType == other.MetricType &&
-		s.AggregationTemporality == other.AggregationTemporality && s.IsMonotonic == other.IsMonotonic &&
-		s.ScopeName == other.ScopeName && s.ScopeVersion == other.ScopeVersion &&
-		s.ScopeSchemaURL == other.ScopeSchemaURL && slices.Equal(s.ScopeAttributeIDs, other.ScopeAttributeIDs)
+type streamLookupKey struct {
+	resourceAttributes     string
+	name                   string
+	unit                   string
+	metricType             string
+	aggregationTemporality int32
+	isMonotonic            string
+	scopeName              string
+	scopeVersion           string
+	scopeSchemaURL         string
+	scopeAttributes        string
 }
 
-func findStreamIdentity(identities []streamIdentity, identity streamIdentity) int {
-	for i := range identities {
-		if identities[i].sameKey(identity) {
-			return i
-		}
+func uuidListKey(ids []duckdb.UUID) string {
+	var key strings.Builder
+	key.Grow(36 * len(ids))
+	for _, id := range ids {
+		key.WriteString(ingest.FormatUUID(id))
 	}
-	return -1
+	return key.String()
+}
+
+func (s streamIdentity) lookupKey() streamLookupKey {
+	return streamLookupKey{
+		resourceAttributes:     uuidListKey(s.ResourceAttributeIDs),
+		name:                   s.Name,
+		unit:                   s.Unit,
+		metricType:             s.MetricType,
+		aggregationTemporality: s.AggregationTemporality,
+		isMonotonic:            s.IsMonotonic,
+		scopeName:              s.ScopeName,
+		scopeVersion:           s.ScopeVersion,
+		scopeSchemaURL:         s.ScopeSchemaURL,
+		scopeAttributes:        uuidListKey(s.ScopeAttributeIDs),
+	}
 }
 
 func resolveStreamIDs(
