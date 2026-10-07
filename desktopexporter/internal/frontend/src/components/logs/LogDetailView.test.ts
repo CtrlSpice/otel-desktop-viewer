@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { screen } from '@testing-library/svelte'
+import { screen, within } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import LogDetailView from './LogDetailView.svelte'
 import type { LogData } from '@/types/api-types'
@@ -42,6 +42,17 @@ function renderLog(log: LogData) {
 }
 
 describe('LogDetailView trace correlation', () => {
+  it('places the whole-record export in the main log header', () => {
+    renderLog(makeLog())
+    const header = screen.getByRole('region', { name: 'Log record' })
+    expect(
+      within(header).getByRole('button', { name: 'Export log' })
+    ).toBeEnabled()
+    expect(screen.getAllByRole('button', { name: 'Export log' })).toHaveLength(
+      1
+    )
+  })
+
   it('links trace and span ids with span in the href', () => {
     renderLog(makeLog())
     const traceLink = screen.getByRole('link', { name: 'trace-abc' })

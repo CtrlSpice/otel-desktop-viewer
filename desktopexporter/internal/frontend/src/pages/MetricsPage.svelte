@@ -107,6 +107,7 @@
   import MetricDetailView from '@/components/metrics/Detail/MetricDetailView.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import PaneHeader, { paneTabID } from '@/components/shared/PaneHeader.svelte'
+  import ExportButton from '@/components/shared/ExportButton.svelte'
   import type { AggregationView } from '@/components/metrics/utils/aggregation'
   import {
     PANEL_DEFAULT_REM,
@@ -718,6 +719,9 @@
             aggregationTemporality={selectedSummary.aggregationTemporality}
             isMonotonic={selectedSummary.isMonotonic}
           />
+          {#key selectedSummary.metricRef}
+            <ExportButton signal="metric" id={selectedSummary.metricRef} />
+          {/key}
         {/snippet}
 
         {@const histogramChartTabs = histogramViewTabs()}

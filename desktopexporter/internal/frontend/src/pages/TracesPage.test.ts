@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/svelte'
+import { fireEvent, screen, waitFor, within } from '@testing-library/svelte'
 import TracesPage from './TracesPage.svelte'
 import type {
   TraceSummary,
@@ -192,9 +192,15 @@ describe('TracesPage unplaced spans banner', () => {
     })
     setTestUrl('/traces/trace-1')
     renderWithContexts(TracesPage)
+    const header = await screen.findByRole('region', {
+      name: 'Trace waterfall',
+    })
     expect(
-      await screen.findByRole('button', { name: 'Export trace' })
+      within(header).getByRole('button', { name: 'Export trace' })
     ).toBeEnabled()
+    expect(
+      screen.getAllByRole('button', { name: 'Export trace' })
+    ).toHaveLength(1)
     expect(await screen.findByRole('alert')).toHaveTextContent(
       '2 spans are missing'
     )
