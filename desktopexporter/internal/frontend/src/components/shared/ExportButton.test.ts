@@ -67,7 +67,9 @@ describe('ExportButton', () => {
     const trigger = screen.getByRole('button', { name: 'Export metric' })
     await userEvent.click(trigger)
     await userEvent.click(screen.getByRole('menuitem', { name: 'OTLP JSON' }))
-    expect(trigger).toBeDisabled()
+    expect(trigger).toHaveAttribute('aria-disabled', 'true')
+    expect(trigger).toBeEnabled()
+    expect(trigger).not.toHaveAttribute('popovertarget')
     const signal = vi.mocked(downloadOTLP).mock.calls[0]![3]
     expect(signal.aborted).toBe(false)
     view.unmount()

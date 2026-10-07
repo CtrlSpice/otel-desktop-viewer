@@ -81,12 +81,20 @@ for (const format of ['json', 'protobuf'] as const) {
             '{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"body":{"doubleValue":-0.0}}]}]}]}\n'
           )
         : Buffer.from([0x0a, 0x04, 0x12, 0x02, 0x12, 0x00])
-    await page.route(`**/export/logs/${logRef}?format=${format}`, route =>
-      route.fulfill({
-        contentType:
-          format === 'json' ? 'application/json' : 'application/x-protobuf',
-        body,
-      })
+    let releaseResponse!: () => void
+    const responseReady = new Promise<void>(resolve => {
+      releaseResponse = resolve
+    })
+    await page.route(
+      `**/export/logs/${logRef}?format=${format}`,
+      async route => {
+        await responseReady
+        await route.fulfill({
+          contentType:
+            format === 'json' ? 'application/json' : 'application/x-protobuf',
+          body,
+        })
+      }
     )
     const trigger = page.getByRole('button', { name: 'Export log' })
     const style = await trigger.evaluate(element => ({
@@ -102,6 +110,14 @@ for (const format of ['json', 'protobuf'] as const) {
     if (format === 'protobuf') await page.keyboard.press('ArrowDown')
     const downloaded = page.waitForEvent('download')
     await page.keyboard.press('Enter')
+    try {
+      await expect(trigger).toHaveAttribute('aria-busy', 'true')
+      await expect(trigger).toBeFocused()
+      await page.keyboard.press('Enter')
+      await expect(page.getByRole('menu')).not.toBeVisible()
+    } finally {
+      releaseResponse()
+    }
     const download = await downloaded
     expect(download.suggestedFilename()).toBe(
       `log-${logRef}.${format === 'json' ? 'json' : 'pb'}`
@@ -109,6 +125,8 @@ for (const format of ['json', 'protobuf'] as const) {
     const path = await download.path()
     expect(path).not.toBeNull()
     expect(await readFile(path!)).toEqual(body)
+    await expect(trigger).toHaveAttribute('aria-busy', 'false')
+    await expect(trigger).toBeFocused()
   })
 }
 
@@ -124,8 +142,43 @@ test('shows an export failure instead of downloading an error document', async (
   )
   const downloads: string[] = []
   page.on('download', download => downloads.push(download.suggestedFilename()))
-  await page.getByRole('button', { name: 'Export log' }).click()
-  await page.getByRole('menuitem', { name: 'OTLP JSON' }).click()
+  const trigger = page.getByRole('button', { name: 'Export log' })
+  await trigger.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('menuitem', { name: 'OTLP JSON' })).toBeFocused()
+  await page.keyboard.press('Enter')
   await expect(page.getByRole('alert')).toContainText('export record not found')
+  await expect(trigger).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('menuitem', { name: 'OTLP JSON' })).toBeFocused()
   expect(downloads).toEqual([])
+})
+
+test('export completion does not take focus back after the user moves it', async ({
+  page,
+}) => {
+  let releaseResponse!: () => void
+  const responseReady = new Promise<void>(resolve => {
+    releaseResponse = resolve
+  })
+  await page.route('**/export/logs/**', async route => {
+    await responseReady
+    await route.fulfill({ contentType: 'application/json', body: '{}' })
+  })
+  const trigger = page.getByRole('button', { name: 'Export log' })
+  await trigger.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('menuitem', { name: 'OTLP JSON' })).toBeFocused()
+  const downloaded = page.waitForEvent('download')
+  await page.keyboard.press('Enter')
+  const elsewhere = page.getByRole('link', { name: 'Traces', exact: true })
+  try {
+    await expect(trigger).toHaveAttribute('aria-busy', 'true')
+    await elsewhere.focus()
+  } finally {
+    releaseResponse()
+  }
+  await downloaded
+  await expect(trigger).toHaveAttribute('aria-busy', 'false')
+  await expect(elsewhere).toBeFocused()
 })

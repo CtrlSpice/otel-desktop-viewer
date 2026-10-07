@@ -92,18 +92,21 @@
   }
 </script>
 
+<!-- Keep the pending trigger focusable when the menu returns focus to it. -->
 <button
   bind:this={trigger}
   type="button"
   class="btn btn-circle btn-primary btn-soft btn-xs"
-  popovertarget={popoverID}
+  class:btn-disabled={pending}
+  popovertarget={pending ? undefined : popoverID}
   aria-controls={popoverID}
   aria-haspopup="menu"
   aria-expanded={open}
   aria-label="Export {signal}"
   aria-busy={pending}
+  aria-disabled={pending}
   title="Export {signal}"
-  disabled={pending || !id}
+  disabled={!id}
 >
   <HugeiconsIcon
     icon={FileExportIcon}
