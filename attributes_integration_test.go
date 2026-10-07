@@ -19,6 +19,8 @@ import (
 	"go.opentelemetry.io/collector/exporter/exporterhelper"
 	"go.opentelemetry.io/collector/extension/extensiontest"
 	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
@@ -33,7 +35,8 @@ func (h attributeIntegrationHost) GetExtensions() map[component.ID]component.Com
 // Exercise ingestion, canonical value encoding, the production HTTP query
 // handler/executor, and the actual commands together, without a browser or
 // a collector subprocess. Only this test's extension owns the in-memory store.
-func TestAttributesThroughProductionQueryHandler(t *testing.T) {
+func startAttributeIntegration(t *testing.T) (string, exporter.Traces, exporter.Logs, exporter.Metrics) {
+	t.Helper()
 	ctx := context.Background()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -58,6 +61,20 @@ func TestAttributesThroughProductionQueryHandler(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, tracesExporter.Start(ctx, attributeIntegrationHost{ext: ext}))
 	t.Cleanup(func() { require.NoError(t, tracesExporter.Shutdown(context.Background())) })
+	settings := exporter.Settings{ID: component.NewID(exporterFactory.Type()), TelemetrySettings: componenttest.NewNopTelemetrySettings()}
+	logsExporter, err := exporterFactory.CreateLogs(ctx, settings, exporterCfg)
+	require.NoError(t, err)
+	require.NoError(t, logsExporter.Start(ctx, attributeIntegrationHost{ext: ext}))
+	t.Cleanup(func() { require.NoError(t, logsExporter.Shutdown(context.Background())) })
+	metricsExporter, err := exporterFactory.CreateMetrics(ctx, settings, exporterCfg)
+	require.NoError(t, err)
+	require.NoError(t, metricsExporter.Start(ctx, attributeIntegrationHost{ext: ext}))
+	t.Cleanup(func() { require.NoError(t, metricsExporter.Shutdown(context.Background())) })
+	return "http://" + address, tracesExporter, logsExporter, metricsExporter
+}
+
+func TestAttributesThroughProductionQueryHandler(t *testing.T) {
+	endpoint, tracesExporter, _, _ := startAttributeIntegration(t)
 
 	bits := []uint64{
 		0x0000000000000000, // positive zero
@@ -82,8 +99,7 @@ func TestAttributesThroughProductionQueryHandler(t *testing.T) {
 		span.Attributes().PutDouble("number", math.Float64frombits(value))
 		span.Attributes().PutInt("integer", math.MaxInt64)
 	}
-	require.NoError(t, tracesExporter.ConsumeTraces(ctx, traces))
-	endpoint := "http://" + address
+	require.NoError(t, tracesExporter.ConsumeTraces(context.Background(), traces))
 
 	var keys attributeKeysResult
 	require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, endpoint, "keys", "--json")), &keys))
@@ -137,4 +153,109 @@ func TestAttributesThroughProductionQueryHandler(t *testing.T) {
 	assert.Equal(t, 1.0, integer.Values[0].RelativeFrequency)
 	assert.Contains(t, attributeTestRun(t, endpoint, "values", "integer"), "100%")
 	assert.Contains(t, attributeTestRun(t, endpoint, "values", "integer"), "9223372036854775807")
+}
+
+func TestAttributeResourceScopeFrequenciesAcrossSignals(t *testing.T) {
+	endpoint, te, le, me := startAttributeIntegration(t)
+	traces, logs, metrics := ptrace.NewTraces(), plog.NewLogs(), pmetric.NewMetrics()
+	// West records share one resource and scope. East uses a different owner.
+	// Missing-key, out-of-window and other-service records must not change the
+	// denominator. The timestamp and histogram count deliberately differ.
+	groups := []struct {
+		value     string
+		service   string
+		count     int
+		timestamp pcommon.Timestamp
+	}{
+		{"west", "checkout", 100, 8000000000000},
+		{"east", "checkout", 1, 8000000000000},
+		{"", "checkout", 3, 8000000000000},
+		{"west", "checkout", 7, 10000000000001},
+		{"west", "other", 5, 8000000000000},
+	}
+	for groupIndex, group := range groups {
+		rs := traces.ResourceSpans().AppendEmpty()
+		rl := logs.ResourceLogs().AppendEmpty()
+		rm := metrics.ResourceMetrics().AppendEmpty()
+		ss, sl, sm := rs.ScopeSpans().AppendEmpty(), rl.ScopeLogs().AppendEmpty(), rm.ScopeMetrics().AppendEmpty()
+		for _, resource := range []pcommon.Resource{rs.Resource(), rl.Resource(), rm.Resource()} {
+			resource.Attributes().PutStr("service.name", group.service)
+			if group.value != "" {
+				resource.Attributes().PutStr("region", group.value)
+			}
+		}
+		for _, scope := range []pcommon.InstrumentationScope{ss.Scope(), sl.Scope(), sm.Scope()} {
+			scope.SetName("test-scope")
+			if group.value != "" {
+				scope.Attributes().PutStr("region", group.value)
+			}
+		}
+		metric := sm.Metrics().AppendEmpty()
+		metric.SetName("requests")
+		histogram := metric.SetEmptyHistogram()
+		histogram.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+		for i := 0; i < group.count; i++ {
+			span := ss.Spans().AppendEmpty()
+			span.SetTraceID(pcommon.TraceID{14: byte(groupIndex + 1), 15: byte(i + 1)})
+			span.SetSpanID(pcommon.SpanID{7: 1})
+			span.SetStartTimestamp(group.timestamp)
+			span.SetEndTimestamp(group.timestamp + 1)
+			log := sl.LogRecords().AppendEmpty()
+			// No trace/span correlation. Alternate received and observed fallback.
+			if i%2 == 0 {
+				log.SetTimestamp(group.timestamp)
+			} else {
+				log.SetObservedTimestamp(group.timestamp)
+			}
+			dp := histogram.DataPoints().AppendEmpty()
+			dp.SetTimestamp(group.timestamp)
+			dp.SetStartTimestamp(1)
+			dp.SetCount(9999)
+			if group.value != "" {
+				for _, attributes := range []pcommon.Map{span.Attributes(), log.Attributes(), dp.Attributes()} {
+					attributes.PutStr("region", group.value)
+					attributes.PutInt("exact", math.MaxInt64)
+				}
+			}
+		}
+	}
+	require.NoError(t, te.ConsumeTraces(context.Background(), traces))
+	require.NoError(t, le.ConsumeLogs(context.Background(), logs))
+	require.NoError(t, me.ConsumeMetrics(context.Background(), metrics))
+	for _, pair := range []attributeLocation{
+		{Signal: "traces", OwnerType: "span"}, {Signal: "logs", OwnerType: "log"}, {Signal: "metrics", OwnerType: "datapoint"},
+		{Signal: "traces", OwnerType: "resource"}, {Signal: "logs", OwnerType: "resource"}, {Signal: "metrics", OwnerType: "resource"},
+		{Signal: "traces", OwnerType: "scope"}, {Signal: "logs", OwnerType: "scope"}, {Signal: "metrics", OwnerType: "scope"},
+	} {
+		t.Run(pair.Signal+"/"+pair.OwnerType, func(t *testing.T) {
+			flags := []string{"--signal", pair.Signal, "--owner-type", pair.OwnerType, "--service", "checkout", "--json"}
+			var result attributeValuesResult
+			require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, endpoint, append([]string{"values", "region", "--limit", "2"}, flags...)...)), &result))
+			require.Len(t, result.Values, 2)
+			assert.False(t, result.Truncated)
+			assert.Equal(t, uint64(100), result.Values[0].Count)
+			assert.Equal(t, uint64(1), result.Values[1].Count)
+			assert.JSONEq(t, `{"kind":"string","value":"west"}`, string(result.Values[0].Value))
+			assert.JSONEq(t, `{"kind":"string","value":"east"}`, string(result.Values[1].Value))
+			for _, value := range result.Values {
+				assert.Equal(t, uint64(101), value.Denominator)
+				assert.Equal(t, float64(value.Count)/101, value.RelativeFrequency)
+				assert.Equal(t, []attributeLocation{pair}, value.FoundOn)
+			}
+			var limited attributeValuesResult
+			require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, endpoint, append([]string{"values", "region", "--limit", "1"}, flags...)...)), &limited))
+			require.Len(t, limited.Values, 1)
+			assert.True(t, limited.Truncated)
+			assert.Equal(t, uint64(101), limited.Values[0].Denominator)
+			var keys attributeKeysResult
+			require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, endpoint, append([]string{"keys"}, flags...)...)), &keys))
+			assert.Contains(t, keys.Keys, attributeKey{Key: "region", Kind: "string", FoundOn: []attributeLocation{pair}})
+			// Scope is shared across services, but counts still follow filtered records.
+			var other attributeValuesResult
+			require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, endpoint, "values", "region", "--signal", pair.Signal, "--owner-type", pair.OwnerType, "--service", "other", "--json")), &other))
+			require.Len(t, other.Values, 1)
+			assert.Equal(t, uint64(5), other.Values[0].Count)
+			assert.Equal(t, uint64(5), other.Values[0].Denominator)
+		})
+	}
 }
