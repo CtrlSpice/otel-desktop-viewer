@@ -113,7 +113,8 @@ func newAttributeValuesCommand(client *http.Client, now func() time.Time) *cobra
 			"The denominator is all matching spans carrying the exact key, before the result limit. " +
 			"Kinds stay distinct. Defaults to the last hour and 25 values. " +
 			"Columns show value, kind, count and percentage; --json retains the tagged value, owner location, count, denominator and relative frequency. " +
-			"A span with multiple values for the key contributes once to each value and once to the denominator, so percentages may sum above 100%.",
+			"A span with multiple values for the key contributes once to each value and once to the denominator, so percentages may sum above 100%. " +
+			"Use query to find records carrying a selected typed value, then trace or span to inspect them; skills includes a checked SQL example.",
 		Example: "  otel-desktop-viewer attributes values http.method\n" +
 			"  otel-desktop-viewer attributes values http.method --service checkout --limit 10 --json",
 		Args: cobra.ExactArgs(1),

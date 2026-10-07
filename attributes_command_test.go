@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -227,4 +228,48 @@ func TestAttributesOfflineHelpAndValidation(t *testing.T) {
 		cmd.SetArgs(args)
 		require.Error(t, cmd.Execute())
 	}
+}
+
+func TestAttributeSkillRecordLookup(t *testing.T) {
+	db, _ := attributeTestViewer(t)
+	for _, name := range []string{"trace_id_wire", "span_id_wire"} {
+		macro, err := os.ReadFile("desktopexporter/internal/store/queries/ddl/macros/" + name + ".sql")
+		require.NoError(t, err)
+		_, err = db.Exec(string(macro))
+		require.NoError(t, err)
+	}
+	_, err := db.Exec(`ALTER TABLE spans ADD COLUMN name VARCHAR DEFAULT 'request';
+INSERT INTO attributes VALUES
+ ('00000000-0000-0000-0000-000000000001', 'http.request.method', '{"kind":"string","value":"POST"}'),
+ ('00000000-0000-0000-0000-000000000002', 'http.request.method', '{"kind":"string","value":"GET"}'),
+ ('00000000-0000-0000-0000-000000000003', 'other.key', '{"kind":"string","value":"POST"}');
+INSERT INTO spans (trace_id, span_id, start_time, service_name, attribute_ids) VALUES
+ ('00000000-0000-0000-0000-000000000001', 42, 1790928000000000000, 'checkout', ['00000000-0000-0000-0000-000000000001']),
+ ('00000000-0000-0000-0000-000000000002', 42, 1790931600000000000, 'checkout', ['00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000001']),
+ ('00000000-0000-0000-0000-000000000003', 42, 1790931600000000000, 'checkout', ['00000000-0000-0000-0000-000000000002']),
+ ('00000000-0000-0000-0000-000000000004', 42, 1790931600000000001, 'checkout', ['00000000-0000-0000-0000-000000000001']),
+ ('00000000-0000-0000-0000-000000000005', 42, 1790931600000000000, 'other', ['00000000-0000-0000-0000-000000000001']),
+ ('00000000-0000-0000-0000-000000000006', 42, 1790931600000000000, 'checkout', ['00000000-0000-0000-0000-000000000003'])`)
+	require.NoError(t, err)
+	guide, err := os.ReadFile("skills/otel-desktop-viewer/SKILL.md")
+	require.NoError(t, err)
+	_, section, ok := strings.Cut(string(guide), "## Discover span attributes and inspect matching records")
+	require.True(t, ok)
+	_, statement, ok := strings.Cut(section, "otel-desktop-viewer query --json \"\n")
+	require.True(t, ok)
+	statement, _, ok = strings.Cut(statement, "\"\n```")
+	require.True(t, ok)
+	rows, err := db.Query(statement)
+	require.NoError(t, err)
+	defer rows.Close()
+	var traces []string
+	for rows.Next() {
+		var traceID, spanID, service, name string
+		require.NoError(t, rows.Scan(&traceID, &spanID, &service, &name))
+		assert.Equal(t, "000000000000002a", spanID)
+		assert.Equal(t, "checkout", service)
+		traces = append(traces, traceID)
+	}
+	require.NoError(t, rows.Err())
+	assert.Equal(t, []string{"00000000000000000000000000000002", "00000000000000000000000000000001"}, traces)
 }

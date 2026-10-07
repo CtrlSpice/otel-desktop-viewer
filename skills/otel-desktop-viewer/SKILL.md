@@ -44,6 +44,8 @@ Choose the narrowest command for the question:
 | What exact data belongs to one span? | `span <span-id>` or `span <trace-id> <span-id>` |
 | Which logs arrived? | `logs` |
 | Which Metrics arrived? | `metrics` |
+| Which direct span attribute keys and kinds occur? | `attributes keys` |
+| What are one key's common typed values and frequencies? | `attributes values <key>` |
 | What custom aggregation or stored field is needed? | `query <sql>` |
 
 Use `--json` for machine consumption or when exact values, JSON nulls, objects,
@@ -237,7 +239,58 @@ These are stored fields, not Metric-summary display values. `metric_ref` and
 `series_ref` are computed text projections of stored UUIDs. The one-hour
 predicate is query scope, not received.
 
-## Query recent span attribute use
+## Discover span attributes and inspect matching records
+
+```sh
+otel-desktop-viewer attributes keys --json
+otel-desktop-viewer attributes values http.request.method --limit 10 --json
+```
+
+Both default to the last hour and 25 rows. They accept `--endpoint`, `--service`,
+`--since`, `--start`, `--end`, `--limit`, and `--json`, with the same time rules as
+the summary commands. This first slice supports only `--signal traces` and
+`--owner-type span`: direct span attributes, not resource, scope, event or link
+attributes. Keys return distinct key/kind pairs with `foundOn` locations.
+
+Values return complete tagged values, each with its own `foundOn`, exact `count`
+and `denominator`, and computed `relativeFrequency`. Count is the number of
+distinct `(trace_id, span_id)` owners for that value; denominator is the number
+of matching spans carrying the key, before limiting values. Their ratio is a
+unitless DuckDB `DOUBLE`; the displayed percentage is that ratio times 100.
+A span carrying multiple values counts once per value but once in the
+denominator, so percentages can sum above 100%. Results include `truncated`.
+Table output shows value, kind, count and percentage without bars.
+
+Use `query` to find records for a selected typed value, then `trace` or `span`
+to inspect their returned IDs. Keep the endpoint, service and time bounds the
+same across discovery and lookup. For example, this follows the string `POST`
+in `checkout` during one fixed hour:
+
+```sh
+otel-desktop-viewer attributes values http.request.method --service checkout --start 2026-10-02T08:00:00Z --end 2026-10-02T09:00:00Z --json
+otel-desktop-viewer query --json "
+SELECT trace_id_wire(s.trace_id) AS trace_id,
+       span_id_wire(s.span_id) AS span_id, s.service_name, s.name
+FROM spans s
+WHERE s.service_name = 'checkout'
+  AND s.start_time >= 1790928000000000000::UBIGINT
+  AND s.start_time <= 1790931600000000000::UBIGINT
+  AND EXISTS (
+    SELECT 1 FROM attributes a
+    WHERE a.key = 'http.request.method'
+      AND json_extract_string(a.value, '$.kind') = 'string'
+      AND json_extract_string(a.value, '$.value') = 'POST'
+      AND list_contains(s.attribute_ids, a.id)
+  )
+ORDER BY s.start_time DESC, s.trace_id, s.span_id"
+```
+
+Adapt the key, received kind and value together. An `int64` payload is an exact
+decimal string, not a `DOUBLE`. Double SQL single quotes inside key or string
+value literals. Use the existing `trace` and trace-qualified `span` forms above;
+there is no separate attribute-record lookup command.
+
+## Custom span attribute SQL
 
 `attributes` is a canonical `{kind,value}` dictionary. Owner arrays such as
 `spans.attribute_ids` store its database-local IDs. For example:
