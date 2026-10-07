@@ -68,9 +68,10 @@ func newAttributeKeysCommand(client *http.Client, now func() time.Time) *cobra.C
 		Use:   "keys",
 		Short: "🔎 List distinct attribute keys and kinds",
 		Long: "🔎 List each distinct attribute key and received kind once, with its owner location. " +
-			"Defaults to direct span attributes, the last hour and 25 key/kind pairs. Select logs/log or metrics/datapoint explicitly; resource and scope owners work with all three signals.",
+			"Defaults to direct span attributes, the last hour and 25 key/kind pairs. Select the signal and owner explicitly for other locations.",
 		Example: "  otel-desktop-viewer attributes keys\n" +
-			"  otel-desktop-viewer attributes keys --signal traces --owner-type span --service checkout --since 30m --json",
+			"  otel-desktop-viewer attributes keys --signal logs --owner-type log --service checkout --since 30m --json\n" +
+			"  otel-desktop-viewer attributes keys --signal metrics --owner-type scope --json",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cmd.SilenceUsage, cmd.SilenceErrors = true, true
@@ -116,13 +117,15 @@ func newAttributeValuesCommand(client *http.Client, now func() time.Time) *cobra
 		Use:   "values <key>",
 		Short: "🔎 Count exact typed values for one attribute key",
 		Long: "🔎 Rank attribute values by distinct telemetry-record count: spans, logs or Metric datapoints for the selected signal. " +
+			"Events/links count their owning spans; exemplars and Metric metadata count associated datapoints. Time and service filters apply to those same records. " +
 			"Resource/scope values count referencing records, not distinct resources/scopes. The denominator is matching records whose selected owner carries the key, before the result limit. " +
 			"A histogram datapoint counts once, not by its observation count. Kinds stay distinct. Defaults to direct span attributes, the last hour and 25 values. " +
 			"Columns show value, kind, count and percentage; --json retains the tagged value, owner location, count, denominator and relative frequency. " +
 			"A record with multiple values for the key contributes once to each value and once to the denominator, so percentages may sum above 100%. " +
 			"Use query to find records carrying a selected typed value, then trace or span to inspect them; skills includes a checked SQL example.",
 		Example: "  otel-desktop-viewer attributes values http.method\n" +
-			"  otel-desktop-viewer attributes values http.method --service checkout --limit 10 --json",
+			"  otel-desktop-viewer attributes values http.method --service checkout --limit 10 --json\n" +
+			"  otel-desktop-viewer attributes values region --signal metrics --owner-type resource --json",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage, cmd.SilenceErrors = true, true
@@ -173,7 +176,7 @@ func addAttributeFlags(cmd *cobra.Command, options *telemetrySearchOptions, sign
 	cmd.Flags().Lookup("service").Usage = "Only records for this service"
 	cmd.Flags().Lookup("json").Usage = "Emit exact JSON with truncation instead of columns"
 	cmd.Flags().StringVar(signal, "signal", "traces", "Telemetry signal: traces, logs or metrics")
-	cmd.Flags().StringVar(ownerType, "owner-type", "span", "Attribute owner: span (traces), log (logs), datapoint (metrics), resource or scope")
+	cmd.Flags().StringVar(ownerType, "owner-type", "span", "Attribute owner: span/event/link (traces), log (logs), datapoint/exemplar/metadata (metrics), resource or scope")
 }
 
 func resolveAttributeSearch(cmd *cobra.Command, options telemetrySearchOptions, signal, ownerType string, now time.Time) (attributeSearchQuery, error) {
@@ -208,18 +211,36 @@ func attributeSQLLiteral(value string) string {
 // These projections keep the counted record identity separate from the owner
 // of the attributes. Resource/scope joins do not deduplicate referencing records.
 func attributeRecordsSQL(signal, ownerType string) (string, error) {
-	var identity, timestamp, service, from, directOwner, attributes, resource, scope string
+	var identity, timestamp, service, from, directOwner, attributes, resource, scope, allowed string
 	switch signal {
 	case "traces":
 		identity, timestamp, service = "struct_pack(trace_id := s.trace_id, span_id := s.span_id)", "s.start_time", "s.service_name"
 		from, directOwner, attributes, resource, scope = "spans s", "span", "s.attribute_ids", "s.resource_id", "s.scope_id"
+		allowed = "span, event, link, resource or scope"
+		switch ownerType {
+		case "event":
+			from += " JOIN events e ON e.trace_id = s.trace_id AND e.span_id = s.span_id"
+			attributes, directOwner = "e.attribute_ids", "event"
+		case "link":
+			from += " JOIN links l ON l.trace_id = s.trace_id AND l.span_id = s.span_id"
+			attributes, directOwner = "l.attribute_ids", "link"
+		}
 	case "logs":
 		identity, timestamp, service = "l.id", "coalesce(nullif(l.timestamp, 0), l.observed_timestamp)", "l.service_name"
 		from, directOwner, attributes, resource, scope = "logs l", "log", "l.attribute_ids", "l.resource_id", "l.scope_id"
+		allowed = "log, resource or scope"
 	case "metrics":
 		identity, timestamp, service = "d.id", "d.timestamp", "m.service_name"
 		from, directOwner = "metric_datapoints d JOIN metrics m ON m.id = d.metric_id", "datapoint"
 		attributes, resource, scope = "d.attribute_ids", "m.resource_id", "m.scope_id"
+		allowed = "datapoint, exemplar, metadata, resource or scope"
+		switch ownerType {
+		case "exemplar":
+			from += " JOIN exemplars e ON e.metric_datapoint_id = d.id"
+			attributes, directOwner = "e.attribute_ids", "exemplar"
+		case "metadata":
+			attributes, directOwner = "m.metadata_ids", "metadata"
+		}
 	default:
 		return "", fmt.Errorf("unsupported --signal %q: use traces, logs or metrics", signal)
 	}
@@ -232,7 +253,7 @@ func attributeRecordsSQL(signal, ownerType string) (string, error) {
 		from += " JOIN scopes sc ON sc.id = " + scope
 		attributes = "sc.attribute_ids"
 	default:
-		return "", fmt.Errorf("--signal %s supports --owner-type %s, resource or scope; got %q", signal, directOwner, ownerType)
+		return "", fmt.Errorf("--signal %s supports --owner-type %s; got %q", signal, allowed, ownerType)
 	}
 	return "SELECT " + identity + " AS record_id, " + timestamp + " AS time_ns, " + service +
 		" AS service_name, " + attributes + " AS attribute_ids FROM " + from, nil

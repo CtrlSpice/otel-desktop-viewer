@@ -253,7 +253,7 @@ INSERT INTO spans (trace_id, span_id, start_time, service_name, attribute_ids) V
 	require.NoError(t, err)
 	guide, err := os.ReadFile("skills/otel-desktop-viewer/SKILL.md")
 	require.NoError(t, err)
-	_, section, ok := strings.Cut(strings.ReplaceAll(string(guide), "\r\n", "\n"), "## Discover span attributes and inspect matching records")
+	_, section, ok := strings.Cut(strings.ReplaceAll(string(guide), "\r\n", "\n"), "## Discover attributes and inspect matching records")
 	require.True(t, ok)
 	_, statement, ok := strings.Cut(section, "otel-desktop-viewer query --json \"\n")
 	require.True(t, ok)

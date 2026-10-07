@@ -259,3 +259,96 @@ func TestAttributeResourceScopeFrequenciesAcrossSignals(t *testing.T) {
 		})
 	}
 }
+
+func TestAttributeChildOwnersFollowTheirRecords(t *testing.T) {
+	endpoint, te, _, me := startAttributeIntegration(t)
+	traces, metrics := ptrace.NewTraces(), pmetric.NewMetrics()
+	parents := []struct {
+		service   string
+		timestamp pcommon.Timestamp
+	}{
+		{"checkout", 6400000000000},
+		{"checkout", 10000000000000},
+		{"checkout", 10000000000001},
+		{"other", 8000000000000},
+		{"checkout", 6399999999999},
+	}
+	for i, parent := range parents {
+		rs := traces.ResourceSpans().AppendEmpty()
+		rs.Resource().Attributes().PutStr("service.name", parent.service)
+		span := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		span.SetTraceID(pcommon.TraceID{15: byte(i + 1)})
+		span.SetSpanID(pcommon.SpanID{7: 42})
+		span.SetStartTimestamp(parent.timestamp)
+		span.SetEndTimestamp(parent.timestamp + 1)
+		span.Attributes().PutStr("direct.only", "exclude")
+		rm := metrics.ResourceMetrics().AppendEmpty()
+		rm.Resource().Attributes().PutStr("service.name", parent.service)
+		metric := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		metric.SetName("requests")
+		metric.Metadata().PutStr("phase", "alpha")
+		dp := metric.SetEmptyGauge().DataPoints().AppendEmpty()
+		dp.SetTimestamp(parent.timestamp)
+		dp.SetIntValue(1)
+		dp.Attributes().PutStr("direct.only", "exclude")
+		// Duplicate child values on a parent count that parent once. The second
+		// eligible parent also carries beta, so shares can add to more than 100%.
+		for j, value := range []string{"alpha", "alpha", "beta"} {
+			if j == 2 && i != 1 {
+				continue
+			}
+			event := span.Events().AppendEmpty()
+			event.SetName("phase")
+			event.SetTimestamp(1)
+			event.Attributes().PutStr("phase", value)
+			link := span.Links().AppendEmpty()
+			link.SetTraceID(pcommon.TraceID{15: 4})
+			link.SetSpanID(pcommon.SpanID{7: 42})
+			link.Attributes().PutStr("phase", value)
+			exemplar := dp.Exemplars().AppendEmpty()
+			exemplar.SetTimestamp(1)
+			exemplar.SetIntValue(int64(j))
+			// No correlation IDs: metric_datapoint_id supplies ownership.
+			exemplar.FilteredAttributes().PutStr("phase", value)
+		}
+	}
+	require.NoError(t, te.ConsumeTraces(context.Background(), traces))
+	require.NoError(t, me.ConsumeMetrics(context.Background(), metrics))
+	for _, pair := range []attributeLocation{
+		{Signal: "traces", OwnerType: "event"},
+		{Signal: "traces", OwnerType: "link"},
+		{Signal: "metrics", OwnerType: "exemplar"},
+		{Signal: "metrics", OwnerType: "metadata"},
+	} {
+		t.Run(pair.Signal+"/"+pair.OwnerType, func(t *testing.T) {
+			flags := []string{"--signal", pair.Signal, "--owner-type", pair.OwnerType, "--service", "checkout", "--json"}
+			var keys attributeKeysResult
+			require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, endpoint, append([]string{"keys"}, flags...)...)), &keys))
+			assert.Equal(t, []attributeKey{{Key: "phase", Kind: "string", FoundOn: []attributeLocation{pair}}}, keys.Keys)
+			var values attributeValuesResult
+			require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, endpoint, append([]string{"values", "phase"}, flags...)...)), &values))
+			expectedLen := 2
+			if pair.OwnerType == "metadata" {
+				expectedLen = 1
+			}
+			require.Len(t, values.Values, expectedLen)
+			assert.False(t, values.Truncated)
+			assert.JSONEq(t, `{"kind":"string","value":"alpha"}`, string(values.Values[0].Value))
+			assert.Equal(t, uint64(2), values.Values[0].Count)
+			assert.Equal(t, uint64(2), values.Values[0].Denominator)
+			assert.Equal(t, 1.0, values.Values[0].RelativeFrequency)
+			assert.Equal(t, []attributeLocation{pair}, values.Values[0].FoundOn)
+			if expectedLen == 2 {
+				assert.JSONEq(t, `{"kind":"string","value":"beta"}`, string(values.Values[1].Value))
+				assert.Equal(t, uint64(1), values.Values[1].Count)
+				assert.Equal(t, uint64(2), values.Values[1].Denominator)
+				assert.Equal(t, 0.5, values.Values[1].RelativeFrequency)
+			}
+			var limited attributeValuesResult
+			require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, endpoint, append([]string{"values", "phase", "--limit", "1"}, flags...)...)), &limited))
+			assert.Equal(t, expectedLen == 2, limited.Truncated)
+			require.Len(t, limited.Values, 1)
+			assert.Equal(t, uint64(2), limited.Values[0].Denominator)
+		})
+	}
+}

@@ -44,7 +44,7 @@ Choose the narrowest command for the question:
 | What exact data belongs to one span? | `span <span-id>` or `span <trace-id> <span-id>` |
 | Which logs arrived? | `logs` |
 | Which Metrics arrived? | `metrics` |
-| Which direct span attribute keys and kinds occur? | `attributes keys` |
+| Which attribute keys and kinds occur? | `attributes keys` |
 | What are one key's common typed values and frequencies? | `attributes values <key>` |
 | What custom aggregation or stored field is needed? | `query <sql>` |
 
@@ -239,25 +239,45 @@ These are stored fields, not Metric-summary display values. `metric_ref` and
 `series_ref` are computed text projections of stored UUIDs. The one-hour
 predicate is query scope, not received.
 
-## Discover span attributes and inspect matching records
+## Discover attributes and inspect matching records
 
 ```sh
 otel-desktop-viewer attributes keys --json
 otel-desktop-viewer attributes values http.request.method --limit 10 --json
+otel-desktop-viewer attributes keys --signal logs --owner-type log --json
+otel-desktop-viewer attributes values region --signal metrics --owner-type resource --json
 ```
 
 Both default to the last hour and 25 rows. They accept `--endpoint`, `--service`,
 `--since`, `--start`, `--end`, `--limit`, and `--json`, with the same time rules as
-the summary commands. This first slice supports only `--signal traces` and
-`--owner-type span`: direct span attributes, not resource, scope, event or link
-attributes. Keys return distinct key/kind pairs with `foundOn` locations.
+the summary commands. Defaults remain `--signal traces --owner-type span`;
+select both flags when changing to logs or Metric datapoints. Keys return
+distinct key/kind pairs with actual `foundOn` locations.
+
+| Signal | Supported owners | Counted records | Time filter |
+| --- | --- | --- | --- |
+| `traces` | `span`, `event`, `link`, `resource`, `scope` | Distinct `(trace_id, span_id)` pairs | Received span start |
+| `logs` | `log`, `resource`, `scope` | Distinct log records | Received timestamp; observed timestamp when timestamp is zero |
+| `metrics` | `datapoint`, `exemplar`, `metadata`, `resource`, `scope` | Distinct datapoints | Received datapoint timestamp |
+
+Resource/scope attributes stay on those owners. Frequencies count referencing
+records: 100 spans sharing a west resource and one referencing an east resource
+give counts 100 and 1, not one resource each. A histogram datapoint counts once,
+not by its observations or buckets. Service and time filters apply to the same
+counted records. `--service` matches the stored resource-derived `service_name`
+projection. Events and links count their owning spans; exemplars count their
+owning datapoints; metadata counts the Metric's datapoints. Repeated child values
+count a parent once per value. Time bounds apply to the counted span/datapoint,
+not the event/exemplar timestamp. Link targets and exemplar trace/span
+correlations do not determine ownership. Metric metadata/resource/scope lookup follows current stored associations,
+not a reconstruction of their history at each datapoint time.
 
 Values return complete tagged values, each with its own `foundOn`, exact `count`
 and `denominator`, and computed `relativeFrequency`. Count is the number of
-distinct `(trace_id, span_id)` owners for that value; denominator is the number
-of matching spans carrying the key, before limiting values. Their ratio is a
+distinct matching records associated with that value; denominator is the number
+of matching records whose selected owner carries the key, before limiting values. Their ratio is a
 unitless DuckDB `DOUBLE`; the displayed percentage is that ratio times 100.
-A span carrying multiple values counts once per value but once in the
+A record associated with multiple values counts once per value but once in the
 denominator, so percentages can sum above 100%. Results include `truncated`.
 Table output shows value, kind, count and percentage without bars.
 
