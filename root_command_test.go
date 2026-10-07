@@ -42,7 +42,7 @@ USAGE
   otel-desktop-viewer <command> [flags]
 
 COMMANDS
-  attributes 🔎 Discover span attribute keys and values
+  attributes 🔎 Discover attribute keys and values
   query     🔎 Run SQL against a running viewer
   traces    🧵 Search traces in a running viewer
   trace     🧵 Inspect one complete trace

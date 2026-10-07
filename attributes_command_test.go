@@ -143,7 +143,7 @@ INSERT INTO spans VALUES
 		assert.Equal(t, uint64(3), limited.Values[0].Denominator, "limit must not change the denominator")
 	}
 	output := attributeTestRun(t, viewer.URL, "values", "method", "--service", "checkout", "--limit", "1")
-	for _, text := range []string{"value", "kind", "count", "percentage", `"GET"`, "more rows available"} {
+	for _, text := range []string{"value", "kind", "count", "percentage", `"GET"`, "66.67%", "more rows available"} {
 		assert.Contains(t, output, text)
 	}
 	assert.NotContains(t, output, "█")
@@ -218,7 +218,7 @@ func TestAttributesOfflineHelpAndValidation(t *testing.T) {
 			}
 		})
 	}
-	for _, args := range [][]string{{"values"}, {"keys", "extra"}, {"keys", "--signal", "logs"}, {"values", "key", "--owner-type", "resource"}, {"keys", "--limit", "0"}, {"keys", "--since", "1h", "--start", "2026-10-02T00:00:00Z"}} {
+	for _, args := range [][]string{{"values"}, {"keys", "extra"}, {"keys", "--signal", "logs"}, {"values", "key", "--owner-type", "datapoint"}, {"keys", "--signal", "unknown"}, {"keys", "--limit", "0"}, {"keys", "--since", "1h", "--start", "2026-10-02T00:00:00Z"}} {
 		cmd := newAttributesCommand(&http.Client{Transport: telemetryRoundTripFunc(func(*http.Request) (*http.Response, error) {
 			t.Fatal("invalid input made an HTTP request")
 			return nil, nil
@@ -253,7 +253,7 @@ INSERT INTO spans (trace_id, span_id, start_time, service_name, attribute_ids) V
 	require.NoError(t, err)
 	guide, err := os.ReadFile("skills/otel-desktop-viewer/SKILL.md")
 	require.NoError(t, err)
-	_, section, ok := strings.Cut(strings.ReplaceAll(string(guide), "\r\n", "\n"), "## Discover span attributes and inspect matching records")
+	_, section, ok := strings.Cut(strings.ReplaceAll(string(guide), "\r\n", "\n"), "## Discover attributes and inspect matching records")
 	require.True(t, ok)
 	_, statement, ok := strings.Cut(section, "otel-desktop-viewer query --json \"\n")
 	require.True(t, ok)

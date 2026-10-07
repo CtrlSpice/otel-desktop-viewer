@@ -17,6 +17,12 @@ type attributeLocation struct {
 	OwnerType string `json:"ownerType"`
 }
 
+type attributeSearchQuery struct {
+	telemetrySearchQuery
+	location attributeLocation
+	records  string
+}
+
 type attributeKey struct {
 	Key     string              `json:"key"`
 	Kind    string              `json:"kind"`
@@ -45,8 +51,8 @@ type attributeValuesResult struct {
 func newAttributesCommand(client *http.Client, now func() time.Time) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "attributes",
-		Short: "🔎 Discover span attribute keys and values",
-		Long:  "🔎 Discover direct span attributes in a running viewer, keeping received kinds and owner associations.",
+		Short: "🔎 Discover attribute keys and values",
+		Long:  "🔎 Discover attributes in a running viewer, keeping received kinds and owner associations.",
 		Args:  cobra.NoArgs,
 		RunE:  func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
@@ -60,11 +66,12 @@ func newAttributeKeysCommand(client *http.Client, now func() time.Time) *cobra.C
 	var jsonOutput bool
 	cmd := &cobra.Command{
 		Use:   "keys",
-		Short: "🔎 List distinct span attribute keys and kinds",
-		Long: "🔎 List each distinct direct span attribute key and received kind once, with its owner location. " +
-			"Defaults to the last hour and 25 key/kind pairs. Resource, scope, event and link attributes are excluded.",
+		Short: "🔎 List distinct attribute keys and kinds",
+		Long: "🔎 List each distinct attribute key and received kind once, with its owner location. " +
+			"Defaults to direct span attributes, the last hour and 25 key/kind pairs. Select the signal and owner explicitly for other locations.",
 		Example: "  otel-desktop-viewer attributes keys\n" +
-			"  otel-desktop-viewer attributes keys --signal traces --owner-type span --service checkout --since 30m --json",
+			"  otel-desktop-viewer attributes keys --signal logs --owner-type log --service checkout --since 30m --json\n" +
+			"  otel-desktop-viewer attributes keys --signal metrics --owner-type scope --json",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cmd.SilenceUsage, cmd.SilenceErrors = true, true
@@ -108,15 +115,17 @@ func newAttributeValuesCommand(client *http.Client, now func() time.Time) *cobra
 	var jsonOutput bool
 	cmd := &cobra.Command{
 		Use:   "values <key>",
-		Short: "🔎 Count exact typed values for one span attribute key",
-		Long: "🔎 Rank direct span attribute values by distinct owning-span count. " +
-			"The denominator is all matching spans carrying the exact key, before the result limit. " +
-			"Kinds stay distinct. Defaults to the last hour and 25 values. " +
+		Short: "🔎 Count exact typed values for one attribute key",
+		Long: "🔎 Rank attribute values by distinct telemetry-record count: spans, logs or Metric datapoints for the selected signal. " +
+			"Events/links count their owning spans; exemplars and Metric metadata count associated datapoints. Events and exemplars use their own timestamps; other owners use the counted record's time. Service filters follow the associated record. " +
+			"Resource/scope values count referencing records, not distinct resources/scopes. The denominator is matching records whose selected owner carries the key, before the result limit. " +
+			"A histogram datapoint counts once, not by its observation count. Kinds stay distinct. Defaults to direct span attributes, the last hour and 25 values. " +
 			"Columns show value, kind, count and percentage; --json retains the tagged value, owner location, count, denominator and relative frequency. " +
-			"A span with multiple values for the key contributes once to each value and once to the denominator, so percentages may sum above 100%. " +
+			"A record with multiple values for the key contributes once to each value and once to the denominator, so percentages may sum above 100%. " +
 			"Use query to find records carrying a selected typed value, then trace or span to inspect them; skills includes a checked SQL example.",
 		Example: "  otel-desktop-viewer attributes values http.method\n" +
-			"  otel-desktop-viewer attributes values http.method --service checkout --limit 10 --json",
+			"  otel-desktop-viewer attributes values http.method --service checkout --limit 10 --json\n" +
+			"  otel-desktop-viewer attributes values region --signal metrics --owner-type resource --json",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage, cmd.SilenceErrors = true, true
@@ -148,7 +157,7 @@ func newAttributeValuesCommand(client *http.Client, now func() time.Time) *cobra
 				if err := json.Unmarshal(value.Value, &tagged); err != nil {
 					return fmt.Errorf("decode attribute value: %w", err)
 				}
-				rows = append(rows, []any{tagged.Value, tagged.Kind, value.Count, strconv.FormatFloat(value.RelativeFrequency*100, 'g', -1, 64) + "%"})
+				rows = append(rows, []any{tagged.Value, tagged.Kind, value.Count, strconv.FormatFloat(value.RelativeFrequency*100, 'f', 2, 64) + "%"})
 			}
 			_, err = io.WriteString(cmd.OutOrStdout(), formatQueryColumns(queryResult{
 				Columns: []queryColumn{{Name: "value"}, {Name: "kind"}, {Name: "count"}, {Name: "percentage"}},
@@ -164,17 +173,19 @@ func newAttributeValuesCommand(client *http.Client, now func() time.Time) *cobra
 func addAttributeFlags(cmd *cobra.Command, options *telemetrySearchOptions, signal, ownerType *string, jsonOutput *bool) {
 	addTelemetrySearchFlags(cmd, options, jsonOutput)
 	cmd.Flags().Lookup("limit").Usage = "Maximum rows to return"
-	cmd.Flags().Lookup("service").Usage = "Only spans for this service"
+	cmd.Flags().Lookup("service").Usage = "Only records for this service"
 	cmd.Flags().Lookup("json").Usage = "Emit exact JSON with truncation instead of columns"
-	cmd.Flags().StringVar(signal, "signal", "traces", "Telemetry signal (traces supported)")
-	cmd.Flags().StringVar(ownerType, "owner-type", "span", "Attribute owner (span supported)")
+	cmd.Flags().StringVar(signal, "signal", "traces", "Telemetry signal: traces, logs or metrics")
+	cmd.Flags().StringVar(ownerType, "owner-type", "span", "Attribute owner: span/event/link (traces), log (logs), datapoint/exemplar/metadata (metrics), resource or scope")
 }
 
-func resolveAttributeSearch(cmd *cobra.Command, options telemetrySearchOptions, signal, ownerType string, now time.Time) (telemetrySearchQuery, error) {
-	if signal != "traces" || ownerType != "span" {
-		return telemetrySearchQuery{}, fmt.Errorf("attribute commands currently support --signal traces --owner-type span")
+func resolveAttributeSearch(cmd *cobra.Command, options telemetrySearchOptions, signal, ownerType string, now time.Time) (attributeSearchQuery, error) {
+	records, err := attributeRecordsSQL(signal, ownerType)
+	if err != nil {
+		return attributeSearchQuery{}, err
 	}
-	return resolveTelemetrySearch(options, cmd.Flags().Changed("since"), now)
+	query, err := resolveTelemetrySearch(options, cmd.Flags().Changed("since"), now)
+	return attributeSearchQuery{telemetrySearchQuery: query, location: attributeLocation{Signal: signal, OwnerType: ownerType}, records: records}, err
 }
 
 func decodeAttributeEntry(row []any, entry any) error {
@@ -197,13 +208,66 @@ func attributeSQLLiteral(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
-func attributeSpanPredicate(query telemetrySearchQuery) string {
+// These projections keep the counted record identity separate from the owner
+// of the attributes. Resource/scope joins do not deduplicate referencing records.
+func attributeRecordsSQL(signal, ownerType string) (string, error) {
+	var identity, timestamp, service, from, directOwner, attributes, resource, scope, allowed string
+	switch signal {
+	case "traces":
+		identity, timestamp, service = "struct_pack(trace_id := s.trace_id, span_id := s.span_id)", "s.start_time", "s.service_name"
+		from, directOwner, attributes, resource, scope = "spans s", "span", "s.attribute_ids", "s.resource_id", "s.scope_id"
+		allowed = "span, event, link, resource or scope"
+		switch ownerType {
+		case "event":
+			from += " JOIN events e ON e.trace_id = s.trace_id AND e.span_id = s.span_id"
+			attributes, directOwner = "e.attribute_ids", "event"
+			timestamp = "e.timestamp"
+		case "link":
+			from += " JOIN links l ON l.trace_id = s.trace_id AND l.span_id = s.span_id"
+			attributes, directOwner = "l.attribute_ids", "link"
+		}
+	case "logs":
+		identity, timestamp, service = "l.id", "coalesce(nullif(l.timestamp, 0), l.observed_timestamp)", "l.service_name"
+		from, directOwner, attributes, resource, scope = "logs l", "log", "l.attribute_ids", "l.resource_id", "l.scope_id"
+		allowed = "log, resource or scope"
+	case "metrics":
+		identity, timestamp, service = "d.id", "d.timestamp", "m.service_name"
+		from, directOwner = "metric_datapoints d JOIN metrics m ON m.id = d.metric_id", "datapoint"
+		attributes, resource, scope = "d.attribute_ids", "m.resource_id", "m.scope_id"
+		allowed = "datapoint, exemplar, metadata, resource or scope"
+		switch ownerType {
+		case "exemplar":
+			from += " JOIN exemplars e ON e.metric_datapoint_id = d.id"
+			attributes, directOwner = "e.attribute_ids", "exemplar"
+			timestamp = "e.timestamp"
+		case "metadata":
+			attributes, directOwner = "m.metadata_ids", "metadata"
+		}
+	default:
+		return "", fmt.Errorf("unsupported --signal %q: use traces, logs or metrics", signal)
+	}
+	switch ownerType {
+	case directOwner:
+	case "resource":
+		from += " JOIN resources r ON r.id = " + resource
+		attributes = "r.attribute_ids"
+	case "scope":
+		from += " JOIN scopes sc ON sc.id = " + scope
+		attributes = "sc.attribute_ids"
+	default:
+		return "", fmt.Errorf("--signal %s supports --owner-type %s; got %q", signal, allowed, ownerType)
+	}
+	return "SELECT " + identity + " AS record_id, " + timestamp + " AS time_ns, " + service +
+		" AS service_name, " + attributes + " AS attribute_ids FROM " + from, nil
+}
+
+func attributeRecordPredicate(query telemetrySearchQuery) string {
 	predicates := []string{"true"}
 	if query.StartTime != nil {
-		predicates = append(predicates, "s.start_time >= "+attributeSQLLiteral(*query.StartTime)+"::UBIGINT")
+		predicates = append(predicates, "s.time_ns >= "+attributeSQLLiteral(*query.StartTime)+"::UBIGINT")
 	}
 	if query.EndTime != nil {
-		predicates = append(predicates, "s.start_time <= "+attributeSQLLiteral(*query.EndTime)+"::UBIGINT")
+		predicates = append(predicates, "s.time_ns <= "+attributeSQLLiteral(*query.EndTime)+"::UBIGINT")
 	}
 	if query.Service != "" {
 		predicates = append(predicates, "s.service_name = "+attributeSQLLiteral(query.Service))
@@ -211,33 +275,38 @@ func attributeSpanPredicate(query telemetrySearchQuery) string {
 	return strings.Join(predicates, " AND ")
 }
 
-func attributeKeysSQL(query telemetrySearchQuery) string {
-	return `SELECT json_object('key', a.key, 'kind', json_extract_string(a.value, '$.kind'),
-    'foundOn', json('[{"signal":"traces","ownerType":"span"}]')) AS entry
-FROM spans s
+func attributeFoundOnSQL(location attributeLocation) string {
+	return "json_array(json_object('signal', " + attributeSQLLiteral(location.Signal) + ", 'ownerType', " + attributeSQLLiteral(location.OwnerType) + "))"
+}
+
+func attributeKeysSQL(query attributeSearchQuery) string {
+	return `WITH records AS (` + query.records + `)
+SELECT json_object('key', a.key, 'kind', json_extract_string(a.value, '$.kind'),
+    'foundOn', ` + attributeFoundOnSQL(query.location) + `) AS entry
+FROM records s
 CROSS JOIN unnest(s.attribute_ids) owned(attribute_id)
 JOIN attributes a ON a.id = owned.attribute_id
-WHERE ` + attributeSpanPredicate(query) + `
+WHERE ` + attributeRecordPredicate(query.telemetrySearchQuery) + `
 GROUP BY a.key, json_extract_string(a.value, '$.kind')
 ORDER BY a.key, json_extract_string(a.value, '$.kind')`
 }
 
-func attributeValuesSQL(query telemetrySearchQuery, key string) string {
-	return `WITH owned_values AS (
-    SELECT s.trace_id, s.span_id, a.value
-    FROM spans s
+func attributeValuesSQL(query attributeSearchQuery, key string) string {
+	return `WITH records AS (` + query.records + `), owned_values AS (
+    SELECT s.record_id, a.value
+    FROM records s
     CROSS JOIN unnest(s.attribute_ids) owned(attribute_id)
     JOIN attributes a ON a.id = owned.attribute_id
-    WHERE ` + attributeSpanPredicate(query) + ` AND a.key = ` + attributeSQLLiteral(key) + `
+    WHERE ` + attributeRecordPredicate(query.telemetrySearchQuery) + ` AND a.key = ` + attributeSQLLiteral(key) + `
 ), value_counts AS (
-    SELECT value, count(DISTINCT struct_pack(trace_id := trace_id, span_id := span_id)) AS count
+    SELECT value, count(DISTINCT record_id) AS count
     FROM owned_values GROUP BY value
 ), denominator AS (
-    SELECT count(DISTINCT struct_pack(trace_id := trace_id, span_id := span_id)) AS count
+    SELECT count(DISTINCT record_id) AS count
     FROM owned_values
 )
 SELECT json_object('value', v.value,
-    'foundOn', json('[{"signal":"traces","ownerType":"span"}]'),
+    'foundOn', ` + attributeFoundOnSQL(query.location) + `,
     'count', v.count, 'denominator', d.count,
     'relativeFrequency', v.count::DOUBLE / nullif(d.count, 0)::DOUBLE) AS entry
 FROM value_counts v CROSS JOIN denominator d
