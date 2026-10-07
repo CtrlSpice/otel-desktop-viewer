@@ -143,7 +143,7 @@ INSERT INTO spans VALUES
 		assert.Equal(t, uint64(3), limited.Values[0].Denominator, "limit must not change the denominator")
 	}
 	output := attributeTestRun(t, viewer.URL, "values", "method", "--service", "checkout", "--limit", "1")
-	for _, text := range []string{"value", "kind", "count", "percentage", `"GET"`, "more rows available"} {
+	for _, text := range []string{"value", "kind", "count", "percentage", `"GET"`, "66.67%", "more rows available"} {
 		assert.Contains(t, output, text)
 	}
 	assert.NotContains(t, output, "█")

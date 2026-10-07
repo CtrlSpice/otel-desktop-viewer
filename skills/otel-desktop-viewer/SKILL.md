@@ -280,7 +280,8 @@ Values return complete tagged values, each with its own `foundOn`, exact `count`
 and `denominator`, and computed `relativeFrequency`. Count is the number of
 distinct matching records associated with that value; denominator is the number
 of matching records whose selected owner carries the key, before limiting values. Their ratio is a
-unitless DuckDB `DOUBLE`; the displayed percentage is that ratio times 100.
+unitless DuckDB `DOUBLE`; the displayed percentage is that ratio times 100,
+rounded to two decimal places. JSON retains the unrounded ratio.
 A record associated with multiple values counts once per value but once in the
 denominator, so percentages can sum above 100%. Results include `truncated`.
 Table output shows value, kind, count and percentage without bars.

@@ -151,7 +151,7 @@ func TestAttributesThroughProductionQueryHandler(t *testing.T) {
 	assert.JSONEq(t, `{"kind":"int64","value":"9223372036854775807"}`, string(integer.Values[0].Value))
 	assert.Equal(t, uint64(8), integer.Values[0].Count)
 	assert.Equal(t, 1.0, integer.Values[0].RelativeFrequency)
-	assert.Contains(t, attributeTestRun(t, endpoint, "values", "integer"), "100%")
+	assert.Contains(t, attributeTestRun(t, endpoint, "values", "integer"), "100.00%")
 	assert.Contains(t, attributeTestRun(t, endpoint, "values", "integer"), "9223372036854775807")
 }
 

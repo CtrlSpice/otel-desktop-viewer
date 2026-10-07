@@ -157,7 +157,7 @@ func newAttributeValuesCommand(client *http.Client, now func() time.Time) *cobra
 				if err := json.Unmarshal(value.Value, &tagged); err != nil {
 					return fmt.Errorf("decode attribute value: %w", err)
 				}
-				rows = append(rows, []any{tagged.Value, tagged.Kind, value.Count, strconv.FormatFloat(value.RelativeFrequency*100, 'g', -1, 64) + "%"})
+				rows = append(rows, []any{tagged.Value, tagged.Kind, value.Count, strconv.FormatFloat(value.RelativeFrequency*100, 'f', 2, 64) + "%"})
 			}
 			_, err = io.WriteString(cmd.OutOrStdout(), formatQueryColumns(queryResult{
 				Columns: []queryColumn{{Name: "value"}, {Name: "kind"}, {Name: "count"}, {Name: "percentage"}},
