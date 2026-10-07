@@ -299,14 +299,14 @@ func TestAttributeChildOwnersFollowTheirRecords(t *testing.T) {
 			}
 			event := span.Events().AppendEmpty()
 			event.SetName("phase")
-			event.SetTimestamp(1)
+			event.SetTimestamp(parent.timestamp)
 			event.Attributes().PutStr("phase", value)
 			link := span.Links().AppendEmpty()
 			link.SetTraceID(pcommon.TraceID{15: 4})
 			link.SetSpanID(pcommon.SpanID{7: 42})
 			link.Attributes().PutStr("phase", value)
 			exemplar := dp.Exemplars().AppendEmpty()
-			exemplar.SetTimestamp(1)
+			exemplar.SetTimestamp(parent.timestamp)
 			exemplar.SetIntValue(int64(j))
 			// No correlation IDs: metric_datapoint_id supplies ownership.
 			exemplar.FilteredAttributes().PutStr("phase", value)
@@ -370,12 +370,16 @@ func TestAttributeKindsSurviveEveryOwnerPath(t *testing.T) {
 	dp := metric.SetEmptyGauge().DataPoints().AppendEmpty()
 	dp.SetTimestamp(8000000000000)
 	dp.SetIntValue(1)
+	event := span.Events().AppendEmpty()
+	event.SetTimestamp(8000000000000)
+	exemplar := dp.Exemplars().AppendEmpty()
+	exemplar.SetTimestamp(8000000000000)
 	owners := []struct {
 		location   attributeLocation
 		attributes pcommon.Map
 	}{
 		{attributeLocation{"traces", "span"}, span.Attributes()},
-		{attributeLocation{"traces", "event"}, span.Events().AppendEmpty().Attributes()},
+		{attributeLocation{"traces", "event"}, event.Attributes()},
 		{attributeLocation{"traces", "link"}, span.Links().AppendEmpty().Attributes()},
 		{attributeLocation{"traces", "resource"}, rs.Resource().Attributes()},
 		{attributeLocation{"traces", "scope"}, ss.Scope().Attributes()},
@@ -383,7 +387,7 @@ func TestAttributeKindsSurviveEveryOwnerPath(t *testing.T) {
 		{attributeLocation{"logs", "resource"}, rl.Resource().Attributes()},
 		{attributeLocation{"logs", "scope"}, sl.Scope().Attributes()},
 		{attributeLocation{"metrics", "datapoint"}, dp.Attributes()},
-		{attributeLocation{"metrics", "exemplar"}, dp.Exemplars().AppendEmpty().FilteredAttributes()},
+		{attributeLocation{"metrics", "exemplar"}, exemplar.FilteredAttributes()},
 		{attributeLocation{"metrics", "metadata"}, metric.Metadata()},
 		{attributeLocation{"metrics", "resource"}, rm.Resource().Attributes()},
 		{attributeLocation{"metrics", "scope"}, sm.Scope().Attributes()},
@@ -471,5 +475,93 @@ func TestAttributeLogTimePrecedenceAndUnsignedBounds(t *testing.T) {
 			"--start", "2554-07-21T23:34:33.709551615Z", "--end", "2554-07-21T23:34:33.709551615Z", "--json")), &upper))
 		require.Len(t, upper.Values, 1)
 		assert.JSONEq(t, `{"kind":"int64","value":"6"}`, string(upper.Values[0].Value))
+	}
+}
+
+func TestAttributeEventsAndExemplarsUseTheirOwnTime(t *testing.T) {
+	endpoint, te, _, me := startAttributeIntegration(t)
+	traces, metrics := ptrace.NewTraces(), pmetric.NewMetrics()
+	type child struct {
+		timestamp pcommon.Timestamp
+		value     string
+	}
+	fixtures := []struct {
+		parentTime pcommon.Timestamp
+		service    string
+		children   []child
+	}{
+		{1, "checkout", []child{{6400000000000, "alpha"}, {8000000000000, "alpha"}, {10000000000001, "outside"}}},
+		{8000000000000, "checkout", []child{{6399999999999, "outside"}, {10000000000001, "outside"}}},
+		{10000000000001, "checkout", []child{{10000000000000, "beta"}}},
+		{8000000000000, "other", []child{{8000000000000, "other-service"}}},
+		{8000000000000, "checkout", []child{{0, "zero"}}},
+		{8000000000000, "checkout", []child{{math.MaxUint64, "unsigned"}}},
+	}
+	for i, fixture := range fixtures {
+		rs := traces.ResourceSpans().AppendEmpty()
+		rs.Resource().Attributes().PutStr("service.name", fixture.service)
+		span := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+		span.SetTraceID(pcommon.TraceID{15: byte(i + 1)})
+		span.SetSpanID(pcommon.SpanID{7: 42})
+		span.SetStartTimestamp(fixture.parentTime)
+		span.SetEndTimestamp(fixture.parentTime + 1)
+		rm := metrics.ResourceMetrics().AppendEmpty()
+		rm.Resource().Attributes().PutStr("service.name", fixture.service)
+		metric := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		metric.SetName("child-time")
+		dp := metric.SetEmptyGauge().DataPoints().AppendEmpty()
+		dp.SetTimestamp(fixture.parentTime)
+		dp.SetIntValue(1)
+		for _, child := range fixture.children {
+			event := span.Events().AppendEmpty()
+			event.SetTimestamp(child.timestamp)
+			event.Attributes().PutStr("phase", child.value)
+			event.Attributes().PutBool("only."+child.value, true)
+			exemplar := dp.Exemplars().AppendEmpty()
+			exemplar.SetTimestamp(child.timestamp)
+			exemplar.SetIntValue(1)
+			exemplar.FilteredAttributes().PutStr("phase", child.value)
+			exemplar.FilteredAttributes().PutBool("only."+child.value, true)
+		}
+	}
+	require.NoError(t, te.ConsumeTraces(context.Background(), traces))
+	require.NoError(t, me.ConsumeMetrics(context.Background(), metrics))
+	for _, pair := range []attributeLocation{{"traces", "event"}, {"metrics", "exemplar"}} {
+		t.Run(pair.Signal+"/"+pair.OwnerType, func(t *testing.T) {
+			flags := []string{"--signal", pair.Signal, "--owner-type", pair.OwnerType, "--service", "checkout", "--json"}
+			var values attributeValuesResult
+			require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, endpoint, append([]string{"values", "phase"}, flags...)...)), &values))
+			require.Len(t, values.Values, 2)
+			for i, want := range []string{"alpha", "beta"} {
+				assert.JSONEq(t, fmt.Sprintf(`{"kind":"string","value":%q}`, want), string(values.Values[i].Value))
+				assert.Equal(t, uint64(1), values.Values[i].Count)
+				assert.Equal(t, uint64(2), values.Values[i].Denominator)
+				assert.Equal(t, 0.5, values.Values[i].RelativeFrequency)
+				assert.Equal(t, []attributeLocation{pair}, values.Values[i].FoundOn)
+			}
+			var keys attributeKeysResult
+			require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, endpoint, append([]string{"keys"}, flags...)...)), &keys))
+			assert.Equal(t, []attributeKey{
+				{Key: "only.alpha", Kind: "bool", FoundOn: []attributeLocation{pair}},
+				{Key: "only.beta", Kind: "bool", FoundOn: []attributeLocation{pair}},
+				{Key: "phase", Kind: "string", FoundOn: []attributeLocation{pair}},
+			}, keys.Keys)
+			var limited attributeValuesResult
+			require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, endpoint, append([]string{"values", "phase", "--limit", "1"}, flags...)...)), &limited))
+			require.Len(t, limited.Values, 1)
+			assert.True(t, limited.Truncated)
+			assert.Equal(t, uint64(2), limited.Values[0].Denominator)
+			for _, boundary := range []struct{ time, value string }{
+				{"1970-01-01T00:00:00Z", "zero"},
+				{"2554-07-21T23:34:33.709551615Z", "unsigned"},
+			} {
+				var result attributeValuesResult
+				args := append([]string{"values", "phase", "--start", boundary.time, "--end", boundary.time}, flags...)
+				require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, endpoint, args...)), &result))
+				require.Len(t, result.Values, 1)
+				assert.JSONEq(t, fmt.Sprintf(`{"kind":"string","value":%q}`, boundary.value), string(result.Values[0].Value))
+				assert.Equal(t, uint64(1), result.Values[0].Denominator)
+			}
+		})
 	}
 }

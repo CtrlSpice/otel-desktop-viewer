@@ -117,7 +117,7 @@ func newAttributeValuesCommand(client *http.Client, now func() time.Time) *cobra
 		Use:   "values <key>",
 		Short: "🔎 Count exact typed values for one attribute key",
 		Long: "🔎 Rank attribute values by distinct telemetry-record count: spans, logs or Metric datapoints for the selected signal. " +
-			"Events/links count their owning spans; exemplars and Metric metadata count associated datapoints. Time and service filters apply to those same records. " +
+			"Events/links count their owning spans; exemplars and Metric metadata count associated datapoints. Events and exemplars use their own timestamps; other owners use the counted record's time. Service filters follow the associated record. " +
 			"Resource/scope values count referencing records, not distinct resources/scopes. The denominator is matching records whose selected owner carries the key, before the result limit. " +
 			"A histogram datapoint counts once, not by its observation count. Kinds stay distinct. Defaults to direct span attributes, the last hour and 25 values. " +
 			"Columns show value, kind, count and percentage; --json retains the tagged value, owner location, count, denominator and relative frequency. " +
@@ -221,6 +221,7 @@ func attributeRecordsSQL(signal, ownerType string) (string, error) {
 		case "event":
 			from += " JOIN events e ON e.trace_id = s.trace_id AND e.span_id = s.span_id"
 			attributes, directOwner = "e.attribute_ids", "event"
+			timestamp = "e.timestamp"
 		case "link":
 			from += " JOIN links l ON l.trace_id = s.trace_id AND l.span_id = s.span_id"
 			attributes, directOwner = "l.attribute_ids", "link"
@@ -238,6 +239,7 @@ func attributeRecordsSQL(signal, ownerType string) (string, error) {
 		case "exemplar":
 			from += " JOIN exemplars e ON e.metric_datapoint_id = d.id"
 			attributes, directOwner = "e.attribute_ids", "exemplar"
+			timestamp = "e.timestamp"
 		case "metadata":
 			attributes, directOwner = "m.metadata_ids", "metadata"
 		}

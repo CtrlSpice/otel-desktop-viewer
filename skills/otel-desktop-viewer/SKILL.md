@@ -256,20 +256,24 @@ distinct key/kind pairs with actual `foundOn` locations.
 
 | Signal | Supported owners | Counted records | Time filter |
 | --- | --- | --- | --- |
-| `traces` | `span`, `event`, `link`, `resource`, `scope` | Distinct `(trace_id, span_id)` pairs | Received span start |
+| `traces` | `span`, `event`, `link`, `resource`, `scope` | Distinct `(trace_id, span_id)` pairs | Event timestamp for `event`; span start otherwise |
 | `logs` | `log`, `resource`, `scope` | Distinct log records | Received timestamp; observed timestamp when timestamp is zero |
-| `metrics` | `datapoint`, `exemplar`, `metadata`, `resource`, `scope` | Distinct datapoints | Received datapoint timestamp |
+| `metrics` | `datapoint`, `exemplar`, `metadata`, `resource`, `scope` | Distinct datapoints | Exemplar timestamp for `exemplar`; datapoint timestamp otherwise |
 
 Resource/scope attributes stay on those owners. Frequencies count referencing
 records: 100 spans sharing a west resource and one referencing an east resource
 give counts 100 and 1, not one resource each. A histogram datapoint counts once,
-not by its observations or buckets. Service and time filters apply to the same
-counted records. `--service` matches the stored resource-derived `service_name`
+not by its observations or buckets. `--service` matches the counted record's
+stored resource-derived `service_name`
 projection. Events and links count their owning spans; exemplars count their
 owning datapoints; metadata counts the Metric's datapoints. Repeated child values
-count a parent once per value. Time bounds apply to the counted span/datapoint,
-not the event/exemplar timestamp. Link targets and exemplar trace/span
-correlations do not determine ownership. Metric metadata/resource/scope lookup follows current stored associations,
+count a parent once per value. Event/exemplar time bounds apply to their own
+received timestamps, even when the parent is outside the window. Only in-window
+events/exemplars contribute values and parent counts; their denominator is distinct
+parents with an in-window event/exemplar carrying the key. Zero timestamps are
+compared as zero, with no parent-time fallback. Link targets and exemplar trace/span
+correlations do not determine ownership. Metric metadata/resource/scope lookup
+follows current stored associations,
 not a reconstruction of their history at each datapoint time.
 
 Values return complete tagged values, each with its own `foundOn`, exact `count`
