@@ -42,6 +42,7 @@ USAGE
   otel-desktop-viewer <command> [flags]
 
 COMMANDS
+  attributes 🔎 Discover span attribute keys and values
   query     🔎 Run SQL against a running viewer
   traces    🧵 Search traces in a running viewer
   trace     🧵 Inspect one complete trace
@@ -278,7 +279,7 @@ func TestRootExposesOnlyViewerCommandsAndFlags(t *testing.T) {
 			names = append(names, child.Name())
 		}
 	}
-	assert.Equal(t, []string{"logs", "metrics", "query", "skills", "span", "trace", "traces"}, names)
+	assert.Equal(t, []string{"attributes", "logs", "metrics", "query", "skills", "span", "trace", "traces"}, names)
 	for _, forbidden := range []string{"config", "set", "feature-gates"} {
 		assert.Nil(t, cmd.Flags().Lookup(forbidden))
 	}
