@@ -19,6 +19,7 @@ import (
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
+	"github.com/CtrlSpice/otel-desktop-viewer/skills"
 	"github.com/rs/cors"
 	"go.uber.org/zap"
 	"golang.org/x/exp/jsonrpc2"
@@ -126,6 +127,7 @@ func (s *Server) initHandler() error {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("POST /rpc", s.rpcHandler)
+	mux.Handle("GET /llms.txt", llmsTextHandler())
 
 	// Single-page app: serve a static asset when one exists at the request path,
 	// otherwise fall back to index.html so client-side routes (/traces,
@@ -144,6 +146,19 @@ func (s *Server) initHandler() error {
 	})
 	s.server.Handler = c.Handler(mux)
 	return nil
+}
+
+func llmsTextHandler() http.Handler {
+	guide := skills.Guide()
+	sum := sha256.Sum256([]byte(guide))
+	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
+
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		writer.Header().Set("Cache-Control", revalidateCacheControl)
+		writer.Header().Set("ETag", etag)
+		http.ServeContent(writer, request, "llms.txt", time.Time{}, strings.NewReader(guide))
+	})
 }
 
 func staticFS() (fs.FS, error) {
