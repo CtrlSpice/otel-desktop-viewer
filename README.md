@@ -461,6 +461,12 @@ Open `http://localhost:8000/traces` to explore the result. For more otel-cli fea
 
 ## Agent Usage Skill
 
+Print the guide bundled with your installed viewer:
+
+```bash
+otel-desktop-viewer skills
+```
+
 Install the `otel-desktop-viewer` skill from this repository:
 
 ```bash

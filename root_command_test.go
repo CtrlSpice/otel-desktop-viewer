@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
@@ -47,6 +48,7 @@ COMMANDS
   span      🧵 Inspect one span
   logs      🪵 Search logs in a running viewer
   metrics   📈 Search metrics in a running viewer
+  skills    🧩 Print the agent usage guide
 
 VIEWER FLAGS
       --host string          Address used by viewer/OTLP receivers (default "localhost")
@@ -79,6 +81,15 @@ FLAGS
       --endpoint string   Running viewer HTTP endpoint (default "http://localhost:8000")
       --json              Emit the JSON result instead of columns
       --limit uint        Maximum rows to return (default 25)
+
+GLOBAL FLAGS
+  -h, --help   Help for this command
+`
+
+const expectedSkillsHelp = `🧩 Print the bundled OTel Desktop Viewer agent usage guide.
+
+USAGE
+  otel-desktop-viewer skills [flags]
 
 GLOBAL FLAGS
   -h, --help   Help for this command
@@ -118,6 +129,7 @@ func TestCommandHelpSnapshotsAreOffline(t *testing.T) {
 		{name: "traces", args: []string{"traces", "--help"}, expected: expectedTelemetryHelp("traces", "🧵", "trace")},
 		{name: "logs", args: []string{"logs", "--help"}, expected: expectedTelemetryHelp("logs", "🪵", "log")},
 		{name: "metrics", args: []string{"metrics", "--help"}, expected: expectedTelemetryHelp("metrics", "📈", "metric", "JSON identifies a viewer-assigned Metric with the opaque metricRef field.")},
+		{name: "skills", args: []string{"skills", "--help"}, expected: expectedSkillsHelp},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			started := false
@@ -137,6 +149,27 @@ func TestCommandHelpSnapshotsAreOffline(t *testing.T) {
 			assert.False(t, started)
 		})
 	}
+}
+
+func TestSkillsCommandPrintsBundledGuide(t *testing.T) {
+	expected, err := os.ReadFile("skills/otel-desktop-viewer/SKILL.md")
+	require.NoError(t, err)
+
+	settings := otelcol.CollectorSettings{BuildInfo: component.BuildInfo{Command: "otel-desktop-viewer", Version: "test"}}
+	cmd := newRootCommand(settings, http.DefaultClient, time.Now, func(context.Context, otelcol.CollectorSettings) error {
+		t.Fatal("skills started the viewer")
+		return nil
+	}, func(string) error {
+		t.Fatal("skills opened a browser")
+		return nil
+	})
+	var output bytes.Buffer
+	cmd.SetOut(&output)
+	cmd.SetErr(&output)
+	cmd.SetArgs([]string{"skills"})
+
+	require.NoError(t, cmd.Execute())
+	assert.Equal(t, expected, output.Bytes())
 }
 
 func TestHiddenHelpCommandRemainsCallable(t *testing.T) {
@@ -245,7 +278,7 @@ func TestRootExposesOnlyViewerCommandsAndFlags(t *testing.T) {
 			names = append(names, child.Name())
 		}
 	}
-	assert.Equal(t, []string{"logs", "metrics", "query", "span", "trace", "traces"}, names)
+	assert.Equal(t, []string{"logs", "metrics", "query", "skills", "span", "trace", "traces"}, names)
 	for _, forbidden := range []string{"config", "set", "feature-gates"} {
 		assert.Nil(t, cmd.Flags().Lookup(forbidden))
 	}
