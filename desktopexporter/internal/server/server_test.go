@@ -17,6 +17,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
+	"github.com/CtrlSpice/otel-desktop-viewer/skills"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -120,6 +121,46 @@ func TestIndexHandler(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, res.StatusCode)
 	assert.Contains(t, res.Header.Get("Content-Type"), "text/html")
+}
+
+func TestLLMsTextHandler(t *testing.T) {
+	testServer, teardown := setupServer(t)
+	defer teardown()
+
+	response, err := http.Get(testServer.URL + "/llms.txt")
+	require.NoError(t, err)
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	require.NoError(t, err)
+
+	require.Equal(t, http.StatusOK, response.StatusCode)
+	assert.Equal(t, "text/plain; charset=utf-8", response.Header.Get("Content-Type"))
+	assert.Equal(t, revalidateCacheControl, response.Header.Get("Cache-Control"))
+	assert.Equal(t, skills.Guide(), string(body))
+	etag := response.Header.Get("ETag")
+	require.NotEmpty(t, etag)
+
+	headRequest, err := http.NewRequest(http.MethodHead, testServer.URL+"/llms.txt", nil)
+	require.NoError(t, err)
+	headResponse, err := http.DefaultClient.Do(headRequest)
+	require.NoError(t, err)
+	headBody, err := io.ReadAll(headResponse.Body)
+	headResponse.Body.Close()
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, headResponse.StatusCode)
+	assert.Empty(t, headBody)
+	assert.Equal(t, int64(len(skills.Guide())), headResponse.ContentLength)
+
+	conditionalRequest, err := http.NewRequest(http.MethodGet, testServer.URL+"/llms.txt", nil)
+	require.NoError(t, err)
+	conditionalRequest.Header.Set("If-None-Match", etag)
+	conditionalResponse, err := http.DefaultClient.Do(conditionalRequest)
+	require.NoError(t, err)
+	conditionalBody, err := io.ReadAll(conditionalResponse.Body)
+	conditionalResponse.Body.Close()
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotModified, conditionalResponse.StatusCode)
+	assert.Empty(t, conditionalBody)
 }
 
 // Client-side routes have no matching file on disk; the server must fall back to

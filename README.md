@@ -467,6 +467,9 @@ Print the guide bundled with your installed viewer:
 otel-desktop-viewer skills
 ```
 
+While the viewer is running, the same guide is available at
+`http://localhost:8000/llms.txt`.
+
 Install the `otel-desktop-viewer` skill from this repository:
 
 ```bash
