@@ -78,6 +78,7 @@ func newRootCommand(
 	root.Flags().StringVar(&options.selfTelemetryEndpoint, "self-telemetry-endpoint", "", "Export the viewer's own traces and metrics to this OTLP/gRPC endpoint")
 
 	commands := []*cobra.Command{
+		newAttributesCommand(client, now),
 		newQueryCommand(client),
 		newTracesCommand(client, now),
 		newTraceCommand(client),
@@ -145,6 +146,7 @@ USAGE
   %s <command> [flags]
 
 COMMANDS
+  attributes 🔎 Discover span attribute keys and values
   query     🔎 Run SQL against a running viewer
   traces    🧵 Search traces in a running viewer
   trace     🧵 Inspect one complete trace
@@ -177,6 +179,14 @@ func writeCommandHelp(cmd *cobra.Command, _ []string) {
 func writeCommandHelpTo(cmd *cobra.Command, writer io.Writer) {
 	_, _ = fmt.Fprintln(writer, cmd.Long)
 	_, _ = fmt.Fprintf(writer, "\nUSAGE\n  %s\n", cmd.UseLine())
+	if cmd.HasAvailableSubCommands() {
+		_, _ = fmt.Fprintln(writer, "\nCOMMANDS")
+		for _, child := range cmd.Commands() {
+			if !child.Hidden {
+				_, _ = fmt.Fprintf(writer, "  %-12s %s\n", child.Name(), child.Short)
+			}
+		}
+	}
 	if cmd.Example != "" {
 		_, _ = fmt.Fprintf(writer, "\nEXAMPLES\n%s\n", cmd.Example)
 	}
