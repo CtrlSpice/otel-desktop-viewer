@@ -159,8 +159,8 @@ func TestAttributeCommandsPreserveNestedAndSpecialValuesAndQuoteFilters(t *testi
 	values := []string{
 		`{"kind":"empty","value":null}`,
 		`{"kind":"int64","value":"9223372036854775807"}`,
-		`{"kind":"double","value":{"bits":"8000000000000000"}}`,
-		`{"kind":"double","value":{"bits":"7ff8000000000001"}}`,
+		`{"kind":"double","value":"0x8000000000000000"}`,
+		`{"kind":"double","value":"0x7ff8000000000001"}`,
 		`{"kind":"bytes","value":"AAEC"}`,
 		`{"kind":"map","value":[{"key":"dup","value":{"kind":"string","value":"a"}},{"key":"dup","value":{"kind":"int64","value":"9007199254740993"}}]}`,
 		`{"kind":"array","value":[{"kind":"bool","value":true},{"kind":"string","value":"\\u001b"}]}`,
