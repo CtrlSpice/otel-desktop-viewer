@@ -182,6 +182,24 @@ function normalizedText(el: HTMLElement): string {
 }
 
 describe('TracesPage unplaced spans banner', () => {
+  it('allows exporting the selected trace when all its spans are unplaced', async () => {
+    searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
+    getStats.mockResolvedValue(makeStats())
+    getTraceView.mockResolvedValue({
+      traceID: 'trace-1',
+      spans: [],
+      unplacedSpanCount: 2,
+    })
+    setTestUrl('/traces/trace-1')
+    renderWithContexts(TracesPage)
+    expect(
+      await screen.findByRole('button', { name: 'Export trace' })
+    ).toBeEnabled()
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '2 spans are missing'
+    )
+  })
+
   it('queries the list with null bounds for the default All selection', async () => {
     await renderSelectedTrace(0)
     expect(searchTraceSummaries).toHaveBeenCalledWith(null, null)

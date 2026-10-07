@@ -17,6 +17,7 @@
     type PaneTab,
   } from '@/components/shared/PaneHeader.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
+  import ExportButton from '@/components/shared/ExportButton.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
     BarChartHorizontalIcon,
@@ -92,7 +93,13 @@
       ariaLabel="Metric detail tabs"
       tabLayout="equal"
       tabPanelID={METRIC_DETAIL_PANEL_ID}
-    />
+    >
+      {#snippet right()}
+        {#key metric.metricRef}
+          <ExportButton signal="metric" id={metric.metricRef} />
+        {/key}
+      {/snippet}
+    </PaneHeader>
 
     <div
       class="detail-view__scroll"

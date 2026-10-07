@@ -2,6 +2,7 @@
   import type { SpanNode, SpanData, TraceLogSummary } from '@/types/api-types'
   import type { TreeConnectorMeta } from './WaterfallTreeGutter.svelte'
   import { getServiceName } from '@/utils/resource'
+  import ExportButton from '@/components/shared/ExportButton.svelte'
   import { categoricalPalette } from '@/utils/chart-palette'
   import { themeSignal } from '@/state/theme.svelte'
   import { recordsForSpan, type TimelineRecord } from './timeline-markers'
@@ -288,6 +289,8 @@
 
   type Props = {
     spans: SpanNode[]
+    /** Retained trace identity, including when no spans can be placed in the view. */
+    traceID?: string
     logs?: TraceLogSummary[]
     selectedSpanID: string | null
     searchActive?: boolean
@@ -299,6 +302,7 @@
 
   let {
     spans,
+    traceID: providedTraceID,
     logs = [],
     selectedSpanID,
     searchActive = false,
@@ -587,7 +591,7 @@
    * Span IDs collapsed by row toggles, keyboard arrows, or collapse-all.
    * Refetches, searches, selections, and resizes must not write this state.
    */
-  let traceID = $derived(spans[0]?.spanData.traceID ?? '')
+  let traceID = $derived(providedTraceID ?? spans[0]?.spanData.traceID ?? '')
   let userCollapsed = $derived(collapsedForTrace(traceID))
 
   // Search uses a response-scoped overlay so clearing it restores user state.
@@ -949,6 +953,9 @@
       {/if}
     {/snippet}
     {#snippet right()}
+      {#key traceID}
+        <ExportButton signal="trace" id={traceID} />
+      {/key}
       {#if collapsibleSpanIDs.length > 0}
         <button
           type="button"

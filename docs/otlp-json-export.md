@@ -28,8 +28,9 @@ Absent trace and span IDs remain absent.
 
 ## Metrics
 
-`metrics.GetMetricOTLP` accepts one Metric reference and returns one OTLP Metric
-object with all retained datapoints for that Metric. Gauge, Sum, Histogram, and
+`metrics.GetMetricOTLP` accepts one Metric reference and returns a `MetricsData`
+document containing that Metric, its resource/scope wrappers, and all retained
+datapoints. Gauge, Sum, Histogram, and
 ExponentialHistogram are supported. Summary and unrecognised stored Metric types
 return an unsupported-type error.
 
@@ -65,7 +66,7 @@ re-encoding it in JavaScript changes negative zero to zero.
 `spans.GetTraceOTLPProtobuf`, `logs.GetLogOTLPProtobuf`, and
 `metrics.GetMetricOTLPProtobuf` encode the same reconstructed data as binary OTLP
 export requests. These are store-level functions; API, CLI, and frontend download
-controls are not yet exposed.
+controls use these same getters, as described below.
 
 Binary export uses the official OTLP generated messages and the Google Go
 protobuf runtime. The pinned Collector pdata encoder omits an
@@ -75,7 +76,37 @@ the base64 representation expected by the standard ProtoJSON decoder. Exact
 integer strings and other number tokens are preserved. JSON exports continue to
 use the unchanged DuckDB result.
 
-## Limits
+## Download API and CLI
+
+The viewer serves individual exports through:
+
+```text
+GET /export/traces/{traceID}?format=json
+GET /export/logs/{logRef}?format=json
+GET /export/metrics/{metricRef}?format=json
+```
+
+`format` is required: `json` returns `application/json`, and `protobuf` returns
+`application/x-protobuf`. Responses use `Cache-Control: no-store` and attachment
+filenames `trace-{traceID}.json|.pb`, `log-{logRef}.json|.pb`, or
+`metric-{metricRef}.json|.pb`, with canonical identifiers. Errors return plain text
+without an attachment: 400 for invalid IDs/formats, 404 for missing records,
+422 for unsupported stored Metric types, and 500 for reconstruction/encoding
+failures.
+
+The CLI writes the exact response bytes to stdout, without an added newline:
+
+```sh
+otel-desktop-viewer export trace 4bf92f3577b34da6a3ce929d0e0e4736 --format json > trace.json
+otel-desktop-viewer export trace 4bf92f3577b34da6a3ce929d0e0e4736 --format protobuf > trace.pb
+```
+
+Use `export log <log-ref>` and `export metric <metric-ref>` for the other signals.
+`--format` is required; `--endpoint` follows the existing viewer convention.
+The selected signal header offers the same two formats as browser downloads.
+Search/time filters and collapsed rows do not limit exported members.
+
+## Reconstruction limits
 
 The store cannot recover request segmentation, empty wrappers, received order,
 unsupported fields, rejected duplicate span identities, default-field omission,

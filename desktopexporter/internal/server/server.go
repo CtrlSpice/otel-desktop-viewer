@@ -36,6 +36,7 @@ const maxRPCRequestBodyBytes = 1 << 20 // 1 MB
 
 type Server struct {
 	server         http.Server
+	store          *store.Store
 	jsonrpcHandler *JSONRPCHandler
 	logger         *zap.Logger
 	tel            *telemetry.Telemetry
@@ -70,6 +71,7 @@ func NewServer(endpoint string, store *store.Store, logger *zap.Logger, tel *tel
 			// context tears the DuckDB query down.
 		},
 		jsonrpcHandler: NewJSONRPCHandler(store, logger),
+		store:          store,
 		logger:         logger,
 		tel:            tel,
 	}
@@ -128,6 +130,7 @@ func (s *Server) initHandler() error {
 
 	mux.HandleFunc("POST /rpc", s.rpcHandler)
 	mux.Handle("GET /llms.txt", llmsTextHandler())
+	mux.HandleFunc("GET /export/{signal}/{id}", s.exportHandler)
 
 	// Single-page app: serve a static asset when one exists at the request path,
 	// otherwise fall back to index.html so client-side routes (/traces,
