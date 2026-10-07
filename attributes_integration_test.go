@@ -352,3 +352,124 @@ func TestAttributeChildOwnersFollowTheirRecords(t *testing.T) {
 		})
 	}
 }
+
+func TestAttributeKindsSurviveEveryOwnerPath(t *testing.T) {
+	endpoint, te, le, me := startAttributeIntegration(t)
+	traces, logs, metrics := ptrace.NewTraces(), plog.NewLogs(), pmetric.NewMetrics()
+	rs, rl, rm := traces.ResourceSpans().AppendEmpty(), logs.ResourceLogs().AppendEmpty(), metrics.ResourceMetrics().AppendEmpty()
+	ss, sl, sm := rs.ScopeSpans().AppendEmpty(), rl.ScopeLogs().AppendEmpty(), rm.ScopeMetrics().AppendEmpty()
+	span := ss.Spans().AppendEmpty()
+	span.SetTraceID(pcommon.TraceID{15: 1})
+	span.SetSpanID(pcommon.SpanID{7: 1})
+	span.SetStartTimestamp(8000000000000)
+	span.SetEndTimestamp(8000000000001)
+	log := sl.LogRecords().AppendEmpty()
+	log.SetObservedTimestamp(8000000000000)
+	metric := sm.Metrics().AppendEmpty()
+	metric.SetName("typed")
+	dp := metric.SetEmptyGauge().DataPoints().AppendEmpty()
+	dp.SetTimestamp(8000000000000)
+	dp.SetIntValue(1)
+	owners := []struct {
+		location   attributeLocation
+		attributes pcommon.Map
+	}{
+		{attributeLocation{"traces", "span"}, span.Attributes()},
+		{attributeLocation{"traces", "event"}, span.Events().AppendEmpty().Attributes()},
+		{attributeLocation{"traces", "link"}, span.Links().AppendEmpty().Attributes()},
+		{attributeLocation{"traces", "resource"}, rs.Resource().Attributes()},
+		{attributeLocation{"traces", "scope"}, ss.Scope().Attributes()},
+		{attributeLocation{"logs", "log"}, log.Attributes()},
+		{attributeLocation{"logs", "resource"}, rl.Resource().Attributes()},
+		{attributeLocation{"logs", "scope"}, sl.Scope().Attributes()},
+		{attributeLocation{"metrics", "datapoint"}, dp.Attributes()},
+		{attributeLocation{"metrics", "exemplar"}, dp.Exemplars().AppendEmpty().FilteredAttributes()},
+		{attributeLocation{"metrics", "metadata"}, metric.Metadata()},
+		{attributeLocation{"metrics", "resource"}, rm.Resource().Attributes()},
+		{attributeLocation{"metrics", "scope"}, sm.Scope().Attributes()},
+	}
+	for _, owner := range owners {
+		a := owner.attributes
+		a.PutStr("location", owner.location.Signal+"/"+owner.location.OwnerType)
+		a.PutStr("string", "9007199254740993")
+		a.PutInt("int64", math.MaxInt64)
+		a.PutDouble("double", math.Copysign(0, -1))
+		a.PutDouble("infinity", math.Inf(1))
+		a.PutBool("bool", true)
+		a.PutEmpty("empty")
+		a.PutEmptyBytes("bytes").FromRaw([]byte{0, 1, 255})
+		array := a.PutEmptySlice("array")
+		array.AppendEmpty().SetInt(math.MinInt64)
+		array.AppendEmpty().SetDouble(math.SmallestNonzeroFloat64)
+		a.PutEmptyMap("map").PutInt("nested", 9007199254740993)
+	}
+	require.NoError(t, te.ConsumeTraces(context.Background(), traces))
+	require.NoError(t, le.ConsumeLogs(context.Background(), logs))
+	require.NoError(t, me.ConsumeMetrics(context.Background(), metrics))
+	expected := map[string]string{
+		"string":   `{"kind":"string","value":"9007199254740993"}`,
+		"int64":    `{"kind":"int64","value":"9223372036854775807"}`,
+		"double":   `{"kind":"double","value":"0x8000000000000000"}`,
+		"infinity": `{"kind":"double","value":"0x7ff0000000000000"}`,
+		"bool":     `{"kind":"bool","value":true}`,
+		"empty":    `{"kind":"empty","value":null}`,
+		"bytes":    `{"kind":"bytes","value":"AAH/"}`,
+		"array":    `{"kind":"array","value":[{"kind":"int64","value":"-9223372036854775808"},{"kind":"double","value":5e-324}]}`,
+		"map":      `{"kind":"map","value":[{"key":"nested","value":{"kind":"int64","value":"9007199254740993"}}]}`,
+	}
+	for _, owner := range owners {
+		pair := owner.location
+		t.Run(pair.Signal+"/"+pair.OwnerType, func(t *testing.T) {
+			for key, want := range expected {
+				var result attributeValuesResult
+				require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, endpoint, "values", key, "--signal", pair.Signal, "--owner-type", pair.OwnerType, "--json")), &result))
+				require.Len(t, result.Values, 1, key)
+				value := result.Values[0]
+				assert.JSONEq(t, want, string(value.Value), key)
+				assert.Equal(t, uint64(1), value.Count)
+				assert.Equal(t, uint64(1), value.Denominator)
+				assert.Equal(t, []attributeLocation{pair}, value.FoundOn)
+			}
+			var location attributeValuesResult
+			require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, endpoint, "values", "location", "--signal", pair.Signal, "--owner-type", pair.OwnerType, "--json")), &location))
+			require.Len(t, location.Values, 1)
+			assert.JSONEq(t, fmt.Sprintf(`{"kind":"string","value":%q}`, pair.Signal+"/"+pair.OwnerType), string(location.Values[0].Value))
+		})
+	}
+}
+
+func TestAttributeLogTimePrecedenceAndUnsignedBounds(t *testing.T) {
+	endpoint, _, le, _ := startAttributeIntegration(t)
+	logs := plog.NewLogs()
+	for i, times := range [][2]uint64{
+		{6400000000000, 0}, {10000000000000, 0}, {0, 8000000000000},
+		{1, 8000000000000}, {10000000000001, 8000000000000},
+		{0, 0}, {math.MaxUint64, 0},
+	} {
+		rl := logs.ResourceLogs().AppendEmpty()
+		// Exercise the existing resource-derived service-name projection.
+		rl.Resource().Attributes().PutInt("service.name", 42)
+		sl := rl.ScopeLogs().AppendEmpty()
+		log := sl.LogRecords().AppendEmpty()
+		log.SetTimestamp(pcommon.Timestamp(times[0]))
+		log.SetObservedTimestamp(pcommon.Timestamp(times[1]))
+		for _, attributes := range []pcommon.Map{rl.Resource().Attributes(), sl.Scope().Attributes(), log.Attributes()} {
+			attributes.PutInt("row", int64(i))
+		}
+	}
+	require.NoError(t, le.ConsumeLogs(context.Background(), logs))
+	for _, owner := range []string{"log", "resource", "scope"} {
+		var result attributeValuesResult
+		require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, endpoint, "values", "row", "--signal", "logs", "--owner-type", owner, "--service", "42", "--json")), &result))
+		require.Len(t, result.Values, 3)
+		for i, value := range result.Values {
+			assert.JSONEq(t, fmt.Sprintf(`{"kind":"int64","value":"%d"}`, i), string(value.Value))
+			assert.Equal(t, uint64(3), value.Denominator)
+		}
+		var upper attributeValuesResult
+		require.NoError(t, json.Unmarshal([]byte(attributeTestRun(t, endpoint, "values", "row", "--signal", "logs", "--owner-type", owner,
+			"--start", "2554-07-21T23:34:33.709551615Z", "--end", "2554-07-21T23:34:33.709551615Z", "--json")), &upper))
+		require.Len(t, upper.Values, 1)
+		assert.JSONEq(t, `{"kind":"int64","value":"6"}`, string(upper.Values[0].Value))
+	}
+}
