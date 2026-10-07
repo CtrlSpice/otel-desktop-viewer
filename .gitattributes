@@ -9,3 +9,6 @@ desktopexporter/internal/server/static/** linguist-generated=true
 # byte against fragments Go builds with LF. Pinning eol=lf keeps one canonical
 # form everywhere.
 *.sql text eol=lf
+
+# Keep replayable OTLP fixtures byte-identical across platform checkouts.
+testdata/otlp/**/*.json text eol=lf
