@@ -67,6 +67,18 @@ func TestGetLogOTLP(t *testing.T) {
 
 	decoded, err := (&plog.JSONUnmarshaler{}).UnmarshalLogs(raw)
 	require.NoError(t, err)
+	t.Run("json", func(t *testing.T) { assertLogOTLP(t, decoded) })
+	protobuf, err := readStore(s, func(db *sql.DB) ([]byte, error) {
+		return logs.GetLogOTLPProtobuf(ctx, db, primaryID)
+	})
+	require.NoError(t, err)
+	decodedProto, err := (&plog.ProtoUnmarshaler{}).UnmarshalLogs(protobuf)
+	require.NoError(t, err)
+	t.Run("protobuf", func(t *testing.T) { assertLogOTLP(t, decodedProto) })
+}
+
+func assertLogOTLP(t *testing.T, decoded plog.Logs) {
+	t.Helper()
 	require.Equal(t, 1, decoded.ResourceLogs().Len())
 	rl := decoded.ResourceLogs().At(0)
 	assert.Equal(t, "https://example.test/resource/log/v2", rl.SchemaUrl())

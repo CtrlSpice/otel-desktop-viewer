@@ -60,6 +60,18 @@ func TestGetTraceOTLP(t *testing.T) {
 
 	decoded, err := (&ptrace.JSONUnmarshaler{}).UnmarshalTraces(raw)
 	require.NoError(t, err)
+	t.Run("json", func(t *testing.T) { assertTraceOTLP(t, decoded) })
+	protobuf, err := readStore(s, func(db *sql.DB) ([]byte, error) {
+		return spans.GetTraceOTLPProtobuf(ctx, db, otlpTraceID)
+	})
+	require.NoError(t, err)
+	decodedProto, err := (&ptrace.ProtoUnmarshaler{}).UnmarshalTraces(protobuf)
+	require.NoError(t, err)
+	t.Run("protobuf", func(t *testing.T) { assertTraceOTLP(t, decodedProto) })
+}
+
+func assertTraceOTLP(t *testing.T, decoded ptrace.Traces) {
+	t.Helper()
 	assert.Equal(t, 3, decoded.ResourceSpans().Len())
 
 	var spanCount, eventCount, linkCount int

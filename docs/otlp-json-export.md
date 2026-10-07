@@ -60,6 +60,21 @@ The output follows these rules:
 The JSON text must pass through RPC and download paths unchanged. Parsing and
 re-encoding it in JavaScript changes negative zero to zero.
 
+## Protobuf encoding
+
+`spans.GetTraceOTLPProtobuf`, `logs.GetLogOTLPProtobuf`, and
+`metrics.GetMetricOTLPProtobuf` encode the same reconstructed data as binary OTLP
+export requests. These are store-level functions; API, CLI, and frontend download
+controls are not yet exposed.
+
+Binary export uses the official OTLP generated messages and the Google Go
+protobuf runtime. The pinned Collector pdata encoder omits an
+ExponentialHistogram `zeroThreshold` of negative zero; the Google encoder retains
+its sign. The conversion adapts hexadecimal trace, span, and parent-span IDs to
+the base64 representation expected by the standard ProtoJSON decoder. Exact
+integer strings and other number tokens are preserved. JSON exports continue to
+use the unchanged DuckDB result.
+
 ## Limits
 
 The store cannot recover request segmentation, empty wrappers, received order,
