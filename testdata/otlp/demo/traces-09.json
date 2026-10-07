@@ -1,0 +1,223 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "orphan-lab"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "0.0.1"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "orphan-lab.tracer",
+            "version": "0.1.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "spans": [
+            {
+              "traceId": "63bf893c7d22b2ae3a3106d75b147931",
+              "spanId": "fbbd3806d0a08443",
+              "traceState": "",
+              "name": "ingest/partial-batch",
+              "kind": 2,
+              "startTimeUnixNano": "1791395431000000000",
+              "endTimeUnixNano": "1791395431400000000",
+              "attributes": [],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791395431000000000",
+                  "name": "batch.parser.start",
+                  "attributes": [
+                    {
+                      "key": "batch.bytes",
+                      "value": {
+                        "intValue": "4096"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [
+                {
+                  "traceState": "",
+                  "attributes": [
+                    {
+                      "key": "link.preset",
+                      "value": {
+                        "stringValue": "prior_ingest_attempt"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0,
+                  "flags": 0,
+                  "traceId": "ffcf82f39732ed718b4b03697677a932",
+                  "spanId": "9ca2c6f138fb37b9"
+                }
+              ],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0
+            },
+            {
+              "traceId": "63bf893c7d22b2ae3a3106d75b147931",
+              "spanId": "96e3920a530e6586",
+              "traceState": "",
+              "name": "orphan/missing_parent_A",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431020000000",
+              "endTimeUnixNano": "1791395431200000000",
+              "attributes": [
+                {
+                  "key": "note",
+                  "value": {
+                    "stringValue": "parentSpanId not in this export"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791395431025000000",
+                  "name": "orphan.span.attached",
+                  "attributes": [
+                    {
+                      "key": "synthetic",
+                      "value": {
+                        "stringValue": "true"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "22bad90e4a726912"
+            },
+            {
+              "traceId": "63bf893c7d22b2ae3a3106d75b147931",
+              "spanId": "30d20d03fa26765c",
+              "traceState": "",
+              "name": "orphan/missing_parent_B",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431040000000",
+              "endTimeUnixNano": "1791395431220000000",
+              "attributes": [],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791395431045000000",
+                  "name": "work.unit.done",
+                  "attributes": [],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [
+                {
+                  "traceState": "",
+                  "attributes": [
+                    {
+                      "key": "note",
+                      "value": {
+                        "stringValue": "orphan still links outward"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0,
+                  "flags": 0,
+                  "traceId": "76ce478f4e6201295f0af2c37d70ea0b",
+                  "spanId": "5b873adcadf64c00"
+                }
+              ],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "49596e48a6e8ec12"
+            },
+            {
+              "traceId": "63bf893c7d22b2ae3a3106d75b147931",
+              "spanId": "c920c7a90941cf86",
+              "traceState": "",
+              "name": "orphan/sibling_same_missing_parent",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431060000000",
+              "endTimeUnixNano": "1791395431300000000",
+              "attributes": [],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791395431070000000",
+                  "name": "dedupe.checkpoint",
+                  "attributes": [
+                    {
+                      "key": "shard",
+                      "value": {
+                        "intValue": "7"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [
+                {
+                  "traceState": "",
+                  "attributes": [],
+                  "droppedAttributesCount": 0,
+                  "flags": 0,
+                  "traceId": "5ae3a8a2ae1aece1629deebcac2ed705",
+                  "spanId": "15a4291e4f6728d2"
+                }
+              ],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "22bad90e4a726912"
+            }
+          ],
+          "schemaUrl": ""
+        }
+      ],
+      "schemaUrl": ""
+    }
+  ]
+}

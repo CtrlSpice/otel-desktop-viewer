@@ -1,0 +1,243 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "user-service"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.0"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "user-service.tracer",
+            "version": "0.1.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "spans": [
+            {
+              "traceId": "5b7071611266718ac50321f72dcc02ef",
+              "spanId": "117ff3d9238012e1",
+              "traceState": "",
+              "name": "authenticate",
+              "kind": 2,
+              "startTimeUnixNano": "1791337831000000000",
+              "endTimeUnixNano": "1791337831110000000",
+              "attributes": [
+                {
+                  "key": "http.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "http.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "http.target",
+                  "value": {
+                    "stringValue": "/authenticate"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791337831000000000",
+                  "name": "request.received",
+                  "attributes": [
+                    {
+                      "key": "net.peer.ip",
+                      "value": {
+                        "stringValue": "10.0.1.2"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                },
+                {
+                  "timeUnixNano": "1791337831003000000",
+                  "name": "auth.verified",
+                  "attributes": [
+                    {
+                      "key": "auth.scheme",
+                      "value": {
+                        "stringValue": "bearer"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [
+                {
+                  "traceState": "",
+                  "attributes": [
+                    {
+                      "key": "link.relationship",
+                      "value": {
+                        "stringValue": "follows_from"
+                      }
+                    },
+                    {
+                      "key": "messaging.system",
+                      "value": {
+                        "stringValue": "kafka"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0,
+                  "flags": 0,
+                  "traceId": "e9900cb286758fed69c9982a0ca56a8b",
+                  "spanId": "b4360ecce5a5068b"
+                }
+              ],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0
+            },
+            {
+              "traceId": "5b7071611266718ac50321f72dcc02ef",
+              "spanId": "b7dc6a5e681359df",
+              "traceState": "",
+              "name": "authenticate/child-1",
+              "kind": 3,
+              "startTimeUnixNano": "1791337831005000000",
+              "endTimeUnixNano": "1791337831015000000",
+              "attributes": [
+                {
+                  "key": "child.index",
+                  "value": {
+                    "intValue": "1"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791337831005000000",
+                  "name": "child.checkpoint",
+                  "attributes": [
+                    {
+                      "key": "checkpoint",
+                      "value": {
+                        "stringValue": "after_dispatch"
+                      }
+                    },
+                    {
+                      "key": "child.index",
+                      "value": {
+                        "intValue": "1"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "117ff3d9238012e1"
+            },
+            {
+              "traceId": "5b7071611266718ac50321f72dcc02ef",
+              "spanId": "ee0be323d68bd548",
+              "traceState": "",
+              "name": "authenticate/child-2",
+              "kind": 3,
+              "startTimeUnixNano": "1791337831010000000",
+              "endTimeUnixNano": "1791337831020000000",
+              "attributes": [
+                {
+                  "key": "child.index",
+                  "value": {
+                    "intValue": "2"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791337831010000000",
+                  "name": "child.checkpoint",
+                  "attributes": [
+                    {
+                      "key": "checkpoint",
+                      "value": {
+                        "stringValue": "after_dispatch"
+                      }
+                    },
+                    {
+                      "key": "child.index",
+                      "value": {
+                        "intValue": "2"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [
+                {
+                  "traceState": "",
+                  "attributes": [
+                    {
+                      "key": "peer.operation",
+                      "value": {
+                        "stringValue": "synthetic_async_consumer"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0,
+                  "flags": 0,
+                  "traceId": "fc9e7e7f957fe8e7145b4e6e96975305",
+                  "spanId": "2e814954fc489df0"
+                }
+              ],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "117ff3d9238012e1"
+            }
+          ],
+          "schemaUrl": ""
+        }
+      ],
+      "schemaUrl": ""
+    }
+  ]
+}

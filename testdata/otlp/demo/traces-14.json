@@ -1,0 +1,319 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "deep-stack-service"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.0"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "deep-stack-service.tracer",
+            "version": "0.1.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "spans": [
+            {
+              "traceId": "a2081b75b5e8ab752aa374b2f68e42cc",
+              "spanId": "93885792549db75c",
+              "traceState": "",
+              "name": "shell/checkout-flow",
+              "kind": 2,
+              "startTimeUnixNano": "1791395431000000000",
+              "endTimeUnixNano": "1791395431800000000",
+              "attributes": [],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791395431000000000",
+                  "name": "checkout.session.start",
+                  "attributes": [
+                    {
+                      "key": "cart.item_count",
+                      "value": {
+                        "intValue": "3"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [
+                {
+                  "traceState": "",
+                  "attributes": [
+                    {
+                      "key": "note",
+                      "value": {
+                        "stringValue": "synthetic upstream marketing click"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0,
+                  "flags": 0,
+                  "traceId": "329425e99c31ce193dc7ab588b390be9",
+                  "spanId": "c2ffab2454b92daf"
+                }
+              ],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0
+            },
+            {
+              "traceId": "a2081b75b5e8ab752aa374b2f68e42cc",
+              "spanId": "0e414cd9317000b7",
+              "traceState": "",
+              "name": "HTTP GET /checkout",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431010000000",
+              "endTimeUnixNano": "1791395431600000000",
+              "attributes": [],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791395431012000000",
+                  "name": "net.dns.lookup",
+                  "attributes": [
+                    {
+                      "key": "net.host.name",
+                      "value": {
+                        "stringValue": "api.internal"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "93885792549db75c"
+            },
+            {
+              "traceId": "a2081b75b5e8ab752aa374b2f68e42cc",
+              "spanId": "e35a61c70dd0396e",
+              "traceState": "",
+              "name": "worker/dispatch_payment",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431020000000",
+              "endTimeUnixNano": "1791395431750000000",
+              "attributes": [],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "93885792549db75c"
+            },
+            {
+              "traceId": "a2081b75b5e8ab752aa374b2f68e42cc",
+              "spanId": "a0d4f7924e88be9b",
+              "traceState": "",
+              "name": "db/checkout_snapshot",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431030000000",
+              "endTimeUnixNano": "1791395431500000000",
+              "attributes": [],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "0e414cd9317000b7"
+            },
+            {
+              "traceId": "a2081b75b5e8ab752aa374b2f68e42cc",
+              "spanId": "1e4f5d8eef8f236b",
+              "traceState": "",
+              "name": "db/line_items_subquery",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431050000000",
+              "endTimeUnixNano": "1791395431450000000",
+              "attributes": [],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791395431055000000",
+                  "name": "db.stmt.complete",
+                  "attributes": [
+                    {
+                      "key": "db.rows",
+                      "value": {
+                        "intValue": "1842"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "a0d4f7924e88be9b"
+            },
+            {
+              "traceId": "a2081b75b5e8ab752aa374b2f68e42cc",
+              "spanId": "23112f11aae61c85",
+              "traceState": "",
+              "name": "queue/consume_payment_job",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431100000000",
+              "endTimeUnixNano": "1791395431700000000",
+              "attributes": [],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "e35a61c70dd0396e"
+            },
+            {
+              "traceId": "a2081b75b5e8ab752aa374b2f68e42cc",
+              "spanId": "101170e5a97f6bc8",
+              "traceState": "",
+              "name": "handler/process_payment",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431150000000",
+              "endTimeUnixNano": "1791395431650000000",
+              "attributes": [],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "23112f11aae61c85"
+            },
+            {
+              "traceId": "a2081b75b5e8ab752aa374b2f68e42cc",
+              "spanId": "085a3b38275ef7fd",
+              "traceState": "",
+              "name": "grpc/ChargeCard",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431200000000",
+              "endTimeUnixNano": "1791395431620000000",
+              "attributes": [],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791395431220000000",
+                  "name": "rpc.metadata.received",
+                  "attributes": [
+                    {
+                      "key": "rpc.grpc.status_code",
+                      "value": {
+                        "intValue": "0"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [
+                {
+                  "traceState": "",
+                  "attributes": [
+                    {
+                      "key": "rpc.system",
+                      "value": {
+                        "stringValue": "grpc"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0,
+                  "flags": 0,
+                  "traceId": "119f7da9cb7f47c6fc346b424a2d219a",
+                  "spanId": "fbe5f9a66f2c7816"
+                }
+              ],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "101170e5a97f6bc8"
+            },
+            {
+              "traceId": "a2081b75b5e8ab752aa374b2f68e42cc",
+              "spanId": "2db5f307a35387d4",
+              "traceState": "",
+              "name": "cache/session_lookup",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431400000000",
+              "endTimeUnixNano": "1791395431580000000",
+              "attributes": [],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "0e414cd9317000b7"
+            }
+          ],
+          "schemaUrl": ""
+        }
+      ],
+      "schemaUrl": ""
+    }
+  ]
+}

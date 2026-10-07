@@ -1,0 +1,184 @@
+{
+  "resourceMetrics": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "api-gateway"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeMetrics": [
+        {
+          "scope": {
+            "name": "checkout-fixture",
+            "version": "1.0.0"
+          },
+          "metrics": [
+            {
+              "name": "system.cpu.utilization",
+              "description": "Synthetic CPU utilisation",
+              "unit": "1",
+              "gauge": {
+                "dataPoints": [
+                  {
+                    "timeUnixNano": "1791359880000000000",
+                    "asDouble": 0.45,
+                    "attributes": [
+                      {
+                        "key": "host.name",
+                        "value": {
+                          "stringValue": "gw-01"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "timeUnixNano": "1791359940000000000",
+                    "asDouble": 0.82,
+                    "attributes": [
+                      {
+                        "key": "host.name",
+                        "value": {
+                          "stringValue": "gw-01"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "timeUnixNano": "1791360000000000000",
+                    "asDouble": 0.48,
+                    "attributes": [
+                      {
+                        "key": "host.name",
+                        "value": {
+                          "stringValue": "gw-01"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "http.server.request.duration",
+              "unit": "s",
+              "histogram": {
+                "aggregationTemporality": 1,
+                "dataPoints": [
+                  {
+                    "startTimeUnixNano": "1791359940000000000",
+                    "timeUnixNano": "1791360001200000000",
+                    "count": "10",
+                    "sum": 3.2,
+                    "min": 0.05,
+                    "max": 1.2,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "4",
+                      "4",
+                      "1",
+                      "1"
+                    ],
+                    "attributes": [
+                      {
+                        "key": "http.request.method",
+                        "value": {
+                          "stringValue": "POST"
+                        }
+                      },
+                      {
+                        "key": "http.route",
+                        "value": {
+                          "stringValue": "/api/v2/orders"
+                        }
+                      }
+                    ],
+                    "exemplars": [
+                      {
+                        "timeUnixNano": "1791360001200000000",
+                        "asDouble": 1.2,
+                        "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+                        "spanId": "0000000000000001",
+                        "filteredAttributes": [
+                          {
+                            "key": "http.response.status_code",
+                            "value": {
+                              "intValue": "402"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "notification-service"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "east"
+            }
+          }
+        ]
+      },
+      "scopeMetrics": [
+        {
+          "scope": {
+            "name": "checkout-fixture",
+            "version": "1.0.0"
+          },
+          "metrics": [
+            {
+              "name": "messaging.queue.depth",
+              "description": "Synthetic notification queue depth",
+              "unit": "{message}",
+              "gauge": {
+                "dataPoints": [
+                  {
+                    "timeUnixNano": "1791359880000000000",
+                    "asInt": "40"
+                  },
+                  {
+                    "timeUnixNano": "1791359940000000000",
+                    "asInt": "250"
+                  },
+                  {
+                    "timeUnixNano": "1791360000000000000",
+                    "asInt": "180"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

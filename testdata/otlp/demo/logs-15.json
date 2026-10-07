@@ -1,0 +1,75 @@
+{
+  "resourceLogs": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "inventory-service"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.0"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeLogs": [
+        {
+          "scope": {
+            "name": "inventory-service.logger",
+            "version": "0.1.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "logRecords": [
+            {
+              "timeUnixNano": "1791394831000000000",
+              "observedTimeUnixNano": "1791394831000500000",
+              "severityNumber": 13,
+              "severityText": "WARN",
+              "body": {
+                "stringValue": "Stock level below threshold: SKU-4412 has 3 remaining (threshold: 10)"
+              },
+              "attributes": [
+                {
+                  "key": "remaining",
+                  "value": {
+                    "intValue": "3"
+                  }
+                },
+                {
+                  "key": "sku",
+                  "value": {
+                    "stringValue": "SKU-4412"
+                  }
+                },
+                {
+                  "key": "threshold",
+                  "value": {
+                    "intValue": "10"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "flags": 0,
+              "eventName": ""
+            }
+          ],
+          "schemaUrl": ""
+        }
+      ],
+      "schemaUrl": ""
+    }
+  ]
+}

@@ -1,0 +1,118 @@
+{
+  "resourceMetrics": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "worker"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeMetrics": [
+        {
+          "scope": {
+            "name": "pilot"
+          },
+          "metrics": [
+            {
+              "name": "request.duration",
+              "unit": "ms",
+              "histogram": {
+                "aggregationTemporality": 2,
+                "dataPoints": [
+                  {
+                    "timeUnixNano": "1791359999000000000",
+                    "count": "500",
+                    "bucketCounts": [
+                      "500"
+                    ],
+                    "exemplars": [
+                      {
+                        "timeUnixNano": "1791360030000000000",
+                        "asDouble": 42,
+                        "filteredAttributes": [
+                          {
+                            "key": "sample.label",
+                            "value": {
+                              "stringValue": "sampled"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "worker"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeMetrics": [
+        {
+          "scope": {
+            "name": "pilot"
+          },
+          "metrics": [
+            {
+              "name": "request.duration",
+              "unit": "ms",
+              "histogram": {
+                "aggregationTemporality": 2,
+                "dataPoints": [
+                  {
+                    "timeUnixNano": "1791360030000000000",
+                    "count": "500",
+                    "bucketCounts": [
+                      "500"
+                    ],
+                    "exemplars": [
+                      {
+                        "timeUnixNano": "1791363600000000001",
+                        "asDouble": 42,
+                        "filteredAttributes": [
+                          {
+                            "key": "sample.label",
+                            "value": {
+                              "stringValue": "outside"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

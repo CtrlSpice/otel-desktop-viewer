@@ -53,17 +53,20 @@ dev-ts:
 run-go-persist:
 	go run . --db duck.db
 
-.PHONY: populate-traces
-populate-traces:
-	OTLP_ENDPOINT="$(OTLP_ENDPOINT)" perl "$(CURDIR)/scripts/seed.pl" --traces
+OTLP_DATASET ?= $(CURDIR)/testdata/otlp/demo
+OTLP_ENDPOINT ?= http://localhost:4318
 
-.PHONY: populate-logs
-populate-logs:
-	OTLP_ENDPOINT="$(OTLP_ENDPOINT)" perl "$(CURDIR)/scripts/seed.pl" --logs
-
-.PHONY: populate-metrics
-populate-metrics:
-	OTLP_ENDPOINT="$(OTLP_ENDPOINT)" perl "$(CURDIR)/scripts/seed.pl" --metrics
+.PHONY: populate-traces populate-logs populate-metrics
+populate-traces populate-logs populate-metrics:
+	@set -eu; \
+	endpoint="$(OTLP_ENDPOINT)"; endpoint="$${endpoint:-http://localhost:4318}"; \
+	signal="$(@:populate-%=%)"; \
+	for file in "$(OTLP_DATASET)/$$signal"*.json; do \
+		test -f "$$file" || { printf 'No %s requests in %s\n' "$$signal" "$(OTLP_DATASET)" >&2; exit 1; }; \
+		curl --fail-with-body --silent --show-error -H 'Content-Type: application/json' \
+			--data-binary "@$$file" "$${endpoint%/}/v1/$$signal"; \
+		printf '\nLoaded %s\n' "$$file"; \
+	done
 
 .PHONY: dev-go
 dev-go: kill-port

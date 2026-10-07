@@ -1,0 +1,169 @@
+{
+  "resourceLogs": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "payment-service"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": {
+            "name": "checkout-fixture",
+            "version": "1.0.0"
+          },
+          "logRecords": [
+            {
+              "timeUnixNano": "1791360000950000000",
+              "observedTimeUnixNano": "1791360000950500000",
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+              "spanId": "0000000000000006",
+              "severityNumber": 17,
+              "severityText": "ERROR",
+              "body": {
+                "stringValue": "Payment declined: card ending 4242, reason: insufficient_funds"
+              },
+              "attributes": [
+                {
+                  "key": "error.type",
+                  "value": {
+                    "stringValue": "PaymentDeclinedError"
+                  }
+                },
+                {
+                  "key": "card.last4",
+                  "value": {
+                    "stringValue": "4242"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "api-gateway"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": {
+            "name": "checkout-fixture",
+            "version": "1.0.0"
+          },
+          "logRecords": [
+            {
+              "timeUnixNano": "1791360001200000000",
+              "observedTimeUnixNano": "1791360001200500000",
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+              "spanId": "0000000000000001",
+              "severityNumber": 17,
+              "severityText": "ERROR",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 402 after 1.2s"
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "402"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "inventory-service"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "east"
+            }
+          }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": {
+            "name": "checkout-fixture",
+            "version": "1.0.0"
+          },
+          "logRecords": [
+            {
+              "timeUnixNano": "1791360000490000000",
+              "observedTimeUnixNano": "1791360000490500000",
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+              "spanId": "0000000000000003",
+              "severityNumber": 13,
+              "severityText": "WARN",
+              "body": {
+                "stringValue": "Stock level below threshold: SKU-4412 has 3 remaining (threshold: 10)"
+              },
+              "attributes": [
+                {
+                  "key": "sku",
+                  "value": {
+                    "stringValue": "SKU-4412"
+                  }
+                },
+                {
+                  "key": "remaining",
+                  "value": {
+                    "intValue": "3"
+                  }
+                },
+                {
+                  "key": "threshold",
+                  "value": {
+                    "intValue": "10"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

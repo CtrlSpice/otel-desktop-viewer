@@ -1,0 +1,179 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "billing-service"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.0"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "billing-service.tracer",
+            "version": "0.1.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "spans": [
+            {
+              "traceId": "b531639e1404302e6d1cef9a29bdb8c8",
+              "spanId": "703296e99517ce5d",
+              "traceState": "",
+              "name": "charge",
+              "kind": 2,
+              "startTimeUnixNano": "1791366631000000000",
+              "endTimeUnixNano": "1791366631150000000",
+              "attributes": [
+                {
+                  "key": "http.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "http.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "http.target",
+                  "value": {
+                    "stringValue": "/charge"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791366631000000000",
+                  "name": "request.received",
+                  "attributes": [
+                    {
+                      "key": "net.peer.ip",
+                      "value": {
+                        "stringValue": "10.0.1.2"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                },
+                {
+                  "timeUnixNano": "1791366631003000000",
+                  "name": "auth.verified",
+                  "attributes": [
+                    {
+                      "key": "auth.scheme",
+                      "value": {
+                        "stringValue": "bearer"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [
+                {
+                  "traceState": "",
+                  "attributes": [
+                    {
+                      "key": "link.relationship",
+                      "value": {
+                        "stringValue": "follows_from"
+                      }
+                    },
+                    {
+                      "key": "messaging.system",
+                      "value": {
+                        "stringValue": "kafka"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0,
+                  "flags": 0,
+                  "traceId": "ff5dda691683f54178d0e1c32ed08fa3",
+                  "spanId": "daa79f7b55b6faba"
+                }
+              ],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0
+            },
+            {
+              "traceId": "b531639e1404302e6d1cef9a29bdb8c8",
+              "spanId": "02cb03be7cf7908e",
+              "traceState": "",
+              "name": "charge/child-1",
+              "kind": 3,
+              "startTimeUnixNano": "1791366631005000000",
+              "endTimeUnixNano": "1791366631015000000",
+              "attributes": [
+                {
+                  "key": "child.index",
+                  "value": {
+                    "intValue": "1"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791366631005000000",
+                  "name": "child.checkpoint",
+                  "attributes": [
+                    {
+                      "key": "checkpoint",
+                      "value": {
+                        "stringValue": "after_dispatch"
+                      }
+                    },
+                    {
+                      "key": "child.index",
+                      "value": {
+                        "intValue": "1"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "703296e99517ce5d"
+            }
+          ],
+          "schemaUrl": ""
+        }
+      ],
+      "schemaUrl": ""
+    }
+  ]
+}

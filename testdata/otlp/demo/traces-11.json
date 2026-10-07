@@ -1,0 +1,137 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "billing-service"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.0"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "billing-service.tracer",
+            "version": "0.1.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "spans": [
+            {
+              "traceId": "68c9d24a96ff51dcc70e497293516760",
+              "spanId": "203367cef15b6206",
+              "traceState": "",
+              "name": "refund",
+              "kind": 2,
+              "startTimeUnixNano": "1791352231000000000",
+              "endTimeUnixNano": "1791352231045000000",
+              "attributes": [
+                {
+                  "key": "http.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "http.status_code",
+                  "value": {
+                    "intValue": "500"
+                  }
+                },
+                {
+                  "key": "http.target",
+                  "value": {
+                    "stringValue": "/refund"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791352231000000000",
+                  "name": "exception",
+                  "attributes": [
+                    {
+                      "key": "exception.message",
+                      "value": {
+                        "stringValue": "something went wrong in refund"
+                      }
+                    },
+                    {
+                      "key": "exception.type",
+                      "value": {
+                        "stringValue": "RuntimeError"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                },
+                {
+                  "timeUnixNano": "1791352231005000000",
+                  "name": "http.response.flush",
+                  "attributes": [
+                    {
+                      "key": "http.status_code",
+                      "value": {
+                        "intValue": "500"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [
+                {
+                  "traceState": "",
+                  "attributes": [
+                    {
+                      "key": "link.relationship",
+                      "value": {
+                        "stringValue": "follows_from"
+                      }
+                    },
+                    {
+                      "key": "messaging.system",
+                      "value": {
+                        "stringValue": "kafka"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0,
+                  "flags": 0,
+                  "traceId": "045a77d97004cd67f66f9f63f91db528",
+                  "spanId": "ddf319852777d8c0"
+                }
+              ],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 2
+              },
+              "flags": 0
+            }
+          ],
+          "schemaUrl": ""
+        }
+      ],
+      "schemaUrl": ""
+    }
+  ]
+}

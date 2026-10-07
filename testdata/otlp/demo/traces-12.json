@@ -1,0 +1,193 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "orphan-subtree-lab"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "0.0.1"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "orphan-subtree-lab.tracer",
+            "version": "0.1.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "spans": [
+            {
+              "traceId": "6daebbff92b2f1d7db2f7eb08118c797",
+              "spanId": "57bb44fe33c35329",
+              "traceState": "",
+              "name": "orphan/subtree_head",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431000000000",
+              "endTimeUnixNano": "1791395431350000000",
+              "attributes": [
+                {
+                  "key": "edge",
+                  "value": {
+                    "stringValue": "parent_span_id_not_in_batch"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791395431005000000",
+                  "name": "subtree.head.bootstrap",
+                  "attributes": [
+                    {
+                      "key": "children.expected",
+                      "value": {
+                        "intValue": "2"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [
+                {
+                  "traceState": "",
+                  "attributes": [
+                    {
+                      "key": "causal",
+                      "value": {
+                        "stringValue": "scheduled_by_external"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0,
+                  "flags": 0,
+                  "traceId": "612de516fbd6280e26ac4a3069879170",
+                  "spanId": "30a9941bea1792d4"
+                }
+              ],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "4d6b2e01652ba1d0"
+            },
+            {
+              "traceId": "6daebbff92b2f1d7db2f7eb08118c797",
+              "spanId": "6e791103c2978973",
+              "traceState": "",
+              "name": "orphan/subtree_head/child_a",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431030000000",
+              "endTimeUnixNano": "1791395431200000000",
+              "attributes": [],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791395431040000000",
+                  "name": "child_a.phase1",
+                  "attributes": [],
+                  "droppedAttributesCount": 0
+                },
+                {
+                  "timeUnixNano": "1791395431120000000",
+                  "name": "child_a.phase2",
+                  "attributes": [
+                    {
+                      "key": "rows",
+                      "value": {
+                        "intValue": "12"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "57bb44fe33c35329"
+            },
+            {
+              "traceId": "6daebbff92b2f1d7db2f7eb08118c797",
+              "spanId": "600d89cb3a84c9de",
+              "traceState": "",
+              "name": "orphan/subtree_head/child_b",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431050000000",
+              "endTimeUnixNano": "1791395431280000000",
+              "attributes": [],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791395431090000000",
+                  "name": "child_b.retry",
+                  "attributes": [
+                    {
+                      "key": "attempt",
+                      "value": {
+                        "intValue": "2"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [
+                {
+                  "traceState": "",
+                  "attributes": [
+                    {
+                      "key": "downstream",
+                      "value": {
+                        "stringValue": "synthetic"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0,
+                  "flags": 0,
+                  "traceId": "7bef111aa7b20c048b5547ce5bcd3c80",
+                  "spanId": "b345670091ed6b76"
+                }
+              ],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "57bb44fe33c35329"
+            }
+          ],
+          "schemaUrl": ""
+        }
+      ],
+      "schemaUrl": ""
+    }
+  ]
+}

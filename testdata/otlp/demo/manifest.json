@@ -1,0 +1,224 @@
+{
+  "description": "Fixed synthetic dev capture: multi-service operations, Metric shapes, errors and orphan traces.",
+  "startTimeUnixNano": "1791222571000000000",
+  "endTimeUnixNano": "1791395432200000000",
+  "requests": [
+    {
+      "signal": "traces",
+      "file": "traces-01.json"
+    },
+    {
+      "signal": "traces",
+      "file": "traces-02.json"
+    },
+    {
+      "signal": "traces",
+      "file": "traces-03.json"
+    },
+    {
+      "signal": "traces",
+      "file": "traces-04.json"
+    },
+    {
+      "signal": "traces",
+      "file": "traces-05.json"
+    },
+    {
+      "signal": "traces",
+      "file": "traces-06.json"
+    },
+    {
+      "signal": "traces",
+      "file": "traces-07.json"
+    },
+    {
+      "signal": "traces",
+      "file": "traces-08.json"
+    },
+    {
+      "signal": "traces",
+      "file": "traces-09.json"
+    },
+    {
+      "signal": "traces",
+      "file": "traces-10.json"
+    },
+    {
+      "signal": "traces",
+      "file": "traces-11.json"
+    },
+    {
+      "signal": "traces",
+      "file": "traces-12.json"
+    },
+    {
+      "signal": "traces",
+      "file": "traces-13.json"
+    },
+    {
+      "signal": "traces",
+      "file": "traces-14.json"
+    },
+    {
+      "signal": "traces",
+      "file": "traces-15.json"
+    },
+    {
+      "signal": "traces",
+      "file": "traces-16.json"
+    },
+    {
+      "signal": "traces",
+      "file": "traces-17.json"
+    },
+    {
+      "signal": "traces",
+      "file": "traces-18.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-01.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-02.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-03.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-04.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-05.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-06.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-07.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-08.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-09.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-10.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-11.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-12.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-13.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-14.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-15.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-16.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-17.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-18.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-19.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-20.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-21.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-22.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs-23.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics-01.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics-02.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics-03.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics-04.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics-05.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics-06.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics-07.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics-08.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics-09.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics-10.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics-11.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics-12.json"
+    }
+  ],
+  "storedCounts": {
+    "spans": 101,
+    "logs": 23,
+    "datapoints": 9901
+  }
+}

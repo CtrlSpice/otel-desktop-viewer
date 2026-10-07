@@ -1,0 +1,339 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "api-gateway"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.0"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "api-gateway.tracer",
+            "version": "0.1.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "spans": [
+            {
+              "traceId": "9c17449564e5ed42a137d8f4f39981bd",
+              "spanId": "9c21f135336cb60c",
+              "traceState": "",
+              "name": "POST /orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791384631000000000",
+              "endTimeUnixNano": "1791384631210000000",
+              "attributes": [
+                {
+                  "key": "http.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "http.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                },
+                {
+                  "key": "http.target",
+                  "value": {
+                    "stringValue": "/POST /orders"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791384631000000000",
+                  "name": "request.received",
+                  "attributes": [
+                    {
+                      "key": "net.peer.ip",
+                      "value": {
+                        "stringValue": "10.0.1.2"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                },
+                {
+                  "timeUnixNano": "1791384631003000000",
+                  "name": "auth.verified",
+                  "attributes": [
+                    {
+                      "key": "auth.scheme",
+                      "value": {
+                        "stringValue": "bearer"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [
+                {
+                  "traceState": "",
+                  "attributes": [
+                    {
+                      "key": "link.relationship",
+                      "value": {
+                        "stringValue": "follows_from"
+                      }
+                    },
+                    {
+                      "key": "messaging.system",
+                      "value": {
+                        "stringValue": "kafka"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0,
+                  "flags": 0,
+                  "traceId": "975e725074061f5915bc63644a01f172",
+                  "spanId": "bbc0e75f028aea55"
+                }
+              ],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0
+            },
+            {
+              "traceId": "9c17449564e5ed42a137d8f4f39981bd",
+              "spanId": "d232cffee70bb92b",
+              "traceState": "",
+              "name": "POST /orders/child-1",
+              "kind": 3,
+              "startTimeUnixNano": "1791384631005000000",
+              "endTimeUnixNano": "1791384631015000000",
+              "attributes": [
+                {
+                  "key": "child.index",
+                  "value": {
+                    "intValue": "1"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791384631005000000",
+                  "name": "child.checkpoint",
+                  "attributes": [
+                    {
+                      "key": "checkpoint",
+                      "value": {
+                        "stringValue": "after_dispatch"
+                      }
+                    },
+                    {
+                      "key": "child.index",
+                      "value": {
+                        "intValue": "1"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "9c21f135336cb60c"
+            },
+            {
+              "traceId": "9c17449564e5ed42a137d8f4f39981bd",
+              "spanId": "d02797b39d3f0906",
+              "traceState": "",
+              "name": "POST /orders/child-2",
+              "kind": 3,
+              "startTimeUnixNano": "1791384631010000000",
+              "endTimeUnixNano": "1791384631020000000",
+              "attributes": [
+                {
+                  "key": "child.index",
+                  "value": {
+                    "intValue": "2"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791384631010000000",
+                  "name": "child.checkpoint",
+                  "attributes": [
+                    {
+                      "key": "checkpoint",
+                      "value": {
+                        "stringValue": "after_dispatch"
+                      }
+                    },
+                    {
+                      "key": "child.index",
+                      "value": {
+                        "intValue": "2"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [
+                {
+                  "traceState": "",
+                  "attributes": [
+                    {
+                      "key": "peer.operation",
+                      "value": {
+                        "stringValue": "synthetic_async_consumer"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0,
+                  "flags": 0,
+                  "traceId": "e5f4661ebd8de7f7f5ed9b4ccf15404d",
+                  "spanId": "fa7477347aea1c1c"
+                }
+              ],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "9c21f135336cb60c"
+            },
+            {
+              "traceId": "9c17449564e5ed42a137d8f4f39981bd",
+              "spanId": "fed3d2757ffb907f",
+              "traceState": "",
+              "name": "POST /orders/child-3",
+              "kind": 3,
+              "startTimeUnixNano": "1791384631015000000",
+              "endTimeUnixNano": "1791384631025000000",
+              "attributes": [
+                {
+                  "key": "child.index",
+                  "value": {
+                    "intValue": "3"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791384631015000000",
+                  "name": "child.checkpoint",
+                  "attributes": [
+                    {
+                      "key": "checkpoint",
+                      "value": {
+                        "stringValue": "after_dispatch"
+                      }
+                    },
+                    {
+                      "key": "child.index",
+                      "value": {
+                        "intValue": "3"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "9c21f135336cb60c"
+            },
+            {
+              "traceId": "9c17449564e5ed42a137d8f4f39981bd",
+              "spanId": "699803b1a1f4a155",
+              "traceState": "",
+              "name": "POST /orders/child-4",
+              "kind": 3,
+              "startTimeUnixNano": "1791384631020000000",
+              "endTimeUnixNano": "1791384631030000000",
+              "attributes": [
+                {
+                  "key": "child.index",
+                  "value": {
+                    "intValue": "4"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791384631020000000",
+                  "name": "child.checkpoint",
+                  "attributes": [
+                    {
+                      "key": "checkpoint",
+                      "value": {
+                        "stringValue": "after_dispatch"
+                      }
+                    },
+                    {
+                      "key": "child.index",
+                      "value": {
+                        "intValue": "4"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "9c21f135336cb60c"
+            }
+          ],
+          "schemaUrl": ""
+        }
+      ],
+      "schemaUrl": ""
+    }
+  ]
+}

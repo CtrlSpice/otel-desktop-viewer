@@ -1,0 +1,2799 @@
+{
+  "resourceMetrics": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "payment-service"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.0"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeMetrics": [
+        {
+          "scope": {
+            "name": "payment-service.meter",
+            "version": "0.1.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "metrics": [
+            {
+              "name": "payment.processing.duration",
+              "description": "End-to-end payment processing time",
+              "unit": "ms",
+              "metadata": [],
+              "exponentialHistogram": {
+                "dataPoints": [
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791391771000000000",
+                    "timeUnixNano": "1791391831000000000",
+                    "count": "201",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 55,
+                      "bucketCounts": [
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "29",
+                        "25",
+                        "22",
+                        "17",
+                        "13"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 34011.3413101039,
+                    "min": 33.8421306568198,
+                    "max": 304.579175911378
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791391831000000000",
+                    "timeUnixNano": "1791391891000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 56,
+                      "bucketCounts": [
+                        "19",
+                        "22",
+                        "24",
+                        "27",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "13"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 37165.0624553673,
+                    "min": 37.1650624553673,
+                    "max": 334.485562098306
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791391891000000000",
+                    "timeUnixNano": "1791391951000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 55,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "26",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 34409.9008100429,
+                    "min": 34.5828148844652,
+                    "max": 311.245333960187
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791391951000000000",
+                    "timeUnixNano": "1791392011000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 56,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "27",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 37608.4607209079,
+                    "min": 37.6084607209079,
+                    "max": 338.476146488171
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791392011000000000",
+                    "timeUnixNano": "1791392071000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 56,
+                      "bucketCounts": [
+                        "19",
+                        "22",
+                        "24",
+                        "27",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "13"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 37146.7811155133,
+                    "min": 37.1467811155133,
+                    "max": 334.32103003962
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791392071000000000",
+                    "timeUnixNano": "1791392131000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 56,
+                      "bucketCounts": [
+                        "20",
+                        "23",
+                        "25",
+                        "28",
+                        "28",
+                        "25",
+                        "21",
+                        "17",
+                        "12"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 36184.8443139852,
+                    "min": 36.3666777024977,
+                    "max": 327.300099322479
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791392131000000000",
+                    "timeUnixNano": "1791392191000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 56,
+                      "bucketCounts": [
+                        "19",
+                        "22",
+                        "25",
+                        "27",
+                        "29",
+                        "25",
+                        "22",
+                        "18",
+                        "13"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 36963.4284588508,
+                    "min": 36.9634284588508,
+                    "max": 332.670856129658
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791392191000000000",
+                    "timeUnixNano": "1791392251000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 55,
+                      "bucketCounts": [
+                        "18",
+                        "21",
+                        "23",
+                        "26",
+                        "29",
+                        "26",
+                        "23",
+                        "19",
+                        "15"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 34948.2873137109,
+                    "min": 34.9482873137109,
+                    "max": 314.534585823398
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791392251000000000",
+                    "timeUnixNano": "1791392311000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 55,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "23",
+                        "26",
+                        "29",
+                        "27",
+                        "23",
+                        "19",
+                        "15"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 35302.9275077395,
+                    "min": 35.3029275077395,
+                    "max": 317.726347569656
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791392311000000000",
+                    "timeUnixNano": "1791392371000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 55,
+                      "bucketCounts": [
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "29",
+                        "25",
+                        "21",
+                        "17",
+                        "13"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 33636.2287024967,
+                    "min": 33.6362287024967,
+                    "max": 302.726058322471
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791392371000000000",
+                    "timeUnixNano": "1791392431000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 55,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "23",
+                        "26",
+                        "29",
+                        "27",
+                        "23",
+                        "19",
+                        "15"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 35380.9078398161,
+                    "min": 35.380907839816,
+                    "max": 318.428170558345
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791392431000000000",
+                    "timeUnixNano": "1791392491000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 55,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "23",
+                        "26",
+                        "29",
+                        "27",
+                        "23",
+                        "19",
+                        "15"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 35467.4937511794,
+                    "min": 35.4674937511794,
+                    "max": 319.207443760615
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791392491000000000",
+                    "timeUnixNano": "1791392551000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 56,
+                      "bucketCounts": [
+                        "20",
+                        "23",
+                        "26",
+                        "28",
+                        "28",
+                        "25",
+                        "21",
+                        "17",
+                        "12"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 36213.1455170922,
+                    "min": 36.2131455170922,
+                    "max": 325.91830965383
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791392551000000000",
+                    "timeUnixNano": "1791392611000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 56,
+                      "bucketCounts": [
+                        "19",
+                        "22",
+                        "24",
+                        "27",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "13"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 37162.8145764582,
+                    "min": 37.1628145764582,
+                    "max": 334.465331188124
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791392611000000000",
+                    "timeUnixNano": "1791392671000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 56,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "23",
+                        "26",
+                        "29",
+                        "27",
+                        "23",
+                        "19",
+                        "15"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 38620.2505859546,
+                    "min": 38.6202505859546,
+                    "max": 347.582255273592
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791392671000000000",
+                    "timeUnixNano": "1791392731000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 55,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "27",
+                        "24",
+                        "20",
+                        "16"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 35806.3510294072,
+                    "min": 35.8063510294072,
+                    "max": 322.257159264665
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791392731000000000",
+                    "timeUnixNano": "1791392791000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 55,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "26",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 34409.4428042793,
+                    "min": 34.5823545771651,
+                    "max": 311.241191194486
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791392791000000000",
+                    "timeUnixNano": "1791392851000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 55,
+                      "bucketCounts": [
+                        "18",
+                        "21",
+                        "23",
+                        "26",
+                        "29",
+                        "26",
+                        "23",
+                        "19",
+                        "15"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 35075.3781954758,
+                    "min": 35.0753781954758,
+                    "max": 315.678403759282
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791392851000000000",
+                    "timeUnixNano": "1791392911000000000",
+                    "count": "201",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 55,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "23",
+                        "25",
+                        "28",
+                        "27",
+                        "24",
+                        "20",
+                        "16"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 35922.5169958896,
+                    "min": 35.7437980058603,
+                    "max": 321.694182052743
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791392911000000000",
+                    "timeUnixNano": "1791392971000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 56,
+                      "bucketCounts": [
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "29",
+                        "25",
+                        "21",
+                        "17",
+                        "13"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 36619.9738944881,
+                    "min": 36.6199738944881,
+                    "max": 329.579765050393
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791392971000000000",
+                    "timeUnixNano": "1791393031000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 56,
+                      "bucketCounts": [
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "29",
+                        "25",
+                        "21",
+                        "17",
+                        "13"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 36667.817871552,
+                    "min": 36.667817871552,
+                    "max": 330.010360843968
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791393031000000000",
+                    "timeUnixNano": "1791393091000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 56,
+                      "bucketCounts": [
+                        "20",
+                        "23",
+                        "25",
+                        "28",
+                        "28",
+                        "25",
+                        "21",
+                        "17",
+                        "12"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 36210.7426497401,
+                    "min": 36.3927061806433,
+                    "max": 327.53435562579
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791393091000000000",
+                    "timeUnixNano": "1791393151000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 56,
+                      "bucketCounts": [
+                        "19",
+                        "22",
+                        "24",
+                        "27",
+                        "29",
+                        "25",
+                        "22",
+                        "18",
+                        "13"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 36856.0289823362,
+                    "min": 37.0412351581268,
+                    "max": 333.371116423141
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791393151000000000",
+                    "timeUnixNano": "1791393211000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 55,
+                      "bucketCounts": [
+                        "18",
+                        "21",
+                        "23",
+                        "26",
+                        "29",
+                        "26",
+                        "23",
+                        "19",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 34753.6792383031,
+                    "min": 34.9283208425157,
+                    "max": 314.354887582641
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791393211000000000",
+                    "timeUnixNano": "1791393271000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 56,
+                      "bucketCounts": [
+                        "20",
+                        "23",
+                        "25",
+                        "28",
+                        "29",
+                        "25",
+                        "21",
+                        "17",
+                        "12"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 36429.1423338465,
+                    "min": 36.4291423338465,
+                    "max": 327.862281004619
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791393271000000000",
+                    "timeUnixNano": "1791393331000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 56,
+                      "bucketCounts": [
+                        "20",
+                        "23",
+                        "25",
+                        "28",
+                        "28",
+                        "25",
+                        "21",
+                        "17",
+                        "12"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 36191.5617585392,
+                    "min": 36.3734289030544,
+                    "max": 327.36086012749
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791393331000000000",
+                    "timeUnixNano": "1791393391000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 72,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "23",
+                        "25",
+                        "28",
+                        "27",
+                        "23",
+                        "20",
+                        "15"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 154269.669220728,
+                    "min": 155.044893689174,
+                    "max": 1395.40404320257
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791393391000000000",
+                    "timeUnixNano": "1791393451000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 79,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "23",
+                        "26",
+                        "29",
+                        "26",
+                        "22",
+                        "19",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 276650.617475559,
+                    "min": 278.040821583476,
+                    "max": 2502.36739425128
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791393451000000000",
+                    "timeUnixNano": "1791393511000000000",
+                    "count": "201",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 79,
+                      "bucketCounts": [
+                        "18",
+                        "21",
+                        "23",
+                        "26",
+                        "29",
+                        "27",
+                        "23",
+                        "19",
+                        "15"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 282606.136980086,
+                    "min": 281.200136298593,
+                    "max": 2530.80122668734
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791393511000000000",
+                    "timeUnixNano": "1791393571000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 79,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "27",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 274972.823709156,
+                    "min": 274.972823709156,
+                    "max": 2474.75541338241
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791393571000000000",
+                    "timeUnixNano": "1791393631000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 79,
+                      "bucketCounts": [
+                        "18",
+                        "21",
+                        "23",
+                        "26",
+                        "29",
+                        "26",
+                        "23",
+                        "19",
+                        "15"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 280241.488604899,
+                    "min": 280.241488604899,
+                    "max": 2522.17339744409
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791393631000000000",
+                    "timeUnixNano": "1791393691000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 79,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "26",
+                        "29",
+                        "26",
+                        "22",
+                        "19",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 277788.171200361,
+                    "min": 277.788171200361,
+                    "max": 2500.09354080325
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791393691000000000",
+                    "timeUnixNano": "1791393751000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 79,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "27",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 276226.329556759,
+                    "min": 276.226329556759,
+                    "max": 2486.03696601083
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791393751000000000",
+                    "timeUnixNano": "1791393811000000000",
+                    "count": "201",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 79,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "23",
+                        "25",
+                        "28",
+                        "27",
+                        "24",
+                        "20",
+                        "16"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 287079.044707637,
+                    "min": 285.650790753867,
+                    "max": 2570.85711678481
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791393811000000000",
+                    "timeUnixNano": "1791393871000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 78,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "27",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 253022.552214097,
+                    "min": 253.022552214097,
+                    "max": 2277.20296992688
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791393871000000000",
+                    "timeUnixNano": "1791393931000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 77,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "26",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 232286.154128075,
+                    "min": 233.453421234246,
+                    "max": 2101.08079110822
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791393931000000000",
+                    "timeUnixNano": "1791393991000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 77,
+                      "bucketCounts": [
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "29",
+                        "25",
+                        "21",
+                        "17",
+                        "13"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 225780.219322722,
+                    "min": 225.780219322722,
+                    "max": 2032.0219739045
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791393991000000000",
+                    "timeUnixNano": "1791394051000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 76,
+                      "bucketCounts": [
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "29",
+                        "25",
+                        "21",
+                        "17",
+                        "12"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 205255.902094771,
+                    "min": 206.287338788714,
+                    "max": 1856.58604909843
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791394051000000000",
+                    "timeUnixNano": "1791394111000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 75,
+                      "bucketCounts": [
+                        "19",
+                        "22",
+                        "24",
+                        "27",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "13"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 193390.006902348,
+                    "min": 193.390006902348,
+                    "max": 1740.51006212113
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791394111000000000",
+                    "timeUnixNano": "1791394171000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 75,
+                      "bucketCounts": [
+                        "20",
+                        "23",
+                        "25",
+                        "28",
+                        "28",
+                        "25",
+                        "21",
+                        "17",
+                        "12"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 187446.311913945,
+                    "min": 188.388253179844,
+                    "max": 1695.4942786186
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791394171000000000",
+                    "timeUnixNano": "1791394231000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 73,
+                      "bucketCounts": [
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "29",
+                        "25",
+                        "21",
+                        "17",
+                        "13"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 160388.454793673,
+                    "min": 160.388454793673,
+                    "max": 1443.49609314306
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791394231000000000",
+                    "timeUnixNano": "1791394291000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 71,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "27",
+                        "24",
+                        "20",
+                        "16"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 144289.33510771,
+                    "min": 144.28933510771,
+                    "max": 1298.60401596939
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791394291000000000",
+                    "timeUnixNano": "1791394351000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 70,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "27",
+                        "24",
+                        "20",
+                        "16"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 132329.290337395,
+                    "min": 132.329290337395,
+                    "max": 1190.96361303655
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791394351000000000",
+                    "timeUnixNano": "1791394411000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 69,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "27",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 116091.919334885,
+                    "min": 116.091919334885,
+                    "max": 1044.82727401396
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791394411000000000",
+                    "timeUnixNano": "1791394471000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 67,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "23",
+                        "26",
+                        "29",
+                        "27",
+                        "23",
+                        "19",
+                        "15"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 100066.631499212,
+                    "min": 100.066631499212,
+                    "max": 900.59968349291
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791394471000000000",
+                    "timeUnixNano": "1791394531000000000",
+                    "count": "201",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 65,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "23",
+                        "25",
+                        "28",
+                        "27",
+                        "24",
+                        "20",
+                        "16"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 85285.5138504985,
+                    "min": 84.8612078114413,
+                    "max": 763.750870302971
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791394531000000000",
+                    "timeUnixNano": "1791394591000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 63,
+                      "bucketCounts": [
+                        "20",
+                        "23",
+                        "25",
+                        "28",
+                        "29",
+                        "25",
+                        "21",
+                        "17",
+                        "12"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 66763.1899948232,
+                    "min": 66.7631899948232,
+                    "max": 600.868709953409
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791394591000000000",
+                    "timeUnixNano": "1791394651000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 60,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "27",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 52946.9727999531,
+                    "min": 52.9469727999531,
+                    "max": 476.522755199578
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791394651000000000",
+                    "timeUnixNano": "1791394711000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 56,
+                      "bucketCounts": [
+                        "19",
+                        "22",
+                        "24",
+                        "27",
+                        "29",
+                        "25",
+                        "22",
+                        "18",
+                        "13"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 36838.3570428514,
+                    "min": 37.023474414926,
+                    "max": 333.211269734334
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791394711000000000",
+                    "timeUnixNano": "1791394771000000000",
+                    "count": "201",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 55,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "23",
+                        "25",
+                        "28",
+                        "27",
+                        "24",
+                        "20",
+                        "16"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 35871.1313408925,
+                    "min": 35.6926680008881,
+                    "max": 321.234012007993
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791394771000000000",
+                    "timeUnixNano": "1791394831000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 55,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "23",
+                        "25",
+                        "28",
+                        "27",
+                        "23",
+                        "20",
+                        "15"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 35390.100451211,
+                    "min": 35.5679401519708,
+                    "max": 320.111461367738
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791394831000000000",
+                    "timeUnixNano": "1791394891000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 55,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "27",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 34532.7249730937,
+                    "min": 34.5327249730937,
+                    "max": 310.794524757843
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791394891000000000",
+                    "timeUnixNano": "1791394951000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 55,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "27",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 34281.6961931996,
+                    "min": 34.2816961931996,
+                    "max": 308.535265738796
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791394951000000000",
+                    "timeUnixNano": "1791395011000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 56,
+                      "bucketCounts": [
+                        "20",
+                        "23",
+                        "25",
+                        "28",
+                        "29",
+                        "25",
+                        "21",
+                        "17",
+                        "12"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 36405.6792746298,
+                    "min": 36.4056792746298,
+                    "max": 327.651113471668
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791395011000000000",
+                    "timeUnixNano": "1791395071000000000",
+                    "count": "201",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 56,
+                      "bucketCounts": [
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "29",
+                        "25",
+                        "22",
+                        "17",
+                        "13"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 37050.7393088615,
+                    "min": 36.866407272499,
+                    "max": 331.797665452491
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791395071000000000",
+                    "timeUnixNano": "1791395131000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 56,
+                      "bucketCounts": [
+                        "19",
+                        "22",
+                        "24",
+                        "27",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "13"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 37198.6204440706,
+                    "min": 37.1986204440705,
+                    "max": 334.787583996635
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791395131000000000",
+                    "timeUnixNano": "1791395191000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 56,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "23",
+                        "26",
+                        "29",
+                        "27",
+                        "23",
+                        "19",
+                        "15"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 38577.0096081309,
+                    "min": 38.5770096081309,
+                    "max": 347.193086473178
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791395191000000000",
+                    "timeUnixNano": "1791395251000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 55,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "23",
+                        "26",
+                        "29",
+                        "27",
+                        "23",
+                        "19",
+                        "15"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 35285.5032543652,
+                    "min": 35.2855032543652,
+                    "max": 317.569529289287
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791395251000000000",
+                    "timeUnixNano": "1791395311000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 56,
+                      "bucketCounts": [
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "29",
+                        "25",
+                        "21",
+                        "17",
+                        "13"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 36726.3984027319,
+                    "min": 36.7263984027319,
+                    "max": 330.537585624587
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791395311000000000",
+                    "timeUnixNano": "1791395371000000000",
+                    "count": "198",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 55,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "23",
+                        "25",
+                        "28",
+                        "27",
+                        "23",
+                        "19",
+                        "15"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 35151.7668607095,
+                    "min": 35.5068352128379,
+                    "max": 319.561516915541
+                  },
+                  {
+                    "attributes": [
+                      {
+                        "key": "payment.method",
+                        "value": {
+                          "stringValue": "card"
+                        }
+                      },
+                      {
+                        "key": "payment.provider",
+                        "value": {
+                          "stringValue": "stripe"
+                        }
+                      }
+                    ],
+                    "startTimeUnixNano": "1791395371000000000",
+                    "timeUnixNano": "1791395431000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 55,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "23",
+                        "26",
+                        "29",
+                        "27",
+                        "23",
+                        "19",
+                        "15"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 35340.1153433137,
+                    "min": 35.3401153433137,
+                    "max": 318.061038089823
+                  }
+                ],
+                "aggregationTemporality": 1
+              }
+            }
+          ],
+          "schemaUrl": ""
+        }
+      ],
+      "schemaUrl": ""
+    }
+  ]
+}

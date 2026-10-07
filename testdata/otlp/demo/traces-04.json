@@ -1,0 +1,345 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "order-service"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.0"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "order-service.tracer",
+            "version": "0.1.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "spans": [
+            {
+              "traceId": "3328eeaad8daf3e052a9441e8c964363",
+              "spanId": "11c4138e3bb94068",
+              "traceState": "",
+              "name": "create-order",
+              "kind": 2,
+              "startTimeUnixNano": "1791265831000000000",
+              "endTimeUnixNano": "1791265831420000000",
+              "attributes": [
+                {
+                  "key": "http.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "http.status_code",
+                  "value": {
+                    "intValue": "500"
+                  }
+                },
+                {
+                  "key": "http.target",
+                  "value": {
+                    "stringValue": "/create-order"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791265831000000000",
+                  "name": "exception",
+                  "attributes": [
+                    {
+                      "key": "exception.message",
+                      "value": {
+                        "stringValue": "something went wrong in create-order"
+                      }
+                    },
+                    {
+                      "key": "exception.type",
+                      "value": {
+                        "stringValue": "RuntimeError"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                },
+                {
+                  "timeUnixNano": "1791265831005000000",
+                  "name": "http.response.flush",
+                  "attributes": [
+                    {
+                      "key": "http.status_code",
+                      "value": {
+                        "intValue": "500"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [
+                {
+                  "traceState": "",
+                  "attributes": [
+                    {
+                      "key": "link.relationship",
+                      "value": {
+                        "stringValue": "follows_from"
+                      }
+                    },
+                    {
+                      "key": "messaging.system",
+                      "value": {
+                        "stringValue": "kafka"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0,
+                  "flags": 0,
+                  "traceId": "282a41679804297db49c28e43bb208ba",
+                  "spanId": "af5b6ac66bd14064"
+                }
+              ],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 2
+              },
+              "flags": 0
+            },
+            {
+              "traceId": "3328eeaad8daf3e052a9441e8c964363",
+              "spanId": "b01dc6d1214cf9f5",
+              "traceState": "",
+              "name": "create-order/child-1",
+              "kind": 3,
+              "startTimeUnixNano": "1791265831005000000",
+              "endTimeUnixNano": "1791265831015000000",
+              "attributes": [
+                {
+                  "key": "child.index",
+                  "value": {
+                    "intValue": "1"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791265831005000000",
+                  "name": "child.checkpoint",
+                  "attributes": [
+                    {
+                      "key": "checkpoint",
+                      "value": {
+                        "stringValue": "after_dispatch"
+                      }
+                    },
+                    {
+                      "key": "child.index",
+                      "value": {
+                        "intValue": "1"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 2
+              },
+              "flags": 0,
+              "parentSpanId": "11c4138e3bb94068"
+            },
+            {
+              "traceId": "3328eeaad8daf3e052a9441e8c964363",
+              "spanId": "d810fcda8cd2f78e",
+              "traceState": "",
+              "name": "create-order/child-2",
+              "kind": 3,
+              "startTimeUnixNano": "1791265831010000000",
+              "endTimeUnixNano": "1791265831020000000",
+              "attributes": [
+                {
+                  "key": "child.index",
+                  "value": {
+                    "intValue": "2"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791265831010000000",
+                  "name": "child.checkpoint",
+                  "attributes": [
+                    {
+                      "key": "checkpoint",
+                      "value": {
+                        "stringValue": "after_dispatch"
+                      }
+                    },
+                    {
+                      "key": "child.index",
+                      "value": {
+                        "intValue": "2"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [
+                {
+                  "traceState": "",
+                  "attributes": [
+                    {
+                      "key": "peer.operation",
+                      "value": {
+                        "stringValue": "synthetic_async_consumer"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0,
+                  "flags": 0,
+                  "traceId": "a85f5568e0e6b899b5cee1766cd57838",
+                  "spanId": "ca7f592b26051ed1"
+                }
+              ],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "11c4138e3bb94068"
+            },
+            {
+              "traceId": "3328eeaad8daf3e052a9441e8c964363",
+              "spanId": "feb25c01060f4507",
+              "traceState": "",
+              "name": "create-order/child-3",
+              "kind": 3,
+              "startTimeUnixNano": "1791265831015000000",
+              "endTimeUnixNano": "1791265831025000000",
+              "attributes": [
+                {
+                  "key": "child.index",
+                  "value": {
+                    "intValue": "3"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791265831015000000",
+                  "name": "child.checkpoint",
+                  "attributes": [
+                    {
+                      "key": "checkpoint",
+                      "value": {
+                        "stringValue": "after_dispatch"
+                      }
+                    },
+                    {
+                      "key": "child.index",
+                      "value": {
+                        "intValue": "3"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "11c4138e3bb94068"
+            },
+            {
+              "traceId": "3328eeaad8daf3e052a9441e8c964363",
+              "spanId": "d144f21c6a694a39",
+              "traceState": "",
+              "name": "create-order/child-4",
+              "kind": 3,
+              "startTimeUnixNano": "1791265831020000000",
+              "endTimeUnixNano": "1791265831030000000",
+              "attributes": [
+                {
+                  "key": "child.index",
+                  "value": {
+                    "intValue": "4"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791265831020000000",
+                  "name": "child.checkpoint",
+                  "attributes": [
+                    {
+                      "key": "checkpoint",
+                      "value": {
+                        "stringValue": "after_dispatch"
+                      }
+                    },
+                    {
+                      "key": "child.index",
+                      "value": {
+                        "intValue": "4"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "11c4138e3bb94068"
+            }
+          ],
+          "schemaUrl": ""
+        }
+      ],
+      "schemaUrl": ""
+    }
+  ]
+}
