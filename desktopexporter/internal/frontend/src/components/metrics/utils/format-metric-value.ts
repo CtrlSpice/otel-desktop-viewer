@@ -42,7 +42,7 @@ export function formatMetricValue(
 ): string {
   if (value === null || value === undefined) return ''
   if (!Number.isFinite(value)) return String(value)
-  if (value === 0) return '0'
+  if (value === 0) return Object.is(value, -0) ? '-0' : '0'
 
   const sigDigits = options.maxSignificantDigits ?? 3
   const sign = value < 0 ? '-' : ''
@@ -89,7 +89,9 @@ export function formatMetricValuePlain(
   if (!Number.isFinite(value)) return String(value)
 
   const maxFrac = options.maxFractionDigits ?? 6
-  const number = trimTrailingZeros(value.toFixed(maxFrac))
+  const number = Object.is(value, -0)
+    ? '-0'
+    : trimTrailingZeros(value.toFixed(maxFrac))
   const unit = options.unit?.trim()
   if (!unit || unit === '1') return number
   return `${number} ${unit}`

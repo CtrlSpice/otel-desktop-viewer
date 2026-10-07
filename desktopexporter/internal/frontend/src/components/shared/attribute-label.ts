@@ -8,8 +8,9 @@ export function attributeValueLabel(value: AttributeValue): string {
     case 'bytes':
     case 'bool':
     case 'int64':
-    case 'double':
       return String(value.value)
+    case 'double':
+      return Object.is(value.value, -0) ? '-0' : String(value.value)
     case 'array':
       return `[${value.value.map(attributeValueLabel).join(', ')}]`
     case 'map':
