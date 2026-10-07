@@ -102,7 +102,19 @@ make populate-logs
 make populate-metrics
 ```
 
-Seeding is driven by `scripts/seed.pl` (`--traces`, `--logs`, `--metrics`, `--all`). Run `populate-traces` before `populate-logs` so linked log records can resolve their traces. Override the endpoint with `OTLP_ENDPOINT=http://host:4318` when needed.
+Seeding posts fixed OTLP JSON from `testdata/otlp/demo/` using curl. Trace/log
+correlations are stored in the files; no generator or temporary handoff is needed.
+Choose **All** or the dataset's recorded time window in the viewer. Replaying
+logs or datapoints appends more records, so use a fresh store for repeatable counts.
+
+Override the endpoint with `OTLP_ENDPOINT=http://host:4318`, or select the smaller
+checkout-failure scenario:
+
+```bash
+make populate-traces populate-logs populate-metrics OTLP_DATASET=testdata/otlp/checkout
+```
+
+Dataset contents and counts are documented in [`testdata/otlp/README.md`](../testdata/otlp/README.md).
 
 ### Stop dev servers
 

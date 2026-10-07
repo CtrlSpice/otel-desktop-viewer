@@ -1,0 +1,119 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "replay-lab"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "0.0.1"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "replay-lab.tracer",
+            "version": "0.1.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "spans": [
+            {
+              "traceId": "474ba3f3d156b778e927b2811aede70a",
+              "spanId": "00b92b2b89e59215",
+              "traceState": "",
+              "name": "replay/session",
+              "kind": 2,
+              "startTimeUnixNano": "1791395431000000000",
+              "endTimeUnixNano": "1791395431400000000",
+              "attributes": [
+                {
+                  "key": "replay.source",
+                  "value": {
+                    "stringValue": "captured-session.otlp"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791395431000000000",
+                  "name": "replay.start",
+                  "attributes": [
+                    {
+                      "key": "replay.attempt",
+                      "value": {
+                        "intValue": "2"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0
+            },
+            {
+              "traceId": "474ba3f3d156b778e927b2811aede70a",
+              "spanId": "ad3bd4e424ce78a9",
+              "traceState": "",
+              "name": "replay/emit (first)",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431020000000",
+              "endTimeUnixNano": "1791395431180000000",
+              "attributes": [
+                {
+                  "key": "note",
+                  "value": {
+                    "stringValue": "kept: first span to claim this id"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791395431025000000",
+                  "name": "span.emitted",
+                  "attributes": [],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "00b92b2b89e59215"
+            }
+          ],
+          "schemaUrl": ""
+        }
+      ],
+      "schemaUrl": ""
+    }
+  ]
+}

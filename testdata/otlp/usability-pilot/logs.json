@@ -1,0 +1,225 @@
+{
+  "resourceLogs": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "worker"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": {
+            "name": "pilot"
+          },
+          "logRecords": [
+            {
+              "observedTimeUnixNano": "1791360010000000000",
+              "severityNumber": 9,
+              "body": {
+                "stringValue": "worker log 0"
+              },
+              "attributes": [
+                {
+                  "key": "outcome",
+                  "value": {
+                    "stringValue": "ok"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "worker"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": {
+            "name": "pilot"
+          },
+          "logRecords": [
+            {
+              "observedTimeUnixNano": "1791360010000000000",
+              "severityNumber": 9,
+              "body": {
+                "stringValue": "worker log 1"
+              },
+              "attributes": [
+                {
+                  "key": "outcome",
+                  "value": {
+                    "stringValue": "ok"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "worker"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "east"
+            }
+          }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": {
+            "name": "pilot"
+          },
+          "logRecords": [
+            {
+              "observedTimeUnixNano": "1791360010000000000",
+              "severityNumber": 9,
+              "body": {
+                "stringValue": "worker log 2"
+              },
+              "attributes": [
+                {
+                  "key": "outcome",
+                  "value": {
+                    "stringValue": "retry"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "worker"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": {
+            "name": "pilot"
+          },
+          "logRecords": [
+            {
+              "observedTimeUnixNano": "1791363600000000001",
+              "severityNumber": 9,
+              "body": {
+                "stringValue": "worker log 3"
+              },
+              "attributes": [
+                {
+                  "key": "outcome",
+                  "value": {
+                    "stringValue": "retry"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": {
+            "name": "pilot"
+          },
+          "logRecords": [
+            {
+              "traceId": "0000000000000000000000000000000a",
+              "timeUnixNano": "1791360010000000000",
+              "severityNumber": 17,
+              "body": {
+                "stringValue": "payment declined"
+              },
+              "spanId": "000000000000010a"
+            },
+            {
+              "traceId": "0000000000000000000000000000000a",
+              "timeUnixNano": "1791360010000000000",
+              "severityNumber": 9,
+              "body": {
+                "stringValue": "trace completed"
+              }
+            },
+            {
+              "traceId": "0000000000000000000000000000000a",
+              "timeUnixNano": "1791360010000000000",
+              "severityNumber": 9,
+              "body": {
+                "stringValue": "late instrumentation"
+              },
+              "spanId": "000000000000ffff"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

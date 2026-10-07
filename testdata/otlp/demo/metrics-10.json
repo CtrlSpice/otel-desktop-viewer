@@ -1,0 +1,1046 @@
+{
+  "resourceMetrics": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "legacy-batch"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.0"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeMetrics": [
+        {
+          "scope": {
+            "name": "legacy-batch.meter",
+            "version": "0.1.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "metrics": [
+            {
+              "name": "rpc.client.duration",
+              "description": "RPC client duration (legacy meter, temporality not declared)",
+              "unit": "ms",
+              "metadata": [],
+              "exponentialHistogram": {
+                "dataPoints": [
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791393571000000000",
+                    "timeUnixNano": "1791393631000000000",
+                    "count": "201",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 57,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "23",
+                        "25",
+                        "28",
+                        "27",
+                        "24",
+                        "20",
+                        "16"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 42622.3855218259,
+                    "min": 42.410333852563,
+                    "max": 381.693004673067
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791393631000000000",
+                    "timeUnixNano": "1791393691000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "26",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 44705.5044587026,
+                    "min": 44.930155234877,
+                    "max": 404.371397113893
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791393691000000000",
+                    "timeUnixNano": "1791393751000000000",
+                    "count": "201",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "18",
+                        "21",
+                        "23",
+                        "26",
+                        "29",
+                        "27",
+                        "23",
+                        "19",
+                        "15"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 45909.8983467263,
+                    "min": 45.681490892265,
+                    "max": 411.133418030385
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791393751000000000",
+                    "timeUnixNano": "1791393811000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "27",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 44493.8484617509,
+                    "min": 44.4938484617509,
+                    "max": 400.444636155758
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791393811000000000",
+                    "timeUnixNano": "1791393871000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "26",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 44697.3485668856,
+                    "min": 44.9219583586789,
+                    "max": 404.297625228111
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791393871000000000",
+                    "timeUnixNano": "1791393931000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 57,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "27",
+                        "24",
+                        "20",
+                        "16"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 42852.0726048388,
+                    "min": 42.8520726048388,
+                    "max": 385.668653443549
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791393931000000000",
+                    "timeUnixNano": "1791393991000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 57,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "27",
+                        "24",
+                        "20",
+                        "16"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 42702.7949065901,
+                    "min": 42.7027949065901,
+                    "max": 384.325154159311
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791393991000000000",
+                    "timeUnixNano": "1791394051000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "27",
+                        "24",
+                        "20",
+                        "16"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 46632.9419829883,
+                    "min": 46.6329419829883,
+                    "max": 419.696477846894
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394051000000000",
+                    "timeUnixNano": "1791394111000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "29",
+                        "25",
+                        "21",
+                        "17",
+                        "13"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 43568.9361439086,
+                    "min": 43.5689361439086,
+                    "max": 392.120425295178
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394111000000000",
+                    "timeUnixNano": "1791394171000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "27",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 44664.2291181721,
+                    "min": 44.6642291181721,
+                    "max": 401.978062063549
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394171000000000",
+                    "timeUnixNano": "1791394231000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "27",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 44603.2571316697,
+                    "min": 44.6032571316697,
+                    "max": 401.429314185027
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394231000000000",
+                    "timeUnixNano": "1791394291000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "29",
+                        "25",
+                        "21",
+                        "17",
+                        "12"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 43145.6150993104,
+                    "min": 43.3624272354878,
+                    "max": 390.261845119391
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394291000000000",
+                    "timeUnixNano": "1791394351000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 57,
+                      "bucketCounts": [
+                        "17",
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "28",
+                        "24",
+                        "20",
+                        "16"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 43040.6348840334,
+                    "min": 43.0406348840334,
+                    "max": 387.3657139563
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394351000000000",
+                    "timeUnixNano": "1791394411000000000",
+                    "count": "201",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "19",
+                        "22",
+                        "24",
+                        "27",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 44593.671826974,
+                    "min": 44.3718127631582,
+                    "max": 399.346314868424
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394411000000000",
+                    "timeUnixNano": "1791394471000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "18",
+                        "21",
+                        "23",
+                        "26",
+                        "29",
+                        "26",
+                        "23",
+                        "19",
+                        "15"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 45532.0108682849,
+                    "min": 45.5320108682849,
+                    "max": 409.788097814564
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394471000000000",
+                    "timeUnixNano": "1791394531000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "29",
+                        "25",
+                        "21",
+                        "17",
+                        "13"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 43653.5078325309,
+                    "min": 43.6535078325309,
+                    "max": 392.881570492778
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394531000000000",
+                    "timeUnixNano": "1791394591000000000",
+                    "count": "201",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "29",
+                        "25",
+                        "22",
+                        "17",
+                        "13"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 44077.7457723585,
+                    "min": 43.8584535048343,
+                    "max": 394.726081543509
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394591000000000",
+                    "timeUnixNano": "1791394651000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "20",
+                        "23",
+                        "25",
+                        "28",
+                        "28",
+                        "25",
+                        "21",
+                        "17",
+                        "12"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 43008.4200641881,
+                    "min": 43.2245427780784,
+                    "max": 389.020885002706
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394651000000000",
+                    "timeUnixNano": "1791394711000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "23",
+                        "26",
+                        "29",
+                        "26",
+                        "23",
+                        "19",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 45095.2206672169,
+                    "min": 45.0952206672169,
+                    "max": 405.856986004952
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394711000000000",
+                    "timeUnixNano": "1791394771000000000",
+                    "count": "201",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 57,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "23",
+                        "25",
+                        "28",
+                        "27",
+                        "24",
+                        "20",
+                        "16"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 42759.6532305856,
+                    "min": 42.5469186373986,
+                    "max": 382.922267736588
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394771000000000",
+                    "timeUnixNano": "1791394831000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "19",
+                        "22",
+                        "24",
+                        "27",
+                        "29",
+                        "25",
+                        "22",
+                        "18",
+                        "13"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 43805.6930711823,
+                    "min": 44.0258221820928,
+                    "max": 396.232399638835
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394831000000000",
+                    "timeUnixNano": "1791394891000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "27",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 44766.669651214,
+                    "min": 44.766669651214,
+                    "max": 402.900026860926
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394891000000000",
+                    "timeUnixNano": "1791394951000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "29",
+                        "25",
+                        "21",
+                        "17",
+                        "12"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 43189.0519176009,
+                    "min": 43.4060823292471,
+                    "max": 390.654740963224
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394951000000000",
+                    "timeUnixNano": "1791395011000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "27",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 44802.9257633723,
+                    "min": 44.8029257633723,
+                    "max": 403.226331870351
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791395011000000000",
+                    "timeUnixNano": "1791395071000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 59,
+                      "bucketCounts": [
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "29",
+                        "25",
+                        "21",
+                        "17",
+                        "12"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 47041.8113298821,
+                    "min": 47.2782023415901,
+                    "max": 425.503821074311
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791395071000000000",
+                    "timeUnixNano": "1791395131000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "20",
+                        "23",
+                        "25",
+                        "28",
+                        "28",
+                        "25",
+                        "21",
+                        "17",
+                        "12"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 43070.540245242,
+                    "min": 43.2869751208462,
+                    "max": 389.582776087616
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791395131000000000",
+                    "timeUnixNano": "1791395191000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 57,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "22",
+                        "25",
+                        "28",
+                        "27",
+                        "24",
+                        "20",
+                        "16"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 42734.8229051568,
+                    "min": 42.7348229051568,
+                    "max": 384.613406146411
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791395191000000000",
+                    "timeUnixNano": "1791395251000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 57,
+                      "bucketCounts": [
+                        "18",
+                        "20",
+                        "23",
+                        "25",
+                        "28",
+                        "27",
+                        "23",
+                        "20",
+                        "15"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 42139.5699408646,
+                    "min": 42.3513265737332,
+                    "max": 381.161939163599
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791395251000000000",
+                    "timeUnixNano": "1791395311000000000",
+                    "count": "199",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "26",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 44708.4212258118,
+                    "min": 44.9330866591073,
+                    "max": 404.397779931966
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791395311000000000",
+                    "timeUnixNano": "1791395371000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 57,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "27",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 40868.7721752562,
+                    "min": 40.8687721752561,
+                    "max": 367.818949577305
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791395371000000000",
+                    "timeUnixNano": "1791395431000000000",
+                    "count": "200",
+                    "scale": 3,
+                    "zeroCount": "0",
+                    "positive": {
+                      "offset": 58,
+                      "bucketCounts": [
+                        "19",
+                        "21",
+                        "24",
+                        "27",
+                        "29",
+                        "26",
+                        "22",
+                        "18",
+                        "14"
+                      ]
+                    },
+                    "negative": {
+                      "offset": 0,
+                      "bucketCounts": []
+                    },
+                    "zeroThreshold": 0.0,
+                    "exemplars": [],
+                    "flags": 0,
+                    "sum": 44758.700695727,
+                    "min": 44.758700695727,
+                    "max": 402.828306261543
+                  }
+                ],
+                "aggregationTemporality": 0
+              }
+            }
+          ],
+          "schemaUrl": ""
+        }
+      ],
+      "schemaUrl": ""
+    }
+  ]
+}

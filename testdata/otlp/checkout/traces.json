@@ -1,0 +1,310 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "api-gateway"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "checkout-fixture",
+            "version": "1.0.0"
+          },
+          "spans": [
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+              "spanId": "0000000000000001",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791360000000000000",
+              "endTimeUnixNano": "1791360001200000000",
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "http.route",
+                  "value": {
+                    "stringValue": "/api/v2/orders"
+                  }
+                },
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "402"
+                  }
+                }
+              ],
+              "status": {
+                "code": 2,
+                "message": "Payment declined"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "catalog-service"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "checkout-fixture",
+            "version": "1.0.0"
+          },
+          "spans": [
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+              "spanId": "0000000000000002",
+              "parentSpanId": "0000000000000001",
+              "name": "catalog/resolve-items",
+              "kind": 1,
+              "startTimeUnixNano": "1791360000025000000",
+              "endTimeUnixNano": "1791360000280000000",
+              "attributes": [
+                {
+                  "key": "items",
+                  "value": {
+                    "intValue": "3"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "inventory-service"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "east"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "checkout-fixture",
+            "version": "1.0.0"
+          },
+          "spans": [
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+              "spanId": "0000000000000003",
+              "parentSpanId": "0000000000000001",
+              "name": "inventory/reserve-stock",
+              "kind": 1,
+              "startTimeUnixNano": "1791360000285000000",
+              "endTimeUnixNano": "1791360000500000000",
+              "attributes": [
+                {
+                  "key": "sku",
+                  "value": {
+                    "stringValue": "SKU-4412"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "order-service"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "checkout-fixture",
+            "version": "1.0.0"
+          },
+          "spans": [
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+              "spanId": "0000000000000004",
+              "parentSpanId": "0000000000000001",
+              "name": "order/create",
+              "kind": 1,
+              "startTimeUnixNano": "1791360000505000000",
+              "endTimeUnixNano": "1791360000780000000",
+              "attributes": [
+                {
+                  "key": "order.id",
+                  "value": {
+                    "stringValue": "ORD-20260411-7829"
+                  }
+                },
+                {
+                  "key": "order.total_cents",
+                  "value": {
+                    "intValue": "15499"
+                  }
+                }
+              ],
+              "status": {
+                "code": 1
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "payment-service"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "checkout-fixture",
+            "version": "1.0.0"
+          },
+          "spans": [
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+              "spanId": "0000000000000005",
+              "parentSpanId": "0000000000000001",
+              "name": "payment/charge",
+              "kind": 1,
+              "startTimeUnixNano": "1791360000785000000",
+              "endTimeUnixNano": "1791360001050000000",
+              "attributes": [
+                {
+                  "key": "error.type",
+                  "value": {
+                    "stringValue": "PaymentDeclinedError"
+                  }
+                }
+              ],
+              "status": {
+                "code": 2,
+                "message": "Card declined"
+              }
+            },
+            {
+              "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+              "spanId": "0000000000000006",
+              "parentSpanId": "0000000000000005",
+              "name": "stripe/create-charge",
+              "kind": 3,
+              "startTimeUnixNano": "1791360000882000000",
+              "endTimeUnixNano": "1791360001000000000",
+              "attributes": [
+                {
+                  "key": "server.address",
+                  "value": {
+                    "stringValue": "api.stripe.com"
+                  }
+                },
+                {
+                  "key": "error.type",
+                  "value": {
+                    "stringValue": "PaymentDeclinedError"
+                  }
+                }
+              ],
+              "events": [
+                {
+                  "name": "exception",
+                  "timeUnixNano": "1791360000950000000",
+                  "attributes": [
+                    {
+                      "key": "exception.type",
+                      "value": {
+                        "stringValue": "PaymentDeclinedError"
+                      }
+                    },
+                    {
+                      "key": "exception.message",
+                      "value": {
+                        "stringValue": "Card declined: insufficient funds"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "status": {
+                "code": 2,
+                "message": "Card declined: insufficient funds"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

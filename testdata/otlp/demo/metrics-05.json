@@ -1,0 +1,303 @@
+{
+  "resourceMetrics": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "legacy-batch"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.0"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeMetrics": [
+        {
+          "scope": {
+            "name": "legacy-batch.meter",
+            "version": "0.1.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "metrics": [
+            {
+              "name": "jobs.processed.count",
+              "description": "Jobs processed (legacy meter, temporality not declared)",
+              "unit": "{jobs}",
+              "metadata": [],
+              "sum": {
+                "dataPoints": [
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791393571000000000",
+                    "timeUnixNano": "1791393631000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 14070.2062543947
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791393631000000000",
+                    "timeUnixNano": "1791393691000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 14029.271892671
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791393691000000000",
+                    "timeUnixNano": "1791393751000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 13894.6816887042
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791393751000000000",
+                    "timeUnixNano": "1791393811000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 14210.6993472113
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791393811000000000",
+                    "timeUnixNano": "1791393871000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 14192.5067926668
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791393871000000000",
+                    "timeUnixNano": "1791393931000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 14211.2273779199
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791393931000000000",
+                    "timeUnixNano": "1791393991000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 14336.5642295325
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791393991000000000",
+                    "timeUnixNano": "1791394051000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 14326.5341985839
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394051000000000",
+                    "timeUnixNano": "1791394111000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 14555.4778856959
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394111000000000",
+                    "timeUnixNano": "1791394171000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 14445.2262090256
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394171000000000",
+                    "timeUnixNano": "1791394231000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 14632.0039839772
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394231000000000",
+                    "timeUnixNano": "1791394291000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 14648.9509833834
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394291000000000",
+                    "timeUnixNano": "1791394351000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 14706.6409469038
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394351000000000",
+                    "timeUnixNano": "1791394411000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 14771.2790083938
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394411000000000",
+                    "timeUnixNano": "1791394471000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 14897.1580099912
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394471000000000",
+                    "timeUnixNano": "1791394531000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 14940.454171672
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394531000000000",
+                    "timeUnixNano": "1791394591000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 15011.1425850246
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394591000000000",
+                    "timeUnixNano": "1791394651000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 15059.9129999933
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394651000000000",
+                    "timeUnixNano": "1791394711000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 15111.8663733399
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394711000000000",
+                    "timeUnixNano": "1791394771000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 15133.8726475744
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394771000000000",
+                    "timeUnixNano": "1791394831000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 15313.7702291049
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394831000000000",
+                    "timeUnixNano": "1791394891000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 15265.4876343549
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394891000000000",
+                    "timeUnixNano": "1791394951000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 15223.067772601
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791394951000000000",
+                    "timeUnixNano": "1791395011000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 15308.675334278
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791395011000000000",
+                    "timeUnixNano": "1791395071000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 15320.5677535038
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791395071000000000",
+                    "timeUnixNano": "1791395131000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 15549.7102135723
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791395131000000000",
+                    "timeUnixNano": "1791395191000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 15570.215164165
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791395191000000000",
+                    "timeUnixNano": "1791395251000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 15507.4868190325
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791395251000000000",
+                    "timeUnixNano": "1791395311000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 15647.2511028931
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791395311000000000",
+                    "timeUnixNano": "1791395371000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 15786.3515163013
+                  },
+                  {
+                    "attributes": [],
+                    "startTimeUnixNano": "1791395371000000000",
+                    "timeUnixNano": "1791395431000000000",
+                    "exemplars": [],
+                    "flags": 0,
+                    "asDouble": 15928.2913872348
+                  }
+                ],
+                "aggregationTemporality": 0,
+                "isMonotonic": true
+              }
+            }
+          ],
+          "schemaUrl": ""
+        }
+      ],
+      "schemaUrl": ""
+    }
+  ]
+}

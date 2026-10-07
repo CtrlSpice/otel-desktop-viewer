@@ -1,0 +1,1503 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "notification-service"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.5.0"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "notification-service.tracer",
+            "version": "0.1.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "spans": [
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "01c35affce94640f",
+              "traceState": "",
+              "name": "notify/send-confirmation",
+              "kind": 1,
+              "startTimeUnixNano": "1791395432055000000",
+              "endTimeUnixNano": "1791395432170000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "notification-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "04d8b8135bafff35"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "5b56efee970c20d4",
+              "traceState": "",
+              "name": "template/render-email",
+              "kind": 1,
+              "startTimeUnixNano": "1791395432058000000",
+              "endTimeUnixNano": "1791395432090000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "notification-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "01c35affce94640f"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "94d32edc99f07f7e",
+              "traceState": "",
+              "name": "push/send-mobile",
+              "kind": 3,
+              "startTimeUnixNano": "1791395432092000000",
+              "endTimeUnixNano": "1791395432130000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "notification-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "01c35affce94640f"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "f96b082070b3141b",
+              "traceState": "",
+              "name": "smtp/deliver",
+              "kind": 3,
+              "startTimeUnixNano": "1791395432092000000",
+              "endTimeUnixNano": "1791395432140000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "notification-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "01c35affce94640f"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "a61706725c358b66",
+              "traceState": "",
+              "name": "webhook/post-order-event",
+              "kind": 3,
+              "startTimeUnixNano": "1791395432095000000",
+              "endTimeUnixNano": "1791395432165000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "notification-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "01c35affce94640f"
+            }
+          ],
+          "schemaUrl": ""
+        }
+      ],
+      "schemaUrl": ""
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "user-service"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.8.0"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "user-service.tracer",
+            "version": "0.1.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "spans": [
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "d0b6875f7f64b710",
+              "traceState": "",
+              "name": "user/validate-token",
+              "kind": 1,
+              "startTimeUnixNano": "1791395431003000000",
+              "endTimeUnixNano": "1791395431016000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "user-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "cb96fb5d226ca2ec"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "c061000f51cb79e3",
+              "traceState": "",
+              "name": "user/load-profile",
+              "kind": 1,
+              "startTimeUnixNano": "1791395431005000000",
+              "endTimeUnixNano": "1791395431014000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "user-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "d0b6875f7f64b710"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "44605844e08c754d",
+              "traceState": "",
+              "name": "cache/profile-lookup",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431006000000",
+              "endTimeUnixNano": "1791395431008000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "user-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "c061000f51cb79e3"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "5d6aa1c29be8f5fa",
+              "traceState": "",
+              "name": "db/SELECT users",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431006000000",
+              "endTimeUnixNano": "1791395431010000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "user-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "c061000f51cb79e3"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "58d962d3fa55d0f0",
+              "traceState": "",
+              "name": "user/check-permissions",
+              "kind": 1,
+              "startTimeUnixNano": "1791395431014000000",
+              "endTimeUnixNano": "1791395431016000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "user-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "d0b6875f7f64b710"
+            }
+          ],
+          "schemaUrl": ""
+        }
+      ],
+      "schemaUrl": ""
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "payment-service"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "4.0.1"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "payment-service.tracer",
+            "version": "0.1.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "spans": [
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "3731c46b2718dc0d",
+              "traceState": "",
+              "name": "payment/charge",
+              "kind": 1,
+              "startTimeUnixNano": "1791395431785000000",
+              "endTimeUnixNano": "1791395432050000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "payment-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "04d8b8135bafff35"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "308a08ca22a94c92",
+              "traceState": "",
+              "name": "payment/fraud-check",
+              "kind": 1,
+              "startTimeUnixNano": "1791395431788000000",
+              "endTimeUnixNano": "1791395431880000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "payment-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "3731c46b2718dc0d"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "d2db5c5733c2d840",
+              "traceState": "",
+              "name": "ml/score-transaction",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431790000000",
+              "endTimeUnixNano": "1791395431870000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "payment-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "308a08ca22a94c92"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "992d5d81e7272e1a",
+              "traceState": "",
+              "name": "stripe/create-charge",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431882000000",
+              "endTimeUnixNano": "1791395432000000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "payment-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791395431950000000",
+                  "name": "exception",
+                  "attributes": [
+                    {
+                      "key": "exception.message",
+                      "value": {
+                        "stringValue": "Card declined: insufficient funds"
+                      }
+                    },
+                    {
+                      "key": "exception.type",
+                      "value": {
+                        "stringValue": "PaymentDeclinedError"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 2
+              },
+              "flags": 0,
+              "parentSpanId": "3731c46b2718dc0d"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "03b3fd983c4f4f4d",
+              "traceState": "",
+              "name": "db/INSERT ledger_entry",
+              "kind": 3,
+              "startTimeUnixNano": "1791395432002000000",
+              "endTimeUnixNano": "1791395432030000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "payment-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "3731c46b2718dc0d"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "c937233d5cb2abc3",
+              "traceState": "",
+              "name": "payment/generate-receipt",
+              "kind": 1,
+              "startTimeUnixNano": "1791395432032000000",
+              "endTimeUnixNano": "1791395432048000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "payment-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "3731c46b2718dc0d"
+            }
+          ],
+          "schemaUrl": ""
+        }
+      ],
+      "schemaUrl": ""
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "order-service"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "2.0.3"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "order-service.tracer",
+            "version": "0.1.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "spans": [
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "1aef7593257a4822",
+              "traceState": "",
+              "name": "order/create",
+              "kind": 1,
+              "startTimeUnixNano": "1791395431505000000",
+              "endTimeUnixNano": "1791395431780000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "order-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "04d8b8135bafff35"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "089b2dd7d68590bb",
+              "traceState": "",
+              "name": "order/validate-request",
+              "kind": 1,
+              "startTimeUnixNano": "1791395431508000000",
+              "endTimeUnixNano": "1791395431530000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "order-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "1aef7593257a4822"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "076fd769402aad19",
+              "traceState": "",
+              "name": "db/INSERT orders",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431532000000",
+              "endTimeUnixNano": "1791395431600000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "order-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "1aef7593257a4822"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "9267c0cad2a89b35",
+              "traceState": "",
+              "name": "db/INSERT line_items[0]",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431535000000",
+              "endTimeUnixNano": "1791395431555000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "order-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "076fd769402aad19"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "6eae138e2688fc05",
+              "traceState": "",
+              "name": "db/INSERT line_items[1]",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431556000000",
+              "endTimeUnixNano": "1791395431575000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "order-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "076fd769402aad19"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "a5ec18e88486b714",
+              "traceState": "",
+              "name": "db/INSERT line_items[2]",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431576000000",
+              "endTimeUnixNano": "1791395431595000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "order-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "076fd769402aad19"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "322aae510d8b1cce",
+              "traceState": "",
+              "name": "order/compute-totals",
+              "kind": 1,
+              "startTimeUnixNano": "1791395431602000000",
+              "endTimeUnixNano": "1791395431770000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "order-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "1aef7593257a4822"
+            }
+          ],
+          "schemaUrl": ""
+        }
+      ],
+      "schemaUrl": ""
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "api-gateway"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "2.4.1"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "api-gateway.tracer",
+            "version": "0.1.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "spans": [
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "9c618c1a2d234204",
+              "traceState": "",
+              "name": "POST /api/v2/orders",
+              "kind": 2,
+              "startTimeUnixNano": "1791395431000000000",
+              "endTimeUnixNano": "1791395432200000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "api-gateway"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [
+                {
+                  "timeUnixNano": "1791395431000000000",
+                  "name": "request.received",
+                  "attributes": [
+                    {
+                      "key": "http.method",
+                      "value": {
+                        "stringValue": "POST"
+                      }
+                    },
+                    {
+                      "key": "http.url",
+                      "value": {
+                        "stringValue": "/api/v2/orders"
+                      }
+                    }
+                  ],
+                  "droppedAttributesCount": 0
+                }
+              ],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "cb96fb5d226ca2ec",
+              "traceState": "",
+              "name": "middleware/authenticate",
+              "kind": 1,
+              "startTimeUnixNano": "1791395431002000000",
+              "endTimeUnixNano": "1791395431018000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "api-gateway"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "9c618c1a2d234204"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "fe957541f6ad79ad",
+              "traceState": "",
+              "name": "middleware/rate-limit",
+              "kind": 1,
+              "startTimeUnixNano": "1791395431018000000",
+              "endTimeUnixNano": "1791395431022000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "api-gateway"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "9c618c1a2d234204"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "04d8b8135bafff35",
+              "traceState": "",
+              "name": "router/dispatch",
+              "kind": 1,
+              "startTimeUnixNano": "1791395431022000000",
+              "endTimeUnixNano": "1791395432180000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "api-gateway"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "9c618c1a2d234204"
+            }
+          ],
+          "schemaUrl": ""
+        }
+      ],
+      "schemaUrl": ""
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "catalog-service"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "3.1.2"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "catalog-service.tracer",
+            "version": "0.1.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "spans": [
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "630bd56b8ca3c65c",
+              "traceState": "",
+              "name": "catalog/resolve-items",
+              "kind": 1,
+              "startTimeUnixNano": "1791395431025000000",
+              "endTimeUnixNano": "1791395431280000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "catalog-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "04d8b8135bafff35"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "4f04fb700ca6ff3a",
+              "traceState": "",
+              "name": "cache/product-details",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431028000000",
+              "endTimeUnixNano": "1791395431045000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "catalog-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "630bd56b8ca3c65c"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "9b657c0450ae6da4",
+              "traceState": "",
+              "name": "db/SELECT products",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431028000000",
+              "endTimeUnixNano": "1791395431120000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "catalog-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "630bd56b8ca3c65c"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "29af5e3be1c80b81",
+              "traceState": "",
+              "name": "catalog/enrich-metadata",
+              "kind": 1,
+              "startTimeUnixNano": "1791395431125000000",
+              "endTimeUnixNano": "1791395431270000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "catalog-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "630bd56b8ca3c65c"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "13fed4b721c10327",
+              "traceState": "",
+              "name": "cdn/resolve-image-urls",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431130000000",
+              "endTimeUnixNano": "1791395431200000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "catalog-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "29af5e3be1c80b81"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "a7cbc92b971830e7",
+              "traceState": "",
+              "name": "pricing/compute-discounts",
+              "kind": 1,
+              "startTimeUnixNano": "1791395431135000000",
+              "endTimeUnixNano": "1791395431260000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "catalog-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "29af5e3be1c80b81"
+            }
+          ],
+          "schemaUrl": ""
+        }
+      ],
+      "schemaUrl": ""
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "inventory-service"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.2.0"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "inventory-service.tracer",
+            "version": "0.1.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "spans": [
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "b37882f282895107",
+              "traceState": "",
+              "name": "inventory/reserve-stock",
+              "kind": 1,
+              "startTimeUnixNano": "1791395431285000000",
+              "endTimeUnixNano": "1791395431500000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "inventory-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "04d8b8135bafff35"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "e59d3047fafc8bc6",
+              "traceState": "",
+              "name": "db/advisory-lock",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431288000000",
+              "endTimeUnixNano": "1791395431310000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "inventory-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "b37882f282895107"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "18d0a437c4addb88",
+              "traceState": "",
+              "name": "db/UPDATE stock",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431312000000",
+              "endTimeUnixNano": "1791395431420000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "inventory-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "b37882f282895107"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "49abe350a651f89c",
+              "traceState": "",
+              "name": "db/SELECT remaining",
+              "kind": 3,
+              "startTimeUnixNano": "1791395431422000000",
+              "endTimeUnixNano": "1791395431460000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "inventory-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "b37882f282895107"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "33fa6c7f9d7e5e0e",
+              "traceState": "",
+              "name": "inventory/confirm-hold",
+              "kind": 1,
+              "startTimeUnixNano": "1791395431462000000",
+              "endTimeUnixNano": "1791395431495000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "inventory-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "b37882f282895107"
+            }
+          ],
+          "schemaUrl": ""
+        }
+      ],
+      "schemaUrl": ""
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "deployment.environment",
+            "value": {
+              "stringValue": "production"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "shipping-service"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.4"
+            }
+          }
+        ],
+        "droppedAttributesCount": 0
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "shipping-service.tracer",
+            "version": "0.1.0",
+            "attributes": [],
+            "droppedAttributesCount": 0
+          },
+          "spans": [
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "65a94a908d803215",
+              "traceState": "",
+              "name": "shipping/schedule-pickup",
+              "kind": 1,
+              "startTimeUnixNano": "1791395432055000000",
+              "endTimeUnixNano": "1791395432175000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "shipping-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "04d8b8135bafff35"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "268cb1309673efb8",
+              "traceState": "",
+              "name": "carrier/query-rates",
+              "kind": 3,
+              "startTimeUnixNano": "1791395432060000000",
+              "endTimeUnixNano": "1791395432120000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "shipping-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "65a94a908d803215"
+            },
+            {
+              "traceId": "231d60169caedc749f923a03c08a0943",
+              "spanId": "9fc7042cc1da032d",
+              "traceState": "",
+              "name": "label/generate-pdf",
+              "kind": 1,
+              "startTimeUnixNano": "1791395432122000000",
+              "endTimeUnixNano": "1791395432170000000",
+              "attributes": [
+                {
+                  "key": "service.layer",
+                  "value": {
+                    "stringValue": "shipping-service"
+                  }
+                }
+              ],
+              "droppedAttributesCount": 0,
+              "events": [],
+              "droppedEventsCount": 0,
+              "links": [],
+              "droppedLinksCount": 0,
+              "status": {
+                "message": "",
+                "code": 1
+              },
+              "flags": 0,
+              "parentSpanId": "65a94a908d803215"
+            }
+          ],
+          "schemaUrl": ""
+        }
+      ],
+      "schemaUrl": ""
+    }
+  ]
+}

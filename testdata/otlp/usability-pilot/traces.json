@@ -1,0 +1,2013 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-a"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000001",
+              "spanId": "0000000000000101",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360001000000000",
+              "endTimeUnixNano": "1791360001001000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-01"
+                  }
+                },
+                {
+                  "key": "attempt",
+                  "value": {
+                    "intValue": "9007199254740993"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-a"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000002",
+              "spanId": "0000000000000102",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360002000000000",
+              "endTimeUnixNano": "1791360002002000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-02"
+                  }
+                },
+                {
+                  "key": "attempt",
+                  "value": {
+                    "stringValue": "9007199254740993"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-a"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000003",
+              "spanId": "0000000000000103",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360003000000000",
+              "endTimeUnixNano": "1791360003003000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-03"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-a"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000004",
+              "spanId": "0000000000000104",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360004000000000",
+              "endTimeUnixNano": "1791360004004000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-04"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-a"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000005",
+              "spanId": "0000000000000105",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360005000000000",
+              "endTimeUnixNano": "1791360005005000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-05"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-a"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000006",
+              "spanId": "0000000000000106",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360006000000000",
+              "endTimeUnixNano": "1791360006006000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-06"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-a"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000007",
+              "spanId": "0000000000000107",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360007000000000",
+              "endTimeUnixNano": "1791360007007000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-07"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-a"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000008",
+              "spanId": "0000000000000108",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360008000000000",
+              "endTimeUnixNano": "1791360008008000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-08"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-a"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000009",
+              "spanId": "0000000000000109",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360009000000000",
+              "endTimeUnixNano": "1791360009009000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-09"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-a"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "0000000000000000000000000000000a",
+              "spanId": "000000000000010a",
+              "name": "POST /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360010000000000",
+              "endTimeUnixNano": "1791360010010000000",
+              "status": {
+                "code": 2
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-10"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-a"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "0000000000000000000000000000000b",
+              "spanId": "000000000000010b",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360011000000000",
+              "endTimeUnixNano": "1791360011011000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-11"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-a"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "0000000000000000000000000000000c",
+              "spanId": "000000000000010c",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360012000000000",
+              "endTimeUnixNano": "1791360012012000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-12"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-a"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "0000000000000000000000000000000d",
+              "spanId": "000000000000010d",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360013000000000",
+              "endTimeUnixNano": "1791360013013000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-13"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-a"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "0000000000000000000000000000000e",
+              "spanId": "000000000000010e",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360014000000000",
+              "endTimeUnixNano": "1791360014014000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-14"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-a"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "0000000000000000000000000000000f",
+              "spanId": "000000000000010f",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360015000000000",
+              "endTimeUnixNano": "1791360015015000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-15"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-a"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000010",
+              "spanId": "0000000000000110",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360016000000000",
+              "endTimeUnixNano": "1791360016016000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-16"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-a"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000011",
+              "spanId": "0000000000000111",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360017000000000",
+              "endTimeUnixNano": "1791360017017000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-17"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-a"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000012",
+              "spanId": "0000000000000112",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360018000000000",
+              "endTimeUnixNano": "1791360018018000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-18"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-a"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000013",
+              "spanId": "0000000000000113",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360019000000000",
+              "endTimeUnixNano": "1791360019019000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-19"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-a"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000014",
+              "spanId": "0000000000000114",
+              "name": "POST /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360020000000000",
+              "endTimeUnixNano": "1791360020020000000",
+              "status": {
+                "code": 2
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-20"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-b"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000015",
+              "spanId": "0000000000000115",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360021000000000",
+              "endTimeUnixNano": "1791360021021000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-21"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-b"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000016",
+              "spanId": "0000000000000116",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360022000000000",
+              "endTimeUnixNano": "1791360022022000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-22"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-b"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000017",
+              "spanId": "0000000000000117",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360023000000000",
+              "endTimeUnixNano": "1791360023023000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-23"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-b"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000018",
+              "spanId": "0000000000000118",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360024000000000",
+              "endTimeUnixNano": "1791360024024000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "GET"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-24"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-b"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000019",
+              "spanId": "0000000000000119",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360025000000000",
+              "endTimeUnixNano": "1791360025025000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-25"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-b"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "0000000000000000000000000000001a",
+              "spanId": "000000000000011a",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360026000000000",
+              "endTimeUnixNano": "1791360026026000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-26"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-b"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "0000000000000000000000000000001b",
+              "spanId": "000000000000011b",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360027000000000",
+              "endTimeUnixNano": "1791360027027000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-27"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-b"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "0000000000000000000000000000001c",
+              "spanId": "000000000000011c",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360028000000000",
+              "endTimeUnixNano": "1791360028028000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-28"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-b"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "0000000000000000000000000000001d",
+              "spanId": "000000000000011d",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360029000000000",
+              "endTimeUnixNano": "1791360029029000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-29"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-b"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "0000000000000000000000000000001e",
+              "spanId": "000000000000011e",
+              "name": "POST /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360030000000000",
+              "endTimeUnixNano": "1791360030030000000",
+              "status": {
+                "code": 2
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-30"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "checkout"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "east"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot",
+            "attributes": [
+              {
+                "key": "build.id",
+                "value": {
+                  "stringValue": "build-b"
+                }
+              }
+            ]
+          },
+          "spans": [
+            {
+              "traceId": "0000000000000000000000000000001f",
+              "spanId": "000000000000011f",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360031000000000",
+              "endTimeUnixNano": "1791360031031000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [
+                {
+                  "key": "http.request.method",
+                  "value": {
+                    "stringValue": "POST"
+                  }
+                },
+                {
+                  "key": "customer.id",
+                  "value": {
+                    "stringValue": "customer-31"
+                  }
+                }
+              ],
+              "events": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "worker"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot"
+          },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000063",
+              "spanId": "0000000000000163",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791359880000000000",
+              "endTimeUnixNano": "1791360480000000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [],
+              "events": [
+                {
+                  "name": "exception",
+                  "timeUnixNano": "1791360060000000000",
+                  "attributes": [
+                    {
+                      "key": "exception.type",
+                      "value": {
+                        "stringValue": "Timeout"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "worker"
+            }
+          },
+          {
+            "key": "region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": {
+            "name": "pilot"
+          },
+          "spans": [
+            {
+              "traceId": "00000000000000000000000000000064",
+              "spanId": "0000000000000164",
+              "name": "GET /checkout",
+              "kind": 2,
+              "startTimeUnixNano": "1791360020000000000",
+              "endTimeUnixNano": "1791360620000000000",
+              "status": {
+                "code": 1
+              },
+              "attributes": [],
+              "events": [
+                {
+                  "name": "exception",
+                  "timeUnixNano": "1791363600000000001",
+                  "attributes": [
+                    {
+                      "key": "exception.type",
+                      "value": {
+                        "stringValue": "Outside"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

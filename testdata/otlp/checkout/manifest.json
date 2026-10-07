@@ -1,0 +1,24 @@
+{
+  "description": "A checkout request fails when payment is declined; includes service-level spans, correlated logs and a linked exemplar.",
+  "startTimeUnixNano": "1791359880000000000",
+  "endTimeUnixNano": "1791360002000000000",
+  "requests": [
+    {
+      "signal": "traces",
+      "file": "traces.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics.json"
+    }
+  ],
+  "storedCounts": {
+    "spans": 6,
+    "logs": 3,
+    "datapoints": 7
+  }
+}

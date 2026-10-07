@@ -1,0 +1,24 @@
+{
+  "description": "Original six-task usability pilot fixture; retained for reproducibility, not the revised investigation suite.",
+  "startTimeUnixNano": "1791360000000000000",
+  "endTimeUnixNano": "1791363600000000000",
+  "requests": [
+    {
+      "signal": "traces",
+      "file": "traces.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics.json"
+    }
+  ],
+  "storedCounts": {
+    "spans": 33,
+    "logs": 7,
+    "datapoints": 2
+  }
+}
