@@ -51,6 +51,16 @@
   import LogCard from '@/components/logs/LogCard.svelte'
   import LogDetailPanel from '@/components/logs/LogDetailView.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
+  import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
+  import type { ImportFailure } from '@/types/import-types'
+
+  let {
+    importFailure = null,
+    onViewIssue,
+  }: {
+    importFailure?: ImportFailure | null
+    onViewIssue?: (event: MouseEvent) => void
+  } = $props()
 
   const SORT_OPTIONS: SortOption<LogSortColumn>[] = [
     { value: 'timestamp', label: 'Timestamp', defaultDirection: 'desc' },
@@ -201,9 +211,16 @@
     {/snippet}
 
     {#snippet main()}
-      {#if displayError}
+      {#if displayError || importFailure}
         <div class="logs-page__placeholder alert alert-error">
-          <span>Error: {displayError}</span>
+          {#if displayError}
+            <span>Error: {displayError}</span>
+          {:else if importFailure}
+            <span>Couldn't import {importFailure.fileName}.</span>
+            <a class="link" href="/#{INGESTION_ISSUES_ID}" onclick={onViewIssue}
+              >View issue</a
+            >
+          {/if}
         </div>
       {:else if page.selectedID && detailFetcher.loading && !detailFetcher.data}
         <div class="logs-page__placeholder logs-empty">

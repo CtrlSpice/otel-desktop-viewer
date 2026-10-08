@@ -6,7 +6,6 @@
   import TracesPage from '@/pages/TracesPage.svelte'
   import FileDropOverlay from '@/components/shared/FileDropOverlay.svelte'
   import ImportFilesCard from '@/components/shared/ImportFilesCard.svelte'
-  import ImportFailureNotice from '@/components/shared/ImportFailureNotice.svelte'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
   import type { ImportFailure } from '@/types/import-types'
   import { isPlainLeftClick, navigate } from '@/route'
@@ -29,7 +28,7 @@
 
   const routeContext = getRouteContext()
   let mainElement = $state<HTMLElement | null>(null)
-  let failureNotice = $state<ImportFailure | null>(null)
+  let importFailure = $state<ImportFailure | null>(null)
   let seenFailure: ImportFailure | undefined
 
   function pagePath(path: string): string {
@@ -79,15 +78,15 @@
     const latestFailure = importFailures.at(-1)
     if (latestFailure !== seenFailure) {
       seenFailure = latestFailure
-      failureNotice = Page === HomePage ? null : (latestFailure ?? null)
+      importFailure = Page === HomePage ? null : (latestFailure ?? null)
     }
-    if (Page === HomePage) failureNotice = null
+    if (Page === HomePage) importFailure = null
   })
 
   function viewIssue(event: MouseEvent) {
     if (!isPlainLeftClick(event)) return
     event.preventDefault()
-    failureNotice = null
+    importFailure = null
     navigate(`/#${INGESTION_ISSUES_ID}`)
   }
 </script>
@@ -106,18 +105,10 @@
       {/snippet}
     </HomePage>
   {:else}
-    <Page />
+    <Page {importFailure} onViewIssue={viewIssue} />
   {/if}
 </main>
 
 {#if importFiles}
   <FileDropOverlay onFiles={importFiles} />
-{/if}
-
-{#if failureNotice}
-  <ImportFailureNotice
-    failure={failureNotice}
-    onViewIssue={viewIssue}
-    onDismiss={() => (failureNotice = null)}
-  />
 {/if}

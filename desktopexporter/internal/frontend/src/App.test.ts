@@ -130,34 +130,39 @@ describe('App real-page composition', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('shows a failure notice on another page and focuses Home issues only when requested', async () => {
-    setTestUrl('/logs')
-    render(App, {
-      importFailures: [
-        {
-          fileName: 'example.json',
-          reason: 'Invalid JSON.',
-          occurredAt: BigInt(Date.now()) * 1_000_000n,
-        },
-      ],
-    })
-    const notice = await screen.findByRole('alert')
-    expect(notice).toHaveTextContent("Couldn't import example.json.")
-    expect(window.location.pathname).toBe('/logs')
-    await userEvent.click(
-      within(notice).getByRole('link', { name: 'View issue' })
-    )
-    const panel = await screen.findByRole('region', {
-      name: 'Ingestion issues',
-    })
-    expect(window.location.pathname).toBe('/')
-    expect(window.location.hash).toBe('#ingestion-issues')
-    await waitFor(() => expect(panel).toHaveFocus())
-    expect(within(panel).getByText(/Invalid JSON\./)).toBeInTheDocument()
-    expect(screen.queryByRole('alert')).toBeNull()
-  })
+  it.each(['/logs', '/traces', '/metrics'])(
+    'shows an inline import error on %s and links to Home issues',
+    async path => {
+      setTestUrl(path)
+      render(App, {
+        importFailures: [
+          {
+            fileName: 'example.json',
+            reason: 'Invalid JSON.',
+            occurredAt: BigInt(Date.now()) * 1_000_000n,
+          },
+        ],
+      })
+      const main = screen.getByRole('main')
+      expect(
+        await within(main).findByText("Couldn't import example.json.")
+      ).toBeInTheDocument()
+      expect(window.location.pathname).toBe(path)
+      const link = within(main).getByRole('link', { name: 'View issue' })
+      expect(link).toHaveAttribute('href', '/#ingestion-issues')
+      await userEvent.click(link)
+      const panel = await screen.findByRole('region', {
+        name: 'Ingestion issues',
+      })
+      expect(window.location.pathname).toBe('/')
+      expect(window.location.hash).toBe('#ingestion-issues')
+      await waitFor(() => expect(panel).toHaveFocus())
+      expect(within(panel).getByText(/Invalid JSON\./)).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).toBeNull()
+    }
+  )
 
-  it('dismisses the notice without removing the issue and announces a later failure', async () => {
+  it('keeps the issue on Home, clears the inline error after visiting Home and shows a later failure', async () => {
     setTestUrl('/logs')
     const failure: ImportFailure = {
       fileName: 'example.json',
@@ -165,11 +170,7 @@ describe('App real-page composition', () => {
       occurredAt: BigInt(Date.now()) * 1_000_000n,
     }
     const view = render(App, { importFailures: [failure] })
-    await screen.findByRole('alert')
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Dismiss import failure notice' })
-    )
-    expect(screen.queryByRole('alert')).toBeNull()
+    await screen.findByText("Couldn't import example.json.")
     navigate('/')
     const panel = await screen.findByRole('region', {
       name: 'Ingestion issues',
@@ -177,7 +178,7 @@ describe('App real-page composition', () => {
     expect(within(panel).getByText('example.json')).toBeInTheDocument()
     navigate('/logs')
     await screen.findByText('No logs in this time range')
-    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByText("Couldn't import example.json.")).toBeNull()
     await view.rerender({
       importFailures: [
         failure,
@@ -188,9 +189,43 @@ describe('App real-page composition', () => {
         },
       ],
     })
-    expect(await screen.findByRole('alert')).toHaveTextContent('another.json')
+    expect(
+      await within(screen.getByRole('main')).findByText(
+        "Couldn't import another.json."
+      )
+    ).toBeInTheDocument()
     expect(window.location.pathname).toBe('/logs')
   })
+
+  it.each([
+    { path: '/logs', fetchList: searchLogSummaries },
+    { path: '/traces', fetchList: searchTraceSummaries },
+    { path: '/metrics', fetchList: searchMetricSummaries },
+  ])(
+    'preserves the existing page error on $path when an import also fails',
+    async ({ path, fetchList }) => {
+      setTestUrl(path)
+      fetchList.mockRejectedValue(new Error('Unable to load telemetry'))
+      render(App, {
+        importFailures: [
+          {
+            fileName: 'example.json',
+            reason: 'Invalid JSON.',
+            occurredAt: BigInt(Date.now()) * 1_000_000n,
+          },
+        ],
+      })
+      expect(
+        await screen.findByText('Error: Unable to load telemetry')
+      ).toBeInTheDocument()
+      expect(screen.queryByText("Couldn't import example.json.")).toBeNull()
+      navigate('/')
+      const panel = await screen.findByRole('region', {
+        name: 'Ingestion issues',
+      })
+      expect(within(panel).getByText('example.json')).toBeInTheDocument()
+    }
+  )
 
   it('offers the home picker and accepts dropped files after navigating to another signal', async () => {
     setTestUrl('/')
