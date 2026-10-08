@@ -78,6 +78,7 @@ func newRootCommand(
 	root.Flags().StringVar(&options.selfTelemetryEndpoint, "self-telemetry-endpoint", "", "Export the viewer's own traces and metrics to this OTLP/gRPC endpoint")
 
 	commands := []*cobra.Command{
+		newServicesCommand(client, now),
 		newAttributesCommand(client, now),
 		newExportCommand(client),
 		newQueryCommand(client),
@@ -147,6 +148,7 @@ USAGE
   %s <command> [flags]
 
 COMMANDS
+  services  Discover services and their telemetry counts
   attributes 🏷️ Discover attribute keys and values
   export    📤 Export stored telemetry as OTLP JSON or protobuf
   query     🦆 Run SQL against a running viewer

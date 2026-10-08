@@ -39,6 +39,7 @@ Choose the narrowest command for the question:
 
 | Question | Command |
 | --- | --- |
+| Which services have telemetry, and what is in it? | `services` |
 | Which traces arrived? | `traces` |
 | What spans and trace-linked logs belong to one trace? | `trace <trace-id>` |
 | What exact data belongs to one span? | `span <span-id>` or `span <trace-id> <span-id>` |
@@ -52,6 +53,45 @@ Choose the narrowest command for the question:
 Use `--json` for machine consumption or when exact values, JSON nulls, objects,
 or column types matter; use table output for human inspection. Export commands
 instead require `--format` and return the OTLP payload itself.
+
+## Discover services
+
+```sh
+otel-desktop-viewer services --since 30m --json
+otel-desktop-viewer services --service checkout --since 30m
+```
+
+`services` discovers services with spans, logs or Metric datapoints in the window.
+It groups by Resource `service.namespace` and `service.name`, ordered by namespace
+then name. Missing and empty namespaces share a group. Missing names display as
+empty strings; the command does not invent `unknown_service`. Present names and
+namespaces must be strings; a non-string value produces an error rather than
+being converted into a service identity. Original resource attributes are unchanged.
+
+The command accepts the same flags as the signal summary commands below, with the
+same last-hour and 25-row defaults. `--service` matches an exact name across all
+namespaces; it does not select one namespace. JSON returns `startTime`, `endTime`,
+`services` and `truncated`. Bounds are inclusive decimal Unix nanosecond strings;
+an omitted absolute bound is `null` (unbounded). A truncated result is not a
+complete service inventory; increase `--limit` to see more.
+
+Each summary includes `serviceNamespace`, `serviceName` and these computed fields:
+
+| Field | Meaning within the selected window |
+| --- | --- |
+| `spanCount` | Stored spans, identified by trace ID plus span ID. Not requests. |
+| `errorSpanCount` | Spans whose received status code is Error (2). |
+| `logCount` | Stored log records, regardless of trace/span correlation. |
+| `errorLogCount` | Logs whose received severity number is ERROR or FATAL (17–24). No inference from text. |
+| `metricCount` | Distinct exact `metrics.id` values with datapoints in the window, not distinct Metric names or series. |
+| `dataPointCount` | Stored Metric datapoints; a histogram datapoint counts once, not by buckets or observation count. |
+| `lastSeen` | Maximum qualifying telemetry timestamp, as an exact decimal Unix nanosecond string. Not viewer arrival time or evidence of liveness. |
+
+Time eligibility and `lastSeen` use received span start time, log timestamp
+(observed timestamp when timestamp is zero), and Metric datapoint timestamp.
+Counts are exact integers over stored records; they do not estimate unreceived
+telemetry. Instances and versions within a namespace/name pair contribute to the
+same summary. Zero counts mean no matching stored records for that signal.
 
 ## Search traces, logs, and Metrics
 
