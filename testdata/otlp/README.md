@@ -6,11 +6,17 @@ defined in the data rather than regenerated at runtime.
 
 | Dataset | Contents | Stored records after one load |
 | --- | --- | --- |
+| `small/` | Shared shop workload with failure/success/latency comparisons, deployment groups, log correlations and all supported Metric types | 48 spans, 40 logs, 96 datapoints |
 | `demo/` | Captured synthetic dev data: multi-service traces, errors, deep/orphan traces, scalar and histogram Metric series, logs | 101 spans, 23 logs, 9,901 datapoints |
 | `checkout/` | Small checkout failure with correlated logs and a Metric exemplar | 6 spans, 3 logs, 7 datapoints |
 | `usability-pilot/` | Original six-task evaluation fixture, with typed values, a 31-value inventory and child-time boundaries | 33 spans, 7 logs, 2 datapoints |
 
-`demo/manifest.json` lists the requests and capture time bounds. The demo was
+`small/` is the default shared workload. Medium and large profiles will be sized
+after the small workload is measured. The earlier datasets remain available for
+existing checks and historical reproductions.
+
+Each `manifest.json` lists request files, expected stored counts and fixed time
+bounds. The demo was
 exported through the viewer's SQL CLI from its stored OTLP reconstruction. It
 preserves retained data, not original HTTP request bytes or rejected duplicate
 spans. `checkout/README.md` describes the smaller scenario and curl commands.
@@ -21,6 +27,7 @@ make populate-traces populate-logs populate-metrics OTLP_DATASET=testdata/otlp/c
 ```
 
 - `OTLP_ENDPOINT` selects the receiver (default `http://localhost:4318`).
+- `OTLP_DATASET` selects the dataset directory (default `testdata/otlp/small`).
 - Files are sent unchanged; timestamps are fixed. Select All or the recorded
   window. No timestamp rewriting or randomized IDs occurs during loading.
 - Load once into a fresh store when asserting counts. Re-sending logs/datapoints
