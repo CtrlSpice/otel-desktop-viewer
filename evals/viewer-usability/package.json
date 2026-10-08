@@ -1,0 +1,22 @@
+{
+  "name": "otel-cli-usability-evaluation",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.22.0"
+  },
+  "scripts": {
+    "test": "node --test *.test.ts",
+    "typecheck": "node ../../desktopexporter/internal/frontend/node_modules/typescript/bin/tsc -p tsconfig.json",
+    "stage": "node stage-dataset.ts",
+    "prepare": "node prepare.ts",
+    "verify": "node verify.ts",
+    "pilot": "node run-pilot.ts",
+    "verify:isolation": "node verify-isolation.ts",
+    "verify:loader": "node verify-loader.ts",
+    "verify:integration": "node verify-integration.ts"
+  },
+  "dependencies": {
+    "promptfoo": "0.124.0"
+  }
+}
