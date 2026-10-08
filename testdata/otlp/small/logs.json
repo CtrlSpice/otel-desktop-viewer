@@ -1,0 +1,919 @@
+{
+  "resourceLogs": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "api-gateway"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.0"
+            }
+          },
+          {
+            "key": "cloud.region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+      "scopeLogs": [
+        {
+          "scope": {
+            "name": "shop.instrumentation",
+            "version": "1.0.0"
+          },
+          "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+          "logRecords": [
+            {
+              "timeUnixNano": "1791359760200000000",
+              "observedTimeUnixNano": "1791359760200500000",
+              "traceId": "00000000000000000000000000000001",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791359762200000000",
+              "observedTimeUnixNano": "1791359762200500000",
+              "traceId": "00000000000000000000000000000002",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791359764200000000",
+              "observedTimeUnixNano": "1791359764200500000",
+              "traceId": "00000000000000000000000000000003",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791359766200000000",
+              "observedTimeUnixNano": "1791359766200500000",
+              "traceId": "00000000000000000000000000000004",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791359768200000000",
+              "observedTimeUnixNano": "1791359768200500000",
+              "traceId": "00000000000000000000000000000005",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791359770200000000",
+              "observedTimeUnixNano": "1791359770200500000",
+              "traceId": "00000000000000000000000000000006",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791359772200000000",
+              "observedTimeUnixNano": "1791359772200500000",
+              "traceId": "00000000000000000000000000000007",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791359774200000000",
+              "observedTimeUnixNano": "1791359774200500000",
+              "traceId": "00000000000000000000000000000008",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "api-gateway"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.0"
+            }
+          },
+          {
+            "key": "cloud.region",
+            "value": {
+              "stringValue": "east"
+            }
+          }
+        ]
+      },
+      "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+      "scopeLogs": [
+        {
+          "scope": {
+            "name": "shop.instrumentation",
+            "version": "1.0.0"
+          },
+          "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+          "logRecords": [
+            {
+              "timeUnixNano": "1791359776200000000",
+              "observedTimeUnixNano": "1791359776200500000",
+              "traceId": "00000000000000000000000000000009",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791359778200000000",
+              "observedTimeUnixNano": "1791359778200500000",
+              "traceId": "0000000000000000000000000000000a",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791359780200000000",
+              "observedTimeUnixNano": "1791359780200500000",
+              "traceId": "0000000000000000000000000000000b",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791359782200000000",
+              "observedTimeUnixNano": "1791359782200500000",
+              "traceId": "0000000000000000000000000000000c",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791359784200000000",
+              "observedTimeUnixNano": "1791359784200500000",
+              "traceId": "0000000000000000000000000000000d",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791359786200000000",
+              "observedTimeUnixNano": "1791359786200500000",
+              "traceId": "0000000000000000000000000000000e",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791359788200000000",
+              "observedTimeUnixNano": "1791359788200500000",
+              "traceId": "0000000000000000000000000000000f",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791359790200000000",
+              "observedTimeUnixNano": "1791359790200500000",
+              "traceId": "00000000000000000000000000000010",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791360016200000000",
+              "observedTimeUnixNano": "1791360016200500000",
+              "traceId": "00000000000000000000000000000019",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791360018200000000",
+              "observedTimeUnixNano": "1791360018200500000",
+              "traceId": "0000000000000000000000000000001a",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791360020200000000",
+              "observedTimeUnixNano": "1791360020200500000",
+              "traceId": "0000000000000000000000000000001b",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791360022200000000",
+              "observedTimeUnixNano": "1791360022200500000",
+              "traceId": "0000000000000000000000000000001c",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791360024200000000",
+              "observedTimeUnixNano": "1791360024200500000",
+              "traceId": "0000000000000000000000000000001d",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791360026200000000",
+              "observedTimeUnixNano": "1791360026200500000",
+              "traceId": "0000000000000000000000000000001e",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791360028200000000",
+              "observedTimeUnixNano": "1791360028200500000",
+              "traceId": "0000000000000000000000000000001f",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791360030200000000",
+              "observedTimeUnixNano": "1791360030200500000",
+              "traceId": "00000000000000000000000000000020",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "api-gateway"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.1.0"
+            }
+          },
+          {
+            "key": "cloud.region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+      "scopeLogs": [
+        {
+          "scope": {
+            "name": "shop.instrumentation",
+            "version": "1.0.0"
+          },
+          "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+          "logRecords": [
+            {
+              "timeUnixNano": "1791360001200000000",
+              "observedTimeUnixNano": "1791360001200500000",
+              "traceId": "00000000000000000000000000000011",
+              "severityNumber": 17,
+              "severityText": "ERROR",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 402"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "402"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791360002600000000",
+              "observedTimeUnixNano": "1791360002600500000",
+              "traceId": "00000000000000000000000000000012",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791360005500000000",
+              "observedTimeUnixNano": "1791360005500500000",
+              "traceId": "00000000000000000000000000000013",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791360006800000000",
+              "observedTimeUnixNano": "1791360006800500000",
+              "traceId": "00000000000000000000000000000014",
+              "severityNumber": 17,
+              "severityText": "ERROR",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 504"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "504"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791360008400000000",
+              "observedTimeUnixNano": "1791360008400500000",
+              "traceId": "00000000000000000000000000000015",
+              "severityNumber": 17,
+              "severityText": "ERROR",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 503"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "503"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791360010400000000",
+              "observedTimeUnixNano": "1791360010400500000",
+              "traceId": "00000000000000000000000000000016",
+              "severityNumber": 17,
+              "severityText": "ERROR",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 503"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "503"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791360012200000000",
+              "observedTimeUnixNano": "1791360012200500000",
+              "traceId": "00000000000000000000000000000017",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791360014200000000",
+              "observedTimeUnixNano": "1791360014200500000",
+              "traceId": "00000000000000000000000000000018",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "POST /api/v2/orders returned 200"
+              },
+              "attributes": [
+                {
+                  "key": "http.response.status_code",
+                  "value": {
+                    "intValue": "200"
+                  }
+                }
+              ],
+              "spanId": "0000000000000001"
+            },
+            {
+              "timeUnixNano": "1791360001250000000",
+              "observedTimeUnixNano": "1791360001250500000",
+              "traceId": "00000000000000000000000000000011",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "Request audit recorded"
+              },
+              "attributes": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "payment-service"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.0"
+            }
+          },
+          {
+            "key": "cloud.region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+      "scopeLogs": [
+        {
+          "scope": {
+            "name": "shop.instrumentation",
+            "version": "1.0.0"
+          },
+          "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+          "logRecords": [
+            {
+              "timeUnixNano": "1791360000950000000",
+              "observedTimeUnixNano": "1791360000950500000",
+              "traceId": "00000000000000000000000000000011",
+              "severityNumber": 17,
+              "severityText": "ERROR",
+              "body": {
+                "stringValue": "Payment declined: insufficient_funds"
+              },
+              "attributes": [],
+              "spanId": "0000000000000006"
+            },
+            {
+              "timeUnixNano": "1791360002400000000",
+              "observedTimeUnixNano": "1791360002400500000",
+              "traceId": "00000000000000000000000000000012",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "Payment accepted"
+              },
+              "attributes": [],
+              "spanId": "0000000000000006"
+            },
+            {
+              "timeUnixNano": "1791360005400000000",
+              "observedTimeUnixNano": "1791360005400500000",
+              "traceId": "00000000000000000000000000000013",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "Payment provider request completed"
+              },
+              "attributes": [],
+              "spanId": "0000000000000003"
+            },
+            {
+              "timeUnixNano": "1791360006700000000",
+              "observedTimeUnixNano": "1791360006700500000",
+              "traceId": "00000000000000000000000000000014",
+              "severityNumber": 17,
+              "severityText": "ERROR",
+              "body": {
+                "stringValue": "Payment provider timed out"
+              },
+              "attributes": [],
+              "spanId": "0000000000000003"
+            },
+            {
+              "timeUnixNano": "1791360001400000000",
+              "observedTimeUnixNano": "1791360001400500000",
+              "traceId": "00000000000000000000000000000011",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "Delayed payment audit received"
+              },
+              "attributes": [],
+              "spanId": "000000000000ffff"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "inventory-service"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.0"
+            }
+          },
+          {
+            "key": "cloud.region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+      "scopeLogs": [
+        {
+          "scope": {
+            "name": "shop.instrumentation",
+            "version": "1.0.0"
+          },
+          "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+          "logRecords": [
+            {
+              "timeUnixNano": "1791360000490000000",
+              "observedTimeUnixNano": "1791360000490500000",
+              "traceId": "00000000000000000000000000000011",
+              "severityNumber": 13,
+              "severityText": "WARN",
+              "body": {
+                "stringValue": "Stock below threshold; reservation succeeded"
+              },
+              "attributes": [],
+              "spanId": "0000000000000003"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "worker"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "1.0.0"
+            }
+          },
+          {
+            "key": "cloud.region",
+            "value": {
+              "stringValue": "west"
+            }
+          }
+        ]
+      },
+      "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+      "scopeLogs": [
+        {
+          "scope": {
+            "name": "shop.instrumentation",
+            "version": "1.0.0"
+          },
+          "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+          "logRecords": [
+            {
+              "timeUnixNano": "1791360000000000000",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "Worker heartbeat"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

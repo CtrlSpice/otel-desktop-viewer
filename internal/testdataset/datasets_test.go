@@ -33,43 +33,56 @@ func readRequest(t *testing.T, file string) []byte {
 	return raw
 }
 
+type datasetManifest struct {
+	Requests     []struct{ Signal, File string }       `json:"requests"`
+	StoredCounts struct{ Spans, Logs, Datapoints int } `json:"storedCounts"`
+}
+
+func manifests(t *testing.T) []string {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join("..", "..", "testdata", "otlp", "*", "manifest.json"))
+	require.NoError(t, err)
+	require.NotEmpty(t, files)
+	return files
+}
+
 func TestOTLPDatasets(t *testing.T) {
-	for _, expected := range []struct {
-		name                    string
-		spans, logs, datapoints int
-	}{{"demo", 101, 23, 9901}, {"checkout", 6, 3, 7}, {"usability-pilot", 33, 7, 2}} {
-		t.Run(expected.name, func(t *testing.T) {
+	for _, filename := range manifests(t) {
+		t.Run(filepath.Base(filepath.Dir(filename)), func(t *testing.T) {
+			var manifest datasetManifest
+			require.NoError(t, json.Unmarshal(readRequest(t, filename), &manifest))
 			var spans, logs, datapoints int
-			for _, file := range datasetFiles(t, expected.name, "traces") {
-				data, err := (&ptrace.JSONUnmarshaler{}).UnmarshalTraces(readRequest(t, file))
-				require.NoError(t, err, file)
-				spans += data.SpanCount()
+			for _, request := range manifest.Requests {
+				file := filepath.Join(filepath.Dir(filename), request.File)
+				switch request.Signal {
+				case "traces":
+					data, err := (&ptrace.JSONUnmarshaler{}).UnmarshalTraces(readRequest(t, file))
+					require.NoError(t, err, file)
+					spans += data.SpanCount()
+				case "logs":
+					data, err := (&plog.JSONUnmarshaler{}).UnmarshalLogs(readRequest(t, file))
+					require.NoError(t, err, file)
+					logs += data.LogRecordCount()
+				case "metrics":
+					data, err := (&pmetric.JSONUnmarshaler{}).UnmarshalMetrics(readRequest(t, file))
+					require.NoError(t, err, file)
+					datapoints += data.DataPointCount()
+				default:
+					t.Fatalf("unknown signal %q", request.Signal)
+				}
 			}
-			for _, file := range datasetFiles(t, expected.name, "logs") {
-				data, err := (&plog.JSONUnmarshaler{}).UnmarshalLogs(readRequest(t, file))
-				require.NoError(t, err, file)
-				logs += data.LogRecordCount()
-			}
-			for _, file := range datasetFiles(t, expected.name, "metrics") {
-				data, err := (&pmetric.JSONUnmarshaler{}).UnmarshalMetrics(readRequest(t, file))
-				require.NoError(t, err, file)
-				datapoints += data.DataPointCount()
-			}
-			assert.Equal(t, expected.spans, spans)
-			assert.Equal(t, expected.logs, logs)
-			assert.Equal(t, expected.datapoints, datapoints)
+			assert.Equal(t, manifest.StoredCounts.Spans, spans)
+			assert.Equal(t, manifest.StoredCounts.Logs, logs)
+			assert.Equal(t, manifest.StoredCounts.Datapoints, datapoints)
 		})
 	}
 }
 
 func TestDatasetManifests(t *testing.T) {
-	for _, dataset := range []string{"demo", "checkout", "usability-pilot"} {
+	for _, filename := range manifests(t) {
+		dataset := filepath.Base(filepath.Dir(filename))
 		t.Run(dataset, func(t *testing.T) {
-			filename := filepath.Join("..", "..", "testdata", "otlp", dataset, "manifest.json")
-			var manifest struct {
-				Requests     []struct{ Signal, File string }       `json:"requests"`
-				StoredCounts struct{ Spans, Logs, Datapoints int } `json:"storedCounts"`
-			}
+			var manifest datasetManifest
 			require.NoError(t, json.Unmarshal(readRequest(t, filename), &manifest))
 			listed := map[string]bool{}
 			for _, request := range manifest.Requests {
@@ -161,4 +174,47 @@ func TestCheckoutAssociations(t *testing.T) {
 		}
 	}
 	assert.Equal(t, 1, exemplarCount)
+}
+
+func TestSmallMetricCoverageAndBucketCounts(t *testing.T) {
+	seen := map[pmetric.MetricType]bool{}
+	for _, file := range datasetFiles(t, "small", "metrics") {
+		data, err := (&pmetric.JSONUnmarshaler{}).UnmarshalMetrics(readRequest(t, file))
+		require.NoError(t, err)
+		for _, resource := range data.ResourceMetrics().All() {
+			for _, scope := range resource.ScopeMetrics().All() {
+				for _, metric := range scope.Metrics().All() {
+					seen[metric.Type()] = true
+					switch metric.Type() {
+					case pmetric.MetricTypeHistogram:
+						for _, point := range metric.Histogram().DataPoints().All() {
+							var count uint64
+							for _, value := range point.BucketCounts().All() {
+								count += value
+							}
+							assert.Equal(t, point.Count(), count)
+							assert.Equal(t, point.ExplicitBounds().Len()+1, point.BucketCounts().Len())
+							assert.GreaterOrEqual(t, point.Timestamp(), point.StartTimestamp())
+						}
+					case pmetric.MetricTypeExponentialHistogram:
+						for _, point := range metric.ExponentialHistogram().DataPoints().All() {
+							count := point.ZeroCount()
+							for _, value := range point.Positive().BucketCounts().All() {
+								count += value
+							}
+							for _, value := range point.Negative().BucketCounts().All() {
+								count += value
+							}
+							assert.Equal(t, point.Count(), count)
+							assert.GreaterOrEqual(t, point.Timestamp(), point.StartTimestamp())
+						}
+					}
+				}
+			}
+		}
+	}
+	assert.Equal(t, map[pmetric.MetricType]bool{
+		pmetric.MetricTypeGauge: true, pmetric.MetricTypeSum: true,
+		pmetric.MetricTypeHistogram: true, pmetric.MetricTypeExponentialHistogram: true,
+	}, seen)
 }
