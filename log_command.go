@@ -63,6 +63,9 @@ func normalizeDetailRef(value, kind string) (string, error) {
 }
 
 func formatLogDetail(raw json.RawMessage) (string, error) {
+	if err := validateLogDetail(raw); err != nil {
+		return "", err
+	}
 	var log struct {
 		LogRef                 string          `json:"logRef"`
 		Timestamp              string          `json:"timestamp"`
@@ -83,9 +86,6 @@ func formatLogDetail(raw json.RawMessage) (string, error) {
 	}
 	if err := decodeExactJSON(raw, &log); err != nil {
 		return "", err
-	}
-	if log.LogRef == "" || len(log.Body) == 0 {
-		return "", fmt.Errorf("missing logRef or body")
 	}
 	bodyKind, body := compactTaggedValue(log.Body)
 	return "LOG\n" + detailTable(

@@ -87,6 +87,9 @@ func newMetricCommand(client *http.Client) *cobra.Command {
 }
 
 func formatMetricDetail(raw json.RawMessage, seriesSelected bool) (string, error) {
+	if err := validateMetricDetail(raw, seriesSelected); err != nil {
+		return "", err
+	}
 	var metric struct {
 		MetricRef                  string       `json:"metricRef"`
 		Name                       string       `json:"name"`
@@ -112,9 +115,6 @@ func formatMetricDetail(raw json.RawMessage, seriesSelected bool) (string, error
 	if err := decodeExactJSON(raw, &metric); err != nil {
 		return "", err
 	}
-	if metric.MetricRef == "" || metric.MetricType == "" {
-		return "", fmt.Errorf("missing metricRef or metricType")
-	}
 	fields := []string{"metricRef", "name", "description", "unit", "metricType"}
 	values := []any{metric.MetricRef, metric.Name, metric.Description, metric.Unit, metric.MetricType}
 	if metric.AggregationTemporalityCode != nil {
@@ -132,18 +132,12 @@ func formatMetricDetail(raw json.RawMessage, seriesSelected bool) (string, error
 		"\nSCOPE\n" + detailTable([]string{"name", "version", "schemaURL", "droppedAttributesCount"}, [][]any{{metric.Scope.Name, metric.Scope.Version, metric.Scope.SchemaURL, metric.Scope.DroppedAttributesCount}}) +
 		"\nSCOPE ATTRIBUTES\n" + formatAttributes(metric.Scope.Attributes)
 	if !seriesSelected {
-		if metric.Series == nil {
-			return "", fmt.Errorf("missing series catalogue")
-		}
 		rows, err := decodeTelemetryRows(metric.Series, []string{"seriesRef", "attributes", "datapointCount", "firstDatapointTimestamp", "lastDatapointTimestamp"})
 		if err != nil {
 			return "", err
 		}
 		return output + fmt.Sprintf("\nSERIES (%d; counts and timestamp bounds are computed)\n", len(rows)) +
 			detailTable([]string{"seriesRef", "attributes", "datapointCount", "firstDatapointTimestamp", "lastDatapointTimestamp"}, rows), nil
-	}
-	if metric.SeriesRef == "" || metric.Datapoints == nil {
-		return "", fmt.Errorf("missing seriesRef or datapoints")
 	}
 	columns := []string{"datapointRef", "timestamp", "startTime", "flags"}
 	switch metric.MetricType {
