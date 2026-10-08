@@ -662,7 +662,7 @@ function receivedNumberDataPointFromJSON(
   json: JsonReceivedNumberDataPoint
 ): ReceivedNumberDataPoint {
   const base = {
-    datapointID: json.datapointID,
+    datapointRef: json.datapointRef,
     timestamp: bigintFromWire(json.timestamp),
     startTime: bigintFromWire(json.startTime),
     flags: json.flags,
@@ -697,7 +697,7 @@ function receivedHistogramDataPointFromJSON(
   json: JsonReceivedHistogramDataPoint
 ): ReceivedHistogramDataPoint {
   const decoded: ReceivedHistogramDataPoint = {
-    datapointID: json.datapointID,
+    datapointRef: json.datapointRef,
     timestamp: bigintFromWire(json.timestamp),
     startTime: bigintFromWire(json.startTime),
     flags: json.flags,
@@ -716,7 +716,7 @@ function receivedExponentialHistogramDataPointFromJSON(
   json: JsonReceivedExponentialHistogramDataPoint
 ): ReceivedExponentialHistogramDataPoint {
   const decoded: ReceivedExponentialHistogramDataPoint = {
-    datapointID: json.datapointID,
+    datapointRef: json.datapointRef,
     timestamp: bigintFromWire(json.timestamp),
     startTime: bigintFromWire(json.startTime),
     flags: json.flags,

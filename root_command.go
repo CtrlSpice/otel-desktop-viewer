@@ -86,7 +86,9 @@ func newRootCommand(
 		newTraceCommand(client),
 		newSpanCommand(client),
 		newLogsCommand(client, now),
+		newLogCommand(client),
 		newMetricsCommand(client, now),
+		newMetricCommand(client),
 		newSkillsCommand(),
 	}
 	for _, command := range commands {
@@ -148,16 +150,18 @@ USAGE
   %s <command> [flags]
 
 COMMANDS
-  services  Discover services and their telemetry counts
-  attributes 🏷️ Discover attribute keys and values
-  export    📤 Export stored telemetry as OTLP JSON or protobuf
-  query     🦆 Run SQL against a running viewer
+  skills    🧠 Print the agent usage guide
+  logs      🪵 Search logs in a running viewer
+  log       🪵 Inspect one complete log
+  metrics   📈 Search metrics in a running viewer
+  metric    📈 Inspect one Metric or its series datapoints
   traces    🧵 Search traces in a running viewer
   trace     🧵 Inspect one complete trace
   span      🧵 Inspect one span
-  logs      🪵 Search logs in a running viewer
-  metrics   📈 Search metrics in a running viewer
-  skills    🧠 Print the agent usage guide
+  attributes 🏷️ Discover attribute keys and values
+  services  Discover services and their telemetry counts
+  query     🦆 Run SQL against a running viewer
+  export    📤 Export stored telemetry as OTLP JSON or protobuf
 
 VIEWER FLAGS
       --host string          Address used by viewer/OTLP receivers (default "localhost")

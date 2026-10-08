@@ -504,7 +504,8 @@ export type JsonExactMetric = JsonExactMetricIdentity & {
 }
 
 type JsonReceivedDataPointBase = {
-  datapointID: string
+  /** Viewer-generated database reference for this retained datapoint. */
+  datapointRef: string
   timestamp: string
   startTime: string
   flags: number

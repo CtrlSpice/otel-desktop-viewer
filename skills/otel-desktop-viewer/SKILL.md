@@ -44,7 +44,10 @@ Choose the narrowest command for the question:
 | What spans and trace-linked logs belong to one trace? | `trace <trace-id>` |
 | What exact data belongs to one span? | `span <span-id>` or `span <trace-id> <span-id>` |
 | Which logs arrived? | `logs` |
+| What is one log's complete body and context? | `log <log-ref>` |
 | Which Metrics arrived? | `metrics` |
+| What describes one Metric and its series? | `metric <metric-ref>` |
+| What exact datapoints belong to one Metric series? | `metric <metric-ref> --series <series-ref>` |
 | Which attribute keys and kinds occur? | `attributes keys` |
 | What are one key's common typed values and frequencies? | `attributes values <key>` |
 | What custom aggregation or stored field is needed? | `query <sql>` |
@@ -95,6 +98,46 @@ field.
 `metrics --json` includes `metricRef`, the exact UUID text from `metrics.id`.
 This viewer-generated reference is valid only in that database; OTLP does not
 provide it. Pass it unchanged without parsing. The Metric table omits it.
+
+## Inspect one log or Metric
+
+```sh
+otel-desktop-viewer log 018f0000-0000-7000-8000-000000000001 --json
+otel-desktop-viewer metric 018f0000-0000-7000-8000-000000000001 --json
+otel-desktop-viewer metric 018f0000-0000-7000-8000-000000000001 --series 018f0000-0000-7000-8000-000000000002 --start 2026-10-07T08:00:00Z --end 2026-10-07T09:00:00Z --json
+```
+
+Use references from `logs --json`, `metrics --json` and the Metric's series
+catalogue. Both detail commands accept `--endpoint` and render readable sections
+by default. `--json` preserves the complete detail response. A missing record
+returns a not-found error and a nonzero exit status.
+
+| Command | Detail returned |
+| --- | --- |
+| `log <log-ref>` | Complete typed body, log attributes, resource/scope context, severity, timestamps and correlation IDs |
+| `metric <metric-ref>` | Descriptor, metadata, resource/scope context and all retained series summaries |
+| `metric <metric-ref> --series <series-ref>` | Selected series attributes and all retained datapoints with their exemplars |
+
+`--start` and `--end` require `--series`; they filter received datapoint timestamps
+inclusively and accept RFC3339 nanoseconds. Unspecified bounds include all retained
+times. The selected series has no implicit last-hour filter or datapoint limit.
+
+| Field | Origin and representation |
+| --- | --- |
+| `logRef`, `metricRef`, `seriesRef`, `datapointRef` | Viewer-generated UUID references, valid within the current database |
+| `traceID`, `spanID` | Received OTel correlation IDs rendered as hexadecimal strings; null when absent |
+| Log `timestamp`, `observedTimestamp`; datapoint `timestamp`, `startTime`; exemplar `timestamp` | Received unsigned Unix nanoseconds, encoded as exact decimal strings |
+| `body`, `attributes`, `metadata`, resource/scope attributes | Retained OTel values with their types in `{kind,value}` JSON |
+| Metric `name`, `description`, `unit`, `aggregationTemporalityCode`, `isMonotonic` | Received descriptor fields; temporality applies to Sum/Histogram/ExponentialHistogram and monotonicity to Sum |
+| `intValue` | Received signed integer as an exact decimal string; null for the inactive number arm |
+| `doubleValue`, histogram bounds/statistics and `zeroThreshold` | Received doubles encoded as JSON numbers; non-finite values and negative zero use exact IEEE-754 bit strings |
+| Histogram `count`, `bucketCounts`, `zeroCount` | Received unsigned counts as exact decimal strings |
+| Catalogue `datapointCount` | Computed count of retained datapoints in that series, as an exact decimal string |
+| Catalogue `firstDatapointTimestamp`, `lastDatapointTimestamp` | Computed minimum/maximum received datapoint timestamp in Unix nanoseconds, as exact decimal strings; null for an empty series |
+
+Optional histogram `sum`, `min` and `max` retain presence: an absent field is
+omitted in JSON and shown as `(absent)` in sections. Inactive scalar arms are null.
+The series' `datapointRef` field corresponds to stored `metric_datapoints.id`.
 
 ## Inspect one trace or span
 
