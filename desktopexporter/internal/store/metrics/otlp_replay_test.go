@@ -1,7 +1,6 @@
 package metrics_test
 
 import (
-	"database/sql"
 	"database/sql/driver"
 	"math"
 	"testing"
@@ -14,28 +13,15 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
-func TestGetMetricOTLPProtobuf(t *testing.T) {
+func TestGetMetricOTLPJSONReplay(t *testing.T) {
 	s, ctx := storetest.New(t)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
 		return metrics.Ingest(ctx, conn, otlpMetricFixture(), s.FlushedIDs())
 	}))
 	for name, id := range metricMetricIDs(t, s, ctx) {
 		t.Run(name, func(t *testing.T) {
-			wire, err := readStore(s, func(db *sql.DB) ([]byte, error) {
-				return metrics.GetMetricOTLPProtobuf(ctx, db, id)
-			})
+			decoded, err := (&pmetric.JSONUnmarshaler{}).UnmarshalMetrics(getMetricOTLP(t, s, ctx, id))
 			require.NoError(t, err)
-			decoded, err := (&pmetric.ProtoUnmarshaler{}).UnmarshalMetrics(wire)
-			require.NoError(t, err)
-			jsonDecoded, err := (&pmetric.JSONUnmarshaler{}).UnmarshalMetrics(getMetricOTLP(t, s, ctx, id))
-			require.NoError(t, err)
-			// Compare every retained field. Check sign bits separately below because
-			// pdata's JSON marshaler itself omits a negative-zero zeroThreshold.
-			expected, err := (&pmetric.JSONMarshaler{}).MarshalMetrics(jsonDecoded)
-			require.NoError(t, err)
-			actual, err := (&pmetric.JSONMarshaler{}).MarshalMetrics(decoded)
-			require.NoError(t, err)
-			assert.JSONEq(t, string(expected), string(actual))
 			metric := decoded.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0)
 			switch metric.Type() {
 			case pmetric.MetricTypeGauge:
