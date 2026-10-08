@@ -14,7 +14,7 @@
 </script>
 
 <script lang="ts">
-  import { onMount, type Component } from 'svelte'
+  import { onMount, type Component, type Snippet } from 'svelte'
   import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/svelte'
   import {
     Alert02Icon,
@@ -36,6 +36,8 @@
   import { telemetryAPI } from '@/services/telemetry-service'
   import type { Stats } from '@/types/api-types'
   import luluImage from '@/assets/images/lulu.webp'
+
+  let { importContent }: { importContent?: Snippet } = $props()
 
   const POLL_INTERVAL_MS = 5000
 
@@ -151,6 +153,8 @@ $ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
             </div>
           </div>
         </header>
+
+        {@render importContent?.()}
 
         <section class="section home-endpoint-section">
           <h2 class="section-title">Configure your OTLP exporter</h2>

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/svelte'
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte'
 import { navigate } from '@/route'
 import { setTestUrl } from '@/test/render-helpers'
 import type { Stats } from '@/types/api-types'
@@ -76,6 +76,27 @@ beforeEach(() => {
 })
 
 describe('App real-page composition', () => {
+  it('offers the home picker and accepts dropped files after navigating to another signal', async () => {
+    setTestUrl('/')
+    const importFiles = vi.fn()
+    render(App, { importFiles })
+    expect(
+      screen.getByRole('button', { name: 'Import files' })
+    ).toBeInTheDocument()
+    navigate('/logs')
+    await screen.findByText('No logs in this time range')
+    expect(screen.queryByRole('button', { name: 'Import files' })).toBeNull()
+    const file = new File(['{"resourceLogs":[]}'], 'renamed.json')
+    const dataTransfer = { types: ['Files'], files: [file] }
+    await fireEvent.dragEnter(window, { dataTransfer })
+    expect(
+      screen.getByText('Drop OTLP JSON files to import')
+    ).toBeInTheDocument()
+    await fireEvent.drop(window, { dataTransfer })
+    expect(importFiles).toHaveBeenCalledWith([file])
+    expect(window.location.pathname).toBe('/logs')
+  })
+
   it('selects real pages for route prefixes and falls back to Home', async () => {
     setTestUrl('/traces/trace-1')
     render(App)

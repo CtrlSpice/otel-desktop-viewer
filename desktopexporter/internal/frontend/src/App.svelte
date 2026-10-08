@@ -4,11 +4,15 @@
   import MetricsPage from '@/pages/MetricsPage.svelte'
   import LogsPage from '@/pages/LogsPage.svelte'
   import TracesPage from '@/pages/TracesPage.svelte'
+  import FileDropOverlay from '@/components/shared/FileDropOverlay.svelte'
+  import ImportFilesCard from '@/components/shared/ImportFilesCard.svelte'
   import {
     createRouteContext,
     getRouteContext,
   } from '@/contexts/route-context.svelte'
   import { createTimeContext } from '@/contexts/time-context.svelte'
+
+  let { importFiles }: { importFiles?: (files: File[]) => void } = $props()
 
   createRouteContext()
   createTimeContext()
@@ -55,5 +59,19 @@
   tabindex="-1"
   class="flex h-screen min-w-0 flex-col overflow-hidden bg-base-100 transition-colors duration-300"
 >
-  <Page />
+  {#if Page === HomePage}
+    <HomePage>
+      {#snippet importContent()}
+        {#if importFiles}
+          <ImportFilesCard onFiles={importFiles} />
+        {/if}
+      {/snippet}
+    </HomePage>
+  {:else}
+    <Page />
+  {/if}
 </main>
+
+{#if importFiles}
+  <FileDropOverlay onFiles={importFiles} />
+{/if}
