@@ -71,64 +71,51 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Export log' })).toBeVisible()
 })
 
-for (const format of ['json', 'protobuf'] as const) {
-  test(`downloads exact ${format} bytes from the signal header`, async ({
-    page,
-  }) => {
-    const body =
-      format === 'json'
-        ? Buffer.from(
-            '{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"body":{"doubleValue":-0.0}}]}]}]}\n'
-          )
-        : Buffer.from([0x0a, 0x04, 0x12, 0x02, 0x12, 0x00])
-    let releaseResponse!: () => void
-    const responseReady = new Promise<void>(resolve => {
-      releaseResponse = resolve
-    })
-    await page.route(
-      `**/export/logs/${logRef}?format=${format}`,
-      async route => {
-        await responseReady
-        await route.fulfill({
-          contentType:
-            format === 'json' ? 'application/json' : 'application/x-protobuf',
-          body,
-        })
-      }
-    )
-    const trigger = page.getByRole('button', { name: 'Export log' })
-    const style = await trigger.evaluate(element => ({
-      radius: parseFloat(getComputedStyle(element).borderTopLeftRadius),
-      width: element.getBoundingClientRect().width,
-    }))
-    expect(style.radius).toBeGreaterThanOrEqual(style.width / 2)
-    await trigger.focus()
-    await page.keyboard.press('Enter')
-    await expect(
-      page.getByRole('menuitem', { name: 'OTLP JSON' })
-    ).toBeFocused()
-    if (format === 'protobuf') await page.keyboard.press('ArrowDown')
-    const downloaded = page.waitForEvent('download')
-    await page.keyboard.press('Enter')
-    try {
-      await expect(trigger).toHaveAttribute('aria-busy', 'true')
-      await expect(trigger).toBeFocused()
-      await page.keyboard.press('Enter')
-      await expect(page.getByRole('menu')).not.toBeVisible()
-    } finally {
-      releaseResponse()
-    }
-    const download = await downloaded
-    expect(download.suggestedFilename()).toBe(
-      `log-${logRef}.${format === 'json' ? 'json' : 'pb'}`
-    )
-    const path = await download.path()
-    expect(path).not.toBeNull()
-    expect(await readFile(path!)).toEqual(body)
-    await expect(trigger).toHaveAttribute('aria-busy', 'false')
-    await expect(trigger).toBeFocused()
+test('downloads exact JSON bytes with one activation from the signal header', async ({
+  page,
+}) => {
+  const body = Buffer.from(
+    '{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"body":{"doubleValue":-0.0}}]}]}]}\n'
+  )
+  let requestCount = 0
+  let releaseResponse!: () => void
+  const responseReady = new Promise<void>(resolve => {
+    releaseResponse = resolve
   })
-}
+  await page.route(`**/export/logs/${logRef}`, async route => {
+    requestCount++
+    await responseReady
+    await route.fulfill({
+      contentType: 'application/json',
+      body,
+    })
+  })
+  const trigger = page.getByRole('button', { name: 'Export log' })
+  const style = await trigger.evaluate(element => ({
+    radius: parseFloat(getComputedStyle(element).borderTopLeftRadius),
+    width: element.getBoundingClientRect().width,
+  }))
+  expect(style.radius).toBeGreaterThanOrEqual(style.width / 2)
+  await trigger.focus()
+  const downloaded = page.waitForEvent('download')
+  await page.keyboard.press('Enter')
+  try {
+    await expect(trigger).toHaveAttribute('aria-busy', 'true')
+    await expect(trigger).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('menu')).toHaveCount(0)
+  } finally {
+    releaseResponse()
+  }
+  const download = await downloaded
+  expect(download.suggestedFilename()).toBe(`log-${logRef}.json`)
+  const path = await download.path()
+  expect(path).not.toBeNull()
+  expect(await readFile(path!)).toEqual(body)
+  await expect(trigger).toHaveAttribute('aria-busy', 'false')
+  await expect(trigger).toBeFocused()
+  expect(requestCount).toBe(1)
+})
 
 test('uses the shared tooltip style on hover and keyboard focus without clipping', async ({
   page,
@@ -191,12 +178,10 @@ test('shows an export failure instead of downloading an error document', async (
   const trigger = page.getByRole('button', { name: 'Export log' })
   await trigger.focus()
   await page.keyboard.press('Enter')
-  await expect(page.getByRole('menuitem', { name: 'OTLP JSON' })).toBeFocused()
-  await page.keyboard.press('Enter')
   await expect(page.getByRole('alert')).toContainText('export record not found')
   await expect(trigger).toBeFocused()
   await page.keyboard.press('Enter')
-  await expect(page.getByRole('menuitem', { name: 'OTLP JSON' })).toBeFocused()
+  await expect(page.getByRole('alert')).toContainText('export record not found')
   expect(downloads).toEqual([])
 })
 
@@ -213,8 +198,6 @@ test('export completion does not take focus back after the user moves it', async
   })
   const trigger = page.getByRole('button', { name: 'Export log' })
   await trigger.focus()
-  await page.keyboard.press('Enter')
-  await expect(page.getByRole('menuitem', { name: 'OTLP JSON' })).toBeFocused()
   const downloaded = page.waitForEvent('download')
   await page.keyboard.press('Enter')
   const elsewhere = page.getByRole('link', { name: 'Traces', exact: true })

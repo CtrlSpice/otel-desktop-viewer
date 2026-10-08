@@ -61,35 +61,21 @@ The output follows these rules:
 The JSON text must pass through RPC and download paths unchanged. Parsing and
 re-encoding it in JavaScript changes negative zero to zero.
 
-## Protobuf encoding
-
-`spans.GetTraceOTLPProtobuf`, `logs.GetLogOTLPProtobuf`, and
-`metrics.GetMetricOTLPProtobuf` encode the same reconstructed data as binary OTLP
-export requests. These are store-level functions; API, CLI, and frontend download
-controls use these same getters, as described below.
-
-Binary export uses the official OTLP generated messages and the Google Go
-protobuf runtime. The pinned Collector pdata encoder omits an
-ExponentialHistogram `zeroThreshold` of negative zero; the Google encoder retains
-its sign. The conversion adapts hexadecimal trace, span, and parent-span IDs to
-the base64 representation expected by the standard ProtoJSON decoder. Exact
-integer strings and other number tokens are preserved. JSON exports continue to
-use the unchanged DuckDB result.
-
 ## Download API and CLI
 
 The viewer serves individual exports through:
 
 ```text
-GET /export/traces/{traceID}?format=json
-GET /export/logs/{logRef}?format=json
-GET /export/metrics/{metricRef}?format=json
+GET /export/traces/{traceID}
+GET /export/logs/{logRef}
+GET /export/metrics/{metricRef}
 ```
 
-`format` is required: `json` returns `application/json`, and `protobuf` returns
-`application/x-protobuf`. Responses use `Cache-Control: no-store` and attachment
-filenames `trace-{traceID}.json|.pb`, `log-{logRef}.json|.pb`, or
-`metric-{metricRef}.json|.pb`, with canonical identifiers. Errors return plain text
+JSON is the sole file export format, for straightforward sharing and re-consumption.
+Responses return `application/json`. Existing `?format=json` requests are accepted;
+unsupported or duplicate format parameters return 400. Responses use
+`Cache-Control: no-store` and attachment filenames `trace-{traceID}.json`,
+`log-{logRef}.json`, or `metric-{metricRef}.json`, with canonical identifiers. Errors return plain text
 without an attachment: 400 for invalid IDs/formats, 404 for missing records,
 422 for unsupported stored Metric types, and 500 for reconstruction/encoding
 failures.
@@ -97,14 +83,27 @@ failures.
 The CLI writes the exact response bytes to stdout, without an added newline:
 
 ```sh
-otel-desktop-viewer export trace 4bf92f3577b34da6a3ce929d0e0e4736 --format json > trace.json
-otel-desktop-viewer export trace 4bf92f3577b34da6a3ce929d0e0e4736 --format protobuf > trace.pb
+otel-desktop-viewer export trace 4bf92f3577b34da6a3ce929d0e0e4736 > trace.json
 ```
 
 Use `export log <log-ref>` and `export metric <metric-ref>` for the other signals.
-`--format` is required; `--endpoint` follows the existing viewer convention.
-The selected signal header offers the same two formats as browser downloads.
+`--endpoint` follows the existing viewer convention; there is no format selector.
+The selected signal header downloads JSON with one click.
 Search/time filters and collapsed rows do not limit exported members.
+
+## File Receiver
+
+The binary registers Contrib's `otlpjsonfilereceiver` at `v0.162.0` alongside the
+network OTLP receiver. Network protobuf transport remains supported. The JSON
+document identifies its signal through `resourceSpans`, `resourceLogs`, or
+`resourceMetrics`; the file name is not needed for signal selection.
+
+Registration does not activate file ingestion or provide a browser-import backend.
+Runtime paths, watching versus read-once behavior, upload handling, and completion
+are not configured by this slice. The upstream receiver defaults to starting at the
+end of existing files, adding file-name metadata, and splitting records over 1 MiB.
+Those defaults are not a fidelity-preserving import policy. Tests use explicit
+test-owned paths and configuration; production configuration still needs a decision.
 
 ## Reconstruction limits
 

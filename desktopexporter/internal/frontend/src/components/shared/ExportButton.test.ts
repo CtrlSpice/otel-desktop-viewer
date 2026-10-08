@@ -10,30 +10,30 @@ vi.mock('@/services/export-service', () => ({ downloadOTLP: vi.fn() }))
 afterEach(() => vi.resetAllMocks())
 
 describe('ExportButton', () => {
-  it('offers both formats and supports keyboard selection and dismissal', async () => {
+  it('does not export without a selected identifier', async () => {
+    render(ExportButton, { signal: 'trace', id: '' })
+    const trigger = screen.getByRole('button', { name: 'Export trace' })
+    expect(trigger).toBeDisabled()
+    await userEvent.click(trigger)
+    expect(downloadOTLP).not.toHaveBeenCalled()
+  })
+
+  it('downloads JSON with one click and keeps keyboard focus', async () => {
     vi.mocked(downloadOTLP).mockResolvedValue()
     render(ExportButton, { signal: 'trace', id: 'trace-id' })
     const trigger = screen.getByRole('button', { name: 'Export trace' })
     await userEvent.click(trigger)
-    expect(screen.getByRole('menuitem', { name: 'OTLP JSON' })).toHaveFocus()
-    await userEvent.keyboard('{ArrowDown}')
-    expect(
-      screen.getByRole('menuitem', { name: 'OTLP protobuf' })
-    ).toHaveFocus()
-    await userEvent.keyboard('{Enter}')
     await waitFor(() =>
       expect(downloadOTLP).toHaveBeenCalledWith(
         'trace',
         'trace-id',
-        'protobuf',
         expect.any(AbortSignal)
       )
     )
-    expect(trigger).toHaveAttribute('aria-expanded', 'false')
-    await userEvent.click(trigger)
-    await userEvent.keyboard('{Escape}')
     expect(trigger).toHaveFocus()
-    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('menu')).toBeNull()
+    await userEvent.keyboard('{Enter}')
+    await waitFor(() => expect(downloadOTLP).toHaveBeenCalledTimes(2))
   })
 
   it('reports failures and allows retrying', async () => {
@@ -43,20 +43,18 @@ describe('ExportButton', () => {
     render(ExportButton, { signal: 'log', id: 'log-id' })
     const trigger = screen.getByRole('button', { name: 'Export log' })
     await userEvent.click(trigger)
-    await userEvent.click(screen.getByRole('menuitem', { name: 'OTLP JSON' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'export record not found'
     )
     expect(trigger).toBeEnabled()
     vi.mocked(downloadOTLP).mockResolvedValueOnce()
     await userEvent.click(trigger)
-    await userEvent.click(screen.getByRole('menuitem', { name: 'OTLP JSON' }))
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
   })
 
   it('disables duplicate exports and aborts its request on unmount', async () => {
     vi.mocked(downloadOTLP).mockImplementation(
-      (_signal, _id, _format, abort) =>
+      (_signal, _id, abort) =>
         new Promise((_resolve, reject) => {
           abort.addEventListener('abort', () => reject(abort.reason), {
             once: true,
@@ -66,11 +64,14 @@ describe('ExportButton', () => {
     const view = render(ExportButton, { signal: 'metric', id: 'metric-id' })
     const trigger = screen.getByRole('button', { name: 'Export metric' })
     await userEvent.click(trigger)
-    await userEvent.click(screen.getByRole('menuitem', { name: 'OTLP JSON' }))
     expect(trigger).toHaveAttribute('aria-disabled', 'true')
     expect(trigger).toBeEnabled()
     expect(trigger).not.toHaveAttribute('popovertarget')
-    const signal = vi.mocked(downloadOTLP).mock.calls[0]![3]
+    await userEvent.click(trigger)
+    await userEvent.keyboard('{Enter}')
+    expect(downloadOTLP).toHaveBeenCalledTimes(1)
+    expect(trigger).toHaveFocus()
+    const signal = vi.mocked(downloadOTLP).mock.calls[0]![2]
     expect(signal.aborted).toBe(false)
     view.unmount()
     expect(signal.aborted).toBe(true)

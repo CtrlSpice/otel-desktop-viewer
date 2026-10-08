@@ -44,7 +44,7 @@ USAGE
 COMMANDS
   services  Discover services and their telemetry counts
   attributes 🏷️ Discover attribute keys and values
-  export    📤 Export stored telemetry as OTLP JSON or protobuf
+  export    📤 Export stored telemetry as OTLP JSON
   query     🦆 Run SQL against a running viewer
   traces    🧵 Search traces in a running viewer
   trace     🧵 Inspect one complete trace

@@ -48,11 +48,11 @@ Choose the narrowest command for the question:
 | Which attribute keys and kinds occur? | `attributes keys` |
 | What are one key's common typed values and frequencies? | `attributes values <key>` |
 | What custom aggregation or stored field is needed? | `query <sql>` |
-| What complete OTLP payload should be saved or replayed? | `export trace <trace-id>`, `export log <log-ref>`, or `export metric <metric-ref>` with `--format json` or `--format protobuf` |
+| What complete OTLP JSON payload should be saved or replayed? | `export trace <trace-id>`, `export log <log-ref>`, or `export metric <metric-ref>` |
 
 Use `--json` for machine consumption or when exact values, JSON nulls, objects,
 or column types matter; use table output for human inspection. Export commands
-instead require `--format` and return the OTLP payload itself.
+instead return the OTLP JSON payload itself without a format selector.
 
 ## Discover services
 
@@ -129,14 +129,13 @@ logs. `--limit` affects only ambiguous standalone-ID summaries.
 ## Export retained telemetry
 
 ```sh
-otel-desktop-viewer export trace 4bf92f3577b34da6a3ce929d0e0e4736 --format json > trace.json
-otel-desktop-viewer export trace 4bf92f3577b34da6a3ce929d0e0e4736 --format protobuf > trace.pb
+otel-desktop-viewer export trace 4bf92f3577b34da6a3ce929d0e0e4736 > trace.json
 ```
 
 Use `export log <log-ref>` or `export metric <metric-ref>` for references returned
 by `logs --json` and `metrics --json`. All three commands accept `--endpoint`.
-They require an explicit `--format json` or `--format protobuf` and write exact
-bytes to stdout without an added newline. Failures return a nonzero exit status.
+They write exact JSON bytes to stdout without an added newline. Failures return a
+nonzero exit status.
 
 Exports reconstruct the complete retained entity with its resource, scope and
 schema URLs. Trace exports include every stored span with that trace ID, including
@@ -145,12 +144,13 @@ datapoints. Current search filters, time windows and collapsed rows do not limit
 an export. This is retained telemetry, not the original request bytes.
 
 Keep exported bytes unchanged. Parsing and re-encoding JSON in JavaScript turns
-negative zero into positive zero. JSON and protobuf use the same stored values;
-they are not the compact inspection output of `trace --json`.
+negative zero into positive zero. Exports are not the compact inspection output
+of `trace --json`.
 
 The same payloads are available through `GET /export/traces/{traceID}`,
-`GET /export/logs/{logRef}`, and `GET /export/metrics/{metricRef}`, each with the
-required query parameter `format=json` or `format=protobuf`.
+`GET /export/logs/{logRef}`, and `GET /export/metrics/{metricRef}`. No format
+parameter is required; `format=json` remains accepted. Unsupported or duplicate
+format parameters return HTTP 400.
 
 ## Run custom read-only SQL
 
