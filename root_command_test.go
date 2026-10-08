@@ -42,6 +42,7 @@ USAGE
   otel-desktop-viewer <command> [flags]
 
 COMMANDS
+  services  Discover services and their telemetry counts
   attributes 🏷️ Discover attribute keys and values
   export    📤 Export stored telemetry as OTLP JSON or protobuf
   query     🦆 Run SQL against a running viewer
@@ -280,7 +281,7 @@ func TestRootExposesOnlyViewerCommandsAndFlags(t *testing.T) {
 			names = append(names, child.Name())
 		}
 	}
-	assert.Equal(t, []string{"attributes", "export", "logs", "metrics", "query", "skills", "span", "trace", "traces"}, names)
+	assert.Equal(t, []string{"attributes", "export", "logs", "metrics", "query", "services", "skills", "span", "trace", "traces"}, names)
 	for _, forbidden := range []string{"config", "set", "feature-gates"} {
 		assert.Nil(t, cmd.Flags().Lookup(forbidden))
 	}

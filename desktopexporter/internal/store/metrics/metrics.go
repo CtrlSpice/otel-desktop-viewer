@@ -857,7 +857,7 @@ func cleanupProvisionalIdentities(
 // serviceNameFromAttrs returns the value of the resource attribute
 // service.name, or empty string if it isn't set.
 func serviceNameFromAttrs(attrs pcommon.Map) string {
-	if v, ok := attrs.Get("service.name"); ok {
+	if v, ok := util.LastValue(attrs, "service.name"); ok {
 		return v.AsString()
 	}
 	return ""

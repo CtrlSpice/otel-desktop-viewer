@@ -39,6 +39,7 @@ Choose the narrowest command for the question:
 
 | Question | Command |
 | --- | --- |
+| Which services have telemetry, and what is in it? | `services` |
 | Which traces arrived? | `traces` |
 | What spans and trace-linked logs belong to one trace? | `trace <trace-id>` |
 | What exact data belongs to one span? | `span <span-id>` or `span <trace-id> <span-id>` |
@@ -52,6 +53,24 @@ Choose the narrowest command for the question:
 Use `--json` for machine consumption or when exact values, JSON nulls, objects,
 or column types matter; use table output for human inspection. Export commands
 instead require `--format` and return the OTLP payload itself.
+
+## Discover services
+
+```sh
+otel-desktop-viewer services --since 30m --json
+otel-desktop-viewer services --service checkout --since 30m
+```
+
+`services` lists services across all three signals, grouped by namespace and name.
+Each summary shows span/error-span counts, log/error-log counts, Metric/datapoint
+counts and `lastSeen` (Unix nanoseconds). Counts describe stored telemetry in the
+window, not request volume or service health. Error counts use span status Error
+and log severity ERROR/FATAL; Metric count is not series count.
+
+Use the same filters and defaults as the signal commands below. `--service`
+matches an exact name across namespaces. JSON includes `startTime`, `endTime`,
+`services` and `truncated`; increase `--limit` if truncated. Use a discovered
+name with `traces`, `logs` or `metrics` to investigate further.
 
 ## Search traces, logs, and Metrics
 
@@ -153,7 +172,7 @@ otel-desktop-viewer query 'DESCRIBE attributes'
 otel-desktop-viewer query "SELECT function_name FROM duckdb_functions() WHERE function_type = 'macro' AND function_name IN ('span_id_wire', 'trace_id_wire') ORDER BY function_name"
 ```
 
-The examples use schema 21 tables `spans`, `logs`, `metrics`,
+The examples use schema 22 tables `spans`, `logs`, `metrics`,
 `metric_series`, `metric_datapoints`, and `attributes`, plus registered
 `trace_id_wire` and `span_id_wire` macros. Inspect the installed schema before
 adapting SQL.

@@ -14,9 +14,10 @@ package schema
 // `create table if not exists` silently leaves an old table in place and the
 // mismatch first surfaces as a duckdb appender column-count error during ingest,
 // or as an index creation failure against a column that does not exist.
-// Version 21 is required because the current Metric table and foreign-key names
-// are incompatible with earlier files.
-const Version = 21
+// Version 22 requires last-occurrence selection per attribute collection and
+// nested map before identity hashing. Earlier files can retain conflicting keys
+// whose received order is no longer available.
+const Version = 22
 
 // VersionTableQuery creates the version table.
 //

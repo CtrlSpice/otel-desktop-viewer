@@ -121,7 +121,7 @@ directory has an `_order` manifest because tables, indexes, and macros have
 creation dependencies. Store startup verifies that every embedded DDL file is
 listed exactly once.
 
-The current schema version is 21. Store startup validates `schema_meta` before
+The current schema version is 22. Store startup validates `schema_meta` before
 running DDL. A mismatched, malformed, or unversioned telemetry database is
 rejected without modification. The store does not migrate or reset databases.
 
@@ -166,7 +166,7 @@ value is `{kind,value}`.
 - finite doubles use JSON numbers.
 - negative zero and non-finite doubles use exact IEEE-754 bit text.
 - arrays preserve order.
-- maps use sorted entry lists, preserving duplicate keys.
+- maps keep the last received value per key, then sort the surviving entry list.
 - empty values use `null` inside the tagged value.
 
 Received OTLP timestamps use DuckDB `UBIGINT`. Span kind, span status code, and
@@ -184,7 +184,11 @@ absent. The store does not invent zero IDs.
 
 The attribute dictionary is keyed by a 128-bit prefix of SHA-256 over the key
 and canonical tagged value. Owners store sorted UUID arrays. Identical typed
-values deduplicate across owner categories.
+values deduplicate across owner categories. Each owner's attribute collection
+keeps the last received occurrence of each key before encoding and hashing.
+Selection is local to that collection: it never combines Resource, Scope, record,
+event, link, datapoint, exemplar or metadata attributes. Earlier conflicting values
+are not stored. The incoming pdata is not mutated.
 
 DuckDB cannot enforce foreign keys into UUID arrays. Ingest writes dictionary
 rows before owner rows. Store tests check for dangling references.
@@ -306,6 +310,33 @@ nullable decimal nanosecond strings. `null` means unbounded.
 Requests for missing entities return signal-specific errors. Invalid received
 IDs and invalid viewer references return separate parameter errors. Caller
 cancellation maps to `-32010` rather than an internal error.
+
+## Service discovery CLI
+
+`services` computes a summary through the existing read-only `query` RPC, with
+no stored service entity. It groups the stored `service_name` text projection
+and Resource `service.namespace` converted with `pcommon.Value.AsString` rules.
+Missing/empty namespaces share a label. Different types with equal text labels
+share a summary; surviving source attribute types remain available for inspection.
+
+Each field is computed within the selected inclusive time window:
+
+| Field | Source and formula | Unit / precision |
+| --- | --- | --- |
+| `spanCount` | Number of stored spans, by composite trace/span identity | Exact integer records |
+| `errorSpanCount` | Spans with received status code 2 | Exact integer records |
+| `logCount` | Number of stored logs, independent of correlation IDs | Exact integer records |
+| `errorLogCount` | Logs with received severity number 17–24 | Exact integer records |
+| `metricCount` | Distinct `metrics.id` with qualifying datapoints | Exact integer Metric identities, not names or series |
+| `dataPointCount` | Number of stored datapoints; histogram buckets/count do not multiply it | Exact integer records |
+| `lastSeen` | Maximum span start, effective log time, or datapoint timestamp | Exact unsigned Unix nanoseconds, decimal string |
+
+Effective log time is received timestamp, falling back to observed timestamp
+when timestamp is zero. The same times determine window eligibility. `lastSeen`
+is not ingestion time or proof of liveness. Signals aggregate independently before
+joining Resource identity, avoiding multiplied counts. Instances/versions contribute
+to the same namespace/name summary. JSON includes resolved window bounds and
+look-ahead truncation. The exact-name `--service` filter spans all namespaces.
 
 ## Frontend
 

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/plog"
 	"go.uber.org/zap"
 )
 
@@ -77,6 +78,36 @@ func TestAttributeSetIsOrderIndependent(t *testing.T) {
 		ingest.ScopeID("otelhttp", "1.0.0", "schema", idsOne, 0),
 		ingest.ScopeID("otelhttp", "1.0.0", "schema", idsTwo, 0),
 		"so the same scope in a different order is still one scope")
+}
+
+func TestAttributeSetSelectsLastKeyPerCollectionBeforeHashing(t *testing.T) {
+	for _, scope := range []string{ingest.ScopeResource, ingest.ScopeScope, ingest.ScopeSpan,
+		ingest.ScopeLog, ingest.ScopeEvent, ingest.ScopeLink, ingest.ScopeDatapoint,
+		ingest.ScopeExemplar, ingest.ScopeMetricMetadata} {
+		t.Run(scope, func(t *testing.T) {
+			for _, pair := range [][2]string{
+				{`{"stringValue":"old"}`, `{"intValue":"9223372036854775807"}`},
+				{`{"intValue":"9223372036854775807"}`, `{"stringValue":"old"}`},
+				{`{"doubleValue":-0.0}`, `{"doubleValue":-0.0}`},
+			} {
+				logs, err := (&plog.JSONUnmarshaler{}).UnmarshalLogs([]byte(
+					`{"resourceLogs":[{"resource":{"attributes":[{"key":"key","value":` + pair[0] + `},{"key":"key","value":` + pair[1] + `}]}}]}`))
+				require.NoError(t, err)
+				attrs := logs.ResourceLogs().At(0).Resource().Attributes()
+				winner, err := (&plog.JSONUnmarshaler{}).UnmarshalLogs([]byte(
+					`{"resourceLogs":[{"resource":{"attributes":[{"key":"key","value":` + pair[1] + `}]}}]}`))
+				require.NoError(t, err)
+				wantRows, wantIDs := ingest.AttributeSet(winner.ResourceLogs().At(0).Resource().Attributes(), scope)
+				for range 2 { // Exercise the memo as well as the uncached calculation.
+					rows, ids := ingest.AttributeSet(attrs, scope)
+					assert.Equal(t, wantRows, rows)
+					assert.Equal(t, wantIDs, ids)
+					require.Len(t, rows, 1)
+				}
+				assert.Equal(t, 2, attrs.Len(), "selection must not mutate incoming pdata")
+			}
+		})
+	}
 }
 
 func resourceID(attrs pcommon.Map, dropped uint32) duckdb.UUID {
