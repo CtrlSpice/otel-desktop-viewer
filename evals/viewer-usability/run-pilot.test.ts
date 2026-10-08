@@ -40,6 +40,9 @@ process.exitCode = 7;
   assert.equal(observation.cwd, fs.realpathSync(root))
   assert.ok(Array.isArray(observation.args))
   assert.ok(observation.args.includes('--no-share'))
+  const repeat = observation.args.indexOf('--repeat')
+  assert.ok(repeat >= 0)
+  assert.equal(observation.args[repeat + 1], '3')
   assert.ok(observation.args.includes(path.join(suite, 'config.ts')))
   assert.equal(
     record(readJson(path.join(root, 'pilot-completion.json'))).exit,

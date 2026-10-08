@@ -18,7 +18,11 @@ const observation = {cwd:process.cwd(),args,env:process.env,
 fs.writeFileSync(path.join(process.cwd(),'stub-observation.json'),JSON.stringify(observation));
 fs.writeFileSync(path.join(process.env.XDG_DATA_HOME,'opencode','opencode.db'),'test session only');
 process.stderr.write(secret.slice(0,6));
-setTimeout(()=>{
+if (settings.hang) {
+  process.stderr.write(secret.slice(6));
+  console.log(JSON.stringify({type:'tool_use',part:{tool:'bash',state:{input:{command:'synthetic slow command'},status:'running',output:'retained partial output'}}}));
+  setInterval(()=>{},1000);
+} else setTimeout(()=>{
   process.stderr.write(secret.slice(6));
   if (process.env.SYNTHETIC_API_KEY) process.stderr.write(process.env.SYNTHETIC_API_KEY);
   if (settings.tools) {
