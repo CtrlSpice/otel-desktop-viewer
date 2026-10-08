@@ -130,6 +130,43 @@ for (const format of ['json', 'protobuf'] as const) {
   })
 }
 
+test('uses the shared tooltip style on hover and keyboard focus without clipping', async ({
+  page,
+}) => {
+  const trigger = page.getByRole('button', { name: 'Export log', exact: true })
+  await expect(trigger).toHaveAttribute('data-tip', 'Export log')
+  await expect(trigger).not.toHaveAttribute('title')
+  await expect(trigger.locator('svg')).toHaveAttribute('aria-hidden', 'true')
+  await trigger.hover()
+  await expect
+    .poll(() =>
+      trigger.evaluate(button => getComputedStyle(button, '::before').opacity)
+    )
+    .toBe('1')
+  expect(
+    await trigger.evaluate(
+      button => getComputedStyle(button.closest('.pane-header')!).overflowY
+    )
+  ).toBe('visible')
+  await page.mouse.move(0, 0)
+  await trigger.focus()
+  await page.keyboard.press('Tab')
+  await page.keyboard.press('Shift+Tab')
+  await expect(trigger).toBeFocused()
+  await expect
+    .poll(() =>
+      trigger.evaluate(button => getComputedStyle(button, '::before').opacity)
+    )
+    .toBe('1')
+  await page.keyboard.press('Escape')
+  await expect(trigger).toBeFocused()
+  await expect
+    .poll(() =>
+      trigger.evaluate(button => getComputedStyle(button, '::before').opacity)
+    )
+    .toBe('0')
+})
+
 test('shows an export failure instead of downloading an error document', async ({
   page,
 }) => {

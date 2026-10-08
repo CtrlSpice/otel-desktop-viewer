@@ -96,7 +96,7 @@
 <button
   bind:this={trigger}
   type="button"
-  class="btn btn-circle btn-primary btn-soft btn-xs"
+  class="btn btn-circle btn-primary btn-soft btn-xs tooltip tooltip-left"
   class:btn-disabled={pending}
   popovertarget={pending ? undefined : popoverID}
   aria-controls={popoverID}
@@ -105,7 +105,7 @@
   aria-label="Export {signal}"
   aria-busy={pending}
   aria-disabled={pending}
-  title="Export {signal}"
+  data-tip={open ? '' : `Export ${signal}`}
   disabled={!id}
 >
   <HugeiconsIcon

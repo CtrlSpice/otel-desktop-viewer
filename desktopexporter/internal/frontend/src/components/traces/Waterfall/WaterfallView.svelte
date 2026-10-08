@@ -219,7 +219,12 @@
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { ChevronLeftIcon, ChevronRightIcon } from '@hugeicons/core-free-icons'
+  import {
+    ChevronLeftIcon,
+    ChevronRightIcon,
+    UnfoldMoreIcon,
+    UnfoldLessIcon,
+  } from '@hugeicons/core-free-icons'
   import WaterfallTimeAxisHeader, {
     waterfallTimeAxis,
   } from './WaterfallTimeAxisHeader.svelte'
@@ -959,19 +964,33 @@
       {#if collapsibleSpanIDs.length > 0}
         <button
           type="button"
-          class="btn btn-ghost btn-xs"
+          class="btn btn-circle btn-ghost btn-xs tooltip tooltip-left"
           onclick={() => setAll(false)}
           aria-label="Expand all spans"
+          data-tip="Expand all spans"
         >
-          Expand all
+          <HugeiconsIcon
+            icon={UnfoldMoreIcon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-4 w-4"
+            aria-hidden="true"
+          />
         </button>
         <button
           type="button"
-          class="btn btn-ghost btn-xs"
+          class="btn btn-circle btn-ghost btn-xs tooltip tooltip-left"
           onclick={() => setAll(true)}
           aria-label="Collapse all spans"
+          data-tip="Collapse all spans"
         >
-          Collapse all
+          <HugeiconsIcon
+            icon={UnfoldLessIcon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-4 w-4"
+            aria-hidden="true"
+          />
         </button>
       {/if}
     {/snippet}

@@ -511,6 +511,13 @@
     @apply flex shrink-0 items-center gap-1.5;
   }
 
+  /* Tooltip controls must escape the header; title/subtitle truncate themselves
+     and the tab strip retains its own scroll container. */
+  .pane-header:has(:global(.tooltip[data-tip])),
+  .pane-header__title-row:has(:global(.tooltip[data-tip])) {
+    overflow: visible;
+  }
+
   /* Header badges read at a slightly larger size than their
      drawer-card counterparts. xs is right for stacked card density;
      the header has more breathing room and benefits from sm so the
