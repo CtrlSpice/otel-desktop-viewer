@@ -2,6 +2,7 @@
   import type { Snippet } from 'svelte'
   import type { LogData } from '@/types/api-types'
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
+  import ExportButton from '@/components/shared/ExportButton.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import LogField from './LogField.svelte'
@@ -91,6 +92,11 @@
           severityNumber={log.severityNumber}
           severityText={log.severityText}
         />
+      {/snippet}
+      {#snippet leading()}
+        {#key log.logRef}
+          <ExportButton signal="log" id={log.logRef} />
+        {/key}
       {/snippet}
     </PaneHeader>
 

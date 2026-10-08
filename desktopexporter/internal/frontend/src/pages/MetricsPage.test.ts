@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/svelte'
+import { fireEvent, screen, waitFor, within } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import { tick } from 'svelte'
 import MetricsPage from './MetricsPage.svelte'
@@ -14,6 +14,9 @@ import type {
 } from '@/types/api-types'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 import { navigateCurrentRoute, readRoute, withQueryPatch } from '@/route'
+import { downloadOTLP } from '@/services/export-service'
+
+vi.mock('@/services/export-service', () => ({ downloadOTLP: vi.fn() }))
 
 // Only histograms request the whole-window bucket merge.
 
@@ -170,6 +173,8 @@ function makeStats(): Stats {
 }
 
 beforeEach(() => {
+  vi.mocked(downloadOTLP).mockReset()
+  vi.mocked(downloadOTLP).mockResolvedValue()
   searchMetricSummaries.mockReset()
   getStats.mockReset()
   getMetricView.mockReset()
@@ -200,6 +205,51 @@ async function renderSelected(metricType: MetricType) {
     timeout: 3000,
   })
 }
+
+describe('Metric main-header export', () => {
+  it.each(['Gauge', 'Sum', 'Histogram', 'ExponentialHistogram'] as const)(
+    'exports the whole %s Metric from its chart title header',
+    async metricType => {
+      searchMetricSummaries.mockResolvedValue([makeSummary(metricType)])
+      getStats.mockResolvedValue(makeStats())
+      getMetricView.mockResolvedValue(makeMetric(metricType))
+      getMetricAggregateView.mockResolvedValue({
+        aggregate: null,
+        scalarAggregate: null,
+      })
+      setTestUrl('/metrics/metric-1')
+      renderWithContexts(MetricsPage)
+      await screen.findByRole('tablist', { name: 'Metric detail tabs' })
+
+      const header = screen.getByRole('region', { name: 'Metric chart' })
+      const button = within(header).getByRole('button', {
+        name: 'Export metric',
+      })
+      const title = within(header).getByText('demo.metric', { exact: true })
+      expect(
+        button.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).not.toBe(0)
+      const chartTabs = within(header).queryByRole('tablist')
+      if (chartTabs) {
+        expect(
+          button.compareDocumentPosition(chartTabs) &
+            Node.DOCUMENT_POSITION_FOLLOWING
+        ).not.toBe(0)
+      }
+      expect(
+        screen.getAllByRole('button', { name: 'Export metric' })
+      ).toHaveLength(1)
+      await userEvent.click(button)
+      await userEvent.click(screen.getByRole('menuitem', { name: 'OTLP JSON' }))
+      expect(downloadOTLP).toHaveBeenCalledWith(
+        'metric',
+        'metric-1',
+        'json',
+        expect.any(AbortSignal)
+      )
+    }
+  )
+})
 
 /** targetBuckets is the 4th positional argument; the whole-window call is the
  *  one that asks for exactly 1 bucket. */

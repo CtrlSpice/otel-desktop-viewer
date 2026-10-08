@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/svelte'
+import { fireEvent, screen, waitFor, within } from '@testing-library/svelte'
 import TracesPage from './TracesPage.svelte'
 import type {
   TraceSummary,
@@ -182,6 +182,33 @@ function normalizedText(el: HTMLElement): string {
 }
 
 describe('TracesPage unplaced spans banner', () => {
+  it('allows exporting the selected trace when all its spans are unplaced', async () => {
+    searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
+    getStats.mockResolvedValue(makeStats())
+    getTraceView.mockResolvedValue({
+      traceID: 'trace-1',
+      spans: [],
+      unplacedSpanCount: 2,
+    })
+    setTestUrl('/traces/trace-1')
+    renderWithContexts(TracesPage)
+    const header = await screen.findByRole('region', {
+      name: 'Trace waterfall',
+    })
+    const button = within(header).getByRole('button', { name: 'Export trace' })
+    expect(button).toBeEnabled()
+    const title = header.querySelector('.pane-header__title')!
+    expect(
+      button.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).not.toBe(0)
+    expect(
+      screen.getAllByRole('button', { name: 'Export trace' })
+    ).toHaveLength(1)
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '2 spans are missing'
+    )
+  })
+
   it('queries the list with null bounds for the default All selection', async () => {
     await renderSelectedTrace(0)
     expect(searchTraceSummaries).toHaveBeenCalledWith(null, null)

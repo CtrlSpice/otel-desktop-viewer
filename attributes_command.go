@@ -51,8 +51,8 @@ type attributeValuesResult struct {
 func newAttributesCommand(client *http.Client, now func() time.Time) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "attributes",
-		Short: "🔎 Discover attribute keys and values",
-		Long:  "🔎 Discover attributes in a running viewer, keeping received kinds and owner associations.",
+		Short: "🏷️ Discover attribute keys and values",
+		Long:  "🏷️ Discover attributes in a running viewer, keeping received kinds and owner associations.",
 		Args:  cobra.NoArgs,
 		RunE:  func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
@@ -66,8 +66,8 @@ func newAttributeKeysCommand(client *http.Client, now func() time.Time) *cobra.C
 	var jsonOutput bool
 	cmd := &cobra.Command{
 		Use:   "keys",
-		Short: "🔎 List distinct attribute keys and kinds",
-		Long: "🔎 List each distinct attribute key and received kind once, with its owner location. " +
+		Short: "🔑 List distinct attribute keys and kinds",
+		Long: "🔑 List each distinct attribute key and received kind once, with its owner location. " +
 			"Defaults to direct span attributes, the last hour and 25 key/kind pairs. Select the signal and owner explicitly for other locations.",
 		Example: "  otel-desktop-viewer attributes keys\n" +
 			"  otel-desktop-viewer attributes keys --signal logs --owner-type log --service checkout --since 30m --json\n" +
@@ -115,8 +115,8 @@ func newAttributeValuesCommand(client *http.Client, now func() time.Time) *cobra
 	var jsonOutput bool
 	cmd := &cobra.Command{
 		Use:   "values <key>",
-		Short: "🔎 Count exact typed values for one attribute key",
-		Long: "🔎 Rank attribute values by distinct telemetry-record count: spans, logs or Metric datapoints for the selected signal. " +
+		Short: "🏷️ Count exact typed values for one attribute key",
+		Long: "🏷️ Rank attribute values by distinct telemetry-record count: spans, logs or Metric datapoints for the selected signal. " +
 			"Events/links count their owning spans; exemplars and Metric metadata count associated datapoints. Events and exemplars use their own timestamps; other owners use the counted record's time. Service filters follow the associated record. " +
 			"Resource/scope values count referencing records, not distinct resources/scopes. The denominator is matching records whose selected owner carries the key, before the result limit. " +
 			"A histogram datapoint counts once, not by its observation count. Kinds stay distinct. Defaults to direct span attributes, the last hour and 25 values. " +

@@ -80,7 +80,7 @@ func TestQueryCommandDefaultLimitAndHelpAreOffline(t *testing.T) {
 	cmd.SetErr(&output)
 	cmd.SetArgs([]string{"query", "--help", "--endpoint", "http://127.0.0.1:1"})
 	require.NoError(t, cmd.Execute())
-	assert.Contains(t, output.String(), "🔎 Run one read-only DuckDB query against the existing viewer process.")
+	assert.Contains(t, output.String(), "🦆 Run one read-only DuckDB query against the existing viewer process.")
 	assert.Contains(t, output.String(), "SHOW TABLES")
 	assert.Contains(t, output.String(), "--json")
 	assert.Contains(t, output.String(), "--limit")
@@ -91,7 +91,7 @@ func TestQueryCommandDefaultLimitAndHelpAreOffline(t *testing.T) {
 	cmd.SetErr(&output)
 	cmd.SetArgs([]string{"--help"})
 	require.NoError(t, cmd.Execute())
-	assert.Contains(t, output.String(), "query     🔎 Run SQL against a running viewer")
+	assert.Contains(t, output.String(), "query     🦆 Run SQL against a running viewer")
 }
 
 func TestQueryCommandReturnsRPCAndHTTPFailuresWithoutUsage(t *testing.T) {

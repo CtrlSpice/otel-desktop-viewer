@@ -79,6 +79,7 @@ func newRootCommand(
 
 	commands := []*cobra.Command{
 		newAttributesCommand(client, now),
+		newExportCommand(client),
 		newQueryCommand(client),
 		newTracesCommand(client, now),
 		newTraceCommand(client),
@@ -146,14 +147,15 @@ USAGE
   %s <command> [flags]
 
 COMMANDS
-  attributes 🔎 Discover attribute keys and values
-  query     🔎 Run SQL against a running viewer
+  attributes 🏷️ Discover attribute keys and values
+  export    📤 Export stored telemetry as OTLP JSON or protobuf
+  query     🦆 Run SQL against a running viewer
   traces    🧵 Search traces in a running viewer
   trace     🧵 Inspect one complete trace
   span      🧵 Inspect one span
   logs      🪵 Search logs in a running viewer
   metrics   📈 Search metrics in a running viewer
-  skills    🧩 Print the agent usage guide
+  skills    🧠 Print the agent usage guide
 
 VIEWER FLAGS
       --host string          Address used by viewer/OTLP receivers (default "localhost")

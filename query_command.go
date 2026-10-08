@@ -142,8 +142,8 @@ func newQueryCommand(client *http.Client) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "query <sql>",
-		Short: "🔎 Run SQL against a running viewer",
-		Long: "🔎 Run one read-only DuckDB query against the existing viewer process. " +
+		Short: "🦆 Run SQL against a running viewer",
+		Long: "🦆 Run one read-only DuckDB query against the existing viewer process. " +
 			"Results use aligned columns by default; --json emits the JSON result.",
 		Example: "  otel-desktop-viewer query 'SHOW TABLES'\n" +
 			"  otel-desktop-viewer query 'DESCRIBE spans'\n" +

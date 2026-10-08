@@ -42,14 +42,15 @@ USAGE
   otel-desktop-viewer <command> [flags]
 
 COMMANDS
-  attributes 🔎 Discover attribute keys and values
-  query     🔎 Run SQL against a running viewer
+  attributes 🏷️ Discover attribute keys and values
+  export    📤 Export stored telemetry as OTLP JSON or protobuf
+  query     🦆 Run SQL against a running viewer
   traces    🧵 Search traces in a running viewer
   trace     🧵 Inspect one complete trace
   span      🧵 Inspect one span
   logs      🪵 Search logs in a running viewer
   metrics   📈 Search metrics in a running viewer
-  skills    🧩 Print the agent usage guide
+  skills    🧠 Print the agent usage guide
 
 VIEWER FLAGS
       --host string          Address used by viewer/OTLP receivers (default "localhost")
@@ -67,7 +68,7 @@ GLOBAL FLAGS
   -v, --version   Version for otel-desktop-viewer
 `
 
-const expectedQueryHelp = `🔎 Run one read-only DuckDB query against the existing viewer process. Results use aligned columns by default; --json emits the JSON result.
+const expectedQueryHelp = `🦆 Run one read-only DuckDB query against the existing viewer process. Results use aligned columns by default; --json emits the JSON result.
 
 USAGE
   otel-desktop-viewer query <sql> [flags]
@@ -87,7 +88,7 @@ GLOBAL FLAGS
   -h, --help   Help for this command
 `
 
-const expectedSkillsHelp = `🧩 Print the bundled OTel Desktop Viewer agent usage guide.
+const expectedSkillsHelp = `🧠 Print the bundled OTel Desktop Viewer agent usage guide.
 
 USAGE
   otel-desktop-viewer skills [flags]
@@ -279,7 +280,7 @@ func TestRootExposesOnlyViewerCommandsAndFlags(t *testing.T) {
 			names = append(names, child.Name())
 		}
 	}
-	assert.Equal(t, []string{"attributes", "logs", "metrics", "query", "skills", "span", "trace", "traces"}, names)
+	assert.Equal(t, []string{"attributes", "export", "logs", "metrics", "query", "skills", "span", "trace", "traces"}, names)
 	for _, forbidden := range []string{"config", "set", "feature-gates"} {
 		assert.Nil(t, cmd.Flags().Lookup(forbidden))
 	}

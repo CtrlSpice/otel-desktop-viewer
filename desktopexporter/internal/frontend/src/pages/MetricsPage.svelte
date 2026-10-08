@@ -107,6 +107,7 @@
   import MetricDetailView from '@/components/metrics/Detail/MetricDetailView.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import PaneHeader, { paneTabID } from '@/components/shared/PaneHeader.svelte'
+  import ExportButton from '@/components/shared/ExportButton.svelte'
   import type { AggregationView } from '@/components/metrics/utils/aggregation'
   import {
     PANEL_DEFAULT_REM,
@@ -744,6 +745,11 @@
             tabPanelID={METRIC_CHART_PANEL_ID}
           >
             {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
+            {#snippet leading()}
+              {#key selectedSummary.metricRef}
+                <ExportButton signal="metric" id={selectedSummary.metricRef} />
+              {/key}
+            {/snippet}
           </PaneHeader>
         {:else}
           <PaneHeader
@@ -753,6 +759,11 @@
             ariaLabel="Metric chart"
           >
             {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
+            {#snippet leading()}
+              {#key selectedSummary.metricRef}
+                <ExportButton signal="metric" id={selectedSummary.metricRef} />
+              {/key}
+            {/snippet}
           </PaneHeader>
         {/if}
       {/if}

@@ -427,6 +427,7 @@
           </div>
         {/if}
         <WaterfallView
+          traceID={currentTraceData.traceID}
           spans={currentTraceData.spans}
           logs={traceLogs}
           {selectedSpanID}
