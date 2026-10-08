@@ -267,28 +267,60 @@ func TestServicesDefaultLimitAndEmptyStore(t *testing.T) {
 	assert.False(t, full.Truncated)
 }
 
-func TestServicesDoNotCoerceNonStringIdentity(t *testing.T) {
+func TestServicesGroupTextLabelsAndPreserveReceivedIdentityTypes(t *testing.T) {
 	for _, key := range []string{"service.name", "service.namespace"} {
 		t.Run(key, func(t *testing.T) {
-			endpoint, _, le, _ := startAttributeIntegration(t)
-			logs := plog.NewLogs()
-			for i := range 2 {
-				rl := logs.ResourceLogs().AppendEmpty()
-				rl.Resource().Attributes().PutStr("service.name", "42")
-				rl.Resource().Attributes().PutStr("service.namespace", "42")
-				if i == 1 {
-					rl.Resource().Attributes().PutInt(key, 42)
+			endpoint, te, le, me := startAttributeIntegration(t)
+			traces, logs, metrics := ptrace.NewTraces(), plog.NewLogs(), pmetric.NewMetrics()
+			for i := range 3 {
+				rs, rl, rm := traces.ResourceSpans().AppendEmpty(), logs.ResourceLogs().AppendEmpty(), metrics.ResourceMetrics().AppendEmpty()
+				for _, resource := range []pcommon.Resource{rs.Resource(), rl.Resource(), rm.Resource()} {
+					resource.Attributes().PutStr("service.name", "42")
+					resource.Attributes().PutStr("service.namespace", "42")
+					if i == 1 {
+						resource.Attributes().PutInt(key, 42)
+					} else if i == 2 {
+						resource.Attributes().PutStr("service.name", "healthy")
+						resource.Attributes().PutStr("service.namespace", "shop")
+					}
 				}
-				rl.ScopeLogs().AppendEmpty().LogRecords().AppendEmpty().SetTimestamp(8000000000000 + pcommon.Timestamp(i))
+				timestamp := pcommon.Timestamp(8000000000000 + i)
+				span := rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+				span.SetTraceID(pcommon.TraceID{15: byte(i + 1)})
+				span.SetSpanID(pcommon.SpanID{7: 1})
+				span.SetStartTimestamp(timestamp)
+				span.SetEndTimestamp(timestamp + 1)
+				rl.ScopeLogs().AppendEmpty().LogRecords().AppendEmpty().SetTimestamp(timestamp)
+				metric := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+				metric.SetName("usage")
+				dp := metric.SetEmptyGauge().DataPoints().AppendEmpty()
+				dp.SetTimestamp(timestamp)
+				dp.SetIntValue(1)
 			}
+			require.NoError(t, te.ConsumeTraces(context.Background(), traces))
 			require.NoError(t, le.ConsumeLogs(context.Background(), logs))
-			output, err := servicesTestRun(t, endpoint, "--json")
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "Resource "+key+" must be a string")
-			assert.Empty(t, output, "a failed query must not emit a partial summary")
-			// A malformed resource outside the chosen window must not block valid data.
-			valid := servicesTestResult(t, endpoint, "--end", "1970-01-01T02:13:20Z")
-			assert.Equal(t, []serviceSummary{{ServiceName: "42", ServiceNamespace: "42", LogCount: 1, LastSeen: "8000000000000"}}, valid.Services)
+			require.NoError(t, me.ConsumeMetrics(context.Background(), metrics))
+			result := servicesTestResult(t, endpoint)
+			assert.Equal(t, []serviceSummary{
+				{ServiceName: "42", ServiceNamespace: "42", SpanCount: 2, LogCount: 2, MetricCount: 2, DataPointCount: 2, LastSeen: "8000000000001"},
+				{ServiceName: "healthy", ServiceNamespace: "shop", SpanCount: 1, LogCount: 1, MetricCount: 1, DataPointCount: 1, LastSeen: "8000000000002"},
+			}, result.Services)
+			filtered := servicesTestResult(t, endpoint, "--service", "42")
+			assert.Equal(t, result.Services[:1], filtered.Services)
+			limited := servicesTestResult(t, endpoint, "--limit", "1")
+			assert.Equal(t, result.Services[:1], limited.Services, "limit applies after merging labels")
+			assert.True(t, limited.Truncated)
+			for _, signal := range []string{"traces", "logs", "metrics"} {
+				var attributes attributeValuesResult
+				output := attributeTestRun(t, endpoint, "values", key, "--signal", signal, "--owner-type", "resource", "--service", "42", "--json")
+				require.NoError(t, json.Unmarshal([]byte(output), &attributes))
+				require.Len(t, attributes.Values, 2)
+				assert.JSONEq(t, `{"kind":"int64","value":"42"}`, string(attributes.Values[0].Value))
+				assert.JSONEq(t, `{"kind":"string","value":"42"}`, string(attributes.Values[1].Value))
+				for _, value := range attributes.Values {
+					assert.Equal(t, uint64(1), value.Count, signal)
+				}
+			}
 		})
 	}
 }

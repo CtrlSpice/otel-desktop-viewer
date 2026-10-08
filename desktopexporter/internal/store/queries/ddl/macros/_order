@@ -36,6 +36,7 @@ log_data_json.sql
 zero_fold.sql
 attribute_int64.sql
 attribute_double.sql
+attribute_text.sql
 double_wire_json.sql
 otlp_double_json.sql
 otlp_any_value.sql

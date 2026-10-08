@@ -62,11 +62,14 @@ otel-desktop-viewer services --service checkout --since 30m
 ```
 
 `services` discovers services with spans, logs or Metric datapoints in the window.
-It groups by Resource `service.namespace` and `service.name`, ordered by namespace
-then name. Missing and empty namespaces share a group. Missing names display as
-empty strings; the command does not invent `unknown_service`. Present names and
-namespaces must be strings; a non-string value produces an error rather than
-being converted into a service identity. Original resource attributes are unchanged.
+It groups by the text projections of Resource `service.namespace` and
+`service.name`, ordered by namespace then name. Names use the existing stored
+`service_name` search projection; namespaces use the same `pcommon.Value.AsString`
+conversion rules at query time. Missing and empty namespaces share a group.
+Missing names display as empty strings; the command does not invent `unknown_service`.
+Different received kinds with the same text share a summary: integer `42` and
+string `"42"` both have label `42`. Original typed resource attributes remain
+unchanged and available through `attributes values` and record inspection.
 
 The command accepts the same flags as the signal summary commands below, with the
 same last-hour and 25-row defaults. `--service` matches an exact name across all
