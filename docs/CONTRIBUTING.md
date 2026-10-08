@@ -102,7 +102,7 @@ make populate-logs
 make populate-metrics
 ```
 
-Seeding posts fixed OTLP JSON from `testdata/otlp/demo/` using curl. Trace/log
+Seeding posts fixed OTLP JSON from `testdata/otlp/small/` using curl. Trace/log
 correlations are stored in the files; no generator or temporary handoff is needed.
 Choose **All** or the dataset's recorded time window in the viewer. Replaying
 logs or datapoints appends more records, so use a fresh store for repeatable counts.

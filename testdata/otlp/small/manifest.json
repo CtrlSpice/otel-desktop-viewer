@@ -1,0 +1,24 @@
+{
+  "description": "Small shared synthetic shop workload for development, tests and investigations.",
+  "startTimeUnixNano": "1791359675000000000",
+  "endTimeUnixNano": "1791360275000000000",
+  "requests": [
+    {
+      "signal": "traces",
+      "file": "traces.json"
+    },
+    {
+      "signal": "logs",
+      "file": "logs.json"
+    },
+    {
+      "signal": "metrics",
+      "file": "metrics.json"
+    }
+  ],
+  "storedCounts": {
+    "spans": 48,
+    "logs": 40,
+    "datapoints": 96
+  }
+}

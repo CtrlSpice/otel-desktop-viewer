@@ -1,0 +1,1233 @@
+{
+  "resourceMetrics": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "api-gateway"
+            }
+          }
+        ]
+      },
+      "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+      "scopeMetrics": [
+        {
+          "scope": {
+            "name": "shop.instrumentation",
+            "version": "1.0.0"
+          },
+          "schemaUrl": "https://opentelemetry.io/schemas/1.34.0",
+          "metrics": [
+            {
+              "name": "system.cpu.utilization",
+              "unit": "1",
+              "gauge": {
+                "dataPoints": [
+                  {
+                    "timeUnixNano": "1791359700000000000",
+                    "asDouble": 0.1
+                  },
+                  {
+                    "timeUnixNano": "1791359725000000000",
+                    "asDouble": 0.12
+                  },
+                  {
+                    "timeUnixNano": "1791359750000000000",
+                    "asDouble": 0.14
+                  },
+                  {
+                    "timeUnixNano": "1791359775000000000",
+                    "asDouble": 0.16
+                  },
+                  {
+                    "timeUnixNano": "1791359800000000000",
+                    "asDouble": 0.18
+                  },
+                  {
+                    "timeUnixNano": "1791359825000000000",
+                    "asDouble": 0.1
+                  },
+                  {
+                    "timeUnixNano": "1791359850000000000",
+                    "asDouble": 0.12
+                  },
+                  {
+                    "timeUnixNano": "1791359875000000000",
+                    "asDouble": 0.14
+                  },
+                  {
+                    "timeUnixNano": "1791359900000000000",
+                    "asDouble": 0.16
+                  },
+                  {
+                    "timeUnixNano": "1791359925000000000",
+                    "asDouble": 0.18
+                  },
+                  {
+                    "timeUnixNano": "1791359950000000000",
+                    "asDouble": 0.1
+                  },
+                  {
+                    "timeUnixNano": "1791359975000000000",
+                    "asDouble": 0.12
+                  },
+                  {
+                    "timeUnixNano": "1791360000000000000",
+                    "asDouble": 0.14
+                  },
+                  {
+                    "timeUnixNano": "1791360025000000000",
+                    "asDouble": 0.16
+                  },
+                  {
+                    "timeUnixNano": "1791360050000000000",
+                    "asDouble": 0.18
+                  },
+                  {
+                    "timeUnixNano": "1791360075000000000",
+                    "asDouble": 0.1
+                  },
+                  {
+                    "timeUnixNano": "1791360100000000000",
+                    "asDouble": 0.12
+                  },
+                  {
+                    "timeUnixNano": "1791360125000000000",
+                    "asDouble": 0.14
+                  },
+                  {
+                    "timeUnixNano": "1791360150000000000",
+                    "asDouble": 0.16
+                  },
+                  {
+                    "timeUnixNano": "1791360175000000000",
+                    "asDouble": 0.18
+                  },
+                  {
+                    "timeUnixNano": "1791360200000000000",
+                    "asDouble": 0.1
+                  },
+                  {
+                    "timeUnixNano": "1791360225000000000",
+                    "asDouble": 0.12
+                  },
+                  {
+                    "timeUnixNano": "1791360250000000000",
+                    "asDouble": 0.14
+                  },
+                  {
+                    "timeUnixNano": "1791360275000000000",
+                    "asDouble": 0.16
+                  }
+                ]
+              }
+            },
+            {
+              "name": "http.server.request.count",
+              "unit": "{request}",
+              "sum": {
+                "aggregationTemporality": 2,
+                "isMonotonic": true,
+                "dataPoints": [
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359700000000000",
+                    "asInt": "3"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359725000000000",
+                    "asInt": "6"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359750000000000",
+                    "asInt": "9"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359775000000000",
+                    "asInt": "20"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359800000000000",
+                    "asInt": "31"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359825000000000",
+                    "asInt": "34"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359850000000000",
+                    "asInt": "37"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359875000000000",
+                    "asInt": "40"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359900000000000",
+                    "asInt": "43"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359925000000000",
+                    "asInt": "46"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359950000000000",
+                    "asInt": "49"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359975000000000",
+                    "asInt": "52"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360000000000000",
+                    "asInt": "55"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360025000000000",
+                    "asInt": "71"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360050000000000",
+                    "asInt": "77"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360075000000000",
+                    "asInt": "80"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360100000000000",
+                    "asInt": "83"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360125000000000",
+                    "asInt": "86"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360150000000000",
+                    "asInt": "89"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360175000000000",
+                    "asInt": "92"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360200000000000",
+                    "asInt": "95"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360225000000000",
+                    "asInt": "98"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360250000000000",
+                    "asInt": "101"
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360275000000000",
+                    "asInt": "104"
+                  }
+                ]
+              }
+            },
+            {
+              "name": "http.server.request.duration",
+              "unit": "s",
+              "histogram": {
+                "aggregationTemporality": 1,
+                "dataPoints": [
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359700000000000",
+                    "count": "3",
+                    "sum": 0.45,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "2",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791359700000000000",
+                    "timeUnixNano": "1791359725000000000",
+                    "count": "3",
+                    "sum": 0.45,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "2",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791359725000000000",
+                    "timeUnixNano": "1791359750000000000",
+                    "count": "3",
+                    "sum": 0.45,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "2",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791359750000000000",
+                    "timeUnixNano": "1791359775000000000",
+                    "count": "11",
+                    "sum": 2.05,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "10",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791359775000000000",
+                    "timeUnixNano": "1791359800000000000",
+                    "count": "11",
+                    "sum": 2.05,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "10",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791359800000000000",
+                    "timeUnixNano": "1791359825000000000",
+                    "count": "3",
+                    "sum": 0.45,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "2",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791359825000000000",
+                    "timeUnixNano": "1791359850000000000",
+                    "count": "3",
+                    "sum": 0.45,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "2",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791359850000000000",
+                    "timeUnixNano": "1791359875000000000",
+                    "count": "3",
+                    "sum": 0.45,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "2",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791359875000000000",
+                    "timeUnixNano": "1791359900000000000",
+                    "count": "3",
+                    "sum": 0.45,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "2",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791359900000000000",
+                    "timeUnixNano": "1791359925000000000",
+                    "count": "3",
+                    "sum": 0.45,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "2",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791359925000000000",
+                    "timeUnixNano": "1791359950000000000",
+                    "count": "3",
+                    "sum": 0.45,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "2",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791359950000000000",
+                    "timeUnixNano": "1791359975000000000",
+                    "count": "3",
+                    "sum": 0.45,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "2",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791359975000000000",
+                    "timeUnixNano": "1791360000000000000",
+                    "count": "3",
+                    "sum": 0.45,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "2",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791360000000000000",
+                    "timeUnixNano": "1791360025000000000",
+                    "count": "16",
+                    "sum": 6.750000000000002,
+                    "min": 0.05,
+                    "max": 1.5,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "11",
+                      "2",
+                      "2"
+                    ],
+                    "exemplars": [
+                      {
+                        "timeUnixNano": "1791360001200000000",
+                        "asDouble": 1.2,
+                        "traceId": "00000000000000000000000000000011",
+                        "spanId": "0000000000000001"
+                      }
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791360025000000000",
+                    "timeUnixNano": "1791360050000000000",
+                    "count": "6",
+                    "sum": 1.05,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "5",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791360050000000000",
+                    "timeUnixNano": "1791360075000000000",
+                    "count": "3",
+                    "sum": 0.45,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "2",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791360075000000000",
+                    "timeUnixNano": "1791360100000000000",
+                    "count": "3",
+                    "sum": 0.45,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "2",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791360100000000000",
+                    "timeUnixNano": "1791360125000000000",
+                    "count": "3",
+                    "sum": 0.45,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "2",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791360125000000000",
+                    "timeUnixNano": "1791360150000000000",
+                    "count": "3",
+                    "sum": 0.45,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "2",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791360150000000000",
+                    "timeUnixNano": "1791360175000000000",
+                    "count": "3",
+                    "sum": 0.45,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "2",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791360175000000000",
+                    "timeUnixNano": "1791360200000000000",
+                    "count": "3",
+                    "sum": 0.45,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "2",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791360200000000000",
+                    "timeUnixNano": "1791360225000000000",
+                    "count": "3",
+                    "sum": 0.45,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "2",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791360225000000000",
+                    "timeUnixNano": "1791360250000000000",
+                    "count": "3",
+                    "sum": 0.45,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "2",
+                      "0",
+                      "0"
+                    ]
+                  },
+                  {
+                    "startTimeUnixNano": "1791360250000000000",
+                    "timeUnixNano": "1791360275000000000",
+                    "count": "3",
+                    "sum": 0.45,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "explicitBounds": [
+                      0.1,
+                      0.5,
+                      1.0
+                    ],
+                    "bucketCounts": [
+                      "1",
+                      "2",
+                      "0",
+                      "0"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "name": "http.server.request.duration.exponential",
+              "unit": "s",
+              "exponentialHistogram": {
+                "aggregationTemporality": 2,
+                "dataPoints": [
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359700000000000",
+                    "count": "3",
+                    "sum": 0.45,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "1",
+                        "0",
+                        "2"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359725000000000",
+                    "count": "6",
+                    "sum": 0.9,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "2",
+                        "0",
+                        "4"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359750000000000",
+                    "count": "9",
+                    "sum": 1.35,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "3",
+                        "0",
+                        "6"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359775000000000",
+                    "count": "20",
+                    "sum": 3.4000000000000012,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "4",
+                        "0",
+                        "16"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359800000000000",
+                    "count": "31",
+                    "sum": 5.450000000000002,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "5",
+                        "0",
+                        "26"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359825000000000",
+                    "count": "34",
+                    "sum": 5.900000000000002,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "6",
+                        "0",
+                        "28"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359850000000000",
+                    "count": "37",
+                    "sum": 6.350000000000002,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "7",
+                        "0",
+                        "30"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359875000000000",
+                    "count": "40",
+                    "sum": 6.8000000000000025,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "8",
+                        "0",
+                        "32"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359900000000000",
+                    "count": "43",
+                    "sum": 7.250000000000003,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "9",
+                        "0",
+                        "34"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359925000000000",
+                    "count": "46",
+                    "sum": 7.700000000000003,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "10",
+                        "0",
+                        "36"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359950000000000",
+                    "count": "49",
+                    "sum": 8.150000000000002,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "11",
+                        "0",
+                        "38"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791359975000000000",
+                    "count": "52",
+                    "sum": 8.600000000000003,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "12",
+                        "0",
+                        "40"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360000000000000",
+                    "count": "55",
+                    "sum": 9.050000000000004,
+                    "min": 0.05,
+                    "max": 0.25,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "13",
+                        "0",
+                        "42"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360025000000000",
+                    "count": "71",
+                    "sum": 15.8,
+                    "min": 0.05,
+                    "max": 1.5,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "14",
+                        "0",
+                        "51",
+                        "2",
+                        "2",
+                        "2"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360050000000000",
+                    "count": "77",
+                    "sum": 16.849999999999998,
+                    "min": 0.05,
+                    "max": 1.5,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "15",
+                        "0",
+                        "56",
+                        "2",
+                        "2",
+                        "2"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360075000000000",
+                    "count": "80",
+                    "sum": 17.299999999999997,
+                    "min": 0.05,
+                    "max": 1.5,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "16",
+                        "0",
+                        "58",
+                        "2",
+                        "2",
+                        "2"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360100000000000",
+                    "count": "83",
+                    "sum": 17.749999999999996,
+                    "min": 0.05,
+                    "max": 1.5,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "17",
+                        "0",
+                        "60",
+                        "2",
+                        "2",
+                        "2"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360125000000000",
+                    "count": "86",
+                    "sum": 18.199999999999996,
+                    "min": 0.05,
+                    "max": 1.5,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "18",
+                        "0",
+                        "62",
+                        "2",
+                        "2",
+                        "2"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360150000000000",
+                    "count": "89",
+                    "sum": 18.649999999999995,
+                    "min": 0.05,
+                    "max": 1.5,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "19",
+                        "0",
+                        "64",
+                        "2",
+                        "2",
+                        "2"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360175000000000",
+                    "count": "92",
+                    "sum": 19.099999999999994,
+                    "min": 0.05,
+                    "max": 1.5,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "20",
+                        "0",
+                        "66",
+                        "2",
+                        "2",
+                        "2"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360200000000000",
+                    "count": "95",
+                    "sum": 19.549999999999994,
+                    "min": 0.05,
+                    "max": 1.5,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "21",
+                        "0",
+                        "68",
+                        "2",
+                        "2",
+                        "2"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360225000000000",
+                    "count": "98",
+                    "sum": 19.999999999999993,
+                    "min": 0.05,
+                    "max": 1.5,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "22",
+                        "0",
+                        "70",
+                        "2",
+                        "2",
+                        "2"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360250000000000",
+                    "count": "101",
+                    "sum": 20.449999999999992,
+                    "min": 0.05,
+                    "max": 1.5,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "23",
+                        "0",
+                        "72",
+                        "2",
+                        "2",
+                        "2"
+                      ]
+                    }
+                  },
+                  {
+                    "startTimeUnixNano": "1791359675000000000",
+                    "timeUnixNano": "1791360275000000000",
+                    "count": "104",
+                    "sum": 20.89999999999999,
+                    "min": 0.05,
+                    "max": 1.5,
+                    "scale": 0,
+                    "zeroCount": "0",
+                    "zeroThreshold": 0,
+                    "positive": {
+                      "offset": -5,
+                      "bucketCounts": [
+                        "24",
+                        "0",
+                        "74",
+                        "2",
+                        "2",
+                        "2"
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

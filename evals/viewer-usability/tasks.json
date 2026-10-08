@@ -1,0 +1,32 @@
+[
+  {
+    "id": "typed-values",
+    "goal": "identify the received kinds and exact values of attempt, and the counts and relative frequencies of http.request.method, for checkout spans in the window. Keep integers exact and distinguish numbers from strings. Return JSON with attempt: [{kind,value}], methods: [{value,count,denominator,relativeFrequency}], and evidence. Use decimal strings for attempt payloads and fractions (0 to 1) for relativeFrequency.",
+    "expected": {"attempt":[{"kind":"int64","value":"9007199254740993"},{"kind":"string","value":"9007199254740993"}],"methods":[{"value":"GET","count":24,"denominator":31,"relativeFrequency":0.7741935483870968},{"value":"POST","count":7,"denominator":31,"relativeFrequency":0.22580645161290322}]}
+  },
+  {
+    "id": "resource-frequency",
+    "goal": "compare the resource attribute region for checkout spans and worker log records in the window. How many records are associated with each region? State the denominator in each population. Return JSON with spans: [{region,count,denominator}], logs: [{region,count,denominator}], and evidence.",
+    "expected": {"spans":[{"region":"west","count":30,"denominator":31},{"region":"east","count":1,"denominator":31}],"logs":[{"region":"west","count":2,"denominator":3},{"region":"east","count":1,"denominator":3}]}
+  },
+  {
+    "id": "trace-investigation",
+    "goal": "investigate trace 0000000000000000000000000000000a. Identify its error span and every log carrying that trace ID, including logs without a matching span. Return JSON with errorSpans: [{traceID,spanID,service}], logs: [{body,association}], and evidence. Classify each log using these exact definitions: matching-span means the log has a span ID and the viewer contains a span with both the same trace ID and the same span ID; trace-only means the log has no span ID; missing-span means the log has a span ID but the viewer contains no span with that trace ID and span ID. A supplied span ID with no matching stored span is missing-span, not trace-only. IDs must be hexadecimal strings.",
+    "expected": {"errorSpans":[{"traceID":"0000000000000000000000000000000a","spanID":"000000000000010a","service":"checkout"}],"logs":[{"body":"payment declined","association":"matching-span"},{"body":"trace completed","association":"trace-only"},{"body":"late instrumentation","association":"missing-span"}]}
+  },
+  {
+    "id": "child-time",
+    "goal": "find exception.type values on span events and sample.label values on metric exemplars that occurred inside the window for worker telemetry. Use the occurrence timestamps of the events and exemplars. Report distinct associated span/datapoint counts, and whether any associated parent has its timestamp outside the window. Return JSON with events: [{value,count}], exemplars: [{value,count}], hasParentOutsideWindow: boolean, and evidence.",
+    "expected": {"events":[{"value":"Timeout","count":1}],"exemplars":[{"value":"sampled","count":1}],"hasParentOutsideWindow":true}
+  },
+  {
+    "id": "complete-customer-inventory",
+    "goal": "determine the complete number of distinct string customer.id values on checkout spans in the window, and their lexicographically first and last values. Also check whether exact key customer.missing occurs on these spans. Establish completeness rather than assuming the first returned page is everything. Return JSON with distinctCustomers: number, first: string, last: string, complete: boolean, missingKeyPresent: boolean, and evidence.",
+    "expected": {"distinctCustomers":31,"first":"customer-01","last":"customer-31","complete":true,"missingKeyPresent":false}
+  },
+  {
+    "id": "custom-aggregation",
+    "goal": "group checkout spans in the window by string http.request.method. Report span count, error-span count, and the sum of span durations in exact nanoseconds for each group. Return JSON with groups: [{method,spanCount,errorCount,totalDurationNs}], and evidence. totalDurationNs must be an exact decimal string.",
+    "expected": {"groups":[{"method":"GET","spanCount":24,"errorCount":2,"totalDurationNs":"300000000"},{"method":"POST","spanCount":7,"errorCount":1,"totalDurationNs":"196000000"}]}
+  }
+]

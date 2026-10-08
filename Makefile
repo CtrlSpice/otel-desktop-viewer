@@ -53,7 +53,7 @@ dev-ts:
 run-go-persist:
 	go run . --db duck.db
 
-OTLP_DATASET ?= $(CURDIR)/testdata/otlp/demo
+OTLP_DATASET ?= $(CURDIR)/testdata/otlp/small
 OTLP_ENDPOINT ?= http://localhost:4318
 
 .PHONY: populate-traces populate-logs populate-metrics

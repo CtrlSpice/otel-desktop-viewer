@@ -1,0 +1,27 @@
+{
+  "source": "https://models.dev/api.json",
+  "verifiedOn": "2026-10-08",
+  "models": {
+    "gpt-6-luna": {
+      "name": "GPT-6 Luna",
+      "reasoning": true,
+      "tool_call": true,
+      "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+      "limit": { "context": 1050000, "input": 922000, "output": 128000 }
+    },
+    "gpt-6.1-sol": {
+      "name": "GPT-6.1 Sol",
+      "reasoning": true,
+      "tool_call": true,
+      "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+      "limit": { "context": 1050000, "input": 922000, "output": 128000 }
+    },
+    "gpt-6-astra": {
+      "name": "GPT-6 Astra",
+      "reasoning": true,
+      "tool_call": true,
+      "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+      "limit": { "context": 1050000, "input": 922000, "output": 128000 }
+    }
+  }
+}
