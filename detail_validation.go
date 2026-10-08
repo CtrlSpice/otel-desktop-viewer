@@ -10,8 +10,8 @@ import (
 	"strings"
 )
 
-// Check the fields used by the section renderers before Go's zero values can
-// conceal absent/null members. JSON output remains the unmodified RPC result.
+// Check the decoded fields before section rendering can conceal absent/null
+// members. JSON output remains the unmodified RPC result.
 func checkDetailFields(value any, fields map[string]func(any) bool) error {
 	object, ok := value.(map[string]any)
 	if !ok || object == nil {
@@ -183,11 +183,7 @@ func detailScopeFields(value any) bool {
 	}) == nil
 }
 
-func validateLogDetail(raw json.RawMessage) error {
-	var document any
-	if err := decodeExactJSON(raw, &document); err != nil {
-		return err
-	}
+func validateLogDetail(document map[string]any) error {
 	return checkDetailFields(document, map[string]func(any) bool{
 		"logRef": detailRef, "timestamp": detailUintText, "observedTimestamp": detailUintText,
 		"traceID": detailTraceID, "spanID": detailSpanID,
@@ -265,11 +261,7 @@ func detailDatapoint(value any, kind string) bool {
 	return checkDetailFields(value, fields) == nil
 }
 
-func validateMetricDetail(raw json.RawMessage, selected bool) error {
-	var document map[string]any
-	if err := decodeExactJSON(raw, &document); err != nil {
-		return err
-	}
+func validateMetricDetail(document map[string]any, selected bool) error {
 	if err := checkDetailFields(document, map[string]func(any) bool{
 		"metricRef": detailRef, "name": detailString, "description": detailString,
 		"unit": detailString, "metadata": detailAttributes,

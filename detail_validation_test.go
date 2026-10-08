@@ -44,7 +44,16 @@ func TestDetailSectionsRejectMalformedStoreResponses(t *testing.T) {
 		mutations map[string]func(map[string]any)
 	}{
 		{"log", []string{"log", logRef}, "getLog", map[string]any{"logRef": logRef}, map[string]func(map[string]any){
-			"missing timestamp":         func(d map[string]any) { delete(d, "timestamp") },
+			"missing timestamp": func(d map[string]any) { delete(d, "timestamp") },
+			"uppercase-only timestamp": func(d map[string]any) {
+				d["TIMESTAMP"] = d["timestamp"]
+				delete(d, "timestamp")
+			},
+			"uppercase-only body value": func(d map[string]any) {
+				body := d["body"].(map[string]any)
+				body["VALUE"] = body["value"]
+				delete(body, "value")
+			},
 			"missing traceID":           func(d map[string]any) { delete(d, "traceID") },
 			"null body":                 func(d map[string]any) { d["body"] = nil },
 			"empty body object":         func(d map[string]any) { d["body"] = map[string]any{} },
@@ -61,6 +70,10 @@ func TestDetailSectionsRejectMalformedStoreResponses(t *testing.T) {
 			"missing attribute key":     func(d map[string]any) { delete(d["attributes"].([]any)[0].(map[string]any), "key") },
 		}},
 		{"metric", []string{"metric", metricRef}, "getMetric", map[string]any{"metricRef": metricRef}, map[string]func(map[string]any){
+			"uppercase-only series": func(d map[string]any) {
+				d["SERIES"] = d["series"]
+				delete(d, "series")
+			},
 			"missing resource":              func(d map[string]any) { delete(d, "resource") },
 			"missing scope":                 func(d map[string]any) { delete(d, "scope") },
 			"missing unit":                  func(d map[string]any) { delete(d, "unit") },

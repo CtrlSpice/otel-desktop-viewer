@@ -63,38 +63,22 @@ func normalizeDetailRef(value, kind string) (string, error) {
 }
 
 func formatLogDetail(raw json.RawMessage) (string, error) {
-	if err := validateLogDetail(raw); err != nil {
+	var document map[string]any
+	if err := decodeExactJSON(raw, &document); err != nil {
 		return "", err
 	}
-	var log struct {
-		LogRef                 string          `json:"logRef"`
-		Timestamp              string          `json:"timestamp"`
-		ObservedTimestamp      string          `json:"observedTimestamp"`
-		TraceID                *string         `json:"traceID"`
-		SpanID                 *string         `json:"spanID"`
-		SeverityText           string          `json:"severityText"`
-		SeverityNumber         json.Number     `json:"severityNumber"`
-		Body                   json.RawMessage `json:"body"`
-		Flags                  json.Number     `json:"flags"`
-		EventName              string          `json:"eventName"`
-		DroppedAttributesCount json.Number     `json:"droppedAttributesCount"`
-		ResourceSchemaURL      string          `json:"resourceSchemaURL"`
-		ScopeSchemaURL         string          `json:"scopeSchemaURL"`
-		Resource               detailResource  `json:"resource"`
-		Scope                  detailScope     `json:"scope"`
-		Attributes             []detailAttr    `json:"attributes"`
-	}
-	if err := decodeExactJSON(raw, &log); err != nil {
+	if err := validateLogDetail(document); err != nil {
 		return "", err
 	}
-	bodyKind, body := compactTaggedValue(log.Body)
-	return "LOG\n" + detailTable(
-		[]string{"logRef", "timestamp", "observedTimestamp", "traceID", "spanID", "severityText", "severityNumber", "flags", "eventName", "droppedAttributesCount"},
-		[][]any{{log.LogRef, log.Timestamp, log.ObservedTimestamp, nullableString(log.TraceID), nullableString(log.SpanID), log.SeverityText, log.SeverityNumber, log.Flags, log.EventName, log.DroppedAttributesCount}},
-	) + "\nBODY\n" + detailTable([]string{"kind", "value"}, [][]any{{bodyKind, body}}) +
-		"\nRESOURCE\n" + detailTable([]string{"schemaURL", "droppedAttributesCount"}, [][]any{{log.ResourceSchemaURL, log.Resource.DroppedAttributesCount}}) +
-		"\nRESOURCE ATTRIBUTES\n" + formatAttributes(log.Resource.Attributes) +
-		"\nSCOPE\n" + detailTable([]string{"name", "version", "schemaURL", "droppedAttributesCount"}, [][]any{{log.Scope.Name, log.Scope.Version, log.ScopeSchemaURL, log.Scope.DroppedAttributesCount}}) +
-		"\nSCOPE ATTRIBUTES\n" + formatAttributes(log.Scope.Attributes) +
-		"\nLOG ATTRIBUTES\n" + formatAttributes(log.Attributes), nil
+	resource := document["resource"].(map[string]any)
+	scope := document["scope"].(map[string]any)
+	body := detailValueDocument(document["body"])
+	fields := []string{"logRef", "timestamp", "observedTimestamp", "traceID", "spanID", "severityText", "severityNumber", "flags", "eventName", "droppedAttributesCount"}
+	return "LOG\n" + detailTable(fields, [][]any{detailFieldValues(document, fields)}) +
+		"\nBODY\n" + detailTable([]string{"kind", "value"}, [][]any{{body["kind"], formatQueryValue(body["value"])}}) +
+		"\nRESOURCE\n" + detailTable([]string{"schemaURL", "droppedAttributesCount"}, [][]any{{document["resourceSchemaURL"], resource["droppedAttributesCount"]}}) +
+		"\nRESOURCE ATTRIBUTES\n" + formatDetailAttributes(resource["attributes"].([]any)) +
+		"\nSCOPE\n" + detailTable([]string{"name", "version", "schemaURL", "droppedAttributesCount"}, [][]any{{scope["name"], scope["version"], document["scopeSchemaURL"], scope["droppedAttributesCount"]}}) +
+		"\nSCOPE ATTRIBUTES\n" + formatDetailAttributes(scope["attributes"].([]any)) +
+		"\nLOG ATTRIBUTES\n" + formatDetailAttributes(document["attributes"].([]any)), nil
 }

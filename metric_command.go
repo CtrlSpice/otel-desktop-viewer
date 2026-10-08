@@ -87,90 +87,73 @@ func newMetricCommand(client *http.Client) *cobra.Command {
 }
 
 func formatMetricDetail(raw json.RawMessage, seriesSelected bool) (string, error) {
-	if err := validateMetricDetail(raw, seriesSelected); err != nil {
+	var document map[string]any
+	if err := decodeExactJSON(raw, &document); err != nil {
 		return "", err
 	}
-	var metric struct {
-		MetricRef                  string       `json:"metricRef"`
-		Name                       string       `json:"name"`
-		Description                string       `json:"description"`
-		Unit                       string       `json:"unit"`
-		MetricType                 string       `json:"metricType"`
-		AggregationTemporalityCode *json.Number `json:"aggregationTemporalityCode"`
-		IsMonotonic                *bool        `json:"isMonotonic"`
-		Metadata                   []detailAttr `json:"metadata"`
-		Resource                   struct {
-			detailResource
-			SchemaURL string `json:"schemaUrl"`
-		} `json:"resource"`
-		Scope struct {
-			detailScope
-			SchemaURL string `json:"schemaUrl"`
-		} `json:"scope"`
-		Series     []json.RawMessage `json:"series"`
-		SeriesRef  string            `json:"seriesRef"`
-		Attributes []detailAttr      `json:"attributes"`
-		Datapoints []json.RawMessage `json:"datapoints"`
-	}
-	if err := decodeExactJSON(raw, &metric); err != nil {
+	if err := validateMetricDetail(document, seriesSelected); err != nil {
 		return "", err
 	}
+	kind := document["metricType"].(string)
+	resource := document["resource"].(map[string]any)
+	scope := document["scope"].(map[string]any)
 	fields := []string{"metricRef", "name", "description", "unit", "metricType"}
-	values := []any{metric.MetricRef, metric.Name, metric.Description, metric.Unit, metric.MetricType}
-	if metric.AggregationTemporalityCode != nil {
+	switch kind {
+	case "Sum":
+		fields = append(fields, "aggregationTemporalityCode", "isMonotonic")
+	case "Histogram", "ExponentialHistogram":
 		fields = append(fields, "aggregationTemporalityCode")
-		values = append(values, *metric.AggregationTemporalityCode)
 	}
-	if metric.IsMonotonic != nil {
-		fields = append(fields, "isMonotonic")
-		values = append(values, *metric.IsMonotonic)
-	}
-	output := "METRIC\n" + detailTable(fields, [][]any{values}) +
-		"\nMETADATA\n" + formatAttributes(metric.Metadata) +
-		"\nRESOURCE\n" + detailTable([]string{"schemaURL", "droppedAttributesCount"}, [][]any{{metric.Resource.SchemaURL, metric.Resource.DroppedAttributesCount}}) +
-		"\nRESOURCE ATTRIBUTES\n" + formatAttributes(metric.Resource.Attributes) +
-		"\nSCOPE\n" + detailTable([]string{"name", "version", "schemaURL", "droppedAttributesCount"}, [][]any{{metric.Scope.Name, metric.Scope.Version, metric.Scope.SchemaURL, metric.Scope.DroppedAttributesCount}}) +
-		"\nSCOPE ATTRIBUTES\n" + formatAttributes(metric.Scope.Attributes)
+	output := "METRIC\n" + detailTable(fields, [][]any{detailFieldValues(document, fields)}) +
+		"\nMETADATA\n" + formatDetailAttributes(document["metadata"].([]any)) +
+		"\nRESOURCE\n" + detailTable([]string{"schemaURL", "droppedAttributesCount"}, [][]any{{resource["schemaUrl"], resource["droppedAttributesCount"]}}) +
+		"\nRESOURCE ATTRIBUTES\n" + formatDetailAttributes(resource["attributes"].([]any)) +
+		"\nSCOPE\n" + detailTable([]string{"name", "version", "schemaURL", "droppedAttributesCount"}, [][]any{{scope["name"], scope["version"], scope["schemaUrl"], scope["droppedAttributesCount"]}}) +
+		"\nSCOPE ATTRIBUTES\n" + formatDetailAttributes(scope["attributes"].([]any))
 	if !seriesSelected {
-		rows, err := decodeTelemetryRows(metric.Series, []string{"seriesRef", "attributes", "datapointCount", "firstDatapointTimestamp", "lastDatapointTimestamp"})
-		if err != nil {
-			return "", err
+		columns := []string{"seriesRef", "attributes", "datapointCount", "firstDatapointTimestamp", "lastDatapointTimestamp"}
+		series := document["series"].([]any)
+		rows := make([][]any, len(series))
+		for i, value := range series {
+			entry := value.(map[string]any)
+			rows[i] = detailFieldValues(entry, columns)
+			rows[i][1] = detailAttributeDocuments(entry["attributes"].([]any))
 		}
 		return output + fmt.Sprintf("\nSERIES (%d; counts and timestamp bounds are computed)\n", len(rows)) +
-			detailTable([]string{"seriesRef", "attributes", "datapointCount", "firstDatapointTimestamp", "lastDatapointTimestamp"}, rows), nil
+			detailTable(columns, rows), nil
 	}
 	columns := []string{"datapointRef", "timestamp", "startTime", "flags"}
-	switch metric.MetricType {
+	switch kind {
 	case "Gauge", "Sum":
 		columns = append(columns, "valueType", "intValue", "doubleValue")
 	case "Histogram":
 		columns = append(columns, "count", "sum", "min", "max", "bucketCounts", "explicitBounds")
 	case "ExponentialHistogram":
 		columns = append(columns, "count", "sum", "min", "max", "scale", "zeroCount", "zeroThreshold", "positive", "negative")
-	default:
-		return "", fmt.Errorf("unsupported Metric type %q", metric.MetricType)
 	}
 	columns = append(columns, "exemplars")
-	rows := make([][]any, 0, len(metric.Datapoints))
-	for _, raw := range metric.Datapoints {
-		var point map[string]any
-		if err := decodeExactJSON(raw, &point); err != nil {
-			return "", err
-		}
+	datapoints := document["datapoints"].([]any)
+	rows := make([][]any, len(datapoints))
+	for pointIndex, value := range datapoints {
+		point := value.(map[string]any)
 		row := make([]any, len(columns))
 		for i, column := range columns {
 			value, ok := point[column]
 			if !ok {
-				if column != "sum" && column != "min" && column != "max" {
-					return "", fmt.Errorf("datapoint is missing %s", column)
-				}
 				value = "(absent)"
+			}
+			switch column {
+			case "exemplars":
+				value = detailExemplarDocuments(value.([]any))
+			case "positive", "negative":
+				bucket := value.(map[string]any)
+				value = map[string]any{"offset": bucket["offset"], "bucketCounts": bucket["bucketCounts"]}
 			}
 			row[i] = value
 		}
-		rows = append(rows, row)
+		rows[pointIndex] = row
 	}
-	return output + "\nSERIES\n" + detailTable([]string{"seriesRef"}, [][]any{{metric.SeriesRef}}) +
-		"\nDATAPOINT ATTRIBUTES\n" + formatAttributes(metric.Attributes) +
+	return output + "\nSERIES\n" + detailTable([]string{"seriesRef"}, [][]any{{document["seriesRef"]}}) +
+		"\nDATAPOINT ATTRIBUTES\n" + formatDetailAttributes(document["attributes"].([]any)) +
 		fmt.Sprintf("\nDATAPOINTS (%d; special doubles and negative zero use IEEE-754 bit strings)\n", len(rows)) + detailTable(columns, rows), nil
 }
