@@ -2,14 +2,21 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { readJson, record, runtimeRoot, saveJson, SUITE } from './runtime.ts'
+import { freezePricing } from './pricing.ts'
+import type { PricingSnapshot } from './pricing.ts'
+import { modelSummaries, modelSummaryTable } from './model-summary.ts'
 
-export function pilotSummary(value: unknown) {
+export function pilotSummary(value: unknown, pricing?: PricingSnapshot) {
   const rows = record(record(value).results).results
   if (!Array.isArray(rows)) throw new Error('Invalid pilot result rows')
   const lines = [
     '# Pilot results',
     '',
     'Automated fact checks only; transcript interpretation pending.',
+    '',
+    modelSummaryTable(rows, pricing),
+    '',
+    '## Task results',
     '',
     '| Model | Task | Facts | Seconds | Tool calls | Utility entries | Query entries | Failed tools |',
     '| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |',
@@ -37,9 +44,14 @@ export function pilotSummary(value: unknown) {
   return lines.join('\n') + '\n'
 }
 
-export async function runPilot(root = runtimeRoot(), suite = SUITE) {
+export async function runPilot(
+  root = runtimeRoot(),
+  suite = SUITE,
+  suppliedPricing?: PricingSnapshot
+) {
   if (fs.existsSync(path.join(root, 'pilot.json')))
     throw new Error('pilot.json exists; refusing to overwrite')
+  const pricing = await freezePricing(root, suite, suppliedPricing)
   const env = {
     ...process.env,
     PROMPTFOO_DISABLE_TELEMETRY: '1',
@@ -87,11 +99,18 @@ export async function runPilot(root = runtimeRoot(), suite = SUITE) {
     error: failure?.message,
   })
   if (fs.existsSync(path.join(root, 'pilot.json'))) {
+    const result = readJson(path.join(root, 'pilot.json'))
     fs.writeFileSync(
       path.join(root, 'pilot-summary.md'),
-      pilotSummary(readJson(path.join(root, 'pilot.json'))),
+      pilotSummary(result, pricing),
       { flag: 'wx', mode: 0o600 }
     )
+    const rows = record(record(result).results).results
+    if (!Array.isArray(rows)) throw new Error('Invalid pilot result rows')
+    saveJson(path.join(root, 'model-summary.json'), {
+      pricing,
+      models: modelSummaries(rows, pricing),
+    })
   }
   if (failure) throw failure
   return exit

@@ -10,10 +10,9 @@ import { readJson, record, saveJson, SUITE } from './runtime.ts'
 const { root, isolation } = providerFixture()
 const settings = {
   models: [
+    'openai/gpt-6-luna',
     'openai/gpt-6.1-sol',
-    'openai/gpt-5.6-sol',
-    'openai/gpt-5.6-luna',
-    'openai/gpt-5.6-terra',
+    'openai/gpt-6-astra',
   ].join('\n'),
   answer: JSON.stringify({
     ...cases[0].expected,
@@ -89,7 +88,7 @@ const rows = record(
   record(readJson(path.join(root, 'loader-results.json'))).results
 ).results
 assert.ok(Array.isArray(rows))
-assert.equal(rows.length, 4)
+assert.equal(rows.length, 3)
 for (const value of rows) {
   const row = record(value)
   assert.equal(row.success, true)

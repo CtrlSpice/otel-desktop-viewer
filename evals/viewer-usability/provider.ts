@@ -7,6 +7,7 @@ import {
   createCleanEnvironment,
   credentialEnvironment,
 } from './clean-environment.ts'
+import { usageStep } from './pricing.ts'
 
 export type Isolation = {
   permission?: unknown
@@ -63,6 +64,7 @@ function sessionSummary(stdout: string) {
     cacheRead: 0,
     cacheWrite: 0,
   }
+  const usageSteps = steps.map(step => usageStep(record(step.part.tokens)))
   for (const step of steps) {
     const tokens = record(step.part.tokens)
     const cache = tokens.cache === undefined ? {} : record(tokens.cache)
@@ -101,6 +103,7 @@ function sessionSummary(stdout: string) {
   return {
     output,
     usage,
+    usageSteps,
     commands,
     reason: lastStep?.reason,
     sessionIDs: [

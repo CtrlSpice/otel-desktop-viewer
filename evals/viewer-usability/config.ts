@@ -23,15 +23,10 @@ if (isolationFile) {
   if (isolation.authEnvironment)
     throw new Error('Use authEnvironmentFile rather than inline credentials')
 }
-const models = [
-  'openai/gpt-6.1-sol',
-  'openai/gpt-5.6-sol',
-  'openai/gpt-5.6-luna',
-  'openai/gpt-5.6-terra',
-]
+const models = ['openai/gpt-6-luna', 'openai/gpt-6.1-sol', 'openai/gpt-6-astra']
 export default {
   description:
-    'Viewer usability pilot: natural command choice, six tasks, four available models',
+    'Viewer usability: natural command choice, six tasks, latest GPT tiers',
   prompts: ['file://' + path.join(SUITE, 'prompt.txt')],
   providers: models.map(model => ({
     id: 'file://' + path.join(SUITE, 'provider.ts'),

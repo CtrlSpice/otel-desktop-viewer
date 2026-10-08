@@ -41,12 +41,7 @@ test('runner configuration forwards only explicit private isolation settings', (
   const providers = parsed.map(record)
   assert.deepEqual(
     providers.map(provider => provider.model),
-    [
-      'openai/gpt-6.1-sol',
-      'openai/gpt-5.6-sol',
-      'openai/gpt-5.6-luna',
-      'openai/gpt-5.6-terra',
-    ]
+    ['openai/gpt-6-luna', 'openai/gpt-6.1-sol', 'openai/gpt-6-astra']
   )
   for (const provider of providers)
     assert.deepEqual(provider.isolation, settings)

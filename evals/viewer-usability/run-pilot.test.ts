@@ -4,6 +4,14 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { runPilot, pilotSummary } from './run-pilot.ts'
 import { readJson, record, TEMPORARY } from './runtime.ts'
+import apiPrices from './api-prices.json' with { type: 'json' }
+import { pricingSnapshot } from './pricing.ts'
+
+const pricing = pricingSnapshot({
+  capturedAt: '2026-10-08T06:00:00Z',
+  api: apiPrices,
+  exchange: { source: 'synthetic-rate', date: '2026-10-07', cadPerUsd: 1.4257 },
+})
 
 test('pilot subprocess keeps sharing/telemetry disabled, failed evidence and original results', async () => {
   const root = fs.mkdtempSync(
@@ -25,7 +33,7 @@ process.exitCode = 7;
 `,
     { mode: 0o700 }
   )
-  assert.equal(await runPilot(root, suite), 7)
+  assert.equal(await runPilot(root, suite, pricing), 7)
   const observation = record(readJson(path.join(root, 'observation.json')))
   assert.equal(observation.telemetry, '1')
   assert.equal(observation.state, path.join(root, 'promptfoo-state'))
@@ -46,7 +54,9 @@ process.exitCode = 7;
     /synthetic \| synthetic \| error \| 1.23/
   )
   const retained = fs.readFileSync(path.join(root, 'pilot.json'))
-  await assert.rejects(runPilot(root, suite), /refusing to overwrite/)
+  assert.deepEqual(readJson(path.join(root, 'pricing-snapshot.json')), pricing)
+  assert.ok(fs.existsSync(path.join(root, 'model-summary.json')))
+  await assert.rejects(runPilot(root, suite, pricing), /refusing to overwrite/)
   assert.deepEqual(fs.readFileSync(path.join(root, 'pilot.json')), retained)
 })
 
@@ -55,7 +65,7 @@ test('pilot spawn failure keeps protected completion and logs', async () => {
     path.join(TEMPORARY, 'eval-typescript-pilot-spawn-test-')
   )
   await assert.rejects(
-    runPilot(root, path.join(root, 'missing-suite')),
+    runPilot(root, path.join(root, 'missing-suite'), pricing),
     /ENOENT/
   )
   assert.match(

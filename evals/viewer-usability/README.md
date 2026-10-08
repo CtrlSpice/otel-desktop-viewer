@@ -14,9 +14,11 @@ Keep credentials, local settings and run artifacts outside version control.
 | `grade.ts`, `grade.test.ts`                             | Deterministic answer checks and grader tests                                                                       |
 | `provider.ts`, `config.ts`                              | Normal OpenCode sessions through Promptfoo                                                                         |
 | `run-pilot.ts`, `run-pilot.test.ts`                     | Retain batch results, failures and summaries                                                                       |
+| `model-summary.ts`, `pricing.ts`, `api-prices.json`     | Model totals, per-response API-price estimates and a run-fixed USD/CAD rate                                        |
 | `runtime.ts`, `runtime.test.ts`                         | Require runtime paths outside repositories                                                                         |
 | `dataset.test.ts`                                       | Check manifest staging, unchanged HTTP bytes, exact time bounds and partial-success rejection                      |
 | `clean-environment.ts`, `clean-environment.test.ts`     | Fresh private CLI environments and isolation helper tests                                                          |
+| `openai-models.json` | Explicit public model definitions for the latest GPT tiers |
 | `provider.test.ts`, `config.test.ts`, `test-fixture.ts` | Synthetic child-process adapter and explicit settings wiring tests                                                 |
 | `verify-isolation.ts`                                   | Standalone loader/canary checks and optional Sol 6.1 access smoke                                                  |
 | `isolation-check-settings.ts`                           | Validate private path and canary inputs for standalone isolation checks                                            |
@@ -28,9 +30,14 @@ Keep credentials, local settings and run artifacts outside version control.
 The loader now defaults to the shared small workload and derives requests, counts
 and time bounds from its manifest. The existing tasks, verifier and grading still
 describe the historical pilot and must be migrated before evaluating small.
-`config.ts` lists the configured model IDs. The adapter requires OpenCode 1.18.10
-and refreshes its native model catalogue before rejecting a missing ID. Catalogue
-presence alone is not proof of inference access. A new batch requires compatible
+`config.ts` targets GPT-6 Luna, GPT-6.1 Sol and GPT-6 Astra. The adapter requires
+OpenCode 1.18.10 and registers the exact public definitions in `openai-models.json`
+for each requested model. This corrects the CLI's ChatGPT-login name filter, which
+recognises decimal-version names but omits the plain GPT-6 Luna/Astra IDs.
+Authentication continues through the caller's selected existing login; model
+definitions contain no endpoint, credential or alias changes. The adapter refreshes
+its native catalogue before rejecting other missing IDs. Catalogue presence alone
+is not proof of inference access. A new batch requires compatible
 tasks, verified model access and an explicit permission map for that run.
 
 The completed pilot and its transcripts, databases and run directories remain
@@ -169,7 +176,7 @@ npm run verify:loader --prefix evals/viewer-usability
 ```
 
 This runs the actual pinned Promptfoo CLI against `config.ts`, `provider.ts` and
-`grade.ts`, filtering to one existing task with all four original model IDs.
+`grade.ts`, filtering to one existing task with all three configured model IDs.
 The supplied executable is a local synthetic child, not OpenCode or a model service.
 All proof, outputs and private synthetic
 auth references remain in a new external directory. No inference is performed.
@@ -191,6 +198,36 @@ OTLP_DATASET="$PWD/testdata/otlp/small" \
 OTLP_DATASET="$PWD/testdata/otlp/usability-pilot" \
   node evals/viewer-usability/verify-integration.ts --verify-pilot
 ```
+
+## Model summary and CAD API-price estimate
+
+Each run records `pricing-snapshot.json` before model execution, using the tracked
+standard OpenAI API rate card and the latest available Bank of Canada USD/CAD
+daily observation. The saved prices, exchange rate and source dates stay fixed
+throughout that run. Existing snapshots are reused without overwriting them.
+
+`pilot-summary.md` shows model totals, median seconds per task attempt, tool calls,
+recorded failed tools, uncached input, output including reasoning, cache reads and
+estimated API cost in CAD. Per-task details follow the model table.
+`model-summary.json` retains unrounded costs, cache-write totals, attempt counts
+and estimate coverage alongside the pricing snapshot.
+
+OpenCode's input count excludes cache reads/writes; its output count excludes
+reasoning. For each model response, the estimate uses:
+
+```text
+USD = (input × input_rate + cache_read × cached_input_rate
+     + cache_write × cache_write_rate
+     + (output + reasoning) × output_rate) / 1,000,000
+CAD = USD × saved_CAD_per_USD_rate
+```
+
+Rates are selected per response: full input (`input + cache_read + cache_write`)
+above 272,000 tokens uses long-context pricing. Costs are summed before conversion
+and display rounding. Usage missing from the recorded responses or an unknown
+model price produces `N/A` or an explicitly partial estimate. This is a comparison
+at standard API prices; subscription accounting and taxes are outside its scope.
+Local CLI/HTTP tools have no additional hosted-tool charge in this estimate.
 
 ## Measurement boundaries
 
