@@ -102,6 +102,9 @@ decimal strings. The frontend decodes them to `bigint`. Ordinary finite doubles
 use JSON numbers. Negative zero and non-finite doubles use exact IEEE-754 bit
 text and are decoded once by the frontend service.
 
+Gauge and Sum view datapoints include both `intValue` and `doubleValue`.
+The inactive value is JSON `null`; an empty datapoint has both values null.
+
 Derived rates, quantiles, and chart coordinates use IEEE-754 numbers. They are
 labelled and typed as computed display values.
 
