@@ -1,9 +1,7 @@
-Investigate the telemetry in the supplied running OTel Desktop Viewer.
+Use otel-desktop-viewer to {{goal}}
 
-Viewer executable: {{binary}}
-Viewer address: {{endpoint}}
-Fixed time window: {{start}} through {{end}}, inclusive.
+Executable: {{binary}}
+Endpoint: {{endpoint}}
+Time window: {{start}} through {{end}}, inclusive.
 
-{{goal}}
-
-Choose your own approach. Normal viewer tooling, help and documentation are available. Shell commands, read-only CLI client processes and HTTP requests are allowed. Do not start, stop or reconfigure viewer servers. Keep any scratch files inside your assigned temporary working directory. Use only the supplied viewer for telemetry facts; do not read repository source, fixture-generation files, grading files or other evaluations. Report uncertainty honestly. Return your answer as JSON, with evidence identifying the commands or queries used. Do not delegate.
+The viewer is already running. Keep scratch files inside your assigned temporary working directory. Work independently. Report uncertainty honestly. Return one JSON object containing the requested answer fields and an evidence field identifying the commands or queries used.
