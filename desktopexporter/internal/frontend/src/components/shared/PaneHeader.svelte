@@ -77,6 +77,8 @@
   const DEFAULT_BADGE_CLASS = 'badge-count'
 
   type CommonProps = {
+    /** Optional action before the title in title and title-tabs headers. */
+    leading?: Snippet
     /** Right-aligned badges (counts, severity, offsets) as
      *  plain strings. Use for ad-hoc badges where there's no shared
      *  rendering rule. Pinned to the right edge of the strip. */
@@ -335,6 +337,9 @@
   >
     <div class="pane-header__top">
       <div class="pane-header__title-row">
+        {#if props.leading}
+          <div class="pane-header__leading">{@render props.leading()}</div>
+        {/if}
         <span class="pane-header__title">{props.title}</span>
         {#if props.subtitle?.trim()}
           <span class="pane-header__subtitle">({props.subtitle.trim()})</span>
@@ -387,6 +392,9 @@
   >
     <div class="pane-header__top pane-header__top--title-tabs">
       <div class="pane-header__title-row pane-header__title-row--tabs">
+        {#if props.leading}
+          <div class="pane-header__leading">{@render props.leading()}</div>
+        {/if}
         <span class="pane-header__title">{props.title}</span>
         {#if props.subtitle?.trim()}
           <span class="pane-header__subtitle">({props.subtitle.trim()})</span>
@@ -496,6 +504,10 @@
 
   .pane-header__title {
     @apply truncate text-sm font-semibold tracking-tight text-base-content;
+  }
+
+  .pane-header__leading {
+    @apply flex shrink-0 items-center self-center;
   }
 
   .pane-header__subtitle {

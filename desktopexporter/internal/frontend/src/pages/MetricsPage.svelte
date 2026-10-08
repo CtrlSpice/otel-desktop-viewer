@@ -719,9 +719,6 @@
             aggregationTemporality={selectedSummary.aggregationTemporality}
             isMonotonic={selectedSummary.isMonotonic}
           />
-          {#key selectedSummary.metricRef}
-            <ExportButton signal="metric" id={selectedSummary.metricRef} />
-          {/key}
         {/snippet}
 
         {@const histogramChartTabs = histogramViewTabs()}
@@ -748,6 +745,11 @@
             tabPanelID={METRIC_CHART_PANEL_ID}
           >
             {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
+            {#snippet leading()}
+              {#key selectedSummary.metricRef}
+                <ExportButton signal="metric" id={selectedSummary.metricRef} />
+              {/key}
+            {/snippet}
           </PaneHeader>
         {:else}
           <PaneHeader
@@ -757,6 +759,11 @@
             ariaLabel="Metric chart"
           >
             {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
+            {#snippet leading()}
+              {#key selectedSummary.metricRef}
+                <ExportButton signal="metric" id={selectedSummary.metricRef} />
+              {/key}
+            {/snippet}
           </PaneHeader>
         {/if}
       {/if}

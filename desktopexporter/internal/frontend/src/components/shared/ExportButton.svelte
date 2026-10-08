@@ -27,7 +27,7 @@
     return setupAnchorPopover({
       popover: element,
       trigger: button,
-      anchor: 'below-end',
+      anchor: 'inward',
       onOpenChange: next => {
         open = next
         if (next) element.querySelector<HTMLButtonElement>('button')?.focus()
@@ -96,7 +96,7 @@
 <button
   bind:this={trigger}
   type="button"
-  class="btn btn-circle btn-primary btn-soft btn-xs tooltip tooltip-left"
+  class="btn btn-circle btn-primary btn-soft btn-xs tooltip tooltip-right"
   class:btn-disabled={pending}
   popovertarget={pending ? undefined : popoverID}
   aria-controls={popoverID}

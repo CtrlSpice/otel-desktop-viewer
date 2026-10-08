@@ -93,7 +93,7 @@
           severityText={log.severityText}
         />
       {/snippet}
-      {#snippet right()}
+      {#snippet leading()}
         {#key log.logRef}
           <ExportButton signal="log" id={log.logRef} />
         {/key}

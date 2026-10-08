@@ -45,9 +45,12 @@ describe('LogDetailView trace correlation', () => {
   it('places the whole-record export in the main log header', () => {
     renderLog(makeLog())
     const header = screen.getByRole('region', { name: 'Log record' })
+    const button = within(header).getByRole('button', { name: 'Export log' })
+    expect(button).toBeEnabled()
+    const title = within(header).getByText('checkout', { exact: true })
     expect(
-      within(header).getByRole('button', { name: 'Export log' })
-    ).toBeEnabled()
+      button.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).not.toBe(0)
     expect(screen.getAllByRole('button', { name: 'Export log' })).toHaveLength(
       1
     )

@@ -957,10 +957,12 @@
         </span>
       {/if}
     {/snippet}
-    {#snippet right()}
+    {#snippet leading()}
       {#key traceID}
         <ExportButton signal="trace" id={traceID} />
       {/key}
+    {/snippet}
+    {#snippet right()}
       {#if collapsibleSpanIDs.length > 0}
         <button
           type="button"

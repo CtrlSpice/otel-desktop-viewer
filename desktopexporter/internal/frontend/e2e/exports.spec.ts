@@ -134,6 +134,15 @@ test('uses the shared tooltip style on hover and keyboard focus without clipping
   page,
 }) => {
   const trigger = page.getByRole('button', { name: 'Export log', exact: true })
+  const placement = await trigger.evaluate(button => {
+    const rect = button.getBoundingClientRect()
+    const title = button
+      .closest('.pane-header')!
+      .querySelector('.pane-header__title')!
+      .getBoundingClientRect()
+    return { buttonRight: rect.right, titleLeft: title.left }
+  })
+  expect(placement.buttonRight).toBeLessThan(placement.titleLeft)
   await expect(trigger).toHaveAttribute('data-tip', 'Export log')
   await expect(trigger).not.toHaveAttribute('title')
   await expect(trigger.locator('svg')).toHaveAttribute('aria-hidden', 'true')
