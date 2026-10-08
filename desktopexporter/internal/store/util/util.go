@@ -15,8 +15,8 @@ import (
 )
 
 // EncodeValue renders one received OTel value as the canonical recursive wire
-// representation. Map entries are sorted for identity because received map
-// order is not semantic; slices retain their received order.
+// representation. Each map keeps the last received value per key, then sorts
+// keys for identity. Slices retain their received order and repeated elements.
 func EncodeValue(v pcommon.Value) ([]byte, error) {
 	value, err := encodeValuePayload(v)
 	if err != nil {
@@ -68,30 +68,47 @@ func encodeValuePayload(v pcommon.Value) (encodedValue, error) {
 			Key   string          `json:"key"`
 			Value json.RawMessage `json:"value"`
 		}
-		values := make([]mapEntry, 0, v.Map().Len())
-		var encodeErr error
-		v.Map().Range(func(key string, child pcommon.Value) bool {
-			encoded, err := EncodeValue(child)
+		latest := LastValues(v.Map())
+		keys := make([]string, 0, len(latest))
+		for key := range latest {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		values := make([]mapEntry, 0, len(keys))
+		for _, key := range keys {
+			encoded, err := EncodeValue(latest[key])
 			if err != nil {
-				encodeErr = err
-				return false
+				return encodedValue{}, err
 			}
 			values = append(values, mapEntry{Key: key, Value: encoded})
-			return true
-		})
-		if encodeErr != nil {
-			return encodedValue{}, encodeErr
 		}
-		sort.SliceStable(values, func(i, j int) bool {
-			if values[i].Key != values[j].Key {
-				return values[i].Key < values[j].Key
-			}
-			return string(values[i].Value) < string(values[j].Value)
-		})
 		return encodedValue{kind: "map", value: values}, nil
 	default:
 		return encodedValue{}, fmt.Errorf("unsupported OpenTelemetry value kind %d", v.Type())
 	}
+}
+
+// LastValues selects within this one collection only, without changing pdata.
+// Returned values refer to the input and must not outlive or mutate it.
+func LastValues(attrs pcommon.Map) map[string]pcommon.Value {
+	latest := make(map[string]pcommon.Value, attrs.Len())
+	for key, value := range attrs.All() {
+		latest[key] = value
+	}
+	return latest
+}
+
+// LastValue matches the collection's last-occurrence storage rule for derived
+// fields without allocating a complete map. A missing value must not be read.
+func LastValue(attrs pcommon.Map, key string) (pcommon.Value, bool) {
+	var value pcommon.Value
+	found := false
+	for candidate, current := range attrs.All() {
+		if candidate == key {
+			value, found = current, true
+		}
+	}
+	return value, found
 }
 
 // SpanIDUint64 converts an OTLP 8-byte span ID to its native integer value.

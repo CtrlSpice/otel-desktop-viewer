@@ -36,13 +36,9 @@ func newServicesCommand(client *http.Client, now func() time.Time) *cobra.Comman
 		Use:   "services",
 		Short: "Discover services and their telemetry counts",
 		Long: "Discover services with spans, logs or Metric datapoints in a running viewer. " +
-			"Group by Resource service.namespace and service.name, ordered by namespace then name. " +
-			"Missing and empty namespaces share a group; missing names display as empty strings. " +
-			"Names and namespaces are derived text labels; original typed Resource attributes remain available for inspection. Values with the same text share a summary. " +
-			"Counts cover stored records in the selected window, not requests. Error spans have status Error; error logs have numeric severity ERROR or FATAL (17–24). " +
-			"Metrics counts exact Metric identities with datapoints in the window; a histogram datapoint counts once. " +
-			"Time filtering and lastSeen use span start, log timestamp (observed timestamp when timestamp is zero), or datapoint timestamp. " +
-			"Timestamps are exact decimal Unix nanoseconds. Defaults to the last hour and 25 services. " +
+			"Group by service.namespace and service.name, ordered by namespace then name. " +
+			"Show span/error-span, log/error-log and Metric/datapoint counts, plus lastSeen in Unix nanoseconds. " +
+			"Counts describe stored telemetry, not requests or service health. Defaults to the last hour and 25 services. " +
 			"--service matches an exact name across namespaces. --json includes window bounds and truncation.",
 		Example: "  otel-desktop-viewer services\n" +
 			"  otel-desktop-viewer services --service checkout --since 30m\n" +

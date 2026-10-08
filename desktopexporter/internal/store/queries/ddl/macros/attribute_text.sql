@@ -40,6 +40,7 @@ create or replace macro attribute_text(encoded) as (
 				when kind = 'map' then '{'
 				when len(path) = 0 then text
 				when kind = 'empty' then 'null'
+				when kind = 'bytes' and text = '' then 'null'
 				when kind in ('string', 'bytes') then
 					replace(replace(to_json(text)::varchar, chr(8232), '\u2028'), chr(8233), '\u2029')
 				else text

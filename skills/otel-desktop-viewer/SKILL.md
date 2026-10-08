@@ -61,40 +61,16 @@ otel-desktop-viewer services --since 30m --json
 otel-desktop-viewer services --service checkout --since 30m
 ```
 
-`services` discovers services with spans, logs or Metric datapoints in the window.
-It groups by the text projections of Resource `service.namespace` and
-`service.name`, ordered by namespace then name. Names use the existing stored
-`service_name` search projection; namespaces use the same `pcommon.Value.AsString`
-conversion rules at query time. Missing and empty namespaces share a group.
-Missing names display as empty strings; the command does not invent `unknown_service`.
-Different received kinds with the same text share a summary: integer `42` and
-string `"42"` both have label `42`. Original typed resource attributes remain
-unchanged and available through `attributes values` and record inspection.
+`services` lists services across all three signals, grouped by namespace and name.
+Each summary shows span/error-span counts, log/error-log counts, Metric/datapoint
+counts and `lastSeen` (Unix nanoseconds). Counts describe stored telemetry in the
+window, not request volume or service health. Error counts use span status Error
+and log severity ERROR/FATAL; Metric count is not series count.
 
-The command accepts the same flags as the signal summary commands below, with the
-same last-hour and 25-row defaults. `--service` matches an exact name across all
-namespaces; it does not select one namespace. JSON returns `startTime`, `endTime`,
-`services` and `truncated`. Bounds are inclusive decimal Unix nanosecond strings;
-an omitted absolute bound is `null` (unbounded). A truncated result is not a
-complete service inventory; increase `--limit` to see more.
-
-Each summary includes `serviceNamespace`, `serviceName` and these computed fields:
-
-| Field | Meaning within the selected window |
-| --- | --- |
-| `spanCount` | Stored spans, identified by trace ID plus span ID. Not requests. |
-| `errorSpanCount` | Spans whose received status code is Error (2). |
-| `logCount` | Stored log records, regardless of trace/span correlation. |
-| `errorLogCount` | Logs whose received severity number is ERROR or FATAL (17–24). No inference from text. |
-| `metricCount` | Distinct exact `metrics.id` values with datapoints in the window, not distinct Metric names or series. |
-| `dataPointCount` | Stored Metric datapoints; a histogram datapoint counts once, not by buckets or observation count. |
-| `lastSeen` | Maximum qualifying telemetry timestamp, as an exact decimal Unix nanosecond string. Not viewer arrival time or evidence of liveness. |
-
-Time eligibility and `lastSeen` use received span start time, log timestamp
-(observed timestamp when timestamp is zero), and Metric datapoint timestamp.
-Counts are exact integers over stored records; they do not estimate unreceived
-telemetry. Instances and versions within a namespace/name pair contribute to the
-same summary. Zero counts mean no matching stored records for that signal.
+Use the same filters and defaults as the signal commands below. `--service`
+matches an exact name across namespaces. JSON includes `startTime`, `endTime`,
+`services` and `truncated`; increase `--limit` if truncated. Use a discovered
+name with `traces`, `logs` or `metrics` to investigate further.
 
 ## Search traces, logs, and Metrics
 
@@ -196,7 +172,7 @@ otel-desktop-viewer query 'DESCRIBE attributes'
 otel-desktop-viewer query "SELECT function_name FROM duckdb_functions() WHERE function_type = 'macro' AND function_name IN ('span_id_wire', 'trace_id_wire') ORDER BY function_name"
 ```
 
-The examples use schema 21 tables `spans`, `logs`, `metrics`,
+The examples use schema 22 tables `spans`, `logs`, `metrics`,
 `metric_series`, `metric_datapoints`, and `attributes`, plus registered
 `trace_id_wire` and `span_id_wire` macros. Inspect the installed schema before
 adapting SQL.

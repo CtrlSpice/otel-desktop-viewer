@@ -45,7 +45,7 @@ const flushIntervalSpans = 500
 // used by the metrics package to denormalize service onto metrics,
 // kept private here so spans doesn't grow a metrics dependency.
 func resourceServiceName(attrs pcommon.Map) string {
-	if v, ok := attrs.Get("service.name"); ok {
+	if v, ok := util.LastValue(attrs, "service.name"); ok {
 		return v.AsString()
 	}
 	return ""

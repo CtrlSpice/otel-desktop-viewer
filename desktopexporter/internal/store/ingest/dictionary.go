@@ -132,8 +132,8 @@ func uuidString(id duckdb.UUID) string {
 	return string(out[:])
 }
 
-// AttributeSet turns an attribute map into dictionary rows plus the sorted,
-// deduped id array an owner stores.
+// AttributeSet keeps the last received value per key within one owner's
+// collection, then derives dictionary rows and sorted references.
 //
 // IDs provide a total order independent of map insertion order. Duplicate IDs
 // are removed so resource and scope identity depends on attribute content.
@@ -162,8 +162,9 @@ func AttributeSet(attrs pcommon.Map, scope string) ([]Attribute, []duckdb.UUID) 
 
 // attributeSetUncached derives rows and IDs without the memo.
 func attributeSetUncached(attrs pcommon.Map, scope string) ([]Attribute, []duckdb.UUID) {
-	rows := make([]Attribute, 0, attrs.Len())
-	for k, v := range attrs.All() {
+	latest := util.LastValues(attrs)
+	rows := make([]Attribute, 0, len(latest))
+	for k, v := range latest {
 		encoded, err := util.EncodeValue(v)
 		if err != nil {
 			// pcommon exposes only the kinds EncodeValue supports. Keep this

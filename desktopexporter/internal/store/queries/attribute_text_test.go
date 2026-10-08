@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/plog"
 )
 
 func TestAttributeTextMatchesPdata(t *testing.T) {
@@ -30,6 +31,7 @@ func TestAttributeTextMatchesPdata(t *testing.T) {
 		{"nan", math.NaN()}, {"infinity", math.Inf(1)}, {"negative infinity", math.Inf(-1)},
 		{"bytes", []byte{0, 1, 255}}, {"empty bytes", []byte{}},
 		{"empty array", []any{}}, {"empty map", map[string]any{}},
+		{"nested empty bytes", []any{[]byte{}, map[string]any{"empty": []byte{}}}},
 		{"array", []any{nil, "<>&\u2028", true, int64(math.MaxInt64), math.Copysign(0, -1), 1e21, []byte{255}}},
 		{"map", map[string]any{"z": int64(math.MinInt64), "a": "value", "<>&\u2029": []any{1e-7, false}}},
 		{"nested", []any{map[string]any{"b": []any{1e21, nil}, "a": map[string]any{"x": []byte{1, 2}}}}},
@@ -60,5 +62,24 @@ func TestAttributeTextDoubleFormatting(t *testing.T) {
 		var text string
 		require.NoError(t, macroDB(t).QueryRow("SELECT attribute_text(?::JSON)", string(encoded)).Scan(&text))
 		assert.Equal(t, value.AsString(), text, fmt.Sprintf("bits %016x", bits))
+	}
+}
+
+func TestAttributeTextSelectedDuplicateMapsMatchesPdata(t *testing.T) {
+	for _, entries := range []string{
+		`{"key":"x","value":{"stringValue":"z"}},{"key":"x","value":{"stringValue":"a"}}`,
+		`{"key":"x","value":{"stringValue":"a"}},{"key":"x","value":{"stringValue":"z"}}`,
+		`{"key":"x","value":{"intValue":"9223372036854775807"}},{"key":"x","value":{"stringValue":"last"}}`,
+		`{"key":"x","value":{"doubleValue":"NaN"}},{"key":"x","value":{"intValue":"42"}}`,
+	} {
+		logs, err := (&plog.JSONUnmarshaler{}).UnmarshalLogs([]byte(
+			`{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"body":{"kvlistValue":{"values":[` + entries + `]}}}]}]}]}`))
+		require.NoError(t, err)
+		value := logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0).Body()
+		encoded, err := util.EncodeValue(value)
+		require.NoError(t, err)
+		var text string
+		require.NoError(t, macroDB(t).QueryRow("SELECT attribute_text(?::JSON)", string(encoded)).Scan(&text))
+		assert.Equal(t, value.AsString(), text)
 	}
 }

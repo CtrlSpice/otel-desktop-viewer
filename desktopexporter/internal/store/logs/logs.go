@@ -25,7 +25,7 @@ import (
 // in spans / metrics; kept private here so logs doesn't grow a cross-
 // package dependency just for one attribute lookup.
 func resourceServiceName(attrs pcommon.Map) string {
-	if v, ok := attrs.Get("service.name"); ok {
+	if v, ok := util.LastValue(attrs, "service.name"); ok {
 		return v.AsString()
 	}
 	return ""
