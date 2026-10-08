@@ -5,8 +5,21 @@ import test from 'node:test'
 import {
   cleanEnvironment,
   createCleanEnvironment,
+  openaiModelConfig,
 } from './clean-environment.ts'
 import { record, TEMPORARY } from './runtime.ts'
+
+test('latest GPT definitions register exact names without changing authentication or API routes', () => {
+  for (const id of ['gpt-6-luna', 'gpt-6.1-sol', 'gpt-6-astra']) {
+    const config = openaiModelConfig('openai/' + id)
+    assert.ok(config.provider)
+    assert.deepEqual(Object.keys(config.provider.openai), ['models'])
+    assert.deepEqual(Object.keys(config.provider.openai.models), [id])
+    assert.equal(config.provider.openai.models[id].tool_call, true)
+  }
+  assert.deepEqual(openaiModelConfig('openai/gpt-5.6-luna'), {})
+  assert.deepEqual(openaiModelConfig('other/gpt-6-luna'), {})
+})
 
 const parent = () =>
   fs.mkdtempSync(path.join(TEMPORARY, 'eval-isolation-helper-test-'))

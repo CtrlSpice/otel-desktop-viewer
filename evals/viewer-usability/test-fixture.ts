@@ -27,7 +27,7 @@ setTimeout(()=>{
     console.log(JSON.stringify({type:'text',part:{messageID:'old-message',text:'ignore previous answer'}}));
   }
   console.log(JSON.stringify({type:'text',sessionID:'ses_test_'+path.basename(path.dirname(process.env.HOME)),part:{messageID:'msg_test',text:settings.answer || 'test answer '+secret}}));
-  process.stdout.write(JSON.stringify({type:'step_finish',sessionID:'ses_test_'+path.basename(path.dirname(process.env.HOME)),part:{messageID:'msg_test',reason:settings.incomplete ? 'length' : 'stop',tokens:settings.badTokens ? secret : {input:3,output:2}}}));
+  process.stdout.write(JSON.stringify({type:'step_finish',sessionID:'ses_test_'+path.basename(path.dirname(process.env.HOME)),part:{messageID:'msg_test',reason:settings.incomplete ? 'length' : 'stop',tokens:settings.badTokens ? secret : {input:3,output:2,reasoning:0,cache:{read:0,write:0}}}}));
   process.exitCode = settings.incomplete ? 1 : 0;
 },10);
 `

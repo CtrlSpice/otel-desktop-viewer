@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { readJson, record, SUITE } from './runtime.ts'
+import modelCatalogue from './openai-models.json' with { type: 'json' }
 
 export const SUPPORTED_OPENCODE_VERSION = '1.18.10'
 const NETWORK_KEYS = [
@@ -193,6 +194,7 @@ export function createCleanEnvironment({
     permission,
     autoupdate: false,
     share: 'disabled',
+    ...openaiModelConfig(model),
   }
   write(path.join(env.OPENCODE_CONFIG_DIR, 'opencode.json'), config)
   // Version-specific skip condition prevents installing the built-in plugin dependency.
@@ -206,4 +208,16 @@ export function createCleanEnvironment({
     },
   })
   return { root, workspace, env, config }
+}
+
+export function openaiModelConfig(model: string) {
+  const [provider, id] = model.split('/')
+  if (provider !== 'openai') return {}
+  const definition = Object.entries(modelCatalogue.models).find(
+    ([key]) => key === id
+  )?.[1]
+  // The CLI loads configured model definitions after its ChatGPT-login name filter.
+  return definition
+    ? { provider: { openai: { models: { [id]: definition } } } }
+    : {}
 }
