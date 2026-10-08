@@ -839,7 +839,7 @@ describe('exact received metric API', () => {
       attributes: [],
       datapoints: [
         {
-          datapointID: 'point-1',
+          datapointRef: 'point-1',
           timestamp: '18446744073709551615',
           startTime: '0',
           flags: 1,
@@ -880,6 +880,7 @@ describe('exact received metric API', () => {
     )
     const point = selected!.datapoints[0]! as ReceivedHistogramDataPoint
     expect(point).toMatchObject({
+      datapointRef: 'point-1',
       timestamp: 18446744073709551615n,
       count: 18446744073709551615n,
       sum: 0,
@@ -916,7 +917,7 @@ describe('exact received metric API', () => {
       attributes: [],
       datapoints: [
         {
-          datapointID: 'i',
+          datapointRef: 'i',
           timestamp: '1',
           startTime: '0',
           flags: 0,
@@ -926,7 +927,7 @@ describe('exact received metric API', () => {
           doubleValue: null,
         },
         {
-          datapointID: 'd',
+          datapointRef: 'd',
           timestamp: '2',
           startTime: '0',
           flags: 0,
@@ -936,7 +937,7 @@ describe('exact received metric API', () => {
           doubleValue: '0x7ff8000000000001',
         },
         {
-          datapointID: 'e',
+          datapointRef: 'e',
           timestamp: '3',
           startTime: '0',
           flags: 0,
@@ -955,6 +956,8 @@ describe('exact received metric API', () => {
       null
     )
     const points = selected!.datapoints
+    expect(points.map(point => point.datapointRef)).toEqual(['i', 'd', 'e'])
+    expect(points.every(point => !('datapointID' in point))).toBe(true)
     expect(points[0]).toMatchObject({
       valueType: 'Int',
       intValue: 9223372036854775807n,
@@ -990,7 +993,7 @@ describe('exact received metric API', () => {
       attributes: [],
       datapoints: [
         {
-          datapointID: 'point-1',
+          datapointRef: 'point-1',
           timestamp: '1',
           startTime: '0',
           flags: 0,
@@ -1015,6 +1018,7 @@ describe('exact received metric API', () => {
       1n
     )
     expect(selected!.datapoints[0]).toMatchObject({
+      datapointRef: 'point-1',
       count: 18446744073709551615n,
       scale: -10,
       zeroCount: 9007199254740993n,
