@@ -6,19 +6,31 @@
   import TracesPage from '@/pages/TracesPage.svelte'
   import FileDropOverlay from '@/components/shared/FileDropOverlay.svelte'
   import ImportFilesCard from '@/components/shared/ImportFilesCard.svelte'
+  import ImportFailureNotice from '@/components/shared/ImportFailureNotice.svelte'
+  import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
+  import type { ImportFailure } from '@/types/import-types'
+  import { isPlainLeftClick, navigate } from '@/route'
   import {
     createRouteContext,
     getRouteContext,
   } from '@/contexts/route-context.svelte'
   import { createTimeContext } from '@/contexts/time-context.svelte'
 
-  let { importFiles }: { importFiles?: (files: File[]) => void } = $props()
+  let {
+    importFiles,
+    importFailures = [],
+  }: {
+    importFiles?: (files: File[]) => void
+    importFailures?: readonly ImportFailure[]
+  } = $props()
 
   createRouteContext()
   createTimeContext()
 
   const routeContext = getRouteContext()
   let mainElement = $state<HTMLElement | null>(null)
+  let failureNotice = $state<ImportFailure | null>(null)
+  let seenFailure: ImportFailure | undefined
 
   function pagePath(path: string): string {
     for (const base of ['/traces', '/metrics', '/logs']) {
@@ -34,7 +46,17 @@
     if (page === lastFocusedPage) return
     lastFocusedPage = page
     void tick().then(() => {
-      if (pagePath(routeContext.route.path) === page) mainElement?.focus()
+      if (pagePath(routeContext.route.path) !== page) return
+      const issuePanel =
+        window.location.hash === `#${INGESTION_ISSUES_ID}`
+          ? document.getElementById(INGESTION_ISSUES_ID)
+          : null
+      if (issuePanel) {
+        issuePanel.scrollIntoView({ block: 'nearest' })
+        issuePanel.focus({ preventScroll: true })
+      } else {
+        mainElement?.focus()
+      }
     })
   })
 
@@ -52,6 +74,22 @@
           ? LogsPage
           : HomePage
   )
+
+  $effect(() => {
+    const latestFailure = importFailures.at(-1)
+    if (latestFailure !== seenFailure) {
+      seenFailure = latestFailure
+      failureNotice = Page === HomePage ? null : (latestFailure ?? null)
+    }
+    if (Page === HomePage) failureNotice = null
+  })
+
+  function viewIssue(event: MouseEvent) {
+    if (!isPlainLeftClick(event)) return
+    event.preventDefault()
+    failureNotice = null
+    navigate(`/#${INGESTION_ISSUES_ID}`)
+  }
 </script>
 
 <main
@@ -60,7 +98,7 @@
   class="flex h-screen min-w-0 flex-col overflow-hidden bg-base-100 transition-colors duration-300"
 >
   {#if Page === HomePage}
-    <HomePage>
+    <HomePage {importFailures}>
       {#snippet importContent()}
         {#if importFiles}
           <ImportFilesCard onFiles={importFiles} />
@@ -74,4 +112,12 @@
 
 {#if importFiles}
   <FileDropOverlay onFiles={importFiles} />
+{/if}
+
+{#if failureNotice}
+  <ImportFailureNotice
+    failure={failureNotice}
+    onViewIssue={viewIssue}
+    onDismiss={() => (failureNotice = null)}
+  />
 {/if}
