@@ -18,7 +18,7 @@ Keep credentials, local settings and run artifacts outside version control.
 | `runtime.ts`, `runtime.test.ts`                         | Require runtime paths outside repositories                                                                         |
 | `dataset.test.ts`                                       | Check manifest staging, unchanged HTTP bytes, exact time bounds and partial-success rejection                      |
 | `clean-environment.ts`, `clean-environment.test.ts`     | Fresh private CLI environments and isolation helper tests                                                          |
-| `openai-models.json` | Explicit public model definitions for the latest GPT tiers |
+| `openai-models.json`                                    | Explicit public model definitions for the latest GPT tiers                                                         |
 | `provider.test.ts`, `config.test.ts`, `test-fixture.ts` | Synthetic child-process adapter and explicit settings wiring tests                                                 |
 | `verify-isolation.ts`                                   | Standalone loader/canary checks and optional Sol 6.1 access smoke                                                  |
 | `isolation-check-settings.ts`                           | Validate private path and canary inputs for standalone isolation checks                                            |
@@ -95,6 +95,10 @@ After next-eval isolation and task changes are verified, run through
 `node evals/viewer-usability/run-pilot.ts`. It disables Promptfoo telemetry and
 sharing, writes Promptfoo state under the external runtime, and refuses an
 existing `pilot.json`. It preserves failed runs and their transcripts.
+The runner performs three repetitions of every task/model pair. Each fresh
+OpenCode call has a ten-minute deadline including startup/model discovery and
+tool use. A timeout terminates the owned process group, retains partial output
+and usage, records an infrastructure error, and lets Promptfoo continue the queue.
 
 ## Isolated provider setup
 
@@ -198,6 +202,19 @@ OTLP_DATASET="$PWD/testdata/otlp/small" \
 OTLP_DATASET="$PWD/testdata/otlp/usability-pilot" \
   node evals/viewer-usability/verify-integration.ts --verify-pilot
 ```
+
+## Owned overnight run
+
+`run-overnight.ts` stages the explicitly selected historical pilot dataset,
+starts one dedicated viewer, verifies all six expected answers before model calls,
+runs 54 fresh sessions (six tasks × three models × three repetitions), then stops
+and waits for its owned viewer on completion or failure. It requires separate
+permission for this viewer lifecycle and an absolute `OTEL_EVAL_VIEWER_BINARY`.
+Set `OTLP_DATASET` to the `usability-pilot` directory and `OTEL_EVAL_ISOLATION_FILE`
+to the private approved settings. Source commits, binary hash, settings and run
+ownership are recorded in the external run directory. Shared `small` remains the
+default for ordinary dataset loading; these historical cases require this explicit
+selection until their migration is complete.
 
 ## Model summary and CAD API-price estimate
 

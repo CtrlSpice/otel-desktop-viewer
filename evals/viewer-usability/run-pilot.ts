@@ -63,6 +63,8 @@ export async function runPilot(
     '-c',
     path.join(suite, 'config.ts'),
     '--no-cache',
+    '--repeat',
+    '3',
     '--no-share',
     '-o',
     path.join(root, 'pilot.json'),

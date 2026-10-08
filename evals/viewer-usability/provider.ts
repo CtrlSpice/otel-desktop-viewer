@@ -26,6 +26,7 @@ type ProcessResult = {
   signal: NodeJS.Signals | null
   errorCode?: string
   pid?: number
+  timedOut: boolean
 }
 
 type Event = {
@@ -173,9 +174,17 @@ export function isolationSettings(value: unknown): Isolation {
 export default class OpenCodeProvider {
   model: string
   isolation: unknown
-  constructor(options: { config: { model: string; isolation?: unknown } }) {
+  timeoutMs: number
+  constructor(options: {
+    config: { model: string; isolation?: unknown; timeoutMs?: number }
+  }) {
     this.model = options.config.model
     this.isolation = options.config.isolation
+    this.timeoutMs = options.config.timeoutMs ?? 10 * 60 * 1000
+    if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs <= 0)
+      throw new Error(
+        'Session timeout must be a positive integer in milliseconds'
+      )
   }
   id() {
     return 'opencode-cli:' + this.model
@@ -194,6 +203,7 @@ export default class OpenCodeProvider {
     const evidence = fs.mkdtempSync(path.join(evidenceRoot, tag))
     fs.chmodSync(evidence, 0o700)
     const started = performance.now()
+    let timedOut = false
     let isolated: ReturnType<typeof createCleanEnvironment> | undefined
     let version: string | undefined
     let binary = ''
@@ -245,12 +255,36 @@ export default class OpenCodeProvider {
           cwd: isolated.workspace,
           env: isolated.env,
           stdio: ['ignore', 'pipe', 'pipe'],
+          detached: process.platform !== 'win32',
         })
         if (stdoutFile === 'stdout.jsonl' && child.pid)
           save('process.pid', String(child.pid))
         let stdout = '',
           stderr = '',
           errorCode: string | undefined
+        const signalOwned = (signal: NodeJS.Signals) => {
+          if (!child.pid) return
+          try {
+            if (process.platform === 'win32') child.kill(signal)
+            else process.kill(-child.pid, signal)
+          } catch (error) {
+            if (!(
+              error instanceof Error &&
+              'code' in error &&
+              error.code === 'ESRCH'
+            ))
+              throw error
+          }
+        }
+        let forceKill: ReturnType<typeof setTimeout> | undefined
+        const timer = setTimeout(
+          () => {
+            timedOut = true
+            signalOwned('SIGTERM')
+            forceKill = setTimeout(() => signalOwned('SIGKILL'), 30000)
+          },
+          Math.max(0, this.timeoutMs - (performance.now() - started))
+        )
         child.stdout.setEncoding('utf8')
         child.stderr.setEncoding('utf8')
         child.stdout.on('data', data => {
@@ -268,6 +302,8 @@ export default class OpenCodeProvider {
               : 'SPAWN_ERROR'
         })
         child.once('close', (code, signal) => {
+          clearTimeout(timer)
+          if (forceKill) clearTimeout(forceKill)
           writeOut('', true)
           writeErr('', true)
           resolve({
@@ -277,6 +313,7 @@ export default class OpenCodeProvider {
             signal,
             errorCode,
             pid: child.pid,
+            timedOut,
           })
         })
       })
@@ -363,6 +400,7 @@ export default class OpenCodeProvider {
         'version.stderr'
       )
       version = checked.stdout.trim()
+      if (checked.timedOut) throw new Error('OpenCode session timed out')
       if (checked.errorCode)
         throw new Error('OpenCode spawn failed: ' + checked.errorCode)
       if (checked.code !== 0 || version !== SUPPORTED_OPENCODE_VERSION)
@@ -374,6 +412,7 @@ export default class OpenCodeProvider {
         'models.stdout',
         'models.stderr'
       )
+      if (catalogue.timedOut) throw new Error('OpenCode session timed out')
       if (catalogue.errorCode || catalogue.code !== 0)
         throw new Error('Clean OpenCode model discovery failed')
       if (!catalogue.stdout.trim().split(/\r?\n/).includes(this.model)) {
@@ -383,6 +422,7 @@ export default class OpenCodeProvider {
           'models-refreshed.stdout',
           'models-refreshed.stderr'
         )
+        if (catalogue.timedOut) throw new Error('OpenCode session timed out')
         if (catalogue.errorCode || catalogue.code !== 0)
           throw new Error('Clean OpenCode model refresh failed')
       }
@@ -394,7 +434,7 @@ export default class OpenCodeProvider {
       // Do not expose parser/input errors that can contain authentication material.
       const message = error instanceof Error ? error.message : ''
       const safe =
-        /^(Caller must|Unsupported OpenCode|OpenCode spawn failed|Clean OpenCode|Requested model|Managed macOS|Remote-config|Only explicit|Executable search|An explicit)/.test(
+        /^(Caller must|Unsupported OpenCode|OpenCode spawn failed|OpenCode session timed out|Clean OpenCode|Requested model|Managed macOS|Remote-config|Only explicit|Executable search|An explicit)/.test(
           message
         )
           ? message
@@ -407,6 +447,8 @@ export default class OpenCodeProvider {
         isolationRoot: isolated?.root,
         version,
         elapsedSeconds: (performance.now() - started) / 1000,
+        timedOut,
+        timeoutMs: this.timeoutMs,
       }
       save('failure.json', { error: safe, ...metadata })
       return { error: safe + '; see ' + evidence, metadata }
@@ -422,6 +464,8 @@ export default class OpenCodeProvider {
         workspace,
         evidence,
         isolationRoot: isolated.root,
+        timedOut,
+        timeoutMs: this.timeoutMs,
       }
       save('failure.json', {
         error: 'Prompt contains selected credential material',
@@ -455,12 +499,14 @@ export default class OpenCodeProvider {
         isolationRoot: isolated.root,
         args,
         startedAt: new Date().toISOString(),
+        timeoutMs: this.timeoutMs,
       })
       const result = await execute(args, 'stdout.jsonl', 'stderr.log')
       const exit = {
         code: result.code,
         signal: result.signal,
         errorCode: result.errorCode,
+        timedOut: result.timedOut,
       }
       const { output, usage, commands, reason, ...metrics } = sessionSummary(
         result.stdout
@@ -477,10 +523,17 @@ export default class OpenCodeProvider {
         exit,
         usage,
         ...metrics,
+        timedOut,
+        timeoutMs: this.timeoutMs,
       }
       save('commands.json', commands)
       save('metrics.json', metadata)
       save('answer.txt', output)
+      if (timedOut) {
+        const error = 'OpenCode session timed out; see ' + evidence
+        save('failure.json', { error, ...metadata })
+        return { error, metadata }
+      }
       if (exit.code !== 0 || reason !== 'stop' || !output) {
         return {
           error: 'Incomplete OpenCode session; see ' + evidence,
@@ -508,8 +561,12 @@ export default class OpenCodeProvider {
         isolationRoot: isolated.root,
         task: context.vars.task_id,
         elapsedSeconds: (performance.now() - started) / 1000,
+        timedOut,
+        timeoutMs: this.timeoutMs,
       }
-      const error = 'OpenCode session processing failed'
+      const error = timedOut
+        ? 'OpenCode session timed out'
+        : 'OpenCode session processing failed'
       save('failure.json', { error, ...metadata })
       return { error: error + '; see ' + evidence, metadata }
     }

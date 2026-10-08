@@ -8,6 +8,51 @@ import { providerFixture as setup } from './test-fixture.ts'
 import { readJson, record } from './runtime.ts'
 import { credentialEnvironment } from './clean-environment.ts'
 
+test('timed-out sessions retain partial evidence, terminate their process and allow the next call', async () => {
+  const previous = { ...process.env }
+  try {
+    const { root, isolation } = setup()
+    const file = path.join(root, 'stub-settings.json')
+    fs.writeFileSync(file, '{"hang":true}')
+    const provider = new Provider({
+      config: { model: 'openai/gpt-6.1-sol', isolation, timeoutMs: 1000 },
+    })
+    const timed = await provider.callApi('Synthetic timeout check.', {
+      vars: { task_id: 'timeout' },
+    })
+    assert.match(timed.error || '', /timed out/)
+    assert.equal(timed.metadata.timedOut, true)
+    assert.ok('exit' in timed.metadata)
+    assert.ok(timed.metadata.exit)
+    assert.equal(timed.metadata.exit.timedOut, true)
+    const pid = Number(
+      fs.readFileSync(path.join(timed.metadata.evidence, 'process.pid'), 'utf8')
+    )
+    assert.throws(() => process.kill(pid, 0), /ESRCH/)
+    assert.match(
+      fs.readFileSync(
+        path.join(timed.metadata.evidence, 'stdout.jsonl'),
+        'utf8'
+      ),
+      /retained partial output/
+    )
+    assert.equal(
+      fs.readFileSync(path.join(timed.metadata.evidence, 'stderr.log'), 'utf8'),
+      '[REDACTED]'
+    )
+    assert.ok(fs.existsSync(path.join(timed.metadata.evidence, 'failure.json')))
+    fs.writeFileSync(file, '{}')
+    const next = await provider.callApi('Synthetic next task.', {
+      vars: { task_id: 'next' },
+    })
+    assert.equal(next.output, 'test answer [REDACTED]')
+    assert.equal(next.metadata.timedOut, false)
+    assert.notEqual(next.metadata.evidence, timed.metadata.evidence)
+  } finally {
+    process.env = previous
+  }
+})
+
 test('adapter uses actual process boundaries, fresh roots, exact launch and safe evidence', async () => {
   const previous = { ...process.env }
   try {

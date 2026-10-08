@@ -12,6 +12,7 @@
     "prepare": "node prepare.ts",
     "verify": "node verify.ts",
     "pilot": "node run-pilot.ts",
+    "overnight": "node run-overnight.ts",
     "verify:isolation": "node verify-isolation.ts",
     "verify:loader": "node verify-loader.ts",
     "verify:integration": "node verify-integration.ts"
