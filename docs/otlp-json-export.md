@@ -91,6 +91,40 @@ Use `export log <log-ref>` and `export metric <metric-ref>` for the other signal
 The selected signal header downloads JSON with one click.
 Search/time filters and collapsed rows do not limit exported members.
 
+## Browser file import
+
+Select OTLP JSON or JSONL files on Home, or drop them anywhere in the viewer.
+Files are processed sequentially, including selections made during an import.
+Each file is parsed once in chunks before any of its requests are sent. The
+frontend retains byte ranges, not a complete decoded telemetry object tree.
+
+Top-level `resourceSpans`, `resourceLogs` and `resourceMetrics` collections are
+grouped by signal and sent to the existing OTLP HTTP receiver. Request bodies
+use the original resource/record bytes, preserving exact numbers, negative zero,
+attributes and resource/scope associations. Batches include at most 20 MiB of
+encoded JSON, including their wrapper, with one request in flight at a time.
+Large resource groups are split at scope, span, log-record, Metric or datapoint
+boundaries while repeating the associated metadata. An individual record or
+required metadata that cannot fit is reported rather than truncated.
+
+The viewer's `getImportConfig` JSON-RPC method returns `otlpHttpPort`, populated
+from the CLI's `--http` setting. The browser connects using the viewer's hostname
+and that HTTP port. That receiver must be reachable from the browser; a reverse
+proxy serving the viewer alone does not also proxy the OTLP port. Standalone
+DuckDB-extension configurations can set `otlp_http_port`; when it is unset, imports
+report that OTLP HTTP import is not configured.
+
+Malformed JSON prevents sending any of that file. Unknown wrappers, oversized
+records, network errors and OTLP rejection responses appear under Home's
+**Ingestion issues**. Profiles appear as **Profiles support coming soon**.
+Supported signal groups and subsequent files continue after individual issues,
+so a file may be partially imported. Signal pages link to Home's issue details.
+Existing stored-record rejection summaries remain separate from file issues.
+
+An HTTP response acknowledges the normal receiver handoff, not a completed
+database write. Imported data is discoverable through the existing UI refresh
+and query interfaces.
+
 ## File Receiver
 
 The binary registers Contrib's `otlpjsonfilereceiver` at `v0.162.0` alongside the
@@ -98,12 +132,10 @@ network OTLP receiver. Network protobuf transport remains supported. The JSON
 document identifies its signal through `resourceSpans`, `resourceLogs`, or
 `resourceMetrics`; the file name is not needed for signal selection.
 
-Registration does not activate file ingestion or provide a browser-import backend.
-Runtime paths, watching versus read-once behavior, upload handling, and completion
-are not configured by this slice. The upstream receiver defaults to starting at the
-end of existing files, adding file-name metadata, and splitting records over 1 MiB.
-Those defaults are not a fidelity-preserving import policy. Tests use explicit
-test-owned paths and configuration; production configuration still needs a decision.
+This registered component is not activated by the viewer CLI. Browser imports
+use the network receiver described above. File-receiver tests use explicit
+test-owned paths and settings; its upstream defaults start at the end of existing
+files, add filename metadata, and split records over 1 MiB.
 
 ## Reconstruction limits
 

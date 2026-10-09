@@ -145,7 +145,7 @@ describe('App real-page composition', () => {
       })
       const main = screen.getByRole('main')
       expect(
-        await within(main).findByText("Couldn't import example.json.")
+        await within(main).findByText('Import issue in example.json.')
       ).toBeInTheDocument()
       expect(window.location.pathname).toBe(path)
       const link = within(main).getByRole('link', { name: 'View issue' })
@@ -170,7 +170,7 @@ describe('App real-page composition', () => {
       occurredAt: BigInt(Date.now()) * 1_000_000n,
     }
     const view = render(App, { importFailures: [failure] })
-    await screen.findByText("Couldn't import example.json.")
+    await screen.findByText('Import issue in example.json.')
     navigate('/')
     const panel = await screen.findByRole('region', {
       name: 'Ingestion issues',
@@ -178,7 +178,7 @@ describe('App real-page composition', () => {
     expect(within(panel).getByText('example.json')).toBeInTheDocument()
     navigate('/logs')
     await screen.findByText('No logs in this time range')
-    expect(screen.queryByText("Couldn't import example.json.")).toBeNull()
+    expect(screen.queryByText('Import issue in example.json.')).toBeNull()
     await view.rerender({
       importFailures: [
         failure,
@@ -191,7 +191,7 @@ describe('App real-page composition', () => {
     })
     expect(
       await within(screen.getByRole('main')).findByText(
-        "Couldn't import another.json."
+        'Import issue in another.json.'
       )
     ).toBeInTheDocument()
     expect(window.location.pathname).toBe('/logs')
@@ -218,7 +218,7 @@ describe('App real-page composition', () => {
       expect(
         await screen.findByText('Error: Unable to load telemetry')
       ).toBeInTheDocument()
-      expect(screen.queryByText("Couldn't import example.json.")).toBeNull()
+      expect(screen.queryByText('Import issue in example.json.')).toBeNull()
       navigate('/')
       const panel = await screen.findByRole('region', {
         name: 'Ingestion issues',

@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { tick } from 'svelte'
+  import { onDestroy, tick } from 'svelte'
+  import { createFileImporter } from '@/services/import-service'
   import HomePage from '@/pages/HomePage.svelte'
   import MetricsPage from '@/pages/MetricsPage.svelte'
   import LogsPage from '@/pages/LogsPage.svelte'
@@ -22,6 +23,20 @@
     importFiles?: (files: File[]) => void
     importFailures?: readonly ImportFailure[]
   } = $props()
+
+  let localImportFailures = $state<ImportFailure[]>([])
+  const importer = createFileImporter(window.location.href, failure => {
+    localImportFailures.push(failure)
+  })
+  const allImportFailures = $derived([
+    ...importFailures,
+    ...localImportFailures,
+  ])
+  function handleImportFiles(files: File[]) {
+    if (importFiles) importFiles(files)
+    else void importer.enqueue(files)
+  }
+  onDestroy(() => importer.cancel())
 
   createRouteContext()
   createTimeContext()
@@ -75,7 +90,7 @@
   )
 
   $effect(() => {
-    const latestFailure = importFailures.at(-1)
+    const latestFailure = allImportFailures.at(-1)
     if (latestFailure !== seenFailure) {
       seenFailure = latestFailure
       importFailure = Page === HomePage ? null : (latestFailure ?? null)
@@ -97,11 +112,9 @@
   class="flex h-screen min-w-0 flex-col overflow-hidden bg-base-100 transition-colors duration-300"
 >
   {#if Page === HomePage}
-    <HomePage {importFailures}>
+    <HomePage importFailures={allImportFailures}>
       {#snippet importContent()}
-        {#if importFiles}
-          <ImportFilesCard onFiles={importFiles} />
-        {/if}
+        <ImportFilesCard onFiles={handleImportFiles} />
       {/snippet}
     </HomePage>
   {:else}
@@ -109,6 +122,4 @@
   {/if}
 </main>
 
-{#if importFiles}
-  <FileDropOverlay onFiles={importFiles} />
-{/if}
+<FileDropOverlay onFiles={handleImportFiles} />

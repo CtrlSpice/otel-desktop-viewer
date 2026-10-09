@@ -88,6 +88,31 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+describe('file-import endpoint discovery', () => {
+  it('reads the configured OTLP port through RPC', async () => {
+    stubRpcResult({ otlpHttpPort: 54318 })
+    expect(await telemetryAPI.getImportConfig()).toEqual({
+      otlpHttpPort: 54318,
+    })
+    expect(
+      JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string).method
+    ).toBe('getImportConfig')
+  })
+
+  it.each([
+    null,
+    {},
+    { otlpHttpPort: 0 },
+    { otlpHttpPort: '4318' },
+    { otlpHttpPort: 65536 },
+  ])('rejects unusable endpoint config %j', async config => {
+    stubRpcResult(config)
+    await expect(telemetryAPI.getImportConfig()).rejects.toThrow(
+      'invalid OTLP HTTP port'
+    )
+  })
+})
+
 describe('JSON-RPC response identity', () => {
   it('accepts a successful response with the numeric request ID', async () => {
     stubRpcResult('cleared')

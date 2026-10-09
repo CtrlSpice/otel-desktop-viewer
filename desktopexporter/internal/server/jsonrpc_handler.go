@@ -24,8 +24,9 @@ import (
 )
 
 type JSONRPCHandler struct {
-	store  *store.Store
-	logger *zap.Logger
+	store        *store.Store
+	logger       *zap.Logger
+	otlpHTTPPort int
 }
 
 func NewJSONRPCHandler(store *store.Store, logger *zap.Logger) *JSONRPCHandler {
@@ -104,6 +105,13 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 	req.Params = normalized
 
 	switch req.Method {
+	case "getImportConfig":
+		if h.otlpHTTPPort <= 0 {
+			return nil, fmt.Errorf("%w: OTLP HTTP import is not configured", jsonrpc2.ErrInternal)
+		}
+		return struct {
+			OTLPHTTPPort int `json:"otlpHttpPort"`
+		}{OTLPHTTPPort: h.otlpHTTPPort}, nil
 	case "searchTraceSummaries":
 		return h.searchTraceSummaries(ctx, req)
 	case "getTraceView":

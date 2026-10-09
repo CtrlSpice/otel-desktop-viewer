@@ -40,7 +40,7 @@
       {#if importFailures.length > 0}
         <div class="issues-section">
           <h3 class="issues-heading">
-            Failed imports
+            File import issues
             <span
               class="badge badge-xs badge-soft badge-error text-base-content"
             >
@@ -48,7 +48,7 @@
               {importFailures.length === 1 ? 'file' : 'files'}
             </span>
           </h3>
-          <ul class="issues-list" aria-label="Failed imports">
+          <ul class="issues-list" aria-label="File import issues">
             {#each importFailures as failure}
               <li class="issues-file">
                 <p class="issues-file__message">

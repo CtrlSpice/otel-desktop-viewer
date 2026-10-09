@@ -2,6 +2,6 @@
 export type ImportFailure = {
   fileName: string
   reason: string
-  /** Time the import failed, in Unix nanoseconds. */
+  /** UI failure time: BigInt(Date.now()) * 1_000_000n, Unix ns with millisecond precision. */
   occurredAt: bigint
 }

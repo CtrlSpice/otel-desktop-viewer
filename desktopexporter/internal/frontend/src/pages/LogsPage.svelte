@@ -216,7 +216,7 @@
           {#if displayError}
             <span>Error: {displayError}</span>
           {:else if importFailure}
-            <span>Couldn't import {importFailure.fileName}.</span>
+            <span>Import issue in {importFailure.fileName}.</span>
             <a class="link" href="/#{INGESTION_ISSUES_ID}" onclick={onViewIssue}
               >View issue</a
             >

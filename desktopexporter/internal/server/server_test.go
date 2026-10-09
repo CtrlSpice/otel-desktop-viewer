@@ -35,7 +35,7 @@ func setupServerWithStore(t *testing.T) (*httptest.Server, *store.Store, func())
 	t.Helper()
 	str, err := store.NewStore(context.Background(), "", zap.NewNop())
 	require.NoError(t, err)
-	s, err := NewServer("localhost:8000", str, zap.NewNop(), telemetry.Disabled())
+	s, err := NewServer("localhost:8000", 0, str, zap.NewNop(), telemetry.Disabled())
 	require.NoError(t, err)
 	testServer := httptest.NewServer(s.server.Handler)
 
@@ -302,7 +302,7 @@ func TestStartBindConflict(t *testing.T) {
 	require.NoError(t, err)
 	defer str.Close()
 
-	s, err := NewServer(addr, str, zap.NewNop(), telemetry.Disabled())
+	s, err := NewServer(addr, 0, str, zap.NewNop(), telemetry.Disabled())
 	require.NoError(t, err)
 
 	err = s.Start()
