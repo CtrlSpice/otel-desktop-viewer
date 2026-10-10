@@ -60,7 +60,7 @@ func TestImportCommandPortDiscoveryTablesAndFilePreservation(t *testing.T) {
 	require.NoError(t, root.ExecuteContext(t.Context()))
 	require.Equal(t, input, received)
 	require.Contains(t, output.String(), "ACCEPTED REQUESTS")
-	require.Contains(t, output.String(), "ingestion not confirmed")
+	require.Contains(t, output.String(), "Received")
 	unchanged, err := os.ReadFile(path)
 	require.NoError(t, err)
 	require.Equal(t, input, string(unchanged))
@@ -94,7 +94,8 @@ func TestImportCommandLateInvalidSyntaxAndLaterFilesContinue(t *testing.T) {
 	require.Error(t, cmd.ExecuteContext(t.Context()))
 	require.Equal(t, 1, requests)
 	require.Contains(t, output.String(), "invalid JSON")
-	require.Contains(t, output.String(), "ingestion not confirmed")
+	require.Contains(t, output.String(), "Rejected:")
+	require.Contains(t, output.String(), "Received")
 }
 
 func TestImportResponseIssues(t *testing.T) {

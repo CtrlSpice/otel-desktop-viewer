@@ -112,7 +112,7 @@ func TestCLIImportExportedTelemetryThroughReceiverAndStore(t *testing.T) {
 		require.NoError(t, err)
 		file := writeImportTestFile(t, string(body))
 		output := runImportIntegrationCLI(t, target, file)
-		require.Contains(t, output, "ingestion not confirmed")
+		require.Contains(t, output, "Received")
 		_, result, err = requestQuery(t.Context(), http.DefaultClient, target, query, 1)
 		require.NoError(t, err)
 		retained, err := runExportCLI(signal, result.Rows[0][0].(string), "--endpoint", target)

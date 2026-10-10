@@ -23,7 +23,7 @@ func newImportCommand(client *http.Client) *cobra.Command {
 		Long: "📥 Import JSON or JSONL files into an existing viewer through its OTLP HTTP receiver. " +
 			"Validates each complete file before sending, preserves telemetry bytes, and splits requests at 20 MiB. " +
 			"Files and requests are sent sequentially; later files continue after a failure. " +
-			"Profiles support is coming soon. Receiver acceptance does not confirm completed database ingestion.",
+			"Profiles support is coming soon.",
 		Example: "  otel-desktop-viewer import checkout-017.json --endpoint http://localhost:8000\n" +
 			"  otel-desktop-viewer import traces.json logs.json metrics.jsonl",
 		Args: cobra.MinimumNArgs(1), SilenceUsage: true, SilenceErrors: true,
@@ -41,13 +41,13 @@ func newImportCommand(client *http.Client) *cobra.Command {
 					}
 					issues = append(issues, err.Error())
 				}
-				result := "Receiver accepted requests; ingestion not confirmed"
+				result := "Received"
 				if accepted == 0 {
-					result = "No requests accepted"
+					result = "No requests sent"
 				}
 				if len(issues) > 0 {
 					failed = true
-					result = strings.Join(issues, "; ")
+					result = "Rejected: " + strings.Join(issues, "; ")
 				}
 				rows = append(rows, []any{path, accepted, result})
 			}
