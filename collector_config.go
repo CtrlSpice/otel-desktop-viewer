@@ -35,6 +35,7 @@ func collectorURIs(o configOptions) []string {
 		// retention; the desktop exporter only writes and finds the store
 		// through the extension at startup.
 		`yaml:extensions::duckdb::endpoint: "` + endpoint(o.browserPort) + `"`,
+		`yaml:extensions::duckdb::otlp_http_port: ` + strconv.Itoa(o.httpPort),
 		`yaml:extensions::duckdb::db: ` + o.db,
 		`yaml:extensions::duckdb::db_max_size: "` + o.dbMaxSize + `"`,
 		`yaml:service::extensions: [duckdb]`,

@@ -53,7 +53,7 @@ COMMANDS
   attributes 🏷️ Discover attribute keys and values
   services  Discover services and their telemetry counts
   query     🦆 Run SQL against a running viewer
-  export    📤 Export stored telemetry as OTLP JSON or protobuf
+  export    📤 Export stored telemetry as OTLP JSON
 
 VIEWER FLAGS
       --host string          Address used by viewer/OTLP receivers (default "localhost")

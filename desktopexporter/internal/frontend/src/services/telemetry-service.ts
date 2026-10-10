@@ -1187,6 +1187,24 @@ export let telemetryAPI = {
   clearMetrics: () => callRPC<string>('clearMetrics', undefined),
 
   // Stats methods
+  getImportConfig: async (
+    signal?: AbortSignal
+  ): Promise<{ otlpHttpPort: number }> => {
+    const config = await callRPC<{ otlpHttpPort: number }>(
+      'getImportConfig',
+      undefined,
+      signal
+    )
+    if (
+      !Number.isInteger(config?.otlpHttpPort) ||
+      config.otlpHttpPort < 1 ||
+      config.otlpHttpPort > 65535
+    ) {
+      throw new Error('The viewer returned an invalid OTLP HTTP port')
+    }
+    return config
+  },
+
   getStats: async (): Promise<Stats> => {
     const rawData = await callRPC<JsonStats>('getStats')
     return statsFromJSON(rawData)
