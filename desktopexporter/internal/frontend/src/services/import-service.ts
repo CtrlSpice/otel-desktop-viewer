@@ -14,7 +14,7 @@ async function responseIssue(response: Response): Promise<string | undefined> {
     try {
       const reply: unknown = JSON.parse(text)
       if (isReply(reply) && typeof reply.message === 'string')
-        return reply.message
+        return reply.message.trim() || `HTTP ${response.status}`
     } catch {
       /* Non-JSON proxy errors are still useful to the user. */
     }

@@ -107,6 +107,47 @@ describe('OTLP file sender', () => {
   })
 
   it.each([
+    { status: 400, message: '' },
+    { status: 500, message: '' },
+    { status: 400, message: ' \t\n ' },
+    { status: 500, message: ' \t\n ' },
+  ])(
+    'reports HTTP $status when its JSON error message is blank',
+    async ({ status, message }) => {
+      receiver(
+        async () => new Response(JSON.stringify({ message }), { status })
+      )
+      const issues = await importOTLPFile(
+        new File(['{"resourceSpans":[{}]}'], 'trace.json'),
+        'http://localhost:8000',
+        new AbortController().signal
+      )
+      expect(issues).toEqual([`traces: HTTP ${status}`])
+    }
+  )
+
+  it('reports a blank-message HTTP failure through the file queue and continues to the next file', async () => {
+    const send = receiver()
+    send.mockResolvedValueOnce(
+      new Response('{"code":13,"message":""}', { status: 500 })
+    )
+    const report = vi.fn()
+    const importer = createFileImporter('http://localhost:8000', report)
+    await importer.enqueue([
+      new File(['{"resourceSpans":[{}]}'], 'failed.json'),
+      new File(['{"resourceLogs":[{}]}'], 'next.json'),
+    ])
+    expect(send).toHaveBeenCalledTimes(2)
+    expect(report).toHaveBeenCalledOnce()
+    expect(report).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fileName: 'failed.json',
+        reason: 'traces: HTTP 500',
+      })
+    )
+  })
+
+  it.each([
     'null',
     '42',
     '{"partialSuccess":42}',
