@@ -19,8 +19,8 @@ import (
 func newImportCommand(client *http.Client) *cobra.Command {
 	var endpoint string
 	cmd := &cobra.Command{
-		Use: "import <file> [file...]", Short: "Import OTLP JSON files into a running viewer",
-		Long: "Import JSON or JSONL files into an existing viewer through its OTLP HTTP receiver. " +
+		Use: "import <file> [file...]", Short: "📥 Import OTLP JSON files into a running viewer",
+		Long: "📥 Import JSON or JSONL files into an existing viewer through its OTLP HTTP receiver. " +
 			"Validates each complete file before sending, preserves telemetry bytes, and splits requests at 20 MiB. " +
 			"Files and requests are sent sequentially; later files continue after a failure. " +
 			"Profiles support is coming soon. Receiver acceptance does not confirm completed database ingestion.",
