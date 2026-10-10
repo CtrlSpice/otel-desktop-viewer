@@ -16,6 +16,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	go.opentelemetry.io/collector/component v1.68.0
 	go.opentelemetry.io/collector/component/componenttest v0.162.0
+	go.opentelemetry.io/collector/config/configgrpc v1.68.0
 	go.opentelemetry.io/collector/config/configoptional v1.68.0
 	go.opentelemetry.io/collector/confmap v1.68.0
 	go.opentelemetry.io/collector/confmap/provider/envprovider v1.68.0
@@ -41,7 +42,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.46.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/exp/jsonrpc2 v0.0.0-20260718201538-764159d718ef
-	golang.org/x/sys v0.48.0
+	golang.org/x/sys v0.49.0
 	google.golang.org/grpc v1.84.0
 )
 
@@ -121,7 +122,6 @@ require (
 	go.opentelemetry.io/collector/component/componentstatus v0.162.0 // indirect
 	go.opentelemetry.io/collector/config/configauth v1.68.0 // indirect
 	go.opentelemetry.io/collector/config/configcompression v1.68.0 // indirect
-	go.opentelemetry.io/collector/config/configgrpc v1.68.0 // indirect
 	go.opentelemetry.io/collector/config/confighttp v0.162.0 // indirect
 	go.opentelemetry.io/collector/config/configmiddleware v1.68.0 // indirect
 	go.opentelemetry.io/collector/config/confignet v1.68.0 // indirect
