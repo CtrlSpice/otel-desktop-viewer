@@ -6,14 +6,16 @@ import cases from './tasks.json' with { type: 'json' }
 import { providerFixture } from './test-fixture.ts'
 import { readJson, record, saveJson, SUITE } from './runtime.ts'
 import rubrics from './rubrics.json' with { type: 'json' }
+import { pilotSummary } from './run-pilot.ts'
 
 // This invokes the actual pinned loader, but every provider process is a local stub.
 const { root, isolation } = providerFixture()
 const settings = {
   models: [
-    'openai/gpt-6-luna',
     'openai/gpt-6.1-sol',
-    'openai/gpt-6-astra',
+    'openai/gpt-5.6-sol',
+    'openai/gpt-6-luna',
+    'openai/gpt-5.6-luna',
   ].join('\n'),
   answer:
     'The payment was declined for insufficient funds, according to the provider exception and payment log.',
@@ -87,7 +89,11 @@ const rows = record(
   record(readJson(path.join(root, 'loader-results.json'))).results
 ).results
 assert.ok(Array.isArray(rows))
-assert.equal(rows.length, 3)
+assert.equal(rows.length, 4)
+assert.equal(
+  pilotSummary({ results: { results: rows } }).split(' | pass |').length - 1,
+  4
+)
 for (const value of rows) {
   const row = record(value)
   assert.equal(row.success, true)
@@ -149,7 +155,12 @@ const errorRows = record(
   record(readJson(path.join(root, 'loader-errors.json'))).results
 ).results
 assert.ok(Array.isArray(errorRows))
-assert.equal(errorRows.length, 3)
+assert.equal(errorRows.length, 4)
+assert.equal(
+  pilotSummary({ results: { results: errorRows } }).split(' | error |').length -
+    1,
+  4
+)
 for (const value of errorRows) {
   const row = record(value)
   assert.equal(row.success, false)
@@ -157,14 +168,69 @@ for (const value of errorRows) {
   assert.equal(row.failureReason, 2)
   assert.equal(row.gradingResult, null)
 }
+fs.writeFileSync(
+  path.join(root, 'stub-settings.json'),
+  JSON.stringify({
+    ...settings,
+    answer: 'Inventory failed.',
+    graderAnswer: JSON.stringify({
+      criteria: [
+        {
+          id: 'reported-cause',
+          verdict: 'Fail',
+          explanation: 'Incorrectly blames inventory.',
+        },
+      ],
+    }),
+  })
+)
+const factCommand = [...command]
+factCommand[factCommand.indexOf('-o') + 1] = path.join(
+  root,
+  'loader-factual-failures.json'
+)
+const factual = spawnSync(factCommand[0], factCommand.slice(1), {
+  cwd: root,
+  encoding: 'utf8',
+  timeout: 120000,
+  env: {
+    ...process.env,
+    OTEL_EVAL_RUN_DIR: root,
+    OTEL_EVAL_ISOLATION_FILE: path.join(root, 'isolation.json'),
+    PROMPTFOO_DISABLE_TELEMETRY: '1',
+    PROMPTFOO_CONFIG_DIR: path.join(root, 'promptfoo-state'),
+  },
+})
+assert.equal(factual.error, undefined)
+saveJson(path.join(root, 'loader-factual-command.json'), {
+  status: factual.status,
+  externalInferenceAttempted: false,
+})
+const factRows = record(
+  record(readJson(path.join(root, 'loader-factual-failures.json'))).results
+).results
+assert.ok(Array.isArray(factRows))
+assert.equal(factRows.length, 4)
+for (const value of factRows) {
+  const row = record(value)
+  assert.equal(row.failureReason, 1)
+  assert.equal(record(row.gradingResult).pass, false)
+  assert.ok(row.error)
+}
+assert.equal(
+  pilotSummary({ results: { results: factRows } }).split(' | fail |').length -
+    1,
+  4
+)
 const investigatorRuns = fs
   .readdirSync(path.join(root, 'runs'))
   .filter(name => name.startsWith('investigator-'))
-assert.equal(investigatorRuns.length, 6)
+assert.equal(investigatorRuns.length, 12)
 for (const run of investigatorRuns)
-  assert.equal(
-    fs.readFileSync(path.join(root, 'runs', run, 'answer.txt'), 'utf8'),
-    settings.answer
+  assert.ok(
+    ['Inventory failed.', settings.answer].includes(
+      fs.readFileSync(path.join(root, 'runs', run, 'answer.txt'), 'utf8')
+    )
   )
 saveJson(path.join(root, 'loader-proof.json'), {
   loadedConfig: path.join(SUITE, 'config.ts'),
@@ -172,6 +238,7 @@ saveJson(path.join(root, 'loader-proof.json'), {
   loadedGrader: path.join(SUITE, 'grade.ts'),
   syntheticResults: rows.length,
   syntheticExecutionErrors: errorRows.length,
+  syntheticFactualFailures: factRows.length,
   investigatorResponsesRetained: investigatorRuns.length,
   separateFreshGraderContexts: true,
   privatePromptSeparation: true,

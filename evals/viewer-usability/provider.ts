@@ -283,12 +283,17 @@ export default class OpenCodeProvider {
               throw error
           }
         }
-        let forceKill: ReturnType<typeof setTimeout> | undefined
+        let groupCleanup: Promise<void> | undefined
         const timer = setTimeout(
           () => {
             timedOut = true
             signalOwned('SIGTERM')
-            forceKill = setTimeout(() => signalOwned('SIGKILL'), 30000)
+            groupCleanup = new Promise(resolve => {
+              setTimeout(() => {
+                signalOwned('SIGKILL')
+                resolve()
+              }, 30000)
+            })
           },
           Math.max(0, this.timeoutMs - (performance.now() - started))
         )
@@ -308,11 +313,12 @@ export default class OpenCodeProvider {
               ? error.code
               : 'SPAWN_ERROR'
         })
-        child.once('close', (code, signal) => {
+        child.once('close', async (code, signal) => {
           clearTimeout(timer)
-          if (forceKill) clearTimeout(forceKill)
           writeOut('', true)
           writeErr('', true)
+          // A closed direct child does not mean its owned descendants have exited.
+          await groupCleanup
           resolve({
             stdout: redact(stdout),
             stderr: redact(stderr),

@@ -16,7 +16,12 @@ if (!binary || !path.isAbsolute(binary))
     'Set absolute OTEL_EVAL_VIEWER_BINARY for the owned overnight viewer'
   )
 const source = datasetSource()
-const models = ['openai/gpt-6-luna', 'openai/gpt-6.1-sol', 'openai/gpt-6-astra']
+const models = [
+  'openai/gpt-6.1-sol',
+  'openai/gpt-5.6-sol',
+  'openai/gpt-6-luna',
+  'openai/gpt-5.6-luna',
+]
 const repetitions = 3
 if (!process.env.OTEL_EVAL_ISOLATION_FILE)
   throw new Error('Set OTEL_EVAL_ISOLATION_FILE before running models')

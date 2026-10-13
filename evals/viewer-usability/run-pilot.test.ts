@@ -2,8 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { runPilot, pilotSummary } from './run-pilot.ts'
-import { readJson, record, TEMPORARY } from './runtime.ts'
+import { readJson, record, TEMPORARY, SUITE, saveJson } from './runtime.ts'
 import apiPrices from './api-prices.json' with { type: 'json' }
 import { pricingSnapshot } from './pricing.ts'
 
@@ -65,7 +66,9 @@ process.exitCode = 7;
   const retained = fs.readFileSync(path.join(root, 'pilot.json'))
   assert.deepEqual(readJson(path.join(root, 'pricing-snapshot.json')), pricing)
   assert.ok(fs.existsSync(path.join(root, 'model-summary.json')))
-  const investigators = record(readJson(path.join(root, 'model-summary.json'))).models
+  const investigators = record(
+    readJson(path.join(root, 'model-summary.json'))
+  ).models
   assert.ok(Array.isArray(investigators))
   assert.equal(record(investigators[0]).model, 'openai/gpt-6-luna')
   assert.equal(record(investigators[0]).inputTokens, 123)
@@ -99,9 +102,19 @@ test('pilot spawn failure keeps protected completion and logs', async () => {
 test('pilot summary distinguishes fact failures and provider errors', () => {
   const results = [
     { success: true },
-    { success: false },
+    {
+      success: false,
+      failureReason: 1,
+      error: 'Incorrect cause',
+      gradingResult: { pass: false },
+    },
     { success: false, response: { error: 'failure' } },
-    { success: false, error: 'Grader execution failure' },
+    {
+      success: false,
+      failureReason: 2,
+      error: 'Grader execution failure',
+      gradingResult: null,
+    },
   ].map(row => ({
     provider: { label: 'model' },
     vars: { task_id: 'task' },
@@ -110,4 +123,38 @@ test('pilot summary distinguishes fact failures and provider errors', () => {
   const summary = pilotSummary({ results: { results } })
   for (const status of ['pass', 'fail', 'error'])
     assert.ok(summary.includes(`| model | task | ${status} |`))
+  assert.equal(summary.split('| model | task | error |').length - 1, 2)
+})
+
+test('actual standalone pilot entrypoint propagates nonzero child exit', () => {
+  const root = fs.mkdtempSync(path.join(TEMPORARY, 'eval-pilot-entrypoint-'))
+  const suite = path.join(root, 'suite')
+  fs.mkdirSync(path.join(suite, 'node_modules/.bin'), { recursive: true })
+  for (const file of [
+    'run-pilot.ts',
+    'runtime.ts',
+    'pricing.ts',
+    'model-summary.ts',
+  ])
+    fs.copyFileSync(path.join(SUITE, file), path.join(suite, file))
+  fs.writeFileSync(path.join(suite, 'package.json'), '{"type":"module"}')
+  fs.writeFileSync(
+    path.join(suite, 'node_modules/.bin/promptfoo'),
+    `#!${process.execPath}\nprocess.exitCode = 7;\n`,
+    { mode: 0o700 }
+  )
+  saveJson(path.join(root, 'pricing-snapshot.json'), pricing)
+  const result = spawnSync(
+    process.execPath,
+    [path.join(suite, 'run-pilot.ts')],
+    {
+      env: { ...process.env, OTEL_EVAL_RUN_DIR: root },
+      encoding: 'utf8',
+    }
+  )
+  assert.equal(result.status, 7, result.stderr)
+  assert.equal(
+    record(readJson(path.join(root, 'pilot-completion.json'))).exit,
+    7
+  )
 })

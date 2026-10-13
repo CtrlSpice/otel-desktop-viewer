@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import assert from 'node:assert/strict'
-import { prepare } from './prepare.ts'
+import { prepare, IngestionRejectedError } from './prepare.ts'
 import { datasetManifest, readManifest } from './stage-dataset.ts'
 import { readJson, record, runtimeRoot, saveJson } from './runtime.ts'
 
@@ -194,7 +194,18 @@ export async function verifyExport(
       requests: [{ signal: 'traces', file: 'trace.json' }],
       storedCounts: { spans: candidate.spanCount, logs: 0, datapoints: 0 },
     })
-    const ready = await prepare(replay)
+    let ready: Awaited<ReturnType<typeof prepare>>
+    try {
+      ready = await prepare(replay)
+    } catch (error) {
+      if (!(error instanceof IngestionRejectedError)) throw error
+      saveJson(path.join(replay, 'export-proof.json'), {
+        file: candidate.file,
+        pass: false,
+        reason: error.message,
+      })
+      continue
+    }
     try {
       assert.deepEqual(traceRows(await exportedTrace(ready.endpoint)), expected)
       files.push(candidate.file)
@@ -202,6 +213,13 @@ export async function verifyExport(
         file: candidate.file,
         retainedSpans: 6,
         pass: true,
+      })
+    } catch (error) {
+      if (!(error instanceof assert.AssertionError)) throw error
+      saveJson(path.join(replay, 'export-proof.json'), {
+        file: candidate.file,
+        pass: false,
+        reason: 'Replayed trace does not retain the expected contents.',
       })
     } finally {
       ready.process.kill('SIGTERM')
@@ -218,9 +236,10 @@ export async function verifyExport(
     }
   }
   return {
-    pass: true,
-    reason:
-      'Produced file replayed unchanged into an owned viewer and retains all six spans, values, context and parents.',
+    pass: files.length > 0,
+    reason: files.length
+      ? 'Produced file replayed unchanged into an owned viewer and retains all six spans, values, context and parents.'
+      : 'No candidate file was fully accepted and retained the expected trace contents.',
     files,
   }
 }

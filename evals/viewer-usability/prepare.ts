@@ -61,6 +61,8 @@ export async function freePorts() {
   }
 }
 
+export class IngestionRejectedError extends Error {}
+
 export async function postBytes(
   url: string,
   data: Uint8Array
@@ -71,7 +73,11 @@ export async function postBytes(
     body: Buffer.from(data),
     signal: AbortSignal.timeout(10000),
   })
-  if (!response.ok) throw new Error(`HTTP request failed: ${response.status}`)
+  if (!response.ok) {
+    if (response.status === 400 && new URL(url).pathname.startsWith('/v1/'))
+      throw new IngestionRejectedError('OTLP payload rejected: HTTP 400')
+    throw new Error(`HTTP request failed: ${response.status}`)
+  }
   return response.json()
 }
 
@@ -88,7 +94,7 @@ export function checkReceipt(value: unknown) {
       key => integer(partial[key] ?? 0) !== 0n
     )
   ) {
-    throw new Error(
+    throw new IngestionRejectedError(
       'Fixture request was not fully accepted: ' + JSON.stringify(partial)
     )
   }
@@ -223,7 +229,7 @@ export async function prepare(root = runtimeRoot()) {
       if (JSON.stringify(counts.rows) === JSON.stringify([manifest.counts]))
         break
       if (attempt === 99)
-        throw new Error(
+        throw new IngestionRejectedError(
           'Fixture ingestion counts differ: ' + JSON.stringify(counts)
         )
       await delay(100)
@@ -239,8 +245,10 @@ export async function prepare(root = runtimeRoot()) {
     saveJson(path.join(runtime, 'stats.json'), stats)
     if ('error' in stats) throw new Error(JSON.stringify(stats.error))
     const rejections = record(stats.result).rejections
-    if (!Array.isArray(rejections) || rejections.length)
-      throw new Error(
+    if (!Array.isArray(rejections))
+      throw new Error('Invalid fixture store rejection diagnostics')
+    if (rejections.length)
+      throw new IngestionRejectedError(
         'Fixture store reported rejected records; inspect stats.json'
       )
     const connection = { binary, endpoint, ...window }

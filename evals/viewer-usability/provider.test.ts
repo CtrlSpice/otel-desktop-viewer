@@ -169,6 +169,58 @@ test('adapter uses actual process boundaries, fresh roots, exact launch and safe
   }
 })
 
+test('timeout kills the owned SIGTERM-resistant descendant after the parent closes', async () => {
+  const previous = { ...process.env }
+  let group: number | undefined
+  try {
+    const { root, isolation } = setup()
+    fs.writeFileSync(
+      path.join(root, 'stub-settings.json'),
+      '{"hang":true,"descendant":true}'
+    )
+    const result = await new Provider({
+      config: { model: 'openai/gpt-6.1-sol', isolation, timeoutMs: 1500 },
+    }).callApi('Synthetic descendant cleanup check.', {
+      vars: { task_id: 'descendant' },
+    })
+    group = Number(
+      fs.readFileSync(
+        path.join(result.metadata.evidence, 'process.pid'),
+        'utf8'
+      )
+    )
+    const descendant = Number(
+      fs.readFileSync(path.join(root, 'descendant.pid'), 'utf8')
+    )
+    assert.match(result.error || '', /timed out/)
+    assert.throws(() => process.kill(group!, 0), /ESRCH/)
+    const remaining = spawnSync(
+      'ps',
+      ['-p', String(descendant), '-o', 'stat='],
+      { encoding: 'utf8' }
+    )
+    assert.ok(
+      remaining.status === 1 || remaining.stdout.trim().startsWith('Z'),
+      remaining.stdout
+    )
+    assert.ok(Number(record(result.metadata).elapsedSeconds) >= 30)
+  } finally {
+    if (group) {
+      try {
+        process.kill(-group, 'SIGKILL')
+      } catch (error) {
+        if (!(
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'ESRCH'
+        ))
+          throw error
+      }
+    }
+    process.env = previous
+  }
+})
+
 test('missing policy/model, unsupported version, spawn and incomplete sessions retain failures', async () => {
   const previous = { ...process.env }
   try {

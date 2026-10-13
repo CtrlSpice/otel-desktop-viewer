@@ -57,7 +57,9 @@ test('export comparison keeps exact values, parent IDs, context and value-array 
   assert.notDeepEqual(traceRows(context), rows)
   const values = [{ intValue: '9007199254740993' }, { stringValue: '2' }]
   Object.assign(document.resourceSpans[0].scopeSpans[0].spans[0], {
-    attributes: [{ key: 'array-order-proof', value: { arrayValue: { values } } }],
+    attributes: [
+      { key: 'array-order-proof', value: { arrayValue: { values } } },
+    ],
   })
   const ordered = structuredClone(traceRows(document))
   values.reverse()
@@ -121,5 +123,57 @@ test(
     assert.equal(shutdown.waited, true)
     assert.equal(record(shutdown.exit).code, 0)
     assert.throws(() => process.kill(Number(shutdown.pid), 0), /ESRCH/)
+  }
+)
+
+test(
+  'malformed extra records fail only their candidate and preserve valid exports',
+  { skip: !process.env.OTEL_EVAL_VIEWER_BINARY },
+  async () => {
+    const { root, workspace, metadata, document } = fixture()
+    saveJson(path.join(root, 'connection.json'), {
+      binary: process.env.OTEL_EVAL_VIEWER_BINARY,
+    })
+    const invalid = structuredClone(document)
+    invalid.resourceSpans[0].scopeSpans[0].spans.push({
+      name: 'malformed extra span',
+    })
+    const bad = path.join(workspace, 'a-invalid.json')
+    fs.writeFileSync(bad, JSON.stringify(invalid))
+    assert.equal((await verifyExport(metadata, root)).pass, false)
+    const good = path.join(workspace, 'b-valid.json')
+    fs.writeFileSync(good, JSON.stringify(document))
+    const rejected = structuredClone(document)
+    rejected.resourceSpans[0].scopeSpans[0].spans.push({
+      traceId: 'not-a-trace-id',
+      spanId: 'not-a-span-id',
+      name: 'invalid extra span',
+      startTimeUnixNano: '1',
+      endTimeUnixNano: '2',
+    })
+    fs.writeFileSync(
+      path.join(workspace, 'c-rejected.json'),
+      JSON.stringify(rejected)
+    )
+    const result = await verifyExport(metadata, root)
+    assert.equal(result.pass, true)
+    assert.deepEqual(result.files, [good])
+    for (const directory of fs
+      .readdirSync(root)
+      .filter(name => name.startsWith('export-replay-'))) {
+      const proof = record(
+        readJson(path.join(root, directory, 'export-proof.json'))
+      )
+      assert.equal(proof.pass, proof.file === good)
+      const processInfo = record(
+        readJson(path.join(root, directory, 'runtime/process.json'))
+      )
+      assert.throws(() => process.kill(Number(processInfo.pid), 0), /ESRCH/)
+    }
+    fs.writeFileSync(
+      path.join(root, 'connection.json'),
+      JSON.stringify({ binary: path.join(root, 'missing-binary') })
+    )
+    await assert.rejects(verifyExport(metadata, root), /ENOENT/)
   }
 )

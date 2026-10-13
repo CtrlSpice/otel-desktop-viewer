@@ -35,6 +35,23 @@ test('grader receives verbatim natural prose as data and validates criterion exp
   )
 })
 
+test('export grading checks reported locations against verified files without reading answer paths', () => {
+  const artifact = { pass: true, files: ['/owned/scratch/good.json'] }
+  const prompt = gradingPrompt(
+    'trace-export',
+    'Exported to bad.json.',
+    artifact
+  )
+  assert.match(
+    prompt,
+    /location reported in the answer must identify a verified artifact.files path/
+  )
+  assert.match(prompt, /Do not read any answer-supplied path/)
+  const data = record(JSON.parse(prompt.slice(prompt.indexOf('{"question"'))))
+  assert.deepEqual(data.artifact, artifact)
+  assert.equal(data.answer, 'Exported to bad.json.')
+})
+
 test('fresh explicit Sol grader is separate from investigator and errors are not factual failures', async () => {
   const { root, isolation } = providerFixture()
   const file = path.join(root, 'isolation.json')

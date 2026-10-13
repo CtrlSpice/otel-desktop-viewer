@@ -23,7 +23,12 @@ if (isolationFile) {
   if (isolation.authEnvironment)
     throw new Error('Use authEnvironmentFile rather than inline credentials')
 }
-const models = ['openai/gpt-6-luna', 'openai/gpt-6.1-sol', 'openai/gpt-6-astra']
+const models = [
+  'openai/gpt-6.1-sol',
+  'openai/gpt-5.6-sol',
+  'openai/gpt-6-luna',
+  'openai/gpt-5.6-luna',
+]
 export default {
   description:
     'Viewer usability: ten natural investigations, separate provisional Sol6.1 grading',

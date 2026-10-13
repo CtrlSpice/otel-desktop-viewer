@@ -43,7 +43,13 @@ export function pilotSummary(
     const cells = [
       record(row.provider).label,
       record(row.vars).task_id,
-      row.success ? 'pass' : response.error || row.error ? 'error' : 'fail',
+      row.success
+        ? 'pass'
+        : response.error ||
+            row.failureReason === 2 ||
+            (row.error && row.failureReason !== 1 && !row.gradingResult)
+          ? 'error'
+          : 'fail',
       typeof seconds === 'number' ? Math.round(seconds * 100) / 100 : '?',
       metadata.toolCalls ?? '?',
       metadata.utilityCommandEntries ?? '?',
@@ -169,5 +175,8 @@ export async function runPilot(
   return exit
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === import.meta.filename)
-  await runPilot()
+if (
+  process.argv[1] &&
+  fs.realpathSync(process.argv[1]) === import.meta.filename
+)
+  process.exitCode = (await runPilot()) ?? 1

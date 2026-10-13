@@ -32,8 +32,11 @@ Keep credentials, local settings and run artifacts outside version control.
 The ten approved questions use the shared small workload. Requests, counts and
 inclusive exact time bounds come from its manifest; `OTLP_DATASET` selects another
 dataset, whose facts must satisfy the approved preflight before model calls.
-No model trial is authorised before all agreed changes have landed.
-`config.ts` targets GPT-6 Luna, GPT-6.1 Sol and GPT-6 Astra. The adapter requires
+The approved comparison may run from the corrected feature branch before merge.
+`config.ts` targets GPT-6.1 Sol, GPT-5.6 Sol, GPT-6 Luna and GPT-5.6 Luna: ten tasks
+times three repetitions times four models gives 120 investigator sessions.
+Separate fresh GPT-6.1 Sol grading sessions are counted independently.
+The adapter requires
 OpenCode 1.18.10 and registers the exact public definitions in `openai-models.json`
 for each requested model. This corrects the CLI's ChatGPT-login name filter, which
 recognises decimal-version names but omits the plain GPT-6 Luna/Astra IDs.
@@ -113,7 +116,7 @@ with browser opening disabled, and records its PID/command in
 It stops only its owned process if preparation fails. No internal trace-monitoring
 instance is required. Use a fresh runtime directory for another experiment.
 
-After all agreed changes land and a model batch is explicitly authorised, run through
+After corrections are verified and a model batch is explicitly authorised, run through
 `node evals/viewer-usability/run-pilot.ts`. It disables Promptfoo telemetry and
 sharing, writes Promptfoo state under the external runtime, and refuses an
 existing `pilot.json`. It preserves failed runs and their transcripts.
@@ -203,10 +206,11 @@ npm run verify:loader --prefix evals/viewer-usability
 ```
 
 This runs the actual pinned Promptfoo CLI against `config.ts`, `provider.ts` and
-`grade.ts`, filtering to one existing task with all three configured model IDs.
+`grade.ts`, filtering to one existing task with all four configured model IDs.
 The supplied executable is a local synthetic child, not OpenCode or a model service.
 The loader verifies natural prose, fresh exact-model grader sessions, private prompt
-separation and execution-error handling. All proof, outputs and private synthetic
+separation, factual-failure classification and execution-error handling.
+All proof, outputs and private synthetic
 auth references remain in a new directory under the system temporary directory
 (or the caller's `TMPDIR`).
 No inference is performed.
@@ -235,6 +239,11 @@ unchanged over OTLP HTTP to a new dynamic-port viewer with browser opening disab
 the re-exported trace is compared with the staged reference. The owned replay process
 is stopped and awaited in `finally`. This checks importability without relying on
 pending CLI line-file replay changes; it does not test browser import.
+Rejected or incompletely retained candidate payloads fail their own file check;
+other candidates still run and valid exports remain available. Viewer startup,
+transport and other verifier infrastructure failures remain execution errors.
+The grader checks that the answer's reported location identifies a verified file;
+an unreferenced valid scratch file does not validate a reported invalid file.
 
 ## Owned overnight run
 
@@ -277,7 +286,8 @@ Rates are selected per response: full input (`input + cache_read + cache_write`)
 above 272,000 tokens uses long-context pricing. Costs are summed before conversion
 and display rounding. Usage missing from the recorded responses or an unknown
 model price produces `N/A` or an explicitly partial estimate. This is a comparison
-at standard API prices; subscription accounting and taxes are outside its scope.
+at standard API prices; GPT-5.6 Sol/Luna prices are unavailable in the tracked rate card.
+Subscription accounting and taxes are outside its scope.
 Local CLI/HTTP tools have no additional hosted-tool charge in this estimate.
 
 ## Measurement boundaries

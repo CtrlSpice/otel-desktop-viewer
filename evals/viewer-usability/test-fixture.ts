@@ -19,6 +19,11 @@ fs.writeFileSync(path.join(process.cwd(),'stub-observation.json'),JSON.stringify
 fs.writeFileSync(path.join(process.env.XDG_DATA_HOME,'opencode','opencode.db'),'test session only');
 process.stderr.write(secret.slice(0,6));
 if (settings.hang) {
+  if (settings.descendant) {
+    const {spawn} = require('node:child_process');
+    const child = spawn(process.execPath, ['-e', "process.on('SIGTERM',()=>{}); process.send('ready'); setInterval(()=>{},1000);"], {stdio:['ignore','ignore','ignore','ipc']});
+    child.once('message',()=>{fs.writeFileSync(path.join(__dirname,'descendant.pid'),String(child.pid)); child.disconnect();});
+  }
   process.stderr.write(secret.slice(6));
   console.log(JSON.stringify({type:'tool_use',part:{tool:'bash',state:{input:{command:'synthetic slow command'},status:'running',output:'retained partial output'}}}));
   setInterval(()=>{},1000);
