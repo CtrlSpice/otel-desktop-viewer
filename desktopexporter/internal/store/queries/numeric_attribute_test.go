@@ -15,7 +15,7 @@ func TestTypedAttributeNumericDecoding(t *testing.T) {
 
 	var version string
 	require.NoError(t, db.QueryRow(`select version()`).Scan(&version))
-	assert.Equal(t, "v1.5.5", version)
+	assert.Equal(t, "v1.5.6", version)
 
 	var textOrder, typedOrder string
 	require.NoError(t, db.QueryRow(`
