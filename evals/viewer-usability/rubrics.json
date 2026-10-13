@@ -1,6 +1,6 @@
 {
   "checkout-failure": {
-    "reference": "Root HTTP 402, ERROR/Payment declined, 1.2 s. payment/charge and stripe/create-charge report decline; provider exception PaymentDeclinedError: Card declined: insufficient funds. Matching log: Payment declined: insufficient_funds. Inventory reservation succeeded. Provider internal decision process is not observed.",
+    "reference": "checkout-017\n\nSpan name                status.code  status.message\n-----------------------  -----------  ---------------------------------\nPOST /api/v2/orders                2  Payment declined\npayment/charge                     2  Card declined\nstripe/create-charge               2  Card declined: insufficient funds\ninventory/reserve-stock            1  (absent)\n\nPOST /api/v2/orders\nField                      Value\n-------------------------  -----\nhttp.response.status_code  402\nDuration (ms, computed)    1200\n\nstripe/create-charge: exception event\nAttribute          Value\n-----------------  ---------------------------------\nexception.type     PaymentDeclinedError\nexception.message  Card declined: insufficient funds\n\nSpan name                Log body\n-----------------------  --------------------------------------------\nstripe/create-charge     Payment declined: insufficient_funds\ninventory/reserve-stock  Stock below threshold; reservation succeeded\n\nStatus codes are received OTel values: 1 = Ok, 2 = Error. Duration is computed as (endTimeUnixNano - startTimeUnixNano) / 1000000, in milliseconds.",
     "criteria": [
       {
         "id": "reported-cause",
@@ -9,11 +9,11 @@
     ]
   },
   "checkout-latency": {
-    "reference": "Both succeeded. checkout-019/018 root durations 1.5/0.6 s, payment 1.35/0.195 s, nested provider 1.25/0.08 s. No provider-internal telemetry explains the slower call.",
+    "reference": "Both checkouts succeeded.\n\nSpan name             checkout-018 (ms)  checkout-019 (ms)\n--------------------  -----------------  -----------------\nPOST /api/v2/orders                 600               1500\npayment/charge                      195               1350\nstripe/create-charge                 80               1250\n\nstripe/create-charge is nested inside payment/charge, which is nested inside POST /api/v2/orders. Durations are computed as (endTimeUnixNano - startTimeUnixNano) / 1000000, in milliseconds.",
     "criteria": [
       {
         "id": "payment-comparison",
-        "text": "Locates the extra time in the payment/provider call supported by the comparison; does not double-count overlapping parent/child durations or invent an internal cause. Exact repetition of all timings is not required."
+        "text": "Locates the extra time in the payment/provider call supported by the comparison."
       }
     ]
   },
