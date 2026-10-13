@@ -122,6 +122,26 @@ test('fresh explicit Sol grader is separate from investigator and errors are not
       text: 'Identifies the reported payment decline for insufficient funds with relevant telemetry support.',
     },
   ])
+  const packet = record(gradingData.evidence)
+  assert.equal(record(packet.investigator).evidence, response.metadata.evidence)
+  assert.deepEqual(packet.events, [])
+  // Evidence issues must be raised before any grader session is created.
+  const before = fs.readdirSync(path.join(root, 'runs'))
+  await assert.rejects(
+    grade('another attempt answer', {
+      vars: { task_id: cases[0].id },
+      providerResponse: response,
+    }),
+    /Investigator evidence harness issue: Attempt answer mismatch/
+  )
+  await assert.rejects(
+    grade(answer, {
+      vars: { task_id: cases[0].id },
+      providerResponse: { metadata: {} },
+    }),
+    /Investigator evidence harness issue/
+  )
+  assert.deepEqual(fs.readdirSync(path.join(root, 'runs')), before)
   fs.writeFileSync(
     settings,
     JSON.stringify({
