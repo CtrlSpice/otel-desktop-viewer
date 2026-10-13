@@ -3,7 +3,12 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import assert from 'node:assert/strict'
 import { prepare, query, post } from './prepare.ts'
-import { stageDataset, datasetManifest, readManifest } from './stage-dataset.ts'
+import {
+  stageDataset,
+  datasetManifest,
+  readManifest,
+  datasetSource,
+} from './stage-dataset.ts'
 import { readJson, record, saveJson, TEMPORARY } from './runtime.ts'
 import { verify } from './verify.ts'
 
@@ -12,11 +17,7 @@ if (!binary || !path.isAbsolute(binary))
   throw new Error(
     'Set absolute OTEL_EVAL_VIEWER_BINARY for owned integration verification'
   )
-const source = process.env.OTLP_DATASET
-if (!source || !path.isAbsolute(source))
-  throw new Error(
-    'Set absolute OTLP_DATASET for owned integration verification'
-  )
+const source = datasetSource()
 const root = fs.mkdtempSync(
   path.join(TEMPORARY, 'eval-typescript-owned-integration-')
 )
@@ -57,8 +58,7 @@ try {
     })
   )
   assert.deepEqual(record(stats.result).rejections, [])
-  if (process.argv.includes('--verify-pilot'))
-    await verify('historical-pilot-verification', root)
+  await verify('investigation-preflight', root)
   saveJson(path.join(root, 'integration-proof.json'), {
     node: process.version,
     counts,
