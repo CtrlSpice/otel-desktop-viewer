@@ -11,6 +11,10 @@ type Config struct {
 	// Endpoint defines the host and port where we serve our frontend app.
 	Endpoint string `mapstructure:"endpoint"`
 
+	// OTLPHTTPPort advertises the co-located receiver to browser file imports.
+	// Zero leaves import unavailable when this extension is used without that receiver.
+	OTLPHTTPPort int `mapstructure:"otlp_http_port"`
+
 	// Db defines the path of your database file. Setting an empty string opens
 	// DuckDB in in-memory mode.
 	Db string `mapstructure:"db"`
@@ -43,6 +47,9 @@ func (cfg *Config) SelfTelemetry() bool {
 
 // Validate checks if the extension configuration is valid.
 func (cfg *Config) Validate() error {
+	if cfg.OTLPHTTPPort < 0 || cfg.OTLPHTTPPort > 65535 {
+		return fmt.Errorf("invalid otlp_http_port %d", cfg.OTLPHTTPPort)
+	}
 	if _, err := parseByteSize(cfg.DbMaxSize); err != nil {
 		return fmt.Errorf("invalid db_max_size %q: %w", cfg.DbMaxSize, err)
 	}

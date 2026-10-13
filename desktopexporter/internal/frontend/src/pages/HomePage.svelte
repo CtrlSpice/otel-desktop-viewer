@@ -14,10 +14,9 @@
 </script>
 
 <script lang="ts">
-  import { onMount, type Component } from 'svelte'
+  import { onMount, type Component, type Snippet } from 'svelte'
   import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/svelte'
   import {
-    Alert02Icon,
     BarChartHorizontalIcon,
     ChartHistogramIcon,
     CheckmarkCircle02Icon,
@@ -28,14 +27,23 @@
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import LogField from '@/components/logs/LogField.svelte'
   import PageLayout from '@/components/shared/PageLayout.svelte'
+  import IngestionIssues from '@/components/shared/IngestionIssues.svelte'
   import PaneHeader, {
     paneTabID,
     type PaneTab,
   } from '@/components/shared/PaneHeader.svelte'
-  import { itemHref, SPAN_PARAM } from '@/route'
   import { telemetryAPI } from '@/services/telemetry-service'
   import type { Stats } from '@/types/api-types'
+  import type { ImportFailure } from '@/types/import-types'
   import luluImage from '@/assets/images/lulu.webp'
+
+  let {
+    importContent,
+    importFailures = [],
+  }: {
+    importContent?: Snippet
+    importFailures?: readonly ImportFailure[]
+  } = $props()
 
   const POLL_INTERVAL_MS = 5000
 
@@ -87,9 +95,6 @@ $ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
   // Only ever a handful of entries -- the backend keys them by signal and
   // kind, so a replay loop that refuses thousands of spans is still one row.
   let rejections = $derived(stats?.rejections ?? [])
-  let rejectedTotal = $derived(
-    rejections.reduce((sum, r) => sum + r.occurrences, 0)
-  )
 
   function formatRelativeTime(timestampNs: bigint | null | undefined): string {
     if (timestampNs == null) return '-'
@@ -151,6 +156,8 @@ $ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
             </div>
           </div>
         </header>
+
+        {@render importContent?.()}
 
         <section class="section home-endpoint-section">
           <h2 class="section-title">Configure your OTLP exporter</h2>
@@ -384,79 +391,15 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
             </table>
           </FieldGroup>
 
-          {#if rejections.length > 0}
-            <FieldGroup label="Dropped on ingest">
-              {#snippet headerAction()}
-                <div class="home-summary__header">
-                  <span
-                    class="home-summary__icon-link home-summary__icon-link--warning"
-                    aria-hidden="true"
-                  >
-                    <HugeiconsIcon
-                      icon={Alert02Icon}
-                      size="1em"
-                      strokeWidth={1.5}
-                      class="h-4 w-4 shrink-0"
-                    />
-                  </span>
-                  <span class="home-summary__title">Dropped on ingest</span>
-                  <span
-                    class="badge badge-xs badge-soft badge-warning home-summary__badge tabular-nums"
-                    title="Telemetry this viewer received but did not store"
-                  >
-                    {rejectedTotal}
-                  </span>
-                </div>
-              {/snippet}
-              <table
-                class="detail-fields w-full"
-                aria-label="Dropped on ingest"
-              >
-                <tbody>
-                  {#each rejections as r (r.signal + r.kind)}
-                    <LogField
-                      fieldName={rejectionLabel(r.kind)}
-                      fieldType={r.signal}
-                      showType={true}
-                      fieldValue={String(r.occurrences)}
-                    />
-                    <LogField
-                      fieldName="last seen"
-                      fieldType="string"
-                      showType={false}
-                      fieldValue={formatRelativeTime(r.lastSeen)}
-                    />
-                    {#if r.samples.length > 0}
-                      <LogField
-                        fieldName="samples"
-                        fieldType="string"
-                        showType={false}
-                        multiline={true}
-                      >
-                        {#snippet value()}
-                          <span class="home-rejected-samples">
-                            {#each r.samples as sample (sample.traceID + sample.spanID)}
-                              <a
-                                class="link link-primary font-mono text-xs"
-                                href={itemHref('traces', sample.traceID, {
-                                  [SPAN_PARAM]: sample.spanID,
-                                })}
-                              >
-                                {sample.spanID}
-                              </a>
-                            {/each}
-                          </span>
-                        {/snippet}
-                      </LogField>
-                    {/if}
-                  {/each}
-                </tbody>
-              </table>
-            </FieldGroup>
-          {/if}
+          <IngestionIssues
+            {rejections}
+            {importFailures}
+            {rejectionLabel}
+            {formatRelativeTime}
+          />
         </div>
 
-        {#if rejections.length === 0}
+        {#if rejections.length === 0 && importFailures.length === 0}
           <p class="home-detail__coming-soon">more coming soon…</p>
         {/if}
       </div>
@@ -520,16 +463,6 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
 
   .home-summary__icon-link {
     @apply btn btn-soft btn-primary btn-sm btn-circle h-8 w-8 min-h-8 shrink-0 border-transparent bg-primary/10 text-primary no-underline shadow-none;
-  }
-
-  /* Same circle as the signal groups, warning-toned. Not a link: there is no
-     page to send anyone to, so it is a marker rather than an affordance. */
-  .home-summary__icon-link--warning {
-    @apply pointer-events-none btn-warning bg-warning/10 text-warning;
-  }
-
-  .home-rejected-samples {
-    @apply inline-flex flex-wrap gap-x-2 gap-y-0.5;
   }
 
   .home-summary__icon-link:hover {

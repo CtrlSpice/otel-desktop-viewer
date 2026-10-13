@@ -86,11 +86,21 @@
   import DetailView from '@/components/traces/Detail/TraceDetailView.svelte'
   import WaterfallView from '@/components/traces/Waterfall/WaterfallView.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
+  import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
+  import type { ImportFailure } from '@/types/import-types'
   import {
     PANEL_DEFAULT_REM,
     PANEL_MIN_REM,
     remToPx,
   } from '@/state/panel-width'
+
+  let {
+    importFailure = null,
+    onViewIssue,
+  }: {
+    importFailure?: ImportFailure | null
+    onViewIssue?: (event: MouseEvent) => void
+  } = $props()
 
   const SORT_OPTIONS: SortOption<TraceSummarySortColumn>[] = [
     { value: 'startTime', label: 'Start Time', defaultDirection: 'desc' },
@@ -400,9 +410,16 @@
     {/snippet}
 
     {#snippet main()}
-      {#if displayError}
+      {#if displayError || importFailure}
         <div class="traces-page__placeholder alert alert-error">
-          <span>Error: {displayError}</span>
+          {#if displayError}
+            <span>Error: {displayError}</span>
+          {:else if importFailure}
+            <span>Import issue in {importFailure.fileName}.</span>
+            <a class="link" href="/#{INGESTION_ISSUES_ID}" onclick={onViewIssue}
+              >View issue</a
+            >
+          {/if}
         </div>
       {:else if page.loading && !hasTraceRows}
         <div class="traces-page__placeholder traces-empty">Loading traces…</div>

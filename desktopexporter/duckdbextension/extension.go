@@ -75,7 +75,7 @@ func (e *DuckDBExtension) Start(ctx context.Context, _ component.Host) error {
 		return err
 	}
 
-	srv, err := server.NewServer(e.cfg.Endpoint, str, e.logger, e.tel)
+	srv, err := server.NewServer(e.cfg.Endpoint, e.cfg.OTLPHTTPPort, str, e.logger, e.tel)
 	if err != nil {
 		str.Close()
 		return err

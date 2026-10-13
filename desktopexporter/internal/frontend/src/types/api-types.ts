@@ -500,7 +500,8 @@ export type ExactMetric = ExactMetricIdentity & {
 }
 
 type ReceivedDataPointBase = {
-  datapointID: string
+  /** Viewer-generated database reference for this retained datapoint. */
+  datapointRef: string
   timestamp: bigint
   startTime: bigint
   flags: number

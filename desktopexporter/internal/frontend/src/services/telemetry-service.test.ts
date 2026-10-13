@@ -88,6 +88,31 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+describe('file-import endpoint discovery', () => {
+  it('reads the configured OTLP port through RPC', async () => {
+    stubRpcResult({ otlpHttpPort: 54318 })
+    expect(await telemetryAPI.getImportConfig()).toEqual({
+      otlpHttpPort: 54318,
+    })
+    expect(
+      JSON.parse(vi.mocked(fetch).mock.calls[0][1]!.body as string).method
+    ).toBe('getImportConfig')
+  })
+
+  it.each([
+    null,
+    {},
+    { otlpHttpPort: 0 },
+    { otlpHttpPort: '4318' },
+    { otlpHttpPort: 65536 },
+  ])('rejects unusable endpoint config %j', async config => {
+    stubRpcResult(config)
+    await expect(telemetryAPI.getImportConfig()).rejects.toThrow(
+      'invalid OTLP HTTP port'
+    )
+  })
+})
+
 describe('JSON-RPC response identity', () => {
   it('accepts a successful response with the numeric request ID', async () => {
     stubRpcResult('cleared')
@@ -839,7 +864,7 @@ describe('exact received metric API', () => {
       attributes: [],
       datapoints: [
         {
-          datapointID: 'point-1',
+          datapointRef: 'point-1',
           timestamp: '18446744073709551615',
           startTime: '0',
           flags: 1,
@@ -880,6 +905,7 @@ describe('exact received metric API', () => {
     )
     const point = selected!.datapoints[0]! as ReceivedHistogramDataPoint
     expect(point).toMatchObject({
+      datapointRef: 'point-1',
       timestamp: 18446744073709551615n,
       count: 18446744073709551615n,
       sum: 0,
@@ -916,7 +942,7 @@ describe('exact received metric API', () => {
       attributes: [],
       datapoints: [
         {
-          datapointID: 'i',
+          datapointRef: 'i',
           timestamp: '1',
           startTime: '0',
           flags: 0,
@@ -926,7 +952,7 @@ describe('exact received metric API', () => {
           doubleValue: null,
         },
         {
-          datapointID: 'd',
+          datapointRef: 'd',
           timestamp: '2',
           startTime: '0',
           flags: 0,
@@ -936,7 +962,7 @@ describe('exact received metric API', () => {
           doubleValue: '0x7ff8000000000001',
         },
         {
-          datapointID: 'e',
+          datapointRef: 'e',
           timestamp: '3',
           startTime: '0',
           flags: 0,
@@ -955,6 +981,8 @@ describe('exact received metric API', () => {
       null
     )
     const points = selected!.datapoints
+    expect(points.map(point => point.datapointRef)).toEqual(['i', 'd', 'e'])
+    expect(points.every(point => !('datapointID' in point))).toBe(true)
     expect(points[0]).toMatchObject({
       valueType: 'Int',
       intValue: 9223372036854775807n,
@@ -990,7 +1018,7 @@ describe('exact received metric API', () => {
       attributes: [],
       datapoints: [
         {
-          datapointID: 'point-1',
+          datapointRef: 'point-1',
           timestamp: '1',
           startTime: '0',
           flags: 0,
@@ -1015,6 +1043,7 @@ describe('exact received metric API', () => {
       1n
     )
     expect(selected!.datapoints[0]).toMatchObject({
+      datapointRef: 'point-1',
       count: 18446744073709551615n,
       scale: -10,
       zeroCount: 9007199254740993n,

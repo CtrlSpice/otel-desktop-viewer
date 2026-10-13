@@ -11,3 +11,5 @@
 - After frontend changes, run `make build-ts` from the repository root and commit
   the updated `desktopexporter/internal/server/static` assets. `make test` runs
   the full local quality gate, including bundle freshness.
+- Keep preview-only diagnostics in the console or local logs rather than
+  rendering them in the application UI.

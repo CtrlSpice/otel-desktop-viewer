@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/duckdbextension"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/component"
@@ -94,6 +96,14 @@ func validateServiceTelemetry(t *testing.T, o configOptions) error {
 }
 
 func TestCollectorURIsResolve(t *testing.T) {
+	t.Run("imports advertise the configured HTTP receiver port", func(t *testing.T) {
+		o := testOptions()
+		o.httpPort = 54318
+		cfg, err := resolveConfig(t, o)
+		require.NoError(t, err)
+		ext := cfg.Extensions[component.NewID(duckdbextension.Type)].(*duckdbextension.Config)
+		require.Equal(t, o.httpPort, ext.OTLPHTTPPort)
+	})
 	t.Run("telemetry off", func(t *testing.T) {
 		cfg, err := resolveConfig(t, testOptions())
 		require.NoError(t, err)

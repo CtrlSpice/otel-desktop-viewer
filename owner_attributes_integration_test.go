@@ -113,19 +113,14 @@ func TestLastAttributeSelectionIsLocalToEveryOwner(t *testing.T) {
 	require.Len(t, refs.Rows, 1)
 	ref, ok := refs.Rows[0][0].(string)
 	require.True(t, ok)
-	for _, format := range []string{"json", "protobuf"} {
-		response, err := http.Get(endpoint + "/export/logs/" + ref + "?format=" + format)
+	for _, query := range []string{"", "?format=json"} {
+		response, err := http.Get(endpoint + "/export/logs/" + ref + query)
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, response.StatusCode)
 		wire, err := io.ReadAll(response.Body)
 		require.NoError(t, response.Body.Close())
 		require.NoError(t, err)
-		var exported plog.Logs
-		if format == "json" {
-			exported, err = (&plog.JSONUnmarshaler{}).UnmarshalLogs(wire)
-		} else {
-			exported, err = (&plog.ProtoUnmarshaler{}).UnmarshalLogs(wire)
-		}
+		exported, err := (&plog.JSONUnmarshaler{}).UnmarshalLogs(wire)
 		require.NoError(t, err)
 		resource := exported.ResourceLogs().At(0)
 		scope := resource.ScopeLogs().At(0)

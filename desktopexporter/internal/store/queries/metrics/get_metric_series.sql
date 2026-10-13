@@ -41,7 +41,7 @@ datapoint_documents as materialized (
 	select d.id, d.timestamp,
 		case m.metric_type
 			when 'Gauge' then json_object(
-					'datapointID', d.id::varchar,
+					'datapointRef', d.id::varchar,
 					'timestamp', d.timestamp::varchar,
 					'startTime', d.start_time::varchar,
 					'flags', d.flags,
@@ -50,7 +50,7 @@ datapoint_documents as materialized (
 					'doubleValue', double_wire_json(d.double_value),
 					'intValue', d.int_value::varchar)
 			when 'Sum' then json_object(
-					'datapointID', d.id::varchar,
+					'datapointRef', d.id::varchar,
 					'timestamp', d.timestamp::varchar,
 					'startTime', d.start_time::varchar,
 					'flags', d.flags,
@@ -60,7 +60,7 @@ datapoint_documents as materialized (
 					'intValue', d.int_value::varchar)
 			when 'Histogram' then json_merge_patch(
 				json_object(
-					'datapointID', d.id::varchar,
+					'datapointRef', d.id::varchar,
 					'timestamp', d.timestamp::varchar,
 					'startTime', d.start_time::varchar,
 					'flags', d.flags,
@@ -73,7 +73,7 @@ datapoint_documents as materialized (
 				case when d.max is null then json('{}') else json_object('max', double_wire_json(d.max)) end)
 			when 'ExponentialHistogram' then json_merge_patch(
 				json_object(
-					'datapointID', d.id::varchar,
+					'datapointRef', d.id::varchar,
 					'timestamp', d.timestamp::varchar,
 					'startTime', d.start_time::varchar,
 					'flags', d.flags,

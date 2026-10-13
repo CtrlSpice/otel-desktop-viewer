@@ -45,7 +45,7 @@ type Server struct {
 	startMu   sync.Mutex
 }
 
-func NewServer(endpoint string, store *store.Store, logger *zap.Logger, tel *telemetry.Telemetry) (*Server, error) {
+func NewServer(endpoint string, otlpHTTPPort int, store *store.Store, logger *zap.Logger, tel *telemetry.Telemetry) (*Server, error) {
 	if tel == nil {
 		tel = telemetry.Disabled()
 	}
@@ -76,6 +76,7 @@ func NewServer(endpoint string, store *store.Store, logger *zap.Logger, tel *tel
 		tel:            tel,
 	}
 
+	s.jsonrpcHandler.otlpHTTPPort = otlpHTTPPort
 	if err := s.initHandler(); err != nil {
 		return nil, fmt.Errorf("could not initialize desktop exporter server: %w", err)
 	}

@@ -106,6 +106,8 @@
   import MetricChartView from '@/components/metrics/Charts/MetricChartView.svelte'
   import MetricDetailView from '@/components/metrics/Detail/MetricDetailView.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
+  import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
+  import type { ImportFailure } from '@/types/import-types'
   import PaneHeader, { paneTabID } from '@/components/shared/PaneHeader.svelte'
   import ExportButton from '@/components/shared/ExportButton.svelte'
   import type { AggregationView } from '@/components/metrics/utils/aggregation'
@@ -121,6 +123,14 @@
     getMetricViewContext,
     type HistogramTab,
   } from '@/contexts/metric-view-context.svelte'
+
+  let {
+    importFailure = null,
+    onViewIssue,
+  }: {
+    importFailure?: ImportFailure | null
+    onViewIssue?: (event: MouseEvent) => void
+  } = $props()
 
   const METRIC_CHART_PANEL_ID = 'metric-chart-tabpanel'
 
@@ -767,12 +777,19 @@
           </PaneHeader>
         {/if}
       {/if}
-      {#if displayError}
+      {#if displayError || importFailure}
         <div
           {...chartTabPanelAttrs}
           class="metrics-page__placeholder alert alert-error"
         >
-          <span>Error: {displayError}</span>
+          {#if displayError}
+            <span>Error: {displayError}</span>
+          {:else if importFailure}
+            <span>Import issue in {importFailure.fileName}.</span>
+            <a class="link" href="/#{INGESTION_ISSUES_ID}" onclick={onViewIssue}
+              >View issue</a
+            >
+          {/if}
         </div>
       {:else if page.loading && !hasMetricRows}
         <div

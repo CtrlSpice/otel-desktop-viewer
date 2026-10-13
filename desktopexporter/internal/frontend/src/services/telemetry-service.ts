@@ -662,7 +662,7 @@ function receivedNumberDataPointFromJSON(
   json: JsonReceivedNumberDataPoint
 ): ReceivedNumberDataPoint {
   const base = {
-    datapointID: json.datapointID,
+    datapointRef: json.datapointRef,
     timestamp: bigintFromWire(json.timestamp),
     startTime: bigintFromWire(json.startTime),
     flags: json.flags,
@@ -697,7 +697,7 @@ function receivedHistogramDataPointFromJSON(
   json: JsonReceivedHistogramDataPoint
 ): ReceivedHistogramDataPoint {
   const decoded: ReceivedHistogramDataPoint = {
-    datapointID: json.datapointID,
+    datapointRef: json.datapointRef,
     timestamp: bigintFromWire(json.timestamp),
     startTime: bigintFromWire(json.startTime),
     flags: json.flags,
@@ -716,7 +716,7 @@ function receivedExponentialHistogramDataPointFromJSON(
   json: JsonReceivedExponentialHistogramDataPoint
 ): ReceivedExponentialHistogramDataPoint {
   const decoded: ReceivedExponentialHistogramDataPoint = {
-    datapointID: json.datapointID,
+    datapointRef: json.datapointRef,
     timestamp: bigintFromWire(json.timestamp),
     startTime: bigintFromWire(json.startTime),
     flags: json.flags,
@@ -1187,6 +1187,24 @@ export let telemetryAPI = {
   clearMetrics: () => callRPC<string>('clearMetrics', undefined),
 
   // Stats methods
+  getImportConfig: async (
+    signal?: AbortSignal
+  ): Promise<{ otlpHttpPort: number }> => {
+    const config = await callRPC<{ otlpHttpPort: number }>(
+      'getImportConfig',
+      undefined,
+      signal
+    )
+    if (
+      !Number.isInteger(config?.otlpHttpPort) ||
+      config.otlpHttpPort < 1 ||
+      config.otlpHttpPort > 65535
+    ) {
+      throw new Error('The viewer returned an invalid OTLP HTTP port')
+    }
+    return config
+  },
+
   getStats: async (): Promise<Stats> => {
     const rawData = await callRPC<JsonStats>('getStats')
     return statsFromJSON(rawData)

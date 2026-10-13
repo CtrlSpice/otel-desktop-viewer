@@ -40,8 +40,8 @@ func TestExportReconstructionFailuresAreNotAttachments(t *testing.T) {
 				_, err := db.Exec(tc.sql)
 				return err
 			}))
-			for _, format := range []string{"json", "protobuf"} {
-				response, err := http.Get(server.URL + "/export/metrics/" + id + "?format=" + format)
+			for _, query := range []string{"", "?format=json"} {
+				response, err := http.Get(server.URL + "/export/metrics/" + id + query)
 				require.NoError(t, err)
 				defer response.Body.Close()
 				body, err := io.ReadAll(response.Body)

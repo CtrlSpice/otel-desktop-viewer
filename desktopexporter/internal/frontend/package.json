@@ -34,6 +34,7 @@
     "@internationalized/date": "^3.12.4",
     "@lezer/highlight": "^1.2.5",
     "@lezer/lr": "^1.4.10",
+    "@streamparser/json": "0.0.26",
     "bits-ui": "^2.19.3",
     "chrono-node": "^2.10.1",
     "d3-interpolate": "^3.0.1",

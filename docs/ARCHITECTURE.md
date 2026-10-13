@@ -144,8 +144,10 @@ rejected without modification. The store does not migrate or reset databases.
 | `ingest_rejections` | Refused record diagnostics |
 
 `metrics.id` and `metric_series.id` are viewer-generated UUIDs. Public APIs call
-them `metricRef` and `seriesRef`. They are scoped to one database and are not
-received OTel identifiers.
+them `metricRef` and `seriesRef`. `getMetricSeries` exposes `metric_datapoints.id`
+as `datapointRef`; `getLog` exposes `logs.id` as `logRef`. These references are
+scoped to one database. Received OTel trace/span identifiers remain `traceID`
+and `spanID`.
 
 Metric identity includes the complete Resource payload key, complete Scope,
 Scope schema URL, name, unit, type, temporality where applicable, and

@@ -154,6 +154,7 @@ func TestEveryMethodHasParamNames(t *testing.T) {
 	unnamed := map[string]bool{
 		"clearTraces": true, "clearLogs": true, "clearMetrics": true,
 		"getStats":                      true,
+		"getImportConfig":               true,
 		"getTraceAttributeDefinitions":  true,
 		"getLogAttributeDefinitions":    true,
 		"getMetricAttributeDefinitions": true,

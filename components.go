@@ -6,6 +6,7 @@ package main
 import (
 	desktopexporter "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter"
 	duckdbextension "github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/duckdbextension"
+	"github.com/open-telemetry/opentelemetry-collector-contrib/receiver/otlpjsonfilereceiver"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/connector"
 	"go.opentelemetry.io/collector/otelcol"
@@ -32,12 +33,14 @@ func components() (otelcol.Factories, error) {
 
 	factories.Receivers, err = otelcol.MakeFactoryMap(
 		otlpreceiver.NewFactory(),
+		otlpjsonfilereceiver.NewFactory(),
 	)
 	if err != nil {
 		return otelcol.Factories{}, err
 	}
 	factories.ReceiverModules = make(map[component.Type]string, len(factories.Receivers))
 	factories.ReceiverModules[otlpreceiver.NewFactory().Type()] = "go.opentelemetry.io/collector/receiver/otlpreceiver v0.162.0"
+	factories.ReceiverModules[otlpjsonfilereceiver.NewFactory().Type()] = "github.com/open-telemetry/opentelemetry-collector-contrib/receiver/otlpjsonfilereceiver v0.162.0"
 
 	factories.Exporters, err = otelcol.MakeFactoryMap(
 		desktopexporter.NewFactory(),

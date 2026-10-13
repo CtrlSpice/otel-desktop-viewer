@@ -240,11 +240,9 @@ describe('Metric main-header export', () => {
         screen.getAllByRole('button', { name: 'Export metric' })
       ).toHaveLength(1)
       await userEvent.click(button)
-      await userEvent.click(screen.getByRole('menuitem', { name: 'OTLP JSON' }))
       expect(downloadOTLP).toHaveBeenCalledWith(
         'metric',
         'metric-1',
-        'json',
         expect.any(AbortSignal)
       )
     }

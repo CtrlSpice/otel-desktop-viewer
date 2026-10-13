@@ -1,9 +1,17 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/svelte'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/svelte'
+import userEvent from '@testing-library/user-event'
 import { navigate } from '@/route'
 import { setTestUrl } from '@/test/render-helpers'
 import type { Stats } from '@/types/api-types'
+import type { ImportFailure } from '@/types/import-types'
 
 const {
   getStats,
@@ -76,6 +84,170 @@ beforeEach(() => {
 })
 
 describe('App real-page composition', () => {
+  it('keeps failed-file counts separate from rejected telemetry in Home Overview', async () => {
+    setTestUrl('/')
+    const timestamp = BigInt(Date.now()) * 1_000_000n
+    const rejectedStats: Stats = {
+      ...EMPTY_STATS,
+      rejections: [
+        {
+          signal: 'traces',
+          kind: 'span_already_stored',
+          occurrences: 2,
+          samples: [
+            {
+              traceID: '00000000000000000000000000000001',
+              spanID: '0000000000000001',
+            },
+          ],
+          firstSeen: timestamp,
+          lastSeen: timestamp,
+        },
+      ],
+    }
+    getStats.mockResolvedValue(rejectedStats)
+    render(App, {
+      importFailures: [
+        {
+          fileName: 'example.json',
+          reason: 'Invalid JSON.',
+          occurredAt: timestamp,
+        },
+      ],
+    })
+    const panel = await screen.findByRole('region', {
+      name: 'Ingestion issues',
+    })
+    expect(within(panel).getByText('1 file')).toBeInTheDocument()
+    expect(await within(panel).findByText('2 records')).toBeInTheDocument()
+    expect(within(panel).getByText(/Invalid JSON\./)).toBeInTheDocument()
+    expect(
+      within(panel).getByRole('link', { name: '0000000000000001' })
+    ).toHaveAttribute(
+      'href',
+      '/traces/00000000000000000000000000000001?span=0000000000000001'
+    )
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it.each(['/logs', '/traces', '/metrics'])(
+    'shows an inline import error on %s and links to Home issues',
+    async path => {
+      setTestUrl(path)
+      render(App, {
+        importFailures: [
+          {
+            fileName: 'example.json',
+            reason: 'Invalid JSON.',
+            occurredAt: BigInt(Date.now()) * 1_000_000n,
+          },
+        ],
+      })
+      const main = screen.getByRole('main')
+      expect(
+        await within(main).findByText('Import issue in example.json.')
+      ).toBeInTheDocument()
+      expect(window.location.pathname).toBe(path)
+      const link = within(main).getByRole('link', { name: 'View issue' })
+      expect(link).toHaveAttribute('href', '/#ingestion-issues')
+      await userEvent.click(link)
+      const panel = await screen.findByRole('region', {
+        name: 'Ingestion issues',
+      })
+      expect(window.location.pathname).toBe('/')
+      expect(window.location.hash).toBe('#ingestion-issues')
+      await waitFor(() => expect(panel).toHaveFocus())
+      expect(within(panel).getByText(/Invalid JSON\./)).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).toBeNull()
+    }
+  )
+
+  it('keeps the issue on Home, clears the inline error after visiting Home and shows a later failure', async () => {
+    setTestUrl('/logs')
+    const failure: ImportFailure = {
+      fileName: 'example.json',
+      reason: 'Invalid JSON.',
+      occurredAt: BigInt(Date.now()) * 1_000_000n,
+    }
+    const view = render(App, { importFailures: [failure] })
+    await screen.findByText('Import issue in example.json.')
+    navigate('/')
+    const panel = await screen.findByRole('region', {
+      name: 'Ingestion issues',
+    })
+    expect(within(panel).getByText('example.json')).toBeInTheDocument()
+    navigate('/logs')
+    await screen.findByText('No logs in this time range')
+    expect(screen.queryByText('Import issue in example.json.')).toBeNull()
+    await view.rerender({
+      importFailures: [
+        failure,
+        {
+          ...failure,
+          fileName: 'another.json',
+          occurredAt: failure.occurredAt + 1n,
+        },
+      ],
+    })
+    expect(
+      await within(screen.getByRole('main')).findByText(
+        'Import issue in another.json.'
+      )
+    ).toBeInTheDocument()
+    expect(window.location.pathname).toBe('/logs')
+  })
+
+  it.each([
+    { path: '/logs', fetchList: searchLogSummaries },
+    { path: '/traces', fetchList: searchTraceSummaries },
+    { path: '/metrics', fetchList: searchMetricSummaries },
+  ])(
+    'preserves the existing page error on $path when an import also fails',
+    async ({ path, fetchList }) => {
+      setTestUrl(path)
+      fetchList.mockRejectedValue(new Error('Unable to load telemetry'))
+      render(App, {
+        importFailures: [
+          {
+            fileName: 'example.json',
+            reason: 'Invalid JSON.',
+            occurredAt: BigInt(Date.now()) * 1_000_000n,
+          },
+        ],
+      })
+      expect(
+        await screen.findByText('Error: Unable to load telemetry')
+      ).toBeInTheDocument()
+      expect(screen.queryByText('Import issue in example.json.')).toBeNull()
+      navigate('/')
+      const panel = await screen.findByRole('region', {
+        name: 'Ingestion issues',
+      })
+      expect(within(panel).getByText('example.json')).toBeInTheDocument()
+    }
+  )
+
+  it('offers the home picker and accepts dropped files after navigating to another signal', async () => {
+    setTestUrl('/')
+    const importFiles = vi.fn()
+    render(App, { importFiles })
+    expect(
+      screen.getByRole('button', { name: 'Import files' })
+    ).toBeInTheDocument()
+    navigate('/logs')
+    await screen.findByText('No logs in this time range')
+    expect(screen.queryByRole('button', { name: 'Import files' })).toBeNull()
+    const file = new File(['{"resourceLogs":[]}'], 'renamed.json')
+    const dataTransfer = { types: ['Files'], files: [file] }
+    await fireEvent.dragEnter(window, { dataTransfer })
+    expect(
+      screen.getByText('Drop OTLP JSON files to import')
+    ).toBeInTheDocument()
+    await fireEvent.drop(window, { dataTransfer })
+    expect(importFiles).toHaveBeenCalledWith([file])
+    expect(window.location.pathname).toBe('/logs')
+  })
+
   it('selects real pages for route prefixes and falls back to Home', async () => {
     setTestUrl('/traces/trace-1')
     render(App)

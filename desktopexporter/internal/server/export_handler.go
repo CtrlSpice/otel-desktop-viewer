@@ -23,8 +23,8 @@ func (s *Server) exportHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	formats := r.URL.Query()["format"]
-	if len(formats) != 1 || (formats[0] != "json" && formats[0] != "protobuf") {
-		http.Error(w, "format must be json or protobuf", http.StatusBadRequest)
+	if len(formats) > 1 || (len(formats) == 1 && formats[0] != "json") {
+		http.Error(w, "format must be json", http.StatusBadRequest)
 		return
 	}
 	id, err := normalizeUUID(r.PathValue("id"))
@@ -36,7 +36,7 @@ func (s *Server) exportHandler(w http.ResponseWriter, r *http.Request) {
 		id = strings.ReplaceAll(id, "-", "")
 	}
 	data, err := storeRead(s.store, func(db *sql.DB) ([]byte, error) {
-		return readExport(r.Context(), db, signal, id, formats[0])
+		return readExport(r.Context(), db, signal, id)
 	})
 	if err != nil {
 		switch {
@@ -53,12 +53,8 @@ func (s *Server) exportHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	contentType, extension := "application/json", "json"
-	if formats[0] == "protobuf" {
-		contentType, extension = "application/x-protobuf", "pb"
-	}
-	filename := strings.TrimSuffix(signal, "s") + "-" + id + "." + extension
-	w.Header().Set("Content-Type", contentType)
+	filename := strings.TrimSuffix(signal, "s") + "-" + id + ".json"
+	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	if r.Method != http.MethodHead {
@@ -66,22 +62,13 @@ func (s *Server) exportHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func readExport(ctx context.Context, db *sql.DB, signal, id, format string) ([]byte, error) {
+func readExport(ctx context.Context, db *sql.DB, signal, id string) ([]byte, error) {
 	switch signal {
 	case "traces":
-		if format == "protobuf" {
-			return spans.GetTraceOTLPProtobuf(ctx, db, id)
-		}
 		return spans.GetTraceOTLP(ctx, db, id)
 	case "logs":
-		if format == "protobuf" {
-			return logs.GetLogOTLPProtobuf(ctx, db, id)
-		}
 		return logs.GetLogOTLP(ctx, db, id)
 	default: // The handler has validated the signal as metrics.
-		if format == "protobuf" {
-			return metrics.GetMetricOTLPProtobuf(ctx, db, id)
-		}
 		return metrics.GetMetricOTLP(ctx, db, id)
 	}
 }
