@@ -38,7 +38,7 @@ test('exact approved questions contain no private grading values or answer forma
     assert.ok(rendered.startsWith(task.goal + '\n'))
     assert.doesNotMatch(
       rendered,
-      /JSON|evidence field|900719925474|insufficient_funds|104|reported-cause|0\/8/
+      /JSON|evidence field|900719925474|insufficient_funds|104|reported-cause|0\/8|Observability guidance|document-processing|720 ms/
     )
   }
 })

@@ -95,6 +95,33 @@ test('fresh explicit Sol grader is separate from investigator and errors are not
     readJson(path.join(String(metadata.workspace), 'stub-observation.json'))
   )
   assert.equal(observation.emptyScratch, true)
+  const graderPrompt = fs.readFileSync(
+    path.join(String(metadata.evidence), 'prompt.txt'),
+    'utf8'
+  )
+  const investigatorPrompt = fs.readFileSync(
+    path.join(response.metadata.evidence, 'prompt.txt'),
+    'utf8'
+  )
+  for (const example of [
+    'Example 1: interpreting a response',
+    'Example 2: interpreting nested durations',
+  ]) {
+    assert.equal(graderPrompt.split(example).length - 1, 1)
+    assert.ok(!investigatorPrompt.includes(example))
+  }
+  const gradingData = record(
+    JSON.parse(
+      graderPrompt.split('\n').find(line => line.startsWith('{"question"'))!
+    )
+  )
+  assert.equal(gradingData.answer, answer)
+  assert.deepEqual(gradingData.criteria, [
+    {
+      id: 'reported-cause',
+      text: 'Identifies the reported payment decline for insufficient funds with relevant telemetry support.',
+    },
+  ])
   fs.writeFileSync(
     settings,
     JSON.stringify({

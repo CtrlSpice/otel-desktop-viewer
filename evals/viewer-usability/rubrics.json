@@ -4,7 +4,7 @@
     "criteria": [
       {
         "id": "reported-cause",
-        "text": "Identifies the reported payment decline for insufficient funds with relevant telemetry support. Does not blame the successful inventory reservation or invent an unsupported cause."
+        "text": "Identifies the reported payment decline for insufficient funds with relevant telemetry support."
       }
     ]
   },
