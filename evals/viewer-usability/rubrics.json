@@ -1,0 +1,92 @@
+{
+  "checkout-failure": {
+    "reference": "Root HTTP 402, ERROR/Payment declined, 1.2 s. payment/charge and stripe/create-charge report decline; provider exception PaymentDeclinedError: Card declined: insufficient funds. Matching log: Payment declined: insufficient_funds. Inventory reservation succeeded. Provider internal decision process is not observed.",
+    "criteria": [
+      {
+        "id": "reported-cause",
+        "text": "Identifies the reported payment decline for insufficient funds with relevant telemetry support. Does not blame the successful inventory reservation or invent an unsupported cause."
+      }
+    ]
+  },
+  "checkout-latency": {
+    "reference": "Both succeeded. checkout-019/018 root durations 1.5/0.6 s, payment 1.35/0.195 s, nested provider 1.25/0.08 s. No provider-internal telemetry explains the slower call.",
+    "criteria": [
+      {
+        "id": "payment-comparison",
+        "text": "Locates the extra time in the payment/provider call supported by the comparison; does not double-count overlapping parent/child durations or invent an internal cause. Exact repetition of all timings is not required."
+      }
+    ]
+  },
+  "failure-rate": {
+    "reference": "32 recorded checkout roots. First 16: 0/16; next eight: 4/8; last eight: 0/8; overall 4/32. Cohorts: west/1.0.0 0/8 before, east/1.0.0 0/8 before, west/1.1.0 4/8 after, east/1.0.0 0/8 after. Failed 017,020,021,022. Time/version/region are related. 32 traces are not all 104 metric requests.",
+    "criteria": [
+      {
+        "id": "change-and-association",
+        "text": "Identifies the increase in failures among recorded checkouts and association with gateway version and region. Does not claim deployment caused failures, a rollback occurred in west, or switching regions fixed failures."
+      }
+    ]
+  },
+  "trace-logs": {
+    "reference": "Five logs: gateway 402 (span 1), payment decline (span 6), successful inventory reservation warning (span 3), request audit (no span ID), delayed payment audit (absent span 000000000000ffff). Three match stored same-trace spans; identity requires both trace ID and span ID.",
+    "criteria": [
+      {
+        "id": "complete-logs-and-links",
+        "text": "Finds all five associated logs and correctly explains which can be tied to a stored same-trace span, distinguishing no span ID from an absent referenced span."
+      }
+    ]
+  },
+  "customer-count": {
+    "reference": "32 root spans carry distinct strings customer-001 through customer-032. Child spans are not extra checkouts; 104 metric requests do not supply more customer identities.",
+    "criteria": [
+      {
+        "id": "complete-observed-count",
+        "text": "Reports 32 distinct customers supported by recorded checkout traffic, without mistaking a limited page for the full population."
+      }
+    ]
+  },
+  "sequence-types": {
+    "reference": "All 32 roots have order.sequence. checkout-008 stores 9007199254741000 as a string; other 31 store int64. Full exact range 9007199254740993..9007199254741024, beyond JavaScript exact integer range.",
+    "criteria": [
+      {
+        "id": "typed-example",
+        "text": "Identifies the string-versus-integer inconsistency and gives a correct supporting example without rounding its value. Listing every value is not required."
+      }
+    ]
+  },
+  "trace-export": {
+    "reference": "Complete checkout-017 trace has six spans, payment/provider failure, exception, resource/scope context and same-trace parent relationships. Trace export alone excludes five logs and metrics. Code independently checks the produced file in investigator scratch, importability and retained trace contents.",
+    "criteria": [
+      {
+        "id": "export-description",
+        "text": "Reports the produced export's location and accurately describes its contents. Does not claim logs or metrics are included unless they are. A promise without a produced file does not pass."
+      }
+    ]
+  },
+  "request-latency": {
+    "reference": "Delta histogram spike 08:00:00-08:00:25 UTC: 16 observations, sum 6.750000000000002 s, mean about 422 ms, max 1.5 s, two above 1 s. Usual mean about 150 ms; next 175 ms then 150 ms. checkout-017 exemplar 1.2 s. Mean = received binary64 sum / exact count, approximate seconds; buckets do not give exact percentiles or raw requests.",
+    "criteria": [
+      {
+        "id": "spike-and-recovery",
+        "text": "Identifies latency spike around 08:00-08:00:25 UTC and recovery supported by duration metrics. No unsupported exact percentile or raw-request claims. Other correct descriptions/statistics are accepted; not every statistic is required."
+      }
+    ]
+  },
+  "request-count": {
+    "reference": "Monotonic cumulative counter starts at window start, final sample at window end 104, no resets. First sample 3; last-minus-first 101 omits initial interval. Summing snapshots is wrong; 32 traces are not the counter population.",
+    "criteria": [
+      {
+        "id": "full-window-total",
+        "text": "Reports 104 requests for the full window with counter support, without summing cumulative snapshots or omitting the initial interval."
+      }
+    ]
+  },
+  "cpu-evidence": {
+    "reference": "Only gateway CPU: 25-second sampling, 10%-18%, 14% at 08:00:00 and 16% at 08:00:25. checkout-019 runs 08:00:04-08:00:05.5, no in-interval sample, no payment-service CPU series.",
+    "criteria": [
+      {
+        "id": "limited-evidence",
+        "text": "Recognises nearby gateway CPU samples look ordinary but cannot establish CPU during the request or rule out pressure elsewhere. Does not confidently rule CPU in/out or claim continuous coverage."
+      }
+    ]
+  }
+}

@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process'
 import cases from './tasks.json' with { type: 'json' }
 import { providerFixture } from './test-fixture.ts'
 import { readJson, record, saveJson, SUITE } from './runtime.ts'
+import rubrics from './rubrics.json' with { type: 'json' }
 
 // This invokes the actual pinned loader, but every provider process is a local stub.
 const { root, isolation } = providerFixture()
@@ -14,10 +15,8 @@ const settings = {
     'openai/gpt-6.1-sol',
     'openai/gpt-6-astra',
   ].join('\n'),
-  answer: JSON.stringify({
-    ...cases[0].expected,
-    evidence: ['synthetic loader proof'],
-  }),
+  answer:
+    'The payment was declined for insufficient funds, according to the provider exception and payment log.',
 }
 fs.writeFileSync(
   path.join(root, 'stub-settings.json'),
@@ -97,12 +96,85 @@ for (const value of rows) {
   assert.equal(metadata.version, '1.18.10')
   assert.equal(response.output, settings.answer)
   assert.equal(record(row.gradingResult).pass, true)
+  const prompt = fs.readFileSync(
+    path.join(String(metadata.evidence), 'prompt.txt'),
+    'utf8'
+  )
+  assert.ok(prompt.startsWith(cases[0].goal + '\n'))
+  assert.ok(!prompt.includes('reported-cause'))
+  assert.ok(!prompt.includes('insufficient_funds'))
+  assert.ok(!prompt.includes('Return one JSON'))
+  const grading = record(row.gradingResult)
+  assert.ok(Array.isArray(grading.componentResults))
+  const report = record(record(grading.componentResults[0]).metadata)
+  const grader = record(report.metadata)
+  assert.equal(grader.role, 'grader')
+  assert.equal(grader.model, 'openai/gpt-6.1-sol')
+  assert.notEqual(grader.workspace, metadata.workspace)
+  assert.notDeepEqual(grader.sessionIDs, metadata.sessionIDs)
+  assert.ok(
+    !JSON.stringify(row.vars).includes(
+      String(rubrics['checkout-failure'].reference)
+    )
+  )
+  assert.ok(!JSON.stringify(row.vars).includes('reported-cause'))
 }
+// A malformed grading response is a loader execution error, not an incorrect answer.
+fs.writeFileSync(
+  path.join(root, 'stub-settings.json'),
+  JSON.stringify({ ...settings, graderAnswer: 'invalid grader response' })
+)
+const errorCommand = [...command]
+errorCommand[errorCommand.indexOf('-o') + 1] = path.join(
+  root,
+  'loader-errors.json'
+)
+const failed = spawnSync(errorCommand[0], errorCommand.slice(1), {
+  cwd: root,
+  encoding: 'utf8',
+  timeout: 120000,
+  env: {
+    ...process.env,
+    OTEL_EVAL_RUN_DIR: root,
+    OTEL_EVAL_ISOLATION_FILE: path.join(root, 'isolation.json'),
+    PROMPTFOO_DISABLE_TELEMETRY: '1',
+    PROMPTFOO_CONFIG_DIR: path.join(root, 'promptfoo-state'),
+  },
+})
+saveJson(path.join(root, 'loader-error-command.json'), {
+  status: failed.status,
+  externalInferenceAttempted: false,
+})
+const errorRows = record(
+  record(readJson(path.join(root, 'loader-errors.json'))).results
+).results
+assert.ok(Array.isArray(errorRows))
+assert.equal(errorRows.length, 3)
+for (const value of errorRows) {
+  const row = record(value)
+  assert.equal(row.success, false)
+  assert.match(String(row.error), /Invalid grader output/)
+  assert.equal(row.failureReason, 2)
+  assert.equal(row.gradingResult, null)
+}
+const investigatorRuns = fs
+  .readdirSync(path.join(root, 'runs'))
+  .filter(name => name.startsWith('investigator-'))
+assert.equal(investigatorRuns.length, 6)
+for (const run of investigatorRuns)
+  assert.equal(
+    fs.readFileSync(path.join(root, 'runs', run, 'answer.txt'), 'utf8'),
+    settings.answer
+  )
 saveJson(path.join(root, 'loader-proof.json'), {
   loadedConfig: path.join(SUITE, 'config.ts'),
   loadedProvider: path.join(SUITE, 'provider.ts'),
   loadedGrader: path.join(SUITE, 'grade.ts'),
   syntheticResults: rows.length,
+  syntheticExecutionErrors: errorRows.length,
+  investigatorResponsesRetained: investigatorRuns.length,
+  separateFreshGraderContexts: true,
+  privatePromptSeparation: true,
   allPassed: true,
   externalInferenceAttempted: false,
 })

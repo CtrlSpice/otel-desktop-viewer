@@ -6,15 +6,26 @@ import { freezePricing } from './pricing.ts'
 import type { PricingSnapshot } from './pricing.ts'
 import { modelSummaries, modelSummaryTable } from './model-summary.ts'
 
-export function pilotSummary(value: unknown, pricing?: PricingSnapshot) {
+export function pilotSummary(
+  value: unknown,
+  pricing?: PricingSnapshot,
+  investigatorRows?: unknown[],
+  graderRows: unknown[] = []
+) {
   const rows = record(record(value).results).results
   if (!Array.isArray(rows)) throw new Error('Invalid pilot result rows')
   const lines = [
     '# Pilot results',
     '',
-    'Automated fact checks only; transcript interpretation pending.',
+    'Separate Sol6.1 grading is provisional until comparison with human-reviewed answers.',
     '',
-    modelSummaryTable(rows, pricing),
+    '## Investigators',
+    '',
+    modelSummaryTable(investigatorRows ?? rows, pricing),
+    '',
+    '## Separate Grader',
+    '',
+    modelSummaryTable(graderRows, pricing),
     '',
     '## Task results',
     '',
@@ -26,14 +37,14 @@ export function pilotSummary(value: unknown, pricing?: PricingSnapshot) {
     const response = row.response === undefined ? {} : record(row.response)
     const metadata =
       response.metadata === undefined ? {} : record(response.metadata)
-    const seconds = metadata.elapsedSeconds ?? 0
-    if (typeof seconds !== 'number')
+    const seconds = metadata.elapsedSeconds
+    if (seconds !== undefined && typeof seconds !== 'number')
       throw new Error('Invalid pilot elapsed seconds')
     const cells = [
       record(row.provider).label,
       record(row.vars).task_id,
-      row.success ? 'pass' : response.error ? 'error' : 'fail',
-      Math.round(seconds * 100) / 100,
+      row.success ? 'pass' : response.error || row.error ? 'error' : 'fail',
+      typeof seconds === 'number' ? Math.round(seconds * 100) / 100 : '?',
       metadata.toolCalls ?? '?',
       metadata.utilityCommandEntries ?? '?',
       metadata.queryCommandEntries ?? '?',
@@ -102,17 +113,57 @@ export async function runPilot(
   })
   if (fs.existsSync(path.join(root, 'pilot.json'))) {
     const result = readJson(path.join(root, 'pilot.json'))
-    fs.writeFileSync(
-      path.join(root, 'pilot-summary.md'),
-      pilotSummary(result, pricing),
-      { flag: 'wx', mode: 0o600 }
-    )
     const rows = record(record(result).results).results
     if (!Array.isArray(rows)) throw new Error('Invalid pilot result rows')
+    const runs = path.join(root, 'runs')
+    // Promptfoo drops providerResponse when an assertion throws. Retained process
+    // evidence still accounts for investigator usage on grading execution errors.
+    const investigators = fs.existsSync(runs)
+      ? fs
+          .readdirSync(runs)
+          .filter(name => name.startsWith('investigator-'))
+          .map(name => {
+            const metrics = path.join(runs, name, 'metrics.json')
+            const file = fs.existsSync(metrics)
+              ? metrics
+              : path.join(runs, name, 'failure.json')
+            return record(readJson(file))
+          })
+          .map(metadata => ({
+            provider: { label: metadata.model },
+            response: { metadata },
+          }))
+      : rows
     saveJson(path.join(root, 'model-summary.json'), {
       pricing,
-      models: modelSummaries(rows, pricing),
+      models: modelSummaries(investigators, pricing),
     })
+    const grading = fs.existsSync(runs)
+      ? fs
+          .readdirSync(runs)
+          .filter(name => name.startsWith('grader-'))
+          .map(name => path.join(runs, name, 'grading.json'))
+          .filter(file => fs.existsSync(file))
+          .map(file => record(readJson(file)))
+      : []
+    const graderRows = grading.map(report => ({
+      provider: { label: 'openai/gpt-6.1-sol' },
+      response: { metadata: report.metadata },
+    }))
+    saveJson(path.join(root, 'grader-summary.json'), {
+      provisional: true,
+      sessions: grading.length,
+      executionErrors: grading.filter(
+        report => report.status === 'execution-error'
+      ).length,
+      models: modelSummaries(graderRows, pricing),
+      judgments: grading,
+    })
+    fs.writeFileSync(
+      path.join(root, 'pilot-summary.md'),
+      pilotSummary(result, pricing, investigators, graderRows),
+      { flag: 'wx', mode: 0o600 }
+    )
   }
   if (failure) throw failure
   return exit

@@ -1,7 +1,7 @@
-Use otel-desktop-viewer to {{goal}}
+{{goal}}
 
 Executable: {{binary}}
 Endpoint: {{endpoint}}
 Time window: {{start}} through {{end}}, inclusive.
 
-The viewer is already running. Keep scratch files inside your assigned temporary working directory. Work independently. Report uncertainty honestly. Return one JSON object containing the requested answer fields and an evidence field identifying the commands or queries used.
+The viewer is already running. Do not start, stop or reconfigure viewers. Keep scratch files inside your assigned temporary working directory. Work independently.

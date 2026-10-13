@@ -7,6 +7,7 @@ import { runPilot } from './run-pilot.ts'
 import { datasetSource, stageDataset } from './stage-dataset.ts'
 import { runtimeRoot, saveJson } from './runtime.ts'
 import cases from './tasks.json' with { type: 'json' }
+import { GRADER_MODEL } from './grade.ts'
 
 const root = runtimeRoot()
 const binary = process.env.OTEL_EVAL_VIEWER_BINARY
@@ -15,19 +16,19 @@ if (!binary || !path.isAbsolute(binary))
     'Set absolute OTEL_EVAL_VIEWER_BINARY for the owned overnight viewer'
   )
 const source = datasetSource()
-if (path.basename(source) !== 'usability-pilot')
-  throw new Error(
-    'The current six cases require explicit OTLP_DATASET=.../usability-pilot'
-  )
+const models = ['openai/gpt-6-luna', 'openai/gpt-6.1-sol', 'openai/gpt-6-astra']
+const repetitions = 3
 if (!process.env.OTEL_EVAL_ISOLATION_FILE)
   throw new Error('Set OTEL_EVAL_ISOLATION_FILE before running models')
 
 saveJson(path.join(root, 'run-manifest.json'), {
   startedAt: new Date().toISOString(),
-  models: ['openai/gpt-6-luna', 'openai/gpt-6.1-sol', 'openai/gpt-6-astra'],
+  models,
+  graderModel: GRADER_MODEL,
+  gradingProvisional: true,
   tasks: cases.length,
-  repetitions: 3,
-  sessions: cases.length * 3 * 3,
+  repetitions,
+  investigatorSessions: cases.length * models.length * repetitions,
   timeoutMs: 600000,
   dataset: source,
   binary,

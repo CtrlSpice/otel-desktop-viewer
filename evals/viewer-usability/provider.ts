@@ -175,10 +175,17 @@ export default class OpenCodeProvider {
   model: string
   isolation: unknown
   timeoutMs: number
+  role: 'investigator' | 'grader'
   constructor(options: {
-    config: { model: string; isolation?: unknown; timeoutMs?: number }
+    config: {
+      model: string
+      isolation?: unknown
+      timeoutMs?: number
+      role?: 'investigator' | 'grader'
+    }
   }) {
     this.model = options.config.model
+    this.role = options.config.role ?? 'investigator'
     this.isolation = options.config.isolation
     this.timeoutMs = options.config.timeoutMs ?? 10 * 60 * 1000
     if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs <= 0)
@@ -196,7 +203,7 @@ export default class OpenCodeProvider {
     fs.mkdirSync(workspaceRoot, { recursive: true })
     fs.mkdirSync(evidenceRoot, { recursive: true })
     const tag =
-      (this.model + '-' + context.vars.task_id).replace(
+      (this.role + '-' + this.model + '-' + context.vars.task_id).replace(
         /[^a-zA-Z0-9_.-]/g,
         '-'
       ) + '-'
@@ -440,6 +447,7 @@ export default class OpenCodeProvider {
           ? message
           : 'Isolation setup failed; check protected caller settings'
       const metadata = {
+        role: this.role,
         model: this.model,
         task: context.vars.task_id,
         evidence,
@@ -459,6 +467,7 @@ export default class OpenCodeProvider {
       prompt + '\n\nYour temporary working directory: ' + workspace + '\n'
     if (redact(supplied) !== supplied) {
       const metadata = {
+        role: this.role,
         model: this.model,
         version,
         workspace,
@@ -492,6 +501,7 @@ export default class OpenCodeProvider {
       ]
       save('prompt.txt', supplied)
       save('launch.json', {
+        role: this.role,
         model: this.model,
         version,
         binary,
@@ -512,6 +522,7 @@ export default class OpenCodeProvider {
         result.stdout
       )
       const metadata = {
+        role: this.role,
         model: this.model,
         version,
         binary,
@@ -553,6 +564,7 @@ export default class OpenCodeProvider {
       }
     } catch {
       const metadata = {
+        role: this.role,
         model: this.model,
         version,
         binary,

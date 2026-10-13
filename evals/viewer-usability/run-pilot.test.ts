@@ -29,6 +29,12 @@ fs.writeFileSync('observation.json',JSON.stringify({args:process.argv.slice(2),c
 console.log('synthetic failed pilot stdout'); console.error('synthetic failed pilot stderr');
 fs.writeFileSync('pilot.json',JSON.stringify({results:{results:[{provider:{label:'synthetic'},vars:{task_id:'synthetic'},
   success:false,response:{error:'synthetic failure',metadata:{elapsedSeconds:1.234,toolCalls:0}}}]}}));
+fs.mkdirSync('runs/investigator-synthetic',{recursive:true});
+fs.mkdirSync('runs/grader-synthetic',{recursive:true});
+const investigator={role:'investigator',model:'openai/gpt-6-luna',elapsedSeconds:1.234,toolCalls:0,usage:{input:123,output:2,reasoning:0,cacheRead:0,cacheWrite:0}};
+const grader={role:'grader',model:'openai/gpt-6.1-sol',elapsedSeconds:0.5,toolCalls:0,usage:{input:3,output:2,reasoning:0,cacheRead:0,cacheWrite:0}};
+fs.writeFileSync('runs/investigator-synthetic/metrics.json',JSON.stringify(investigator));
+fs.writeFileSync('runs/grader-synthetic/grading.json',JSON.stringify({status:'execution-error',metadata:grader,investigator}));
 process.exitCode = 7;
 `,
     { mode: 0o700 }
@@ -59,6 +65,15 @@ process.exitCode = 7;
   const retained = fs.readFileSync(path.join(root, 'pilot.json'))
   assert.deepEqual(readJson(path.join(root, 'pricing-snapshot.json')), pricing)
   assert.ok(fs.existsSync(path.join(root, 'model-summary.json')))
+  const investigators = record(readJson(path.join(root, 'model-summary.json'))).models
+  assert.ok(Array.isArray(investigators))
+  assert.equal(record(investigators[0]).model, 'openai/gpt-6-luna')
+  assert.equal(record(investigators[0]).inputTokens, 123)
+  const grading = record(readJson(path.join(root, 'grader-summary.json')))
+  assert.equal(grading.executionErrors, 1)
+  assert.ok(Array.isArray(grading.models))
+  assert.equal(record(grading.models[0]).model, 'openai/gpt-6.1-sol')
+  assert.equal(record(grading.models[0]).inputTokens, 3)
   await assert.rejects(runPilot(root, suite, pricing), /refusing to overwrite/)
   assert.deepEqual(fs.readFileSync(path.join(root, 'pilot.json')), retained)
 })
@@ -86,6 +101,7 @@ test('pilot summary distinguishes fact failures and provider errors', () => {
     { success: true },
     { success: false },
     { success: false, response: { error: 'failure' } },
+    { success: false, error: 'Grader execution failure' },
   ].map(row => ({
     provider: { label: 'model' },
     vars: { task_id: 'task' },

@@ -26,7 +26,7 @@ if (isolationFile) {
 const models = ['openai/gpt-6-luna', 'openai/gpt-6.1-sol', 'openai/gpt-6-astra']
 export default {
   description:
-    'Viewer usability: natural command choice, six tasks, latest GPT tiers',
+    'Viewer usability: ten natural investigations, separate provisional Sol6.1 grading',
   prompts: ['file://' + path.join(SUITE, 'prompt.txt')],
   providers: models.map(model => ({
     id: 'file://' + path.join(SUITE, 'provider.ts'),

@@ -7,11 +7,13 @@ Keep credentials, local settings and run artifacts outside version control.
 
 | File                                                    | Purpose                                                                                                            |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `tasks.json`, `prompt.txt`                              | Task goals, expected answers and shared prompt                                                                     |
+| `tasks.json`, `prompt.txt`                              | Exact approved questions and investigator context only                                                             |
+| `rubrics.json`                                          | Private reference facts and criteria, loaded only by the separate grader                                           |
 | `stage-dataset.ts`                                      | Copy manifest-listed requests unchanged; defaults to `testdata/otlp/small/`, accepts `OTLP_DATASET`                |
 | `prepare.ts`, `prepare.test.ts`                         | Start one owned persistent viewer, ingest the fixture and check failure cleanup                                    |
-| `verify.ts`                                             | Check historical pilot facts through independent SQL                                                               |
-| `grade.ts`, `grade.test.ts`                             | Deterministic answer checks and grader tests                                                                       |
+| `verify.ts`                                             | Check approved small-dataset facts against stored traces, logs and metrics                                         |
+| `grade.ts`, `grade.test.ts`                             | Separate fresh Sol6.1 grading and synthetic wiring tests                                                           |
+| `verify-export.ts`, `verify-export.test.ts`             | Check session-owned export files and unchanged-byte replay into a new owned viewer                                 |
 | `provider.ts`, `config.ts`                              | Normal OpenCode sessions through Promptfoo                                                                         |
 | `run-pilot.ts`, `run-pilot.test.ts`                     | Retain batch results, failures and summaries                                                                       |
 | `model-summary.ts`, `pricing.ts`, `api-prices.json`     | Model totals, per-response API-price estimates and a run-fixed USD/CAD rate                                        |
@@ -27,9 +29,10 @@ Keep credentials, local settings and run artifacts outside version control.
 
 ## Status
 
-The loader now defaults to the shared small workload and derives requests, counts
-and time bounds from its manifest. The existing tasks, verifier and grading still
-describe the historical pilot and must be migrated before evaluating small.
+The ten approved questions use the shared small workload. Requests, counts and
+inclusive exact time bounds come from its manifest; `OTLP_DATASET` selects another
+dataset, whose facts must satisfy the approved preflight before model calls.
+No model trial is authorised before all agreed changes have landed.
 `config.ts` targets GPT-6 Luna, GPT-6.1 Sol and GPT-6 Astra. The adapter requires
 OpenCode 1.18.10 and registers the exact public definitions in `openai-models.json`
 for each requested model. This corrects the CLI's ChatGPT-login name filter, which
@@ -37,13 +40,24 @@ recognises decimal-version names but omits the plain GPT-6 Luna/Astra IDs.
 Authentication continues through the caller's selected existing login; model
 definitions contain no endpoint, credential or alias changes. The adapter refreshes
 its native catalogue before rejecting other missing IDs. Catalogue presence alone
-is not proof of inference access. A new batch requires compatible
-tasks, verified model access and an explicit permission map for that run.
+is not proof of inference access. A new batch requires explicit authorisation,
+verified model access and an approved permission map for that run.
 
-The completed pilot and its transcripts, databases and run directories remain
-outside the repo, unchanged. These files are the reusable suite, not those results.
-Run model sessions in external scratch directories. Agents must not receive
-fixture or grading files.
+Investigators receive only the exact question, executable, endpoint, dataset window
+and scratch/lifecycle restrictions. They answer naturally, with no required JSON
+or evidence field. `tasks.json` contains no answer key; private reference facts and
+criteria are loaded separately by `grade.ts`, never into investigator vars or scratch.
+Each answer is graded in a new `openai/gpt-6.1-sol` context using the same selected
+credential references and existing isolation boundaries. Common grading instructions
+are supplied once in that session. Each criterion gets Pass/Fail and an explanation;
+the task passes only when its approved criterion and any required file check pass.
+Invalid grader output, provider errors and timeouts are execution errors, not
+incorrect investigator answers. Grading reliability remains provisional until
+comparison with human-reviewed answers; deterministic tests do not validate model judgments.
+
+Run results, transcripts and databases stay outside the repo. These files are
+the reusable suite. Run model sessions in external scratch directories.
+Investigators must not receive fixture or grading files.
 
 ## Local setup
 
@@ -82,8 +96,16 @@ node evals/viewer-usability/prepare.ts
 Preparation posts unchanged request bytes, checks Collector partial-success
 responses, waits for manifest counts, and checks stored rejection diagnostics.
 The connection window is formatted from manifest nanoseconds without rounding.
-`verify.ts` still checks the old pilot's task answers; do not use it as proof of
-the new small investigations until task migration is complete.
+`verify.ts` checks 32 checkout roots, regional/version cohorts, exact sequence types,
+payment failure and latency, all five trace logs, histogram spike/recovery, cumulative
+request count and the limits of sparse gateway-only CPU samples. Trace/context values
+are checked against staged fixture data. Parent relationships use same-trace
+`parentSpanId`, not the resource or scope wrapper. Histogram interval mean is derived
+as received binary64 sum divided by exact count, in seconds; displayed decimals
+are approximate. Span duration is end timestamp minus start timestamp, computed
+as an exact integer in nanoseconds; seconds are a display conversion. CPU percentages
+are received gauge ratios multiplied by 100, displayed as approximate binary64
+percentages. These associations do not establish deployment or CPU causation.
 
 `prepare.ts` refuses an existing `runtime/` directory, starts one owned viewer
 with browser opening disabled, and records its PID/command in
@@ -91,7 +113,7 @@ with browser opening disabled, and records its PID/command in
 It stops only its owned process if preparation fails. No internal trace-monitoring
 instance is required. Use a fresh runtime directory for another experiment.
 
-After next-eval isolation and task changes are verified, run through
+After all agreed changes land and a model batch is explicitly authorised, run through
 `node evals/viewer-usability/run-pilot.ts`. It disables Promptfoo telemetry and
 sharing, writes Promptfoo state under the external runtime, and refuses an
 existing `pilot.json`. It preserves failed runs and their transcripts.
@@ -129,7 +151,8 @@ then checks the exact requested ID, with no model fallback or alias. The normal
 build agent and built-in tools remain; no custom tool interface is introduced.
 The runtime viewer executable remains on the explicitly assembled PATH.
 
-Evidence is in a separate private `runs/*` directory, not model scratch. It records
+Evidence is in separate private `runs/investigator-*` and `runs/grader-*` directories,
+not model scratch. It records
 actual version, requested model, session IDs, launch paths and outputs; failures
 are retained. Selected credentials are redacted from captured output, including
 split chunks. Credential copies and evidence files are `0600`; private roots are
@@ -182,39 +205,47 @@ npm run verify:loader --prefix evals/viewer-usability
 This runs the actual pinned Promptfoo CLI against `config.ts`, `provider.ts` and
 `grade.ts`, filtering to one existing task with all three configured model IDs.
 The supplied executable is a local synthetic child, not OpenCode or a model service.
-All proof, outputs and private synthetic
-auth references remain in a new external directory. No inference is performed.
+The loader verifies natural prose, fresh exact-model grader sessions, private prompt
+separation and execution-error handling. All proof, outputs and private synthetic
+auth references remain in a new directory under the system temporary directory
+(or the caller's `TMPDIR`).
+No inference is performed.
 
 Owned-viewer integration verification requires separate permission to start a
 new viewer server and stop/wait for only that owned process. CLI-client permission
 alone does not authorise this command. Set `OTEL_EVAL_VIEWER_BINARY` to an absolute
-viewer executable path and `OTLP_DATASET` to an absolute dataset directory.
+viewer executable path. `OTLP_DATASET` is optional and defaults to shared `small`.
 It copies unchanged requests, checks counts
 and rejection diagnostics, records PID/command, then stops and waits for its viewer.
-It never reuses or stops an existing viewer. With the historical `usability-pilot`
-dataset only, `--verify-pilot` also verifies all six unchanged task answers through SQL.
-It is not a new-small-task verifier and does not run model inference.
+It never reuses or stops an existing viewer. It verifies the approved investigation
+facts against the new store and does not run model inference.
 
 ```sh
 export OTEL_EVAL_VIEWER_BINARY="$OTEL_EVAL_RUN_DIR/otel-desktop-viewer"
 OTLP_DATASET="$PWD/testdata/otlp/small" \
   node evals/viewer-usability/verify-integration.ts
-OTLP_DATASET="$PWD/testdata/otlp/usability-pilot" \
-  node evals/viewer-usability/verify-integration.ts --verify-pilot
 ```
+
+Task 7 also requires a produced file. The runner keeps the investigator's scratch
+path in response metadata. The verifier inspects only regular files in that scratch,
+ignores symbolic links, and does not follow paths supplied in the answer. It accepts
+any filename or subdirectory. A complete six-span export must retain exact values,
+resource/scope context, exception and same-trace parent IDs. Candidate bytes are sent
+unchanged over OTLP HTTP to a new dynamic-port viewer with browser opening disabled;
+the re-exported trace is compared with the staged reference. The owned replay process
+is stopped and awaited in `finally`. This checks importability without relying on
+pending CLI line-file replay changes; it does not test browser import.
 
 ## Owned overnight run
 
-`run-overnight.ts` stages the explicitly selected historical pilot dataset,
-starts one dedicated viewer, verifies all six expected answers before model calls,
-runs 54 fresh sessions (six tasks × three models × three repetitions), then stops
+`run-overnight.ts` stages shared `small` by default, honours `OTLP_DATASET`,
+starts one dedicated viewer, verifies approved facts before model calls,
+derives investigator session count from tasks × models × three repetitions, then stops
 and waits for its owned viewer on completion or failure. It requires separate
 permission for this viewer lifecycle and an absolute `OTEL_EVAL_VIEWER_BINARY`.
-Set `OTLP_DATASET` to the `usability-pilot` directory and `OTEL_EVAL_ISOLATION_FILE`
-to the private approved settings. Source commits, binary hash, settings and run
-ownership are recorded in the external run directory. Shared `small` remains the
-default for ordinary dataset loading; these historical cases require this explicit
-selection until their migration is complete.
+Set `OTEL_EVAL_ISOLATION_FILE` to the private approved settings. Each completed
+investigation gets a separate fresh Sol6.1 grading session, not an added investigator
+cohort. Source commits, binary hash, settings and ownership are recorded externally.
 
 ## Model summary and CAD API-price estimate
 
@@ -226,8 +257,11 @@ throughout that run. Existing snapshots are reused without overwriting them.
 `pilot-summary.md` shows model totals, median seconds per task attempt, tool calls,
 recorded failed tools, uncached input, output including reasoning, cache reads and
 estimated API cost in CAD. Per-task details follow the model table.
-`model-summary.json` retains unrounded costs, cache-write totals, attempt counts
-and estimate coverage alongside the pricing snapshot.
+`model-summary.json` retains investigator costs, usage and attempt counts.
+`grader-summary.json` separately retains grader costs, usage, timing, per-criterion
+judgments and execution failures. Markdown has separate investigator and grader tables.
+Retained investigator process evidence preserves usage even when Promptfoo drops
+its response from a row after a grading assertion throws.
 
 OpenCode's input count excludes cache reads/writes; its output count excludes
 reasoning. For each model response, the estimate uses:
@@ -249,7 +283,7 @@ Local CLI/HTTP tools have no additional hosted-tool charge in this estimate.
 ## Measurement boundaries
 
 - Fresh OpenCode session, private context paths and external working directory per model/task.
-- Scores check required final JSON facts; command choice earns no credit.
+- Separate provisional grading checks correctness and support, not answer format or command choice.
 - Readiness/setup failures, instruction violations and factual failures must be
   distinguished during transcript review.
 - Current command counters count matching shell entries, including help; loops,
