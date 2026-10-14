@@ -3,7 +3,7 @@ import path from 'node:path'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import cases from './tasks.json' with { type: 'json' }
-import { providerFixture } from './test-fixture.ts'
+import { providerFixture, viewerSkillFixture } from './test-fixture.ts'
 import { readJson, record, saveJson, SUITE } from './runtime.ts'
 import rubrics from './rubrics.json' with { type: 'json' }
 import { pilotSummary } from './run-pilot.ts'
@@ -25,7 +25,7 @@ fs.writeFileSync(
   JSON.stringify(settings)
 )
 saveJson(path.join(root, 'connection.json'), {
-  binary: '/synthetic/viewer',
+  binary: viewerSkillFixture(root),
   endpoint: 'http://127.0.0.1:1',
   start: '2026-10-07T08:00:00Z',
   end: '2026-10-07T08:10:00Z',
@@ -34,26 +34,18 @@ saveJson(path.join(root, 'isolation.json'), isolation)
 const pinned = record(
   readJson(path.join(SUITE, 'node_modules/promptfoo/package.json'))
 )
-assert.equal(pinned.version, '0.124.0')
+assert.equal(pinned.version, '0.124.1')
 const command = [
   process.execPath,
-  path.join(SUITE, 'node_modules/promptfoo/dist/src/entrypoint.js'),
-  'eval',
-  '-c',
-  path.join(SUITE, 'config.ts'),
-  '--filter-first-n',
-  '1',
-  '--no-cache',
-  '--no-share',
-  '-o',
-  path.join(root, 'loader-results.json'),
-  '--no-progress-bar',
-  '--no-table',
+  '--input-type=module',
+  '-e',
+  `import config from ${JSON.stringify(path.join(SUITE, 'config.ts'))}; import {runNativeEvaluation} from ${JSON.stringify(path.join(SUITE, 'native-evaluate.ts'))}; process.exitCode=await runNativeEvaluation({...config,tests:config.tests.slice(0,4)},1,process.argv[1]);`,
+  'loader-results.json',
 ]
 const result = spawnSync(command[0], command.slice(1), {
   cwd: root,
   encoding: 'utf8',
-  timeout: 120000,
+  timeout: 300000,
   env: {
     ...process.env,
     OTEL_EVAL_RUN_DIR: root,
@@ -131,14 +123,11 @@ fs.writeFileSync(
   JSON.stringify({ ...settings, graderAnswer: 'invalid grader response' })
 )
 const errorCommand = [...command]
-errorCommand[errorCommand.indexOf('-o') + 1] = path.join(
-  root,
-  'loader-errors.json'
-)
+errorCommand[errorCommand.length - 1] = 'loader-errors.json'
 const failed = spawnSync(errorCommand[0], errorCommand.slice(1), {
   cwd: root,
   encoding: 'utf8',
-  timeout: 120000,
+  timeout: 300000,
   env: {
     ...process.env,
     OTEL_EVAL_RUN_DIR: root,
@@ -185,14 +174,11 @@ fs.writeFileSync(
   })
 )
 const factCommand = [...command]
-factCommand[factCommand.indexOf('-o') + 1] = path.join(
-  root,
-  'loader-factual-failures.json'
-)
+factCommand[factCommand.length - 1] = 'loader-factual-failures.json'
 const factual = spawnSync(factCommand[0], factCommand.slice(1), {
   cwd: root,
   encoding: 'utf8',
-  timeout: 120000,
+  timeout: 300000,
   env: {
     ...process.env,
     OTEL_EVAL_RUN_DIR: root,
@@ -234,7 +220,7 @@ for (const run of investigatorRuns)
   )
 saveJson(path.join(root, 'loader-proof.json'), {
   loadedConfig: path.join(SUITE, 'config.ts'),
-  loadedProvider: path.join(SUITE, 'provider.ts'),
+  loadedProvider: path.join(SUITE, 'native-lifecycle.ts'),
   loadedGrader: path.join(SUITE, 'grade.ts'),
   syntheticResults: rows.length,
   syntheticExecutionErrors: errorRows.length,

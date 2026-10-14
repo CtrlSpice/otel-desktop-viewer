@@ -21,7 +21,7 @@ test('pilot subprocess keeps sharing/telemetry disabled, failed evidence and ori
   const suite = path.join(root, 'synthetic-suite')
   fs.mkdirSync(path.join(suite, 'node_modules/.bin'), { recursive: true })
   fs.writeFileSync(
-    path.join(suite, 'node_modules/.bin/promptfoo'),
+    path.join(suite, 'native-evaluate.ts'),
     `#!${process.execPath}
 const fs = require('node:fs');
 const path = require('node:path');
@@ -46,11 +46,10 @@ process.exitCode = 7;
   assert.equal(observation.state, path.join(root, 'promptfoo-state'))
   assert.equal(observation.cwd, fs.realpathSync(root))
   assert.ok(Array.isArray(observation.args))
-  assert.ok(observation.args.includes('--no-share'))
-  const repeat = observation.args.indexOf('--repeat')
-  assert.ok(repeat >= 0)
-  assert.equal(observation.args[repeat + 1], '3')
-  assert.ok(observation.args.includes(path.join(suite, 'config.ts')))
+  assert.deepEqual(observation.args, [])
+  const entrypoint = fs.readFileSync(path.join(SUITE, 'native-evaluate.ts'), 'utf8')
+  assert.match(entrypoint, /share: false/)
+  assert.match(entrypoint, /repeat = 3/)
   assert.equal(
     record(readJson(path.join(root, 'pilot-completion.json'))).exit,
     7
@@ -85,14 +84,9 @@ test('pilot spawn failure keeps protected completion and logs', async () => {
   const root = fs.mkdtempSync(
     path.join(TEMPORARY, 'eval-typescript-pilot-spawn-test-')
   )
-  await assert.rejects(
-    runPilot(root, path.join(root, 'missing-suite'), pricing),
-    /ENOENT/
-  )
-  assert.match(
-    String(record(readJson(path.join(root, 'pilot-completion.json'))).error),
-    /ENOENT/
-  )
+  assert.equal(await runPilot(root, path.join(root, 'missing-suite'), pricing), 1)
+  assert.equal(record(readJson(path.join(root, 'pilot-completion.json'))).exit, 1)
+  assert.match(fs.readFileSync(path.join(root, 'pilot.stderr.log'), 'utf8'), /Cannot find module/)
   assert.equal(
     fs.statSync(path.join(root, 'pilot.stderr.log')).mode & 0o777,
     0o600
@@ -135,11 +129,13 @@ test('actual standalone pilot entrypoint propagates nonzero child exit', () => {
     'runtime.ts',
     'pricing.ts',
     'model-summary.ts',
+    'clean-environment.ts',
+    'openai-models.json',
   ])
     fs.copyFileSync(path.join(SUITE, file), path.join(suite, file))
   fs.writeFileSync(path.join(suite, 'package.json'), '{"type":"module"}')
   fs.writeFileSync(
-    path.join(suite, 'node_modules/.bin/promptfoo'),
+    path.join(suite, 'native-evaluate.ts'),
     `#!${process.execPath}\nprocess.exitCode = 7;\n`,
     { mode: 0o700 }
   )

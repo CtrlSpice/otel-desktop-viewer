@@ -8,6 +8,7 @@ import { datasetSource, stageDataset } from './stage-dataset.ts'
 import { runtimeRoot, saveJson } from './runtime.ts'
 import cases from './tasks.json' with { type: 'json' }
 import { GRADER_MODEL } from './grade.ts'
+import { ownedViewerStop } from './owned-viewer-stop.ts'
 
 const root = runtimeRoot()
 const binary = process.env.OTEL_EVAL_VIEWER_BINARY
@@ -52,6 +53,7 @@ fs.copyFileSync(
 )
 stageDataset(source, path.join(root, 'fixture'))
 const ready = await prepare(root)
+const stopViewer = ownedViewerStop(root, ready)
 let phase = 'verification'
 try {
   await verify('preflight', root)
@@ -64,7 +66,7 @@ try {
       endpoint: ready.endpoint,
     })
   )
-  const exit = await runPilot(root)
+  const exit = await runPilot(root, undefined, undefined, stopViewer)
   saveJson(path.join(root, 'overnight-completion.json'), {
     finishedAt: new Date().toISOString(),
     exit,
@@ -77,16 +79,5 @@ try {
   })
   process.exitCode = 1
 } finally {
-  ready.process.kill('SIGTERM')
-  const timer = setTimeout(() => ready.process.kill('SIGKILL'), 30000)
-  try {
-    const exit = await ready.closed
-    saveJson(path.join(root, 'owned-shutdown.json'), {
-      pid: ready.pid,
-      waited: true,
-      exit,
-    })
-  } finally {
-    clearTimeout(timer)
-  }
+  await stopViewer()
 }

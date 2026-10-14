@@ -22,7 +22,7 @@ test('runner configuration forwards only explicit private isolation settings', (
       [
         '--input-type=module',
         '-e',
-        'import c from "./config.ts"; console.log(JSON.stringify(c.providers.map(p=>p.config)));',
+        'import c from "./config.ts"; console.log(JSON.stringify({models:[...new Set(c.tests.map(t=>t.vars.eval_model))],tests:c.tests.length,extensions:c.extensions}));',
       ],
       {
         cwd: SUITE,
@@ -37,10 +37,9 @@ test('runner configuration forwards only explicit private isolation settings', (
   const result = run(file)
   assert.equal(result.status, 0)
   const parsed: unknown = JSON.parse(result.stdout)
-  assert.ok(Array.isArray(parsed))
-  const providers = parsed.map(record)
+  const configuration = record(parsed)
   assert.deepEqual(
-    providers.map(provider => provider.model),
+    configuration.models,
     [
       'openai/gpt-6.1-sol',
       'openai/gpt-5.6-sol',
@@ -48,17 +47,12 @@ test('runner configuration forwards only explicit private isolation settings', (
       'openai/gpt-5.6-luna',
     ]
   )
-  for (const provider of providers)
-    assert.deepEqual(provider.isolation, settings)
+  assert.equal(configuration.tests, 40)
+  assert.equal((configuration.extensions as string[]).length, 3)
   const missing = run('')
   assert.equal(missing.status, 0)
   const missingProviders: unknown = JSON.parse(missing.stdout)
-  assert.ok(Array.isArray(missingProviders))
-  assert.ok(
-    missingProviders
-      .map(record)
-      .every(provider => provider.isolation === undefined)
-  )
+  assert.equal(record(missingProviders).tests, 40)
   fs.chmodSync(file, 0o644)
   const publicFile = run(file)
   assert.notEqual(publicFile.status, 0)

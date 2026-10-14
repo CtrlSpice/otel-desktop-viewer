@@ -7,6 +7,151 @@ import Provider from './provider.ts'
 import { providerFixture as setup } from './test-fixture.ts'
 import { readJson, record } from './runtime.ts'
 import { credentialEnvironment } from './clean-environment.ts'
+import { permissionStopFixture } from './permission-stop-fixture.ts'
+
+test('split native viewer denial terminates the child, retains partial evidence and prevents new sessions', async () => {
+  const previous = { ...process.env }
+  try {
+    const { root, isolation } = permissionStopFixture({ mode: 'split' })
+    const provider = new Provider({
+      config: { model: 'openai/gpt-6.1-sol', isolation },
+    })
+    const result = await provider.callApi(
+      'Viewer executable: ' + path.join(root, 'otel-desktop-viewer'),
+      { vars: { task_id: 'blocked' } }
+    )
+    assert.match(result.error ?? '', /Harness blocker/)
+    assert.equal(result.metadata.timedOut, false)
+    const blocker = record(readJson(path.join(root, 'harness-blocker.json')))
+    assert.equal(blocker.status, 'harness-blocker')
+    assert.equal(blocker.task, 'blocked')
+    assert.equal(
+      record(record(blocker.denial).input).command,
+      './otel-desktop-viewer --help'
+    )
+    assert.equal(fs.existsSync(path.join(root, 'continued-tool-work')), false)
+    const pid = Number(
+      fs.readFileSync(
+        path.join(result.metadata.evidence, 'process.pid'),
+        'utf8'
+      )
+    )
+    assert.throws(() => process.kill(pid, 0), /ESRCH/)
+    const retained = fs.readFileSync(
+      path.join(result.metadata.evidence, 'stdout.jsonl'),
+      'utf8'
+    )
+    assert.ok(retained.endsWith('\n'))
+    assert.match(retained, /external_directory/)
+    assert.ok(
+      fs.existsSync(path.join(result.metadata.evidence, 'failure.json'))
+    )
+    assert.ok(
+      fs.existsSync(
+        path.join(result.metadata.evidence, 'partial-commands.json')
+      )
+    )
+    await assert.rejects(
+      provider.callApi('next', { vars: { task_id: 'next' } }),
+      /Evaluation stopped/
+    )
+    assert.equal(
+      fs
+        .readFileSync(path.join(root, 'started.jsonl'), 'utf8')
+        .trim()
+        .split('\n').length,
+      1
+    )
+  } finally {
+    process.env = previous
+  }
+})
+
+test('protected/lifecycle denials remain logged; ordinary failures and quoted denials do not abort', async () => {
+  const previous = { ...process.env }
+  try {
+    for (const mode of [
+      'protected',
+      'lifecycle',
+      'quoted',
+      'not-found',
+      'search-empty',
+      'rpc-error',
+    ]) {
+      const { root, isolation } = permissionStopFixture({ mode })
+      const result = await new Provider({
+        config: { model: 'openai/gpt-6.1-sol', isolation },
+      }).callApi(
+        'Viewer executable: ' + path.join(root, 'otel-desktop-viewer'),
+        { vars: { task_id: mode } }
+      )
+      assert.equal(result.error, undefined, mode)
+      assert.equal(
+        fs.existsSync(path.join(root, 'harness-blocker.json')),
+        false,
+        mode
+      )
+      assert.equal(
+        fs.existsSync(
+          path.join(result.metadata.evidence, 'permission-denials.jsonl')
+        ),
+        mode === 'protected' || mode === 'lifecycle',
+        mode
+      )
+      assert.equal(result.output, 'synthetic complete answer')
+      assert.equal(
+        result.metadata.failedToolCalls,
+        ['protected', 'lifecycle', 'not-found', 'search-empty'].includes(mode)
+          ? 1
+          : 0
+      )
+    }
+  } finally {
+    process.env = previous
+  }
+})
+
+test('supplied viewer is copied into investigator scratch without exposing run evidence', async () => {
+  const previous = { ...process.env }
+  try {
+    const { root, isolation } = setup()
+    const viewer = path.join(root, 'otel-desktop-viewer')
+    fs.writeFileSync(viewer, '#!/bin/sh\nexit 0\n', { mode: 0o700 })
+    fs.writeFileSync(path.join(root, 'answer-canary.txt'), 'private answer')
+    const result = await new Provider({
+      config: { model: 'openai/gpt-6.1-sol', isolation },
+    }).callApi('Viewer executable: ' + viewer, { vars: { task_id: 'access' } })
+    assert.equal(result.error, undefined)
+    const copied = path.join(
+      result.metadata.workspace!,
+      'bin/otel-desktop-viewer'
+    )
+    assert.deepEqual(fs.readFileSync(copied), fs.readFileSync(viewer))
+    assert.equal(fs.statSync(copied).mode & 0o777, 0o700)
+    assert.deepEqual(fs.readdirSync(path.dirname(copied)), [
+      'otel-desktop-viewer',
+    ])
+    const prompt = fs.readFileSync(
+      path.join(result.metadata.evidence, 'prompt.txt'),
+      'utf8'
+    )
+    assert.ok(prompt.includes(copied))
+    assert.ok(!prompt.includes('Viewer executable: ' + viewer))
+    const observation = record(
+      readJson(path.join(result.metadata.workspace!, 'stub-observation.json'))
+    )
+    assert.deepEqual(
+      record(observation.config).permission,
+      isolation.permission
+    )
+    assert.equal(
+      fs.existsSync(path.join(result.metadata.workspace!, 'answer-canary.txt')),
+      false
+    )
+  } finally {
+    process.env = previous
+  }
+})
 
 test('timed-out sessions retain partial evidence, terminate their process and allow the next call', async () => {
   const previous = { ...process.env }

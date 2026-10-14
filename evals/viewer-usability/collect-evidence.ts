@@ -1,14 +1,15 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { investigatorEvidence, ownedPath, sha256 } from './evidence.ts'
-import { gradingPrompt } from './grade.ts'
+import { gradingPrompt, readViewerSkill } from './grade.ts'
 import { record, saveJson, TEMPORARY } from './runtime.ts'
 
-export function collectEvidence(root: string, parent = TEMPORARY) {
+export async function collectEvidence(root: string, parent = TEMPORARY) {
   const pilotFile = ownedPath(root, path.join(root, 'pilot.json'))
   const pilotText = fs.readFileSync(pilotFile, 'utf8')
   const rows = record(record(JSON.parse(pilotText)).results).results
   if (!Array.isArray(rows)) throw new Error('Missing saved attempts')
+  const viewerSkill = await readViewerSkill(root)
   const output = fs.mkdtempSync(path.join(parent, 'otel-grader-evidence-'))
   fs.chmodSync(output, 0o700)
   const seen = new Set<string>()
@@ -36,7 +37,13 @@ export function collectEvidence(root: string, parent = TEMPORARY) {
     const name = path.basename(packet.investigator.evidence) + '.json'
     saveJson(path.join(output, name), packet)
     const packetText = fs.readFileSync(path.join(output, name), 'utf8')
-    const prompt = gradingPrompt(taskID, response.output, undefined, packet)
+    const prompt = gradingPrompt(
+      taskID,
+      response.output,
+      viewerSkill,
+      undefined,
+      packet
+    )
     const truncated = packet.events
       .filter(event => {
         const state = record(record(record(JSON.parse(event.raw)).part).state)
@@ -118,4 +125,4 @@ if (
   process.argv[1] &&
   fs.realpathSync(process.argv[1]) === import.meta.filename
 )
-  console.log(JSON.stringify(collectEvidence(process.argv[2]), null, 2))
+  console.log(JSON.stringify(await collectEvidence(process.argv[2]), null, 2))

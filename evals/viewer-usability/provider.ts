@@ -8,6 +8,7 @@ import {
   credentialEnvironment,
 } from './clean-environment.ts'
 import { usageStep } from './pricing.ts'
+import { permissionDenial } from './permission-stop.ts'
 
 export type Isolation = {
   permission?: unknown
@@ -55,7 +56,7 @@ function parseEvents(stdout: string) {
 const tokenCount = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value) ? value : 0
 
-function sessionSummary(stdout: string) {
+export function sessionSummary(stdout: string) {
   const events = parseEvents(stdout)
   const steps = events.filter(event => event.type === 'step_finish')
   const usage = {
@@ -198,6 +199,11 @@ export default class OpenCodeProvider {
   }
   async callApi(prompt: string, context: { vars: { task_id?: unknown } }) {
     const root = runtimeRoot()
+    const blockerFile = path.join(root, 'harness-blocker.json')
+    if (fs.existsSync(blockerFile))
+      throw new Error(
+        'Evaluation stopped by viewer permission denial; see ' + blockerFile
+      )
     const workspaceRoot = path.join(root, 'workspaces')
     const evidenceRoot = path.join(root, 'runs')
     fs.mkdirSync(workspaceRoot, { recursive: true })
@@ -216,6 +222,11 @@ export default class OpenCodeProvider {
     let binary = ''
     let redact = (text: string) => text
     let secrets: string[] = []
+    const viewers = [
+      path.join(root, 'otel-desktop-viewer'),
+      path.join(process.env.OTEL_EVAL_RUN_DIR!, 'otel-desktop-viewer'),
+    ]
+    let blocked: ReturnType<typeof permissionDenial>
     const save = (name: string, value: unknown) =>
       fs.writeFileSync(
         path.join(evidence, name),
@@ -230,8 +241,10 @@ export default class OpenCodeProvider {
         const sink = (name: string) => {
           const descriptor = fs.openSync(path.join(evidence, name), 'wx', 0o600)
           let pending = ''
+          let closed = false
           const maximum = Math.max(1, ...secrets.map(value => value.length))
           return (chunk: string, final = false) => {
+            if (closed) return
             pending += chunk
             const end = final
               ? pending.length
@@ -253,7 +266,10 @@ export default class OpenCodeProvider {
             }
             pending = pending.slice(offset)
             fs.writeSync(descriptor, safe)
-            if (final) fs.closeSync(descriptor)
+            if (final) {
+              fs.closeSync(descriptor)
+              closed = true
+            }
           }
         }
         const writeOut = sink(stdoutFile),
@@ -284,24 +300,87 @@ export default class OpenCodeProvider {
           }
         }
         let groupCleanup: Promise<void> | undefined
+        const terminateOwned = () => {
+          if (groupCleanup) return
+          signalOwned('SIGTERM')
+          groupCleanup = new Promise(resolve => {
+            setTimeout(() => {
+              signalOwned('SIGKILL')
+              resolve()
+            }, 30000)
+          })
+        }
         const timer = setTimeout(
           () => {
             timedOut = true
-            signalOwned('SIGTERM')
-            groupCleanup = new Promise(resolve => {
-              setTimeout(() => {
-                signalOwned('SIGKILL')
-                resolve()
-              }, 30000)
-            })
+            terminateOwned()
           },
           Math.max(0, this.timeoutMs - (performance.now() - started))
         )
         child.stdout.setEncoding('utf8')
         child.stderr.setEncoding('utf8')
+        let pendingEvents = ''
+        const inspectLine = (line: string) => {
+          if (stdoutFile !== 'stdout.jsonl' || blocked) return
+          const denial = permissionDenial(line, isolated!.workspace, viewers)
+          if (!denial) return
+          fs.appendFileSync(
+            path.join(evidence, 'permission-denials.jsonl'),
+            redact(JSON.stringify(denial)) + '\n',
+            { mode: 0o600 }
+          )
+          if (!denial.stopsRun || this.role !== 'investigator' || timedOut)
+            return
+          blocked = denial
+          clearTimeout(timer)
+          const blocker = {
+            status: 'harness-blocker',
+            role: this.role,
+            model: this.model,
+            task: context.vars.task_id,
+            evidence,
+            attempt: path.basename(evidence),
+            workspace: isolated!.workspace,
+            isolationRoot: isolated!.root,
+            version,
+            sessionPID: child.pid,
+            runnerPID: process.pid,
+            timedOut: false,
+            timeoutMs: this.timeoutMs,
+            harnessBlocker: true,
+            detectedAt: new Date().toISOString(),
+            denial,
+            ...sessionSummary(stdout),
+            output: undefined,
+          }
+          save('failure.json', blocker)
+          save('partial-commands.json', sessionSummary(stdout).commands)
+          fs.writeFileSync(
+            blockerFile,
+            redact(JSON.stringify(blocker, null, 2)),
+            { flag: 'wx', mode: 0o600 }
+          )
+          // Persist the full blocked event before the runner terminates Promptfoo.
+          writeOut('', true)
+          writeErr('', true)
+          terminateOwned()
+          if (process.send)
+            process.send({
+              type: 'otel-eval-harness-blocker',
+              root,
+              sessionPID: child.pid,
+              runnerPID: process.pid,
+            })
+        }
         child.stdout.on('data', data => {
           stdout += data
           writeOut(data)
+          pendingEvents += data
+          let end
+          while ((end = pendingEvents.indexOf('\n')) >= 0) {
+            inspectLine(pendingEvents.slice(0, end))
+            pendingEvents = pendingEvents.slice(end + 1)
+          }
         })
         child.stderr.on('data', data => {
           stderr += data
@@ -315,6 +394,7 @@ export default class OpenCodeProvider {
         })
         child.once('close', async (code, signal) => {
           clearTimeout(timer)
+          if (pendingEvents) inspectLine(pendingEvents)
           writeOut('', true)
           writeErr('', true)
           // A closed direct child does not mean its owned descendants have exited.
@@ -393,6 +473,25 @@ export default class OpenCodeProvider {
         providerIDs,
         executablePaths: [root, ...executablePaths],
       })
+      const viewer = path.join(root, 'otel-desktop-viewer')
+      const viewerPaths = [
+        viewer,
+        path.join(process.env.OTEL_EVAL_RUN_DIR!, 'otel-desktop-viewer'),
+      ]
+      if (
+        this.role === 'investigator' &&
+        viewerPaths.some(file => prompt.includes(file))
+      ) {
+        // Keep the supplied executable inside assigned scratch, not beside answers.
+        const directory = path.join(isolated.workspace, 'bin')
+        fs.mkdirSync(directory, { mode: 0o700 })
+        const suppliedViewer = path.join(directory, 'otel-desktop-viewer')
+        fs.copyFileSync(viewer, suppliedViewer, fs.constants.COPYFILE_EXCL)
+        fs.chmodSync(suppliedViewer, 0o700)
+        viewers.push(suppliedViewer)
+        for (const file of viewerPaths)
+          prompt = prompt.split(file).join(suppliedViewer)
+      }
       const candidates = path.isAbsolute(binary)
         ? [binary]
         : isolated.env.PATH.split(path.delimiter).map(directory =>
@@ -546,6 +645,12 @@ export default class OpenCodeProvider {
       save('commands.json', commands)
       save('metrics.json', metadata)
       save('answer.txt', output)
+      if (blocked) {
+        return {
+          error: 'Harness blocker: viewer permission denial; see ' + evidence,
+          metadata: { ...metadata, harnessBlocker: true },
+        }
+      }
       if (timedOut) {
         const error = 'OpenCode session timed out; see ' + evidence
         save('failure.json', { error, ...metadata })

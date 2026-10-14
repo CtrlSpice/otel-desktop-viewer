@@ -34,6 +34,6 @@
   },
   {
     "id": "cpu-evidence",
-    "goal": "Was CPU unusually high when checkout-019 was slow?"
+    "goal": "What CPU readings are available around checkout-019?"
   }
 ]

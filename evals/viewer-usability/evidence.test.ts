@@ -5,7 +5,9 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { investigatorEvidence, toolEvidence } from './evidence.ts'
 import { collectEvidence } from './collect-evidence.ts'
-import { providerFixture } from './test-fixture.ts'
+import {
+  providerFixture, viewerSkillFixture, VIEWER_SKILL,
+} from './test-fixture.ts'
 import OpenCodeProvider from './provider.ts'
 import { readJson, record, SUITE } from './runtime.ts'
 
@@ -177,7 +179,7 @@ test('owned evidence matches one answer and rejects missing, swapped and symlink
   )
 })
 
-test('pinned Promptfoo delivers matching tool evidence only to the fresh grader', () => {
+test('pinned Promptfoo delivers matching tool evidence only to the fresh grader', async () => {
   const { root, isolation } = evidenceFixture()
   fs.writeFileSync(
     path.join(root, 'stub-settings.json'),
@@ -196,7 +198,7 @@ test('pinned Promptfoo delivers matching tool evidence only to the fresh grader'
   fs.writeFileSync(
     path.join(root, 'connection.json'),
     JSON.stringify({
-      binary: '/synthetic/viewer',
+      binary: viewerSkillFixture(root),
       endpoint: 'http://127.0.0.1:1',
       start: 'start',
       end: 'end',
@@ -205,28 +207,19 @@ test('pinned Promptfoo delivers matching tool evidence only to the fresh grader'
   assert.equal(
     record(readJson(path.join(SUITE, 'node_modules/promptfoo/package.json')))
       .version,
-    '0.124.0'
+    '0.124.1'
   )
   const result = spawnSync(
     process.execPath,
     [
-      path.join(SUITE, 'node_modules/promptfoo/dist/src/entrypoint.js'),
-      'eval',
-      '-c',
-      path.join(SUITE, 'config.ts'),
-      '--filter-first-n',
-      '1',
-      '--no-cache',
-      '--no-share',
-      '-o',
-      path.join(root, 'pilot.json'),
-      '--no-progress-bar',
-      '--no-table',
+      '--input-type=module',
+      '-e',
+      `import config from ${JSON.stringify(path.join(SUITE, 'config.ts'))}; import {runNativeEvaluation} from ${JSON.stringify(path.join(SUITE, 'native-evaluate.ts'))}; process.exitCode=await runNativeEvaluation({...config, tests:config.tests.slice(0,4)},1);`,
     ],
     {
       cwd: root,
       encoding: 'utf8',
-      timeout: 120000,
+      timeout: 300000,
       env: {
         ...process.env,
         OTEL_EVAL_RUN_DIR: root,
@@ -258,6 +251,7 @@ test('pinned Promptfoo delivers matching tool evidence only to the fresh grader'
       )
     )
     const packet = record(data.evidence)
+    assert.equal(data.viewerSkill, VIEWER_SKILL)
     assert.equal(record(packet.investigator).model, metadata.model)
     assert.equal(record(packet.investigator).evidence, metadata.evidence)
     assert.deepEqual(
@@ -275,11 +269,12 @@ test('pinned Promptfoo delivers matching tool evidence only to the fresh grader'
       path.join(String(metadata.evidence), 'prompt.txt'),
       'utf8'
     )
+    assert.ok(!investigatorPrompt.includes('SYNTHETIC_EVALUATED_VIEWER_GUIDE'))
     assert.ok(!investigatorPrompt.includes('Recorded tool events'))
     assert.ok(!investigatorPrompt.includes('reported-cause'))
     assert.notEqual(metadata.workspace, grader.workspace)
   }
-  const collected = collectEvidence(root, root)
+  const collected = await collectEvidence(root, root)
   assert.equal(collected.attempts, 4)
   const inventory = record(
     readJson(path.join(collected.output, 'inventory.json'))

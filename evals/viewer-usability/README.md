@@ -13,8 +13,9 @@ Keep credentials, local settings and run artifacts outside version control.
 | `prepare.ts`, `prepare.test.ts`                         | Start one owned persistent viewer, ingest the fixture and check failure cleanup                                    |
 | `verify.ts`                                             | Check approved small-dataset facts against stored traces, logs and metrics                                         |
 | `grade.ts`, `grade.test.ts`                             | Separate fresh Sol6.1 grading and synthetic wiring tests                                                           |
-| `verify-export.ts`, `verify-export.test.ts`             | Check session-owned export files and unchanged-byte replay into a new owned viewer                                 |
-| `provider.ts`, `config.ts`                              | Normal OpenCode sessions through Promptfoo                                                                         |
+| `verify-export.ts`, `verify-export.test.ts`             | Check session-owned JSON or tar.gz exports and unchanged-byte replay into a new owned viewer                        |
+| `native-lifecycle.ts`, `native-hooks.mjs`, `config.ts`    | Native Promptfoo OpenCode SDK providers with private attempt runtimes and lifecycle hooks                           |
+| `native-evaluate.ts`                                    | Programmatic Promptfoo evaluation in the same module graph as the native provider                                   |
 | `run-pilot.ts`, `run-pilot.test.ts`                     | Retain batch results, failures and summaries                                                                       |
 | `model-summary.ts`, `pricing.ts`, `api-prices.json`     | Model totals, per-response API-price estimates and a run-fixed USD/CAD rate                                        |
 | `runtime.ts`, `runtime.test.ts`                         | Require runtime paths outside repositories                                                                         |
@@ -52,11 +53,65 @@ or evidence field. `tasks.json` contains no answer key; private reference facts 
 criteria are loaded separately by `grade.ts`, never into investigator vars or scratch.
 Each answer is graded in a new `openai/gpt-6.1-sol` context using the same selected
 credential references and existing isolation boundaries. Common grading instructions
-are supplied once in that session. Each criterion gets Pass/Fail and an explanation;
+are supplied once in that session. The harness runs the evaluated binary's offline
+`skills` command and supplies its exact app guide as `viewerSkill` in the grading
+prompt. The guide is reference context for interpreting recorded commands/results;
+the grader is still instructed not to investigate or execute tools. The retained
+grader prompt includes the guide used for that attempt. A missing, failed or invalid
+guide read is a setup error before the grader starts. Each criterion gets Pass/Fail
+and an explanation;
 the task passes only when its approved criterion and any required file check pass.
 Invalid grader output, provider errors and timeouts are execution errors, not
 incorrect investigator answers. Grading reliability remains provisional until
 comparison with human-reviewed answers; deterministic tests do not validate model judgments.
+
+Before each attempt, the hook creates a private OpenCode profile and a seed containing
+only `bin/otel-desktop-viewer`. Promptfoo's native `copy_working_dir: 'copy'` supplies
+a fresh investigator workspace. The prompt uses `./bin/otel-desktop-viewer`, never
+the run-level executable path. No fixture, rubric or answer files are copied.
+Artifacts are retained in that attempt's owned `scratch` before assertions or
+framework cleanup. Export verification reads those retained bytes; verified filenames
+are mapped back to the original workspace paths by preserving each relative suffix.
+
+Native permission checks use only local synthetic responses and a new owned
+viewer. With an externally built verification binary, run
+`OTEL_EVAL_VIEWER_BINARY=/absolute/path/to/viewer node --test evals/viewer-usability/verify-permissions.ts`.
+The check retains tool events and waited viewer-shutdown evidence outside the
+repository. It also verifies active-session stopping on a native viewer-help
+working-directory denial. It does not run or grade a model evaluation.
+
+The provider detects native permission-denial events while OpenCode is running.
+A denial or pending native permission request for the supplied viewer's help or client commands stops the investigator
+and the remaining Promptfoo queue, skips grading the blocked attempt, and returns
+a nonzero harness-blocker result. Viewer commands include help/version discovery,
+skills, services, attributes, query, trace/span/log/metric clients, export and import.
+Protected-file, lifecycle, delegation and other-tool denials remain visible in
+the transcript and `permission-denials.jsonl`, but do not stop the run. Ordinary
+command failures, empty searches and JSON-RPC errors are not permission denials;
+successful output quoting a denial does not trigger stopping.
+
+The shell recogniser covers literal executable paths, quoted arguments, common
+wrappers, value flags, literal `cd` and redirections. It is not a complete shell
+interpreter: aliases, dynamically constructed paths and nested shell scripts are
+not claimed covered. Raw native permission events remain available for inspection.
+
+`harness-blocker.json` identifies the attempt, role, model, exact blocked input,
+native reason and raw event. The blocked attempt retains its partial transcript,
+failure record and command list; completed attempt records are preserved. The
+runner signals only its owned Promptfoo and OpenCode process groups and retains
+the existing 30-second cleanup grace for resistant descendants. The overnight
+runner starts shutdown of its owned viewer immediately and waits for it. Callers
+of `runPilot` that own a viewer supply the same shutdown callback; the pilot does
+not infer ownership of a separately started viewer from a stored PID.
+
+`node --test evals/viewer-usability/native-lifecycle.test.ts` checks the current hook
+path with pinned Promptfoo, real native OpenCode and a scripted local model service.
+It checks fresh profiles/workspaces/conversations, saved-output retrieval, all-step
+usage, viewer denial/pending-permission stopping, deadlines and owned cleanup.
+Set `OTEL_EVAL_VIEWER_BINARY` to an externally built viewer to exercise its real help;
+otherwise the test uses a deterministic executable. It makes no paid/live model calls.
+The older CLI-specific `verify-stop.ts` is retained as historical verification source,
+not a current native-hook verification command.
 
 Run results, transcripts and databases stay outside the repo. These files are
 the reusable suite. Run model sessions in external scratch directories.
@@ -97,7 +152,11 @@ node evals/viewer-usability/prepare.ts
 ```
 
 Preparation posts unchanged request bytes, checks Collector partial-success
-responses, waits for manifest counts, and checks stored rejection diagnostics.
+responses, and polls final stored counts derived from the input. Spans count unique
+trace/span ID pairs; logs and supported metric datapoints count each occurrence.
+Stored rejection diagnostics are checked during polling, even if counts differ.
+The existing 100-attempt/100-ms wait is unchanged. Unconfirmed visibility at the
+deadline is a verifier infrastructure error, not evidence of payload rejection.
 The connection window is formatted from manifest nanoseconds without rounding.
 `verify.ts` checks 32 checkout roots, regional/version cohorts, exact sequence types,
 payment failure and latency, all five trace logs, histogram spike/recovery, cumulative
@@ -128,7 +187,7 @@ and usage, records an infrastructure error, and lets Promptfoo continue the queu
 ## Isolated provider setup
 
 Set `OTEL_EVAL_ISOLATION_FILE` to an absolute private JSON file (mode `0600`)
-outside model scratch. `config.ts` forwards it to each provider. The JSON accepts
+outside model scratch. Lifecycle hooks read it for each provider. The JSON accepts
 `permission` (required, caller-approved OpenCode rules), `authFile` (the original
 private absolute auth JSON reference), `providerIDs` (additional explicitly selected
 auth records), `executablePaths` (absolute executable directories), and
@@ -142,23 +201,38 @@ implemented here.
 No default cohort policy is supplied. The approved map must permit viewer CLI
 client/HTTP access while denying viewer start/stop/reconfiguration, source/fixture/
 grader/other-evaluation reads and delegation. Existing prompt restrictions remain.
-The adapter retains the existing `--auto` flag: this CLI auto-approves requests not
-explicitly denied. Therefore `ask` is not an effective denial in this runner.
+Native sessions do not use CLI `--auto` or silently approve permission requests.
+Pending viewer-help/client requests stop the run, just as native denials do.
+The session policy explicitly allows only its own native saved-output directory
+after the approved external-directory rules, so truncated tool results remain readable.
 Smoke-only permission maps in tests/verifier are not cohort policy.
 
 Each provider call creates a new `workspaces/clean-context-*` private root beneath
-the external runtime, with independent home/config/data/state/cache/tmp and empty
+the external runtime, with independent home/config/data/state/cache and empty
 scratch. It copies only selected authentication records and does not merge
 `process.env`. It checks the CLI version before configuration/model commands,
 then checks the exact requested ID, with no model fallback or alias. The normal
 build agent and built-in tools remain; no custom tool interface is introduced.
-The runtime viewer executable remains on the explicitly assembled PATH.
+The run-level viewer executable is not added to the investigator PATH.
+Server startup and native provider loading wait until Promptfoo assigns the actual
+working directory. Runtime `TMPDIR` is that workspace's `tmp` directory (the
+uncopied scratch for graders), so OpenCode's `tmp/opencode` instructions, tool
+environment and retained exports refer to the same workspace. Private authentication
+and data stay outside it; no additional external-directory permission is granted.
+Each attempt uses an owned `opencode serve` process with its explicit clean environment;
+the native provider connects through documented `baseUrl`, preserving selected OAuth
+authentication without injecting a substitute API key. Fresh provider instances retain
+their own session until evidence is recorded; no conversation is reused.
 
 Evidence is in separate private `runs/investigator-*` and `runs/grader-*` directories,
 not model scratch. It records
 actual version, requested model, session IDs, launch paths and outputs; failures
 are retained. Selected credentials are redacted from captured output, including
-split chunks. Credential copies and evidence files are `0600`; private roots are
+complete native event frames and history responses. `native-events.jsonl` retains raw
+events and `native-history.json` retains the complete session response. Tool strings
+and numeric text remain intact; usage is summed across every assistant step, not just
+the final answer. `afterEach` stops and waits for the owned runtime after assertions,
+with the existing descendant cleanup grace. Credential copies and evidence files are `0600`; private roots are
 `0700`. Original auth/config files are never written by the adapter.
 Context isolation is not a filesystem sandbox: tools can still access outside
 scratch according to permissions. Generic built-in prompts and the built-in
@@ -221,6 +295,8 @@ alone does not authorise this command. Set `OTEL_EVAL_VIEWER_BINARY` to an absol
 viewer executable path. `OTLP_DATASET` is optional and defaults to shared `small`.
 It copies unchanged requests, checks counts
 and rejection diagnostics, records PID/command, then stops and waits for its viewer.
+Readiness retains `traces` / `span_already_stored` diagnostics without failing on
+deduplication alone; receiver partial failures and all other store rejection reasons fail.
 It never reuses or stops an existing viewer. It verifies the approved investigation
 facts against the new store and does not run model inference.
 
@@ -233,16 +309,30 @@ OTLP_DATASET="$PWD/testdata/otlp/small" \
 Task 7 also requires a produced file. The runner keeps the investigator's scratch
 path in response metadata. The verifier inspects only regular files in that scratch,
 ignores symbolic links, and does not follow paths supplied in the answer. It accepts
-any filename or subdirectory. A complete six-span export must retain exact values,
-resource/scope context, exception and same-trace parent IDs. Candidate bytes are sent
-unchanged over OTLP HTTP to a new dynamic-port viewer with browser opening disabled;
-the re-exported trace is compared with the staged reference. The owned replay process
+OTLP JSON or a gzip-compressed tar archive containing OTLP JSON, with any filename
+or subdirectory. Archive regular-file members are read in memory using the pinned
+`tar` dependency; member paths are evidence labels, never extraction destinations.
+Directories and links do not supply payloads. Malformed archives and duplicate
+file paths fail their own file check. Duplicate checks treat `trace.json`,
+`./trace.json` and `dir/../trace.json` as the same path. Repeated directory headers
+are allowed. A complete six-span export must retain exact values, resource/scope
+context, exception and same-trace parent IDs. Candidate JSON bytes, including those
+read from archive members, are sent unchanged over OTLP HTTP to a new dynamic-port
+viewer with browser opening disabled;
+readiness uses the candidate's final stored counts, not the reference's six spans;
+the re-exported trace is then compared with the staged reference. Counts alone
+cannot establish correct IDs or contents. Dedup-only diagnostics permit a pass only
+when the separate stored ID/content comparison matches; the diagnostics remain in
+replay evidence. The owned replay process
 is stopped and awaited in `finally`. This checks importability without relying on
 pending CLI line-file replay changes; it does not test browser import.
 Rejected or incompletely retained candidate payloads fail their own file check;
 other candidates still run and valid exports remain available. Viewer startup,
 transport and other verifier infrastructure failures remain execution errors.
-The grader checks that the answer's reported location identifies a verified file;
+Archive replay evidence identifies both the delivered archive and the verified
+member. The grader's verified file list contains the delivered archive path once,
+even if more than one member passes. The grader checks that the answer's reported
+location identifies a verified file;
 an unreferenced valid scratch file does not validate a reported invalid file.
 
 ## Owned overnight run

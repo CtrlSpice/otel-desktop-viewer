@@ -19,7 +19,7 @@ test('exact approved questions contain no private grading values or answer forma
       'Export checkout-017 so another engineer can load it into their viewer.',
       'How did request latency change during this period?',
       'How many requests does the request counter report during this period?',
-      'Was CPU unusually high when checkout-019 was slow?',
+      'What CPU readings are available around checkout-019?',
     ]
   )
   assert.deepEqual(

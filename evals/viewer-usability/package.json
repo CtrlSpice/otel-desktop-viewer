@@ -18,6 +18,7 @@
     "verify:integration": "node verify-integration.ts"
   },
   "dependencies": {
-    "promptfoo": "0.124.0"
+    "promptfoo": "0.124.1",
+    "tar": "7.5.22"
   }
 }

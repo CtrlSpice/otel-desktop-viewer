@@ -5,6 +5,7 @@ import { query } from './prepare.ts'
 import { datasetManifest, readManifest } from './stage-dataset.ts'
 import { readJson, record, runtimeRoot, saveJson } from './runtime.ts'
 import { exportedTrace, traceRows } from './verify-export.ts'
+import { verifyDiscovery } from './verify-discovery.ts'
 
 export function normalize(value: unknown): unknown {
   if (Array.isArray(value)) {
@@ -39,6 +40,10 @@ export async function verify(name = 'verification', root = runtimeRoot()) {
   const endpoint = connection.endpoint
   const evidence = path.join(root, name)
   fs.mkdirSync(evidence)
+  saveJson(
+    path.join(evidence, 'openrpc-discovery.json'),
+    await verifyDiscovery(endpoint, manifest.start, manifest.end)
+  )
   async function sql(name: string, statement: string) {
     const result = await query(endpoint, statement)
     saveJson(path.join(evidence, name + '.json'), {

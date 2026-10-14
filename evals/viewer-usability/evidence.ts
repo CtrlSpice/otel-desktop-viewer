@@ -104,7 +104,7 @@ export function investigatorEvidence(
     )
       throw new Error('Not an investigator evidence directory')
     const isolation = ownedPath(root, metadata.isolationRoot)
-    const scratch = ownedPath(root, metadata.workspace)
+    const scratch = ownedPath(root, metadata.archivedWorkspace ?? metadata.workspace)
     if (
       path.dirname(isolation) !==
         path.join(fs.realpathSync(root), 'workspaces') ||
@@ -128,6 +128,7 @@ export function investigatorEvidence(
       'workspace',
       'isolationRoot',
       'evidence',
+      ...(metadata.archivedWorkspace === undefined ? [] : ['archivedWorkspace']),
     ])
       if (metrics[key] !== metadata[key])
         throw new Error('Attempt metadata mismatch')

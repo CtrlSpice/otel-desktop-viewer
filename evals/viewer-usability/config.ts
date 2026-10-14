@@ -33,11 +33,9 @@ export default {
   description:
     'Viewer usability: ten natural investigations, separate provisional Sol6.1 grading',
   prompts: ['file://' + path.join(SUITE, 'prompt.txt')],
-  providers: models.map(model => ({
-    id: 'file://' + path.join(SUITE, 'provider.ts'),
-    label: model,
-    config: { model, isolation },
-  })),
+  // beforeEach replaces this inert provider with a fresh native attempt.
+  providers: ['echo'],
+  extensions: ['beforeEach', 'afterEach', 'afterAll'].map(hook => 'file://' + path.join(SUITE, 'native-hooks.mjs') + ':' + hook),
   evaluateOptions: { maxConcurrency: 1 },
   defaultTest: {
     vars: connection,
@@ -45,8 +43,8 @@ export default {
       { type: 'javascript', value: 'file://' + path.join(SUITE, 'grade.ts') },
     ],
   },
-  tests: cases.map(c => ({
+  tests: cases.flatMap(c => models.map(model => ({
     description: c.id,
-    vars: { task_id: c.id, goal: c.goal },
-  })),
+    vars: { task_id: c.id, goal: c.goal, eval_model: model },
+  }))),
 }

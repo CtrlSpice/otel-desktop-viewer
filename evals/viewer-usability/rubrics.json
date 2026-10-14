@@ -85,7 +85,7 @@
     "criteria": [
       {
         "id": "limited-evidence",
-        "text": "Describes the ordinary nearby gateway CPU samples and the limits of their time and service coverage."
+        "text": "Reports the nearby CPU readings with their timestamps and associated service."
       }
     ]
   }

@@ -63,6 +63,49 @@ export async function freePorts() {
 
 export class IngestionRejectedError extends Error {}
 
+// Counts describe a fresh store, not raw entries or the task's answer key.
+// Only spans have a telemetry-row identity; logs and datapoints get new UUIDs.
+export function expectedStoredCounts(
+  inputs: { signal: string; document: unknown }[]
+) {
+  const spans = new Set<string>()
+  let logs = 0
+  let datapoints = 0
+  const entries = (value: unknown) => {
+    if (value === undefined) return []
+    if (!Array.isArray(value)) throw new Error('Expected OTLP collection')
+    return value.map(record)
+  }
+  for (const { signal, document } of inputs) {
+    const data = record(document)
+    if (signal === 'traces') {
+      for (const resource of entries(data.resourceSpans))
+        for (const scope of entries(resource.scopeSpans))
+          for (const span of entries(scope.spans)) {
+            const traceID = String(span.traceId ?? '').toLowerCase()
+            const spanID = String(span.spanId ?? '').toLowerCase()
+            // Do not turn invalid IDs into an empty successful import while the
+            // Collector is still batching. Receiver/store rejection decides that.
+            spans.add(JSON.stringify([
+              traceID || '0'.repeat(32), spanID || '0'.repeat(16),
+            ]))
+          }
+    } else if (signal === 'logs') {
+      for (const resource of entries(data.resourceLogs))
+        for (const scope of entries(resource.scopeLogs))
+          logs += entries(scope.logRecords).length
+    } else if (signal === 'metrics') {
+      for (const resource of entries(data.resourceMetrics))
+        for (const scope of entries(resource.scopeMetrics))
+          for (const metric of entries(scope.metrics))
+            for (const kind of ['gauge', 'sum', 'histogram', 'exponentialHistogram'])
+              if (metric[kind] !== undefined)
+                datapoints += entries(record(metric[kind]).dataPoints).length
+    } else throw new Error('Unknown OTLP signal')
+  }
+  return [spans.size, logs, datapoints]
+}
+
 export async function postBytes(
   url: string,
   data: Uint8Array
@@ -207,10 +250,12 @@ export async function prepare(root = runtimeRoot()) {
     }
     if (!ready) throw new Error('Owned viewer did not become ready')
     const receipts: Record<string, unknown> = {}
+    const inputs: { signal: string; document: unknown }[] = []
     for (const request of manifest.requests) {
+      const bytes = fs.readFileSync(path.join(root, 'fixture', request.file))
       const receipt = await postBytes(
         `http://127.0.0.1:${http}/v1/${request.signal}`,
-        fs.readFileSync(path.join(root, 'fixture', request.file))
+        bytes
       )
       receipts[request.file] = receipt
       fs.writeFileSync(
@@ -219,38 +264,58 @@ export async function prepare(root = runtimeRoot()) {
         { mode: 0o600 }
       )
       checkReceipt(receipt)
+      inputs.push({
+        signal: request.signal,
+        document: JSON.parse(bytes.toString('utf8')),
+      })
     }
+    const expectedCounts = expectedStoredCounts(inputs)
+    saveJson(path.join(runtime, 'expected-counts.json'), expectedCounts)
     let counts
     for (let attempt = 0; attempt < 100; attempt++) {
       counts = await query(
         endpoint,
         'SELECT (SELECT count(*) FROM spans), (SELECT count(*) FROM logs), (SELECT count(*) FROM metric_datapoints)'
       )
-      if (JSON.stringify(counts.rows) === JSON.stringify([manifest.counts]))
+      fs.writeFileSync(
+        path.join(runtime, 'counts.json'),
+        JSON.stringify(counts, null, 2) + '\n',
+        { mode: 0o600 }
+      )
+      const stats = record(
+        await post(endpoint + '/rpc', {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'getStats',
+        })
+      )
+      fs.writeFileSync(
+        path.join(runtime, 'stats.json'),
+        JSON.stringify(stats, null, 2) + '\n',
+        { mode: 0o600 }
+      )
+      if ('error' in stats) throw new Error(JSON.stringify(stats.error))
+      const rejections = record(stats.result).rejections
+      if (!Array.isArray(rejections))
+        throw new Error('Invalid fixture store rejection diagnostics')
+      if (rejections.some(value => {
+        const rejection = record(value)
+        return rejection.signal !== 'traces' ||
+          rejection.kind !== 'span_already_stored'
+      }))
+        throw new IngestionRejectedError(
+          'Fixture store reported rejected records; inspect stats.json'
+        )
+      if (JSON.stringify(counts.rows) === JSON.stringify([expectedCounts]))
         break
       if (attempt === 99)
-        throw new IngestionRejectedError(
-          'Fixture ingestion counts differ: ' + JSON.stringify(counts)
+        throw new Error(
+          'Fixture ingestion visibility not confirmed before deadline: expected ' +
+          JSON.stringify(expectedCounts) +
+          ', observed ' + JSON.stringify(counts)
         )
       await delay(100)
     }
-    saveJson(path.join(runtime, 'counts.json'), counts)
-    const stats = record(
-      await post(endpoint + '/rpc', {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'getStats',
-      })
-    )
-    saveJson(path.join(runtime, 'stats.json'), stats)
-    if ('error' in stats) throw new Error(JSON.stringify(stats.error))
-    const rejections = record(stats.result).rejections
-    if (!Array.isArray(rejections))
-      throw new Error('Invalid fixture store rejection diagnostics')
-    if (rejections.length)
-      throw new IngestionRejectedError(
-        'Fixture store reported rejected records; inspect stats.json'
-      )
     const connection = { binary, endpoint, ...window }
     saveJson(path.join(root, 'connection.json'), connection)
     child.unref()

@@ -1,7 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import assert from 'node:assert/strict'
-import { prepare, IngestionRejectedError } from './prepare.ts'
+import { Parser } from 'tar'
+import { prepare, IngestionRejectedError, expectedStoredCounts } from './prepare.ts'
 import { datasetManifest, readManifest } from './stage-dataset.ts'
 import { readJson, record, runtimeRoot, saveJson } from './runtime.ts'
 
@@ -101,6 +102,42 @@ export function scratchFiles(workspace: string) {
   return files
 }
 
+// Archive paths are evidence labels only; no member is extracted to disk.
+export async function exportPayloads(bytes: Buffer) {
+  type Payload = { bytes: Buffer; member?: string }
+  if (bytes[0] !== 0x1f || bytes[1] !== 0x8b)
+    return [{ bytes }] satisfies Payload[]
+  return new Promise<Payload[]>((resolve, reject) => {
+    const payloads: Payload[] = []
+    const members = new Map<string, boolean>()
+    const parser = new Parser({
+      strict: true,
+      onReadEntry(entry) {
+        const name = path.posix.normalize(entry.path).replace(/^\/+|\/+$/g, '')
+        const directory = entry.type === 'Directory'
+        if (members.has(name) && !(members.get(name) && directory)) {
+          entry.resume()
+          parser.abort(new Error('Duplicate archive member path'))
+          return
+        }
+        members.set(name, directory)
+        if (entry.type !== 'File' && entry.type !== 'OldFile') {
+          entry.resume()
+          return
+        }
+        const chunks: Buffer[] = []
+        entry.on('data', chunk => chunks.push(chunk))
+        entry.on('end', () => {
+          payloads.push({ member: entry.path, bytes: Buffer.concat(chunks) })
+        })
+      },
+    })
+    parser.on('error', reject)
+    parser.on('end', () => resolve(payloads))
+    parser.end(bytes)
+  })
+}
+
 export async function exportedTrace(
   endpoint: string,
   traceID = CHECKOUT_TRACE
@@ -144,7 +181,12 @@ export async function verifyExport(
     6,
     'Approved trace reference requires six spans'
   )
-  const candidates: { file: string; bytes: Buffer; spanCount: number }[] = []
+  const candidates: {
+    file: string
+    member?: string
+    bytes: Buffer
+    spanCount: number
+  }[] = []
   for (const file of scratchFiles(workspace)) {
     const descriptor = fs.openSync(
       file,
@@ -156,14 +198,27 @@ export async function verifyExport(
     } finally {
       fs.closeSync(descriptor)
     }
+    let payloads: Awaited<ReturnType<typeof exportPayloads>>
     try {
-      const rows = traceRows(JSON.parse(bytes.toString('utf8')))
-      assert.deepEqual(
-        rows.filter(row => record(row.span).traceId === CHECKOUT_TRACE),
-        expected
-      )
-      candidates.push({ file, bytes, spanCount: rows.length })
-    } catch {}
+      payloads = await exportPayloads(bytes)
+    } catch {
+      // A malformed archive fails its own file check, like malformed JSON.
+      continue
+    }
+    for (const payload of payloads) {
+      try {
+        const document: unknown = JSON.parse(payload.bytes.toString('utf8'))
+        const rows = traceRows(document)
+        assert.deepEqual(
+          rows.filter(row => record(row.span).traceId === CHECKOUT_TRACE),
+          expected
+        )
+        const [spanCount] = expectedStoredCounts([
+          { signal: 'traces', document },
+        ])
+        candidates.push({ file, ...payload, spanCount })
+      } catch {}
+    }
   }
   if (!candidates.length)
     return {
@@ -175,7 +230,7 @@ export async function verifyExport(
   const connection = record(readJson(path.join(root, 'connection.json')))
   if (typeof connection.binary !== 'string')
     throw new Error('Missing replay binary')
-  const files: string[] = []
+  const files = new Set<string>()
   for (const candidate of candidates) {
     const replay = fs.mkdtempSync(path.join(root, 'export-replay-'))
     fs.chmodSync(replay, 0o700)
@@ -201,6 +256,7 @@ export async function verifyExport(
       if (!(error instanceof IngestionRejectedError)) throw error
       saveJson(path.join(replay, 'export-proof.json'), {
         file: candidate.file,
+        member: candidate.member,
         pass: false,
         reason: error.message,
       })
@@ -208,9 +264,10 @@ export async function verifyExport(
     }
     try {
       assert.deepEqual(traceRows(await exportedTrace(ready.endpoint)), expected)
-      files.push(candidate.file)
+      files.add(candidate.file)
       saveJson(path.join(replay, 'export-proof.json'), {
         file: candidate.file,
+        member: candidate.member,
         retainedSpans: 6,
         pass: true,
       })
@@ -218,6 +275,7 @@ export async function verifyExport(
       if (!(error instanceof assert.AssertionError)) throw error
       saveJson(path.join(replay, 'export-proof.json'), {
         file: candidate.file,
+        member: candidate.member,
         pass: false,
         reason: 'Replayed trace does not retain the expected contents.',
       })
@@ -236,10 +294,10 @@ export async function verifyExport(
     }
   }
   return {
-    pass: files.length > 0,
-    reason: files.length
-      ? 'Produced file replayed unchanged into an owned viewer and retains all six spans, values, context and parents.'
+    pass: files.size > 0,
+    reason: files.size
+      ? 'Produced JSON file or archive member replayed unchanged into an owned viewer and retains all six spans, values, context and parents.'
       : 'No candidate file was fully accepted and retained the expected trace contents.',
-    files,
+    files: [...files],
   }
 }
