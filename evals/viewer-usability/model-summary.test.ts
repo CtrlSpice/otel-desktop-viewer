@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import apiPrices from './api-prices.json' with { type: 'json' }
-import { median, modelSummaries, modelSummaryTable } from './model-summary.ts'
+import { median, p95, modelSummaries, modelSummaryTable } from './model-summary.ts'
 import { pricingSnapshot } from './pricing.ts'
 
 const pricing = pricingSnapshot({
@@ -56,6 +56,16 @@ test('model totals aggregate attempts and use median without mutating timings', 
     /Sol 6\.1 \| 2\.00 \| 4 \| 2 \| 300,000 \| 0 \| 0 \| C\$0\.86/
   )
   assert.match(table, /2026-10-07: 1 USD = 1\.4257 CAD/)
+})
+
+test('continuous p95 interpolates recorded seconds without mutating input', () => {
+  const times = [100, 3, 1, 8]
+  assert.ok(Math.abs(p95(times)! - 86.2) < 1e-10)
+  assert.deepEqual(times, [100, 3, 1, 8])
+  assert.equal(p95([]), null)
+  assert.equal(p95([7]), 7)
+  assert.ok(Math.abs(modelSummaries([attempt(1), attempt(3)])[0].p95Seconds! - 2.9) < 1e-10)
+  assert.equal(modelSummaries([attempt(1), { provider: { label: 'openai/gpt-6.1-sol' }, response: {} }])[0].p95Seconds, null)
 })
 
 test('displayed output includes reasoning and cost uses recorded per-response categories', () => {

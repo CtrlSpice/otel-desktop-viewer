@@ -160,6 +160,8 @@ export function aggregate(
   ]
   const repetitions = count(manifest.repetitions),
     tasksExpected = count(manifest.tasks)
+  const expectedAttempts = repetitions !== null && tasksExpected !== null
+    ? models.length * tasksExpected * repetitions : null
   const summarise = (model: string, selected: typeof rows) => {
     const result = modelSummaries(
       selected.map((row) => ({
@@ -173,10 +175,17 @@ export function aggregate(
       pass: selected.filter((row) => row.outcome === 'pass').length,
       fail: selected.filter((row) => row.outcome === 'fail').length,
       partial: selected.filter((row) => row.outcome === 'partial').length,
+      displayPass: selected.filter(row => (row.signedScore ?? row.score) === 1).length,
+      displayPartial: selected.filter(row => (row.signedScore ?? row.score) === 0.5).length,
+      displayFail: selected.filter(row => (row.signedScore ?? row.score) === 0).length,
       scoredAttempts: selected.filter(row => row.score !== null).length,
       provisionalMean: selected.some(row => row.score !== null)
         ? selected.reduce((sum, row) => sum + (row.score ?? 0), 0) /
           selected.filter(row => row.score !== null).length
+        : null,
+      displayMean: selected.some(row => (row.signedScore ?? row.score) !== null)
+        ? selected.reduce((sum, row) => sum + (row.signedScore ?? row.score ?? 0), 0) /
+          selected.filter(row => (row.signedScore ?? row.score) !== null).length
         : null,
       signedAttempts: selected.filter(row => row.signedScore !== null).length,
       signedFull: selected.filter(row => row.signedScore === 1).length,
@@ -187,6 +196,7 @@ export function aggregate(
       error: selected.filter((row) => row.outcome === 'error').length,
       unknown: selected.filter((row) => row.outcome === 'unknown').length,
       medianSeconds: result?.medianSeconds ?? null,
+      p95Seconds: result?.p95Seconds ?? null,
       timedAttempts: selected.filter(
         (row) => row.metadata.elapsedSeconds !== undefined
       ).length,
@@ -204,6 +214,7 @@ export function aggregate(
   const savedMetrics = (value: Record<string, unknown>) => ({
     attempts: count(value.attempts),
     medianSeconds: number(value.medianSeconds),
+    p95Seconds: number(value.p95Seconds),
     toolCalls: count(value.toolCalls),
     failedTools: count(value.failedTools),
     inputTokens: count(value.inputTokens),
@@ -230,15 +241,12 @@ export function aggregate(
   return {
     date,
     synthetic: manifest.synthetic === true,
-    provisional: rows.some(row => row.signedScore === null),
+    provisional: rows.length === 0 || rows.some(row => row.signedScore === null) || expectedAttempts === null || rows.length !== expectedAttempts,
     repetitions,
     tasksExpected,
     tasksObserved: taskIDs.length,
     attempts: rows.length,
-    expectedAttempts:
-      repetitions !== null && tasksExpected !== null
-        ? models.length * tasksExpected * repetitions
-        : null,
+    expectedAttempts,
     dataset: dataset ? `testdata/otlp/${dataset}` : 'Unknown',
     viewerCommit: hash(manifest.viewerSourceCommit),
     suiteCommit: hash(manifest.evalSourceCommit),
@@ -267,7 +275,7 @@ export function aggregate(
         provider: model.split('/')[0],
         result: calculated,
         investigator: saved
-          ? savedMetrics(saved)
+          ? { ...savedMetrics(saved), p95Seconds: saved.attempts === selected.length ? calculated.p95Seconds : null }
           : { ...savedMetrics(calculated), attempts: calculated.attempts },
         tasks: taskIDs.map((task) => {
           const attempts = selected.filter((row) => row.task === task)
@@ -276,6 +284,13 @@ export function aggregate(
             ...summarise(model, attempts),
             scores: attempts.map(row => row.score),
             signedScores: attempts.map(row => row.signedScore),
+            runResults: attempts.map((row, index) => ({
+              run: index + 1,
+              score: row.signedScore ?? row.score,
+              automatedScore: row.score,
+              signedOff: row.signedScore !== null,
+              status: row.outcome === 'error' ? 'error' : row.score === null && row.signedScore === null ? 'unscored' : 'scored',
+            })),
             finalMean: repetitions === 3 && attempts.length === 3 &&
               attempts.every(row => row.signedScore !== null)
               ? attempts.reduce((sum, row) => sum + row.signedScore!, 0) / 3
@@ -305,11 +320,38 @@ export function aggregate(
     grader: {
       sessions: count(grader.sessions),
       executionErrors: count(grader.executionErrors),
+      outputs: array(grader.judgments).map(object).filter(report => {
+        const metadata = object(report.metadata), investigator = object(report.investigator)
+        return typeof report.taskID === 'string' && typeof metadata.model === 'string' && typeof investigator.model === 'string'
+      }).map(report => {
+        const metadata = object(report.metadata), investigator = object(report.investigator)
+        const model = id(metadata.model, true)
+        const result = modelSummaries([{ provider: { label: model }, response: { metadata: metrics(metadata) } }], pricing)[0]
+        return {
+          graderModel: model,
+          investigatorModel: id(investigator.model, true),
+          task: id(report.taskID),
+          score: report.status === 'execution-error' ? null : completionScore(report.score),
+          executionError: report.status === 'execution-error',
+          seconds: result.medianSeconds,
+          costCad: result.apiCostCad,
+          estimateCoverage: result.estimateCoverage,
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+        }
+      }),
       models: array(grader.models).map((raw) => {
         const value = object(raw)
+        const model = typeof value.model === 'string' ? id(value.model, true) : null
+        const recorded = array(grader.judgments).map(object).map(report => object(report.metadata)).filter(metadata => metadata.model === model)
+        const calculated = model !== null && recorded.length === value.attempts
+          ? modelSummaries(recorded.map(metadata => ({ provider: { label: model }, response: { metadata: metrics(metadata) } })))[0]
+          : undefined
         return {
           name: label(value.name, 'Separate grader'),
+          model,
           ...savedMetrics(value),
+          p95Seconds: calculated?.p95Seconds ?? number(value.p95Seconds),
         }
       }),
     },

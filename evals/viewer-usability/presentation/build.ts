@@ -3,6 +3,8 @@ import path from 'node:path'
 import { aggregate } from './aggregate.ts'
 import { render } from './render.ts'
 import { showReview } from '../human-review.ts'
+import { viewerFonts } from './fonts.ts'
+import { viewerStyles } from './viewer-components.ts'
 
 export function build(run: string, output: string, reviewDirectories: string[] = []) {
   const read = (name: string, optional = false) => {
@@ -33,7 +35,7 @@ export function build(run: string, output: string, reviewDirectories: string[] =
     reviews
   )
   // Never serialize raw run data into the reader-facing artifact.
-  fs.writeFileSync(output, render(data), { flag: 'wx', mode: 0o600 })
+  fs.writeFileSync(output, render(data, viewerFonts(), viewerStyles()), { flag: 'wx', mode: 0o600 })
   return data
 }
 

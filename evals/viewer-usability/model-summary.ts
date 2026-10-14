@@ -20,6 +20,15 @@ export function median(values: number[]) {
     : (sorted[middle - 1] + sorted[middle]) / 2
 }
 
+// Continuous p95: interpolate at (n - 1) * 0.95; seconds, binary64 precision.
+export function p95(values: number[]) {
+  if (!values.length) return null
+  const sorted = [...values].sort((a, b) => a - b)
+  const index = (sorted.length - 1) * 0.95
+  const lower = Math.floor(index), upper = Math.ceil(index)
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower)
+}
+
 export function modelSummaries(rows: unknown[], pricing?: PricingSnapshot) {
   const groups = new Map<string, Record<string, unknown>[]>()
   for (const value of rows) {
@@ -80,6 +89,8 @@ export function modelSummaries(rows: unknown[], pricing?: PricingSnapshot) {
       attempts: attempts.length,
       medianSeconds:
         validTimes.length === times.length ? median(validTimes) : null,
+      p95Seconds:
+        validTimes.length === times.length ? p95(validTimes) : null,
       toolCalls: sum(attempts.map(attempt => attempt.toolCalls)),
       failedTools: sum(attempts.map(attempt => attempt.failedToolCalls)),
       inputTokens: sum(usages.map(usage => usage.input)),

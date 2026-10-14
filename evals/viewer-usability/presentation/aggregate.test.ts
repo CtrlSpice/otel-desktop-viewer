@@ -164,7 +164,9 @@ test('projection drops private payload; labels cannot inject markup or copy path
   assert.ok(!html.includes('/Users/'))
   assert.ok(!html.includes('<img src=x'))
   assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt;'))
-  assert.ok(html.includes('C$12.000 est. (partial)'))
+  assert.ok(html.includes('C$12.000 (partial)'))
+  assert.ok(!html.includes('C$12.000 est.'))
+  assert.ok(html.includes('Artifact check'))
   assert.equal(data.dataset, 'testdata/otlp/small')
   assert.throws(
     () =>
@@ -209,13 +211,75 @@ test('partial scores and signed three-run means stay separate; errors are unscor
   assert.equal(errored.models[0].tasks[0].provisionalMean, null)
   assert.equal(errored.models[0].tasks[0].signedAttempts, 0)
   const html = render(data)
-  assert.match(html, /Final three-run mean/)
+  assert.match(html, /<dt>Mean<\/dt>/)
+  assert.ok(!html.includes('Provisional mean'))
+  assert.ok(!html.includes('Final three-run mean'))
+  assert.ok(html.includes('class="task-group"'))
+  assert.ok(!html.includes('<h4>'))
   assert.match(html, /50.0%/)
-  assert.match(html, /1 · 0.5 · 0/)
+  assert.match(html, /Run 1/)
+  assert.match(html, /Run 2/)
+  assert.match(html, /Run 3/)
+  assert.match(html, /<td><span class="badge badge-soft result-badge result-partial">Partial · signed<\/span><\/td><td>0.5<\/td>/)
   assert.ok(!JSON.stringify(data).includes('ses_'))
   assert.ok(!html.includes('ses_'))
+  assert.ok(!html.includes('Artifact check'))
+  assert.ok(!html.includes('Unknown / not recorded'))
   assert.throws(() => project([...reviews, reviews[0]]), /Duplicate human review/)
   assert.throws(() => project(reviews, [attempts[0], attempts[0], attempts[0]]), /duplicate investigator session/)
+  const corrected = render(project(reviews.map(review => ({ ...review, score: 0 }))))
+  assert.match(corrected, /<span class="pass" style="flex:0"/)
+  assert.match(corrected, /<span class="fail" style="flex:3"/)
+  assert.match(corrected, /<strong>0.0%<\/strong>/)
+  const unsigned = render(project([]))
+  for (const label of ['Human-signed scores', 'Human claim review', 'Signoff coverage', 'Final three-run mean'])
+    assert.ok(!unsigned.includes(label))
+})
+
+test('signed single-run corrections update the displayed model mean as well as the task result', () => {
+  const attempt = row('other/cedar', 'inspect', true)
+  const data = aggregate({ tasks: 1, repetitions: 1 }, { results: { results: [attempt] } },
+    undefined, undefined, undefined, [{ model: 'other/cedar', task: 'inspect',
+      sessionIDs: attempt.response.metadata.sessionIDs, signedOff: true, score: 0.5 }])
+  assert.equal(data.models[0].result.provisionalMean, 1)
+  assert.equal(data.models[0].result.displayMean, 0.5)
+  const html = render(data)
+  assert.match(html, /<strong>50.0%<\/strong>/)
+  assert.match(html, /Partial \(0.5\)/)
+  assert.match(html, /Automated result/)
+  assert.doesNotMatch(html, /<strong>100.0%<\/strong>/)
+})
+
+test('grader outputs expose only aggregate fields, not private judging data', () => {
+  const data = aggregate({ tasks: 1, repetitions: 1 }, { results: { results: [row('other/cedar', 'checkout-failure', true)] } }, undefined,
+    { sessions: 1, executionErrors: 0, models: [{ model: 'openai/gpt-6.1-sol', name: 'Sol 6.1', attempts: 1 }], judgments: [{
+      taskID: 'checkout-failure', score: 0.5, status: 'partial',
+      investigator: { model: 'other/cedar', evidence: secret },
+      metadata: { ...metadata('openai/gpt-6.1-sol'), sessionIDs: [secret] },
+      reason: secret, criteria: [{ explanation: secret }],
+    }] })
+  assert.equal(data.grader.outputs.length, 1)
+  assert.equal(data.grader.outputs[0].score, 0.5)
+  assert.ok(!JSON.stringify(data).includes(secret))
+  const html = render(data)
+  assert.ok(html.includes('grader-row'))
+  assert.ok(html.includes('<strong>Grader</strong><span>Sol 6.1</span>'))
+  assert.ok(html.lastIndexOf('class="model grader-row"') > html.lastIndexOf('class="model"'))
+  assert.ok(html.includes('Grading outputs'))
+  assert.ok(html.includes('<span class="badge badge-soft result-badge result-partial">Partial (0.5)</span>'))
+  assert.ok(!html.includes(secret))
+})
+
+test('single-run result badges distinguish completion, partial credit and no credit; errors stay unscored', () => {
+  for (const [score, status, label] of [[1, 'complete', 'Complete (1)'], [0.5, 'partial', 'Partial (0.5)'], [0, 'no-credit', 'No credit (0)']] as const) {
+    const attempt = { ...row('other/cedar', 'inspect', score === 1), gradingResult: { score } }
+    const data = aggregate({ tasks: 1, repetitions: 1 }, { results: { results: [attempt] } }, undefined, undefined)
+    assert.ok(render(data).includes(`<span class="badge badge-soft result-badge result-${status}">${label}</span>`))
+    const errored = { ...attempt, failureReason: 2 }
+    const errorHtml = render(aggregate({ tasks: 1, repetitions: 1 }, { results: { results: [errored] } }, undefined, undefined))
+    assert.ok(errorHtml.includes('<dt>Result</dt><dd>Execution error</dd>'))
+    assert.ok(!errorHtml.includes(`<span class="badge badge-soft result-badge result-${status}">`))
+  }
 })
 
 const run = process.env.EVAL_PRESENTATION_RUN
