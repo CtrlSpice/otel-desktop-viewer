@@ -11,7 +11,15 @@ type Rates = {
   cacheWrite: number
   output: number
 }
-type ModelPrices = { name: string; short: Rates; long: Rates }
+type ModelPrices = {
+  name: string
+  short: Rates
+  long: Rates
+  source?: string
+  verifiedOn?: string
+  shortContextMaximum?: number
+  timePricing?: 'deepseek-peak-utc'
+}
 export type PricingSnapshot = {
   capturedAt: string
   api: {
@@ -27,6 +35,8 @@ export type PricingSnapshot = {
 }
 
 export type UsageStep = {
+  // Native assistant-response timestamp, Unix milliseconds; not eval wall time.
+  timestamp?: number
   input?: number
   output?: number
   reasoning?: number
@@ -64,11 +74,16 @@ function positive(value: unknown) {
 
 function rates(value: unknown): Rates {
   const source = record(value)
+  const rate = (value: unknown) => {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0)
+      throw new Error('Invalid pricing number')
+    return value
+  }
   return {
-    input: positive(source.input),
-    output: positive(source.output),
-    cacheRead: positive(source.cacheRead),
-    cacheWrite: positive(source.cacheWrite),
+    input: rate(source.input),
+    output: rate(source.output),
+    cacheRead: rate(source.cacheRead),
+    cacheWrite: rate(source.cacheWrite),
   }
 }
 
@@ -81,12 +96,21 @@ export function pricingSnapshot(value: unknown): PricingSnapshot {
   const models = Object.fromEntries(
     Object.entries(record(api.models)).map(([id, value]) => {
       const model = record(value)
+      if (model.timePricing !== undefined && model.timePricing !== 'deepseek-peak-utc')
+        throw new Error('Unknown time pricing')
+      const timePricing: ModelPrices['timePricing'] = model.timePricing
       return [
         id,
         {
           name: text(model.name),
           short: rates(model.short),
           long: rates(model.long),
+          ...(model.source === undefined ? {} : { source: text(model.source) }),
+          ...(model.verifiedOn === undefined ? {} : { verifiedOn: text(model.verifiedOn) }),
+          ...(model.shortContextMaximum === undefined ? {} : {
+            shortContextMaximum: positive(model.shortContextMaximum),
+          }),
+          ...(timePricing === undefined ? {} : { timePricing }),
         },
       ]
     })
@@ -119,6 +143,18 @@ export async function freezePricing(
   if (fs.existsSync(file)) return pricingSnapshot(readJson(file))
   let snapshot = supplied
   if (!snapshot) {
+    const openai = record(readJson(path.join(suite, 'api-prices.json')))
+    const go = record(readJson(path.join(suite, 'go-api-prices.json')))
+    if (go.currency !== openai.currency || go.tokensPerUnit !== openai.tokensPerUnit ||
+      go.serviceTier !== openai.serviceTier)
+      throw new Error('Incompatible provider pricing units')
+    const sourcedModels = (api: Record<string, unknown>) =>
+      Object.fromEntries(Object.entries(record(api.models)).map(([id, model]) => [
+        id, { source: api.source, verifiedOn: api.verifiedOn, ...record(model) },
+      ]))
+    const openaiModels = sourcedModels(openai), goModels = sourcedModels(go)
+    if (Object.keys(goModels).some(id => Object.hasOwn(openaiModels, id)))
+      throw new Error('Duplicate provider/model price')
     const response = await fetch(EXCHANGE_SOURCE, {
       signal: AbortSignal.timeout(30000),
     })
@@ -133,7 +169,7 @@ export async function freezePricing(
       throw new Error('Invalid Bank of Canada exchange rate')
     snapshot = pricingSnapshot({
       capturedAt: new Date().toISOString(),
-      api: readJson(path.join(suite, 'api-prices.json')),
+      api: { ...openai, models: { ...openaiModels, ...goModels } },
       exchange: {
         source: EXCHANGE_SOURCE,
         date: observation.d,
@@ -173,12 +209,24 @@ export function responseCostUsd(
   )
     return null
   const rate =
-    context > snapshot.api.shortContextMaximum ? prices.long : prices.short
+    context > (prices.shortContextMaximum ?? snapshot.api.shortContextMaximum)
+      ? prices.long : prices.short
+  let multiplier = 1
+  if (prices.timePricing === 'deepseek-peak-utc') {
+    const timestamp = usageCount(step.timestamp)
+    if (timestamp === undefined) return null
+    const date = new Date(timestamp)
+    if (!Number.isFinite(date.getTime())) return null
+    const weekday = date.getUTCDay(), hour = date.getUTCHours()
+    // Start inclusive, end exclusive. Weekends are always off-peak.
+    if (weekday >= 1 && weekday <= 5 &&
+      ((hour >= 1 && hour < 4) || (hour >= 6 && hour < 10))) multiplier = 2
+  }
   return (
     (input * rate.input +
       cacheRead * rate.cacheRead +
       cacheWrite * rate.cacheWrite +
       (output + reasoning) * rate.output) /
-    snapshot.api.tokensPerUnit
+    snapshot.api.tokensPerUnit * multiplier
   )
 }

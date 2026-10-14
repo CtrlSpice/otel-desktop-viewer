@@ -107,6 +107,12 @@ fs.writeFileSync(process.env.NATIVE_TEST_RESULT || ${JSON.stringify(path.join(ro
       assert.equal(m.toolCalls, 8)
       assert.equal(m.usage.input, 90)
       assert.equal(m.usage.output, 18)
+      assert.equal(m.usageSteps.length, 9)
+      const history = JSON.parse(fs.readFileSync(path.join(m.evidence, 'native-history.json'), 'utf8'))
+      const responseTimes = history.flatMap((message: { info: { time?: { created?: number } }; parts: { type: string }[] }) =>
+        message.parts.filter(part => part.type === 'step-finish').map(() => message.info.time?.created))
+      assert.deepEqual(m.usageSteps.map((step: { timestamp: number }) => step.timestamp), responseTimes)
+      assert.ok(responseTimes.every((time: unknown) => typeof time === 'number' && Number.isSafeInteger(time) && time > 0))
       const runtime = JSON.parse(fs.readFileSync(path.join(m.evidence, 'runtime.json'), 'utf8'))
       assert.equal(runtime.tmpdir, path.join(m.workspace, 'tmp'))
       assert.notEqual(m.workspace, m.archivedWorkspace)

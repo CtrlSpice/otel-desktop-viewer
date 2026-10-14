@@ -64,6 +64,7 @@ export class NativeAttempt {
   static async create(model: string, role: 'investigator' | 'grader', task: unknown, isolation: unknown, copy = true, timeoutMs = 600000) {
     const root = runtimeRoot()
     if (fs.existsSync(path.join(root, 'harness-blocker.json'))) throw new Error('Evaluation stopped by viewer permission denial')
+    if (fs.existsSync(path.join(root, 'execution-error.json'))) throw new Error('Evaluation stopped by an execution error')
     const started = performance.now()
     const settings = isolationSettings(isolation)
     if (settings.authEnvironment) throw new Error('Use credential file references')
@@ -86,7 +87,7 @@ export class NativeAttempt {
     fs.chmodSync(evidence, 0o700)
     let isolated: ReturnType<typeof createCleanEnvironment>
     try {
-      isolated = createCleanEnvironment({ parent: path.join(root, 'workspaces'), model, permission: settings.permission, authFile: settings.authFile, authEnvironment, providerIDs: settings.providerIDs, executablePaths: settings.executablePaths })
+      isolated = createCleanEnvironment({ parent: path.join(root, 'workspaces'), model, permission: settings.permission, authFile: settings.authFile, authEnvironment, modelCatalogueFile: settings.modelCatalogueFile, providerIDs: settings.providerIDs, executablePaths: settings.executablePaths })
     } catch {
       fs.writeFileSync(path.join(evidence, 'failure.json'), JSON.stringify({ role, model, task, evidence, phase: 'private profile', error: 'Native private profile setup failed' }), { mode: 0o600, flag: 'wx' })
       throw new Error('Native private profile setup failed; see ' + evidence)
@@ -260,7 +261,8 @@ export class NativeAttempt {
           partIDs.add(part.id)
           const type = part.type === 'tool' ? 'tool_use' : part.type === 'step-finish' ? 'step_finish' : part.type
           if (type === 'tool_use' && !['completed', 'error'].includes(part.state?.status)) incomplete = true
-          events.push(JSON.stringify({ type, sessionID, part }))
+          // Native assistant creation time is Unix milliseconds for this response.
+          events.push(JSON.stringify({ type, sessionID, timestamp: message.info.time?.created, part }))
         }
       }
       const stdout = events.join('\n') + '\n'
@@ -325,11 +327,18 @@ export async function beforeEach(context: { test: TestCase }) {
   return { test: { ...context.test, provider: attempt, vars: { ...context.test.vars, binary: './bin/otel-desktop-viewer' }, metadata: { ...context.test.metadata, nativeAttempt: attempt.evidence } } }
 }
 
-export async function afterEach(context: { test: TestCase }) {
+export async function afterEach(context: { test: TestCase; result?: { failureReason?: number; response?: { error?: string } } }) {
+  const root = runtimeRoot()
+  if (context.result?.failureReason === 2 || context.result?.response?.error) {
+    const file = path.join(root, 'execution-error.json')
+    if (!fs.existsSync(file)) fs.writeFileSync(file, JSON.stringify({
+      status: 'execution-error', model: context.test.vars?.eval_model,
+      task: context.test.vars?.task_id, evidence: context.test.metadata?.nativeAttempt,
+    }), { flag: 'wx', mode: 0o600 })
+  }
   const evidence = context.test.metadata?.nativeAttempt
   if (typeof evidence === 'string') {
     const attempt = attempts.get(evidence)
-    const root = runtimeRoot()
     if (attempt && fs.existsSync(path.join(root, 'harness-blocker.json')) && process.send) process.send({ type: 'otel-eval-harness-blocker', root, runnerPID: process.pid, sessionPID: attempt.child?.pid })
     await attempt?.close()
   }

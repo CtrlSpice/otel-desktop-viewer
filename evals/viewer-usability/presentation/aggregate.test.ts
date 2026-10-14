@@ -6,6 +6,7 @@ import { aggregate } from './aggregate.ts'
 import { render } from './render.ts'
 import { modelSummaries, median } from '../model-summary.ts'
 import { pricingSnapshot } from '../pricing.ts'
+import goPrices from '../go-api-prices.json' with { type: 'json' }
 
 const secret = 'PRIVATE_SENTINEL_DO_NOT_EMBED'
 const metadata = (model: string, seconds = 2) => ({
@@ -220,7 +221,7 @@ test('partial scores and signed three-run means stay separate; errors are unscor
   assert.match(html, /Run 1/)
   assert.match(html, /Run 2/)
   assert.match(html, /Run 3/)
-  assert.match(html, /<td><span class="badge badge-soft result-badge result-partial">Partial · signed<\/span><\/td><td>0.5<\/td>/)
+  assert.match(html, /<td><span class="badge badge-soft result-badge result-partial">0.5\/1 · signed<\/span><\/td>/)
   assert.ok(!JSON.stringify(data).includes('ses_'))
   assert.ok(!html.includes('ses_'))
   assert.ok(!html.includes('Artifact check'))
@@ -245,7 +246,7 @@ test('signed single-run corrections update the displayed model mean as well as t
   assert.equal(data.models[0].result.displayMean, 0.5)
   const html = render(data)
   assert.match(html, /<strong>50.0%<\/strong>/)
-  assert.match(html, /Partial \(0.5\)/)
+  assert.match(html, /0.5\/1/)
   assert.match(html, /Automated result/)
   assert.doesNotMatch(html, /<strong>100.0%<\/strong>/)
 })
@@ -266,12 +267,27 @@ test('grader outputs expose only aggregate fields, not private judging data', ()
   assert.ok(html.includes('<strong>Grader</strong><span>Sol 6.1</span>'))
   assert.ok(html.lastIndexOf('class="model grader-row"') > html.lastIndexOf('class="model"'))
   assert.ok(html.includes('Grading outputs'))
-  assert.ok(html.includes('<span class="badge badge-soft result-badge result-partial">Partial (0.5)</span>'))
+  assert.ok(html.includes('aria-label="Automated grades: 0 × 1/1 · 1 × 0.5/1 · 0 × 0/1"'))
+  assert.ok(!html.includes('<strong>1 grades</strong>'))
+  assert.ok(html.includes('<span class="badge badge-soft result-badge result-partial">0.5/1</span>'))
   assert.ok(!html.includes(secret))
 })
 
+test('grader breakdown counts original grades and keeps execution errors and missing outputs separate', () => {
+  const investigator = 'other/cedar', grader = 'openai/gpt-6.1-sol'
+  const judgments = [{ score: 1 }, { score: 0.5 }, { score: 0 }, { score: 1, status: 'execution-error' }, { score: null }]
+    .map(result => ({ ...result, taskID: 'inspect', investigator: { model: investigator }, metadata: metadata(grader) }))
+  const data = aggregate({ tasks: 1, repetitions: 1 }, { results: { results: [row(investigator, 'inspect', true)] } }, undefined,
+    { models: [{ model: grader, name: 'Sol 6.1', attempts: 6 }], judgments })
+  const html = render(data)
+  assert.ok(html.includes('aria-label="Automated grades: 1 × 1/1 · 1 × 0.5/1 · 1 × 0/1"'))
+  assert.ok(html.includes('<span>1 execution error</span>'))
+  assert.ok(html.includes('<span>1 unscored</span>'))
+  assert.ok(html.includes('<span>5/6 outputs recorded</span>'))
+})
+
 test('single-run result badges distinguish completion, partial credit and no credit; errors stay unscored', () => {
-  for (const [score, status, label] of [[1, 'complete', 'Complete (1)'], [0.5, 'partial', 'Partial (0.5)'], [0, 'no-credit', 'No credit (0)']] as const) {
+  for (const [score, status, label] of [[1, 'complete', '1/1'], [0.5, 'partial', '0.5/1'], [0, 'no-credit', '0/1']] as const) {
     const attempt = { ...row('other/cedar', 'inspect', score === 1), gradingResult: { score } }
     const data = aggregate({ tasks: 1, repetitions: 1 }, { results: { results: [attempt] } }, undefined, undefined)
     assert.ok(render(data).includes(`<span class="badge badge-soft result-badge result-${status}">${label}</span>`))
@@ -280,6 +296,23 @@ test('single-run result badges distinguish completion, partial credit and no cre
     assert.ok(errorHtml.includes('<dt>Result</dt><dd>Execution error</dd>'))
     assert.ok(!errorHtml.includes(`<span class="badge badge-soft result-badge result-${status}">`))
   }
+})
+
+test('task and grader cost projections retain response timestamps for peak pricing', () => {
+  const model = 'opencode-go/deepseek-v4-pro'
+  const make = (timestamp?: number) => {
+    const attempt = row(model, 'inspect', true)
+    const metrics = { ...attempt.response.metadata, usageSteps: [{ ...attempt.response.metadata.usageSteps[0], timestamp }] }
+    const prices = { capturedAt: '2026-10-14T00:00:00Z', api: goPrices,
+      exchange: { source: 'synthetic', date: '2026-10-14', cadPerUsd: 1 } }
+    return aggregate({ tasks: 1, repetitions: 1 }, { results: { results: [{ ...attempt, response: { metadata: metrics } }] } }, undefined,
+      { judgments: [{ taskID: 'inspect', score: 1, status: 'pass', investigator: { model }, metadata: metrics }] }, prices)
+  }
+  const offPeak = make(Date.parse('2026-10-14T00:59:59Z'))
+  const peak = make(Date.parse('2026-10-14T01:00:00Z'))
+  assert.equal(peak.models[0].tasks[0].apiCostCad, offPeak.models[0].tasks[0].apiCostCad! * 2)
+  assert.equal(peak.grader.outputs[0].costCad, offPeak.grader.outputs[0].costCad! * 2)
+  assert.equal(make().models[0].tasks[0].apiCostCad, null)
 })
 
 const run = process.env.EVAL_PRESENTATION_RUN

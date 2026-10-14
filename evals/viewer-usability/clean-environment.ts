@@ -90,6 +90,7 @@ export type CleanOptions = {
   parent?: string
   model?: string
   authFile?: string
+  modelCatalogueFile?: string
   providerIDs?: string[]
   permission?: unknown
   executablePaths?: string[]
@@ -101,6 +102,7 @@ export function createCleanEnvironment({
   parent = SUITE,
   model,
   authFile,
+  modelCatalogueFile,
   providerIDs = [],
   permission,
   executablePaths = [],
@@ -144,6 +146,8 @@ export function createCleanEnvironment({
     if (!path.isAbsolute(directory))
       throw new Error('Executable search directories must be absolute')
   }
+  if (modelCatalogueFile && (!path.isAbsolute(modelCatalogueFile) || !fs.statSync(modelCatalogueFile).isFile()))
+    throw new Error('Model catalogue must reference an absolute JSON file')
   const root = fs.mkdtempSync(path.join(resolvedParent, 'clean-context-'))
   fs.chmodSync(root, 0o700)
   const env = cleanEnvironment({
@@ -173,6 +177,15 @@ export function createCleanEnvironment({
       flag: 'wx',
       mode: 0o600,
     })
+  if (modelCatalogueFile) {
+    const bytes = fs.readFileSync(modelCatalogueFile)
+    // Validate before giving the CLI a frozen copy outside model scratch.
+    record(JSON.parse(bytes.toString('utf8')))
+    const catalogue = path.join(root, 'models.json')
+    fs.writeFileSync(catalogue, bytes, { flag: 'wx', mode: 0o600 })
+    env.OPENCODE_MODELS_PATH = catalogue
+    env.OPENCODE_DISABLE_MODELS_FETCH = '1'
+  }
   if (authFile) {
     const source = record(readJson(authFile))
     const selected: Record<string, unknown> = {}

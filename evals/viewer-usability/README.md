@@ -206,6 +206,21 @@ outside model scratch. Lifecycle hooks read it for each provider. The JSON accep
 private absolute auth JSON reference), `providerIDs` (additional explicitly selected
 auth records), `executablePaths` (absolute executable directories), and
 `opencodeBinary` (defaults to normal `opencode` on the clean PATH).
+Optional `modelCatalogueFile` references an absolute frozen models.dev catalogue.
+Each attempt copies its bytes outside model scratch and sets `OPENCODE_MODELS_PATH`
+with model fetching disabled. This supplies current model definitions without
+changing the pinned CLI, authentication or model IDs. Save the catalogue source,
+capture time and hash with the run. Ambient catalogue overrides remain excluded.
+
+Go estimates use the selected Go model's published token rates, recorded separately
+from OpenAI rates. They estimate subscription usage, not the subscription invoice.
+DeepSeek peak rates apply Monday–Friday UTC during [01:00, 04:00) and [06:00, 10:00).
+Each native usage step retains its assistant message creation time in Unix
+milliseconds; absent response times make time-dependent costs unknown. Qwen3.7
+Plus uses its published 256K context boundary. The official Go price table supplies
+MiniMax M3 rates; catalogue prices are not used to override the serving provider's
+published price table. Estimates use recorded input, output/reasoning and cache
+categories, with the frozen Bank of Canada rate for CAD display.
 If provider-key authentication is explicitly approved, use `authEnvironmentFile`
 to reference a private JSON file of selected provider API-key/token environment
 entries. Do not put credentials inline in settings: Promptfoo can retain provider
@@ -216,6 +231,9 @@ No default cohort policy is supplied. The approved map must permit viewer CLI
 client/HTTP access while denying viewer start/stop/reconfiguration, source/fixture/
 grader/other-evaluation reads and delegation. Existing prompt restrictions remain.
 Native sessions do not use CLI `--auto` or silently approve permission requests.
+An investigator or grader execution error stops the run before another session
+starts. The failed row and evidence are retained. Valid `0/1` and `0.5/1` results
+continue normally; they are not execution failures.
 Pending viewer-help/client requests stop the run, just as native denials do.
 The session policy explicitly allows only its own native saved-output directory
 after the approved external-directory rules, so truncated tool results remain readable.

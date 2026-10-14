@@ -126,6 +126,23 @@ test('fresh roots do not reuse scratch, database or evidence; credentials are se
   )
 })
 
+test('explicit model catalogue is copied byte-for-byte outside scratch with network refresh disabled', () => {
+  const directory = parent()
+  const file = path.join(directory, 'catalogue.json')
+  const bytes = '{ "test": {"models":{"candidate":{"name":"Candidate"}}} }\n'
+  fs.writeFileSync(file, bytes)
+  const options = { parent: directory, model: 'test/candidate', permission: { '*': 'deny' }, modelCatalogueFile: file }
+  const clean = createCleanEnvironment(options)
+  assert.equal(fs.readFileSync(clean.env.OPENCODE_MODELS_PATH, 'utf8'), bytes)
+  assert.equal(fs.statSync(clean.env.OPENCODE_MODELS_PATH).mode & 0o777, 0o600)
+  assert.ok(!clean.env.OPENCODE_MODELS_PATH.startsWith(clean.workspace + path.sep))
+  assert.equal(clean.env.OPENCODE_DISABLE_MODELS_FETCH, '1')
+  fs.writeFileSync(file, '{}')
+  assert.equal(fs.readFileSync(clean.env.OPENCODE_MODELS_PATH, 'utf8'), bytes)
+  assert.throws(() => createCleanEnvironment({ ...options, modelCatalogueFile: 'relative.json' }), /absolute/)
+  assert.throws(() => createCleanEnvironment({ ...options, modelCatalogueFile: directory }), /absolute/)
+})
+
 test('missing permissions, remote auth and override credentials fail closed', () => {
   assert.throws(
     () => createCleanEnvironment({ permission: { bash: 'ask' } }),

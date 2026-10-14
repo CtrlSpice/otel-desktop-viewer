@@ -176,33 +176,6 @@ test('fresh explicit Sol grader is separate from investigator and errors are not
   const packet = record(gradingData.evidence)
   assert.equal(record(packet.investigator).evidence, response.metadata.evidence)
   assert.deepEqual(packet.events, [])
-  // Evidence issues must be raised before any grader session is created.
-  const before = fs.readdirSync(path.join(root, 'runs'))
-  await assert.rejects(
-    grade('another attempt answer', {
-      vars: { task_id: cases[0].id },
-      providerResponse: response,
-    }),
-    /Investigator evidence harness issue: Attempt answer mismatch/
-  )
-  await assert.rejects(
-    grade(answer, {
-      vars: { task_id: cases[0].id },
-      providerResponse: { metadata: {} },
-    }),
-    /Investigator evidence harness issue/
-  )
-  assert.deepEqual(fs.readdirSync(path.join(root, 'runs')), before)
-  viewerSkillFixture(root, '')
-  await assert.rejects(
-    grade(answer, {
-      vars: { task_id: cases[0].id },
-      providerResponse: response,
-    }),
-    /did not return its app skill/
-  )
-  assert.deepEqual(fs.readdirSync(path.join(root, 'runs')), before)
-  viewerSkillFixture(root)
   fs.writeFileSync(
     settings,
     JSON.stringify({
@@ -242,40 +215,49 @@ test('fresh explicit Sol grader is separate from investigator and errors are not
   assert.equal(savedPartial.status, 'partial')
   assert.equal(savedPartial.score, 0.5)
   assert.match(partial.reason, /reported-cause: Partial:/)
-  for (const graderAnswer of [
-    'not JSON',
-    '{"executionFailure":"unavailable"}',
-  ]) {
-    fs.writeFileSync(settings, JSON.stringify({ answer, graderAnswer }))
-    await assert.rejects(
-      grade(answer, {
-        vars: { task_id: cases[0].id },
-        providerResponse: response,
-      }),
-      /Invalid grader output/
-    )
-  }
-  const savedGrades = fs.readdirSync(path.join(root, 'runs'))
-    .filter(name => name.startsWith('grader-'))
+  assert.equal(fs.existsSync(path.join(root, 'execution-error.json')), false)
+})
+
+for (const scenario of [
+  { name: 'answer mismatch', error: /Attempt answer mismatch/, sessions: 0 },
+  { name: 'missing evidence', error: /Investigator evidence harness issue/, sessions: 0 },
+  { name: 'missing skill', error: /did not return its app skill/, sessions: 0 },
+  { name: 'invalid JSON', error: /Invalid grader output/, sessions: 1, settings: { graderAnswer: 'not JSON' } },
+  { name: 'reported failure', error: /Invalid grader output/, sessions: 1, settings: { graderAnswer: '{"executionFailure":"unavailable"}' } },
+  { name: 'incomplete response', error: /Grader execution failure/, sessions: 1, settings: { incomplete: true } },
+  { name: 'investigator error', error: /Investigator execution failure/, sessions: 0 },
+]) test(`grading ${scenario.name} retains an execution error and prevents another session`, async () => {
+  const { root, isolation } = providerFixture()
+  fs.writeFileSync(path.join(root, 'connection.json'), JSON.stringify({ binary: viewerSkillFixture(root) }))
+  const file = path.join(root, 'isolation.json')
+  fs.writeFileSync(file, JSON.stringify(isolation), { mode: 0o600 })
+  process.env.OTEL_EVAL_ISOLATION_FILE = file
+  const settings = path.join(root, 'stub-settings.json')
+  const answer = 'Payment declined for insufficient funds.'
+  fs.writeFileSync(settings, JSON.stringify({ answer }))
+  const investigator = new OpenCodeProvider({ config: { model: GRADER_MODEL, isolation } })
+  const response = await investigator.callApi(cases[0].goal, { vars: { task_id: cases[0].id } })
+  fs.writeFileSync(settings, JSON.stringify({ answer, ...scenario.settings }))
+  if (scenario.name === 'missing skill') viewerSkillFixture(root, '')
+  await assert.rejects(grade(scenario.name === 'answer mismatch' ? 'another answer' : answer, {
+    vars: { task_id: cases[0].id },
+    providerResponse: scenario.name === 'missing evidence' ? { metadata: {} }
+      : scenario.name === 'investigator error' ? { error: 'timed out' } : response,
+  }), scenario.error)
+  const before = fs.readdirSync(path.join(root, 'runs'))
+  const savedGrades = before.filter(name => name.startsWith('grader-'))
     .map(name => record(readJson(path.join(root, 'runs', name, 'grading.json'))))
-  const executionErrors = savedGrades.filter(report => report.status === 'execution-error')
-  assert.equal(executionErrors.length, 2)
-  assert.ok(executionErrors.every(report => !('score' in report)))
-  fs.writeFileSync(settings, JSON.stringify({ incomplete: true }))
-  await assert.rejects(
-    grade(answer, {
-      vars: { task_id: cases[0].id },
-      providerResponse: response,
-    }),
-    /Grader execution failure/
-  )
-  await assert.rejects(
-    grade(answer, {
-      vars: { task_id: cases[0].id },
-      providerResponse: { error: 'timed out' },
-    }),
-    /Investigator execution failure/
-  )
+  assert.equal(savedGrades.length, scenario.sessions)
+  assert.ok(savedGrades.every(report => report.status === 'execution-error' && !('score' in report)))
+  const marker = fs.readFileSync(path.join(root, 'execution-error.json'), 'utf8')
+  assert.equal(record(JSON.parse(marker)).status, 'execution-error')
+  viewerSkillFixture(root)
+  fs.writeFileSync(settings, JSON.stringify({ answer }))
+  await assert.rejects(grade(answer, {
+    vars: { task_id: cases[0].id }, providerResponse: response,
+  }), /Evaluation stopped by an execution error/)
+  assert.deepEqual(fs.readdirSync(path.join(root, 'runs')), before)
+  assert.equal(fs.readFileSync(path.join(root, 'execution-error.json'), 'utf8'), marker)
 })
 
 test('failed export verification forces zero even when the synthetic grader returns Pass', async () => {

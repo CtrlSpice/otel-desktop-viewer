@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import apiPrices from './api-prices.json' with { type: 'json' }
+import goPrices from './go-api-prices.json' with { type: 'json' }
 import { median, p95, modelSummaries, modelSummaryTable } from './model-summary.ts'
 import { pricingSnapshot } from './pricing.ts'
 
@@ -100,4 +101,42 @@ test('missing usage is unavailable and mixed coverage is explicitly partial', ()
   assert.equal(unavailable.apiCostCad, null)
   assert.equal(unavailable.estimateCoverage, 'unavailable')
   assert.match(modelSummaryTable([missing], pricing), /N\/A/)
+})
+
+test('summaries price native response timestamps individually and report missing timestamps as partial', () => {
+  const timedPricing = pricingSnapshot({ ...pricing, api: goPrices })
+  const model = 'opencode-go/deepseek-v4-pro'
+  const row = { ...attempt(1, model), response: { metadata: {
+    ...attempt(1, model).response.metadata,
+    usageSteps: [
+      { ...step, timestamp: Date.parse('2026-10-12T01:00:00Z') },
+      { ...step, timestamp: Date.parse('2026-10-12T04:00:00Z') },
+      { ...step },
+    ],
+  } } }
+  const [summary] = modelSummaries([row], timedPricing)
+  assert.equal(summary.pricedResponses, 2)
+  assert.equal(summary.apiCostUsd, 0.15 * 0.66 * 3)
+  assert.equal(summary.estimateCoverage, 'partial')
+  assert.match(modelSummaryTable([row], timedPricing), /2026-10-14: https:\/\/opencode.ai\/v2\/docs\/console\/go\//)
+  const [missing] = modelSummaries([attempt(1, model)], timedPricing)
+  assert.equal(missing.estimateCoverage, 'unavailable')
+  assert.equal(missing.apiCostCad, null)
+})
+
+test('summary price citations use each provider source rather than the OpenAI default', () => {
+  const combined = pricingSnapshot({ ...pricing, api: { ...apiPrices, models: {
+    ...apiPrices.models,
+    'opencode-go/kimi-k3': {
+      ...goPrices.models['opencode-go/kimi-k3'],
+      source: goPrices.source, verifiedOn: goPrices.verifiedOn,
+    },
+  } } })
+  const table = modelSummaryTable([
+    attempt(1), attempt(1, 'opencode-go/kimi-k3'),
+  ], combined)
+  assert.match(table, /2026-10-08: https:\/\/developers.openai.com\/api\/docs\/pricing/)
+  assert.match(table, /2026-10-14: https:\/\/opencode.ai\/v2\/docs\/console\/go\//)
+  const onlyGo = modelSummaryTable([attempt(1, 'opencode-go/kimi-k3')], combined)
+  assert.doesNotMatch(onlyGo, /developers.openai.com/)
 })

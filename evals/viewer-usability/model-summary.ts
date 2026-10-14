@@ -62,6 +62,7 @@ export function modelSummaries(rows: unknown[], pricing?: PricingSnapshot) {
       for (const raw of attempt.usageSteps) {
         const value = record(raw)
         const step: UsageStep = {
+          timestamp: usageCount(value.timestamp),
           input: usageCount(value.input),
           output: usageCount(value.output),
           reasoning: usageCount(value.reasoning),
@@ -121,7 +122,8 @@ export function modelSummaryTable(rows: unknown[], pricing?: PricingSnapshot) {
     '| Model | Median seconds/task | Tool calls | Recorded failed tools | Input tokens | Output tokens (including reasoning) | Cache-read tokens | Estimated API cost (CAD) |',
     '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
   ]
-  for (const summary of modelSummaries(rows, pricing)) {
+  const summaries = modelSummaries(rows, pricing)
+  for (const summary of summaries) {
     const cost =
       summary.apiCostCad === null
         ? 'N/A'
@@ -148,10 +150,17 @@ export function modelSummaryTable(rows: unknown[], pricing?: PricingSnapshot) {
     'API-price estimates include recorded cache writes and reasoning. Missing usage or prices produce N/A or a partial estimate.',
     'Recorded failed tools count explicit tool errors and nonzero exit codes; hidden failures require transcript inspection.'
   )
-  if (pricing)
+  if (pricing) {
+    const sources = new Set(summaries.map(summary => {
+      const model = pricing.api.models[summary.model]
+      return model
+        ? `Token prices verified ${model.verifiedOn ?? pricing.api.verifiedOn}: ${model.source ?? pricing.api.source}.`
+        : undefined
+    }).filter(source => source !== undefined))
     lines.push(
-      `Standard API prices verified ${pricing.api.verifiedOn}: ${pricing.api.source}.`,
+      ...sources,
       `Bank of Canada rate dated ${pricing.exchange.date}: 1 USD = ${pricing.exchange.cadPerUsd} CAD. Pricing snapshot captured ${pricing.capturedAt}.`
     )
+  }
   return lines.join('\n')
 }

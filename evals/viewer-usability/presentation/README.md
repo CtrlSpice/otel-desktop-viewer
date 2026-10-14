@@ -33,7 +33,8 @@ not untrusted provider prompts or answer text. Titles do not change investigatio
 Recorded complete/partial/wrong/error counts retain every pilot attempt. Scores
 come from the current saved grading result, not inferred from old pass/fail labels.
 Task cards group results, performance, and usage/cost. A single attempt shows its
-result and score; multiple attempts show a mean and a labelled run/result/score table.
+result as `1/1`, `0.5/1` or `0/1`; multiple attempts show a mean and a labelled
+run/result table. Errors stay labelled as errors, not zero scores.
 Unrecorded artifact checks and human-review fields are omitted.
 Human review directories are read through `showReview`, which validates evidence
 and revision history. Original automated scores and human-signed scores stay
@@ -59,6 +60,8 @@ estimates. Prices and FX come from the run snapshot; these are not billed costs.
 Output token counts include reasoning; tool calls are not labelled as turns.
 
 Grading is its own collapsible row, not an investigator accuracy score. Its table
+and three-colour bar retain original grades, with counts for `1/1`, `0.5/1` and
+`0/1`; execution errors and unavailable outputs remain separate. The table
 shows original automated outputs, recorded time, tokens and estimated cost without
 grader explanations, evidence or rubric text. Human corrections do not rewrite
 the original grading output.

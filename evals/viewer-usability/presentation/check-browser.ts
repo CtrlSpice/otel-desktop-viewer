@@ -44,7 +44,7 @@ try {
   await checkTabSurface()
   const checkResultColours = async (colours: Record<string, string>) => {
     for (const [status, colour] of Object.entries(colours)) {
-      const badges = page.locator(`.result-${status}`)
+      const badges = page.locator(`.result-badge.result-${status}`)
       const count = await badges.count()
       assert.deepEqual(await badges.evaluateAll(elements => elements.map(element => getComputedStyle(element, '::before').backgroundColor)), Array(count).fill(colour))
       assert.deepEqual(await badges.evaluateAll(elements => elements.map(element => getComputedStyle(element).fontSize)), Array(count).fill('14px'))

@@ -7,13 +7,14 @@ import {
   createCleanEnvironment,
   credentialEnvironment,
 } from './clean-environment.ts'
-import { usageStep } from './pricing.ts'
+import { usageCount, usageStep } from './pricing.ts'
 import { permissionDenial } from './permission-stop.ts'
 
 export type Isolation = {
   permission?: unknown
   authFile?: string
   authEnvironmentFile?: string
+  modelCatalogueFile?: string
   authEnvironment?: unknown
   providerIDs?: string[]
   executablePaths?: string[]
@@ -32,6 +33,7 @@ type ProcessResult = {
 
 type Event = {
   type: string
+  timestamp?: number
   sessionID?: string
   part: Record<string, unknown>
 }
@@ -44,6 +46,7 @@ function parseEvents(stdout: string) {
       if (typeof event.type !== 'string') continue
       events.push({
         type: event.type,
+        timestamp: usageCount(event.timestamp),
         sessionID:
           typeof event.sessionID === 'string' ? event.sessionID : undefined,
         part: record(event.part),
@@ -66,7 +69,10 @@ export function sessionSummary(stdout: string) {
     cacheRead: 0,
     cacheWrite: 0,
   }
-  const usageSteps = steps.map(step => usageStep(record(step.part.tokens)))
+  const usageSteps = steps.map(step => ({
+    ...usageStep(record(step.part.tokens)),
+    ...(step.timestamp === undefined ? {} : { timestamp: step.timestamp }),
+  }))
   for (const step of steps) {
     const tokens = record(step.part.tokens)
     const cache = tokens.cache === undefined ? {} : record(tokens.cache)
@@ -156,6 +162,7 @@ export function isolationSettings(value: unknown): Isolation {
   for (const key of [
     'authFile',
     'authEnvironmentFile',
+    'modelCatalogueFile',
     'opencodeBinary',
   ] as const) {
     if (source[key] === undefined) continue
@@ -420,6 +427,7 @@ export default class OpenCodeProvider {
         permission,
         authFile,
         authEnvironmentFile,
+        modelCatalogueFile,
         providerIDs = [],
         executablePaths = [],
         opencodeBinary = 'opencode',
@@ -470,6 +478,7 @@ export default class OpenCodeProvider {
         permission,
         authFile,
         authEnvironment,
+        modelCatalogueFile,
         providerIDs,
         executablePaths: [root, ...executablePaths],
       })

@@ -112,7 +112,25 @@ export function parseVerdicts(output: string, taskID: string) {
   return criteria
 }
 
-export default async function grade(
+export default async function grade(output: string, context: Parameters<typeof gradeAttempt>[1]) {
+  try {
+    return await gradeAttempt(output, context)
+  } catch (error) {
+    const file = path.join(runtimeRoot(), 'execution-error.json')
+    // A failed investigator may have no metadata; retain the original error.
+    const metadata = context.providerResponse?.metadata
+    const identity = metadata !== null && typeof metadata === 'object' && !Array.isArray(metadata)
+      ? metadata as Record<string, unknown> : {}
+    if (!fs.existsSync(file)) saveJson(file, {
+      status: 'execution-error', role: 'grader', task: context.vars.task_id,
+      model: identity.model,
+      evidence: identity.evidence,
+    })
+    throw error
+  }
+}
+
+async function gradeAttempt(
   output: string,
   context: {
     vars: { task_id?: unknown }

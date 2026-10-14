@@ -25,11 +25,11 @@ const percent = (value: number | null) =>
 const scores = (values: (number | null)[]) =>
   values.length ? values.map(value => value === null ? '—' : String(value)).join(' · ') : '—'
 const runResult = (value: number) =>
-  value === 1 ? 'Complete (1)' : value === 0.5 ? 'Partial (0.5)' : 'No credit (0)'
-const resultBadge = (value: number, includeScore = true, signedOff = false) => {
+  `${value}/1`
+const resultBadge = (value: number, signedOff = false, count?: number) => {
   const status = value === 1 ? 'complete' : value === 0.5 ? 'partial' : 'no-credit'
-  const label = includeScore ? runResult(value) : value === 1 ? 'Complete' : value === 0.5 ? 'Partial' : 'No credit'
-  return `<span class="badge badge-soft result-badge result-${status}">${escapeHtml(label)}${signedOff ? ' · signed' : ''}</span>`
+  const label = runResult(value)
+  return `<span class="badge badge-soft result-badge result-${status}">${count === undefined ? '' : `${integer(count)} × `}${escapeHtml(label)}${signedOff ? ' · signed' : ''}</span>`
 }
 const resultCell = (title: string, value: number) =>
   `<div><dt>${escapeHtml(title)}</dt><dd>${resultBadge(value)}</dd></div>`
@@ -53,7 +53,7 @@ export function render(data: Presentation, fontFaces = '', componentStyles = '')
   const graderAverages = data.grader.models.map(model => model.apiCostCad !== null && model.estimateCoverage === 'complete' && model.attempts ? model.apiCostCad / model.attempts : null)
   const maxCost = Math.max(0.001, ...averages.map((value) => value ?? 0), ...graderAverages.map(value => value ?? 0))
   const outcome = (value: Presentation['models'][number]['result']) =>
-    [[value.displayPass, 'complete'], [value.displayPartial, 'partial'], [value.displayFail, 'no credit'],
+    [[value.displayPass, '× 1/1'], [value.displayPartial, '× 0.5/1'], [value.displayFail, '× 0/1'],
       [value.error, 'error'], [value.unknown, 'unknown']]
       .filter(([count]) => Number(count) > 0)
       .map(([count, label]) => `${count} ${label}`).join(' · ') || 'No results'
@@ -75,7 +75,7 @@ export function render(data: Presentation, fontFaces = '', componentStyles = '')
          ${task.attempts === 1 && task.signedAttempts && task.scores[0] !== singleScore && task.scores[0] !== null ? resultCell('Automated result', task.scores[0]!) : ''}
         ${task.claimReviewedAttempts ? cell('Human claim review', `${task.supportedClaims} supported · ${task.contradictedClaims} contradicted · ${task.unverifiedClaims} unverified`) : ''}
          ${checks.artifactPass + checks.artifactFail ? cell('Artifact check', checks.artifactPass + checks.artifactFail === 1 ? (checks.artifactPass ? 'Passed' : 'Failed') : [[checks.artifactPass, 'passed'], [checks.artifactFail, 'failed']].filter(([count]) => Number(count) > 0).map(([count, label]) => `${count} ${label}`).join(' · ')) : ''}
-           </dl>${task.attempts > 1 ? `<table class="table run-results"><thead><tr><th scope="col">Run</th><th scope="col">Result</th><th scope="col">Score</th></tr></thead><tbody>${task.runResults.map(run => `<tr><th scope="row">Run ${run.run}</th><td>${run.status === 'error' ? 'Execution error' : run.score === null ? 'Unscored' : resultBadge(run.score, false, run.signedOff)}</td><td>${run.score === null ? '—' : run.score}</td></tr>`).join('')}</tbody></table>` : ''}</div>
+           </dl>${task.attempts > 1 ? `<table class="table run-results"><thead><tr><th scope="col">Run</th><th scope="col">Result</th></tr></thead><tbody>${task.runResults.map(run => `<tr><th scope="row">Run ${run.run}</th><td>${run.status === 'error' ? 'Execution error' : run.score === null ? 'Unscored' : resultBadge(run.score, run.signedOff)}</td></tr>`).join('')}</tbody></table>` : ''}</div>
           <div class="task-group"><dl>${cell('Median time', seconds(task.medianSeconds))}${task.attempts > 1 ? cell('P95 time', seconds(task.p95Seconds)) : ''}
          ${task.timedAttempts !== task.attempts ? cell('Time coverage', `${task.timedAttempts}/${task.attempts} attempts`) : ''}
          ${cell('Tool calls', integer(task.toolCalls))}${task.failedTools ? cell('Failed tools', integer(task.failedTools)) : ''}</dl></div>
@@ -95,8 +95,13 @@ export function render(data: Presentation, fontFaces = '', componentStyles = '')
     .join('')
   const graderRows = data.grader.models.map((model, index) => {
     const outputs = data.grader.outputs.filter(output => output.graderModel === model.model)
+    const counts = [1, 0.5, 0].map(score => ({ score, count: outputs.filter(output => !output.executionError && output.score === score).length }))
+    const errors = outputs.filter(output => output.executionError).length
+    const unscored = outputs.filter(output => !output.executionError && output.score === null).length
+    const scored = counts.reduce((sum, value) => sum + value.count, 0)
+    const breakdown = counts.map(value => `${value.count} × ${runResult(value.score)}`).join(' · ')
     return `<details class="model grader-row"><summary><div class="model-name"><strong>Grader</strong><span>${escapeHtml(model.name)}</span></div>
-      <div class="metric result"><strong>${integer(model.attempts)} grades</strong></div>
+      <div class="metric result grade-breakdown">${scored ? `<div class="grade-strip" role="img" aria-label="Automated grades: ${breakdown}">${counts.map(value => `<span class="result-${value.score === 1 ? 'complete' : value.score === 0.5 ? 'partial' : 'no-credit'}" style="flex:${value.count}"></span>`).join('')}</div><div class="grade-counts">${counts.map(value => resultBadge(value.score, false, value.count)).join('')}</div>` : '<span>Unscored</span>'}${errors ? `<span>${errors} execution ${errors === 1 ? 'error' : 'errors'}</span>` : ''}${unscored ? `<span>${unscored} unscored</span>` : ''}${model.attempts !== null && outputs.length !== model.attempts ? `<span>${outputs.length}/${model.attempts} outputs recorded</span>` : ''}</div>
       <div class="metric duration"><span class="bar-track" aria-hidden="true"><span style="width:${((model.medianSeconds ?? 0) / maxTime) * 100}%"></span></span><strong>${seconds(model.medianSeconds)}</strong></div>
       <div class="metric p95"><span class="bar-track" aria-hidden="true"><span style="width:${((model.p95Seconds ?? 0) / maxP95) * 100}%"></span></span><strong>${seconds(model.p95Seconds)}</strong></div>
       <div class="metric cost"><span class="bar-track" aria-hidden="true"><span style="width:${((graderAverages[index] ?? 0) / maxCost) * 100}%"></span></span><strong>${cost(graderAverages[index], 'complete')}</strong></div>
@@ -129,12 +134,14 @@ ${fontFaces}
  .result-complete{--result-colour:var(--color-info,#9ccfd8)}.result-partial{--result-colour:var(--color-warning,#f6c177)}.result-no-credit{--result-colour:var(--color-error,#eb6f92)}
  .result-badge{display:inline-flex;align-items:center;gap:6px;height:auto;min-height:0;padding:2px 8px;border:0;border-radius:6px;background:color-mix(in oklab,var(--result-colour) 12%,var(--panel));color:var(--text);font-family:inherit;font-size:var(--font-label);font-weight:400;line-height:1.5;white-space:nowrap}.result-badge::before{content:"";width:6px;height:6px;flex:none;border-radius:50%;background:var(--result-colour)}
  .run-results thead th,.grading-output thead th{color:var(--text)}
+ .grade-breakdown{flex-direction:column;align-items:stretch;gap:8px;font-size:var(--font-label)}.grade-strip{display:flex;gap:3px;height:8px;overflow:hidden;border-radius:4px}.grade-strip>span{min-width:0;background:var(--result-colour)}.grade-counts{display:flex;flex-wrap:wrap;gap:6px 12px;justify-content:flex-end}.grade-counts .result-badge{padding:1px 6px}
  @media(prefers-color-scheme:light){.result-complete{--result-colour:var(--color-info,#56949f)}.result-partial{--result-colour:var(--color-warning,#ea9d34)}.result-no-credit{--result-colour:var(--color-error,#b4637a)}}
   .chevron{transform:none!important;display:flex;align-items:center;justify-content:center}.chevron::before,.chevron::after{content:none!important}.model[open]>summary .chevron svg{transform:rotate(180deg)}.model>summary{border:0}.model{border-bottom:1px solid var(--edge)}.run-results{width:100%;margin-top:20px;font-size:var(--font-label)}.run-results th,.run-results td{padding:8px 0;text-align:left;font-family:inherit;font-size:var(--font-label);white-space:normal}.notice{display:flex;align-items:center;gap:12px}
  .task h3{text-transform:none}
  .task-title{background:var(--color-base-300,var(--track));margin:-24px -24px 0;padding:16px 24px;border-radius:8px 8px 0 0;align-items:flex-start}.task-title h3{font-weight:700;margin:0;color:var(--text)}@media(max-width:700px){.task-title{margin:-20px -20px 0;padding:14px 20px}}
  .task-title{height:auto;white-space:normal}.task dl{display:grid;grid-template-columns:1fr;gap:12px}.task dl>div{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:baseline}.task dd{margin:0;text-align:right;overflow-wrap:anywhere}
  .metrics{display:grid;grid-template-columns:repeat(4,max-content);gap:4px;background:transparent;padding:4px;border-radius:8px}.metrics button{display:flex;align-items:center;gap:8px;min-width:0}.metrics svg{flex-shrink:0}.model .metric{display:none}body[data-metric=result] .model .metric.result,body[data-metric=duration] .model .metric.duration,body[data-metric=p95] .model .metric.p95,body[data-metric=cost] .model .metric.cost{display:flex}.grading-output{overflow-x:auto;max-width:100%;margin-top:24px}.grading-output table{min-width:900px;width:100%;font-size:var(--font-label)}.grading-output caption{text-align:left;font-size:var(--font-body);font-weight:600;margin-bottom:16px}.grading-output th,.grading-output td{padding:12px;text-align:left;vertical-align:top;white-space:normal}.grader-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin:20px 0}.grader-metrics dt{font-size:var(--font-label);color:var(--muted)}.grader-metrics dd{margin:8px 0 0;font-size:var(--font-body)}@media(max-width:700px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.metrics button{justify-content:center}.grader-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+ .grader-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 32px;margin:20px 0}.grader-metrics>div{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:16px}.grader-metrics dt,.grader-metrics dd{margin:0;font-size:var(--font-label);line-height:1.5}.grader-metrics dd{text-align:right;font-variant-numeric:tabular-nums}@media(max-width:700px){.grader-metrics{grid-template-columns:1fr}}
  ${componentStyles ? ':root{--bg:var(--color-base-100);--panel:var(--color-base-200);--edge:var(--color-neutral);--text:var(--color-base-content);--muted:var(--color-subtle);--accent:var(--color-primary);--warning:var(--color-warning);--pass:var(--color-success);--fail:var(--color-error);--track:var(--color-base-300)}@media(prefers-color-scheme:light){:root{--muted:var(--color-base-content)}}' : ''}
  </style></head><body data-metric="result"><main><header><div class="eyebrow">OpenTelemetry Desktop Viewer</div><h1>Eval results</h1></header>
 <div class="notice alert${data.provisional || data.synthetic ? ' alert-warning notice-warning' : ' alert-info'}">${data.provisional || data.synthetic ? warningIcon : ''}<strong>${data.synthetic ? 'Synthetic preview · not model results.' : data.provisional ? 'Provisional · awaiting human signoff.' : 'Recorded attempts signed off.'}</strong></div>

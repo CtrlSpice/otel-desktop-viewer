@@ -60,7 +60,7 @@ function metrics(value: unknown) {
     usageSteps: array(source.usageSteps).map((raw) => {
       const step = object(raw)
       return Object.fromEntries(
-        ['input', 'output', 'reasoning', 'cacheRead', 'cacheWrite'].map(
+        ['input', 'output', 'reasoning', 'cacheRead', 'cacheWrite', 'timestamp'].map(
           (key) => [key, count(step[key]) ?? undefined]
         )
       )
