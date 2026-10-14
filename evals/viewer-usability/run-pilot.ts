@@ -30,8 +30,8 @@ export function pilotSummary(
     '',
     '## Task results',
     '',
-    '| Model | Task | Facts | Seconds | Tool calls | Utility entries | Query entries | Failed tools |',
-    '| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |',
+    '| Model | Task | Completion | Score | Seconds | Tool calls | Utility entries | Query entries | Failed tools |',
+    '| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |',
   ]
   for (const value of rows) {
     const row = record(value)
@@ -41,16 +41,17 @@ export function pilotSummary(
     const seconds = metadata.elapsedSeconds
     if (seconds !== undefined && typeof seconds !== 'number')
       throw new Error('Invalid pilot elapsed seconds')
+    const executionError = response.error ||
+      row.failureReason === 2 ||
+      (row.error && row.failureReason !== 1 && !row.gradingResult)
+    const score = executionError || !row.gradingResult
+      ? undefined
+      : record(row.gradingResult).score
     const cells = [
       record(row.provider).label,
       record(row.vars).task_id,
-      row.success
-        ? 'pass'
-        : response.error ||
-            row.failureReason === 2 ||
-            (row.error && row.failureReason !== 1 && !row.gradingResult)
-          ? 'error'
-          : 'fail',
+      executionError ? 'error' : score === 0.5 ? 'partial' : row.success ? 'pass' : 'fail',
+      score ?? 'N/A',
       typeof seconds === 'number' ? Math.round(seconds * 100) / 100 : '?',
       metadata.toolCalls ?? '?',
       metadata.utilityCommandEntries ?? '?',

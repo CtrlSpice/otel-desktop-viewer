@@ -94,6 +94,7 @@ for (const value of rows) {
   assert.equal(metadata.version, '1.18.10')
   assert.equal(response.output, settings.answer)
   assert.equal(record(row.gradingResult).pass, true)
+  assert.equal(record(row.gradingResult).score, 1)
   const prompt = fs.readFileSync(
     path.join(String(metadata.evidence), 'prompt.txt'),
     'utf8'
@@ -201,6 +202,7 @@ for (const value of factRows) {
   const row = record(value)
   assert.equal(row.failureReason, 1)
   assert.equal(record(row.gradingResult).pass, false)
+  assert.equal(record(row.gradingResult).score, 0)
   assert.ok(row.error)
 }
 assert.equal(
@@ -208,13 +210,64 @@ assert.equal(
     1,
   4
 )
+const partialAnswer = 'The payment was declined.'
+fs.writeFileSync(path.join(root, 'stub-settings.json'), JSON.stringify({
+  ...settings,
+  answer: partialAnswer,
+  graderAnswer: JSON.stringify({ criteria: [{
+    id: 'reported-cause', verdict: 'Partial',
+    explanation: 'Identifies the decline but omits insufficient funds.',
+  }] }),
+}))
+const partialCommand = [...command]
+partialCommand[partialCommand.length - 1] = 'loader-partial-results.json'
+const partial = spawnSync(partialCommand[0], partialCommand.slice(1), {
+  cwd: root,
+  encoding: 'utf8',
+  timeout: 300000,
+  env: {
+    ...process.env,
+    OTEL_EVAL_RUN_DIR: root,
+    OTEL_EVAL_ISOLATION_FILE: path.join(root, 'isolation.json'),
+    PROMPTFOO_DISABLE_TELEMETRY: '1',
+    PROMPTFOO_CONFIG_DIR: path.join(root, 'promptfoo-state'),
+  },
+})
+assert.equal(partial.error, undefined)
+saveJson(path.join(root, 'loader-partial-command.json'), {
+  status: partial.status,
+  externalInferenceAttempted: false,
+})
+const partialRows = record(
+  record(readJson(path.join(root, 'loader-partial-results.json'))).results
+).results
+assert.ok(Array.isArray(partialRows))
+assert.equal(partialRows.length, 4)
+for (const value of partialRows) {
+  const row = record(value)
+  assert.equal(row.success, false)
+  assert.equal(row.failureReason, 1)
+  const grading = record(row.gradingResult)
+  assert.equal(grading.pass, false)
+  assert.equal(grading.score, 0.5)
+  assert.ok(Array.isArray(grading.componentResults))
+  const report = record(record(grading.componentResults[0]).metadata)
+  const grader = record(report.metadata)
+  const saved = record(readJson(path.join(String(grader.evidence), 'grading.json')))
+  assert.equal(saved.status, 'partial')
+  assert.equal(saved.score, 0.5)
+}
+assert.equal(
+  pilotSummary({ results: { results: partialRows } }).split(' | partial | 0.5 |').length - 1,
+  4
+)
 const investigatorRuns = fs
   .readdirSync(path.join(root, 'runs'))
   .filter(name => name.startsWith('investigator-'))
-assert.equal(investigatorRuns.length, 12)
+assert.equal(investigatorRuns.length, 16)
 for (const run of investigatorRuns)
   assert.ok(
-    ['Inventory failed.', settings.answer].includes(
+    ['Inventory failed.', settings.answer, partialAnswer].includes(
       fs.readFileSync(path.join(root, 'runs', run, 'answer.txt'), 'utf8')
     )
   )
@@ -225,6 +278,7 @@ saveJson(path.join(root, 'loader-proof.json'), {
   syntheticResults: rows.length,
   syntheticExecutionErrors: errorRows.length,
   syntheticFactualFailures: factRows.length,
+  syntheticPartialResults: partialRows.length,
   investigatorResponsesRetained: investigatorRuns.length,
   separateFreshGraderContexts: true,
   privatePromptSeparation: true,

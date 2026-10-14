@@ -6,8 +6,9 @@
     "node": ">=22.22.0"
   },
   "scripts": {
-    "test": "node --test *.test.ts",
+    "test": "node --test *.test.ts presentation/*.test.ts",
     "typecheck": "node ../../desktopexporter/internal/frontend/node_modules/typescript/bin/tsc -p tsconfig.json",
+    "typecheck:presentation": "node ../../desktopexporter/internal/frontend/node_modules/typescript/bin/tsc -p presentation/tsconfig.json",
     "stage": "node stage-dataset.ts",
     "prepare": "node prepare.ts",
     "verify": "node verify.ts",

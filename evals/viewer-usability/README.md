@@ -30,13 +30,16 @@ Keep credentials, local settings and run artifacts outside version control.
 
 ## Status
 
-The ten approved questions use the shared small workload. Requests, counts and
+The eleven approved questions use the shared small workload. Requests, counts and
 inclusive exact time bounds come from its manifest; `OTLP_DATASET` selects another
 dataset, whose facts must satisfy the approved preflight before model calls.
-The approved comparison may run from the corrected feature branch before merge.
-`config.ts` targets GPT-6.1 Sol, GPT-5.6 Sol, GPT-6 Luna and GPT-5.6 Luna: ten tasks
-times three repetitions times four models gives 120 investigator sessions.
+The approved pilot may run from the corrected feature branch before merge.
+`config.ts` targets GPT-6.1 Sol, GPT-5.6 Sol, GPT-6 Luna and GPT-5.6 Luna: eleven tasks
+times three repetitions times four models gives 132 investigator sessions.
 Separate fresh GPT-6.1 Sol grading sessions are counted independently.
+The currently authorised pilot is GPT-6.1 Sol and GPT-6 Luna once per task:
+22 investigator sessions and 22 separate grader sessions, after verification.
+The full 132-investigation comparison is not authorised.
 The adapter requires
 OpenCode 1.18.10 and registers the exact public definitions in `openai-models.json`
 for each requested model. This corrects the CLI's ChatGPT-login name filter, which
@@ -58,9 +61,20 @@ are supplied once in that session. The harness runs the evaluated binary's offli
 prompt. The guide is reference context for interpreting recorded commands/results;
 the grader is still instructed not to investigate or execute tools. The retained
 grader prompt includes the guide used for that attempt. A missing, failed or invalid
-guide read is a setup error before the grader starts. Each criterion gets Pass/Fail
-and an explanation;
-the task passes only when its approved criterion and any required file check pass.
+guide read is a setup error before the grader starts. Each question has one
+completion criterion with explicit scoring descriptions in `rubrics.json`:
+Fail earns 0, Partial earns 0.5, and Pass earns 1. Customer count, trace export and
+request count allow only 0 or 1; a Partial verdict for those tasks is invalid grader
+output. Partial credit rewards correct supported results, not effort or tool use.
+The grader supplies a verdict and explanation; code derives its numeric score.
+The task score is that single criterion's score, except an unsuccessful required
+export-file check makes it 0. Only score 1 counts as a complete pass. Saved grading
+reports and task summaries distinguish partial completion from failure and retain
+the numeric score. Execution errors have no completion score.
+The failure-rate question asks only for the rate change; the log question asks
+only for the associated logs; the sequence question asks which types are stored.
+Optional reference details do not add requirements. Completion grading remains
+separate from unsupported-claim assessment.
 Invalid grader output, provider errors and timeouts are execution errors, not
 incorrect investigator answers. Grading reliability remains provisional until
 comparison with human-reviewed answers; deterministic tests do not validate model judgments.
@@ -334,6 +348,70 @@ member. The grader's verified file list contains the delivered archive path once
 even if more than one member passes. The grader checks that the answer's reported
 location identifies a verified file;
 an unreferenced valid scratch file does not validate a reported invalid file.
+
+## Offline human correction and signoff
+
+`human-review.ts` reviews one saved **current-question/current-rubric** grading report.
+Old scores are obsolete; this command does not migrate or finalise old-rubric attempts.
+Original automated results and run evidence remain unchanged. Human decisions are
+stored separately in a new private directory outside repositories and the run.
+The command makes no model calls, network requests or viewer lifecycle changes.
+
+From the repository root, use absolute external paths for your run and new review
+directory. `--grading` is relative to the run:
+
+```sh
+node evals/viewer-usability/human-review.ts prepare --run /absolute/run --grading runs/grader-attempt/grading.json --review-dir /absolute/review
+node evals/viewer-usability/human-review.ts record --review-dir /absolute/review --decision /absolute/review/draft.json
+node evals/viewer-usability/human-review.ts signoff --review-dir /absolute/review --revision 1 --reviewer your-label --confirm-final
+node evals/viewer-usability/human-review.ts show --review-dir /absolute/review
+```
+
+Preparation writes `audit.md`, `source.json`, selected evidence snapshots and
+`draft.json`. It supplies no human decisions. Read the audit and edit the draft:
+enter your reviewer label; choose `completion.action` (`accept` or `correct`), the
+score, reason and evidence citations; enter explicit `claims`, `findings` and
+`toolReviews` arrays, including `[]` when appropriate. Each citation has a `source`
+ID from the audit and an exact `quote` from that source. For example:
+
+```json
+{"source":"answer","quote":"The payment was declined."}
+```
+
+`accept` must retain the automated score. `correct` accepts only the task's approved
+0/0.5/1 scores; customer count, export and request count remain binary. Claim entries
+retain exact answer text, its `claimSource` citation, `classification` (`supported`,
+`contradicted` or `unverified`), manual `decision` (`Pass`, `Fail` or unresolved null),
+evidence and reason. Unverified Pass means human acceptance, not proof. Additional
+findings require evidence and reason but do not change the completion score or add
+requirements. This workflow does not automatically extract or grade claims.
+
+Each recorded failed tool needs a `toolReviews` entry with its source ID,
+`disposition` (`not-blocking` or `blocking`) and reason. Blocking failures and unresolved
+claim decisions prevent signoff. Execution errors and harness blockers stay unscored.
+For export score 1, add `completion.export` with `file` selected from the audit's
+verified export list and `location` citing the exact absolute or relative filename
+in the answer. A saved successful content/reloadability check and matching retained
+replay bytes are mandatory; a human cannot override a failed deterministic check.
+No export is replayed by this command.
+
+`record` appends a decision revision but leaves it **pending**. Only explicit signoff
+of the current revision makes its numeric score **final**. A correction appends a new
+revision, preserves earlier decisions/signoffs and requires new signoff. Changed
+source bytes or review history fail validation. Reviewer identity is a self-declared
+local label, not authentication or a cryptographic signature; hashes do not prevent
+someone with filesystem access from rewriting all records. Keep the directory 0700
+and decision/review files 0600.
+
+For a read-only consumer, import `showReview(directory: string)`. It validates sources
+and event history, then returns `run`, `taskID`, `investigator` (evidence directory,
+session IDs and model), `revision`, `latestRevisionSigned`, pending/final `status`, and
+`signedOff`, `finalScore` (signed numeric score or null), and human `claimCounts`
+(`supported`, `contradicted`, `unverified`; null before a human revision exists).
+Recorded counts remain provisional until that revision is signed; they are not a
+numeric hallucination measure or evidence of exhaustive claim coverage.
+Invalid evidence throws. Do not treat
+raw review JSON or a previous revision's signoff as the current final result.
 
 ## Owned overnight run
 

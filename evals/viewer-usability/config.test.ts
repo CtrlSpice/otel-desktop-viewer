@@ -47,12 +47,12 @@ test('runner configuration forwards only explicit private isolation settings', (
       'openai/gpt-5.6-luna',
     ]
   )
-  assert.equal(configuration.tests, 40)
+  assert.equal(configuration.tests, 44)
   assert.equal((configuration.extensions as string[]).length, 3)
   const missing = run('')
   assert.equal(missing.status, 0)
   const missingProviders: unknown = JSON.parse(missing.stdout)
-  assert.equal(record(missingProviders).tests, 40)
+  assert.equal(record(missingProviders).tests, 44)
   fs.chmodSync(file, 0o644)
   const publicFile = run(file)
   assert.notEqual(publicFile.status, 0)

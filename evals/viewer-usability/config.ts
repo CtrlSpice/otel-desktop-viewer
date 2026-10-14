@@ -31,7 +31,7 @@ const models = [
 ]
 export default {
   description:
-    'Viewer usability: ten natural investigations, separate provisional Sol6.1 grading',
+    'Viewer usability: eleven natural investigations, separate provisional Sol6.1 grading',
   prompts: ['file://' + path.join(SUITE, 'prompt.txt')],
   // beforeEach replaces this inert provider with a fresh native attempt.
   providers: ['echo'],

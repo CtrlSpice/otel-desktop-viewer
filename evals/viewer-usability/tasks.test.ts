@@ -12,19 +12,20 @@ test('exact approved questions contain no private grading values or answer forma
     [
       'Why did checkout-017 fail?',
       'Why was checkout-019 slower than checkout-018?',
-      'Did the checkout failure rate change during this period? What changed alongside it?',
-      'Show me all the logs for checkout-017. Can each one be tied to a span we have?',
+      'How did the checkout failure rate change during this period?',
+      'Show me all the logs for checkout-017.',
       'How many different customers appear in the checkout traffic during this period?',
-      'Are order sequence numbers stored with the same data type across checkouts?',
+      'What data types are used for order sequence numbers across checkouts?',
       'Export checkout-017 so another engineer can load it into their viewer.',
       'How did request latency change during this period?',
       'How many requests does the request counter report during this period?',
       'What CPU readings are available around checkout-019?',
+      'Can the available telemetry establish whether CPU saturation caused checkout-019’s slowdown?',
     ]
   )
   assert.deepEqual(
-    Object.keys(rubrics),
-    tasks.map(task => task.id)
+    Object.keys(rubrics).sort(),
+    tasks.map(task => task.id).sort()
   )
   const prompt = fs.readFileSync(path.join(SUITE, 'prompt.txt'), 'utf8')
   for (const task of tasks) {
@@ -41,4 +42,22 @@ test('exact approved questions contain no private grading values or answer forma
       /JSON|evidence field|900719925474|insufficient_funds|104|reported-cause|0\/8|Observability guidance|document-processing|720 ms/
     )
   }
+})
+
+test('each question has one completion criterion and only approved tasks allow partial credit', () => {
+  const partialTasks = []
+  for (const [id, rubric] of Object.entries(rubrics)) {
+    assert.equal(rubric.criteria.length, 1)
+    const { scoring } = rubric.criteria[0]
+    assert.ok(scoring.Fail.trim())
+    assert.ok(scoring.Pass.trim())
+    if ('Partial' in scoring) {
+      assert.ok(scoring.Partial.trim())
+      partialTasks.push(id)
+    }
+  }
+  assert.deepEqual(partialTasks, [
+    'checkout-failure', 'checkout-latency', 'failure-rate', 'trace-logs',
+    'sequence-types', 'request-latency', 'cpu-causation', 'cpu-evidence',
+  ])
 })

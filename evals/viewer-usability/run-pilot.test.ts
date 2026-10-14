@@ -60,7 +60,7 @@ process.exitCode = 7;
   )
   assert.match(
     fs.readFileSync(path.join(root, 'pilot-summary.md'), 'utf8'),
-    /synthetic \| synthetic \| error \| 1.23/
+    /synthetic \| synthetic \| error \| N\/A \| 1.23/
   )
   const retained = fs.readFileSync(path.join(root, 'pilot.json'))
   assert.deepEqual(readJson(path.join(root, 'pricing-snapshot.json')), pricing)
@@ -93,14 +93,20 @@ test('pilot spawn failure keeps protected completion and logs', async () => {
   )
 })
 
-test('pilot summary distinguishes fact failures and provider errors', () => {
+test('pilot summary preserves partial credit and leaves execution errors unscored', () => {
   const results = [
-    { success: true },
+    { success: true, gradingResult: { pass: true, score: 1 } },
+    {
+      success: false,
+      failureReason: 1,
+      error: 'Incomplete explanation',
+      gradingResult: { pass: false, score: 0.5 },
+    },
     {
       success: false,
       failureReason: 1,
       error: 'Incorrect cause',
-      gradingResult: { pass: false },
+      gradingResult: { pass: false, score: 0 },
     },
     { success: false, response: { error: 'failure' } },
     {
@@ -115,8 +121,8 @@ test('pilot summary distinguishes fact failures and provider errors', () => {
     ...row,
   }))
   const summary = pilotSummary({ results: { results } })
-  for (const status of ['pass', 'fail', 'error'])
-    assert.ok(summary.includes(`| model | task | ${status} |`))
+  for (const [status, score] of [['pass', 1], ['partial', 0.5], ['fail', 0], ['error', 'N/A']])
+    assert.ok(summary.includes(`| model | task | ${status} | ${score} |`))
   assert.equal(summary.split('| model | task | error |').length - 1, 2)
 })
 

@@ -6,11 +6,11 @@
   },
   {
     "id": "failure-rate",
-    "goal": "Did the checkout failure rate change during this period? What changed alongside it?"
+    "goal": "How did the checkout failure rate change during this period?"
   },
   {
     "id": "trace-logs",
-    "goal": "Show me all the logs for checkout-017. Can each one be tied to a span we have?"
+    "goal": "Show me all the logs for checkout-017."
   },
   {
     "id": "customer-count",
@@ -18,7 +18,7 @@
   },
   {
     "id": "sequence-types",
-    "goal": "Are order sequence numbers stored with the same data type across checkouts?"
+    "goal": "What data types are used for order sequence numbers across checkouts?"
   },
   {
     "id": "trace-export",
@@ -35,5 +35,9 @@
   {
     "id": "cpu-evidence",
     "goal": "What CPU readings are available around checkout-019?"
+  },
+  {
+    "id": "cpu-causation",
+    "goal": "Can the available telemetry establish whether CPU saturation caused checkout-019’s slowdown?"
   }
 ]
