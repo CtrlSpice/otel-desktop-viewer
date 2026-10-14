@@ -79,6 +79,18 @@ test('export grading checks reported locations against verified files without re
   assert.equal(data.answer, 'Exported to bad.json.')
 })
 
+test('export relative locations use the original working directory, not archived scratch', () => {
+  const workspace = '/owned/tmp/promptfoo-workspace/workspace'
+  const artifact = { pass: true, files: [workspace + '/tmp/opencode/checkout-017.tar.gz'] }
+  const prompt = gradingPrompt('trace-export', 'Exported to tmp/opencode/checkout-017.tar.gz.',
+    VIEWER_SKILL, artifact, undefined, workspace)
+  const data = record(JSON.parse(prompt.slice(prompt.indexOf('{"question"'))))
+  assert.equal(data.investigatorWorkingDirectory, workspace)
+  assert.deepEqual(data.artifact, artifact)
+  assert.match(prompt, /Resolve relative locations against investigatorWorkingDirectory/)
+  assert.match(prompt, /archived copy and is not the base/)
+})
+
 test('fresh explicit Sol grader is separate from investigator and errors are not factual failures', async () => {
   const { root, isolation } = providerFixture()
   const viewer = viewerSkillFixture(root)

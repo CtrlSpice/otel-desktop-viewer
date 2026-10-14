@@ -348,6 +348,9 @@ member. The grader's verified file list contains the delivered archive path once
 even if more than one member passes. The grader checks that the answer's reported
 location identifies a verified file;
 an unreferenced valid scratch file does not validate a reported invalid file.
+Relative answer locations resolve against the original investigator working
+directory supplied to the grader, not the archived scratch directory. Verified
+file paths are mapped to that same original directory.
 
 ## Offline human correction and signoff
 
