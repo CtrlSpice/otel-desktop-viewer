@@ -32,14 +32,20 @@ not untrusted provider prompts or answer text. Titles do not change investigatio
 
 Recorded complete/partial/wrong/error counts retain every pilot attempt. Scores
 come from the current saved grading result, not inferred from old pass/fail labels.
-Task cards group results, performance, and usage/cost. A single attempt shows its
-result as `1/1`, `0.5/1` or `0/1`; multiple attempts show a mean and a labelled
-run/result table. Errors stay labelled as errors, not zero scores.
+Task cards use the same coloured result bar for one or many attempts, followed by
+text-labelled counts and percentages. Each percentage is the category count divided
+by all recorded attempts, displayed with at most one decimal place; it describes
+the distribution of outcomes, not the mean score. Thin dividers separate results,
+performance, and usage/cost; aligned metric rows replace the nested run table.
+Errors stay labelled as errors, not zero scores. Errors with recorded
+`harnessBlocker: true` appear as **Harness
+error** in Rosé Pine rose; they remain unscored and included in the error total.
 Unrecorded artifact checks and human-review fields are omitted.
 Human review directories are read through `showReview`, which validates evidence
 and revision history. Original automated scores and human-signed scores stay
 separate. Displayed results and means use signed corrections where available,
-with review coverage visible; incomplete planned runs remain provisional.
+with review coverage and original-to-signed corrections visible; incomplete planned
+runs remain provisional.
 Final three-run results require three signed-off attempts. Errors stay unscored.
 Human claim counts
 reflect explicitly reviewed claims, not exhaustive automated detection or a numeric

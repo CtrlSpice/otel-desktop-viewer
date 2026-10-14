@@ -120,6 +120,34 @@ test('error and wrong answer stay distinct; missing duration makes median unknow
   assert.equal(data.models[0].result.timedAttempts, 3)
 })
 
+test('recorded harness blockers stay unscored and distinct from other execution errors', () => {
+  const blocked = row('other/cedar', 'inspect', false)
+  const harnessError = { ...blocked, failureReason: 2,
+    response: { ...blocked.response, metadata: { ...blocked.response.metadata, harnessBlocker: true } } }
+  const executionError = { ...row('other/cedar', 'inspect', false), failureReason: 2 }
+  const retry = row('other/cedar', 'inspect', true)
+  const project = (rows: unknown[]) => aggregate({ tasks: 1, repetitions: 1 },
+    { results: { results: rows } }, undefined, undefined)
+  const data = project([harnessError, executionError, retry])
+  const task = data.models[0].tasks[0]
+  assert.equal(data.models[0].result.harnessError, 1)
+  assert.equal(task.error, 2)
+  assert.equal(task.harnessError, 1)
+  assert.equal(task.scoredAttempts, 1)
+  assert.equal(task.displayMean, 1)
+  assert.deepEqual(task.runResults.map(run => [run.status, run.score]),
+    [['harness-error', null], ['error', null], ['scored', 1]])
+  const html = render(data)
+  assert.match(html, /1 harness error/)
+  assert.match(html, /1 execution error/)
+  assert.match(html, /result-harness-error" style="flex:1"/)
+  assert.match(html, /1 harness error · 33.3%/)
+  assert.match(render(project([harnessError])), /1 harness error · 100%/)
+  assert.match(render(project([harnessError, retry])), /Attempt results: 1 complete · 50%; 1 harness error · 50%/)
+  assert.doesNotMatch(html, /<table class="table run-results"/)
+  assert.equal(project([{ ...harnessError, failureReason: undefined }]).models[0].result.harnessError, 0)
+})
+
 test('projection drops private payload; labels cannot inject markup or copy paths', () => {
   const data = aggregate(
     {
@@ -212,16 +240,16 @@ test('partial scores and signed three-run means stay separate; errors are unscor
   assert.equal(errored.models[0].tasks[0].provisionalMean, null)
   assert.equal(errored.models[0].tasks[0].signedAttempts, 0)
   const html = render(data)
-  assert.match(html, /<dt>Mean<\/dt>/)
+  assert.doesNotMatch(html, /<dt>Mean<\/dt>/)
   assert.ok(!html.includes('Provisional mean'))
   assert.ok(!html.includes('Final three-run mean'))
   assert.ok(html.includes('class="task-group"'))
   assert.ok(!html.includes('<h4>'))
   assert.match(html, /50.0%/)
-  assert.match(html, /Run 1/)
-  assert.match(html, /Run 2/)
-  assert.match(html, /Run 3/)
-  assert.match(html, /<td><span class="badge badge-soft result-badge result-partial">0.5\/1 · signed<\/span><\/td>/)
+  assert.match(html, /1 complete · 33.3%/)
+  assert.match(html, /1 partial · 33.3%/)
+  assert.match(html, /1 incorrect or missing · 33.3%/)
+  assert.match(html, /3\/3 runs signed/)
   assert.ok(!JSON.stringify(data).includes('ses_'))
   assert.ok(!html.includes('ses_'))
   assert.ok(!html.includes('Artifact check'))
@@ -229,8 +257,8 @@ test('partial scores and signed three-run means stay separate; errors are unscor
   assert.throws(() => project([...reviews, reviews[0]]), /Duplicate human review/)
   assert.throws(() => project(reviews, [attempts[0], attempts[0], attempts[0]]), /duplicate investigator session/)
   const corrected = render(project(reviews.map(review => ({ ...review, score: 0 }))))
-  assert.match(corrected, /<span class="pass" style="flex:0"/)
-  assert.match(corrected, /<span class="fail" style="flex:3"/)
+  assert.doesNotMatch(corrected, /<span class="result-complete" style="flex:/)
+  assert.match(corrected, /<span class="result-no-credit" style="flex:3"/)
   assert.match(corrected, /<strong>0.0%<\/strong>/)
   const unsigned = render(project([]))
   for (const label of ['Human-signed scores', 'Human claim review', 'Signoff coverage', 'Final three-run mean'])
@@ -247,7 +275,8 @@ test('signed single-run corrections update the displayed model mean as well as t
   const html = render(data)
   assert.match(html, /<strong>50.0%<\/strong>/)
   assert.match(html, /0.5\/1/)
-  assert.match(html, /Automated result/)
+  assert.match(html, /Human correction/)
+  assert.match(html, /Automated 1\/1 → signed 0.5\/1/)
   assert.doesNotMatch(html, /<strong>100.0%<\/strong>/)
 })
 
@@ -286,14 +315,15 @@ test('grader breakdown counts original grades and keeps execution errors and mis
   assert.ok(html.includes('<span>5/6 outputs recorded</span>'))
 })
 
-test('single-run result badges distinguish completion, partial credit and no credit; errors stay unscored', () => {
-  for (const [score, status, label] of [[1, 'complete', '1/1'], [0.5, 'partial', '0.5/1'], [0, 'no-credit', '0/1']] as const) {
+test('single-run task bars show the outcome distribution; errors stay unscored', () => {
+  for (const [score, status, label] of [[1, 'complete', 'complete'], [0.5, 'partial', 'partial'], [0, 'no-credit', 'incorrect or missing']] as const) {
     const attempt = { ...row('other/cedar', 'inspect', score === 1), gradingResult: { score } }
     const data = aggregate({ tasks: 1, repetitions: 1 }, { results: { results: [attempt] } }, undefined, undefined)
-    assert.ok(render(data).includes(`<span class="badge badge-soft result-badge result-${status}">${label}</span>`))
+    assert.ok(render(data).includes(`<span class="badge badge-soft result-badge result-${status}">1 ${label} · 100%</span>`))
+    assert.ok(render(data).includes(`<span class="result-${status}" style="flex:1"></span>`))
     const errored = { ...attempt, failureReason: 2 }
     const errorHtml = render(aggregate({ tasks: 1, repetitions: 1 }, { results: { results: [errored] } }, undefined, undefined))
-    assert.ok(errorHtml.includes('<dt>Result</dt><dd>Execution error</dd>'))
+    assert.ok(errorHtml.includes('1 execution error · 100%'))
     assert.ok(!errorHtml.includes(`<span class="badge badge-soft result-badge result-${status}">`))
   }
 })

@@ -119,6 +119,7 @@ export function aggregate(
     return {
       model: id(metadata.model ?? object(row.provider).label, true),
       task: id(object(row.vars).task_id),
+      harnessError: error && metadata.harnessBlocker === true,
       outcome: error
         ? 'error'
         : score === 0.5
@@ -194,6 +195,7 @@ export function aggregate(
       contradictedClaims: selected.reduce((sum, row) => sum + (row.claimCounts?.contradicted ?? 0), 0),
       unverifiedClaims: selected.reduce((sum, row) => sum + (row.claimCounts?.unverified ?? 0), 0),
       error: selected.filter((row) => row.outcome === 'error').length,
+      harnessError: selected.filter((row) => row.harnessError).length,
       unknown: selected.filter((row) => row.outcome === 'unknown').length,
       medianSeconds: result?.medianSeconds ?? null,
       p95Seconds: result?.p95Seconds ?? null,
@@ -289,7 +291,7 @@ export function aggregate(
               score: row.signedScore ?? row.score,
               automatedScore: row.score,
               signedOff: row.signedScore !== null,
-              status: row.outcome === 'error' ? 'error' : row.score === null && row.signedScore === null ? 'unscored' : 'scored',
+              status: row.harnessError ? 'harness-error' : row.outcome === 'error' ? 'error' : row.score === null && row.signedScore === null ? 'unscored' : 'scored',
             })),
             finalMean: repetitions === 3 && attempts.length === 3 &&
               attempts.every(row => row.signedScore !== null)

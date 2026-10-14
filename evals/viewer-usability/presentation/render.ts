@@ -33,8 +33,8 @@ const resultBadge = (value: number, signedOff = false, count?: number) => {
   const label = count === undefined ? runResult(value) : gradeLabel(value)
   return `<span class="badge badge-soft result-badge result-${status}">${count === undefined ? '' : `${integer(count)} `}${escapeHtml(label)}${signedOff ? ' · signed' : ''}</span>`
 }
-const resultCell = (title: string, value: number) =>
-  `<div><dt>${escapeHtml(title)}</dt><dd>${resultBadge(value)}</dd></div>`
+const harnessErrorBadge = (count?: number) =>
+  `<span class="badge badge-soft result-badge result-harness-error">${count === undefined ? 'Harness error' : `${integer(count)} harness ${count === 1 ? 'error' : 'errors'}`}</span>`
 const taskName = (id: string) => tasks.find(task => task.id === id)?.goal ?? id.replaceAll('-', ' ')
 
 export function render(data: Presentation, fontFaces = '', componentStyles = '') {
@@ -55,10 +55,12 @@ export function render(data: Presentation, fontFaces = '', componentStyles = '')
   const graderAverages = data.grader.models.map(model => model.apiCostCad !== null && model.estimateCoverage === 'complete' && model.attempts ? model.apiCostCad / model.attempts : null)
   const maxCost = Math.max(0.001, ...averages.map((value) => value ?? 0), ...graderAverages.map(value => value ?? 0))
   const outcome = (value: Presentation['models'][number]['result']) =>
-    [[value.displayPass, '× 1/1'], [value.displayPartial, '× 0.5/1'], [value.displayFail, '× 0/1'],
-      [value.error, 'error'], [value.unknown, 'unknown']]
-      .filter(([count]) => Number(count) > 0)
-      .map(([count, label]) => `${count} ${label}`).join(' · ') || 'No results'
+    [[1, value.displayPass], [0.5, value.displayPartial], [0, value.displayFail]]
+      .filter(([, count]) => count > 0)
+      .map(([score, count]) => resultBadge(score, false, count)).join('') +
+    (value.harnessError ? harnessErrorBadge(value.harnessError) : '') +
+    (value.error > value.harnessError ? `<span class="badge badge-soft result-badge result-unscored">${integer(value.error - value.harnessError)} execution ${value.error - value.harnessError === 1 ? 'error' : 'errors'}</span>` : '') +
+    (value.unknown ? `<span class="badge badge-soft result-badge result-unscored">${integer(value.unknown)} unscored</span>` : '')
   const rows = data.models
     .map((model, index) => {
        const metrics = model.investigator,
@@ -68,16 +70,27 @@ export function render(data: Presentation, fontFaces = '', componentStyles = '')
       const taskCards = model.tasks
         .map((task) => {
            const checks = task.checks
-           const singleScore = task.signedScores[0] ?? task.scores[0]
+           const distribution = [
+             { status: 'complete', count: task.displayPass, label: 'complete' },
+             { status: 'partial', count: task.displayPartial, label: 'partial' },
+             { status: 'no-credit', count: task.displayFail, label: 'incorrect or missing' },
+             { status: 'harness-error', count: task.harnessError, label: task.harnessError === 1 ? 'harness error' : 'harness errors' },
+             { status: 'unscored', count: task.error - task.harnessError, label: task.error - task.harnessError === 1 ? 'execution error' : 'execution errors' },
+             { status: 'unscored', count: task.attempts - task.displayPass - task.displayPartial - task.displayFail - task.error, label: 'unscored' },
+           ].filter(value => value.count > 0)
+           const breakdown = distribution.map(value => ({ ...value,
+             text: `${integer(value.count)} ${value.label} · ${(value.count / task.attempts * 100).toLocaleString('en-CA', { maximumFractionDigits: 1 })}%`,
+           }))
+           const reviewFields =
+             (task.signedAttempts ? cell('Human signoff', task.attempts === 1 ? 'Signed off' : `${task.signedAttempts}/${task.attempts} runs signed`) : '') +
+             task.runResults.filter(run => run.signedOff && run.automatedScore !== run.score).map(run =>
+               cell(`Human correction${task.attempts > 1 ? ` · Run ${run.run}` : ''}`, `Automated ${run.automatedScore === null ? 'unscored' : runResult(run.automatedScore)} → signed ${runResult(run.score!)}`)).join('') +
+             (task.claimReviewedAttempts ? cell('Human claim review', `${task.supportedClaims} supported · ${task.contradictedClaims} contradicted · ${task.unverifiedClaims} unverified`) : '') +
+             (checks.artifactPass + checks.artifactFail ? cell('Artifact check', checks.artifactPass + checks.artifactFail === 1 ? (checks.artifactPass ? 'Passed' : 'Failed') : [[checks.artifactPass, 'passed'], [checks.artifactFail, 'failed']].filter(([count]) => Number(count) > 0).map(([count, label]) => `${count} ${label}`).join(' · ')) : '')
             return `<article class="task card bg-base-200"><div class="task-title pane-header"><h3>${escapeHtml(taskName(task.task))}</h3>${data.repetitions !== 1 ? `<span class="task-count">${task.attempts}/${integer(data.repetitions)} runs</span>` : ''}</div>
-         <div class="task-group result-group">${task.attempts > 1 ? `<p class="task-result">${escapeHtml(outcome(task))}</p>
-         <div class="repeat-strip" aria-hidden="true"><span class="pass" style="flex:${task.displayPass}"></span><span class="partial" style="flex:${task.displayPartial};background:var(--accent)"></span><span class="fail" style="flex:${task.displayFail}"></span><span class="error" style="flex:${task.error + task.unknown}"></span></div>` : ''}
-          <dl>${task.attempts === 1 ? singleScore !== null && singleScore !== undefined ? resultCell('Result', singleScore) : cell('Result', task.error ? 'Execution error' : 'Unscored') : task.displayMean !== null ? cell('Mean', percent(task.displayMean), true) + (task.scoredAttempts !== task.attempts ? cell('Scored runs', `${task.scoredAttempts}/${task.attempts}`) : '') : cell('Result', task.error ? 'Execution error' : 'Unscored')}
-        ${task.signedAttempts ? cell('Human signoff', task.attempts === 1 ? 'Signed off' : `${task.signedAttempts}/${task.attempts} runs signed`) : ''}
-         ${task.attempts === 1 && task.signedAttempts && task.scores[0] !== singleScore && task.scores[0] !== null ? resultCell('Automated result', task.scores[0]!) : ''}
-        ${task.claimReviewedAttempts ? cell('Human claim review', `${task.supportedClaims} supported · ${task.contradictedClaims} contradicted · ${task.unverifiedClaims} unverified`) : ''}
-         ${checks.artifactPass + checks.artifactFail ? cell('Artifact check', checks.artifactPass + checks.artifactFail === 1 ? (checks.artifactPass ? 'Passed' : 'Failed') : [[checks.artifactPass, 'passed'], [checks.artifactFail, 'failed']].filter(([count]) => Number(count) > 0).map(([count, label]) => `${count} ${label}`).join(' · ')) : ''}
-           </dl>${task.attempts > 1 ? `<table class="table run-results"><thead><tr><th scope="col">Run</th><th scope="col">Result</th></tr></thead><tbody>${task.runResults.map(run => `<tr><th scope="row">Run ${run.run}</th><td>${run.status === 'error' ? 'Execution error' : run.score === null ? 'Unscored' : resultBadge(run.score, run.signedOff)}</td></tr>`).join('')}</tbody></table>` : ''}</div>
+         <div class="task-group result-group"><div class="grade-strip" role="img" aria-label="Attempt results: ${escapeHtml(breakdown.map(value => value.text).join('; ') || 'No results')}">${breakdown.map(value => `<span class="result-${value.status}" style="flex:${value.count}"></span>`).join('')}</div>
+          <div class="grade-counts task-result">${breakdown.map(value => `<span class="badge badge-soft result-badge result-${value.status}">${escapeHtml(value.text)}</span>`).join('') || 'No results'}</div></div>
+          ${reviewFields ? `<div class="task-group"><dl>${reviewFields}</dl></div>` : ''}
           <div class="task-group"><dl>${cell('Median time', seconds(task.medianSeconds))}${task.attempts > 1 ? cell('P95 time', seconds(task.p95Seconds)) : ''}
          ${task.timedAttempts !== task.attempts ? cell('Time coverage', `${task.timedAttempts}/${task.attempts} attempts`) : ''}
          ${cell('Tool calls', integer(task.toolCalls))}${task.failedTools ? cell('Failed tools', integer(task.failedTools)) : ''}</dl></div>
@@ -92,7 +105,7 @@ export function render(data: Presentation, fontFaces = '', componentStyles = '')
       <div class="metric p95"><span class="bar-track" aria-hidden="true"><span style="width:${((metrics.p95Seconds ?? 0) / maxP95) * 100}%"></span></span><strong>${seconds(metrics.p95Seconds)}</strong></div>
       <div class="metric cost"><span class="bar-track" aria-hidden="true"><span style="width:${((averages[index] ?? 0) / maxCost) * 100}%"></span></span><strong>${cost(averages[index], 'complete')}</strong></div>
        <span class="coverage">${result.attempts}/${data.tasksExpected !== null && data.repetitions !== null ? data.tasksExpected * data.repetitions : 'Unknown'} runs</span><span class="chevron" aria-hidden="true">${caret}</span></summary>
-       <div class="expanded"><h2 class="sr-only">${escapeHtml(model.name)} task results</h2><div class="model-meta"><span>${escapeHtml(outcome(result))}</span><span>Investigator: ${integer(metrics.attempts)} sessions · total cost (est., CAD) ${escapeHtml(cost(metrics.apiCostCad, metrics.estimateCoverage))}</span><span>${integer(metrics.toolCalls)} tool calls · ${integer(metrics.failedTools)} recorded failed tools</span></div><div class="tasks">${taskCards}</div></div></details>`
+        <div class="expanded"><h2 class="sr-only">${escapeHtml(model.name)} task results</h2><div class="model-meta"><div class="grade-counts">${outcome(result) || 'No results'}</div><span>Investigator: ${integer(metrics.attempts)} sessions · total cost (est., CAD) ${escapeHtml(cost(metrics.apiCostCad, metrics.estimateCoverage))}</span><span>${integer(metrics.toolCalls)} tool calls · ${integer(metrics.failedTools)} recorded failed tools</span></div><div class="tasks">${taskCards}</div></div></details>`
     })
     .join('')
   const graderRows = data.grader.models.map((model, index) => {
@@ -134,6 +147,8 @@ ${fontFaces}
  :root{font-family:"Atkinson Hyperlegible Next",system-ui,"Segoe UI",sans-serif}
  .task .result-group dd:not(.mean dd){font-size:var(--font-label);font-weight:400}.result-group{margin-top:20px}
  .result-complete{--result-colour:var(--color-info,#9ccfd8)}.result-partial{--result-colour:var(--color-warning,#f6c177)}.result-no-credit{--result-colour:var(--color-error,#eb6f92)}
+ .result-unscored{--result-colour:var(--muted)}.task-result{margin:8px 0 16px}
+ .result-harness-error{--result-colour:var(--color-rose,#ebbcba)}@media(prefers-color-scheme:light){.result-harness-error{--result-colour:var(--color-rose,#d7827e)}}
  .result-badge{display:inline-flex;align-items:center;gap:6px;height:auto;min-height:0;padding:2px 8px;border:0;border-radius:6px;background:color-mix(in oklab,var(--result-colour) 12%,var(--panel));color:var(--text);font-family:inherit;font-size:var(--font-label);font-weight:400;line-height:1.5;white-space:nowrap}.result-badge::before{content:"";width:6px;height:6px;flex:none;border-radius:50%;background:var(--result-colour)}
  .run-results thead th,.grading-output thead th{color:var(--text)}
  .grade-breakdown{flex-direction:column;align-items:stretch;gap:8px;min-width:0;width:100%;font-size:var(--font-label)}.grade-overview{display:flex;align-items:center;gap:18px}.grade-distribution{display:flex;flex:1;min-width:0;flex-direction:column;gap:8px}.grader-mean{flex:0 0 108px;font-size:var(--font-label);font-weight:400;color:var(--muted);text-align:right;line-height:1.5}.grade-strip{display:flex;gap:3px;width:100%;height:7px;overflow:hidden;border-radius:3px}.grade-strip>span{min-width:0;background:var(--result-colour)}.grade-counts{display:flex;flex-wrap:wrap;gap:6px 12px;justify-content:flex-start}.grade-counts .result-badge{padding:1px 6px;white-space:normal;min-width:0}@media(min-width:701px){summary,.board-label{grid-template-columns:220px minmax(0,1fr) 110px 20px}}@media(max-width:700px){.grader-mean{flex-basis:115px}}
@@ -141,7 +156,8 @@ ${fontFaces}
   .chevron{transform:none!important;display:flex;align-items:center;justify-content:center}.chevron::before,.chevron::after{content:none!important}.model[open]>summary .chevron svg{transform:rotate(180deg)}.model>summary{border:0}.model{border-bottom:1px solid var(--edge)}.run-results{width:100%;margin-top:20px;font-size:var(--font-label)}.run-results th,.run-results td{padding:8px 0;text-align:left;font-family:inherit;font-size:var(--font-label);white-space:normal}.notice{display:flex;align-items:center;gap:12px}
  .task h3{text-transform:none}
  .task-title{background:var(--color-base-300,var(--track));margin:-24px -24px 0;padding:16px 24px;border-radius:8px 8px 0 0;align-items:flex-start}.task-title h3{font-weight:700;margin:0;color:var(--text)}@media(max-width:700px){.task-title{margin:-20px -20px 0;padding:14px 20px}}
- .task-title{height:auto;white-space:normal}.task dl{display:grid;grid-template-columns:1fr;gap:12px}.task dl>div{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:baseline}.task dd{margin:0;text-align:right;overflow-wrap:anywhere}
+  .task-title{height:auto;white-space:normal}.task dl{display:grid;grid-template-columns:1fr;gap:12px}.task dl>div{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:baseline}.task dd{margin:0;text-align:right;overflow-wrap:anywhere}
+  .task .task-group{margin:0;padding:14px 0;border-top:1px solid color-mix(in oklab,var(--text) 18%,transparent)}.task .result-group{border-top:0}.task .task-group:last-child{padding-bottom:0}.task .task-result{margin:8px 0 0}.task dl{gap:8px}.task dd{font-size:var(--font-label)}.task .grade-strip{background:var(--track)}
  main{max-width:none}
  .metrics{display:grid;grid-template-columns:repeat(4,max-content);gap:4px;background:transparent;padding:4px;border-radius:8px}.metrics button{display:flex;align-items:center;gap:8px;min-width:0}.metrics svg{flex-shrink:0}.model .metric{display:none}body[data-metric=result] .model .metric.result,body[data-metric=duration] .model .metric.duration,body[data-metric=p95] .model .metric.p95,body[data-metric=cost] .model .metric.cost{display:flex}@media(max-width:700px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.metrics button{justify-content:center}}
  .grader-metrics{display:grid;grid-template-columns:repeat(3,max-content);gap:14px 40px;margin:20px 0 28px}.grader-metrics>div{display:flex;align-items:baseline;gap:10px}.grader-metrics dt,.grader-metrics dd{margin:0;font-size:var(--font-label);line-height:1.5}.grader-metrics dt{color:var(--muted)}.grader-metrics dd{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}@media(max-width:900px){.grader-metrics{grid-template-columns:repeat(2,max-content);column-gap:28px}}@media(max-width:600px){.grader-metrics{grid-template-columns:max-content;gap:12px}}
