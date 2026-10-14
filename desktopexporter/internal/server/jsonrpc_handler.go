@@ -105,6 +105,11 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 	req.Params = normalized
 
 	switch req.Method {
+	case "rpc.discover":
+		if err := validateNoParams(req.Params); err != nil {
+			return nil, err
+		}
+		return openRPCDocument(), nil
 	case "getImportConfig":
 		if h.otlpHTTPPort <= 0 {
 			return nil, fmt.Errorf("%w: OTLP HTTP import is not configured", jsonrpc2.ErrInternal)
