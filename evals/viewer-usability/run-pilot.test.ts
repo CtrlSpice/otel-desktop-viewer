@@ -93,6 +93,35 @@ test('pilot spawn failure keeps protected completion and logs', async () => {
   )
 })
 
+test('permission-blocker signalling errors retain completion and await viewer cleanup', async t => {
+  const root = fs.mkdtempSync(path.join(TEMPORARY, 'eval-pilot-signal-error-'))
+  const suite = path.join(root, 'suite')
+  fs.mkdirSync(suite)
+  fs.writeFileSync(path.join(suite, 'native-evaluate.ts'), `
+const fs = require('node:fs');
+const event = { type: 'otel-eval-harness-blocker', root: fs.realpathSync('.'),
+  runnerPID: process.pid, sessionPID: process.pid };
+fs.writeFileSync('harness-blocker.json', JSON.stringify({ ...event, status: 'harness-blocker' }));
+process.send(event, () => { process.disconnect(); process.exitCode = 1; });
+`)
+  const signals: NodeJS.Signals[] = []
+  t.mock.method(process, 'kill', (_pid: number, signal: NodeJS.Signals) => {
+    signals.push(signal)
+    throw Object.assign(new Error('kill EPERM'), { code: 'EPERM' })
+  })
+  let viewerStopped = false
+  await assert.rejects(runPilot(root, suite, pricing, async () => {
+    await new Promise(resolve => setTimeout(resolve, 10))
+    viewerStopped = true
+  }), /kill EPERM/)
+  assert.equal(viewerStopped, true)
+  assert.deepEqual(signals, ['SIGTERM', 'SIGTERM', 'SIGKILL', 'SIGKILL'])
+  const completion = record(readJson(path.join(root, 'pilot-completion.json')))
+  assert.equal(completion.status, 'harness-blocker')
+  assert.equal(completion.error, 'kill EPERM')
+  assert.equal(completion.exit, 1)
+})
+
 test('pilot summary preserves partial credit and leaves execution errors unscored', () => {
   const results = [
     { success: true, gradingResult: { pass: true, score: 1 } },

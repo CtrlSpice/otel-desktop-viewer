@@ -135,8 +135,8 @@ test('summary price citations use each provider source rather than the OpenAI de
   const table = modelSummaryTable([
     attempt(1), attempt(1, 'opencode-go/kimi-k3'),
   ], combined)
-  assert.match(table, /2026-10-08: https:\/\/developers.openai.com\/api\/docs\/pricing/)
+  assert.match(table, /2026-10-08: https:\/\/developers\.openai\.com\/api\/docs\/pricing/)
   assert.match(table, /2026-10-14: https:\/\/opencode.ai\/v2\/docs\/console\/go\//)
   const onlyGo = modelSummaryTable([attempt(1, 'opencode-go/kimi-k3')], combined)
-  assert.doesNotMatch(onlyGo, /developers.openai.com/)
+  assert.doesNotMatch(onlyGo, /developers\.openai\.com/)
 })

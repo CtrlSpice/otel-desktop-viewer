@@ -145,7 +145,7 @@ export async function runPilot(
             'code' in error &&
             error.code === 'ESRCH'
           ))
-            throw error
+            failure ??= error instanceof Error ? error : new Error('Owned process signalling failed')
         }
       }
     }
