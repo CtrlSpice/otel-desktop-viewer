@@ -26,9 +26,11 @@ const scores = (values: (number | null)[]) =>
   values.length ? values.map(value => value === null ? '—' : String(value)).join(' · ') : '—'
 const runResult = (value: number) =>
   `${value}/1`
+const gradeLabel = (value: number) =>
+  `${value === 1 ? 'Complete' : value === 0.5 ? 'Partial' : 'Incorrect or missing'} (${runResult(value)})`
 const resultBadge = (value: number, signedOff = false, count?: number) => {
   const status = value === 1 ? 'complete' : value === 0.5 ? 'partial' : 'no-credit'
-  const label = runResult(value)
+  const label = count === undefined ? runResult(value) : gradeLabel(value)
   return `<span class="badge badge-soft result-badge result-${status}">${count === undefined ? '' : `${integer(count)} × `}${escapeHtml(label)}${signedOff ? ' · signed' : ''}</span>`
 }
 const resultCell = (title: string, value: number) =>
@@ -99,9 +101,9 @@ export function render(data: Presentation, fontFaces = '', componentStyles = '')
     const errors = outputs.filter(output => output.executionError).length
     const unscored = outputs.filter(output => !output.executionError && output.score === null).length
     const scored = counts.reduce((sum, value) => sum + value.count, 0)
-    const breakdown = counts.map(value => `${value.count} × ${runResult(value.score)}`).join(' · ')
+    const breakdown = counts.map(value => `${value.count} × ${gradeLabel(value.score)}`).join(' · ')
     return `<details class="model grader-row"><summary><div class="model-name"><strong>Grader</strong><span>${escapeHtml(model.name)}</span></div>
-      <div class="metric result grade-breakdown">${scored ? `<div class="grade-strip" role="img" aria-label="Automated grades: ${breakdown}">${counts.map(value => `<span class="result-${value.score === 1 ? 'complete' : value.score === 0.5 ? 'partial' : 'no-credit'}" style="flex:${value.count}"></span>`).join('')}</div><div class="grade-counts">${counts.map(value => resultBadge(value.score, false, value.count)).join('')}</div>` : '<span>Unscored</span>'}${errors ? `<span>${errors} execution ${errors === 1 ? 'error' : 'errors'}</span>` : ''}${unscored ? `<span>${unscored} unscored</span>` : ''}${model.attempts !== null && outputs.length !== model.attempts ? `<span>${outputs.length}/${model.attempts} outputs recorded</span>` : ''}</div>
+      <div class="metric result grade-breakdown">${scored ? `<div class="grade-overview"><div class="grade-distribution"><div class="grade-strip" role="img" aria-label="Automated grades: ${breakdown}">${counts.map(value => `<span class="result-${value.score === 1 ? 'complete' : value.score === 0.5 ? 'partial' : 'no-credit'}" style="flex:${value.count}"></span>`).join('')}</div><div class="grade-counts">${counts.map(value => resultBadge(value.score, false, value.count)).join('')}</div></div><span class="grader-mean">sometimes, but<br>it means well</span></div>` : '<span>Unscored</span>'}${errors ? `<span>${errors} execution ${errors === 1 ? 'error' : 'errors'}</span>` : ''}${unscored ? `<span>${unscored} unscored</span>` : ''}${model.attempts !== null && outputs.length !== model.attempts ? `<span>${outputs.length}/${model.attempts} outputs recorded</span>` : ''}</div>
       <div class="metric duration"><span class="bar-track" aria-hidden="true"><span style="width:${((model.medianSeconds ?? 0) / maxTime) * 100}%"></span></span><strong>${seconds(model.medianSeconds)}</strong></div>
       <div class="metric p95"><span class="bar-track" aria-hidden="true"><span style="width:${((model.p95Seconds ?? 0) / maxP95) * 100}%"></span></span><strong>${seconds(model.p95Seconds)}</strong></div>
       <div class="metric cost"><span class="bar-track" aria-hidden="true"><span style="width:${((graderAverages[index] ?? 0) / maxCost) * 100}%"></span></span><strong>${cost(graderAverages[index], 'complete')}</strong></div>
@@ -134,7 +136,7 @@ ${fontFaces}
  .result-complete{--result-colour:var(--color-info,#9ccfd8)}.result-partial{--result-colour:var(--color-warning,#f6c177)}.result-no-credit{--result-colour:var(--color-error,#eb6f92)}
  .result-badge{display:inline-flex;align-items:center;gap:6px;height:auto;min-height:0;padding:2px 8px;border:0;border-radius:6px;background:color-mix(in oklab,var(--result-colour) 12%,var(--panel));color:var(--text);font-family:inherit;font-size:var(--font-label);font-weight:400;line-height:1.5;white-space:nowrap}.result-badge::before{content:"";width:6px;height:6px;flex:none;border-radius:50%;background:var(--result-colour)}
  .run-results thead th,.grading-output thead th{color:var(--text)}
- .grade-breakdown{flex-direction:column;align-items:stretch;gap:8px;font-size:var(--font-label)}.grade-strip{display:flex;gap:3px;height:8px;overflow:hidden;border-radius:4px}.grade-strip>span{min-width:0;background:var(--result-colour)}.grade-counts{display:flex;flex-wrap:wrap;gap:6px 12px;justify-content:flex-end}.grade-counts .result-badge{padding:1px 6px}
+ .grade-breakdown{flex-direction:column;align-items:stretch;gap:8px;min-width:0;width:100%;font-size:var(--font-label)}.grade-overview{display:flex;align-items:center;gap:18px}.grade-distribution{display:flex;flex:1;min-width:0;flex-direction:column;gap:8px}.grader-mean{flex:0 0 108px;font-size:var(--font-label);font-weight:400;color:var(--muted);text-align:right;line-height:1.5}.grade-strip{display:flex;gap:3px;width:100%;height:7px;overflow:hidden;border-radius:3px}.grade-strip>span{min-width:0;background:var(--result-colour)}.grade-counts{display:flex;flex-wrap:wrap;gap:6px 12px;justify-content:flex-start}.grade-counts .result-badge{padding:1px 6px;white-space:normal;min-width:0}@media(min-width:701px){summary,.board-label{grid-template-columns:220px minmax(0,1fr) 110px 20px}}@media(max-width:700px){.grader-mean{flex-basis:115px}}
  @media(prefers-color-scheme:light){.result-complete{--result-colour:var(--color-info,#56949f)}.result-partial{--result-colour:var(--color-warning,#ea9d34)}.result-no-credit{--result-colour:var(--color-error,#b4637a)}}
   .chevron{transform:none!important;display:flex;align-items:center;justify-content:center}.chevron::before,.chevron::after{content:none!important}.model[open]>summary .chevron svg{transform:rotate(180deg)}.model>summary{border:0}.model{border-bottom:1px solid var(--edge)}.run-results{width:100%;margin-top:20px;font-size:var(--font-label)}.run-results th,.run-results td{padding:8px 0;text-align:left;font-family:inherit;font-size:var(--font-label);white-space:normal}.notice{display:flex;align-items:center;gap:12px}
  .task h3{text-transform:none}
