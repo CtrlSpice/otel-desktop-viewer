@@ -108,8 +108,9 @@ There are no nested tables or expandable question rows. Each model table starts
 with only its header and totals row visible; clicking anywhere in its header
 toggles the question rows. Its model-name button provides keyboard access.
 Carets sit to the left of model names in both investigator rows and table
-headers. The totals row remains visible. Headers and totals use the same
-soft theme background as task-card headers, without table separators.
+headers. The totals row remains visible and uses the normal body-row styling.
+Headers use the same soft theme background as task-card headers, without table
+separators.
 Each score column sums recorded numeric points out of the manifest's
 total question count, for example `10.5/11`; it is not an average. Incomplete
 columns show grading coverage, errors stay unscored, and a column with no scored

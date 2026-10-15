@@ -210,7 +210,8 @@ try {
         assert.equal(await table.locator('tfoot>tr').count(), 1)
         assert.equal(await table.locator('tfoot>tr>th').textContent(), 'Total')
         assert.equal(await table.locator('tfoot>tr>th').evaluate(element => getComputedStyle(element).borderTopWidth), '0px')
-        assert.equal(await table.locator('thead>tr>th').first().evaluate(element => getComputedStyle(element).backgroundColor), await table.locator('tfoot').evaluate(element => getComputedStyle(element).backgroundColor))
+        assert.equal(await table.locator('tfoot').evaluate(element => getComputedStyle(element).backgroundColor), 'rgba(0, 0, 0, 0)')
+        assert.equal(await table.locator('tfoot>tr>th').evaluate(element => getComputedStyle(element).fontWeight), '400')
         assert.deepEqual((await table.locator('thead>tr>th').allTextContents()).slice(-4), ['Grading Time', 'Cost (est., CAD)', 'Input Tokens', 'Output Tokens'])
         assert.ok(await table.locator('thead>tr>th').first().textContent())
         assert.notEqual(await table.locator('thead>tr>th').first().textContent(), 'Question')
@@ -218,6 +219,8 @@ try {
         const tableCaret = await table.locator('.grading-table-caret').boundingBox()
         const tableName = await table.locator('.grading-table-toggle>span').last().boundingBox()
         assert.ok(tableCaret && tableName && tableCaret.x + tableCaret.width <= tableName.x)
+        const totalStart = await table.locator('tfoot>tr>th').evaluate(element => element.getBoundingClientRect().x + parseFloat(getComputedStyle(element).paddingLeft))
+        assert.ok(Math.abs(totalStart - tableName.x) < 1)
         const questions = await table.locator('tbody>tr>th').allTextContents()
         assert.equal(new Set(questions).size, questions.length)
       }
@@ -231,6 +234,9 @@ try {
       await page.keyboard.press('Enter')
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true')
       assert.ok(await page.locator('.grading-model-table tbody').first().isVisible())
+      const questionStart = await page.locator('.grading-model-table tbody th').first().evaluate(element => element.getBoundingClientRect().x + parseFloat(getComputedStyle(element).paddingLeft))
+      const headingName = await toggle.locator('span').last().boundingBox()
+      assert.ok(headingName && Math.abs(questionStart - headingName.x) < 1)
       assert.ok(await page.locator('.grading-model-table tfoot').first().isVisible())
       const layouts = await page.locator('.grading-model-table').evaluateAll(tables => tables.map(table => {
         const start = table.getBoundingClientRect().x
