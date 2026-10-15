@@ -139,6 +139,13 @@ test('recorded harness blockers stay unscored and distinct from other execution 
     [['harness-error', null], ['error', null], ['scored', 1]])
   const html = render(data)
   assert.match(html, /1 harness error/)
+  assert.equal(task.failedTools, 3)
+  assert.match(html, /<dt>Failed tool calls<\/dt><dd>3<\/dd>/)
+  assert.match(html, /<dt>Execution errors<\/dt><dd><span class="badge badge-soft result-badge result-execution-error">2<\/span>/)
+  const cleanRetry = { ...retry, response: { ...retry.response, metadata: { ...retry.response.metadata, failedToolCalls: 0 } } }
+  const successful = render(project([cleanRetry]))
+  assert.match(successful, /<dt>Failed tool calls<\/dt><dd>0<\/dd>/)
+  assert.match(successful, /<dt>Execution errors<\/dt><dd>0<\/dd>/)
   assert.match(html, /1 execution error/)
   assert.match(html, /result-harness-error" style="flex:1"/)
   assert.match(html, /1 harness error · 33.3%/)
@@ -184,6 +191,8 @@ test('projection drops private payload; labels cannot inject markup or copy path
   )
   const html = render(data)
   assert.equal(data.models[0].investigator.attempts, 5)
+  assert.equal(data.models[0].investigator.totalSeconds, null)
+  assert.equal(data.models[0].investigator.maxSeconds, null)
   assert.equal(data.models[0].investigator.apiCostCad, 12)
   assert.equal(data.models[0].result.attempts, 1)
   assert.equal(data.grader.models[0].apiCostCad, 3)
@@ -259,7 +268,7 @@ test('partial scores and signed three-run means stay separate; errors are unscor
   const corrected = render(project(reviews.map(review => ({ ...review, score: 0 }))))
   assert.doesNotMatch(corrected, /<span class="result-complete" style="flex:/)
   assert.match(corrected, /<span class="result-no-credit" style="flex:3"/)
-  assert.match(corrected, /<strong>0.0%<\/strong>/)
+  assert.match(corrected, /<strong aria-label="Mean: 0.0%">0.0%<\/strong>/)
   const unsigned = render(project([]))
   for (const label of ['Human-signed scores', 'Human claim review', 'Signoff coverage', 'Final three-run mean'])
     assert.ok(!unsigned.includes(label))
@@ -273,11 +282,11 @@ test('signed single-run corrections update the displayed model mean as well as t
   assert.equal(data.models[0].result.provisionalMean, 1)
   assert.equal(data.models[0].result.displayMean, 0.5)
   const html = render(data)
-  assert.match(html, /<strong>50.0%<\/strong>/)
-  assert.match(html, /0.5\/1/)
+  assert.match(html, /<strong aria-label="Mean: 50.0%">50.0%<\/strong>/)
+  assert.match(html, /\.5\/1/)
   assert.match(html, /Human correction/)
-  assert.match(html, /Automated 1\/1 → signed 0.5\/1/)
-  assert.doesNotMatch(html, /<strong>100.0%<\/strong>/)
+  assert.match(html, /Automated 1\/1 → signed \.5\/1/)
+  assert.doesNotMatch(html, /<strong aria-label="Mean: 100.0%">100.0%<\/strong>/)
 })
 
 test('grader outputs expose only aggregate fields, not private judging data', () => {
@@ -298,7 +307,12 @@ test('grader outputs expose only aggregate fields, not private judging data', ()
   assert.ok(html.includes('Grading outputs'))
   assert.ok(html.includes('aria-label="Automated grades: 0 complete · 1 partial · 0 incorrect or missing"'))
   assert.ok(!html.includes('<strong>1 grades</strong>'))
-  assert.ok(html.includes('<span class="badge badge-soft result-badge result-partial">0.5/1</span>'))
+  assert.ok(html.includes('<span class="badge badge-soft result-badge result-partial">.5/1</span>'))
+  assert.ok(!html.includes('>0.5/1<'))
+  assert.ok(html.includes('<section class="model grader-row"'))
+  assert.ok(!html.includes('<details class="model grader-row"'))
+  assert.ok(html.includes('aria-expanded="false"'))
+  assert.ok(html.includes('<tfoot><tr><th scope="row">Total</th>'))
   assert.ok(!html.includes(secret))
 })
 
@@ -315,6 +329,21 @@ test('grader breakdown counts original grades and keeps execution errors and mis
   assert.ok(html.includes('<span>5/6 outputs recorded</span>'))
 })
 
+test('grading score columns follow the plan, extend beyond three, and leave missing outputs unscored', () => {
+  const investigator = 'other/cedar', grader = 'openai/gpt-6.1-sol'
+  const judgments = ['first', 'first', 'first', 'first', 'second'].map((taskID, index) => ({
+    taskID, score: index === 1 ? 0.5 : 1, status: index === 1 ? 'partial' : 'pass',
+    investigator: { model: investigator }, metadata: metadata(grader),
+  }))
+  const data = aggregate({ models: [investigator], tasks: 2, repetitions: 3 }, { results: { results: [] } }, undefined,
+    { models: [{ model: grader, attempts: judgments.length }], judgments })
+  const html = render(data)
+  for (const run of [1, 2, 3, 4]) assert.ok(html.includes(`<th scope="col" class="grading-run">Score ${run}</th>`))
+  assert.ok(!html.includes('class="grading-run">Score 5'))
+  assert.ok(html.includes('<td class="grading-run"><span aria-label="Not recorded">—</span></td>'))
+  assert.ok(html.includes('<td class="grading-run"><span class="badge badge-soft result-badge result-partial">.5/1</span></td>'))
+})
+
 test('single-run task bars show the outcome distribution; errors stay unscored', () => {
   for (const [score, status, label] of [[1, 'complete', 'complete'], [0.5, 'partial', 'partial'], [0, 'no-credit', 'incorrect or missing']] as const) {
     const attempt = { ...row('other/cedar', 'inspect', score === 1), gradingResult: { score } }
@@ -326,6 +355,36 @@ test('single-run task bars show the outcome distribution; errors stay unscored',
     assert.ok(errorHtml.includes('1 execution error · 100%'))
     assert.ok(!errorHtml.includes(`<span class="badge badge-soft result-badge result-${status}">`))
   }
+})
+
+test('time bands cover median to p95 to slowest; total is separate and errors retain their duration', () => {
+  const attempts = [10, 20, 100].map((elapsedSeconds, index) => {
+    const attempt = row('other/cedar', 'inspect', true)
+    return { ...attempt, failureReason: index === 2 ? 2 : 0,
+      response: { metadata: { ...attempt.response.metadata, elapsedSeconds } } }
+  })
+  const data = aggregate({ models: ['other/cedar', 'other/not-started'], tasks: 1, repetitions: 3 },
+    { results: { results: attempts } }, undefined,
+    { models: [{ model: 'openai/gpt-6.1-sol', attempts: 1 }], judgments: [{
+      taskID: 'inspect', investigator: { model: 'other/cedar' }, metadata: metadata('openai/gpt-6.1-sol', 5),
+    }] })
+  assert.equal(data.models[0].investigator.totalSeconds, 130)
+  assert.equal(data.models[0].investigator.medianSeconds, 20)
+  assert.equal(data.models[0].investigator.p95Seconds, 92)
+  assert.equal(data.models[0].investigator.maxSeconds, 100)
+  assert.equal(data.models[0].result.error, 1)
+  assert.equal(data.models[1].investigator.totalSeconds, null)
+  assert.equal(data.models[1].investigator.maxSeconds, null)
+  assert.equal(data.grader.models[0].totalSeconds, 5)
+  assert.equal(data.grader.models[0].maxSeconds, 5)
+  const html = render(data)
+  assert.match(html, /class="time-median" style="width:20%"/)
+  assert.match(html, /class="time-p95" style="width:72%"/)
+  assert.match(html, /class="time-tail" style="width:8%"/)
+  assert.match(html, /class="time-total"><strong aria-label="Total time: 130.0 s">130.0 s<\/strong>/)
+  assert.match(html, /aria-label="Results: 2 complete · 66.7%; 1 execution error · 33.3%"/)
+  assert.match(html, /<span>other<\/span><span class="model-id">other\/cedar<\/span>/)
+  assert.equal((html.match(/data-view="/g) ?? []).length, 3)
 })
 
 test('task and grader cost projections retain response timestamps for peak pricing', () => {

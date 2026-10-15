@@ -72,7 +72,7 @@ test('build consumes validated human review without exposing private audit data'
   assert.ok(!html.includes('1/1 repeats'))
   assert.doesNotMatch(html, /\n[ \t]*\n/)
   assert.ok(!html.includes('<dt>Mean</dt>'))
-  assert.ok(html.includes('0.5/1'))
+  assert.ok(html.includes('.5/1'))
   assert.ok(html.includes(tasks[0].goal))
   assert.throws(() => build(run, path.join(root, 'duplicate.html'), [review, review]), /Duplicate human review/)
   fs.appendFileSync(path.join(evidence, 'answer.txt'), 'changed')

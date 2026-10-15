@@ -51,6 +51,7 @@ export function modelSummaries(rows: unknown[], pricing?: PricingSnapshot) {
       (value): value is number =>
         typeof value === 'number' && Number.isFinite(value) && value >= 0
     )
+    const totalSeconds = validTimes.reduce((total, seconds) => total + seconds, 0)
     let costUsd = 0
     let pricedResponses = 0
     let complete = true
@@ -88,6 +89,10 @@ export function modelSummaries(rows: unknown[], pricing?: PricingSnapshot) {
       model,
       name: pricing?.api.models[model]?.name ?? model,
       attempts: attempts.length,
+      totalSeconds:
+        validTimes.length === times.length && Number.isFinite(totalSeconds) ? totalSeconds : null,
+      maxSeconds:
+        validTimes.length === times.length ? validTimes.reduce((max, seconds) => Math.max(max, seconds), 0) : null,
       medianSeconds:
         validTimes.length === times.length ? median(validTimes) : null,
       p95Seconds:

@@ -197,6 +197,8 @@ export function aggregate(
       error: selected.filter((row) => row.outcome === 'error').length,
       harnessError: selected.filter((row) => row.harnessError).length,
       unknown: selected.filter((row) => row.outcome === 'unknown').length,
+      totalSeconds: result?.totalSeconds ?? null,
+      maxSeconds: result?.maxSeconds ?? null,
       medianSeconds: result?.medianSeconds ?? null,
       p95Seconds: result?.p95Seconds ?? null,
       timedAttempts: selected.filter(
@@ -215,6 +217,8 @@ export function aggregate(
   // Saved summaries account for sessions omitted by Promptfoo after grading errors.
   const savedMetrics = (value: Record<string, unknown>) => ({
     attempts: count(value.attempts),
+    totalSeconds: number(value.totalSeconds),
+    maxSeconds: number(value.maxSeconds),
     medianSeconds: number(value.medianSeconds),
     p95Seconds: number(value.p95Seconds),
     toolCalls: count(value.toolCalls),
@@ -277,7 +281,10 @@ export function aggregate(
         provider: model.split('/')[0],
         result: calculated,
         investigator: saved
-          ? { ...savedMetrics(saved), p95Seconds: saved.attempts === selected.length ? calculated.p95Seconds : null }
+          ? { ...savedMetrics(saved),
+              totalSeconds: saved.attempts === selected.length ? calculated.totalSeconds : number(saved.totalSeconds),
+              maxSeconds: saved.attempts === selected.length ? calculated.maxSeconds : number(saved.maxSeconds),
+              p95Seconds: saved.attempts === selected.length ? calculated.p95Seconds : null }
           : { ...savedMetrics(calculated), attempts: calculated.attempts },
         tasks: taskIDs.map((task) => {
           const attempts = selected.filter((row) => row.task === task)
@@ -353,6 +360,8 @@ export function aggregate(
           name: label(value.name, 'Separate grader'),
           model,
           ...savedMetrics(value),
+          totalSeconds: calculated?.totalSeconds ?? number(value.totalSeconds),
+          maxSeconds: calculated?.maxSeconds ?? number(value.maxSeconds),
           p95Seconds: calculated?.p95Seconds ?? number(value.p95Seconds),
         }
       }),
