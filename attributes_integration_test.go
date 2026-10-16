@@ -37,6 +37,11 @@ func (h attributeIntegrationHost) GetExtensions() map[component.ID]component.Com
 // a collector subprocess. Only this test's extension owns the in-memory store.
 func startAttributeIntegration(t *testing.T) (string, exporter.Traces, exporter.Logs, exporter.Metrics) {
 	t.Helper()
+	return startAttributeIntegrationWithImportPort(t, 0)
+}
+
+func startAttributeIntegrationWithImportPort(t *testing.T, port int) (string, exporter.Traces, exporter.Logs, exporter.Metrics) {
+	t.Helper()
 	ctx := context.Background()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -47,6 +52,7 @@ func startAttributeIntegration(t *testing.T) (string, exporter.Traces, exporter.
 	cfg := factory.CreateDefaultConfig().(*duckdbextension.Config)
 	cfg.Endpoint = address
 	cfg.DbMaxSize = "0"
+	cfg.OTLPHTTPPort = port
 	ext, err := factory.Create(ctx, extensiontest.NewNopSettings(duckdbextension.Type), cfg)
 	require.NoError(t, err)
 	require.NoError(t, ext.Start(ctx, componenttest.NewNopHost()))

@@ -54,6 +54,7 @@ COMMANDS
   services  Discover services and their telemetry counts
   query     🦆 Run SQL against a running viewer
   export    📤 Export stored telemetry as OTLP JSON
+  import    📥 Import OTLP JSON files into a running viewer
 
 VIEWER FLAGS
       --host string          Address used by viewer/OTLP receivers (default "localhost")
@@ -283,7 +284,7 @@ func TestRootExposesOnlyViewerCommandsAndFlags(t *testing.T) {
 			names = append(names, child.Name())
 		}
 	}
-	assert.Equal(t, []string{"attributes", "export", "log", "logs", "metric", "metrics", "query", "services", "skills", "span", "trace", "traces"}, names)
+	assert.Equal(t, []string{"attributes", "export", "import", "log", "logs", "metric", "metrics", "query", "services", "skills", "span", "trace", "traces"}, names)
 	for _, forbidden := range []string{"config", "set", "feature-gates"} {
 		assert.Nil(t, cmd.Flags().Lookup(forbidden))
 	}

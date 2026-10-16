@@ -125,6 +125,33 @@ An HTTP response acknowledges the normal receiver handoff, not a completed
 database write. Imported data is discoverable through the existing UI refresh
 and query interfaces.
 
+## CLI file import
+
+Use an existing viewer; `--endpoint` selects its HTTP endpoint, not the OTLP port:
+
+```sh
+otel-desktop-viewer import checkout-017.json --endpoint http://localhost:8000
+otel-desktop-viewer import trace.json logs.json metrics.jsonl
+```
+
+| Command | Behaviour |
+| --- | --- |
+| `import <file> [file...]` | Sends regular JSON or JSONL files sequentially; later files continue after an individual failure |
+| `--endpoint <url>` | Discovers `otlpHttpPort` through `getImportConfig`, then uses the viewer hostname and receiver HTTP port |
+| `import --help` | Shows usage, examples and aligned flag sections without contacting a viewer |
+
+The command follows the browser's wrapper classification, complete-file syntax
+validation and 20 MiB batching rules. One standard-library token scan records byte
+ranges; requests read those ranges directly without re-encoding telemetry values.
+Metadata is copied when a resource, scope or Metric is split. Source files are not
+modified. The receiver remains responsible for validating OTel record fields.
+
+The aligned result table reports each file, requests accepted without issues, and
+any file or receiver issues. Profiles are reported as coming soon. Any issue makes
+the command exit nonzero; other supported groups and later files continue. The
+command does not retry, start a viewer, or confirm completed database ingestion.
+Some telemetry may already be stored after a failure, so replay can duplicate it.
+
 ## File Receiver
 
 The binary registers Contrib's `otlpjsonfilereceiver` at `v0.162.0` alongside the

@@ -52,10 +52,36 @@ Choose the narrowest command for the question:
 | What are one key's common typed values and frequencies? | `attributes values <key>` |
 | What custom aggregation or stored field is needed? | `query <sql>` |
 | What complete OTLP JSON payload should be saved or replayed? | `export trace <trace-id>`, `export log <log-ref>`, or `export metric <metric-ref>` |
+| How should saved OTLP JSON be sent to an existing viewer? | `import <file> [file...] --endpoint <viewer-url>` |
 
 Use `--json` for machine consumption or when exact values, JSON nulls, objects,
 or column types matter; use table output for human inspection. Export commands
 instead return the OTLP JSON payload itself without a format selector.
+
+## Import saved telemetry
+
+Import changes the running viewer's telemetry; use it only when asked to import.
+
+```sh
+otel-desktop-viewer import checkout-017.json --endpoint http://localhost:8000
+otel-desktop-viewer import traces.json logs.json metrics.jsonl
+```
+
+| Input or result | Behaviour |
+| --- | --- |
+| JSON or JSONL | Classifies `resourceSpans`, `resourceLogs`, and `resourceMetrics`; mixed files are supported |
+| Validation | Scans each complete file before its first request; malformed JSON sends nothing from that file |
+| Large requests | Splits at 20 MiB while copying resource, scope and Metric metadata and original value bytes |
+| Multiple files | Sends files and requests sequentially; later files continue after an individual failure |
+| Profiles | Reports that support is coming soon |
+| Result table | Shows each file, accepted request count and issues; any issue produces a nonzero exit status |
+
+`--endpoint` selects the existing viewer, not its OTLP port. The command discovers
+the receiver's HTTP port from that viewer and sends to the same hostname. No
+retries are made. Oversized individual records or metadata are reported, and
+other batches can still be sent. Receiver acceptance does not confirm completed
+database ingestion. A failed import may already have stored some telemetry;
+replaying the file can duplicate it.
 
 ## Discover services
 
