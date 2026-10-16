@@ -17,10 +17,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/features"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/telemetry"
 	"github.com/CtrlSpice/otel-desktop-viewer/skills"
 	"github.com/rs/cors"
+	"go.opentelemetry.io/otel/propagation"
 	"go.uber.org/zap"
 	"golang.org/x/exp/jsonrpc2"
 )
@@ -40,12 +42,13 @@ type Server struct {
 	jsonrpcHandler *JSONRPCHandler
 	logger         *zap.Logger
 	tel            *telemetry.Telemetry
+	features       *features.Flags
 
 	serveDone chan struct{}
 	startMu   sync.Mutex
 }
 
-func NewServer(endpoint string, otlpHTTPPort int, store *store.Store, logger *zap.Logger, tel *telemetry.Telemetry) (*Server, error) {
+func NewServer(endpoint string, otlpHTTPPort int, store *store.Store, logger *zap.Logger, tel *telemetry.Telemetry, options ...Option) (*Server, error) {
 	if tel == nil {
 		tel = telemetry.Disabled()
 	}
@@ -76,6 +79,9 @@ func NewServer(endpoint string, otlpHTTPPort int, store *store.Store, logger *za
 		tel:            tel,
 	}
 
+	for _, option := range options {
+		option(&s)
+	}
 	s.jsonrpcHandler.otlpHTTPPort = otlpHTTPPort
 	if err := s.initHandler(); err != nil {
 		return nil, fmt.Errorf("could not initialize desktop exporter server: %w", err)
@@ -130,6 +136,7 @@ func (s *Server) initHandler() error {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("POST /rpc", s.rpcHandler)
+	mux.HandleFunc("GET /api/features", s.featureConfig)
 	discovery, err := openRPCHandler()
 	if err != nil {
 		return err
@@ -145,7 +152,13 @@ func (s *Server) initHandler() error {
 	if err != nil {
 		return err
 	}
-	mux.Handle("/", spaHandler(fsys, s.logger))
+	spa := spaHandler(fsys, s.logger)
+	mux.Handle("/", spa)
+	mux.Handle("/evals", s.requireEvals(spa))
+	mux.Handle("/evals/", s.requireEvals(spa))
+	// Reserve the API namespace; handlers land with the complete Evals feature.
+	mux.Handle("/api/evals", s.requireEvals(http.NotFoundHandler()))
+	mux.Handle("/api/evals/", s.requireEvals(http.NotFoundHandler()))
 
 	// CORS for the Vite frontend
 	c := cors.New(cors.Options{
@@ -244,43 +257,53 @@ func spaHandler(fsys fs.FS, logger *zap.Logger) http.Handler {
 }
 
 func (s *Server) rpcHandler(writer http.ResponseWriter, request *http.Request) {
-	requestCtx := request.Context()
+	requestCtx := (propagation.TraceContext{}).Extract(request.Context(), propagation.HeaderCarrier(request.Header))
+	ctx, endRPC := s.tel.RPCRequest(requestCtx)
+	var method string
+	var responseBytes int
+	var rpcError error
+	defer func() { endRPC(method, responseBytes, rpcError) }()
 
 	limited := http.MaxBytesReader(writer, request.Body, maxRPCRequestBodyBytes)
 	body, err := io.ReadAll(limited)
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			s.sendJSONRPCResponse(requestCtx, writer, jsonrpc2.ID{}, nil, fmt.Errorf("%w: request body too large", jsonrpc2.ErrInvalidRequest))
+			rpcError = fmt.Errorf("%w: request body too large", jsonrpc2.ErrInvalidRequest)
+			responseBytes = s.sendJSONRPCResponse(ctx, writer, jsonrpc2.ID{}, nil, rpcError)
 			return
 		}
-		s.sendJSONRPCResponse(requestCtx, writer, jsonrpc2.ID{}, nil, jsonrpc2.ErrInternal)
+		rpcError = jsonrpc2.ErrInternal
+		responseBytes = s.sendJSONRPCResponse(ctx, writer, jsonrpc2.ID{}, nil, rpcError)
 		return
 	}
 
 	message, err := jsonrpc2.DecodeMessage(body)
 	if err != nil {
-		s.sendJSONRPCResponse(requestCtx, writer, jsonrpc2.ID{}, nil, jsonrpc2.ErrParse)
+		rpcError = jsonrpc2.ErrParse
+		responseBytes = s.sendJSONRPCResponse(ctx, writer, jsonrpc2.ID{}, nil, rpcError)
 		return
 	}
 
 	rpcRequest, ok := message.(*jsonrpc2.Request)
 	if !ok {
-		s.sendJSONRPCResponse(requestCtx, writer, jsonrpc2.ID{}, nil, jsonrpc2.ErrInvalidRequest)
+		rpcError = jsonrpc2.ErrInvalidRequest
+		responseBytes = s.sendJSONRPCResponse(ctx, writer, jsonrpc2.ID{}, nil, rpcError)
 		return
 	}
 
 	// DuckDB builds response JSON inside the query; EncodeMessage is the only
 	// separately measured encoding step.
-	ctx, endRPC := s.tel.RPC(requestCtx, rpcRequest.Method)
+	method = rpcRequest.Method
 
 	result, err := s.jsonrpcHandler.Handle(ctx, rpcRequest)
 	if err != nil {
-		endRPC(s.sendJSONRPCResponse(ctx, writer, rpcRequest.ID, nil, err), err)
+		rpcError = err
+		responseBytes = s.sendJSONRPCResponse(ctx, writer, rpcRequest.ID, nil, err)
 		return
 	}
 
-	endRPC(s.sendJSONRPCResponse(ctx, writer, rpcRequest.ID, result, nil), nil)
+	responseBytes = s.sendJSONRPCResponse(ctx, writer, rpcRequest.ID, result, nil)
 }
 
 // sendJSONRPCResponse writes the response and returns its encoded size in

@@ -16,6 +16,8 @@ Keep credentials, local settings and run artifacts outside version control.
 | `verify-export.ts`, `verify-export.test.ts`             | Check session-owned JSON or tar.gz exports and unchanged-byte replay into a new owned viewer                        |
 | `native-lifecycle.ts`, `native-hooks.mjs`, `config.ts`    | Native Promptfoo OpenCode SDK providers with private attempt runtimes and lifecycle hooks                           |
 | `native-evaluate.ts`                                    | Programmatic Promptfoo evaluation in the same module graph as the native provider                                   |
+| `eval-telemetry.ts`, `native-telemetry-plugin.mjs`        | Attempt/turn/tool spans, native detail links and context propagation into viewer RPCs                               |
+| `native-telemetry.test.ts`                               | Local scripted-model integration check using the viewer CLI to verify stored parentage and error status             |
 | `run-pilot.ts`, `run-pilot.test.ts`                     | Retain batch results, failures and summaries                                                                       |
 | `model-summary.ts`, `pricing.ts`, `api-prices.json`     | Model totals, per-response API-price estimates and a run-fixed USD/CAD rate                                        |
 | `runtime.ts`, `runtime.test.ts`                         | Require runtime paths outside repositories                                                                         |
@@ -33,6 +35,15 @@ Keep credentials, local settings and run artifacts outside version control.
 The eleven approved questions use the shared small workload. Requests, counts and
 inclusive exact time bounds come from its manifest; `OTLP_DATASET` selects another
 dataset, whose facts must satisfy the approved preflight before model calls.
+
+`cpu-comparison` replaces the historical `cpu-causation` question for future runs:
+“How do the recorded CPU readings around checkout-019 compare with the rest of
+the time window?” Its completion score is Pass/Fail. Preserve frozen historical
+questions, answers and grades. For the approved recount, exclude `cpu-causation`
+from both earned and possible points; keep `cpu-evidence` included. This leaves
+ten eligible historical questions per repetition. Do not grade historical
+causation answers against the replacement comparison question.
+
 The approved pilot may run from the corrected feature branch before merge.
 `config.ts` targets GPT-6.1 Sol, GPT-5.6 Sol, GPT-6 Luna and GPT-5.6 Luna: eleven tasks
 times three repetitions times four models gives 132 investigator sessions.
@@ -63,8 +74,8 @@ the grader is still instructed not to investigate or execute tools. The retained
 grader prompt includes the guide used for that attempt. A missing, failed or invalid
 guide read is a setup error before the grader starts. Each question has one
 completion criterion with explicit scoring descriptions in `rubrics.json`:
-Fail earns 0, Partial earns 0.5, and Pass earns 1. Customer count, trace export and
-request count allow only 0 or 1; a Partial verdict for those tasks is invalid grader
+Fail earns 0, Partial earns 0.5, and Pass earns 1. Customer count, trace export,
+request count and CPU comparison allow only 0 or 1; a Partial verdict for those tasks is invalid grader
 output. Partial credit rewards correct supported results, not effort or tool use.
 The grader supplies a verdict and explanation; code derives its numeric score.
 The task score is that single criterion's score, except an unsuccessful required
@@ -152,6 +163,68 @@ export OTEL_EVAL_RUN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/otel-eval.XXXXXX")"
 go build -o "$OTEL_EVAL_RUN_DIR/otel-desktop-viewer" .
 node evals/viewer-usability/stage-dataset.ts
 ```
+
+### Evaluation traces
+
+Use a separate observer viewer so evaluation telemetry does not enter the fixture
+being investigated. Keep it running until Promptfoo, OpenCode and the evaluated
+viewer have shut down and exported their telemetry. Set these before the existing
+prepare/pilot/overnight workflow:
+
+```sh
+export OTEL_EVAL_OBSERVER_HTTP=http://127.0.0.1:4318
+export OTEL_EVAL_OBSERVER_GRPC=http://127.0.0.1:4317
+```
+
+These are the observer's OTLP HTTP **base URL** and OTLP gRPC endpoint, respectively,
+not its UI port. `prepare.ts` and the overnight workflow forward the gRPC endpoint
+to the newly owned fixture viewer. Programmatic callers can use
+`prepare(root, selfTelemetryEndpoint)`. `runPilot` forwards the HTTP setting to
+its isolated Promptfoo worker. An already running fixture viewer must have been
+started with `--self-telemetry-endpoint` to export its RPC spans.
+
+Promptfoo owns the tracing SDK and flushes it after evaluation. The adapter uses
+only the OTel API and the explicit trusted plugin in each private OpenCode profile.
+Tracing enables private Promptfoo SQLite bookkeeping under the run directory;
+`writeLatestResults: true` at suite level initializes the required tables.
+
+Each test-case trace contains its provider attempt, numbered agent turns, tool
+calls and grading assertion. The separate grader's native attempt inherits the
+active assertion context. Each shell tool passes W3C `TRACEPARENT`/`TRACESTATE`
+to the CLI, which injects them into `/rpc`; the viewer extracts them before
+decoding. An explicit Go context takes precedence over environment context.
+RPC decoding/query failures and nonzero tool-process exits receive error status.
+Argument/result payloads, output text, reported usage and exact session/message/
+call IDs remain available. Reported usage is not inferred when absent.
+
+`metrics.json` records the attempt's trace/span IDs. `telemetry-events.jsonl`
+retains redacted hook events; `telemetry.json` records plugin readiness/drain,
+operation counts and incomplete operations. A failed hook or incomplete operation
+cannot silently report a successful telemetry receipt. Known selected credential
+values are redacted from bridge payloads; the private hook token is removed from
+the tool's shell environment. Ordinary permission and execution-stop rules apply.
+
+Pinned OpenCode **1.18.10 accepts HTTP trace context but does not pass it into its
+internal session work**. The adapter builds the readable tree from explicit native
+session/message/call identities, and links those spans to unmodified native detail
+spans. Native model-call/internal traces remain separate. Instance disposal drains
+the plugin before process shutdown; a shorter native export interval and larger
+queue reduce buffering pressure. This does **not** establish native export
+completeness: the local check still found missing parents in the detailed native
+trace. Do not interpret those links as proof of a complete native trace.
+
+For a no-inference integration check, build the viewer outside the repo and run:
+
+```sh
+OTEL_EVAL_VIEWER_BINARY=/absolute/path/to/viewer \
+  node --test evals/viewer-usability/native-telemetry.test.ts
+```
+
+It uses two owned viewers, pinned OpenCode, dummy credentials and a loopback model
+fixture. The viewer CLI checks the stored root/parents, cross-service RPCs, both
+successful and failed queries, full tool payloads, and native detail-link targets.
+All evidence is retained; owned processes are stopped. Set
+`OTEL_EVAL_OPENCODE_BINARY` if the pinned binary is not `/opt/homebrew/bin/opencode`.
 
 `OTLP_DATASET` selects another dataset directory using the same setting as the
 development Make targets. To select a dataset from another worktree, use its

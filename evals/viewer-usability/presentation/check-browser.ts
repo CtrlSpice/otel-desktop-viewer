@@ -33,7 +33,7 @@ try {
   const checkMetricControls = async () => {
     assert.equal(await page.locator('.metrics').evaluate(element => getComputedStyle(element).backgroundColor), 'rgba(0, 0, 0, 0)')
     assert.equal(await page.locator('.board-label>.metric-heading .metrics').count(), 1)
-    assert.deepEqual(await page.locator('.metrics button').allTextContents(), ['Results', 'Time', 'Cost (est., CAD)'])
+    assert.deepEqual((await page.locator('.metrics button').allTextContents()).map(text => text.trim()), ['Results', 'Time', 'Cost (est., CAD)'])
     await page.locator('[data-view="result"]').focus()
     await page.keyboard.press('Enter')
     const selectedColour = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--text').trim())
@@ -73,15 +73,25 @@ try {
       assert.deepEqual(await badges.evaluateAll(elements => elements.map(element => getComputedStyle(element).fontSize)), Array(count).fill('14px'))
     }
   }
-  const checkHarnessColour = async () => {
-    assert.equal(await page.evaluate(() => {
+  const checkErrorColours = async () => {
+    for (const status of ['harness-error', 'execution-error']) {
+      assert.deepEqual(await page.evaluate(status => {
       const badge = document.createElement('span')
-      badge.className = 'result-badge result-harness-error'
+      badge.className = `result-badge result-${status}`
       document.body.append(badge)
       const colour = getComputedStyle(badge, '::before').backgroundColor
       badge.remove()
-      return colour
-    }), 'rgb(255, 128, 0)')
+      const strip = document.createElement('div')
+      strip.className = 'grade-strip'
+      const segment = document.createElement('span')
+      segment.className = `result-${status}`
+      strip.append(segment)
+      document.body.append(strip)
+      const barColour = getComputedStyle(segment).backgroundColor
+      strip.remove()
+      return [colour, barColour]
+      }, status), ['rgb(255, 128, 0)', 'rgb(255, 128, 0)'])
+    }
   }
   const checkModelDividers = async () => {
     const rows = await page.locator('.model').count()
@@ -89,7 +99,7 @@ try {
     assert.deepEqual(await page.locator('.model>summary').evaluateAll(elements => elements.map(element => getComputedStyle(element).borderBottomWidth)), Array(await page.locator('.model>summary').count()).fill('0px'))
   }
   await checkResultColours({ complete: 'rgb(49, 116, 143)', partial: 'rgb(246, 193, 119)', 'no-credit': 'rgb(235, 111, 146)' })
-  await checkHarnessColour()
+  await checkErrorColours()
   await page.locator('.model summary').first().focus()
   await page.keyboard.press('Enter')
   assert.equal(await page.locator('.model').first().getAttribute('open'), '')
@@ -195,22 +205,10 @@ try {
       []
     )
     if (process.env.EVAL_PRESENTATION_SCREENSHOT_DIR) {
-      await page
-        .locator('.model')
-        .first()
-        .evaluate((element) => {
-          const target = element as HTMLElement
-          target.style.outline = '5px solid #ff69b4'
-          target.style.borderRadius = '12px'
-        })
       await page.evaluate(() => scrollTo(0, 0))
       await page.screenshot({
         path: `${process.env.EVAL_PRESENTATION_SCREENSHOT_DIR}/dark-${width}.png`,
       })
-      await page
-        .locator('.model')
-        .first()
-        .evaluate((element) => element.removeAttribute('style'))
     }
     await page.locator('.model summary').first().click()
     if (await page.locator('.grader-row').count()) {
@@ -312,7 +310,7 @@ try {
   await checkMetricControls()
   await checkHeaderLayout()
   await checkResultColours({ complete: 'rgb(40, 105, 131)', partial: 'rgb(234, 157, 52)', 'no-credit': 'rgb(180, 99, 122)' })
-  await checkHarnessColour()
+  await checkErrorColours()
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 900 })
     await checkTimeAndProvider()

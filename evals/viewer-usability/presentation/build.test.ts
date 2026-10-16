@@ -54,7 +54,7 @@ test('build consumes validated human review without exposing private audit data'
   })
   signoffReview(review, 1, 'PRIVATE_REVIEW_CANARY', true)
   const output = path.join(root, 'index.html')
-  const data = build(run, output, [review])
+  const data = await build(run, output, [review])
   const task = data.models[0].tasks[0]
   assert.deepEqual(task.scores, [1])
   assert.deepEqual(task.signedScores, [0.5])
@@ -74,8 +74,16 @@ test('build consumes validated human review without exposing private audit data'
   assert.ok(!html.includes('<dt>Mean</dt>'))
   assert.ok(html.includes('.5/1'))
   assert.ok(html.includes(tasks[0].goal))
-  assert.throws(() => build(run, path.join(root, 'duplicate.html'), [review, review]), /Duplicate human review/)
+  assert.ok(!html.includes('<style>'))
+  assert.ok(!html.includes('base64,'))
+  assert.match(html, /href="\.\/index.html.assets\/results.css"/)
+  for (const name of fs.readdirSync(output + '.assets')) {
+    assert.ok(!fs.readFileSync(path.join(output + '.assets', name)).includes('PRIVATE_REVIEW_CANARY'))
+  }
+  assert.equal(fs.readdirSync(output + '.assets').filter(name => name.endsWith('.woff2')).length, 4)
+  await assert.rejects(build(run, output, [review]), /EEXIST/)
+  await assert.rejects(build(run, path.join(root, 'duplicate.html'), [review, review]), /Duplicate human review/)
   fs.appendFileSync(path.join(evidence, 'answer.txt'), 'changed')
-  assert.throws(() => build(run, path.join(root, 'tampered.html'), [review]), /changed|mismatch/i)
+  await assert.rejects(build(run, path.join(root, 'tampered.html'), [review]), /changed|mismatch/i)
   assert.equal(fs.existsSync(path.join(root, 'tampered.html')), false)
 })

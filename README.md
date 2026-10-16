@@ -23,6 +23,7 @@ It has **two** dark modes now.
   - [Via Docker](#via-docker)
 - [Docker Compose](#docker-compose)
 - [Command Line Options](#command-line-options)
+- [Experimental Features](docs/experimental-features.md)
 - [Observe the Viewer](#observe-the-viewer)
 - [Query a Running Viewer](#query-a-running-viewer)
 - [Search Telemetry from the CLI](#search-telemetry-from-the-cli)

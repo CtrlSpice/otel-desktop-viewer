@@ -1,238 +1,63 @@
+import path from 'node:path'
+import { createRequire } from 'node:module'
+import { pathToFileURL } from 'node:url'
+import { build } from '../../../desktopexporter/internal/frontend/node_modules/vite/dist/node/index.js'
 import type { Presentation } from './aggregate.ts'
-import { caret, warningIcon, meanIcon, timeIcon, costIcon } from './viewer-components.ts'
-import tasks from '../tasks.json' with { type: 'json' }
-import { groupGradingOutputs, gradingScoreTotals, gradingStatus } from './grading-output.ts'
+import { escapeHtml } from './format.ts'
 
-export const escapeHtml = (value: unknown) =>
-  String(value).replace(
-    /[&<>"']/g,
-    (character) =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
-        character
-      ]!
-  )
-const integer = (value: number | null) =>
-  value === null ? 'Unknown' : value.toLocaleString('en-CA')
-const seconds = (value: number | null) =>
-  value === null ? 'Unknown' : `${value.toFixed(1)} s`
-const cost = (value: number | null, coverage: string) =>
-  value === null
-    ? 'Unknown'
-    : `C$${value.toFixed(3)}${coverage === 'partial' ? ' (partial)' : ''}`
-const cell = (title: string, value: string, emphasis = false) =>
-  `<div${emphasis ? ' class="mean"' : ''}><dt>${escapeHtml(title)}</dt><dd>${escapeHtml(value)}</dd></div>`
-const percent = (value: number | null) =>
-  value === null ? 'Unscored' : `${(value * 100).toFixed(1)}%`
-const scores = (values: (number | null)[]) =>
-  values.length ? values.map(value => value === null ? '—' : String(value)).join(' · ') : '—'
-const runResult = (value: number) =>
-  value === 0.5 ? '.5/1' : `${value}/1`
-const gradeLabel = (value: number) =>
-  value === 1 ? 'complete' : value === 0.5 ? 'partial' : 'incorrect or missing'
-const resultBadge = (value: number, signedOff = false, count?: number) => {
-  const status = value === 1 ? 'complete' : value === 0.5 ? 'partial' : 'no-credit'
-  const label = count === undefined ? runResult(value) : gradeLabel(value)
-  return `<span class="badge badge-soft result-badge result-${status}">${count === undefined ? '' : `${integer(count)} `}${escapeHtml(label)}${signedOff ? ' · signed' : ''}</span>`
-}
-const harnessErrorBadge = (count?: number) =>
-  `<span class="badge badge-soft result-badge result-harness-error">${count === undefined ? 'Harness error' : `${integer(count)} harness ${count === 1 ? 'error' : 'errors'}`}</span>`
-const taskName = (id: string) => tasks.find(task => task.id === id)?.goal ?? id.replaceAll('-', ' ')
-const gradingStatusBadge = (status: ReturnType<typeof gradingStatus>) => {
-  const labels = { 'not-started': 'Not Started', 'in-progress': 'In Progress', done: 'Completed', 'needs-attention': 'Needs Attention' }
-  return `<span class="badge badge-soft result-badge grading-status-badge grading-status-${status}">${labels[status]}</span>`
-}
-const outcomeBreakdown = (value: Presentation['models'][number]['result']) => [
-  { status: 'complete', count: value.displayPass, label: 'complete' },
-  { status: 'partial', count: value.displayPartial, label: 'partial' },
-  { status: 'no-credit', count: value.displayFail, label: 'incorrect or missing' },
-  { status: 'harness-error', count: value.harnessError, label: value.harnessError === 1 ? 'harness error' : 'harness errors' },
-  { status: 'execution-error', count: value.error - value.harnessError, label: value.error - value.harnessError === 1 ? 'execution error' : 'execution errors' },
-  { status: 'unscored', count: value.attempts - value.displayPass - value.displayPartial - value.displayFail - value.error, label: 'unscored' },
-].filter(part => part.count > 0).map(part => ({ ...part,
-  text: `${integer(part.count)} ${part.label} · ${(part.count / value.attempts * 100).toLocaleString('en-CA', { maximumFractionDigits: 1 })}%`,
-}))
+export { escapeHtml } from './format.ts'
 
-export function render(data: Presentation, fontFaces = '', componentStyles = '') {
-  const maxTime = Math.max(
-    1,
-    ...data.models.map((model) => model.investigator.maxSeconds ?? 0),
-    ...data.grader.models.map(model => model.maxSeconds ?? 0)
-  )
-  const timeMetric = (value: Pick<Presentation['models'][number]['investigator'], 'totalSeconds' | 'medianSeconds' | 'p95Seconds' | 'maxSeconds'>) => {
-    const values = [
-      { label: 'Median', status: 'median', seconds: value.medianSeconds },
-      { label: 'P95', status: 'p95', seconds: value.p95Seconds },
-      { label: 'Slowest', status: 'tail', seconds: value.maxSeconds },
-    ]
-    const bands = value.medianSeconds === null || value.p95Seconds === null || value.maxSeconds === null ? [] : [
-      { status: 'median', seconds: value.medianSeconds },
-      { status: 'p95', seconds: value.p95Seconds - value.medianSeconds },
-      { status: 'tail', seconds: value.maxSeconds - value.p95Seconds },
-    ]
-    return `<div class="metric time"><div class="time-distribution"><div class="time-track" role="img" aria-label="Time per run: ${escapeHtml(values.map(part => `${part.label}: ${seconds(part.seconds)}`).join('; '))}. Shared scale: 0 to ${seconds(maxTime)}.">${bands.map(part => `<span class="time-${part.status}" style="width:${(part.seconds / maxTime) * 100}%"></span>`).join('')}</div><div class="time-values">${values.map(part => `<span class="badge badge-soft time-value time-${part.status}"><span>${part.label}</span><strong>${seconds(part.seconds)}</strong></span>`).join('')}</div></div><div class="time-total"><strong aria-label="Total time: ${seconds(value.totalSeconds)}">${seconds(value.totalSeconds)}</strong></div></div>`
-  }
-  const averages = data.models.map((model) =>
-    model.investigator.apiCostCad !== null &&
-    model.investigator.estimateCoverage === 'complete' &&
-    model.investigator.attempts
-      ? model.investigator.apiCostCad / model.investigator.attempts
-      : null
-  )
-  const graderAverages = data.grader.models.map(model => model.apiCostCad !== null && model.estimateCoverage === 'complete' && model.attempts ? model.apiCostCad / model.attempts : null)
-  const maxCost = Math.max(0.001, ...averages.map((value) => value ?? 0), ...graderAverages.map(value => value ?? 0))
-  const outcome = (value: Presentation['models'][number]['result']) =>
-    [[1, value.displayPass], [0.5, value.displayPartial], [0, value.displayFail]]
-      .filter(([, count]) => count > 0)
-      .map(([score, count]) => resultBadge(score, false, count)).join('') +
-    (value.harnessError ? harnessErrorBadge(value.harnessError) : '') +
-    (value.error > value.harnessError ? `<span class="badge badge-soft result-badge result-execution-error">${integer(value.error - value.harnessError)} execution ${value.error - value.harnessError === 1 ? 'error' : 'errors'}</span>` : '') +
-    (value.unknown ? `<span class="badge badge-soft result-badge result-unscored">${integer(value.unknown)} unscored</span>` : '')
-  const rows = data.models
-    .map((model, index) => {
-       const metrics = model.investigator,
-         result = model.result
-        const completionMean = result.displayMean
-       const modelBreakdown = outcomeBreakdown(result)
-      const taskCards = model.tasks
-        .map((task) => {
-           const checks = task.checks
-           const breakdown = outcomeBreakdown(task)
-           const reviewFields =
-             (task.signedAttempts ? cell('Human signoff', task.attempts === 1 ? 'Signed off' : `${task.signedAttempts}/${task.attempts} runs signed`) : '') +
-             task.runResults.filter(run => run.signedOff && run.automatedScore !== run.score).map(run =>
-               cell(`Human correction${task.attempts > 1 ? ` · Run ${run.run}` : ''}`, `Automated ${run.automatedScore === null ? 'unscored' : runResult(run.automatedScore)} → signed ${runResult(run.score!)}`)).join('') +
-             (task.claimReviewedAttempts ? cell('Human claim review', `${task.supportedClaims} supported · ${task.contradictedClaims} contradicted · ${task.unverifiedClaims} unverified`) : '') +
-             (checks.artifactPass + checks.artifactFail ? cell('Artifact check', checks.artifactPass + checks.artifactFail === 1 ? (checks.artifactPass ? 'Passed' : 'Failed') : [[checks.artifactPass, 'passed'], [checks.artifactFail, 'failed']].filter(([count]) => Number(count) > 0).map(([count, label]) => `${count} ${label}`).join(' · ')) : '')
-            return `<article class="task card bg-base-200"><div class="task-title pane-header"><h3>${escapeHtml(taskName(task.task))}</h3>${data.repetitions !== 1 ? `<span class="task-count" aria-label="Runs: ${task.attempts}/${integer(data.repetitions)}">${task.attempts}/${integer(data.repetitions)}</span>` : ''}</div>
-         <div class="task-group result-group"><div class="grade-strip" role="img" aria-label="Attempt results: ${escapeHtml(breakdown.map(value => value.text).join('; ') || 'No results')}">${breakdown.map(value => `<span class="result-${value.status}" style="flex:${value.count}"></span>`).join('')}</div>
-          <div class="grade-counts task-result">${breakdown.map(value => `<span class="badge badge-soft result-badge result-${value.status}">${escapeHtml(value.text)}</span>`).join('') || 'No results'}</div></div>
-          ${reviewFields ? `<div class="task-group"><dl>${reviewFields}</dl></div>` : ''}
-          <div class="task-group"><dl>${cell('Median time', seconds(task.medianSeconds))}${task.attempts > 1 ? cell('P95 time', seconds(task.p95Seconds)) : ''}
-         ${task.timedAttempts !== task.attempts ? cell('Time coverage', `${task.timedAttempts}/${task.attempts} attempts`) : ''}
-         ${cell('Tool calls', integer(task.toolCalls))}${cell('Failed tool calls', integer(task.failedTools))}
-          <div><dt>Execution errors</dt><dd>${task.error ? `<span class="badge badge-soft result-badge ${task.harnessError === task.error ? 'result-harness-error' : 'result-execution-error'}">${integer(task.error)}</span>` : '0'}</dd></div></dl></div>
-         <div class="task-group"><dl>${cell('Input tokens', integer(task.inputTokens))}${cell('Output tokens', integer(task.outputTokens))}
-         ${cell('Cache read', integer(task.cacheReadTokens))}${task.cacheWriteTokens ? cell('Cache write', integer(task.cacheWriteTokens)) : ''}
-           ${cell('Cost (est., CAD)', cost(task.apiCostCad, task.estimateCoverage))}</dl></div></article>`
-        })
-        .join('')
-      return `<details class="model" data-live-key="${escapeHtml(model.model)}"><summary><div class="model-heading"><span class="chevron" aria-hidden="true">${caret}</span><div class="model-name"><strong>${escapeHtml(model.name)}</strong><span>${escapeHtml(model.provider)}</span><span class="model-id">${escapeHtml(model.model)}</span></div></div>
-        <div class="metric result"><div class="grade-distribution"><div class="grade-strip" role="img" aria-label="Results: ${escapeHtml(modelBreakdown.map(part => part.text).join('; ') || 'No results')}">${modelBreakdown.map(part => `<span class="result-${part.status}" style="flex:${part.count}"></span>`).join('')}</div><div class="grade-counts">${modelBreakdown.map(part => `<span class="badge badge-soft result-badge result-${part.status}">${escapeHtml(part.text)}</span>`).join('') || 'No results'}</div></div><div class="result-mean"><strong aria-label="Mean: ${percent(completionMean)}">${percent(completionMean)}</strong></div></div>
-      ${timeMetric(metrics)}
-      <div class="metric cost"><span class="bar-track" aria-hidden="true"><span style="width:${((averages[index] ?? 0) / maxCost) * 100}%"></span></span><strong>${cost(averages[index], 'complete')}</strong></div>
-       <span class="coverage" aria-label="Runs: ${result.attempts}/${data.tasksExpected !== null && data.repetitions !== null ? data.tasksExpected * data.repetitions : 'Unknown'}">${result.attempts}/${data.tasksExpected !== null && data.repetitions !== null ? data.tasksExpected * data.repetitions : 'Unknown'}</span><span aria-hidden="true"></span></summary>
-        <div class="expanded"><h2 class="sr-only">${escapeHtml(model.name)} task results</h2><div class="model-meta"><div class="grade-counts">${outcome(result) || 'No results'}</div><span>Investigator: ${integer(metrics.attempts)} sessions · total cost (est., CAD) ${escapeHtml(cost(metrics.apiCostCad, metrics.estimateCoverage))}</span><span>${integer(metrics.toolCalls)} tool calls · ${integer(metrics.failedTools)} recorded failed tools</span></div><div class="tasks">${taskCards}</div></div></details>`
-    })
-    .join('')
-  const graderRows = data.grader.models.map((model, index) => {
-    const outputs = data.grader.outputs.filter(output => output.graderModel === model.model)
-    const counts = [1, 0.5, 0].map(score => ({ score, count: outputs.filter(output => !output.executionError && output.score === score).length }))
-    const errors = outputs.filter(output => output.executionError).length
-    const unscored = outputs.filter(output => !output.executionError && output.score === null).length
-    const scored = counts.reduce((sum, value) => sum + value.count, 0)
-    const breakdown = counts.map(value => `${value.count} ${gradeLabel(value.score)}`).join(' · ')
-    const knownTasks = [...new Set(data.models.flatMap(model => model.tasks.map(task => task.task)))]
-    const questionOrder = [...tasks.map(task => task.id).filter(id => knownTasks.includes(id)), ...knownTasks.filter(id => !tasks.some(task => task.id === id))]
-    const gradingGroups = groupGradingOutputs(outputs, data.models.map(model => model.model), questionOrder, true)
-    const runs = Array.from({ length: Math.max(data.repetitions ?? 0, ...gradingGroups.flatMap(group => group.questions.map(question => question.grades.length))) }, (_, index) => index)
-    const gradingSections = gradingGroups.map(group => {
-      const investigator = data.models.find(model => model.model === group.model)
-      const name = investigator?.name ?? group.model
-      const bodyID = 'grading-body-' + encodeURIComponent(`${model.model}:${group.model}`)
-      const scoreTotals = gradingScoreTotals(group.questions, runs.length)
-      const totals = group.totals
-      const graded = scoreTotals.reduce((sum, score) => sum + score.graded, 0)
-      const modelStatus = gradingStatus(graded, data.tasksExpected !== null && data.repetitions !== null ? data.tasksExpected * data.repetitions : null,
-        Math.max(investigator?.result.attempts ?? 0, outputs.filter(output => output.investigatorModel === group.model).length),
-        Math.max(investigator?.result.error ?? 0, scoreTotals.reduce((sum, score) => sum + score.errors, 0)))
-      return `<tbody class="grading-model-header"><tr><th scope="col"><button type="button" class="grading-table-toggle" id="toggle-${bodyID}" data-grading-table="${bodyID}" aria-controls="${bodyID}" aria-expanded="false"><span class="grading-table-caret" aria-hidden="true">${caret}</span><span class="grading-model-name">${escapeHtml(name)}</span>${gradingStatusBadge(modelStatus)}</button></th>${runs.map(index => `<th scope="col" class="grading-run">Score ${index + 1}</th>`).join('')}<th scope="col">Grading Time</th><th scope="col">Cost (est., CAD)</th><th scope="col">Input Tokens</th><th scope="col">Output Tokens</th></tr></tbody><tbody class="grading-questions" id="${bodyID}" hidden>${group.questions.map(question => {
-        return `<tr><th scope="row">${escapeHtml(taskName(question.task))}</th>${runs.map(index => {
-        const output = question.grades[index]
-        return `<td class="grading-run">${!output ? '<span aria-label="Not recorded">—</span>' : output.executionError ? '<span class="badge badge-soft result-badge result-execution-error">Execution error</span>' : output.score === null ? '<span class="badge badge-soft result-badge result-unscored">Unscored</span>' : resultBadge(output.score)}</td>`
-      }).join('')}<td>${seconds(question.totalSeconds)}</td><td>${cost(question.costCad, question.estimateCoverage)}</td><td>${integer(question.inputTokens)}</td><td>${integer(question.outputTokens)}</td></tr>`
-      }).join('')}</tbody><tbody class="grading-model-total"><tr><th scope="row">Total</th>${scoreTotals.map(score => `<td class="grading-run"><span class="grading-score-total">${score.earned === 0.5 ? '.5' : String(score.earned ?? 0)}/${integer(data.tasksExpected)}</span></td>`).join('')}<td>${seconds(totals.totalSeconds)}</td><td>${cost(totals.costCad, totals.estimateCoverage)}</td><td>${integer(totals.inputTokens)}</td><td>${integer(totals.outputTokens)}</td></tr></tbody>`
-    }).join('')
-    const gradingTable = gradingGroups.length ? `<div class="grading-output" data-grading-scroll-key="grading-table" role="region" aria-label="Grading outputs" tabindex="0"><table class="table grading-model-table" style="--grading-run-count:${runs.length}"><caption class="sr-only">Grading outputs by investigator model</caption><colgroup><col class="grading-question-column">${runs.map(() => '<col class="grading-run-column">').join('')}<col span="4" class="grading-number-column"></colgroup>${gradingSections}</table></div>` : ''
-    return `<section class="model grader-row" data-live-key="grader:${escapeHtml(model.model ?? model.name)}" aria-label="Grader ${escapeHtml(model.model ?? model.name)}"><div class="grader-summary"><div class="model-name"><strong>Grader</strong><span>${escapeHtml(model.model ?? model.name)}</span></div>
-      <div class="metric result grade-breakdown">${scored ? `<div class="grade-overview"><div class="grade-distribution"><div class="grade-strip" role="img" aria-label="Automated grades: ${breakdown}">${counts.map(value => `<span class="result-${value.score === 1 ? 'complete' : value.score === 0.5 ? 'partial' : 'no-credit'}" style="flex:${value.count}"></span>`).join('')}</div><div class="grade-counts">${counts.map(value => resultBadge(value.score, false, value.count)).join('')}</div></div><span class="grader-mean">sometimes, but<br>it means well</span></div>` : '<span>Unscored</span>'}${errors ? `<span>${errors} execution ${errors === 1 ? 'error' : 'errors'}</span>` : ''}${unscored ? `<span>${unscored} unscored</span>` : ''}${model.attempts !== null && outputs.length !== model.attempts ? `<span>${outputs.length}/${model.attempts} outputs recorded</span>` : ''}</div>
-      ${timeMetric(model)}
-      <div class="metric cost"><span class="bar-track" aria-hidden="true"><span style="width:${((graderAverages[index] ?? 0) / maxCost) * 100}%"></span></span><strong>${cost(graderAverages[index], 'complete')}</strong></div>
-      <span class="coverage" aria-label="Grading runs: ${integer(model.attempts)}/${integer(data.expectedAttempts)}">${integer(model.attempts)}/${integer(data.expectedAttempts)}</span><span aria-hidden="true"></span></div>
-      <div class="expanded"><div class="grader-metrics-scroll" data-grading-scroll-key="grader-summary" role="region" aria-label="Grading summary" tabindex="0"><dl class="grader-metrics">${cell('Sessions', integer(model.attempts))}${cell('Median time', seconds(model.medianSeconds))}${cell('P95 time', seconds(model.p95Seconds))}${cell('Input tokens', integer(model.inputTokens))}${cell('Output tokens', integer(model.outputTokens))}${cell('Total cost (est., CAD)', cost(model.apiCostCad, model.estimateCoverage))}${data.grader.executionErrors ? cell('Execution errors', String(data.grader.executionErrors)) : ''}</dl></div>
-      ${gradingTable}</div></section>`
-  }).join('')
+// Compile the typed Svelte templates once per Node process. The static export
+// needs no client framework, hydration payload, generated source file or server.
+const frontend = path.resolve(
+  import.meta.dirname,
+  '../../../desktopexporter/internal/frontend'
+)
+const require = createRequire(path.join(frontend, 'package.json'))
+const { svelte } = (await import(
+  pathToFileURL(require.resolve('@sveltejs/vite-plugin-svelte')).href
+)) as typeof import('@sveltejs/vite-plugin-svelte')
+const compiled = await build({
+  configFile: false,
+  root: frontend,
+  logLevel: 'error',
+  plugins: [svelte({ configFile: false })],
+  resolve: { dedupe: ['svelte', '@hugeicons/core-free-icons'] },
+  ssr: { noExternal: true },
+  build: {
+    ssr: path.join(import.meta.dirname, 'components/render.ts'),
+    write: false,
+    minify: false,
+  },
+})
+if (Array.isArray(compiled) || !('output' in compiled))
+  throw new Error('Expected one results template bundle')
+const chunks = compiled.output.filter(output => output.type === 'chunk')
+if (chunks.length !== 1) throw new Error('Expected one results template module')
+const templates = (await import(
+  `data:text/javascript;base64,${Buffer.from(chunks[0].code).toString('base64')}`
+)) as {
+  renderResults: (data: Presentation) => string
+}
+
+export function render(data: Presentation, assetBase = './assets') {
+  const assets = escapeHtml(assetBase)
   return `<!doctype html>
-<html lang="en" data-theme="rose-pine"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark light"><title>Viewer investigation evals</title><script>const theme=matchMedia('(prefers-color-scheme: light)');const applyTheme=()=>document.documentElement.dataset.theme=theme.matches?'rose-pine-dawn':'rose-pine';applyTheme();theme.addEventListener('change',applyTheme);</script><style>
-${componentStyles}
-${fontFaces}
-:root{color-scheme:dark;--bg:#191724;--panel:#1f1d2e;--edge:#6e6a86;--text:#e0def4;--muted:#908caa;--accent:#c4a7e7;--pass:#31748f;--fail:#eb6f92;--track:#26233a;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
-.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-*{box-sizing:border-box}body{margin:0}main{max-width:1080px;margin:auto;padding:64px 28px}a{color:var(--accent);text-underline-offset:4px}h1{font-size:clamp(30px,5vw,46px);letter-spacing:-1.6px;margin:16px 0 12px;font-weight:650;line-height:1.15}.eyebrow{color:var(--accent);font:12px ui-monospace,monospace;letter-spacing:2px;text-transform:uppercase}.question{font-size:18px;color:var(--muted);margin:0 0 20px}.header-link{font-size:14px}.notice{margin:32px 0 18px;border-left:3px solid var(--accent);padding:12px 16px;background:var(--panel);font-size:13px;color:var(--muted);line-height:1.6}.notice strong{color:var(--accent)}.run-meta{display:flex;flex-wrap:wrap;gap:8px 24px;color:var(--muted);font-size:12px;margin-bottom:26px}button{font:inherit;cursor:pointer}.metrics{display:flex;gap:6px;border-bottom:1px solid var(--edge);padding-bottom:12px}.metrics button{border:1px solid transparent;background:none;color:var(--muted);padding:10px 15px;border-radius:6px;font-size:13px}.metrics button[aria-pressed="true"]{color:var(--text);background:var(--panel);border-color:var(--edge)}:focus-visible{outline:3px solid var(--accent);outline-offset:4px}.board-label{display:flex;justify-content:space-between;color:var(--muted);font:11px ui-monospace,monospace;text-transform:uppercase;letter-spacing:1px;margin:22px 0 8px}.model{border-bottom:1px solid var(--edge)}summary{list-style:none;display:grid;grid-template-columns:minmax(220px,1fr) minmax(240px,1fr) 110px 20px;gap:18px;align-items:center;padding:23px 0;cursor:pointer}summary::-webkit-details-marker{display:none}.model-name{display:flex;flex-direction:column;gap:5px;min-width:0}.model-name strong{font-size:16px}.model-name>span{font-size:11px;color:var(--muted);overflow-wrap:anywhere}.metric{display:flex;align-items:center;gap:18px}.metric strong{font:13px ui-monospace,monospace;white-space:nowrap;min-width:108px;text-align:right}.bar-track{height:7px;background:var(--track);border-radius:3px;flex:1;overflow:hidden}.bar-track>span{height:100%;background:var(--pass);display:block}.duration .bar-track>span{background:#a7b9e0}.cost .bar-track>span{background:var(--accent)}.metric.duration,.metric.cost{display:none}body[data-metric="duration"] .metric.result,body[data-metric="cost"] .metric.result{display:none}body[data-metric="duration"] .metric.duration,body[data-metric="cost"] .metric.cost{display:flex}.coverage{font-size:11px;text-align:right;color:var(--muted)}.chevron{font-size:23px;color:var(--muted);text-align:center}details[open] .chevron{transform:rotate(45deg)}.expanded{padding-bottom:24px}.model-meta{display:flex;flex-wrap:wrap;gap:10px 24px;font-size:12px;color:var(--muted);margin-bottom:18px}.tasks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.task{background:var(--panel);border:1px solid var(--edge);border-radius:7px;padding:18px}.task-title{display:flex;gap:8px;justify-content:space-between;align-items:baseline}h3{font-size:14px;font-weight:600;margin:0;text-transform:capitalize}.task-count{font:11px ui-monospace,monospace;color:var(--muted);white-space:nowrap}.task-result{font:12px ui-monospace,monospace;margin:14px 0 10px}.repeat-strip{height:3px;display:flex;gap:3px}.repeat-strip span{min-width:0}.pass{background:var(--pass)}.fail{background:var(--fail)}.error{background:#aab3c0}dl{display:grid;grid-template-columns:1fr 1fr;gap:16px 12px;margin:18px 0 0}dt{font-size:11px;color:var(--muted);margin-bottom:5px}dd{font:11px ui-monospace,monospace;margin:0;line-height:1.5;overflow-wrap:anywhere}.footnote{font-size:12px;color:var(--muted);line-height:1.7;margin:18px 0}.method{border-top:1px solid var(--edge);margin-top:40px;padding-top:26px}.method h2{font-size:19px}.method p{font-size:13px;line-height:1.8;color:var(--muted);max-width:850px}.versions{font:11px ui-monospace,monospace;line-height:1.8;overflow-wrap:anywhere;color:var(--muted)}.grader{display:flex;flex-wrap:wrap;gap:10px 24px;font-size:12px;color:var(--muted)}
-@media(max-width:700px){main{padding:32px 18px}.metrics{flex-wrap:wrap;gap:0}.metrics button{padding:9px 10px}summary{grid-template-columns:1fr 20px;gap:12px;padding:20px 0}.model-name{grid-column:1}.chevron{grid-column:2;grid-row:1}.metric{grid-column:1;grid-row:2}.coverage{grid-column:1;grid-row:3;text-align:left}.tasks{grid-template-columns:1fr}.board-label>span:last-child{display:none}.model-id{display:none}.task{padding:16px}.model-meta{flex-direction:column;gap:7px}.metric strong{min-width:115px}}
-@media(prefers-color-scheme:light){:root{color-scheme:light;--bg:#f2e9e1;--panel:#f8f1ea;--edge:#9893a5;--text:#575279;--muted:#575279;--accent:#907aa9;--pass:#286983;--fail:#b4637a;--track:#fffff9}.eyebrow,.notice strong{color:var(--text)}}
- .task-group{margin-top:20px;padding-top:12px;border-top:1px solid var(--edge)}.task-group h4{margin:0 0 12px;font-size:13px;font-weight:600;color:var(--text)}
- .board-label{display:grid;grid-template-columns:minmax(220px,1fr) minmax(240px,1fr) 110px 20px;gap:18px}#metric-label{text-align:right}.board-label .runs-label{text-align:right}@media(max-width:700px){.board-label{display:none}}
-  .metrics{gap:4px;align-items:flex-end}.metrics button{border:0;border-radius:0;background:transparent;box-shadow:none;color:var(--text);white-space:nowrap;transition:color 200ms ease-out,background-color 200ms ease-out,box-shadow 200ms ease-out}.metrics button:hover{background:color-mix(in oklab,var(--text) 10%,var(--bg))}.metrics button[aria-pressed=true]{color:var(--text);background:transparent;box-shadow:inset 0 -2px var(--accent)}.metrics button:focus-visible{color:var(--text);outline:none;background:transparent;box-shadow:inset 0 -3px var(--accent)}summary:focus-visible{outline:1px solid var(--accent);outline-offset:1px;border-radius:8px}@media(prefers-color-scheme:light){.metrics button{color:var(--text)}}@media(forced-colors:active){.metrics button:focus-visible{outline:2px solid Highlight;outline-offset:-2px}}
- .grading-summary{margin-top:40px;padding-top:24px;border-top:1px solid var(--edge)}.grading-summary h2{margin:0 0 20px;font-size:16px}.grading-summary .grader{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:24px;margin:0;padding:0;border:0}.grading-summary dt{font-size:12px;color:var(--muted)}.grading-summary dd{margin:8px 0 0;font-size:16px}.grading-summary .footnote{margin-top:24px}
- .tasks{gap:20px}.task{padding:24px;line-height:1.5}.task h3{font-size:18px;line-height:1.4}.task-group{margin-top:24px;padding-top:20px}.task-group h4{font-size:16px;margin-bottom:16px}.task dl{gap:20px 24px}.task dt{font-size:14px;line-height:1.5}.task dd{margin-top:6px;font-family:inherit;font-size:18px;line-height:1.4;letter-spacing:normal;font-variant-numeric:tabular-nums;color:var(--text)}.task .mean dd{font-size:28px;font-weight:600}.task-result{font-size:14px;line-height:1.5}.task-count{font-size:13px}@media(max-width:700px){.task{padding:20px}.task dl{gap:18px}.task dd{font-size:17px}}
- :root{--warning:#f6c177}.notice-warning{border-left-color:var(--warning);background:color-mix(in oklab,var(--warning) 10%,var(--bg))}.notice-warning strong{color:var(--warning)}@media(prefers-color-scheme:light){:root{--warning:#ea9d34}.notice-warning strong{color:var(--text)}}
- .task-group{border:0;padding-top:0;margin-top:28px}.task dl{margin:0}.task-group:first-of-type{margin-top:20px}
- .metrics,.model,.task,.grading-summary{border:0}
- .model>summary{border-bottom:1px solid var(--edge)}
- .metrics button{transition:background-color 200ms ease-out,box-shadow 200ms ease-out}
- :root{--font-label:0.875rem;--font-body:1rem;--font-title:1.5rem;font-size:100%}h1{font-size:var(--font-title);line-height:1.3}.eyebrow,.run-meta,.board-label,.model-name>span,.coverage,.model-meta,.task-count,.task dt,.grading-summary dt,.footnote,.metrics button,.notice{font-family:inherit;font-size:var(--font-label);line-height:1.5;letter-spacing:normal}.model-name strong,.metric strong,.task h3,.task dd,.task .mean dd,.task-result,.grading-summary h2,.grading-summary dd{font-family:inherit;font-size:var(--font-body);line-height:1.5;letter-spacing:normal;font-variant-numeric:tabular-nums}
- :root{font-family:"Atkinson Hyperlegible Next",system-ui,"Segoe UI",sans-serif}
- .task .result-group dd:not(.mean dd){font-size:var(--font-label);font-weight:400}.result-group{margin-top:20px}
- .result-complete{--result-colour:var(--color-success,#31748f)}.result-partial{--result-colour:var(--color-warning,#f6c177)}.result-no-credit{--result-colour:var(--color-error,#eb6f92)}
- .result-unscored{--result-colour:var(--muted)}.task-result{margin:8px 0 16px}
-  .result-harness-error{--result-colour:#ff8000}.result-execution-error{--result-colour:var(--color-rose,#ebbcba)}@media(prefers-color-scheme:light){.result-execution-error{--result-colour:var(--color-rose,#d7827e)}}
- .result-badge{display:inline-flex;align-items:center;gap:6px;height:auto;min-height:0;padding:2px 8px;border:0;border-radius:999rem;background:color-mix(in oklab,var(--result-colour) 12%,var(--panel));color:var(--text);font-family:inherit;font-size:var(--font-label);font-weight:400;line-height:1.5;white-space:nowrap}.result-badge::before{content:"";width:6px;height:6px;flex:none;border-radius:50%;background:var(--result-colour)}
- .run-results thead th,.grading-output thead th{color:var(--text)}
-  .grade-breakdown{flex-direction:column;align-items:stretch;gap:8px;min-width:0;width:100%;font-size:var(--font-label)}.grade-overview{display:flex;align-items:center;gap:18px}.grade-distribution{display:flex;flex:1;min-width:0;flex-direction:column;gap:8px}.grader-mean{flex:0 0 108px;font-size:var(--font-body);font-weight:400;color:var(--text);text-align:right;line-height:1.5}.grade-strip{display:flex;gap:3px;width:100%;height:7px;overflow:hidden;border-radius:3px}.grade-strip>span{min-width:0;background:var(--result-colour)}.grade-counts{display:flex;flex-wrap:wrap;gap:6px 12px;justify-content:flex-start}.grade-counts .result-badge{padding:1px 6px;white-space:normal;min-width:0}@media(min-width:701px){summary,.board-label{grid-template-columns:clamp(220px,25vw,320px) minmax(0,1fr) 110px 20px}}@media(max-width:700px){.grader-mean{flex-basis:115px}}
- @media(prefers-color-scheme:light){.result-complete{--result-colour:var(--color-success,#286983)}.result-partial{--result-colour:var(--color-warning,#ea9d34)}.result-no-credit{--result-colour:var(--color-error,#b4637a)}}
-  .chevron{transform:none!important;display:flex;align-items:center;justify-content:center}.chevron::before,.chevron::after{content:none!important}.model[open]>summary .chevron svg{transform:rotate(180deg)}.model>summary{border:0}.model{border-bottom:1px solid var(--edge)}.run-results{width:100%;margin-top:20px;font-size:var(--font-label)}.run-results th,.run-results td{padding:8px 0;text-align:left;font-family:inherit;font-size:var(--font-label);white-space:normal}.notice{display:flex;align-items:center;gap:12px}
- .task h3{text-transform:none}
- .task-title{background:var(--color-base-300,var(--track));margin:-24px -24px 0;padding:16px 24px;border-radius:8px 8px 0 0;align-items:center}.task-title h3{font-weight:400;margin:0;color:var(--text)}@media(max-width:700px){.task-title{margin:-20px -20px 0;padding:14px 20px}}
-  .task-title{height:auto;white-space:normal}.task dl{display:grid;grid-template-columns:1fr;gap:12px}.task dl>div{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:baseline}.task dd{margin:0;text-align:right;overflow-wrap:anywhere}
-  .task .task-group{margin:0;padding:14px 0;border-top:1px solid color-mix(in oklab,var(--text) 18%,transparent)}.task .result-group{border-top:0}.task .task-group:last-child{padding-bottom:0}.task .task-result{margin:8px 0 0}.task dl{gap:8px}.task dd{font-size:var(--font-label)}.task .grade-strip{background:var(--track)}
-  main{max-width:none}
- .metrics{display:grid;grid-template-columns:repeat(4,max-content);gap:4px;background:transparent;padding:4px;border-radius:8px}.metrics button{display:flex;align-items:center;gap:8px;min-width:0}.metrics svg{flex-shrink:0}.model .metric{display:none}body[data-metric=result] .model .metric.result,body[data-metric=duration] .model .metric.duration,body[data-metric=p95] .model .metric.p95,body[data-metric=cost] .model .metric.cost{display:flex}@media(max-width:700px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.metrics button{justify-content:center}}
- .grader-metrics{display:grid;grid-template-columns:repeat(3,max-content);gap:14px 40px;margin:20px 0 28px}.grader-metrics>div{display:flex;align-items:baseline;gap:10px}.grader-metrics dt,.grader-metrics dd{margin:0;font-size:var(--font-label);line-height:1.5}.grader-metrics dt{color:var(--muted)}.grader-metrics dd{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}@media(max-width:900px){.grader-metrics{grid-template-columns:repeat(2,max-content);column-gap:28px}}@media(max-width:600px){.grader-metrics{grid-template-columns:max-content;gap:12px}}
- .grading-output{overflow-x:auto;max-width:100%;margin-top:24px;padding-bottom:2px}.grading-output table{min-width:900px;width:100%;font-size:var(--font-label)}.grading-output caption{text-align:left;font-size:var(--font-body);font-weight:600;padding:0 16px 14px}.grading-output table,.run-results{border-collapse:separate;border-spacing:0;border-radius:8px;overflow:hidden}.grading-output th,.grading-output td,.run-results th,.run-results td{padding:12px 16px;vertical-align:middle;line-height:1.5;border-bottom:1px solid color-mix(in oklab,var(--text) 12%,transparent)}.grading-output thead th,.run-results thead th{background:var(--panel);font-weight:600;white-space:nowrap}.grading-output tbody th,.run-results tbody th{font-weight:400}.grading-output tbody tr:nth-child(even),.run-results tbody tr:nth-child(even){background:color-mix(in oklab,var(--panel) 55%,var(--bg))}.grading-output tbody tr:hover,.run-results tbody tr:hover{background:color-mix(in oklab,var(--accent) 8%,var(--bg))}.grading-output tbody tr:last-child>*,.run-results tbody tr:last-child>*{border-bottom:0}.grading-output th,.grading-output td{text-align:left}.grading-output td:nth-child(2){width:40%;min-width:260px;white-space:normal}.grading-output th:nth-child(n+4),.grading-output td:nth-child(n+4){text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.grading-output tbody th{white-space:nowrap}.run-results th:last-child,.run-results td:last-child{text-align:right}
- ${componentStyles ? ':root{--bg:var(--color-base-100);--panel:var(--color-base-200);--edge:var(--color-neutral);--text:var(--color-base-content);--muted:var(--color-subtle);--accent:var(--color-primary);--warning:var(--color-warning);--pass:var(--color-success);--fail:var(--color-error);--track:var(--color-base-300)}@media(prefers-color-scheme:light){:root{--muted:var(--color-base-content)}}' : ''}
-  .model{border-bottom-color:transparent}.task .task-group{border-top-color:transparent}.grading-output th,.grading-output td,.run-results th,.run-results td{border-bottom-color:transparent}
-  main{padding:28px 20px}.notice{margin:16px 0 12px;padding:10px 12px}.run-meta{margin-bottom:14px;gap:6px 16px}.board-label{margin:16px 0 4px}.model>summary{padding:12px 0}.expanded{padding-bottom:16px}.model-meta{gap:6px 16px;margin-bottom:12px}
-  .tasks{grid-template-columns:repeat(auto-fit,minmax(min(100%,32rem),1fr));gap:0.75rem}.task{min-width:0;padding:1rem}.task-title{margin:-1rem -1rem 0;padding:0.75rem 1rem;gap:1rem}.task .task-group{padding:0.5rem 0}.task .task-group:last-child{padding-bottom:0}.task dl{gap:0.25rem}.task dl>div{gap:0.75rem}.task .task-result{margin:0.5rem 0 0}
-  .grader-metrics{gap:8px 24px;margin:12px 0 16px}.grading-output{margin-top:16px}.grading-output th,.grading-output td{padding:8px 12px}
-  .model-name>.model-id{display:block}
-  .metrics{grid-template-columns:repeat(3,max-content)}body[data-metric=time] .model .metric.time{display:flex}.result-mean,.time-total{display:flex;flex:0 0 108px;flex-direction:column;align-items:flex-end;font-size:var(--font-label);line-height:1.5}.result-mean>span,.time-total>span{color:var(--muted)}
-  .time-distribution{display:flex;flex:1;min-width:0;flex-direction:column;gap:8px}.time-track{display:flex;width:100%;height:7px;overflow:hidden;border-radius:3px;background:var(--track)}.time-track>span{flex:none;height:100%;background:var(--time-colour)}.time-median{--time-colour:var(--color-success,#31748f)}.time-p95{--time-colour:var(--color-warning,#f6c177)}.time-tail{--time-colour:var(--color-error,#eb6f92)}@media(prefers-color-scheme:light){.time-median{--time-colour:var(--color-success,#286983)}}
-  .time-values{display:flex;flex-wrap:wrap;gap:4px 12px}.time-value{display:inline-flex;align-items:center;gap:0.375rem;height:auto;min-height:0;padding:0.125rem 0.5rem;border:0;border-radius:999rem;background:color-mix(in oklab,var(--time-colour) 12%,var(--panel));color:var(--text);font-size:var(--font-label);font-weight:400;line-height:1.5;white-space:nowrap}.time-value::before{content:"";width:6px;height:6px;flex:none;border-radius:50%;background:var(--time-colour)}.time-values strong{min-width:0;font-size:var(--font-label);font-weight:400}@media(max-width:700px){.metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.time-values{gap:4px 8px}}
-  .metric-heading{display:flex;gap:18px;min-width:0}#metric-label{flex:1;min-width:0}.mean-heading,.total-heading{display:none;flex:0 0 108px;text-align:right}body[data-metric=result] .mean-heading,body[data-metric=time] .total-heading{display:block}body[data-metric=result] #metric-label,body[data-metric=time] #metric-label{text-align:left}
-  .grader-row{border-top:1px solid color-mix(in oklab,var(--text) 14%,transparent);margin-top:0.5rem;padding-top:0.25rem}
-   .result-mean,.grader-mean,.mean-heading{flex-basis:8rem}
-   .grade-overview{width:100%}
-   .model>summary{align-items:start}.model>summary>.metric.result,.model>summary>.metric.time,.grade-overview{align-items:flex-start}.model>summary .grade-strip,.model>summary .time-track{margin-block:calc((1.5rem - 7px)/2)}
-   .board-label{align-items:end;text-transform:none}.metric-heading{align-items:flex-end;flex-wrap:wrap;row-gap:0.5rem}.metric-selector{display:flex;flex:1 1 14rem;min-width:0;flex-wrap:wrap;align-items:center;gap:0.25rem 0.5rem}#metric-label{flex:none;text-align:left;white-space:nowrap}.mean-heading,.total-heading,.cost-heading{margin-left:auto}.cost-heading{display:none;flex:0 0 108px;text-align:right}body[data-metric=cost] .cost-heading{display:block}
-   .metric-selector .metrics{display:flex;flex-wrap:wrap;align-items:center;gap:0.25rem 0.5rem;padding:0;border:0;border-radius:0;background:none}.metric-choice{display:inline-flex;align-items:center;gap:0.5rem;min-width:0}.metric-separator{color:var(--edge)}
-   .metric-selector .metrics button{display:inline-flex;align-items:center;justify-content:flex-start;gap:0.375rem;padding:0.125rem 0;border:0;border-radius:0;background:none;box-shadow:none;color:var(--muted);font:inherit;text-transform:none;transition:color 150ms ease-out}.metric-selector .metrics button[aria-pressed=true]{color:var(--accent);background:none;box-shadow:none}.metric-selector .metrics button:not([aria-pressed=true]):hover{color:var(--text);background:none}.metric-selector .metrics button:focus-visible{outline:2px solid var(--accent);outline-offset:3px;background:none;box-shadow:none}
-   @media(max-width:700px){.board-label{display:grid;grid-template-columns:minmax(0,1fr) 20px;gap:0.5rem 0.75rem}.board-label>span:first-child{grid-column:1;grid-row:1}.board-label>.metric-heading{grid-column:1;grid-row:2;align-items:flex-end}.board-label>.runs-label{display:none}.board-label .mean-heading,.board-label .total-heading{flex-shrink:0}}
-   .metric-selector .metrics button[aria-pressed=true]{color:var(--text)}
-   @media(prefers-color-scheme:light){.metric-selector .metrics button{color:color-mix(in oklab,var(--text) 90%,var(--bg))}}
-   :root{--column-gap:0.75rem;--grading-question-min-width:25.25rem;--grading-run-width:5.5rem;--grading-number-width:10.5rem}
-   .model>summary,.board-label,.metric,.metric-heading,.grade-overview,.task dl>div{column-gap:var(--column-gap)}.tasks{column-gap:var(--column-gap)}.run-meta,.model-meta,.grader-metrics,.grader-metrics>div,.grade-counts,.time-values{column-gap:var(--column-gap)}.grading-output th,.grading-output td,.run-results th,.run-results td{padding-inline:var(--column-gap)}
-   .grading-output .grading-model-table{table-layout:fixed;width:100%;min-width:calc(var(--grading-question-min-width) + var(--grading-run-count)*var(--grading-run-width) + 4*var(--grading-number-width))}.grading-model-table .grading-run-column{width:var(--grading-run-width)}.grading-model-table .grading-number-column{width:var(--grading-number-width)}.grading-output .grading-model-table tbody th{width:auto;min-width:0;white-space:normal}.grading-output .grading-model-table td:nth-child(2){width:auto;min-width:0}.grading-output .grading-model-table th:nth-child(n+2),.grading-output .grading-model-table td:nth-child(n+2){text-align:right;white-space:nowrap}.grading-output .grading-model-table .grading-run{text-align:center;white-space:normal}.grading-run .result-badge{max-width:100%;white-space:normal;overflow-wrap:anywhere}
-   .grader-summary{display:grid;grid-template-columns:clamp(220px,25vw,320px) minmax(0,1fr) 110px 20px;gap:var(--column-gap);align-items:start;padding:12px 0}.grader-summary>.metric.result,.grader-summary>.metric.time{align-items:flex-start}.grader-summary .grade-strip,.grader-summary .time-track{margin-block:calc((1.5rem - 7px)/2)}@media(max-width:700px){.grader-summary{grid-template-columns:minmax(0,1fr) 20px}}
-   .model-heading{display:flex;align-items:flex-start;gap:var(--column-gap);min-width:0}.model-heading .chevron{flex:none;padding-top:0.25rem}.model-heading .chevron svg{width:1rem;height:1rem}
-   .grading-output .grading-model-table .grading-questions th,.grading-output .grading-model-table .grading-model-total th{padding-inline-start:calc(1rem + 2*var(--column-gap))}
-   .grading-table-toggle{display:flex;align-items:center;justify-content:flex-start;gap:var(--column-gap);width:100%;padding:0;border:0;background:none;color:var(--text);font:inherit;text-align:left;font-weight:inherit}.grading-model-header{cursor:pointer}.grading-table-caret{display:flex;flex:none;color:var(--muted)}.grading-table-caret svg{width:1rem;height:1rem}.grading-table-toggle[aria-expanded=true] .grading-table-caret svg{transform:rotate(180deg)}.grading-model-table tbody[hidden]{display:none}.grading-output .grading-model-table .grading-model-header th{background:var(--track);color:var(--text);font-weight:600;white-space:nowrap}.grading-output .grading-model-table .grading-model-header th:first-child{border-radius:8px 0 0 8px}.grading-output .grading-model-table .grading-model-header th:last-child{border-radius:0 8px 8px 0}.grading-model-table .grading-model-total{background:transparent;color:var(--text)}.grading-model-table .grading-model-total>tr>*{color:var(--text);font-weight:400}.grading-output .grading-model-table th,.grading-output .grading-model-table td{border:0}.grading-output .grading-model-table tbody tr{background:transparent}.grading-score-total{white-space:nowrap}
-   .grading-status-not-started{--result-colour:var(--muted)}.grading-status-in-progress{--result-colour:var(--warning)}.grading-status-done{--result-colour:var(--pass)}.grading-status-needs-attention{--result-colour:#ff8000}.grading-status-badge{padding:1px 6px;white-space:nowrap;background:var(--panel);color:var(--muted)}
-   .grader-metrics-scroll{overflow-x:auto;max-width:100%;margin:12px 0 16px;padding-bottom:2px}.grader-metrics{display:flex;flex-wrap:nowrap;align-items:baseline;gap:var(--column-gap);margin:0}.grader-metrics>div{flex:none;white-space:nowrap}
-  </style></head><body data-metric="result"><main><header><div class="eyebrow">OpenTelemetry Desktop Viewer</div><h1>Eval results</h1></header>
-<div class="notice alert${data.provisional || data.synthetic ? ' alert-warning notice-warning' : ' alert-info'}">${data.provisional || data.synthetic ? warningIcon : ''}<strong>${data.synthetic ? 'Synthetic preview · not model results.' : data.provisional ? 'Provisional · awaiting human signoff.' : 'Recorded attempts signed off.'}</strong></div>
-<div class="run-meta"><span>Run ${escapeHtml(data.date)}</span><span>${data.models.length} models · ${data.tasksObserved}/${integer(data.tasksExpected)} tasks · ${integer(data.repetitions)} repetitions</span><span>${data.attempts}/${integer(data.expectedAttempts)} recorded attempts</span></div>
- <div class="board-label"><span>Model</span><div class="metric-heading"><div class="metric-selector"><div class="metrics" role="group" aria-label="Model metric"><span class="metric-choice"><button type="button" data-view="result" aria-pressed="true">${meanIcon}Results</button></span><span class="metric-choice"><span class="metric-separator" aria-hidden="true">|</span><button type="button" data-view="time" aria-pressed="false">${timeIcon}Time</button></span><span class="metric-choice"><span class="metric-separator" aria-hidden="true">|</span><button type="button" data-view="cost" aria-pressed="false">${costIcon}Cost (est., CAD)</button></span></div></div><span class="mean-heading">Mean</span><span class="total-heading">Total</span><span class="cost-heading">Cost/run</span></div><span class="runs-label">Runs</span><span aria-hidden="true"></span></div><section aria-label="Model results">${rows}${graderRows}</section>
-${data.pricing ? `<p class="footnote">API-price estimates · CAD · Exchange rate dated ${escapeHtml(data.pricing.fxDate)}.</p>` : ''}
-</main>
-  <script>const views=['result','time','cost'];document.addEventListener('click',event=>{if(!(event.target instanceof Element))return;const tableButton=event.target.closest('button[data-grading-table]')??event.target.closest('.grading-model-header')?.querySelector('button[data-grading-table]');if(tableButton){const body=document.getElementById(tableButton.dataset.gradingTable);if(body){const expanded=tableButton.getAttribute('aria-expanded')!=='true';tableButton.setAttribute('aria-expanded',String(expanded));body.hidden=!expanded;}return;}const button=event.target.closest('button[data-view]');if(!button||!views.includes(button.dataset.view))return;document.body.dataset.metric=button.dataset.view;for(const item of document.querySelectorAll('[data-view]'))item.setAttribute('aria-pressed',String(item===button));});</script></body></html>`.replace(/\n(?:[ \t]*\n)+/g, '\n')
+<html lang="en" data-theme="rose-pine">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark light">
+    <title>Viewer investigation evals</title>
+    <script src="${assets}/theme.js"></script>
+    <link rel="stylesheet" href="${assets}/viewer.css">
+    <link rel="stylesheet" href="${assets}/fonts.css">
+    <link rel="stylesheet" href="${assets}/results.css">
+    <script src="${assets}/interactions.js" defer></script>
+  </head>
+  <body data-metric="result">
+${templates.renderResults(data)}
+  </body>
+</html>
+`
 }

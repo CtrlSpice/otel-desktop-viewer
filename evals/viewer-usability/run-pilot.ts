@@ -5,7 +5,7 @@ import { readJson, record, runtimeRoot, saveJson, SUITE } from './runtime.ts'
 import { freezePricing } from './pricing.ts'
 import type { PricingSnapshot } from './pricing.ts'
 import { modelSummaries, modelSummaryTable } from './model-summary.ts'
-import { cleanEnvironment } from './clean-environment.ts'
+import { cleanEnvironment, observerEnvironment } from './clean-environment.ts'
 
 export function pilotSummary(
   value: unknown,
@@ -78,6 +78,7 @@ export async function runPilot(
   for (const key of ['HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME', 'TMPDIR', 'OPENCODE_CONFIG_DIR', 'OPENCODE_TEST_MANAGED_CONFIG_DIR']) fs.mkdirSync(clean[key], { recursive: true, mode: 0o700 })
   const env = {
     ...clean,
+    ...observerEnvironment(),
     OTEL_EVAL_RUN_DIR: root,
     OTEL_EVAL_ISOLATION_FILE: process.env.OTEL_EVAL_ISOLATION_FILE,
     PROMPTFOO_DISABLE_TELEMETRY: '1',

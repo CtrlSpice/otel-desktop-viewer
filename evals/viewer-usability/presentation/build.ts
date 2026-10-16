@@ -1,12 +1,14 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { createRequire } from 'node:module'
 import { aggregate } from './aggregate.ts'
 import { render } from './render.ts'
 import { showReview } from '../human-review.ts'
-import { viewerFonts } from './fonts.ts'
-import { viewerStyles } from './viewer-components.ts'
+import { presentationAssets } from './assets.ts'
+const require = createRequire(import.meta.url)
+const { format } = require('../../../desktopexporter/internal/frontend/node_modules/prettier') as typeof import('../../../desktopexporter/internal/frontend/node_modules/prettier/index.d.ts')
 
-export function build(run: string, output: string, reviewDirectories: string[] = []) {
+export async function build(run: string, output: string, reviewDirectories: string[] = []) {
   const read = (name: string, optional = false) => {
     const file = path.join(run, name)
     return optional && !fs.existsSync(file)
@@ -35,7 +37,25 @@ export function build(run: string, output: string, reviewDirectories: string[] =
     reviews
   )
   // Never serialize raw run data into the reader-facing artifact.
-  fs.writeFileSync(output, render(data, viewerFonts(), viewerStyles()), { flag: 'wx', mode: 0o600 })
+  const assets = presentationAssets()
+  const assetDirectory = output + '.assets'
+  const html = await format(render(data, './' + encodeURIComponent(path.basename(assetDirectory))), { parser: 'html' })
+  const file = fs.openSync(output, 'wx', 0o600)
+  let createdAssets = false
+  try {
+    fs.mkdirSync(assetDirectory, { mode: 0o700 })
+    createdAssets = true
+    for (const [name, asset] of assets) {
+      fs.writeFileSync(path.join(assetDirectory, name), asset.body, { flag: 'wx', mode: 0o600 })
+    }
+    fs.writeFileSync(file, html)
+  } catch (error) {
+    if (createdAssets) fs.rmSync(assetDirectory, { recursive: true })
+    fs.unlinkSync(output)
+    throw error
+  } finally {
+    fs.closeSync(file)
+  }
   return data
 }
 
@@ -48,7 +68,7 @@ if (
     throw new Error(
       'Usage: node presentation/build.ts RUN_DIRECTORY OUTPUT.html [REVIEW_DIRECTORY ...]'
     )
-  const data = build(run, output, reviews)
+  const data = await build(run, output, reviews)
   console.log(
     `Presentation generated: ${data.models.length} models, ${data.attempts} recorded attempts. ${data.provisional ? 'Signoff pending.' : 'Recorded attempts signed off.'}`
   )

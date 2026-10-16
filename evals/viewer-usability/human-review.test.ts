@@ -178,12 +178,12 @@ test('pure score validation enforces all approved task scales and accept semanti
     for (const score of [0, 0.5, 1]) {
       const decision = f.decision(score, 'correct')
       if (task.id === 'trace-export' && score === 1) assert.throws(() => validateDecision(decision, selected), /Export score 1/)
-      else if (score === 0.5 && ['customer-count', 'trace-export', 'request-count'].includes(task.id)) assert.throws(() => validateDecision(decision, selected), /not defined/)
+      else if (score === 0.5 && ['customer-count', 'trace-export', 'request-count', 'cpu-comparison'].includes(task.id)) assert.throws(() => validateDecision(decision, selected), /not defined/)
       else assert.equal(validateDecision(decision, selected).completion?.score, score)
     }
   }
   for (const score of [-1, 0.25, 0.75, 2, NaN]) assert.throws(() => validateDecision(f.decision(score, 'correct'), packet), /not defined/)
-  // The main-owned new task uses the same rubric-defined 0/0.5/1 mechanics.
+  // Historical rubrics retain their own scales, independent of the replacement.
   // These descriptions are explicitly synthetic, not a replacement task rubric.
   const cpuPacket = { ...packet, taskID: 'cpu-causation', approvedRubric: { criteria: [{
     id: 'synthetic-cpu-causation', scoring: { Fail: 'Synthetic wrong answer.', Partial: 'Synthetic partial answer.', Pass: 'Synthetic complete answer.' },

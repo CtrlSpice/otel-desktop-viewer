@@ -63,6 +63,8 @@ VIEWER FLAGS
       --open-browser         Open viewer after startup (default true)
       --db string            DuckDB file; omit for memory
       --db-max-size string   Maximum telemetry-store size (defaults to 512MB in memory or 2GB with --db; 0 disables pruning)
+      --feature-flags-file string
+                            Local flagd JSON file; opted-in features are experimental and unsupported
       --self-telemetry-endpoint string
                             Export the viewer's own traces and metrics to this OTLP/gRPC endpoint
 
@@ -240,9 +242,9 @@ func TestViewerStartupUsesParsedFlagsAndBrowserContext(t *testing.T) {
 		opened <- url
 		return nil
 	})
-	cmd.SetArgs([]string{"--host", "0.0.0.0", "--http", "14318", "--grpc", "14317", "--browser-port", "18000", "--db", "viewer.duckdb", "--db-max-size", "3GB", "--self-telemetry-endpoint", "http://localhost:4327"})
+	cmd.SetArgs([]string{"--host", "0.0.0.0", "--http", "14318", "--grpc", "14317", "--browser-port", "18000", "--db", "viewer.duckdb", "--db-max-size", "3GB", "--feature-flags-file", "local flags.json", "--self-telemetry-endpoint", "http://localhost:4327"})
 	require.NoError(t, cmd.Execute())
-	expected := configOptions{host: "0.0.0.0", httpPort: 14318, grpcPort: 14317, browserPort: 18000, db: "viewer.duckdb", dbMaxSize: "3GB", selfTelemetryEndpoint: "http://localhost:4327"}
+	expected := configOptions{host: "0.0.0.0", httpPort: 14318, grpcPort: 14317, browserPort: 18000, db: "viewer.duckdb", dbMaxSize: "3GB", featureFlagsFile: "local flags.json", selfTelemetryEndpoint: "http://localhost:4327"}
 	assert.Equal(t, collectorURIs(expected), received.ConfigProviderSettings.ResolverSettings.URIs)
 	assert.Equal(t, "env", received.ConfigProviderSettings.ResolverSettings.DefaultScheme)
 	select {

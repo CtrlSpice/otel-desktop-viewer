@@ -37,7 +37,7 @@
     "goal": "What CPU readings are available around checkout-019?"
   },
   {
-    "id": "cpu-causation",
-    "goal": "Can the available telemetry establish whether CPU saturation caused checkout-019’s slowdown?"
+    "id": "cpu-comparison",
+    "goal": "How do the recorded CPU readings around checkout-019 compare with the rest of the time window?"
   }
 ]

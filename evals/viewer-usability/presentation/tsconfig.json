@@ -1,4 +1,14 @@
 {
   "extends": "../tsconfig.json",
-  "include": ["*.ts"]
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "paths": {
+      "svelte": ["../../../desktopexporter/internal/frontend/node_modules/svelte"],
+      "svelte/*": ["../../../desktopexporter/internal/frontend/node_modules/svelte/*"],
+      "@hugeicons/core-free-icons": ["../../../desktopexporter/internal/frontend/node_modules/@hugeicons/core-free-icons"],
+      "@sveltejs/vite-plugin-svelte": ["../../../desktopexporter/internal/frontend/node_modules/@sveltejs/vite-plugin-svelte/types/index.d.ts"]
+    }
+  },
+  "include": ["*.ts", "components/**/*.ts", "components/**/*.svelte"]
 }

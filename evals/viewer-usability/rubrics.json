@@ -122,16 +122,15 @@
       }
     ]
   },
-  "cpu-causation": {
-    "reference": "The available system.cpu.utilization Gauge belongs to api-gateway, not payment-service or the external provider. Received CPU ratios are 0.14 at timestamp 1791360000000000000 and 0.16 at 1791360025000000000. Samples are 25000000000 ns apart. checkout-019 runs from 1791360004000000000 to 1791360005500000000, between those samples. Nearby low samples do not establish CPU conditions throughout the request or on other services. Trace timings locate extra elapsed time in payment/provider calls, but do not establish CPU causation. All timestamps are exact Unix nanoseconds; percentages are display conversions of received ratios.",
+  "cpu-comparison": {
+    "reference": "The system.cpu.utilization Gauge belongs to api-gateway. Recorded CPU ratios near checkout-019 are 0.14 at 08:00:00Z and 0.16 at 08:00:25Z (14% and 16%). checkout-019 runs from 08:00:04Z to 08:00:05.5Z. Recorded CPU ratios repeat between 0.10 and 0.18 throughout the time window. The nearby recorded readings are within that same range, with no unusual increase in those readings. No alternative cause, exhaustive sample list or exact caveat about sampling gaps or missing service coverage is required for this comparison. Assess additional unsupported claims separately from completion of the requested comparison.",
     "criteria": [
       {
-        "id": "evidence-limits",
-        "text": "Explains whether the available telemetry can establish CPU saturation as the cause of checkout-019’s slowdown.",
+        "id": "recorded-comparison",
+        "text": "Compares the nearby recorded CPU readings with the rest of the time window, supported by recorded values.",
         "scoring": {
-          "Fail": "Gives an unsupported conclusion about CPU causation, or no useful supported answer.",
-          "Partial": "Recognises that the available evidence is insufficient to establish CPU causation, but does not explain why.",
-          "Pass": "Explains that the available evidence cannot establish CPU causation because of its time and service coverage limits: gateway-only samples 25 seconds apart do not measure CPU throughout this short request or in its payment dependencies. Equivalent evidence-backed explanations are accepted."
+          "Fail": "Gives an incorrect comparison or no useful supported answer to the comparison question.",
+          "Pass": "Correctly compares the nearby recorded CPU readings with the rest of the window and supports the comparison with recorded values. Equivalent ratios or percentages, sensible rounding and equivalent wording are accepted. Listing every sample is not required."
         }
       }
     ]

@@ -52,7 +52,7 @@ fs.copyFileSync(
   fs.constants.COPYFILE_EXCL
 )
 stageDataset(source, path.join(root, 'fixture'))
-const ready = await prepare(root)
+const ready = await prepare(root, process.env.OTEL_EVAL_OBSERVER_GRPC)
 const stopViewer = ownedViewerStop(root, ready)
 let phase = 'verification'
 try {

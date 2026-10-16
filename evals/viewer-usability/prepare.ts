@@ -176,7 +176,7 @@ export async function query(endpoint: string, sql: string) {
   }
 }
 
-export async function prepare(root = runtimeRoot()) {
+export async function prepare(root = runtimeRoot(), selfTelemetryEndpoint?: string) {
   const manifest = datasetManifest(
     readManifest(path.join(root, 'fixture/manifest.json'))
   )
@@ -204,6 +204,7 @@ export async function prepare(root = runtimeRoot()) {
     path.join(runtime, 'fixture.duckdb'),
     '--db-max-size',
     '0',
+    ...(selfTelemetryEndpoint ? ['--self-telemetry-endpoint', selfTelemetryEndpoint] : []),
   ]
   const out = fs.openSync(path.join(runtime, 'viewer.stdout'), 'wx', 0o600)
   let err: number
@@ -347,7 +348,7 @@ export async function prepare(root = runtimeRoot()) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === import.meta.filename) {
-  const { process: ownedProcess, closed, ...connection } = await prepare()
+  const { process: ownedProcess, closed, ...connection } = await prepare(runtimeRoot(), process.env.OTEL_EVAL_OBSERVER_GRPC)
   ownedProcess.unref()
   console.log(JSON.stringify(connection))
 }

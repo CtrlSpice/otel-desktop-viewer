@@ -8,7 +8,7 @@
   "scripts": {
     "test": "node --test *.test.ts presentation/*.test.ts",
     "typecheck": "node ../../desktopexporter/internal/frontend/node_modules/typescript/bin/tsc -p tsconfig.json",
-    "typecheck:presentation": "node ../../desktopexporter/internal/frontend/node_modules/typescript/bin/tsc -p presentation/tsconfig.json",
+    "typecheck:presentation": "node ../../desktopexporter/internal/frontend/node_modules/svelte-check/bin/svelte-check --tsconfig presentation/tsconfig.json",
     "stage": "node stage-dataset.ts",
     "prepare": "node prepare.ts",
     "verify": "node verify.ts",
@@ -19,6 +19,7 @@
     "verify:integration": "node verify-integration.ts"
   },
   "dependencies": {
+    "@opentelemetry/api": "1.9.1",
     "promptfoo": "0.124.1",
     "tar": "7.5.22"
   }

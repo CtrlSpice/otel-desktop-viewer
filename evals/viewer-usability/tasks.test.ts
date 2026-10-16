@@ -20,7 +20,7 @@ test('exact approved questions contain no private grading values or answer forma
       'How did request latency change during this period?',
       'How many requests does the request counter report during this period?',
       'What CPU readings are available around checkout-019?',
-      'Can the available telemetry establish whether CPU saturation caused checkout-019’s slowdown?',
+      'How do the recorded CPU readings around checkout-019 compare with the rest of the time window?',
     ]
   )
   assert.deepEqual(
@@ -58,6 +58,6 @@ test('each question has one completion criterion and only approved tasks allow p
   }
   assert.deepEqual(partialTasks, [
     'checkout-failure', 'checkout-latency', 'failure-rate', 'trace-logs',
-    'sequence-types', 'request-latency', 'cpu-causation', 'cpu-evidence',
+    'sequence-types', 'request-latency', 'cpu-evidence',
   ])
 })

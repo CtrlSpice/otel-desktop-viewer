@@ -4,6 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { readLiveData } from './live-data.ts'
+import { serveResults } from './serve.ts'
 
 const model = 'synthetic/investigator', grader = 'synthetic/grader'
 const secret = 'PRIVATE_SENTINEL_DO_NOT_EMBED'
@@ -90,6 +91,23 @@ test('complete requires the full plan; duplicate attempts, incompatible sources 
   f.write('batch/run-a/run-manifest.json', f.plan)
   fs.writeFileSync(path.join(f.directory, 'batch/run-a/runs/grader-3/grading.json'), '{')
   assert.throws(() => readLiveData(f.selection), SyntaxError)
+})
+
+test('live recovery notes badge nonzero execution errors without changing recorded counts', async t => {
+  const f = fixture(t)
+  f.write('batch/run-a/runs/grader-1/grading.json', f.report(1, 1))
+  f.write('batch/recovery/run-manifest.json', { ...f.plan, repetitions: 1, retryOf: 'saved-attempt' })
+  f.write('batch/recovery/runs/grader-2/grading.json', { ...f.report(2, 1), status: 'execution-error', score: null })
+  const before = readLiveData(f.selection)
+  assert.equal(before.recoveries[0].models[0].result.error, 1)
+  const server = await serveResults(f.selection)
+  try {
+    const html = await (await fetch(server.url)).text()
+    assert.match(html, /Recovery · synthetic\/investigator · 0 complete, 0 partial, 0 incorrect, <span class="badge badge-soft result-badge result-execution-error">1 execution errors<\/span>/)
+    assert.deepEqual(readLiveData(f.selection), before)
+  } finally {
+    await server.close()
+  }
 })
 
 test('error markers cannot read evidence outside the selected run', t => {

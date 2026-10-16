@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { aggregate } from './aggregate.ts'
 import { render } from './render.ts'
 import { liveClient } from './live-client.ts'
+import { presentationAssets } from './assets.ts'
 
 const require = createRequire(import.meta.url)
 const { chromium } =
@@ -12,7 +13,7 @@ const { chromium } =
 const investigator = 'synthetic/investigator'
 const grader = 'synthetic/grader'
 const timestamp = '2026-10-15T12:00:00.000Z'
-function fixture(attempts: number) {
+function fixture(attempts: number, executionErrors = 0) {
   const rows = Array.from({ length: attempts }, (_, index) => ({
     provider: { label: investigator },
     vars: { task_id: 'checkout-failure' },
@@ -24,10 +25,11 @@ function fixture(attempts: number) {
     { models: [investigator], tasks: 1, repetitions: 3, synthetic: true },
     { results: { results: rows } }, undefined,
     {
-      sessions: attempts, executionErrors: 0,
+      sessions: attempts, executionErrors,
       models: [{ model: grader, attempts, totalSeconds: attempts, medianSeconds: 1, p95Seconds: 1, maxSeconds: 1 }],
-      judgments: rows.map(() => ({
-        taskID: 'checkout-failure', status: 'pass', score: 1,
+      judgments: rows.map((_, index) => ({
+        taskID: 'checkout-failure', status: index < executionErrors ? 'execution-error' : 'pass',
+        score: index < executionErrors ? null : 1,
         metadata: { model: grader, elapsedSeconds: 1 }, investigator: { model: investigator },
       })),
     }
@@ -47,8 +49,12 @@ let latest = { html: mainHtml(initial), state: 'running', updatedAt: timestamp }
 function send(data: unknown) {
   for (const client of clients) client.write(`event: snapshot\ndata: ${JSON.stringify(data)}\n\n`)
 }
+const assets = presentationAssets()
 const server = createServer((request, response) => {
-  if (request.url === '/events') {
+  const asset = assets.get(request.url?.replace(/^\/assets\//, '') ?? '')
+  if (request.url?.startsWith('/assets/') && asset) {
+    response.writeHead(200, { 'Content-Type': asset.type }).end(asset.body)
+  } else if (request.url === '/events') {
     response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' })
     response.write(`retry: 50\nevent: snapshot\ndata: ${JSON.stringify(latest)}\n\n`)
     clients.add(response)
@@ -56,6 +62,9 @@ const server = createServer((request, response) => {
   } else if (request.url === '/') {
     response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
     response.end(initial.replace('</body>', `<script>${liveClient}</script></body>`))
+  } else if (request.url === '/error-fixture') {
+    response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+    response.end(fixture(3, 2))
   } else {
     response.writeHead(404)
     response.end()
@@ -159,8 +168,30 @@ try {
   await page.waitForFunction(() => document.querySelector('#live-status')?.textContent?.includes('Stopped'))
   assert.equal(await page.locator('main script').count(), 0)
   assert.equal(await page.evaluate(() => 'liveScriptExecuted' in window), false)
+  // Check actual rendered error counts, not only synthetic CSS probes. This
+  // fixture includes one numeric grade and two unscored grading errors.
+  await page.goto(origin + '/error-fixture')
+  for (const colorScheme of ['dark', 'light'] as const) {
+    await page.emulateMedia({ colorScheme })
+    await page.waitForFunction(theme => document.documentElement.dataset.theme === theme,
+      colorScheme === 'dark' ? 'rose-pine' : 'rose-pine-dawn')
+    const summaryError = grading.locator('.grader-summary .result-execution-error')
+    const metricError = grading.locator('.grader-metrics dd .result-execution-error')
+    assert.equal(await summaryError.count(), 1)
+    assert.equal(await summaryError.textContent(), '2 execution errors')
+    assert.equal(await metricError.count(), 1)
+    assert.equal(await metricError.textContent(), '2')
+    for (const badge of [summaryError, metricError]) {
+      assert.ok(await badge.isVisible())
+      assert.equal(await badge.evaluate(element => getComputedStyle(element, '::before').backgroundColor), 'rgb(255, 128, 0)')
+    }
+    await grading.locator('.grading-table-toggle').click()
+    assert.equal(await grading.locator('.grading-questions .result-execution-error').count(), 2)
+    assert.equal((await grading.locator('.grading-model-total .grading-score-total').allTextContents()).join(','), '0/1,0/1,1/1')
+    await grading.locator('.grading-table-toggle').click()
+  }
   assert.deepEqual(errors, [])
-  console.log('Live results: metrics, disclosures, focus, page/table scroll, counts and invalid-update retention passed.')
+  console.log('Live results: metrics, disclosures, focus, page/table scroll, counts, invalid-update retention and rendered grader-error badges in OG/Dawn passed.')
 } finally {
   await browser?.close()
   for (const client of clients) client.end()

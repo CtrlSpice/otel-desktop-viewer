@@ -3,6 +3,7 @@ import path from 'node:path'
 import config from './config.ts'
 import { readJson, record, runtimeRoot, saveJson } from './runtime.ts'
 import { afterAll } from './native-lifecycle.ts'
+import { observerEnvironment } from './clean-environment.ts'
 
 const promptfooPackage = 'promptfoo'
 const { evaluate } = await import(promptfooPackage)
@@ -12,8 +13,13 @@ export async function runNativeEvaluation(suite = config, repeat = 3, resultName
     throw new Error('Result filename must stay inside the run directory')
   try {
     const root = runtimeRoot()
+    const observer = observerEnvironment()
+    Object.assign(process.env, observer)
+    if (observer.OTEL_EVAL_OBSERVER_HTTP && !process.env.PROMPTFOO_CONFIG_DIR)
+      process.env.PROMPTFOO_CONFIG_DIR = path.join(root, 'promptfoo-state')
     const stop = new AbortController()
-    const result = await evaluate(suite, {
+    const result = await evaluate(observer.OTEL_EVAL_OBSERVER_HTTP
+      ? { ...suite, writeLatestResults: true, tracing: { enabled: true } } : suite, {
       cache: false,
       writeLatestResults: false,
       share: false,

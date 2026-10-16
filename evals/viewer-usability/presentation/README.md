@@ -1,15 +1,16 @@
 # Compact results preview
 
-Generate a local, self-contained HTML page from a selected saved run. No server,
-model calls or network requests are required. Output must be outside tracked
-source; generation refuses to overwrite an existing file.
+Generate a local HTML page and its sibling `OUTPUT.html.assets/` directory from
+a selected saved run. Keep them together when moving the report. No server,
+model calls or external network requests are required. Output must be outside
+tracked source; generation refuses to overwrite existing output or assets.
 
 ```sh
 node presentation/build.ts /absolute/saved-run /absolute/local-preview.html
 node presentation/build.ts /absolute/saved-run /absolute/reviewed-preview.html /absolute/review-directory
 node --test presentation/aggregate.test.ts
 EVAL_PRESENTATION_RUN=/absolute/saved-run node --test presentation/aggregate.test.ts
-node ../../desktopexporter/internal/frontend/node_modules/typescript/bin/tsc -p presentation/tsconfig.json
+npm run typecheck:presentation
 node presentation/check-browser.ts /absolute/local-preview.html
 ```
 
@@ -32,9 +33,25 @@ Time bars share one scale across investigators and graders: zero to median uses
 the theme's success colour, median to P95 uses warning, and P95 to the slowest
 recorded attempt uses error. These segments are duration ranges, not proportions
 of attempts. Labels show median, P95 and slowest; total time is a separate value.
-The build embeds the viewer's existing Atkinson Hyperlegible Next font files into
-the HTML; no font dependency or external request is added.
+The build copies the viewer's existing Atkinson Hyperlegible Next font files into
+the report's asset directory. CSS and browser scripts are separate files, and the
+HTML is formatted for inspection.
 Browser checks cover both themes on desktop and mobile.
+
+### Template source
+
+- `components/Results.svelte` is the typed page template. Model rows, task cards,
+  grader rows, grading tables and metric displays are separate Svelte components.
+- `components/model.ts` shares the existing presentation types and pure formatting
+  and grading helpers. Svelte escapes displayed values; raw run records stay in
+  the evaluation evidence.
+- `results.css` contains the consolidated layout rules and uses the viewer's
+  theme tokens. `viewer-components.ts` reads the viewer's built stylesheet.
+- `theme.ts` and `interactions.ts` provide system-theme selection, metric selection
+  and table disclosure for the static export.
+- `render.ts` compiles the Svelte templates once per Node process with the viewer's
+  installed Vite/Svelte tooling, then renders static HTML. `build.ts` writes the
+  formatted page and assets. The export needs no Svelte runtime or hydration data.
 
 The page includes only allowlisted model/task labels, counts, coverage, timing,
 usage and estimated costs. Answers, full prompts, rubric text, grader explanations,
@@ -53,13 +70,12 @@ the nested run table. Task-card dividers keep their spacing without a visible li
 Errors stay labelled as errors, not zero scores. Errors with recorded
 `harnessBlocker: true` appear as **Harness
 error** in papaya orange (`#FF8000`) in both themes; they remain unscored and
-included in the error total. Other execution errors retain Rosé Pine rose.
+included in the error total. Execution errors also use papaya orange in both themes.
 Unrecorded artifact checks and human-review fields are omitted.
 Task cards show failed tool calls and execution errors in separate rows, including
 zero counts. Failed tool calls count unsuccessful tool operations even when the
 investigation recovers; execution errors count unscored attempts, including harness
-errors. Nonzero execution-error counts use Rosé Pine rose, or papaya when every
-recorded error in that count is a harness blocker. Missing tool-call counts
+errors. Nonzero execution-error counts use papaya orange. Missing tool-call counts
 remain unknown rather than becoming zero.
 Human review directories are read through `showReview`, which validates evidence
 and revision history. Original automated scores and human-signed scores stay

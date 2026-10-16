@@ -16,6 +16,7 @@ import (
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	"go.opentelemetry.io/otel/trace"
@@ -128,11 +129,20 @@ func (t *Telemetry) Ingest(ctx context.Context, signal string, items int) (conte
 // span and records duration; call it with the response's encoded byte count
 // (0 if the call failed before encoding) and the error, or nil.
 func (t *Telemetry) RPC(ctx context.Context, method string) (context.Context, func(int, error)) {
-	ctx, span := t.tracer.Start(ctx, "desktopexporter.rpc",
-		trace.WithAttributes(attribute.String("method", method)))
+	ctx, end := t.RPCRequest(ctx)
+	return ctx, func(responseBytes int, err error) { end(method, responseBytes, err) }
+}
+
+// RPCRequest includes decoding failures and accepts the method once decoded.
+func (t *Telemetry) RPCRequest(ctx context.Context) (context.Context, func(string, int, error)) {
+	ctx, span := t.tracer.Start(ctx, "desktopexporter.rpc", trace.WithSpanKind(trace.SpanKindServer))
 	start := time.Now()
 
-	return ctx, func(responseBytes int, err error) {
+	return ctx, func(method string, responseBytes int, err error) {
+		if method != "" {
+			span.SetName("viewer.rpc " + method)
+			span.SetAttributes(attribute.String("method", method))
+		}
 		methodAttr := metric.WithAttributes(attribute.String("method", method))
 		t.rpcDuration.Record(ctx, millis(start), methodAttr)
 		if responseBytes > 0 {
@@ -183,6 +193,7 @@ func millis(start time.Time) float64 {
 func endSpan(span trace.Span, err error) {
 	if err != nil {
 		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 	}
 	span.End()
 }

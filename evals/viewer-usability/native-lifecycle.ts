@@ -3,16 +3,19 @@ import path from 'node:path'
 import { spawn, execFile } from 'node:child_process'
 import { once } from 'node:events'
 import { promisify } from 'node:util'
-import { createCleanEnvironment, credentialEnvironment, SUPPORTED_OPENCODE_VERSION } from './clean-environment.ts'
+import { pathToFileURL } from 'node:url'
+import { context as otelContext } from '@opentelemetry/api'
+import { createCleanEnvironment, credentialEnvironment, observerEnvironment, SUPPORTED_OPENCODE_VERSION } from './clean-environment.ts'
 import { isolationSettings, sessionSummary } from './provider.ts'
 import { permissionDenial, viewerClientCall } from './permission-stop.ts'
 import { readJson, record, runtimeRoot } from './runtime.ts'
+import { AttemptTelemetry, withOpenCodeContext } from './eval-telemetry.ts'
 
 const attempts = new Map<string, NativeAttempt>()
 // Import the public package at runtime; its declarations require optional database drivers.
 const promptfooPackage = 'promptfoo'
 const { loadApiProvider } = await import(promptfooPackage)
-type CallApiContextParams = { vars?: Record<string, unknown>; prompt?: { config?: Record<string, unknown> } }
+type CallApiContextParams = { traceparent?: string; vars?: Record<string, unknown>; prompt?: { config?: Record<string, unknown> } }
 type ProviderResponse = { output?: unknown; error?: string; sessionId?: string; metadata?: Record<string, unknown>; tokenUsage?: unknown }
 type ApiProvider = { callApi(prompt: string, context?: CallApiContextParams, options?: { abortSignal: AbortSignal }): Promise<ProviderResponse> }
 type TestCase = { vars?: Record<string, unknown>; metadata?: Record<string, unknown>; provider?: unknown }
@@ -33,6 +36,9 @@ export class NativeAttempt {
   started: number
   timeoutMs: number
   diagnostics = () => {}
+  telemetry?: AttemptTelemetry
+  telemetryOutcome?: { error?: string; output?: unknown }
+  private closing?: Promise<void>
   private constructor(
     model: string,
     role: 'investigator' | 'grader',
@@ -191,6 +197,29 @@ export class NativeAttempt {
     }
     try {
       if (performance.now() - this.started >= this.timeoutMs) { timedOut = true; throw new Error('Attempt deadline exceeded before startup') }
+      const observer = observerEnvironment()
+      if (observer.OTEL_EVAL_OBSERVER_HTTP) {
+        this.telemetry = await new AttemptTelemetry({ root: runtimeRoot(), evidence: this.evidence,
+          model: this.model, role: this.role, task: String(this.task), parent: context?.traceparent,
+          redact: this.redact }).listen()
+        const configFile = path.join(this.isolated.env.OPENCODE_CONFIG_DIR, 'opencode.json')
+        const config = record(readJson(configFile))
+        fs.writeFileSync(configFile, JSON.stringify({ ...config,
+          plugin: [pathToFileURL(path.join(import.meta.dirname, 'native-telemetry-plugin.mjs')).href],
+          experimental: { ...record(config.experimental ?? {}), openTelemetry: true },
+        }), { mode: 0o600 })
+        Object.assign(this.isolated.env, {
+          // Project/global discovery is still isolated. Enable only the explicit
+          // trusted adapter; --pure would suppress it along with external plugins.
+          OPENCODE_PURE: '0',
+          OTEL_EXPORTER_OTLP_ENDPOINT: observer.OTEL_EVAL_OBSERVER_HTTP,
+          OTEL_BSP_SCHEDULE_DELAY: '100', OTEL_BSP_MAX_QUEUE_SIZE: '65536',
+          OTEL_EVAL_HOOK_ENDPOINT: this.telemetry.endpoint, OTEL_EVAL_HOOK_TOKEN: this.telemetry.token,
+          OTEL_RESOURCE_ATTRIBUTES: Object.entries({ 'eval.run.id': path.basename(runtimeRoot()),
+            'eval.attempt.id': path.basename(this.evidence), 'eval.task.id': String(this.task),
+            'eval.role': this.role }).map(([key, value]) => key + '=' + encodeURIComponent(value)).join(','),
+        })
+      }
       await this.start(workspace)
       if (timedOut || controller.signal.aborted) throw new Error('Attempt deadline exceeded during startup')
       const stream = await fetch(this.baseUrl + '/event?directory=' + encodeURIComponent(workspace), { signal: streamController.signal })
@@ -237,7 +266,11 @@ export class NativeAttempt {
       })().catch(async () => { if (!streamController.signal.aborted) { monitorError = true; await abortOwned().catch(() => {}) } })
       if (this.redact(prompt) !== prompt) throw new Error('Prompt contains selected credential material')
       this.save('prompt.txt', prompt)
-      const response = await this.native!.callApi(prompt, context, { abortSignal: controller.signal })
+      this.telemetry?.span.setAttribute('gen_ai.input', prompt)
+      const invoke = () => this.native!.callApi(prompt, context, { abortSignal: controller.signal })
+      const response = this.telemetry
+        ? await otelContext.with(this.telemetry.context, () => withOpenCodeContext(this.baseUrl, this.telemetry!.context, invoke))
+        : await invoke()
       if (monitorError) throw new Error('Native denial monitor failed')
       if (typeof response.sessionId === 'string') {
         if (sessionID && response.sessionId !== sessionID) throw new Error('Cross-session native response rejected')
@@ -270,30 +303,56 @@ export class NativeAttempt {
       const { output: ignored, commands, usage, ...metrics } = sessionSummary(stdout)
       const output = typeof response.output === 'string' ? this.redact(response.output) : ''
       if (workspace !== this.isolated.workspace) fs.cpSync(workspace, this.isolated.workspace, { recursive: true })
-      const metadata = { ...response.metadata, ...metrics, version: SUPPORTED_OPENCODE_VERSION, role: this.role, model: this.model, task: this.task, evidence: this.evidence, workspace, archivedWorkspace: this.isolated.workspace, isolationRoot: this.isolated.root, usage, elapsedSeconds: (performance.now() - this.started) / 1000, timedOut, timeoutMs: this.timeoutMs, exit: { code: response.error || incomplete ? 1 : 0, timedOut }, harnessBlocker: blocked }
+      const metadata = { ...response.metadata, ...metrics, ...(this.telemetry ? { telemetry: this.telemetry.identity() } : {}), version: SUPPORTED_OPENCODE_VERSION, role: this.role, model: this.model, task: this.task, evidence: this.evidence, workspace, archivedWorkspace: this.isolated.workspace, isolationRoot: this.isolated.root, usage, elapsedSeconds: (performance.now() - this.started) / 1000, timedOut, timeoutMs: this.timeoutMs, exit: { code: response.error || incomplete ? 1 : 0, timedOut }, harnessBlocker: blocked }
       this.save('commands.json', commands)
       this.save('answer.txt', output)
       this.save('metrics.json', metadata)
       const safeResponse = JSON.parse(this.redact(JSON.stringify(response)))
-      return { ...safeResponse, output, error: blocked ? 'Harness blocker: viewer permission denial' : timedOut ? 'OpenCode session timed out' : incomplete || !output ? 'Incomplete OpenCode session' : safeResponse.error, metadata, tokenUsage: { prompt: usage.input, completion: usage.output, cached: usage.cacheRead, total: usage.input + usage.output + usage.cacheRead } }
+      const error = blocked ? 'Harness blocker: viewer permission denial' : timedOut ? 'OpenCode session timed out' : incomplete || !output ? 'Incomplete OpenCode session' : safeResponse.error
+      this.telemetryOutcome = { error, output }
+      return { ...safeResponse, output, error, metadata, tokenUsage: { prompt: usage.input, completion: usage.output, cached: usage.cacheRead, total: usage.input + usage.output + usage.cacheRead } }
     } catch {
       const stdout = [...latestParts.values()].map(part => JSON.stringify({ type: part.type === 'tool' ? 'tool_use' : part.type === 'step-finish' ? 'step_finish' : part.type, sessionID, part })).join('\n') + '\n'
       const { output, commands, usage, ...metrics } = sessionSummary(stdout)
       const metadata = { ...metrics, usage, role: this.role, model: this.model, task: this.task, evidence: this.evidence, workspace, archivedWorkspace: this.isolated.workspace, isolationRoot: this.isolated.root, timedOut, timeoutMs: this.timeoutMs, elapsedSeconds: (performance.now() - this.started) / 1000, exit: { code: 1, timedOut }, harnessBlocker: blocked }
       for (const [name, value] of [['stdout.jsonl', stdout], ['commands.json', commands], ['answer.txt', output], ['metrics.json', metadata]] as const) if (!fs.existsSync(path.join(this.evidence, name))) this.save(name, value)
       if (!fs.existsSync(path.join(this.evidence, 'failure.json'))) this.save('failure.json', { ...metadata, error: 'Native session or evidence collection failed' })
-      return { error: blocked ? 'Harness blocker: viewer permission denial' : timedOut ? 'OpenCode session timed out' : 'Native session or evidence collection failed; see ' + this.evidence, metadata }
+      this.telemetryOutcome = { error: blocked ? 'Harness blocker: viewer permission denial' : timedOut ? 'OpenCode session timed out' : 'Native session or evidence collection failed; see ' + this.evidence }
+      return { ...this.telemetryOutcome, metadata }
     } finally {
       clearTimeout(timer)
       if (escalation) clearTimeout(escalation)
       streamController.abort()
       await monitor?.catch(() => {})
       this.diagnostics()
+      // Keep the attempt registered until afterEach sends any run-stop IPC.
+      if (this.telemetry) await this.close(true)
     }
   }
-  async close() {
-    attempts.delete(this.evidence)
-    if (this.child) await stopOwned(this.child)
+  async close(retainForHook = false) {
+    if (!retainForHook) attempts.delete(this.evidence)
+    return this.closing ??= (async () => {
+      try {
+        if (this.telemetry && this.baseUrl && this.child?.exitCode === null && this.child.signalCode === null) {
+          // Disposing the instance drains awaited plugin hooks and closes native
+          // instance scopes before signalling the process. Keep the observer up.
+          const response = await fetch(this.baseUrl + '/global/dispose', { method: 'POST', signal: AbortSignal.timeout(10000) })
+          if (!response.ok) throw new Error('Native telemetry dispose failed')
+          // Pinned native tracing has no public forceFlush API. Allow its 100ms
+          // batch timer to run after disposal; native receipt is verified in the
+          // integration check, not inferred from this delay.
+          await new Promise(resolve => setTimeout(resolve, 250))
+        }
+      } catch (cause) {
+        if (this.telemetry) this.telemetry.failure = this.redact(cause instanceof Error ? cause.message : 'Native telemetry cleanup failed')
+        throw cause
+      } finally {
+        try { if (this.child) await stopOwned(this.child) }
+        finally { await this.telemetry?.finish(this.telemetryOutcome) }
+      }
+      if (this.telemetry && (!this.telemetry.ready || this.telemetry.failure))
+        throw new Error('Native telemetry hook failed; see ' + this.evidence)
+    })()
   }
 }
 

@@ -5,8 +5,7 @@ import { once } from 'node:events'
 import { readLiveData } from './live-data.ts'
 import type { LiveSelection, LiveState } from './live-data.ts'
 import { render, escapeHtml } from './render.ts'
-import { viewerFonts } from './fonts.ts'
-import { viewerStyles } from './viewer-components.ts'
+import { presentationAssets } from './assets.ts'
 import { liveClient } from './live-client.ts'
 
 type Snapshot = { html: string; state: LiveState; updatedAt: string }
@@ -14,11 +13,11 @@ const savedFiles = new Set(['run-manifest.json', 'pricing-snapshot.json', 'pilot
   'execution-error.json', 'harness-blocker.json', 'launch.json', 'run-completion.json', 'run-failure.json',
   'pilot-completion.json', 'overnight-completion.json', 'overnight-failure.json', 'completed-runs.json'])
 
-export async function serveResults(selection: LiveSelection, assets?: { fonts: string; styles: string }) {
+export async function serveResults(selection: LiveSelection) {
   const roots = [...new Set(selection.runs.map(root => fs.realpathSync(root)))]
   if (roots.length === 0) throw new Error('Select at least one saved run directory')
   const manifest = fs.realpathSync(selection.manifest)
-  const fonts = assets?.fonts ?? viewerFonts(), styles = assets?.styles ?? viewerStyles()
+  const assets = presentationAssets()
   const clients = new Set<http.ServerResponse>()
   let snapshot: Snapshot
   let document = ''
@@ -26,8 +25,8 @@ export async function serveResults(selection: LiveSelection, assets?: { fonts: s
     try {
       const { data, recoveries, state } = readLiveData({ manifest, runs: roots })
       const notes = recoveries.flatMap(recovery => recovery.models.map(model =>
-        `<p class="footnote">Recovery · ${escapeHtml(model.model)} · ${model.result.displayPass} complete, ${model.result.displayPartial} partial, ${model.result.displayFail} incorrect, ${model.result.error} execution errors. Original attempts remain in the table.</p>`)).join('')
-      const rendered = render(data, fonts, styles).replace('</header>', '</header><p class="footnote" id="live-status" role="status"></p>' + notes)
+        `<p class="footnote">Recovery · ${escapeHtml(model.model)} · ${model.result.displayPass} complete, ${model.result.displayPartial} partial, ${model.result.displayFail} incorrect, ${model.result.error ? `<span class="badge badge-soft result-badge result-execution-error">${model.result.error} execution errors</span>` : '0 execution errors'}. Original attempts remain in the table.</p>`)).join('')
+      const rendered = render(data).replace('</header>', '</header><p class="footnote" id="live-status" role="status"></p>' + notes)
       const start = rendered.indexOf('<main>') + '<main>'.length
       const end = rendered.lastIndexOf('</main>')
       if (start < '<main>'.length || end < start) throw new Error('Missing results content')
@@ -35,7 +34,7 @@ export async function serveResults(selection: LiveSelection, assets?: { fonts: s
       if (snapshot?.html === html && snapshot.state === state) return
       snapshot = { html, state, updatedAt: new Date().toISOString() }
       document = rendered.replace('</body>', `<script>${liveClient}</script></body>`)
-    } catch (error) {
+    } catch {
       if (!snapshot) throw new Error('Cannot read the selected saved evaluation results')
       // A partially written report must not replace the last complete display.
       if (snapshot.state === 'unavailable') return
@@ -53,7 +52,10 @@ export async function serveResults(selection: LiveSelection, assets?: { fonts: s
     if (request.method !== 'GET') { response.writeHead(405, { Allow: 'GET' }).end(); return }
     response.setHeader('Cache-Control', 'no-store')
     response.setHeader('X-Content-Type-Options', 'nosniff')
-    if (request.url === '/') {
+    const asset = assets.get(request.url?.replace(/^\/assets\//, '') ?? '')
+    if (request.url?.startsWith('/assets/') && asset) {
+      response.writeHead(200, { 'Content-Type': asset.type }).end(asset.body)
+    } else if (request.url === '/') {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(document)
     } else if (request.url === '/events') {
       response.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', Connection: 'keep-alive' })
