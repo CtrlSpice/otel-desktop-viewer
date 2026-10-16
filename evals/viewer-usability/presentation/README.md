@@ -89,37 +89,60 @@ saved investigator cost divided by investigator sessions, shown only for complet
 estimates. Prices and exchange rates come from the run snapshot; these are not billed costs.
 Output token counts include reasoning; tool calls are not labelled as turns.
 
-The Grader summary shows grading work separately from investigator performance. Its table
+The Grader summary shows grading work separately from investigator performance.
+Its summary metrics stay on one line and scroll horizontally on narrow screens. Its table
 and three-colour bar retain original grades, with counts for `1/1`, `.5/1` and
 `0/1`; execution errors and unavailable outputs remain separate. The table
 shows original automated outputs, recorded time, tokens and estimated cost without
 grader explanations, evidence or rubric text. Human corrections do not rewrite
 the original grading output.
 
-Each investigator model has one flat grading table, with its model name in the
-first column header instead of a separate visible title, and one row per question
+Each grader has one flat grading table with a collapsible section per investigator
+model. Each section has its model name in the first column header, one row per question
 and a separate column for each run's original grade. Columns cover the planned
 repetition count and extend if more outputs were recorded; missing outputs show
 a dash, never zero. Score column numbers are display order within each question, not stored
-planned-repetition IDs. Tables scroll horizontally. Time and token columns sum
+planned-repetition IDs. The table scrolls horizontally. Time and token columns sum
 the recorded grading outputs for that question; missing values remain unknown.
 Cost sums known estimates and marks incomplete coverage as partial or unknown.
-There are no nested tables or expandable question rows. Each model table starts
+There are no nested tables or expandable question rows. Each model section starts
 with only its header and totals row visible; clicking anywhere in its header
 toggles the question rows. Its model-name button provides keyboard access.
 Carets sit to the left of model names in both investigator rows and table
 headers. The totals row remains visible and uses the normal body-row styling.
-Headers use the same soft theme background as task-card headers, without table
-separators.
+Headers use the same soft theme background as task-card headers, with rounded
+outer corners and carets in the header-label muted colour. Sections are
+continuous, with no gaps or divider lines between rows or model sections.
 Each score column sums recorded numeric points out of the manifest's
-total question count, for example `10.5/11`; it is not an average. Incomplete
-columns show grading coverage, errors stay unscored, and a column with no scored
-outputs shows a dash rather than zero. Time, cost and token totals cover recorded
+total question count, for example `10.5/11`; it is not an average. Each model
+header shows a status indicator immediately beside its name: a coloured dot and
+label in the header-label muted colour, on a soft pill using the active theme's
+panel background. There is no separate Status label:
+Not Started, In Progress,
+Completed or Needs Attention. Needs Attention uses papaya and marks recorded execution
+errors; a valid zero score is still a completed grade. There is no separate
+Status column or row, and no status badges on question or Total rows. Status describes saved
+grading progress, not live process health. Pending score totals display zero
+earned points without creating stored grades; individual missing grades remain
+unscored. Time, cost and token totals cover recorded
 grading work for that model.
 Partial-score labels display `.5/1`; stored scores remain numeric `0.5`.
-Grading tables share a column layout: the question column takes the remaining
+All sections share one column layout: the question column takes the remaining
 width, run columns have equal widths, and numeric columns have equal widths.
-The same run columns appear in every model table for a grader. Summary rows,
+The same run columns appear in every model section for a grader. Summary rows,
 task cards and tables use shared horizontal spacing; narrow tables scroll.
 
 This is a local presentation candidate, not a hosting/integration decision.
+
+### Experimental saved-results updates
+
+`serve.ts`, `live-data.ts` and `live-client.ts` preserve the in-progress local
+results-server prototype. It watches selected saved result files and updates the
+page while retaining the selected metric, expanded sections, focus and scroll.
+It binds to loopback and serves aggregate presentation fields only.
+
+This prototype is unfinished: recoveries appear separately rather than replacing
+the approved failed attempts in the main table, and its status comes from saved
+files rather than process health. User-cancellation markers are not yet handled.
+Use the static builder for reviewed results. The prototype is not started by the
+evaluation workflow.

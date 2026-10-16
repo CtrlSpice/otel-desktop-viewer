@@ -312,7 +312,7 @@ test('grader outputs expose only aggregate fields, not private judging data', ()
   assert.ok(html.includes('<section class="model grader-row"'))
   assert.ok(!html.includes('<details class="model grader-row"'))
   assert.ok(html.includes('aria-expanded="false"'))
-  assert.ok(html.includes('<tfoot><tr><th scope="row">Total</th>'))
+  assert.ok(html.includes('<tbody class="grading-model-total"><tr><th scope="row">Total</th>'))
   assert.ok(!html.includes(secret))
 })
 
@@ -342,6 +342,60 @@ test('grading score columns follow the plan, extend beyond three, and leave miss
   assert.ok(!html.includes('class="grading-run">Score 5'))
   assert.ok(html.includes('<td class="grading-run"><span aria-label="Not recorded">—</span></td>'))
   assert.ok(html.includes('<td class="grading-run"><span class="badge badge-soft result-badge result-partial">.5/1</span></td>'))
+})
+
+test('model-header status replaces grading coverage lines while pending zeros stay display-only', () => {
+  const data = aggregate({ models: ['other/cedar', 'other/pine'], tasks: 2, repetitions: 3 }, { results: { results: [] } }, undefined,
+    { models: [{ model: 'openai/gpt-6.1-sol', attempts: 1 }], judgments: [{ taskID: 'inspect', score: 1, status: 'pass', investigator: { model: 'other/cedar' }, metadata: metadata('openai/gpt-6.1-sol') }] })
+  const html = render(data)
+  assert.ok(!html.includes('class="grading-status"'))
+  assert.ok(!html.includes('class="grading-status-column"'))
+  assert.match(html, /<span class="grading-model-name">[^<]+<\/span><span class="badge badge-soft result-badge grading-status-badge grading-status-in-progress">In Progress<\/span><\/button><\/th><th scope="col" class="grading-run">Score 1<\/th>/)
+  assert.ok(html.includes('grading-status-in-progress">In Progress</span>'))
+  assert.ok(html.includes('grading-status-not-started">Not Started</span>'))
+  assert.ok(html.includes('<span class="grading-score-total">0/2</span>'))
+  assert.ok(!html.includes('grading-score-coverage'))
+  assert.equal([...html.matchAll(/<table class="table grading-model-table"/g)].length, 1)
+  assert.equal([...html.matchAll(/<colgroup>/g)].length, 1)
+  assert.deepEqual([...html.matchAll(/<tbody class="(grading-model-header|grading-questions|grading-model-total)"/g)].map(match => match[1]), [
+    'grading-model-header', 'grading-questions', 'grading-model-total',
+    'grading-model-header', 'grading-questions', 'grading-model-total',
+  ])
+  const controlled = [...html.matchAll(/data-grading-table="([^"]+)"/g)].map(match => match[1])
+  assert.equal(new Set(controlled).size, 2)
+  for (const id of controlled) assert.ok(html.includes(`<tbody class="grading-questions" id="${id}" hidden>`))
+  assert.equal(data.grader.outputs.length, 1)
+  assert.equal(data.grader.outputs[0].score, 1)
+})
+
+test('model status appears beside its name, not Total or completed question rows', () => {
+  const data = aggregate({ models: ['other/cedar'], tasks: 1, repetitions: 1 },
+    { results: { results: [row('other/cedar', 'inspect', false)] } }, undefined,
+    { models: [{ model: 'openai/gpt-6.1-sol', attempts: 1 }], judgments: [
+      { taskID: 'inspect', score: 0, status: 'fail', investigator: { model: 'other/cedar' }, metadata: metadata('openai/gpt-6.1-sol') },
+    ] })
+  const html = render(data)
+  const header = html.match(/<tbody class="grading-model-header">([\s\S]*?)<\/tbody>/)?.[1]
+  const questions = html.match(/<tbody class="grading-questions"[^>]*>([\s\S]*?)<\/tbody>/)?.[1]
+  const total = html.match(/<tbody class="grading-model-total">([\s\S]*?)<\/tbody>/)?.[1]
+  assert.ok(header && questions && total)
+  assert.ok(!questions.includes('grading-status'))
+  assert.ok(questions.includes('result-no-credit">0/1</span>'))
+  assert.ok(!questions.includes('Completed'))
+  assert.ok(header.includes('grading-status-done">Completed</span>'))
+  assert.ok(!total.includes('Completed'))
+  assert.ok(!total.includes('grading-status'))
+  assert.ok(total.includes('grading-score-total">0/1</span>'))
+  assert.equal(data.grader.outputs[0].score, 0)
+})
+
+test('a grading execution error needs attention even when the investigator succeeded', () => {
+  const data = aggregate({ models: ['other/cedar'], tasks: 1, repetitions: 1 },
+    { results: { results: [row('other/cedar', 'inspect', true)] } }, undefined,
+    { models: [{ model: 'openai/gpt-6.1-sol', attempts: 1 }], judgments: [
+      { taskID: 'inspect', status: 'execution-error', investigator: { model: 'other/cedar' }, metadata: metadata('openai/gpt-6.1-sol') },
+    ] })
+  assert.ok(render(data).includes('grading-status-needs-attention">Needs Attention</span>'))
 })
 
 test('single-run task bars show the outcome distribution; errors stay unscored', () => {

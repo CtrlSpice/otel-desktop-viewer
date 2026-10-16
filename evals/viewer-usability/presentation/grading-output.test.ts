@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { groupGradingOutputs, gradingScoreTotals } from './grading-output.ts'
+import { groupGradingOutputs, gradingScoreTotals, gradingStatus } from './grading-output.ts'
 import type { Presentation } from './aggregate.ts'
 
 const output = (model: string, task: string, score: number | null): Presentation['grader']['outputs'][number] => ({
@@ -44,6 +44,27 @@ test('token totals stay unknown rather than lose integer precision', () => {
   assert.equal(group.totals.outputTokens, null)
   assert.equal(group.questions[0].inputTokens, null)
   assert.equal(group.questions[0].outputTokens, null)
+})
+
+test('status distinguishes pending grading from execution errors and completed zero scores', () => {
+  assert.equal(gradingStatus(0, 3, 0, 0), 'not-started')
+  assert.equal(gradingStatus(0, 3, 1, 0), 'in-progress')
+  assert.equal(gradingStatus(1, 3, 1, 0), 'in-progress')
+  assert.equal(gradingStatus(3, 3, 3, 0), 'done')
+  assert.equal(gradingStatus(3, 3, 3, 1), 'needs-attention')
+  assert.equal(gradingStatus(0, 3, 1, 1), 'needs-attention')
+  assert.equal(gradingStatus(1, null, 1, 0), 'in-progress')
+})
+
+test('not-started models and questions can be shown without inventing grades or costs', () => {
+  const groups = groupGradingOutputs([output('synthetic/a', 'first', 1)], ['synthetic/a', 'synthetic/b'], ['first', 'second'], true)
+  assert.equal(groups.length, 2)
+  assert.equal(groups[1].questions.length, 2)
+  assert.deepEqual(groups[1].questions[0].grades, [])
+  assert.equal(groups[1].totals.totalSeconds, 0)
+  assert.equal(groups[1].totals.costCad, null)
+  assert.equal(groups[1].totals.estimateCoverage, 'unavailable')
+  assert.deepEqual(gradingScoreTotals(groups[1].questions, 3).map(score => score.earned), [null, null, null])
 })
 
 test('missing timing and tokens stay unknown, incomplete costs stay partial, errors stay unscored', () => {

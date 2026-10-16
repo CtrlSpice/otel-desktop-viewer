@@ -15,7 +15,7 @@ const countTotal = (values: (number | null)[]) => {
 
 function gradingMetrics(grades: Output[]) {
   const knownCosts = grades.map(grade => grade.costCad).filter(value => value !== null)
-  const complete = grades.every(grade => grade.costCad !== null && grade.estimateCoverage === 'complete')
+  const complete = grades.length > 0 && grades.every(grade => grade.costCad !== null && grade.estimateCoverage === 'complete')
   return {
     totalSeconds: total(grades.map(grade => grade.seconds)),
     inputTokens: countTotal(grades.map(grade => grade.inputTokens)),
@@ -37,15 +37,21 @@ export function gradingScoreTotals(questions: { grades: Output[] }[], columns: n
   })
 }
 
-export function groupGradingOutputs(outputs: Output[], modelOrder: string[], taskOrder: string[]) {
+export function gradingStatus(graded: number, expected: number | null, started: number, errors: number) {
+  if (errors > 0) return 'needs-attention'
+  if (started === 0) return 'not-started'
+  return expected !== null && graded >= expected ? 'done' : 'in-progress'
+}
+
+export function groupGradingOutputs(outputs: Output[], modelOrder: string[], taskOrder: string[], includeNotStarted = false) {
   const models = [...new Set([...modelOrder, ...outputs.map(output => output.investigatorModel)])]
   const tasks = [...new Set([...taskOrder, ...outputs.map(output => output.task)])]
   return models.flatMap(model => {
     const selected = outputs.filter(output => output.investigatorModel === model)
-    if (!selected.length) return []
+    if (!selected.length && !includeNotStarted) return []
     return [{ model, totals: gradingMetrics(selected), questions: tasks.flatMap(task => {
       const grades = selected.filter(output => output.task === task)
-      if (!grades.length) return []
+      if (!grades.length && !includeNotStarted) return []
       return [{ task, grades, ...gradingMetrics(grades) }]
     }) }]
   })

@@ -118,6 +118,20 @@ try {
     }
   }
   const checkTimeAndProvider = async () => {
+    const headerLabelColour = await page.locator('.board-label').evaluate(element => getComputedStyle(element).color)
+    assert.ok((await page.locator('.grading-table-caret').evaluateAll(elements => elements.map(element => getComputedStyle(element).color))).every(colour => colour === headerLabelColour))
+    assert.ok((await page.locator('.grading-model-header th:first-child').evaluateAll(elements => elements.map(element => getComputedStyle(element).borderRadius))).every(radius => radius === '8px 0px 0px 8px'))
+    assert.ok((await page.locator('.grading-model-header th:last-child').evaluateAll(elements => elements.map(element => getComputedStyle(element).borderRadius))).every(radius => radius === '0px 8px 8px 0px'))
+    assert.ok((await page.locator('.grading-status-badge').evaluateAll(elements => elements.map(element => getComputedStyle(element).color))).every(colour => colour === headerLabelColour))
+    const panelColour = await page.evaluate(() => {
+      const probe = document.createElement('span')
+      probe.style.backgroundColor = 'var(--panel)'
+      document.body.append(probe)
+      const colour = getComputedStyle(probe).backgroundColor
+      probe.remove()
+      return colour
+    })
+    assert.ok((await page.locator('.grading-status-badge').evaluateAll(elements => elements.map(element => getComputedStyle(element).backgroundColor))).every(colour => colour === panelColour))
     await page.locator('[data-view="time"]').click()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     const ranges = await page.locator('.time-track').evaluateAll(elements => elements.filter(element => element.children.length).map(element => [...element.children].map(child => child.className)))
@@ -201,31 +215,56 @@ try {
     await page.locator('.model summary').first().click()
     if (await page.locator('.grader-row').count()) {
       assert.equal(await page.locator('.grader-row summary').count(), 0)
+      const summaryLines = await page.locator('.grader-metrics>div').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().y))
+      assert.ok(summaryLines.every(y => Math.abs(y - summaryLines[0]) < 1))
       assert.ok(await page.locator('.grading-output table').first().isVisible())
       assert.equal(await page.locator('.grading-output table table').count(), 0)
-      for (const table of await page.locator('.grading-output>table').all()) {
-        assert.equal(await table.locator('.grading-table-toggle').getAttribute('aria-expanded'), 'false')
-        assert.equal(await table.locator('tbody').isVisible(), false)
-        assert.ok(await table.locator('tfoot').isVisible())
-        assert.equal(await table.locator('tfoot>tr').count(), 1)
-        assert.equal(await table.locator('tfoot>tr>th').textContent(), 'Total')
-        assert.equal(await table.locator('tfoot>tr>th').evaluate(element => getComputedStyle(element).borderTopWidth), '0px')
-        assert.equal(await table.locator('tfoot').evaluate(element => getComputedStyle(element).backgroundColor), 'rgba(0, 0, 0, 0)')
-        assert.equal(await table.locator('tfoot>tr>th').evaluate(element => getComputedStyle(element).fontWeight), '400')
-        assert.deepEqual((await table.locator('thead>tr>th').allTextContents()).slice(-4), ['Grading Time', 'Cost (est., CAD)', 'Input Tokens', 'Output Tokens'])
-        assert.ok(await table.locator('thead>tr>th').first().textContent())
-        assert.notEqual(await table.locator('thead>tr>th').first().textContent(), 'Question')
-        assert.equal(await table.locator('caption:not(.sr-only)').count(), 0)
-        const tableCaret = await table.locator('.grading-table-caret').boundingBox()
-        const tableName = await table.locator('.grading-table-toggle>span').last().boundingBox()
+      for (const grader of await page.locator('.grader-row').all()) {
+        assert.equal(await grader.locator('.grading-output>table').count(), 1)
+      }
+      for (const header of await page.locator('.grading-model-header').all()) {
+        const questionsBody = header.locator('xpath=following-sibling::tbody[1]')
+        const total = header.locator('xpath=following-sibling::tbody[2]')
+        assert.equal(await header.locator('.grading-table-toggle').getAttribute('aria-expanded'), 'false')
+        assert.equal(await questionsBody.isVisible(), false)
+        assert.ok(await total.isVisible())
+        assert.equal(await total.locator('tr').count(), 1)
+        assert.equal(await total.locator('tr>th').textContent(), 'Total')
+        assert.equal(await total.locator('tr>th').evaluate(element => getComputedStyle(element).borderTopWidth), '0px')
+        assert.equal(await total.evaluate(element => getComputedStyle(element).backgroundColor), 'rgba(0, 0, 0, 0)')
+        assert.equal(await total.locator('tr>th').evaluate(element => getComputedStyle(element).fontWeight), '400')
+        const statusBadge = await header.locator('.grading-status-badge').boundingBox()
+        assert.notEqual(await header.locator('.grading-status-badge').evaluate(element => getComputedStyle(element).backgroundColor), await header.locator('th').first().evaluate(element => getComputedStyle(element).backgroundColor))
+        assert.equal(await total.locator('.grading-status-badge').count(), 0)
+        assert.equal(await questionsBody.locator('.grading-status-badge').count(), 0)
+        const columnCount = await header.locator('tr>th').count()
+        assert.equal(await total.locator('tr>*').count(), columnCount)
+        for (const row of await questionsBody.locator('tr').all()) assert.equal(await row.locator('th,td').count(), columnCount)
+        assert.deepEqual((await header.locator('tr>th').allTextContents()).slice(-4), ['Grading Time', 'Cost (est., CAD)', 'Input Tokens', 'Output Tokens'])
+        assert.ok(await header.locator('tr>th').first().textContent())
+        assert.notEqual(await header.locator('tr>th').first().textContent(), 'Question')
+        const tableCaret = await header.locator('.grading-table-caret').boundingBox()
+        const tableName = await header.locator('.grading-model-name').boundingBox()
         assert.ok(tableCaret && tableName && tableCaret.x + tableCaret.width <= tableName.x)
-        const totalStart = await table.locator('tfoot>tr>th').evaluate(element => element.getBoundingClientRect().x + parseFloat(getComputedStyle(element).paddingLeft))
+        assert.ok(statusBadge && statusBadge.x >= tableName.x + tableName.width)
+        assert.ok(Math.abs(statusBadge.y + statusBadge.height / 2 - tableName.y - tableName.height / 2) < 1)
+        const headerCell = await header.locator('th').first().boundingBox()
+        assert.ok(headerCell && statusBadge.x + statusBadge.width <= headerCell.x + headerCell.width)
+        const totalStart = await total.locator('tr>th').evaluate(element => element.getBoundingClientRect().x + parseFloat(getComputedStyle(element).paddingLeft))
         assert.ok(Math.abs(totalStart - tableName.x) < 1)
-        const questions = await table.locator('tbody>tr>th').allTextContents()
+        const headerBox = await header.boundingBox()
+        const totalBox = await total.boundingBox()
+        assert.ok(headerBox && totalBox && Math.abs(headerBox.y + headerBox.height - totalBox.y) < 1)
+        const nextHeader = total.locator('xpath=following-sibling::tbody[1]')
+        if (await nextHeader.count()) {
+          const nextBox = await nextHeader.boundingBox()
+          assert.ok(nextBox && Math.abs(totalBox.y + totalBox.height - nextBox.y) < 1)
+        }
+        const questions = await questionsBody.locator('tr>th').allTextContents()
         assert.equal(new Set(questions).size, questions.length)
       }
       const toggle = page.locator('.grading-table-toggle').first()
-      const scoreHeading = page.locator('.grading-model-table thead th').nth(1)
+      const scoreHeading = page.locator('.grading-model-header th.grading-run').first()
       await scoreHeading.click()
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true')
       await scoreHeading.click()
@@ -233,14 +272,14 @@ try {
       await toggle.focus()
       await page.keyboard.press('Enter')
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true')
-      assert.ok(await page.locator('.grading-model-table tbody').first().isVisible())
-      const questionStart = await page.locator('.grading-model-table tbody th').first().evaluate(element => element.getBoundingClientRect().x + parseFloat(getComputedStyle(element).paddingLeft))
-      const headingName = await toggle.locator('span').last().boundingBox()
+      assert.ok(await page.locator('.grading-questions').first().isVisible())
+      const questionStart = await page.locator('.grading-questions th').first().evaluate(element => element.getBoundingClientRect().x + parseFloat(getComputedStyle(element).paddingLeft))
+      const headingName = await toggle.locator('.grading-model-name').boundingBox()
       assert.ok(headingName && Math.abs(questionStart - headingName.x) < 1)
-      assert.ok(await page.locator('.grading-model-table tfoot').first().isVisible())
-      const layouts = await page.locator('.grading-model-table').evaluateAll(tables => tables.map(table => {
-        const start = table.getBoundingClientRect().x
-        return [...table.querySelectorAll('thead th')].map(cell => ({ x: cell.getBoundingClientRect().x - start, width: cell.getBoundingClientRect().width }))
+      assert.ok(await page.locator('.grading-model-total').first().isVisible())
+      const layouts = await page.locator('.grading-model-header').evaluateAll(headers => headers.map(header => {
+        const start = header.getBoundingClientRect().x
+        return [...header.querySelectorAll('th')].map(cell => ({ x: cell.getBoundingClientRect().x - start, width: cell.getBoundingClientRect().width }))
       }))
       for (const layout of layouts.slice(1)) {
         assert.equal(layout.length, layouts[0].length)
@@ -254,7 +293,17 @@ try {
       assert.deepEqual(grading.violations.map(value => ({ id: value.id, impact: value.impact, count: value.nodes.length })), [])
       await page.keyboard.press('Space')
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false')
-      assert.equal(await page.locator('.grading-model-table tbody').first().isVisible(), false)
+      assert.equal(await page.locator('.grading-questions').first().isVisible(), false)
+      if (await page.locator('.grading-table-toggle').count() > 1) {
+        const second = page.locator('.grading-table-toggle').nth(1)
+        await second.click()
+        await toggle.click()
+        assert.ok(await page.locator('.grading-questions').first().isVisible())
+        assert.ok(await page.locator('.grading-questions').nth(1).isVisible())
+        await toggle.click()
+        assert.ok(await page.locator('.grading-questions').nth(1).isVisible())
+        await second.click()
+      }
     }
   }
   await page.emulateMedia({ colorScheme: 'light' })
