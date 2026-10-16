@@ -1,0 +1,58 @@
+{
+  "source": "https://opencode.ai/v2/docs/console/go/",
+  "verifiedOn": "2026-10-14",
+  "serviceTier": "standard",
+  "currency": "USD",
+  "tokensPerUnit": 1000000,
+  "shortContextMaximum": 272000,
+  "models": {
+    "opencode-go/deepseek-v4-pro": {
+      "name": "DeepSeek V4 Pro",
+      "timePricing": "deepseek-peak-utc",
+      "short": { "input": 0.66, "output": 1.98, "cacheRead": 0.022, "cacheWrite": 0 },
+      "long": { "input": 0.66, "output": 1.98, "cacheRead": 0.022, "cacheWrite": 0 }
+    },
+    "opencode-go/kimi-k3": {
+      "name": "Kimi K3",
+      "short": { "input": 3, "output": 15, "cacheRead": 0.3, "cacheWrite": 0 },
+      "long": { "input": 3, "output": 15, "cacheRead": 0.3, "cacheWrite": 0 }
+    },
+    "opencode-go/glm-5.3": {
+      "name": "GLM-5.3",
+      "short": { "input": 1.4, "output": 4.4, "cacheRead": 0.26, "cacheWrite": 0 },
+      "long": { "input": 1.4, "output": 4.4, "cacheRead": 0.26, "cacheWrite": 0 }
+    },
+    "opencode-go/minimax-m3": {
+      "name": "MiniMax M3",
+      "short": { "input": 0.3, "output": 1.2, "cacheRead": 0.06, "cacheWrite": 0 },
+      "long": { "input": 0.3, "output": 1.2, "cacheRead": 0.06, "cacheWrite": 0 }
+    },
+    "opencode-go/gemini-4-argon-contributor": {
+      "name": "Gemini 4 Argon Contributor",
+      "short": { "input": 4, "output": 20, "cacheRead": 0.2, "cacheWrite": 0 },
+      "long": { "input": 4, "output": 20, "cacheRead": 0.2, "cacheWrite": 0 }
+    },
+    "opencode-go/deepseek-v4.1-flash": {
+      "name": "DeepSeek V4.1 Flash",
+      "timePricing": "deepseek-peak-utc",
+      "short": { "input": 0.15, "output": 0.6, "cacheRead": 0.003, "cacheWrite": 0 },
+      "long": { "input": 0.15, "output": 0.6, "cacheRead": 0.003, "cacheWrite": 0 }
+    },
+    "opencode-go/mimo-v2.6-flash": {
+      "name": "MiMo-V2.6-Flash",
+      "short": { "input": 0.14, "output": 0.28, "cacheRead": 0.0028, "cacheWrite": 0 },
+      "long": { "input": 0.14, "output": 0.28, "cacheRead": 0.0028, "cacheWrite": 0 }
+    },
+    "opencode-go/qwen3.7-plus": {
+      "name": "Qwen3.7 Plus",
+      "shortContextMaximum": 256000,
+      "short": { "input": 0.4, "output": 1.6, "cacheRead": 0.04, "cacheWrite": 0.5 },
+      "long": { "input": 1.2, "output": 4.8, "cacheRead": 0.12, "cacheWrite": 1.5 }
+    },
+    "opencode-go/qwen3.8-flash": {
+      "name": "Qwen3.8 Flash",
+      "short": { "input": 0.15, "output": 0.47, "cacheRead": 0.016, "cacheWrite": 0.2 },
+      "long": { "input": 0.15, "output": 0.47, "cacheRead": 0.016, "cacheWrite": 0.2 }
+    }
+  }
+}

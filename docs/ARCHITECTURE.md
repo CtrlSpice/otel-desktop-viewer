@@ -266,12 +266,23 @@ frontend `bigint` values. Derived chart values use JavaScript numbers. See
 
 ## HTTP and JSON-RPC
 
-The server exposes two routes:
+The server exposes these routes:
 
 | Route | Purpose |
 | --- | --- |
 | `POST /rpc` | JSON-RPC 2.0, with a 1 MB request limit |
+| `GET /openrpc.json` | OpenRPC method descriptions, also returned by `rpc.discover` |
+| `GET /llms.txt` | Agent guide, including HTTP discovery instructions |
+| `GET /export/{signal}/{id}` | Store-backed OTLP JSON download |
 | `GET /*` | Embedded frontend and client-route fallback |
+
+The HTTP root advertises `/openrpc.json` and `/llms.txt` with a `Link` header.
+Discovery uses existing method names. The document describes the `View` naming
+convention once, without audience tags or aliases. OpenRPC is a
+JSON-RPC description, not an OpenAPI description of HTTP routes. GET and HEAD
+are supported for the document. Named/positional params, exact numeric input
+rules and wire representations are described alongside each method. The two
+variadic delete methods accept repeated positional IDs, not a nested array.
 
 The server binds to `localhost` by default. CORS accepts HTTP and HTTPS origins
 so the Vite development server can call `/rpc`.
@@ -280,6 +291,8 @@ so the Vite development server can call `/rpc`.
 
 | Method | Result |
 | --- | --- |
+| `rpc.discover` | OpenRPC description of the JSON-RPC interface |
+| `getImportConfig` | Configured OTLP HTTP import port |
 | `query` | Read-only SQL rows |
 | `searchTraceSummaries` | Trace list summaries |
 | `getTraceOverview` | Compact spans and trace-linked log summaries |
