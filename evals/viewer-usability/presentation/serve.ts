@@ -11,7 +11,7 @@ import { liveClient } from './live-client.ts'
 type Snapshot = { html: string; state: LiveState; updatedAt: string }
 const savedFiles = new Set(['run-manifest.json', 'pricing-snapshot.json', 'pilot.json', 'grading.json', 'metrics.json', 'failure.json',
   'execution-error.json', 'harness-blocker.json', 'launch.json', 'run-completion.json', 'run-failure.json',
-  'pilot-completion.json', 'overnight-completion.json', 'overnight-failure.json', 'completed-runs.json'])
+  'pilot-completion.json', 'overnight-completion.json', 'overnight-failure.json', 'completed-runs.json', 'model-errors.json'])
 
 export async function serveResults(selection: LiveSelection) {
   const roots = [...new Set(selection.runs.map(root => fs.realpathSync(root)))]

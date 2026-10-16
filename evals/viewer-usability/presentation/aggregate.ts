@@ -1,5 +1,6 @@
 import { modelSummaries } from '../model-summary.ts'
 import { pricingSnapshot } from '../pricing.ts'
+import { telemetryLinks } from './telemetry-links.ts'
 
 const object = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -130,6 +131,8 @@ export function aggregate(
             ? 'fail'
             : 'unknown',
       metadata: metrics(metadata),
+      telemetry: telemetryLinks(metadata.telemetry, manifest),
+      graderTelemetry: telemetryLinks(object(reports.find(report => report.role === 'grader')?.metadata).telemetry, manifest),
       score,
       signedScore,
       claimCounts: human?.claimCounts ?? null,
@@ -163,7 +166,7 @@ export function aggregate(
     tasksExpected = count(manifest.tasks)
   const expectedAttempts = repetitions !== null && tasksExpected !== null
     ? models.length * tasksExpected * repetitions : null
-  const summarise = (model: string, selected: typeof rows) => {
+  const summarise = (model: string, selected: typeof rows, plannedAttempts: number | null) => {
     const result = modelSummaries(
       selected.map((row) => ({
         provider: { label: model },
@@ -180,13 +183,14 @@ export function aggregate(
       displayPartial: selected.filter(row => (row.signedScore ?? row.score) === 0.5).length,
       displayFail: selected.filter(row => (row.signedScore ?? row.score) === 0).length,
       scoredAttempts: selected.filter(row => row.score !== null).length,
-      provisionalMean: selected.some(row => row.score !== null)
+      plannedAttempts,
+      provisionalMean: plannedAttempts !== null && plannedAttempts > 0
         ? selected.reduce((sum, row) => sum + (row.score ?? 0), 0) /
-          selected.filter(row => row.score !== null).length
+          plannedAttempts
         : null,
-      displayMean: selected.some(row => (row.signedScore ?? row.score) !== null)
+      displayMean: plannedAttempts !== null && plannedAttempts > 0
         ? selected.reduce((sum, row) => sum + (row.signedScore ?? row.score ?? 0), 0) /
-          selected.filter(row => (row.signedScore ?? row.score) !== null).length
+          plannedAttempts
         : null,
       signedAttempts: selected.filter(row => row.signedScore !== null).length,
       signedFull: selected.filter(row => row.signedScore === 1).length,
@@ -270,7 +274,8 @@ export function aggregate(
       : null,
     models: models.map((model) => {
       const selected = rows.filter((row) => row.model === model),
-        calculated = summarise(model, selected)
+        calculated = summarise(model, selected,
+          tasksExpected !== null && repetitions !== null ? tasksExpected * repetitions : null)
       const saved = summaries.find((value) => value.model === model)
       return {
         model,
@@ -290,7 +295,7 @@ export function aggregate(
           const attempts = selected.filter((row) => row.task === task)
           return {
             task,
-            ...summarise(model, attempts),
+            ...summarise(model, attempts, repetitions),
             scores: attempts.map(row => row.score),
             signedScores: attempts.map(row => row.signedScore),
             runResults: attempts.map((row, index) => ({
@@ -298,6 +303,8 @@ export function aggregate(
               score: row.signedScore ?? row.score,
               automatedScore: row.score,
               signedOff: row.signedScore !== null,
+              telemetry: row.telemetry,
+              graderTelemetry: row.graderTelemetry,
               status: row.harnessError ? 'harness-error' : row.outcome === 'error' ? 'error' : row.score === null && row.signedScore === null ? 'unscored' : 'scored',
             })),
             finalMean: repetitions === 3 && attempts.length === 3 &&
@@ -342,6 +349,7 @@ export function aggregate(
           task: id(report.taskID),
           score: report.status === 'execution-error' ? null : completionScore(report.score),
           executionError: report.status === 'execution-error',
+          telemetry: telemetryLinks(metadata.telemetry, manifest),
           seconds: result.medianSeconds,
           costCad: result.apiCostCad,
           estimateCoverage: result.estimateCoverage,

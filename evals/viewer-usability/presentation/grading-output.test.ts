@@ -4,7 +4,7 @@ import { groupGradingOutputs, gradingScoreTotals, gradingStatus } from './gradin
 import type { Presentation } from './aggregate.ts'
 
 const output = (model: string, task: string, score: number | null): Presentation['grader']['outputs'][number] => ({
-  graderModel: 'synthetic/grader', investigatorModel: model, task, score, executionError: false,
+  graderModel: 'synthetic/grader', investigatorModel: model, task, score, executionError: false, telemetry: null,
   seconds: 2, costCad: 0.25, estimateCoverage: 'complete', inputTokens: 10, outputTokens: 2,
 })
 

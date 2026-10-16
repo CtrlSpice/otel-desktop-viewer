@@ -10,6 +10,7 @@ import { isolationSettings, sessionSummary } from './provider.ts'
 import { permissionDenial, viewerClientCall } from './permission-stop.ts'
 import { readJson, record, runtimeRoot } from './runtime.ts'
 import { AttemptTelemetry, withOpenCodeContext } from './eval-telemetry.ts'
+import { modelExecutionErrors, recordExecutionError } from './execution-errors.ts'
 
 const attempts = new Map<string, NativeAttempt>()
 // Import the public package at runtime; its declarations require optional database drivers.
@@ -71,6 +72,7 @@ export class NativeAttempt {
     const root = runtimeRoot()
     if (fs.existsSync(path.join(root, 'harness-blocker.json'))) throw new Error('Evaluation stopped by viewer permission denial')
     if (fs.existsSync(path.join(root, 'execution-error.json'))) throw new Error('Evaluation stopped by an execution error')
+    if (role === 'investigator' && modelExecutionErrors(root).some(error => error.model === model)) throw new Error('Investigator model paused after an execution error')
     const started = performance.now()
     const settings = isolationSettings(isolation)
     if (settings.authEnvironment) throw new Error('Use credential file references')
@@ -187,6 +189,7 @@ export class NativeAttempt {
     const timer = setTimeout(() => { timedOut = true; void abortOwned().catch(() => this.close()) }, Math.max(1, this.timeoutMs - (performance.now() - this.started)))
     let monitor: Promise<void> | undefined
     let monitorError = false
+    let invoked = false
     let escalation: ReturnType<typeof setTimeout> | undefined
     const abortOwned = () => {
       if (!escalation) escalation = setTimeout(() => {
@@ -267,7 +270,7 @@ export class NativeAttempt {
       if (this.redact(prompt) !== prompt) throw new Error('Prompt contains selected credential material')
       this.save('prompt.txt', prompt)
       this.telemetry?.span.setAttribute('gen_ai.input', prompt)
-      const invoke = () => this.native!.callApi(prompt, context, { abortSignal: controller.signal })
+      const invoke = () => { invoked = true; return this.native!.callApi(prompt, context, { abortSignal: controller.signal }) }
       const response = this.telemetry
         ? await otelContext.with(this.telemetry.context, () => withOpenCodeContext(this.baseUrl, this.telemetry!.context, invoke))
         : await invoke()
@@ -303,7 +306,7 @@ export class NativeAttempt {
       const { output: ignored, commands, usage, ...metrics } = sessionSummary(stdout)
       const output = typeof response.output === 'string' ? this.redact(response.output) : ''
       if (workspace !== this.isolated.workspace) fs.cpSync(workspace, this.isolated.workspace, { recursive: true })
-      const metadata = { ...response.metadata, ...metrics, ...(this.telemetry ? { telemetry: this.telemetry.identity() } : {}), version: SUPPORTED_OPENCODE_VERSION, role: this.role, model: this.model, task: this.task, evidence: this.evidence, workspace, archivedWorkspace: this.isolated.workspace, isolationRoot: this.isolated.root, usage, elapsedSeconds: (performance.now() - this.started) / 1000, timedOut, timeoutMs: this.timeoutMs, exit: { code: response.error || incomplete ? 1 : 0, timedOut }, harnessBlocker: blocked }
+      const metadata = { ...response.metadata, ...metrics, ...(this.telemetry ? { telemetry: this.telemetry.identity() } : {}), version: SUPPORTED_OPENCODE_VERSION, role: this.role, model: this.model, task: this.task, evidence: this.evidence, workspace, archivedWorkspace: this.isolated.workspace, isolationRoot: this.isolated.root, usage, elapsedSeconds: (performance.now() - this.started) / 1000, timedOut, timeoutMs: this.timeoutMs, exit: { code: response.error || incomplete ? 1 : 0, timedOut }, harnessBlocker: blocked, executionFailure: blocked ? 'harness' : response.error || incomplete || !output || timedOut ? 'model' : undefined }
       this.save('commands.json', commands)
       this.save('answer.txt', output)
       this.save('metrics.json', metadata)
@@ -314,7 +317,7 @@ export class NativeAttempt {
     } catch {
       const stdout = [...latestParts.values()].map(part => JSON.stringify({ type: part.type === 'tool' ? 'tool_use' : part.type === 'step-finish' ? 'step_finish' : part.type, sessionID, part })).join('\n') + '\n'
       const { output, commands, usage, ...metrics } = sessionSummary(stdout)
-      const metadata = { ...metrics, usage, role: this.role, model: this.model, task: this.task, evidence: this.evidence, workspace, archivedWorkspace: this.isolated.workspace, isolationRoot: this.isolated.root, timedOut, timeoutMs: this.timeoutMs, elapsedSeconds: (performance.now() - this.started) / 1000, exit: { code: 1, timedOut }, harnessBlocker: blocked }
+      const metadata = { ...metrics, usage, ...(this.telemetry ? { telemetry: this.telemetry.identity() } : {}), role: this.role, model: this.model, task: this.task, evidence: this.evidence, workspace, archivedWorkspace: this.isolated.workspace, isolationRoot: this.isolated.root, timedOut, timeoutMs: this.timeoutMs, elapsedSeconds: (performance.now() - this.started) / 1000, exit: { code: 1, timedOut }, harnessBlocker: blocked, executionFailure: timedOut && invoked && !monitorError && !blocked ? 'model' : 'harness' }
       for (const [name, value] of [['stdout.jsonl', stdout], ['commands.json', commands], ['answer.txt', output], ['metrics.json', metadata]] as const) if (!fs.existsSync(path.join(this.evidence, name))) this.save(name, value)
       if (!fs.existsSync(path.join(this.evidence, 'failure.json'))) this.save('failure.json', { ...metadata, error: 'Native session or evidence collection failed' })
       this.telemetryOutcome = { error: blocked ? 'Harness blocker: viewer permission denial' : timedOut ? 'OpenCode session timed out' : 'Native session or evidence collection failed; see ' + this.evidence }
@@ -386,20 +389,25 @@ export async function beforeEach(context: { test: TestCase }) {
   return { test: { ...context.test, provider: attempt, vars: { ...context.test.vars, binary: './bin/otel-desktop-viewer' }, metadata: { ...context.test.metadata, nativeAttempt: attempt.evidence } } }
 }
 
-export async function afterEach(context: { test: TestCase; result?: { failureReason?: number; response?: { error?: string } } }) {
+export async function afterEach(context: { test: TestCase; result?: { failureReason?: number; response?: { error?: string; metadata?: Record<string, unknown> } } }) {
   const root = runtimeRoot()
   if (context.result?.failureReason === 2 || context.result?.response?.error) {
-    const file = path.join(root, 'execution-error.json')
-    if (!fs.existsSync(file)) fs.writeFileSync(file, JSON.stringify({
-      status: 'execution-error', model: context.test.vars?.eval_model,
+    recordExecutionError({
+      model: context.test.vars?.eval_model,
       task: context.test.vars?.task_id, evidence: context.test.metadata?.nativeAttempt,
-    }), { flag: 'wx', mode: 0o600 })
+      modelFailure: context.result.response?.metadata?.executionFailure === 'model',
+    })
   }
   const evidence = context.test.metadata?.nativeAttempt
   if (typeof evidence === 'string') {
     const attempt = attempts.get(evidence)
     if (attempt && fs.existsSync(path.join(root, 'harness-blocker.json')) && process.send) process.send({ type: 'otel-eval-harness-blocker', root, runnerPID: process.pid, sessionPID: attempt.child?.pid })
-    await attempt?.close()
+    try {
+      await attempt?.close()
+    } catch (error) {
+      recordExecutionError({ model: context.test.vars?.eval_model, task: context.test.vars?.task_id, evidence, modelFailure: false })
+      throw error
+    }
   }
   return context
 }

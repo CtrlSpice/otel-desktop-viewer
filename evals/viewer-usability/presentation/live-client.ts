@@ -64,16 +64,23 @@ export const liveClient = String.raw`(() => {
     const focus = rememberFocus();
     const x = window.scrollX, y = window.scrollY;
     const expandedTables = new Set(Array.from(main.querySelectorAll('[data-grading-table][aria-expanded="true"]')).map(button => button.dataset.gradingTable));
+    const expandedTools = new Map(modelRows().map(model => [model.dataset.liveKey,
+      new Set(Array.from(model.querySelectorAll('.task-tool-metric[open]')).map(detail => detail.dataset.liveKey))
+    ]));
     const saved = new Map(modelRows().map(model => [model.dataset.liveKey, {
       open: model instanceof HTMLDetailsElement ? model.open : null,
       horizontal: new Map(Array.from(model.querySelectorAll('.grading-output,.grader-metrics-scroll')).map((output, index) => [output.dataset.gradingScrollKey || index, output.scrollLeft]))
     }]));
     main.replaceChildren(template.content);
+    document.dispatchEvent(new Event('eval-results-updated'));
     const rows = modelRows();
     for (const model of rows) {
       const previous = saved.get(model.dataset.liveKey);
       if (!previous) continue;
       if (model instanceof HTMLDetailsElement && previous.open !== null) model.open = previous.open;
+      model.querySelectorAll('details.task-tool-metric').forEach(detail => {
+        detail.open = expandedTools.get(model.dataset.liveKey)?.has(detail.dataset.liveKey) ?? false;
+      });
       model.querySelectorAll('.grading-output,.grader-metrics-scroll').forEach((output, index) => {
         output.scrollLeft = previous.horizontal.get(output.dataset.gradingScrollKey || index) || 0;
       });

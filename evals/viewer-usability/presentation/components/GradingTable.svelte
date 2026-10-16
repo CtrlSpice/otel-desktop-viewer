@@ -2,6 +2,7 @@
   import HugeiconsIcon from './Icon.svelte'
   import { ChevronDownIcon } from '@hugeicons/core-free-icons'
   import Badge from './Badge.svelte'
+  import CompletionBadge from './CompletionBadge.svelte'
   import {
     cost,
     integer,
@@ -50,12 +51,6 @@
       (_, index) => index
     )
   )
-  const labels = {
-    'not-started': 'Not Started',
-    'in-progress': 'In Progress',
-    done: 'Completed',
-    'needs-attention': 'Needs Attention',
-  }
 </script>
 
 {#if groups.length}
@@ -122,10 +117,7 @@
                 <span class="grading-model-name"
                   >{investigator?.name ?? group.model}</span
                 >
-                <span
-                  class="badge badge-soft result-badge grading-status-badge grading-status-{status}"
-                  >{labels[status]}</span
-                >
+                <CompletionBadge {status} />
               </button>
             </th>
             {#each runs as index}<th scope="col" class="grading-run"
@@ -160,7 +152,9 @@
                           ? 'partial'
                           : 'no-credit'}
                       label={runResult(output.score)}
-                    />{/if}
+                    />{/if}{#if output?.telemetry?.span}
+                    <a class="grader-trace-link" href={output.telemetry.span} target="_blank" rel="noreferrer" aria-label="{taskName(question.task)} run {index + 1} grader trace">Trace</a>
+                  {/if}
                 </td>
               {/each}
               <td>{seconds(question.totalSeconds)}</td>

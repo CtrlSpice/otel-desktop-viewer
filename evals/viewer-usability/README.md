@@ -87,7 +87,16 @@ only for the associated logs; the sequence question asks which types are stored.
 Optional reference details do not add requirements. Completion grading remains
 separate from unsupported-claim assessment.
 Invalid grader output, provider errors and timeouts are execution errors, not
-incorrect investigator answers. Grading reliability remains provisional until
+incorrect investigator answers. An investigator model execution error pauses that
+model for the rest of the run. The queue continues with unstarted slots for other
+models, without retrying the failed slot or rerunning completed answers. Paused
+slots remain pending and unscored. `model-errors.json` preserves each model's first
+error; `deferred-slots.json` lists the unexecuted slots. Original Promptfoo summaries
+are saved under `evaluation-batches/`; the combined `pilot.json` contains only actual
+attempts. The run returns nonzero if any model was paused. Shared grader errors,
+harness/evidence failures and blocking viewer permission denials still stop the
+whole run. Ordinary recoverable tool denials do not pause a model.
+Grading reliability remains provisional until
 comparison with human-reviewed answers; deterministic tests do not validate model judgments.
 
 Before each attempt, the hook creates a private OpenCode profile and a seed containing

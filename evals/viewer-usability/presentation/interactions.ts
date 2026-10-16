@@ -1,5 +1,22 @@
 const views = ['result', 'time', 'cost']
 
+const localDateTime = new Intl.DateTimeFormat('en-CA', {
+  year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit',
+  timeZoneName: 'short',
+  hourCycle: 'h23',
+})
+
+function localizeTimes() {
+  for (const time of document.querySelectorAll<HTMLTimeElement>('time[data-local-time]')) {
+    const parts = Object.fromEntries(localDateTime.formatToParts(new Date(time.dateTime))
+      .map(part => [part.type, part.value]))
+    time.textContent = `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second} ${parts.timeZoneName}`
+  }
+}
+localizeTimes()
+document.addEventListener('eval-results-updated', localizeTimes)
+
 // Delegation also handles rows replaced by the saved-results live prototype.
 document.addEventListener('click', event => {
   if (!(event.target instanceof Element)) return

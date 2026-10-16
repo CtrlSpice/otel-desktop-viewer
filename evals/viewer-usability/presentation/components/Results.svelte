@@ -114,6 +114,9 @@
         {maxCost}
       />{/each}
   </section>
+  <p class="footnote">
+    Mean = earned points ÷ all planned runs, including incomplete runs.
+  </p>
   {#if data.pricing}<p class="footnote">
       API-price estimates · CAD · Exchange rate dated {data.pricing.fxDate}.
     </p>{/if}

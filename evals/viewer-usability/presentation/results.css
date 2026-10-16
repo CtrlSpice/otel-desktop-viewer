@@ -263,6 +263,12 @@ body[data-metric='cost'] .cost-heading {
   color: var(--muted);
   overflow-wrap: anywhere;
 }
+.model-title-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+}
 .chevron {
   display: flex;
   align-items: center;
@@ -398,6 +404,18 @@ body[data-metric='cost'] .model .metric.cost {
 }
 
 /* Outcome and time legends */
+.task-trace-link,
+.tool-span-link,
+.grader-trace-link {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+.grader-trace-link {
+  display: block;
+  margin-top: 0.25rem;
+}
+
 .result-complete {
   --result-colour: var(--color-success);
 }
@@ -409,6 +427,15 @@ body[data-metric='cost'] .model .metric.cost {
 }
 .result-unscored {
   --result-colour: var(--muted);
+}
+.result-tool-count {
+  --result-colour: var(--color-primary);
+}
+.result-tool-error {
+  --result-colour: var(--color-error);
+}
+.result-pending {
+  --result-colour: var(--panel);
 }
 .result-harness-error {
   --result-colour: #ff8000;
@@ -551,7 +578,11 @@ body[data-metric='cost'] .model .metric.cost {
   gap: var(--column-gap);
   align-items: baseline;
 }
+.task dl > .task-trace-row {
+  grid-template-columns: auto minmax(0, 1fr);
+}
 .task dt {
+  font-size: var(--font-label);
   color: var(--muted);
   margin-bottom: 5px;
 }
@@ -563,6 +594,81 @@ body[data-metric='cost'] .model .metric.cost {
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
   color: var(--text);
+}
+.task .task-tool-metric {
+  margin-block: 0.25rem;
+}
+.task-tool-metric > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.task-tool-metric > summary::-webkit-details-marker {
+  display: none;
+}
+.task-tool-metric > summary .chevron {
+  color: var(--text);
+}
+.activity-summary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.75rem;
+  font-size: var(--font-label);
+}
+.activity-title {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.activity-counts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.25rem 0.375rem;
+}
+.task-tool-metric[open] > summary .chevron svg {
+  transform: rotate(180deg);
+}
+.tool-call-list {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.25rem 0 0.75rem;
+  padding: 0 0 0 1.375rem;
+  list-style: none;
+  font-size: var(--font-label);
+  overflow-wrap: anywhere;
+}
+.tool-call-list time {
+  font-variant-numeric: tabular-nums;
+}
+.tool-call-list time,
+.tool-time {
+  color: var(--muted);
+}
+.tool-call-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  padding: 0.25rem 0.375rem;
+}
+.tool-call-description {
+  min-width: 0;
+  color: var(--text);
+}
+.tool-span-link {
+  justify-self: end;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.tool-error {
+  color: var(--color-error);
+}
+html[data-theme='rose-pine-dawn'] .tool-error {
+  color: color-mix(in oklab, var(--color-error) 60%, var(--text));
 }
 
 /* Grader totals and the continuous, horizontally scrollable grading table */
@@ -739,7 +845,8 @@ body[data-metric='cost'] .model .metric.cost {
 .grading-status-needs-attention {
   --result-colour: #ff8000;
 }
-.grading-status-badge {
+.grading-status-badge,
+.run-status-badge {
   padding: 1px 6px;
   white-space: nowrap;
   background: var(--panel);

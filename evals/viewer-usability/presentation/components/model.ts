@@ -28,6 +28,7 @@ export const taskName = (id: string) =>
 export const taskOrder = tasks.map(task => task.id)
 
 export function outcomeBreakdown(value: Model['result']) {
+  const total = Math.max(value.plannedAttempts ?? 0, value.attempts)
   return [
     { status: 'complete', count: value.displayPass, label: 'complete' },
     { status: 'partial', count: value.displayPartial, label: 'partial' },
@@ -59,11 +60,16 @@ export function outcomeBreakdown(value: Model['result']) {
         value.error,
       label: 'unscored',
     },
+    {
+      status: 'pending',
+      count: total - value.attempts,
+      label: 'pending',
+    },
   ]
     .filter(part => part.count > 0)
     .map(part => ({
       ...part,
-      text: `${part.count.toLocaleString('en-CA')} ${part.label} · ${((part.count / value.attempts) * 100).toLocaleString('en-CA', { maximumFractionDigits: 1 })}%`,
+      text: `${part.count.toLocaleString('en-CA')} ${part.label} · ${((part.count / total) * 100).toLocaleString('en-CA', { maximumFractionDigits: 1 })}%`,
     }))
 }
 

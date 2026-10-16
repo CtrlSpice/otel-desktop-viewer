@@ -2,6 +2,7 @@
   import HugeiconsIcon from './Icon.svelte'
   import { ChevronDownIcon } from '@hugeicons/core-free-icons'
   import Badge from './Badge.svelte'
+  import CompletionBadge from './CompletionBadge.svelte'
   import ResultBar from './ResultBar.svelte'
   import TaskCard from './TaskCard.svelte'
   import TimeMetric from './TimeMetric.svelte'
@@ -12,6 +13,7 @@
     integer,
     outcomeBreakdown,
     percent,
+    gradingStatus,
     type Model,
   } from './model'
 
@@ -36,6 +38,14 @@
       : 'Unknown'
   )
   const parts = $derived(outcomeBreakdown(result))
+  const status = $derived(
+    gradingStatus(
+      result.scoredAttempts,
+      result.plannedAttempts,
+      result.attempts,
+      result.error
+    )
+  )
 </script>
 
 <details class="model" data-live-key={model.model}>
@@ -49,16 +59,21 @@
         /></span
       >
       <div class="model-name">
-        <strong>{model.name}</strong><span>{model.provider}</span><span
-          class="model-id">{model.model}</span
-        >
+        <div class="model-title-line">
+          <strong>{model.name}</strong>
+          <CompletionBadge {status} className="run-status-badge" />
+        </div>
+        <span>{model.provider}</span><span class="model-id">{model.model}</span>
       </div>
     </div>
     <div class="metric result">
       <div class="grade-distribution">
         <ResultBar {parts} label="Results" />
       </div>
-      <div class="result-mean">
+      <div
+        class="result-mean"
+        title="Earned points divided by all {expected} planned runs, including incomplete runs"
+      >
         <strong aria-label="Mean: {percent(result.displayMean)}"
           >{percent(result.displayMean)}</strong
         >

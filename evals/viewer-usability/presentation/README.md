@@ -54,17 +54,60 @@ Browser checks cover both themes on desktop and mobile.
   formatted page and assets. The export needs no Svelte runtime or hydration data.
 
 The page includes only allowlisted model/task labels, counts, coverage, timing,
-usage and estimated costs. Answers, full prompts, rubric text, grader explanations,
+usage, estimated costs and telemetry links. Answers, full prompts, rubric text, grader explanations,
 tool evidence, private paths and configuration are never serialized into it.
 Model names come from saved pricing/summary metadata. No generation badge is
 inferred from names. Task titles use the exact approved questions in `tasks.json`,
 not untrusted provider prompts or answer text. Titles do not change investigations.
 
+### Telemetry navigation
+
+Each recorded task repetition has one trace link in a label/value row that
+matches the card metrics. The link shows the full trace ID.
+It opens the trace with the investigator span selected
+when available. One disclosure uses the viewer's caret with Tool calls on the left
+and three labelled count badges on the right: Total, Failed and Run errors
+(execution failures). Its list includes
+every recorded tool call once, followed by any execution failures. Counts use
+iris total-call badges, red failed-call badges and papaya (#FF8000)
+execution-error badges. Only known positive counts get badges; zero and unknown
+counts produce no badge. Calls show their recorded
+span start date/time in the browser's timezone as `YYYY-MM-DD HH:mm:ss z`
+(for example, `2026-10-16 14:30:05 PDT`). The tooltip retains the full recorded UTC timestamp; static HTML without
+JavaScript falls back to UTC. Local formatting also applies after live updates;
+missing timestamps are labelled Time unavailable. Multiple attempts have run
+labels. Dates use muted text; tool-provided names use normal text. Tool errors use
+the theme error colour and an explicit Error label. Execution failures use the
+existing papaya Needs attention badge.
+Each call or execution failure has its full span ID right-aligned on the same
+row where space allows. Only the span ID is linked; trace IDs appear once in the
+card's trace row. Narrow layouts allow the description to wrap.
+Expanded lists survive saved-results updates;
+grader table cells link to their grading span. IDs come from saved telemetry,
+not from model-written URLs. Missing IDs or viewer origins produce no link.
+
+Card rows start with timing, trace links, then the combined tool/error disclosure.
+Failures without telemetry are labelled Span unavailable. When there is nothing
+to expand, the counts retain a decorative caret for alignment but have no
+disclosure control or keyboard stop.
+
+Set the plan's `telemetryViewer` to an HTTP(S) viewer origin, or `""` for same-origin
+navigation inside the viewer. `telemetryViewers` maps trace IDs to their original
+viewer origins when combining stores. Older attempts can use an explicit
+`telemetryTools` index keyed by trace ID; new attempts record tool span IDs and error
+flags directly in telemetry metadata, together with span start timestamps. The
+index can also supply timestamps for existing tool IDs, matched by span ID.
+Only validated IDs, timestamps, tool names and error
+flags enter the presentation. Importing evals into a viewer should preserve these
+IDs, import the matching telemetry and resolve links against that viewer's store.
+
 Recorded complete/partial/wrong/error counts retain every pilot attempt. Scores
 come from the current saved grading result, not inferred from old pass/fail labels.
 Task cards use the same coloured result bar for one or many attempts, followed by
 text-labelled counts and percentages. Each percentage is the category count divided
-by all recorded attempts, displayed with at most one decimal place; it describes
+by all planned attempts, displayed with at most one decimal place. Unstarted slots
+appear as a neutral pending segment, separate from recorded unscored/error results.
+If the plan is unavailable, the bar describes recorded attempts only. Bars describe
 the distribution of outcomes, not the mean score. Aligned metric rows replace
 the nested run table. Task-card dividers keep their spacing without a visible line.
 Errors stay labelled as errors, not zero scores. Errors with recorded
@@ -82,6 +125,15 @@ and revision history. Original automated scores and human-signed scores stay
 separate. Displayed results and means use signed corrections where available,
 with review coverage and original-to-signed corrections visible; incomplete planned
 runs remain provisional.
+Means divide earned points by all planned task/repetition slots, including
+incomplete and unscored slots. One pass out of eleven planned slots is 9.1%,
+not 100%. With no earned points and a known positive plan, the mean is 0%;
+without a known positive denominator, it is unavailable. Missing/error grades
+remain null and display as dashes or error badges, not individual zero scores.
+Investigator model headers share the grader's Not Started, In Progress,
+Completed and Needs Attention badges. Completion counts graded runs, including
+zero-score answers; execution errors need attention and incomplete grading
+remains in progress.
 Final three-run results require three signed-off attempts. Errors stay unscored.
 Human claim counts
 reflect explicitly reviewed claims, not exhaustive automated detection or a numeric

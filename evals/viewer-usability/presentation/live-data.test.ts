@@ -78,6 +78,22 @@ test('grader failures do not duplicate their investigator; recoveries remain sep
   assert.equal(result.recoveries[0].models[0].result.displayPass, 1)
 })
 
+test('paused model errors appear once and remain unscored while other models run', t => {
+  const f = fixture(t)
+  const investigator = f.report(1, 1).investigator
+  f.write('batch/run-a/runs/investigator-1/metrics.json', investigator)
+  f.write('batch/run-a/model-errors.json', [{ model, task: 'checkout-failure', evidence: investigator.evidence }])
+  const live = readLiveData(f.selection)
+  assert.equal(live.state, 'running')
+  assert.equal(live.data.models[0].result.error, 1)
+  assert.equal(live.data.models[0].result.scoredAttempts, 0)
+  assert.equal(live.data.attempts, 1)
+  f.write('batch/run-a/pilot.json', { results: { results: [{ provider: { label: model }, vars: { task_id: 'checkout-failure' }, failureReason: 2, response: { error: 'synthetic model error', metadata: investigator } }] } })
+  f.write('batch/run-a/run-completion.json', { exit: 1 })
+  assert.equal(readLiveData(f.selection).data.attempts, 1)
+  assert.equal(readLiveData(f.selection).data.models[0].result.scoredAttempts, 0)
+})
+
 test('complete requires the full plan; duplicate attempts, incompatible sources and malformed records are rejected', t => {
   const f = fixture(t)
   for (let i = 1; i <= 3; i++) f.write(`batch/run-a/runs/grader-${i}/grading.json`, f.report(i, 1))

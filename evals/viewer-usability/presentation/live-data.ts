@@ -5,6 +5,7 @@ import { aggregate } from './aggregate.ts'
 import { modelSummaries } from '../model-summary.ts'
 import { pricingSnapshot } from '../pricing.ts'
 import { record } from '../runtime.ts'
+import { modelExecutionErrors } from '../execution-errors.ts'
 
 export type LiveState = 'waiting' | 'running' | 'stopped' | 'complete' | 'unavailable'
 export type LiveSelection = { manifest: string; runs: string[] }
@@ -63,8 +64,8 @@ function readRun(root: string) {
     ? reports.map(gradeRow)
     : records(record(record(pilot).results).results)
   const errorValue = read(path.join(root, 'execution-error.json')) ?? read(path.join(root, 'harness-blocker.json'))
-  if (pilot === undefined && errorValue !== undefined) {
-    const error = record(errorValue)
+  const errors = [...modelExecutionErrors(root), ...(errorValue === undefined ? [] : [record(errorValue)])]
+  if (pilot === undefined) for (const error of errors) {
     const metadata = attemptMetrics(root, error.evidence)
     const alreadyRecorded = rows.some(row => record(record(row.response).metadata).evidence === metadata.evidence)
     if (!alreadyRecorded) rows.push({

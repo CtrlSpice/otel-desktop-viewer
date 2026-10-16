@@ -96,6 +96,56 @@ test('different model set; counts retain failures, errors, unknowns and incomple
   assert.equal(data.provisional, true)
 })
 
+test('means include the full plan without assigning grades to incomplete runs', () => {
+  const pass = row('other/cedar', 'inspect', true)
+  const partial = { ...row('other/cedar', 'inspect', false), gradingResult: { score: 0.5 } }
+  const error = { ...row('other/cedar', 'export', false), failureReason: 2 }
+  const manifest = { models: ['other/cedar', 'new/maple'], tasks: 2, repetitions: 3 }
+  const project = (plan: unknown = manifest) => aggregate(plan,
+    { results: { results: [pass, partial, error] } }, undefined, undefined)
+  const data = project()
+  assert.equal(data.models[0].result.plannedAttempts, 6)
+  assert.equal(data.models[0].result.displayMean, 1.5 / 6)
+  assert.equal(data.models[0].tasks[0].displayMean, 1.5 / 3)
+  assert.equal(data.models[0].tasks[1].displayMean, 0)
+  assert.deepEqual(data.models[0].tasks[1].scores, [null])
+  assert.equal(data.models[0].result.scoredAttempts, 2)
+  assert.equal(data.models[0].result.displayFail, 0)
+  assert.equal(data.models[1].result.displayMean, 0)
+  assert.equal(data.models[1].result.scoredAttempts, 0)
+  assert.equal(project({ models: manifest.models }).models[0].result.displayMean, null)
+  assert.equal(project({ ...manifest, repetitions: 0 }).models[0].result.displayMean, null)
+  const signed = aggregate(manifest, { results: { results: [pass, partial, error] } },
+    undefined, undefined, undefined, [{ model: 'other/cedar', task: 'inspect',
+      sessionIDs: pass.response.metadata.sessionIDs, signedOff: true, score: 0 }])
+  assert.equal(signed.models[0].result.provisionalMean, 1.5 / 6)
+  assert.equal(signed.models[0].result.displayMean, 0.5 / 6)
+  assert.deepEqual(signed.models[0].tasks[0].scores, [1, 0.5])
+
+  const single = aggregate({ tasks: 11, repetitions: 1 },
+    { results: { results: [pass] } }, undefined, undefined)
+  assert.equal(single.models[0].result.displayMean, 1 / 11)
+  assert.match(render(single), /aria-label="Mean: 9.1%">9.1%/)
+  assert.match(render(single), /Results: 1 complete · 9.1%; 10 pending · 90.9%/)
+  assert.match(render(single), /class="result-pending" style="flex:10"/)
+  assert.match(render(data), /Results: 1 complete · 16.7%; 1 partial · 16.7%; 1 execution error · 16.7%; 3 pending · 50%/)
+  assert.match(render(data), /Results: 6 pending · 100%/)
+})
+
+test('run completion badges distinguish pending, graded failure and execution error', () => {
+  const models = ['other/pending', 'other/partial', 'other/done', 'other/error']
+  const rows = [row(models[1], 'inspect', true), row(models[2], 'inspect', false),
+    row(models[2], 'export', false), { ...row(models[3], 'inspect', false), failureReason: 2 }]
+  const html = render(aggregate({ models, tasks: 2, repetitions: 1 },
+    { results: { results: rows } }, undefined, undefined))
+  for (const [index, status, label] of [[0, 'not-started', 'Not Started'],
+    [1, 'in-progress', 'In Progress'], [2, 'done', 'Completed'],
+    [3, 'needs-attention', 'Needs Attention']] as const) {
+    const section = html.split(`data-live-key="${models[index]}"`)[1].split('</summary>')[0]
+    assert.ok(section.includes(`run-status-badge grading-status-${status}">${label}</span>`))
+  }
+})
+
 test('error and wrong answer stay distinct; missing duration makes median unknown', () => {
   const fail = row('other/cedar', 'inspect', false)
   const gradingError = { ...row('other/cedar', 'inspect', false), error: secret, failureReason: 1 }
@@ -140,12 +190,13 @@ test('recorded harness blockers stay unscored and distinct from other execution 
   const html = render(data)
   assert.match(html, /1 harness error/)
   assert.equal(task.failedTools, 3)
-  assert.match(html, /<dt>Failed tool calls<\/dt>\s*<dd>3<\/dd>/)
-  assert.match(html, /<dt>Execution errors<\/dt>\s*<dd><span class="badge badge-soft result-badge result-execution-error">2<\/span>/)
+  assert.match(html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' '), /Total: 9 Failed: 3 Run errors: 2/)
+  assert.match(html, /result-harness-error">Needs attention<\/span>/)
+  assert.match(html, /result-execution-error">Needs attention<\/span>/)
+  assert.match(html, /Span unavailable/)
   const cleanRetry = { ...retry, response: { ...retry.response, metadata: { ...retry.response.metadata, failedToolCalls: 0 } } }
   const successful = render(project([cleanRetry]))
-  assert.match(successful, /<dt>Failed tool calls<\/dt>\s*<dd>0<\/dd>/)
-  assert.match(successful, /<dt>Execution errors<\/dt>\s*<dd>0<\/dd>/)
+  assert.doesNotMatch(successful, /Failed: 0|Run errors: 0/)
   assert.match(html, /1 execution error/)
   assert.match(html, /result-harness-error" style="flex:1"/)
   assert.match(html, /1 harness error · 33.3%/)
@@ -340,7 +391,7 @@ test('grading score columns follow the plan, extend beyond three, and leave miss
   const html = render(data)
   for (const run of [1, 2, 3, 4]) assert.ok(html.includes(`<th scope="col" class="grading-run">Score ${run}</th>`))
   assert.ok(!html.includes('class="grading-run">Score 5'))
-  assert.ok(html.includes('<td class="grading-run"><span aria-label="Not recorded">—</span></td>'))
+  assert.match(html, /<td class="grading-run"><span aria-label="Not recorded">—<\/span>\s*<\/td>/)
   assert.ok(html.includes('<td class="grading-run"><span class="badge badge-soft result-badge result-partial">.5/1</span></td>'))
 })
 

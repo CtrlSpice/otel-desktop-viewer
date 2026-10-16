@@ -32,7 +32,7 @@ export function withOpenCodeContext<T>(baseURL: string, parent: Context, run: ()
 }
 
 const tracer = () => trace.getTracer('viewer-eval', '1')
-type Entry = { span: Span; context: Context; ended: boolean }
+type Entry = { span: Span; context: Context; ended: boolean; name?: string; failed?: boolean; startedAt?: string }
 type AttemptOptions = {
   root: string; evidence: string; model: string; role: string; task: string
   parent?: string; redact: (text: string) => string
@@ -120,11 +120,12 @@ export class AttemptTelemetry {
     let entry = this.tools.get(key)
     if (!entry) {
       const parent = messageID ? this.turns.get(sessionID + '/' + messageID)?.context ?? this.context : this.context
-      const span = tracer().startSpan('tool ' + name, { attributes: {
+      const startedAt = new Date()
+      const span = tracer().startSpan('tool ' + name, { startTime: startedAt, attributes: {
         'session.id': sessionID, 'gen_ai.tool.call.id': callID, 'gen_ai.tool.name': name,
         ...(messageID ? { 'gen_ai.message.id': messageID } : {}),
       } }, parent)
-      entry = { span, context: trace.setSpan(parent, span), ended: false }
+      entry = { span, context: trace.setSpan(parent, span), ended: false, name, startedAt: startedAt.toISOString() }
       this.tools.set(key, entry)
     }
     if (!entry.ended) this.link(entry.span, native)
@@ -207,14 +208,18 @@ export class AttemptTelemetry {
     const metadata = record(result.metadata ?? {})
     if (result.output !== undefined) entry.span.setAttribute('gen_ai.tool.call.result', String(result.output))
     if (typeof metadata.exit === 'number') entry.span.setAttribute('process.exit.code', metadata.exit)
-    if (result.status === 'error' || result.error || (typeof metadata.exit === 'number' && metadata.exit !== 0))
+    if (result.status === 'error' || result.error || (typeof metadata.exit === 'number' && metadata.exit !== 0)) {
+      entry.failed = true
       error(entry.span, String(result.error ?? 'Tool process exited with code ' + metadata.exit))
+    }
     entry.span.end(); entry.ended = true
   }
 
   identity() {
     const sc = this.span.spanContext()
-    return { traceID: sc.traceId, spanID: sc.spanId }
+    return { traceID: sc.traceId, spanID: sc.spanId, tools: [...this.tools.values()].map(entry => ({
+      spanID: entry.span.spanContext().spanId, name: entry.name, error: entry.failed === true, startedAt: entry.startedAt,
+    })) }
   }
 
   async finish(outcome?: { error?: string; output?: unknown }) {
@@ -225,6 +230,7 @@ export class AttemptTelemetry {
     const incomplete = [...this.turns.values(), ...this.tools.values()].filter(entry => !entry.ended)
     for (const entry of incomplete) {
       error(entry.span, outcome?.error ?? 'Native operation did not report completion')
+      entry.failed = true
       entry.span.setAttribute('eval.interrupted', true)
       entry.span.end(); entry.ended = true
     }

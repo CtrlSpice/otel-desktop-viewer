@@ -32,7 +32,7 @@ test('native hook identities build connected turns/tools and scope HTTP context 
   Object.assign(process.env, observerEnvironment({ OTEL_EVAL_OBSERVER_HTTP: endpoint }), {
     PROMPTFOO_CONFIG_DIR: path.join(root, 'promptfoo'), PROMPTFOO_DISABLE_TELEMETRY: '1',
   })
-  let identity: { traceID: string; spanID: string } | undefined
+  let identity: ReturnType<AttemptTelemetry['identity']> | undefined
   let toolParent = ''
   const packageName = 'promptfoo'
   const { evaluate } = await import(packageName)
@@ -94,6 +94,8 @@ test('native hook identities build connected turns/tools and scope HTTP context 
     assert.equal(tool.parentSpanId, turn.spanId)
     assert.equal(tool.traceId, identity!.traceID)
     assert.equal(tool.status.code, 2)
+    const recordedTool = identity!.tools.find(entry => entry.spanID === tool.spanId)!
+    assert.equal(BigInt(Date.parse(recordedTool.startedAt!)) * 1_000_000n, BigInt(tool.startTimeUnixNano))
     assert.equal(tool.links[0].traceId, '11111111111111111111111111111111')
     assert(!JSON.stringify(tool).includes('SECRET'))
     assert.match(probes.find(p => p.url === '/owned')!.parent!, /^00-/)
