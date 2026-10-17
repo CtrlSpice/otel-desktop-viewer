@@ -1,17 +1,11 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import {
-    Home12Icon,
-    SidebarLeft01Icon,
-    RefreshIcon,
-  } from '@hugeicons/core-free-icons'
+  import { SidebarLeft01Icon, RefreshIcon } from '@hugeicons/core-free-icons'
   import PrimaryNavigation from './PrimaryNavigation.svelte'
   import DateTimeFilter from './DateTimeFilter.svelte'
   import PaneHeader from '../PaneHeader.svelte'
   import ThemeToggle from '../ThemeToggle.svelte'
-  import { getRouteContext } from '@/contexts/route-context.svelte'
-  import { isPlainLeftClick, navigate } from '@/route'
 
   let {
     drawerOpen,
@@ -34,37 +28,16 @@
     refreshPulse?: boolean
     refreshAsideTip?: string
   } = $props()
-  const route = getRouteContext()
   const refreshLabel = $derived(
     refreshPulse && refreshAsideTip ? `Refresh — ${refreshAsideTip}` : 'Refresh'
   )
-  function goHome(event: MouseEvent) {
-    if (!isPlainLeftClick(event)) return
-    event.preventDefault()
-    navigate('/')
-  }
 </script>
 
 <header class="shrink-0" aria-label="Workspace navigation and search">
   <PaneHeader mode="toolbar" rounded={false} ariaLabel="Workspace controls">
     {#snippet right()}
       <div class="flex w-full min-w-0 flex-wrap items-center gap-2">
-        <a
-          href="/"
-          onclick={goHome}
-          aria-label="Home"
-          aria-current={route.route.path === '/' ? 'page' : undefined}
-          class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-bottom"
-          data-tip="Home"
-          ><HugeiconsIcon
-            icon={Home12Icon}
-            size="1em"
-            strokeWidth={1.5}
-            class="h-[17px] w-[17px] shrink-0"
-            aria-hidden="true"
-          /></a
-        >
-        <div class="min-w-0 flex-1 md:w-96 md:flex-none">
+        <div class="min-w-0 flex-1 md:w-112 md:flex-none">
           <PrimaryNavigation />
         </div>
         {#if search}<div class="min-w-0 basis-full md:basis-48 md:flex-1">

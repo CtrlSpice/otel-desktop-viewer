@@ -51,7 +51,7 @@ describe('PrimaryNavigation', () => {
   it('renders a labelled tab for each signal', () => {
     setTestUrl('/traces')
     renderTabs()
-    for (const label of ['Traces', 'Metrics', 'Logs']) {
+    for (const label of ['Home', 'Traces', 'Metrics', 'Logs']) {
       expect(screen.getByRole('link', { name: label })).toBeInTheDocument()
       expect(screen.getByText(label)).toBeVisible()
     }
@@ -81,9 +81,13 @@ describe('PrimaryNavigation', () => {
     )
   })
 
-  it('marks no tab as current on a path outside the signals', () => {
+  it('marks Home as current on the root path', () => {
     setTestUrl('/')
     renderTabs()
+    expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute(
+      'aria-current',
+      'page'
+    )
     for (const label of ['Traces', 'Metrics', 'Logs']) {
       expect(screen.getByRole('link', { name: label })).not.toHaveAttribute(
         'aria-current'
@@ -96,6 +100,20 @@ describe('PrimaryNavigation', () => {
     renderTabs()
     await userEvent.click(screen.getByRole('link', { name: 'Logs' }))
     expect(window.location.pathname).toBe('/logs')
+  })
+
+  it('navigates Home through the primary tab strip', async () => {
+    setTestUrl('/traces/abc?span=selected')
+    renderTabs()
+    const home = screen.getByRole('link', { name: 'Home' })
+    expect(home).toHaveAttribute('href', '/')
+    expect(
+      screen.getByRole('navigation', { name: 'Primary' })
+    ).toContainElement(home)
+    await userEvent.click(home)
+    expect(window.location.pathname).toBe('/')
+    expect(window.location.search).toBe('')
+    expect(home).toHaveAttribute('aria-current', 'page')
   })
 
   it('moves the current-page marker to the tab that was clicked', async () => {

@@ -32,7 +32,7 @@
       | { iconType: 'component'; icon: Component }
     )
 
-  export const HOME_NAV: NavItem = {
+  export const HOME_NAV: NavItem<'home'> = {
     id: 'home',
     label: 'Home',
     path: '/',
@@ -103,7 +103,11 @@
   import PaneHeader from '../PaneHeader.svelte'
 
   const routeContext = getRouteContext()
-  const items = $derived($evalsEnabled ? [...NAV_ITEMS, EVALS_NAV] : NAV_ITEMS)
+  const items = $derived(
+    $evalsEnabled
+      ? [HOME_NAV, ...NAV_ITEMS, EVALS_NAV]
+      : [HOME_NAV, ...NAV_ITEMS]
+  )
 
   // NAV_ITEMS are all signal tabs, so navigate through the helper to carry the
   // active time window across signals.
@@ -113,11 +117,17 @@
     const item = items.find(item => item.id === id)
     if (!item) return
     event.preventDefault()
-    if (item.id === 'evals') navigate('/evals')
+    if (item.id === 'home' || item.id === 'evals') navigate(item.path)
     else navigateToSignal(item.id)
   }
 </script>
 
+{#snippet homeIcon()}<HugeiconsIcon
+    icon={Home12Icon}
+    size="1em"
+    strokeWidth={1.5}
+    class="h-[15px] w-[15px] shrink-0"
+  />{/snippet}
 {#snippet tracesIcon()}<HugeiconsIcon
     icon={BarChartHorizontalIcon}
     size="1em"
@@ -151,16 +161,18 @@
     id: item.id,
     label: item.label,
     href:
-      item.id === 'evals'
-        ? '/evals'
+      item.id === 'home' || item.id === 'evals'
+        ? item.path
         : signalHref(item.id, routeContext.route.query),
     icon:
-      item.id === 'traces'
-        ? tracesIcon
-        : item.id === 'metrics'
-          ? metricsIcon
-          : item.id === 'logs'
-            ? logsIcon
-            : evalsIcon,
+      item.id === 'home'
+        ? homeIcon
+        : item.id === 'traces'
+          ? tracesIcon
+          : item.id === 'metrics'
+            ? metricsIcon
+            : item.id === 'logs'
+              ? logsIcon
+              : evalsIcon,
   }))}
 />
