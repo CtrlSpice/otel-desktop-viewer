@@ -41,7 +41,7 @@
   <PaneHeader mode="toolbar" rounded={false} ariaLabel="Workspace controls">
     {#snippet right()}
       <div class="flex w-full min-w-0 flex-wrap items-center gap-2">
-        <div class="min-w-0 flex-1 md:w-112 md:flex-none">
+        <div class="min-w-0 flex-1 md:w-120 md:flex-none">
           <PrimaryNavigation />
         </div>
         {#if search}<div

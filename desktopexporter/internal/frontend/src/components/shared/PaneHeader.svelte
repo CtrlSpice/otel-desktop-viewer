@@ -126,7 +126,7 @@
     activeID: string
     onSelect: (id: string, event?: MouseEvent) => void
     tabLayout?: PaneTabLayout
-    /** Plain tabs use muted labels and separators, with text colour for selection. */
+    /** Plain tabs use spaced, muted labels with text colour for selection. */
     tabStyle?: 'underline' | 'plain'
     /** Route navigation renders real links instead of ARIA tabs. */
     navigation?: boolean
@@ -280,11 +280,7 @@
       {#if layout === 'right'}
         <span class="pane-header__tab-lead" aria-hidden="true"></span>
       {/if}
-      {#each tabs as tab, index (tab.id)}
-        {#if plainTabs && index > 0}<span
-            class="pane-header__tab-separator"
-            aria-hidden="true">|</span
-          >{/if}
+      {#each tabs as tab (tab.id)}
         {@const active = tab.id === activeID}
         {#if navigation && tab.href}
           <a
@@ -683,7 +679,7 @@
   }
 
   .pane-header--plain-tabs :global(.tabs.pane-header__tabs) {
-    @apply items-center gap-0;
+    @apply items-center gap-4;
   }
 
   .pane-header--plain-tabs :global(.pane-header__tabs > .pane-header__tab) {
@@ -705,11 +701,6 @@
   .pane-header--plain-tabs
     :global(.pane-header__tabs > .pane-header__tab:focus-visible) {
     color: var(--color-base-content);
-  }
-
-  .pane-header__tab-separator {
-    @apply shrink-0 select-none;
-    color: var(--color-muted);
   }
 
   @media (forced-colors: active) {
