@@ -2,7 +2,7 @@
   import { tick } from 'svelte'
   import type { EventData, TraceLogSummary } from '@/types/api-types'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
-  import LogField from '@/components/logs/LogField.svelte'
+  import LogField from '@/components/shared/DetailField.svelte'
   import EventsPanel from './EventsPanel.svelte'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { formatSignedDuration, formatTimestamp } from '@/utils/time'

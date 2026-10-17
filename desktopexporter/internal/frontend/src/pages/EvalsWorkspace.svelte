@@ -1,20 +1,18 @@
 <script lang="ts">
   import PageLayout from '@/components/shared/PageLayout.svelte'
+  import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import SignalCard from '@/components/shared/SignalCard.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
+  import SignalDrawerFooter from '@/components/shared/Drawer/SignalDrawerFooter.svelte'
   import EvalDetail from '@/components/evals/EvalDetail.svelte'
   import AssessmentBadge from '@/components/evals/AssessmentBadge.svelte'
   import { exampleRuns } from '@/components/evals/examples'
-  import {
-    assessmentSummary,
-    localTimestamp,
-    percent,
-  } from '@/components/evals/model'
-  import { evalsEnabled } from '@/state/features'
+  import { localTimestamp } from '@/components/evals/model'
   import { getRouteContext } from '@/contexts/route-context.svelte'
   import { navigate, buildSearch, withQueryPatch } from '@/route'
+  import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
   import type { ImportFailure } from '@/types/import-types'
-  import '@/components/evals/evals.css'
+  import { PANEL_DEFAULT_REM } from '@/state/panel-width'
 
   let {
     importFailure = null,
@@ -71,9 +69,6 @@
   const selectedIndex = $derived(
     results.findIndex(item => item.id === attempt?.id)
   )
-  const completed = $derived(
-    run.attempts.filter(item => item.state === 'Complete').length
-  )
 
   function update(changes: Record<string, string | null>, replace = false) {
     navigate(
@@ -90,137 +85,87 @@
   }
 </script>
 
-<div class="evals-page">
-  <PageLayout
-    items={$evalsEnabled ? runs : []}
-    selectedID={run.id}
-    drawerID="signal-drawer"
-    drawerLabel="Evals"
-    itemKey={item => item.id}
-    defaultDetailRem={25}
-    minMainWidth={0.35}
-    minDetailWidth={0.25}
-    resizableStorageKey="evals:detail-width"
-  >
-    {#snippet drawerSearch()}
-      <label class="eval-run-search"
-        ><span class="sr-only">Find a run</span><input
-          type="search"
-          placeholder="Find a run…"
-          bind:value={runSearch}
-        /></label
-      >
-    {/snippet}
-    {#snippet drawerChromeToolbar()}<span class="eval-drawer-label"
-        >Evaluation runs</span
-      >{/snippet}
-    {#snippet itemSnippet(item, selected)}
-      <SignalCard
-        id={item.id}
-        title={item.name}
-        description={item.evaluation}
-        {selected}
-        onclick={selectRun}
-      >
-        {#snippet badge()}<span
-            class="eval-run-state"
-            class:eval-attention={item.state === 'Paused'}>{item.state}</span
-          >{/snippet}
-        {#snippet meta()}
-          <div class="eval-run-card-meta">
-            <div class="eval-run-meta">
-              <span
-                >{item.attempts.filter(row => row.state === 'Complete').length} /
-                {item.attempts.length} complete</span
-              >
-              <strong
-                >{percent(
-                  assessmentSummary(
-                    item,
-                    item.assessments.find(
-                      definition => definition.id === item.headlineAssessment
-                    ) ?? item.assessments[0]
-                  ).percent
-                )}</strong
-              >
-            </div>
-            <div class="eval-progress" aria-hidden="true">
-              <span
-                style:width={`${(item.attempts.filter(row => row.state === 'Complete').length / item.attempts.length) * 100}%`}
-              ></span>
-            </div>
-            {#if item.startedAt}<time
-                class="eval-time"
-                datetime={item.startedAt}
-                title={item.startedAt}>{localTimestamp(item.startedAt)}</time
-              >{/if}
-          </div>
-        {/snippet}
-      </SignalCard>
-    {/snippet}
-    {#snippet drawerFooter()}<div class="eval-drawer-footer">
-        {runs.length} runs <span>Example data</span>
-      </div>{/snippet}
-    {#snippet main()}
-      {#if !$evalsEnabled}
-        <div class="eval-empty">
-          <h1>Evals is not enabled</h1>
-          <p>
-            Enable Evals in your local feature flags to open this experiment.
-          </p>
-        </div>
-      {:else}
-        {#if importFailure}<div class="alert alert-error">
-            Import issue in {importFailure.fileName}.
-            <a href="/#ingestion-issues" onclick={onViewIssue}>View issue</a>
-          </div>{/if}
-        <header class="eval-run-heading">
-          <div class="eval-between">
-            <p class="eval-eyebrow">{run.evaluation}</p>
-            <span class="eval-example">Example data</span>
-          </div>
-          <div class="eval-between">
-            <h1>{run.name}</h1>
-            <button
-              class="eval-text-button"
-              onclick={() => update({ attempt: null })}>Run details</button
-            >
-          </div>
-          <div class="eval-meta">
-            <span>{run.state}</span><span
-              >{completed} / {run.attempts.length} complete</span
-            ><span>Grades provisional</span>
-          </div>
-          <div class="eval-summary-grid">
-            {#each run.assessments as definition}
-              {@const summary = assessmentSummary(run, definition)}
-              <div class="eval-metric">
-                <span>{definition.name}</span><strong
-                  >{percent(summary.percent)}</strong
-                >
-                <div class="eval-progress" aria-hidden="true">
-                  <span style:width={`${summary.percent ?? 0}%`}></span>
-                </div>
-                <small
-                  >{summary.scored} scored / {summary.denominator}
-                  {definition.aggregation === 'planned'
-                    ? 'planned'
-                    : 'scored applicable'}</small
-                >
-              </div>
-            {/each}
-          </div>
-        </header>
-        <div class="eval-result-toolbar">
-          <label class="eval-result-search"
-            ><span class="sr-only">Filter loaded results</span><input
-              type="search"
-              placeholder="Filter loaded results…"
-              value={query.q ?? ''}
-              oninput={event => update({ q: event.currentTarget.value }, true)}
-            /></label
-          >
+<PageLayout
+  items={runs}
+  selectedID={run.id}
+  drawerID="signal-drawer"
+  drawerLabel="Evals"
+  itemKey={item => item.id}
+  defaultDetailRem={PANEL_DEFAULT_REM}
+  resizableStorageKey="evals:detail-width"
+>
+  {#snippet drawerSearch()}
+    <input
+      class="input typed-field typed-field--pill w-full"
+      type="search"
+      aria-label="Find a run"
+      placeholder="Find a run…"
+      bind:value={runSearch}
+    />
+  {/snippet}
+  {#snippet drawerChromeToolbar()}<span class="badge-count">Example data</span
+    >{/snippet}
+  {#snippet itemSnippet(item, selected)}
+    <SignalCard
+      id={item.id}
+      title={item.name}
+      description={item.evaluation}
+      {selected}
+      onclick={selectRun}
+    >
+      {#snippet badge()}
+        <span class="badge-count"
+          >{item.attempts.filter(row => row.state === 'Complete').length} / {item
+            .attempts.length}</span
+        >
+        <span
+          class="badge badge-xs badge-soft"
+          class:badge-warning={item.state === 'Paused'}>{item.state}</span
+        >
+      {/snippet}
+      {#snippet meta()}
+        {#if item.startedAt}<time
+            class="text-xs tabular-nums text-rp-subtle"
+            datetime={item.startedAt}
+            title={item.startedAt}>{localTimestamp(item.startedAt)}</time
+          >{/if}
+      {/snippet}
+    </SignalCard>
+  {/snippet}
+  {#snippet drawerFooter()}<SignalDrawerFooter
+      count={runs.length}
+      label="run"
+    />{/snippet}
+  {#snippet main()}
+    {#if importFailure}<div class="alert alert-error">
+        Import issue in {importFailure.fileName}.
+        <a class="link" href={`/#${INGESTION_ISSUES_ID}`} onclick={onViewIssue}
+          >View issue</a
+        >
+      </div>{/if}
+    <PaneHeader mode="title" title={run.name} subtitle={run.evaluation}>
+      {#snippet badge()}<span
+          class="badge badge-xs badge-soft"
+          class:badge-warning={run.state === 'Paused'}>{run.state}</span
+        >{/snippet}
+      {#snippet right()}<button
+          class="btn btn-ghost btn-xs"
+          onclick={() => update({ attempt: null })}>Run details</button
+        >{/snippet}
+    </PaneHeader>
+    <PaneHeader mode="toolbar" ariaLabel="Result filters" rounded={false}>
+      {#snippet right()}
+        <div class="flex w-full min-w-0 flex-wrap items-center gap-2">
+          <input
+            class="input typed-field typed-field--pill min-w-0 flex-1"
+            type="search"
+            aria-label="Filter loaded results"
+            placeholder="Filter loaded results…"
+            value={query.q ?? ''}
+            oninput={event => update({ q: event.currentTarget.value }, true)}
+          />
           <select
+            class="select typed-field w-auto"
             aria-label="Execution status"
             value={query.status ?? ''}
             onchange={event =>
@@ -231,6 +176,7 @@
               >{/each}</select
           >
           <select
+            class="select typed-field w-auto"
             aria-label="Sort results"
             value={query.sort ?? ''}
             onchange={event =>
@@ -240,88 +186,90 @@
             ><option value="name">Name</option></select
           >
         </div>
-        <div class="eval-results-scroll">
-          <table class="eval-results">
-            <caption class="sr-only">Results for {run.name}</caption>
-            <thead
-              ><tr
-                ><th scope="col">Case / attempt</th
-                >{#each run.assessments as definition}<th
-                    scope="col"
-                    title={definition.scale}>{definition.name}</th
-                  >{/each}</tr
-              ></thead
+      {/snippet}
+    </PaneHeader>
+    <div class="min-h-0 flex-1 overflow-auto">
+      <table class="table w-full">
+        <caption class="sr-only">Results for {run.name}</caption>
+        <thead class="header-surface sticky top-0 z-10"
+          ><tr
+            ><th class="table-header-cell text-left" scope="col"
+              >Case / attempt</th
+            >{#each run.assessments as definition}<th
+                class="table-header-cell text-right"
+                scope="col"
+                title={definition.scale}>{definition.name}</th
+              >{/each}</tr
+          ></thead
+        >
+        <tbody class="table-body-surface">
+          {#each results as item (item.id)}
+            <tr
+              class="table-row"
+              class:table-row--selected={attempt?.id === item.id}
             >
-            <tbody>
-              {#each results as item (item.id)}
-                <tr class:eval-selected={attempt?.id === item.id}>
-                  <th scope="row"
-                    ><button
-                      aria-pressed={attempt?.id === item.id}
-                      onclick={() => update({ run: run.id, attempt: item.id })}
-                      ><strong>{item.name}</strong><span class="eval-meta"
-                        ><span class:eval-attention={item.state === 'Error'}
-                          >{item.state}</span
-                        >{#if item.seconds !== undefined}<span
-                            >{item.seconds} s</span
-                          >{/if}<span>Rep {item.repetition}</span></span
-                      ></button
-                    ></th
-                  >
-                  {#each run.assessments as definition}<td
-                      ><AssessmentBadge
-                        assessment={item.assessments.find(
-                          score => score.id === definition.id
-                        )}
-                        maximum={definition.maximum}
-                      /></td
-                    >{/each}
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-          {#if !results.length}<div class="eval-empty">
-              <h2>No matching attempts</h2>
-              <p>Try another term or execution status.</p>
-              <button
-                class="eval-text-button"
-                onclick={() => update({ q: null, status: null }, true)}
-                >Clear filters</button
+              <th scope="row" class="table-cell text-left font-normal"
+                ><button
+                  class="btn btn-ghost btn-sm h-auto justify-start text-left whitespace-normal"
+                  aria-pressed={attempt?.id === item.id}
+                  onclick={() => update({ run: run.id, attempt: item.id })}
+                  >{item.name}</button
+                >
+                <div class="flex flex-wrap items-center gap-2 px-3 text-xs">
+                  <span
+                    class="badge badge-xs badge-soft"
+                    class:badge-error={item.state === 'Error'}
+                    >{item.state}</span
+                  >{#if item.seconds !== undefined}<span class="tabular-nums"
+                      >{item.seconds} s</span
+                    >{/if}<span>Rep {item.repetition}</span>
+                </div></th
               >
-            </div>{/if}
-        </div>
-        <div class="eval-results-note">
-          <span>{results.length} / {run.attempts.length} attempts</span><span
-            >— No assessment recorded</span
+              {#each run.assessments as definition}<td
+                  class="table-cell text-right"
+                  ><AssessmentBadge
+                    assessment={item.assessments.find(
+                      score => score.id === definition.id
+                    )}
+                    maximum={definition.maximum}
+                  /></td
+                >{/each}
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+      {#if !results.length}<div class="p-6 text-sm">
+          <p>No matching attempts</p>
+          <button
+            class="btn btn-ghost btn-sm"
+            onclick={() => update({ q: null, status: null }, true)}
+            >Clear filters</button
           >
-        </div>
-      {/if}
-    {/snippet}
-    {#snippet detail()}
-      {#if $evalsEnabled}
-        {#key `${run.id}/${attempt?.id ?? ''}`}<EvalDetail
-            {run}
-            {attempt}
-            {tab}
-            onTab={detail => update({ detail }, true)}
-          />{/key}
-      {:else}<div class="eval-empty">
-          Select an enabled evaluation to inspect its results.
         </div>{/if}
-    {/snippet}
-    {#snippet pageFooter()}
-      <div class="eval-footer">
-        <span>Experimental and unsupported</span>
-        {#if $evalsEnabled}<SignalFooter
-            index={selectedIndex}
-            total={results.length}
-            label="attempt"
-            onFirst={() => selectIndex(0)}
-            onPrev={() => selectIndex(selectedIndex - 1)}
-            onNext={() => selectIndex(selectedIndex + 1)}
-            onLast={() => selectIndex(results.length - 1)}
-          />{/if}
+    </div>
+  {/snippet}
+  {#snippet detail()}
+    {#key `${run.id}/${attempt?.id ?? ''}`}<EvalDetail
+        {run}
+        {attempt}
+        {tab}
+        onTab={detail => update({ detail }, true)}
+      />{/key}
+  {/snippet}
+  {#snippet pageFooter()}
+    <div class="flex min-w-0 flex-wrap items-center">
+      <span class="px-3 text-xs">Experimental and unsupported</span>
+      <div class="min-w-0 flex-1">
+        <SignalFooter
+          index={selectedIndex}
+          total={results.length}
+          label="attempt"
+          onFirst={() => selectIndex(0)}
+          onPrev={() => selectIndex(selectedIndex - 1)}
+          onNext={() => selectIndex(selectedIndex + 1)}
+          onLast={() => selectIndex(results.length - 1)}
+        />
       </div>
-    {/snippet}
-  </PageLayout>
-</div>
+    </div>
+  {/snippet}
+</PageLayout>

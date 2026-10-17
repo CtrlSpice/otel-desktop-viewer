@@ -27,55 +27,66 @@ test('run selection, assessments, filtering and browser history stay connected',
   await enableEvals(page)
   await page.goto('/evals')
   await expect(
-    page.getByRole('heading', { name: 'Guide-assisted agent', level: 1 })
+    page.getByRole('region', { name: 'Guide-assisted agent', exact: true })
   ).toBeVisible()
   await page.getByRole('button', { name: /Find the slow request/ }).click()
-  await page.getByRole('button', { name: 'Assessments', exact: true }).click()
+  await page.getByRole('tab', { name: /^Assessments/ }).click()
   await expect(
     page.getByText('The causal claim about total latency', { exact: false })
   ).toBeVisible()
-  await page.getByRole('button', { name: 'Tool calls', exact: true }).click()
+  await page.getByRole('tab', { name: /^Tool calls/ }).click()
   await page.locator('summary').filter({ hasText: 'Error' }).click()
   await expect(
     page.getByText('SQL binder error:', { exact: false })
   ).toBeVisible()
   await page.reload()
-  await expect(
-    page.getByRole('button', { name: 'Tool calls', exact: true })
-  ).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('tab', { name: /^Tool calls/ })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  )
   await page
     .getByRole('searchbox', { name: 'Filter loaded results' })
     .fill('Mixed')
-  await expect(page.getByRole('table').getByRole('row')).toHaveCount(2)
+  await expect(
+    page
+      .getByRole('table', { name: 'Results for Guide-assisted agent' })
+      .getByRole('row')
+  ).toHaveCount(2)
   await page
     .getByRole('searchbox', { name: 'Filter loaded results' })
     .fill('nonexistent-score')
   await expect(
-    page.getByRole('heading', { name: 'No matching attempts' })
+    page.getByText('No matching attempts', { exact: true })
   ).toBeVisible()
   await page.getByRole('button', { name: 'Clear filters' }).click()
   await page.getByRole('button', { name: /Direct agent/ }).click()
   await expect(
-    page.getByRole('heading', { name: 'Direct agent', level: 1 })
+    page.getByRole('region', { name: 'Direct agent', exact: true })
   ).toBeVisible()
   await page.getByRole('button', { name: /Compare CPU evidence/ }).click()
-  await page.getByRole('button', { name: 'Overview', exact: true }).click()
+  await page.getByRole('tab', { name: 'Fields', exact: true }).click()
   await expect(
     page.getByText('The investigator process exited', { exact: false })
   ).toBeVisible()
   await expect(
-    page.locator('.eval-detail-body').getByText('Unknown', { exact: true })
+    page.getByRole('tabpanel').getByText('Unknown', { exact: true })
   ).toHaveCount(2)
   await page.goBack()
   await expect(
-    page.getByRole('heading', { name: 'Grading for this run' })
+    page.getByRole('table', { name: 'Grading for this run' })
   ).toBeVisible()
   await page.getByRole('button', { name: /Revised instructions/ }).click()
-  await expect(page.locator('.eval-metric > strong')).toHaveText([
-    'Unscored',
-    'Unscored',
-    'Unscored',
-  ])
+  const plannedResults = page.getByRole('table', {
+    name: 'Results for Revised instructions',
+  })
+  await expect(
+    plannedResults.getByText('Unscored', { exact: true })
+  ).toHaveCount(24)
+  await expect(
+    page
+      .getByRole('table', { name: 'Grading for this run' })
+      .getByText('Unknown', { exact: true })
+  ).toHaveCount(2)
 })
 
 for (const theme of ['rose-pine', 'rose-pine-dawn']) {
@@ -94,17 +105,17 @@ for (const theme of ['rose-pine', 'rose-pine-dawn']) {
         '/evals?run=guide-assisted&attempt=request-latency&detail=Assessments'
       )
       await expect(
-        page.getByRole('heading', { name: 'Find the slow request', level: 2 })
+        page.getByRole('tabpanel', { name: /^Assessments/ })
       ).toBeVisible()
-      const scan = await new AxeBuilder({ page })
-        .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
-        .analyze()
-      expect(scan.violations).toEqual([])
       expect(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= window.innerWidth
         )
       ).toBe(true)
+      const scan = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
+        .analyze()
+      expect(scan.violations).toEqual([])
     })
   }
 }

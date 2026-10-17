@@ -7,13 +7,13 @@
 </script>
 
 <span
-  class="eval-score"
-  class:eval-score--good={assessment?.value === maximum}
-  class:eval-score--partial={assessment?.value != null &&
+  class="badge badge-xs badge-soft tabular-nums"
+  class:badge-success={assessment?.value === maximum}
+  class:badge-warning={assessment?.value != null &&
     assessment.value > 0 &&
     assessment.value < maximum}
-  class:eval-score--bad={assessment?.value === 0}
+  class:badge-error={assessment?.value === 0}
   title={assessment?.value != null
     ? `${assessment.value} / ${maximum}`
-    : undefined}>{assessment?.label ?? '—'}</span
+    : undefined}>{assessment?.label ?? 'Unscored'}</span
 >

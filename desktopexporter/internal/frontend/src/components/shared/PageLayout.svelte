@@ -3,11 +3,9 @@
    * PageLayout: the single top-level layout used by every route.
    *
    * Owns:
-   *   1. The SignalListDrawer (the left rail with nav/theme + optional
-   *      item list/search/footer). Always rendered. `railOnly` pages
-   *      (Home) force-collapse it into a thin nav rail; list pages with
-   *      zero results keep it open and show an empty state so search and
-   *      time filters stay reachable.
+   *   1. The workspace shell: horizontal navigation/search/actions above
+   *      the resizable list drawer. `railOnly` pages (Home) omit the list;
+   *      the toolbar stays available on every route and at every drawer width.
    *   2. The content area: a `main` snippet (required) with an
    *      optional `detail` snippet that, when present, splits the
    *      content area into a horizontally resizable main+detail pair
@@ -15,8 +13,7 @@
    *
    * The page-level footer (delete + prev/next nav) lives INSIDE the
    * `main` snippet -- it acts on the main view's selection, not on
-   * the detail pane. Drawer-level controls (search, sort, refresh)
-   * still live in the drawer slots.
+   * the detail pane. The search/sort slots render in the workspace toolbar.
    */
   import type { Snippet } from 'svelte'
   import ResizablePanels from './ResizablePanels.svelte'
@@ -28,7 +25,7 @@
      * `railOnly` for pages with no list (Home). On list pages an
      * empty array renders the drawer's empty state instead. */
     items: T[]
-    /** Force-collapse the drawer into a thin nav rail (Home). */
+    /** Hide the list drawer on pages with no list (Home). */
     railOnly?: boolean
     selectedID: string | null
     drawerID: string

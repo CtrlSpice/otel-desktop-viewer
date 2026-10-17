@@ -2,11 +2,11 @@
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
-import DrawerNavTabs, { isNavItemActive } from './DrawerNavTabs.svelte'
+import PrimaryNavigation, { isNavItemActive } from './PrimaryNavigation.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
 function renderTabs() {
-  return renderWithContexts(DrawerNavTabs, { collapsed: false })
+  return renderWithContexts(PrimaryNavigation, {})
 }
 
 describe('isNavItemActive', () => {
@@ -47,7 +47,7 @@ describe('isNavItemActive', () => {
   })
 })
 
-describe('DrawerNavTabs (expanded)', () => {
+describe('PrimaryNavigation', () => {
   it('renders a labelled tab for each signal', () => {
     setTestUrl('/traces')
     renderTabs()

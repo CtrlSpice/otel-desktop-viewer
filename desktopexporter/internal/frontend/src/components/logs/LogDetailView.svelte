@@ -5,7 +5,7 @@
   import ExportButton from '@/components/shared/ExportButton.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
-  import LogField from './LogField.svelte'
+  import LogField from '@/components/shared/DetailField.svelte'
   import AttributeValueView from '@/components/shared/AttributeValue.svelte'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
   import { severityLabel as buildSeverityLabel } from '@/components/logs/log-severity'

@@ -25,7 +25,7 @@
   import { LogIcon } from '@/icons'
   import ReadonlyCodePanel from '@/components/shared/ReadonlyCodePanel.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
-  import LogField from '@/components/logs/LogField.svelte'
+  import LogField from '@/components/shared/DetailField.svelte'
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import IngestionIssues from '@/components/shared/IngestionIssues.svelte'
   import PaneHeader, {

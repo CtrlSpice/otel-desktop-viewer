@@ -77,21 +77,13 @@ test.describe('home page accessibility', () => {
   test('starts keyboard traversal in primary navigation', async ({ page }) => {
     await page.keyboard.press('Tab')
 
-    const tracesLink = page.getByRole('link', { name: 'Traces', exact: true })
-    await expect(tracesLink).toBeFocused()
-
-    const tracesLinkMetrics = await tracesLink.evaluate(element => {
-      const styles = getComputedStyle(element)
-      return {
-        radius: Number.parseFloat(styles.borderTopLeftRadius),
-        width: element.getBoundingClientRect().width,
-        zIndex: Number.parseFloat(styles.zIndex),
-      }
-    })
-    expect(tracesLinkMetrics.radius).toBeGreaterThanOrEqual(
-      tracesLinkMetrics.width / 2
-    )
-    expect(tracesLinkMetrics.zIndex).toBeGreaterThan(0)
+    await expect(
+      page.getByRole('link', { name: 'Home', exact: true })
+    ).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(
+      page.getByRole('link', { name: 'Traces', exact: true })
+    ).toBeFocused()
   })
 
   test('moves focus through the trace sort menu with native keyboard events', async ({
@@ -115,6 +107,55 @@ test.describe('home page accessibility', () => {
     await page.keyboard.press('Escape')
     await expect(trigger).toBeFocused()
     await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  test('keeps search drafts and controls accessible above collapsed signal drawers', async ({
+    page,
+  }) => {
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      for (const signal of ['traces', 'metrics', 'logs']) {
+        await page.evaluate(() =>
+          localStorage.setItem('signal-drawer:open', 'true')
+        )
+        await page.goto(`/${signal}`)
+        const editor = page.locator('.cm-content[contenteditable="true"]')
+        await editor.fill('service.name = "checkout"')
+        await page.getByRole('button', { name: 'Collapse sidebar' }).click()
+        await expect(editor).toBeVisible()
+        await expect(editor).toHaveText('service.name = "checkout"')
+        await expect(
+          page.getByRole('button', { name: /^Sort by/ })
+        ).toBeVisible()
+        await expect(
+          page.getByRole('button', { name: 'Refresh', exact: true })
+        ).toBeVisible()
+        await expect(
+          page.getByRole('button', { name: 'Open sidebar' })
+        ).toBeFocused()
+        const geometry = await editor.evaluate(element => {
+          const editorBox = element.getBoundingClientRect()
+          const navigationBox = document
+            .querySelector('[aria-label="Primary"]')!
+            .getBoundingClientRect()
+          return {
+            outsideDrawer: !element.closest('.drawer-side'),
+            noOverlap:
+              editorBox.left >= navigationBox.right ||
+              editorBox.top >= navigationBox.bottom,
+            noPageOverflow:
+              document.documentElement.scrollWidth <= window.innerWidth,
+          }
+        })
+        expect(geometry).toEqual({
+          outsideDrawer: true,
+          noOverlap: true,
+          noPageOverflow: true,
+        })
+        await page.getByRole('button', { name: 'Open sidebar' }).click()
+        await expect(editor).toHaveText('service.name = "checkout"')
+      }
+    }
   })
 
   test('keeps visible endpoint labels in their accessible names', async ({

@@ -4,7 +4,7 @@
 
 <script lang="ts">
   import FieldGroup from './FieldGroup.svelte'
-  import LogField from '@/components/logs/LogField.svelte'
+  import LogField from '@/components/shared/DetailField.svelte'
   import { itemHref, SPAN_PARAM } from '@/route'
   import type { Rejection } from '@/types/api-types'
   import type { ImportFailure } from '@/types/import-types'

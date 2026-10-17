@@ -2,7 +2,10 @@
 
 The `/evals` frontend is a fixture-backed workspace for developing the Evals
 experience before implementing ingestion and storage. It uses the existing
-drawer, resizable panels, theme controls and trace viewer. The server's
+drawer, resizable panels, headers, field groups, badges and trace viewer.
+App-wide navigation, search and controls live above the drawer in
+`shared/Toolbar/WorkspaceToolbar.svelte`. The existing log field renderer is
+shared as `shared/DetailField.svelte` for logs, traces, Home and Evals. The server's
 `/api/features` capability gates navigation and loading; Evals remains off by
 default and is labelled experimental and unsupported.
 

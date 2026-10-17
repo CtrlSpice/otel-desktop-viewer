@@ -385,6 +385,28 @@ describe('SignalListDrawer refresh control', () => {
 })
 
 describe('SignalListDrawer collapse behaviour', () => {
+  it('keeps the same search input and controls outside the drawer when collapsed', async () => {
+    setTestUrl('/traces')
+    const search = createRawSnippet(() => ({
+      render: () => '<input aria-label="Search traces" type="search" />',
+    }))
+    renderDrawer({
+      drawerSearch: search,
+      drawerChromeToolbar,
+      onRefresh: vi.fn(),
+    })
+    const input = screen.getByRole('searchbox', { name: 'Search traces' })
+    await userEvent.type(input, 'service.name = checkout')
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Collapse sidebar' })
+    )
+    expect(screen.getByRole('searchbox', { name: 'Search traces' })).toBe(input)
+    expect(input).toHaveValue('service.name = checkout')
+    expect(input.closest('.drawer-side')).toBeNull()
+    expect(screen.getByText('sort control')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeVisible()
+  })
+
   it('opens by default when no preference is stored', () => {
     setTestUrl('/traces')
     renderDrawer()
@@ -392,12 +414,16 @@ describe('SignalListDrawer collapse behaviour', () => {
     expect(screen.queryByLabelText('Open sidebar')).not.toBeInTheDocument()
   })
 
-  it('collapses to the rail when the collapse control is clicked', async () => {
+  it('collapses the list while keeping navigation above it', async () => {
     setTestUrl('/traces')
     renderDrawer()
     await userEvent.click(screen.getByLabelText('Collapse sidebar'))
     expect(screen.getByLabelText('Open sidebar')).toBeInTheDocument()
-    expect(document.querySelector('.signal-drawer__header')).toBeNull()
+    expect(
+      screen
+        .getByRole('navigation', { name: 'Primary' })
+        .closest('.drawer-side')
+    ).toBeNull()
   })
 
   it('keeps focus on the corresponding toggle as the drawer changes state', async () => {
@@ -448,7 +474,7 @@ describe('SignalListDrawer collapse behaviour', () => {
     expect(screen.queryByText('GET /checkout')).not.toBeInTheDocument()
   })
 
-  it('expands again from the collapsed rail', async () => {
+  it('expands again from the workspace toolbar', async () => {
     localStorage.setItem(DRAWER_OPEN_KEY, 'false')
     setTestUrl('/traces')
     renderDrawer()
@@ -457,7 +483,7 @@ describe('SignalListDrawer collapse behaviour', () => {
     expect(localStorage.getItem(DRAWER_OPEN_KEY)).toBe('true')
   })
 
-  it('still offers signal navigation from the collapsed rail', async () => {
+  it('still offers signal navigation with the drawer collapsed', async () => {
     localStorage.setItem(DRAWER_OPEN_KEY, 'false')
     setTestUrl('/traces')
     renderDrawer()
@@ -477,14 +503,14 @@ describe('SignalListDrawer rail-only pages', () => {
     const user = userEvent.setup()
 
     await user.tab()
-    expect(screen.getByRole('link', { name: 'Traces' })).toHaveFocus()
+    expect(screen.getByRole('link', { name: 'Home' })).toHaveFocus()
   })
 
   it('stays collapsed even when the stored preference says open', () => {
     localStorage.setItem(DRAWER_OPEN_KEY, 'true')
     setTestUrl('/')
     renderDrawer({ railOnly: true, items: [] })
-    expect(document.querySelector('.signal-drawer__header')).toBeNull()
+    expect(screen.getByRole('navigation', { name: 'Primary' })).toBeVisible()
     expect(screen.getByText('page body')).toBeInTheDocument()
   })
 

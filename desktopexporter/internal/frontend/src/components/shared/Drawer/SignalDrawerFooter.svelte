@@ -2,12 +2,12 @@
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { Delete02Icon } from '@hugeicons/core-free-icons'
 
-  type SignalLabel = 'trace' | 'log' | 'metric'
+  type SignalLabel = 'trace' | 'log' | 'metric' | 'run'
 
   interface Props {
     count: number
     label: SignalLabel
-    onDeleteAll: () => void
+    onDeleteAll?: () => void
   }
 
   let { count, label, onDeleteAll }: Props = $props()
@@ -16,6 +16,7 @@
     trace: 'traces',
     log: 'logs',
     metric: 'metrics',
+    run: 'runs',
   }
 
   let countLabel = $derived(`${count} ${count === 1 ? label : PLURAL[label]}`)
@@ -27,19 +28,19 @@
   <span class="text-xs tabular-nums text-base-content/50">
     {countLabel}
   </span>
-  <button
-    type="button"
-    class="btn btn-ghost btn-xs text-error"
-    onclick={onDeleteAll}
-    aria-label={deleteAriaLabel}
-  >
-    <HugeiconsIcon
-      icon={Delete02Icon}
-      size="1em"
-      strokeWidth={1.5}
-      class="h-3 w-3"
-      aria-hidden="true"
-    />
-    Delete all
-  </button>
+  {#if onDeleteAll}<button
+      type="button"
+      class="btn btn-ghost btn-xs text-error"
+      onclick={onDeleteAll}
+      aria-label={deleteAriaLabel}
+    >
+      <HugeiconsIcon
+        icon={Delete02Icon}
+        size="1em"
+        strokeWidth={1.5}
+        class="h-3 w-3"
+        aria-hidden="true"
+      />
+      Delete all
+    </button>{/if}
 </div>

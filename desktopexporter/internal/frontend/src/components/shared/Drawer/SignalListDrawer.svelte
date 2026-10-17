@@ -18,41 +18,13 @@
   import type { Snippet } from 'svelte'
   import { onDestroy, onMount, tick } from 'svelte'
   import VirtualList from '@humanspeak/svelte-virtual-list'
-  import { HugeiconsIcon } from '@hugeicons/svelte'
-  import {
-    BarChartHorizontalIcon,
-    ChartHistogramIcon,
-    ChevronRightIcon,
-    Home12Icon,
-    RefreshIcon,
-    TestTube01Icon,
-  } from '@hugeicons/core-free-icons'
-  import { LogIcon } from '@/icons'
-  import { evalsEnabled } from '@/state/features'
-  import ThemeToggle from '@/components/shared/ThemeToggle.svelte'
+  import WorkspaceToolbar from '@/components/shared/Toolbar/WorkspaceToolbar.svelte'
   import { startDrag, type DragHandle } from '@/components/shared/utils/drag'
   import {
     drawerWidth,
     MIN_DRAWER_WIDTH_REM,
     MAX_DRAWER_WIDTH_REM,
   } from '@/state/drawer-width.svelte'
-  import DrawerNavTabs from '@/components/shared/Drawer/DrawerNavTabs.svelte'
-  import {
-    NAV_ITEMS,
-    isNavItemActive,
-  } from '@/components/shared/Drawer/DrawerNavTabs.svelte'
-  import DateTimeFilter from '@/components/shared/Toolbar/DateTimeFilter.svelte'
-  import PaneHeader, {
-    type PaneNavigationTab,
-  } from '@/components/shared/PaneHeader.svelte'
-  import {
-    isPlainLeftClick,
-    navigate,
-    navigateToSignal,
-    signalHref,
-    type SignalName,
-  } from '@/route'
-  import { getRouteContext } from '@/contexts/route-context.svelte'
   import {
     keyDeltaFor,
     resolveNextPos,
@@ -71,10 +43,8 @@
     refreshAsideTip?: string
     /** When true, an empty list shows a loading gap instead of the empty state (initial fetch). */
     loading?: boolean
-    /** Page has no list at all (Home): force-collapse into a thin nav rail
-     * and disable the expand toggle. Zero *results* on a list page should
-     * NOT set this — the drawer stays open with an empty state so the
-     * search and time filters remain reachable. */
+    /** Page has no list (Home): hide the drawer and its toggle.
+     * Empty result lists still show the drawer's empty state. */
     railOnly?: boolean
     drawerChromeToolbar?: Snippet
     drawerSearch?: Snippet
@@ -291,53 +261,17 @@
     })
   })
 
-  // Only rail-only pages (Home) force-collapse. A list page with zero
-  // results keeps the drawer open and shows an empty state instead —
-  // otherwise the search bar and time filter needed to broaden the query
-  // are unreachable from the collapsed rail.
+  // Home has no list. Search and navigation stay mounted above the drawer.
   let effectivelyOpen = $derived(railOnly ? false : drawerOpen)
   let showEmptyState = $derived(items.length === 0 && !loading)
 
-  let openDrawerButton = $state<HTMLButtonElement | null>(null)
-  let collapseDrawerButton = $state<HTMLButtonElement | null>(null)
   let drawerPanelID = $derived(`${drawerID}-panel`)
 
-  async function setDrawerOpen(open: boolean) {
+  function setDrawerOpen(open: boolean) {
     if (railOnly) return
     skipWidthTransition = false
     drawerOpen = open
     persistDrawerOpen(open)
-    await tick()
-    const nextButton = open ? collapseDrawerButton : openDrawerButton
-    nextButton?.focus()
-  }
-
-  const routeContext = getRouteContext()
-  let activeNavID = $derived(
-    ($evalsEnabled && isNavItemActive('evals', routeContext.route.path)
-      ? 'evals'
-      : NAV_ITEMS.find(n => isNavItemActive(n.id, routeContext.route.path))
-          ?.id) ?? ''
-  )
-
-  function handleSignalNavigation(id: string, event?: MouseEvent) {
-    if (!event || !isPlainLeftClick(event)) return
-    if (id === 'evals' && $evalsEnabled) {
-      event.preventDefault()
-      navigate('/evals')
-      return
-    }
-    const item = NAV_ITEMS.find(n => n.id === id)
-    if (!item) return
-    event.preventDefault()
-    // SAFETY: NAV_ITEMS is the fixed navigation data source whose ids are SignalName values.
-    navigateToSignal(item.id as SignalName)
-  }
-
-  function handleHomeNavigation(event: MouseEvent) {
-    if (!isPlainLeftClick(event)) return
-    event.preventDefault()
-    navigate('/')
   }
 
   // Only fires when `selectedID` actually changes (not on items reshuffles),
@@ -552,383 +486,134 @@
   })
 </script>
 
-<div class="signal-drawer drawer drawer-open">
-  <input
-    id={drawerID}
-    type="checkbox"
-    class="drawer-toggle signal-drawer-toggle"
-    checked={effectivelyOpen}
-    disabled
-    aria-hidden="true"
-    tabindex="-1"
+<div class="workspace-shell">
+  <WorkspaceToolbar
+    drawerOpen={effectivelyOpen}
+    {drawerPanelID}
+    hasDrawer={!railOnly}
+    onToggleDrawer={() => setDrawerOpen(!effectivelyOpen)}
+    search={drawerSearch}
+    controls={drawerChromeToolbar}
+    {onRefresh}
+    {refreshPulse}
+    {refreshAsideTip}
   />
+  <div
+    class="signal-drawer drawer drawer-open"
+    class:signal-drawer--no-list={railOnly}
+  >
+    <input
+      id={drawerID}
+      type="checkbox"
+      class="drawer-toggle signal-drawer-toggle"
+      checked={effectivelyOpen}
+      disabled
+      aria-hidden="true"
+      tabindex="-1"
+    />
 
-  <div class="drawer-side">
-    <div
-      id={drawerPanelID}
-      class="signal-drawer__panel flex h-full flex-col is-drawer-close:w-14 is-drawer-close:bg-base-300 is-drawer-open:bg-base-200"
-      class:signal-drawer__panel--instant={(skipWidthTransition ||
-        isResizing) &&
-        !snapTween}
-      class:signal-drawer__panel--snap={snapTween}
-      style={effectivelyOpen ? `width: ${drawerWidth.rem}rem` : undefined}
-    >
-      {#if !railOnly}
-        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-        <div
-          class="col-resize-bar col-resize-bar--in-flow signal-drawer__resize"
-          class:col-resize-bar--active={isResizing}
-          onpointerdown={handleResizeStart}
-          ondblclick={handleResizeDblclick}
-          onkeydown={handleResizeKeydown}
-          role="separator"
-          aria-orientation="vertical"
-          aria-label={effectivelyOpen ? 'Resize the list' : 'Open the list'}
-          aria-valuenow={Math.round(drawerWidth.rem)}
-          aria-valuemin={MIN_DRAWER_WIDTH_REM}
-          aria-valuemax={MAX_DRAWER_WIDTH_REM}
-          tabindex="0"
-        >
-          <div class="col-resize-bar__line"></div>
-        </div>
-      {/if}
-      {#if !effectivelyOpen}
-        <div class="signal-drawer__collapsed-rail">
-          <div class="signal-drawer__collapsed-group">
-            {#if railOnly}
-              <span
-                class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-right"
-                data-tip="Waiting for data"
-                aria-disabled="true"
-              >
-                <HugeiconsIcon
-                  icon={ChevronRightIcon}
-                  size="1em"
-                  strokeWidth={1.5}
-                  class="h-[17px] w-[17px] opacity-40"
-                  aria-hidden="true"
-                />
-              </span>
-            {:else}
-              <!--
-              data-tip matches aria-label: a chevron labelled with the signal
-              name ("Traces") reads as a filter, not an expander, and a visible
-              label that disagrees with the accessible name trips WCAG 2.5.3.
-            -->
-              <button
-                bind:this={openDrawerButton}
-                type="button"
-                class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-right cursor-pointer"
-                data-tip="Open sidebar"
-                aria-label="Open sidebar"
-                aria-controls={drawerPanelID}
-                aria-expanded="false"
-                onclick={() => setDrawerOpen(true)}
-              >
-                <HugeiconsIcon
-                  icon={ChevronRightIcon}
-                  size="1em"
-                  strokeWidth={1.5}
-                  class="h-[17px] w-[17px] animate-[spin-half_200ms_ease-out]"
-                  aria-hidden="true"
-                />
-              </button>
-            {/if}
-          </div>
-
-          <div class="separator w-8" aria-hidden="true"></div>
-
-          <div class="signal-drawer__collapsed-group">
-            <DrawerNavTabs collapsed />
-          </div>
-
-          <div class="separator w-8" aria-hidden="true"></div>
-          <div class="signal-drawer__collapsed-group">
-            <DateTimeFilter
-              popoverAnchor="outward"
-              class="drawer-header-btn drawer-header-btn--inactive shrink-0 tooltip tooltip-right"
-            />
-            {#if onRefresh}
-              <button
-                type="button"
-                class="signal-drawer__refresh drawer-header-btn drawer-header-btn--inactive tooltip tooltip-right {refreshPulse &&
-                refreshAsideTip
-                  ? 'tooltip-secondary'
-                  : ''}"
-                data-tip={refreshPulse && refreshAsideTip
-                  ? refreshAsideTip
-                  : 'Refresh'}
-                class:signal-drawer__refresh--has-new-data={refreshPulse}
-                onclick={onRefresh}
-                aria-label={refreshPulse
-                  ? `Refresh — ${refreshAsideTip}`
-                  : 'Refresh'}
-              >
-                {#if refreshPulse && refreshAsideTip}
-                  <div class="sr-only" aria-live="polite" aria-atomic="true">
-                    {refreshAsideTip}
-                  </div>
-                {/if}
-                {#if refreshPulse}
-                  <span class="signal-drawer__new-data-dot" aria-hidden="true"
-                  ></span>
-                {/if}
-                <HugeiconsIcon
-                  icon={RefreshIcon}
-                  size="1em"
-                  strokeWidth={1.5}
-                  class="relative z-[1] h-[17px] w-[17px] shrink-0"
-                  aria-hidden="true"
-                />
-              </button>
-            {/if}
-            <ThemeToggle
-              class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-right"
-            />
-          </div>
-        </div>
-      {/if}
-
-      <!-- Expanded: unified header panel (tabs + chrome + search + toolbar) -->
-      {#if effectivelyOpen}
-        {#snippet tracesIcon()}<HugeiconsIcon
-            icon={BarChartHorizontalIcon}
-            size="1em"
-            strokeWidth={1.5}
-            class="h-[15px] w-[15px] shrink-0"
-          />{/snippet}
-        {#snippet metricsIcon()}<HugeiconsIcon
-            icon={ChartHistogramIcon}
-            size="1em"
-            strokeWidth={1.5}
-            class="h-[15px] w-[15px] shrink-0"
-          />{/snippet}
-        {#snippet logsIcon()}<LogIcon
-            class="h-[15px] w-[15px] shrink-0"
-          />{/snippet}
-        {#snippet evalsIcon()}<HugeiconsIcon
-            icon={TestTube01Icon}
-            size="1em"
-            strokeWidth={1.5}
-            class="h-[15px] w-[15px] shrink-0"
-          />{/snippet}
-        {@const navTabs: PaneNavigationTab[] = [
-          {
-            id: 'traces',
-            label: 'Traces',
-            icon: tracesIcon,
-            href: signalHref('traces', routeContext.route.query),
-          },
-          {
-            id: 'metrics',
-            label: 'Metrics',
-            icon: metricsIcon,
-            href: signalHref('metrics', routeContext.route.query),
-          },
-          {
-            id: 'logs',
-            label: 'Logs',
-            icon: logsIcon,
-            href: signalHref('logs', routeContext.route.query),
-          },
-        ]}
-        <div
-          class="signal-drawer__header is-drawer-close:hidden"
-          class:signal-drawer__header--evals={$evalsEnabled}
-        >
-          <PaneHeader
-            mode="tabs"
-            tabs={$evalsEnabled
-              ? [
-                  ...navTabs,
-                  {
-                    id: 'evals',
-                    label: 'Evals',
-                    icon: evalsIcon,
-                    href: '/evals',
-                  },
-                ]
-              : navTabs}
-            activeID={activeNavID}
-            onSelect={handleSignalNavigation}
-            navigation
-            rounded={false}
-            ariaLabel="Primary"
+    <div class="drawer-side">
+      <div
+        id={drawerPanelID}
+        class="signal-drawer__panel flex h-full flex-col is-drawer-close:w-2 is-drawer-open:bg-base-200"
+        class:signal-drawer__panel--instant={(skipWidthTransition ||
+          isResizing) &&
+          !snapTween}
+        class:signal-drawer__panel--snap={snapTween}
+        style={effectivelyOpen ? `width: ${drawerWidth.rem}rem` : undefined}
+      >
+        {#if !railOnly}
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <div
+            class="col-resize-bar col-resize-bar--in-flow signal-drawer__resize"
+            class:col-resize-bar--active={isResizing}
+            onpointerdown={handleResizeStart}
+            ondblclick={handleResizeDblclick}
+            onkeydown={handleResizeKeydown}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={effectivelyOpen ? 'Resize the list' : 'Open the list'}
+            aria-valuenow={Math.round(drawerWidth.rem)}
+            aria-valuemin={MIN_DRAWER_WIDTH_REM}
+            aria-valuemax={MAX_DRAWER_WIDTH_REM}
+            tabindex="0"
           >
-            {#snippet right()}
-              <a
-                href="/"
-                class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-bottom"
-                data-tip="Home"
-                onclick={handleHomeNavigation}
-                aria-current={routeContext.route.path === '/'
-                  ? 'page'
-                  : undefined}
-                aria-label="Home"
+            <div class="col-resize-bar__line"></div>
+          </div>
+        {/if}
+        <!-- Expanded: list (unmounted when collapsed so footer/count cannot leak) -->
+        {#if effectivelyOpen}
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            class="signal-drawer__body"
+            bind:this={drawerBodyEl}
+            onfocusin={handleListFocusin}
+            onkeydown={handleListKeydown}
+          >
+            {#if showEmptyState}
+              <div class="signal-drawer__empty" role="status">
+                <p class="signal-drawer__empty-title">
+                  No {label.toLowerCase()} found
+                </p>
+                <p class="signal-drawer__empty-hint">
+                  Try widening the time range or clearing the search.
+                </p>
+              </div>
+            {:else}
+              <VirtualList
+                bind:this={vlistRef}
+                {items}
+                {itemKey}
+                defaultEstimatedItemHeight={72}
+                bufferSize={10}
+                containerClass="signal-drawer__vlist"
+                viewportClass="signal-drawer__vlist-viewport"
+                viewportLabel={`${label} list`}
+                itemsClass="signal-drawer__vlist-items"
+                onRangeChange={handleRenderedRange}
               >
-                <HugeiconsIcon
-                  icon={Home12Icon}
-                  size="1em"
-                  strokeWidth={1.5}
-                  class="h-[17px] w-[17px] shrink-0"
-                  aria-hidden="true"
-                />
-              </a>
-              <ThemeToggle
-                class="drawer-header-btn drawer-header-btn--inactive tooltip tooltip-bottom"
-              />
-              <button
-                bind:this={collapseDrawerButton}
-                type="button"
-                class="drawer-header-btn drawer-header-btn--inactive cursor-pointer tooltip tooltip-bottom"
-                data-tip="Collapse sidebar"
-                aria-label="Collapse sidebar"
-                aria-controls={drawerPanelID}
-                aria-expanded="true"
-                onclick={() => setDrawerOpen(false)}
-              >
-                <HugeiconsIcon
-                  icon={ChevronRightIcon}
-                  size="1em"
-                  strokeWidth={1.5}
-                  class="h-[17px] w-[17px] shrink-0 transition-transform duration-200 rotate-180"
-                  aria-hidden="true"
-                />
-              </button>
-            {/snippet}
-          </PaneHeader>
-
-          {#if onRefresh || drawerSearch || drawerChromeToolbar}
-            <div class="signal-drawer__search-row">
-              {#if onRefresh}
-                <div
-                  class="shrink-0 {refreshPulse && refreshAsideTip
-                    ? 'tooltip tooltip-bottom tooltip-secondary'
-                    : ''}"
-                  data-tip={refreshPulse && refreshAsideTip
-                    ? refreshAsideTip
-                    : undefined}
-                >
-                  {#if refreshPulse && refreshAsideTip}
-                    <div class="sr-only" aria-live="polite" aria-atomic="true">
-                      {refreshAsideTip}
-                    </div>
-                  {/if}
-                  <button
-                    type="button"
-                    class="signal-drawer__refresh drawer-header-btn drawer-header-btn--inactive tooltip tooltip-bottom {refreshPulse &&
-                    refreshAsideTip
-                      ? 'tooltip-secondary'
-                      : ''}"
-                    class:signal-drawer__refresh--has-new-data={refreshPulse}
-                    onclick={onRefresh}
-                    data-tip={refreshPulse && refreshAsideTip
-                      ? refreshAsideTip
-                      : 'Refresh'}
-                    aria-label={refreshPulse
-                      ? `Refresh — ${refreshAsideTip}`
-                      : 'Refresh'}
+                {#snippet renderItem(item)}
+                  {@const key = itemKey(item)}
+                  <div
+                    class="signal-drawer__item"
+                    data-drawer-item-key={key}
+                    use:navigableDrawerItem={{
+                      tabIndex: key === rovingItemKey ? 0 : -1,
+                    }}
                   >
-                    {#if refreshPulse}
-                      <span
-                        class="signal-drawer__new-data-dot"
-                        aria-hidden="true"
-                      ></span>
-                    {/if}
-                    <HugeiconsIcon
-                      icon={RefreshIcon}
-                      size="1em"
-                      strokeWidth={1.5}
-                      class="relative z-[1] h-[17px] w-[17px] shrink-0"
-                      aria-hidden="true"
-                    />
-                  </button>
-                </div>
-              {/if}
-              {#if drawerSearch}
-                <div class="signal-drawer__search">
-                  {@render drawerSearch()}
-                </div>
-              {/if}
-              {#if drawerChromeToolbar}
-                <div class="signal-drawer__chrome-toolbar">
-                  {@render drawerChromeToolbar()}
-                </div>
-              {/if}
-            </div>
-          {/if}
-        </div>
-      {/if}
+                    {@render itemSnippet(item, selectedID === key)}
+                  </div>
+                {/snippet}
+              </VirtualList>
+            {/if}
+          </div>
+        {/if}
 
-      <!-- Expanded: list (unmounted when collapsed so footer/count cannot leak) -->
-      {#if effectivelyOpen}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div
-          class="signal-drawer__body"
-          bind:this={drawerBodyEl}
-          onfocusin={handleListFocusin}
-          onkeydown={handleListKeydown}
-        >
-          {#if showEmptyState}
-            <div class="signal-drawer__empty" role="status">
-              <p class="signal-drawer__empty-title">
-                No {label.toLowerCase()} found
-              </p>
-              <p class="signal-drawer__empty-hint">
-                Try widening the time range or clearing the search.
-              </p>
-            </div>
-          {:else}
-            <VirtualList
-              bind:this={vlistRef}
-              {items}
-              {itemKey}
-              defaultEstimatedItemHeight={72}
-              bufferSize={10}
-              containerClass="signal-drawer__vlist"
-              viewportClass="signal-drawer__vlist-viewport"
-              viewportLabel={`${label} list`}
-              itemsClass="signal-drawer__vlist-items"
-              onRangeChange={handleRenderedRange}
-            >
-              {#snippet renderItem(item)}
-                {@const key = itemKey(item)}
-                <div
-                  class="signal-drawer__item"
-                  data-drawer-item-key={key}
-                  use:navigableDrawerItem={{
-                    tabIndex: key === rovingItemKey ? 0 : -1,
-                  }}
-                >
-                  {@render itemSnippet(item, selectedID === key)}
-                </div>
-              {/snippet}
-            </VirtualList>
-          {/if}
-        </div>
-      {/if}
-
-      <!-- Expanded: footer -->
-      {#if effectivelyOpen && footer}
-        <div class="signal-drawer__footer">
-          {@render footer()}
-        </div>
-      {/if}
+        <!-- Expanded: footer -->
+        {#if effectivelyOpen && footer}
+          <div class="signal-drawer__footer">
+            {@render footer()}
+          </div>
+        {/if}
+      </div>
     </div>
-  </div>
 
-  <div class="drawer-content min-h-0 min-w-0">
-    {@render children()}
+    <div class="drawer-content min-h-0 min-w-0">
+      {@render children()}
+    </div>
   </div>
 </div>
 
 <style lang="postcss">
   @reference "../../../app.css";
 
-  .signal-drawer__header--evals :global(.pane-header__tab) {
-    padding-inline: 0.5rem;
-    gap: 0.3rem;
+  .workspace-shell {
+    @apply flex min-h-0 min-w-0 flex-1 flex-col;
+  }
+
+  .signal-drawer--no-list :global(.drawer-side) {
+    display: none;
   }
 
   .signal-drawer {
@@ -939,35 +624,10 @@
     @apply flex flex-col;
   }
 
-  /*
-   * Nothing in the drawer chrome may clip: the icon buttons carry DaisyUI
-   * tooltips, which are pseudo-elements that paint outside their trigger.
-   * Clipping is not a stacking problem -- no z-index rescues a tooltip inside
-   * an `overflow: hidden` ancestor, the ancestor has to stop clipping. Same
-   * hazard the PaneHeader tab rule warns about.
-   *
-   * Three elements clip the chrome: .drawer-side, the collapsed panel (3.5rem
-   * wide, clips rail tooltips sideways) and the drawer's PaneHeader (one row
-   * tall, clips header tooltips downward). The outer .drawer and app shell
-   * clip too, but they are full-viewport, so nothing lands outside them.
-   *
-   * The PaneHeader rule is scoped to this drawer on purpose -- .pane-header
-   * keeps its own overflow-hidden elsewhere so long tab labels truncate
-   * against it.
-   *
-   * This lives here rather than as `is-drawer-close:overflow-visible` on the
-   * elements: that utility compiles to a `:where()` selector with zero
-   * specificity, so it lost to the .drawer-side rule in this very block.
-   */
+  /* Keep the resize hit target reachable just beyond the drawer edge. */
   .signal-drawer :global(.drawer-side) {
     @apply h-full;
     min-height: 0;
-    overflow: visible;
-  }
-
-  .signal-drawer
-    :global(.drawer-toggle:not(:checked) ~ .drawer-side .signal-drawer__panel),
-  .signal-drawer :global(.signal-drawer__header .pane-header) {
     overflow: visible;
   }
 
@@ -1001,136 +661,6 @@
     .signal-drawer__panel {
       transition: none !important;
     }
-  }
-
-  /* ── Collapsed: open-sidebar toggle pinned to the top ── */
-  @keyframes spin-half {
-    from {
-      transform: rotate(180deg);
-    }
-    to {
-      transform: rotate(0deg);
-    }
-  }
-
-  .signal-drawer__collapsed-rail {
-    @apply flex shrink-0 flex-col items-center gap-2 px-1.5;
-    padding-top: var(--layout-gap);
-  }
-
-  .signal-drawer__collapsed-group {
-    @apply flex flex-col items-center gap-2;
-  }
-
-  /* ── Expanded: unified header panel ── */
-  .signal-drawer__header {
-    @apply flex w-full min-w-0 shrink-0 flex-col;
-  }
-
-  /* Positioning context for the chrome pinned over the tab strip. PaneHeader's
-     own flush inset supplies the remaining vertical breathing room. */
-  .signal-drawer__header :global(.pane-header.pane-header--flush) {
-    @apply relative;
-  }
-
-  /* Chrome shares the tab row's centerline. Anchoring to the bottom and
-     padding by (tab row 40px - button 32px) / 2 puts button centers on the
-     label line without depending on the header's top inset. */
-  /* The one collapse pattern, settled after building the alternatives:
-     when the drawer narrows, the tab strip slides BEHIND the pinned
-     chrome and stays scrollable. Icon-only tabs, tabs-covering-chrome,
-     and a two-row header were each built and rejected; sliding-under
-     matches how the row badges collapse too, so the whole drawer
-     speaks one language. The chrome is opaque so covered tabs are
-     occluded rather than rendering through the icons, and its leading
-     edge carries a fade that says the strip continues beneath. The
-     fade resolves to the header surface, so while everything fits it
-     paints base-300 over base-300 and is invisible -- it appears
-     exactly when a tab is under it, no threshold to keep in sync. */
-  .signal-drawer__header :global(.pane-header__right) {
-    @apply absolute inset-y-0 right-0 z-10 flex items-end gap-2 pr-2;
-    height: auto;
-    margin: 0;
-    padding-bottom: 4px;
-    background: var(--color-base-300);
-  }
-
-  .signal-drawer__header :global(.pane-header__right)::before {
-    content: '';
-    position: absolute;
-    right: 100%;
-    top: 0;
-    bottom: 0;
-    width: 2rem;
-    pointer-events: none;
-    background: linear-gradient(to right, transparent, var(--color-base-300));
-  }
-
-  /* The chrome reserve: trailing padding equal to the chrome zone, so
-     at maximum scroll the last tab sits fully clear of the icons --
-     everything remains reachable, just not all at once. */
-  .signal-drawer__header :global(.pane-header__tab-scroll) {
-    padding-right: 7rem;
-  }
-
-  /* Refresh + new-data indicator */
-  .signal-drawer__refresh {
-    @apply relative;
-  }
-
-  .signal-drawer__new-data-dot {
-    @apply pointer-events-none absolute bottom-0.5 right-0.5 z-[2] size-2 rounded-full bg-secondary shadow-sm ring-2 ring-base-100/90;
-  }
-
-  @keyframes signal-drawer-new-data-dot-pulse {
-    0%,
-    100% {
-      box-shadow:
-        0 0 0 1px color-mix(in oklab, var(--color-secondary) 18%, transparent),
-        0 0 10px color-mix(in oklab, var(--color-secondary) 12%, transparent);
-    }
-    50% {
-      box-shadow:
-        0 0 0 1px color-mix(in oklab, var(--color-secondary) 38%, transparent),
-        0 0 22px color-mix(in oklab, var(--color-secondary) 28%, transparent);
-    }
-  }
-
-  .signal-drawer__refresh.signal-drawer__refresh--has-new-data:not(:hover):not(
-      :focus-visible
-    )
-    .signal-drawer__new-data-dot {
-    animation: signal-drawer-new-data-dot-pulse 2.8s ease-in-out infinite;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .signal-drawer__refresh.signal-drawer__refresh--has-new-data
-      .signal-drawer__new-data-dot {
-      animation: none !important;
-    }
-  }
-
-  /* ── Search + toolbar row (search · sort · time · refresh) ──
-     Top pad = row bottom (pb-2) + signal-row top (py-2) → pt-4 (16px). */
-  .signal-drawer__search-row {
-    @apply flex min-w-0 w-full shrink-0 items-center gap-2 bg-base-200 px-2 pb-2 pt-4;
-  }
-
-  .signal-drawer__search {
-    @apply min-w-0 flex-1;
-  }
-
-  .signal-drawer__chrome-toolbar {
-    @apply flex shrink-0 items-center justify-end gap-2;
-  }
-
-  .signal-drawer__search
-    :global(.search-editor-wrapper--drawer .search-editor__footer-actions) {
-    @apply ml-auto shrink-0 gap-2;
-  }
-
-  .signal-drawer__chrome-toolbar :global(.drawer-search-panel) {
-    @apply gap-0;
   }
 
   /* ── Body (list) ── */

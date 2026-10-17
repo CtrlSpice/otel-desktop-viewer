@@ -26,8 +26,8 @@
 </script>
 
 {#if !hidden}
-  <tr class="table-row" class:log-field--multiline={multiline}>
-    <td class="detail-cell" class:log-field__cell--multiline={multiline}>
+  <tr class="table-row">
+    <td class="detail-cell" class:detail-field__cell--multiline={multiline}>
       {#snippet keyLabel()}
         <span class="detail-cell__key">
           {fieldName}{#if showType}
@@ -36,13 +36,12 @@
       {/snippet}
       {#if value}
         {@render keyLabel()}
-        <div class="log-field__value">{@render value()}</div>
+        <div class="detail-field__value">{@render value()}</div>
       {:else if multiline}
-        <!-- Log bodies are always shown whole: the body is the record, and
-             clamping it would hide the thing the row exists for. -->
+        <!-- Multiline record content is shown whole rather than clamped. -->
         {@render keyLabel()}
         <span
-          class="detail-cell__value log-field__value log-field__value--multiline"
+          class="detail-cell__value detail-field__value detail-field__value--multiline"
           class:tabular-nums={fieldType === 'timestamp'}>{fieldValue}</span
         >
       {:else}
@@ -64,15 +63,15 @@
     @apply font-normal;
   }
 
-  .log-field__cell--multiline {
+  .detail-field__cell--multiline {
     @apply align-top whitespace-normal;
     max-width: none;
   }
 
-  .log-field__value {
+  .detail-field__value {
     @apply mt-0.5 min-w-0;
   }
-  .log-field__value--multiline {
+  .detail-field__value--multiline {
     @apply block text-base-content;
     white-space: pre-wrap;
     overflow-wrap: break-word;
