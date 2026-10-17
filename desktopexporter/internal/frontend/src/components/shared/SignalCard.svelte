@@ -22,6 +22,8 @@
     durationUnit?: string
     /** Badges beside the title, right-aligned. */
     badge?: Snippet
+    /** Place badges directly after the title or at the row's trailing edge. */
+    badgePlacement?: 'inline' | 'end'
     /** Subtle line under the title (e.g. metric description). */
     description?: string
     /** Secondary line under header (custom content; prefer description). */
@@ -44,6 +46,7 @@
     duration,
     durationUnit,
     badge,
+    badgePlacement = 'end',
     description,
     lead,
     meta,
@@ -66,8 +69,11 @@
       {#if subtitle}
         <span class="signal-row__subtitle"> ({subtitle})</span>
       {/if}
+      {#if badge && badgePlacement === 'inline'}
+        <span class="flex shrink-0 items-center gap-1">{@render badge()}</span>
+      {/if}
     </span>
-    {#if badge}
+    {#if badge && badgePlacement === 'end'}
       <span class="signal-row__badge">
         {@render badge()}
       </span>

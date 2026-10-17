@@ -17,7 +17,13 @@
   const summary = $derived(runSummary(run))
 </script>
 
-<SignalCard id={run.id} title={run.name} {selected} {onclick}>
+<SignalCard
+  id={run.id}
+  title={run.name}
+  badgePlacement="inline"
+  {selected}
+  {onclick}
+>
   {#snippet badge()}<RunStatusBadge state={run.state} />{/snippet}
   {#snippet meta()}
     <div class="flex w-full min-w-0 flex-col gap-2 py-1">
@@ -28,9 +34,7 @@
             label={summary.definition?.name ?? 'Results'}
           />
         </div>
-        <div
-          class="grid grid-cols-3 items-center gap-2 text-xs tabular-nums"
-        >
+        <div class="grid grid-cols-3 items-center gap-2 text-xs tabular-nums">
           <span title="Completed investigations / planned attempts"
             >Assessed: <span class="text-base-content"
               >{summary.assessed}/{summary.planned}</span
