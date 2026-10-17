@@ -683,7 +683,7 @@
   }
 
   .pane-header--plain-tabs :global(.pane-header__tabs > .pane-header__tab) {
-    @apply px-2 font-normal;
+    @apply px-2 text-base font-normal;
     color: var(--color-subtle);
   }
 
