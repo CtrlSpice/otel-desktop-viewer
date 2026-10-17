@@ -103,8 +103,7 @@
       bind:value={runSearch}
     />
   {/snippet}
-  {#snippet drawerChromeToolbar()}<span class="badge-count">Example data</span
-    >{/snippet}
+  {#snippet drawerChromeToolbar()}{/snippet}
   {#snippet itemSnippet(item, selected)}
     <EvalRunSummary run={item} {selected} onclick={selectRun} />
   {/snippet}
