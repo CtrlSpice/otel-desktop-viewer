@@ -86,30 +86,98 @@ test.describe('home page accessibility', () => {
     ).toBeFocused()
   })
 
-  test('moves focus through the trace sort menu with native keyboard events', async ({
+  test('uses DaisyUI navigation tabs with a primary selected icon and underline', async ({
+    page,
+  }) => {
+    const navigation = page.getByRole('navigation', { name: 'Primary' })
+    const tabs = await navigation.evaluate(element => {
+      const reference = element.cloneNode(true) as HTMLElement
+      document.body.append(reference)
+      const primary = document.createElement('span')
+      primary.className = 'text-primary'
+      reference.append(primary)
+      const primaryColour = getComputedStyle(primary).color
+      const referenceLinks = reference.querySelectorAll('a')
+      const centreY = (element: Element) => {
+        const bounds = element.getBoundingClientRect()
+        return bounds.top + bounds.height / 2
+      }
+      try {
+        return [...element.querySelectorAll('a')].map((link, index) => {
+          const style = getComputedStyle(link)
+          const plainStyle = getComputedStyle(referenceLinks[index])
+          const underline = getComputedStyle(link, '::before')
+          const selected = link.getAttribute('aria-current') === 'page'
+          return {
+            fontSize: style.fontSize,
+            plainColour: style.color === plainStyle.color,
+            plainBackground:
+              style.backgroundColor === plainStyle.backgroundColor,
+            plainShadow: style.boxShadow === plainStyle.boxShadow,
+            labelColour:
+              getComputedStyle(link.querySelector('span')!).color ===
+              style.color,
+            iconColour:
+              getComputedStyle(link.querySelector('svg')!).color ===
+              (selected ? primaryColour : style.color),
+            underlineMatchesSelection: selected
+              ? underline.borderTopColor === primaryColour &&
+                underline.borderTopWidth === '1px' &&
+                underline.height === '1px' &&
+                underline.left === '0px' &&
+                Math.abs(
+                  Number.parseFloat(underline.width) -
+                    link.getBoundingClientRect().width
+                ) < 0.5
+              : underline.borderTopWidth === '0px',
+            centred:
+              Math.abs(
+                centreY(link.querySelector('svg')!) -
+                  centreY(link.querySelector('span')!)
+              ) < 0.5,
+          }
+        })
+      } finally {
+        reference.remove()
+      }
+    })
+
+    expect(tabs).toHaveLength(4)
+    for (const tab of tabs) {
+      expect(tab).toEqual({
+        fontSize: '14px',
+        plainColour: true,
+        plainBackground: true,
+        plainShadow: true,
+        labelColour: true,
+        iconColour: true,
+        underlineMatchesSelection: true,
+        centred: true,
+      })
+    }
+  })
+
+  test('keeps the icon-only time range control accessible without a sort menu', async ({
     page,
   }) => {
     await page.goto('/traces')
-    const trigger = page.getByRole('button', { name: /^Sort by/ })
+    const trigger = page.getByRole('button', { name: /^Change time range/ })
+    await expect(trigger).toHaveText('')
+    await expect(trigger).toHaveCSS('font-size', '14px')
+    await expect(page.getByRole('button', { name: /^Sort by/ })).toHaveCount(0)
+    await expect(page.getByRole('menu', { name: 'Sort by' })).toHaveCount(0)
     await trigger.focus()
-
-    await page.keyboard.press('ArrowDown')
-    const firstOption = page.getByRole('menuitemradio', { name: 'Start Time' })
-    await expect(firstOption).toBeFocused()
-    await expect(firstOption).toHaveAttribute('tabindex', '0')
-
-    await page.keyboard.press('End')
-    const lastOption = page.getByRole('menuitemradio', { name: 'Error Count' })
-    await expect(lastOption).toBeFocused()
-    await expect(lastOption).toHaveAttribute('tabindex', '0')
-    await expect(firstOption).toHaveAttribute('tabindex', '-1')
-
+    await page.keyboard.press('Enter')
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    await expect(
+      page.getByRole('button', { name: 'Last 5m', exact: true })
+    ).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(trigger).toBeFocused()
     await expect(trigger).toHaveAttribute('aria-expanded', 'false')
   })
 
-  test('keeps search drafts and controls accessible above collapsed signal drawers', async ({
+  test('keeps search drafts and controls accessible above signal drawers', async ({
     page,
   }) => {
     for (const width of [1440, 390]) {
@@ -120,23 +188,82 @@ test.describe('home page accessibility', () => {
         )
         await page.goto(`/${signal}`)
         const editor = page.locator('.cm-content[contenteditable="true"]')
-        await editor.fill('service.name = "checkout"')
-        await page.getByRole('button', { name: 'Collapse sidebar' }).click()
+        await editor.pressSequentially('service.name = "checkout"')
+        await expect(
+          page.getByRole('button', { name: /^(Open|Collapse) sidebar$/ })
+        ).toHaveCount(0)
         await expect(editor).toBeVisible()
         await expect(editor).toHaveText('service.name = "checkout"')
         await expect(
           page.getByRole('button', { name: /^Sort by/ })
-        ).toBeVisible()
+        ).toHaveCount(0)
+        await expect(
+          page.getByRole('button', { name: /^Change time range/ })
+        ).toHaveText('')
         await expect(
           page.getByRole('button', { name: 'Refresh', exact: true })
         ).toBeVisible()
+        const searchBar = page.getByRole('search', { name: 'Workspace search' })
+        await expect(searchBar.locator('.search-bar__query')).not.toHaveCSS(
+          'background-color',
+          'rgba(0, 0, 0, 0)'
+        )
+        for (const name of ['Refresh', 'Clear search', 'Search query help']) {
+          const button = searchBar.getByRole('button', { name, exact: true })
+          await expect(button).toBeVisible()
+          await expect(button).toHaveCSS('width', '32px')
+          await expect(button).toHaveCSS('height', '32px')
+        }
         await expect(
-          page.getByRole('button', { name: 'Open sidebar' })
-        ).toBeFocused()
+          searchBar.getByRole('combobox', { name: 'Result limit' })
+        ).toHaveCount(0)
+        const timeButton = searchBar.getByRole('button', {
+          name: /^Change time range/,
+        })
+        await expect(timeButton).toBeVisible()
+        await expect(timeButton).toHaveCSS('width', '32px')
+        await expect(timeButton).toHaveCSS('height', '32px')
+        const help = searchBar.getByRole('button', {
+          name: 'Search query help',
+        })
+        await expect(help).toBeVisible()
+        await expect
+          .poll(() =>
+            searchBar.evaluate(element => {
+              const help = element.querySelector(
+                'button[aria-label="Search query help"]'
+              )!
+              const clear = element.querySelector(
+                'button[aria-label="Clear search"]'
+              )!
+              return (
+                help.getBoundingClientRect().left >=
+                clear.getBoundingClientRect().right
+              )
+            })
+          )
+          .toBe(true)
+        await expect
+          .poll(() =>
+            searchBar.evaluate(element => {
+              const colour = getComputedStyle(element).color
+              return [...element.querySelectorAll('button')]
+                .filter(button => !button.closest('[popover], dialog'))
+                .every(button => getComputedStyle(button).color === colour)
+            })
+          )
+          .toBe(true)
+        await expect(editor).toBeFocused()
         const geometry = await editor.evaluate(element => {
           const editorBox = element.getBoundingClientRect()
-          const navigationBox = document
-            .querySelector('[aria-label="Primary"]')!
+          const navigation = document.querySelector('[aria-label="Primary"]')!
+          const navigationBox = navigation.getBoundingClientRect()
+          const refresh = document.querySelector(
+            'button[aria-label="Refresh"]'
+          )!
+          const refreshBox = refresh.getBoundingClientRect()
+          const searchBox = element
+            .closest('.search-editor-container')!
             .getBoundingClientRect()
           return {
             outsideDrawer: !element.closest('.drawer-side'),
@@ -145,17 +272,65 @@ test.describe('home page accessibility', () => {
               editorBox.top >= navigationBox.bottom,
             noPageOverflow:
               document.documentElement.scrollWidth <= window.innerWidth,
+            refreshBeforeSearch:
+              Boolean(
+                refresh.compareDocumentPosition(element) &
+                Node.DOCUMENT_POSITION_FOLLOWING
+              ) &&
+              refreshBox.right <= searchBox.left &&
+              refreshBox.top < searchBox.bottom &&
+              refreshBox.bottom > searchBox.top,
           }
         })
         expect(geometry).toEqual({
           outsideDrawer: true,
           noOverlap: true,
           noPageOverflow: true,
+          refreshBeforeSearch: true,
         })
-        await page.getByRole('button', { name: 'Open sidebar' }).click()
+        await page.getByRole('button', { name: 'Refresh', exact: true }).click()
         await expect(editor).toHaveText('service.name = "checkout"')
       }
     }
+  })
+
+  test('keeps the search bar visible without an active outline or collapse control', async ({
+    page,
+  }) => {
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.goto('/logs')
+      const bar = page.getByRole('search', { name: 'Workspace search' })
+      await expect(
+        bar.getByRole('button', { name: /Expand search|Collapse search/ })
+      ).toHaveCount(0)
+      const surface = bar.locator('.search-bar__query')
+      const background = await surface.evaluate(
+        element => getComputedStyle(element).backgroundColor
+      )
+      await expect(bar).toHaveCSS('background-color', background)
+      const editor = bar.locator('.cm-content[contenteditable="true"]')
+      await editor.pressSequentially('service.name = "checkout"')
+      await expect(surface).toHaveCSS('background-color', background)
+      await expect(surface).toHaveCSS('outline-style', 'none')
+      await expect(editor).toHaveText('service.name = "checkout"')
+      await bar.getByRole('button', { name: 'Clear search' }).click()
+      await expect(editor).toBeVisible()
+      await expect(editor.locator('.cm-placeholder')).toBeVisible()
+    }
+  })
+
+  test('opens query help after Clear and restores focus on close', async ({
+    page,
+  }) => {
+    await page.goto('/logs')
+    const help = page.getByRole('button', { name: 'Search query help' })
+    await help.click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(dialog).not.toBeVisible()
+    await expect(help).toBeFocused()
   })
 
   test('keeps visible endpoint labels in their accessible names', async ({
@@ -263,15 +438,17 @@ test.describe('home page accessibility', () => {
     expect(handleSize.height).toBeLessThan(handleSize.separatorHeight)
   })
 
-  test('uses theme text colors for preset labels', async ({ page }) => {
+  test('uses the main navigation color rules for preset labels', async ({
+    page,
+  }) => {
     await page.goto('/traces')
     await page.getByRole('button', { name: /Change time range/i }).click()
 
     const presetColors = await page
       .locator('.preset-time-ranges')
       .evaluate(element => {
-        const active = element.querySelector('.chrome-btn--active')
-        const inactive = element.querySelector('.chrome-btn--inactive')
+        const active = element.querySelector('.tab-active')
+        const inactive = element.querySelector('.tab:not(.tab-active)')
         if (!active || !inactive) throw new Error('Preset state is missing')
 
         const probe = document.createElement('span')
@@ -284,12 +461,81 @@ test.describe('home page accessibility', () => {
         return {
           active: getComputedStyle(active).color,
           inactive: getComputedStyle(inactive).color,
+          navInactive: getComputedStyle(
+            document.querySelector(
+              'nav[aria-label="Primary"] .tab:not(.tab-active)'
+            )!
+          ).color,
+          underline: getComputedStyle(active, '::before').color,
+          background: getComputedStyle(active).backgroundColor,
           primary,
           baseContent,
         }
       })
-    expect(presetColors.inactive).toBe(presetColors.baseContent)
-    expect(presetColors.active).toBe(presetColors.primary)
+    expect(presetColors.inactive).toBe(presetColors.navInactive)
+    expect(presetColors.active).toBe(presetColors.baseContent)
+    expect(presetColors.underline).toBe(presetColors.primary)
+    expect(presetColors.background).toBe('rgba(0, 0, 0, 0)')
+  })
+
+  test('aligns preset edge labels with the range labels and timezone value', async ({
+    page,
+  }) => {
+    await page.goto('/traces')
+    await page.getByRole('button', { name: /Change time range/i }).click()
+
+    const popup = page.locator('[popover]:popover-open')
+    const alignment = await popup.evaluate(element => {
+      const presets = element.querySelectorAll('.preset-time-ranges .tab')
+      const tabs = [...presets].map(tab => {
+        const range = document.createRange()
+        range.selectNodeContents(tab)
+        const text = range.getBoundingClientRect()
+        const bounds = tab.getBoundingClientRect()
+        return {
+          left: bounds.left,
+          right: bounds.right,
+          width: bounds.width,
+          center: (bounds.left + bounds.right) / 2,
+          textCenter: (text.left + text.right) / 2,
+          textLeft: text.left,
+          textRight: text.right,
+        }
+      })
+      const popupBounds = element.getBoundingClientRect()
+      const popupStyle = getComputedStyle(element)
+      const row = element.querySelector('.range-editor-row')!
+      const border = Number.parseFloat(popupStyle.borderLeftWidth)
+      const labelRange = document.createRange()
+      labelRange.selectNodeContents(element.querySelector('.endpoint-label')!)
+      const timezoneRange = document.createRange()
+      timezoneRange.selectNodeContents(
+        element.querySelector('.timezone-summary')!
+      )
+      return {
+        tabs,
+        labelLeft: labelRange.getBoundingClientRect().left,
+        timezoneRight: timezoneRange.getBoundingClientRect().right,
+        leftInset: tabs[0].left - popupBounds.left - border,
+        rightInset: popupBounds.right - border - tabs[tabs.length - 1].right,
+        rowInset: row.getBoundingClientRect().left - popupBounds.left - border,
+        contentInset: Number.parseFloat(popupStyle.paddingLeft),
+      }
+    })
+    expect(alignment.leftInset).toBeCloseTo(alignment.contentInset, 0)
+    expect(alignment.rightInset).toBeCloseTo(alignment.contentInset, 0)
+    expect(alignment.rowInset).toBeCloseTo(alignment.contentInset, 0)
+    for (const tab of alignment.tabs) {
+      expect(tab.width).toBeCloseTo(alignment.tabs[0].width, 0)
+    }
+    expect(alignment.tabs[0].textLeft).toBeCloseTo(alignment.labelLeft, 0)
+    expect(alignment.tabs.at(-1)!.textRight).toBeCloseTo(
+      alignment.timezoneRight,
+      0
+    )
+    for (const tab of alignment.tabs.slice(1, -1)) {
+      expect(tab.textCenter).toBeCloseTo(tab.center, 0)
+    }
   })
 
   test('keeps custom range controls circular and focus treatment inset', async ({
@@ -304,13 +550,15 @@ test.describe('home page accessibility', () => {
     })
 
     await startDate.focus()
-    const focusTreatment = await startDate.locator('..').evaluate(element => {
-      const styles = getComputedStyle(element)
-      return {
-        boxShadow: styles.boxShadow,
-        outlineStyle: styles.outlineStyle,
-      }
-    })
+    const focusTreatment = await startDate
+      .locator('xpath=ancestor::div[contains(@class, "range-editor-row")]')
+      .evaluate(element => {
+        const styles = getComputedStyle(element)
+        return {
+          boxShadow: styles.boxShadow,
+          outlineStyle: styles.outlineStyle,
+        }
+      })
     expect(focusTreatment.boxShadow).toContain('inset')
     expect(focusTreatment.outlineStyle).toBe('none')
 
@@ -379,9 +627,7 @@ test.describe('home page accessibility', () => {
     await expect(startCalendar).toBeFocused()
   })
 
-  test('extends recent range selection to the section edges', async ({
-    page,
-  }) => {
+  test('omits recent ranges even when saved ranges exist', async ({ page }) => {
     const end = Date.UTC(2026, 0, 15, 12)
     await page.evaluate(
       ({ ranges, selection }) => {
@@ -403,67 +649,17 @@ test.describe('home page accessibility', () => {
     await page.goto('/traces')
     await page.getByRole('button', { name: /Change time range/i }).click()
 
-    const list = page.getByRole('list', {
-      name: 'Recent time ranges',
-    })
-    const firstRange = list.locator('.recent-range-button').first()
-    const firstRemove = list
-      .getByRole('button', { name: /Remove recent range from/ })
-      .first()
-    const section = list.locator('xpath=ancestor::details')
-    const bounds = await Promise.all([
-      section.boundingBox(),
-      list.boundingBox(),
-      firstRange.boundingBox(),
-      firstRange.locator('.recent-range-label').first().boundingBox(),
-      firstRemove.boundingBox(),
-      section.locator(':scope > summary .field-group__caret').boundingBox(),
-      firstRemove.locator('svg').boundingBox(),
-    ])
-
-    expect(bounds.every(Boolean)).toBe(true)
-    const [
-      sectionBounds,
-      listBounds,
-      buttonBounds,
-      labelBounds,
-      removeBounds,
-      caretBounds,
-      removeIconBounds,
-    ] = bounds
-    expect(listBounds!.x).toBeCloseTo(sectionBounds!.x, 0)
-    expect(listBounds!.x + listBounds!.width).toBeCloseTo(
-      sectionBounds!.x + sectionBounds!.width,
-      0
-    )
-    expect(buttonBounds!.x).toBeCloseTo(listBounds!.x, 0)
-    expect(buttonBounds!.x + buttonBounds!.width).toBeCloseTo(
-      listBounds!.x + listBounds!.width,
-      0
-    )
-
-    await expect(firstRange).toHaveAttribute('aria-pressed', 'true')
-    const backgroundColor = await firstRange.evaluate(
-      element => getComputedStyle(element).backgroundColor
-    )
-    expect(backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
-    expect(
-      await firstRange
-        .locator('.recent-range-value')
-        .first()
-        .evaluate(element => getComputedStyle(element).textAlign)
-    ).toBe('center')
-    const recentLeftInset = labelBounds!.x - listBounds!.x
-    expect(recentLeftInset).toBeCloseTo(16, 0)
-    expect(removeBounds!.width).toBeGreaterThanOrEqual(24)
-    expect(removeBounds!.height).toBeGreaterThanOrEqual(24)
-    expect(removeIconBounds!.x + removeIconBounds!.width / 2).toBeCloseTo(
-      caretBounds!.x + caretBounds!.width / 2,
-      0
-    )
+    const popup = page.locator('[popover]:popover-open')
+    await expect(popup.getByText('Recent', { exact: true })).toHaveCount(0)
+    await expect(
+      popup.getByRole('list', { name: 'Recent time ranges' })
+    ).toHaveCount(0)
+    await expect(
+      popup.getByRole('button', { name: 'Apply range' })
+    ).toBeVisible()
   })
 
-  test('keeps timezone options full width with inset content', async ({
+  test('keeps timezone controls full width with optically inset option text', async ({
     page,
   }) => {
     await page.goto('/traces')
@@ -504,9 +700,10 @@ test.describe('home page accessibility', () => {
       timezoneListBounds!.width,
       0
     )
-    expect(timezoneFilterBounds!.x).toBeGreaterThan(timezoneSectionBounds!.x)
-    expect(timezoneFilterBounds!.x + timezoneFilterBounds!.width).toBeLessThan(
-      timezoneSectionBounds!.x + timezoneSectionBounds!.width
+    expect(timezoneFilterBounds!.x).toBeCloseTo(timezoneSectionBounds!.x, 0)
+    expect(timezoneFilterBounds!.x + timezoneFilterBounds!.width).toBeCloseTo(
+      timezoneSectionBounds!.x + timezoneSectionBounds!.width,
+      0
     )
     const timezoneLeftInset = timezoneNameBounds!.x - timezoneListBounds!.x
     const timezoneRightInset =
@@ -514,7 +711,7 @@ test.describe('home page accessibility', () => {
       timezoneListBounds!.width -
       timezoneBadgeBounds!.x -
       timezoneBadgeBounds!.width
-    expect(timezoneLeftInset).toBeCloseTo(16, 0)
+    expect(timezoneLeftInset).toBeCloseTo(12, 0)
     expect(timezoneRightInset).toBeCloseTo(timezoneLeftInset, 0)
   })
 })

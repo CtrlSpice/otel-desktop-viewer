@@ -74,6 +74,8 @@
     children,
   }: Props<T> = $props()
 
+  const resizingEnabled = false
+
   /*
    * Drawer open/closed is a single global preference shared by every
    * signal page. Each route mounts its own SignalListDrawer instance,
@@ -266,13 +268,6 @@
   let showEmptyState = $derived(items.length === 0 && !loading)
 
   let drawerPanelID = $derived(`${drawerID}-panel`)
-
-  function setDrawerOpen(open: boolean) {
-    if (railOnly) return
-    skipWidthTransition = false
-    drawerOpen = open
-    persistDrawerOpen(open)
-  }
 
   // Only fires when `selectedID` actually changes (not on items reshuffles),
   // so the user is free to scroll the list independently.
@@ -488,10 +483,6 @@
 
 <div class="workspace-shell">
   <WorkspaceToolbar
-    drawerOpen={effectivelyOpen}
-    {drawerPanelID}
-    hasDrawer={!railOnly}
-    onToggleDrawer={() => setDrawerOpen(!effectivelyOpen)}
     search={drawerSearch}
     controls={drawerChromeToolbar}
     {onRefresh}
@@ -522,7 +513,7 @@
         class:signal-drawer__panel--snap={snapTween}
         style={effectivelyOpen ? `width: ${drawerWidth.rem}rem` : undefined}
       >
-        {#if !railOnly}
+        {#if !railOnly && resizingEnabled}
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
           <div

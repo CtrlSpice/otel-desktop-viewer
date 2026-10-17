@@ -26,14 +26,6 @@ import {
 
 export type SortDirection = 'asc' | 'desc'
 
-export type SortOption<TSortColumn extends string> = {
-  value: TSortColumn
-  label: string
-  /** Direction a first click on this column lands on. Magnitude and time
-   * columns want the largest/newest first; text columns read A–Z. */
-  defaultDirection?: SortDirection
-}
-
 export type SignalListPageOptions<TItem, TSortColumn extends string> = {
   signal: SignalName
   getItemID: (item: TItem) => string
@@ -242,8 +234,8 @@ export function createSignalListPage<TItem, TSortColumn extends string>(
   }
 
   function handleRefresh() {
-    searchEditorApi?.clear()
-    void runListFetch()
+    if (searchEditorApi) searchEditorApi.submit()
+    else void runListFetch()
   }
 
   function handleSearchResults(event: SearchResultEvent) {

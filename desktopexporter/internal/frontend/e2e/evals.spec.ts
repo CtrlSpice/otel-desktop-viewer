@@ -26,6 +26,56 @@ test('run selection, assessments, filtering and browser history stay connected',
 }) => {
   await enableEvals(page)
   await page.goto('/evals')
+  const toolbar = page.getByRole('toolbar', {
+    name: 'Workspace controls',
+  })
+  await expect(
+    toolbar.getByRole('searchbox', { name: 'Search evals' })
+  ).toBeVisible()
+  await expect(
+    toolbar.getByRole('searchbox', { name: 'Search evals' })
+  ).toHaveCSS('font-size', '14px')
+  expect(
+    await toolbar.getByRole('search').evaluate(element =>
+      [...element.querySelectorAll('button')].flatMap(button => {
+        if (button.closest('[popover], dialog')) return []
+        const name = button.getAttribute('aria-label')
+        return [name?.startsWith('Change time range') ? 'Time' : name]
+      })
+    )
+  ).toEqual(['Refresh', 'Clear search', 'Search query help', 'Time'])
+  await expect
+    .poll(() =>
+      toolbar.getByRole('search').evaluate(element => {
+        const surface = element.querySelector('.search-bar__query')!
+        const help = element.querySelector(
+          'button[aria-label="Search query help"]'
+        )!
+        return Math.abs(
+          surface.getBoundingClientRect().right -
+            help.getBoundingClientRect().right
+        )
+      })
+    )
+    .toBeLessThan(1)
+  await expect(
+    toolbar.getByRole('button', { name: 'Refresh', exact: true })
+  ).toBeVisible()
+  expect(
+    await toolbar
+      .getByRole('button', { name: 'Refresh', exact: true })
+      .evaluate(element => getComputedStyle(element).backgroundColor)
+  ).toBe('rgba(0, 0, 0, 0)')
+  await expect(page.getByRole('searchbox')).toHaveCount(1)
+  await expect(
+    page.getByRole('combobox', { name: 'Execution status' })
+  ).toHaveCount(0)
+  await expect(
+    page.getByRole('combobox', { name: 'Sort results' })
+  ).toHaveCount(0)
+  await expect(
+    toolbar.getByRole('button', { name: /^Change time range/ })
+  ).toHaveText('')
   await expect(
     page.getByRole('region', { name: 'Guide-assisted agent', exact: true })
   ).toBeVisible()
@@ -44,21 +94,19 @@ test('run selection, assessments, filtering and browser history stay connected',
     'aria-selected',
     'true'
   )
-  await page
-    .getByRole('searchbox', { name: 'Filter loaded results' })
-    .fill('Mixed')
+  await page.getByRole('searchbox', { name: 'Search evals' }).fill('Mixed')
   await expect(
     page
       .getByRole('table', { name: 'Results for Guide-assisted agent' })
       .getByRole('row')
   ).toHaveCount(2)
   await page
-    .getByRole('searchbox', { name: 'Filter loaded results' })
+    .getByRole('searchbox', { name: 'Search evals' })
     .fill('nonexistent-score')
   await expect(
     page.getByText('No matching attempts', { exact: true })
   ).toBeVisible()
-  await page.getByRole('button', { name: 'Clear filters' }).click()
+  await toolbar.getByRole('button', { name: 'Clear search' }).click()
   await page.getByRole('button', { name: /Direct agent/ }).click()
   await expect(
     page.getByRole('region', { name: 'Direct agent', exact: true })

@@ -962,17 +962,20 @@ svg {
 
 /* Anchor popovers — native popover, fixed to trigger, dimmed backdrop (datetime, sort, …). */
 .anchor-popover {
-  @apply overflow-hidden px-0 pb-0 pt-0;
+  @apply overflow-hidden;
   margin: 0;
   box-sizing: border-box;
-  @apply rounded-xl bg-base-200 text-sm text-base-content;
-  @apply border border-base-300 shadow-surface;
+  @apply rounded-xl bg-base-100 text-sm text-base-content;
+  @apply border border-base-300;
+  box-shadow:
+    0 2px 6px rgb(0 0 0 / 0.1),
+    0 12px 28px rgb(0 0 0 / 0.16);
   inset: unset;
 }
 
 .anchor-popover::backdrop {
   background-color: rgb(0 0 0 / 0.15);
-  backdrop-filter: blur(1px);
+  backdrop-filter: blur(4px);
 }
 
 .anchor-popover--anchored {
@@ -991,41 +994,15 @@ svg {
 }
 
 .anchor-popover__body {
-  @apply min-h-0 flex-1 overflow-y-auto py-2;
+  @apply min-h-0 flex-1 overflow-y-auto;
   overscroll-behavior: contain;
 }
 
 .anchor-popover--wide {
-  width: 25rem;
+  @apply gap-2 p-4;
+  width: 35rem;
   max-width: calc(100vw - 1.5rem);
   max-height: min(85vh, calc(100vh - 2rem));
-}
-
-.anchor-popover--menu {
-  width: 12rem;
-  max-width: calc(100vw - 1.5rem);
-}
-
-.anchor-popover-menu {
-  @apply flex min-h-0 flex-1 flex-col gap-0 p-1;
-}
-
-.anchor-popover-menu__option {
-  @apply flex w-full items-center justify-between gap-2 rounded-lg border-none bg-transparent px-3 py-2 text-left text-xs text-base-content transition-colors duration-150;
-  @apply cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-0;
-}
-
-.anchor-popover-menu__option:hover,
-.anchor-popover-menu__option:focus-visible {
-  @apply bg-base-300/40;
-}
-
-.anchor-popover-menu__option--active {
-  @apply font-medium text-primary;
-}
-
-.anchor-popover-menu__option-icon {
-  @apply h-3.5 w-3.5 shrink-0 text-primary;
 }
 
 /* Toolbar filter triggers (time range, column filter): lg when labeled, full pill when icon-only (--compact) */
@@ -1082,50 +1059,12 @@ svg {
   @apply inline-flex min-h-[1.125rem] min-w-[1.125rem] shrink-0 items-center justify-center rounded-md bg-primary/20 px-1.5 text-[0.65rem] font-semibold tabular-nums text-primary ring-1 ring-inset ring-primary/15;
 }
 
-/* Trace detail panel — Fields | Events | Links (and metric histogram tabs). */
-.detail-tab {
-  @apply flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium tracking-tight transition-[color,background-color,box-shadow] duration-200;
-}
-
-.detail-tab--active {
-  @apply bg-primary/15 text-base-content shadow-sm shadow-primary/10;
-}
-
-.detail-tab--inactive {
-  @apply border border-transparent text-primary hover:bg-base-200/80;
-}
-
-/* Signal drawer — route tabs (Traces | Metrics | Logs) + collapsed icon rail. */
-.drawer-tab {
-  @apply flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium tracking-tight transition-[color,background-color,box-shadow] duration-200;
-}
-
-.drawer-tab--active {
-  @apply bg-primary/15 text-base-content shadow-sm shadow-primary/10;
-}
-
-.drawer-tab--inactive {
-  @apply border border-transparent text-primary hover:bg-base-200/80;
-}
-
-.drawer-tab--icon-only {
-  @apply btn btn-ghost btn-neutral btn-sm btn-square shrink-0 gap-0 border-transparent px-0 py-0 font-medium tracking-tight shadow-none;
-}
-
-.drawer-tab--icon-only.drawer-tab--inactive {
-  @apply text-primary hover:bg-base-200/80;
-}
-
-.drawer-tab--icon-only.drawer-tab--active {
-  @apply border-transparent bg-primary/15 text-base-content shadow-sm shadow-primary/10;
-}
-
 /* Pane tabs — inactive = primary, active = base text. */
-.pane-header :where(.tab:not(.tab-active)) {
+.pane-header :where(.pane-header__tab:not(.tab-active)) {
   color: var(--color-primary);
 }
 
-.pane-header :where(.tab.tab-active) {
+.pane-header :where(.pane-header__tab.tab-active) {
   color: var(--color-base-content);
 }
 
@@ -1177,24 +1116,11 @@ svg {
   border-radius: 9999px;
 }
 
-/* Signal drawer — circle controls in the search editor (header join + footer join). */
-.drawer-editor-btn {
-  @apply btn btn-circle btn-ghost btn-neutral btn-xs shrink-0 gap-0 border-transparent px-0 py-0 font-medium tracking-tight shadow-none;
-}
-
-.detail-tab:focus-visible,
-.drawer-tab:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring-color);
-  outline-offset: var(--focus-ring-offset);
-}
-
 .input {
   border-color: var(--color-base-300);
 }
 
-/* Monospace text-entry chrome — search, custom time range, future type-in surfaces.
-   Add `typed-field` to the control (or its wrapper). Use `typed-field--pill` for
-   rounded-full; wrap join rows in `typed-field-group`. */
+/* Monospace query-entry controls. Use typed-field--pill for rounded ends. */
 .typed-field {
   @apply min-h-0 border border-base-300 px-4 py-0 text-left text-sm font-mono tracking-tight shadow-none;
   background-color: var(--typed-field-bg, var(--color-base-100));
@@ -1221,68 +1147,6 @@ textarea.typed-field::placeholder,
   @apply rounded-full;
 }
 
-.typed-field-group {
-  @apply overflow-hidden rounded-full border border-base-300;
-}
-
-.typed-field-group > .typed-field {
-  @apply border-none;
-}
-
-/* Prefix/suffix cap in a join row (e.g. Start | input… | Apply). */
-.typed-field-label {
-  @apply join-item flex shrink-0 cursor-pointer items-center justify-start border-none bg-base-100 px-3 py-0 text-left text-xs font-normal font-sans tracking-tight shadow-none;
-  color: var(--color-subtle);
-  height: calc(var(--table-row-h) + 0.5rem);
-  min-height: calc(var(--table-row-h) + 0.5rem);
-}
-
-.typed-field-group > .typed-field-label {
-  @apply rounded-l-full rounded-r-none;
-}
-
-/* Input between label cap and optional action cap. */
-.typed-field-group
-  > .typed-field-label
-  + .typed-field.join-item:not(.typed-field--action) {
-  @apply min-w-0 flex-1 rounded-none pl-0;
-}
-
-/* Label + input only (no trailing action). */
-.typed-field-group
-  > .typed-field-label
-  + .typed-field.join-item:not(.typed-field--action):last-child {
-  @apply rounded-l-none rounded-r-full;
-}
-
-.typed-field-group > .typed-field--action.join-item {
-  @apply rounded-l-none rounded-r-full;
-}
-
-/* Join row: one focus ring around the whole group (label + input + action). */
-.typed-field-group:focus-within {
-  outline: var(--focus-ring-width) solid var(--focus-ring-color);
-  outline-offset: var(--focus-ring-offset);
-}
-
-.typed-field-group:has(> .input-error):focus-within,
-.typed-field-group:has(> .typed-field.input-error):focus-within {
-  outline-color: var(--color-error);
-}
-
-.typed-field-group
-  > :where(.typed-field, input, textarea, select, button):focus,
-.typed-field-group
-  > :where(.typed-field, input, textarea, select, button):focus-visible,
-.typed-field-group:focus-within > .btn:focus-visible {
-  outline: none;
-}
-
-.typed-field-group > .typed-field--apply:focus,
-.typed-field-group > .typed-field--apply:focus-visible {
-  @apply bg-primary text-primary-content;
-}
-
 .typed-field:focus {
   outline: none;
 }
@@ -1292,25 +1156,8 @@ textarea.typed-field::placeholder,
   outline-offset: var(--focus-ring-offset);
 }
 
-.typed-field-group > .typed-field:focus-visible {
-  outline: none;
-}
-
 .typed-field.input-error:focus-visible {
   outline-color: var(--color-error);
-}
-
-/* Label/action in a group (e.g. Apply) — sans, not mono. */
-.typed-field--action {
-  @apply justify-center font-sans font-semibold;
-}
-
-.typed-field--action.typed-field--apply {
-  @apply bg-primary/10 text-primary;
-}
-
-.typed-field--action.typed-field--apply:hover {
-  @apply bg-primary/15;
 }
 
 /* CodeMirror inside a typed-field surface (search). */

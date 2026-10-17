@@ -33,11 +33,16 @@ describe('TimeRangeFilterBody', () => {
     vi.useRealTimers()
   })
 
-  it('renders the custom range, timezone, and recents sections', () => {
+  it('keeps the custom range visible without a section heading or collapse control', () => {
     renderComponent()
-    expect(screen.getByText('Custom Range')).toBeInTheDocument()
+    expect(screen.queryByText('Custom Range')).not.toBeInTheDocument()
+    const start = screen.getByLabelText('Start')
+    expect(start).toBeVisible()
+    expect(start.closest('details')).toBeNull()
+    expect(screen.getByLabelText('End')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Apply range' })).toBeVisible()
     expect(screen.getByText('Timezone')).toBeInTheDocument()
-    expect(screen.getByText('Recent')).toBeInTheDocument()
+    expect(screen.queryByText('Recent')).not.toBeInTheDocument()
   })
 
   it('switches the timezone from local to UTC', async () => {
@@ -49,6 +54,25 @@ describe('TimeRangeFilterBody', () => {
       screen.getByRole('button', { name: 'Coordinated Universal Time UTC' })
     )
     expect(localStorage.getItem('time-tz')).toBe('UTC')
+  })
+
+  it('orders the timezone header as caret, label, and current timezone', () => {
+    renderComponent()
+    const heading = screen.getByText('Timezone').closest('summary')!
+    const [caret, label, timezone] = heading.children
+    expect(caret).toHaveClass('timezone-caret')
+    expect(label).toHaveTextContent('Timezone')
+    expect(timezone).toHaveClass('timezone-summary')
+    expect(timezone.textContent).not.toBe('')
+  })
+
+  it('places Timezone before Apply', () => {
+    renderComponent()
+    const timezone = screen.getByText('Timezone').closest('details')!
+    const apply = screen.getByRole('button', { name: 'Apply range' })
+    expect(
+      timezone.compareDocumentPosition(apply) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
   })
 
   it('marks the machine timezone option as local', async () => {

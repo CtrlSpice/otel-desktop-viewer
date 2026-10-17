@@ -100,7 +100,6 @@
   } from '@/route'
   import { evalsEnabled } from '@/state/features'
   import { getRouteContext } from '@/contexts/route-context.svelte'
-  import PaneHeader from '../PaneHeader.svelte'
 
   const routeContext = getRouteContext()
   const items = $derived(
@@ -122,58 +121,31 @@
   }
 </script>
 
-{#snippet homeIcon()}<HugeiconsIcon
-    icon={Home12Icon}
-    size="1em"
-    strokeWidth={1.5}
-    class="h-[15px] w-[15px] shrink-0"
-  />{/snippet}
-{#snippet tracesIcon()}<HugeiconsIcon
-    icon={BarChartHorizontalIcon}
-    size="1em"
-    strokeWidth={1.5}
-    class="h-[15px] w-[15px] shrink-0"
-  />{/snippet}
-{#snippet metricsIcon()}<HugeiconsIcon
-    icon={ChartHistogramIcon}
-    size="1em"
-    strokeWidth={1.5}
-    class="h-[15px] w-[15px] shrink-0"
-  />{/snippet}
-{#snippet logsIcon()}<LogIcon class="h-[15px] w-[15px] shrink-0" />{/snippet}
-{#snippet evalsIcon()}<HugeiconsIcon
-    icon={TestTube01Icon}
-    size="1em"
-    strokeWidth={1.5}
-    class="h-[15px] w-[15px] shrink-0"
-  />{/snippet}
-
-<PaneHeader
-  mode="tabs"
-  tabStyle="plain"
-  navigation
-  rounded={false}
-  ariaLabel="Primary"
-  activeID={items.find(item =>
-    isNavItemActive(item.id, routeContext.route.path)
-  )?.id ?? ''}
-  onSelect={goto}
-  tabs={items.map(item => ({
-    id: item.id,
-    label: item.label,
-    href:
-      item.id === 'home' || item.id === 'evals'
+<nav aria-label="Primary" class="tabs tabs-border flex-nowrap overflow-x-auto">
+  {#each items as item (item.id)}
+    {@const active = isNavItemActive(item.id, routeContext.route.path)}
+    <a
+      href={item.id === 'home' || item.id === 'evals'
         ? item.path
-        : signalHref(item.id, routeContext.route.query),
-    icon:
-      item.id === 'home'
-        ? homeIcon
-        : item.id === 'traces'
-          ? tracesIcon
-          : item.id === 'metrics'
-            ? metricsIcon
-            : item.id === 'logs'
-              ? logsIcon
-              : evalsIcon,
-  }))}
-/>
+        : signalHref(item.id, routeContext.route.query)}
+      class="tab shrink-0 flex-nowrap items-center gap-2 px-4 text-sm before:left-0 before:w-full before:text-primary {active
+        ? 'before:h-px before:border-t'
+        : ''}"
+      class:tab-active={active}
+      aria-current={active ? 'page' : undefined}
+      onclick={event => goto(item.id, event)}
+    >
+      {#if item.iconType === 'hugeicon'}
+        <HugeiconsIcon
+          icon={item.icon}
+          size={16}
+          strokeWidth={1.5}
+          class="shrink-0 {active ? 'text-primary' : ''}"
+        />
+      {:else}
+        <item.icon class="size-4 shrink-0 {active ? 'text-primary' : ''}" />
+      {/if}
+      <span>{item.label}</span>
+    </a>
+  {/each}
+</nav>

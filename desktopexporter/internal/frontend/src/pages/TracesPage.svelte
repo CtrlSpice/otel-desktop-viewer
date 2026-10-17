@@ -74,10 +74,7 @@
   } from '@/types/api-types'
   import type { QueryNode } from '@/search/model'
   import type { TimelineRecord } from '@/components/traces/Waterfall/timeline-markers'
-  import {
-    createSignalListPage,
-    type SortOption,
-  } from '@/contexts/signal-list-page.svelte'
+  import { createSignalListPage } from '@/contexts/signal-list-page.svelte'
 
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
@@ -101,15 +98,6 @@
     importFailure?: ImportFailure | null
     onViewIssue?: (event: MouseEvent) => void
   } = $props()
-
-  const SORT_OPTIONS: SortOption<TraceSummarySortColumn>[] = [
-    { value: 'startTime', label: 'Start Time', defaultDirection: 'desc' },
-    { value: 'duration', label: 'Duration', defaultDirection: 'desc' },
-    { value: 'rootSpanName', label: 'Root Span Name' },
-    { value: 'serviceName', label: 'Service Name' },
-    { value: 'spanCount', label: 'Span Count', defaultDirection: 'desc' },
-    { value: 'errorCount', label: 'Error Count', defaultDirection: 'desc' },
-  ]
 
   let timeContext = getTimeContext()
   const routeContext = getRouteContext()
@@ -377,10 +365,8 @@
       <DrawerSearchPanel
         segment="toolbar"
         signal="traces"
-        sortOptions={SORT_OPTIONS}
         sortValue={page.sortColumn}
         sortDirection={page.sortDirection}
-        onSortChange={page.handleSortChange}
       />
     {/snippet}
 
@@ -388,10 +374,8 @@
       <DrawerSearchPanel
         segment="search"
         signal="traces"
-        sortOptions={SORT_OPTIONS}
         sortValue={page.sortColumn}
         sortDirection={page.sortDirection}
-        onSortChange={page.handleSortChange}
         onSearchResults={handleSearchResults}
         onSearchReady={api => (page.searchEditorApi = api)}
       />

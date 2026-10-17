@@ -94,10 +94,7 @@
     MetricViewData,
     MetricStats,
   } from '@/types/api-types'
-  import {
-    createSignalListPage,
-    type SortOption,
-  } from '@/contexts/signal-list-page.svelte'
+  import { createSignalListPage } from '@/contexts/signal-list-page.svelte'
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
   import SignalDrawerFooter from '@/components/shared/Drawer/SignalDrawerFooter.svelte'
@@ -133,24 +130,6 @@
   } = $props()
 
   const METRIC_CHART_PANEL_ID = 'metric-chart-tabpanel'
-
-  const SORT_OPTIONS: SortOption<MetricSortColumn>[] = [
-    { value: 'lastSeen', label: 'Last Seen', defaultDirection: 'desc' },
-    { value: 'name', label: 'Name' },
-    { value: 'metricType', label: 'Type' },
-    { value: 'serviceName', label: 'Service Name' },
-    { value: 'description', label: 'Description' },
-    {
-      value: 'dataPointCount',
-      label: 'Datapoint Count',
-      defaultDirection: 'desc',
-    },
-    {
-      value: 'seriesCount',
-      label: 'Timeseries Count',
-      defaultDirection: 'desc',
-    },
-  ]
 
   let timeContext = getTimeContext()
 
@@ -687,10 +666,8 @@
       <DrawerSearchPanel
         segment="toolbar"
         signal="metrics"
-        sortOptions={SORT_OPTIONS}
         sortValue={page.sortColumn}
         sortDirection={page.sortDirection}
-        onSortChange={page.handleSortChange}
       />
     {/snippet}
 
@@ -698,10 +675,8 @@
       <DrawerSearchPanel
         segment="search"
         signal="metrics"
-        sortOptions={SORT_OPTIONS}
         sortValue={page.sortColumn}
         sortDirection={page.sortDirection}
-        onSortChange={page.handleSortChange}
         onSearchResults={page.handleSearchResults}
         onSearchReady={api => (page.searchEditorApi = api)}
       />

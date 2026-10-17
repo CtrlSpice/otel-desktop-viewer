@@ -32,8 +32,12 @@ describe('PresetTimeRanges', () => {
   it('selects the All preset by default', () => {
     renderComponent()
     expect(getPresetButton('All')).toHaveAttribute('aria-pressed', 'true')
+    expect(getPresetButton('All')).toHaveClass('tab', 'tab-active')
+    expect(getPresetButton('All')).not.toHaveClass('chrome-btn')
     for (const label of PRESET_LABELS.slice(1)) {
       expect(getPresetButton(label)).toHaveAttribute('aria-pressed', 'false')
+      expect(getPresetButton(label)).toHaveClass('tab')
+      expect(getPresetButton(label)).not.toHaveClass('tab-active')
     }
   })
 
@@ -52,7 +56,9 @@ describe('PresetTimeRanges', () => {
     expect(window.location.search).toContain(`start=${Date.now() - 300_000}`)
     expect(window.location.search).toContain(`end=${Date.now()}`)
     expect(getPresetButton('5m')).toHaveAttribute('aria-pressed', 'true')
+    expect(getPresetButton('5m')).toHaveClass('tab-active')
     expect(getPresetButton('All')).toHaveAttribute('aria-pressed', 'false')
+    expect(getPresetButton('All')).not.toHaveClass('tab-active')
   })
 
   it('applies All as an explicit unbounded selection', () => {

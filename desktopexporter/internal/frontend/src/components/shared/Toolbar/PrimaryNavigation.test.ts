@@ -81,6 +81,25 @@ describe('PrimaryNavigation', () => {
     )
   })
 
+  it('applies primary colour only to the current tab icon', async () => {
+    setTestUrl('/metrics')
+    renderTabs()
+    const metrics = screen.getByRole('link', { name: 'Metrics' })
+    const logs = screen.getByRole('link', { name: 'Logs' })
+
+    expect(metrics.querySelector('svg')).toHaveClass('text-primary')
+    expect(logs.querySelector('svg')).not.toHaveClass('text-primary')
+    expect(metrics).not.toHaveClass('text-primary')
+    expect(screen.getByText('Metrics')).not.toHaveClass('text-primary')
+
+    await userEvent.click(logs)
+
+    expect(logs.querySelector('svg')).toHaveClass('text-primary')
+    expect(metrics.querySelector('svg')).not.toHaveClass('text-primary')
+    expect(logs).not.toHaveClass('text-primary')
+    expect(screen.getByText('Logs')).not.toHaveClass('text-primary')
+  })
+
   it('marks Home as current on the root path', () => {
     setTestUrl('/')
     renderTabs()

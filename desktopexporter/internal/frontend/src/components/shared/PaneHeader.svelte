@@ -126,8 +126,6 @@
     activeID: string
     onSelect: (id: string, event?: MouseEvent) => void
     tabLayout?: PaneTabLayout
-    /** Plain tabs use DaisyUI ghost buttons and a soft primary selection. */
-    tabStyle?: 'underline' | 'plain'
     /** Route navigation renders real links instead of ARIA tabs. */
     navigation?: boolean
     /** ID of the local tabpanel controlled by every tab in this strip. */
@@ -143,7 +141,6 @@
     activeID: string
     onSelect: (id: string, event?: MouseEvent) => void
     tabLayout?: PaneTabLayout
-    tabStyle?: 'underline' | 'plain'
     /** ID of the local tabpanel controlled by every tab in this strip. */
     tabPanelID: string
   }
@@ -163,10 +160,6 @@
     props.rounded !== false ? 'pane-header--rounded' : 'pane-header--flush'
   )
   let tabSizeClass = $derived(props.rounded !== false ? 'tabs-sm' : '')
-  let plainTabs = $derived(
-    (props.mode === 'tabs' || props.mode === 'title-tabs') &&
-      props.tabStyle === 'plain'
-  )
   let stackedClass = $derived(
     props.timeRange !== undefined ||
       props.timestampMs !== undefined ||
@@ -282,9 +275,7 @@
       {/if}
       {#each tabs as tab (tab.id)}
         {@const active = tab.id === activeID}
-        {@const tabClass = plainTabs
-          ? `btn btn-md shrink-0 gap-2 text-base font-normal ${active ? 'btn-soft btn-primary' : 'btn-ghost text-rp-subtle'} ${tab.disabled ? 'btn-disabled' : ''}`
-          : `tab pane-header__tab gap-2 whitespace-nowrap px-3 ${active ? 'tab-active' : ''}`}
+        {@const tabClass = `tab pane-header__tab gap-2 whitespace-nowrap px-3 ${active ? 'tab-active' : ''}`}
         {#if navigation && tab.href}
           <a
             href={tab.disabled ? undefined : tab.href}
@@ -367,10 +358,7 @@
     {/if}
   </div>
 {:else if props.mode === 'tabs'}
-  <div
-    class="pane-header pane-header--tabs {roundedClass} {stackedClass}"
-    class:pane-header--plain-tabs={plainTabs}
-  >
+  <div class="pane-header pane-header--tabs {roundedClass} {stackedClass}">
     <div class="pane-header__top pane-header__top--tabs">
       {@render tabStrip(
         props.tabs,
@@ -402,7 +390,6 @@
 {:else}
   <div
     class="pane-header pane-header--title-tabs {roundedClass} {stackedClass}"
-    class:pane-header--plain-tabs={plainTabs}
     role="region"
     aria-label={props.ariaLabel ?? props.title}
   >
@@ -675,14 +662,6 @@
     outline: none;
     background: color-mix(in oklab, var(--color-primary) 12%, transparent);
     box-shadow: inset 0 -3px var(--color-primary);
-  }
-
-  .pane-header--plain-tabs :global(.tabs.pane-header__tabs) {
-    @apply items-center gap-4;
-  }
-
-  .pane-header--plain-tabs .pane-header__tab-scroll {
-    width: auto;
   }
 
   @media (forced-colors: active) {

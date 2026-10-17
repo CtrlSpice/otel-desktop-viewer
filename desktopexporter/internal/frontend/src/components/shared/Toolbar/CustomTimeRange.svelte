@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, untrack } from 'svelte'
+  import { onMount, untrack, type Snippet } from 'svelte'
   import { slide } from 'svelte/transition'
   import { Calendar } from 'bits-ui'
   import { HugeiconsIcon } from '@hugeicons/svelte'
@@ -21,6 +21,8 @@
     parseDateTimeInTimezone,
     type WallClockDisambiguation,
   } from '@/utils/time'
+
+  let { beforeApply }: { beforeApply?: Snippet } = $props()
 
   const ctx = getTimeContext()
   type Endpoint = 'start' | 'end'
@@ -382,8 +384,8 @@
     applyCustom()
   }}
 >
-  <fieldset class="fieldset min-w-0 w-full px-0 py-0">
-    <legend class="fieldset-legend sr-only">Custom Time Range</legend>
+  <fieldset class="custom-range-layout">
+    <legend class="sr-only">Custom Time Range</legend>
 
     {#snippet endpointCalendar(endpoint: Endpoint)}
       <Calendar.Root
@@ -457,206 +459,196 @@
       </Calendar.Root>
     {/snippet}
 
-    <div class="custom-range-layout">
-      <div class="range-editor">
-        <div class="typed-field-group range-editor-row join w-full">
-          <label for="custom-start-date" class="typed-field-label join-item">
-            Start
-          </label>
-          <input
-            id="custom-start-date"
-            type="text"
-            placeholder="YYYY-MM-DD"
-            class="typed-field input input-sm join-item endpoint-date"
-            class:input-error={startInputInvalid}
-            aria-invalid={startInputInvalid}
-            aria-describedby={startInputInvalid
-              ? 'custom-time-range-error'
-              : undefined}
-            oninput={editStart}
-            bind:value={startDateText}
-          />
-          <input
-            id="custom-start-time"
-            type="text"
-            aria-label="Start time"
-            placeholder="HH:mm:ss.SSS"
-            class="typed-field input input-sm join-item endpoint-time"
-            class:input-error={startInputInvalid}
-            aria-invalid={startInputInvalid}
-            aria-describedby={startInputInvalid
-              ? 'custom-time-range-error'
-              : undefined}
-            oninput={editStart}
-            bind:value={startTimeText}
-          />
-          <button
-            type="button"
-            class="endpoint-calendar-button btn btn-circle btn-ghost btn-xs"
-            class:endpoint-calendar-button--active={openCalendar === 'start'}
-            aria-label="Choose start date"
-            aria-expanded={openCalendar === 'start'}
-            aria-controls="custom-start-calendar"
-            onclick={() =>
-              (openCalendar = openCalendar === 'start' ? null : 'start')}
-          >
-            <HugeiconsIcon icon={Calendar03Icon} size={14} aria-hidden="true" />
-          </button>
-        </div>
-
-        {#if openCalendar === 'start'}
-          <div
-            class="endpoint-calendar-panel"
-            transition:slide={{ duration: 120 }}
-          >
-            {@render endpointCalendar('start')}
-          </div>
-        {/if}
-
-        {#if startAmbiguity}
-          <div
-            class="ambiguity-choices"
-            role="group"
-            aria-label="Start time occurrence"
-          >
-            <button
-              type="button"
-              class="ambiguity-choice"
-              class:ambiguity-choice--active={startChoice === 'earlier'}
-              aria-pressed={startChoice === 'earlier'}
-              onclick={() => {
-                startDirty = true
-                startChoice = 'earlier'
-                customFieldIssue = null
-              }}
-            >
-              {ambiguityLabel(startAmbiguity.earlier, 'earlier')}
-            </button>
-            <button
-              type="button"
-              class="ambiguity-choice"
-              class:ambiguity-choice--active={startChoice === 'later'}
-              aria-pressed={startChoice === 'later'}
-              onclick={() => {
-                startDirty = true
-                startChoice = 'later'
-                customFieldIssue = null
-              }}
-            >
-              {ambiguityLabel(startAmbiguity.later, 'later')}
-            </button>
-          </div>
-        {/if}
-
-        <div
-          class="typed-field-group range-editor-row range-editor-row--end join w-full"
-        >
-          <label for="custom-end-date" class="typed-field-label join-item">
-            End
-          </label>
-          <input
-            id="custom-end-date"
-            type="text"
-            placeholder="YYYY-MM-DD"
-            class="typed-field input input-sm join-item endpoint-date"
-            class:input-error={endInputInvalid}
-            aria-invalid={endInputInvalid}
-            aria-describedby={endInputInvalid
-              ? 'custom-time-range-error'
-              : undefined}
-            oninput={event => editEndField('date', event.currentTarget.value)}
-            bind:value={endDateText}
-          />
-          <input
-            id="custom-end-time"
-            type="text"
-            aria-label="End time"
-            placeholder="right now"
-            class="typed-field input input-sm join-item endpoint-time"
-            class:input-error={endInputInvalid}
-            aria-invalid={endInputInvalid}
-            aria-describedby={endInputInvalid
-              ? 'custom-time-range-error'
-              : undefined}
-            oninput={event => editEndField('time', event.currentTarget.value)}
-            bind:value={endTimeText}
-          />
-          <button
-            type="button"
-            class="endpoint-calendar-button btn btn-circle btn-ghost btn-xs"
-            class:endpoint-calendar-button--active={openCalendar === 'end'}
-            aria-label="Choose end date"
-            aria-expanded={openCalendar === 'end'}
-            aria-controls="custom-end-calendar"
-            onclick={() =>
-              (openCalendar = openCalendar === 'end' ? null : 'end')}
-          >
-            <HugeiconsIcon icon={Calendar03Icon} size={14} aria-hidden="true" />
-          </button>
-        </div>
-
-        {#if openCalendar === 'end'}
-          <div
-            class="endpoint-calendar-panel"
-            transition:slide={{ duration: 120 }}
-          >
-            {@render endpointCalendar('end')}
-          </div>
-        {/if}
-
-        {#if endAmbiguity}
-          <div
-            class="ambiguity-choices"
-            role="group"
-            aria-label="End time occurrence"
-          >
-            <button
-              type="button"
-              class="ambiguity-choice"
-              class:ambiguity-choice--active={endChoice === 'earlier'}
-              aria-pressed={endChoice === 'earlier'}
-              onclick={() => {
-                endDirty = true
-                endChoice = 'earlier'
-                customFieldIssue = null
-              }}
-            >
-              {ambiguityLabel(endAmbiguity.earlier, 'earlier')}
-            </button>
-            <button
-              type="button"
-              class="ambiguity-choice"
-              class:ambiguity-choice--active={endChoice === 'later'}
-              aria-pressed={endChoice === 'later'}
-              onclick={() => {
-                endDirty = true
-                endChoice = 'later'
-                customFieldIssue = null
-              }}
-            >
-              {ambiguityLabel(endAmbiguity.later, 'later')}
-            </button>
-          </div>
-        {/if}
-
-        <div class="custom-range-footer">
-          <button
-            type="submit"
-            class="apply-range btn btn-sm"
-            aria-label="Apply range"
-          >
-            Apply
-          </button>
-        </div>
-      </div>
-
-      {#if customFieldIssue}
-        <FieldErrorMessage
-          id="custom-time-range-error"
-          message={customFieldIssue.message}
+    <div class="range-editor-row">
+      <label for="custom-start-date" class="endpoint-label"> Start: </label>
+      <div class="endpoint-fields">
+        <input
+          id="custom-start-date"
+          type="text"
+          aria-label="Start"
+          placeholder="YYYY-MM-DD"
+          class="endpoint-input endpoint-date"
+          class:input-error={startInputInvalid}
+          aria-invalid={startInputInvalid}
+          aria-describedby={startInputInvalid
+            ? 'custom-time-range-error'
+            : undefined}
+          oninput={editStart}
+          bind:value={startDateText}
         />
-      {/if}
+        <span aria-hidden="true">,</span>
+        <input
+          id="custom-start-time"
+          type="text"
+          aria-label="Start time"
+          placeholder="HH:mm:ss.SSS"
+          class="endpoint-input"
+          class:input-error={startInputInvalid}
+          aria-invalid={startInputInvalid}
+          aria-describedby={startInputInvalid
+            ? 'custom-time-range-error'
+            : undefined}
+          oninput={editStart}
+          bind:value={startTimeText}
+        />
+      </div>
+      <button
+        type="button"
+        class="endpoint-calendar-button btn btn-circle btn-ghost btn-xs"
+        class:endpoint-calendar-button--active={openCalendar === 'start'}
+        aria-label="Choose start date"
+        aria-expanded={openCalendar === 'start'}
+        aria-controls="custom-start-calendar"
+        onclick={() =>
+          (openCalendar = openCalendar === 'start' ? null : 'start')}
+      >
+        <HugeiconsIcon icon={Calendar03Icon} size={14} aria-hidden="true" />
+      </button>
     </div>
+
+    {#if openCalendar === 'start'}
+      <div class="endpoint-calendar-panel" transition:slide={{ duration: 120 }}>
+        {@render endpointCalendar('start')}
+      </div>
+    {/if}
+
+    {#if startAmbiguity}
+      <div
+        class="ambiguity-choices"
+        role="group"
+        aria-label="Start time occurrence"
+      >
+        <button
+          type="button"
+          class="ambiguity-choice"
+          class:ambiguity-choice--active={startChoice === 'earlier'}
+          aria-pressed={startChoice === 'earlier'}
+          onclick={() => {
+            startDirty = true
+            startChoice = 'earlier'
+            customFieldIssue = null
+          }}
+        >
+          {ambiguityLabel(startAmbiguity.earlier, 'earlier')}
+        </button>
+        <button
+          type="button"
+          class="ambiguity-choice"
+          class:ambiguity-choice--active={startChoice === 'later'}
+          aria-pressed={startChoice === 'later'}
+          onclick={() => {
+            startDirty = true
+            startChoice = 'later'
+            customFieldIssue = null
+          }}
+        >
+          {ambiguityLabel(startAmbiguity.later, 'later')}
+        </button>
+      </div>
+    {/if}
+
+    <div class="range-editor-row">
+      <label for="custom-end-date" class="endpoint-label"> End: </label>
+      <div class="endpoint-fields">
+        <input
+          id="custom-end-date"
+          type="text"
+          aria-label="End"
+          placeholder="YYYY-MM-DD"
+          class="endpoint-input endpoint-date"
+          class:input-error={endInputInvalid}
+          aria-invalid={endInputInvalid}
+          aria-describedby={endInputInvalid
+            ? 'custom-time-range-error'
+            : undefined}
+          oninput={event => editEndField('date', event.currentTarget.value)}
+          bind:value={endDateText}
+        />
+        <span aria-hidden="true">,</span>
+        <input
+          id="custom-end-time"
+          type="text"
+          aria-label="End time"
+          placeholder="right now"
+          class="endpoint-input"
+          class:input-error={endInputInvalid}
+          aria-invalid={endInputInvalid}
+          aria-describedby={endInputInvalid
+            ? 'custom-time-range-error'
+            : undefined}
+          oninput={event => editEndField('time', event.currentTarget.value)}
+          bind:value={endTimeText}
+        />
+      </div>
+      <button
+        type="button"
+        class="endpoint-calendar-button btn btn-circle btn-ghost btn-xs"
+        class:endpoint-calendar-button--active={openCalendar === 'end'}
+        aria-label="Choose end date"
+        aria-expanded={openCalendar === 'end'}
+        aria-controls="custom-end-calendar"
+        onclick={() => (openCalendar = openCalendar === 'end' ? null : 'end')}
+      >
+        <HugeiconsIcon icon={Calendar03Icon} size={14} aria-hidden="true" />
+      </button>
+    </div>
+
+    {#if openCalendar === 'end'}
+      <div class="endpoint-calendar-panel" transition:slide={{ duration: 120 }}>
+        {@render endpointCalendar('end')}
+      </div>
+    {/if}
+
+    {#if endAmbiguity}
+      <div
+        class="ambiguity-choices"
+        role="group"
+        aria-label="End time occurrence"
+      >
+        <button
+          type="button"
+          class="ambiguity-choice"
+          class:ambiguity-choice--active={endChoice === 'earlier'}
+          aria-pressed={endChoice === 'earlier'}
+          onclick={() => {
+            endDirty = true
+            endChoice = 'earlier'
+            customFieldIssue = null
+          }}
+        >
+          {ambiguityLabel(endAmbiguity.earlier, 'earlier')}
+        </button>
+        <button
+          type="button"
+          class="ambiguity-choice"
+          class:ambiguity-choice--active={endChoice === 'later'}
+          aria-pressed={endChoice === 'later'}
+          onclick={() => {
+            endDirty = true
+            endChoice = 'later'
+            customFieldIssue = null
+          }}
+        >
+          {ambiguityLabel(endAmbiguity.later, 'later')}
+        </button>
+      </div>
+    {/if}
+
+    {#if beforeApply}{@render beforeApply()}{/if}
+
+    <button
+      type="submit"
+      class="apply-range btn btn-sm"
+      aria-label="Apply range"
+    >
+      Apply
+    </button>
+    {#if customFieldIssue}
+      <FieldErrorMessage
+        id="custom-time-range-error"
+        message={customFieldIssue.message}
+      />
+    {/if}
   </fieldset>
 </form>
 
@@ -664,41 +656,56 @@
   @reference "../../../app.css";
 
   .custom-range-layout {
-    @apply flex min-w-0 w-full flex-col gap-2;
-  }
-
-  .range-editor {
-    @apply flex min-w-0 w-full flex-col overflow-hidden rounded-xl border border-base-300/70 bg-base-100;
+    @apply m-0 flex min-w-0 w-full flex-col border-0 p-0;
   }
 
   .range-editor-row {
-    @apply rounded-none border-0;
+    @apply grid grid-cols-[3.5rem_minmax(0,1fr)_auto] items-center gap-x-3;
   }
 
-  .range-editor-row--end {
-    @apply border-t border-base-300/70;
-  }
-
-  .range-editor-row:has(> input:focus) {
-    z-index: 1;
-    outline: none;
+  .range-editor-row:has(input:focus) {
     box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
   }
 
-  .range-editor-row:has(> input.input-error:focus) {
+  .range-editor-row:has(input.input-error:focus) {
     box-shadow: inset 0 0 0 var(--focus-ring-width) var(--color-error);
   }
 
-  .range-editor-row > .typed-field-label {
-    @apply rounded-none;
+  .endpoint-label {
+    @apply cursor-pointer pl-3 text-sm font-normal;
+    color: var(--color-subtle);
+  }
+
+  .endpoint-input {
+    @apply min-w-0 max-w-full rounded-none border-0 bg-transparent p-0 text-left font-mono text-sm tracking-tight tabular-nums shadow-none outline-none;
+    field-sizing: content;
+    height: calc(var(--table-row-h) + 0.5rem);
+    line-height: calc(var(--table-row-h) + 0.5rem);
+  }
+
+  .endpoint-input::placeholder {
+    color: var(--color-subtle);
+    opacity: 1;
+  }
+
+  .endpoint-fields {
+    @apply flex min-w-0 items-center justify-center font-mono text-sm;
+  }
+
+  .endpoint-fields > span {
+    @apply pr-2 text-base-content/50;
+  }
+
+  .endpoint-date {
+    @apply w-[10ch] shrink-0;
   }
 
   :global(.custom-calendar) {
-    @apply rounded-none border-0 bg-transparent p-2;
+    @apply rounded-none border-0 bg-transparent px-0 py-4;
   }
 
   :global(.calendar-header) {
-    @apply mb-1 flex items-center justify-between;
+    @apply mb-2 flex items-center justify-center gap-3;
   }
 
   :global(.calendar-heading) {
@@ -706,7 +713,7 @@
   }
 
   :global(.calendar-nav) {
-    @apply btn btn-circle btn-ghost btn-xs text-base-content/60 hover:bg-base-300/40 hover:text-base-content;
+    @apply btn btn-circle btn-ghost btn-xs h-7 min-h-0 w-7 p-0 text-base-content/60 hover:bg-base-300/40 hover:text-base-content;
   }
 
   :global(.calendar-grid) {
@@ -735,7 +742,7 @@
   }
 
   :global(.calendar-day[data-selected]) {
-    @apply bg-primary text-primary-content;
+    @apply bg-primary/20 text-primary;
   }
 
   .calendar-today-dot {
@@ -746,16 +753,8 @@
     @apply block;
   }
 
-  .endpoint-date {
-    @apply min-w-0 basis-[7.25rem];
-  }
-
-  .endpoint-time {
-    @apply min-w-0 basis-[8.5rem] border-l border-base-300/70 font-mono tabular-nums;
-  }
-
   .endpoint-calendar-button {
-    @apply mr-0.5 h-7 min-h-7 w-7 shrink-0 self-center border-transparent p-0 text-base-content/50 shadow-none;
+    @apply mr-1 h-7 min-h-0 w-7 shrink-0 self-center border-transparent p-0 text-base-content/50 shadow-none;
     @apply hover:bg-base-300/40 hover:text-base-content;
   }
 
@@ -764,15 +763,11 @@
   }
 
   .endpoint-calendar-panel {
-    @apply min-w-0 w-full border-t border-base-300/70 bg-base-200/20;
-  }
-
-  .typed-field-group > .endpoint-time:last-child {
-    @apply rounded-r-full;
+    @apply min-w-0 w-full bg-transparent;
   }
 
   .ambiguity-choices {
-    @apply grid grid-cols-2 gap-1 border-t border-base-300/70 px-2 py-1.5;
+    @apply grid grid-cols-2 gap-1 px-2 py-1.5;
   }
 
   .ambiguity-choice {
@@ -784,16 +779,12 @@
     @apply border-primary/50 bg-primary/10 text-primary;
   }
 
-  .custom-range-footer {
-    @apply flex min-w-0 items-center justify-end border-t border-primary/15;
-  }
-
   .apply-range {
-    @apply btn-soft btn-primary w-full rounded-none border-0 bg-primary/10 px-4 text-primary shadow-none;
+    @apply btn-ghost mt-2 w-full rounded-none border-0 bg-transparent px-4 text-sm text-primary shadow-none;
   }
 
   .apply-range:hover {
-    @apply border-0 bg-primary/15 text-primary;
+    @apply bg-base-300/40;
   }
 
   .apply-range:focus-visible {

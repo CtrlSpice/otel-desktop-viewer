@@ -1,11 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import {
-    CustomizeIcon,
-    FilterIcon,
-    GlobalIcon,
-  } from '@hugeicons/core-free-icons'
+  import { ChevronDownIcon } from '@hugeicons/core-free-icons'
   import {
     getTimeContext,
     selectionToQueryRangeMs,
@@ -16,9 +12,7 @@
     getSupportedTimezones,
     resolveTimezoneName,
   } from '@/utils/time'
-  import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import CustomTimeRange from './CustomTimeRange.svelte'
-  import RecentTimeRanges from './RecentTimeRanges.svelte'
 
   const ctx = getTimeContext()
 
@@ -91,130 +85,127 @@
   })
 </script>
 
-<!-- Shared body: custom range, timezone group, recents group. -->
-<div class="time-range-groups">
-  <FieldGroup label="Custom Range">
-    {#snippet icon()}
-      <HugeiconsIcon
-        icon={CustomizeIcon}
-        size={14}
-        strokeWidth={1.5}
-        class="shrink-0 text-base-content/55"
-        aria-hidden="true"
-      />
-    {/snippet}
-    <CustomTimeRange />
-  </FieldGroup>
-
-  <FieldGroup label="Timezone" bind:open={timezoneOpen}>
-    {#snippet icon()}
-      <HugeiconsIcon
-        icon={GlobalIcon}
-        size={14}
-        strokeWidth={1.5}
-        class="shrink-0 text-base-content/55"
-        aria-hidden="true"
-      />
-    {/snippet}
-    {#snippet heading()}
-      <span>Timezone</span>
-      <span
-        class="timezone-summary"
-        title={selectedTimezoneLabel}
-        aria-live="polite">{selectedTimezoneLabel}</span
-      >
-    {/snippet}
-    {#if timezoneOpen}
-      <div class="timezone-search">
-        <div class="typed-field-group join w-full">
-          <label
-            for="timezone-filter"
-            class="typed-field-label join-item"
-            title="Filter timezones"
-          >
-            <HugeiconsIcon
-              icon={FilterIcon}
-              size="1em"
-              strokeWidth={1.5}
-              class="h-3.5 w-3.5 shrink-0"
-              aria-hidden="true"
+<!-- Shared body: always-visible custom range and timezone group. -->
+<CustomTimeRange>
+  {#snippet beforeApply()}
+    <details
+      class="timezone-group"
+      open={timezoneOpen}
+      ontoggle={event => (timezoneOpen = event.currentTarget.open)}
+    >
+      <summary class="timezone-heading">
+        <HugeiconsIcon
+          icon={ChevronDownIcon}
+          size={14}
+          strokeWidth={1.5}
+          class="timezone-caret"
+          aria-hidden="true"
+        />
+        <span>Timezone</span>
+        <span
+          class="timezone-summary"
+          title={selectedTimezoneLabel}
+          aria-live="polite">{selectedTimezoneLabel}</span
+        >
+      </summary>
+      <div class="timezone-content">
+        {#if timezoneOpen}
+          <div class="timezone-search">
+            <input
+              id="timezone-filter"
+              type="search"
+              class="timezone-filter"
+              aria-label="Filter timezones"
+              placeholder="Filter timezones"
+              autocomplete="off"
+              spellcheck="false"
+              onkeydown={event => {
+                if (event.key === 'Enter') event.preventDefault()
+              }}
+              bind:value={timezoneSearch}
             />
-            <span class="sr-only">Filter timezones</span>
-          </label>
-          <input
-            id="timezone-filter"
-            type="search"
-            class="typed-field input input-sm join-item"
-            placeholder="Filter timezones"
-            autocomplete="off"
-            spellcheck="false"
-            bind:value={timezoneSearch}
-          />
-        </div>
-      </div>
-      <div
-        class="timezone-list"
-        aria-label="Timezone options"
-        bind:this={timezoneList}
-      >
-        <button
-          type="button"
-          class="tz-option"
-          class:tz-option--active={ctx.tz === 'local'}
-          aria-pressed={ctx.tz === 'local'}
-          onclick={() => ctx.setTz('local')}
-        >
-          <!-- "(Local)" disambiguates from UTC when the machine follows UTC. -->
-          <span class="tz-name">{getLocalTimezoneName()} (Local)</span>
-          <span class="tz-badge">{formatTimezoneLabel('local')}</span>
-        </button>
-        <button
-          type="button"
-          class="tz-option"
-          class:tz-option--active={ctx.tz === 'UTC'}
-          aria-pressed={ctx.tz === 'UTC'}
-          onclick={() => ctx.setTz('UTC')}
-        >
-          <span class="tz-name">Coordinated Universal Time</span>
-          <span class="tz-badge">UTC</span>
-        </button>
-        <div class="timezone-list__separator" role="separator"></div>
-        {#each filteredTimezones as timezone (timezone.name)}
-          <button
-            type="button"
-            class="tz-option"
-            class:tz-option--active={ctx.tz === timezone.name}
-            aria-pressed={ctx.tz === timezone.name}
-            onclick={() => ctx.setTz(timezone.name)}
+          </div>
+          <div
+            class="timezone-list"
+            aria-label="Timezone options"
+            bind:this={timezoneList}
           >
-            <span class="tz-name">{timezone.name}</span>
-            <span class="tz-badge">{timezone.shortLabel}</span>
-          </button>
-        {/each}
-        {#if filteredTimezones.length === 0}
-          <p class="timezone-list__empty">No matching named timezones</p>
+            <button
+              type="button"
+              class="tz-option"
+              class:tz-option--active={ctx.tz === 'local'}
+              aria-pressed={ctx.tz === 'local'}
+              onclick={() => ctx.setTz('local')}
+            >
+              <!-- "(Local)" disambiguates from UTC when the machine follows UTC. -->
+              <span class="tz-name">{getLocalTimezoneName()} (Local)</span>
+              <span class="tz-badge">{formatTimezoneLabel('local')}</span>
+            </button>
+            <button
+              type="button"
+              class="tz-option"
+              class:tz-option--active={ctx.tz === 'UTC'}
+              aria-pressed={ctx.tz === 'UTC'}
+              onclick={() => ctx.setTz('UTC')}
+            >
+              <span class="tz-name">Coordinated Universal Time</span>
+              <span class="tz-badge">UTC</span>
+            </button>
+            <div class="timezone-list__separator" role="separator"></div>
+            {#each filteredTimezones as timezone (timezone.name)}
+              <button
+                type="button"
+                class="tz-option"
+                class:tz-option--active={ctx.tz === timezone.name}
+                aria-pressed={ctx.tz === timezone.name}
+                onclick={() => ctx.setTz(timezone.name)}
+              >
+                <span class="tz-name">{timezone.name}</span>
+                <span class="tz-badge">{timezone.shortLabel}</span>
+              </button>
+            {/each}
+            {#if filteredTimezones.length === 0}
+              <p class="timezone-list__empty">No matching named timezones</p>
+            {/if}
+          </div>
         {/if}
       </div>
-    {/if}
-  </FieldGroup>
-
-  <RecentTimeRanges />
-</div>
+    </details>
+  {/snippet}
+</CustomTimeRange>
 
 <style lang="postcss">
   @reference "../../../app.css";
 
-  .time-range-groups {
-    --field-group-inline: 1rem;
-    @apply flex min-w-0 flex-col text-sm;
+  .timezone-heading {
+    @apply flex cursor-pointer select-none list-none items-center gap-2 py-1.5 text-sm font-medium;
+    color: var(--color-subtle);
+  }
+
+  .timezone-heading::marker,
+  .timezone-heading::-webkit-details-marker {
+    display: none;
+  }
+
+  .timezone-heading :global(.timezone-caret) {
+    @apply h-7 w-7 shrink-0 p-[7px] transition-transform duration-150;
+    color: var(--color-muted);
+    transform: rotate(-90deg);
+  }
+
+  .timezone-group[open] .timezone-heading :global(.timezone-caret) {
+    transform: rotate(0deg);
+  }
+
+  .timezone-content {
+    @apply pb-2;
   }
 
   .tz-option {
     box-sizing: border-box;
     height: var(--table-row-h);
     min-height: var(--table-row-h);
-    padding-inline: var(--fg-inline);
-    @apply flex w-full cursor-pointer items-center gap-2 rounded-none border-none bg-transparent py-0 text-left text-sm transition-colors;
+    @apply flex w-full cursor-pointer items-center gap-2 rounded-none border-none bg-transparent px-3 py-0 text-left text-sm transition-colors;
     @apply text-base-content/90 hover:bg-base-300/40;
     @apply focus-visible:bg-base-300/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-0;
   }
@@ -232,7 +223,6 @@
   }
 
   .timezone-list {
-    margin-inline: calc(var(--fg-inline) * -1);
     @apply max-h-72 overflow-y-auto;
     scrollbar-width: thin;
   }
@@ -241,8 +231,17 @@
     @apply py-1.5;
   }
 
+  .timezone-filter {
+    @apply h-8 min-w-0 w-full rounded-full border-0 bg-base-300 px-3.5 py-0 font-mono text-sm tracking-tight text-base-content outline-none;
+  }
+
+  .timezone-filter::placeholder {
+    color: var(--color-muted);
+    opacity: 1;
+  }
+
   .timezone-summary {
-    @apply min-w-0 flex-1 truncate text-right font-mono text-xs text-base-content/55;
+    @apply ml-auto min-w-0 truncate pr-3 text-right font-mono text-xs text-base-content;
   }
 
   .timezone-list__separator {
@@ -250,7 +249,6 @@
   }
 
   .timezone-list__empty {
-    padding-inline: var(--fg-inline);
     @apply py-3 text-xs text-base-content/55;
   }
 </style>

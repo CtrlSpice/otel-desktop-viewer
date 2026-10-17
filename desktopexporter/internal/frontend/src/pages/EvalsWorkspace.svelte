@@ -1,6 +1,10 @@
 <script lang="ts">
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import { Cancel01Icon } from '@hugeicons/core-free-icons'
+  import { QuestionMarkIcon } from '@/icons'
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
+  import DateTimeFilter from '@/components/shared/Toolbar/DateTimeFilter.svelte'
   import EvalRunSummary from '@/components/evals/EvalRunSummary.svelte'
   import RunStatusBadge from '@/components/evals/RunStatusBadge.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
@@ -22,7 +26,6 @@
     onViewIssue?: (event: MouseEvent) => void
   } = $props()
   const route = getRouteContext()
-  let runSearch = $state('')
   const query = $derived(route.route.query)
   const run = $derived(
     exampleRuns.find(item => item.id === query.run) ?? exampleRuns[0]
@@ -33,17 +36,9 @@
       ? (query.detail ?? 'Overview')
       : 'Overview'
   )
-  const runs = $derived(
-    exampleRuns.filter(item =>
-      `${item.name} ${item.evaluation} ${item.state}`
-        .toLowerCase()
-        .includes(runSearch.toLowerCase())
-    )
-  )
   const results = $derived.by(() => {
     const text = (query.q ?? '').toLowerCase().trim()
-    const rows = run.attempts.filter(item => {
-      if (query.status && item.state !== query.status) return false
+    return run.attempts.filter(item => {
       const searchable = [
         item.name,
         item.question,
@@ -61,10 +56,6 @@
         .toLowerCase()
       return !text || searchable.includes(text)
     })
-    if (query.sort === 'duration')
-      rows.sort((a, b) => (b.seconds ?? -1) - (a.seconds ?? -1))
-    if (query.sort === 'name') rows.sort((a, b) => a.name.localeCompare(b.name))
-    return rows
   })
   const selectedIndex = $derived(
     results.findIndex(item => item.id === attempt?.id)
@@ -86,7 +77,7 @@
 </script>
 
 <PageLayout
-  items={runs}
+  items={exampleRuns}
   selectedID={run.id}
   drawerID="signal-drawer"
   drawerLabel="Evals"
@@ -95,20 +86,46 @@
   resizableStorageKey="evals:detail-width"
 >
   {#snippet drawerSearch()}
-    <input
-      class="input typed-field typed-field--pill w-full"
-      type="search"
-      aria-label="Find a run"
-      placeholder="Find a run…"
-      bind:value={runSearch}
-    />
+    <div class="flex w-full min-w-0 items-center gap-1">
+      <input
+        class="input typed-field typed-field--pill min-w-0 flex-1"
+        type="search"
+        aria-label="Search evals"
+        placeholder="Search evals…"
+        value={query.q ?? ''}
+        oninput={event => update({ q: event.currentTarget.value }, true)}
+      />
+      <button
+        type="button"
+        class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content"
+        aria-label="Clear search"
+        onclick={() => update({ q: null }, true)}
+      >
+        <HugeiconsIcon
+          icon={Cancel01Icon}
+          size={17}
+          strokeWidth={1.5}
+          aria-hidden="true"
+        />
+      </button>
+      <button
+        type="button"
+        class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content"
+        aria-label="Search query help"
+      >
+        <QuestionMarkIcon
+          class="h-[17px] w-[17px] shrink-0"
+          aria-hidden="true"
+        />
+      </button>
+    </div>
   {/snippet}
-  {#snippet drawerChromeToolbar()}{/snippet}
+  {#snippet drawerChromeToolbar()}<DateTimeFilter />{/snippet}
   {#snippet itemSnippet(item, selected)}
     <EvalRunSummary run={item} {selected} onclick={selectRun} />
   {/snippet}
   {#snippet drawerFooter()}<SignalDrawerFooter
-      count={runs.length}
+      count={exampleRuns.length}
       label="run"
     />{/snippet}
   {#snippet main()}
@@ -127,41 +144,6 @@
           class="btn btn-ghost btn-xs"
           onclick={() => update({ attempt: null })}>Run details</button
         >{/snippet}
-    </PaneHeader>
-    <PaneHeader mode="toolbar" ariaLabel="Result filters" rounded={false}>
-      {#snippet right()}
-        <div class="flex w-full min-w-0 flex-wrap items-center gap-2">
-          <input
-            class="input typed-field typed-field--pill min-w-0 flex-1"
-            type="search"
-            aria-label="Filter loaded results"
-            placeholder="Filter loaded results…"
-            value={query.q ?? ''}
-            oninput={event => update({ q: event.currentTarget.value }, true)}
-          />
-          <select
-            class="select typed-field w-auto"
-            aria-label="Execution status"
-            value={query.status ?? ''}
-            onchange={event =>
-              update({ status: event.currentTarget.value }, true)}
-            ><option value="">All statuses</option
-            >{#each ['Complete', 'Running', 'Error', 'Planned'] as state}<option
-                >{state}</option
-              >{/each}</select
-          >
-          <select
-            class="select typed-field w-auto"
-            aria-label="Sort results"
-            value={query.sort ?? ''}
-            onchange={event =>
-              update({ sort: event.currentTarget.value }, true)}
-            ><option value="">Case order</option><option value="duration"
-              >Slowest first</option
-            ><option value="name">Name</option></select
-          >
-        </div>
-      {/snippet}
     </PaneHeader>
     <div class="min-h-0 flex-1 overflow-auto">
       <table class="table w-full">
@@ -217,8 +199,7 @@
           <p>No matching attempts</p>
           <button
             class="btn btn-ghost btn-sm"
-            onclick={() => update({ q: null, status: null }, true)}
-            >Clear filters</button
+            onclick={() => update({ q: null }, true)}>Clear search</button
           >
         </div>{/if}
     </div>

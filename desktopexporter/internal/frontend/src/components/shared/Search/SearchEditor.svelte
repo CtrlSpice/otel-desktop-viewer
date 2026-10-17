@@ -35,7 +35,8 @@
   import { queryTheme, ensureTooltipStyles } from './codemirror/theme'
   import { createQueryKeymap } from './codemirror/keymap'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { Cancel01Icon, HelpCircleIcon } from '@hugeicons/core-free-icons'
+  import { Cancel01Icon } from '@hugeicons/core-free-icons'
+  import { QuestionMarkIcon } from '@/icons'
   import FieldErrorMessage from '@/components/shared/FieldErrorMessage.svelte'
 
   import type { SearchEditorAPI } from './search-editor-api'
@@ -381,20 +382,6 @@
           {@render headerActions()}
         </div>
       {/if}
-      <span class="search-editor__leading-icon" aria-hidden="true">
-        <svg
-          class="h-3.5 w-3.5 shrink-0"
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.75"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="m17 17l4 4m-2-10a8 8 0 1 0-16 0a8 8 0 0 0 16 0" />
-        </svg>
-      </span>
       <div class="editor-mount" bind:this={editorContainer}></div>
       <div
         class="search-editor__footer-actions"
@@ -405,34 +392,31 @@
             <FieldErrorMessage message={searchError} />
           </div>
         {/if}
-        <div class="join join-horizontal shrink-0 rounded-full">
+        <div class="flex shrink-0 items-center gap-1">
           <button
             type="button"
-            class="drawer-editor-btn join-item tooltip tooltip-bottom"
-            onclick={openHelp}
-            aria-label="Search query help"
-            data-tip="Query help"
-          >
-            <HugeiconsIcon
-              icon={HelpCircleIcon}
-              size="1em"
-              strokeWidth={1.5}
-              class="h-3.5 w-3.5 shrink-0"
-              aria-hidden="true"
-            />
-          </button>
-          <button
-            type="button"
-            class="drawer-editor-btn join-item tooltip tooltip-bottom"
+            class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-bottom"
             onclick={clearSearch}
             aria-label="Clear search"
             data-tip="Clear search"
           >
             <HugeiconsIcon
               icon={Cancel01Icon}
-              size="1em"
+              size={17}
               strokeWidth={1.5}
-              class="h-3.5 w-3.5 shrink-0"
+              class="shrink-0"
+              aria-hidden="true"
+            />
+          </button>
+          <button
+            type="button"
+            class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-bottom"
+            onclick={openHelp}
+            aria-label="Search query help"
+            data-tip="Query help"
+          >
+            <QuestionMarkIcon
+              class="h-[17px] w-[17px] shrink-0"
               aria-hidden="true"
             />
           </button>
@@ -459,13 +443,7 @@
           aria-label="Search query help"
           data-tip="Query help"
         >
-          <HugeiconsIcon
-            icon={HelpCircleIcon}
-            size="1em"
-            strokeWidth={1.5}
-            class="h-4 w-4 shrink-0"
-            aria-hidden="true"
-          />
+          <QuestionMarkIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
         </button>
         <button
           type="button"
@@ -725,13 +703,8 @@
   }
 
   .search-editor-wrapper--drawer .search-editor-container {
-    @apply items-center gap-1.5 py-1 pl-4 pr-2;
+    @apply items-center gap-1.5 py-1 pl-4 pr-0;
     height: auto;
-  }
-
-  .search-editor-wrapper--drawer .search-editor__leading-icon {
-    @apply flex shrink-0 items-center;
-    color: var(--color-subtle);
   }
 
   .search-editor-wrapper--drawer

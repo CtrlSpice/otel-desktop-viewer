@@ -40,10 +40,7 @@
   } from '@/contexts/time-context.svelte'
   import { navigateToItem } from '@/route'
   import type { LogData } from '@/types/api-types'
-  import {
-    createSignalListPage,
-    type SortOption,
-  } from '@/contexts/signal-list-page.svelte'
+  import { createSignalListPage } from '@/contexts/signal-list-page.svelte'
   import { createDebouncedDetailFetcher } from '@/components/shared/utils/debounced-detail-fetcher.svelte'
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
@@ -61,13 +58,6 @@
     importFailure?: ImportFailure | null
     onViewIssue?: (event: MouseEvent) => void
   } = $props()
-
-  const SORT_OPTIONS: SortOption<LogSortColumn>[] = [
-    { value: 'timestamp', label: 'Timestamp', defaultDirection: 'desc' },
-    { value: 'body', label: 'Body' },
-    { value: 'service', label: 'Service Name' },
-    { value: 'severity', label: 'Severity', defaultDirection: 'desc' },
-  ]
 
   let timeContext = getTimeContext()
 
@@ -178,10 +168,8 @@
       <DrawerSearchPanel
         segment="toolbar"
         signal="logs"
-        sortOptions={SORT_OPTIONS}
         sortValue={page.sortColumn}
         sortDirection={page.sortDirection}
-        onSortChange={page.handleSortChange}
       />
     {/snippet}
 
@@ -189,10 +177,8 @@
       <DrawerSearchPanel
         segment="search"
         signal="logs"
-        sortOptions={SORT_OPTIONS}
         sortValue={page.sortColumn}
         sortDirection={page.sortDirection}
-        onSortChange={page.handleSortChange}
         onSearchResults={page.handleSearchResults}
         onSearchReady={api => (page.searchEditorApi = api)}
       />

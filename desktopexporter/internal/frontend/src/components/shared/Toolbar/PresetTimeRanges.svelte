@@ -15,7 +15,7 @@
   }
 </script>
 
-<div class="preset-time-ranges">
+<div class="preset-time-ranges tabs tabs-border">
   {#each TIME_RANGE_PRESETS as preset (preset.label)}
     {@const selected =
       preset.durationMs === undefined
@@ -24,9 +24,10 @@
           ctx.selection.durationMs === preset.durationMs}
     <button
       type="button"
-      class="chrome-btn {selected
-        ? 'chrome-btn--active'
-        : 'chrome-btn--inactive'}"
+      class="tab min-w-0 px-3 text-sm first:justify-start last:justify-end before:left-0 before:w-full before:text-primary {selected
+        ? 'before:h-px before:border-t'
+        : ''}"
+      class:tab-active={selected}
       aria-pressed={selected}
       aria-label={preset.label === 'All' ? 'All time' : `Last ${preset.label}`}
       onclick={() => applyPreset(preset)}
@@ -40,14 +41,6 @@
   @reference "../../../app.css";
 
   .preset-time-ranges {
-    @apply flex min-w-0 w-full flex-nowrap items-center justify-evenly gap-1;
-  }
-
-  .preset-time-ranges .chrome-btn--inactive {
-    color: var(--color-base-content);
-  }
-
-  .preset-time-ranges .chrome-btn--active {
-    color: var(--color-primary);
+    @apply grid min-w-0 w-full grid-flow-col auto-cols-fr;
   }
 </style>

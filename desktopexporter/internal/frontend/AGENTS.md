@@ -13,3 +13,9 @@
   the full local quality gate, including bundle freshness.
 - Keep preview-only diagnostics in the console or local logs rather than
   rendering them in the application UI.
+- Remove unused CSS encountered during frontend work after checking for remaining
+  consumers. Do not retain obsolete styles for possible future reuse; Git keeps
+  their history.
+- For incremental UI work, implement only the requested step. Do not infer search
+  behaviour, receiver or storage contracts, or actions for unwired controls. Ask
+  before filling those gaps.

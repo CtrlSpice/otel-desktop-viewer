@@ -80,6 +80,55 @@ describe('createSignalListPage integration', () => {
     expect(screen.getByTestId('selected-index').textContent).toBe('1')
   })
 
+  it('refreshes through the current search without clearing it or fetching the unfiltered list', async () => {
+    let page:
+      | import('@/contexts/signal-list-page.svelte').SignalListPage<
+          Item,
+          'name'
+        >
+      | undefined
+    const fetchList = vi.fn(async () => [{ id: 'a', name: 'alfa' }])
+    const submit = vi.fn()
+    const clear = vi.fn()
+    setTestUrl('/logs')
+    renderWithContexts(SignalListPageProbe, {
+      fetchList,
+      onContext: ctx => {
+        page = ctx
+      },
+    })
+    await waitForListLoaded()
+    page!.searchEditorApi = { submit, clear }
+
+    page!.handleRefresh()
+
+    expect(submit).toHaveBeenCalledTimes(1)
+    expect(clear).not.toHaveBeenCalled()
+    expect(fetchList).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes the list when no search editor is attached', async () => {
+    let page:
+      | import('@/contexts/signal-list-page.svelte').SignalListPage<
+          Item,
+          'name'
+        >
+      | undefined
+    const fetchList = vi.fn(async () => [{ id: 'a', name: 'alfa' }])
+    setTestUrl('/logs')
+    renderWithContexts(SignalListPageProbe, {
+      fetchList,
+      onContext: ctx => {
+        page = ctx
+      },
+    })
+    await waitForListLoaded()
+
+    page!.handleRefresh()
+
+    await vi.waitFor(() => expect(fetchList).toHaveBeenCalledTimes(2))
+  })
+
   it('does not clobber a shared-link id before the list finishes loading', async () => {
     let resolveFetch!: (items: Item[]) => void
     const fetchList = vi.fn(
