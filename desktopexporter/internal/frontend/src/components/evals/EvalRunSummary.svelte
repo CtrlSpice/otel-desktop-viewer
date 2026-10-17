@@ -57,22 +57,18 @@
       <div
         class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs tabular-nums"
       >
-        <span title="Investigator cost estimate in CAD"
-          >Est. cost: {cost(
-            summary.investigatorCost.total
-          )}{#if summary.investigatorCost.incomplete && summary.investigatorCost.total !== null}
-            {' · incomplete'}{/if}</span
-        >
-      </div>
-      <div
-        class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs tabular-nums"
-      >
         <span>
           Tool calls: <span class="text-base-content">{summary.toolCalls}</span>
           {#if summary.failedTools > 0}
             <span class="text-error">({summary.failedTools} failed)</span>
           {/if}
         </span>
+        <span title="Investigator cost estimate in CAD"
+          >Est. cost: {cost(
+            summary.investigatorCost.total
+          )}{#if summary.investigatorCost.incomplete && summary.investigatorCost.total !== null}
+            {' · incomplete'}{/if}</span
+        >
       </div>
     </div>
   {/snippet}
