@@ -30,8 +30,8 @@
 /*
  * Rosé Pine theme mapping
  *
- * RP base    → base-100      RP pine  → secondary
- * RP surface → base-200      RP foam  → accent, info, success
+ * RP base    → base-100      RP pine  → secondary, success
+ * RP surface → base-200      RP foam  → accent, info
  * RP overlay → base-300      RP iris  → primary
  * RP text    → base-content  RP love  → error
  * RP muted   → neutral       RP gold  → warning
@@ -66,8 +66,8 @@ html[data-theme='rose-pine'] {
   --color-neutral-content: #e0def4;
   --color-info: #9ccfd8;
   --color-info-content: #191724;
-  --color-success: #9ccfd8;
-  --color-success-content: #191724;
+  --color-success: #31748f;
+  --color-success-content: #e0def4;
   --color-warning: #f6c177;
   --color-warning-content: #191724;
   --color-error: #eb6f92;
@@ -104,8 +104,8 @@ html[data-theme='rose-pine-moon'] {
   --color-neutral-content: #e0def4;
   --color-info: #9ccfd8;
   --color-info-content: #232136;
-  --color-success: #9ccfd8;
-  --color-success-content: #232136;
+  --color-success: #3e8fb0;
+  --color-success-content: #e0def4;
   --color-warning: #f6c177;
   --color-warning-content: #232136;
   --color-error: #eb6f92;
@@ -141,7 +141,7 @@ html[data-theme='rose-pine-dawn'] {
   --color-neutral-content: #575279;
   --color-info: #56949f;
   --color-info-content: #faf4ed;
-  --color-success: #56949f;
+  --color-success: #286983;
   --color-success-content: #faf4ed;
   --color-warning: #ea9d34;
   --color-warning-content: #faf4ed;
