@@ -18,11 +18,15 @@ export default defineConfig({
     strictPort: true, // Fail if port is in use instead of trying another
     proxy: {
       '/rpc': {
-        target: 'http://localhost:8000',
+        target: process.env.VIEWER_PROXY_TARGET || 'http://localhost:8000',
         changeOrigin: true,
       },
       '/export': {
-        target: 'http://localhost:8000',
+        target: process.env.VIEWER_PROXY_TARGET || 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/api/features': {
+        target: process.env.VIEWER_PROXY_TARGET || 'http://localhost:8000',
         changeOrigin: true,
       },
     },
@@ -31,7 +35,8 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     // This app is served from localhost out of a Go-embedded binary, so
-    // transfer size is irrelevant and we deliberately don't code-split.
+    // transfer size is irrelevant. The experimental Evals workspace is lazy
+    // loaded so disabled experiments do not load their presentation or examples.
     // Vite's default 500 kB warning assumes a public web app; keep the
     // warning as a canary for genuine bloat instead.
     chunkSizeWarningLimit: 1200,

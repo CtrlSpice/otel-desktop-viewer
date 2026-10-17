@@ -5,11 +5,20 @@
     BarChartHorizontalIcon,
     ChartHistogramIcon,
     Home12Icon,
+    TestTube01Icon,
   } from '@hugeicons/core-free-icons'
   import { LogIcon } from '@/icons'
   import type { SignalName } from '@/route'
 
-  type NavItemID = 'home' | SignalName
+  type NavItemID = 'home' | 'evals' | SignalName
+
+  export const EVALS_NAV: NavItem<'evals'> = {
+    id: 'evals',
+    label: 'Evals',
+    path: '/evals',
+    iconType: 'hugeicon',
+    icon: TestTube01Icon,
+  }
 
   type NavItemBase<ID extends NavItemID> = {
     id: ID
@@ -61,6 +70,7 @@
     metrics: (path: string) =>
       path === '/metrics' || path.startsWith('/metrics/'),
     logs: (path: string) => path === '/logs' || path.startsWith('/logs/'),
+    evals: (path: string) => path === '/evals' || path.startsWith('/evals/'),
   } satisfies Record<NavItemID, (path: string) => boolean>
 
   function isNavItemID(itemID: string): itemID is NavItemID {
@@ -69,6 +79,7 @@
       case 'traces':
       case 'metrics':
       case 'logs':
+      case 'evals':
         return true
       default:
         return false
@@ -81,7 +92,13 @@
 </script>
 
 <script lang="ts">
-  import { isPlainLeftClick, navigateToSignal, signalHref } from '@/route'
+  import {
+    isPlainLeftClick,
+    navigate,
+    navigateToSignal,
+    signalHref,
+  } from '@/route'
+  import { evalsEnabled } from '@/state/features'
   import { getRouteContext } from '@/contexts/route-context.svelte'
 
   type Props = {
@@ -90,23 +107,27 @@
   let { collapsed = false }: Props = $props()
 
   const routeContext = getRouteContext()
+  const items = $derived($evalsEnabled ? [...NAV_ITEMS, EVALS_NAV] : NAV_ITEMS)
 
   // NAV_ITEMS are all signal tabs, so navigate through the helper to carry the
   // active time window across signals.
   // Switching signal is navigational: push so back returns to the prior signal.
-  function goto(event: MouseEvent, item: NavItem<SignalName>) {
+  function goto(event: MouseEvent, item: NavItem<SignalName | 'evals'>) {
     if (!isPlainLeftClick(event)) return
     event.preventDefault()
-    navigateToSignal(item.id)
+    if (item.id === 'evals') navigate('/evals')
+    else navigateToSignal(item.id)
   }
 </script>
 
 {#if collapsed}
   <nav class="drawer-nav-tabs drawer-nav-tabs--collapsed" aria-label="Primary">
-    {#each NAV_ITEMS as item (item.id)}
+    {#each items as item (item.id)}
       {@const active = isNavItemActive(item.id, routeContext.route.path)}
       <a
-        href={signalHref(item.id, routeContext.route.query)}
+        href={item.id === 'evals'
+          ? '/evals'
+          : signalHref(item.id, routeContext.route.query)}
         class="drawer-header-btn tooltip tooltip-right {active
           ? 'drawer-header-btn--active'
           : 'drawer-header-btn--inactive'}"
@@ -132,10 +153,12 @@
   </nav>
 {:else}
   <nav class="drawer-nav-tabs drawer-nav-tabs--expanded" aria-label="Primary">
-    {#each NAV_ITEMS as item (item.id)}
+    {#each items as item (item.id)}
       {@const active = isNavItemActive(item.id, routeContext.route.path)}
       <a
-        href={signalHref(item.id, routeContext.route.query)}
+        href={item.id === 'evals'
+          ? '/evals'
+          : signalHref(item.id, routeContext.route.query)}
         class="drawer-tab {active
           ? 'drawer-tab--active'
           : 'drawer-tab--inactive'}"

@@ -5,6 +5,7 @@
   import MetricsPage from '@/pages/MetricsPage.svelte'
   import LogsPage from '@/pages/LogsPage.svelte'
   import TracesPage from '@/pages/TracesPage.svelte'
+  import EvalsPage from '@/pages/EvalsPage.svelte'
   import FileDropOverlay from '@/components/shared/FileDropOverlay.svelte'
   import ImportFilesCard from '@/components/shared/ImportFilesCard.svelte'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
@@ -47,7 +48,7 @@
   let seenFailure: ImportFailure | undefined
 
   function pagePath(path: string): string {
-    for (const base of ['/traces', '/metrics', '/logs']) {
+    for (const base of ['/traces', '/metrics', '/logs', '/evals']) {
       if (path === base || path.startsWith(`${base}/`)) return base
     }
     return '/'
@@ -86,7 +87,9 @@
         ? MetricsPage
         : under('/logs')
           ? LogsPage
-          : HomePage
+          : under('/evals')
+            ? EvalsPage
+            : HomePage
   )
 
   $effect(() => {

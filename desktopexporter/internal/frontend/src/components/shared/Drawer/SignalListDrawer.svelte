@@ -25,8 +25,10 @@
     ChevronRightIcon,
     Home12Icon,
     RefreshIcon,
+    TestTube01Icon,
   } from '@hugeicons/core-free-icons'
   import { LogIcon } from '@/icons'
+  import { evalsEnabled } from '@/state/features'
   import ThemeToggle from '@/components/shared/ThemeToggle.svelte'
   import { startDrag, type DragHandle } from '@/components/shared/utils/drag'
   import {
@@ -312,12 +314,19 @@
 
   const routeContext = getRouteContext()
   let activeNavID = $derived(
-    NAV_ITEMS.find(n => isNavItemActive(n.id, routeContext.route.path))?.id ??
-      ''
+    ($evalsEnabled && isNavItemActive('evals', routeContext.route.path)
+      ? 'evals'
+      : NAV_ITEMS.find(n => isNavItemActive(n.id, routeContext.route.path))
+          ?.id) ?? ''
   )
 
   function handleSignalNavigation(id: string, event?: MouseEvent) {
     if (!event || !isPlainLeftClick(event)) return
+    if (id === 'evals' && $evalsEnabled) {
+      event.preventDefault()
+      navigate('/evals')
+      return
+    }
     const item = NAV_ITEMS.find(n => n.id === id)
     if (!item) return
     event.preventDefault()
@@ -698,6 +707,12 @@
         {#snippet logsIcon()}<LogIcon
             class="h-[15px] w-[15px] shrink-0"
           />{/snippet}
+        {#snippet evalsIcon()}<HugeiconsIcon
+            icon={TestTube01Icon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-[15px] w-[15px] shrink-0"
+          />{/snippet}
         {@const navTabs: PaneNavigationTab[] = [
           {
             id: 'traces',
@@ -718,10 +733,23 @@
             href: signalHref('logs', routeContext.route.query),
           },
         ]}
-        <div class="signal-drawer__header is-drawer-close:hidden">
+        <div
+          class="signal-drawer__header is-drawer-close:hidden"
+          class:signal-drawer__header--evals={$evalsEnabled}
+        >
           <PaneHeader
             mode="tabs"
-            tabs={navTabs}
+            tabs={$evalsEnabled
+              ? [
+                  ...navTabs,
+                  {
+                    id: 'evals',
+                    label: 'Evals',
+                    icon: evalsIcon,
+                    href: '/evals',
+                  },
+                ]
+              : navTabs}
             activeID={activeNavID}
             onSelect={handleSignalNavigation}
             navigation
@@ -897,6 +925,11 @@
 
 <style lang="postcss">
   @reference "../../../app.css";
+
+  .signal-drawer__header--evals :global(.pane-header__tab) {
+    padding-inline: 0.5rem;
+    gap: 0.3rem;
+  }
 
   .signal-drawer {
     @apply min-h-0 flex-1 overflow-hidden;
