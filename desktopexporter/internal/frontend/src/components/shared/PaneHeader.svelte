@@ -692,7 +692,7 @@
       .pane-header__tabs > .pane-header__tab.tab-active:not(:focus-visible)
     ) {
     color: var(--color-base-content);
-    background: transparent;
+    background: color-mix(in oklab, var(--color-primary) 10%, transparent);
     box-shadow: none;
   }
 
