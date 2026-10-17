@@ -52,6 +52,8 @@
     icon?: Snippet
     /** Optional trailing count badge ("3", "12"). */
     count?: number
+    /** Visible unit inside the count badge; defaults to the tab label. */
+    countLabel?: string
     /** Disabled tabs render greyed out and ignore clicks. */
     disabled?: boolean
     /** Route destination; present only when the strip is navigation. */
@@ -292,7 +294,9 @@
             {/if}
             <span class="pane-header__tab-label">{tab.label}</span>
             {#if tab.count !== undefined}
-              <span class="badge-count">{tab.count}</span>
+              <span class="badge-count"
+                >{tab.count} {tab.countLabel ?? tab.label.toLowerCase()}</span
+              >
             {/if}
           </a>
         {:else}
@@ -317,7 +321,9 @@
             {/if}
             <span class="pane-header__tab-label">{tab.label}</span>
             {#if tab.count !== undefined}
-              <span class="badge-count">{tab.count}</span>
+              <span class="badge-count"
+                >{tab.count} {tab.countLabel ?? tab.label.toLowerCase()}</span
+              >
             {/if}
           </button>
         {/if}

@@ -107,7 +107,12 @@
         </tbody>
       </table>
     </FieldGroup>
-    <FieldGroup label="Configuration" count={run.configuration.length} detail>
+    <FieldGroup
+      label="Configuration"
+      count={run.configuration.length}
+      countLabel="fields"
+      detail
+    >
       <table class="detail-fields w-full" aria-label="Run configuration">
         <tbody
           >{#each run.configuration as field}<DetailField

@@ -285,7 +285,9 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
                 {/if}
               </a>
               <span class="home-summary__title">{label}</span>
-              <span class="badge-count home-summary__badge">{count}</span>
+              <span class="badge-count home-summary__badge"
+                >{count} {label.toLowerCase()}</span
+              >
             </div>
           {/snippet}
 

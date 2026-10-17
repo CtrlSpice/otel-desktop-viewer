@@ -46,6 +46,7 @@
 
 <FieldGroup
   label="Recent"
+  countLabel="ranges"
   count={recentTimeRanges.length > 0 ? recentTimeRanges.length : undefined}
 >
   {#snippet icon()}

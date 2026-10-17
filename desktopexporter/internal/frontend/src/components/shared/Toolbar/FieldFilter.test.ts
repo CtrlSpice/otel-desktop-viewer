@@ -37,7 +37,7 @@ describe('FieldFilter', () => {
     renderComponent({
       selectedFields: [TRACE_COLUMN_DEFAULTS[0]],
     })
-    expect(screen.getByText('1')).toBeInTheDocument()
+    expect(screen.getByText('1 field')).toBeInTheDocument()
   })
 
   it('opens the popover and renders static field options', () => {

@@ -104,6 +104,7 @@
         <FieldGroup
           label="Metric"
           count={metricFieldCount}
+          countLabel="fields"
           detail
           bind:open={metricOpen}
         >
@@ -180,6 +181,7 @@
 
         <FieldGroup
           label="Resource"
+          countLabel="fields"
           count={metric.resource.attributes.length +
             (metric.resourceSchemaUrl ? 1 : 0) +
             (metric.resourceDroppedAttributesCount > 0 ? 1 : 0)}
@@ -210,6 +212,7 @@
 
         <FieldGroup
           label="Scope"
+          countLabel="fields"
           count={metric.scope.attributes.length +
             (metric.scope.name ? 1 : 0) +
             (metric.scope.version ? 1 : 0) +

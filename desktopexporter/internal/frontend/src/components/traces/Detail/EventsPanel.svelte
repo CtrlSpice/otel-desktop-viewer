@@ -46,6 +46,7 @@
       label={event.name}
       badge={formatSignedDuration(event.timestamp - spanStartTime)}
       count={eventFieldCount(event)}
+      countLabel="fields"
       detail
       open={isEventOpen(index)}
     >

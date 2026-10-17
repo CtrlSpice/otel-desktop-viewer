@@ -127,7 +127,9 @@
       <span class="toolbar-filter-trigger__label">{label}</span>
     {/if}
     {#if activeCount > 0}
-      <span class="toolbar-filter-trigger__badge">{activeCount}</span>
+      <span class="toolbar-filter-trigger__badge"
+        >{activeCount} {activeCount === 1 ? 'field' : 'fields'}</span
+      >
     {/if}
     {#if label}
       <span class="toolbar-filter-trigger__dropdown-circle" aria-hidden="true">

@@ -1,13 +1,13 @@
 <script lang="ts">
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
-  import SignalCard from '@/components/shared/SignalCard.svelte'
+  import EvalRunSummary from '@/components/evals/EvalRunSummary.svelte'
+  import RunStatusBadge from '@/components/evals/RunStatusBadge.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import SignalDrawerFooter from '@/components/shared/Drawer/SignalDrawerFooter.svelte'
   import EvalDetail from '@/components/evals/EvalDetail.svelte'
   import AssessmentBadge from '@/components/evals/AssessmentBadge.svelte'
   import { exampleRuns } from '@/components/evals/examples'
-  import { localTimestamp } from '@/components/evals/model'
   import { getRouteContext } from '@/contexts/route-context.svelte'
   import { navigate, buildSearch, withQueryPatch } from '@/route'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
@@ -106,31 +106,7 @@
   {#snippet drawerChromeToolbar()}<span class="badge-count">Example data</span
     >{/snippet}
   {#snippet itemSnippet(item, selected)}
-    <SignalCard
-      id={item.id}
-      title={item.name}
-      description={item.evaluation}
-      {selected}
-      onclick={selectRun}
-    >
-      {#snippet badge()}
-        <span class="badge-count"
-          >{item.attempts.filter(row => row.state === 'Complete').length} / {item
-            .attempts.length}</span
-        >
-        <span
-          class="badge badge-xs badge-soft"
-          class:badge-warning={item.state === 'Paused'}>{item.state}</span
-        >
-      {/snippet}
-      {#snippet meta()}
-        {#if item.startedAt}<time
-            class="text-xs tabular-nums text-rp-subtle"
-            datetime={item.startedAt}
-            title={item.startedAt}>{localTimestamp(item.startedAt)}</time
-          >{/if}
-      {/snippet}
-    </SignalCard>
+    <EvalRunSummary run={item} {selected} onclick={selectRun} />
   {/snippet}
   {#snippet drawerFooter()}<SignalDrawerFooter
       count={runs.length}
@@ -144,10 +120,7 @@
         >
       </div>{/if}
     <PaneHeader mode="title" title={run.name} subtitle={run.evaluation}>
-      {#snippet badge()}<span
-          class="badge badge-xs badge-soft"
-          class:badge-warning={run.state === 'Paused'}>{run.state}</span
-        >{/snippet}
+      {#snippet badge()}<RunStatusBadge state={run.state} />{/snippet}
       {#snippet right()}<button
           class="btn btn-ghost btn-xs"
           onclick={() => update({ attempt: null })}>Run details</button

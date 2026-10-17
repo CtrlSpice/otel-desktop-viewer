@@ -101,7 +101,13 @@
     </PaneHeader>
 
     <div class="log-detail-panel__scroll">
-      <FieldGroup label="Log" count={logFieldCount} detail bind:open={logOpen}>
+      <FieldGroup
+        label="Log"
+        count={logFieldCount}
+        countLabel="fields"
+        detail
+        bind:open={logOpen}
+      >
         <table class="detail-fields w-full" aria-label="Log fields">
           <tbody>
             <LogField
@@ -191,6 +197,7 @@
       <FieldGroup
         label="Resource"
         count={resourceFieldCount}
+        countLabel="fields"
         detail
         bind:open={resourceOpen}
       >
@@ -214,6 +221,7 @@
       <FieldGroup
         label="Scope"
         count={scopeFieldCount}
+        countLabel="fields"
         detail
         bind:open={scopeOpen}
       >

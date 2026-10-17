@@ -14,6 +14,8 @@
     /** Optional badge before the count (e.g. event offset). */
     badge?: string
     count?: number
+    /** Visible unit inside the count badge; defaults to the group label. */
+    countLabel?: string
     /** Detail panels align headings and field rows to a shared 16px inset. */
     detail?: boolean
     open?: boolean
@@ -29,6 +31,7 @@
     headerAction,
     badge,
     count,
+    countLabel,
     detail = false,
     open = $bindable(true),
     onOpenChange,
@@ -51,7 +54,7 @@
     <span class="badge-count">{badge}</span>
   {/if}
   {#if count !== undefined}
-    <span class="badge-count">{count}</span>
+    <span class="badge-count">{count} {countLabel ?? label.toLowerCase()}</span>
   {/if}
 {/snippet}
 

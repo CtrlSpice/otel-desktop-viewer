@@ -88,7 +88,7 @@ describe('LinksPanel field count', () => {
       links: [makeLink({ flags: 1, attributes: [] })],
     })
     expect(document.body.textContent).toContain('flags')
-    expect(badge()).toBe(String(rows()))
+    expect(badge()).toBe(`${rows()} fields`)
   })
 
   it('still agrees when there are no flags', () => {
@@ -96,6 +96,6 @@ describe('LinksPanel field count', () => {
       links: [makeLink({ flags: 0, attributes: [] })],
     })
     expect(document.body.textContent).not.toContain('flags')
-    expect(badge()).toBe(String(rows()))
+    expect(badge()).toBe(`${rows()} fields`)
   })
 })

@@ -447,6 +447,7 @@
         <FieldGroup
           label="Resource"
           count={resourceFieldCount}
+          countLabel="fields"
           detail
           bind:open={resourceOpen}
         >
@@ -472,6 +473,7 @@
         <FieldGroup
           label="Scope"
           count={scopeFieldCount}
+          countLabel="fields"
           detail
           bind:open={scopeOpen}
         >

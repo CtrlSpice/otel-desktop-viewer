@@ -51,6 +51,7 @@
     label={link.traceID ?? 'Invalid link target'}
     icon={invalid ? invalidLinkIcon : undefined}
     count={linkFieldCount(link)}
+    countLabel="fields"
     detail
     open={index === 0}
   >
