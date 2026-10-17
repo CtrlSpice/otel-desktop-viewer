@@ -29,17 +29,19 @@
           />
         </div>
         <div
-          class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs tabular-nums"
+          class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs tabular-nums"
         >
           <span title="Completed investigations / planned attempts"
-            >Assessed: {summary.assessed}/{summary.planned}</span
+            >Assessed: <span class="text-base-content"
+              >{summary.assessed}/{summary.planned}</span
+            ></span
           >
-          <span aria-hidden="true">|</span>
           <span
             title="Attempts with a recorded headline score / planned attempts"
-            >Graded: {summary.assessment?.scored ?? 0}/{summary.planned}</span
+            >Graded: <span class="text-base-content"
+              >{summary.assessment?.scored ?? 0}/{summary.planned}</span
+            ></span
           >
-          <span aria-hidden="true">|</span>
           <span
             title={summary.assessment
               ? `${summary.definition?.name}: provisional mean across ${summary.assessment.denominator} ${summary.definition?.aggregation === 'planned' ? 'planned' : 'scored'} attempts`
