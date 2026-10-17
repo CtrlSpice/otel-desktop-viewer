@@ -67,12 +67,15 @@
       <div
         class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs tabular-nums"
       >
-        <span>Tool calls: {summary.toolCalls}</span>
-        {#if summary.failedTools}
-          <span class="badge badge-xs badge-soft badge-error"
-            >Failed calls: {summary.failedTools}</span
+        <span>Tool calls</span>
+        <span class="flex items-center gap-1">
+          <span class="badge-count">Total: {summary.toolCalls}</span>
+          <span
+            class="badge badge-xs badge-soft"
+            class:badge-error={summary.failedTools > 0}
+            >Failed: {summary.failedTools}</span
           >
-        {:else}<span>Failed calls: 0</span>{/if}
+        </span>
       </div>
     </div>
   {/snippet}
