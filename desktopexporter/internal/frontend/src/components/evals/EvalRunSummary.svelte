@@ -29,7 +29,7 @@
           />
         </div>
         <div
-          class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs tabular-nums"
+          class="grid grid-cols-3 items-center gap-2 text-xs tabular-nums"
         >
           <span title="Completed investigations / planned attempts"
             >Assessed: <span class="text-base-content"
@@ -37,12 +37,14 @@
             ></span
           >
           <span
+            class="text-center"
             title="Attempts with a recorded headline score / planned attempts"
             >Graded: <span class="text-base-content"
               >{summary.assessment?.scored ?? 0}/{summary.planned}</span
             ></span
           >
           <span
+            class="text-right"
             title={summary.assessment
               ? `${summary.definition?.name}: provisional mean across ${summary.assessment.denominator} ${summary.definition?.aggregation === 'planned' ? 'planned' : 'scored'} attempts`
               : 'No headline assessment defined'}
