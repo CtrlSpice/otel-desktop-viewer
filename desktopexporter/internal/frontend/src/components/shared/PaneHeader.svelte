@@ -126,6 +126,8 @@
     activeID: string
     onSelect: (id: string, event?: MouseEvent) => void
     tabLayout?: PaneTabLayout
+    /** Plain tabs use muted labels and separators, with text colour for selection. */
+    tabStyle?: 'underline' | 'plain'
     /** Route navigation renders real links instead of ARIA tabs. */
     navigation?: boolean
     /** ID of the local tabpanel controlled by every tab in this strip. */
@@ -141,6 +143,7 @@
     activeID: string
     onSelect: (id: string, event?: MouseEvent) => void
     tabLayout?: PaneTabLayout
+    tabStyle?: 'underline' | 'plain'
     /** ID of the local tabpanel controlled by every tab in this strip. */
     tabPanelID: string
   }
@@ -160,6 +163,10 @@
     props.rounded !== false ? 'pane-header--rounded' : 'pane-header--flush'
   )
   let tabSizeClass = $derived(props.rounded !== false ? 'tabs-sm' : '')
+  let plainTabs = $derived(
+    (props.mode === 'tabs' || props.mode === 'title-tabs') &&
+      props.tabStyle === 'plain'
+  )
   let stackedClass = $derived(
     props.timeRange !== undefined ||
       props.timestampMs !== undefined ||
@@ -273,7 +280,11 @@
       {#if layout === 'right'}
         <span class="pane-header__tab-lead" aria-hidden="true"></span>
       {/if}
-      {#each tabs as tab (tab.id)}
+      {#each tabs as tab, index (tab.id)}
+        {#if plainTabs && index > 0}<span
+            class="pane-header__tab-separator"
+            aria-hidden="true">|</span
+          >{/if}
         {@const active = tab.id === activeID}
         {#if navigation && tab.href}
           <a
@@ -361,7 +372,10 @@
     {/if}
   </div>
 {:else if props.mode === 'tabs'}
-  <div class="pane-header pane-header--tabs {roundedClass} {stackedClass}">
+  <div
+    class="pane-header pane-header--tabs {roundedClass} {stackedClass}"
+    class:pane-header--plain-tabs={plainTabs}
+  >
     <div class="pane-header__top pane-header__top--tabs">
       {@render tabStrip(
         props.tabs,
@@ -393,6 +407,7 @@
 {:else}
   <div
     class="pane-header pane-header--title-tabs {roundedClass} {stackedClass}"
+    class:pane-header--plain-tabs={plainTabs}
     role="region"
     aria-label={props.ariaLabel ?? props.title}
   >
@@ -664,6 +679,36 @@
     outline: none;
     background: color-mix(in oklab, var(--color-primary) 12%, transparent);
     box-shadow: inset 0 -3px var(--color-primary);
+  }
+
+  .pane-header--plain-tabs :global(.tabs.pane-header__tabs) {
+    @apply items-center gap-0;
+  }
+
+  .pane-header--plain-tabs :global(.pane-header__tabs > .pane-header__tab) {
+    @apply px-2 font-normal;
+    color: var(--color-subtle);
+  }
+
+  .pane-header--plain-tabs
+    :global(
+      .pane-header__tabs > .pane-header__tab.tab-active:not(:focus-visible)
+    ) {
+    color: var(--color-base-content);
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .pane-header--plain-tabs
+    :global(.pane-header__tabs > .pane-header__tab:hover),
+  .pane-header--plain-tabs
+    :global(.pane-header__tabs > .pane-header__tab:focus-visible) {
+    color: var(--color-base-content);
+  }
+
+  .pane-header__tab-separator {
+    @apply shrink-0 select-none;
+    color: var(--color-muted);
   }
 
   @media (forced-colors: active) {

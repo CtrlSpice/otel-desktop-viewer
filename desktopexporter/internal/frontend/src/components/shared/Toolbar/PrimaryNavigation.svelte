@@ -150,6 +150,7 @@
 
 <PaneHeader
   mode="tabs"
+  tabStyle="plain"
   navigation
   rounded={false}
   ariaLabel="Primary"
