@@ -126,7 +126,7 @@
     activeID: string
     onSelect: (id: string, event?: MouseEvent) => void
     tabLayout?: PaneTabLayout
-    /** Plain tabs use spaced, muted labels with text colour for selection. */
+    /** Plain tabs use DaisyUI ghost buttons and a soft primary selection. */
     tabStyle?: 'underline' | 'plain'
     /** Route navigation renders real links instead of ARIA tabs. */
     navigation?: boolean
@@ -282,12 +282,13 @@
       {/if}
       {#each tabs as tab (tab.id)}
         {@const active = tab.id === activeID}
+        {@const tabClass = plainTabs
+          ? `btn btn-md shrink-0 gap-2 text-base font-normal ${active ? 'btn-soft btn-primary' : 'btn-ghost text-rp-subtle'} ${tab.disabled ? 'btn-disabled' : ''}`
+          : `tab pane-header__tab gap-2 whitespace-nowrap px-3 ${active ? 'tab-active' : ''}`}
         {#if navigation && tab.href}
           <a
             href={tab.disabled ? undefined : tab.href}
-            class="tab pane-header__tab gap-2 whitespace-nowrap px-3 {active
-              ? 'tab-active'
-              : ''}"
+            class={tabClass}
             aria-current={active ? 'page' : undefined}
             aria-disabled={tab.disabled ? 'true' : undefined}
             tabindex={tab.disabled ? -1 : undefined}
@@ -312,9 +313,7 @@
             role="tab"
             id={tabPanelID ? paneTabID(tabPanelID, tab.id) : undefined}
             aria-controls={tabPanelID}
-            class="tab pane-header__tab gap-2 whitespace-nowrap px-3 {active
-              ? 'tab-active'
-              : ''}"
+            class={tabClass}
             aria-selected={active}
             tabindex={tab.id === tabbableTabID(tabs, activeID) ? 0 : -1}
             disabled={tab.disabled}
@@ -682,25 +681,8 @@
     @apply items-center gap-4;
   }
 
-  .pane-header--plain-tabs :global(.pane-header__tabs > .pane-header__tab) {
-    @apply px-2 text-base font-normal;
-    color: var(--color-subtle);
-  }
-
-  .pane-header--plain-tabs
-    :global(
-      .pane-header__tabs > .pane-header__tab.tab-active:not(:focus-visible)
-    ) {
-    color: var(--color-base-content);
-    background: color-mix(in oklab, var(--color-primary) 10%, transparent);
-    box-shadow: none;
-  }
-
-  .pane-header--plain-tabs
-    :global(.pane-header__tabs > .pane-header__tab:hover),
-  .pane-header--plain-tabs
-    :global(.pane-header__tabs > .pane-header__tab:focus-visible) {
-    color: var(--color-base-content);
+  .pane-header--plain-tabs .pane-header__tab-scroll {
+    width: auto;
   }
 
   @media (forced-colors: active) {
