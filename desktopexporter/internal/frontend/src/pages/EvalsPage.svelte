@@ -21,7 +21,7 @@
   {:then module}
     <module.default {importFailure} {onViewIssue} />
   {:catch}
-    <p class="p-6 text-sm" role="alert">
+    <p class="p-6 text-sm text-papaya" role="alert">
       Could not load Evals. Reload the page to try again.
     </p>
   {/await}

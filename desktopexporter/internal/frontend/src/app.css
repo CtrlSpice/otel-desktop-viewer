@@ -6,6 +6,12 @@
 }
 @config "../tailwind.config.js";
 
+/* Internal viewer, harness and execution errors use the same papaya in every theme. */
+@theme {
+  --color-papaya: #ff8000;
+  --color-papaya-content: #191724;
+}
+
 /* Shared DaisyUI chrome — identical across all three Rosé Pine variants */
 :root {
   --radius-selector: 0.5rem;
@@ -1935,13 +1941,20 @@ button:focus-visible:not(.btn) {
 /* Rosé Pine rose token — used for Gauge metric type (not a built-in Daisy semantic). */
 .badge.badge-soft.badge-rose {
   --badge-color: var(--color-rose);
+}
+
+.badge.badge-soft.badge-papaya {
+  --badge-color: var(--color-papaya);
+}
+
+.badge.badge-soft:is(.badge-rose, .badge-papaya) {
   border-color: transparent;
   background-color: color-mix(
     in oklab,
     var(--badge-color) 12%,
     var(--color-base-100)
   );
-  color: var(--color-rose);
+  color: var(--badge-color);
 }
 
 /* Outline badges (e.g. metric type) — match chip density; Daisy draws the outline */

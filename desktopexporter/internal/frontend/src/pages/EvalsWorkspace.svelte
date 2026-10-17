@@ -119,7 +119,10 @@
         >
       </div>{/if}
     <PaneHeader mode="title" title={run.name} subtitle={run.evaluation}>
-      {#snippet badge()}<RunStatusBadge state={run.state} />{/snippet}
+      {#snippet badge()}<RunStatusBadge
+          state={run.state}
+          pauseReason={run.pauseReason}
+        />{/snippet}
       {#snippet right()}<button
           class="btn btn-ghost btn-xs"
           onclick={() => update({ attempt: null })}>Run details</button
@@ -190,7 +193,7 @@
                 <div class="flex flex-wrap items-center gap-2 px-3 text-xs">
                   <span
                     class="badge badge-xs badge-soft"
-                    class:badge-error={item.state === 'Error'}
+                    class:badge-papaya={item.state === 'Error'}
                     >{item.state}</span
                   >{#if item.seconds !== undefined}<span class="tabular-nums"
                       >{item.seconds} s</span

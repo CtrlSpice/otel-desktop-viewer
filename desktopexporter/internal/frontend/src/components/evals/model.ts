@@ -50,6 +50,7 @@ export type EvalRun = {
   evaluation: string
   source: string
   state: 'Complete' | 'Paused' | 'Planned'
+  pauseReason?: 'internal-error' | 'manual'
   startedAt?: string
   configuration: { name: string; value: string }[]
   assessments: AssessmentDefinition[]

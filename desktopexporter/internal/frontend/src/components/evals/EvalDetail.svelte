@@ -5,6 +5,7 @@
   import type { EvalRun, EvalAttempt, TelemetryReference } from './model'
   import { cost, estimatedCost, localTimestamp, traceHref } from './model'
   import AssessmentBadge from './AssessmentBadge.svelte'
+  import RunStatusBadge from './RunStatusBadge.svelte'
 
   let {
     run,
@@ -87,11 +88,12 @@
             fieldType="string"
             fieldValue={run.evaluation}
           />
-          <DetailField
-            fieldName="state"
-            fieldType="string"
-            fieldValue={run.state}
-          />
+          <DetailField fieldName="state" fieldType="string"
+            >{#snippet value()}<RunStatusBadge
+                state={run.state}
+                pauseReason={run.pauseReason}
+              />{/snippet}</DetailField
+          >
           <DetailField
             fieldName="source"
             fieldType="string"
@@ -158,11 +160,12 @@
             fieldType="string"
             fieldValue={attempt.name}
           />
-          <DetailField
-            fieldName="state"
-            fieldType="string"
-            fieldValue={attempt.state}
-          />
+          <DetailField fieldName="state" fieldType="string"
+            >{#snippet value()}<span
+                class:text-papaya={attempt.state === 'Error'}
+                >{attempt.state}</span
+              >{/snippet}</DetailField
+          >
           <DetailField
             fieldName="repetition"
             fieldType="integer"
@@ -178,9 +181,11 @@
           {#if attempt.error}<DetailField
               fieldName="execution error"
               fieldType="string"
-              fieldValue={attempt.error}
               multiline
-            />{/if}
+              >{#snippet value()}<span class="text-papaya whitespace-pre-wrap"
+                  >{attempt.error}</span
+                >{/snippet}</DetailField
+            >{/if}
           <DetailField
             fieldName="question"
             fieldType="string"

@@ -24,7 +24,10 @@
   {selected}
   {onclick}
 >
-  {#snippet badge()}<RunStatusBadge state={run.state} />{/snippet}
+  {#snippet badge()}<RunStatusBadge
+      state={run.state}
+      pauseReason={run.pauseReason}
+    />{/snippet}
   {#snippet meta()}
     <div class="flex w-full min-w-0 flex-col gap-2 py-1">
       <div class="flex min-w-0 flex-col gap-2">

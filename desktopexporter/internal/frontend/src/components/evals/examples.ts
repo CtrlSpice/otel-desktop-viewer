@@ -223,6 +223,7 @@ export const exampleRuns: EvalRun[] = [
     evaluation: 'Telemetry investigation',
     source: 'Illustrative example',
     state: 'Paused',
+    pauseReason: 'internal-error',
     startedAt: '2026-10-16T20:15:12.456Z',
     configuration: [
       { name: 'Agent', value: 'Direct' },

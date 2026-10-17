@@ -2,7 +2,7 @@
   export type OutcomePart = {
     label: string
     count: number
-    tone: 'success' | 'warning' | 'error' | 'neutral'
+    tone: 'success' | 'warning' | 'error' | 'papaya' | 'neutral'
   }
 </script>
 
@@ -26,6 +26,7 @@
       class:bg-success={part.tone === 'success'}
       class:bg-warning={part.tone === 'warning'}
       class:bg-error={part.tone === 'error'}
+      class:bg-papaya={part.tone === 'papaya'}
       class:bg-neutral={part.tone === 'neutral'}
       style:flex={part.count}
     ></span>

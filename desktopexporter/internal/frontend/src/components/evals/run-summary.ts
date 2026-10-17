@@ -31,6 +31,7 @@ export function runSummary(run: EvalRun) {
       label = 'Planned'
     } else if (attempt.state === 'Error') {
       label = 'Execution error'
+      tone = 'papaya'
     }
     const key = `${tone}:${label}`
     const group = groups.get(key)
@@ -38,7 +39,7 @@ export function runSummary(run: EvalRun) {
     else groups.set(key, { label, tone, count: 1 })
   }
 
-  const order = { success: 0, warning: 1, error: 2, neutral: 3 }
+  const order = { success: 0, warning: 1, error: 2, papaya: 3, neutral: 4 }
   return {
     definition,
     assessment: definition ? assessmentSummary(run, definition) : null,
