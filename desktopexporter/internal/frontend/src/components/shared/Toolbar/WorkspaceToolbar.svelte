@@ -33,14 +33,21 @@
   )
 </script>
 
-<header class="shrink-0" aria-label="Workspace navigation and search">
+<header
+  class="shrink-0 bg-base-100"
+  style="--pane-header-bg: var(--color-base-100)"
+  aria-label="Workspace navigation and search"
+>
   <PaneHeader mode="toolbar" rounded={false} ariaLabel="Workspace controls">
     {#snippet right()}
       <div class="flex w-full min-w-0 flex-wrap items-center gap-2">
         <div class="min-w-0 flex-1 md:w-112 md:flex-none">
           <PrimaryNavigation />
         </div>
-        {#if search}<div class="min-w-0 basis-full md:basis-48 md:flex-1">
+        {#if search}<div
+            class="min-w-0 basis-full md:basis-48 md:flex-1"
+            style="--typed-field-bg: var(--color-base-300)"
+          >
             {@render search()}
           </div>{:else}<div class="flex-1"></div>{/if}
         <div class="ml-auto flex shrink-0 items-center gap-2">

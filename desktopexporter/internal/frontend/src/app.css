@@ -1196,7 +1196,8 @@ svg {
    Add `typed-field` to the control (or its wrapper). Use `typed-field--pill` for
    rounded-full; wrap join rows in `typed-field-group`. */
 .typed-field {
-  @apply min-h-0 border border-base-300 bg-base-100 px-4 py-0 text-left text-sm font-mono tracking-tight shadow-none;
+  @apply min-h-0 border border-base-300 px-4 py-0 text-left text-sm font-mono tracking-tight shadow-none;
+  background-color: var(--typed-field-bg, var(--color-base-100));
   height: calc(var(--table-row-h) + 0.5rem);
   min-height: calc(var(--table-row-h) + 0.5rem);
 }

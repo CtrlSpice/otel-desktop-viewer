@@ -456,7 +456,8 @@
    * helper for ad-hoc consumers.
    */
   .pane-header {
-    @apply flex min-w-0 shrink-0 flex-nowrap items-end gap-2 overflow-hidden px-0.5 pt-0.5 bg-base-300;
+    @apply flex min-w-0 shrink-0 flex-nowrap items-end gap-2 overflow-hidden px-0.5 pt-0.5;
+    background-color: var(--pane-header-bg, var(--color-base-300));
   }
 
   .pane-header--rounded {
