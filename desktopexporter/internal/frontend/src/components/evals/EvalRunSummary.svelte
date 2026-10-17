@@ -21,15 +21,15 @@
   {#snippet badge()}<RunStatusBadge state={run.state} />{/snippet}
   {#snippet meta()}
     <div class="flex w-full min-w-0 flex-col gap-2 py-1">
-      <div class="flex items-center gap-3">
-        <div class="min-w-0 flex-1">
+      <div class="flex min-w-0 flex-col gap-2">
+        <div class="w-full min-w-0">
           <OutcomeBar
             parts={summary.parts}
             label={summary.definition?.name ?? 'Results'}
           />
         </div>
         <span
-          class="shrink-0 text-xs tabular-nums"
+          class="self-end text-xs tabular-nums"
           title={summary.assessment
             ? `${summary.definition?.name}: provisional mean across ${summary.assessment.denominator} ${summary.definition?.aggregation === 'planned' ? 'planned' : 'scored'} attempts`
             : 'No headline assessment defined'}
