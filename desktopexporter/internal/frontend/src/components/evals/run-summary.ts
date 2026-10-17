@@ -44,6 +44,8 @@ export function runSummary(run: EvalRun) {
     assessment: definition ? assessmentSummary(run, definition) : null,
     parts: [...groups.values()].sort((a, b) => order[a.tone] - order[b.tone]),
     planned: run.attempts.length,
+    assessed: run.attempts.filter(attempt => attempt.state === 'Complete')
+      .length,
     started,
     toolCalls,
     failedTools,

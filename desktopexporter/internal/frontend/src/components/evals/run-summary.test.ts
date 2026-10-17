@@ -53,4 +53,13 @@ describe('run summaries', () => {
     expect(summary.started).toBe(0)
     expect(summary.investigatorCost.total).toBeNull()
   })
+
+  it('counts completed investigations separately from recorded grades', () => {
+    const run = structuredClone(exampleRuns[0])
+    run.attempts[0].assessments = []
+    const summary = runSummary(run)
+    expect(summary.assessed).toBe(8)
+    expect(summary.assessment?.scored).toBe(7)
+    expect(summary.planned).toBe(8)
+  })
 })

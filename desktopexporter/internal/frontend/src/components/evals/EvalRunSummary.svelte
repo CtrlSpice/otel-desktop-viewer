@@ -28,22 +28,31 @@
             label={summary.definition?.name ?? 'Results'}
           />
         </div>
-        <span
-          class="self-end text-xs tabular-nums"
-          title={summary.assessment
-            ? `${summary.definition?.name}: provisional mean across ${summary.assessment.denominator} ${summary.definition?.aggregation === 'planned' ? 'planned' : 'scored'} attempts`
-            : 'No headline assessment defined'}
-          >Score: <strong class="text-base-content"
-            >{percent(summary.assessment?.percent ?? null)}</strong
-          ></span
+        <div
+          class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs tabular-nums"
         >
+          <span title="Completed investigations / planned attempts"
+            >Assessed: {summary.assessed}/{summary.planned}</span
+          >
+          <span aria-hidden="true">|</span>
+          <span
+            title="Attempts with a recorded headline score / planned attempts"
+            >Graded: {summary.assessment?.scored ?? 0}/{summary.planned}</span
+          >
+          <span aria-hidden="true">|</span>
+          <span
+            title={summary.assessment
+              ? `${summary.definition?.name}: provisional mean across ${summary.assessment.denominator} ${summary.definition?.aggregation === 'planned' ? 'planned' : 'scored'} attempts`
+              : 'No headline assessment defined'}
+            >Score: <strong class="text-base-content"
+              >{percent(summary.assessment?.percent ?? null)}</strong
+            ></span
+          >
+        </div>
       </div>
       <div
         class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs tabular-nums"
       >
-        <span class="badge-count" title="Assessed attempts / planned attempts"
-          >Assessed: {summary.assessment?.scored ?? 0}/{summary.planned}</span
-        >
         <span title="Investigator cost estimate in CAD"
           >Est. cost: {cost(
             summary.investigatorCost.total
