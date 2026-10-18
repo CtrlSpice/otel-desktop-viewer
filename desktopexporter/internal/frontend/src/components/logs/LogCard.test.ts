@@ -44,6 +44,14 @@ describe('LogCard', () => {
   it('renders the severity text and number in the badge', () => {
     renderCard({ log: makeLog({ severityText: 'ERROR', severityNumber: 17 }) })
     expect(screen.getByText('ERROR (17)')).toBeInTheDocument()
+    expect(screen.queryByText('Log', { exact: true })).toBeNull()
+  })
+
+  it('can show its log provenance beside the severity for associated logs', () => {
+    const { container } = renderCard({ log: makeLog(), showLogBadge: true })
+    expect(container.querySelector('.signal-row__badge')).toHaveTextContent(
+      'Log ERROR (17)'
+    )
   })
 
   it('falls back to the severity band label when severity text is empty', () => {
@@ -60,6 +68,16 @@ describe('LogCard', () => {
       'milliseconds'
     )
     expect(screen.getByText(timestampParts.value)).toBeInTheDocument()
+  })
+
+  it('shows an associated offset as muted text beside the timestamp', () => {
+    renderCard({ log: makeLog(), offset: '+500.000 ms' })
+    const offset = screen.getByText('(+500.000 ms)', { exact: true })
+    expect(offset).toHaveClass('text-rp-muted')
+    expect(offset.closest('.signal-row__time')).toHaveTextContent(
+      'PST (+500.000 ms)'
+    )
+    expect(screen.getByRole('button')).toContainElement(offset)
   })
 
   it('reflects the selected prop via aria-pressed', () => {

@@ -121,6 +121,8 @@ it('keeps series attributes and datapoints in one table without nested disclosur
   expect(table).toHaveTextContent('Time')
   expect(table).toHaveTextContent('Value')
   expect(series.querySelector('.field-group__caret')).toBeNull()
+  expect(series.querySelector(':scope > summary')).toHaveClass('item-state')
+  expect(series).toHaveClass('field-group--card')
   expect(series).toHaveAttribute('name', 'metric-series')
   expect(screen.queryByText('Resource attributes')).toBeNull()
 

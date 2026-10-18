@@ -273,8 +273,8 @@ describe('TracesPage trace detail lifecycle', () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText('Activity', { exact: true }).closest('summary')
-      ).toHaveTextContent('2 activity')
+        screen.getByText('Events', { exact: true }).closest('summary')
+      ).toHaveTextContent('2 events')
     )
     expect(window.location.search).toBe('?span=root&log=log-1')
   })

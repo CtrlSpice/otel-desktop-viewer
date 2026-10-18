@@ -8,10 +8,18 @@
   type Props = {
     log: LogSummary
     selected?: boolean
+    showLogBadge?: boolean
+    offset?: string
     onclick?: (id: string) => void
   }
 
-  let { log, selected = false, onclick }: Props = $props()
+  let {
+    log,
+    selected = false,
+    showLogBadge = false,
+    offset,
+    onclick,
+  }: Props = $props()
 
   const timeContext = getTimeContext()
 
@@ -31,9 +39,11 @@
   timeLayout="labeled"
   timestamp={timestampParts.value}
   timestampUnit={timestampParts.unit || undefined}
+  timestampSuffix={offset ? `(${offset})` : undefined}
   {onclick}
 >
   {#snippet badge()}
+    {#if showLogBadge}<span class="badge-count">Log</span>{/if}
     <SignalBadges
       signal="log"
       severityNumber={log.severityNumber}

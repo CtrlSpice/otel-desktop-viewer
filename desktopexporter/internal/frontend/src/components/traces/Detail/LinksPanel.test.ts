@@ -23,8 +23,80 @@ describe('LinksPanel trace correlation', () => {
     setTestUrl('/traces/trace-1?start=0&end=1&span=current-span&event=3')
   })
 
-  it('links trace and span ids with span in the href', () => {
+  it('shows only the destination name and service while keeping IDs in expanded details', async () => {
+    renderWithContexts(LinksPanel, {
+      links: [
+        makeLink({
+          summary: {
+            target: { name: 'consume order', serviceName: 'worker' },
+          },
+        }),
+      ],
+    })
+    const card = screen.getByRole('button', { expanded: false })
+    expect(card).toHaveTextContent('consume order (worker)')
+    expect(card).not.toHaveTextContent('linked-trace')
+    expect(card).not.toHaveTextContent('linked-span')
+    expect(card).not.toHaveTextContent('→')
+    expect(card).toHaveTextContent('3 fields')
+    await userEvent.click(card)
+    expect(screen.getByRole('link', { name: 'linked-span' })).toHaveAttribute(
+      'href',
+      '/traces/linked-trace?start=0&end=1&span=linked-span'
+    )
+  })
+
+  it('uses both target IDs when the target is not stored', () => {
+    renderWithContexts(LinksPanel, {
+      links: [
+        makeLink({
+          summary: {
+            target: null,
+          },
+        }),
+      ],
+    })
+    expect(screen.getByRole('button')).toHaveTextContent(
+      'linked-trace / linked-span'
+    )
+  })
+
+  it('does not invent service names or hide empty names', () => {
+    renderWithContexts(LinksPanel, {
+      links: [
+        makeLink({
+          summary: {
+            target: { name: '', serviceName: '' },
+          },
+        }),
+      ],
+    })
+    expect(screen.getByRole('button')).toHaveTextContent('linked-span')
+    expect(screen.getByRole('button')).not.toHaveTextContent('()')
+  })
+
+  it('keeps invalid linked identities explicit when the destination is unresolved', () => {
+    renderWithContexts(LinksPanel, {
+      links: [
+        makeLink({
+          traceID: null,
+          summary: {
+            target: null,
+          },
+        }),
+      ],
+    })
+    expect(screen.getByRole('button')).toHaveTextContent('Invalid link target')
+    expect(screen.queryByRole('link')).toBeNull()
+  })
+
+  it('links trace and span ids with span in the href', async () => {
     renderWithContexts(LinksPanel, { links: [makeLink()] })
+    const card = screen.getByRole('button', { expanded: false })
+    expect(card).toHaveTextContent('linked-trace')
+    expect(card).toHaveTextContent('linked-span')
+    expect(screen.queryByRole('link')).toBeNull()
+    await userEvent.click(card)
     expect(screen.getByRole('link', { name: 'linked-trace' })).toHaveAttribute(
       'href',
       '/traces/linked-trace?start=0&end=1&span=linked-span'
@@ -39,6 +111,7 @@ describe('LinksPanel trace correlation', () => {
     renderWithContexts(LinksPanel, { links: [makeLink()] })
     const historyLength = window.history.length
 
+    await userEvent.click(screen.getByRole('button', { expanded: false }))
     await userEvent.click(screen.getByRole('link', { name: 'linked-span' }))
 
     expect(window.location.pathname).toBe('/traces/linked-trace')
@@ -52,27 +125,39 @@ describe('LinksPanel trace correlation', () => {
     })
 
     expect(screen.getByText('Invalid link target')).toBeInTheDocument()
-    expect(screen.getByTitle('Invalid link target')).toHaveClass(
-      'links-panel__warning'
-    )
-    expect(screen.getByTitle('Invalid link target')).toHaveAttribute(
-      'aria-hidden',
-      'true'
-    )
+    const warning = document.querySelector('.links-panel__warning')
+    expect(warning).toHaveAttribute('title', 'Invalid link target')
+    expect(warning).toHaveAttribute('aria-hidden', 'true')
     expect(screen.getAllByText('null')).toHaveLength(2)
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
   })
 
-  it('links only the trace when the linked span ID is missing', () => {
+  it('links only the trace when the linked span ID is missing', async () => {
     renderWithContexts(LinksPanel, {
       links: [makeLink({ spanID: null })],
     })
 
+    await userEvent.click(screen.getByRole('button', { expanded: false }))
     expect(screen.getByRole('link', { name: 'linked-trace' })).toHaveAttribute(
       'href',
       '/traces/linked-trace?start=0&end=1'
     )
     expect(screen.getByText('null').closest('a')).toBeNull()
+  })
+
+  it('opens link cards independently without navigating from their summaries', async () => {
+    renderWithContexts(LinksPanel, {
+      links: [makeLink(), makeLink({ traceID: 'another-trace' })],
+    })
+    const cards = screen.getAllByRole('button', { expanded: false })
+    await userEvent.click(cards[0]!)
+    cards[1]!.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(cards[0]).toHaveAttribute('aria-expanded', 'true')
+    expect(cards[1]).toHaveAttribute('aria-expanded', 'true')
+    expect(window.location.pathname).toBe('/traces/trace-1')
+    await userEvent.click(cards[0]!)
+    expect(cards[1]).toHaveAttribute('aria-expanded', 'true')
   })
 })
 
@@ -81,7 +166,9 @@ describe('LinksPanel field count', () => {
 
   const rows = () => document.querySelectorAll('tr[data-field]').length
   const badge = () =>
-    document.querySelector('.badge-count')?.textContent?.trim()
+    document
+      .querySelector('.signal-row__badge .badge-count:last-child')
+      ?.textContent?.trim()
 
   it('counts every rendered row when the link carries flags', () => {
     renderWithContexts(LinksPanel, {

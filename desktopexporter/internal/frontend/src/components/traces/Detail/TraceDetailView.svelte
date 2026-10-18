@@ -106,7 +106,7 @@
   let resourceAttributes = $derived(span?.resource.attributes ?? [])
   let scopeAttributes = $derived(span?.scope.attributes ?? [])
   let numEvents = $derived(span?.events.length ?? 0)
-  let numActivity = $derived(numEvents + logs.length)
+  let numCombinedEvents = $derived(numEvents + logs.length)
   let numLinks = $derived(span?.links.length ?? 0)
   let hasUnrecognisedStatusCode = $derived(
     span !== undefined &&
@@ -124,7 +124,7 @@
       strokeWidth={1.5}
     />{/snippet}
 
-  {#snippet activityIcon()}<LogIcon
+  {#snippet eventsIcon()}<LogIcon
       class="size-4 shrink-0 text-rp-muted"
       aria-hidden="true"
     />{/snippet}
@@ -162,7 +162,7 @@
           a loop, so this span has no place under the root.
         </div>
       {/if}
-      <table class="detail-fields w-full" aria-label="Span fields">
+      <table class="detail-fields span-fields w-full" aria-label="Span fields">
         <tbody>
           {#if detailSearchFieldVisible(columnFilter, 'name')}
             <SpanField
@@ -345,10 +345,10 @@
         </tbody>
       </table>
     </DetailBubble>
-    <DetailBubble label="Activity" icon={activityIcon} count={numActivity}>
-      {#if numActivity === 0}
+    <DetailBubble label="Events" icon={eventsIcon} count={numCombinedEvents}>
+      {#if numCombinedEvents === 0}
         <p class="detail-view__section-empty">
-          No activity recorded for this span
+          No events recorded for this span
         </p>
       {:else}
         <ActivityPanel
@@ -378,6 +378,10 @@
 
 <style lang="postcss">
   @reference "../../../app.css";
+
+  .span-fields :global(.detail-property__key) {
+    color: var(--color-muted);
+  }
 
   .detail-view {
     @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden;

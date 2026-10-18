@@ -75,7 +75,7 @@ describe('TimelineMarkers', () => {
     const rows = screen.getAllByRole('button', { name: /Event|Log/ })
     expect(rows[0]).toHaveTextContent(/Event\s+\+10 ns\s+exception/)
     expect(rows[1]).toHaveTextContent(/Log\s+\+11 ns\s+payment\.failed/)
-    expect(screen.getByText('Event')).toHaveStyle('--activity-color: #abc')
+    expect(screen.getByText('Event')).toHaveStyle('--badge-color: #abc')
     expect(screen.getByText('Log')).toHaveClass('badge-error')
 
     await fireEvent.click(rows[1]!)

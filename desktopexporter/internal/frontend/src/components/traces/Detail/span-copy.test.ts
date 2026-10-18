@@ -57,6 +57,9 @@ function makeSpan(): SpanData {
         flags: 257,
         attributes: [{ key: 'bytes', value: { kind: 'bytes', value: 'AQI=' } }],
         droppedAttributesCount: 4,
+        summary: {
+          target: { name: 'linked span', serviceName: 'worker' },
+        },
       },
     ],
     droppedAttributesCount: 5,
@@ -119,6 +122,7 @@ describe('selected span JSON', () => {
       droppedAttributesCount: 4,
       attributes: [{ key: 'bytes', value: { bytesValue: 'AQI=' } }],
     })
+    expect(span.links[0]).not.toHaveProperty('summary')
     expect(json).toContain('\n  "resourceSpans": [')
   })
 

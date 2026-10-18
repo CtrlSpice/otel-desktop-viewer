@@ -21,6 +21,8 @@
   import MetricField from '@/components/shared/DetailProperty.svelte'
   import TimeseriesPanel from './TimeseriesPanel.svelte'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
+  import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
+  import { readOTLPText } from '@/services/export-service'
 
   const ctx = getMetricViewContext()
   const timeContext = getTimeContext()
@@ -58,6 +60,16 @@
       <TimeseriesPanel />
     </DetailBubble>
     <DetailBubble label="Metric" icon={metricIcon}>
+      {#snippet action()}
+        {#key metric.metricRef}
+          <ValueCopyButton
+            loadText={signal =>
+              readOTLPText('metric', metric.metricRef, signal)}
+            label="metric"
+            tooltip="Copy metric as OTLP JSON"
+          />
+        {/key}
+      {/snippet}
       <table class="detail-fields w-full" aria-label="Metric fields">
         <tbody>
           <MetricField

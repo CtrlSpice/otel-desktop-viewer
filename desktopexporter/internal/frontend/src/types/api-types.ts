@@ -1,4 +1,4 @@
-import type { JsonAggregateBucket } from '@/types/wire-types'
+import type { JsonAggregateBucket, JsonLinkSummary } from '@/types/wire-types'
 
 export type RootSpan = {
   serviceName: string
@@ -130,6 +130,8 @@ export type LinkData = {
   droppedAttributesCount: number
   /** W3C trace flags for the linked context. */
   flags: number
+  /** Read-time names for presentation only; never exported as OTLP fields. */
+  summary?: JsonLinkSummary
 }
 
 export type LogData = {

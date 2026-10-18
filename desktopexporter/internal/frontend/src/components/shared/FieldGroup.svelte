@@ -18,6 +18,8 @@
     countLabel?: string
     /** Detail headings use the same 12px inset as the field cards. */
     detail?: boolean
+    /** Use the same rounded, interactive surface as signal summary cards. */
+    card?: boolean
     open?: boolean
     /** When set, parent owns `open` (e.g. a Set membership). */
     onOpenChange?: (open: boolean) => void
@@ -34,6 +36,7 @@
     count,
     countLabel,
     detail = false,
+    card = false,
     open = $bindable(true),
     onOpenChange,
     children,
@@ -65,10 +68,11 @@
   class="field-group"
   {name}
   class:field-group--detail={detail}
+  class:field-group--card={card}
   {open}
   ontoggle={e => setOpen(e.currentTarget.open)}
 >
-  <summary class="field-group__heading">
+  <summary class="field-group__heading" class:item-state={card}>
     {#if headerAction}
       {@render headerAction()}
     {:else if icon}
@@ -114,6 +118,11 @@
 
   .field-group__heading-content {
     @apply flex min-w-0 flex-1 items-center gap-2;
+  }
+
+  .field-group--card > .field-group__heading {
+    --item-idle-bg: var(--color-base-100);
+    @apply rounded-xl px-3 py-2.5 font-normal leading-snug text-base-content;
   }
 
   .field-group__heading::marker,

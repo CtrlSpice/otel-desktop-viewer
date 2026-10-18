@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { LinkData } from '@/types/api-types'
-  import FieldGroup from '@/components/shared/FieldGroup.svelte'
+  import DisclosureSignalCard from '@/components/shared/DisclosureSignalCard.svelte'
   import SpanField from '@/components/shared/DetailProperty.svelte'
   import { itemHref, navigateToItem } from '@/route'
   import { SPAN_PARAM } from '@/route/query-params'
@@ -21,6 +21,29 @@
     if (link.droppedAttributesCount > 0) n++
     if (link.flags > 0) n++
     return n
+  }
+
+  function spanLabel(
+    name: string,
+    serviceName: string,
+    fallback: string
+  ): string {
+    const label = name.trim() || fallback
+    return serviceName.trim() ? `${label} (${serviceName})` : label
+  }
+
+  function linkLabel(link: LinkData): string {
+    if (!link.summary) return link.traceID ?? 'Invalid link target'
+    const { target } = link.summary
+    return target
+      ? spanLabel(
+          target.name,
+          target.serviceName,
+          link.spanID ?? 'Unnamed span'
+        )
+      : link.spanID && link.traceID
+        ? `${link.traceID} / ${link.spanID}`
+        : 'Invalid link target'
   }
 
   function spanPatch(link: LinkData) {
@@ -49,14 +72,15 @@
   {@const patch = spanPatch(link)}
   {@const href = link.traceID ? itemHref('traces', link.traceID, patch) : null}
   {@const invalid = !link.traceID || !link.spanID}
-  <FieldGroup
-    label={link.traceID ?? 'Invalid link target'}
-    icon={invalid ? invalidLinkIcon : undefined}
-    count={linkFieldCount(link)}
-    countLabel="fields"
-    detail
-    open={index === 0}
+  <DisclosureSignalCard
+    title={linkLabel(link)}
+    description={link.summary ? undefined : (link.spanID ?? 'Missing span ID')}
   >
+    {#snippet badge()}
+      {#if invalid}{@render invalidLinkIcon()}{/if}
+      <span class="badge-count">Link</span>
+      <span class="badge-count">{linkFieldCount(link)} fields</span>
+    {/snippet}
     <table
       class="detail-fields w-full"
       aria-label="Link {link.traceID ?? 'invalid target'}"
@@ -123,7 +147,7 @@
         {/if}
       </tbody>
     </table>
-  </FieldGroup>
+  </DisclosureSignalCard>
 {/each}
 
 <style lang="postcss">

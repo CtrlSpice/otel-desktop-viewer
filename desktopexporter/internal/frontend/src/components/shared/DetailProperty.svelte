@@ -55,14 +55,14 @@
   let copyText = $derived(
     copyValue ?? (typedValue ? attributeValueCopy(typedValue) : fieldValue)
   )
-  let typeColor = $derived(
+  let typeTone = $derived(
     fieldType === 'string' || fieldType === 'bytes'
-      ? 'var(--color-accent)'
+      ? 'badge-accent'
       : /^(u?int|fixed|double|float)/.test(fieldType)
-        ? 'var(--color-warning)'
+        ? 'badge-warning'
         : fieldType === 'empty'
-          ? 'var(--color-neutral)'
-          : 'var(--color-primary)'
+          ? 'badge-neutral'
+          : 'badge-primary'
   )
   let copyControl = $state<{ copy: () => Promise<void> }>()
 
@@ -87,8 +87,8 @@
     {#if conflict}<ConflictMarker label={conflict} />{/if}
     <span class="detail-property__key">{fieldName}</span>
     {#if showType}<span
-        class="badge badge-xs badge-soft badge-neutral detail-property__type"
-        style:color={typeColor}>{fieldType}</span
+        class="badge badge-xs badge-soft {typeTone} detail-property__type"
+        >{fieldType}</span
       >{/if}
     {#if origin}<span
         class="badge badge-xs badge-soft badge-neutral detail-property__origin"

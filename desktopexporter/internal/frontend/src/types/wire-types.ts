@@ -70,6 +70,11 @@ export type JsonEventData = {
   attributes: JsonAttribute[]
 }
 
+/** Derived locally at read time; not part of the received OTLP link. */
+export type JsonLinkSummary = {
+  target: { name: string; serviceName: string } | null
+}
+
 export type JsonLinkData = {
   traceID: string | null
   // The linked target span (OTLP link.spanID), 16-char hex when valid.
@@ -79,6 +84,7 @@ export type JsonLinkData = {
   /** W3C trace flags for the linked context. Same reasoning as on the span. */
   flags: number
   attributes: JsonAttribute[]
+  summary?: JsonLinkSummary
 }
 
 // Spans reference top-level resources and scopes, use baseline-relative times,

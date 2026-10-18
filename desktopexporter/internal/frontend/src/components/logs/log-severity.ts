@@ -20,7 +20,7 @@ const BADGE_CLASS: Record<SeverityBand, string> = {
   info: 'badge badge-xs badge-soft badge-info',
   warn: 'badge badge-xs badge-soft badge-warning',
   error: 'badge badge-xs badge-soft badge-error',
-  fatal: 'badge badge-xs badge-soft badge-error border border-error/50',
+  fatal: 'badge badge-xs badge-soft badge-error',
 }
 
 const BORDER_CLASS: Record<SeverityBand, string> = {

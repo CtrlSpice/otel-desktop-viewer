@@ -49,6 +49,7 @@ exemplar_json.sql
 metric_series_view_json.sql
 series_stats_json.sql
 event_json.sql
+span_link_summaries.sql
 link_json.sql
 span_data_json.sql
 exp_zero_cutoff.sql

@@ -90,11 +90,7 @@ const summary: JsonMetricSummary = {
   lastSeen: endNs,
 }
 
-test('series open by their headers, one at a time, with one combined table', async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 1920, height: 1000 })
-  await page.emulateMedia({ reducedMotion: 'reduce' })
+test.beforeEach(async ({ page }) => {
   await page.route('**/rpc', async route => {
     const request = route.request().postDataJSON() as {
       id: number
@@ -128,6 +124,13 @@ test('series open by their headers, one at a time, with one combined table', asy
               : []
     await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result } })
   })
+})
+
+test('series open by their headers, one at a time, with one combined table', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1000 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.goto(`/metrics/${metric.metricRef}?agg=raw`)
   const details = page.getByRole('region', {
     name: 'Metric details',
@@ -137,6 +140,20 @@ test('series open by their headers, one at a time, with one combined table', asy
   const fieldsBubble = details.locator('details.collapse').nth(1)
   const series = page.locator('details[name="metric-series"]')
   await expect(series).toHaveCount(2)
+  for (const item of await series.all()) {
+    const card = item.locator(':scope > summary')
+    await expect(card).toHaveClass(/item-state/)
+    await expect(card).toHaveCSS('border-radius', '12px')
+    await expect(card).toHaveCSS('padding-top', '10px')
+    await expect(card).toHaveCSS('padding-bottom', '10px')
+  }
+  const firstCheckbox = page.getByRole('checkbox', {
+    name: 'Show route: /first in chart',
+  })
+  await firstCheckbox.uncheck()
+  await expect(series.nth(0)).not.toHaveAttribute('open')
+  await firstCheckbox.check()
+  await expect(series.nth(0)).not.toHaveAttribute('open')
   await expect(seriesBubble).toHaveAttribute('open')
   await expect(fieldsBubble).toHaveAttribute('open')
   await expect(fieldsBubble.locator(':scope > summary')).toHaveText('Metric')
@@ -229,4 +246,64 @@ test('series open by their headers, one at a time, with one combined table', asy
   await page.keyboard.press('Enter')
   await expect(series.nth(0)).toHaveAttribute('open')
   await expect(series.nth(1)).not.toHaveAttribute('open')
+})
+
+test('Copy metric stays in its heading and copies exact OTLP only for the selected metric', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.setViewportSize({ width: 1920, height: 1000 })
+  const raw =
+    '{"resourceMetrics":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"checkout-api"}}]},"scopeMetrics":[{"scope":{"name":"instrumentation"},"metrics":[{"name":"request.duration","gauge":{"dataPoints":[{"timeUnixNano":"18446744073709551615","asDouble":-0.0},{"asInt":"9223372036854775807"}]}}]}]}]}\n'
+  let exportRequests = 0
+  await page.route('**/export/metrics/**', async route => {
+    expect(new URL(route.request().url()).pathname).toBe(
+      `/export/metrics/${metric.metricRef}`
+    )
+    exportRequests++
+    await route.fulfill(
+      exportRequests === 1
+        ? { status: 503, contentType: 'text/plain', body: 'export unavailable' }
+        : { contentType: 'application/json', body: raw }
+    )
+  })
+  await page.goto(`/metrics/${metric.metricRef}?agg=raw`)
+  const detail = page.getByRole('region', {
+    name: 'Metric details',
+    exact: true,
+  })
+  const bubble = detail.locator('.detail-bubble__with-action')
+  const heading = bubble.locator('summary').first()
+  const copy = bubble.getByRole('button', { name: 'Copy metric', exact: true })
+  await expect(copy).toBeVisible()
+  await expect(copy).toHaveCSS('opacity', '1')
+  expect(exportRequests).toBe(0)
+  expect(await copy.evaluate(element => element.closest('summary'))).toBeNull()
+  const iconBox = (await heading.locator('svg').boundingBox())!
+  const copyBox = (await copy.boundingBox())!
+  const headingBox = (await heading.boundingBox())!
+  expect(
+    Math.abs(iconBox.y + iconBox.height / 2 - copyBox.y - copyBox.height / 2)
+  ).toBeLessThan(1)
+  expect(
+    headingBox.x + headingBox.width - copyBox.x - copyBox.width
+  ).toBeCloseTo(12, 0)
+  await heading.click()
+  await expect(bubble.locator('details')).not.toHaveAttribute('open')
+  await expect(copy).toBeVisible()
+  await page.evaluate(() => navigator.clipboard.writeText('keep my clipboard'))
+  await copy.click()
+  const status = bubble.locator('.detail-bubble__action').getByRole('status')
+  await expect(status).toHaveText('Could not copy metric.')
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    'keep my clipboard'
+  )
+  await copy.focus()
+  await page.keyboard.press('Enter')
+  await expect(status).toHaveText('Copied metric.')
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(raw)
+  expect(exportRequests).toBe(2)
+  await expect(bubble.locator('details')).not.toHaveAttribute('open')
+  await expect(page).toHaveURL(`/metrics/${metric.metricRef}?agg=raw`)
 })

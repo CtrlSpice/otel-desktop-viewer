@@ -65,8 +65,8 @@ describe('AttributeRows', () => {
       'badge-neutral'
     )
     const type = within(header as HTMLElement).getByText('string')
-    expect(type).toHaveClass('badge-soft', 'badge-neutral')
-    expect(type.style.color).toBe('var(--color-accent)')
+    expect(type).toHaveClass('badge-soft', 'badge-accent')
+    expect(type.style.color).toBe('')
     expect(
       screen
         .getByRole('button', { name: 'Copy service.name (resource)' })

@@ -54,50 +54,51 @@ async function interceptRpc(page: Page): Promise<void> {
   })
 }
 
+async function showBadgeExamples(page: Page, theme: string) {
+  await interceptRpc(page)
+  await page.addInitScript(theme => localStorage.setItem('theme', theme), theme)
+  await page.goto('/')
+  await expect(
+    page.getByRole('heading', { name: 'OpenTelemetry Desktop Viewer' })
+  ).toBeVisible()
+  await page.evaluate(() => {
+    const examples = document.createElement('section')
+    examples.id = 'badge-a11y-fixture'
+    examples.setAttribute('aria-label', 'Badge examples')
+    examples.style.cssText =
+      'display:flex;flex-wrap:wrap;gap:8px;padding:16px;background:var(--color-base-100)'
+    for (const kind of [
+      'badge-primary',
+      'badge-secondary',
+      'badge-accent',
+      'badge-neutral',
+      'badge-info',
+      'badge-success',
+      'badge-warning',
+      'badge-error',
+      'badge-rose',
+      'badge-papaya',
+    ]) {
+      const badge = document.createElement('span')
+      badge.className = `badge badge-xs badge-soft ${kind}`
+      badge.textContent = kind
+      examples.append(badge)
+    }
+    for (const className of ['badge-count', 'badge-origin']) {
+      const badge = document.createElement('span')
+      badge.className = className
+      badge.textContent = className
+      examples.append(badge)
+    }
+    document.querySelector('main')!.prepend(examples)
+  })
+}
+
 for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
-  test(`soft badges stay consistent and readable in ${theme}`, async ({
+  test(`soft badges use canonical DaisyUI styling in ${theme}`, async ({
     page,
   }) => {
-    await interceptRpc(page)
-    await page.addInitScript(
-      theme => localStorage.setItem('theme', theme),
-      theme
-    )
-    await page.goto('/')
-    await expect(
-      page.getByRole('heading', { name: 'OpenTelemetry Desktop Viewer' })
-    ).toBeVisible()
-    await page.evaluate(() => {
-      const examples = document.createElement('section')
-      examples.id = 'badge-a11y-fixture'
-      examples.setAttribute('aria-label', 'Badge examples')
-      examples.style.cssText =
-        'display:flex;flex-wrap:wrap;gap:8px;padding:16px;background:var(--color-base-100)'
-      for (const kind of [
-        'badge-primary',
-        'badge-secondary',
-        'badge-accent',
-        'badge-neutral',
-        'badge-info',
-        'badge-success',
-        'badge-warning',
-        'badge-error',
-        'badge-rose',
-        'badge-papaya',
-      ]) {
-        const badge = document.createElement('span')
-        badge.className = `badge badge-xs badge-soft ${kind}`
-        badge.textContent = kind
-        examples.append(badge)
-      }
-      for (const className of ['badge-count', 'badge-origin']) {
-        const badge = document.createElement('span')
-        badge.className = className
-        badge.textContent = className
-        examples.append(badge)
-      }
-      document.querySelector('main')!.prepend(examples)
-    })
+    await showBadgeExamples(page, theme)
     const fixture = page.locator('#badge-a11y-fixture')
     const appearance = await fixture.evaluate(element => {
       const probe = document.createElement('span')
@@ -108,12 +109,16 @@ for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
         ),
       ].map(badge => {
         const style = getComputedStyle(badge)
-        probe.style.backgroundColor = `color-mix(in oklab, ${style.getPropertyValue('--badge-color')} 8%, var(--color-base-100))`
+        const tone = style.getPropertyValue('--badge-color')
+        probe.style.color = tone
+        probe.style.backgroundColor = `color-mix(in oklab, ${tone} 8%, var(--color-base-100))`
+        probe.style.borderColor = `color-mix(in oklab, ${tone} 10%, var(--color-base-100))`
+        const expected = getComputedStyle(probe)
         return {
           kind: badge.className,
-          softFill:
-            style.backgroundColor === getComputedStyle(probe).backgroundColor,
-          borderless: style.borderColor === 'rgba(0, 0, 0, 0)',
+          softFill: style.backgroundColor === expected.backgroundColor,
+          softBorder: style.borderColor === expected.borderColor,
+          semanticText: style.color === expected.color,
           pill:
             parseFloat(style.borderRadius) >=
             badge.getBoundingClientRect().height / 2,
@@ -125,7 +130,8 @@ for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
     expect(appearance).toHaveLength(12)
     for (const badge of appearance) {
       expect(badge.softFill, badge.kind).toBe(true)
-      expect(badge.borderless, badge.kind).toBe(true)
+      expect(badge.softBorder, badge.kind).toBe(true)
+      expect(badge.semanticText, badge.kind).toBe(true)
       expect(badge.pill, badge.kind).toBe(true)
     }
     for (const className of ['badge-count', 'badge-origin']) {
@@ -136,6 +142,10 @@ for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
           .evaluate(element => getComputedStyle(element).color)
       )
     }
+  })
+
+  test(`soft badge contrast in ${theme}`, async ({ page }) => {
+    await showBadgeExamples(page, theme)
     const scan = await new AxeBuilder({ page })
       .include('#badge-a11y-fixture')
       .withRules(['color-contrast'])

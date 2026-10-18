@@ -1281,7 +1281,19 @@ describe('telemetryAPI.getTraceView rehydration', () => {
               attributes: [],
             },
           ],
-          links: [],
+          links: [
+            {
+              traceID: 'linked-trace',
+              spanID: 'linked-span',
+              traceState: '',
+              flags: 0,
+              droppedAttributesCount: 0,
+              attributes: [],
+              summary: {
+                target: { name: 'consume', serviceName: 'worker' },
+              },
+            },
+          ],
           r: 7,
           s: 3,
           droppedAttributesCount: 0,
@@ -1327,6 +1339,18 @@ describe('telemetryAPI.getTraceView rehydration', () => {
     stubRpcResult<JsonTraceData>(wire)
     return telemetryAPI.getTraceView('abc123')
   }
+
+  it('retains derived link names separately from received link attributes', async () => {
+    const trace = await fetchTrace()
+    expect(trace.spans[0].spanData.links[0]).toMatchObject({
+      traceID: 'linked-trace',
+      spanID: 'linked-span',
+      attributes: [],
+      summary: {
+        target: { name: 'consume', serviceName: 'worker' },
+      },
+    })
+  })
 
   it('resolves each span against its own resource, not the first one', async () => {
     const trace = await fetchTrace()

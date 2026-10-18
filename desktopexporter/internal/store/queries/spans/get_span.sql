@@ -9,7 +9,7 @@ with target as materialized (
 	where exists (select 1 from target t where t.trace_id = e.trace_id and t.span_id = e.span_id)
 ), link_data as (
 	select to_json(list(link_json(l, attrs_json(l.attribute_ids)) order by l.id)) as links
-	from links l
+	from span_link_summaries((select trace_id from target), (select span_id from target)) l
 	where exists (select 1 from target t where t.trace_id = l.trace_id and t.span_id = l.span_id)
 )
 select cast(json_object(

@@ -87,14 +87,14 @@ describe('DetailProperty copy controls', () => {
   })
 
   it.each([
-    ['string', 'var(--color-accent)'],
-    ['int64', 'var(--color-warning)'],
-    ['bool', 'var(--color-primary)'],
-    ['map', 'var(--color-primary)'],
-    ['empty', 'var(--color-neutral)'],
+    ['string', 'badge-accent'],
+    ['int64', 'badge-warning'],
+    ['bool', 'badge-primary'],
+    ['map', 'badge-primary'],
+    ['empty', 'badge-neutral'],
   ])(
     'places the %s type badge directly beside the key with its type color',
-    (fieldType, color) => {
+    (fieldType, tone) => {
       const { container } = render(DetailProperty, {
         fieldName: 'example',
         fieldType,
@@ -106,8 +106,8 @@ describe('DetailProperty copy controls', () => {
         '.detail-property__type'
       )!
       expect(key.nextElementSibling).toBe(badge)
-      expect(badge.style.color).toBe(color)
-      expect(badge).toHaveClass('badge-soft', 'badge-neutral')
+      expect(badge.style.color).toBe('')
+      expect(badge).toHaveClass('badge-soft', tone)
       expect(badge).not.toHaveClass('badge-outline')
       const origin = container.querySelector('.detail-property__origin')!
       expect(badge.nextElementSibling).toBe(origin)

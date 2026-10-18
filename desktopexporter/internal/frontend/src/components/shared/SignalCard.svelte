@@ -4,6 +4,9 @@
   type Props = {
     id: string
     selected?: boolean
+    /** Disclosure cards use expanded state instead of selection semantics. */
+    expanded?: boolean
+    controls?: string
     /** Optional monospace id line at the bottom of the card (e.g. trace id). */
     idLine?: string
     title: string
@@ -17,6 +20,8 @@
     timestamp?: string
     /** Timezone suffix when timeLayout is `interval` (e.g. UTC, PST). */
     timestampUnit?: string
+    /** Optional muted suffix after the timestamp in the labeled layout. */
+    timestampSuffix?: string
     duration?: string
     /** Duration unit when timeLayout is `interval` (e.g. ms, s). */
     durationUnit?: string
@@ -35,6 +40,8 @@
   let {
     id,
     selected = false,
+    expanded,
+    controls,
     idLine,
     title,
     titleMuted = false,
@@ -43,6 +50,7 @@
     timestampLabel,
     timestamp,
     timestampUnit,
+    timestampSuffix,
     duration,
     durationUnit,
     badge,
@@ -58,7 +66,9 @@
   type="button"
   class="signal-row item-state {selected ? 'signal-row--selected' : ''}"
   onclick={() => onclick?.(id)}
-  aria-pressed={selected}
+  aria-pressed={expanded === undefined ? selected : undefined}
+  aria-expanded={expanded}
+  aria-controls={controls}
 >
   <div class="signal-row__header">
     <span class="signal-row__title-cluster" {title}>
@@ -132,6 +142,9 @@
             >
             {#if timestampUnit}
               <span class="signal-row__time-unit">{timestampUnit}</span>
+            {/if}
+            {#if timestampSuffix}
+              <span class="text-rp-muted">{timestampSuffix}</span>
             {/if}
           </span>
         {/if}

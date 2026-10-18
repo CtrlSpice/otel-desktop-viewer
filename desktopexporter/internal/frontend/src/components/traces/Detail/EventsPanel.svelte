@@ -3,7 +3,12 @@
   import type { EventData } from '@/types/api-types'
   import SpanField from '@/components/shared/DetailProperty.svelte'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
-  import { formatSignedDuration, formatTimestamp } from '@/utils/time'
+  import DisclosureSignalCard from '@/components/shared/DisclosureSignalCard.svelte'
+  import {
+    formatSignedDuration,
+    formatTimestamp,
+    formatTimestampParts,
+  } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
 
   type Props = {
@@ -22,54 +27,65 @@
     void tick().then(() => {
       document
         .getElementById(`span-event-${index}`)
-        ?.scrollIntoView({ block: 'nearest' })
+        ?.scrollIntoView?.({ block: 'nearest' })
     })
   })
 </script>
 
 {#each events as event, index (index)}
-  <table
+  {@const timestamp = formatTimestampParts(
+    event.timestamp,
+    timeContext.tz,
+    'milliseconds'
+  )}
+  <section
     id={`span-event-${index}`}
-    class="detail-fields w-full"
+    class="w-full"
     aria-label="Event {event.name}"
   >
-    <caption class="px-3 py-2 text-left">
-      <span class="badge-count mr-2">Event</span>
-      <span class="mr-2 font-medium">{event.name}</span>
-      <span class="badge-count mr-2"
-        >{formatSignedDuration(event.timestamp - spanStartTime)}</span
-      >
-      <a
-        class="badge badge-xs badge-soft badge-warning"
-        href="https://opentelemetry.io/blog/2026/deprecating-span-events/"
-        target="_blank"
-        rel="noopener noreferrer"
-        title="OpenTelemetry is deprecating the Span Event API in favour of the Logs API. Existing span-event data remains supported."
-        >API deprecation</a
-      >
-    </caption>
-    <tbody>
-      <SpanField
-        fieldName="timeUnixNano"
-        fieldValue={event.timestamp.toString()}
-        timestampLabel={formatTimestamp(
-          event.timestamp,
-          timeContext.tz,
-          'milliseconds'
-        )}
-        fieldType="fixed64"
-      />
-      <AttributeRows
-        attributes={event.attributes}
-        owner={`event ${index + 1}`}
-      />
-      {#if event.droppedAttributesCount > 0}
-        <SpanField
-          fieldName="droppedAttributesCount"
-          fieldValue={event.droppedAttributesCount.toString()}
-          fieldType="uint32"
-        />
-      {/if}
-    </tbody>
-  </table>
+    <DisclosureSignalCard
+      title={event.name}
+      timestamp={timestamp.value}
+      timestampUnit={timestamp.unit || undefined}
+      timestampSuffix={`(${formatSignedDuration(event.timestamp - spanStartTime)})`}
+      reveal={selectedEventIndex === index}
+    >
+      {#snippet badge()}<span class="badge-count">Span event</span>{/snippet}
+      <div class="px-3 py-2">
+        <a
+          class="badge badge-xs badge-soft badge-warning"
+          href="https://opentelemetry.io/blog/2026/deprecating-span-events/"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="OpenTelemetry is deprecating the Span Event API in favour of the Logs API. Existing span-event data remains supported."
+          >API deprecation</a
+        >
+      </div>
+      <table class="detail-fields w-full" aria-label="Event {event.name}">
+        <tbody>
+          <SpanField
+            fieldName="timeUnixNano"
+            fieldValue={event.timestamp.toString()}
+            timestampLabel={formatTimestamp(
+              event.timestamp,
+              timeContext.tz,
+              'milliseconds'
+            )}
+            fieldType="fixed64"
+          />
+          <AttributeRows
+            attributes={event.attributes}
+            owner={`event ${index + 1}`}
+          />
+          {#if event.droppedAttributesCount > 0}
+            <SpanField
+              fieldName="droppedAttributesCount"
+              fieldValue={event.droppedAttributesCount.toString()}
+              fieldType="uint32"
+            />
+          {/if}
+        </tbody>
+      </table>
+    </DisclosureSignalCard>
+  </section>
 {/each}

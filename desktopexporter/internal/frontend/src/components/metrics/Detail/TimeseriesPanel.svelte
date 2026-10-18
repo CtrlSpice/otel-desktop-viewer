@@ -156,6 +156,7 @@
 
     <FieldGroup
       label={headerLabel}
+      card
       name="metric-series"
       open={expanded}
       onOpenChange={open => setTimeseriesOpen(ts.key, open)}
@@ -249,7 +250,7 @@
   @reference "../../../app.css";
 
   .ts-panel {
-    @apply flex min-w-0 flex-col;
+    @apply flex min-w-0 flex-col gap-1;
     /* Fixed chrome widths for sparkline inset (checkbox-xs + label pad). */
     --ts-check-col: 1.5rem;
     --ts-header-gap: 0.5rem;
@@ -258,9 +259,6 @@
 
   .ts-panel :global(.field-group) {
     --fg-inline: 0;
-  }
-  .ts-panel :global(.field-group__heading) {
-    @apply px-3;
   }
 
   .ts-row__header {
@@ -313,7 +311,7 @@
 
   .ts-row__attrs-text,
   .ts-row__default-label {
-    @apply block truncate text-sm;
+    @apply block truncate text-sm font-medium;
   }
 
   .ts-row__default-label {

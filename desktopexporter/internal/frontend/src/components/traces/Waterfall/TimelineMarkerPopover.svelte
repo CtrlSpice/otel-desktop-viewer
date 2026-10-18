@@ -240,8 +240,8 @@
         >
           {#if record.kind === 'event'}
             <span
-              class="badge badge-xs badge-soft activity-popover__event-badge"
-              style:--activity-color={spanColor}>Event</span
+              class="badge badge-xs badge-soft"
+              style:--badge-color={spanColor}>Event</span
             >
           {:else}
             <span class={severityBadgeClass(record.log.severityNumber)}
@@ -299,12 +299,6 @@
 
   .activity-popover__row {
     @apply grid w-full cursor-pointer grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-2 rounded px-2 py-1.5 text-left text-xs;
-  }
-
-  .activity-popover__event-badge {
-    color: var(--activity-color);
-    border-color: color-mix(in oklab, var(--activity-color) 45%, transparent);
-    background: color-mix(in oklab, var(--activity-color) 14%, transparent);
   }
 
   .activity-popover__offset {

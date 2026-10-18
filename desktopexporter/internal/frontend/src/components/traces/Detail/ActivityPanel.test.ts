@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/svelte'
+import { screen, within, waitFor } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import ActivityPanel from './ActivityPanel.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
@@ -29,7 +29,7 @@ const logs: TraceLogSummary[] = [
 ]
 
 describe('ActivityPanel', () => {
-  it('uses event and log badges without nested disclosure containers', async () => {
+  it('uses summary cards for events and logs without changing log navigation', async () => {
     Object.defineProperty(Element.prototype, 'scrollIntoView', {
       configurable: true,
       value: vi.fn(),
@@ -42,47 +42,43 @@ describe('ActivityPanel', () => {
       selectedLogRef: 'log-1',
     })
 
-    expect(screen.getByText('Event', { exact: true })).toBeVisible()
+    expect(screen.getByText('Span event', { exact: true })).toBeVisible()
     expect(screen.getByText('Log', { exact: true })).toBeVisible()
     expect(container.querySelectorAll('details, summary')).toHaveLength(0)
     expect(
-      screen.getByRole('table', { name: 'Event cache.hit' }).parentElement
-    ).toBe(screen.getByRole('table', { name: 'Log summary' }).parentElement)
-    const summary = screen.getByRole('table', { name: 'Log summary' })
-    expect(
-      [...summary.querySelectorAll('[data-field]')].map(row =>
-        row.getAttribute('data-field')
-      )
-    ).toEqual([
-      'timeUnixNano',
-      'offset',
-      'severityText',
-      'severityNumber',
-      'service.name',
-      'eventName',
-      'body preview',
-    ])
-    expect(
-      summary.querySelector(
-        '[data-field="service.name"] .detail-property__origin'
-      )
-    ).toHaveTextContent('resource')
-    expect(screen.getByText('preview only')).toBeVisible()
+      screen.getByRole('region', { name: 'Event cache.hit' }).parentElement
+    ).toBe(screen.getByRole('region', { name: 'Log summary' }).parentElement)
+    const summary = screen.getByRole('region', { name: 'Log summary' })
+    const card = within(summary).getByRole('button')
+    expect(card).toHaveClass('signal-row')
+    expect(card).toHaveAttribute('aria-pressed', 'true')
+    expect(card).toHaveTextContent('checkout')
+    expect(card).toHaveTextContent('WARN (13)')
+    expect(card.querySelector('.signal-row__badge')).toHaveTextContent(
+      'Log WARN (13)'
+    )
+    expect(within(card).getByText('preview only')).toBeVisible()
+    expect(within(summary).getByText('order.delayed')).toBeVisible()
+    expect(summary.querySelector('table, [data-field]')).toBeNull()
+    await waitFor(() =>
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
+        block: 'nearest',
+      })
+    )
 
-    const link = screen.getByRole('link', { name: 'Open log' })
-    expect(link).toHaveAttribute('href', '/logs/log-1?start=1&end=2')
-    await userEvent.click(link)
+    expect(screen.queryByRole('link', { name: 'Open log' })).toBeNull()
+    await userEvent.click(card)
     expect(window.location.pathname).toBe('/logs/log-1')
   })
 
-  it('formats negative event and log offsets and keeps received severity fields independent', () => {
+  it('keeps negative event and log offsets and uses the shared severity fallback', () => {
     const negativeEvents: EventData[] = [{ ...events[0]!, timestamp: 0n }]
     const negativeLogs: TraceLogSummary[] = [
       {
         ...logs[0]!,
         timestamp: 0n,
         severityText: '',
-        severityNumber: 0,
+        severityNumber: 5,
       },
     ]
     renderWithContexts(ActivityPanel, {
@@ -91,15 +87,38 @@ describe('ActivityPanel', () => {
       spanStartTime: 1_000_000_000n,
     })
 
-    const badges = screen.getAllByText('-1.000 s')
-    expect(badges).toHaveLength(3)
-    const summary = screen.getByRole('table', { name: 'Log summary' })
-    expect(
-      summary.querySelector(
-        '[data-field="severityNumber"] .detail-property__body'
-      )
-    ).toHaveTextContent(/^0$/)
-    expect(summary.querySelector('[data-field="severityText"]')).toBeNull()
+    expect(screen.getAllByText('(-1.000 s)')).toHaveLength(2)
+    const summary = screen.getByRole('region', { name: 'Log summary' })
+    const offset = within(summary).getByText('(-1.000 s)', { exact: true })
+    expect(offset).toHaveClass('text-rp-muted')
+    expect(offset).not.toHaveClass('badge-count')
+    expect(offset.closest('.signal-row__time')).not.toBeNull()
+    expect(within(summary).getByRole('button')).toContainElement(offset)
+    expect(summary).toHaveTextContent('DEBUG (5)')
     expect(summary).not.toHaveTextContent('TRACE')
   })
+
+  it.each(['click', 'keyboard'] as const)(
+    'opens the associated log from its summary by %s and preserves the time range',
+    async interaction => {
+      setTestUrl('/traces/trace-1?span=span-1&log=log-1&start=1&end=2')
+      renderWithContexts(ActivityPanel, {
+        events: [],
+        logs,
+        spanStartTime: 100n,
+      })
+      const card = within(
+        screen.getByRole('region', { name: 'Log summary' })
+      ).getByRole('button')
+      expect(card).toHaveAttribute('aria-pressed', 'false')
+      if (interaction === 'click') await userEvent.click(card)
+      else {
+        card.focus()
+        await userEvent.keyboard('{Enter}')
+      }
+      expect(window.location.pathname + window.location.search).toBe(
+        '/logs/log-1?start=1&end=2'
+      )
+    }
+  )
 })

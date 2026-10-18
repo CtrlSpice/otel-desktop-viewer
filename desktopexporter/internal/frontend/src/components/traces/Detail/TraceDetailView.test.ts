@@ -253,7 +253,7 @@ describe('TraceDetailView detail bubbles', () => {
       .getByText('Span', { exact: true, selector: '.collapse-title > span' })
       .closest('details')!
     const activity = screen
-      .getByText('Activity', { exact: true })
+      .getByText('Events', { exact: true })
       .closest('details')!
     const links = screen.getByText('Links', { exact: true }).closest('details')!
     expect(fields.open).toBe(true)
@@ -265,12 +265,12 @@ describe('TraceDetailView detail bubbles', () => {
     expect(links.open).toBe(true)
   })
 
-  it('keeps zero-count Activity and Links headers visible without expandable bodies', async () => {
+  it('keeps zero-count Events and Links headers visible without expandable bodies', async () => {
     renderWithContexts(TraceDetailView, { span: makeSpan() })
-    for (const label of ['Activity', 'Links']) {
+    for (const label of ['Events', 'Links']) {
       const section = screen.getByRole('region', { name: label })
       expect(section).toHaveTextContent(
-        label === 'Activity' ? '0 activity' : '0 links'
+        label === 'Events' ? '0 events' : '0 links'
       )
       await userEvent.click(within(section).getByText(label, { exact: true }))
       expect(
@@ -279,7 +279,7 @@ describe('TraceDetailView detail bubbles', () => {
     }
   })
 
-  it('uses one Activity count and badges the flat event and log records', () => {
+  it('combines span events and correlated logs under Events with provenance badges', () => {
     const logs: TraceLogSummary[] = [
       {
         logRef: 'log-1',
@@ -308,16 +308,16 @@ describe('TraceDetailView detail bubbles', () => {
     })
 
     expect(
-      screen.getByText('Activity', { exact: true }).closest('summary')
-    ).toHaveTextContent('2 activity')
+      screen.getByText('Events', { exact: true }).closest('summary')
+    ).toHaveTextContent('2 events')
     expect(
-      screen.getByText('Activity', { exact: true }).closest('details')
+      screen.getByText('Events', { exact: true }).closest('details')
     ).toHaveAttribute('open')
-    expect(screen.getByText('Event', { exact: true })).toBeVisible()
+    expect(screen.getByText('Span event', { exact: true })).toBeVisible()
     expect(screen.getByText('Log', { exact: true })).toBeVisible()
     expect(
       screen
-        .getByText('Activity', { exact: true })
+        .getByText('Events', { exact: true })
         .closest('details')!
         .querySelectorAll('details')
     ).toHaveLength(0)
