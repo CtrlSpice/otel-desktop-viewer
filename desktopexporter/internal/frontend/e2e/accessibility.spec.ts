@@ -157,21 +157,62 @@ test.describe('home page accessibility', () => {
     }
   })
 
-  test('keeps the icon-only time range control accessible without a sort menu', async ({
+  test('keeps the icon-only time range control accessible in the workspace toolbar', async ({
     page,
   }) => {
     await page.goto('/traces')
     const trigger = page.getByRole('button', { name: /^Change time range/ })
     await expect(trigger).toHaveText('')
     await expect(trigger).toHaveCSS('font-size', '14px')
-    await expect(page.getByRole('button', { name: /^Sort by/ })).toHaveCount(0)
-    await expect(page.getByRole('menu', { name: 'Sort by' })).toHaveCount(0)
+    await expect(
+      page
+        .getByRole('banner', { name: 'Workspace navigation and search' })
+        .getByRole('button', { name: /^Sort By/ })
+    ).toHaveCount(0)
     await trigger.focus()
     await page.keyboard.press('Enter')
     await expect(trigger).toHaveAttribute('aria-expanded', 'true')
     await expect(
       page.getByRole('button', { name: 'Last 5 min', exact: true })
     ).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(trigger).toBeFocused()
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  test('changes the drawer sort target and direction independently', async ({
+    page,
+  }) => {
+    await page.goto('/traces')
+    const controls = page.getByRole('group', { name: 'Traces list controls' })
+    const trigger = controls.getByRole('button', { name: /^Sort By/ })
+    await expect(trigger).toHaveText('Sort By: Start Time')
+    await expect(trigger).toHaveCSS('font-size', '14px')
+
+    await controls
+      .getByRole('button', { name: 'Sort ascending', exact: true })
+      .click()
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    await expect(
+      controls.getByRole('button', { name: 'Sort descending', exact: true })
+    ).toBeVisible()
+
+    await trigger.click()
+    const popup = page.getByRole('group', { name: 'Sort By', exact: true })
+    await popup.getByRole('button', { name: 'Duration', exact: true }).click()
+    await expect(trigger).toHaveText('Sort By: Duration')
+    await expect(trigger).toBeFocused()
+    await expect(popup).not.toBeVisible()
+    await expect(
+      controls.getByRole('button', { name: 'Sort descending', exact: true })
+    ).toBeVisible()
+
+    await trigger.click()
+    await popup.getByRole('button', { name: 'Duration', exact: true }).click()
+    await expect(
+      controls.getByRole('button', { name: 'Sort descending', exact: true })
+    ).toBeVisible()
+    await trigger.click()
     await page.keyboard.press('Escape')
     await expect(trigger).toBeFocused()
     await expect(trigger).toHaveAttribute('aria-expanded', 'false')
@@ -195,7 +236,9 @@ test.describe('home page accessibility', () => {
         await expect(editor).toBeVisible()
         await expect(editor).toHaveText('service.name = "checkout"')
         await expect(
-          page.getByRole('button', { name: /^Sort by/ })
+          page
+            .getByRole('banner', { name: 'Workspace navigation and search' })
+            .getByRole('button', { name: /^Sort By/ })
         ).toHaveCount(0)
         await expect(
           page.getByRole('button', { name: /^Change time range/ })

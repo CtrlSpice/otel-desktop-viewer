@@ -13,7 +13,8 @@
    *
    * The page-level footer (delete + prev/next nav) lives INSIDE the
    * `main` snippet -- it acts on the main view's selection, not on
-   * the detail pane. The search/sort slots render in the workspace toolbar.
+   * the detail pane. Search renders in the workspace toolbar; list controls
+   * stay above the drawer's scrolling items.
    */
   import type { Snippet } from 'svelte'
   import ResizablePanels from './ResizablePanels.svelte'
@@ -41,6 +42,7 @@
     loading?: boolean
     drawerChromeToolbar?: Snippet
     drawerSearch?: Snippet
+    drawerControls?: Snippet
     drawerFooter?: Snippet
 
     // ── Content slots ──────────────────────────────────────────────
@@ -90,6 +92,7 @@
     loading,
     drawerChromeToolbar,
     drawerSearch,
+    drawerControls,
     drawerFooter,
     main,
     detail,
@@ -128,6 +131,7 @@
     {loading}
     {drawerChromeToolbar}
     {drawerSearch}
+    {drawerControls}
     footer={drawerFooter}
   >
     <div class="page-layout__content">

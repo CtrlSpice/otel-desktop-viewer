@@ -97,6 +97,7 @@
   import { createSignalListPage } from '@/contexts/signal-list-page.svelte'
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
+  import DrawerSortControl from '@/components/shared/Drawer/DrawerSortControl.svelte'
   import SignalDrawerFooter from '@/components/shared/Drawer/SignalDrawerFooter.svelte'
   import MetricCard from '@/components/metrics/MetricCard.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
@@ -679,6 +680,23 @@
         sortDirection={page.sortDirection}
         onSearchResults={page.handleSearchResults}
         onSearchReady={api => (page.searchEditorApi = api)}
+      />
+    {/snippet}
+
+    {#snippet drawerControls()}
+      <DrawerSortControl
+        options={[
+          { value: 'lastSeen', label: 'Last Seen' },
+          { value: 'name', label: 'Name' },
+          { value: 'metricType', label: 'Type' },
+          { value: 'serviceName', label: 'Service Name' },
+          { value: 'description', label: 'Description' },
+          { value: 'dataPointCount', label: 'Datapoint Count' },
+          { value: 'seriesCount', label: 'Timeseries Count' },
+        ]}
+        value={page.sortColumn}
+        direction={page.sortDirection}
+        onchange={page.handleSortChange}
       />
     {/snippet}
 

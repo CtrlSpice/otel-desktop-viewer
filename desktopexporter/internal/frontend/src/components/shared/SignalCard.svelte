@@ -185,29 +185,11 @@
 
   .signal-row--selected {
     box-shadow:
-      inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 40%, transparent),
+      inset 0 0 0 1px var(--color-primary),
       0 2px 6px rgb(0 0 0 / 0.1);
-    --row-surface: color-mix(
-      in srgb,
-      var(--color-primary) 7%,
-      var(--color-base-200)
-    );
-  }
-
-  .signal-row--selected:hover {
-    --row-surface: color-mix(
-      in srgb,
-      var(--color-primary) 10%,
-      var(--color-base-200)
-    );
   }
 
   .signal-row:focus-visible {
-    --row-surface: color-mix(
-      in srgb,
-      var(--color-primary) 12%,
-      var(--color-base-200)
-    );
     outline: 2px solid var(--color-primary);
     outline-offset: -2px;
   }

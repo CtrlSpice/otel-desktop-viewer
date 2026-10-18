@@ -48,6 +48,7 @@
     railOnly?: boolean
     drawerChromeToolbar?: Snippet
     drawerSearch?: Snippet
+    drawerControls?: Snippet
     footer?: Snippet
     children: Snippet
   }
@@ -70,6 +71,7 @@
     railOnly = false,
     drawerChromeToolbar,
     drawerSearch,
+    drawerControls,
     footer,
     children,
   }: Props<T> = $props()
@@ -535,6 +537,15 @@
         {/if}
         <!-- Expanded: list (unmounted when collapsed so footer/count cannot leak) -->
         {#if effectivelyOpen}
+          {#if drawerControls}
+            <div
+              class="signal-drawer__controls"
+              role="group"
+              aria-label={`${label} list controls`}
+            >
+              {@render drawerControls()}
+            </div>
+          {/if}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             class="signal-drawer__body"
@@ -652,6 +663,11 @@
   }
 
   /* ── Body (list) ── */
+  .signal-drawer__controls {
+    @apply mx-3 mt-3 flex min-w-0 shrink-0 items-center rounded-xl bg-base-200;
+    box-shadow: 0 2px 6px rgb(0 0 0 / 0.1);
+  }
+
   .signal-drawer__body {
     @apply flex-1 min-h-0 overflow-hidden pt-3;
   }

@@ -44,6 +44,7 @@
   import { createDebouncedDetailFetcher } from '@/components/shared/utils/debounced-detail-fetcher.svelte'
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
+  import DrawerSortControl from '@/components/shared/Drawer/DrawerSortControl.svelte'
   import SignalDrawerFooter from '@/components/shared/Drawer/SignalDrawerFooter.svelte'
   import LogCard from '@/components/logs/LogCard.svelte'
   import LogDetailPanel from '@/components/logs/LogDetailView.svelte'
@@ -181,6 +182,20 @@
         sortDirection={page.sortDirection}
         onSearchResults={page.handleSearchResults}
         onSearchReady={api => (page.searchEditorApi = api)}
+      />
+    {/snippet}
+
+    {#snippet drawerControls()}
+      <DrawerSortControl
+        options={[
+          { value: 'timestamp', label: 'Timestamp' },
+          { value: 'body', label: 'Body' },
+          { value: 'service', label: 'Service Name' },
+          { value: 'severity', label: 'Severity' },
+        ]}
+        value={page.sortColumn}
+        direction={page.sortDirection}
+        onchange={page.handleSortChange}
       />
     {/snippet}
 

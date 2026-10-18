@@ -78,6 +78,7 @@
 
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
+  import DrawerSortControl from '@/components/shared/Drawer/DrawerSortControl.svelte'
   import SignalDrawerFooter from '@/components/shared/Drawer/SignalDrawerFooter.svelte'
   import TraceCard from '@/components/traces/TraceCard.svelte'
   import DetailView from '@/components/traces/Detail/TraceDetailView.svelte'
@@ -378,6 +379,22 @@
         sortDirection={page.sortDirection}
         onSearchResults={handleSearchResults}
         onSearchReady={api => (page.searchEditorApi = api)}
+      />
+    {/snippet}
+
+    {#snippet drawerControls()}
+      <DrawerSortControl
+        options={[
+          { value: 'startTime', label: 'Start Time' },
+          { value: 'duration', label: 'Duration' },
+          { value: 'rootSpanName', label: 'Root Span Name' },
+          { value: 'serviceName', label: 'Service Name' },
+          { value: 'spanCount', label: 'Span Count' },
+          { value: 'errorCount', label: 'Error Count' },
+        ]}
+        value={page.sortColumn}
+        direction={page.sortDirection}
+        onchange={page.handleSortChange}
       />
     {/snippet}
 

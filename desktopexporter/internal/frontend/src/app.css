@@ -884,11 +884,6 @@ svg {
   @apply text-base-content/60;
 }
 
-/* Shared filter component styles */
-.list-button {
-  @apply w-full text-left px-4 py-1 text-sm hover:bg-base-200 focus:bg-base-200 transition-colors flex items-center;
-}
-
 /* Shared section rules — additive hairline (reads on same fill as the line color).
    Tapered ends via mask; plus-lighter lifts slightly on base-300 panels. */
 .separator {
@@ -960,7 +955,7 @@ svg {
   @apply rotate-180;
 }
 
-/* Shared native popover surface for time ranges and timeline activity. */
+/* Shared native popover surface for time ranges, sorting, and timeline activity. */
 .anchor-popover {
   @apply overflow-hidden rounded-xl border border-base-300 bg-base-100 text-sm text-base-content;
   margin: 0;
@@ -1065,9 +1060,7 @@ svg {
   color: var(--color-base-content);
 }
 
-/* Pane chrome — small round controls shared by drawer header icons and
-   labeled header pills (time presets, nav rail, …). */
-.chrome-btn,
+/* Shared round controls for copy actions and chart overlays. */
 .drawer-header-btn {
   @apply btn btn-circle btn-ghost btn-neutral btn-sm shrink-0 gap-0 border-transparent px-0 py-0 text-xs font-medium tracking-tight shadow-none;
   color: var(--color-subtle);
@@ -1075,38 +1068,20 @@ svg {
   transition-duration: 200ms, 200ms, 200ms, 100ms;
 }
 
-.chrome-btn:hover,
 .drawer-header-btn:hover {
   @apply text-base-content;
 }
 
-.chrome-btn--active,
-.chrome-btn[aria-pressed='true'],
-.drawer-header-btn--active,
-.drawer-header-btn[aria-expanded='true'] {
-  @apply border-transparent bg-primary/15 text-primary shadow-sm shadow-primary/10;
-}
-
-.chrome-btn--active:hover,
-.chrome-btn[aria-pressed='true']:hover,
-.drawer-header-btn--active:hover,
-.drawer-header-btn[aria-expanded='true']:hover {
-  @apply border-transparent bg-primary/20 text-primary shadow-sm shadow-primary/10;
-}
-
-.chrome-btn:active,
 .drawer-header-btn:active {
   @apply translate-y-px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chrome-btn:active,
   .drawer-header-btn:active {
     transform: none;
   }
 }
 
-.chrome-btn:focus-visible,
 .drawer-header-btn:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);

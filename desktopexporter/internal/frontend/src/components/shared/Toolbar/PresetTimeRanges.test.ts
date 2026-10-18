@@ -42,7 +42,6 @@ describe('PresetTimeRanges', () => {
     renderComponent()
     expect(getPresetButton('All')).toHaveAttribute('aria-pressed', 'true')
     expect(getPresetButton('All')).toHaveClass('tab', 'tab-active')
-    expect(getPresetButton('All')).not.toHaveClass('chrome-btn')
     for (const label of PRESET_LABELS.slice(1)) {
       expect(getPresetButton(label)).toHaveAttribute('aria-pressed', 'false')
       expect(getPresetButton(label)).toHaveClass('tab')
