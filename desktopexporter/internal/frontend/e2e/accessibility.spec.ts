@@ -45,6 +45,96 @@ async function interceptRpc(page: Page): Promise<void> {
   })
 }
 
+for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
+  test(`soft badges stay consistent and readable in ${theme}`, async ({
+    page,
+  }) => {
+    await interceptRpc(page)
+    await page.addInitScript(
+      theme => localStorage.setItem('theme', theme),
+      theme
+    )
+    await page.goto('/')
+    await expect(
+      page.getByRole('heading', { name: 'OpenTelemetry Desktop Viewer' })
+    ).toBeVisible()
+    await page.evaluate(() => {
+      const examples = document.createElement('section')
+      examples.id = 'badge-a11y-fixture'
+      examples.setAttribute('aria-label', 'Badge examples')
+      examples.style.cssText =
+        'display:flex;flex-wrap:wrap;gap:8px;padding:16px;background:var(--color-base-100)'
+      for (const kind of [
+        'badge-primary',
+        'badge-secondary',
+        'badge-accent',
+        'badge-neutral',
+        'badge-info',
+        'badge-success',
+        'badge-warning',
+        'badge-error',
+        'badge-rose',
+        'badge-papaya',
+      ]) {
+        const badge = document.createElement('span')
+        badge.className = `badge badge-xs badge-soft ${kind}`
+        badge.textContent = kind
+        examples.append(badge)
+      }
+      for (const className of ['badge-count', 'badge-origin']) {
+        const badge = document.createElement('span')
+        badge.className = className
+        badge.textContent = className
+        examples.append(badge)
+      }
+      document.querySelector('main')!.prepend(examples)
+    })
+    const fixture = page.locator('#badge-a11y-fixture')
+    const appearance = await fixture.evaluate(element => {
+      const probe = document.createElement('span')
+      element.append(probe)
+      const results = [
+        ...element.querySelectorAll<HTMLElement>(
+          '.badge, .badge-count, .badge-origin'
+        ),
+      ].map(badge => {
+        const style = getComputedStyle(badge)
+        probe.style.backgroundColor = `color-mix(in oklab, ${style.getPropertyValue('--badge-color')} 8%, var(--color-base-100))`
+        return {
+          kind: badge.className,
+          softFill:
+            style.backgroundColor === getComputedStyle(probe).backgroundColor,
+          borderless: style.borderColor === 'rgba(0, 0, 0, 0)',
+          pill:
+            parseFloat(style.borderRadius) >=
+            badge.getBoundingClientRect().height / 2,
+        }
+      })
+      probe.remove()
+      return results
+    })
+    expect(appearance).toHaveLength(12)
+    for (const badge of appearance) {
+      expect(badge.softFill, badge.kind).toBe(true)
+      expect(badge.borderless, badge.kind).toBe(true)
+      expect(badge.pill, badge.kind).toBe(true)
+    }
+    for (const className of ['badge-count', 'badge-origin']) {
+      await expect(fixture.locator(`.${className}`)).toHaveCSS(
+        'color',
+        await fixture
+          .locator('.badge-primary')
+          .evaluate(element => getComputedStyle(element).color)
+      )
+    }
+    const scan = await new AxeBuilder({ page })
+      .include('#badge-a11y-fixture')
+      .withRules(['color-contrast'])
+      .analyze()
+    expect(scan.violations).toEqual([])
+  })
+}
+
 test.describe('home page accessibility', () => {
   test.beforeEach(async ({ page }) => {
     await interceptRpc(page)

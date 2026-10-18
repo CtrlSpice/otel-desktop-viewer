@@ -649,7 +649,7 @@
   }
 
   .dp-list__pagination {
-    @apply grid items-center gap-2 px-3 py-2;
+    @apply sticky bottom-0 z-10 grid items-center gap-2 bg-base-100 px-3 py-2;
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     border-top: 1px solid
       color-mix(in oklab, var(--color-base-300) 30%, transparent);

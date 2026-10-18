@@ -167,6 +167,36 @@ test('series open by their headers, one at a time, with one combined table', asy
   await expect(table).toContainText('route (string)')
   await expect(table).toContainText('/first')
   await expect(table.locator('tr[data-dp-id]')).toHaveCount(25)
+  const nextPage = series.nth(0).getByRole('button', {
+    name: 'Next page',
+    exact: true,
+  })
+  await expect(nextPage).toBeInViewport({ ratio: 1 })
+  await nextPage.click()
+  await expect(table.locator('tr[data-dp-id]')).toHaveCount(15)
+  await expect(table.locator('tr[data-dp-id]').first()).toHaveAttribute(
+    'data-dp-id',
+    'first-25'
+  )
+  await expect(series.nth(0)).toContainText('26-40 of 40 datapoints')
+  await expect(nextPage).toBeDisabled()
+  await series
+    .nth(0)
+    .getByRole('button', { name: 'First page', exact: true })
+    .click()
+  await expect(table.locator('tr[data-dp-id]').first()).toHaveAttribute(
+    'data-dp-id',
+    'first-0'
+  )
+  await page.setViewportSize({ width: 1440, height: 720 })
+  await expect(nextPage).toBeInViewport({ ratio: 1 })
+  await series
+    .nth(0)
+    .getByRole('combobox', { name: 'Rows per page' })
+    .selectOption('50')
+  await expect(table.locator('tr[data-dp-id]')).toHaveCount(40)
+  await expect(nextPage).toBeInViewport({ ratio: 1 })
+  await page.setViewportSize({ width: 1920, height: 1000 })
   await expect(series.nth(0).locator('details')).toHaveCount(0)
   await expect(series.nth(0)).not.toContainText('service.name')
   await expect(fieldsBubble).toContainText('resource.service.name')
