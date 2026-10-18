@@ -90,6 +90,11 @@ import {
   visibleKeyListsEqual,
 } from '@/components/metrics/utils/metric-timeseries-visible'
 import {
+  loadHistogramViewPreference,
+  saveHistogramViewPreference,
+  type HistogramViewPreference,
+} from '@/components/metrics/utils/histogram-view-preference'
+import {
   acquireColor,
   remapColorAssignments,
   releaseColor,
@@ -410,6 +415,7 @@ export function createMetricViewContext(
 
   // An absent `agg` restores the seeded aggregation.
   let seededAggregationView: AggregationView = 'raw'
+  let seededHistogramTab: HistogramViewPreference = 'heatmap'
 
   type PendingUrlDatapoint = { id: string; seriesKey: string }
 
@@ -429,6 +435,7 @@ export function createMetricViewContext(
       allowedAggs: availableAggregationViewsList,
       datapointIDs: index.datapointIDs,
       seriesKeys: index.seriesKeys,
+      defaultHistogramTab: seededHistogramTab,
     }
   }
 
@@ -1396,9 +1403,10 @@ export function createMetricViewContext(
     view.selectedQuantileKey = null
     view.expandedDatapoints.clear()
     view.expandedTimeseries.clear()
-    view.activeHistogramTab = 'heatmap'
+    seededHistogramTab = loadHistogramViewPreference()
+    view.activeHistogramTab = seededHistogramTab
 
-    // Use an allowed persisted view; otherwise show received values in Raw.
+    // An applicable saved preference wins over the Raw default; URLs apply below.
     const persistedAggregationView = metricRef
       ? loadPersistedAggregationView(metricRef, availableAggregationViewsList)
       : null
@@ -1606,7 +1614,6 @@ export function createMetricViewContext(
     if (allowed.includes(view.aggregationView)) return
     const next = DEFAULT_AGGREGATION_VIEW
     view.aggregationView = next
-    // Persist the replacement so the invalid choice is not restored.
     const metricRef = getMetric()?.metricRef
     if (metricRef) savePersistedAggregationView(metricRef, next)
   })
@@ -1621,6 +1628,7 @@ export function createMetricViewContext(
 
   function setActiveHistogramTab(tab: HistogramTab) {
     view.activeHistogramTab = tab
+    saveHistogramViewPreference(tab === 'quantiles' ? 'heatmap' : tab)
     // Back returns to the prior tab.
     writeMetricUrl('push')
   }

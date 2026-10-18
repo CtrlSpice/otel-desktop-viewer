@@ -165,7 +165,7 @@ describe('DetailProperty copy controls', () => {
     expect(screen.getByRole('status')).toHaveTextContent(
       'Copied service.name (resource).'
     )
-    expect(screen.getByText('"checkout"')).toBeInTheDocument()
+    expect(screen.getByText('checkout')).toBeInTheDocument()
   })
 
   it.each([undefined, 'resource'])(
@@ -218,6 +218,75 @@ describe('DetailProperty copy controls', () => {
     expect(copy.mock.calls[0]![0]).toBe(
       container.querySelector('pre')!.textContent
     )
+  })
+
+  it.each([false, true])(
+    'renders ordinary strings as text (typed: %s) while copying exact whitespace',
+    async typed => {
+      const user = userEvent.setup()
+      const copy = vi
+        .spyOn(navigator.clipboard, 'writeText')
+        .mockResolvedValue()
+      const text = 'heatmap-playground\n  heatmap-design-playground'
+      const { container } = render(DetailProperty, {
+        fieldName: 'service.name',
+        fieldType: 'string',
+        ...(typed
+          ? { typedValue: { kind: 'string' as const, value: text } }
+          : { fieldValue: text }),
+      })
+      expect(
+        container.querySelector('.attribute-value--text')!.textContent
+      ).toContain(text)
+      expect(container.querySelector('pre')).toBeNull()
+      await user.click(
+        screen.getByRole('button', { name: 'Copy service.name' })
+      )
+      expect(copy).toHaveBeenCalledWith(text)
+    }
+  )
+
+  it.each([false, true])(
+    'formats JSON strings but copies original source (typed: %s)',
+    async typed => {
+      const user = userEvent.setup()
+      const copy = vi
+        .spyOn(navigator.clipboard, 'writeText')
+        .mockResolvedValue()
+      const text = '{"id":9223372036854775807,"items":["hello",false]}'
+      const { container } = render(DetailProperty, {
+        fieldName: 'body',
+        fieldType: 'string',
+        ...(typed
+          ? { typedValue: { kind: 'string' as const, value: text } }
+          : { fieldValue: text }),
+      })
+      expect(
+        container.querySelector('.attribute-value--structured pre')
+      ).toHaveTextContent('9223372036854775807')
+      expect(container.querySelector('pre')!.textContent).toContain(
+        '\n  "items": [\n    "hello",'
+      )
+      expect(container.querySelector('.detail-code--key')).toHaveTextContent(
+        '"id"'
+      )
+      await user.click(screen.getByRole('button', { name: 'Copy body' }))
+      expect(copy).toHaveBeenCalledWith(text)
+    }
+  )
+
+  it.each([
+    ['traceId', 'custom-id'],
+    ['value', 'c7dc4131-2ce3-4d1c-a50b-cc10592aad7c'],
+    ['sequence', '9223372036854775807'],
+  ])('keeps technical string %s in code styling', (fieldName, fieldValue) => {
+    const { container } = render(DetailProperty, {
+      fieldName,
+      fieldType: 'string',
+      fieldValue,
+    })
+    expect(container.querySelector('.attribute-value--text')).toBeNull()
+    expect(container.querySelector('code')).toHaveTextContent(fieldValue)
   })
 
   it('announces clipboard failure without falsely marking the value copied', async () => {

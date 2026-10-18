@@ -42,7 +42,7 @@ describe('AttributeRows', () => {
       attempts: 2,
       flags: [true],
     })
-    expect(screen.getByText('"raw"')).toBeInTheDocument()
+    expect(screen.getByText('raw')).toBeInTheDocument()
     expect(container.querySelectorAll('[data-field="payload"]')).toHaveLength(2)
     expect(
       screen.getAllByRole('img', {

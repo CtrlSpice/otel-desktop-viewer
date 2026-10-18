@@ -35,6 +35,8 @@ export type MetricViewParseContext = {
   datapointIDs: ReadonlySet<string>
   /** Series ids present on the current metric. */
   seriesKeys: ReadonlySet<string>
+  /** Shared histogram-family preference when the URL does not name a tab. */
+  defaultHistogramTab?: 'heatmap' | 'histogram'
 }
 
 const HTAB_VALUES = ['heatmap', 'quantiles', 'histogram'] as const
@@ -135,11 +137,12 @@ function parseEnumMember<T extends string>(
 function parseHistogramMetricViewQuery(
   query: RouteQuery,
   dp: string | null,
-  series: string | null
+  series: string | null,
+  defaultTab: 'heatmap' | 'histogram' = 'heatmap'
 ): HistogramMetricViewQuery {
   return {
     kind: 'histogram',
-    htab: parseEnumMember(query.htab, HTAB_VALUES, 'heatmap'),
+    htab: parseEnumMember(query.htab, HTAB_VALUES, defaultTab),
     // Older snapshot links retain their datapoint selection in the details pane.
     hscope: 'window',
     dp,
@@ -187,7 +190,7 @@ export function parseMetricViewQuery(
   const dp = parseDatapointParam(query, ctx.datapointIDs)
   const series = parseSeriesParam(query, ctx.seriesKeys)
   return ctx.isHistogramKind
-    ? parseHistogramMetricViewQuery(query, dp, series)
+    ? parseHistogramMetricViewQuery(query, dp, series, ctx.defaultHistogramTab)
     : parseTimeseriesMetricViewQuery(query, ctx.allowedAggs, dp, series)
 }
 

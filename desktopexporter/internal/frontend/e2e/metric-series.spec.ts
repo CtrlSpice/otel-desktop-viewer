@@ -141,7 +141,7 @@ test.describe('independent histogram aggregate loading', () => {
     bucketCounts: [2, 7, 3],
   }
 
-  async function holdAggregates(page: Page) {
+  async function holdAggregates(page: Page, includeNextMetric = false) {
     const pending: { route: Route; wholeWindow: boolean }[] = []
     const histogramMetric: JsonMetricViewData = {
       ...metric,
@@ -167,6 +167,12 @@ test.describe('independent histogram aggregate loading', () => {
         ],
       })),
     }
+    const histogramSummary: JsonMetricSummary = {
+      ...summary,
+      metricType: 'Histogram',
+      aggregationTemporalityCode: 1,
+      aggregationTemporality: 'Delta',
+    }
     await page.route('**/rpc', async route => {
       const request = route.request().postDataJSON()
       if (request.method === 'getMetricAggregateView') {
@@ -175,15 +181,20 @@ test.describe('independent histogram aggregate loading', () => {
       }
       const result =
         request.method === 'getMetricView'
-          ? histogramMetric
+          ? { ...histogramMetric, metricRef: request.params.metricRef }
           : request.method === 'searchMetricSummaries'
             ? [
-                {
-                  ...summary,
-                  metricType: 'Histogram',
-                  aggregationTemporalityCode: 1,
-                  aggregationTemporality: 'Delta',
-                },
+                histogramSummary,
+                ...(includeNextMetric
+                  ? [
+                      {
+                        ...histogramSummary,
+                        metricRef: `${metric.metricRef}-next`,
+                        name: 'next.histogram',
+                        lastSeen: String(BigInt(endNs) - 1n),
+                      },
+                    ]
+                  : []),
               ]
             : undefined
       if (result === undefined) return route.fallback()
@@ -207,6 +218,59 @@ test.describe('independent histogram aggregate loading', () => {
       },
     })
   }
+
+  for (const navigation of ['list', 'footer']) {
+    test(`initial load and ${navigation} navigation fetch aggregates without advancing the debounce clock`, async ({
+      page,
+    }) => {
+      const now = new Date('2026-10-18T12:00:00Z')
+      await page.clock.install({ time: now })
+      await page.clock.pauseAt(now)
+      const pending = await holdAggregates(page, true)
+      if (navigation === 'list') {
+        await page
+          .getByRole('button', { name: /next\.histogram/ })
+          .click({ force: true })
+      } else {
+        await page
+          .getByRole('button', { name: 'Next metric', exact: true })
+          .click({ force: true })
+      }
+      await expect.poll(() => pending.length).toBe(4)
+      for (const { route } of pending.slice(2)) {
+        expect(route.request().postDataJSON().params.metricRef).toBe(
+          `${metric.metricRef}-next`
+        )
+      }
+    })
+  }
+
+  test('rapid checkbox changes still coalesce into one request pair after 120ms', async ({
+    page,
+  }) => {
+    const now = new Date('2026-10-18T12:00:00Z')
+    await page.clock.install({ time: now })
+    await page.clock.pauseAt(now)
+    const pending = await holdAggregates(page)
+    const checkbox = page.getByRole('checkbox', {
+      name: 'Show route: /second in chart',
+      exact: true,
+    })
+    await checkbox.uncheck({ force: true })
+    await page.clock.runFor(60)
+    expect(pending).toHaveLength(2)
+    await checkbox.check({ force: true })
+    await page.clock.runFor(119)
+    expect(pending).toHaveLength(2)
+    await page.clock.runFor(1)
+    await expect.poll(() => pending.length).toBe(4)
+    for (const { route } of pending.slice(2)) {
+      expect(route.request().postDataJSON().params.seriesRefs).toEqual([
+        'first',
+        'second',
+      ])
+    }
+  })
 
   for (const fail of [false, true]) {
     test(`heatmap renders before the window summary ${fail ? 'fails' : 'arrives'}`, async ({
@@ -793,7 +857,7 @@ for (const [theme, hoverColour, selectedColour, focusColour] of [
   }
 }
 
-test('extrema use the series colour and the average sits behind the series without a data dot', async ({
+test('extrema use the series colour and the average crosses above the series without a data dot', async ({
   page,
 }) => {
   await page.route('**/rpc', async route => {
@@ -831,7 +895,11 @@ test('extrema use the series colour and the average sits behind the series witho
   ).toBeVisible()
   await expect(average.locator('.series-average-line')).toHaveCSS(
     'stroke-dasharray',
-    '4px, 3px'
+    '6px, 4px'
+  )
+  await expect(average.locator('.series-average-line')).toHaveCSS(
+    'stroke-width',
+    '2px'
   )
   await expect(average.locator('.series-average-line')).toHaveCSS(
     'opacity',
@@ -862,29 +930,27 @@ test('extrema use the series colour and the average sits behind the series witho
       return {
         extremaMatch: minColour === maxColour,
         seriesFound: !!series,
-        averageBehindSeries:
+        averageAboveSeries:
           !!series &&
           !!(
             reference.compareDocumentPosition(series) &
-            Node.DOCUMENT_POSITION_FOLLOWING
+            Node.DOCUMENT_POSITION_PRECEDING
           ),
         averageHasOwnColour: getComputedStyle(reference).stroke !== minColour,
         averageLabelMatches:
           getComputedStyle(reference).stroke ===
           getComputedStyle(label).backgroundColor,
-        averageMatchesAxis:
-          getComputedStyle(reference).stroke ===
-          getComputedStyle(chart.querySelector('.lc-axis-tick-label')!).fill,
+        averageColour: getComputedStyle(reference).stroke,
         averageLabelAtRight: Math.abs(labelBox.right - lineBox.right) < 1,
       }
     })
   expect(drawing).toEqual({
     extremaMatch: true,
     seriesFound: true,
-    averageBehindSeries: true,
+    averageAboveSeries: true,
     averageHasOwnColour: true,
     averageLabelMatches: true,
-    averageMatchesAxis: true,
+    averageColour: 'rgb(144, 122, 169)',
     averageLabelAtRight: true,
   })
 })
@@ -1042,7 +1108,8 @@ test('Rate clicks pin the exact bucket and keep slope in the same card', async (
   await graph.press('Enter')
   await expect(sticky.getByText('slope', { exact: true })).toBeVisible()
   const slopeGuide = page.locator('.series-slope-line')
-  await expect(slopeGuide).toHaveCSS('stroke-dasharray', '4px, 3px')
+  await expect(slopeGuide).toHaveCSS('stroke-dasharray', '6px, 4px')
+  await expect(slopeGuide).toHaveCSS('stroke-width', '2px')
   await expect(slopeGuide).toHaveCSS('opacity', '0.35')
   await expect(slopeGuide).toHaveCSS('pointer-events', 'none')
   const slopeDrawing = await page
@@ -1061,9 +1128,9 @@ test('Rate clicks pin the exact bucket and keep slope in the same card', async (
       const px = Number(point.getAttribute('cx'))
       const py = Number(point.getAttribute('cy'))
       return {
-        behindSeries: !!(
+        aboveSeries: !!(
           guide.compareDocumentPosition(series) &
-          Node.DOCUMENT_POSITION_FOLLOWING
+          Node.DOCUMENT_POSITION_PRECEDING
         ),
         extendsBeyondBucket:
           Math.hypot(x2 - x1, y2 - y1) >
@@ -1072,9 +1139,6 @@ test('Rate clicks pin the exact bucket and keep slope in the same card', async (
           Math.abs((px - x1) * (y2 - y1) - (py - y1) * (x2 - x1)) /
           Math.hypot(x2 - x1, y2 - y1),
         colour: getComputedStyle(guide).stroke,
-        axisColour: getComputedStyle(
-          chart.querySelector('.lc-axis-tick-label')!
-        ).fill,
         cardColour: getComputedStyle(
           chart.querySelector(
             '.metric-time-series-chart__selection-legend .chart-selection-legend__row:last-child .chart-selection-legend__dot'
@@ -1082,11 +1146,11 @@ test('Rate clicks pin the exact bucket and keep slope in the same card', async (
         ).backgroundColor,
       }
     }, firstBucket)
-  expect(slopeDrawing.behindSeries).toBe(true)
+  expect(slopeDrawing.aboveSeries).toBe(true)
   expect(slopeDrawing.extendsBeyondBucket).toBe(true)
   expect(slopeDrawing.distanceFromPoint).toBeLessThan(0.01)
   expect(slopeDrawing.colour).toBe(slopeDrawing.cardColour)
-  expect(slopeDrawing.colour).toBe(slopeDrawing.axisColour)
+  expect(slopeDrawing.colour).toBe('rgb(144, 122, 169)')
   await expect(
     page.locator('.series-stat-tooltip').filter({ hasText: 'slope' })
   ).toHaveCount(0)

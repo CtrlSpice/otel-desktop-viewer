@@ -9,7 +9,7 @@
    *                   "Timeseries", "Log Record").
    *   • tabs        — flat tab strip with an underlined active item. Use
    *                   when the pane has 2+ views or route destinations.
-   *   • title-tabs  — title and badges above a second row of local tabs.
+   *   • title-tabs  — title and badges above compact joined chart controls.
    *                   Use when the pane has a stable label AND tabs that
    *                   switch a sub-view inside the same pane.
    *   • toolbar     — chrome strip with no title or tabs. Use the
@@ -217,7 +217,7 @@
   }
 </script>
 
-{#snippet metaRow()}
+{#snippet metaRow(showControls = true)}
   <div class="pane-header__meta-row">
     <div class="pane-header__time-range">
       {#if props.timeRange}
@@ -229,7 +229,7 @@
         <PaneTimestampHeader timestampMs={props.timestampMs} />
       {/if}
     </div>
-    {#if props.metaRight}
+    {#if showControls && props.metaRight}
       <div class="pane-header__meta-right">{@render props.metaRight()}</div>
     {/if}
   </div>
@@ -266,21 +266,31 @@
   ariaLabel: string,
   layout: PaneTabLayout,
   navigation = false,
-  tabPanelID?: string
+  tabPanelID?: string,
+  joined = false
 )}
-  <div class="pane-header__tab-scroll pane-header__tab-scroll--{layout}">
+  <div
+    class={joined
+      ? 'join pane-header__joined-controls'
+      : `pane-header__tab-scroll pane-header__tab-scroll--${layout}`}
+  >
+    {#if joined && props.metaRight}{@render props.metaRight()}{/if}
     <div
       role={navigation ? 'navigation' : 'tablist'}
       aria-label={ariaLabel}
-      class="tabs tabs-border {tabSizeClass} pane-header__tabs pane-header__tabs--{layout}"
+      class={joined
+        ? 'join pane-header__joined-tabs'
+        : `tabs tabs-border ${tabSizeClass} pane-header__tabs pane-header__tabs--${layout}`}
       onkeydown={navigation ? undefined : handleTablistKeydown}
     >
-      {#if layout === 'right'}
+      {#if !joined && layout === 'right'}
         <span class="pane-header__tab-lead" aria-hidden="true"></span>
       {/if}
       {#each tabs as tab (tab.id)}
         {@const active = tab.id === activeID}
-        {@const tabClass = `tab pane-header__tab gap-2 whitespace-nowrap px-3 ${active ? 'tab-active' : ''}`}
+        {@const tabClass = joined
+          ? `btn btn-xs join-item chart-header-control ${active ? 'chart-header-control--active' : ''}`
+          : `tab pane-header__tab gap-2 whitespace-nowrap px-3 ${active ? 'tab-active' : ''}`}
         {#if navigation && tab.href}
           <a
             href={tab.disabled ? undefined : tab.href}
@@ -292,7 +302,10 @@
             onclick={event => !tab.disabled && onSelect(tab.id, event)}
           >
             {#if tab.icon}
-              <span class="pane-header__tab-icon shrink-0">
+              <span
+                class="pane-header__tab-icon shrink-0"
+                class:chart-header-control__icon={joined}
+              >
                 {@render tab.icon()}
               </span>
             {/if}
@@ -317,7 +330,10 @@
             onclick={event => !tab.disabled && onSelect(tab.id, event)}
           >
             {#if tab.icon}
-              <span class="pane-header__tab-icon shrink-0">
+              <span
+                class="pane-header__tab-icon shrink-0"
+                class:chart-header-control__icon={joined}
+              >
                 {@render tab.icon()}
               </span>
             {/if}
@@ -330,7 +346,7 @@
           </button>
         {/if}
       {/each}
-      {#if layout === 'left'}
+      {#if !joined && layout === 'left'}
         <span class="pane-header__tab-trail" aria-hidden="true"></span>
       {/if}
     </div>
@@ -415,7 +431,7 @@
     </div>
     <div class="pane-header__tabs-row">
       {#if props.timeRange !== undefined || props.timestampMs !== undefined || props.metaRight}
-        {@render metaRow()}
+        {@render metaRow(false)}
       {/if}
       {@render tabStrip(
         props.tabs,
@@ -424,7 +440,8 @@
         props.ariaLabel ?? `${props.title} tabs`,
         props.tabLayout ?? 'right',
         false,
-        props.tabPanelID
+        props.tabPanelID,
+        true
       )}
     </div>
   </div>
@@ -581,7 +598,7 @@
   }
 
   .pane-header__tabs-row {
-    @apply flex min-w-0 w-full flex-wrap items-center gap-x-4;
+    @apply flex min-w-0 w-full flex-wrap items-center gap-x-4 gap-y-1 py-1;
   }
 
   .pane-header__tabs-row .pane-header__meta-row {
@@ -589,10 +606,8 @@
     flex-basis: 20rem;
   }
 
-  .pane-header__tabs-row .pane-header__tab-scroll {
-    flex-basis: max-content;
-    @apply overflow-x-auto overflow-y-hidden;
-    scrollbar-width: thin;
+  .pane-header__joined-controls {
+    @apply ml-auto shrink-0;
   }
 
   /* Right layout: lead spacer pushes tabs to the end. */

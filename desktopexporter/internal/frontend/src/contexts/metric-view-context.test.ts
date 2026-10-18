@@ -406,6 +406,56 @@ function externalNavigationTo(url: string): void {
 }
 
 describe('metric view context aggregation URL sync', () => {
+  it('remembers histogram mode across both histogram kinds and intervening gauges without overriding links', () => {
+    const storageKey = 'metrics:histogram-view'
+    const previous = localStorage.getItem(storageKey)
+    localStorage.removeItem(storageKey)
+    try {
+      const visits = [
+        {
+          type: 'Histogram',
+          query: '',
+          expected: 'heatmap',
+          choose: 'histogram',
+        },
+        { type: 'ExponentialHistogram', query: '', expected: 'histogram' },
+        { type: 'Gauge', query: '', expected: null },
+        { type: 'Histogram', query: '', expected: 'histogram' },
+        {
+          type: 'ExponentialHistogram',
+          query: '?htab=heatmap',
+          expected: 'heatmap',
+        },
+        { type: 'Histogram', query: '', expected: 'histogram' },
+      ] as const
+      for (const [index, visit] of visits.entries()) {
+        const metric: MetricViewData = {
+          ...makeCumulativeSumMetric(),
+          metricRef: `shared-view-${index}`,
+          metricType: visit.type,
+          timeseries: [],
+          datapointCount: 0,
+        }
+        setTestUrl(`/metrics/${metric.metricRef}${visit.query}`)
+        let context: MetricViewContext | undefined
+        const view = renderWithContexts(MetricViewProbe, {
+          metric,
+          oncontext: (ctx: MetricViewContext) => (context = ctx),
+        })
+        if (!context)
+          throw new Error('probe did not report a metric view context')
+        if (visit.expected)
+          expect(context.activeHistogramTab).toBe(visit.expected)
+        else expect(context.aggregationView).toBe('raw')
+        if ('choose' in visit) context.setActiveHistogramTab(visit.choose)
+        view.unmount()
+      }
+    } finally {
+      if (previous === null) localStorage.removeItem(storageKey)
+      else localStorage.setItem(storageKey, previous)
+    }
+  })
+
   it('offers rate for a cumulative monotonic sum with two series', () => {
     renderProbe('/metrics/m1')
     expect(reportedAvailableAggregationViews()).toEqual([
@@ -440,8 +490,9 @@ describe('metric view context aggregation URL sync', () => {
     ['/metrics/m1?agg=bogus', 'rate'],
     ['/metrics/m1?agg=raw', 'raw'],
     ['/metrics/m1?agg=sum', 'sum'],
+    ['/metrics/m1?agg=rate', 'rate'],
   ])(
-    'respects a saved Rate preference or explicit URL at %s',
+    'respects an applicable saved preference or explicit URL at %s',
     (url, expected) => {
       const key = metricViewStorageKey('m1')
       const preference = JSON.stringify({ aggregationView: 'rate' })

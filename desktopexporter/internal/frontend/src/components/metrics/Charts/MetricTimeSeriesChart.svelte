@@ -1,6 +1,6 @@
 <script lang="ts">
   import ChartSticky from '@/components/metrics/Charts/ChartSticky.svelte'
-  import { LineChart, Line, Tooltip, type ChartState } from 'layerchart'
+  import { LineChart, Line, Spline, Tooltip, type ChartState } from 'layerchart'
   import { bisector } from 'd3-array'
   import { scaleTime } from 'd3-scale'
   import { curveStepAfter } from 'd3-shape'
@@ -72,6 +72,13 @@
     points: readonly { date: Date; value: number }[],
     x: Date
   ): number | undefined {
+    return nearestPointAt(points, x)?.value
+  }
+
+  function nearestPointAt<T extends { date: Date }>(
+    points: readonly T[],
+    x: Date
+  ): T | undefined {
     if (points.length === 0) return undefined
     const t = x.getTime()
     const i = bisector((p: { date: Date }) => p.date.getTime()).left(points, t)
@@ -79,7 +86,7 @@
     const hi = Math.min(points.length - 1, i)
     const dl = Math.abs(points[lo]!.date.getTime() - t)
     const dh = Math.abs(points[hi]!.date.getTime() - t)
-    return (dl <= dh ? points[lo] : points[hi])!.value
+    return dl <= dh ? points[lo] : points[hi]
   }
 
   function tooltipXDate(context: {
@@ -381,6 +388,39 @@
   )
 
   let lineChartContext = $state<ChartState<ChartPoint> | undefined>(undefined)
+
+  // Resolve one exact sample for emphasis without rebuilding series data or
+  // moving a point onto another series' timestamp grid.
+  let hoveredPoint = $derived.by(() => {
+    const context = lineChartContext
+    if (!context?.tooltip.isHoveringTooltipArea) return null
+    const date = tooltipXDate(context)
+    if (!date) return null
+    const x = context.tooltip.x - context.padding.left
+    const y = context.tooltip.y - context.padding.top
+    let closest: {
+      key: string
+      color: string
+      point: ChartPoint
+      distance: number
+    } | null = null
+    for (const series of chartSeries) {
+      const point = nearestPointAt(series.data, date)
+      if (!point) continue
+      const distance = Math.hypot(
+        context.xScale(point.date) - x,
+        context.yScale(point.value) - y
+      )
+      if (!closest || distance < closest.distance) {
+        closest = { key: series.key, color: series.color, point, distance }
+      }
+    }
+    return closest
+  })
+
+  let emphasizedSeriesKey = $derived(
+    keyboardFocused ? keyboardSeries?.key : hoveredPoint?.key
+  )
   /** The plot uses the full chart height; pinned cards do not reserve a row. */
   let plotAreaHeight = $state(0)
 
@@ -752,7 +792,7 @@
 
     const stats = seriesStats?.get(selectedSeriesKey)
     if (!stats) return []
-    const color = 'var(--color-subtle)'
+    const color = 'var(--color-primary)'
     const marks: SeriesStatMark[] = []
 
     const minPoint = extremumPoint(series.data, 'min')
@@ -943,54 +983,30 @@
           yNice
           padding={chartPadding}
           {tooltipContext}
+          highlight={{ lines: true, points: false }}
           series={chartSeries}
           onPointClick={handlePointClick}
           onTooltipClick={handleTooltipClick}
           props={chartProps}
         >
-          {#snippet belowMarks({ context }: { context: any })}
-            {@const average = seriesStatMarks.find(mark => mark.kind === 'avg')}
-            {#if average}
-              {@const averageY = context.yScale(average.y)}
-              <g
-                class="series-stat-marker series-average-marker"
-                aria-hidden="true"
-              >
-                <title>{average.title}</title>
-                <Line
-                  x1={context.xRange[0]}
-                  x2={context.xRange[1]}
-                  y1={averageY}
-                  y2={averageY}
-                  class="series-average-line"
-                />
-              </g>
-            {/if}
-            {@const slope = seriesStatMarks.find(mark => mark.kind === 'slope')}
-            {#if slope?.slopeFrom && slope.slopeTo}
-              {@const guide = extendChartLine(
-                {
-                  x: context.xScale(slope.slopeFrom.date),
-                  y: context.yScale(slope.slopeFrom.value),
-                },
-                {
-                  x: context.xScale(slope.slopeTo.date),
-                  y: context.yScale(slope.slopeTo.value),
-                },
-                {
-                  left: Math.min(...context.xRange),
-                  right: Math.max(...context.xRange),
-                  top: Math.min(...context.yRange),
-                  bottom: Math.max(...context.yRange),
-                }
-              )}
-              {#if guide}
-                <g class="series-slope-guide" aria-hidden="true">
-                  <title>{slope.title}</title>
-                  <Line {...guide} class="series-slope-line" />
-                </g>
-              {/if}
-            {/if}
+          {#snippet marks()}
+            {#each chartSeries as series (series.key)}
+              {@const emphasized =
+                series.key === emphasizedSeriesKey ||
+                series.key === selectedSeriesKey}
+              <Spline
+                seriesKey={series.key}
+                class="metric-series-line"
+                data-series-key={series.key}
+                data-emphasized={emphasized}
+                strokeWidth={emphasized ? 2.5 : 1.75}
+                style="--metric-series-line-opacity: {emphasized
+                  ? 1
+                  : emphasizedSeriesKey || selectedSeriesKey
+                    ? 0.45
+                    : 0.7}"
+              />
+            {/each}
           {/snippet}
           {#snippet tooltip({ context }: { context: any })}
             {@const xDate = tooltipXDate(context)}
@@ -1054,6 +1070,58 @@
           {#snippet aboveMarks({ context }: { context: any })}
             {@const yTop = context.yRange[1]}
             {@const yBot = context.yRange[0]}
+            {@const average = seriesStatMarks.find(mark => mark.kind === 'avg')}
+            {#if average}
+              {@const averageY = context.yScale(average.y)}
+              <g
+                class="series-stat-marker series-average-marker"
+                aria-hidden="true"
+              >
+                <title>{average.title}</title>
+                <Line
+                  x1={context.xRange[0]}
+                  x2={context.xRange[1]}
+                  y1={averageY}
+                  y2={averageY}
+                  class="series-average-line"
+                />
+              </g>
+            {/if}
+            {@const slope = seriesStatMarks.find(mark => mark.kind === 'slope')}
+            {#if slope?.slopeFrom && slope.slopeTo}
+              {@const guide = extendChartLine(
+                {
+                  x: context.xScale(slope.slopeFrom.date),
+                  y: context.yScale(slope.slopeFrom.value),
+                },
+                {
+                  x: context.xScale(slope.slopeTo.date),
+                  y: context.yScale(slope.slopeTo.value),
+                },
+                {
+                  left: Math.min(...context.xRange),
+                  right: Math.max(...context.xRange),
+                  top: Math.min(...context.yRange),
+                  bottom: Math.max(...context.yRange),
+                }
+              )}
+              {#if guide}
+                <g class="series-slope-guide" aria-hidden="true">
+                  <title>{slope.title}</title>
+                  <Line {...guide} class="series-slope-line" />
+                </g>
+              {/if}
+            {/if}
+            {#if hoveredPoint}
+              <circle
+                class="series-hover-point"
+                cx={context.xScale(hoveredPoint.point.date)}
+                cy={context.yScale(hoveredPoint.point.value)}
+                r="4.5"
+                style:--point-color={hoveredPoint.color}
+                aria-hidden="true"
+              />
+            {/if}
             {#if seriesStatMarks.length > 0}
               <g
                 class="series-stat-overlay"
@@ -1086,14 +1154,15 @@
                       <circle
                         cx={px}
                         cy={py}
-                        r="8"
+                        r="7"
                         class="selection-dot-halo"
                       />
                       <circle
                         cx={px}
                         cy={py}
-                        r="6"
+                        r={dot.isSelected ? 5 : 4}
                         fill={dot.color}
+                        style:--point-color={dot.color}
                         class="selection-dot"
                         class:selection-dot--selected={dot.isSelected}
                       />
@@ -1106,12 +1175,13 @@
               <g class="selection-overlay" aria-hidden="true">
                 {#each selectionDots as dot (dot.key)}
                   {@const py = context.yScale(dot.value)}
-                  <circle cx={px} cy={py} r="8" class="selection-dot-halo" />
+                  <circle cx={px} cy={py} r="7" class="selection-dot-halo" />
                   <circle
                     cx={px}
                     cy={py}
-                    r="6"
+                    r={dot.isSelected ? 5 : 4}
                     fill={dot.color}
+                    style:--point-color={dot.color}
                     class="selection-dot"
                     class:selection-dot--selected={dot.isSelected}
                   />
@@ -1211,6 +1281,23 @@
 
   .metric-time-series-chart__selection-legend {
     @apply min-w-0 max-w-full;
+  }
+
+  .metric-time-series-chart :global(.metric-series-line) {
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .series-hover-point,
+  .metric-time-series-chart :global(.selection-dot) {
+    fill: var(--color-base-100);
+    stroke: var(--point-color);
+    stroke-width: 2;
+    pointer-events: none;
+  }
+
+  .metric-time-series-chart :global(.selection-dot--selected) {
+    fill: var(--point-color);
   }
 
   /* Stat cards: min/max at their points and average at the right edge. */

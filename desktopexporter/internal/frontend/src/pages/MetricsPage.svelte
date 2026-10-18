@@ -103,6 +103,8 @@
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
   import MetricChartView from '@/components/metrics/Charts/MetricChartView.svelte'
   import ChartStatOverlaysToggle from '@/components/metrics/Charts/ChartStatOverlaysToggle.svelte'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import { GridTableIcon, ChartHistogramIcon } from '@hugeicons/core-free-icons'
   import MetricDetailView from '@/components/metrics/Detail/MetricDetailView.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
@@ -271,6 +273,7 @@
   // Aggregates depend on legend selection; metric detail depends on metric identity.
   let aggregateTimer: ReturnType<typeof setTimeout> | undefined
   let aggregateToken = 0
+  let aggregateMetric: MetricViewData | undefined
 
   $effect(() => {
     const token = ++aggregateToken
@@ -285,6 +288,7 @@
       detailLoading ||
       selectedMetric.metricRef !== summary.metricRef
     ) {
+      aggregateMetric = undefined
       selectedAggregate = null
       selectedAggregateSummary = null
       selectedScalarAggregate = null
@@ -292,17 +296,21 @@
     }
     const bounds = effectiveMetricBounds(selectedMetric)
     if (!bounds) {
+      aggregateMetric = undefined
       selectedAggregate = null
       selectedAggregateSummary = null
       selectedScalarAggregate = null
       return
     }
 
-    // Coalesce rapid legend changes.
+    // A fresh detail response already establishes the selection and bounds.
+    // Only changes to the legend on that same response need coalescing.
+    const debounce = aggregateMetric === selectedMetric
+    aggregateMetric = selectedMetric
     clearTimeout(aggregateTimer)
     // Do not display a previous selection's summary beside the new plot.
     selectedAggregateSummary = null
-    aggregateTimer = setTimeout(() => {
+    const requestAggregates = () => {
       void fetchAggregate(summary, visibleKeys, bounds, token, false)
       if (
         summary.metricType === 'Histogram' ||
@@ -310,7 +318,9 @@
       ) {
         void fetchAggregate(summary, visibleKeys, bounds, token, true)
       }
-    }, 120)
+    }
+    if (debounce) aggregateTimer = setTimeout(requestAggregates, 120)
+    else untrack(requestAggregates)
 
     return () => {
       clearTimeout(aggregateTimer)
@@ -731,10 +741,29 @@
         {/snippet}
 
         {#snippet overlayControl()}
-          <ChartStatOverlaysToggle />
+          <ChartStatOverlaysToggle joined={showChartTitleTabs} />
         {/snippet}
 
-        {@const histogramChartTabs = histogramViewTabs()}
+        {#snippet heatmapIcon()}
+          <HugeiconsIcon
+            icon={GridTableIcon}
+            size={16}
+            strokeWidth={1.5}
+            aria-hidden="true"
+          />
+        {/snippet}
+        {#snippet histogramIcon()}
+          <HugeiconsIcon
+            icon={ChartHistogramIcon}
+            size={16}
+            strokeWidth={1.5}
+            aria-hidden="true"
+          />
+        {/snippet}
+        {@const histogramChartTabs = histogramViewTabs().map(tab => ({
+          ...tab,
+          icon: tab.id === 'heatmap' ? heatmapIcon : histogramIcon,
+        }))}
 
         {#if showChartTitleTabs}
           <PaneHeader

@@ -358,6 +358,31 @@ html[data-theme='rose-pine-dawn'] {
   --stroke-color: var(--color-base-300);
 }
 
+.metric-time-series-chart
+  .metric-chart-view
+  :where(
+    .lc-grid-x-rule,
+    .lc-grid-y-rule,
+    .lc-grid-x-end-rule,
+    .lc-grid-y-end-rule,
+    .lc-axis-grid
+  ) {
+  --stroke-color: color-mix(in oklab, var(--color-base-300) 35%, transparent);
+}
+
+html[data-theme='rose-pine-dawn']
+  .metric-time-series-chart
+  .metric-chart-view
+  :where(
+    .lc-grid-x-rule,
+    .lc-grid-y-rule,
+    .lc-grid-x-end-rule,
+    .lc-grid-y-end-rule,
+    .lc-axis-grid
+  ) {
+  --stroke-color: color-mix(in oklab, var(--color-neutral) 35%, transparent);
+}
+
 /* Series splines only (`.lc-path`); overlays use `.lc-line` + custom classes. */
 .metric-chart-view :where(.lc-path) {
   stroke-opacity: var(--metric-series-line-opacity, 1);
@@ -427,7 +452,9 @@ html[data-theme='rose-pine-dawn'] {
 }
 
 .metric-chart-view :where(.series-average-line, .series-slope-line) {
-  stroke-dasharray: 4 3;
+  stroke-dasharray: 6 4;
+  stroke-width: 2;
+  stroke: var(--color-primary);
 }
 
 .metric-chart-view :where(.quantile-line, .heatmap-quantile-line) {
@@ -760,6 +787,27 @@ svg {
 /* Global button styles */
 .btn {
   @apply transition-[color,background-color,border-color,transform,box-shadow] duration-200 ease-out;
+}
+
+/* Compact chart choices: full-contrast labels, iris marks for active controls. */
+.btn.chart-header-control {
+  @apply h-8 min-h-8 rounded-none border-0 px-3 text-sm font-normal;
+  --btn-noise: none;
+  background: transparent;
+  color: var(--color-base-content);
+  box-shadow: none;
+}
+
+.btn.chart-header-control--active {
+  box-shadow: inset 0 -1px 0 var(--color-primary);
+}
+
+.chart-header-control__icon {
+  display: flex;
+}
+
+.chart-header-control--active .chart-header-control__icon {
+  color: var(--color-primary);
 }
 
 /*

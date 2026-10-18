@@ -153,9 +153,9 @@ describe('TraceDetailView numeric enum fields', () => {
         expect(
           message?.classList.contains('detail-property--error-value')
         ).toBe(statusCodeValue === 2)
-        expect(
-          message?.querySelector('.detail-property__value')
-        ).toHaveTextContent('"original message"')
+        expect(message?.querySelector('.attribute-value')).toHaveTextContent(
+          'original message'
+        )
       }
       expect(document.querySelector('[data-field="kind"]')).not.toHaveClass(
         'detail-property--error-value'

@@ -165,9 +165,11 @@ for (const [theme, errorColour] of [
       const codeValue = codeField.locator('.detail-property__value')
       await expect(codeValue).toBeVisible()
       const message = detail.locator(
-        '[data-field="status.message"] .detail-property__value'
+        '[data-field="status.message"] .attribute-value'
       )
-      const nameValue = detail.getByText('"selected span"', { exact: true })
+      const nameValue = detail
+        .locator('[data-field="name"] .attribute-value')
+        .filter({ hasText: 'selected span' })
       const neutralColour = await nameValue.evaluate(
         value => getComputedStyle(value).color
       )
@@ -181,7 +183,7 @@ for (const [theme, errorColour] of [
         ).toHaveCSS('color', errorColour)
       if (code === 0 || code === 1) await expect(message).toHaveCount(0)
       else {
-        await expect(message).toHaveText('"received error message"')
+        await expect(message).toHaveText('received error message')
         await expect(message).toHaveCSS(
           'color',
           code === 2 ? errorColour : neutralColour

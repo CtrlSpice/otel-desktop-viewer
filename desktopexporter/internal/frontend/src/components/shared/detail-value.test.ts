@@ -3,10 +3,34 @@ import {
   attributeValueCopy,
   attributeValueTokens,
   hasConflictingKeys,
+  jsonContainerTokens,
 } from './detail-value'
 import type { AttributeValue } from '@/types/api-types'
 
 describe('detail value formatting', () => {
+  it('indents JSON source without changing order, duplicate keys, numeric lexemes or escapes', () => {
+    const source = String.raw` {"z":9007199254740993,"z":-0,"a":[1.2300e+40,{},[],"x\n\"y"],"ok":true} `
+    const tokens = jsonContainerTokens(source)!
+    expect(tokens.map(token => token.text).join('')).toBe(
+      '{\n  "z": 9007199254740993,\n  "z": -0,\n  "a": [\n    1.2300e+40,\n    {},\n    [],\n    "x\\n\\\"y"\n  ],\n  "ok": true\n}'
+    )
+    expect(
+      tokens.filter(token => token.kind === 'key').map(token => token.text)
+    ).toEqual(['"z"', '"z"', '"a"', '"ok"'])
+  })
+
+  it.each([
+    '[not json]',
+    '{"x":1,}',
+    '{"x":1} trailing',
+    '42',
+    'true',
+    '"text"',
+    'heatmap-playground',
+  ])('leaves non-container text untouched: %s', text => {
+    expect(jsonContainerTokens(text)).toBeNull()
+  })
+
   it('copies raw strings and bytes without presentation quotes or JSON coercion', () => {
     for (const kind of ['string', 'bytes'] as const) {
       expect(

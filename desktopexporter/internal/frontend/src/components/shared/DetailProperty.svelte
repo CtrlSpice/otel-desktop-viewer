@@ -49,11 +49,6 @@
         ? `Conflicting typed values retained in ${fieldName}. Duplicate keys remain in the JSON output.`
         : undefined)
   )
-  let scalarText = $derived(
-    fieldType === 'string' && !multiline
-      ? JSON.stringify(fieldValue)
-      : fieldValue
-  )
   let copyText = $derived(
     copyValue ?? (typedValue ? attributeValueCopy(typedValue) : fieldValue)
   )
@@ -134,11 +129,20 @@
         <div class="detail-property__body">
           {#if timestampLabel !== undefined}
             <div class="detail-property__raw-timestamp">{fieldValue}</div>
+          {:else if !value && !valueLabel && !typedValue && fieldType === 'string'}
+            <AttributeValueView
+              value={{ kind: 'string', value: fieldValue }}
+              path={fieldName}
+              clamp={!multiline}
+            />
           {:else if value || typedValue || multiline || valueLabel}
             <div class="detail-property__value">
               {#if value}{@render value()}
-              {:else if typedValue}<AttributeValueView value={typedValue} />
-              {:else}{scalarText}{#if valueLabel}<span
+              {:else if typedValue}<AttributeValueView
+                  value={typedValue}
+                  path={fieldName}
+                />
+              {:else}{fieldValue}{#if valueLabel}<span
                     class="detail-property__annotation"
                     class:detail-property__annotation--enum={fieldType ===
                       'enum'}
@@ -149,7 +153,7 @@
             </div>
           {:else}
             <ExpandableValue
-              value={scalarText}
+              value={fieldValue}
               valueClass="detail-property__value"
             />
           {/if}
