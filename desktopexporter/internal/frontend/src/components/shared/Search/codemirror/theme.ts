@@ -38,10 +38,10 @@ function ensureTooltipStyles() {
       box-sizing: border-box;
     }
     html[data-theme] .cm-tooltip-autocomplete > ul > li:hover {
-      background-color: var(--table-hover-bg);
+      background-color: var(--item-hover-bg);
     }
     html[data-theme] .cm-tooltip-autocomplete > ul > li[aria-selected] {
-      background-color: var(--color-base-300);
+      background-color: var(--item-selected-bg);
       color: var(--color-base-content);
     }
     html[data-theme] .cm-completionLabel {

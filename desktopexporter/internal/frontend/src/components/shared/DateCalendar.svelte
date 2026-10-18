@@ -62,7 +62,7 @@
             <Calendar.GridRow>
               {#each weekDates as date (date.toString())}
                 <Calendar.Cell {date} month={month.value} class="calendar-cell">
-                  <Calendar.Day class="calendar-day">
+                  <Calendar.Day class="calendar-day item-state">
                     <span class="calendar-today-dot" aria-hidden="true"></span>
                     {date.day}
                   </Calendar.Day>
@@ -108,8 +108,7 @@
   }
 
   :global(.date-calendar .calendar-day) {
-    @apply relative inline-flex h-7 w-7 items-center justify-center rounded-full border border-transparent bg-transparent p-0 text-xs text-base-content/80;
-    @apply hover:bg-base-300/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35;
+    @apply relative inline-flex h-7 w-7 items-center justify-center rounded-full border border-transparent p-0 text-xs text-base-content;
   }
 
   :global(.date-calendar .calendar-day[data-outside-month]) {
@@ -118,10 +117,6 @@
 
   :global(.date-calendar .calendar-day[data-disabled]) {
     @apply pointer-events-none text-base-content/20;
-  }
-
-  :global(.date-calendar .calendar-day[data-selected]) {
-    @apply bg-primary/20 text-primary;
   }
 
   .calendar-today-dot {

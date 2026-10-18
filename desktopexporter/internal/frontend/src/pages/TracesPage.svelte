@@ -86,11 +86,6 @@
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
   import type { ImportFailure } from '@/types/import-types'
-  import {
-    PANEL_DEFAULT_REM,
-    PANEL_MIN_REM,
-    remToPx,
-  } from '@/state/panel-width'
 
   let {
     importFailure = null,
@@ -357,10 +352,6 @@
     refreshAsideTip={page.refreshAsideTip}
     loading={page.loading}
     itemKey={t => t.traceID}
-    resizableStorageKey="trace-detail-panels"
-    defaultDetailRem={PANEL_DEFAULT_REM}
-    minMainPx={remToPx(PANEL_DEFAULT_REM)}
-    minDetailPx={remToPx(PANEL_MIN_REM)}
   >
     {#snippet drawerChromeToolbar()}
       <DrawerSearchPanel

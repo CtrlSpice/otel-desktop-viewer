@@ -19,7 +19,6 @@ const families = [
   ['gold', 'Gold'],
   ['rose', 'Rose'],
   ['iris', 'Iris'],
-  ['love', 'Mulberry'],
 ]
 
 function svgFor(theme, label, background, text) {
@@ -36,15 +35,15 @@ function svgFor(theme, label, background, text) {
       return `<text x="28" y="${118 + row * 88}" class="family">${family}</text>\n${swatches}`
     })
     .join('\n')
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="860" height="630" viewBox="0 0 860 630" role="img" aria-labelledby="title description">
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="860" height="542" viewBox="0 0 860 542" role="img" aria-labelledby="title description">
 <title id="title">${label} chart palette</title>
-<desc id="description">Six chart-colour families with five swatches each.</desc>
+<desc id="description">Five chart-colour families with five swatches each.</desc>
 <style>
   text { fill: ${text}; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
   .title { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 26px; font-weight: 700; }
   .family { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 17px; font-weight: 650; }
 </style>
-<rect width="860" height="630" fill="${background}"/>
+<rect width="860" height="542" fill="${background}"/>
 <text x="28" y="48" class="title">${label} chart palette</text>
 <text x="180" y="76">1</text><text x="312" y="76">2</text><text x="444" y="76">3</text><text x="576" y="76">4</text><text x="708" y="76">5</text>
 ${rows}

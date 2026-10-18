@@ -66,7 +66,11 @@
         class="timeseries-legend__row"
         class:timeseries-legend__row--disabled={disabled}
       >
-        <label class="timeseries-legend__label" title={tooltip}>
+        <label
+          class="timeseries-legend__label item-state"
+          title={tooltip}
+          data-disabled={disabled ? '' : undefined}
+        >
           <input
             type="checkbox"
             class="checkbox checkbox-xs timeseries-legend__checkbox"
@@ -143,12 +147,12 @@
   }
 
   .timeseries-legend__label {
-    @apply flex items-center gap-2 px-2 py-1 rounded cursor-pointer hover:bg-base-200/60;
+    @apply flex items-center gap-2 px-2 py-1 rounded cursor-pointer;
     min-height: 1.75rem;
   }
 
   .timeseries-legend__row--disabled .timeseries-legend__label {
-    @apply cursor-not-allowed hover:bg-transparent;
+    @apply cursor-not-allowed;
   }
 
   /* daisyUI .checkbox handles the box, the size (.checkbox-xs), and

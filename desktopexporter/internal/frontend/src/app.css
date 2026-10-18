@@ -25,6 +25,13 @@
   --focus-ring-width: 1px;
   --focus-ring-offset: 1px;
   --focus-ring-color: var(--color-primary);
+  --item-hover-bg: color-mix(
+    in srgb,
+    var(--color-base-200) 50%,
+    var(--color-base-300)
+  );
+  --item-selected-bg: var(--color-base-300);
+  --item-motion-duration: 100ms;
 }
 
 /*
@@ -161,18 +168,14 @@ html[data-theme='rose-pine-dawn'] {
 /* Tooltips — inverted against the page.
 
    daisyUI defaults the bubble to --color-neutral on --color-neutral-content,
-   which in Rosé Pine pairs Muted grey with Text and fails AA in every theme:
-   2.44:1 in dawn, 3.91:1 in moon and main (floor is 4.5:1). Dawn is simply
-   where it is most visible.
+   which in Rosé Pine pairs Muted grey with Text and fails AA in every theme.
 
    Inverting against the surface — Text as the background, Base as the
-   foreground — gives 6.07:1 dawn, 11.86:1 moon, 13.39:1 main, and reads as a
-   bubble floating above the UI rather than a panel inside it. That is the
-   conventional treatment and it holds its meaning in both light and dark.
+   foreground — clears AA and reads as a bubble floating above the UI
+   rather than a panel inside it, in both light and dark themes.
 
    --tt-bg is daisyUI's own hook, so the tail (::after) follows the bubble for
-   free. --tt-fg is ours: the colour variants below re-point it so
-   tooltip-error and tooltip-secondary keep their own contrasting text. */
+   free. --tt-fg lets error tooltips retain their contrasting text. */
 .tooltip {
   --tt-bg: var(--color-base-content);
   --tt-fg: var(--color-base-100);
@@ -180,10 +183,6 @@ html[data-theme='rose-pine-dawn'] {
 
 .tooltip-error {
   --tt-fg: var(--color-error-content);
-}
-
-.tooltip-secondary {
-  --tt-fg: var(--color-secondary-content);
 }
 
 .tooltip[data-tip]::before {
@@ -208,18 +207,8 @@ html[data-theme='rose-pine-dawn'] {
   transition-delay: 0s;
 }
 
-.tooltip[data-tip]:where(
-    :hover,
-    :focus-visible,
-    :has(:focus-visible),
-    .tooltip-open
-  )::before,
-.tooltip[data-tip]:where(
-    :hover,
-    :focus-visible,
-    :has(:focus-visible),
-    .tooltip-open
-  )::after {
+.tooltip[data-tip]:where(:hover, :focus-visible, :has(:focus-visible))::before,
+.tooltip[data-tip]:where(:hover, :focus-visible, :has(:focus-visible))::after {
   transition-delay: var(--tooltip-show-delay);
 }
 
@@ -245,13 +234,7 @@ html[data-theme='rose-pine-dawn'] {
   transition-delay: 0s !important;
 }
 
-/* Rosé Pine text hierarchy utilities.
-   text-base  = Text  (e0def4 moon / 575279 dawn) — primary reading
-   text-subtle = Subtle (908caa moon / 797593 dawn) — secondary/label
-   text-muted  = Muted  (6e6a86 moon / 9893a5 dawn) — de-emphasized */
-.text-rp-base {
-  color: var(--color-base-content);
-}
+/* Rosé Pine secondary and de-emphasized text utilities. */
 .text-rp-subtle {
   color: var(--color-subtle);
 }
@@ -266,26 +249,6 @@ html[data-theme='rose-pine-dawn'] {
   font-weight: 400;
   fill: var(--color-subtle);
   stroke: none;
-}
-
-.metric-chart-view .histogram-stats {
-  font-size: 0.75rem;
-  color: var(--color-subtle);
-}
-
-.metric-chart-view .histogram-stats strong {
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-subtle);
-}
-
-.metric-chart-view .metric-chart-view__subtitle {
-  font-size: 0.75rem;
-  color: var(--color-primary);
-}
-
-.metric-chart-view .metric-chart-view__subtitle .tabular-nums {
-  font-variant-numeric: tabular-nums;
 }
 
 /* One keyboard focus stop and readout shared by every interactive metric chart. */
@@ -864,26 +827,6 @@ svg {
   @apply shadow-md;
 }
 
-/* Code block styling */
-.code-block {
-  @apply bg-base-200 p-4 rounded-lg;
-}
-
-.code-block pre {
-  @apply text-sm font-mono tracking-tight;
-  white-space: pre;
-  overflow-x: auto;
-}
-
-.code-block .prompt {
-  @apply text-primary;
-  user-select: none;
-}
-
-.code-block .comment {
-  @apply text-base-content/60;
-}
-
 /* Shared section rules — additive hairline (reads on same fill as the line color).
    Tapered ends via mask; plus-lighter lifts slightly on base-300 panels. */
 .separator {
@@ -904,46 +847,6 @@ svg {
     #000 95%,
     transparent
   );
-}
-
-/* Sortable thead: caret mirrors alignment — left = title then caret; right (--end) = caret then title.
-   Column width = col / resize (not this flex). */
-.table-header-sort {
-  @apply flex min-w-0 items-center gap-2;
-}
-
-.table-header-sort__label {
-  @apply min-w-0 truncate;
-}
-
-.table-header-sort--end {
-  @apply justify-end;
-}
-
-.table-header-sort__indicator {
-  @apply flex h-4 w-4 shrink-0 items-center justify-center;
-}
-
-/* Sort indicator styles (typically on ArrowDownIcon inside .table-header-sort__indicator) */
-.sort-indicator {
-  @apply w-4 h-4;
-  @apply transition-[transform,opacity] duration-200;
-}
-
-.sort-indicator--active {
-  @apply text-primary opacity-100;
-}
-
-.sort-indicator--inactive {
-  @apply text-base-content/40 opacity-0;
-}
-
-.group:hover .sort-indicator--inactive {
-  @apply opacity-100;
-}
-
-.sort-indicator--asc {
-  @apply rotate-180;
 }
 
 /* Popover indicator styles (curved chevron) */
@@ -1051,13 +954,15 @@ svg {
   @apply inline-flex min-h-[1.125rem] min-w-[1.125rem] shrink-0 items-center justify-center rounded-md bg-primary/20 px-1.5 text-[0.65rem] font-semibold tabular-nums text-primary ring-1 ring-inset ring-primary/15;
 }
 
-/* Pane tabs — inactive = primary, active = base text. */
-.pane-header :where(.pane-header__tab:not(.tab-active)) {
-  color: var(--color-primary);
+/* One underline-only tab treatment for navigation, panes and time presets. */
+.tabs-border > .tab {
+  @apply before:left-0 before:w-full before:text-primary;
+  background: transparent;
+  box-shadow: none;
 }
 
-.pane-header :where(.pane-header__tab.tab-active) {
-  color: var(--color-base-content);
+.tabs-border > .tab.tab-active {
+  @apply before:h-px before:border-t;
 }
 
 /* Shared round controls for copy actions and chart overlays. */
@@ -1223,14 +1128,6 @@ button:focus-visible:not(.btn) {
   --toolbar-search-chrome-min-height: calc(
     var(--table-row-h) + 0.5rem + 0.5rem + 2 * var(--border, 1px)
   );
-  /* Trace list (and matching search chrome): min width before horizontal scroll */
-  --trace-list-table-min-width: 60rem;
-  --table-hover-bg: color-mix(in oklab, var(--color-base-200) 70%, transparent);
-  --table-selected-bg: color-mix(
-    in oklab,
-    var(--color-primary) 10%,
-    transparent
-  );
   /* Waterfall span column tree + nested detail rows (WaterfallTreeGutter) */
   --waterfall-gutter-col: 22px;
   --waterfall-gutter-tail: 4px;
@@ -1240,6 +1137,8 @@ button:focus-visible:not(.btn) {
   --layout-gap: 0.75rem;
   /* Main/detail split: gap equals the invisible hit strip (no flex gutter). */
   --resize-bar-hit-width: 0.75rem;
+  --panel-motion-duration: 240ms;
+  --panel-motion-easing: cubic-bezier(0.22, 1, 0.36, 1);
   --panel-split-total: 0.75rem;
   --panel-split-flex-gap: calc(
     (var(--panel-split-total) - var(--resize-bar-hit-width)) / 2
@@ -1265,7 +1164,49 @@ button:focus-visible:not(.btn) {
   --pane-header-h: 3rem;
 }
 
-/* Same frosted fill as panel chrome: paint this on tbody / field lists */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --panel-motion-duration: 0ms;
+    --item-motion-duration: 0ms;
+  }
+}
+
+/* Shared item states. Selection wins over hover; focus is a separate outline. */
+:is(.item-state, .table-row) {
+  --item-state-bg: var(--item-idle-bg, transparent);
+  background-color: var(--item-state-bg);
+  transition: background-color var(--item-motion-duration);
+}
+
+:is(.item-state, .table-row):where(
+  :hover:not(:disabled):not([aria-disabled='true']):not([data-disabled])
+) {
+  --item-state-bg: var(--item-hover-bg);
+}
+
+:is(.item-state, .table-row):where(
+  [aria-selected='true'],
+  [aria-pressed='true'],
+  [aria-checked='true'],
+  [aria-current='page'],
+  [data-selected],
+  .table-row--selected
+) {
+  --item-state-bg: var(--item-selected-bg);
+}
+
+:is(.item-state, .table-row):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+@media (forced-colors: active) {
+  :is(.item-state, .table-row):focus-visible {
+    outline-color: Highlight;
+  }
+}
+
+/* Shared table body fill. */
 .table-body-surface {
   @apply bg-base-100/80;
 }
@@ -1301,35 +1242,7 @@ button:focus-visible:not(.btn) {
   border-top: none;
 }
 
-/* Data Table Styles */
-.trace-list-table :where(th, td) {
-  @apply whitespace-nowrap;
-}
-
-/* Root presence column: center header (Daisy table th can default to start). */
-.trace-list-table thead th.table-header-cell--trace-root {
-  @apply text-center;
-}
-
-/*
- * Shared header band — every "header strip" surface in the app:
- * table theads (trace list, waterfall, log/metric/trace detail
- * tables), popover headers, time-range preset strips, and the
- * per-pane content headers in PageLayout panes.
- *
- * Tone: a "warm-neutral" — base-100 nudged ~6% toward primary
- * (iris). The band reads as a slightly warmer base, not as a
- * tinted bar, so existing primary-family states (active tabs at
- * bg-primary/15, focus rings, etc.) still pop with comfortable
- * contrast against it. The bottom border picks up the same primary
- * mix at low alpha so the band's edge belongs to the same color
- * family as its fill instead of dropping a foreign neutral line.
- * The 1px inset highlight at the top mimics the drawer header's
- * "lift" without committing to a real shadow.
- *
- * Renamed from the misleading `.table-header-surface` (it was never
- * table-only).
- */
+/* Shared header band for table and panel chrome. */
 .header-surface {
   box-sizing: border-box;
   height: var(--table-header-h);
@@ -1350,119 +1263,12 @@ button:focus-visible:not(.btn) {
   @apply flex items-center py-1;
 }
 
-/*
-.table-header-row {
-  height: var(--table-header-h);
-}
-
-.table-header-cell {
-  @apply align-middle px-4 py-3 text-xs font-semibold tracking-normal text-base-content/55;
-}
-
-/* Same text treatment as .table-header-cell; use on form labels / section titles outside <table>. */
-.table-header-typography {
-  @apply text-xs font-semibold tracking-normal text-base-content/55;
-}
-
-.table-header-cell--sortable {
-  @apply cursor-pointer select-none;
-}
-
-.table-header-cell--left {
-  @apply text-left;
-}
-
-.table-header-cell--center {
-  @apply text-center;
-}
-
-.table-header-cell--right {
-  @apply text-right pl-2 pr-4;
-}
-
-.table-header-cell--checkbox {
-  @apply w-10 text-center;
-}
-
-.table-cell--checkbox {
-  @apply w-10 py-1 text-center align-middle;
-}
-
-/* Tight gutter between Trace ID and Root Span (presence) column */
-.table-header-cell--trace-id {
-  @apply pl-4 pr-1 py-4 text-left text-xs font-semibold tracking-normal text-base-content/55 whitespace-nowrap;
-}
-
-.table-header-cell--after-trace-id {
-  @apply pl-1 pr-4 py-4 text-center text-xs font-semibold tracking-normal text-base-content/55;
-}
-
-.table-cell--trace-id {
-  @apply pl-4 pr-1 py-1 text-sm text-base-content font-mono align-middle whitespace-nowrap;
-}
-
-/*
- * Fixed-layout trace list: ellipsis on a single line (nowrap is on .trace-list-table).
- * max-width: 0 lets table-fixed + col widths shrink the cell below content min-width.
- * Ellipsis on td is flaky; inner .trace-list-cell-text is the reliable clip box.
- */
-.trace-list-table td.table-cell--trace-id,
-.trace-list-table td.trace-list-cell-truncate {
-  max-width: 0;
-}
-
-.trace-list-table .trace-list-cell-text {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.trace-list-table td.table-cell--count {
-  @apply pl-2 pr-4 text-right;
-}
-
-.table-cell--has-root {
-  @apply px-2 py-1 text-sm text-center text-base-content align-middle whitespace-nowrap;
-}
-
 .table-row {
-  @apply transition-colors duration-150;
   height: var(--table-row-h);
-}
-
-.table-row:hover {
-  background-color: var(--table-hover-bg);
-}
-
-.table-row--selected {
-  background-color: var(--table-selected-bg);
-  outline: 1px solid color-mix(in oklab, var(--color-primary) 50%, transparent);
-  outline-offset: -1px;
-  position: relative;
-  z-index: 1;
 }
 
 .table-cell {
   @apply pl-4 pr-4 py-1 text-sm text-base-content align-middle;
-}
-
-.table-cell--right {
-  @apply pl-2 pr-4 py-1 text-sm text-right text-base-content align-middle;
-}
-
-.table-cell--count {
-  @apply px-4 py-1 text-right text-sm tabular-nums align-middle;
-}
-
-.table-cell--center {
-  @apply px-4 py-1 text-center;
-}
-
-/* Detail fields: field + colon — same muted tone as waterfall service column. */
-.table-cell--field-name {
-  @apply pl-4 pr-4 py-1 text-left align-middle text-sm font-normal text-base-content/60;
 }
 
 /* Detail KV cell: [key: value] */
@@ -1535,14 +1341,8 @@ button:focus-visible:not(.btn) {
     background-color 0.15s;
 }
 
-.resize-handle:hover::after,
-.resize-handle--active::after {
+.resize-handle:hover::after {
   opacity: 0.6;
-}
-
-.resize-handle--active::after {
-  background-color: var(--color-primary);
-  opacity: 0.9;
 }
 
 /* ── Shared column-resize system ──
@@ -1558,19 +1358,6 @@ button:focus-visible:not(.btn) {
 
 .col-resize-context {
   @apply relative isolate w-full min-h-full;
-}
-
-/* Trace list table: no panel-body-max-height cap (it scrolls inside the page, not a fixed panel). */
-.trace-list-col-resize.col-resize-context {
-  min-height: 0;
-}
-
-/* Scroll region capped like detail / waterfall; use inside flex children with min-h-0 */
-.panel-body-scroll {
-  max-height: min(var(--panel-body-max-height), 100%);
-  min-height: 0;
-  overflow: auto;
-  scrollbar-width: thin;
 }
 
 /* Marker: kills right padding on its parent cell */
@@ -1706,40 +1493,6 @@ button:focus-visible:not(.btn) {
   opacity: 0.95;
 }
 
-/* Pagination Styles — rows left, pager cluster centered, delete label + button trailing */
-.pagination-controls {
-  @apply flex w-full min-w-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 bg-base-100 border-t border-base-300;
-}
-
-.pagination-rows-selector {
-  @apply flex shrink-0 items-center gap-3;
-}
-
-.pagination-label {
-  @apply text-sm text-base-content/70;
-}
-
-.pagination-rows-button {
-  @apply btn btn-sm btn-ghost min-w-16 justify-between;
-  @apply bg-base-100 border border-base-300 hover:bg-base-200;
-}
-
-.pagination-controls__center {
-  @apply flex min-w-0 flex-1 items-center justify-center;
-}
-
-.pagination-controls__actions {
-  @apply flex shrink-0 items-center gap-2;
-}
-
-.pagination-popover-option {
-  @apply w-full text-left px-3 py-2 text-sm hover:bg-base-200 flex items-center gap-2;
-}
-
-.pagination-popover-option--selected {
-  @apply bg-base-200;
-}
-
 /* Badges — pills, no border. */
 .badge {
   @apply rounded-full font-medium tracking-tight;
@@ -1782,14 +1535,7 @@ button:focus-visible:not(.btn) {
   @apply leading-tight;
 }
 
-/*
- * Detail / toolbar metadata: type · origin · root · offset.
- * type → accent, origin → primary, root → secondary (Daisy semantic colors).
- */
-.badge-type {
-  @apply badge badge-sm text-xs badge-soft badge-accent leading-tight;
-}
-
+/* Detail / toolbar metadata origins. */
 .badge-origin {
   @apply badge badge-sm text-xs badge-soft badge-primary leading-tight;
 }
@@ -1802,28 +1548,4 @@ button:focus-visible:not(.btn) {
 /* Conflict containers retain count semantics but use Daisy's warning palette. */
 .badge-count.badge-warning {
   @apply badge-warning;
-}
-
-/* Series min / max / avg chips (detail rows + chart overlays). */
-.series-stat-badge {
-  @apply badge badge-xs inline-flex max-w-full items-baseline tabular-nums leading-tight ring-0;
-  color: var(--color-base-content);
-  background-color: var(--color-base-200);
-  border: none;
-}
-
-.series-stat-badge__label {
-  @apply mr-0.5 text-[0.625rem] font-semibold uppercase opacity-55;
-}
-
-.series-stat-badge__value {
-  @apply font-medium;
-}
-
-.badge-root {
-  @apply badge badge-sm text-xs badge-soft badge-secondary leading-tight;
-}
-
-.badge-offset {
-  @apply badge badge-sm text-xs badge-soft badge-warning tabular-nums leading-tight;
 }

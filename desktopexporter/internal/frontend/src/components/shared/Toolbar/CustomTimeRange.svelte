@@ -457,8 +457,7 @@
       >
         <button
           type="button"
-          class="ambiguity-choice"
-          class:ambiguity-choice--active={startChoice === 'earlier'}
+          class="ambiguity-choice item-state"
           aria-pressed={startChoice === 'earlier'}
           onclick={() => {
             startDirty = true
@@ -470,8 +469,7 @@
         </button>
         <button
           type="button"
-          class="ambiguity-choice"
-          class:ambiguity-choice--active={startChoice === 'later'}
+          class="ambiguity-choice item-state"
           aria-pressed={startChoice === 'later'}
           onclick={() => {
             startDirty = true
@@ -544,8 +542,7 @@
       >
         <button
           type="button"
-          class="ambiguity-choice"
-          class:ambiguity-choice--active={endChoice === 'earlier'}
+          class="ambiguity-choice item-state"
           aria-pressed={endChoice === 'earlier'}
           onclick={() => {
             endDirty = true
@@ -557,8 +554,7 @@
         </button>
         <button
           type="button"
-          class="ambiguity-choice"
-          class:ambiguity-choice--active={endChoice === 'later'}
+          class="ambiguity-choice item-state"
           aria-pressed={endChoice === 'later'}
           onclick={() => {
             endDirty = true
@@ -651,11 +647,6 @@
   }
 
   .ambiguity-choice {
-    @apply min-w-0 truncate rounded-full border border-base-300 bg-transparent px-2 py-1 font-mono text-[0.625rem] text-base-content/60;
-    @apply hover:bg-base-300/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35;
-  }
-
-  .ambiguity-choice--active {
-    @apply border-primary/50 bg-primary/10 text-primary;
+    @apply min-w-0 truncate rounded-full border border-base-300 px-2 py-1 font-mono text-[0.625rem] text-base-content;
   }
 </style>

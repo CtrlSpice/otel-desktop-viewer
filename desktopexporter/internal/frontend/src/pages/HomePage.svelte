@@ -18,11 +18,12 @@
   import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/svelte'
   import {
     BarChartHorizontalIcon,
+    Cancel01Icon,
     ChartHistogramIcon,
     CheckmarkCircle02Icon,
     Copy01Icon,
   } from '@hugeicons/core-free-icons'
-  import { LogIcon } from '@/icons'
+  import { LogIcon, QuestionMarkIcon } from '@/icons'
   import ReadonlyCodePanel from '@/components/shared/ReadonlyCodePanel.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import LogField from '@/components/shared/DetailField.svelte'
@@ -119,14 +120,45 @@ $ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
 <div class="home-page">
   <PageLayout
     items={[]}
-    railOnly
+    emptyDrawer
     selectedID={null}
     drawerID="signal-drawer"
     drawerLabel="Home"
-    resizableStorageKey="home-panels"
-    defaultMainWidth={0.58}
-    minDetailPx={280}
   >
+    {#snippet drawerSearch()}
+      <div class="flex w-full min-w-0 items-center gap-1">
+        <input
+          class="input typed-field typed-field--pill min-w-0 flex-1"
+          type="search"
+          aria-label="Search"
+          placeholder="Search…"
+          readonly
+          aria-disabled="true"
+        />
+        <button
+          type="button"
+          class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content"
+          aria-label="Clear search"
+          disabled
+        >
+          <HugeiconsIcon
+            icon={Cancel01Icon}
+            size={17}
+            strokeWidth={1.5}
+            aria-hidden="true"
+          />
+        </button>
+        <button
+          type="button"
+          class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content"
+          aria-label="Search query help"
+          disabled
+        >
+          <QuestionMarkIcon class="size-4" />
+        </button>
+      </div>
+    {/snippet}
+
     {#snippet main()}
       <div class="home-page__main">
         <header class="mb-6">
@@ -516,14 +548,6 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
 
   .home-endpoint-chrome {
     @apply overflow-hidden rounded-xl border border-base-300 bg-base-200;
-  }
-
-  .home-endpoint-chrome :global(.pane-header__tab.tab-active) {
-    --pane-tab-active-bg: var(--color-base-100);
-  }
-
-  .home-endpoint-chrome :global(.pane-header__tab:not(.tab-active)) {
-    color: var(--home-accent-text);
   }
 
   .home-endpoint-chrome__body {

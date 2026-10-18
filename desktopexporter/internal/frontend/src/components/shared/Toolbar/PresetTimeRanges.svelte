@@ -26,9 +26,7 @@
           ctx.selection.durationMs === preset.durationMs}
     <button
       type="button"
-      class="tab flex-auto justify-center whitespace-nowrap px-3 text-sm tabular-nums before:left-0 before:w-full before:text-primary {selected
-        ? 'before:h-px before:border-t'
-        : ''}"
+      class="tab flex-auto justify-center whitespace-nowrap px-3 text-sm tabular-nums"
       class:tab-active={selected}
       aria-pressed={selected}
       aria-label={preset.label === 'All' ? 'All time' : `Last ${preset.label}`}

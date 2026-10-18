@@ -99,7 +99,7 @@
 <!-- svelte-ignore a11y_no_redundant_roles -->
 <tr
   role="row"
-  class="waterfall-row"
+  class="waterfall-row item-state"
   class:table-row--selected={selected}
   class:waterfall-row--error={row.isError}
   class:waterfall-row--matched={matched}
@@ -216,12 +216,8 @@
 <style lang="postcss">
   @reference "../../../app.css";
   .waterfall-row {
-    @apply cursor-pointer border-none bg-transparent;
+    @apply cursor-pointer border-none;
     height: var(--table-row-h);
-  }
-
-  .waterfall-row:hover {
-    background-color: var(--table-hover-bg);
   }
 
   .waterfall-row__title {
@@ -298,19 +294,6 @@
   }
 
   .waterfall-row--matched {
-    background-color: color-mix(
-      in oklab,
-      var(--color-primary) 12%,
-      transparent
-    );
-  }
-
-  .waterfall-row--matched:hover,
-  .waterfall-row--matched:global(.table-row--selected) {
-    background-color: color-mix(
-      in oklab,
-      var(--color-primary) 22%,
-      transparent
-    );
+    --item-idle-bg: color-mix(in oklab, var(--color-primary) 12%, transparent);
   }
 </style>

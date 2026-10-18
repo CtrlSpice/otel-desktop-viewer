@@ -16,7 +16,6 @@
   import { navigate, buildSearch, withQueryPatch } from '@/route'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
   import type { ImportFailure } from '@/types/import-types'
-  import { PANEL_DEFAULT_REM } from '@/state/panel-width'
 
   let {
     importFailure = null,
@@ -82,8 +81,6 @@
   drawerID="signal-drawer"
   drawerLabel="Evals"
   itemKey={item => item.id}
-  defaultDetailRem={PANEL_DEFAULT_REM}
-  resizableStorageKey="evals:detail-width"
 >
   {#snippet drawerSearch()}
     <div class="flex w-full min-w-0 items-center gap-1">
@@ -167,7 +164,7 @@
             >
               <th scope="row" class="table-cell text-left font-normal"
                 ><button
-                  class="btn btn-ghost btn-sm h-auto justify-start text-left whitespace-normal"
+                  class="btn btn-ghost btn-sm h-auto justify-start text-left whitespace-normal hover:bg-transparent"
                   aria-pressed={attempt?.id === item.id}
                   onclick={() => update({ run: run.id, attempt: item.id })}
                   >{item.name}</button

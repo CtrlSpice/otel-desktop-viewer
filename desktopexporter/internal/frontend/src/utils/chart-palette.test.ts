@@ -59,20 +59,19 @@ describe('categoricalPalette', () => {
   it('uses only the approved unique colours for every theme', () => {
     for (const [theme, families] of Object.entries(CHART_PALETTES)) {
       const approved = Object.values(families).flat()
-      const pool = categoricalPalette(30, 'pine', theme)
-      expect(pool).toHaveLength(30)
+      const pool = categoricalPalette(25, 'pine', theme)
+      expect(pool).toHaveLength(25)
       expect(new Set(pool)).toEqual(new Set(approved))
-      expect(new Set(pool).size).toBe(30)
+      expect(new Set(pool).size).toBe(25)
     }
   })
 
   it('interleaves families from the requested start with stable prefixes', () => {
-    const pool = categoricalPalette(30, 'gold', 'rose-pine-dawn')
-    expect(pool.slice(0, 6)).toEqual([
+    const pool = categoricalPalette(25, 'gold', 'rose-pine-dawn')
+    expect(pool.slice(0, 5)).toEqual([
       '#f0af5d',
       '#d88480',
       '#917cab',
-      '#aa546a',
       '#2b6c85',
       '#559695',
     ])
@@ -82,8 +81,8 @@ describe('categoricalPalette', () => {
   })
 
   it('repeats the finite approved pool deterministically after capacity', () => {
-    const pool = categoricalPalette(35, 'pine', 'rose-pine')
-    expect(pool.slice(30)).toEqual(pool.slice(0, 5))
+    const pool = categoricalPalette(30, 'pine', 'rose-pine')
+    expect(pool.slice(25)).toEqual(pool.slice(0, 5))
   })
 
   it('clamps non-positive counts and floors fractional counts', () => {

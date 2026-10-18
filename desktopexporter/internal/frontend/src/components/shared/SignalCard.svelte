@@ -56,7 +56,7 @@
 
 <button
   type="button"
-  class="signal-row {selected ? 'signal-row--selected' : ''}"
+  class="signal-row item-state {selected ? 'signal-row--selected' : ''}"
   onclick={() => onclick?.(id)}
   aria-pressed={selected}
 >
@@ -168,37 +168,10 @@
      */
     --signal-card-row-h: 1.5rem;
     /* Share the card surface with the badge background and title fade. */
-    --row-surface: var(--color-base-200);
-    @apply flex w-full flex-col gap-0 rounded-xl px-3 py-2.5 text-left text-sm leading-snug transition-colors duration-100;
-    background: var(--row-surface);
-    box-shadow: 0 2px 6px rgb(0 0 0 / 0.1);
+    --item-idle-bg: var(--color-base-100);
+    --row-surface: var(--item-state-bg);
+    @apply flex w-full flex-col gap-0 rounded-xl px-3 py-2.5 text-left text-sm leading-snug;
     cursor: pointer;
-  }
-
-  .signal-row:hover {
-    --row-surface: color-mix(
-      in srgb,
-      var(--color-base-300) 50%,
-      var(--color-base-200)
-    );
-  }
-
-  .signal-row--selected {
-    box-shadow:
-      inset 0 0 0 1px var(--color-primary),
-      0 2px 6px rgb(0 0 0 / 0.1);
-  }
-
-  .signal-row:focus-visible {
-    outline: 2px solid var(--color-primary);
-    outline-offset: -2px;
-  }
-
-  @media (forced-colors: active) {
-    .signal-row:focus-visible {
-      outline: 2px solid Highlight;
-      outline-offset: -2px;
-    }
   }
 
   /* Single-line rows: fixed height + flex centering matches detail-cell

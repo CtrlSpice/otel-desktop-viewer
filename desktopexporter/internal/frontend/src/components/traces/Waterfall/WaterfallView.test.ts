@@ -100,7 +100,7 @@ describe('WaterfallView bigint domain geometry', () => {
 
     expect(rows.map(row => row.color)).toEqual([
       '#917cab',
-      '#aa546a',
+      '#2b6c85',
       'var(--color-error)',
     ])
   })

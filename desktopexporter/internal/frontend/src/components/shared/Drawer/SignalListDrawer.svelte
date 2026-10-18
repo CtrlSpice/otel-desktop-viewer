@@ -18,8 +18,17 @@
   import type { Snippet } from 'svelte'
   import { onDestroy, onMount, tick } from 'svelte'
   import VirtualList from '@humanspeak/svelte-virtual-list'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import { ArrowUp02Icon } from '@hugeicons/core-free-icons'
+  import PanelToggle from '../PanelToggle.svelte'
+  import PanelClip from '../PanelClip.svelte'
   import WorkspaceToolbar from '@/components/shared/Toolbar/WorkspaceToolbar.svelte'
   import { startDrag, type DragHandle } from '@/components/shared/utils/drag'
+  import {
+    remToPx,
+    PANEL_CLOSE_OVERSHOOT_REM,
+    PANEL_DRAG_RESISTANCE,
+  } from '@/state/panel-width'
   import {
     drawerWidth,
     MIN_DRAWER_WIDTH_REM,
@@ -43,12 +52,13 @@
     refreshAsideTip?: string
     /** When true, an empty list shows a loading gap instead of the empty state (initial fetch). */
     loading?: boolean
-    /** Page has no list (Home): hide the drawer and its toggle.
+    /** Leave the drawer blank for pages with no list yet (Home).
      * Empty result lists still show the drawer's empty state. */
-    railOnly?: boolean
+    emptyDrawer?: boolean
     drawerChromeToolbar?: Snippet
     drawerSearch?: Snippet
     drawerControls?: Snippet
+    navigationTrailing?: Snippet
     footer?: Snippet
     children: Snippet
   }
@@ -68,15 +78,14 @@
     refreshPulse = false,
     refreshAsideTip = '',
     loading = false,
-    railOnly = false,
+    emptyDrawer = false,
     drawerChromeToolbar,
     drawerSearch,
     drawerControls,
+    navigationTrailing,
     footer,
     children,
   }: Props<T> = $props()
-
-  const resizingEnabled = false
 
   /*
    * Drawer open/closed is a single global preference shared by every
@@ -100,6 +109,8 @@
   // transition on a value changing every pointermove makes the edge lag the
   // cursor instead of tracking it.
   let isResizing = $state(false)
+  let dragWidthRem = $state<number | null>(null)
+  const drawerShown = $derived(drawerOpen || (dragWidthRem ?? 0) > 0)
   let drag: DragHandle | null = null
 
   function remPerPx(): number {
@@ -107,15 +118,9 @@
     return Number.isFinite(root) && root > 0 ? 1 / root : 1 / 16
   }
 
-  /* Dragging well past the floor collapses the drawer to its rail, and
-   * dragging outward from the rail opens it again -- the overshoot
-   * pattern IDE sidebars use. Distance, not a dwell timer: the drag
-   * already expresses intent as distance, the state change previews live
-   * under the pointer (pull back and it reverses), and nothing fires on
-   * someone who merely paused at the floor to think. The two thresholds
-   * differ so the boundary has hysteresis and cannot flicker. */
-  const COLLAPSE_OVERSHOOT_REM = 6
-  const REOPEN_OVERSHOOT_REM = 5
+  // Track the pointer below the normal width floor. Choose open/closed only
+  // on release, so reversing a drag never triggers a mid-gesture jump.
+  const REOPEN_THRESHOLD_REM = 1.5
 
   function persistDrawerOpen(open: boolean) {
     syncDrawerOpenPreference(open)
@@ -124,76 +129,48 @@
     }
   }
 
-  /* Two kinds of width change happen mid-drag and they need opposite
-   * treatment. Pointer tracking must be instant -- a tween on a value
-   * changing every pointermove makes the edge lag the cursor. The
-   * open/rail flip is the opposite: it is a 400px jump the pointer did
-   * not make, and rendering it in one frame reads as a glitch. So the
-   * flip briefly lifts the instant suppression and animates, then
-   * tracking snaps back to instant. */
-  const SNAP_TWEEN_MS = 220
-  let snapTween = $state(false)
-  let snapTimer: ReturnType<typeof setTimeout> | undefined
-
-  function beginSnapTween() {
-    snapTween = true
-    clearTimeout(snapTimer)
-    snapTimer = setTimeout(() => {
-      snapTween = false
-    }, SNAP_TWEEN_MS)
-  }
-
   function handleResizeStart(e: PointerEvent) {
     if (isResizing) return
-    isResizing = true
     const wasOpen = drawerOpen
     const rememberedRem = drawerWidth.rem
-    // Open drags measure from the current width. Closed drags seed just
-    // under the reopen threshold, so a short outward tug opens the drawer
-    // rather than demanding the pointer travel the whole missing width.
-    const seedRem = wasOpen
-      ? rememberedRem
-      : MIN_DRAWER_WIDTH_REM - COLLAPSE_OVERSHOOT_REM
     const perPx = remPerPx()
+    // Start at the rendered edge, including when a previous settle is interrupted.
+    const handle = e.currentTarget as HTMLElement
+    const seedRem = handle.parentElement!.getBoundingClientRect().width * perPx
     let lastDesired = seedRem
+    dragWidthRem = seedRem
+    isResizing = true
     drag = startDrag(e, {
       axis: 'x',
       onMove: delta => {
-        // Unclamped: the store pins the width at the floor, and the pixels
-        // past it are what measure intent to close or open.
-        lastDesired = seedRem + delta * perPx
-        drawerWidth.preview(lastDesired)
-        const overshoot = MIN_DRAWER_WIDTH_REM - lastDesired
-        if (drawerOpen && overshoot > COLLAPSE_OVERSHOOT_REM) {
-          drawerOpen = false
-          beginSnapTween()
-        } else if (!drawerOpen && overshoot < REOPEN_OVERSHOOT_REM) {
-          drawerOpen = true
-          beginSnapTween()
-        }
+        lastDesired = Math.max(
+          0,
+          Math.min(MAX_DRAWER_WIDTH_REM, seedRem + delta * perPx)
+        )
+        dragWidthRem =
+          wasOpen && lastDesired < MIN_DRAWER_WIDTH_REM
+            ? MIN_DRAWER_WIDTH_REM -
+              (MIN_DRAWER_WIDTH_REM - lastDesired) * PANEL_DRAG_RESISTANCE
+            : lastDesired
       },
       onEnd: () => {
         isResizing = false
         drag = null
-        if (!drawerOpen) {
-          // Ends closed -- whether it started that way or was closed by
-          // this drag, the remembered width survives uncommitted:
-          // reopening should restore the width the person actually chose,
-          // not the floor they dragged through on the way out.
-          drawerWidth.preview(rememberedRem)
-          if (wasOpen) persistDrawerOpen(false)
-          return
+        drawerOpen =
+          lastDesired >=
+          (wasOpen
+            ? MIN_DRAWER_WIDTH_REM - PANEL_CLOSE_OVERSHOOT_REM
+            : REOPEN_THRESHOLD_REM)
+        if (drawerOpen) {
+          drawerWidth.preview(
+            !wasOpen && lastDesired < MIN_DRAWER_WIDTH_REM
+              ? rememberedRem
+              : lastDesired
+          )
+          drawerWidth.commit()
         }
-        if (!wasOpen) {
-          persistDrawerOpen(true)
-          if (lastDesired < MIN_DRAWER_WIDTH_REM) {
-            // A tug that never cleared the floor means "open it", not
-            // "open it at the floor".
-            drawerWidth.preview(rememberedRem)
-            return
-          }
-        }
-        drawerWidth.commit()
+        if (drawerOpen !== wasOpen) persistDrawerOpen(drawerOpen)
+        dragWidthRem = null
       },
     })
   }
@@ -251,7 +228,6 @@
   // selection suppressed for the rest of the session.
   onDestroy(() => {
     drag?.cancel()
-    clearTimeout(snapTimer)
   })
 
   // Suppress width tween when remounting across signal routes (same preference).
@@ -265,8 +241,6 @@
     })
   })
 
-  // Home has no list. Search and navigation stay mounted above the drawer.
-  let effectivelyOpen = $derived(railOnly ? false : drawerOpen)
   let showEmptyState = $derived(items.length === 0 && !loading)
 
   let drawerPanelID = $derived(`${drawerID}-panel`)
@@ -283,6 +257,28 @@
   }
   let vlistRef = $state<VirtualListRef | null>(null)
   let drawerBodyEl = $state<HTMLDivElement | null>(null)
+  let listScrolled = $state(false)
+  let scrollTopFocused = $state(false)
+
+  function handleListScroll(event: Event) {
+    const viewport = event.target
+    if (
+      viewport instanceof HTMLElement &&
+      viewport.classList.contains('signal-drawer__vlist-viewport')
+    ) {
+      listScrolled = viewport.scrollTop > 1
+    }
+  }
+
+  function scrollToTop() {
+    void vlistRef?.scroll({
+      index: 0,
+      align: 'top',
+      smoothScroll: !window.matchMedia('(prefers-reduced-motion: reduce)')
+        .matches,
+      shouldThrowOnBounds: false,
+    })
+  }
   let lastScrolledSelection: string | null = null
   let preferredItemKey = $state<string | null>(null)
   let lastRovingSelection: string | null | undefined
@@ -348,7 +344,7 @@
 
   $effect(() => {
     const body = drawerBodyEl
-    if (!effectivelyOpen || showEmptyState || !body) return
+    if (!drawerOpen || showEmptyState || !body) return
 
     // The virtual-list package makes its scroll viewport focusable. Rows own
     // keyboard entry here, so leaving the viewport in the tab order creates a
@@ -439,7 +435,7 @@
   }
 
   $effect(() => {
-    if (!effectivelyOpen) {
+    if (!drawerOpen) {
       lastScrolledSelection = null
       renderedRange = { start: 0, end: 1 }
     }
@@ -468,7 +464,7 @@
 
   $effect(() => {
     const id = selectedID
-    if (!effectivelyOpen || !vlistRef || !id) return
+    if (!drawerOpen || !vlistRef || !id) return
     if (id === lastScrolledSelection) return
     const idx = items.findIndex(item => itemKey(item) === id)
     if (idx < 0) return
@@ -487,19 +483,29 @@
   <WorkspaceToolbar
     search={drawerSearch}
     controls={drawerChromeToolbar}
+    {navigationTrailing}
     {onRefresh}
     {refreshPulse}
     {refreshAsideTip}
-  />
-  <div
-    class="signal-drawer drawer drawer-open"
-    class:signal-drawer--no-list={railOnly}
   >
+    {#snippet navigationLeading()}
+      <PanelToggle
+        side="left"
+        open={drawerOpen}
+        controls={drawerPanelID}
+        onclick={() => {
+          drawerOpen = !drawerOpen
+          persistDrawerOpen(drawerOpen)
+        }}
+      />
+    {/snippet}
+  </WorkspaceToolbar>
+  <div class="signal-drawer drawer drawer-open">
     <input
       id={drawerID}
       type="checkbox"
       class="drawer-toggle signal-drawer-toggle"
-      checked={effectivelyOpen}
+      checked={drawerOpen}
       disabled
       aria-hidden="true"
       tabindex="-1"
@@ -508,96 +514,120 @@
     <div class="drawer-side">
       <div
         id={drawerPanelID}
-        class="signal-drawer__panel flex h-full flex-col is-drawer-close:w-2"
-        class:signal-drawer__panel--instant={(skipWidthTransition ||
-          isResizing) &&
-          !snapTween}
-        class:signal-drawer__panel--snap={snapTween}
-        style={effectivelyOpen ? `width: ${drawerWidth.rem}rem` : undefined}
+        class="signal-drawer__panel flex h-full flex-col"
+        class:signal-drawer__panel--instant={skipWidthTransition || isResizing}
+        style:width={`${dragWidthRem ?? (drawerOpen ? drawerWidth.rem : 0)}rem`}
       >
-        {#if !railOnly && resizingEnabled}
-          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-          <div
-            class="col-resize-bar col-resize-bar--in-flow signal-drawer__resize"
-            class:col-resize-bar--active={isResizing}
-            onpointerdown={handleResizeStart}
-            ondblclick={handleResizeDblclick}
-            onkeydown={handleResizeKeydown}
-            role="separator"
-            aria-orientation="vertical"
-            aria-label={effectivelyOpen ? 'Resize the list' : 'Open the list'}
-            aria-valuenow={Math.round(drawerWidth.rem)}
-            aria-valuemin={MIN_DRAWER_WIDTH_REM}
-            aria-valuemax={MAX_DRAWER_WIDTH_REM}
-            tabindex="0"
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+        <div
+          class="col-resize-bar col-resize-bar--in-flow signal-drawer__resize"
+          class:col-resize-bar--active={isResizing}
+          onpointerdown={handleResizeStart}
+          ondblclick={handleResizeDblclick}
+          onkeydown={handleResizeKeydown}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={drawerOpen ? 'Resize the list' : 'Open the list'}
+          aria-valuenow={Math.round(drawerWidth.rem)}
+          aria-valuemin={MIN_DRAWER_WIDTH_REM}
+          aria-valuemax={MAX_DRAWER_WIDTH_REM}
+          tabindex="0"
+        >
+          <div class="col-resize-bar__line"></div>
+        </div>
+        <div
+          class="signal-drawer__contents"
+          class:signal-drawer__contents--closed={!drawerShown}
+          inert={!drawerShown}
+          aria-hidden={!drawerShown}
+        >
+          <PanelClip
+            minimumSize={emptyDrawer ? 0 : remToPx(MIN_DRAWER_WIDTH_REM)}
           >
-            <div class="col-resize-bar__line"></div>
-          </div>
-        {/if}
-        <!-- Expanded: list (unmounted when collapsed so footer/count cannot leak) -->
-        {#if effectivelyOpen}
-          {#if drawerControls}
-            <div
-              class="signal-drawer__controls"
-              role="group"
-              aria-label={`${label} list controls`}
-            >
-              {@render drawerControls()}
-            </div>
-          {/if}
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div
-            class="signal-drawer__body"
-            bind:this={drawerBodyEl}
-            onfocusin={handleListFocusin}
-            onkeydown={handleListKeydown}
-          >
-            {#if showEmptyState}
-              <div class="signal-drawer__empty" role="status">
-                <p class="signal-drawer__empty-title">
-                  No {label.toLowerCase()} found
-                </p>
-                <p class="signal-drawer__empty-hint">
-                  Try widening the time range or clearing the search.
-                </p>
-              </div>
-            {:else}
-              <VirtualList
-                bind:this={vlistRef}
-                {items}
-                {itemKey}
-                defaultEstimatedItemHeight={72}
-                bufferSize={10}
-                containerClass="signal-drawer__vlist"
-                viewportClass="signal-drawer__vlist-viewport"
-                viewportLabel={`${label} list`}
-                itemsClass="signal-drawer__vlist-items"
-                onRangeChange={handleRenderedRange}
+            {#if !emptyDrawer && drawerControls}
+              <div
+                class="signal-drawer__controls"
+                role="group"
+                aria-label={`${label} list controls`}
               >
-                {#snippet renderItem(item)}
-                  {@const key = itemKey(item)}
-                  <div
-                    class="signal-drawer__item"
-                    data-drawer-item-key={key}
-                    use:navigableDrawerItem={{
-                      tabIndex: key === rovingItemKey ? 0 : -1,
-                    }}
-                  >
-                    {@render itemSnippet(item, selectedID === key)}
-                  </div>
-                {/snippet}
-              </VirtualList>
+                {@render drawerControls()}
+              </div>
             {/if}
-          </div>
-        {/if}
+            {#if !emptyDrawer}
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div
+                class="signal-drawer__body"
+                bind:this={drawerBodyEl}
+                onfocusin={handleListFocusin}
+                onkeydown={handleListKeydown}
+                onscrollcapture={handleListScroll}
+              >
+                {#if showEmptyState}
+                  <div class="signal-drawer__empty" role="status">
+                    <p class="signal-drawer__empty-title">
+                      No {label.toLowerCase()} found
+                    </p>
+                    <p class="signal-drawer__empty-hint">
+                      Try widening the time range or clearing the search.
+                    </p>
+                  </div>
+                {:else}
+                  <VirtualList
+                    bind:this={vlistRef}
+                    {items}
+                    {itemKey}
+                    defaultEstimatedItemHeight={72}
+                    bufferSize={10}
+                    containerClass="signal-drawer__vlist"
+                    viewportClass="signal-drawer__vlist-viewport"
+                    viewportLabel={`${label} list`}
+                    itemsClass="signal-drawer__vlist-items"
+                    onRangeChange={handleRenderedRange}
+                  >
+                    {#snippet renderItem(item)}
+                      {@const key = itemKey(item)}
+                      <div
+                        class="signal-drawer__item"
+                        data-drawer-item-key={key}
+                        use:navigableDrawerItem={{
+                          tabIndex: key === rovingItemKey ? 0 : -1,
+                        }}
+                      >
+                        {@render itemSnippet(item, selectedID === key)}
+                      </div>
+                    {/snippet}
+                  </VirtualList>
+                  {#if listScrolled || scrollTopFocused}
+                    <button
+                      type="button"
+                      class="navigator-scroll-top btn btn-circle btn-primary"
+                      aria-label="Scroll to top"
+                      title="Scroll to top"
+                      onclick={scrollToTop}
+                      onfocus={() => (scrollTopFocused = true)}
+                      onblur={() => (scrollTopFocused = false)}
+                    >
+                      <HugeiconsIcon
+                        icon={ArrowUp02Icon}
+                        size={16}
+                        strokeWidth={1.5}
+                        aria-hidden="true"
+                      />
+                    </button>
+                  {/if}
+                {/if}
+              </div>
+            {/if}
 
-        <!-- Expanded: footer -->
-        {#if effectivelyOpen && footer}
-          <div class="signal-drawer__footer">
-            {@render footer()}
-          </div>
-        {/if}
+            <!-- Expanded: footer -->
+            {#if !emptyDrawer && footer}
+              <div class="signal-drawer__footer">
+                {@render footer()}
+              </div>
+            {/if}
+          </PanelClip>
+        </div>
       </div>
     </div>
 
@@ -612,10 +642,6 @@
 
   .workspace-shell {
     @apply flex min-h-0 min-w-0 flex-1 flex-col;
-  }
-
-  .signal-drawer--no-list :global(.drawer-side) {
-    display: none;
   }
 
   .signal-drawer {
@@ -634,18 +660,23 @@
   }
 
   .signal-drawer__panel {
-    @apply relative bg-base-100 transition-[width] duration-200;
+    @apply relative bg-base-100;
+    transition: width var(--panel-motion-duration) var(--panel-motion-easing);
+  }
+
+  .signal-drawer__contents {
+    @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden;
+    visibility: visible;
+    transition: visibility 0s;
+  }
+
+  .signal-drawer__contents--closed {
+    visibility: hidden;
+    transition-delay: var(--panel-motion-duration);
   }
 
   .signal-drawer__panel--instant {
     transition: none !important;
-  }
-
-  /* The open/rail flip mid-drag: a fast, decisive deceleration. Duration
-     matches SNAP_TWEEN_MS in the script, which lifts --instant for
-     exactly this long before pointer tracking goes back to instant. */
-  .signal-drawer__panel--snap {
-    transition: width 220ms cubic-bezier(0.2, 0, 0, 1) !important;
   }
 
   /* Sits on the panel's trailing edge. The shared .col-resize-bar supplies the cursor, hit width
@@ -656,12 +687,6 @@
     margin-right: calc(var(--resize-bar-hit-width) / -2);
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .signal-drawer__panel {
-      transition: none !important;
-    }
-  }
-
   /* ── Body (list) ── */
   .signal-drawer__controls {
     @apply mx-3 mt-3 flex min-w-0 shrink-0 items-center rounded-xl bg-base-200;
@@ -669,7 +694,11 @@
   }
 
   .signal-drawer__body {
-    @apply flex-1 min-h-0 overflow-hidden pt-3;
+    @apply relative flex-1 min-h-0 overflow-hidden pt-3;
+  }
+
+  .navigator-scroll-top {
+    @apply absolute bottom-3 right-6 z-10 size-8 p-0 shadow-lg shadow-primary/25;
   }
 
   .signal-drawer__item {

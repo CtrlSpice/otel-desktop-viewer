@@ -9,11 +9,7 @@
 
 <script lang="ts" generics="T extends string">
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import {
-    ArrowDown02Icon,
-    ArrowUp02Icon,
-    Sorting05Icon,
-  } from '@hugeicons/core-free-icons'
+  import { ArrowDown02Icon, Sorting05Icon } from '@hugeicons/core-free-icons'
   import {
     createPopoverID,
     setupAnchorPopover,
@@ -80,12 +76,11 @@
     class="shrink-0 text-base-content/60"
     aria-hidden="true"
   />
-  <span class="shrink-0 text-base-content/60">Sort By:</span>
-  <span class="ml-auto min-w-0 truncate text-right">{currentLabel}</span>
+  <span class="min-w-0 truncate">{currentLabel}</span>
 </button>
 <button
   type="button"
-  class="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-xl text-base-content/70 hover:bg-base-300/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
+  class="btn btn-circle btn-soft btn-primary m-1 size-8 min-h-0 shrink-0 border-0 p-0 shadow-none"
   aria-label={direction === 'asc' ? 'Sort descending' : 'Sort ascending'}
   title={direction === 'asc'
     ? 'Ascending — switch to descending'
@@ -93,10 +88,10 @@
   onclick={() => onchange(value, direction === 'asc' ? 'desc' : 'asc')}
 >
   <HugeiconsIcon
-    icon={direction === 'asc' ? ArrowUp02Icon : ArrowDown02Icon}
+    icon={ArrowDown02Icon}
+    class="shrink-0 {direction === 'asc' ? 'rotate-180' : ''}"
     size={16}
     strokeWidth={1.5}
-    class="shrink-0"
     aria-hidden="true"
   />
 </button>
@@ -113,7 +108,7 @@
       type="button"
       aria-pressed={option.value === value}
       onclick={() => selectSort(option)}
-      class="flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left font-sans text-sm font-normal hover:bg-base-300/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary aria-pressed:text-primary"
+      class="item-state flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left font-sans text-sm font-normal"
     >
       {option.label}
     </button>

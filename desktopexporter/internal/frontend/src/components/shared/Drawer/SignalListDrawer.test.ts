@@ -444,12 +444,16 @@ describe('SignalListDrawer collapse behaviour', () => {
     )
   })
 
-  it('drops the list and footer when collapsed', async () => {
+  it('keeps the list and footer mounted but inert when collapsed', async () => {
     setTestUrl('/traces')
     renderDrawer({ footer })
     await userEvent.click(screen.getByLabelText('Collapse sidebar'))
-    expect(screen.queryByText('GET /checkout')).not.toBeInTheDocument()
-    expect(screen.queryByText('2 traces')).not.toBeInTheDocument()
+    expect(
+      screen.getByText('GET /checkout').closest('.signal-drawer__contents')
+    ).toHaveProperty('inert', true)
+    expect(
+      screen.getByText('2 traces').closest('.signal-drawer__contents')
+    ).toHaveProperty('inert', true)
   })
 
   it('keeps the page content visible when collapsed', async () => {
@@ -471,7 +475,9 @@ describe('SignalListDrawer collapse behaviour', () => {
     setTestUrl('/traces')
     renderDrawer()
     expect(screen.getByLabelText('Open sidebar')).toBeInTheDocument()
-    expect(screen.queryByText('GET /checkout')).not.toBeInTheDocument()
+    expect(
+      screen.getByText('GET /checkout').closest('.signal-drawer__contents')
+    ).toHaveProperty('inert', true)
   })
 
   it('expands again from the workspace toolbar', async () => {
@@ -492,38 +498,50 @@ describe('SignalListDrawer collapse behaviour', () => {
   })
 })
 
-describe('SignalListDrawer rail-only pages', () => {
-  it('puts primary navigation before page controls in the tab order', async () => {
+describe('SignalListDrawer empty-drawer pages', () => {
+  it('puts the drawer toggle before primary navigation in the tab order', async () => {
     setTestUrl('/')
     renderDrawer({
-      railOnly: true,
+      emptyDrawer: true,
       items: [],
       children: focusablePageContent,
     })
     const user = userEvent.setup()
 
     await user.tab()
+    expect(
+      screen.getByRole('button', { name: 'Collapse sidebar' })
+    ).toHaveFocus()
+    await user.tab()
     expect(screen.getByRole('link', { name: 'Home' })).toHaveFocus()
   })
 
-  it('stays collapsed even when the stored preference says open', () => {
+  it('keeps the empty drawer open when the stored preference says open', () => {
     localStorage.setItem(DRAWER_OPEN_KEY, 'true')
     setTestUrl('/')
-    renderDrawer({ railOnly: true, items: [] })
+    renderDrawer({ emptyDrawer: true, items: [] })
+    expect(
+      screen.getByRole('button', { name: 'Collapse sidebar' })
+    ).toHaveAttribute('aria-expanded', 'true')
+    expect(
+      screen.getByRole('separator', { name: 'Resize the list' })
+    ).toBeInTheDocument()
     expect(screen.getByRole('navigation', { name: 'Primary' })).toBeVisible()
     expect(screen.getByText('page body')).toBeInTheDocument()
   })
 
-  it('offers no control to expand the drawer', () => {
+  it('can collapse and reopen the empty drawer', async () => {
     setTestUrl('/')
-    renderDrawer({ railOnly: true, items: [] })
-    expect(screen.queryByLabelText('Open sidebar')).not.toBeInTheDocument()
-    expect(document.querySelector('input[type="checkbox"]')).toBeDisabled()
+    renderDrawer({ emptyDrawer: true, items: [] })
+    await userEvent.click(screen.getByLabelText('Collapse sidebar'))
+    expect(localStorage.getItem(DRAWER_OPEN_KEY)).toBe('false')
+    await userEvent.click(screen.getByLabelText('Open sidebar'))
+    expect(localStorage.getItem(DRAWER_OPEN_KEY)).toBe('true')
   })
 
   it('shows neither the list nor the empty state', () => {
     setTestUrl('/')
-    renderDrawer({ railOnly: true })
+    renderDrawer({ emptyDrawer: true })
     expect(screen.queryByText('GET /checkout')).not.toBeInTheDocument()
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
@@ -569,7 +587,11 @@ describe('SignalListDrawer drag to collapse and reopen', () => {
     drawerWidth.preview(30)
     renderDrawer()
     // jsdom has no root font size, so the component falls back to 16px/rem.
-    // From 30rem, the floor is 22 and the close threshold 16: 15rem of
+    vi.spyOn(
+      handle(true).parentElement!,
+      'getBoundingClientRect'
+    ).mockReturnValue(new DOMRect(0, 0, 30 * 16, 600))
+    // From 30rem, the floor is 22 and the close threshold 18: 15rem of
     // travel (240px) is decisively past it.
     drag(handle(true), 500, 500 - 15 * 16)
     expect(localStorage.getItem(DRAWER_OPEN_KEY)).toBe('false')
@@ -589,6 +611,9 @@ describe('SignalListDrawer drag to collapse and reopen', () => {
     drawerWidth.preview(30)
     renderDrawer()
     const el = handle(true)
+    vi.spyOn(el.parentElement!, 'getBoundingClientRect').mockReturnValue(
+      new DOMRect(0, 0, 30 * 16, 600)
+    )
     const opts = {
       bubbles: true,
       pointerId: 1,

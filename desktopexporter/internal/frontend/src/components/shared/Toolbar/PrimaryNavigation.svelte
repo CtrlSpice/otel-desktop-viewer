@@ -128,9 +128,7 @@
       href={item.id === 'home' || item.id === 'evals'
         ? item.path
         : signalHref(item.id, routeContext.route.query)}
-      class="tab shrink-0 flex-nowrap items-center gap-2 px-4 text-sm before:left-0 before:w-full before:text-primary {active
-        ? 'before:h-px before:border-t'
-        : ''}"
+      class="tab shrink-0 flex-nowrap items-center gap-2 px-4 text-sm"
       class:tab-active={active}
       aria-current={active ? 'page' : undefined}
       onclick={event => goto(item.id, event)}

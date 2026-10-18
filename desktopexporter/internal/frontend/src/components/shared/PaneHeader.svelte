@@ -267,7 +267,7 @@
     <div
       role={navigation ? 'navigation' : 'tablist'}
       aria-label={ariaLabel}
-      class="tabs {tabSizeClass} pane-header__tabs pane-header__tabs--{layout}"
+      class="tabs tabs-border {tabSizeClass} pane-header__tabs pane-header__tabs--{layout}"
       onkeydown={navigation ? undefined : handleTablistKeydown}
     >
       {#if layout === 'right'}
@@ -426,17 +426,7 @@
 <style lang="postcss">
   @reference "../../app.css";
 
-  /*
-   * Outer header strip. Shares the .pane-header name with the
-   * global helper in app.css (same surface concept).
-   *
-   * Note the local class is .pane-header here (component-scoped)
-   * and shares the name with the global .pane-header in app.css on
-   * purpose — both describe the same surface. We don't @apply the
-   * global one because we want full control over flex layout and
-   * the title/tabs/right grid; the global one is a "fill + height"
-   * helper for ad-hoc consumers.
-   */
+  /* Shared theme surface; the workspace toolbar can override the fill. */
   .pane-header {
     @apply flex min-w-0 shrink-0 flex-nowrap items-end gap-2 overflow-hidden px-0.5 pt-0.5;
     background-color: var(--pane-header-bg, var(--color-base-300));
@@ -644,31 +634,6 @@
     border-radius: 0;
     background: transparent;
     box-shadow: none;
-  }
-
-  /* One selection language everywhere: Daisy's lifted borders stay absent,
-     while the inset underline does not alter tab or header geometry. */
-  .pane-header :global(.pane-header__tabs > .pane-header__tab.tab-active) {
-    color: var(--color-base-content);
-    background: var(
-      --pane-tab-active-bg,
-      color-mix(in oklab, var(--color-primary) 7%, transparent)
-    );
-    box-shadow: inset 0 -2px var(--color-primary);
-  }
-
-  .pane-header :global(.pane-header__tabs > .pane-header__tab:focus-visible) {
-    color: var(--color-base-content);
-    outline: none;
-    background: color-mix(in oklab, var(--color-primary) 12%, transparent);
-    box-shadow: inset 0 -3px var(--color-primary);
-  }
-
-  @media (forced-colors: active) {
-    .pane-header :global(.pane-header__tabs > .pane-header__tab:focus-visible) {
-      outline: 2px solid Highlight;
-      outline-offset: -2px;
-    }
   }
 
   /* Equal layout: each tab gets 1fr of the row. No trail; no

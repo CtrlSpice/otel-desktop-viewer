@@ -24,9 +24,9 @@
 </script>
 
 <div
-  class="search-bar flex min-w-0 items-center gap-1 rounded-full text-sm text-base-content {search
-    ? 'flex-[0_1_60vw] bg-base-300 px-1.5'
-    : 'flex-1'}"
+  class="search-bar flex w-full min-w-0 items-center gap-1 rounded-full text-sm text-base-content {search
+    ? 'bg-base-300 px-1.5'
+    : ''}"
   role={search ? 'search' : undefined}
   aria-label={search ? 'Workspace search' : undefined}
 >
@@ -37,6 +37,7 @@
         class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-bottom"
         aria-label={refreshLabel}
         data-tip={refreshLabel}
+        disabled={!onRefresh}
         onclick={onRefresh}
       >
         <HugeiconsIcon

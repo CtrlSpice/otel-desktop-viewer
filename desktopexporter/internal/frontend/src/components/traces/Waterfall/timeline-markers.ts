@@ -1,5 +1,4 @@
 import type { EventData, SpanNode, TraceLogSummary } from '@/types/api-types'
-import { severityBand } from '@/components/logs/log-severity'
 
 export const WATERFALL_BAR_HEIGHT_REM = 0.875
 export const MARKER_GLYPH_REM = WATERFALL_BAR_HEIGHT_REM
@@ -167,24 +166,6 @@ export function markerComposition(
 }
 
 export function markerColor(marker: TimelineMarker, spanColor: string): string {
-  const logs = marker.members.filter(
-    (member): member is Extract<TimelineRecord, { kind: 'log' }> =>
-      member.kind === 'log'
-  )
-  if (logs.length > 0) {
-    const highest = logs.reduce((current, member) =>
-      member.log.severityNumber > current.log.severityNumber ? member : current
-    )
-    const colors = {
-      trace: 'var(--color-base-content)',
-      debug: 'var(--color-success)',
-      info: 'var(--color-info)',
-      warn: 'var(--color-warning)',
-      error: 'var(--color-error)',
-      fatal: 'var(--color-error)',
-    } as const
-    return colors[severityBand(highest.log.severityNumber)]
-  }
   return marker.members.some(
     member => member.kind === 'event' && member.event.name === 'exception'
   )

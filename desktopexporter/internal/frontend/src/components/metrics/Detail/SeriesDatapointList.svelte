@@ -311,8 +311,7 @@
   {@const valueParts = datapointValueParts(dp)}
   {@const formattedTime = formatDatapointTime(dp.timestamp)}
   <tr
-    class="dp-list__row"
-    class:dp-list__row--selected={selected}
+    class="dp-list__row item-state"
     data-dp-id={dp.id}
     data-dp-index={datapointIndex}
     tabindex="0"
@@ -552,22 +551,7 @@
   }
 
   .dp-list__row {
-    @apply cursor-pointer transition-colors hover:bg-base-300/30;
-  }
-
-  .dp-list__row:focus-visible {
-    position: relative;
-    z-index: 1;
-    outline: none;
-    box-shadow: inset 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
-  }
-
-  .dp-list__row--selected {
-    background-color: color-mix(
-      in oklab,
-      var(--color-primary) 18%,
-      transparent
-    );
+    @apply cursor-pointer;
   }
 
   .dp-list__td {

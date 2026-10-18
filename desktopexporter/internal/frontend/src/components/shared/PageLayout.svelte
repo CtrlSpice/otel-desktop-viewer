@@ -4,7 +4,7 @@
    *
    * Owns:
    *   1. The workspace shell: horizontal navigation/search/actions above
-   *      the resizable list drawer. `railOnly` pages (Home) omit the list;
+   *      the resizable list drawer. `emptyDrawer` pages (Home) leave it blank;
    *      the toolbar stays available on every route and at every drawer width.
    *   2. The content area: a `main` snippet (required) with an
    *      optional `detail` snippet that, when present, splits the
@@ -19,15 +19,23 @@
   import type { Snippet } from 'svelte'
   import ResizablePanels from './ResizablePanels.svelte'
   import SignalListDrawer from './Drawer/SignalListDrawer.svelte'
+  import PanelToggle from './PanelToggle.svelte'
+  import { detailWidth } from '@/state/detail-width.svelte'
+  import {
+    PANEL_DEFAULT_REM,
+    PANEL_MIN_REM,
+    PANEL_MAX_REM,
+    remToPx,
+  } from '@/state/panel-width'
 
   type Props<T> = {
     // ── Drawer (forwarded to SignalListDrawer) ─────────────────────
     /** Items rendered in the drawer list. Pass `[]` together with
-     * `railOnly` for pages with no list (Home). On list pages an
+     * `emptyDrawer` for pages with no list yet (Home). On list pages an
      * empty array renders the drawer's empty state instead. */
     items: T[]
-    /** Hide the list drawer on pages with no list (Home). */
-    railOnly?: boolean
+    /** Keep the drawer blank on pages with no list yet (Home). */
+    emptyDrawer?: boolean
     selectedID: string | null
     drawerID: string
     /** Tooltip label on the collapsed open-drawer button. */
@@ -56,31 +64,11 @@
      * isn't the drawer). Use for page-scoped controls that act on
      * the page selection (delete, prev/next, etc.). */
     pageFooter?: Snippet
-
-    // ── ResizablePanels config (only used when `detail` is set) ───
-    defaultMainWidth?: number
-    /** Absolute default for the detail pane, in rem (see
-     * ResizablePanels.defaultRightRem). Signal pages pass
-     * PANEL_DEFAULT_REM so the detail pane and the drawer start at the
-     * same width; Home keeps its fraction default -- its detail pane
-     * is stats, not an inspector. */
-    defaultDetailRem?: number
-    minMainWidth?: number
-    minDetailWidth?: number
-    /** Absolute pixel floor for the main pane. Use when fixed-size
-     * chrome (e.g. a tab strip) needs guaranteed room regardless of
-     * viewport width. The drag clamps to whichever min is larger. */
-    minMainPx?: number
-    /** Absolute pixel floor for the detail pane. */
-    minDetailPx?: number
-    /** Separate localStorage key for the resizable split position
-     * (distinct from drawer open/closed). */
-    resizableStorageKey?: string
   }
 
   let {
     items,
-    railOnly,
+    emptyDrawer,
     selectedID,
     drawerID,
     drawerLabel,
@@ -97,18 +85,21 @@
     main,
     detail,
     pageFooter,
-    defaultMainWidth = 0.7,
-    defaultDetailRem,
-    minMainWidth = 0.3,
-    minDetailWidth = 0.2,
-    minMainPx,
-    minDetailPx,
-    resizableStorageKey,
   }: Props<T> = $props()
 
-  // No-op snippet for railOnly pages (Home) that render no list -- the
-  // drawer's effectivelyOpen=false guarantees this never renders,
-  // but the prop is required so we satisfy the type.
+  const DETAIL_OPEN_KEY = 'signal-detail:open'
+  let detailOpen = $state(
+    typeof localStorage === 'undefined' ||
+      localStorage.getItem(DETAIL_OPEN_KEY) !== 'false'
+  )
+  const detailPanelID = $derived(`${drawerID}-detail`)
+
+  function setDetailOpen(open: boolean) {
+    detailOpen = open
+    localStorage.setItem(DETAIL_OPEN_KEY, String(detailOpen))
+  }
+
+  // Empty-drawer pages have no item renderer; the shared drawer still requires one.
   const noopItem: Snippet<[item: T, selected: boolean]> = $derived(
     itemSnippet ?? noopFallback
   )
@@ -116,10 +107,19 @@
 
 {#snippet noopFallback(_item: T, _selected: boolean)}{/snippet}
 
+{#snippet detailToggle()}
+  <PanelToggle
+    side="right"
+    open={detailOpen}
+    controls={detailPanelID}
+    onclick={() => setDetailOpen(!detailOpen)}
+  />
+{/snippet}
+
 <div class="page-layout">
   <SignalListDrawer
     {items}
-    {railOnly}
+    {emptyDrawer}
     {selectedID}
     {drawerID}
     label={drawerLabel}
@@ -132,19 +132,23 @@
     {drawerChromeToolbar}
     {drawerSearch}
     {drawerControls}
+    navigationTrailing={detail ? detailToggle : undefined}
     footer={drawerFooter}
   >
     <div class="page-layout__content">
       <div class="page-layout__region">
         {#if detail}
           <ResizablePanels
-            defaultLeftWidth={defaultMainWidth}
-            defaultRightRem={defaultDetailRem}
-            minLeftWidth={minMainWidth}
-            minRightWidth={minDetailWidth}
-            minLeftPx={minMainPx}
-            minRightPx={minDetailPx}
-            storageKey={resizableStorageKey}
+            rightCollapsed={!detailOpen}
+            onRightCollapsedChange={collapsed => setDetailOpen(!collapsed)}
+            rightPanelID={detailPanelID}
+            rightWidthRem={detailWidth.rem}
+            onRightWidthChange={rem => detailWidth.set(rem)}
+            defaultRightRem={PANEL_DEFAULT_REM}
+            minLeftPx={remToPx(PANEL_DEFAULT_REM)}
+            minRightPx={remToPx(PANEL_MIN_REM)}
+            maxRightPx={remToPx(PANEL_MAX_REM)}
+            storageKey="workspace-panel-split"
           >
             {#snippet leftPanel()}
               <div class="page-layout__main-chrome">

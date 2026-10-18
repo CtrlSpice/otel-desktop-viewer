@@ -1,12 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="860" height="630" viewBox="0 0 860 630" role="img" aria-labelledby="title description">
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="542" viewBox="0 0 860 542" role="img" aria-labelledby="title description">
 <title id="title">Rose Pine Dawn chart palette</title>
-<desc id="description">Six chart-colour families with five swatches each.</desc>
+<desc id="description">Five chart-colour families with five swatches each.</desc>
 <style>
   text { fill: #575279; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
   .title { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 26px; font-weight: 700; }
   .family { font-family: ui-sans-serif, system-ui, sans-serif; font-size: 17px; font-weight: 650; }
 </style>
-<rect width="860" height="630" fill="#faf4ed"/>
+<rect width="860" height="542" fill="#faf4ed"/>
 <text x="28" y="48" class="title">Rose Pine Dawn chart palette</text>
 <text x="180" y="76">1</text><text x="312" y="76">2</text><text x="444" y="76">3</text><text x="576" y="76">4</text><text x="708" y="76">5</text>
 <text x="28" y="118" class="family">Pine</text>
@@ -113,26 +113,5 @@
 <g transform="translate(708 440)">
   <rect width="112" height="48" rx="8" fill="#a1a9c5"/>
   <text x="56" y="70" text-anchor="middle">#a1a9c5</text>
-</g>
-<text x="28" y="558" class="family">Mulberry</text>
-<g transform="translate(180 528)">
-  <rect width="112" height="48" rx="8" fill="#8d273d"/>
-  <text x="56" y="70" text-anchor="middle">#8d273d</text>
-</g>
-<g transform="translate(312 528)">
-  <rect width="112" height="48" rx="8" fill="#9c3f54"/>
-  <text x="56" y="70" text-anchor="middle">#9c3f54</text>
-</g>
-<g transform="translate(444 528)">
-  <rect width="112" height="48" rx="8" fill="#aa546a"/>
-  <text x="56" y="70" text-anchor="middle">#aa546a</text>
-</g>
-<g transform="translate(576 528)">
-  <rect width="112" height="48" rx="8" fill="#b86981"/>
-  <text x="56" y="70" text-anchor="middle">#b86981</text>
-</g>
-<g transform="translate(708 528)">
-  <rect width="112" height="48" rx="8" fill="#c67e99"/>
-  <text x="56" y="70" text-anchor="middle">#c67e99</text>
 </g>
 </svg>

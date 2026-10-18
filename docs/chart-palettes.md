@@ -1,6 +1,6 @@
 # Chart Palettes
 
-The chart palette has six families with five approved swatches each. Charts interleave families and levels so neighbouring series begin far apart in both hue and lightness.
+The chart palette has five families with five approved swatches each. Charts interleave families and levels so neighbouring series begin far apart in both hue and lightness.
 
 ![Rose Pine chart palette](images/chart-palettes/rose-pine.svg)
 
@@ -19,6 +19,5 @@ The shipped swatch table is authoritative. The palette uses OKLab distance: `sqr
 | Wider endpoints | Extend both measured ramp ends by `0.040` OKLab along the row direction before endpoint-first gamut fitting. Foam's deep end additionally shifts `[0, -0.024, +0.046]` toward sea-green. |
 | Gold | Rose Pine and Moon use deep `[0.775000, 0.051303, 0.140954]` and light `[0.899603, 0.030191, 0.061682]`, with a warmer approximately 70 degree OKLCH direction. Dawn uses deep `[0.730000, 0.051303, 0.140954]`; its final light target is `[0.870000, 0.030000, 0.095000]`. |
 | Five positions | A fifth equal light-side sample was added after fitted endpoints. Dawn Gold was redistributed across all five points to retain even spacing under its final light cap. |
-| Mulberry | Rose Pine and Moon use a dark-end OKLCH hue target of 345 degrees before gamut fitting. |
 
 </details>

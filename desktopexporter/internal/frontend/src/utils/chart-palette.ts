@@ -2,7 +2,7 @@
 //
 //   - `categoricalPalette()` -- series-identity colours for line charts,
 //     histogram heatmap legends, and trace waterfall bars. Uses the approved
-//     six-family static table, rotated so the caller's requested family leads.
+//     five-family static table, rotated so the caller's requested family leads.
 //
 //   - `heatmapSwatches()` -- smooth count ramp for the histogram heatmap.
 //     Endpoints are per-theme literal hex; HCL interpolation keeps the
@@ -64,7 +64,7 @@ export function heatmapSwatches(steps: number, theme: string = ''): string[] {
 
 // ── Categorical series palette ──
 //
-// Fixed static palette interleaving six colour families at five levels. The
+// Fixed static palette interleaving five colour families at five levels. The
 // family order rotates to put `start` first; the level order deliberately
 // spreads the first few series across family and lightness.
 //
@@ -79,8 +79,7 @@ export function heatmapSwatches(steps: number, theme: string = ''): string[] {
 // The scalar cap is independent of the finite table size. It keeps dense line
 // charts readable without changing their selection policy.
 //
-export type CategoricalStem =
-  'pine' | 'foam' | 'gold' | 'rose' | 'iris' | 'love'
+export type CategoricalStem = 'pine' | 'foam' | 'gold' | 'rose' | 'iris'
 
 // Families rotate in this order. Each level is emitted across all families
 // before moving to the next level.
@@ -90,7 +89,6 @@ const FAMILY_ORDER: readonly CategoricalStem[] = [
   'gold',
   'rose',
   'iris',
-  'love',
 ] as const
 
 const DEFAULT_CATEGORICAL_PALETTE = chartPalettes['rose-pine-moon']
@@ -100,7 +98,7 @@ const LEVEL_ORDER = [2, 0, 4, 1, 3] as const
 export const CHART_PALETTES = chartPalettes
 
 /**
- * Categorical chart palette of length `count`. The 30 approved colours are
+ * Categorical chart palette of length `count`. The 25 approved colours are
  * emitted as family/level interleaves and repeat deterministically past that
  * finite pool. Unknown / empty `theme` falls back to moon. `count <= 0`
  * returns `[]`.

@@ -165,8 +165,8 @@
           {@const pinned = category === 'pinned'}
           <button
             type="button"
-            class="field-filter__option"
-            class:field-filter__option--selected={checked}
+            class="field-filter__option item-state"
+            aria-pressed={checked}
             class:field-filter__option--pinned={pinned}
             disabled={pinned}
             onclick={() => onToggleField(field)}
@@ -242,12 +242,6 @@
 
   .field-filter__option {
     @apply flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm;
-    @apply transition-colors duration-150;
-    @apply hover:bg-base-200/60;
-  }
-
-  .field-filter__option--selected {
-    @apply bg-primary/5;
   }
 
   .field-filter__option--pinned {

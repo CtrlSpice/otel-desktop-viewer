@@ -239,7 +239,7 @@ describe('timeline marker ownership and colour', () => {
     ])
   })
 
-  it('uses highest received log severity and event-only fallbacks', () => {
+  it('uses span colour for logs regardless of severity and highlights exception events', () => {
     const owner = span()
     owner.spanData.events = [event('exception', 10n)]
     const exceptionMarker = clusterTimelineRecords(
@@ -272,6 +272,6 @@ describe('timeline marker ownership and colour', () => {
         clusterTimelineRecords(logs, 0n, 100n, 100, CLUSTER_DISTANCE_PX)[0]!,
         '#abc'
       )
-    ).toBe('var(--color-error)')
+    ).toBe('#abc')
   })
 })

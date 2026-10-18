@@ -152,8 +152,7 @@
             {#each filteredTimezones as timezone (timezone.name)}
               <button
                 type="button"
-                class="tz-option"
-                class:tz-option--active={ctx.tz === timezone.name}
+                class="tz-option item-state"
                 aria-pressed={ctx.tz === timezone.name}
                 onclick={() => ctx.setTz(timezone.name)}
               >
@@ -195,13 +194,7 @@
 
   .tz-option {
     height: var(--table-row-h);
-    @apply flex w-full cursor-pointer items-center gap-2 rounded-none border-none bg-transparent px-3 py-0 text-left text-sm transition-colors;
-    @apply text-base-content/90 hover:bg-base-300/40;
-    @apply focus-visible:bg-base-300/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-0;
-  }
-
-  .tz-option--active {
-    @apply text-primary;
+    @apply flex w-full cursor-pointer items-center gap-2 rounded-none border-none px-3 py-0 text-left text-sm text-base-content;
   }
 
   .tz-name {

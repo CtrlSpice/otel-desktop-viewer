@@ -28,6 +28,8 @@ export const PANEL_DEFAULT_REM = 28
 /** >= 3 x --pane-tab-min + 6px chrome; see the derivation above. */
 export const PANEL_MIN_REM = 22
 export const PANEL_MAX_REM = 40
+export const PANEL_CLOSE_OVERSHOOT_REM = 4
+export const PANEL_DRAG_RESISTANCE = 0.35
 
 function rootFontPx(): number {
   if (typeof document === 'undefined') return 16
