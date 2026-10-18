@@ -69,10 +69,11 @@
 <style lang="postcss">
   @reference "../../app.css";
   .detail-bubble__heading {
-    @apply sticky top-0 z-10 flex min-h-10 items-center gap-2 rounded-xl bg-base-300 px-3 py-2.5 text-sm font-medium;
+    @apply sticky top-0 z-10 flex min-h-10 items-center gap-2 rounded-xl border border-base-300 bg-base-200 text-sm font-medium;
+    padding: calc(0.625rem - 1px) calc(0.75rem - 1px);
   }
   .detail-bubble__heading--action {
-    @apply pe-12;
+    padding-inline-end: calc(3rem - 1px);
   }
   .detail-bubble__with-action {
     @apply relative flex min-h-0 flex-col;

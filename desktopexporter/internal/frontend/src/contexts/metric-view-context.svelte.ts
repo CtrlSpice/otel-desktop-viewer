@@ -29,7 +29,6 @@ import {
 import {
   seriesBucketsToSlices,
   buildVisibleSeriesQuantileChartTimeseries,
-  DEFAULT_ACTIVE_HISTOGRAM_QUANTILE_KEY,
   DEFAULT_HISTOGRAM_QUANTILES,
   histogramDatapointToChartDatapoint,
   histogramSliceToChartDatapoint,
@@ -319,7 +318,7 @@ export interface MetricViewContext {
   /** Clear only selection owned by a chart interaction. Detail-pane datapoint
    * selection remains intact when a histogram cursor clears its transient cell. */
   clearChartSelection(): void
-  setActiveQuantileOverlay(quantileKey: string): void
+  setQuantileOverlayVisible(quantileKey: string, checked: boolean): void
 }
 
 /**
@@ -403,9 +402,9 @@ export function createMetricViewContext(
     aggregationView: 'raw',
     showAllSeriesAggregate: false,
     showSelectionStatOverlays: true,
-    activeQuantileOverlays: new SvelteSet([
-      DEFAULT_ACTIVE_HISTOGRAM_QUANTILE_KEY,
-    ]),
+    activeQuantileOverlays: new SvelteSet(
+      DEFAULT_HISTOGRAM_QUANTILES.map(quantileKeyFromValue)
+    ),
   })
 
   // The route stores stable sub-view choices; heatmap column selection is transient.
@@ -1419,9 +1418,9 @@ export function createMetricViewContext(
     view.showAllSeriesAggregate = metricRef
       ? loadPersistedShowAllSeriesAggregate(metricRef)
       : false
-    view.activeQuantileOverlays = new SvelteSet([
-      DEFAULT_ACTIVE_HISTOGRAM_QUANTILE_KEY,
-    ])
+    view.activeQuantileOverlays = new SvelteSet(
+      DEFAULT_HISTOGRAM_QUANTILES.map(quantileKeyFromValue)
+    )
 
     // Scalars cap visible series; histogram selection remains uncapped.
     const histIsHistogram =
@@ -1658,8 +1657,9 @@ export function createMetricViewContext(
     if (metricRef) savePersistedShowAllSeriesAggregate(metricRef, next)
   }
 
-  function setActiveQuantileOverlay(quantileKey: string) {
-    view.activeQuantileOverlays = new SvelteSet([quantileKey])
+  function setQuantileOverlayVisible(quantileKey: string, checked: boolean) {
+    if (checked) view.activeQuantileOverlays.add(quantileKey)
+    else view.activeQuantileOverlays.delete(quantileKey)
   }
 
   function setShowSelectionStatOverlays(next: boolean) {
@@ -1887,7 +1887,11 @@ export function createMetricViewContext(
       return view.expandedTimeseries
     },
     get activeHistogramTab() {
-      return view.activeHistogramTab
+      // Old shared links now open the combined heatmap without dropping
+      // their raw datapoint, series, scope, or history state.
+      return view.activeHistogramTab === 'quantiles'
+        ? 'heatmap'
+        : view.activeHistogramTab
     },
     get histogramScope() {
       return view.histogramScope
@@ -2046,7 +2050,7 @@ export function createMetricViewContext(
     onRateChartPointClick,
     onQuantileChartPointClick,
     clearChartSelection,
-    setActiveQuantileOverlay,
+    setQuantileOverlayVisible,
   }
 
   setMetricViewContext(ctx)

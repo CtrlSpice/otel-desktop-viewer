@@ -4,14 +4,10 @@ import { tick, type Component } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import HistogramChart from './HistogramChart.svelte'
 import HistogramHeatmap from './HistogramHeatmap.svelte'
-import MetricQuantileAreaChart from './MetricQuantileAreaChart.svelte'
 import MetricTimeSeriesChart from './MetricTimeSeriesChart.svelte'
 import MetricChartHarness from '@/test/MetricChartHarness.svelte'
 import type { HistogramSlicePoint } from '@/components/metrics/utils/histogram-aggregation'
-import {
-  histogramDatapointToChartDatapoint,
-  quantileSeriesKey,
-} from '@/components/metrics/utils/histogram-aggregation'
+import { histogramDatapointToChartDatapoint } from '@/components/metrics/utils/histogram-aggregation'
 import type { ChartTimeseries } from '@/types/metric-chart-types'
 import type {
   ExponentialHistogramDataPoint,
@@ -201,7 +197,7 @@ afterEach(() => {
 
 describe('MetricTimeSeriesChart keyboard model', () => {
   it.each(['raw', 'rate'] as const)(
-    'uses the selected series colour for min/max dots in %s, but iris for derived annotations',
+    'uses the selected series colour for min/max dots in %s, but the axis tone for derived annotations',
     async aggregationView => {
       const first = gaugeDatapoint('first', BASE_NS, 2)
       const second = gaugeDatapoint('second', BASE_NS + 1_000_000_000n, 4)
@@ -260,7 +256,7 @@ describe('MetricTimeSeriesChart keyboard model', () => {
         if (aggregationView === 'rate') {
           expect(derived?.querySelector('.series-stat-dot')).toHaveAttribute(
             'fill',
-            'var(--color-primary)'
+            'var(--color-subtle)'
           )
           expect(document.querySelector('.series-average-marker')).toBeNull()
         } else {
@@ -449,7 +445,7 @@ describe('MetricTimeSeriesChart keyboard model', () => {
           '.metric-time-series-chart__selection-legend .chart-selection-legend__row:last-child .chart-selection-legend__dot'
         )
         ?.getAttribute('style')
-    ).toContain('--color: var(--color-primary)')
+    ).toContain('--color: var(--color-subtle)')
   })
 
   it('activates exact Rate buckets with keyboard without fabricating raw identities', async () => {
@@ -628,69 +624,6 @@ describe('MetricTimeSeriesChart keyboard model', () => {
     expect(
       document.querySelector('.metric-time-series-chart__selection-legend')
     ).toBeNull()
-  })
-})
-
-describe('MetricQuantileAreaChart keyboard model', () => {
-  it('keeps same-millisecond quantile columns distinct and activates exact nanoseconds', async () => {
-    const firstNs = BASE_NS + 100n
-    const secondNs = BASE_NS + 900n
-    const metric = metricWithDatapoints('Histogram', [
-      histogramDatapoint('hist', [], [2]),
-    ])
-    const timeseries: ChartTimeseries[] = [
-      {
-        key: quantileSeriesKey('series-a', '0.95'),
-        label: 'series A · p95',
-        points: [
-          { date: new Date(BASE_MS), value: 1, timestampNs: firstNs },
-          { date: new Date(BASE_MS), value: 2, timestampNs: secondNs },
-        ],
-      },
-    ]
-    const onChartPointClick = vi.fn()
-    let context: MetricViewContext | undefined
-    renderChart(
-      MetricQuantileAreaChart,
-      {
-        timeseries,
-        activeQuantileKeys: ['0.95'],
-        colorByKey: new Map([['series-a', '#123456']]),
-        onChartPointClick,
-      },
-      metric,
-      next => (context = next)
-    )
-    if (!context) throw new Error('metric context was not captured')
-    context.onQuantileChartPointClick('series-a', secondNs, '0.95')
-    await tick()
-    const secondSelectionY = document
-      .querySelector('.metric-quantile-area-chart .selection-dot')
-      ?.getAttribute('cy')
-    const surface = screen.getByRole('application', {
-      name: 'Histogram quantile chart',
-    })
-
-    expect(document.querySelector('.chart-keyboard-cursor')).toBeNull()
-    await fireEvent.focus(surface)
-    await tick()
-    expect(document.querySelector('.chart-keyboard-cursor')).not.toBeNull()
-    expect(readout()).toContain('Point 2 of 2')
-    await fireEvent.keyDown(surface, { key: 'Enter' })
-    expect(onChartPointClick).toHaveBeenCalledWith('series-a', secondNs, '0.95')
-
-    context.onQuantileChartPointClick('series-a', firstNs, '0.95')
-    await tick()
-    expect(readout()).toContain('Point 1 of 2')
-    const firstSelectionY = document
-      .querySelector('.metric-quantile-area-chart .selection-dot')
-      ?.getAttribute('cy')
-    expect(secondSelectionY).toBeTruthy()
-    expect(firstSelectionY).toBeTruthy()
-    expect(firstSelectionY).not.toBe(secondSelectionY)
-    await fireEvent.blur(surface)
-    await tick()
-    expect(document.querySelector('.chart-keyboard-cursor')).toBeNull()
   })
 })
 

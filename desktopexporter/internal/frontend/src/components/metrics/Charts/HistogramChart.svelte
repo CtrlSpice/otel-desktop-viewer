@@ -23,6 +23,11 @@
   import { metricTypeSeriesColor } from '@/components/metrics/utils/metric-type'
   import { expBuckets } from '@/components/metrics/utils/histogram-quantile'
   import { formatMetricValue } from '@/components/metrics/utils/format-metric-value'
+  import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
+  import {
+    HISTOGRAM_QUANTILE_DASH,
+    histogramQuantileColor,
+  } from '@/components/metrics/utils/heatmap-quantiles'
   import {
     exponentialBucketIdentity,
     exponentialZeroBucketIdentity,
@@ -76,6 +81,7 @@
   }: Props = $props()
 
   let plotAreaHeight = $state(0)
+  const ctx = getMetricViewContext()
   let pinnedBucketKey = $state<string | null>(null)
 
   // Keys must match Go's strconv.FormatFloat(q, 'f', -1, 64) output.
@@ -280,6 +286,7 @@
   let quantileMarks = $derived.by((): QuantileMark[] => {
     const marks: QuantileMark[] = []
     for (const { key, label } of QUANTILE_LABELS) {
+      if (!ctx.activeQuantileOverlays.has(key)) continue
       const v = quantiles[key]
       if (v === null || v === undefined) continue
       const pos = findBarPosition(v)
@@ -290,7 +297,7 @@
         value: v,
         bucketIndex: pos.index,
         fraction: pos.fraction,
-        color: 'var(--color-primary)',
+        color: histogramQuantileColor(key),
       })
     }
     return marks
@@ -586,7 +593,7 @@
               padding={chartPadding}
               bandPadding={0.2}
               tooltipContext
-              highlight={{ area: true }}
+              highlight={{ area: { class: 'histogram-hover-column' } }}
               props={{
                 bars: {
                   fill: barColor,
@@ -656,14 +663,26 @@
                 {#each quantileMarks as m (m.key)}
                   {@const x0 = xs(buckets[m.bucketIndex].key) ?? 0}
                   {@const px = x0 + bw * m.fraction}
-                  <g class="quantile-marker" style:--marker-color={m.color}>
+                  <g
+                    class="quantile-marker"
+                    style:--marker-color={m.color}
+                    style:--quantile-color={m.color}
+                  >
                     <title>{m.label} {formatQuantileValue(m.value)}</title>
                     <Line
                       x1={px}
                       x2={px}
                       y1={yTop}
                       y2={yBot}
+                      class="quantile-line-backing"
+                    />
+                    <Line
+                      x1={px}
+                      x2={px}
+                      y1={yTop}
+                      y2={yBot}
                       class="quantile-line"
+                      style="stroke-dasharray: {HISTOGRAM_QUANTILE_DASH}"
                     />
                   </g>
                 {/each}
@@ -743,7 +762,7 @@
     @apply flex min-h-0 w-full min-w-0 flex-col;
   }
 
-  .metric-histogram-bar-chart--value-pin :global(.lc-bars-bar) {
+  .metric-histogram-bar-chart :global(.lc-bars-bar) {
     opacity: 1 !important;
   }
 
@@ -788,11 +807,6 @@
 
   .histogram-chart-wrapper--clickable {
     cursor: pointer;
-  }
-
-  /* Match heatmap: hover band must not eat column clicks. */
-  .histogram-chart-wrapper--clickable :global(.lc-highlight-area) {
-    pointer-events: none;
   }
 
   .series-stat-tooltip {

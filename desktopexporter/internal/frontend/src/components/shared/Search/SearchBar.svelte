@@ -54,7 +54,7 @@
   {/if}
   <div
     class="search-bar__query flex min-w-0 flex-1 items-center rounded-full {search
-      ? 'bg-base-200'
+      ? 'border border-base-300 bg-base-200'
       : ''}"
   >
     <div

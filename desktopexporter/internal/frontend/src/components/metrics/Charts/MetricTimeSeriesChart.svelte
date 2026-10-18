@@ -19,6 +19,7 @@
     DEFAULT_METRIC_CHART_HEIGHT,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
   import { chartNeutral } from '@/utils/chart-palette'
+  import { extendChartLine } from '@/components/metrics/utils/extend-chart-line'
   import ChartAggregateSummaryRows from '@/components/metrics/Charts/ChartAggregateSummaryRows.svelte'
   import ChartSelectionLegend, {
     type SelectionLegendRow,
@@ -751,7 +752,7 @@
 
     const stats = seriesStats?.get(selectedSeriesKey)
     if (!stats) return []
-    const color = 'var(--color-primary)'
+    const color = 'var(--color-subtle)'
     const marks: SeriesStatMark[] = []
 
     const minPoint = extremumPoint(series.data, 'min')
@@ -965,6 +966,31 @@
                 />
               </g>
             {/if}
+            {@const slope = seriesStatMarks.find(mark => mark.kind === 'slope')}
+            {#if slope?.slopeFrom && slope.slopeTo}
+              {@const guide = extendChartLine(
+                {
+                  x: context.xScale(slope.slopeFrom.date),
+                  y: context.yScale(slope.slopeFrom.value),
+                },
+                {
+                  x: context.xScale(slope.slopeTo.date),
+                  y: context.yScale(slope.slopeTo.value),
+                },
+                {
+                  left: Math.min(...context.xRange),
+                  right: Math.max(...context.xRange),
+                  top: Math.min(...context.yRange),
+                  bottom: Math.max(...context.yRange),
+                }
+              )}
+              {#if guide}
+                <g class="series-slope-guide" aria-hidden="true">
+                  <title>{slope.title}</title>
+                  <Line {...guide} class="series-slope-line" />
+                </g>
+              {/if}
+            {/if}
           {/snippet}
           {#snippet tooltip({ context }: { context: any })}
             {@const xDate = tooltipXDate(context)}
@@ -1039,22 +1065,6 @@
                   {@const dotYPx = context.yScale(mark.y)}
                   <g class="series-stat-marker">
                     <title>{mark.title}</title>
-                    {#if mark.kind === 'slope' && mark.slopeFrom && mark.slopeTo}
-                      {@const segX1 = context.xScale(mark.slopeFrom.date)}
-                      {@const segY1 = context.yScale(mark.slopeFrom.value)}
-                      {@const segX2 = context.xScale(mark.slopeTo.date)}
-                      {@const segY2 = context.yScale(mark.slopeTo.value)}
-                      <g class="series-stat-line-group">
-                        <Line
-                          x1={segX1}
-                          y1={segY1}
-                          x2={segX2}
-                          y2={segY2}
-                          class="series-stat-line"
-                          markerEnd="arrow"
-                        />
-                      </g>
-                    {/if}
                     <circle
                       cx={dotPx}
                       cy={dotYPx}

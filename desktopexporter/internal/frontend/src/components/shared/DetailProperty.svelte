@@ -15,6 +15,7 @@
     value,
     copyValue,
     valueLabel,
+    valueTone,
     timestampLabel,
     origin,
     multiline = false,
@@ -31,6 +32,7 @@
     value?: Snippet
     copyValue?: string
     valueLabel?: string
+    valueTone?: 'error'
     timestampLabel?: string
     origin?: string
     multiline?: boolean
@@ -112,6 +114,7 @@
 {#if !hidden}
   <tr
     class="detail-property"
+    class:detail-property--error-value={valueTone === 'error'}
     class:table-row--nested={nested}
     data-field={fieldName}
   >
@@ -183,16 +186,19 @@
   .detail-property__body {
     @apply min-w-0 pt-0.5;
   }
+  .detail-property--error-value {
+    --detail-property-value-color: var(--color-error);
+  }
   .detail-property__value,
   :global(.detail-property .detail-property__value) {
     @apply min-w-0 font-mono text-[0.8125rem] leading-relaxed;
-    color: var(--color-base-content);
+    color: var(--detail-property-value-color, var(--color-base-content));
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
   .detail-property__annotation {
     @apply ml-2 text-xs;
-    color: var(--detail-code-key);
+    color: var(--detail-property-value-color, var(--detail-code-key));
   }
   .detail-property__annotation--enum {
     @apply ml-0;

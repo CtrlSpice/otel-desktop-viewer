@@ -1,4 +1,10 @@
 export type ChartAnchor = { x: number; y: number }
+export type ChartStickySize = {
+  width: number
+  height: number
+  cardWidth: number
+  cardHeight: number
+}
 
 /** Keep a pinned card near its mark, flipping sides before clamping to the plot. */
 export function chartStickyPosition(

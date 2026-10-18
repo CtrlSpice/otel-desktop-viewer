@@ -178,7 +178,7 @@ describe('buildHistogramHeatmapData', () => {
     ])
 
     expect(result.rows).toEqual([
-      { key: 'exponential:zero:0', label: '0', order: 0 },
+      { key: 'exponential:zero:0', label: '0', order: 0, lo: -0, hi: 0 },
     ])
   })
 })

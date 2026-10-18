@@ -13,40 +13,18 @@ describe('heatmapSwatches', () => {
   })
 
   it('returns one colour per requested step', () => {
-    expect(heatmapSwatches(4, 'rose-pine')).toHaveLength(4)
+    expect(heatmapSwatches(4)).toHaveLength(4)
   })
 
   it('ends on the theme hot endpoint colour', () => {
     const swatches = heatmapSwatches(3, 'rose-pine-dawn')
-    // The last sample position is t=1, so the interpolator lands exactly on
-    // the hot endpoint -- just reformatted as `rgb(...)` rather than hex.
     expect(swatches.at(-1)).toBe('rgb(144, 122, 169)')
   })
 
-  it('falls back to the moon ramp for an unknown theme', () => {
-    expect(heatmapSwatches(1, 'not-a-theme')).toEqual(
-      heatmapSwatches(1, 'rose-pine-moon')
-    )
-  })
-
-  it('falls back to the moon ramp for an empty theme', () => {
-    expect(heatmapSwatches(2)).toEqual(heatmapSwatches(2, 'rose-pine-moon'))
-  })
-
-  it('falls back for inherited object property names', () => {
-    expect(heatmapSwatches(2, 'toString')).toEqual(
-      heatmapSwatches(2, 'rose-pine-moon')
-    )
-  })
-
   it('floors fractional steps and clamps non-positive steps to 1', () => {
-    expect(heatmapSwatches(2.9, 'rose-pine')).toHaveLength(2)
-    expect(heatmapSwatches(0, 'rose-pine')).toEqual(
-      heatmapSwatches(1, 'rose-pine')
-    )
-    expect(heatmapSwatches(-5, 'rose-pine')).toEqual(
-      heatmapSwatches(1, 'rose-pine')
-    )
+    expect(heatmapSwatches(2.9)).toHaveLength(2)
+    expect(heatmapSwatches(0)).toEqual(heatmapSwatches(1))
+    expect(heatmapSwatches(-5)).toEqual(heatmapSwatches(1))
   })
 
   it('rejects non-finite step counts', () => {

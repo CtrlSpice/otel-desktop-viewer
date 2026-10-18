@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 import type {
+  JsonAggregateBucket,
+  JsonDataPoint,
   JsonMetricSeriesViewData,
   JsonMetricSummary,
   JsonMetricViewData,
@@ -126,6 +128,483 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
+for (const [theme, hoverColour, selectedColour, focusColour] of [
+  ['rose-pine', 'rgb(33, 32, 46)', 'rgb(64, 61, 82)', 'rgb(196, 167, 231)'],
+  [
+    'rose-pine-moon',
+    'rgb(42, 40, 62)',
+    'rgb(68, 65, 90)',
+    'rgb(196, 167, 231)',
+  ],
+  [
+    'rose-pine-dawn',
+    'rgb(244, 237, 232)',
+    'rgb(223, 218, 217)',
+    'rgb(144, 122, 169)',
+  ],
+]) {
+  for (const metricType of ['Histogram', 'ExponentialHistogram'] as const) {
+    test(`${metricType} graph highlights use rounded neutral interaction roles in ${theme}`, async ({
+      page,
+    }) => {
+      const datapoints: JsonDataPoint[] = [0, 1].map(index => {
+        const common = {
+          id: `hist-${index}`,
+          timestamp: String(BigInt(startMs + index * 1000) * 1_000_000n),
+          timestampMs: startMs + index * 1000,
+          startTime: startNs,
+          flags: 0,
+          exemplars: [],
+          count: '12',
+          sum: 18,
+          min: 0,
+          max: 4,
+          quantiles: { '0.5': 100, '0.95': 200, '0.99': 300 },
+          aggregationTemporalityCode: 1,
+          aggregationTemporality: 'Delta',
+        }
+        return metricType === 'Histogram'
+          ? {
+              ...common,
+              metricType,
+              explicitBounds: [1, 2],
+              bucketCounts: ['2', '7', '3'],
+            }
+          : {
+              ...common,
+              metricType,
+              scale: 0,
+              zeroCount: '2',
+              zeroThreshold: 0.1,
+              positiveBucketOffset: 0,
+              positiveBucketCounts: ['7', '3'],
+              negativeBucketOffset: 0,
+              negativeBucketCounts: [],
+            }
+      })
+      const aggregate: JsonAggregateBucket[] = datapoints.map(point => ({
+        timestamp: point.timestamp,
+        startTime: startNs,
+        count: 12,
+        sum: 18,
+        min: 0,
+        max: 4,
+        quantiles: { '0.5': 1.5, '0.95': 1.9, '0.99': 2 },
+        ...(point.metricType === 'Histogram'
+          ? { explicitBounds: [1, 2], bucketCounts: [2, 7, 3] }
+          : {
+              scale: 0,
+              zeroCount: 2,
+              zeroThreshold: 0.1,
+              positiveBucketOffset: 0,
+              positiveBucketCounts: [7, 3],
+              negativeBucketOffset: 0,
+              negativeBucketCounts: [],
+            }),
+      }))
+      const histogramMetric: JsonMetricViewData = {
+        ...metric,
+        metricType,
+        aggregationTemporalityCode: 1,
+        aggregationTemporality: 'Delta',
+        datapointCount: 2,
+        timeseries: [{ ...timeseries[0]!, datapoints, datapointCount: 2 }],
+      }
+      await page.route('**/rpc', async route => {
+        const request = route.request().postDataJSON() as {
+          id: number
+          method: string
+        }
+        const result =
+          request.method === 'getMetricView'
+            ? histogramMetric
+            : request.method === 'getMetricAggregateView'
+              ? { aggregate, scalarAggregate: null }
+              : request.method === 'searchMetricSummaries'
+                ? [
+                    {
+                      ...summary,
+                      metricType,
+                      aggregationTemporalityCode: 1,
+                      aggregationTemporality: 'Delta',
+                      seriesCount: 1,
+                      seriesCardinality: 1,
+                      dataPointCount: 2,
+                    },
+                  ]
+                : undefined
+        if (result === undefined) return route.fallback()
+        await route.fulfill({
+          json: { jsonrpc: '2.0', id: request.id, result },
+        })
+      })
+      await page.addInitScript(
+        theme => localStorage.setItem('theme', theme),
+        theme
+      )
+      await page.setViewportSize({ width: 1440, height: 1000 })
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+
+      for (const [
+        tab,
+        markSelector,
+        hoverSelector,
+        selectionSelector,
+        keyboardSelector,
+        chartLabel,
+      ] of [
+        [
+          'histogram',
+          '.lc-bars-bar',
+          '.histogram-hover-column',
+          '.value-bucket-pin-highlight',
+          '.chart-keyboard-cursor-band',
+          'Histogram distribution chart',
+        ],
+        [
+          'heatmap',
+          '.heatmap-cell',
+          '.heatmap-hover-column',
+          '.heatmap-selection',
+          '.chart-keyboard-cursor-cell',
+          'Histogram heatmap',
+        ],
+      ]) {
+        await page.goto(
+          `/metrics/${metric.metricRef}?htab=${tab}&hscope=window`
+        )
+        const mark = page.locator(markSelector).first()
+        await expect(mark).toBeVisible()
+        await expect(
+          page.locator('.pane-header .histogram-quantile-controls')
+        ).toHaveCount(1)
+        await expect(
+          page.locator('.metric-chart-view .histogram-quantile-controls')
+        ).toHaveCount(0)
+        if (tab === 'heatmap') {
+          // Each row has the same colour in both adjacent time columns.
+          // Render three connected outlines while retaining all six source cells.
+          const blobs = page.locator('.heatmap-blob')
+          await expect(blobs).toHaveCount(3)
+          for (const blob of await blobs.all()) {
+            await expect(blob.locator('.heatmap-cell')).toHaveCount(2)
+            await expect(blob.locator('.heatmap-blob-fill')).toHaveCount(1)
+            await expect(blob.locator('.heatmap-cell').first()).toHaveCSS(
+              'fill-opacity',
+              '0'
+            )
+            const clipped = await blob.evaluate(element => {
+              const id = element.getAttribute('clip-path')!.slice(5, -1)
+              return (
+                document
+                  .getElementById(id)
+                  ?.querySelector('path')
+                  ?.getAttribute('d') ?? ''
+              )
+            })
+            expect(clipped).toContain('Q')
+            expect(clipped.match(/M/g)).toHaveLength(1)
+          }
+          const legend = page.getByRole('list', { name: 'Heatmap count scale' })
+          await expect(legend).toBeVisible()
+          await expect(
+            page.getByText('Observations per cell', { exact: true })
+          ).toBeVisible()
+          const legendBox = (await page
+            .locator('.heatmap-legend')
+            .boundingBox())!
+          const chartBox = (await page
+            .locator('.metric-heatmap-chart')
+            .boundingBox())!
+          expect(legendBox.y + legendBox.height).toBeLessThanOrEqual(chartBox.y)
+          const titleColour = await page
+            .locator('.pane-header__title')
+            .first()
+            .evaluate(title => getComputedStyle(title).color)
+          await expect(legend).toHaveCSS('color', titleColour)
+          await expect(
+            legend.locator('.heatmap-legend__swatch').first()
+          ).toHaveCSS('width', '16px')
+          expect(await legend.innerText()).not.toMatch(/[()[\]]/)
+        }
+        const dataFill = await mark.evaluate(
+          element => getComputedStyle(element).fill
+        )
+        const box = (await mark.boundingBox())!
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+        const hover = page.locator(hoverSelector)
+        await expect(hover).toBeVisible()
+        await expect(hover).toHaveCSS('fill', hoverColour)
+        await expect(hover).toHaveCSS('stroke', 'none')
+        await expect(hover).toHaveCSS('rx', '8px')
+        await expect(hover).toHaveCSS('pointer-events', 'none')
+        let hoveredFill = dataFill
+        if (tab === 'heatmap') {
+          await expect(mark).toHaveClass(/heatmap-cell--hovered/)
+          await expect(mark).toHaveCSS('fill-opacity', '1')
+          await expect(page.locator('.heatmap-cell--hovered')).toHaveCount(1)
+          expect(
+            await hover.evaluate(element => {
+              const blobs = document.querySelector('.heatmap-blobs')!
+              return Boolean(
+                blobs.compareDocumentPosition(element) &
+                Node.DOCUMENT_POSITION_FOLLOWING
+              )
+            })
+          ).toBe(true)
+          hoveredFill = await mark.evaluate(
+            element => getComputedStyle(element).fill
+          )
+          expect(hoveredFill).not.toBe(dataFill)
+        }
+        await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+        const selection = page.locator(selectionSelector)
+        await expect(selection).toBeVisible()
+        await expect(selection).toHaveCSS('fill', selectedColour)
+        await expect(selection).toHaveCSS('stroke', selectedColour)
+        await expect(selection).toHaveCSS('fill-opacity', '0.28')
+        await expect(selection).toHaveCSS('rx', '8px')
+        await expect(selection).toHaveCSS('pointer-events', 'none')
+        if (tab === 'heatmap') {
+          await expect(mark).toHaveClass(/heatmap-cell--selected/)
+          const selectedFill = await mark.evaluate(
+            element => getComputedStyle(element).fill
+          )
+          expect(selectedFill).not.toBe(dataFill)
+          expect(selectedFill).not.toBe(hoveredFill)
+          const card = page.locator('.metric-heatmap-chart .chart-sticky__card')
+          await expect(card).toBeVisible()
+          const cellDetails = card.locator('.heatmap-selected-cell')
+          await expect(cellDetails.locator('dd').nth(1)).toHaveText('2')
+          await expect(
+            card.locator('.chart-selection-legend__value').first()
+          ).toHaveText('12')
+          await expect
+            .poll(async () => {
+              const cardBox = (await card.boundingBox())!
+              return Math.abs(
+                cardBox.y + cardBox.height / 2 - (box.y + box.height / 2)
+              )
+            })
+            .toBeLessThan(1)
+          await expect
+            .poll(async () => {
+              const cardBox = (await card.boundingBox())!
+              const columnBox = (await selection.boundingBox())!
+              const plot = await page
+                .locator('.heatmap-cell')
+                .evaluateAll(cells => {
+                  const boxes = cells.map(cell => cell.getBoundingClientRect())
+                  return {
+                    left: Math.min(...boxes.map(box => box.left)),
+                    right: Math.max(...boxes.map(box => box.right)),
+                  }
+                })
+              const rightGap = cardBox.x - (columnBox.x + columnBox.width)
+              const leftGap = columnBox.x - (cardBox.x + cardBox.width)
+              const roomBeside =
+                plot.right - columnBox.x - columnBox.width >=
+                  cardBox.width + 12 ||
+                columnBox.x - plot.left >= cardBox.width + 12
+              if (roomBeside)
+                return (
+                  Math.min(Math.abs(rightGap - 12), Math.abs(leftGap - 12)) < 1
+                )
+              // Narrow panes keep the card over its column, inside the plot.
+              return (
+                cardBox.x >= plot.left - 1 &&
+                cardBox.x + cardBox.width <= plot.right + 1 &&
+                rightGap <= 0 &&
+                leftGap <= 0
+              )
+            })
+            .toBe(true)
+          // A different row in the same column updates the picked cell,
+          // rather than toggling the column pin off.
+          const x = await mark.getAttribute('x')
+          const y = await mark.getAttribute('y')
+          const nextCell = page
+            .locator(`.heatmap-cell[x="${x}"]:not([y="${y}"])`)
+            .first()
+          const nextBox = (await nextCell.boundingBox())!
+          await page.mouse.click(
+            nextBox.x + nextBox.width / 2,
+            nextBox.y + nextBox.height / 2
+          )
+          await expect(selection).toBeVisible()
+          await expect(cellDetails.locator('dd').nth(1)).toHaveText('7')
+          await expect
+            .poll(async () => {
+              const cardBox = (await card.boundingBox())!
+              return Math.abs(
+                cardBox.y +
+                  cardBox.height / 2 -
+                  (nextBox.y + nextBox.height / 2)
+              )
+            })
+            .toBeLessThan(1)
+        } else {
+          await expect(mark).toHaveCSS('fill', dataFill)
+        }
+        const keyboard = page.getByRole('application', {
+          name: chartLabel,
+          exact: true,
+        })
+        await keyboard.focus()
+        await keyboard.press('ArrowRight')
+        await expect(page.locator(keyboardSelector)).toHaveCSS(
+          'stroke',
+          focusColour
+        )
+        await expect(page.locator(keyboardSelector)).toHaveCSS('rx', '8px')
+        if (tab === 'heatmap') {
+          await keyboard.press('Control+Home')
+          await keyboard.press('Enter')
+          await expect(
+            page.locator('.heatmap-selected-cell dd').nth(1)
+          ).toHaveText('3')
+        }
+        await keyboard.press('Escape')
+        await expect(selection).toHaveCount(0)
+        if (tab === 'heatmap') {
+          await page.mouse.move(0, 0)
+          await expect(mark).not.toHaveClass(
+            /heatmap-cell--hovered|heatmap-cell--selected/
+          )
+          await expect(mark).toHaveCSS('fill', dataFill)
+          await expect(mark).toHaveCSS('fill-opacity', '0')
+        }
+        const quantileLines = page.locator(
+          tab === 'heatmap' ? '.heatmap-quantile-line' : '.quantile-line'
+        )
+        const quantileColours =
+          theme === 'rose-pine-dawn'
+            ? ['rgb(40, 105, 131)', 'rgb(234, 157, 52)', 'rgb(180, 99, 122)']
+            : [
+                theme === 'rose-pine'
+                  ? 'rgb(49, 116, 143)'
+                  : 'rgb(62, 143, 176)',
+                'rgb(246, 193, 119)',
+                'rgb(235, 111, 146)',
+              ]
+        await expect(quantileLines).toHaveCount(3)
+        for (const [index, line] of (await quantileLines.all()).entries()) {
+          await expect(line).toHaveCSS('stroke', quantileColours[index]!)
+          await expect(
+            page.locator('.histogram-quantile-controls svg line').nth(index)
+          ).toHaveCSS('stroke', quantileColours[index]!)
+          await expect(
+            page.locator('.histogram-quantile-controls svg line').nth(index)
+          ).toHaveCSS('stroke-dasharray', '6px, 4px')
+          await expect(line).toHaveCSS('stroke-width', '2px')
+          await expect(line).toHaveCSS('opacity', '0.35')
+          await expect(line).toHaveCSS('pointer-events', 'none')
+        }
+        expect(
+          await quantileLines.evaluateAll(lines =>
+            lines.map(line => getComputedStyle(line).strokeDasharray)
+          )
+        ).toEqual(['6px, 4px', '6px, 4px', '6px, 4px'])
+        if (tab === 'heatmap') {
+          const overlays = page.locator('.heatmap-quantile-line')
+          await expect(overlays).toHaveCount(3)
+          const channels = page.locator('.heatmap-quantile-channel')
+          await expect(channels).toHaveCount(3)
+          expect(
+            await channels.evaluateAll(paths =>
+              paths.map(path => path.getAttribute('d'))
+            )
+          ).toEqual(
+            await overlays.evaluateAll(paths =>
+              paths.map(path => path.getAttribute('d'))
+            )
+          )
+          for (const channel of await channels.all()) {
+            await expect(channel).toHaveAttribute('stroke-width', '4')
+          }
+          await expect(page.locator('.heatmap-blobs')).toHaveAttribute(
+            'mask',
+            /^url\(#.+\)$/
+          )
+          for (const line of await overlays.all()) {
+            await expect(line).toHaveCSS('fill', 'none')
+            await expect(line).toHaveCSS('pointer-events', 'none')
+            // Each estimate stays inside its original populated bucket's
+            // geometry; visual channels do not change the data coordinates.
+            expect(
+              await line.evaluate(element => {
+                const path = element as SVGPathElement
+                const point = path.getPointAtLength(path.getTotalLength() / 4)
+                const screen = new DOMPoint(point.x, point.y).matrixTransform(
+                  path.getScreenCTM()!
+                )
+                return [...document.querySelectorAll('.heatmap-cell')].some(
+                  cell => {
+                    const box = cell.getBoundingClientRect()
+                    return (
+                      screen.x >= box.left - 0.5 &&
+                      screen.x <= box.right + 0.5 &&
+                      screen.y >= box.top - 0.5 &&
+                      screen.y <= box.bottom + 0.5
+                    )
+                  }
+                )
+              })
+            ).toBe(true)
+          }
+          await page
+            .getByRole('checkbox', { name: 'Show p95', exact: true })
+            .uncheck()
+          await expect(overlays).toHaveCount(2)
+          await expect(channels).toHaveCount(2)
+          await expect(
+            page.locator('.heatmap-quantile-line[data-quantile="0.95"]')
+          ).toHaveCount(0)
+          await expect(
+            page.getByRole('tab', { name: 'Quantiles', exact: true })
+          ).toHaveCount(0)
+        }
+      }
+      await page.goto(
+        `/metrics/${metric.metricRef}?htab=quantiles&hscope=window&series=first&dp=hist-0`
+      )
+      await expect(
+        page.getByRole('tab', { name: 'Heatmap', exact: true })
+      ).toHaveAttribute('aria-selected', 'true')
+      await expect(page.locator('.heatmap-quantile-line')).toHaveCount(3)
+      expect(new URL(page.url()).searchParams.get('dp')).toBe('hist-0')
+      if (theme === 'rose-pine-moon' && metricType === 'Histogram') {
+        await page
+          .getByRole('button', { name: 'Collapse sidebar', exact: true })
+          .click()
+        await page
+          .getByRole('button', { name: 'Collapse details', exact: true })
+          .click()
+        await page
+          .getByRole('checkbox', { name: 'Show p95', exact: true })
+          .uncheck()
+        await page.setViewportSize({ width: 390, height: 1000 })
+        await expect(
+          page.getByRole('checkbox', { name: 'Show p95', exact: true })
+        ).not.toBeChecked()
+        for (const label of ['Show p50', 'Show p95', 'Show p99']) {
+          await expect(
+            page
+              .locator('.pane-header')
+              .getByRole('checkbox', { name: label, exact: true })
+          ).toBeVisible()
+        }
+        expect(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= window.innerWidth
+          )
+        ).toBe(true)
+        expect(new URL(page.url()).searchParams.get('dp')).toBe('hist-0')
+      }
+    })
+  }
+}
+
 test('extrema use the series colour and the average sits behind the series without a data dot', async ({
   page,
 }) => {
@@ -205,6 +684,9 @@ test('extrema use the series colour and the average sits behind the series witho
         averageLabelMatches:
           getComputedStyle(reference).stroke ===
           getComputedStyle(label).backgroundColor,
+        averageMatchesAxis:
+          getComputedStyle(reference).stroke ===
+          getComputedStyle(chart.querySelector('.lc-axis-tick-label')!).fill,
         averageLabelAtRight: Math.abs(labelBox.right - lineBox.right) < 1,
       }
     })
@@ -214,6 +696,7 @@ test('extrema use the series colour and the average sits behind the series witho
     averageBehindSeries: true,
     averageHasOwnColour: true,
     averageLabelMatches: true,
+    averageMatchesAxis: true,
     averageLabelAtRight: true,
   })
 })
@@ -294,20 +777,20 @@ test('Rate clicks pin the exact bucket and keep slope in the same card', async (
     isMonotonic: true,
     aggregationTemporalityCode: 2,
     aggregationTemporality: 'Cumulative',
-    datapointCount: 3,
+    datapointCount: 4,
     timeseries: [
       {
         ...timeseries[0]!,
-        datapoints: timeseries[0]!.datapoints.slice(0, 3).map(point => ({
+        datapoints: timeseries[0]!.datapoints.slice(0, 4).map(point => ({
           ...point,
           metricType: 'Sum',
           isMonotonic: true,
           aggregationTemporalityCode: 2,
           aggregationTemporality: 'Cumulative',
         })),
-        datapointCount: 3,
-        rateStats: { min: 2, max: 4, avg: 3 },
-        views: [0, 1, 2].map(index => ({
+        datapointCount: 4,
+        rateStats: { min: 2, max: 6, avg: 4 },
+        views: [0, 1, 2, 3].map(index => ({
           bucketStart: String(BigInt(startMs + index * 1000) * 1_000_000n),
           sampleCount: 1,
           sum: index + 1,
@@ -337,7 +820,7 @@ test('Rate clicks pin the exact bucket and keep slope in the same card', async (
                 aggregationTemporality: 'Cumulative',
                 seriesCount: 1,
                 seriesCardinality: 1,
-                dataPointCount: 3,
+                dataPointCount: 4,
               },
             ]
           : undefined
@@ -361,9 +844,61 @@ test('Rate clicks pin the exact bucket and keep slope in the same card', async (
   await graph.press('Enter')
   const sticky = page.locator('.chart-sticky__card')
   await expect(sticky).toBeVisible()
+  const firstBucket = await page
+    .locator('.selection-dot--selected')
+    .evaluate(point => ({
+      x: Number(point.getAttribute('cx')),
+      y: Number(point.getAttribute('cy')),
+    }))
   await graph.press('ArrowRight')
   await graph.press('Enter')
   await expect(sticky.getByText('slope', { exact: true })).toBeVisible()
+  const slopeGuide = page.locator('.series-slope-line')
+  await expect(slopeGuide).toHaveCSS('stroke-dasharray', '4px, 3px')
+  await expect(slopeGuide).toHaveCSS('opacity', '0.35')
+  await expect(slopeGuide).toHaveCSS('pointer-events', 'none')
+  const slopeDrawing = await page
+    .locator('.metric-time-series-chart')
+    .evaluate((chart, firstBucket) => {
+      const guide = chart.querySelector('.series-slope-line')!
+      const point = chart.querySelector('.selection-dot--selected')!
+      const seriesColour = getComputedStyle(point).fill
+      const series = [...chart.querySelectorAll('path')].find(
+        path => getComputedStyle(path).stroke === seriesColour
+      )!
+      const x1 = Number(guide.getAttribute('x1'))
+      const y1 = Number(guide.getAttribute('y1'))
+      const x2 = Number(guide.getAttribute('x2'))
+      const y2 = Number(guide.getAttribute('y2'))
+      const px = Number(point.getAttribute('cx'))
+      const py = Number(point.getAttribute('cy'))
+      return {
+        behindSeries: !!(
+          guide.compareDocumentPosition(series) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+        ),
+        extendsBeyondBucket:
+          Math.hypot(x2 - x1, y2 - y1) >
+          Math.hypot(px - firstBucket.x, py - firstBucket.y) + 1,
+        distanceFromPoint:
+          Math.abs((px - x1) * (y2 - y1) - (py - y1) * (x2 - x1)) /
+          Math.hypot(x2 - x1, y2 - y1),
+        colour: getComputedStyle(guide).stroke,
+        axisColour: getComputedStyle(
+          chart.querySelector('.lc-axis-tick-label')!
+        ).fill,
+        cardColour: getComputedStyle(
+          chart.querySelector(
+            '.metric-time-series-chart__selection-legend .chart-selection-legend__row:last-child .chart-selection-legend__dot'
+          )!
+        ).backgroundColor,
+      }
+    }, firstBucket)
+  expect(slopeDrawing.behindSeries).toBe(true)
+  expect(slopeDrawing.extendsBeyondBucket).toBe(true)
+  expect(slopeDrawing.distanceFromPoint).toBeLessThan(0.01)
+  expect(slopeDrawing.colour).toBe(slopeDrawing.cardColour)
+  expect(slopeDrawing.colour).toBe(slopeDrawing.axisColour)
   await expect(
     page.locator('.series-stat-tooltip').filter({ hasText: 'slope' })
   ).toHaveCount(0)
@@ -382,7 +917,7 @@ test('Rate clicks pin the exact bucket and keep slope in the same card', async (
     0
   )
   const guideColors = await page
-    .locator('.series-stat-line')
+    .locator('.series-slope-line')
     .evaluateAll(lines => lines.map(line => getComputedStyle(line).stroke))
   expect(guideColors.length).toBeGreaterThan(0)
   expect(new Set(guideColors).size).toBe(1)
@@ -524,7 +1059,8 @@ test('series open by their headers, one at a time, with one combined table', asy
       return (
         element.getBoundingClientRect().right -
         badge.getBoundingClientRect().right -
-        parseFloat(getComputedStyle(element).paddingRight)
+        parseFloat(getComputedStyle(element).paddingRight) -
+        parseFloat(getComputedStyle(element).borderRightWidth)
       )
     })
   expect(Math.abs(badgeInset)).toBeLessThan(1)

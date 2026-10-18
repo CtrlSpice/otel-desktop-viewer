@@ -103,6 +103,7 @@
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
   import MetricChartView from '@/components/metrics/Charts/MetricChartView.svelte'
   import ChartStatOverlaysToggle from '@/components/metrics/Charts/ChartStatOverlaysToggle.svelte'
+  import HistogramQuantileControls from '@/components/metrics/Charts/HistogramQuantileControls.svelte'
   import MetricDetailView from '@/components/metrics/Detail/MetricDetailView.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
@@ -235,6 +236,10 @@
   let showChartHistogramTabs = $derived(
     page.selectedSummary?.metricType === 'Histogram' ||
       page.selectedSummary?.metricType === 'ExponentialHistogram'
+  )
+  let showChartOverlayControls = $derived(
+    (metricCtx.isHistogramKind && !metricCtx.isUnsafeTemporality) ||
+      metricCtx.showChartStatOverlaysToggleVisible
   )
 
   let showChartTitleTabs = $derived(
@@ -726,7 +731,13 @@
           />
         {/snippet}
 
-        {#snippet overlayControl()}<ChartStatOverlaysToggle />{/snippet}
+        {#snippet overlayControl()}
+          {#if metricCtx.isHistogramKind}
+            <HistogramQuantileControls />
+          {:else}
+            <ChartStatOverlaysToggle />
+          {/if}
+        {/snippet}
 
         {@const histogramChartTabs = histogramViewTabs()}
 
@@ -752,9 +763,7 @@
             ariaLabel="Metric chart"
             tabPanelID={METRIC_CHART_PANEL_ID}
             timeRange={chartHeaderTimeRange}
-            metaRight={metricCtx.showChartStatOverlaysToggleVisible
-              ? overlayControl
-              : undefined}
+            metaRight={showChartOverlayControls ? overlayControl : undefined}
           >
             {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
             {#snippet leading()}
@@ -771,9 +780,7 @@
             subtitle={selectedSummary.serviceName?.trim() || undefined}
             ariaLabel="Metric chart"
             timeRange={chartHeaderTimeRange}
-            metaRight={metricCtx.showChartStatOverlaysToggleVisible
-              ? overlayControl
-              : undefined}
+            metaRight={showChartOverlayControls ? overlayControl : undefined}
           >
             {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
             {#snippet leading()}

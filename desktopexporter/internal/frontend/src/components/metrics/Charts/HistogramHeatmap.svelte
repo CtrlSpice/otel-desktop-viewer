@@ -1,18 +1,34 @@
 <script lang="ts">
   import ChartSticky from '@/components/metrics/Charts/ChartSticky.svelte'
+  import type { ChartStickySize } from '@/components/metrics/utils/chart-sticky-position'
+  import { heatmapCardPosition } from '@/components/metrics/utils/heatmap-card-position'
   import {
     Chart,
-    Cell,
     Axis,
     Highlight,
     Layer,
     Rect,
     Tooltip,
+    type ChartState,
   } from 'layerchart'
-  import { scaleBand, scaleThreshold } from 'd3-scale'
+  import { scaleBand, scaleThreshold, type ScaleBand } from 'd3-scale'
   import ChartKeyboardSurface from '@/components/metrics/Charts/ChartKeyboardSurface.svelte'
-  import type { HistogramSlicePoint } from '@/components/metrics/utils/histogram-aggregation'
+  import {
+    QUANTILE_LABELS_DESCENDING,
+    type HistogramSlicePoint,
+  } from '@/components/metrics/utils/histogram-aggregation'
+  import { formatMetricValue } from '@/components/metrics/utils/format-metric-value'
   import { computeHeatmapColorScale } from '@/components/metrics/utils/heatmap-color-scale'
+  import { themeSignal } from '@/state/theme.svelte'
+  import {
+    heatmapQuantilePaths,
+    histogramQuantileColor,
+  } from '@/components/metrics/utils/heatmap-quantiles'
+  import {
+    buildHeatmapBlobs,
+    heatmapBlobDetail,
+    heatmapBlobPath,
+  } from '@/components/metrics/utils/heatmap-blobs'
   import {
     computeHeatmapLayout,
     computeHeatmapPlotHeight,
@@ -21,7 +37,6 @@
     buildHistogramHeatmapData,
     type HeatmapDatum,
   } from '@/components/metrics/utils/histogram-heatmap-data'
-  import { themeSignal } from '@/state/theme.svelte'
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
   import ChartSelectionLegend from '@/components/metrics/Charts/ChartSelectionLegend.svelte'
   import { histogramColumnSelectionLegendRows } from '@/components/metrics/utils/heatmap-column-selection'
@@ -42,6 +57,8 @@
 
   const timeContext = getTimeContext()
   const ctx = getMetricViewContext()
+  const blobClipPrefix = $props.id()
+  const quantileChannelID = `${blobClipPrefix}-quantile-channels`
 
   // The context owns fetching and state; this component only renders points.
   type Props = {
@@ -71,6 +88,11 @@
   }: Props = $props()
 
   let plotAreaHeight = $state(0)
+  let chartContext = $state<
+    ChartState<HeatmapDatum, ScaleBand<string>, ScaleBand<string>> | undefined
+  >(undefined)
+  let hoveredColumnKey = $derived(chartContext?.tooltip.data?.columnKey ?? null)
+  let hoveredBucketKey = $derived(chartContext?.tooltip.data?.bucketKey ?? null)
   let plotBoxHeight = $derived(plotAreaHeight > 0 ? plotAreaHeight : height)
 
   // Tooltip header uses the project-standard datetime formatter at
@@ -91,6 +113,9 @@
 
   let columnByKey = $derived(
     new Map(heatmapColumns.map(column => [column.key, column]))
+  )
+  let pointByColumnKey = $derived(
+    new Map(heatmapColumns.map((column, index) => [column.key, points[index]!]))
   )
 
   let bucketDomain = $derived(heatmapModel.rows.map(row => row.key))
@@ -120,7 +145,14 @@
   )
 
   let cellColorThresholds = $derived(colorScale.thresholds)
-  let cellColorRange = $derived(colorScale.range)
+  let blobs = $derived(buildHeatmapBlobs(heatmapModel, cellColorThresholds))
+  // Resting cells retain the original palette; interactions lift their own colour.
+  let cellColorRange = $derived(
+    colorScale.range.map(
+      colour =>
+        `color-mix(in oklab, ${colour} var(--heatmap-cell-colour-weight, 100%), var(--color-base-content))`
+    )
+  )
 
   let visibleBucketTicks = $derived.by(() => {
     const n = bucketDomain.length
@@ -147,6 +179,41 @@
         ?.key ?? null
     )
   })
+  let selectedCellKey = $state<{ columnKey: string; bucketKey: string } | null>(
+    null
+  )
+  let selectedCell = $derived.by(() => {
+    if (!selectedCellKey || selectedCellKey.columnKey !== selectedColumnKey)
+      return null
+    const rowIndex = bucketDomain.indexOf(selectedCellKey.bucketKey)
+    if (rowIndex < 0) return null
+    return {
+      ...selectedCellKey,
+      rowIndex,
+      bucketLabel:
+        bucketLabelByKey.get(selectedCellKey.bucketKey) ??
+        selectedCellKey.bucketKey,
+      count:
+        heatmapCountByCell
+          .get(selectedCellKey.columnKey)
+          ?.get(selectedCellKey.bucketKey) ?? 0,
+    }
+  })
+  $effect(() => {
+    if (selectedCellKey && selectedCellKey.columnKey !== selectedColumnKey)
+      selectedCellKey = null
+  })
+
+  function selectCell(columnKey: string, bucketKey: string) {
+    const column = columnByKey.get(columnKey)
+    if (!column || !onSelect) return
+    const sameCell =
+      selectedColumnKey === columnKey && selectedCell?.bucketKey === bucketKey
+    selectedCellKey = sameCell ? null : { columnKey, bucketKey }
+    // Picking another row in the pinned column changes the cell, not the pin.
+    if (selectedColumnKey !== columnKey || sameCell)
+      onSelect(column.timestampNs)
+  }
   const keyboardNavigation = createGridChartKeyboardCursor(
     () => timeDomain,
     () => bucketDomain,
@@ -171,10 +238,21 @@
       unit.trim() && unit.trim() !== '1' ? ` ${unit.trim()}` : ''
     const bucketWithUnit =
       bucket === 'all values' ? bucket : `${bucket}${unitSuffix}`
+    const estimates = pointByColumnKey.get(column.key)?.quantiles
+    const quantileReadout = QUANTILE_LABELS_DESCENDING.filter(({ key }) =>
+      ctx.activeQuantileOverlays.has(key)
+    )
+      .flatMap(({ key, label }) => {
+        const value = estimates?.[key]
+        return value != null && Number.isFinite(value)
+          ? [`${label} estimate ${formatMetricValue(value)}${unitSuffix}.`]
+          : []
+      })
+      .join(' ')
     return (
       `Column ${cursor.columnIndex + 1} of ${timeDomain.length}, ${formatTooltipTime(column.timestampMs)}. ` +
       `Row ${cursor.rowIndex + 1} of ${bucketDomain.length}, bucket ${bucketWithUnit}. ` +
-      `Count ${count}.`
+      `Count ${count}. ${quantileReadout}`
     )
   })
 
@@ -194,7 +272,7 @@
       if (!column) return
       event.preventDefault()
       event.stopPropagation()
-      onSelect(column.timestampNs)
+      selectCell(column.key, String(cursor.rowKey))
       return
     }
 
@@ -229,6 +307,9 @@
   let plotContainerWidth = $derived(Math.max(containerWidth, 0))
 
   let maxPlotHeight = $derived(Math.max(0, plotBoxHeight - PLOT_INSET_Y))
+  let keyboardRowHeight = $derived(
+    bucketDomain.length > 0 ? maxPlotHeight / bucketDomain.length : 0
+  )
 
   let baseLayout = $derived.by(() =>
     computeHeatmapLayout({
@@ -241,13 +322,21 @@
   let plotHeight = $derived.by(() =>
     computeHeatmapPlotHeight({ maxPlotHeight })
   )
-
   let heatmapLayout = $derived(baseLayout)
 
   let chartRenderHeight = $derived(plotBoxHeight)
 
   let scrollChartWidth = $derived(heatmapLayout.chartWidth)
   let columnPitch = $derived(heatmapLayout.columnPitch)
+  let quantilePaths = $derived(
+    heatmapQuantilePaths(
+      points,
+      heatmapModel,
+      columnPitch,
+      maxPlotHeight,
+      ctx.activeQuantileOverlays
+    )
+  )
   let plotWidth = $derived(heatmapLayout.plotWidth)
   let heatmapScrolls = $derived(
     containerWidth > 0 && scrollChartWidth > plotContainerWidth
@@ -280,12 +369,15 @@
     if (!onSelect || timeDomain.length === 0 || columnPitch <= 0) return
     const rect = event.currentTarget.getBoundingClientRect()
     const plotX = event.clientX - rect.left - heatmapPlotPadding.left
+    const plotY = event.clientY - rect.top - heatmapPlotPadding.top
     if (plotX < 0 || plotX > plotWidth) return
+    if (plotY < 0 || plotY >= maxPlotHeight || keyboardRowHeight <= 0) return
     const idx = Math.floor(plotX / columnPitch)
     if (idx < 0 || idx >= timeDomain.length) return
     const column = columnByKey.get(timeDomain[idx]!)
     if (!column) return
-    onSelect(column.timestampNs)
+    const bucketKey = bucketDomain[Math.floor(plotY / keyboardRowHeight)]
+    if (bucketKey !== undefined) selectCell(column.key, bucketKey)
   }
 
   let selectedColumnX = $derived.by(() => {
@@ -305,7 +397,11 @@
             selectedColumnX +
             columnPitch / 2 -
             scrollLeft,
-          y: heatmapPlotPadding.top + maxPlotHeight / 2,
+          y:
+            heatmapPlotPadding.top +
+            (selectedCell
+              ? (selectedCell.rowIndex + 0.5) * keyboardRowHeight
+              : maxPlotHeight / 2),
         }
   )
 
@@ -325,9 +421,52 @@
     columnSelectionRowColumns.some(column => column.length > 0)
   )
 
-  let keyboardRowHeight = $derived(
-    bucketDomain.length > 0 ? maxPlotHeight / bucketDomain.length : 0
+  let blobDetail = $derived(heatmapBlobDetail(columnPitch, keyboardRowHeight))
+  // Geometry depends on the grid and viewport, not pointer/selection state.
+  let renderedBlobs = $derived.by(() => {
+    const columns = new Map(timeDomain.map((key, index) => [key, index]))
+    const rows = new Map(bucketDomain.map((key, index) => [key, index]))
+    return blobs.map((blob, index) => ({
+      key: blob.key,
+      band: blob.band,
+      clipID: `${blobClipPrefix}-blob-${index}`,
+      path: heatmapBlobPath(blob, columnPitch, keyboardRowHeight, {
+        columns: timeDomain.length,
+        rows: bucketDomain.length,
+      }),
+      cells: blob.cells.map(cell => ({
+        datum: cell,
+        x: columns.get(cell.columnKey)! * columnPitch,
+        y: rows.get(cell.bucketKey)! * keyboardRowHeight,
+      })),
+    }))
+  })
+  let cardObstacles = $derived(
+    renderedBlobs.flatMap(blob =>
+      blob.cells.map(cell => ({
+        left: heatmapPlotPadding.left + cell.x - scrollLeft,
+        top: heatmapPlotPadding.top + cell.y,
+        width: columnPitch,
+        height: keyboardRowHeight,
+      }))
+    )
   )
+
+  function positionSelectionCard(size: ChartStickySize) {
+    return heatmapCardPosition({
+      ...size,
+      columnLeft: heatmapPlotPadding.left + (selectedColumnX ?? 0) - scrollLeft,
+      columnWidth: columnPitch,
+      anchorY: selectedCell ? selectionAnchor?.y : undefined,
+      plot: {
+        left: heatmapPlotPadding.left,
+        top: heatmapPlotPadding.top,
+        width: Math.max(0, plotContainerWidth - PLOT_INSET_X),
+        height: maxPlotHeight,
+      },
+      cells: cardObstacles,
+    })
+  }
   let keyboardShortcuts = $derived([
     'ArrowLeft',
     'ArrowRight',
@@ -383,6 +522,7 @@
           onclick={handleHeatmapClick}
         >
           <Chart
+            bind:context={chartContext}
             data={heatmapData}
             x="columnKey"
             xScale={xBandScale}
@@ -412,7 +552,78 @@
                 ticks={visibleBucketTicks}
                 format={formatBucketTick}
               />
-              <Cell x="columnKey" y="bucketKey" fill="count" />
+              <defs>
+                <mask
+                  id={quantileChannelID}
+                  maskUnits="userSpaceOnUse"
+                  x={0}
+                  y={0}
+                  width={plotWidth}
+                  height={maxPlotHeight}
+                  style="mask-type: luminance"
+                >
+                  <rect
+                    x={0}
+                    y={0}
+                    width={plotWidth}
+                    height={maxPlotHeight}
+                    fill="white"
+                  />
+                  {#each quantilePaths as quantile (quantile.key)}
+                    <path
+                      d={quantile.path}
+                      class="heatmap-quantile-channel"
+                      fill="none"
+                      stroke="black"
+                      stroke-width={4}
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  {/each}
+                </mask>
+              </defs>
+              <g class="heatmap-blobs" mask={`url(#${quantileChannelID})`}>
+                {#each renderedBlobs as blob (blob.key)}
+                  <defs>
+                    <clipPath id={blob.clipID} clipPathUnits="userSpaceOnUse">
+                      <path d={blob.path} clip-rule="evenodd" />
+                    </clipPath>
+                  </defs>
+                  <g class="heatmap-blob" clip-path={`url(#${blob.clipID})`}>
+                    <path
+                      class="heatmap-blob-fill"
+                      d={blob.path}
+                      fill={cellColorRange[blob.band]}
+                      fill-rule="evenodd"
+                    />
+                    {#each blob.cells as cell (cell.datum)}
+                      <rect
+                        x={cell.x}
+                        y={cell.y}
+                        width={columnPitch}
+                        height={keyboardRowHeight}
+                        fill={cellColorRange[blob.band]}
+                        class="heatmap-cell"
+                        class:heatmap-cell--hovered={cell.datum.columnKey ===
+                          hoveredColumnKey &&
+                          cell.datum.bucketKey === hoveredBucketKey}
+                        class:heatmap-cell--selected={cell.datum.columnKey ===
+                          selectedColumnKey &&
+                          (!selectedCell ||
+                            cell.datum.bucketKey === selectedCell.bucketKey)}
+                      />
+                    {/each}
+                    <path
+                      class="heatmap-blob-outline"
+                      d={blob.path}
+                      style:--blob-color={cellColorRange[blob.band]}
+                      style:--blob-outline-width={blobDetail.liner * 2}
+                      aria-hidden="true"
+                    />
+                  </g>
+                {/each}
+              </g>
+              <Highlight area={{ class: 'heatmap-hover-column' }} axis="x" />
               {#if selectedColumnX !== null}
                 <Rect
                   x={selectedColumnX}
@@ -422,7 +633,25 @@
                   class="heatmap-selection"
                 />
               {/if}
-              <Highlight area={{ class: 'heatmap-hover-column' }} axis="x" />
+              <g class="heatmap-quantile-overlays" aria-hidden="true">
+                {#each quantilePaths as quantile (quantile.key)}
+                  <path d={quantile.path} class="quantile-line-backing" />
+                  <path
+                    d={quantile.path}
+                    class="heatmap-quantile-line"
+                    style:--quantile-color={histogramQuantileColor(
+                      quantile.key
+                    )}
+                    stroke-dasharray={quantile.dash}
+                    data-quantile={quantile.key}
+                  >
+                    <title
+                      >{quantile.label}: bucket-derived estimate of the combined
+                      checked series</title
+                    >
+                  </path>
+                {/each}
+              </g>
               {#if keyboardFocused && activeKeyboardCursor && keyboardRowHeight > 0}
                 <Rect
                   x={activeKeyboardCursor.columnIndex * columnPitch}
@@ -446,6 +675,17 @@
                     value={data.count}
                     format="integer"
                   />
+                  {#each QUANTILE_LABELS_DESCENDING.filter( ({ key }) => ctx.activeQuantileOverlays.has(key) ) as quantile (quantile.key)}
+                    {@const value = pointByColumnKey.get(data.columnKey)
+                      ?.quantiles?.[quantile.key]}
+                    {#if value != null && Number.isFinite(value)}
+                      <Tooltip.Item
+                        label="{quantile.label} (estimate)"
+                        value={formatMetricValue(value) +
+                          (unit.trim() ? ` ${unit.trim()}` : '')}
+                      />
+                    {/if}
+                  {/each}
                 </Tooltip.List>
               {/snippet}
             </Tooltip.Root>
@@ -453,13 +693,42 @@
         </div>
       </div>
       {#if onSelect && hasColumnSelectionSummary}
-        <ChartSticky anchor={selectionAnchor}>
+        <ChartSticky
+          anchor={selectionAnchor}
+          positioner={positionSelectionCard}
+        >
           <div class="metric-heatmap-chart__selection-legend">
             <ChartSelectionLegend
               variant="columns"
               timestamp={columnSelectionTimestamp}
               rowColumns={columnSelectionRowColumns}
-            />
+            >
+              {#snippet leading()}
+                {#if selectedCell}
+                  <div class="heatmap-selected-cell">
+                    <div class="heatmap-selection-heading">Selected cell</div>
+                    <dl>
+                      <div>
+                        <dt>bucket</dt>
+                        <dd>
+                          {selectedCell.bucketLabel}{selectedCell.bucketLabel !==
+                            'all values' &&
+                          unit.trim() &&
+                          unit.trim() !== '1'
+                            ? ` ${unit.trim()}`
+                            : ''}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>count</dt>
+                        <dd>{selectedCell.count}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                {/if}
+                <div class="heatmap-selection-heading">Column summary</div>
+              {/snippet}
+            </ChartSelectionLegend>
           </div>
         </ChartSticky>
       {/if}
@@ -486,6 +755,30 @@
 
   .metric-heatmap-chart__selection-legend {
     @apply min-w-0 max-w-full;
+  }
+
+  .heatmap-selection-heading {
+    @apply mb-1 font-semibold text-base-content;
+  }
+
+  .heatmap-selected-cell {
+    @apply mb-2 border-b border-base-300 pb-2;
+  }
+
+  .heatmap-selected-cell dl {
+    @apply flex flex-wrap gap-x-4 gap-y-1;
+  }
+
+  .heatmap-selected-cell dl > div {
+    @apply flex gap-2;
+  }
+
+  .heatmap-selected-cell dt {
+    color: var(--color-subtle);
+  }
+
+  .heatmap-selected-cell dd {
+    @apply m-0 text-base-content;
   }
 
   .metric-heatmap-chart__selection-legend
@@ -551,35 +844,42 @@
     @apply overflow-x-auto;
   }
 
-  .heatmap-wrapper
-    :global(.lc-rect:not(.heatmap-selection):not(.chart-keyboard-cursor-cell)) {
+  .heatmap-wrapper :global(.heatmap-cell) {
     stroke: none;
+    fill-opacity: 0;
     shape-rendering: crispEdges;
+  }
+
+  .heatmap-wrapper :global(.heatmap-blob-fill) {
+    stroke: none;
+    pointer-events: none;
+  }
+
+  .heatmap-wrapper :global(.heatmap-blob-outline) {
+    fill: none;
+    stroke: color-mix(
+      in oklab,
+      var(--blob-color) 85%,
+      var(--color-base-content)
+    );
+    /* The blob clip retains the inner half, keeping the gap clear. */
+    stroke-width: var(--blob-outline-width);
+    stroke-linejoin: round;
+    pointer-events: none;
+  }
+
+  .heatmap-wrapper :global(.heatmap-cell--hovered) {
+    --heatmap-cell-colour-weight: 88%;
+    fill-opacity: 1;
+  }
+
+  .heatmap-wrapper :global(.heatmap-cell--selected) {
+    --heatmap-cell-colour-weight: 84%;
+    fill-opacity: 1;
   }
 
   /* Pointer affordance applies only when column selection is wired. */
   .heatmap-wrapper--clickable {
     @apply cursor-pointer;
-  }
-
-  /* Full-column hover band (Highlight axis="x"). */
-  .heatmap-wrapper :global(.heatmap-hover-column) {
-    --fill-color: color-mix(
-      in oklab,
-      var(--color-primary, #eb6f92) 14%,
-      transparent
-    );
-    pointer-events: none;
-  }
-
-  /* Persistent selection ring drawn over the active column. Stroke-only
-     (no fill) so the underlying Cell colour stays readable -- the user
-     still wants to see the count distribution in the column they're
-     inspecting. Rosé Pine "love" reads well on both light and dark. */
-  .heatmap-wrapper :global(.heatmap-selection) {
-    fill: none;
-    stroke: var(--color-primary, #eb6f92);
-    stroke-width: 2;
-    pointer-events: none;
   }
 </style>

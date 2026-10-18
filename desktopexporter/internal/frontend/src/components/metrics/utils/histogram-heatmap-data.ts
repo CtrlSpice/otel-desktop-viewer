@@ -26,11 +26,14 @@ export type HeatmapBucketRow = {
   key: string
   label: string
   order: number
+  lo: number
+  hi: number
 }
 
 export type HistogramHeatmapData = {
   columns: HeatmapColumn[]
   rows: HeatmapBucketRow[]
+  rowsByColumn: ReadonlyMap<string, readonly HeatmapBucketRow[]>
   cells: HeatmapDatum[]
   countByColumn: ReadonlyMap<string, ReadonlyMap<string, number>>
   maxCount: number
@@ -80,6 +83,7 @@ function projectHistogramHeatmapData(
   })
 
   const rowByKey = new Map<string, HeatmapBucketRow>()
+  const rowsByColumn = new Map<string, readonly HeatmapBucketRow[]>()
   const cells: HeatmapDatum[] = []
   const countByColumn = new Map<string, Map<string, number>>()
   const distinctNonZeroCounts = new Set<number>()
@@ -171,6 +175,8 @@ function projectHistogramHeatmapData(
         key: histogramRangeIdentity(lo, hi),
         label,
         order,
+        lo,
+        hi,
       })
     }
     return descriptors
@@ -248,12 +254,16 @@ function projectHistogramHeatmapData(
         key: exponentialBucketIdentity(point.scale, 'negative', exponent),
         label: formatHistogramBound(order),
         order,
+        lo,
+        hi,
       })
     }
     descriptors.push({
       key: exponentialZeroBucketIdentity(point.zeroThreshold),
       label: exponentialZeroBucketLabel(point.zeroThreshold),
       order: 0,
+      lo: -point.zeroThreshold,
+      hi: point.zeroThreshold,
     })
     for (
       let countIndex = 0;
@@ -268,6 +278,8 @@ function projectHistogramHeatmapData(
         key: exponentialBucketIdentity(point.scale, 'positive', exponent),
         label: formatHistogramBound(order),
         order,
+        lo,
+        hi,
       })
     }
     return descriptors
@@ -330,6 +342,7 @@ function projectHistogramHeatmapData(
     const column = columns[pointIndex]!
     if (point.kind === 'histogram') {
       const descriptors = explicitDescriptors(point)
+      rowsByColumn.set(column.key, descriptors)
       for (let index = 0; index < point.counts.length; index++) {
         addCount(column, descriptors[index]!, point.counts[index]!)
       }
@@ -337,6 +350,7 @@ function projectHistogramHeatmapData(
     }
 
     const descriptors = exponentialDescriptors(point)
+    rowsByColumn.set(column.key, descriptors)
     let descriptorIndex = 0
     for (
       let countIndex = point.negativeCounts.length - 1;
@@ -382,6 +396,7 @@ function projectHistogramHeatmapData(
   return {
     columns,
     rows,
+    rowsByColumn,
     cells,
     countByColumn,
     maxCount,

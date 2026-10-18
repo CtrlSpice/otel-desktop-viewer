@@ -22,6 +22,7 @@
 </script>
 
 <script lang="ts">
+  import type { Snippet } from 'svelte'
   import type { AggregateSummaryRow } from '@/components/metrics/utils/aggregation'
   import ChartAggregateSummaryRows from '@/components/metrics/Charts/ChartAggregateSummaryRows.svelte'
   /* Callers position the card and provide preformatted rows. */
@@ -44,6 +45,8 @@
     /** Optional aggregate summary rows at the bottom (dashed-line
      *  markers matching Selected / All aggregate lines). */
     aggregateRows?: readonly AggregateSummaryRow[]
+    /** Selection-specific details before the aggregate rows. */
+    leading?: Snippet
   }
 
   let {
@@ -53,6 +56,7 @@
     columnLabels = [],
     variant = 'default',
     aggregateRows = [],
+    leading,
   }: Props = $props()
 
   let hasRowColumns = $derived(rowColumns.some(column => column.length > 0))
@@ -68,6 +72,7 @@
     {#if timestamp}
       <div class="chart-selection-legend__timestamp">{timestamp}</div>
     {/if}
+    {@render leading?.()}
     {#if hasRowColumns}
       <div class="chart-selection-legend__columns">
         {#each rowColumns as column, columnIndex (columnIndex)}

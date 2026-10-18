@@ -689,7 +689,7 @@
 
   /* ── Body (list) ── */
   .signal-drawer__controls {
-    @apply mx-3 mt-3 flex min-h-10 min-w-0 shrink-0 items-center rounded-xl bg-base-200;
+    @apply mx-3 mt-3 flex min-h-10 min-w-0 shrink-0 items-center rounded-xl border border-base-300 bg-base-200;
   }
 
   .signal-drawer__body {

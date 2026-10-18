@@ -1,4 +1,7 @@
-import { QUANTILE_LABELS } from '@/components/metrics/utils/histogram-aggregation'
+import {
+  QUANTILE_LABELS,
+  QUANTILE_LABELS_DESCENDING,
+} from '@/components/metrics/utils/histogram-aggregation'
 import type { HistogramSlicePoint } from '@/components/metrics/utils/histogram-aggregation'
 import type { HistogramTotals } from '@/components/metrics/utils/histogram-aggregation'
 import type { SelectionLegendRow } from '@/components/metrics/Charts/ChartSelectionLegend.svelte'
@@ -11,7 +14,7 @@ export type HeatmapColumnSelection = {
 }
 
 /** Column groups for histogram distribution stats (heatmap + bar chart).
- *  Layout: count/sum | min/max | scale/zeros (exp only) | p50/p95 | p99 */
+ *  Layout: count/sum | min/max | scale/zeros (exp only) | p99 | p95/p50 */
 export function histogramDistributionLegendColumns(opts: {
   totals: HistogramTotals
   quantiles: Record<string, number | null>
@@ -74,7 +77,7 @@ export function histogramDistributionLegendColumns(opts: {
 
   const midQuantiles: SelectionLegendRow[] = []
   let p99: SelectionLegendRow | null = null
-  for (const { key, label } of QUANTILE_LABELS) {
+  for (const { key, label } of QUANTILE_LABELS_DESCENDING) {
     const value = opts.quantiles[key]
     const row: SelectionLegendRow = {
       key,
@@ -90,8 +93,8 @@ export function histogramDistributionLegendColumns(opts: {
     }
   }
 
-  columns.push(midQuantiles)
   if (p99) columns.push([p99])
+  columns.push(midQuantiles)
 
   return columns
 }

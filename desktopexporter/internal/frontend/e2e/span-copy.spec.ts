@@ -76,6 +76,125 @@ const trace: JsonTraceData = {
   })),
 }
 
+for (const [theme, errorColour] of [
+  ['rose-pine', 'rgb(235, 111, 146)'],
+  ['rose-pine-moon', 'rgb(235, 111, 146)'],
+  ['rose-pine-dawn', 'rgb(180, 99, 122)'],
+]) {
+  test(`span status values use the theme error colour only for code 2 in ${theme}`, async ({
+    page,
+  }) => {
+    let statusCodeValue = 2
+    await page.addInitScript(
+      theme => localStorage.setItem('theme', theme),
+      theme
+    )
+    await page.setViewportSize({ width: 1920, height: 1100 })
+    await page.route('**/rpc', async route => {
+      const request = route.request().postDataJSON() as {
+        id: number
+        method: string
+      }
+      const statusTrace: JsonTraceData = {
+        ...trace,
+        spans: trace.spans.map(node =>
+          node.spanData.spanID === selectedID
+            ? {
+                ...node,
+                spanData: {
+                  ...node.spanData,
+                  statusCodeValue,
+                  statusCode:
+                    statusCodeValue === 2
+                      ? 'Error'
+                      : statusCodeValue === 0
+                        ? 'Unset'
+                        : statusCodeValue === 1
+                          ? 'Ok'
+                          : 'Unknown (99)',
+                  statusMessage: 'received error message',
+                },
+              }
+            : node
+        ),
+      }
+      const result =
+        request.method === 'getTraceView'
+          ? statusTrace
+          : request.method === 'searchTraceSummaries'
+            ? [
+                {
+                  traceID,
+                  hasRootSpan: true,
+                  rootSpan: { serviceName: 'checkout', name: 'other span' },
+                  startTime: trace.traceStart,
+                  durationNs: '1000000000',
+                  spanCount: 2,
+                  errorCount: statusCodeValue === 2 ? 1 : 0,
+                },
+              ]
+            : request.method === 'getStats'
+              ? {
+                  storage: { sizeBytes: 0, maxSizeBytes: 0 },
+                  traces: {
+                    traceCount: 1,
+                    spanCount: 2,
+                    serviceCount: 1,
+                    errorCount: statusCodeValue === 2 ? 1 : 0,
+                    lastReceived: null,
+                  },
+                  logs: { logCount: 0, errorCount: 0, lastReceived: null },
+                  metrics: {
+                    metricCount: 0,
+                    dataPointCount: 0,
+                    lastReceived: null,
+                  },
+                  rejections: [],
+                }
+              : []
+      await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result } })
+    })
+    for (const code of [2, 0, 1, 99]) {
+      statusCodeValue = code
+      await page.goto(`/traces/${traceID}?span=${selectedID}`)
+      const detail = page.getByRole('region', {
+        name: 'Span details',
+        exact: true,
+      })
+      const codeField = detail.locator('[data-field="status.code"]')
+      const codeValue = codeField.locator('.detail-property__value')
+      await expect(codeValue).toBeVisible()
+      const message = detail.locator(
+        '[data-field="status.message"] .detail-property__value'
+      )
+      const nameValue = detail.getByText('"selected span"', { exact: true })
+      const neutralColour = await nameValue.evaluate(
+        value => getComputedStyle(value).color
+      )
+      await expect(codeValue).toHaveCSS(
+        'color',
+        code === 2 ? errorColour : neutralColour
+      )
+      if (code === 2)
+        await expect(
+          codeField.locator('.detail-property__annotation')
+        ).toHaveCSS('color', errorColour)
+      if (code === 0 || code === 1) await expect(message).toHaveCount(0)
+      else {
+        await expect(message).toHaveText('"received error message"')
+        await expect(message).toHaveCSS(
+          'color',
+          code === 2 ? errorColour : neutralColour
+        )
+      }
+      await expect(nameValue).toHaveCSS('color', neutralColour)
+      await expect(codeField.locator('.detail-property__type')).toHaveClass(
+        /badge-primary/
+      )
+    }
+  })
+}
+
 test('Copy span sits opposite the span icon and copies only the selected span with context', async ({
   page,
   context,

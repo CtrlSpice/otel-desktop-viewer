@@ -33,7 +33,7 @@
    *   right-aligned via the bar's own flex layout.
    *
    * Consumer contract
-   *   The header is bg-base-300. Selection is drawn inside each tab without
+   *   The header is bg-base-200. Selection is drawn inside each tab without
    *   manufacturing borders around or between the header and pane body.
    */
   import type { Snippet } from 'svelte'
@@ -436,7 +436,11 @@
   /* Shared theme surface; the workspace toolbar can override the fill. */
   .pane-header {
     @apply flex min-w-0 shrink-0 flex-nowrap items-end gap-2 overflow-hidden px-0.5 pt-0.5;
-    background-color: var(--pane-header-bg, var(--color-base-300));
+    background-color: var(--pane-header-bg, var(--color-base-200));
+  }
+
+  .pane-header:not(.pane-header--toolbar) {
+    border: 1px solid var(--color-base-300);
   }
 
   .pane-header--rounded {
@@ -444,7 +448,6 @@
   }
 
   .pane-header--pill {
-    --pane-header-bg: var(--color-base-300);
     @apply min-h-10 rounded-xl;
   }
 
@@ -480,7 +483,7 @@
   }
 
   .pane-header__meta-row {
-    @apply flex w-full min-w-0 items-center justify-between gap-2 pb-1.5;
+    @apply flex w-full min-w-0 flex-wrap items-center justify-between gap-2 pb-1.5;
   }
 
   .pane-header__time-range {
@@ -488,7 +491,7 @@
   }
 
   .pane-header__meta-right {
-    @apply ml-auto flex shrink-0 items-center gap-2;
+    @apply ml-auto flex min-w-0 max-w-full shrink-0 flex-wrap items-center gap-2;
   }
 
   .pane-header--toolbar {

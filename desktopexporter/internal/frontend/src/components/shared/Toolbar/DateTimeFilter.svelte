@@ -78,7 +78,7 @@
 <button
   bind:this={triggerEl}
   type="button"
-  class={className}
+  class="time-filter-trigger {className}"
   popovertarget={popoverID}
   aria-expanded={popoverOpen}
   aria-label={ariaLabel}
@@ -111,3 +111,15 @@
     <TimeRangeFilterBody />
   </div>
 </div>
+
+<style>
+  .time-filter-trigger {
+    border: 1px solid var(--color-base-300);
+    background-color: var(--color-base-200);
+    box-shadow: none;
+  }
+
+  .time-filter-trigger:hover {
+    background-color: var(--color-base-300);
+  }
+</style>

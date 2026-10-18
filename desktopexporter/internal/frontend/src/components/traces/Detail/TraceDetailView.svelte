@@ -215,6 +215,7 @@
           {#if detailSearchFieldVisible(columnFilter, 'statusCode') || detailSearchFieldVisible(columnFilter, 'statusCodeValue')}
             <SpanField
               fieldName="status.code"
+              valueTone={span.statusCodeValue === 2 ? 'error' : undefined}
               fieldValue={span.statusCodeValue.toString()}
               valueLabel={detailSearchFieldVisible(columnFilter, 'statusCode')
                 ? span.statusCode
@@ -228,6 +229,7 @@
           {#if span.statusCodeValue !== 0 && span.statusCodeValue !== 1 && detailSearchFieldVisible(columnFilter, 'statusMessage')}
             <SpanField
               fieldName="status.message"
+              valueTone={span.statusCodeValue === 2 ? 'error' : undefined}
               fieldValue={span.statusMessage}
               fieldType="string"
             />

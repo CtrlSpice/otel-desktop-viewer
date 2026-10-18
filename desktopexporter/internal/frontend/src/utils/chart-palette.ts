@@ -4,48 +4,25 @@
 //     histogram heatmap legends, and trace waterfall bars. Uses the approved
 //     five-family static table, rotated so the caller's requested family leads.
 //
-//   - `heatmapSwatches()` -- smooth count ramp for the histogram heatmap.
-//     Endpoints are per-theme literal hex; HCL interpolation keeps the
-//     middle stops on a clean hue arc rather than drifting through
-//     grey/purple the way sRGB does for dark-to-saturated pairs. Try
-//     `interpolateLab` if HCL hue arcs ever look wrong; sRGB
-//     (`interpolateRgb`) is generally too muddy for these endpoints.
+//   - `heatmapSwatches()` -- per-theme count ramp, interpolated in HCL.
 //
-// Error colouring (e.g. error spans in the waterfall) is intentionally
-// *not* in this file -- callers reach for `var(--color-error)` directly so
-// the error semantic stays anchored to the daisyUI token rather than
-// shadowed by a palette function. Keeps the categorical pool free of
-// reserved hues.
+// Error spans use `var(--color-error)` directly. The heatmap also uses that
+// theme token for its love endpoint; the categorical palette is separate.
 
 import { interpolateHcl } from 'd3-interpolate'
 import chartPalettes from './chart-palettes.json'
 
-// Per-theme heatmap endpoints. base-200 on the cold end so the lowest swatch
-// blends into the chart surface; the "hot" end varies by theme so the ramp
-// reads as theme-native rather than imported.
 const DEFAULT_HEATMAP_ENDPOINTS = ['#2a273f', '#eb6f92'] as const
 const HEATMAP_ENDPOINTS = new Map<string, readonly [string, string]>([
-  ['rose-pine', ['#1f1d2e', '#eb6f92']], // base-200 → error (love)
-  ['rose-pine-moon', DEFAULT_HEATMAP_ENDPOINTS], // base-200 → error (love)
-  ['rose-pine-dawn', ['#faf4ed', '#907aa9']], // base-200 → primary (iris)
+  ['rose-pine', ['#1f1d2e', '#eb6f92']],
+  ['rose-pine-moon', DEFAULT_HEATMAP_ENDPOINTS],
+  ['rose-pine-dawn', ['#faf4ed', '#907aa9']],
 ])
 
 /**
- * Visually-stepped colour ramp for a heatmap with `steps` swatches. Interpolates
- * between a theme-specific [cold, hot] hex pair so the lowest active cell is
- * already one perceptual step in from the chart surface and the hottest cell
- * reads as the theme's accent.
- *
- * Sample positions are `1/steps, 2/steps, ..., 1` -- intentionally excluding
- * t=0 (the cold endpoint) so the first swatch is visible against the chart
- * background. Callers that need a true "empty" colour should prepend the
- * `base-200` (or whatever surface) swatch themselves.
- *
- * No upper cap on steps -- callers that need 16 or 32 swatches get them.
- * `steps <= 1` returns just the hot end.
- *
- * Returns CSS-compatible `rgb(r, g, b)` strings (d3's default output format).
- * Unknown / empty `theme` falls back to the moon ramp.
+ * Sample the HCL ramp at 1/steps through 1, excluding the cold endpoint.
+ * A single step uses the hot endpoint. Unknown themes
+ * use the Moon ramp.
  */
 export function heatmapSwatches(steps: number, theme: string = ''): string[] {
   const safeSteps = Math.max(1, Math.floor(steps))

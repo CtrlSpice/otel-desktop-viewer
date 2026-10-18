@@ -709,11 +709,11 @@
 
   .search-editor-wrapper--drawer
     .search-editor-container:hover:not(:focus-within) {
-    background-color: var(--typed-field-bg, var(--color-base-100));
+    background-color: var(--typed-field-bg, var(--color-base-200));
   }
 
   .search-editor-wrapper--drawer .search-editor-container:focus-within {
-    background-color: var(--typed-field-bg, var(--color-base-100));
+    background-color: var(--typed-field-bg, var(--color-base-200));
   }
 
   .search-editor__header-actions {
@@ -781,7 +781,7 @@
 
   .search-editor-container {
     @apply input relative flex w-full items-center;
-    background-color: var(--typed-field-bg, var(--color-base-100));
+    background-color: var(--typed-field-bg, var(--color-base-200));
     height: fit-content;
   }
 

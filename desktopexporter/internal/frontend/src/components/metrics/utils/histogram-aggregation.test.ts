@@ -81,6 +81,39 @@ function histSlice(
   }
 }
 
+describe('histogramSliceToChartDatapoint quantiles', () => {
+  const explicit = histSlice(ts1, '', [0, 2, 7, 3, 0])
+  const exponential: HistogramSlicePoint = {
+    kind: 'expHistogram',
+    timestamp: ts1,
+    seriesRef: '',
+    scale: 0,
+    zeroThreshold: 0,
+    zeroCount: 0,
+    positiveOffset: 0,
+    positiveCounts: [2, 7, 3],
+    negativeOffset: 0,
+    negativeCounts: [],
+    totals: explicit.totals,
+    quantiles: { '0.5': 2.5, '0.95': 6, '0.99': 7 },
+  }
+  it.each([explicit, exponential])(
+    'preserves store-computed estimates for $kind distribution markers',
+    slice => {
+      const chart = histogramSliceToChartDatapoint(slice, 'merged', 'Delta', 1)
+      expect(chart.quantiles).toBe(slice.quantiles)
+      expect(
+        histogramSliceToChartDatapoint(
+          { ...slice, quantiles: null },
+          'empty',
+          'Delta',
+          1
+        ).quantiles
+      ).toBeNull()
+    }
+  )
+})
+
 describe('buildVisibleSeriesQuantileChartTimeseries', () => {
   it('emits one line per visible series and active quantile', () => {
     const perAttribute: HistogramSlicePoint[] = [

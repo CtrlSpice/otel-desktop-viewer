@@ -128,6 +128,40 @@ describe('TraceDetailView numeric enum fields', () => {
       ).not.toBeInTheDocument()
     }
   )
+
+  it.each([0, 1, 2, 99, -1])(
+    'uses the error value tone only for numeric status code 2, not %s labels or messages',
+    statusCodeValue => {
+      renderWithContexts(TraceDetailView, {
+        span: makeSpan({
+          statusCodeValue,
+          statusCode: 'Error',
+          statusMessage: 'original message',
+        }),
+      })
+      const code = document.querySelector('[data-field="status.code"]')!
+      expect(code.classList.contains('detail-property--error-value')).toBe(
+        statusCodeValue === 2
+      )
+      expect(code.querySelector('.detail-property__value')).toHaveTextContent(
+        `${statusCodeValue} (Error)`
+      )
+      const message = document.querySelector('[data-field="status.message"]')
+      if (statusCodeValue === 0 || statusCodeValue === 1) {
+        expect(message).toBeNull()
+      } else {
+        expect(
+          message?.classList.contains('detail-property--error-value')
+        ).toBe(statusCodeValue === 2)
+        expect(
+          message?.querySelector('.detail-property__value')
+        ).toHaveTextContent('"original message"')
+      }
+      expect(document.querySelector('[data-field="kind"]')).not.toHaveClass(
+        'detail-property--error-value'
+      )
+    }
+  )
 })
 
 describe('TraceDetailView parent span link', () => {

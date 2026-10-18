@@ -3,16 +3,26 @@
   import {
     chartStickyPosition,
     type ChartAnchor,
+    type ChartStickySize,
   } from '@/components/metrics/utils/chart-sticky-position'
 
-  let { anchor, children }: { anchor: ChartAnchor | null; children: Snippet } =
-    $props()
+  let {
+    anchor,
+    children,
+    positioner,
+  }: {
+    anchor: ChartAnchor | null
+    children: Snippet
+    positioner?: (size: ChartStickySize) => { left: number; top: number }
+  } = $props()
   let width = $state(0)
   let height = $state(0)
   let cardWidth = $state(0)
   let cardHeight = $state(0)
   let position = $derived(
-    chartStickyPosition(anchor, width, height, cardWidth, cardHeight)
+    positioner
+      ? positioner({ width, height, cardWidth, cardHeight })
+      : chartStickyPosition(anchor, width, height, cardWidth, cardHeight)
   )
 </script>
 

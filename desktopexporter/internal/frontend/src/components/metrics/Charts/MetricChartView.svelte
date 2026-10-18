@@ -1,7 +1,7 @@
 <script lang="ts">
   /*
    * MetricChartView is the "main" pane on the metrics page. It owns
-   * the chart surface (histogram views, time-series chart, or an
+   * the chart surface (combined histogram/quantile views, time-series chart, or an
    * unspecified-temporality callout). Histogram view tabs live in the
    * metrics page PaneHeader, same as Gauge/Sum aggregation tabs.
    *
@@ -18,7 +18,6 @@
   } from '@/contexts/metric-view-context.svelte'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import MetricTimeSeriesChart from '@/components/metrics/Charts/MetricTimeSeriesChart.svelte'
-  import MetricQuantileAreaChart from '@/components/metrics/Charts/MetricQuantileAreaChart.svelte'
   import HistogramChart from '@/components/metrics/Charts/HistogramChart.svelte'
   import HistogramHeatmap from '@/components/metrics/Charts/HistogramHeatmap.svelte'
   import UnspecifiedTemporalityCallout from '@/components/metrics/Detail/UnspecifiedTemporalityCallout.svelte'
@@ -28,21 +27,13 @@
     chartPadding,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
   import MetricChartControlBar from '@/components/metrics/Charts/MetricChartControlBar.svelte'
-  import HistogramQuantileControlBar from '@/components/metrics/Charts/HistogramQuantileControlBar.svelte'
-  import HistogramHeatmapControlBar from '@/components/metrics/Charts/HistogramHeatmapControlBar.svelte'
+  import HistogramHeatmapLegend from '@/components/metrics/Charts/HistogramHeatmapLegend.svelte'
   import HistogramChartControlBar from '@/components/metrics/Charts/HistogramChartControlBar.svelte'
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
   import { formatDateTime } from '@/utils/time'
-  import { QUANTILE_LABELS } from '@/components/metrics/utils/histogram-aggregation'
 
   const ctx = getMetricViewContext()
   const timeContext = getTimeContext()
-
-  let activeQuantileKeys = $derived(
-    QUANTILE_LABELS.map(q => q.key).filter(k =>
-      ctx.activeQuantileOverlays.has(k)
-    )
-  )
 
   let histogramBucketTimestamp = $derived.by((): string => {
     if (ctx.histogramScope !== 'bucket') return ''
@@ -60,15 +51,6 @@
       return 'Select a datapoint'
     }
     return 'No aggregate in range'
-  })
-
-  let quantileEmptyMessage = $derived.by((): string => {
-    if (ctx.bucketSeriesError) return 'Cannot chart quantiles for this metric'
-    if (ctx.histogramTimeseriesCount === 0) return 'No datapoints to chart'
-    if (ctx.visibleSeries.size === 0) {
-      return 'Nothing to see here — select a timeseries below'
-    }
-    return 'No quantile data in range'
   })
 
   /** Plot area inside the chart pane (flex slot below tabs / subtitle). */
@@ -97,6 +79,9 @@
 
 {#snippet histogramChartSlot()}
   <div class="metric-chart-view metric-chart-view--fill">
+    {#if ctx.activeHistogramTab === 'heatmap'}
+      <HistogramHeatmapLegend />
+    {/if}
     <div
       class="metric-chart-view__plot-host"
       bind:clientHeight={plotHostHeight}
@@ -123,27 +108,6 @@
             selectedTimestamp={ctx.heatmapColumnStartNs}
           />
         {/if}
-      {:else if ctx.activeHistogramTab === 'quantiles'}
-        {#if ctx.bucketSeriesError}
-          {@render bucketSeriesErrorMessage(ctx.bucketSeriesError)}
-        {:else if ctx.quantileChartTimeseries.length === 0}
-          <MetricChartEmpty
-            height={plotHeight}
-            message={quantileEmptyMessage}
-          />
-        {:else}
-          <MetricQuantileAreaChart
-            timeseries={ctx.quantileChartTimeseries}
-            {activeQuantileKeys}
-            unit={ctx.metric!.unit}
-            height={plotHeight}
-            timeRange={ctx.chartDataTimeRange ?? null}
-            colorByKey={ctx.timeseriesColorByKey}
-            onChartPointClick={ctx.onQuantileChartPointClick}
-            onClearSelection={ctx.clearChartSelection}
-            emptyMessage={quantileEmptyMessage}
-          />
-        {/if}
       {:else if ctx.activeHistogramTab === 'histogram'}
         {#if ctx.histogramChartError}
           {@render bucketSeriesErrorMessage(ctx.histogramChartError)}
@@ -164,11 +128,7 @@
         {/if}
       {/if}
     </div>
-    {#if ctx.activeHistogramTab === 'quantiles'}
-      <HistogramQuantileControlBar />
-    {:else if ctx.activeHistogramTab === 'heatmap'}
-      <HistogramHeatmapControlBar />
-    {:else if ctx.activeHistogramTab === 'histogram'}
+    {#if ctx.activeHistogramTab === 'histogram'}
       <HistogramChartControlBar />
     {/if}
   </div>

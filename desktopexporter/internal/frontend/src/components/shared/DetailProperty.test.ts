@@ -87,6 +87,29 @@ describe('DetailProperty copy controls', () => {
   })
 
   it.each([
+    ['status.code', 'enum', '2'],
+    ['status.message', 'string', 'received error message'],
+  ])(
+    'copies the error-toned %s value without changing its contents',
+    async (fieldName, fieldType, fieldValue) => {
+      const user = userEvent.setup()
+      const copy = vi
+        .spyOn(navigator.clipboard, 'writeText')
+        .mockResolvedValue()
+      render(DetailProperty, {
+        fieldName,
+        fieldType,
+        fieldValue,
+        valueTone: 'error',
+      })
+      await user.click(
+        screen.getByRole('button', { name: `Copy ${fieldName}` })
+      )
+      expect(copy).toHaveBeenCalledWith(fieldValue)
+    }
+  )
+
+  it.each([
     ['string', 'badge-accent'],
     ['int64', 'badge-warning'],
     ['bool', 'badge-primary'],
