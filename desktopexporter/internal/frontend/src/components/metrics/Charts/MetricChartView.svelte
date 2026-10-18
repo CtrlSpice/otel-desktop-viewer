@@ -16,7 +16,6 @@
     getMetricViewContext,
     type BucketSeriesError,
   } from '@/contexts/metric-view-context.svelte'
-  import { getTimeContext } from '@/contexts/time-context.svelte'
   import MetricTimeSeriesChart from '@/components/metrics/Charts/MetricTimeSeriesChart.svelte'
   import HistogramChart from '@/components/metrics/Charts/HistogramChart.svelte'
   import HistogramHeatmap from '@/components/metrics/Charts/HistogramHeatmap.svelte'
@@ -27,31 +26,10 @@
     chartPadding,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
   import MetricChartControlBar from '@/components/metrics/Charts/MetricChartControlBar.svelte'
-  import HistogramHeatmapLegend from '@/components/metrics/Charts/HistogramHeatmapLegend.svelte'
-  import HistogramChartControlBar from '@/components/metrics/Charts/HistogramChartControlBar.svelte'
+  import HistogramCountLegend from '@/components/metrics/Charts/HistogramCountLegend.svelte'
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
-  import { formatDateTime } from '@/utils/time'
 
   const ctx = getMetricViewContext()
-  const timeContext = getTimeContext()
-
-  let histogramBucketTimestamp = $derived.by((): string => {
-    if (ctx.histogramScope !== 'bucket') return ''
-    const dp = ctx.histogramChartDatapoint
-    if (!dp) return ''
-    return formatDateTime(
-      Number(dp.timestamp / 1_000_000n),
-      timeContext.tz,
-      'milliseconds'
-    )
-  })
-
-  let histogramEmptyMessage = $derived.by((): string => {
-    if (ctx.histogramScope === 'bucket') {
-      return 'Select a datapoint'
-    }
-    return 'No aggregate in range'
-  })
 
   /** Plot area inside the chart pane (flex slot below tabs / subtitle). */
   let plotHostHeight = $state(0)
@@ -79,9 +57,7 @@
 
 {#snippet histogramChartSlot()}
   <div class="metric-chart-view metric-chart-view--fill">
-    {#if ctx.activeHistogramTab === 'heatmap'}
-      <HistogramHeatmapLegend />
-    {/if}
+    <HistogramCountLegend />
     <div
       class="metric-chart-view__plot-host"
       bind:clientHeight={plotHostHeight}
@@ -114,23 +90,18 @@
         {:else if !ctx.histogramChartDatapoint}
           <MetricChartEmpty
             height={plotHeight}
-            message={histogramEmptyMessage}
+            message="No aggregate in range"
           />
         {:else}
           <HistogramChart
             datapoint={ctx.histogramChartDatapoint}
             unit={ctx.metric!.unit}
             height={plotHeight}
-            selectionTimestamp={histogramBucketTimestamp}
-            enableValueBucketPin={ctx.histogramScope === 'window'}
             onClearSelection={ctx.clearChartSelection}
           />
         {/if}
       {/if}
     </div>
-    {#if ctx.activeHistogramTab === 'histogram'}
-      <HistogramChartControlBar />
-    {/if}
   </div>
 {/snippet}
 

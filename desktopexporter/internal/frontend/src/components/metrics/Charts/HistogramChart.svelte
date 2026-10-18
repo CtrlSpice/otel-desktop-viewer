@@ -1,5 +1,7 @@
 <script lang="ts">
   import ChartSticky from '@/components/metrics/Charts/ChartSticky.svelte'
+  import type { ChartStickySize } from '@/components/metrics/utils/chart-sticky-position'
+  import { histogramCardPosition } from '@/components/metrics/utils/histogram-card-position'
   import {
     BarChart,
     Line,
@@ -8,7 +10,12 @@
     scaleInvert,
     type ChartState,
   } from 'layerchart'
-  import { scaleBand, scaleLinear, type ScaleBand } from 'd3-scale'
+  import {
+    scaleBand,
+    scaleLinear,
+    scaleThreshold,
+    type ScaleBand,
+  } from 'd3-scale'
   import ChartKeyboardSurface from '@/components/metrics/Charts/ChartKeyboardSurface.svelte'
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
   import ChartSelectionLegend, {
@@ -20,7 +27,8 @@
     chartPadding,
     DEFAULT_METRIC_CHART_HEIGHT,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
-  import { metricTypeSeriesColor } from '@/components/metrics/utils/metric-type'
+  import { computeHistogramBarColorScale } from '@/components/metrics/utils/heatmap-color-scale'
+  import { themeSignal } from '@/state/theme.svelte'
   import { expBuckets } from '@/components/metrics/utils/histogram-quantile'
   import { formatMetricValue } from '@/components/metrics/utils/format-metric-value'
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
@@ -64,10 +72,6 @@
      * the x-axis title shows just "value" when unit is empty. */
     unit?: string
     height?: number
-    /** Formatted snapshot timestamp for snapshot-scope header. */
-    selectionTimestamp?: string
-    /** Whole-window mode: click a column to pin bucket summary in the header. */
-    enableValueBucketPin?: boolean
     onClearSelection?: () => void
   }
 
@@ -75,8 +79,6 @@
     datapoint,
     unit = '',
     height = DEFAULT_METRIC_CHART_HEIGHT,
-    selectionTimestamp = '',
-    enableValueBucketPin = false,
     onClearSelection,
   }: Props = $props()
 
@@ -137,22 +139,20 @@
     const cursor = activeKeyboardCursor
     const bucket = keyboardBucket
     if (!cursor || !bucket) return ''
-    const snapshot = selectionTimestamp
-      ? `Snapshot ${selectionTimestamp}. `
-      : ''
     return (
-      `${snapshot}Bucket ${cursor.index + 1} of ${buckets.length}, ${formatBucketRange(bucket)}. ` +
+      `Bucket ${cursor.index + 1} of ${buckets.length}, ${formatBucketRange(bucket)}. ` +
       `Count ${bucket.count}. ${formatPct(bucket.count)} of total.`
     )
   })
-  let keyboardShortcuts = $derived([
+  const keyboardShortcuts = [
     'ArrowLeft',
     'ArrowRight',
     'Home',
     'End',
-    ...(enableValueBucketPin ? ['Enter', 'Space'] : []),
+    'Enter',
+    'Space',
     'Escape',
-  ])
+  ]
 
   let pinDatapointID = $state<string | undefined>(undefined)
 
@@ -162,12 +162,6 @@
       pinnedBucketKey = null
     }
     pinDatapointID = id
-  })
-
-  $effect(() => {
-    if (!enableValueBucketPin) {
-      pinnedBucketKey = null
-    }
   })
 
   function buildHistogramBuckets(
@@ -375,10 +369,13 @@
     return bucketByKey.get(key)?.label ?? key
   }
 
-  // Bar colour mirrors the metric-type badge so a glance at the chart
-  // matches the colour you saw on the card. Histogram = warning, ExpHist
-  // = secondary.
-  let barColor = $derived(metricTypeSeriesColor(datapoint.metricType))
+  // Use the heatmap legend's palette, scaled to the counts in this distribution.
+  let barColorScale = $derived.by(() => {
+    const palette = computeHistogramBarColorScale(datapoint, themeSignal.value)
+    return scaleThreshold<number, string>()
+      .domain(palette.thresholds)
+      .range(palette.range)
+  })
 
   //
   // BarChart with no width hint stretches bars to fill the container; for
@@ -393,6 +390,31 @@
   let parentWidth = $state(0)
   let chartContext = $state<ChartState | undefined>(undefined)
 
+  // Round inside the measured bars; neither the count height nor bucket scale
+  // changes. Short bars cap their corners and omit outlines below one pixel.
+  let barGeometry = $derived.by(() => {
+    const context = chartContext
+    if (!context) return []
+    const xs = histogramBandScale(context)
+    const bandwidth = xs.bandwidth()
+    const gap = Math.min(6, bandwidth * 0.16)
+    const width = Math.max(0, bandwidth - gap)
+    const baseline = context.yScale(0)
+    return buckets.map(bucket => {
+      const y = context.yScale(bucket.count)
+      const height = Math.max(0, baseline - y)
+      return {
+        bucket,
+        x: (xs(bucket.key) ?? 0) + gap / 2,
+        y,
+        width,
+        height,
+        radius: Math.min(10, width / 4, height / 2),
+      }
+    })
+  })
+  let hoveredBucketKey = $derived(chartContext?.tooltip.data?.key ?? null)
+
   let chartRenderHeight = $derived(plotAreaHeight > 0 ? plotAreaHeight : height)
 
   let chartWidth = $derived.by(() => {
@@ -405,7 +427,6 @@
   let histogramScroll = $state<HTMLElement | undefined>(undefined)
 
   function togglePinnedBucket(bucket: Bucket) {
-    if (!enableValueBucketPin) return
     pinnedBucketKey = pinnedBucketKey === bucket.key ? null : bucket.key
   }
 
@@ -419,7 +440,7 @@
     }
 
     if (isChartActivationKey(event.key)) {
-      if (!enableValueBucketPin || !keyboardBucket) return
+      if (!keyboardBucket) return
       event.preventDefault()
       event.stopPropagation()
       togglePinnedBucket(keyboardBucket)
@@ -456,7 +477,7 @@
   function handlePlotClick(
     event: MouseEvent & { currentTarget: HTMLDivElement }
   ) {
-    if (!enableValueBucketPin || !chartContext || buckets.length === 0) return
+    if (!chartContext || buckets.length === 0) return
     const root = event.currentTarget.querySelector('.lc-root-container')
     if (!root) return
     const rect = root.getBoundingClientRect()
@@ -548,14 +569,35 @@
       y: context.padding.top + context.yScale(pinnedBucket.count),
     }
   })
+
+  function positionSelectionCard(size: ChartStickySize) {
+    const context = chartContext
+    const selected = barGeometry.find(bar => bar.bucket.key === pinnedBucketKey)
+    if (!context || !selected) return { left: 8, top: 8 }
+    const offsetX = context.padding.left - scrollLeft
+    const offsetY = context.padding.top
+    const rect = (bar: (typeof barGeometry)[number]) => ({
+      left: offsetX + bar.x,
+      top: offsetY + bar.y,
+      width: bar.width,
+      height: bar.height,
+    })
+    return histogramCardPosition({
+      ...size,
+      selected: rect(selected),
+      bars: barGeometry.map(rect),
+      plot: {
+        left: offsetX + Math.min(...context.xRange),
+        top: offsetY + Math.min(...context.yRange),
+        width: Math.abs(context.xRange[1] - context.xRange[0]),
+        height: Math.abs(context.yRange[1] - context.yRange[0]),
+      },
+    })
+  }
 </script>
 
 {#if buckets.length > 0}
-  <div
-    class="metric-histogram-bar-chart"
-    class:metric-histogram-bar-chart--value-pin={enableValueBucketPin}
-    style:height="{height}px"
-  >
+  <div class="metric-histogram-bar-chart" style:height="{height}px">
     <div
       class="metric-histogram-bar-chart__plot chart-keyboard-surface-host"
       bind:clientWidth={parentWidth}
@@ -572,7 +614,6 @@
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="histogram-chart-wrapper"
-          class:histogram-chart-wrapper--clickable={enableValueBucketPin}
           style:width="{chartWidth}px"
           style:height="{chartRenderHeight}px"
           onclick={handlePlotClick}
@@ -595,14 +636,6 @@
               tooltipContext
               highlight={{ area: { class: 'histogram-hover-column' } }}
               props={{
-                bars: {
-                  fill: barColor,
-                  // layerchart 2.0 types fillOpacity as number, so set the
-                  // CSS var via the style attribute instead.
-                  style: 'fill-opacity: var(--metric-bar-fill-opacity, 0.85)',
-                  stroke: 'var(--color-base-300)',
-                  strokeWidth: 1,
-                },
                 xAxis: {
                   ...axisBuckets(unit),
                   format: bucketLabelForKey,
@@ -610,8 +643,43 @@
                 yAxis: axisCount(),
               }}
             >
+              {#snippet marks()}
+                {#each barGeometry as bar (bar.bucket.key)}
+                  <g
+                    class="histogram-bar"
+                    style:--histogram-bar-color={barColorScale(
+                      bar.bucket.count
+                    )}
+                    class:histogram-bar--active={bar.bucket.key ===
+                      hoveredBucketKey ||
+                      bar.bucket.key === pinnedBucketKey ||
+                      (keyboardFocused &&
+                        bar.bucket.key === keyboardBucket?.key)}
+                  >
+                    <rect
+                      class="lc-bars-bar histogram-bar__fill"
+                      x={bar.x}
+                      y={bar.y}
+                      width={bar.width}
+                      height={bar.height}
+                      rx={bar.radius}
+                    />
+                    {#if bar.height > 1 && bar.width > 1}
+                      <rect
+                        class="histogram-bar__liner"
+                        x={bar.x + 0.5}
+                        y={bar.y + 0.5}
+                        width={bar.width - 1}
+                        height={bar.height - 1}
+                        rx={Math.max(0, bar.radius - 0.5)}
+                      />
+                    {/if}
+                  </g>
+                {/each}
+              {/snippet}
+
               {#snippet tooltip()}
-                <Tooltip.Root>
+                <Tooltip.Root class="chart-hover-card">
                   {#snippet children({ data }: { data: Bucket })}
                     <Tooltip.Header class="text-center"
                       >{formatBucketRange(data)}</Tooltip.Header
@@ -720,30 +788,24 @@
           </MetricChartPlot>
         </div>
       </div>
-      {#if selectionTimestamp || (enableValueBucketPin && pinnedBucket)}
-        <ChartSticky anchor={selectionAnchor}>
-          {#if selectionTimestamp}
-            <ChartSelectionLegend timestamp={selectionTimestamp} rows={[]} />
-          {/if}
-          {#if enableValueBucketPin && pinnedBucket}
-            <div class="metric-histogram-bar-chart__value-pin-legend">
-              <ChartSelectionLegend
-                timestamp={formatBucketRange(pinnedBucket)}
-                rows={valuePinLegendRows}
-              />
-            </div>
-          {/if}
+      {#if pinnedBucket}
+        <ChartSticky
+          anchor={selectionAnchor}
+          positioner={positionSelectionCard}
+        >
+          <div class="metric-histogram-bar-chart__value-pin-legend">
+            <ChartSelectionLegend
+              timestamp={formatBucketRange(pinnedBucket)}
+              rows={valuePinLegendRows}
+            />
+          </div>
         </ChartSticky>
       {/if}
       <ChartKeyboardSurface
         id="metric-histogram-keyboard-surface"
-        label={enableValueBucketPin
-          ? 'Histogram distribution chart'
-          : 'Histogram snapshot distribution chart'}
+        label="Histogram distribution chart"
         roleDescription="interactive histogram"
-        instructions={enableValueBucketPin
-          ? 'Use Left and Right to inspect buckets. Home and End move to the first and last buckets. Enter or Space pins the current bucket. Escape clears chart selection.'
-          : 'Use Left and Right to inspect snapshot buckets. Home and End move to the first and last buckets. Escape clears chart selection.'}
+        instructions="Use Left and Right to inspect buckets. Home and End move to the first and last buckets. Enter or Space pins the current bucket. Escape clears chart selection."
         readout={keyboardReadout}
         shortcuts={keyboardShortcuts}
         onKeydown={handleChartKeyboard}
@@ -762,8 +824,36 @@
     @apply flex min-h-0 w-full min-w-0 flex-col;
   }
 
-  .metric-histogram-bar-chart :global(.lc-bars-bar) {
-    opacity: 1 !important;
+  .histogram-bar {
+    pointer-events: none;
+  }
+
+  .histogram-bar__fill {
+    fill: var(--histogram-bar-color);
+    stroke: none;
+  }
+
+  .histogram-bar__liner {
+    fill: none;
+    stroke: color-mix(
+      in oklab,
+      var(--histogram-bar-color) 80%,
+      var(--color-base-content)
+    );
+    stroke-opacity: 0.4;
+    stroke-width: 1;
+  }
+
+  .histogram-bar--active .histogram-bar__fill {
+    fill: color-mix(
+      in oklab,
+      var(--histogram-bar-color) 85%,
+      var(--color-base-content)
+    );
+  }
+
+  .histogram-bar--active .histogram-bar__liner {
+    stroke-opacity: 0.75;
   }
 
   .metric-histogram-bar-chart__value-pin-legend
@@ -805,7 +895,7 @@
     @apply h-full w-full overflow-x-auto overflow-y-hidden rounded-lg;
   }
 
-  .histogram-chart-wrapper--clickable {
+  .histogram-chart-wrapper {
     cursor: pointer;
   }
 

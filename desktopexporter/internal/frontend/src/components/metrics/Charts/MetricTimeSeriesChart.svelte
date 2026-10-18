@@ -1011,7 +1011,7 @@
                     'milliseconds'
                   )
                 : undefined}
-            <Tooltip.Root {context}>
+            <Tooltip.Root {context} class="chart-hover-card">
               {#snippet children()}
                 <Tooltip.Header value={headerLabel} />
                 <Tooltip.List>

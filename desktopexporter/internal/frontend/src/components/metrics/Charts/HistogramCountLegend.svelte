@@ -1,11 +1,19 @@
 <script lang="ts">
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import { computeHeatmapLegendEntries } from '@/components/metrics/utils/heatmap-legend'
+  import { computeHistogramBarColorScale } from '@/components/metrics/utils/heatmap-color-scale'
   import { themeSignal } from '@/state/theme.svelte'
 
   const ctx = getMetricViewContext()
 
   let legendEntries = $derived.by(() => {
+    if (ctx.activeHistogramTab === 'histogram') {
+      const datapoint = ctx.histogramChartDatapoint
+      return datapoint
+        ? computeHistogramBarColorScale(datapoint, themeSignal.value)
+            .legendEntries
+        : []
+    }
     const points = ctx.heatmapBucketSeries
     if (!points || points.length === 0) return []
     return computeHeatmapLegendEntries(points, themeSignal.value)
@@ -24,7 +32,9 @@
       class="heatmap-legend__entries"
       style:--legend-columns={Math.ceil(legendEntries.length / 2)}
       role="list"
-      aria-label="Heatmap count scale"
+      aria-label={ctx.activeHistogramTab === 'histogram'
+        ? 'Histogram count scale'
+        : 'Heatmap count scale'}
     >
       {#each legendRows as row, index (index)}
         <div class="heatmap-legend__row" role="presentation">

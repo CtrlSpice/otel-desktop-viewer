@@ -1,4 +1,5 @@
 import { heatmapSwatches } from '@/utils/chart-palette'
+import type { HistogramChartDataPoint } from './histogram-aggregation'
 
 const MIN_STEPS = 1
 const MAX_STEPS = 12
@@ -97,4 +98,24 @@ export function computeHeatmapColorScale(opts: {
   }
 
   return { swatchSteps, thresholds, swatches, range, legendEntries }
+}
+
+/** One count scale shared by distribution bars and their legend. */
+export function computeHistogramBarColorScale(
+  datapoint: HistogramChartDataPoint,
+  theme: string
+): HeatmapColorScale {
+  const counts =
+    datapoint.metricType === 'Histogram'
+      ? datapoint.bucketCounts
+      : [
+          datapoint.zeroCount,
+          ...datapoint.negativeBucketCounts,
+          ...datapoint.positiveBucketCounts,
+        ]
+  return computeHeatmapColorScale({
+    maxCount: counts.reduce((max, count) => Math.max(max, count), 0),
+    distinctNonZeroCount: new Set(counts.filter(count => count > 0)).size,
+    theme,
+  })
 }

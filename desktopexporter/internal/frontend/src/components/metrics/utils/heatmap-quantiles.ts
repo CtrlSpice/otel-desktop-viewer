@@ -30,6 +30,7 @@ export function heatmapQuantilePaths(
     ({ key, label }) => {
       let path = ''
       let connected = false
+      let end: { x: number; y: number } | null = null
       for (let index = 0; index < model.columns.length; index++) {
         const point = points[index]!
         const value = point.quantiles?.[key]
@@ -67,12 +68,15 @@ export function heatmapQuantilePaths(
         }
         const y = (order + 1 - fraction) * rowHeight
         const x = index * columnWidth
+        end = { x: x + columnWidth, y }
         path += connected
           ? `V${y}H${x + columnWidth}`
           : `M${x},${y}H${x + columnWidth}`
         connected = true
       }
-      return path ? [{ key, label, path, dash: HISTOGRAM_QUANTILE_DASH }] : []
+      return path && end
+        ? [{ key, label, path, end, dash: HISTOGRAM_QUANTILE_DASH }]
+        : []
     }
   )
 }

@@ -21,7 +21,7 @@ export type TimeseriesMetricViewQuery = {
 export type HistogramMetricViewQuery = {
   kind: 'histogram'
   htab: 'heatmap' | 'quantiles' | 'histogram'
-  hscope: 'window' | 'bucket'
+  hscope: 'window'
   dp: string | null
   series: string | null
 }
@@ -38,7 +38,6 @@ export type MetricViewParseContext = {
 }
 
 const HTAB_VALUES = ['heatmap', 'quantiles', 'histogram'] as const
-const HSCOPE_VALUES = ['window', 'bucket'] as const
 
 /**
  * Validates the `dp` query param against known datapoint ids.
@@ -141,7 +140,8 @@ function parseHistogramMetricViewQuery(
   return {
     kind: 'histogram',
     htab: parseEnumMember(query.htab, HTAB_VALUES, 'heatmap'),
-    hscope: parseEnumMember(query.hscope, HSCOPE_VALUES, 'window'),
+    // Older snapshot links retain their datapoint selection in the details pane.
+    hscope: 'window',
     dp,
     series,
   }

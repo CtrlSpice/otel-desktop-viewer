@@ -30,7 +30,6 @@ import {
   seriesBucketsToSlices,
   buildVisibleSeriesQuantileChartTimeseries,
   DEFAULT_HISTOGRAM_QUANTILES,
-  histogramDatapointToChartDatapoint,
   histogramSliceToChartDatapoint,
   parseQuantileSeriesKey,
   quantileKeyFromValue,
@@ -128,8 +127,6 @@ export const SPARKLINE_BUCKETS = SPARKLINE_WIDTH_PX / 2
 
 export type HistogramTab = 'heatmap' | 'quantiles' | 'histogram'
 
-export type HistogramScope = 'window' | 'bucket'
-
 export type BucketSeriesError =
   | { kind: 'unspecified'; message: string }
   | { kind: 'boundsMismatch'; message: string }
@@ -149,7 +146,6 @@ type MetricViewState = {
   expandedDatapoints: SvelteSet<string>
   expandedTimeseries: SvelteSet<string>
   activeHistogramTab: HistogramTab
-  histogramScope: HistogramScope
   selectedHistogramBucketStart: bigint | null
   selectedQuantileKey: string | null
   visibleSeries: SvelteSet<string>
@@ -157,7 +153,6 @@ type MetricViewState = {
   aggregationView: AggregationView
   showAllSeriesAggregate: boolean
   showSelectionStatOverlays: boolean
-  activeQuantileOverlays: SvelteSet<string>
 }
 
 type TransformedSeries = {
@@ -193,7 +188,6 @@ export interface MetricViewContext {
    * exemplar expansion within SeriesDatapointList). */
   readonly expandedTimeseries: SvelteSet<string>
   readonly activeHistogramTab: HistogramTab
-  readonly histogramScope: HistogramScope
   readonly selectedDatapoint: DataPoint | undefined
 
   /** Series keys in store order, without chart-point projection. */
@@ -263,7 +257,7 @@ export interface MetricViewContext {
   readonly quantilePointSelection: QuantilePointSelection | null
   readonly quantileChartTimeseries: ChartTimeseries[]
   readonly quantileColorByKey: TimeseriesColorByKey
-  readonly activeQuantileOverlays: SvelteSet<string>
+  readonly activeQuantileOverlays: ReadonlySet<string>
 
   readonly filteredTimeseries: MetricViewData['timeseries']
   /** Checked timeseries → colour from the stem-rotated pool. Unchecked rows
@@ -289,7 +283,6 @@ export interface MetricViewContext {
   /** Toggle per-timeseries expansion (TimeseriesPanel chevron). */
   toggleTimeseriesExpanded(key: string): void
   setActiveHistogramTab(tab: HistogramTab): void
-  setHistogramScope(scope: HistogramScope): void
   setAggregationView(next: AggregationView): void
   setShowAllSeriesAggregate(next: boolean): void
   setShowSelectionStatOverlays(next: boolean): void
@@ -318,7 +311,6 @@ export interface MetricViewContext {
   /** Clear only selection owned by a chart interaction. Detail-pane datapoint
    * selection remains intact when a histogram cursor clears its transient cell. */
   clearChartSelection(): void
-  setQuantileOverlayVisible(quantileKey: string, checked: boolean): void
 }
 
 /**
@@ -394,7 +386,6 @@ export function createMetricViewContext(
     expandedDatapoints: new SvelteSet<string>(),
     expandedTimeseries: new SvelteSet<string>(),
     activeHistogramTab: 'heatmap',
-    histogramScope: 'window',
     selectedHistogramBucketStart: null,
     selectedQuantileKey: null,
     visibleSeries: new SvelteSet<string>(),
@@ -402,10 +393,15 @@ export function createMetricViewContext(
     aggregationView: 'raw',
     showAllSeriesAggregate: false,
     showSelectionStatOverlays: true,
-    activeQuantileOverlays: new SvelteSet(
-      DEFAULT_HISTOGRAM_QUANTILES.map(quantileKeyFromValue)
-    ),
   })
+
+  const activeQuantileOverlays = $derived(
+    new Set(
+      view.showSelectionStatOverlays
+        ? DEFAULT_HISTOGRAM_QUANTILES.map(quantileKeyFromValue)
+        : []
+    )
+  )
 
   // The route stores stable sub-view choices; heatmap column selection is transient.
   // Compare route changes with this snapshot because defaults need not be in the URL.
@@ -500,7 +496,7 @@ export function createMetricViewContext(
       return {
         kind: 'histogram',
         htab: view.activeHistogramTab,
-        hscope: view.histogramScope,
+        hscope: 'window',
         dp: datapointID,
         series: selectedSeriesKey,
       }
@@ -525,7 +521,6 @@ export function createMetricViewContext(
       view.aggregationView = q.agg ?? seededAggregationView
     } else {
       view.activeHistogramTab = q.htab
-      view.histogramScope = q.hscope
     }
 
     if (q.dp && selectableDatapointIndex.datapointByID.has(q.dp)) {
@@ -953,7 +948,11 @@ export function createMetricViewContext(
   })
 
   const showChartStatOverlaysToggleVisible = $derived.by((): boolean => {
-    return metricType === 'Gauge' || metricType === 'Sum'
+    return (
+      metricType === 'Gauge' ||
+      metricType === 'Sum' ||
+      (isHistogramKind && !isUnsafeTemporality)
+    )
   })
 
   const rateSlopeOverlayAvailable = $derived.by((): boolean => {
@@ -1221,17 +1220,9 @@ export function createMetricViewContext(
     }
   )
 
-  const histogramChartDatapoint = $derived.by(
-    (): HistogramChartDataPoint | undefined => {
-      if (view.histogramScope === 'window') return aggregatedDatapoint
-      return histogramBucketDatapoint
-        ? histogramDatapointToChartDatapoint(histogramBucketDatapoint)
-        : undefined
-    }
-  )
+  const histogramChartDatapoint = $derived(aggregatedDatapoint)
 
   const histogramChartError = $derived.by((): BucketSeriesError | null => {
-    if (view.histogramScope !== 'window') return null
     return histogramAggregation.aggregatedError
   })
 
@@ -1296,7 +1287,7 @@ export function createMetricViewContext(
     if (!Array.isArray(perAttribute) || perAttribute.length === 0) return []
 
     const activeQuantiles = DEFAULT_HISTOGRAM_QUANTILES.filter(q =>
-      view.activeQuantileOverlays.has(quantileKeyFromValue(q))
+      activeQuantileOverlays.has(quantileKeyFromValue(q))
     )
     if (activeQuantiles.length === 0) return []
 
@@ -1406,7 +1397,6 @@ export function createMetricViewContext(
     view.expandedDatapoints.clear()
     view.expandedTimeseries.clear()
     view.activeHistogramTab = 'heatmap'
-    view.histogramScope = 'window'
 
     // Use an allowed persisted view; otherwise show received values in Raw.
     const persistedAggregationView = metricRef
@@ -1418,9 +1408,6 @@ export function createMetricViewContext(
     view.showAllSeriesAggregate = metricRef
       ? loadPersistedShowAllSeriesAggregate(metricRef)
       : false
-    view.activeQuantileOverlays = new SvelteSet(
-      DEFAULT_HISTOGRAM_QUANTILES.map(quantileKeyFromValue)
-    )
 
     // Scalars cap visible series; histogram selection remains uncapped.
     const histIsHistogram =
@@ -1638,11 +1625,6 @@ export function createMetricViewContext(
     writeMetricUrl('push')
   }
 
-  function setHistogramScope(scope: HistogramScope) {
-    view.histogramScope = scope
-    writeMetricUrl('replace')
-  }
-
   function setAggregationView(next: AggregationView) {
     view.selectedRateBucket = null
     view.aggregationView = next
@@ -1655,11 +1637,6 @@ export function createMetricViewContext(
     view.showAllSeriesAggregate = next
     const metricRef = getMetric()?.metricRef
     if (metricRef) savePersistedShowAllSeriesAggregate(metricRef, next)
-  }
-
-  function setQuantileOverlayVisible(quantileKey: string, checked: boolean) {
-    if (checked) view.activeQuantileOverlays.add(quantileKey)
-    else view.activeQuantileOverlays.delete(quantileKey)
   }
 
   function setShowSelectionStatOverlays(next: boolean) {
@@ -1715,12 +1692,6 @@ export function createMetricViewContext(
     if (view.selectedDatapointID === null) {
       view.selectionSource = null
     }
-    if (isHistogramKind && view.selectedDatapointID !== null) {
-      view.activeHistogramTab = 'histogram'
-      view.histogramScope = 'bucket'
-    } else if (isHistogramKind && view.selectedDatapointID === null) {
-      view.histogramScope = 'window'
-    }
     if (dp.flags > 0 || dp.exemplars.length > 0) {
       if (view.expandedDatapoints.has(dp.id)) {
         view.expandedDatapoints.delete(dp.id)
@@ -1728,8 +1699,7 @@ export function createMetricViewContext(
         view.expandedDatapoints.add(dp.id)
       }
     }
-    // Back returns to the prior selection. For histograms the pick also
-    // moves the tab/scope, so carry those in the same history entry.
+    // Back returns to the prior selection.
     writeMetricUrl('push')
   }
 
@@ -1888,13 +1858,10 @@ export function createMetricViewContext(
     },
     get activeHistogramTab() {
       // Old shared links now open the combined heatmap without dropping
-      // their raw datapoint, series, scope, or history state.
+      // their raw datapoint, series, or history state.
       return view.activeHistogramTab === 'quantiles'
         ? 'heatmap'
         : view.activeHistogramTab
-    },
-    get histogramScope() {
-      return view.histogramScope
     },
     get selectedDatapoint() {
       return selectedDatapoint
@@ -2006,7 +1973,7 @@ export function createMetricViewContext(
       return quantileColorByKey
     },
     get activeQuantileOverlays() {
-      return view.activeQuantileOverlays
+      return activeQuantileOverlays
     },
 
     get filteredTimeseries() {
@@ -2038,7 +2005,6 @@ export function createMetricViewContext(
 
     toggleTimeseriesExpanded,
     setActiveHistogramTab,
-    setHistogramScope,
     setAggregationView,
     setShowAllSeriesAggregate,
     setShowSelectionStatOverlays,
@@ -2050,7 +2016,6 @@ export function createMetricViewContext(
     onRateChartPointClick,
     onQuantileChartPointClick,
     clearChartSelection,
-    setQuantileOverlayVisible,
   }
 
   setMetricViewContext(ctx)

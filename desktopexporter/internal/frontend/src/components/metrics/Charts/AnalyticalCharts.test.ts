@@ -639,7 +639,6 @@ describe('HistogramChart keyboard model', () => {
       HistogramChart,
       {
         datapoint: histogramDatapointToChartDatapoint(duplicateBounds),
-        enableValueBucketPin: true,
       },
       metric
     )
@@ -671,11 +670,11 @@ describe('HistogramChart keyboard model', () => {
       { datapoint: histogramDatapointToChartDatapoint(catchAll) },
       metricWithDatapoints('Histogram', [catchAll])
     )
-    const snapshot = screen.getByRole('application', {
-      name: 'Histogram snapshot distribution chart',
+    const catchAllSurface = screen.getByRole('application', {
+      name: 'Histogram distribution chart',
     })
-    expect(snapshot.getAttribute('aria-keyshortcuts')).not.toContain('Enter')
-    await fireEvent.focus(snapshot)
+    expect(catchAllSurface.getAttribute('aria-keyshortcuts')).toContain('Enter')
+    await fireEvent.focus(catchAllSurface)
     expect(readout()).toContain('all values')
   })
 
@@ -691,7 +690,6 @@ describe('HistogramChart keyboard model', () => {
       HistogramChart,
       {
         datapoint: histogramDatapointToChartDatapoint(datapoint),
-        enableValueBucketPin: true,
       },
       metric
     )
@@ -729,7 +727,7 @@ describe('HistogramChart keyboard model', () => {
       metric
     )
     const rangedSurface = screen.getByRole('application', {
-      name: 'Histogram snapshot distribution chart',
+      name: 'Histogram distribution chart',
     })
 
     await fireEvent.focus(rangedSurface)
@@ -743,7 +741,7 @@ describe('HistogramChart keyboard model', () => {
       metric
     )
     const exactSurface = screen.getByRole('application', {
-      name: 'Histogram snapshot distribution chart',
+      name: 'Histogram distribution chart',
     })
     await fireEvent.focus(exactSurface)
     expect(readout()).toContain('= 0')
@@ -762,6 +760,9 @@ describe('HistogramChart keyboard model', () => {
     )
     if (!context) throw new Error('metric context was not captured')
     context.onDatapointClick(datapoint)
+    expect(context.activeHistogramTab).toBe('heatmap')
+    // A detail selection cannot substitute its raw snapshot for the window summary.
+    expect(context.histogramChartDatapoint).toBeUndefined()
     context.onHeatmapSelect(BASE_NS + 500n)
     expect(context.selectionSource).toBe('chart')
     context.onHeatmapSelect(BASE_NS + 500n)
@@ -776,7 +777,7 @@ describe('HistogramChart keyboard model', () => {
     await tick()
 
     const surface = screen.getByRole('application', {
-      name: 'Histogram snapshot distribution chart',
+      name: 'Histogram distribution chart',
     })
     await fireEvent.focus(surface)
     await fireEvent.keyDown(surface, { key: 'Escape' })

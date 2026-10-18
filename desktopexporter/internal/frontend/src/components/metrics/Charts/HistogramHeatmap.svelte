@@ -338,6 +338,30 @@
     )
   )
   let plotWidth = $derived(heatmapLayout.plotWidth)
+  let quantileLabels = $derived.by(() => {
+    const labels = quantilePaths
+      .map(line => ({ ...line, labelY: line.end.y }))
+      .sort((a, b) => a.labelY - b.labelY)
+    const gap = Math.min(
+      26,
+      Math.max(0, maxPlotHeight - 24) / Math.max(1, labels.length - 1)
+    )
+    for (let index = 0; index < labels.length; index++) {
+      labels[index]!.labelY = Math.max(
+        labels[index]!.labelY,
+        index === 0 ? 12 : labels[index - 1]!.labelY + gap
+      )
+    }
+    for (let index = labels.length - 1; index >= 0; index--) {
+      labels[index]!.labelY = Math.min(
+        labels[index]!.labelY,
+        index === labels.length - 1
+          ? maxPlotHeight - 12
+          : labels[index + 1]!.labelY - gap
+      )
+    }
+    return labels
+  })
   let heatmapScrolls = $derived(
     containerWidth > 0 && scrollChartWidth > plotContainerWidth
   )
@@ -662,34 +686,40 @@
                 />
               {/if}
             </Layer>
-            <Tooltip.Root>
+            <Tooltip.Root class="chart-hover-card">
               {#snippet children({ data }: { data: HeatmapDatum })}
-                <Tooltip.Header class="text-center"
+                <Tooltip.Header
                   >{formatTooltipTime(data.timestampMs)}</Tooltip.Header
                 >
-                <Tooltip.List>
-                  <Tooltip.Item label="bucket" value={data.bucketLabel} />
-                  <Tooltip.Separator />
-                  <Tooltip.Item
-                    label="count"
-                    value={data.count}
-                    format="integer"
-                  />
-                  {#each QUANTILE_LABELS_DESCENDING.filter( ({ key }) => ctx.activeQuantileOverlays.has(key) ) as quantile (quantile.key)}
-                    {@const value = pointByColumnKey.get(data.columnKey)
-                      ?.quantiles?.[quantile.key]}
-                    {#if value != null && Number.isFinite(value)}
-                      <Tooltip.Item
-                        label="{quantile.label} (estimate)"
-                        value={formatMetricValue(value) +
-                          (unit.trim() ? ` ${unit.trim()}` : '')}
-                      />
-                    {/if}
-                  {/each}
-                </Tooltip.List>
+                <dl class="heatmap-hover-cell">
+                  <dt>bucket</dt>
+                  <dd>
+                    {data.bucketLabel}{data.bucketLabel !== 'all values' &&
+                    unit.trim() &&
+                    unit.trim() !== '1'
+                      ? ` ${unit.trim()}`
+                      : ''}
+                  </dd>
+                  <dt>count</dt>
+                  <dd>{data.count.toLocaleString()}</dd>
+                </dl>
               {/snippet}
             </Tooltip.Root>
           </Chart>
+          {#each quantileLabels as quantile (quantile.key)}
+            <div
+              class="heatmap-quantile-label chart-selection-legend chart-selection-legend--stat"
+              style:left="{heatmapPlotPadding.left + quantile.end.x + 8}px"
+              style:top="{heatmapPlotPadding.top + quantile.labelY}px"
+              aria-hidden="true"
+            >
+              <span
+                class="chart-selection-legend__dot"
+                style:--color={histogramQuantileColor(quantile.key)}
+              ></span>
+              <span>{quantile.label}</span>
+            </div>
+          {/each}
         </div>
       </div>
       {#if onSelect && hasColumnSelectionSummary}
@@ -706,7 +736,6 @@
               {#snippet leading()}
                 {#if selectedCell}
                   <div class="heatmap-selected-cell">
-                    <div class="heatmap-selection-heading">Selected cell</div>
                     <dl>
                       <div>
                         <dt>bucket</dt>
@@ -751,6 +780,28 @@
 
   .metric-heatmap-chart {
     @apply flex min-h-0 w-full min-w-0 flex-col;
+  }
+
+  .heatmap-quantile-label {
+    @apply pointer-events-none absolute z-[2] inline-flex items-center gap-1.5;
+    transform: translateY(-50%);
+  }
+
+  .heatmap-hover-cell {
+    @apply m-0 grid items-baseline gap-x-1.5 whitespace-nowrap;
+    grid-template-columns: auto auto auto auto;
+  }
+
+  .heatmap-hover-cell dt {
+    color: var(--color-subtle);
+  }
+
+  .heatmap-hover-cell dt:not(:first-child) {
+    margin-left: 0.5rem;
+  }
+
+  .heatmap-hover-cell dd {
+    @apply m-0 font-medium tabular-nums text-base-content;
   }
 
   .metric-heatmap-chart__selection-legend {
@@ -842,6 +893,10 @@
 
   .heatmap-scroll--active {
     @apply overflow-x-auto;
+  }
+
+  .heatmap-wrapper {
+    position: relative;
   }
 
   .heatmap-wrapper :global(.heatmap-cell) {

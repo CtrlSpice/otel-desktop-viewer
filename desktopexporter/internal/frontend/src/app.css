@@ -341,15 +341,6 @@ html[data-theme='rose-pine-dawn'] {
   pointer-events: none;
 }
 
-/* Histogram bar fill: softer on dawn, same as before on dark themes. */
-.metric-chart-view {
-  --metric-bar-fill-opacity: 0.85;
-}
-
-html[data-theme='rose-pine-dawn'] .metric-chart-view {
-  --metric-bar-fill-opacity: 0.6;
-}
-
 /* Metric detail charts: layerchart strokes use --stroke-color when unset. */
 .metric-chart-view
   :where(
@@ -459,8 +450,9 @@ html[data-theme='rose-pine-dawn'] .metric-chart-view {
   pointer-events: none;
 }
 
-/* Pinned selection legend + stat point labels (ChartSelectionLegend). */
-.metric-chart-view :where(.chart-selection-legend) {
+/* Shared card shape for pinned labels and portaled cursor readouts. */
+.metric-chart-view :where(.chart-selection-legend),
+.chart-hover-card {
   pointer-events: none;
   @apply rounded-md border border-base-300 text-base-content;
   padding: 0.4rem 0.55rem;
@@ -472,6 +464,43 @@ html[data-theme='rose-pine-dawn'] .metric-chart-view {
     0 1px 2px rgb(0 0 0 / 0.04),
     0 2px 6px rgb(0 0 0 / 0.06);
   background-color: var(--color-base-100);
+}
+
+/* The cursor carries a raised card; the pinned card rests on the plot. */
+.chart-hover-card {
+  backdrop-filter: none;
+  max-width: min(30rem, calc(100vw - 2rem));
+  box-shadow:
+    0 3px 8px rgb(0 0 0 / 0.18),
+    0 10px 28px rgb(0 0 0 / 0.28);
+}
+
+.chart-hover-card :where(.lc-tooltip-header) {
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 0.3rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
+  text-align: left;
+}
+
+.chart-hover-card :where(.lc-tooltip-list) {
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 0.4rem;
+  row-gap: 0.18rem;
+  align-items: baseline;
+}
+
+.chart-hover-card :where(.lc-tooltip-item-label) {
+  color: var(--color-subtle);
+}
+
+.chart-hover-card :where(.lc-tooltip-item-value) {
+  color: var(--color-base-content);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  text-align: right;
 }
 
 .metric-chart-view :where(.chart-selection-legend--stat) {
@@ -523,13 +552,15 @@ html[data-theme='rose-pine-dawn']
 
 html[data-theme='rose-pine-dawn']
   .metric-chart-view
-  :where(.chart-selection-legend, .chart-selection-legend--stat) {
+  :where(.chart-selection-legend, .chart-selection-legend--stat),
+html[data-theme='rose-pine-dawn'] .chart-hover-card {
   border-color: var(--color-neutral);
 }
 
 html[data-theme='rose-pine-dawn']
   .metric-chart-view
-  :where(.chart-selection-legend) {
+  :where(.chart-selection-legend),
+html[data-theme='rose-pine-dawn'] .chart-hover-card {
   background-color: var(--color-base-300);
 }
 

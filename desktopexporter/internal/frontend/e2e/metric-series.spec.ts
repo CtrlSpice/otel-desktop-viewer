@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page, type Route } from '@playwright/test'
 import type {
   JsonAggregateBucket,
   JsonDataPoint,
@@ -126,6 +126,179 @@ test.beforeEach(async ({ page }) => {
               : []
     await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result } })
   })
+})
+
+test.describe('independent histogram aggregate loading', () => {
+  const bucket: JsonAggregateBucket = {
+    timestamp: startNs,
+    startTime: startNs,
+    count: 12,
+    sum: 18,
+    min: 0,
+    max: 4,
+    quantiles: { '0.5': 1.5, '0.95': 1.9, '0.99': 2 },
+    explicitBounds: [1, 2],
+    bucketCounts: [2, 7, 3],
+  }
+
+  async function holdAggregates(page: Page) {
+    const pending: { route: Route; wholeWindow: boolean }[] = []
+    const histogramMetric: JsonMetricViewData = {
+      ...metric,
+      metricType: 'Histogram',
+      aggregationTemporalityCode: 1,
+      aggregationTemporality: 'Delta',
+      timeseries: timeseries.map(series => ({
+        ...series,
+        datapoints: [
+          {
+            ...series.datapoints[0]!,
+            metricType: 'Histogram',
+            aggregationTemporalityCode: 1,
+            aggregationTemporality: 'Delta',
+            count: '12',
+            sum: 18,
+            min: 0,
+            max: 4,
+            explicitBounds: [1, 2],
+            bucketCounts: ['2', '7', '3'],
+            quantiles: bucket.quantiles,
+          },
+        ],
+      })),
+    }
+    await page.route('**/rpc', async route => {
+      const request = route.request().postDataJSON()
+      if (request.method === 'getMetricAggregateView') {
+        pending.push({ route, wholeWindow: request.params.targetBuckets === 1 })
+        return
+      }
+      const result =
+        request.method === 'getMetricView'
+          ? histogramMetric
+          : request.method === 'searchMetricSummaries'
+            ? [
+                {
+                  ...summary,
+                  metricType: 'Histogram',
+                  aggregationTemporalityCode: 1,
+                  aggregationTemporality: 'Delta',
+                },
+              ]
+            : undefined
+      if (result === undefined) return route.fallback()
+      await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result } })
+    })
+    await page.goto(
+      `/metrics/${metric.metricRef}?time=all&htab=heatmap&hscope=window`
+    )
+    await expect.poll(() => pending.length).toBe(2)
+    return pending
+  }
+
+  async function respond(route: Route, value = bucket, fail = false) {
+    await route.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id: route.request().postDataJSON().id,
+        ...(fail
+          ? { error: { code: -32603, message: 'Aggregate unavailable' } }
+          : { result: { aggregate: [value], scalarAggregate: null } }),
+      },
+    })
+  }
+
+  for (const fail of [false, true]) {
+    test(`heatmap renders before the window summary ${fail ? 'fails' : 'arrives'}`, async ({
+      page,
+    }) => {
+      const pending = await holdAggregates(page)
+      await respond(pending.find(request => !request.wholeWindow)!.route)
+      await expect(page.locator('.heatmap-cell')).toHaveCount(3)
+      await expect(page.locator('.heatmap-cell').first()).toBeVisible()
+      const paths = await page
+        .locator('.heatmap-blob-fill')
+        .evaluateAll(elements => elements.map(el => el.getAttribute('d')))
+      await respond(
+        pending.find(request => request.wholeWindow)!.route,
+        bucket,
+        fail
+      )
+      await page.getByRole('tab', { name: 'Histogram', exact: true }).click()
+      if (fail)
+        await expect(
+          page.getByText('No aggregate in range', { exact: true })
+        ).toBeVisible()
+      else await expect(page.locator('.lc-bars-bar')).toHaveCount(3)
+      await page.getByRole('tab', { name: 'Heatmap', exact: true }).click()
+      await expect(page.locator('.heatmap-cell')).toHaveCount(3)
+      expect(
+        await page
+          .locator('.heatmap-blob-fill')
+          .evaluateAll(elements => elements.map(el => el.getAttribute('d')))
+      ).toEqual(paths)
+    })
+  }
+
+  test('window summary renders while time buckets are pending', async ({
+    page,
+  }) => {
+    const pending = await holdAggregates(page)
+    await respond(pending.find(request => request.wholeWindow)!.route)
+    await page.getByRole('tab', { name: 'Histogram', exact: true }).click()
+    await expect(page.locator('.lc-bars-bar')).toHaveCount(3)
+    await respond(
+      pending.find(request => !request.wholeWindow)!.route,
+      bucket,
+      true
+    )
+    await expect(page.locator('.lc-bars-bar')).toHaveCount(3)
+  })
+
+  for (const fail of [false, true]) {
+    test(`late aggregate ${fail ? 'errors' : 'results'} cannot replace a newer checked selection`, async ({
+      page,
+    }) => {
+      const pending = await holdAggregates(page)
+      await page
+        .getByRole('checkbox', {
+          name: 'Show route: /second in chart',
+          exact: true,
+        })
+        .uncheck()
+      await expect.poll(() => pending.length).toBe(4)
+      for (const request of pending.slice(2)) await respond(request.route)
+      await expect(page.locator('.heatmap-cell')).toHaveCount(3)
+      const finished = Promise.all(
+        pending
+          .slice(0, 2)
+          .map(({ route }) =>
+            page
+              .waitForResponse(
+                response => response.request() === route.request()
+              )
+              .then(response => response.finished())
+          )
+      )
+      for (const request of pending.slice(0, 2)) {
+        await respond(
+          request.route,
+          { ...bucket, explicitBounds: [2], bucketCounts: [4, 8] },
+          fail
+        )
+      }
+      await finished
+      await page.evaluate(
+        () =>
+          new Promise(resolve =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve))
+          )
+      )
+      await expect(page.locator('.heatmap-cell')).toHaveCount(3)
+      await page.getByRole('tab', { name: 'Histogram', exact: true }).click()
+      await expect(page.locator('.lc-bars-bar')).toHaveCount(3)
+    })
+  }
 })
 
 for (const [theme, hoverColour, selectedColour, focusColour] of [
@@ -276,10 +449,10 @@ for (const [theme, hoverColour, selectedColour, focusColour] of [
         const mark = page.locator(markSelector).first()
         await expect(mark).toBeVisible()
         await expect(
-          page.locator('.pane-header .histogram-quantile-controls')
+          page.locator('.pane-header .chart-stat-overlays-toggle')
         ).toHaveCount(1)
         await expect(
-          page.locator('.metric-chart-view .histogram-quantile-controls')
+          page.locator('.metric-chart-view .chart-stat-overlays-toggle')
         ).toHaveCount(0)
         if (tab === 'heatmap') {
           // Each row has the same colour in both adjacent time columns.
@@ -441,7 +614,7 @@ for (const [theme, hoverColour, selectedColour, focusColour] of [
             })
             .toBeLessThan(1)
         } else {
-          await expect(mark).toHaveCSS('fill', dataFill)
+          await expect(mark).not.toHaveCSS('fill', dataFill)
         }
         const keyboard = page.getByRole('application', {
           name: chartLabel,
@@ -470,6 +643,10 @@ for (const [theme, hoverColour, selectedColour, focusColour] of [
           )
           await expect(mark).toHaveCSS('fill', dataFill)
           await expect(mark).toHaveCSS('fill-opacity', '0')
+        } else {
+          await page.mouse.move(0, 0)
+          await keyboard.evaluate(element => (element as HTMLElement).blur())
+          await expect(mark).toHaveCSS('fill', dataFill)
         }
         const quantileLines = page.locator(
           tab === 'heatmap' ? '.heatmap-quantile-line' : '.quantile-line'
@@ -487,12 +664,6 @@ for (const [theme, hoverColour, selectedColour, focusColour] of [
         await expect(quantileLines).toHaveCount(3)
         for (const [index, line] of (await quantileLines.all()).entries()) {
           await expect(line).toHaveCSS('stroke', quantileColours[index]!)
-          await expect(
-            page.locator('.histogram-quantile-controls svg line').nth(index)
-          ).toHaveCSS('stroke', quantileColours[index]!)
-          await expect(
-            page.locator('.histogram-quantile-controls svg line').nth(index)
-          ).toHaveCSS('stroke-dasharray', '6px, 4px')
           await expect(line).toHaveCSS('stroke-width', '2px')
           await expect(line).toHaveCSS('opacity', '0.35')
           await expect(line).toHaveCSS('pointer-events', 'none')
@@ -549,18 +720,33 @@ for (const [theme, hoverColour, selectedColour, focusColour] of [
               })
             ).toBe(true)
           }
-          await page
-            .getByRole('checkbox', { name: 'Show p95', exact: true })
-            .uncheck()
-          await expect(overlays).toHaveCount(2)
-          await expect(channels).toHaveCount(2)
-          await expect(
-            page.locator('.heatmap-quantile-line[data-quantile="0.95"]')
-          ).toHaveCount(0)
           await expect(
             page.getByRole('tab', { name: 'Quantiles', exact: true })
           ).toHaveCount(0)
         }
+        const countLegend = page.getByRole('list', {
+          name:
+            tab === 'histogram'
+              ? 'Histogram count scale'
+              : 'Heatmap count scale',
+          exact: true,
+        })
+        await expect(countLegend).toBeVisible()
+        const quantileLabels = page.locator(
+          tab === 'heatmap' ? '.heatmap-quantile-label' : '.series-stat-tooltip'
+        )
+        await expect(quantileLabels).toHaveCount(3)
+        const overlaysToggle = page.getByRole('checkbox', {
+          name: 'Show chart stat overlays',
+          exact: true,
+        })
+        await overlaysToggle.uncheck()
+        await expect(quantileLines).toHaveCount(0)
+        await expect(quantileLabels).toHaveCount(0)
+        await expect(page.locator('.heatmap-quantile-channel')).toHaveCount(0)
+        await expect(countLegend).toBeVisible()
+        await overlaysToggle.check()
+        await expect(quantileLines).toHaveCount(3)
       }
       await page.goto(
         `/metrics/${metric.metricRef}?htab=quantiles&hscope=window&series=first&dp=hist-0`
@@ -578,19 +764,24 @@ for (const [theme, hoverColour, selectedColour, focusColour] of [
           .getByRole('button', { name: 'Collapse details', exact: true })
           .click()
         await page
-          .getByRole('checkbox', { name: 'Show p95', exact: true })
+          .getByRole('checkbox', {
+            name: 'Show chart stat overlays',
+            exact: true,
+          })
           .uncheck()
         await page.setViewportSize({ width: 390, height: 1000 })
         await expect(
-          page.getByRole('checkbox', { name: 'Show p95', exact: true })
+          page.getByRole('checkbox', {
+            name: 'Show chart stat overlays',
+            exact: true,
+          })
         ).not.toBeChecked()
-        for (const label of ['Show p50', 'Show p95', 'Show p99']) {
-          await expect(
-            page
-              .locator('.pane-header')
-              .getByRole('checkbox', { name: label, exact: true })
-          ).toBeVisible()
-        }
+        await expect(
+          page.locator('.pane-header').getByRole('checkbox', {
+            name: 'Show chart stat overlays',
+            exact: true,
+          })
+        ).toBeVisible()
         expect(
           await page.evaluate(
             () => document.documentElement.scrollWidth <= window.innerWidth

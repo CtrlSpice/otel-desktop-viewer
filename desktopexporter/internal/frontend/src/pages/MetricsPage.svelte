@@ -103,7 +103,6 @@
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
   import MetricChartView from '@/components/metrics/Charts/MetricChartView.svelte'
   import ChartStatOverlaysToggle from '@/components/metrics/Charts/ChartStatOverlaysToggle.svelte'
-  import HistogramQuantileControls from '@/components/metrics/Charts/HistogramQuantileControls.svelte'
   import MetricDetailView from '@/components/metrics/Detail/MetricDetailView.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
@@ -212,12 +211,7 @@
   const metricCtx = getMetricViewContext()
 
   let chartHeaderTimeRange = $derived(
-    metricCtx.isUnsafeTemporality ||
-      (metricCtx.isHistogramKind &&
-        metricCtx.activeHistogramTab === 'histogram' &&
-        metricCtx.histogramScope === 'bucket')
-      ? undefined
-      : metricCtx.chartDataTimeRange
+    metricCtx.isUnsafeTemporality ? undefined : metricCtx.chartDataTimeRange
   )
 
   let hasMetricRows = $derived(page.items.length > 0)
@@ -238,8 +232,7 @@
       page.selectedSummary?.metricType === 'ExponentialHistogram'
   )
   let showChartOverlayControls = $derived(
-    (metricCtx.isHistogramKind && !metricCtx.isUnsafeTemporality) ||
-      metricCtx.showChartStatOverlaysToggleVisible
+    metricCtx.showChartStatOverlaysToggleVisible
   )
 
   let showChartTitleTabs = $derived(
@@ -280,12 +273,18 @@
   let aggregateToken = 0
 
   $effect(() => {
+    const token = ++aggregateToken
     const summary = page.selectedSummary
     // Sorting keeps equivalent selection sets stable while preserving reactivity.
     const visibleKeys = [...metricCtx.visibleSeries].sort()
 
     // The metric response seeds the initial legend selection.
-    if (!summary || !selectedMetric) {
+    if (
+      !summary ||
+      !selectedMetric ||
+      detailLoading ||
+      selectedMetric.metricRef !== summary.metricRef
+    ) {
       selectedAggregate = null
       selectedAggregateSummary = null
       selectedScalarAggregate = null
@@ -301,19 +300,30 @@
 
     // Coalesce rapid legend changes.
     clearTimeout(aggregateTimer)
-    const token = ++aggregateToken
+    // Do not display a previous selection's summary beside the new plot.
+    selectedAggregateSummary = null
     aggregateTimer = setTimeout(() => {
-      void fetchAggregate(summary, visibleKeys, bounds, token)
+      void fetchAggregate(summary, visibleKeys, bounds, token, false)
+      if (
+        summary.metricType === 'Histogram' ||
+        summary.metricType === 'ExponentialHistogram'
+      ) {
+        void fetchAggregate(summary, visibleKeys, bounds, token, true)
+      }
     }, 120)
 
-    return () => clearTimeout(aggregateTimer)
+    return () => {
+      clearTimeout(aggregateTimer)
+      ++aggregateToken
+    }
   })
 
   async function fetchAggregate(
     summary: MetricSummary,
     visibleKeys: string[],
     bounds: { startTime: bigint; endTime: bigint },
-    token: number
+    token: number,
+    wholeWindow: boolean
   ) {
     try {
       const { startTime, endTime } = bounds
@@ -324,48 +334,37 @@
       // Histograms narrow the merge; scalars keep All intact and name Selected.
       const narrowTo = isHistogramMetric ? visibleKeys : null
       const scalarSelected = isHistogramMetric ? [] : visibleKeys
-      const [buckets, whole] = await Promise.all([
-        telemetryAPI.getMetricAggregateView(
-          summary.metricRef,
-          startTime,
-          endTime,
-          HEATMAP_BUCKET_TARGET,
-          narrowTo,
-          quantiles,
-          tzOffsetNs(),
-          // Keep pooled and per-series lines on the same bucket grid.
-          SCALAR_VIEW_BUCKETS,
-          scalarSelected,
-          tzName()
-        ),
-        // Only histograms have a whole-window distribution summary.
-        isHistogramMetric
-          ? telemetryAPI.getMetricAggregateView(
-              summary.metricRef,
-              startTime,
-              endTime,
-              1,
-              narrowTo,
-              quantiles,
-              tzOffsetNs(),
-              0,
-              undefined,
-              tzName()
-            )
-          : null,
-      ])
+      const result = await telemetryAPI.getMetricAggregateView(
+        summary.metricRef,
+        startTime,
+        endTime,
+        wholeWindow ? 1 : HEATMAP_BUCKET_TARGET,
+        narrowTo,
+        quantiles,
+        tzOffsetNs(),
+        // Keep pooled and per-series lines on the same bucket grid.
+        wholeWindow ? 0 : SCALAR_VIEW_BUCKETS,
+        wholeWindow ? undefined : scalarSelected,
+        tzName()
+      )
       // A slower earlier request must not overwrite a newer answer.
       if (token === aggregateToken) {
-        selectedAggregate = buckets?.aggregate ?? null
-        selectedAggregateSummary = whole?.aggregate?.[0] ?? null
-        selectedScalarAggregate = buckets?.scalarAggregate ?? null
+        if (wholeWindow) {
+          selectedAggregateSummary = result?.aggregate?.[0] ?? null
+        } else {
+          selectedAggregate = result?.aggregate ?? null
+          selectedScalarAggregate = result?.scalarAggregate ?? null
+        }
       }
     } catch (err) {
       console.error('Failed to fetch metric aggregate:', err)
       if (token === aggregateToken) {
-        selectedAggregate = null
-        selectedAggregateSummary = null
-        selectedScalarAggregate = null
+        if (wholeWindow) {
+          selectedAggregateSummary = null
+        } else {
+          selectedAggregate = null
+          selectedScalarAggregate = null
+        }
       }
     }
   }
@@ -732,11 +731,7 @@
         {/snippet}
 
         {#snippet overlayControl()}
-          {#if metricCtx.isHistogramKind}
-            <HistogramQuantileControls />
-          {:else}
-            <ChartStatOverlaysToggle />
-          {/if}
+          <ChartStatOverlaysToggle />
         {/snippet}
 
         {@const histogramChartTabs = histogramViewTabs()}

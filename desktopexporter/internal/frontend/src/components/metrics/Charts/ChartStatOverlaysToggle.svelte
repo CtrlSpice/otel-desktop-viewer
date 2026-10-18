@@ -11,9 +11,11 @@
 {#if ctx.showChartStatOverlaysToggleVisible}
   <label
     class="chart-stat-overlays-toggle chart-control-toggle tooltip tooltip-top"
-    data-tip={ctx.rateSlopeOverlayAvailable
-      ? 'Min/max and selected rate slope'
-      : 'Min/max and average'}
+    data-tip={ctx.isHistogramKind
+      ? 'p50, p95 and p99 of the combined checked series'
+      : ctx.rateSlopeOverlayAvailable
+        ? 'Min/max and selected rate slope'
+        : 'Min/max and average'}
   >
     <input
       type="checkbox"

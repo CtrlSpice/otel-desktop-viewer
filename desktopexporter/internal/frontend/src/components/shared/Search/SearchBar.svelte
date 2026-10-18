@@ -25,7 +25,7 @@
 
 <div
   class="search-bar flex w-full min-w-0 items-center gap-1 rounded-full text-sm text-base-content {search
-    ? 'bg-base-200 px-1.5'
+    ? 'border border-base-300 bg-base-200 px-1.5'
     : ''}"
   role={search ? 'search' : undefined}
   aria-label={search ? 'Workspace search' : undefined}
@@ -54,7 +54,7 @@
   {/if}
   <div
     class="search-bar__query flex min-w-0 flex-1 items-center rounded-full {search
-      ? 'border border-base-300 bg-base-200'
+      ? 'bg-base-200'
       : ''}"
   >
     <div

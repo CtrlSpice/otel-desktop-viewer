@@ -32,7 +32,13 @@ describe('heatmapQuantilePaths', () => {
   it('plots the supplied merged estimates within the correct rows and keeps exact columns distinct', () => {
     const points = [explicit(100n, { '0.5': 2 }), explicit(900n, { '0.5': 3 })]
     expect(paths(points)).toEqual([
-      { key: '0.5', label: 'p50', path: 'M0,150H10V100H20', dash: '6 4' },
+      {
+        key: '0.5',
+        label: 'p50',
+        path: 'M0,150H10V100H20',
+        end: { x: 20, y: 100 },
+        dash: '6 4',
+      },
     ])
     expect(points[0]!.quantiles).toEqual({ '0.5': 2 })
   })
