@@ -5,6 +5,42 @@ import { describe, expect, it } from 'vitest'
 import DetailBubble from './DetailBubble.svelte'
 
 describe('stacked detail bubbles', () => {
+  it('keeps zero-count headings visible without an expandable body or focus target', async () => {
+    const children = createRawSnippet(() => ({
+      render: () => '<p>Empty body</p>',
+    }))
+    const { container } = render(DetailBubble, {
+      label: 'Links',
+      count: 0,
+      children,
+    })
+    expect(screen.getByRole('region', { name: 'Links' })).toBeInTheDocument()
+    expect(screen.getByText('0 links')).toBeInTheDocument()
+    expect(screen.queryByText('Empty body')).toBeNull()
+    await fireEvent.click(screen.getByText('Links', { exact: true }))
+    expect(
+      container.querySelector('details, summary, button, [tabindex]')
+    ).toBeNull()
+    expect(screen.queryByText('Empty body')).toBeNull()
+  })
+
+  it('enables expansion when items arrive and removes it when the count becomes zero', async () => {
+    const children = createRawSnippet(() => ({
+      render: () => '<p>Populated body</p>',
+    }))
+    const { container, rerender } = render(DetailBubble, {
+      label: 'Links',
+      count: 0,
+      children,
+    })
+    await rerender({ label: 'Links', count: 2, children })
+    expect(container.querySelector('details')!.open).toBe(true)
+    expect(screen.getByText('Populated body')).toBeInTheDocument()
+    await rerender({ label: 'Links', count: 0, children })
+    expect(container.querySelector('details')).toBeNull()
+    expect(screen.queryByText('Populated body')).toBeNull()
+  })
+
   it('collapses independently while retaining its contents', async () => {
     const children = createRawSnippet(() => ({
       render: () => '<input aria-label="Retained value" value="draft" />',

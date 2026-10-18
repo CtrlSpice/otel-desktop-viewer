@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { LinkData } from '@/types/api-types'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
-  import SpanField from './SpanField.svelte'
+  import SpanField from '@/components/shared/DetailProperty.svelte'
   import { itemHref, navigateToItem } from '@/route'
   import { SPAN_PARAM } from '@/route/query-params'
   import { detailPanel } from '@/state/detail-panel.svelte'
@@ -62,46 +62,44 @@
       aria-label="Link {link.traceID ?? 'invalid target'}"
     >
       <tbody>
-        <tr class="table-row">
-          <td class="detail-cell">
-            <span class="detail-cell__key">
-              trace id <span class="detail-cell__type">(string | null)</span>:
-            </span>
-            <div class="detail-cell__stacked-value">
-              {#if href}
-                <a
-                  class="detail-cell__value link link-primary font-mono"
-                  {href}
-                  onclick={e => goToLink(e, link)}>{link.traceID}</a
-                >
-              {:else}
-                <span class="detail-cell__value font-mono">null</span>
-              {/if}
-            </div>
-          </td>
-        </tr>
-        <tr class="table-row">
-          <td class="detail-cell">
-            <span class="detail-cell__key">
-              span id <span class="detail-cell__type">(string | null)</span>:
-            </span>
-            <div class="detail-cell__stacked-value">
-              {#if href && link.spanID}
-                <a
-                  class="detail-cell__value link link-primary font-mono"
-                  {href}
-                  onclick={e => goToLink(e, link)}>{link.spanID}</a
-                >
-              {:else}
-                <span class="detail-cell__value font-mono"
-                  >{link.spanID ?? 'null'}</span
-                >
-              {/if}
-            </div>
-          </td>
-        </tr>
         <SpanField
-          fieldName="trace state"
+          fieldName="traceId"
+          fieldType="bytes | null"
+          fieldValue={link.traceID ?? 'null'}
+        >
+          {#snippet value()}
+            {#if href}
+              <a
+                class="detail-cell__value link link-primary font-mono"
+                {href}
+                onclick={e => goToLink(e, link)}>{link.traceID}</a
+              >
+            {:else}
+              <span class="detail-cell__value font-mono">null</span>
+            {/if}
+          {/snippet}
+        </SpanField>
+        <SpanField
+          fieldName="spanId"
+          fieldType="bytes | null"
+          fieldValue={link.spanID ?? 'null'}
+        >
+          {#snippet value()}
+            {#if href && link.spanID}
+              <a
+                class="detail-cell__value link link-primary font-mono"
+                {href}
+                onclick={e => goToLink(e, link)}>{link.spanID}</a
+              >
+            {:else}
+              <span class="detail-cell__value font-mono"
+                >{link.spanID ?? 'null'}</span
+              >
+            {/if}
+          {/snippet}
+        </SpanField>
+        <SpanField
+          fieldName="traceState"
           fieldValue={link.traceState}
           fieldType="string"
         />
@@ -118,7 +116,7 @@
         {/if}
         {#if link.droppedAttributesCount > 0}
           <SpanField
-            fieldName="dropped attributes count"
+            fieldName="droppedAttributesCount"
             fieldValue={link.droppedAttributesCount.toString()}
             fieldType="uint32"
           />
@@ -130,11 +128,6 @@
 
 <style lang="postcss">
   @reference "../../../app.css";
-
-  .detail-cell__type {
-    color: var(--color-subtle);
-    @apply font-normal;
-  }
 
   .links-panel__warning {
     @apply text-warning inline-flex flex-none text-sm;

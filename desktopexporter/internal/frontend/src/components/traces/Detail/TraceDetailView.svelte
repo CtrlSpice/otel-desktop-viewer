@@ -63,13 +63,15 @@
   import DetailStack from '@/components/shared/DetailStack.svelte'
   import { LogIcon } from '@/icons'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
-  import SpanField from './SpanField.svelte'
+  import SpanField from '@/components/shared/DetailProperty.svelte'
   import ActivityPanel from './ActivityPanel.svelte'
   import LinksPanel from './LinksPanel.svelte'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
   import { formatDuration, formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { setSpanInQuery } from '@/route'
+  import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
+  import { spanCopyJSON } from './span-copy'
 
   type Props = {
     span: SpanData | undefined
@@ -96,6 +98,7 @@
   let timeContext = getTimeContext()
 
   let isRoot = $derived(!span?.parentSpanID)
+  let spanJSON = $derived(span ? spanCopyJSON(span) : '')
   let durationLabel = $derived(
     span ? formatDuration(span.endTime - span.startTime) : ''
   )
@@ -134,6 +137,11 @@
 
   <DetailStack label="Span details">
     <DetailBubble label="Span" icon={spanIcon}>
+      {#snippet action()}<ValueCopyButton
+          text={spanJSON}
+          label="span"
+          tooltip="Copy span as JSON"
+        />{/snippet}
       {#if cyclePoint}
         <div
           class="detail-view__paradox detail-view__paradox--cycle-point"
@@ -163,40 +171,38 @@
               fieldType="string"
             />
           {/if}
-          {#if detailSearchFieldVisible(columnFilter, 'kind')}
+          {#if detailSearchFieldVisible(columnFilter, 'kind') || detailSearchFieldVisible(columnFilter, 'kindCode')}
             <SpanField
               fieldName="kind"
-              fieldValue={span.kind}
-              fieldType="string"
-            />
-          {/if}
-          {#if detailSearchFieldVisible(columnFilter, 'kindCode')}
-            <SpanField
-              fieldName="kind code"
               fieldValue={span.kindCode.toString()}
-              fieldType="int64"
+              valueLabel={detailSearchFieldVisible(columnFilter, 'kind')
+                ? span.kind
+                : undefined}
+              fieldType="enum"
             />
           {/if}
           {#if detailSearchFieldVisible(columnFilter, 'startTime')}
             <SpanField
-              fieldName="start time"
-              fieldValue={formatTimestamp(
+              fieldName="startTimeUnixNano"
+              fieldValue={span.startTime.toString()}
+              timestampLabel={formatTimestamp(
                 span.startTime,
                 timeContext.tz,
-                'nanoseconds'
+                'milliseconds'
               )}
-              fieldType="timestamp"
+              fieldType="fixed64"
             />
           {/if}
           {#if detailSearchFieldVisible(columnFilter, 'endTime')}
             <SpanField
-              fieldName="end time"
-              fieldValue={formatTimestamp(
+              fieldName="endTimeUnixNano"
+              fieldValue={span.endTime.toString()}
+              timestampLabel={formatTimestamp(
                 span.endTime,
                 timeContext.tz,
-                'nanoseconds'
+                'milliseconds'
               )}
-              fieldType="timestamp"
+              fieldType="fixed64"
             />
           {/if}
           {#if detailDurationVisible(columnFilter)}
@@ -206,64 +212,54 @@
               fieldType="string"
             />
           {/if}
-          {#if detailSearchFieldVisible(columnFilter, 'statusCode')}
+          {#if detailSearchFieldVisible(columnFilter, 'statusCode') || detailSearchFieldVisible(columnFilter, 'statusCodeValue')}
             <SpanField
-              fieldName="status code"
-              fieldValue={span.statusCode}
-              fieldType="string"
-              defectLabel={hasUnrecognisedStatusCode
-                ? 'Unrecognised status code'
-                : undefined}
-            />
-          {/if}
-          {#if detailSearchFieldVisible(columnFilter, 'statusCodeValue')}
-            <SpanField
-              fieldName="status code value"
+              fieldName="status.code"
               fieldValue={span.statusCodeValue.toString()}
-              fieldType="int64"
-              defectLabel={hasUnrecognisedStatusCode &&
-              !detailSearchFieldVisible(columnFilter, 'statusCode')
+              valueLabel={detailSearchFieldVisible(columnFilter, 'statusCode')
+                ? span.statusCode
+                : undefined}
+              fieldType="enum"
+              defectLabel={hasUnrecognisedStatusCode
                 ? 'Unrecognised status code'
                 : undefined}
             />
           {/if}
           {#if span.statusCodeValue !== 0 && span.statusCodeValue !== 1 && detailSearchFieldVisible(columnFilter, 'statusMessage')}
             <SpanField
-              fieldName="status message"
+              fieldName="status.message"
               fieldValue={span.statusMessage}
               fieldType="string"
             />
           {/if}
           {#if detailSearchFieldVisible(columnFilter, 'traceID')}
             <SpanField
-              fieldName="trace id"
+              fieldName="traceId"
               fieldValue={span.traceID}
-              fieldType="string"
+              fieldType="bytes"
             />
           {/if}
           {#if !isRoot && detailSearchFieldVisible(columnFilter, 'parentSpanID')}
-            <tr class="table-row">
-              <td class="detail-cell">
-                <span class="detail-cell__key">
-                  parent span id <span class="detail-cell__type">(string)</span
-                  >:
-                </span>
-                <div class="detail-cell__stacked-value">
-                  <button
-                    type="button"
-                    class="detail-cell__value link link-primary font-mono"
-                    onclick={() => setSpanInQuery(span.parentSpanID!, 'push')}
-                    >{span.parentSpanID}</button
-                  >
-                </div>
-              </td>
-            </tr>
+            <SpanField
+              fieldName="parentSpanId"
+              fieldType="bytes"
+              fieldValue={span.parentSpanID ?? ''}
+            >
+              {#snippet value()}
+                <button
+                  type="button"
+                  class="detail-cell__value link link-primary font-mono"
+                  onclick={() => setSpanInQuery(span.parentSpanID!, 'push')}
+                  >{span.parentSpanID}</button
+                >
+              {/snippet}
+            </SpanField>
           {/if}
           {#if detailSearchFieldVisible(columnFilter, 'spanID')}
             <SpanField
-              fieldName="span id"
+              fieldName="spanId"
               fieldValue={span.spanID}
-              fieldType="string"
+              fieldType="bytes"
             />
           {/if}
           {#if span.flags > 0 && detailFlagsVisible(columnFilter)}
@@ -281,21 +277,21 @@
           />
           {#if span.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedAttributesCount')}
             <SpanField
-              fieldName="dropped attributes count"
+              fieldName="droppedAttributesCount"
               fieldValue={span.droppedAttributesCount.toString()}
               fieldType="uint32"
             />
           {/if}
           {#if span.droppedEventsCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedEventsCount')}
             <SpanField
-              fieldName="dropped events count"
+              fieldName="droppedEventsCount"
               fieldValue={span.droppedEventsCount.toString()}
               fieldType="uint32"
             />
           {/if}
           {#if span.droppedLinksCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedLinksCount')}
             <SpanField
-              fieldName="dropped links count"
+              fieldName="droppedLinksCount"
               fieldValue={span.droppedLinksCount.toString()}
               fieldType="uint32"
             />
@@ -305,25 +301,28 @@
               detailAttributeVisible(columnFilter, attr.key, 'resource')
             )}
             owner="resource"
-            prefix="resource."
+            origin="resource"
           />
           {#if span.resource.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'resource.droppedAttributesCount')}
             <SpanField
-              fieldName="resource.droppedAttributesCount"
+              fieldName="droppedAttributesCount"
+              origin="resource"
               fieldValue={span.resource.droppedAttributesCount.toString()}
               fieldType="uint32"
             />
           {/if}
           {#if span.scope.name && detailSearchFieldVisible(columnFilter, 'scope.name')}
             <SpanField
-              fieldName="scope.name"
+              fieldName="name"
+              origin="scope"
               fieldValue={span.scope.name}
               fieldType="string"
             />
           {/if}
           {#if span.scope.version && detailSearchFieldVisible(columnFilter, 'scope.version')}
             <SpanField
-              fieldName="scope.version"
+              fieldName="version"
+              origin="scope"
               fieldValue={span.scope.version}
               fieldType="string"
             />
@@ -333,11 +332,12 @@
               detailAttributeVisible(columnFilter, attr.key, 'scope')
             )}
             owner="scope"
-            prefix="scope."
+            origin="scope"
           />
           {#if span.scope.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'scope.droppedAttributesCount')}
             <SpanField
-              fieldName="scope.droppedAttributesCount"
+              fieldName="droppedAttributesCount"
+              origin="scope"
               fieldValue={span.scope.droppedAttributesCount.toString()}
               fieldType="uint32"
             />
@@ -413,10 +413,5 @@
   .detail-view__section-empty {
     @apply m-0 px-3 py-6 text-center text-sm italic;
     color: var(--color-muted);
-  }
-
-  .detail-cell__type {
-    color: var(--color-subtle);
-    @apply font-normal;
   }
 </style>

@@ -7,7 +7,7 @@
 
   type Props = {
     /** The key, rendered by the caller so each signal keeps its own markup. */
-    keyLabel: Snippet
+    keyLabel?: Snippet
     value: string
     /** Extra classes for the value (tabular-nums, font-mono, ...). */
     valueClass?: string
@@ -44,7 +44,7 @@
 </script>
 
 <span class="detail-pair">
-  {@render keyLabel()}
+  {@render keyLabel?.()}
   <span
     bind:this={el}
     class="detail-pair__value {valueClass}"

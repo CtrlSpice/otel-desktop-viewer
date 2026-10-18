@@ -3,7 +3,7 @@
   import DetailStack from '@/components/shared/DetailStack.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
-  import DetailField from '@/components/shared/DetailField.svelte'
+  import DetailField from '@/components/shared/DetailProperty.svelte'
   import type { EvalRun, EvalAttempt, TelemetryReference } from './model'
   import { cost, estimatedCost, localTimestamp, traceHref } from './model'
   import AssessmentBadge from './AssessmentBadge.svelte'
@@ -24,13 +24,21 @@
 </script>
 
 {#snippet telemetry(reference: TelemetryReference)}
-  <DetailField fieldName="trace id" fieldType="string">
+  <DetailField
+    fieldName="traceId"
+    fieldType="bytes"
+    fieldValue={reference.traceID}
+  >
     {#snippet value()}<a
         class="detail-cell__value link link-primary font-mono"
         href={traceHref(reference)}>{reference.traceID}</a
       >{/snippet}
   </DetailField>
-  {#if reference.spanID}<DetailField fieldName="span id" fieldType="string">
+  {#if reference.spanID}<DetailField
+      fieldName="spanId"
+      fieldType="bytes"
+      fieldValue={reference.spanID}
+    >
       {#snippet value()}<a
           class="detail-cell__value link link-primary font-mono"
           href={traceHref(reference)}>{reference.spanID}</a
@@ -59,7 +67,10 @@
             fieldType="string"
             fieldValue={run.evaluation}
           />
-          <DetailField fieldName="state" fieldType="string"
+          <DetailField
+            fieldName="state"
+            fieldType="string"
+            fieldValue={run.state}
             >{#snippet value()}<RunStatusBadge
                 state={run.state}
                 pauseReason={run.pauseReason}
@@ -70,7 +81,11 @@
             fieldType="string"
             fieldValue={run.source}
           />
-          {#if startedAt}<DetailField fieldName="started" fieldType="timestamp"
+          {#if startedAt}<DetailField
+              fieldName="started"
+              fieldType="timestamp"
+              fieldValue={startedAt}
+              timestampLabel={localTimestamp(startedAt)}
               >{#snippet value()}<time
                   class="text-sm text-rp-subtle tabular-nums"
                   datetime={startedAt}
@@ -131,7 +146,10 @@
               fieldType="string"
               fieldValue={attempt.name}
             />
-            <DetailField fieldName="state" fieldType="string"
+            <DetailField
+              fieldName="state"
+              fieldType="string"
+              fieldValue={attempt.state}
               >{#snippet value()}<span
                   class:text-papaya={attempt.state === 'Error'}
                   >{attempt.state}</span
@@ -145,6 +163,8 @@
             {#if startedAt}<DetailField
                 fieldName="started"
                 fieldType="timestamp"
+                fieldValue={startedAt}
+                timestampLabel={localTimestamp(startedAt)}
                 >{#snippet value()}<time
                     class="text-sm text-rp-subtle tabular-nums"
                     datetime={startedAt}
@@ -154,6 +174,7 @@
             {#if attempt.error}<DetailField
                 fieldName="execution error"
                 fieldType="string"
+                fieldValue={attempt.error}
                 multiline
                 >{#snippet value()}<span class="text-papaya whitespace-pre-wrap"
                     >{attempt.error}</span

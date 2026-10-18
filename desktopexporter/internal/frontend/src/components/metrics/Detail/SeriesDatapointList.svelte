@@ -12,8 +12,7 @@
   import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
   import { attributeValueLabel } from '@/components/shared/attribute-label'
   import DetailNav from '@/components/shared/DetailNav.svelte'
-  import AttributeValueView from '@/components/shared/AttributeValue.svelte'
-  import ConflictMarker from '@/components/shared/ConflictMarker.svelte'
+  import DetailProperty from '@/components/shared/DetailProperty.svelte'
   import { itemHref, navigateToItem } from '@/route'
   import { detailPanel } from '@/state/detail-panel.svelte'
   import { SPAN_PARAM } from '@/route/query-params'
@@ -433,11 +432,7 @@
     No datapoints
   </p>
 {:else}
-  <div
-    bind:this={listRoot}
-    class="dp-list__container"
-    class:dp-list__container--flush={flush}
-  >
+  <div bind:this={listRoot} class="dp-list__container">
     <div class="dp-list__table-wrap">
       <table
         class="dp-list"
@@ -447,28 +442,15 @@
         {#if attributes.length > 0}
           <tbody aria-label="Series attributes">
             {#each attributes as attribute, index (`${attributeOwner}:${attribute.id ?? 'unidentified'}:${index}`)}
-              <tr>
-                <th
-                  scope="row"
-                  colspan={showSwatch ? 2 : 1}
-                  class="dp-list__th"
-                >
-                  {#if attribute.hasConflict}
-                    <ConflictMarker
-                      label={`Conflicting typed values retained for ${attribute.key} in ${attributeOwner}.`}
-                    />
-                  {/if}
-                  <span class="detail-cell__key"
-                    >{attribute.key} ({attribute.value.kind})</span
-                  >
-                </th>
-                <td colspan={hasDetails ? 2 : 1} class="dp-list__td">
-                  <AttributeValueView
-                    value={attribute.value}
-                    path={`${attributeOwner}.${attribute.key}`}
-                  />
-                </td>
-              </tr>
+              <DetailProperty
+                fieldName={attribute.key}
+                fieldType={attribute.value.kind}
+                typedValue={attribute.value}
+                colspan={2 + (showSwatch ? 1 : 0) + (hasDetails ? 1 : 0)}
+                defectLabel={attribute.hasConflict
+                  ? `Conflicting typed values retained for ${attribute.key} in ${attributeOwner}.`
+                  : undefined}
+              />
             {/each}
           </tbody>
         {/if}
@@ -558,7 +540,7 @@
 
   .dp-list--flush .dp-list__td--time,
   .dp-list--flush .dp-list__th--time {
-    @apply pl-0;
+    @apply pl-3;
   }
 
   .dp-list__empty {
@@ -653,10 +635,6 @@
     grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
     border-top: 1px solid
       color-mix(in oklab, var(--color-base-300) 30%, transparent);
-  }
-
-  .dp-list__container--flush .dp-list__pagination {
-    @apply px-0;
   }
 
   .dp-list__page-size {

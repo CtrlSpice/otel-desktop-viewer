@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte'
   import type { EventData } from '@/types/api-types'
-  import SpanField from './SpanField.svelte'
+  import SpanField from '@/components/shared/DetailProperty.svelte'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
   import { formatSignedDuration, formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
@@ -33,7 +33,7 @@
     class="detail-fields w-full"
     aria-label="Event {event.name}"
   >
-    <caption class="py-2 text-left">
+    <caption class="px-3 py-2 text-left">
       <span class="badge-count mr-2">Event</span>
       <span class="mr-2 font-medium">{event.name}</span>
       <span class="badge-count mr-2"
@@ -50,13 +50,14 @@
     </caption>
     <tbody>
       <SpanField
-        fieldName="timestamp"
-        fieldValue={formatTimestamp(
+        fieldName="timeUnixNano"
+        fieldValue={event.timestamp.toString()}
+        timestampLabel={formatTimestamp(
           event.timestamp,
           timeContext.tz,
-          'nanoseconds'
+          'milliseconds'
         )}
-        fieldType="timestamp"
+        fieldType="fixed64"
       />
       <AttributeRows
         attributes={event.attributes}
@@ -64,7 +65,7 @@
       />
       {#if event.droppedAttributesCount > 0}
         <SpanField
-          fieldName="dropped attributes count"
+          fieldName="droppedAttributesCount"
           fieldValue={event.droppedAttributesCount.toString()}
           fieldType="uint32"
         />

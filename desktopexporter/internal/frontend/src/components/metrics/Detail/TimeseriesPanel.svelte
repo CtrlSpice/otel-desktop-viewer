@@ -259,6 +259,9 @@
   .ts-panel :global(.field-group) {
     --fg-inline: 0;
   }
+  .ts-panel :global(.field-group__heading) {
+    @apply px-3;
+  }
 
   .ts-row__header {
     @apply flex min-w-0 w-full flex-col gap-0.5;
@@ -319,11 +322,11 @@
   }
 
   .ts-fields-empty {
-    @apply m-0 py-2 text-sm italic;
+    @apply m-0 px-3 py-2 text-sm italic;
     color: var(--color-muted);
   }
 
   .ts-panel__cap-note {
-    @apply m-0 pb-0 text-sm text-warning/80;
+    @apply m-0 px-3 pb-0 text-sm text-warning/80;
   }
 </style>

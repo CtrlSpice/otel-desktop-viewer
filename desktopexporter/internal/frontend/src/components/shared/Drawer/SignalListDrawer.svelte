@@ -689,8 +689,7 @@
 
   /* ── Body (list) ── */
   .signal-drawer__controls {
-    @apply mx-3 mt-3 flex min-w-0 shrink-0 items-center rounded-xl bg-base-200;
-    box-shadow: 0 2px 6px rgb(0 0 0 / 0.1);
+    @apply mx-3 mt-3 flex min-h-10 min-w-0 shrink-0 items-center rounded-xl bg-base-200;
   }
 
   .signal-drawer__body {

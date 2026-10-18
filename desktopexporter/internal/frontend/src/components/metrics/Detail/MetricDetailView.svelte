@@ -18,7 +18,7 @@
     ChartLineData02Icon,
     ChartHistogramIcon,
   } from '@hugeicons/core-free-icons'
-  import MetricField from './MetricField.svelte'
+  import MetricField from '@/components/shared/DetailProperty.svelte'
   import TimeseriesPanel from './TimeseriesPanel.svelte'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
 
@@ -87,14 +87,14 @@
           {/if}
           {#if ctx.temporality}
             <MetricField
-              fieldName="aggregation temporality"
+              fieldName="aggregationTemporality"
               fieldValue={ctx.temporality}
               fieldType="string"
             />
           {/if}
           {#if ctx.isMonotonic !== null}
             <MetricField
-              fieldName="is monotonic"
+              fieldName="isMonotonic"
               fieldValue={String(ctx.isMonotonic)}
               fieldType="bool"
             />
@@ -102,8 +102,9 @@
           {#if metric.lastSeenNs !== null}
             <!-- Metric-wide value; narrowed responses may omit its source series. -->
             <MetricField
-              fieldName="last seen"
-              fieldValue={formatTimestamp(
+              fieldName="lastSeen"
+              fieldValue={metric.lastSeenNs.toString()}
+              timestampLabel={formatTimestamp(
                 metric.lastSeenNs,
                 timeContext.tz,
                 'milliseconds'
@@ -112,18 +113,20 @@
             />
           {/if}
           <MetricField
-            fieldName="datapoint count"
+            fieldName="dataPointCount"
             fieldValue={ctx.totalDatapointCount.toString()}
             fieldType="uint32"
           />
           {#if metric.resourceSchemaUrl}<MetricField
-              fieldName="resource.schemaUrl"
+              fieldName="schemaUrl"
+              origin="resource"
               fieldValue={metric.resourceSchemaUrl}
               fieldType="string"
             />{/if}
           {#if metric.resourceDroppedAttributesCount > 0}
             <MetricField
-              fieldName="resource.droppedAttributesCount"
+              fieldName="droppedAttributesCount"
+              origin="resource"
               fieldValue={metric.resourceDroppedAttributesCount.toString()}
               fieldType="uint32"
             />
@@ -131,26 +134,30 @@
           <AttributeRows
             attributes={metric.resource.attributes}
             owner="resource"
-            prefix="resource."
+            origin="resource"
           />
           {#if metric.scope.name}<MetricField
-              fieldName="scope.name"
+              fieldName="name"
+              origin="scope"
               fieldValue={metric.scope.name}
               fieldType="string"
             />{/if}
           {#if metric.scope.version}<MetricField
-              fieldName="scope.version"
+              fieldName="version"
+              origin="scope"
               fieldValue={metric.scope.version}
               fieldType="string"
             />{/if}
           {#if metric.scopeSchemaUrl}<MetricField
-              fieldName="scope.schemaUrl"
+              fieldName="schemaUrl"
+              origin="scope"
               fieldValue={metric.scopeSchemaUrl}
               fieldType="string"
             />{/if}
           {#if metric.scopeDroppedAttributesCount > 0}
             <MetricField
-              fieldName="scope.droppedAttributesCount"
+              fieldName="droppedAttributesCount"
+              origin="scope"
               fieldValue={metric.scopeDroppedAttributesCount.toString()}
               fieldType="uint32"
             />
@@ -158,7 +165,7 @@
           <AttributeRows
             attributes={metric.scope.attributes}
             owner="scope"
-            prefix="scope."
+            origin="scope"
           />
         </tbody>
       </table>

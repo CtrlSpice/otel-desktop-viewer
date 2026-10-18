@@ -42,6 +42,22 @@ function renderLog(log: LogData) {
 }
 
 describe('LogDetailView trace correlation', () => {
+  it('shows readable millisecond timestamps above unchanged raw nanoseconds', () => {
+    const { container } = renderLog(
+      makeLog({ timestamp: 1_700_000_000_123_456_789n })
+    )
+    const field = container.querySelector('[data-field="timeUnixNano"]')!
+    expect(
+      field.querySelector('.detail-property__timestamp')!.textContent
+    ).toMatch(/\.123\s/)
+    expect(
+      field.querySelector('.detail-property__timestamp')!.textContent
+    ).not.toContain('.123456789')
+    expect(
+      field.querySelector('.detail-property__raw-timestamp')
+    ).toHaveTextContent('1700000000123456789')
+  })
+
   it('places the whole-record export in the main log header', () => {
     renderLog(makeLog())
     const header = screen.getByRole('region', { name: 'Log record' })

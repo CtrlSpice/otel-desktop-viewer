@@ -4,8 +4,7 @@
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import ExportButton from '@/components/shared/ExportButton.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
-  import LogField from '@/components/shared/DetailField.svelte'
-  import AttributeValueView from '@/components/shared/AttributeValue.svelte'
+  import LogField from '@/components/shared/DetailProperty.svelte'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
   import { severityLabel as buildSeverityLabel } from '@/components/logs/log-severity'
   import { getServiceName } from '@/utils/resource'
@@ -27,9 +26,7 @@
   let service = $derived(log ? (getServiceName(log.resource) ?? '') : '')
 
   let severityLabel = $derived(
-    log
-      ? `${buildSeverityLabel(log.severityText, log.severityNumber)} (${log.severityNumber})`
-      : ''
+    log ? buildSeverityLabel(log.severityText, log.severityNumber) : ''
   )
 
   let traceSpanPatch = $derived(
@@ -72,31 +69,43 @@
       <table class="detail-fields w-full" aria-label="Log fields">
         <tbody>
           <LogField
-            fieldName="timestamp"
-            fieldType="timestamp"
-            fieldValue={formatTimestamp(
+            fieldName="timeUnixNano"
+            fieldType="fixed64"
+            fieldValue={log.timestamp.toString()}
+            timestampLabel={formatTimestamp(
               log.timestamp,
               timeContext.tz,
-              'nanoseconds'
+              'milliseconds'
             )}
           />
           <LogField
-            fieldName="observed timestamp"
-            fieldType="timestamp"
-            fieldValue={formatTimestamp(
+            fieldName="observedTimeUnixNano"
+            fieldType="fixed64"
+            fieldValue={log.observedTimestamp.toString()}
+            timestampLabel={formatTimestamp(
               log.observedTimestamp,
               timeContext.tz,
-              'nanoseconds'
+              'milliseconds'
             )}
           />
           <LogField
-            fieldName="severity"
+            fieldName="severityText"
+            fieldType="string"
+            fieldValue={log.severityText}
+          />
+          <LogField
+            fieldName="severityNumber"
             fieldType="enum"
-            fieldValue={severityLabel}
+            fieldValue={String(log.severityNumber)}
+            valueLabel={severityLabel}
           />
           {#if log.traceID}
             {@const traceID = log.traceID}
-            <LogField fieldName="trace id" fieldType="string">
+            <LogField
+              fieldName="traceId"
+              fieldType="bytes"
+              fieldValue={traceID}
+            >
               {#snippet value()}
                 <a
                   class="detail-cell__value link link-primary font-mono"
@@ -108,7 +117,11 @@
           {/if}
           {#if log.spanID && log.traceID}
             {@const traceID = log.traceID}
-            <LogField fieldName="span id" fieldType="string">
+            <LogField
+              fieldName="spanId"
+              fieldType="bytes"
+              fieldValue={log.spanID}
+            >
               {#snippet value()}
                 <a
                   class="detail-cell__value link link-primary font-mono"
@@ -119,21 +132,21 @@
             </LogField>
           {:else if log.spanID}
             <LogField
-              fieldName="span id"
-              fieldType="string"
+              fieldName="spanId"
+              fieldType="bytes"
               fieldValue={log.spanID}
             />
           {/if}
           {#if log.body}
-            <LogField fieldName="body" fieldType={log.body.kind} multiline>
-              {#snippet value()}
-                <AttributeValueView value={log.body} path="body" />
-              {/snippet}
-            </LogField>
+            <LogField
+              fieldName="body"
+              fieldType={log.body.kind}
+              typedValue={log.body}
+            />
           {/if}
           {#if log.eventName}
             <LogField
-              fieldName="event name"
+              fieldName="eventName"
               fieldType="string"
               fieldValue={log.eventName}
             />
@@ -145,7 +158,7 @@
           />
           {#if log.droppedAttributesCount > 0}
             <LogField
-              fieldName="dropped attributes count"
+              fieldName="droppedAttributesCount"
               fieldType="uint32"
               fieldValue={String(log.droppedAttributesCount)}
             />
@@ -154,25 +167,28 @@
           <AttributeRows
             attributes={log.resource.attributes}
             owner="resource"
-            prefix="resource."
+            origin="resource"
           />
           {#if log.resource.droppedAttributesCount > 0}
             <LogField
-              fieldName="resource.droppedAttributesCount"
+              fieldName="droppedAttributesCount"
+              origin="resource"
               fieldType="uint32"
               fieldValue={String(log.resource.droppedAttributesCount)}
             />
           {/if}
           {#if log.scope.name}
             <LogField
-              fieldName="scope.name"
+              fieldName="name"
+              origin="scope"
               fieldType="string"
               fieldValue={log.scope.name}
             />
           {/if}
           {#if log.scope.version}
             <LogField
-              fieldName="scope.version"
+              fieldName="version"
+              origin="scope"
               fieldType="string"
               fieldValue={log.scope.version}
             />
@@ -180,11 +196,12 @@
           <AttributeRows
             attributes={log.scope.attributes}
             owner="scope"
-            prefix="scope."
+            origin="scope"
           />
           {#if log.scope.droppedAttributesCount > 0}
             <LogField
-              fieldName="scope.droppedAttributesCount"
+              fieldName="droppedAttributesCount"
+              origin="scope"
               fieldType="uint32"
               fieldValue={String(log.scope.droppedAttributesCount)}
             />
@@ -215,7 +232,7 @@
   }
 
   .log-detail-panel__scroll {
-    @apply flex-1 min-h-0 overflow-y-auto px-4;
+    @apply flex-1 min-h-0 overflow-y-auto;
     scrollbar-width: thin;
   }
 </style>

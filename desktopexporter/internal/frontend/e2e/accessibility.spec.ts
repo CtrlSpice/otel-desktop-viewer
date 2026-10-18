@@ -224,10 +224,17 @@ test.describe('home page accessibility', () => {
       await page.route('**/api/features', route =>
         route.fulfill({ json: { evals: { enabled: true } } })
       )
-      await page.goto('/evals')
+      await page.goto('/evals?run=guide-assisted&attempt=request-latency')
       await expect(
         page.locator('.page-layout__main-chrome .pane-header').first()
       ).toHaveCSS('background-color', elevated)
+      const detailHeadings = page.locator('.detail-bubble__heading')
+      await expect(detailHeadings).toHaveCount(3)
+      for (const heading of await detailHeadings.all()) {
+        await expect(heading).toHaveCSS('background-color', panel)
+        await expect(heading).toHaveCSS('height', '40px')
+        await expect(heading).toHaveCSS('border-radius', '12px')
+      }
     })
   }
 
@@ -755,24 +762,34 @@ test.describe('home page accessibility', () => {
     await page.goto('/traces')
     const controls = page.getByRole('group', { name: 'Traces list controls' })
     const trigger = controls.getByRole('button', { name: /^Sort By/ })
-    await expect(trigger).toHaveText('Start Time')
+    await expect(trigger).toHaveText('')
+    await expect(trigger).toHaveAccessibleName('Sort By Start Time')
+    await expect(trigger).toHaveAttribute('data-tip', 'Sort By Start Time')
+    await expect(trigger).toHaveClass(/header-icon-button/)
+    await expect(trigger).toHaveCSS('width', '28px')
+    await expect(trigger).toHaveCSS('height', '28px')
+    await expect(controls).toHaveCSS('box-shadow', 'none')
+    await expect(trigger).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
     await expect(trigger).toHaveCSS('font-size', '14px')
     const spacing = await controls.evaluate(element => {
       const target = element.querySelector('button[popovertarget]')!
-      const icon = target.querySelector('svg')!.getBoundingClientRect()
-      const label = target.querySelector('span')!.getBoundingClientRect()
+      const button = target.getBoundingClientRect()
       const arrow = element
         .querySelector('button[title]')!
         .getBoundingClientRect()
       return {
-        iconGap: label.left - icon.right,
-        spacer: arrow.left - label.right,
+        centreOffset:
+          arrow.top + arrow.height / 2 - button.top - button.height / 2,
+        spacer: arrow.left - button.right,
       }
     })
-    expect(spacing.iconGap).toBeGreaterThanOrEqual(0)
-    expect(spacing.iconGap).toBeLessThanOrEqual(9)
+    expect(Math.abs(spacing.centreOffset)).toBeLessThan(1)
     expect(spacing.spacer).toBeGreaterThan(16)
     const directionIcon = controls.locator('button[title] svg')
+    await expect(controls.locator('button[title]')).toHaveClass(
+      /header-icon-button/
+    )
+    await expect(controls.locator('button[title]')).toHaveCSS('width', '28px')
     await expect(directionIcon).toHaveCSS('rotate', 'none')
 
     await controls
@@ -787,7 +804,9 @@ test.describe('home page accessibility', () => {
     await trigger.click()
     const popup = page.getByRole('group', { name: 'Sort By', exact: true })
     await popup.getByRole('button', { name: 'Duration', exact: true }).click()
-    await expect(trigger).toHaveText('Duration')
+    await expect(trigger).toHaveText('')
+    await expect(trigger).toHaveAccessibleName('Sort By Duration')
+    await expect(trigger).toHaveAttribute('data-tip', 'Sort By Duration')
     await expect(trigger).toBeFocused()
     await expect(popup).not.toBeVisible()
     await expect(

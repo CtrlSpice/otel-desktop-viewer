@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte'
   import type { EventData, TraceLogSummary } from '@/types/api-types'
-  import LogField from '@/components/shared/DetailField.svelte'
+  import LogField from '@/components/shared/DetailProperty.svelte'
   import EventsPanel from './EventsPanel.svelte'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { formatSignedDuration, formatTimestamp } from '@/utils/time'
@@ -50,7 +50,7 @@
     class="detail-fields w-full"
     aria-label="Log summary"
   >
-    <caption class="py-2 text-left">
+    <caption class="px-3 py-2 text-left">
       <span class="badge-count mr-2">Log</span>
       {#if log.eventName}<span class="mr-2 font-medium">{log.eventName}</span
         >{/if}
@@ -65,12 +65,13 @@
     </caption>
     <tbody>
       <LogField
-        fieldName="timestamp"
-        fieldType="timestamp"
-        fieldValue={formatTimestamp(
+        fieldName="timeUnixNano"
+        fieldType="fixed64"
+        fieldValue={log.timestamp.toString()}
+        timestampLabel={formatTimestamp(
           log.timestamp,
           timeContext.tz,
-          'nanoseconds'
+          'milliseconds'
         )}
       />
       <LogField
@@ -80,26 +81,27 @@
       />
       {#if log.severityText}
         <LogField
-          fieldName="severity text"
+          fieldName="severityText"
           fieldType="string"
           fieldValue={log.severityText}
         />
       {/if}
       <LogField
-        fieldName="severity number"
+        fieldName="severityNumber"
         fieldType="enum"
         fieldValue={String(log.severityNumber)}
       />
       {#if log.serviceName}
         <LogField
-          fieldName="service"
+          fieldName="service.name"
+          origin="resource"
           fieldType="string"
           fieldValue={log.serviceName}
         />
       {/if}
       {#if log.eventName}
         <LogField
-          fieldName="event name"
+          fieldName="eventName"
           fieldType="string"
           fieldValue={log.eventName}
         />

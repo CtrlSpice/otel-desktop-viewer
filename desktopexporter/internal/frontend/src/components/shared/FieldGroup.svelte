@@ -16,7 +16,7 @@
     count?: number
     /** Visible unit inside the count badge; defaults to the group label. */
     countLabel?: string
-    /** Detail panels align headings and field rows to a shared 16px inset. */
+    /** Detail headings use the same 12px inset as the field cards. */
     detail?: boolean
     open?: boolean
     /** When set, parent owns `open` (e.g. a Set membership). */
@@ -94,13 +94,16 @@
   }
 
   .field-group--detail {
-    --field-group-inline: 1rem;
+    --field-group-inline: 0.75rem;
   }
 
   /* Content aligns with heading inset (icon or label). */
   .field-group__content {
     padding-inline: var(--fg-inline);
     @apply pb-2 pt-0;
+  }
+  .field-group--detail > .field-group__content {
+    padding-inline: 0;
   }
 
   .field-group__heading {

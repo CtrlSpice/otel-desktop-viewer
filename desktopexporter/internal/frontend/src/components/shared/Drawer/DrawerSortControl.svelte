@@ -66,21 +66,21 @@
   type="button"
   popovertarget={popoverID}
   aria-expanded={open}
-  class="flex h-10 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-xl pl-3 text-left font-sans text-sm font-normal text-base-content hover:bg-base-300/40 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
+  class="header-icon-button m-1 text-sm tooltip tooltip-bottom"
   aria-label={`Sort By ${currentLabel}`}
+  data-tip={`Sort By ${currentLabel}`}
 >
   <HugeiconsIcon
     icon={Sorting05Icon}
     size={16}
     strokeWidth={1.5}
-    class="shrink-0 text-base-content/60"
+    class="shrink-0"
     aria-hidden="true"
   />
-  <span class="min-w-0 truncate">{currentLabel}</span>
 </button>
 <button
   type="button"
-  class="btn btn-circle btn-soft btn-primary m-1 size-8 min-h-0 shrink-0 border-0 p-0 shadow-none"
+  class="header-icon-button my-1 mr-1 ml-auto"
   aria-label={direction === 'asc' ? 'Sort descending' : 'Sort ascending'}
   title={direction === 'asc'
     ? 'Ascending — switch to descending'
