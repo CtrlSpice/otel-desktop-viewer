@@ -65,7 +65,7 @@ describe('DateTimeFilter', () => {
       expect(trigger).toHaveAttribute('aria-expanded', 'true')
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Last 5m' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Last 5 min' }))
 
     const saved = JSON.parse(localStorage.getItem('time-selection')!)
     expect(saved).toEqual({

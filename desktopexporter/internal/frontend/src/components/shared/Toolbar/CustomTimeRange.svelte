@@ -1,19 +1,15 @@
 <script lang="ts">
   import { onMount, untrack, type Snippet } from 'svelte'
   import { slide } from 'svelte/transition'
-  import { Calendar } from 'bits-ui'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import {
-    ArrowLeft01Icon,
-    ArrowRight01Icon,
-    Calendar03Icon,
-  } from '@hugeicons/core-free-icons'
+  import { Calendar03Icon } from '@hugeicons/core-free-icons'
   import {
     CalendarDate,
     parseDate,
     type DateValue,
   } from '@internationalized/date'
   import FieldErrorMessage from '@/components/shared/FieldErrorMessage.svelte'
+  import DateCalendar from '@/components/shared/DateCalendar.svelte'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import {
     formatEditableDateTime,
@@ -388,75 +384,16 @@
     <legend class="sr-only">Custom Time Range</legend>
 
     {#snippet endpointCalendar(endpoint: Endpoint)}
-      <Calendar.Root
+      <DateCalendar
         id={`custom-${endpoint}-calendar`}
-        type="single"
-        class="custom-calendar"
+        label={`${endpoint === 'start' ? 'Start' : 'End'} date`}
         value={calendarDate(endpoint === 'start' ? startDateText : endDateText)}
         onValueChange={value => selectCalendarDate(endpoint, value)}
         placeholder={calendarDate(
           endpoint === 'start' ? startDateText : endDateText
         ) ?? today}
         maxValue={today}
-        preventDeselect={true}
-        initialFocus={true}
-        calendarLabel={`${endpoint === 'start' ? 'Start' : 'End'} date`}
-        weekdayFormat="short"
-        fixedWeeks={true}
-      >
-        {#snippet children({ months, weekdays })}
-          <Calendar.Header class="calendar-header">
-            <Calendar.PrevButton class="calendar-nav">
-              <HugeiconsIcon
-                icon={ArrowLeft01Icon}
-                size={14}
-                aria-hidden="true"
-              />
-            </Calendar.PrevButton>
-            <Calendar.Heading class="calendar-heading" />
-            <Calendar.NextButton class="calendar-nav">
-              <HugeiconsIcon
-                icon={ArrowRight01Icon}
-                size={14}
-                aria-hidden="true"
-              />
-            </Calendar.NextButton>
-          </Calendar.Header>
-
-          {#each months as month (month.value.toString())}
-            <Calendar.Grid class="calendar-grid">
-              <Calendar.GridHead>
-                <Calendar.GridRow>
-                  {#each weekdays as weekday (weekday)}
-                    <Calendar.HeadCell class="calendar-weekday">
-                      {weekday.slice(0, 2)}
-                    </Calendar.HeadCell>
-                  {/each}
-                </Calendar.GridRow>
-              </Calendar.GridHead>
-              <Calendar.GridBody>
-                {#each month.weeks as weekDates, week (week)}
-                  <Calendar.GridRow>
-                    {#each weekDates as date (date.toString())}
-                      <Calendar.Cell
-                        {date}
-                        month={month.value}
-                        class="calendar-cell"
-                      >
-                        <Calendar.Day class="calendar-day">
-                          <span class="calendar-today-dot" aria-hidden="true"
-                          ></span>
-                          {date.day}
-                        </Calendar.Day>
-                      </Calendar.Cell>
-                    {/each}
-                  </Calendar.GridRow>
-                {/each}
-              </Calendar.GridBody>
-            </Calendar.Grid>
-          {/each}
-        {/snippet}
-      </Calendar.Root>
+      />
     {/snippet}
 
     <div class="range-editor-row">
@@ -507,7 +444,7 @@
     </div>
 
     {#if openCalendar === 'start'}
-      <div class="endpoint-calendar-panel" transition:slide={{ duration: 120 }}>
+      <div class="min-w-0" transition:slide={{ duration: 120 }}>
         {@render endpointCalendar('start')}
       </div>
     {/if}
@@ -594,7 +531,7 @@
     </div>
 
     {#if openCalendar === 'end'}
-      <div class="endpoint-calendar-panel" transition:slide={{ duration: 120 }}>
+      <div class="min-w-0" transition:slide={{ duration: 120 }}>
         {@render endpointCalendar('end')}
       </div>
     {/if}
@@ -638,7 +575,7 @@
 
     <button
       type="submit"
-      class="apply-range btn btn-sm"
+      class="btn btn-sm btn-ghost mt-2 w-full rounded-full text-sm text-primary"
       aria-label="Apply range"
     >
       Apply
@@ -689,7 +626,7 @@
   }
 
   .endpoint-fields {
-    @apply flex min-w-0 items-center justify-center font-mono text-sm;
+    @apply flex min-w-0 items-center justify-end font-mono text-sm;
   }
 
   .endpoint-fields > span {
@@ -700,70 +637,13 @@
     @apply w-[10ch] shrink-0;
   }
 
-  :global(.custom-calendar) {
-    @apply rounded-none border-0 bg-transparent px-0 py-4;
-  }
-
-  :global(.calendar-header) {
-    @apply mb-2 flex items-center justify-center gap-3;
-  }
-
-  :global(.calendar-heading) {
-    @apply text-sm font-medium text-base-content/85;
-  }
-
-  :global(.calendar-nav) {
-    @apply btn btn-circle btn-ghost btn-xs h-7 min-h-0 w-7 p-0 text-base-content/60 hover:bg-base-300/40 hover:text-base-content;
-  }
-
-  :global(.calendar-grid) {
-    @apply w-full table-fixed border-collapse select-none;
-  }
-
-  :global(.calendar-weekday) {
-    @apply h-6 text-center text-[0.625rem] font-medium uppercase tracking-wide text-base-content/45;
-  }
-
-  :global(.calendar-cell) {
-    @apply h-7 p-0 text-center;
-  }
-
-  :global(.calendar-day) {
-    @apply relative inline-flex h-7 w-7 items-center justify-center rounded-full border border-transparent bg-transparent p-0 text-xs text-base-content/80;
-    @apply hover:bg-base-300/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35;
-  }
-
-  :global(.calendar-day[data-outside-month]) {
-    @apply text-base-content/25;
-  }
-
-  :global(.calendar-day[data-disabled]) {
-    @apply pointer-events-none text-base-content/20;
-  }
-
-  :global(.calendar-day[data-selected]) {
-    @apply bg-primary/20 text-primary;
-  }
-
-  .calendar-today-dot {
-    @apply absolute bottom-0.5 hidden h-0.5 w-2 rounded-full bg-current opacity-60;
-  }
-
-  :global(.calendar-day[data-today]) .calendar-today-dot {
-    @apply block;
-  }
-
   .endpoint-calendar-button {
-    @apply mr-1 h-7 min-h-0 w-7 shrink-0 self-center border-transparent p-0 text-base-content/50 shadow-none;
+    @apply mr-1 h-7 min-h-0 w-7 border-transparent p-0 text-base-content/50 shadow-none;
     @apply hover:bg-base-300/40 hover:text-base-content;
   }
 
   .endpoint-calendar-button--active {
     @apply border-primary/40 bg-base-300/50 text-primary;
-  }
-
-  .endpoint-calendar-panel {
-    @apply min-w-0 w-full bg-transparent;
   }
 
   .ambiguity-choices {
@@ -777,17 +657,5 @@
 
   .ambiguity-choice--active {
     @apply border-primary/50 bg-primary/10 text-primary;
-  }
-
-  .apply-range {
-    @apply btn-ghost mt-2 w-full rounded-none border-0 bg-transparent px-4 text-sm text-primary shadow-none;
-  }
-
-  .apply-range:hover {
-    @apply bg-base-300/40;
-  }
-
-  .apply-range:focus-visible {
-    outline-offset: -2px;
   }
 </style>

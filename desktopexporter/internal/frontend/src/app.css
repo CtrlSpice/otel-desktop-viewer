@@ -960,13 +960,10 @@ svg {
   @apply rotate-180;
 }
 
-/* Anchor popovers — native popover, fixed to trigger, dimmed backdrop (datetime, sort, …). */
+/* Shared native popover surface for time ranges and timeline activity. */
 .anchor-popover {
-  @apply overflow-hidden;
+  @apply overflow-hidden rounded-xl border border-base-300 bg-base-100 text-sm text-base-content;
   margin: 0;
-  box-sizing: border-box;
-  @apply rounded-xl bg-base-100 text-sm text-base-content;
-  @apply border border-base-300;
   box-shadow:
     0 2px 6px rgb(0 0 0 / 0.1),
     0 12px 28px rgb(0 0 0 / 0.16);
@@ -999,8 +996,8 @@ svg {
 }
 
 .anchor-popover--wide {
-  @apply gap-2 p-4;
-  width: 35rem;
+  @apply gap-2 px-4 pb-4 pt-2;
+  width: 34rem;
   max-width: calc(100vw - 1.5rem);
   max-height: min(85vh, calc(100vh - 2rem));
 }

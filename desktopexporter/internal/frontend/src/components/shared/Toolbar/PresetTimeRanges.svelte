@@ -15,7 +15,9 @@
   }
 </script>
 
-<div class="preset-time-ranges tabs tabs-border">
+<div
+  class="preset-time-ranges tabs tabs-border flex min-w-0 w-full flex-nowrap overflow-x-auto"
+>
   {#each TIME_RANGE_PRESETS as preset (preset.label)}
     {@const selected =
       preset.durationMs === undefined
@@ -24,7 +26,7 @@
           ctx.selection.durationMs === preset.durationMs}
     <button
       type="button"
-      class="tab min-w-0 px-3 text-sm first:justify-start last:justify-end before:left-0 before:w-full before:text-primary {selected
+      class="tab flex-auto justify-center whitespace-nowrap px-3 text-sm tabular-nums before:left-0 before:w-full before:text-primary {selected
         ? 'before:h-px before:border-t'
         : ''}"
       class:tab-active={selected}
@@ -32,15 +34,7 @@
       aria-label={preset.label === 'All' ? 'All time' : `Last ${preset.label}`}
       onclick={() => applyPreset(preset)}
     >
-      {preset.label}
+      {preset.shortLabel}
     </button>
   {/each}
 </div>
-
-<style lang="postcss">
-  @reference "../../../app.css";
-
-  .preset-time-ranges {
-    @apply grid min-w-0 w-full grid-flow-col auto-cols-fr;
-  }
-</style>

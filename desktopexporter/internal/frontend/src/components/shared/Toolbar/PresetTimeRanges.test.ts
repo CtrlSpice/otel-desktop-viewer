@@ -4,7 +4,16 @@ import { screen, fireEvent } from '@testing-library/svelte'
 import PresetTimeRanges from './PresetTimeRanges.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
-const PRESET_LABELS = ['All', '5m', '15m', '30m', '1h', '6h', '24h', '7d']
+const PRESET_LABELS = [
+  'All',
+  '5 min',
+  '15 min',
+  '30 min',
+  '1 hr',
+  '6 hr',
+  '24 hr',
+  '7 days',
+]
 
 function renderComponent() {
   setTestUrl('/traces')
@@ -46,7 +55,7 @@ describe('PresetTimeRanges', () => {
     vi.setSystemTime(new Date('2026-01-15T12:00:00.000Z'))
     renderComponent()
 
-    fireEvent.click(getPresetButton('5m'))
+    fireEvent.click(getPresetButton('5 min'))
 
     const saved = JSON.parse(localStorage.getItem('time-selection')!)
     expect(saved).toEqual({
@@ -55,8 +64,8 @@ describe('PresetTimeRanges', () => {
     })
     expect(window.location.search).toContain(`start=${Date.now() - 300_000}`)
     expect(window.location.search).toContain(`end=${Date.now()}`)
-    expect(getPresetButton('5m')).toHaveAttribute('aria-pressed', 'true')
-    expect(getPresetButton('5m')).toHaveClass('tab-active')
+    expect(getPresetButton('5 min')).toHaveAttribute('aria-pressed', 'true')
+    expect(getPresetButton('5 min')).toHaveClass('tab-active')
     expect(getPresetButton('All')).toHaveAttribute('aria-pressed', 'false')
     expect(getPresetButton('All')).not.toHaveClass('tab-active')
   })

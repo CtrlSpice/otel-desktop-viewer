@@ -170,7 +170,7 @@ test.describe('home page accessibility', () => {
     await page.keyboard.press('Enter')
     await expect(trigger).toHaveAttribute('aria-expanded', 'true')
     await expect(
-      page.getByRole('button', { name: 'Last 5m', exact: true })
+      page.getByRole('button', { name: 'Last 5 min', exact: true })
     ).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(trigger).toBeFocused()
@@ -478,9 +478,7 @@ test.describe('home page accessibility', () => {
     expect(presetColors.background).toBe('rgba(0, 0, 0, 0)')
   })
 
-  test('aligns preset edge labels with the range labels and timezone value', async ({
-    page,
-  }) => {
+  test('balances preset label spacing and outer edges', async ({ page }) => {
     await page.goto('/traces')
     await page.getByRole('button', { name: /Change time range/i }).click()
 
@@ -506,16 +504,8 @@ test.describe('home page accessibility', () => {
       const popupStyle = getComputedStyle(element)
       const row = element.querySelector('.range-editor-row')!
       const border = Number.parseFloat(popupStyle.borderLeftWidth)
-      const labelRange = document.createRange()
-      labelRange.selectNodeContents(element.querySelector('.endpoint-label')!)
-      const timezoneRange = document.createRange()
-      timezoneRange.selectNodeContents(
-        element.querySelector('.timezone-summary')!
-      )
       return {
         tabs,
-        labelLeft: labelRange.getBoundingClientRect().left,
-        timezoneRight: timezoneRange.getBoundingClientRect().right,
         leftInset: tabs[0].left - popupBounds.left - border,
         rightInset: popupBounds.right - border - tabs[tabs.length - 1].right,
         rowInset: row.getBoundingClientRect().left - popupBounds.left - border,
@@ -526,16 +516,16 @@ test.describe('home page accessibility', () => {
     expect(alignment.rightInset).toBeCloseTo(alignment.contentInset, 0)
     expect(alignment.rowInset).toBeCloseTo(alignment.contentInset, 0)
     for (const tab of alignment.tabs) {
-      expect(tab.width).toBeCloseTo(alignment.tabs[0].width, 0)
+      expect(tab.textCenter).toBeCloseTo(tab.center, 0)
+      expect(tab.textLeft - tab.left).toBeCloseTo(
+        alignment.tabs[0].textLeft - alignment.tabs[0].left,
+        0
+      )
     }
-    expect(alignment.tabs[0].textLeft).toBeCloseTo(alignment.labelLeft, 0)
-    expect(alignment.tabs.at(-1)!.textRight).toBeCloseTo(
-      alignment.timezoneRight,
+    expect(alignment.tabs[0].textLeft - alignment.tabs[0].left).toBeCloseTo(
+      alignment.tabs.at(-1)!.right - alignment.tabs.at(-1)!.textRight,
       0
     )
-    for (const tab of alignment.tabs.slice(1, -1)) {
-      expect(tab.textCenter).toBeCloseTo(tab.center, 0)
-    }
   })
 
   test('keeps custom range controls circular and focus treatment inset', async ({
@@ -664,7 +654,7 @@ test.describe('home page accessibility', () => {
   }) => {
     await page.goto('/traces')
     await page.getByRole('button', { name: /Change time range/i }).click()
-    const timezoneSummary = page.getByText('Timezone', { exact: true })
+    const timezoneSummary = page.getByText('Timezone:', { exact: true })
     const timezoneSection = timezoneSummary.locator('xpath=ancestor::details')
     await timezoneSummary.click()
 
