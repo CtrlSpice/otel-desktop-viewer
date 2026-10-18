@@ -64,6 +64,8 @@
      * isn't the drawer). Use for page-scoped controls that act on
      * the page selection (delete, prev/next, etc.). */
     pageFooter?: Snippet
+    /** Signal main panes use the base surface; Home and Evals keep their panel surface. */
+    mainSurface?: 'base' | 'panel'
   }
 
   let {
@@ -85,6 +87,7 @@
     main,
     detail,
     pageFooter,
+    mainSurface = 'panel',
   }: Props<T> = $props()
 
   const detailPanelID = $derived(`${drawerID}-detail`)
@@ -106,7 +109,12 @@
   />
 {/snippet}
 
-<div class="page-layout">
+<div
+  class="page-layout"
+  style:--main-surface={mainSurface === 'base'
+    ? 'var(--color-base-100)'
+    : 'var(--color-base-200)'}
+>
   <SignalListDrawer
     {items}
     {emptyDrawer}
@@ -142,7 +150,10 @@
             storageKey="workspace-panel-split"
           >
             {#snippet leftPanel()}
-              <div class="page-layout__main-chrome">
+              <div
+                class="page-layout__main-chrome"
+                class:page-layout__main-chrome--base={mainSurface === 'base'}
+              >
                 {@render main()}
               </div>
             {/snippet}
@@ -151,7 +162,10 @@
             {/snippet}
           </ResizablePanels>
         {:else}
-          <div class="page-layout__main-chrome">
+          <div
+            class="page-layout__main-chrome"
+            class:page-layout__main-chrome--base={mainSurface === 'base'}
+          >
             {@render main()}
           </div>
         {/if}
@@ -204,6 +218,11 @@
   }
 
   .page-layout__main-chrome {
-    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl bg-base-200 border border-base-300;
+    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-base-300;
+    background-color: var(--main-surface);
+  }
+
+  .page-layout__main-chrome--base {
+    @apply border-0;
   }
 </style>

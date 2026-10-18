@@ -3,6 +3,7 @@ import {
   CHART_PALETTES,
   categoricalPalette,
   heatmapSwatches,
+  metricSeriesPalette,
   readableTextColor,
 } from './chart-palette'
 
@@ -109,6 +110,36 @@ describe('categoricalPalette', () => {
       RangeError
     )
     expect(() => categoricalPalette(2 ** 32, 'pine')).toThrow(RangeError)
+  })
+})
+
+describe('metricSeriesPalette', () => {
+  it('reserves iris for overlays without reducing unique series capacity', () => {
+    for (const [theme, families] of Object.entries(CHART_PALETTES)) {
+      const pool = metricSeriesPalette(24, 'pine', theme)
+      expect(pool).toHaveLength(24)
+      expect(new Set(pool).size).toBe(24)
+      expect(new Set(pool.slice(0, 22)).size).toBe(22)
+      for (const iris of families.iris) expect(pool).not.toContain(iris)
+      expect(pool.slice(0, 4)).toEqual([
+        families.pine[2],
+        families.foam[2],
+        families.gold[2],
+        families.rose[2],
+      ])
+      expect(metricSeriesPalette(2, 'pine', theme)).toEqual(pool.slice(0, 2))
+      expect(metricSeriesPalette(22, 'pine', theme)).toEqual(pool.slice(0, 22))
+    }
+  })
+  it('keeps deterministic fallbacks, repetition, and count validation', () => {
+    const pool = metricSeriesPalette(28, 'foam', 'rose-pine-moon')
+    expect(pool[0]).toBe(CHART_PALETTES['rose-pine-moon'].foam[2])
+    expect(pool.slice(24)).toEqual(pool.slice(0, 4))
+    expect(metricSeriesPalette(24, 'iris', 'unknown')).toEqual(
+      metricSeriesPalette(24, 'pine', 'rose-pine-moon')
+    )
+    expect(metricSeriesPalette(0, 'pine')).toEqual([])
+    expect(() => metricSeriesPalette(NaN, 'pine')).toThrow(RangeError)
   })
 })
 

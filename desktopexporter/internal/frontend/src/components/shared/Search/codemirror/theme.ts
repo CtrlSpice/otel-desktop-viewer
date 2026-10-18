@@ -36,12 +36,13 @@ function ensureTooltipStyles() {
       padding: 0.25rem 1rem;
       gap: 0.5rem;
       box-sizing: border-box;
+      border-radius: 0.75rem;
     }
     html[data-theme] .cm-tooltip-autocomplete > ul > li:hover {
-      background-color: var(--item-hover-bg);
+      background-color: var(--color-highlight-med);
     }
     html[data-theme] .cm-tooltip-autocomplete > ul > li[aria-selected] {
-      background-color: var(--item-selected-bg);
+      background-color: var(--color-highlight-med);
       color: var(--color-base-content);
     }
     html[data-theme] .cm-completionLabel {
@@ -102,7 +103,7 @@ export const queryEditorTheme = EditorView.theme({
     outline: 'none',
   },
   '.cm-selectionBackground': {
-    backgroundColor: `${qc.overlay} !important`,
+    backgroundColor: `${qc.highlightMed} !important`,
   },
   '.cm-activeLine': {
     backgroundColor: 'transparent',

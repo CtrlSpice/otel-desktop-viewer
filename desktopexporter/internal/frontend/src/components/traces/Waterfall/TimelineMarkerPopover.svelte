@@ -232,7 +232,7 @@
       <div role="listitem">
         <button
           type="button"
-          class="activity-popover__row item-state"
+          class="activity-popover__row item-state item-state--menu"
           onclick={event => {
             event.stopPropagation()
             select(record, event)
@@ -298,7 +298,7 @@
   }
 
   .activity-popover__row {
-    @apply grid w-full cursor-pointer grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-2 rounded px-2 py-1.5 text-left text-xs;
+    @apply grid w-full cursor-pointer grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-2 px-2 py-1.5 text-left text-xs;
   }
 
   .activity-popover__offset {

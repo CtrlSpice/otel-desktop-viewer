@@ -46,6 +46,7 @@
 {#if log}
   <div class="log-detail-panel">
     <PaneHeader
+      pill
       mode="title"
       title={service || '—'}
       timestampMs={Number(log.timestamp / 1_000_000n)}

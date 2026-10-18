@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ChartSticky from '@/components/metrics/Charts/ChartSticky.svelte'
   import { quantileMergedSelectionLegendRows } from '@/components/metrics/utils/heatmap-column-selection'
   import { formatMetricValue } from '@/components/metrics/utils/format-metric-value'
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
@@ -13,7 +14,6 @@
   import ChartSelectionLegend, {
     type SelectionLegendRow,
   } from '@/components/metrics/Charts/ChartSelectionLegend.svelte'
-  import ChartTimeRangeHeader from '@/components/metrics/Charts/ChartTimeRangeHeader.svelte'
   import MetricChartPlot, {
     axisTime,
     axisValue,
@@ -379,6 +379,7 @@
     const quantileFilter = ctx.selectedQuantileKey
     const dots: {
       key: string
+      seriesKey: string
       color: string
       value: number
     }[] = []
@@ -391,12 +392,25 @@
         if (!point || !Number.isFinite(point.value)) continue
         dots.push({
           key: `${group.seriesKey}:${line.quantileKey}`,
+          seriesKey: group.seriesKey,
           color: group.color,
           value: point.value,
         })
       }
     }
     return dots
+  })
+
+  let selectionAnchor = $derived.by(() => {
+    const context = lineChartContext
+    const dot =
+      selectionDots.find(dot => dot.seriesKey === ctx.selectedSeriesKey) ??
+      selectionDots[0]
+    if (!context || !selectedDate || !dot) return null
+    return {
+      x: context.padding.left + context.xScale(selectedDate),
+      y: context.padding.top + context.yScale(dot.value),
+    }
   })
 
   function nearestValueAt(
@@ -462,37 +476,6 @@
 
 {#if visiblePointCount > 0}
   <div class="metric-quantile-area-chart" style:height="{height}px">
-    {#if timeRange || onChartPointClick}
-      <div class="metric-quantile-area-chart__header">
-        {#if timeRange}
-          <ChartTimeRangeHeader
-            startMs={timeRange.startMs}
-            endMs={timeRange.endMs}
-            variant="legend"
-          />
-        {/if}
-        {#if onChartPointClick && hasSelectionSummary}
-          <div class="metric-quantile-area-chart__selection-legend">
-            {#if seriesQuantileRows.length > 0}
-              <ChartSelectionLegend
-                timestamp={seriesSelectionTimestamp}
-                rows={seriesQuantileRows}
-              />
-            {/if}
-            {#if mergedSelectionRows.length > 0}
-              <div class="metric-quantile-area-chart__merged-totals">
-                <ChartSelectionLegend
-                  timestamp={seriesQuantileRows.length > 0
-                    ? ''
-                    : selectionTimestamp}
-                  rows={mergedSelectionRows}
-                />
-              </div>
-            {/if}
-          </div>
-        {/if}
-      </div>
-    {/if}
     <div
       class="metric-quantile-area-chart__plot chart-keyboard-surface-host"
       bind:clientHeight={plotAreaHeight}
@@ -618,6 +601,28 @@
             {/if}
           {/snippet}
         </LineChart>
+        {#if onChartPointClick && hasSelectionSummary}
+          <ChartSticky anchor={selectionAnchor}>
+            <div class="metric-quantile-area-chart__selection-legend">
+              {#if seriesQuantileRows.length > 0}
+                <ChartSelectionLegend
+                  timestamp={seriesSelectionTimestamp}
+                  rows={seriesQuantileRows}
+                />
+              {/if}
+              {#if mergedSelectionRows.length > 0}
+                <div class="metric-quantile-area-chart__merged-totals">
+                  <ChartSelectionLegend
+                    timestamp={seriesQuantileRows.length > 0
+                      ? ''
+                      : selectionTimestamp}
+                    rows={mergedSelectionRows}
+                  />
+                </div>
+              {/if}
+            </div>
+          </ChartSticky>
+        {/if}
       </MetricChartPlot>
       <ChartKeyboardSurface
         id="metric-quantile-keyboard-surface"
@@ -642,23 +647,8 @@
     @apply flex min-h-0 w-full min-w-0 flex-col;
   }
 
-  .metric-quantile-area-chart__header {
-    @apply flex shrink-0 items-start justify-between gap-2 px-1 pb-1 pt-0.5;
-  }
-
-  .metric-quantile-area-chart__header
-    :global(.chart-time-range-legend__prefix) {
-    color: var(--color-subtle);
-  }
-
-  .metric-quantile-area-chart__header :global(.chart-time-range-legend__value) {
-    @apply text-base-content;
-  }
-
   .metric-quantile-area-chart__selection-legend {
-    @apply ml-auto flex shrink-0 flex-col items-end gap-1;
-    min-height: 4rem;
-    pointer-events: none;
+    @apply flex min-w-0 max-w-full flex-col items-end gap-1;
   }
 
   .metric-quantile-area-chart__selection-legend

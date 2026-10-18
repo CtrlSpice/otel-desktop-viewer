@@ -904,6 +904,7 @@
   data-unmatched-log-count={logPartition.unmatched.length}
 >
   <PaneHeader
+    pill
     mode="title"
     title={headerName}
     subtitle={headerService || undefined}
@@ -1090,7 +1091,7 @@
   @reference "../../../app.css";
 
   .waterfall-view {
-    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-base-200 transition-opacity duration-200;
+    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-base-100 transition-opacity duration-200;
   }
 
   /* The error badge is the navigation: chevrons flank the count inside
@@ -1129,7 +1130,7 @@
 
   /* Local override on top of `.header-surface`: drop the warm
      primary-tinted fill so the thead inherits the panel's
-     bg-base-200, and remove the inset top highlight + primary-mix
+     bg-base-100, and remove the inset top highlight + primary-mix
      bottom border that were tuned for a brighter body. The thead
      keeps its `.header-surface` height + sizing rules but visually
      merges into the panel surface. */

@@ -102,6 +102,7 @@
   import MetricCard from '@/components/metrics/MetricCard.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
   import MetricChartView from '@/components/metrics/Charts/MetricChartView.svelte'
+  import ChartStatOverlaysToggle from '@/components/metrics/Charts/ChartStatOverlaysToggle.svelte'
   import MetricDetailView from '@/components/metrics/Detail/MetricDetailView.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
@@ -208,6 +209,15 @@
     () => columnDistribution
   )
   const metricCtx = getMetricViewContext()
+
+  let chartHeaderTimeRange = $derived(
+    metricCtx.isUnsafeTemporality ||
+      (metricCtx.isHistogramKind &&
+        metricCtx.activeHistogramTab === 'histogram' &&
+        metricCtx.histogramScope === 'bucket')
+      ? undefined
+      : metricCtx.chartDataTimeRange
+  )
 
   let hasMetricRows = $derived(page.items.length > 0)
   let displayError = $derived(page.error ?? actionError)
@@ -644,6 +654,7 @@
 
 <div class="metrics-page">
   <PageLayout
+    mainSurface="base"
     items={page.sortedItems}
     selectedID={page.selectedID}
     drawerID="signal-drawer"
@@ -715,10 +726,13 @@
           />
         {/snippet}
 
+        {#snippet overlayControl()}<ChartStatOverlaysToggle />{/snippet}
+
         {@const histogramChartTabs = histogramViewTabs()}
 
         {#if showChartTitleTabs}
           <PaneHeader
+            pill
             mode="title-tabs"
             title={selectedSummary.name}
             subtitle={selectedSummary.serviceName?.trim() || undefined}
@@ -737,6 +751,10 @@
             }}
             ariaLabel="Metric chart"
             tabPanelID={METRIC_CHART_PANEL_ID}
+            timeRange={chartHeaderTimeRange}
+            metaRight={metricCtx.showChartStatOverlaysToggleVisible
+              ? overlayControl
+              : undefined}
           >
             {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
             {#snippet leading()}
@@ -747,10 +765,15 @@
           </PaneHeader>
         {:else}
           <PaneHeader
+            pill
             mode="title"
             title={selectedSummary.name}
             subtitle={selectedSummary.serviceName?.trim() || undefined}
             ariaLabel="Metric chart"
+            timeRange={chartHeaderTimeRange}
+            metaRight={metricCtx.showChartStatOverlaysToggleVisible
+              ? overlayControl
+              : undefined}
           >
             {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
             {#snippet leading()}

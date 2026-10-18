@@ -31,6 +31,7 @@
   let triggerEl = $state<HTMLButtonElement | null>(null)
   let popoverEl = $state<HTMLDivElement | null>(null)
   let open = $state(false)
+  // Keep the visible target label in sync; the direction control is separate.
   const currentLabel = $derived(
     options.find(option => option.value === value)?.label ?? 'Sort'
   )
@@ -66,9 +67,9 @@
   type="button"
   popovertarget={popoverID}
   aria-expanded={open}
-  class="header-icon-button m-1 text-sm tooltip tooltip-bottom"
-  aria-label={`Sort By ${currentLabel}`}
-  data-tip={`Sort By ${currentLabel}`}
+  class="sort-trigger header-icon-button m-1 text-sm tooltip tooltip-bottom"
+  aria-label={`Sort by: ${currentLabel}`}
+  data-tip={`Sort by: ${currentLabel}`}
 >
   <HugeiconsIcon
     icon={Sorting05Icon}
@@ -77,6 +78,8 @@
     class="shrink-0"
     aria-hidden="true"
   />
+  <span class="shrink-0">Sort by:</span>
+  <span class="min-w-0 truncate text-base-content">{currentLabel}</span>
 </button>
 <button
   type="button"
@@ -101,14 +104,14 @@
   popover="auto"
   class="anchor-popover anchor-popover--anchored sort-popover"
   role="group"
-  aria-label="Sort By"
+  aria-label="Sort by"
 >
   {#each options as option (option.value)}
     <button
       type="button"
       aria-pressed={option.value === value}
       onclick={() => selectSort(option)}
-      class="item-state flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-left font-sans text-sm font-normal"
+      class="item-state item-state--menu flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-left font-sans text-sm font-normal"
     >
       {option.label}
     </button>
@@ -117,6 +120,10 @@
 
 <style lang="postcss">
   @reference "../../../app.css";
+
+  .sort-trigger {
+    @apply min-w-0 w-auto shrink gap-2 px-2 text-left;
+  }
 
   .sort-popover {
     @apply gap-1 p-2;

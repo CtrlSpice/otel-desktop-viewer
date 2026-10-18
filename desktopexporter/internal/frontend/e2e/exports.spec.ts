@@ -69,6 +69,37 @@ test.beforeEach(async ({ page }) => {
   })
   await page.goto(`/logs/${logRef}`)
   await expect(page.getByRole('button', { name: 'Export log' })).toBeVisible()
+  await expect(
+    page.getByRole('region', { name: 'Log record', exact: true })
+  ).toHaveCSS('border-radius', '12px')
+  const badgeInset = await page
+    .getByRole('region', { name: 'Log record', exact: true })
+    .evaluate(header => {
+      const top = header
+        .querySelector('.pane-header__top')!
+        .getBoundingClientRect()
+      const badges = header
+        .querySelector('.pane-header__badges')!
+        .getBoundingClientRect()
+      return top.right - badges.right
+    })
+  expect(Math.abs(badgeInset)).toBeLessThan(1)
+  const darkest = await page.evaluate(() => {
+    const probe = document.createElement('span')
+    probe.style.backgroundColor = 'var(--color-base-100)'
+    document.body.append(probe)
+    const color = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    return color
+  })
+  await expect(page.locator('.page-layout__main-chrome')).toHaveCSS(
+    'background-color',
+    darkest
+  )
+  await expect(page.locator('.page-layout__main-chrome')).toHaveCSS(
+    'border-width',
+    '0px'
+  )
 })
 
 test('downloads exact JSON bytes with one activation from the signal header', async ({

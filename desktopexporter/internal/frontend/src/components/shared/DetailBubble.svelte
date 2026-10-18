@@ -69,7 +69,7 @@
 <style lang="postcss">
   @reference "../../app.css";
   .detail-bubble__heading {
-    @apply sticky top-0 z-10 flex min-h-10 items-center gap-2 rounded-xl bg-base-200 px-3 py-2.5 text-sm font-medium;
+    @apply sticky top-0 z-10 flex min-h-10 items-center gap-2 rounded-xl bg-base-300 px-3 py-2.5 text-sm font-medium;
   }
   .detail-bubble__heading--action {
     @apply pe-12;

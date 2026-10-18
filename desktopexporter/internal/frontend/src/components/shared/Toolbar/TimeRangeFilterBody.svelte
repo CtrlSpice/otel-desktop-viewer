@@ -152,7 +152,7 @@
             {#each filteredTimezones as timezone (timezone.name)}
               <button
                 type="button"
-                class="tz-option item-state"
+                class="tz-option item-state item-state--menu"
                 aria-pressed={ctx.tz === timezone.name}
                 onclick={() => ctx.setTz(timezone.name)}
               >
@@ -194,7 +194,7 @@
 
   .tz-option {
     height: var(--table-row-h);
-    @apply flex w-full cursor-pointer items-center gap-2 rounded-none border-none px-3 py-0 text-left text-sm text-base-content;
+    @apply flex w-full cursor-pointer items-center gap-2 border-none px-3 py-0 text-left text-sm text-base-content;
   }
 
   .tz-name {

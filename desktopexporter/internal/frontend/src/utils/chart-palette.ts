@@ -131,6 +131,33 @@ export function categoricalPalette(
   return out
 }
 
+/** Reserve iris for metric annotations, retaining 24 stable slots for the 22-series cap. */
+export function metricSeriesPalette(
+  count: number,
+  start: CategoricalStem,
+  theme: string = ''
+): string[] {
+  const requested = categoricalPalette(count, start, theme)
+  if (requested.length === 0) return []
+  const palette = PALETTES_BY_THEME.get(theme) ?? DEFAULT_CATEGORICAL_PALETTE
+  const families = FAMILY_ORDER.filter(family => family !== 'iris')
+  const startIdx = Math.max(
+    0,
+    families.indexOf(start === 'iris' ? 'pine' : start)
+  )
+  const rotated = [...families.slice(startIdx), ...families.slice(0, startIdx)]
+  const pool = LEVEL_ORDER.flatMap(level =>
+    rotated.map(family => palette[family][level]!)
+  )
+  // One intermediate shade per non-iris family extends the pool without reusing a colour.
+  pool.push(
+    ...rotated.map(family =>
+      interpolateHcl(palette[family][1]!, palette[family][2]!)(0.5)
+    )
+  )
+  return requested.map((_, index) => pool[index % pool.length]!)
+}
+
 /** Neutral swatch / unchecked-checkbox colour. */
 export function chartNeutral(): string {
   return 'var(--color-neutral)'

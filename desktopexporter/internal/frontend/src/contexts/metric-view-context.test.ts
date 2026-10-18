@@ -177,9 +177,8 @@ function makeSumDatapointAt(
 }
 
 /**
- * Cumulative monotonic Sum with two timeseries: 'rate' is allowed (and is the
- * smart default), and the second series unlocks 'sum' / 'avg' so tests have an
- * allowed value that is NOT the default to deep-link to.
+ * Cumulative monotonic Sum with two timeseries: 'rate' is an explicit option,
+ * and the second series unlocks 'sum' / 'avg'. Raw remains the default.
  */
 function makeCumulativeSumMetric(): MetricViewData {
   return {
@@ -417,29 +416,64 @@ describe('metric view context aggregation URL sync', () => {
     ])
   })
 
-  it('uses the smart default when the URL carries no aggregation', () => {
+  it('uses Raw when the URL carries no aggregation or saved preference', () => {
     renderProbe('/metrics/m1')
-    expect(reportedAggregationView()).toBe('rate')
+    expect(reportedAggregationView()).toBe('raw')
   })
+
+  it('shows a single counter reading in Raw rather than deriving an empty rate', () => {
+    const metric = makeCumulativeSumMetric()
+    const series = metric.timeseries[0]!
+    series.datapoints = [series.datapoints[0]!]
+    series.datapointCount = 1
+    metric.timeseries = [series]
+    metric.datapointCount = 1
+    const ctx = renderProbe('/metrics/m1', { metric })
+    expect(reportedAggregationView()).toBe('raw')
+    expect(ctx.transformedGaugeSumChartTimeseries[0]!.points).toHaveLength(1)
+    expect(ctx.transformedGaugeSumChartTimeseries[0]!.points[0]!.value).toBe(10)
+    expect(reportedAvailableAggregationViews()).toEqual(['raw', 'rate'])
+  })
+
+  it.each([
+    ['/metrics/m1', 'rate'],
+    ['/metrics/m1?agg=bogus', 'rate'],
+    ['/metrics/m1?agg=raw', 'raw'],
+    ['/metrics/m1?agg=sum', 'sum'],
+  ])(
+    'respects a saved Rate preference or explicit URL at %s',
+    (url, expected) => {
+      const key = metricViewStorageKey('m1')
+      const preference = JSON.stringify({ aggregationView: 'rate' })
+      localStorage.setItem(key, preference)
+      try {
+        renderProbe(url)
+        expect(reportedAggregationView()).toBe(expected)
+        expect(localStorage.getItem(key)).toBe(preference)
+      } finally {
+        localStorage.removeItem(key)
+      }
+    }
+  )
 
   it('applies an aggregation deep link on load', () => {
     renderProbe('/metrics/m1?agg=sum')
     expect(reportedAggregationView()).toBe('sum')
   })
 
-  it('falls back to the smart default when the URL aggregation is invalid', () => {
+  it('falls back to Raw when the URL aggregation is invalid', () => {
     renderProbe('/metrics/m1?agg=bogus')
-    expect(reportedAggregationView()).toBe('rate')
+    expect(reportedAggregationView()).toBe('raw')
   })
 
-  it('keeps the smart default when the browser goes back to a URL without an aggregation', async () => {
+  it('keeps Raw when the browser goes back to a URL without an aggregation', async () => {
     renderProbe('/metrics/m1?agg=sum')
     expect(reportedAggregationView()).toBe('sum')
 
     externalNavigationTo('/metrics/m1')
     await tick()
 
-    expect(reportedAggregationView()).toBe('rate')
+    expect(reportedAggregationView()).toBe('raw')
   })
 
   it('ignores an aggregation dropped from the URL behind its back', async () => {
@@ -451,9 +485,9 @@ describe('metric view context aggregation URL sync', () => {
     expect(reportedAggregationView()).toBe('rate')
   })
 
-  it('keeps the smart default when an unrelated query param is written', async () => {
+  it('keeps Raw when an unrelated query param is written', async () => {
     renderProbe('/metrics/m1')
-    expect(reportedAggregationView()).toBe('rate')
+    expect(reportedAggregationView()).toBe('raw')
 
     navigateCurrentRoute(
       withQueryPatch(readRoute().query, { start: '1000', end: '2000' }),
@@ -462,7 +496,7 @@ describe('metric view context aggregation URL sync', () => {
     await tick()
 
     expect(window.location.search).toContain('start=1000')
-    expect(reportedAggregationView()).toBe('rate')
+    expect(reportedAggregationView()).toBe('raw')
   })
 
   it('writes its own aggregation choice to the URL', async () => {
@@ -494,7 +528,7 @@ describe('metric view context aggregation URL sync', () => {
     }
   })
 
-  it('returns to the smart default when the browser goes back past its own write', async () => {
+  it('returns to Raw when the browser goes back past its own write', async () => {
     const ctx = renderProbe('/metrics/m1')
 
     ctx.setAggregationView('sum')
@@ -504,7 +538,7 @@ describe('metric view context aggregation URL sync', () => {
     externalNavigationTo('/metrics/m1')
     await tick()
 
-    expect(reportedAggregationView()).toBe('rate')
+    expect(reportedAggregationView()).toBe('raw')
   })
 
   it('spells out raw rather than omitting it', async () => {
@@ -789,6 +823,67 @@ describe('metric view context datapoint URL sync', () => {
         point => point.timestampNs === selectedBucketStart
       )?.value
     ).toBe(4)
+  })
+
+  it('pins an exact Rate bucket directly without inventing a raw datapoint or URL id', async () => {
+    const { metric, selectedBucketStart } = makeRateSelectionMetric()
+    const ctx = renderProbe('/metrics/m1?agg=rate', { metric })
+    ctx.onRateChartPointClick('route=/a', selectedBucketStart)
+    await tick()
+    expect(ctx.highlightedTimestamp).toBe(selectedBucketStart)
+    expect(ctx.selectedSeriesKey).toBe('route=/a')
+    expect(ctx.selectedRateSlope).toBe(6)
+    expect(ctx.selectedDatapointID).toBeNull()
+    expect(ctx.selectionSource).toBe('chart')
+    expect(new URLSearchParams(window.location.search).has('dp')).toBe(false)
+    ctx.onRateChartPointClick('route=/a', selectedBucketStart + 1n)
+    await tick()
+    expect(ctx.highlightedTimestamp).toBe(selectedBucketStart)
+    ctx.clearChartSelection()
+    await tick()
+    expect(ctx.highlightedTimestamp).toBeNull()
+  })
+
+  it('keeps raw detail selection underneath a Rate pick and lets the list take over again', async () => {
+    const { metric, later, selectedBucketStart } = makeRateSelectionMetric()
+    const ctx = renderProbe('/metrics/m1?agg=rate', { metric })
+    ctx.onDatapointClick(later)
+    await tick()
+    const before = window.location.search
+    const earlierBucket = selectedBucketStart - 300n
+    ctx.onRateChartPointClick('route=/a', earlierBucket)
+    await tick()
+    expect(ctx.highlightedTimestamp).toBe(earlierBucket)
+    expect(ctx.selectedDatapointID).toBe(later.id)
+    expect(window.location.search).toBe(before)
+    ctx.clearChartSelection()
+    await tick()
+    expect(ctx.highlightedTimestamp).toBe(selectedBucketStart)
+    expect(ctx.selectionSource).toBe('detail')
+    ctx.onRateChartPointClick('route=/a', earlierBucket)
+    ctx.onDatapointClick(later)
+    await tick()
+    expect(ctx.highlightedTimestamp).toBe(selectedBucketStart)
+    expect(ctx.selectedDatapointID).toBe(later.id)
+  })
+
+  it('rejects unknown or aggregate Rate buckets and clears a pick when its series is hidden', async () => {
+    const { metric, selectedBucketStart } = makeRateSelectionMetric()
+    const ctx = renderProbe('/metrics/m1?agg=rate', { metric })
+    ctx.onRateChartPointClick('__agg:selected__', selectedBucketStart)
+    ctx.onRateChartPointClick('missing', selectedBucketStart)
+    await tick()
+    expect(ctx.highlightedTimestamp).toBeNull()
+    ctx.onRateChartPointClick('route=/a', selectedBucketStart)
+    await tick()
+    expect(ctx.highlightedTimestamp).toBe(selectedBucketStart)
+    ctx.visibleSeries.delete('route=/a')
+    await tick()
+    expect(ctx.highlightedTimestamp).toBeNull()
+    ctx.setAggregationView('raw')
+    ctx.onRateChartPointClick('route=/a', selectedBucketStart)
+    await tick()
+    expect(ctx.highlightedTimestamp).toBeNull()
   })
 
   it('does not map a raw-only same-time selection onto a reduced rate bucket', async () => {

@@ -62,7 +62,7 @@ describe('AttributeRows', () => {
       within(header as HTMLElement).getByText('service.name')
     ).toBeInTheDocument()
     expect(within(header as HTMLElement).getByText('resource')).toHaveClass(
-      'badge-neutral'
+      'badge-primary'
     )
     const type = within(header as HTMLElement).getByText('string')
     expect(type).toHaveClass('badge-soft', 'badge-accent')

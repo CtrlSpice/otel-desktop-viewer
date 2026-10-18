@@ -27,6 +27,27 @@ const EMPTY_ATTRIBUTE_METHODS = new Set([
   'getMetricAttributeDefinitions',
 ])
 
+const HIGHLIGHT_THEMES = [
+  {
+    theme: 'rose-pine',
+    low: 'rgb(33, 32, 46)',
+    selected: 'rgb(64, 61, 82)',
+    high: '#524f67',
+  },
+  {
+    theme: 'rose-pine-moon',
+    low: 'rgb(42, 40, 62)',
+    selected: 'rgb(68, 65, 90)',
+    high: '#56526e',
+  },
+  {
+    theme: 'rose-pine-dawn',
+    low: 'rgb(244, 237, 232)',
+    selected: 'rgb(223, 218, 217)',
+    high: '#cecacd',
+  },
+] as const
+
 async function interceptRpc(page: Page): Promise<void> {
   await page.route('**/rpc', async route => {
     // SAFETY: This page's /rpc requests come from callRPC, which supplies a
@@ -154,6 +175,118 @@ for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
   })
 }
 
+for (const { theme, selected: selectedColor } of HIGHLIGHT_THEMES) {
+  test(`sort target uses full text contrast in ${theme}`, async ({ page }) => {
+    await interceptRpc(page)
+    await page.addInitScript(
+      theme => localStorage.setItem('theme', theme),
+      theme
+    )
+    await page.goto('/traces')
+    const trigger = page.getByRole('button', { name: /^Sort by:/ })
+    await expect(trigger).toHaveAccessibleName('Sort by: Start Time')
+    const textColor =
+      theme === 'rose-pine-dawn' ? 'rgb(70, 66, 97)' : 'rgb(224, 222, 244)'
+    await expect(trigger.getByText('Start Time', { exact: true })).toHaveCSS(
+      'color',
+      textColor
+    )
+    await expect(trigger.getByText('Sort by:', { exact: true })).toHaveCSS(
+      'color',
+      theme === 'rose-pine-dawn' ? 'rgb(152, 147, 165)' : 'rgb(110, 106, 134)'
+    )
+    await trigger.click()
+    await page
+      .getByRole('group', { name: 'Sort by', exact: true })
+      .getByRole('button', { name: 'Duration', exact: true })
+      .click()
+    await expect(trigger.getByText('Duration', { exact: true })).toHaveCSS(
+      'color',
+      textColor
+    )
+  })
+
+  test(`enabled tabs stay full-strength when inactive in ${theme}`, async ({
+    page,
+  }) => {
+    await interceptRpc(page)
+    await page.addInitScript(
+      theme => localStorage.setItem('theme', theme),
+      theme
+    )
+    await page.goto('/')
+    const textColor =
+      theme === 'rose-pine-dawn' ? 'rgb(70, 66, 97)' : 'rgb(224, 222, 244)'
+    const navigation = page.getByRole('navigation', { name: 'Primary' })
+    const inactive = navigation.locator('.tab:not(.tab-active)')
+    await expect(inactive).toHaveCount(3)
+    for (const tab of await inactive.all()) {
+      await expect(tab).toHaveCSS('color', textColor)
+      await expect(tab).toHaveCSS('opacity', '1')
+      await expect(tab.locator('svg')).toHaveCSS('color', textColor)
+    }
+    const paneTabs = page.locator(
+      '.pane-header__tab:not(:disabled, [aria-disabled="true"])'
+    )
+    expect(await paneTabs.count()).toBeGreaterThan(1)
+    for (const tab of await paneTabs.all()) {
+      await expect(tab).toHaveCSS('color', textColor)
+    }
+    // Disabled local tabs retain DaisyUI's attenuation and cannot be activated.
+    const disabledOpacity = await navigation.evaluate(element => {
+      const disabled = document.createElement('button')
+      disabled.className = 'tab'
+      disabled.disabled = true
+      disabled.textContent = 'Disabled test tab'
+      element.append(disabled)
+      const opacity = getComputedStyle(disabled).opacity
+      disabled.remove()
+      return opacity
+    })
+    expect(disabledOpacity).toBe('0.4')
+    await page.goto('/traces')
+    await page.getByRole('button', { name: /Change time range/i }).click()
+    const presets = page.locator('.preset-time-ranges .tab')
+    expect(await presets.count()).toBeGreaterThan(1)
+    for (const tab of await presets.all()) {
+      await expect(tab).toHaveCSS('color', textColor)
+      await expect(tab).toHaveCSS('opacity', '1')
+    }
+  })
+
+  test(`search completions use rounded Highlight Med for hover and selection in ${theme}`, async ({
+    page,
+  }) => {
+    await interceptRpc(page)
+    await page.addInitScript(
+      theme => localStorage.setItem('theme', theme),
+      theme
+    )
+    await page.goto('/traces')
+    const editor = page.locator('.search-bar .cm-content')
+    await editor.click()
+    await page.keyboard.press('Control+Space')
+    const selected = page.locator(
+      '.cm-tooltip-autocomplete li[aria-selected="true"]'
+    )
+    await expect(selected).toBeVisible()
+    await expect(selected).toHaveCSS('border-radius', '12px')
+    await expect(selected).toHaveCSS('background-color', selectedColor)
+    const idle = page
+      .locator('.cm-tooltip-autocomplete li:not([aria-selected])')
+      .first()
+    await idle.hover()
+    await expect(idle).toHaveCSS('border-radius', '12px')
+    await expect(idle).toHaveCSS('background-color', selectedColor)
+    await selected.hover()
+    await expect(selected).toHaveCSS('background-color', selectedColor)
+    const selection = await editor.evaluate(
+      element => getComputedStyle(element, '::selection').backgroundColor
+    )
+    expect(selection).toBe(selectedColor)
+  })
+}
+
 test.describe('home page accessibility', () => {
   test.beforeEach(async ({ page }) => {
     await interceptRpc(page)
@@ -183,20 +316,23 @@ test.describe('home page accessibility', () => {
     expect(scan.violations).toEqual([])
   })
 
-  test('restores the original Dawn palette', async ({ page }) => {
+  test('uses the canonical Rosé Pine Dawn palette', async ({ page }) => {
     await page.evaluate(() => localStorage.setItem('theme', 'rose-pine-dawn'))
     await page.reload()
     await expect(page.locator('html')).toHaveAttribute(
       'data-theme',
       'rose-pine-dawn'
     )
-    // Preserve the palette from before the Dawn colour experiment.
+    // Palette source: https://rosepinetheme.com/palette/
     const expected = {
-      '--color-base-100': '#f2e9e1',
-      '--color-base-200': '#f8f1ea',
-      '--color-base-300': '#fffff9',
-      '--color-base-content': '#575279',
-      '--color-on-light': '#575279',
+      '--color-base-100': '#faf4ed',
+      '--color-base-200': '#fffaf3',
+      '--color-base-300': '#f2e9e1',
+      '--color-highlight-low': '#f4ede8',
+      '--color-highlight-med': '#dfdad9',
+      '--color-highlight-high': '#cecacd',
+      '--color-base-content': '#464261',
+      '--color-on-light': '#464261',
       '--color-on-dark': '#faf4ed',
       '--color-muted': '#9893a5',
       '--color-subtle': '#797593',
@@ -205,7 +341,7 @@ test.describe('home page accessibility', () => {
       '--color-secondary': '#286983',
       '--color-accent': '#56949f',
       '--color-neutral': '#9893a5',
-      '--color-neutral-content': '#575279',
+      '--color-neutral-content': '#464261',
       '--color-info': '#56949f',
       '--color-success': '#286983',
       '--color-warning': '#ea9d34',
@@ -230,7 +366,7 @@ test.describe('home page accessibility', () => {
       await expect(page.getByRole('main')).toHaveCSS('background-color', canvas)
       await expect(page.locator('.search-bar')).toHaveCSS(
         'background-color',
-        elevated
+        panel
       )
       await expect(page.locator('.signal-drawer__controls')).toHaveCSS(
         'background-color',
@@ -238,7 +374,7 @@ test.describe('home page accessibility', () => {
       )
       await expect(page.locator('.page-layout__main-chrome')).toHaveCSS(
         'background-color',
-        panel
+        canvas
       )
       await page.route('**/api/features', route =>
         route.fulfill({ json: { evals: { enabled: true } } })
@@ -250,35 +386,37 @@ test.describe('home page accessibility', () => {
       const detailHeadings = page.locator('.detail-bubble__heading')
       await expect(detailHeadings).toHaveCount(3)
       for (const heading of await detailHeadings.all()) {
-        await expect(heading).toHaveCSS('background-color', panel)
+        await expect(heading).toHaveCSS('background-color', elevated)
         await expect(heading).toHaveCSS('height', '40px')
         await expect(heading).toHaveCSS('border-radius', '12px')
       }
     })
   }
 
-  test('restores the original Dawn surface styling', async ({ page }) => {
+  test('uses canonical Dawn surfaces with base-300 headers and independent highlights', async ({
+    page,
+  }) => {
     await page.evaluate(() => localStorage.setItem('theme', 'rose-pine-dawn'))
     await page.goto('/traces')
     await expect(page.getByRole('main')).toHaveCSS(
       'background-color',
-      'rgb(242, 233, 225)'
+      'rgb(250, 244, 237)'
     )
     await expect(page.locator('.signal-drawer__panel')).toHaveCSS(
       'background-color',
-      'rgb(242, 233, 225)'
+      'rgb(250, 244, 237)'
     )
     await expect(page.locator('.search-bar')).toHaveCSS(
       'background-color',
-      'rgb(255, 255, 249)'
+      'rgb(255, 250, 243)'
     )
     await expect(page.locator('.signal-drawer__controls')).toHaveCSS(
       'background-color',
-      'rgb(248, 241, 234)'
+      'rgb(255, 250, 243)'
     )
     await expect(page.locator('.page-layout__main-chrome')).toHaveCSS(
       'background-color',
-      'rgb(248, 241, 234)'
+      'rgb(250, 244, 237)'
     )
 
     await page.route('**/api/features', route =>
@@ -287,11 +425,15 @@ test.describe('home page accessibility', () => {
     await page.goto('/evals')
     await expect(page.locator('.signal-row--selected')).toHaveCSS(
       'background-color',
-      'rgb(255, 255, 249)'
+      'rgb(223, 218, 217)'
     )
     await expect(
       page.locator('.signal-row:not(.signal-row--selected)').first()
-    ).toHaveCSS('background-color', 'rgb(242, 233, 225)')
+    ).toHaveCSS('background-color', 'rgb(250, 244, 237)')
+    await expect(page.locator('.detail-bubble__heading').first()).toHaveCSS(
+      'background-color',
+      'rgb(242, 233, 225)'
+    )
     await expect(page.locator('.signal-row--selected')).toHaveCSS(
       'outline-style',
       'none'
@@ -299,11 +441,16 @@ test.describe('home page accessibility', () => {
     await page.locator('.signal-row--selected').hover()
     await expect(page.locator('.signal-row--selected')).toHaveCSS(
       'background-color',
-      'rgb(255, 255, 249)'
+      'rgb(223, 218, 217)'
     )
   })
 
-  for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
+  for (const {
+    theme,
+    low,
+    selected: selectedColor,
+    high,
+  } of HIGHLIGHT_THEMES) {
     test(`shares item hover and selection states in ${theme} without changing tabs`, async ({
       page,
     }) => {
@@ -314,35 +461,43 @@ test.describe('home page accessibility', () => {
       )
       await page.evaluate(theme => localStorage.setItem('theme', theme), theme)
       await page.goto('/evals')
-      const colors = await page.evaluate(() => {
-        const probe = document.createElement('span')
-        document.body.append(probe)
-        probe.style.backgroundColor = 'var(--item-hover-bg)'
-        const hover = getComputedStyle(probe).backgroundColor
-        probe.style.backgroundColor = 'var(--item-selected-bg)'
-        const selected = getComputedStyle(probe).backgroundColor
-        probe.remove()
-        return { hover, selected }
-      })
+      expect(
+        await page
+          .locator('html')
+          .evaluate(element =>
+            getComputedStyle(element)
+              .getPropertyValue('--color-highlight-high')
+              .trim()
+          )
+      ).toBe(high)
       const selectedCard = page.locator('.signal-row--selected')
       const idleCard = page
         .locator('.signal-row:not(.signal-row--selected)')
         .first()
       await idleCard.hover()
-      await expect(idleCard).toHaveCSS('background-color', colors.hover)
+      await expect(idleCard).toHaveCSS('background-color', low)
       await selectedCard.hover()
-      await expect(selectedCard).toHaveCSS('background-color', colors.selected)
+      await expect(selectedCard).toHaveCSS('background-color', selectedColor)
+      await expect(
+        page.locator('.detail-bubble__heading').first()
+      ).not.toHaveCSS('background-color', selectedColor)
 
       const row = page
         .getByRole('table', { name: /^Results for/ })
         .locator('tbody tr')
         .first()
       await row.hover()
-      await expect(row).toHaveCSS('background-color', colors.hover)
+      const rowCell = row.locator('th, td').first()
+      await expect(rowCell).toHaveCSS('background-color', low)
+      await expect(rowCell).toHaveCSS('border-top-left-radius', '12px')
+      await expect(row.locator('th, td').last()).toHaveCSS(
+        'border-bottom-right-radius',
+        '12px'
+      )
       await row.getByRole('button').click()
-      await expect(row).toHaveCSS('background-color', colors.selected)
+      await expect(rowCell).toHaveCSS('background-color', selectedColor)
       await row.hover()
-      await expect(row).toHaveCSS('background-color', colors.selected)
+      await expect(rowCell).toHaveCSS('background-color', selectedColor)
       await expect(row).toHaveCSS('outline-style', 'none')
       await expect(
         page.getByRole('navigation', { name: 'Primary' }).locator('.tab-active')
@@ -359,17 +514,24 @@ test.describe('home page accessibility', () => {
       expect(underline).toEqual({ height: '1px', border: '1px' })
 
       await page.goto('/traces')
-      await page.getByRole('button', { name: /^Sort By/ }).click()
-      const menu = page.getByRole('group', { name: 'Sort By', exact: true })
+      await page.getByRole('button', { name: /^Sort by:/ }).click()
+      const menu = page.getByRole('group', { name: 'Sort by', exact: true })
       const selectedOption = menu.locator('button[aria-pressed="true"]')
+      await expect(selectedOption).toHaveCSS('border-radius', '12px')
       await selectedOption.hover()
-      await expect(selectedOption).toHaveCSS(
-        'background-color',
-        colors.selected
-      )
+      await expect(selectedOption).toHaveCSS('background-color', selectedColor)
       const idleOption = menu.locator('button[aria-pressed="false"]').first()
+      await expect(idleOption).toHaveCSS('border-radius', '12px')
       await idleOption.hover()
-      await expect(idleOption).toHaveCSS('background-color', colors.hover)
+      await expect(idleOption).toHaveCSS('background-color', selectedColor)
+      await idleOption.focus()
+      await page.keyboard.press('Tab')
+      await page.keyboard.press('Shift+Tab')
+      await expect(idleOption).toBeFocused()
+      await expect(idleOption).toHaveCSS(
+        'outline-color',
+        theme === 'rose-pine-dawn' ? 'rgb(144, 122, 169)' : 'rgb(196, 167, 231)'
+      )
       await page.keyboard.press('Escape')
       await page.getByRole('button', { name: /Change time range/i }).click()
       await expect(page.locator('.preset-time-ranges .tab-active')).toHaveCSS(
@@ -378,8 +540,14 @@ test.describe('home page accessibility', () => {
       )
       await page.getByText('Timezone:', { exact: true }).click()
       const timezone = page.locator('.tz-option[aria-pressed="true"]')
+      await expect(timezone).toHaveCSS('border-radius', '12px')
       await timezone.hover()
-      await expect(timezone).toHaveCSS('background-color', colors.selected)
+      await expect(timezone).toHaveCSS('background-color', selectedColor)
+      const idleTimezone = page
+        .locator('.tz-option[aria-pressed="false"]')
+        .first()
+      await idleTimezone.hover()
+      await expect(idleTimezone).toHaveCSS('background-color', selectedColor)
     })
   }
 
@@ -762,7 +930,7 @@ test.describe('home page accessibility', () => {
     await expect(
       page
         .getByRole('banner', { name: 'Workspace navigation and search' })
-        .getByRole('button', { name: /^Sort By/ })
+        .getByRole('button', { name: /^Sort by:/ })
     ).toHaveCount(0)
     await trigger.focus()
     await page.keyboard.press('Enter')
@@ -780,12 +948,12 @@ test.describe('home page accessibility', () => {
   }) => {
     await page.goto('/traces')
     const controls = page.getByRole('group', { name: 'Traces list controls' })
-    const trigger = controls.getByRole('button', { name: /^Sort By/ })
-    await expect(trigger).toHaveText('')
-    await expect(trigger).toHaveAccessibleName('Sort By Start Time')
-    await expect(trigger).toHaveAttribute('data-tip', 'Sort By Start Time')
+    const trigger = controls.getByRole('button', { name: /^Sort by:/ })
+    await expect(trigger).toHaveText(/Sort by:\s*Start Time/)
+    await expect(trigger).toHaveAccessibleName('Sort by: Start Time')
+    await expect(trigger).toHaveAttribute('data-tip', 'Sort by: Start Time')
     await expect(trigger).toHaveClass(/header-icon-button/)
-    await expect(trigger).toHaveCSS('width', '28px')
+    expect((await trigger.boundingBox())!.width).toBeGreaterThan(28)
     await expect(trigger).toHaveCSS('height', '28px')
     await expect(controls).toHaveCSS('box-shadow', 'none')
     await expect(trigger).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
@@ -821,11 +989,11 @@ test.describe('home page accessibility', () => {
     await expect(directionIcon).toHaveCSS('rotate', '180deg')
 
     await trigger.click()
-    const popup = page.getByRole('group', { name: 'Sort By', exact: true })
+    const popup = page.getByRole('group', { name: 'Sort by', exact: true })
     await popup.getByRole('button', { name: 'Duration', exact: true }).click()
-    await expect(trigger).toHaveText('')
-    await expect(trigger).toHaveAccessibleName('Sort By Duration')
-    await expect(trigger).toHaveAttribute('data-tip', 'Sort By Duration')
+    await expect(trigger).toHaveText(/Sort by:\s*Duration/)
+    await expect(trigger).toHaveAccessibleName('Sort by: Duration')
+    await expect(trigger).toHaveAttribute('data-tip', 'Sort by: Duration')
     await expect(trigger).toBeFocused()
     await expect(popup).not.toBeVisible()
     await expect(
@@ -850,6 +1018,49 @@ test.describe('home page accessibility', () => {
     ).toBeVisible()
   })
 
+  test('keeps labelled sort targets and the direction control reachable in narrow drawers', async ({
+    page,
+  }) => {
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      for (const [signal, target] of [
+        ['traces', 'Root Span Name'],
+        ['metrics', 'Timeseries Count'],
+        ['logs', 'Service Name'],
+      ]) {
+        await page.evaluate(() =>
+          localStorage.setItem('signal-drawer:open', 'true')
+        )
+        await page.goto(`/${signal}`)
+        const trigger = page.getByRole('button', { name: /^Sort by:/ })
+        await trigger.click()
+        await page
+          .getByRole('group', { name: 'Sort by', exact: true })
+          .getByRole('button', { name: target, exact: true })
+          .click()
+        await expect(trigger).toHaveAccessibleName(`Sort by: ${target}`)
+        await expect(
+          trigger.getByText('Sort by:', { exact: true })
+        ).toBeVisible()
+        await expect(trigger.getByText(target, { exact: true })).toBeVisible()
+        const direction = page.getByRole('button', {
+          name: /^Sort (ascending|descending)$/,
+        })
+        await expect(direction).toBeVisible()
+        const triggerBox = (await trigger.boundingBox())!
+        const directionBox = (await direction.boundingBox())!
+        expect(directionBox.x).toBeGreaterThanOrEqual(
+          triggerBox.x + triggerBox.width
+        )
+        expect(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= window.innerWidth
+          )
+        ).toBe(true)
+      }
+    }
+  })
+
   test('keeps search drafts and controls accessible above signal drawers', async ({
     page,
   }) => {
@@ -870,7 +1081,7 @@ test.describe('home page accessibility', () => {
         await expect(
           page
             .getByRole('banner', { name: 'Workspace navigation and search' })
-            .getByRole('button', { name: /^Sort By/ })
+            .getByRole('button', { name: /^Sort by:/ })
         ).toHaveCount(0)
         await expect(
           page.getByRole('button', { name: /^Change time range/ })
@@ -1155,6 +1366,7 @@ test.describe('home page accessibility', () => {
         }
       })
     expect(presetColors.inactive).toBe(presetColors.navInactive)
+    expect(presetColors.inactive).toBe(presetColors.baseContent)
     expect(presetColors.active).toBe(presetColors.baseContent)
     expect(presetColors.underline).toBe(presetColors.primary)
     expect(presetColors.background).toBe('rgba(0, 0, 0, 0)')

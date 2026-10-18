@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ChartSticky from '@/components/metrics/Charts/ChartSticky.svelte'
   import {
     BarChart,
     Line,
@@ -13,7 +14,6 @@
   import ChartSelectionLegend, {
     type SelectionLegendRow,
   } from '@/components/metrics/Charts/ChartSelectionLegend.svelte'
-  import ChartTimeRangeHeader from '@/components/metrics/Charts/ChartTimeRangeHeader.svelte'
   import MetricChartPlot, {
     axisBuckets,
     axisCount,
@@ -59,7 +59,6 @@
      * the x-axis title shows just "value" when unit is empty. */
     unit?: string
     height?: number
-    timeRange?: { startMs: number; endMs: number } | null
     /** Formatted snapshot timestamp for snapshot-scope header. */
     selectionTimestamp?: string
     /** Whole-window mode: click a column to pin bucket summary in the header. */
@@ -71,7 +70,6 @@
     datapoint,
     unit = '',
     height = DEFAULT_METRIC_CHART_HEIGHT,
-    timeRange = null,
     selectionTimestamp = '',
     enableValueBucketPin = false,
     onClearSelection,
@@ -258,13 +256,6 @@
     color: string
   }
 
-  // Per-quantile color so p50/p95/p99 are distinguishable at a glance.
-  const QUANTILE_COLORS = {
-    '0.5': 'var(--color-info)',
-    '0.95': 'var(--color-warning)',
-    '0.99': 'var(--color-error)',
-  } satisfies Record<QuantileKey, string>
-
   // Locates which bucket a value lives in and where inside the bar to draw the
   // marker. Returns null if no bucket matches (shouldn't happen for valid
   // quantile output, but we play it safe).
@@ -299,7 +290,7 @@
         value: v,
         bucketIndex: pos.index,
         fraction: pos.fraction,
-        color: QUANTILE_COLORS[key],
+        color: 'var(--color-primary)',
       })
     }
     return marks
@@ -537,6 +528,19 @@
       },
     ]
   })
+
+  let scrollLeft = $state(0)
+  let selectionAnchor = $derived.by(() => {
+    const context = chartContext
+    if (!context || !pinnedBucket) return null
+    const scale = histogramBandScale(context)
+    const x = scale(pinnedBucket.key)
+    if (x === undefined) return null
+    return {
+      x: context.padding.left + x + scale.bandwidth() / 2 - scrollLeft,
+      y: context.padding.top + context.yScale(pinnedBucket.count),
+    }
+  })
 </script>
 
 {#if buckets.length > 0}
@@ -545,36 +549,16 @@
     class:metric-histogram-bar-chart--value-pin={enableValueBucketPin}
     style:height="{height}px"
   >
-    {#if timeRange || selectionTimestamp || (enableValueBucketPin && pinnedBucket)}
-      <div class="metric-histogram-bar-chart__header">
-        {#if timeRange}
-          <ChartTimeRangeHeader
-            startMs={timeRange.startMs}
-            endMs={timeRange.endMs}
-            variant="legend"
-          />
-        {/if}
-        <div class="metric-histogram-bar-chart__header-end">
-          {#if selectionTimestamp}
-            <ChartSelectionLegend timestamp={selectionTimestamp} rows={[]} />
-          {/if}
-          {#if enableValueBucketPin && pinnedBucket}
-            <div class="metric-histogram-bar-chart__value-pin-legend">
-              <ChartSelectionLegend
-                timestamp={formatBucketRange(pinnedBucket)}
-                rows={valuePinLegendRows}
-              />
-            </div>
-          {/if}
-        </div>
-      </div>
-    {/if}
     <div
       class="metric-histogram-bar-chart__plot chart-keyboard-surface-host"
       bind:clientWidth={parentWidth}
       bind:clientHeight={plotAreaHeight}
     >
-      <div class="histogram-chart-scroll" bind:this={histogramScroll}>
+      <div
+        class="histogram-chart-scroll"
+        bind:this={histogramScroll}
+        onscroll={event => (scrollLeft = event.currentTarget.scrollLeft)}
+      >
         <!-- Pointer coordinates stay on the chart-sized hit target; the
              named outer surface owns all equivalent keyboard handling. -->
         <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -717,6 +701,21 @@
           </MetricChartPlot>
         </div>
       </div>
+      {#if selectionTimestamp || (enableValueBucketPin && pinnedBucket)}
+        <ChartSticky anchor={selectionAnchor}>
+          {#if selectionTimestamp}
+            <ChartSelectionLegend timestamp={selectionTimestamp} rows={[]} />
+          {/if}
+          {#if enableValueBucketPin && pinnedBucket}
+            <div class="metric-histogram-bar-chart__value-pin-legend">
+              <ChartSelectionLegend
+                timestamp={formatBucketRange(pinnedBucket)}
+                rows={valuePinLegendRows}
+              />
+            </div>
+          {/if}
+        </ChartSticky>
+      {/if}
       <ChartKeyboardSurface
         id="metric-histogram-keyboard-surface"
         label={enableValueBucketPin
@@ -746,15 +745,6 @@
 
   .metric-histogram-bar-chart--value-pin :global(.lc-bars-bar) {
     opacity: 1 !important;
-  }
-
-  .metric-histogram-bar-chart__header {
-    @apply flex shrink-0 items-start justify-between gap-2 px-1 pb-1 pt-0.5;
-  }
-
-  .metric-histogram-bar-chart__header-end {
-    @apply ml-auto flex shrink-0 flex-col items-end gap-1;
-    pointer-events: none;
   }
 
   .metric-histogram-bar-chart__value-pin-legend

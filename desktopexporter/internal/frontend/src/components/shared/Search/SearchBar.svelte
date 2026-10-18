@@ -25,13 +25,13 @@
 
 <div
   class="search-bar flex w-full min-w-0 items-center gap-1 rounded-full text-sm text-base-content {search
-    ? 'bg-base-300 px-1.5'
+    ? 'bg-base-200 px-1.5'
     : ''}"
   role={search ? 'search' : undefined}
   aria-label={search ? 'Workspace search' : undefined}
 >
   {#if onRefresh || search}
-    <div class="shrink-0 rounded-full {search ? 'bg-base-300' : ''}">
+    <div class="shrink-0 rounded-full {search ? 'bg-base-200' : ''}">
       <button
         type="button"
         class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-bottom"
@@ -54,7 +54,7 @@
   {/if}
   <div
     class="search-bar__query flex min-w-0 flex-1 items-center rounded-full {search
-      ? 'bg-base-300'
+      ? 'bg-base-200'
       : ''}"
   >
     <div
@@ -66,7 +66,7 @@
   </div>
   <div
     class="flex shrink-0 items-center rounded-full {search
-      ? 'bg-base-300'
+      ? 'bg-base-200'
       : ''}"
   >
     {#if controls}{@render controls()}{:else}<DateTimeFilter />{/if}

@@ -558,10 +558,9 @@
 
   .dp-list {
     @apply w-full text-xs;
-    border-collapse: collapse;
   }
 
-  .dp-list__header-row {
+  .dp-list__header-row > .dp-list__th {
     border-bottom: 1px solid
       color-mix(in oklab, var(--color-base-300) 50%, transparent);
   }

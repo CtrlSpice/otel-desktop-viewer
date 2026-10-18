@@ -4,7 +4,7 @@ import {
   AGG_KEY_SELECTED,
   AGG_KEY_TOTAL,
   availableAggregationViews,
-  defaultAggregationViewFor,
+  DEFAULT_AGGREGATION_VIEW,
   isAggregateLineKey,
   rateSlopeBucketSegment,
 } from '@/components/metrics/utils/aggregation'
@@ -84,23 +84,21 @@ describe('the default aggregation view agrees with the offered ones', () => {
         s.isMonotonic,
         s.seriesCount
       )
-      const chosen = defaultAggregationViewFor(
-        s.metricType,
-        s.temporality,
-        s.isMonotonic,
-        s.seriesCount
-      )
-      expect(available).toContain(chosen)
+      expect(DEFAULT_AGGREGATION_VIEW).toBe('raw')
+      expect(available).toContain(DEFAULT_AGGREGATION_VIEW)
     })
   }
 
-  it('only reaches for rate when the counter can actually be differenced', () => {
-    // Non-monotonic means it may legitimately fall, and rate reads a fall as a
-    // counter restart -- so the rate of one would report resets that never
-    // happened.
-    expect(defaultAggregationViewFor('Sum', 'Cumulative', false, 3)).toBe('raw')
-    expect(defaultAggregationViewFor('Sum', 'Cumulative', null, 3)).toBe('raw')
-    expect(defaultAggregationViewFor('Sum', 'Cumulative', true, 3)).toBe('rate')
+  it('offers rate as an explicit choice only when the counter can be differenced', () => {
+    expect(
+      availableAggregationViews('Sum', 'Cumulative', false, 3)
+    ).not.toContain('rate')
+    expect(
+      availableAggregationViews('Sum', 'Cumulative', null, 3)
+    ).not.toContain('rate')
+    expect(availableAggregationViews('Sum', 'Cumulative', true, 3)).toContain(
+      'rate'
+    )
   })
 })
 

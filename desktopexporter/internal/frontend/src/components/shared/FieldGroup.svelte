@@ -54,13 +54,15 @@
   {:else}
     <span>{label}</span>
   {/if}
-  {#if badge}
-    <span class="badge-count">{badge}</span>
-  {/if}
-  {#if count !== undefined}
-    <span class="badge-count ml-auto shrink-0"
-      >{count} {countLabel ?? label.toLowerCase()}</span
-    >
+  {#if badge || count !== undefined}
+    <span class="field-group__badges">
+      {#if badge}<span class="badge-count">{badge}</span>{/if}
+      {#if count !== undefined}
+        <span class="badge-count shrink-0"
+          >{count} {countLabel ?? label.toLowerCase()}</span
+        >
+      {/if}
+    </span>
   {/if}
 {/snippet}
 
@@ -118,6 +120,10 @@
 
   .field-group__heading-content {
     @apply flex min-w-0 flex-1 items-center gap-2;
+  }
+
+  .field-group__badges {
+    @apply ml-auto flex shrink-0 items-center justify-end gap-2;
   }
 
   .field-group--card > .field-group__heading {

@@ -1,8 +1,9 @@
-/** Shared DaisyUI palette tokens for CodeMirror surfaces. */
+/** Shared theme tokens for CodeMirror surfaces and interaction highlights. */
 export const editorColors = {
   base: 'var(--color-base-300)',
   surface: 'var(--color-base-200)',
-  overlay: 'var(--color-base-300)',
+  highlightLow: 'var(--color-highlight-low)',
+  highlightMed: 'var(--color-highlight-med)',
   muted: 'var(--color-neutral)',
   subtle: 'var(--color-subtle)',
   text: 'var(--color-base-content)',

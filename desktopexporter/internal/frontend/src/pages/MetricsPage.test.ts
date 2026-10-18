@@ -206,6 +206,29 @@ async function renderSelected(metricType: MetricType) {
   })
 }
 
+describe('Metric main-header range', () => {
+  it.each(['Gauge', 'Sum', 'Histogram', 'ExponentialHistogram'] as const)(
+    'keeps the %s effective range in the header rather than the plot',
+    async metricType => {
+      await renderSelected(metricType)
+      const header = screen.getByRole('region', {
+        name: 'Metric chart',
+      })
+      const range = header.querySelector('[aria-label="Chart time range"]')!
+      expect(range).toHaveTextContent('start:')
+      expect(range).toHaveTextContent('end:')
+      expect(
+        document.querySelectorAll('[aria-label="Chart time range"]')
+      ).toHaveLength(1)
+      expect(
+        document.querySelector(
+          '.metric-chart-view [aria-label="Chart time range"]'
+        )
+      ).toBeNull()
+    }
+  )
+})
+
 describe('Metric main-header export', () => {
   it.each(['Gauge', 'Sum', 'Histogram', 'ExponentialHistogram'] as const)(
     'exports the whole %s Metric from its chart title header',
@@ -340,7 +363,7 @@ describe('MetricsPage chart control keyboard navigation', () => {
       aggregate: null,
       scalarAggregate: null,
     })
-    setTestUrl('/metrics/metric-1')
+    setTestUrl('/metrics/metric-1?agg=rate')
     renderWithContexts(MetricsPage)
 
     const rate = await screen.findByRole('checkbox', {
@@ -357,8 +380,9 @@ describe('MetricsPage chart control keyboard navigation', () => {
     expect(rate).toBeChecked()
     expect(rate).toHaveFocus()
 
-    await user.tab()
+    overlays.focus()
     expect(overlays).toHaveFocus()
+    expect(overlays.closest('.pane-header')).not.toBeNull()
     expect(overlays).toBeChecked()
     await user.keyboard(' ')
     expect(overlays).not.toBeChecked()

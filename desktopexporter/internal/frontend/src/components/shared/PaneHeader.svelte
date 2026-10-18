@@ -9,7 +9,7 @@
    *                   "Timeseries", "Log Record").
    *   • tabs        — flat tab strip with an underlined active item. Use
    *                   when the pane has 2+ views or route destinations.
-   *   • title-tabs  — flat title on the left + local tabs on the right.
+   *   • title-tabs  — title and badges above a second row of local tabs.
    *                   Use when the pane has a stable label AND tabs that
    *                   switch a sub-view inside the same pane.
    *   • toolbar     — chrome strip with no title or tabs. Use the
@@ -22,7 +22,7 @@
    *                primary nav strips (e.g. the drawer) where a `right`
    *                slot needs to be pushed all the way to the edge.
    *   • 'right'  — tabs pack to the end; a lead spacer pushes them over.
-   *                Use with `title-tabs` (title left, tabs right). No trail.
+   *                Default for the second row in `title-tabs`. No trail.
    *   • 'equal'  — tabs share the row evenly, each taking 1fr of the
    *                tablist. Use for inspector tab strips (Fields /
    *                Events / Links) so labels line up across panes.
@@ -98,8 +98,9 @@
     ariaLabel?: string
     /** Apply rounded top corners. Defaults to true. */
     rounded?: boolean
-    /** Optional chart/query window shown on its own line below the
-     *  title or tab strip. */
+    /** Main signal headers share the base-300 pill surface of detail headings. */
+    pill?: boolean
+    /** Optional chart/query window below the title, beside graph tabs when present. */
     timeRange?: PaneTimeRange
     /** Optional single timestamp (ms) on its own line below the title
      *  or tab strip (e.g. log record time). */
@@ -157,7 +158,11 @@
 <script lang="ts">
   let props: PaneHeaderProps = $props()
   let roundedClass = $derived(
-    props.rounded !== false ? 'pane-header--rounded' : 'pane-header--flush'
+    props.pill
+      ? 'pane-header--pill'
+      : props.rounded !== false
+        ? 'pane-header--rounded'
+        : 'pane-header--flush'
   )
   let tabSizeClass = $derived(props.rounded !== false ? 'tabs-sm' : '')
   let stackedClass = $derived(
@@ -347,8 +352,8 @@
         {#if props.subtitle?.trim()}
           <span class="pane-header__subtitle">({props.subtitle.trim()})</span>
         {/if}
-        {@render badgeBlock(props.badges, props.badge)}
       </div>
+      {@render badgeBlock(props.badges, props.badge)}
       {#if props.right}
         <div class="pane-header__right">{@render props.right()}</div>
       {/if}
@@ -394,7 +399,7 @@
     aria-label={props.ariaLabel ?? props.title}
   >
     <div class="pane-header__top pane-header__top--title-tabs">
-      <div class="pane-header__title-row pane-header__title-row--tabs">
+      <div class="pane-header__title-row">
         {#if props.leading}
           <div class="pane-header__leading">{@render props.leading()}</div>
         {/if}
@@ -402,8 +407,16 @@
         {#if props.subtitle?.trim()}
           <span class="pane-header__subtitle">({props.subtitle.trim()})</span>
         {/if}
-        {@render badgeBlock(props.badges, props.badge)}
       </div>
+      {@render badgeBlock(props.badges, props.badge)}
+      {#if props.right}
+        <div class="pane-header__right">{@render props.right()}</div>
+      {/if}
+    </div>
+    <div class="pane-header__tabs-row">
+      {#if props.timeRange !== undefined || props.timestampMs !== undefined || props.metaRight}
+        {@render metaRow()}
+      {/if}
       {@render tabStrip(
         props.tabs,
         props.activeID,
@@ -413,13 +426,7 @@
         false,
         props.tabPanelID
       )}
-      {#if props.right}
-        <div class="pane-header__right">{@render props.right()}</div>
-      {/if}
     </div>
-    {#if props.timeRange !== undefined || props.timestampMs !== undefined || props.metaRight}
-      {@render metaRow()}
-    {/if}
   </div>
 {/if}
 
@@ -434,6 +441,11 @@
 
   .pane-header--rounded {
     @apply rounded-t-xl;
+  }
+
+  .pane-header--pill {
+    --pane-header-bg: var(--color-base-300);
+    @apply min-h-10 rounded-xl;
   }
 
   .pane-header--flush {
@@ -464,7 +476,7 @@
   }
 
   .pane-header--title-tabs .pane-header__top--title-tabs {
-    @apply min-w-0 flex-1;
+    @apply min-w-0 items-center;
   }
 
   .pane-header__meta-row {
@@ -509,10 +521,7 @@
     color: var(--color-subtle);
   }
 
-  /* Badges sit inline after the title/subtitle, mirroring the
-     drawer card's `.signal-row__badge` layout. Title row owns the
-     `flex-1` truncation so a long title compresses before badges
-     do. */
+  /* The title shrinks before the trailing badge group and any actions. */
   .pane-header__badges {
     @apply flex shrink-0 items-center gap-1.5;
   }
@@ -563,16 +572,24 @@
     min-width: max-content;
   }
 
-  /* Title-tabs: title on the left; tab strip fills the rest of the row
-     and uses the 'right' tab layout (lead spacer + tabs). */
-  .pane-header--title-tabs .pane-header__title-row--tabs {
-    @apply min-w-0 max-w-[55%] shrink self-center pl-3;
-    flex: 0 1 auto;
+  /* Graph tabs have their own row, leaving title and badges on the first. */
+  .pane-header--title-tabs {
+    @apply flex-col items-stretch px-3 pt-2 pb-1;
   }
 
-  .pane-header--title-tabs .pane-header__tab-scroll {
-    @apply min-h-0 min-w-0 flex-1;
-    width: 0;
+  .pane-header__tabs-row {
+    @apply flex min-w-0 w-full flex-wrap items-center gap-x-4;
+  }
+
+  .pane-header__tabs-row .pane-header__meta-row {
+    @apply w-auto flex-1 pb-0;
+    flex-basis: 20rem;
+  }
+
+  .pane-header__tabs-row .pane-header__tab-scroll {
+    flex-basis: max-content;
+    @apply overflow-x-auto overflow-y-hidden;
+    scrollbar-width: thin;
   }
 
   /* Right layout: lead spacer pushes tabs to the end. */

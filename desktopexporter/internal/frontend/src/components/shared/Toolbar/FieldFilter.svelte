@@ -165,7 +165,7 @@
           {@const pinned = category === 'pinned'}
           <button
             type="button"
-            class="field-filter__option item-state"
+            class="field-filter__option item-state item-state--menu"
             aria-pressed={checked}
             class:field-filter__option--pinned={pinned}
             disabled={pinned}

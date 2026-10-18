@@ -128,6 +128,10 @@ test('Copy span sits opposite the span icon and copies only the selected span wi
     await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result } })
   })
   await page.goto(`/traces/${traceID}?span=${selectedID}`)
+  const hoveredRow = page.locator(`.waterfall-row[data-span-id="${rootID}"]`)
+  await hoveredRow.hover()
+  await expect(hoveredRow).toHaveCSS('border-radius', '12px')
+  await expect(hoveredRow).toHaveAttribute('aria-selected', 'false')
   const detail = page.getByRole('region', { name: 'Span details', exact: true })
   const bubble = detail.locator('.detail-bubble__with-action')
   const summary = bubble.locator('summary').first()
@@ -242,4 +246,27 @@ test('Copy span sits opposite the span icon and copies only the selected span wi
     .withRules(['nested-interactive'])
     .analyze()
   expect(scan.violations).toEqual([])
+
+  // A real trace search uses Highlight High, not the header's Overlay surface.
+  const editor = page.locator('.search-bar .cm-content')
+  await editor.fill('name = "selected span"')
+  await editor.press('Escape')
+  await editor.press('Enter')
+  await expect(page.locator('.waterfall-row--matched')).toHaveCount(2)
+  await page.locator('.pane-header--pill').hover()
+  const match = page.locator('.waterfall-row--matched[aria-selected="false"]')
+  await expect(match.locator('td').first()).toHaveCSS(
+    'background-color',
+    'rgb(86, 82, 110)'
+  )
+  const selected = page.locator('.waterfall-row[aria-selected="true"]')
+  await expect(selected.locator('td').first()).toHaveCSS(
+    'background-color',
+    'rgb(68, 65, 90)'
+  )
+  await selected.hover()
+  await expect(selected.locator('td').first()).toHaveCSS(
+    'background-color',
+    'rgb(68, 65, 90)'
+  )
 })

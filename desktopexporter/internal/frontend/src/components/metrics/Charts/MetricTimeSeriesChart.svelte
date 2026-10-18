@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ChartSticky from '@/components/metrics/Charts/ChartSticky.svelte'
   import { LineChart, Line, Tooltip, type ChartState } from 'layerchart'
   import { bisector } from 'd3-array'
   import { scaleTime } from 'd3-scale'
@@ -22,7 +23,6 @@
   import ChartSelectionLegend, {
     type SelectionLegendRow,
   } from '@/components/metrics/Charts/ChartSelectionLegend.svelte'
-  import ChartTimeRangeHeader from '@/components/metrics/Charts/ChartTimeRangeHeader.svelte'
   import {
     buildAggregateSummaryRows,
     type AggregateLineKey,
@@ -133,13 +133,12 @@
     aggregationView?: AggregationView
     /** When false, min / max / avg selection overlays are hidden. */
     showStatOverlays?: boolean
-    /** Rate slope (Δrate/Δt) at the selected bucket; chart-only tangent. */
-    selectedRateSlope?: number | undefined
     /** Plotted data window; rendered as a permanent legend card above the plot. */
     timeRange?: { startMs: number; endMs: number } | null
     /** Source point click -> exact datapoint selection. Synthetic points omit
      *  an id and remain inspectable but read-only. */
     onChartPointClick?: (seriesKey: string, datapointID: string) => void
+    onRateChartPointClick?: (seriesKey: string, timestampNs: bigint) => void
     onClearSelection?: () => void
     /** Store-computed selected-series stats for the source window or rate line. */
     seriesStats?: ReadonlyMap<string, SeriesStats>
@@ -156,9 +155,9 @@
     emptyMessage = 'No datapoints to chart',
     aggregationView = 'raw',
     showStatOverlays = true,
-    selectedRateSlope = undefined,
     timeRange = null,
     onChartPointClick,
+    onRateChartPointClick,
     onClearSelection,
     seriesStats,
   }: Props = $props()
@@ -300,9 +299,15 @@
       timeContext.tz,
       'milliseconds'
     )
-    const readOnly = point.sourceDatapointID
-      ? ''
-      : ' Read-only synthetic point.'
+    const rateSelectable =
+      aggregationView === 'rate' &&
+      onRateChartPointClick &&
+      point.timestampNs !== undefined &&
+      !isAggregateLineKey(series.key)
+    const readOnly =
+      point.sourceDatapointID || rateSelectable
+        ? ''
+        : ' Read-only synthetic point.'
     return (
       `Line ${cursor.lineIndex + 1} of ${keyboardLines.length}, ${series.label}. ` +
       `Point ${cursor.pointIndex + 1} of ${series.data.length}, ${timestamp}. ` +
@@ -321,10 +326,10 @@
 
     if (isChartActivationKey(event.key)) {
       const point = keyboardPoint
-      if (!point?.sourceDatapointID || !onChartPointClick) return
+      const key = activeKeyboardCursor?.lineKey
+      if (!point || !key || !activateChartPoint(key, point)) return
       event.preventDefault()
       event.stopPropagation()
-      onChartPointClick(activeKeyboardCursor!.lineKey, point.sourceDatapointID)
       return
     }
 
@@ -344,10 +349,17 @@
     return { date: point.date, value: point.value, color: series.color }
   })
   let keyboardCanActivate = $derived(
-    !!onChartPointClick &&
-      chartSeries.some(series =>
-        series.data.some(point => point.sourceDatapointID !== undefined)
-      )
+    chartSeries.some(
+      series =>
+        !isAggregateLineKey(series.key) &&
+        series.data.some(
+          point =>
+            (!!onChartPointClick && point.sourceDatapointID !== undefined) ||
+            (aggregationView === 'rate' &&
+              !!onRateChartPointClick &&
+              point.timestampNs !== undefined)
+        )
+    )
   )
   let keyboardShortcuts = $derived([
     'ArrowLeft',
@@ -364,11 +376,11 @@
     'Escape',
   ])
   let keyboardInstructions = $derived(
-    `Use Left and Right to inspect points. Use Up and Down to inspect lines. Home and End move to line boundaries; Control or Command plus Home or End move to chart boundaries.${keyboardCanActivate ? ' Enter or Space selects a source datapoint when the current point is selectable.' : ''} Escape clears chart selection.`
+    `Use Left and Right to inspect points. Use Up and Down to inspect lines. Home and End move to line boundaries; Control or Command plus Home or End move to chart boundaries.${keyboardCanActivate ? ' Enter or Space selects the current datapoint or Rate bucket.' : ''} Escape clears chart selection.`
   )
 
   let lineChartContext = $state<ChartState<ChartPoint> | undefined>(undefined)
-  /** Plot area height after the selection legend claims its row. */
+  /** The plot uses the full chart height; pinned cards do not reserve a row. */
   let plotAreaHeight = $state(0)
 
   /** Plot y-value at the pointer, for disambiguating series at a shared x. */
@@ -516,7 +528,7 @@
     e: MouseEvent,
     data: LayerChartSeriesDatum<ChartPoint>
   ) {
-    if (!onChartPointClick) return
+    if (!onChartPointClick && !onRateChartPointClick) return
     const date = data.date
     let key = seriesKeyAtPointerY(e, date)
     if (!key) {
@@ -524,8 +536,24 @@
     }
     if (!key || isAggregateLineKey(key)) return
     const point = sourcePointForChartPoint(key, data, date)
-    if (!point?.sourceDatapointID) return
-    onChartPointClick(key, point.sourceDatapointID)
+    if (point && activateChartPoint(key, point)) e.stopPropagation()
+  }
+
+  function activateChartPoint(seriesKey: string, point: ChartPoint): boolean {
+    if (isAggregateLineKey(seriesKey)) return false
+    if (
+      aggregationView === 'rate' &&
+      onRateChartPointClick &&
+      point.timestampNs !== undefined
+    ) {
+      onRateChartPointClick(seriesKey, point.timestampNs)
+      return true
+    }
+    if (point.sourceDatapointID && onChartPointClick) {
+      onChartPointClick(seriesKey, point.sourceDatapointID)
+      return true
+    }
+    return false
   }
 
   function handlePointClick(
@@ -533,10 +561,61 @@
     details: LayerChartPointClickDetail<ChartPoint>
   ) {
     if (details.point?.seriesKey === undefined) return
-    e.stopPropagation()
+    if (aggregationView === 'rate') {
+      const key = details.point.seriesKey
+      const timestampNs = details.data.timestampNs
+      if (timestampNs === undefined) return
+      const point = chartSeries
+        .find(series => series.key === key)
+        ?.data.find(point => point.timestampNs === timestampNs)
+      if (point && activateChartPoint(key, point)) e.stopPropagation()
+      return
+    }
     const selection = timeSeriesChartPointSelection(details, timeseries)
     if (selection === null || isAggregateLineKey(selection.seriesKey)) return
+    e.stopPropagation()
     onChartPointClick?.(selection.seriesKey, selection.sourceDatapointID)
+  }
+
+  /** Bare plot/line clicks can lack LayerChart's tooltip datum. Snap using the
+   * drawn points, then activate their real source id or exact Rate bucket. */
+  function handlePlotClick(event: MouseEvent) {
+    const context = lineChartContext
+    const target = event.target
+    if (!context || !(target instanceof Element)) return
+    const root = target.closest('.lc-root-container')
+    if (!root) return
+    const bounds = root.getBoundingClientRect()
+    const x = event.clientX - bounds.left - context.padding.left
+    const y = event.clientY - bounds.top - context.padding.top
+    const xMin = Math.min(...context.xRange)
+    const xMax = Math.max(...context.xRange)
+    const yMin = Math.min(...context.yRange)
+    const yMax = Math.max(...context.yRange)
+    if (x < xMin || x > xMax || y < yMin || y > yMax) return
+    let nearest: {
+      seriesKey: string
+      point: ChartPoint
+      distance: number
+    } | null = null
+    for (const series of chartSeries) {
+      if (isAggregateLineKey(series.key)) continue
+      for (const point of series.data) {
+        const selectable =
+          aggregationView === 'rate'
+            ? !!onRateChartPointClick && point.timestampNs !== undefined
+            : !!onChartPointClick && point.sourceDatapointID !== undefined
+        if (!selectable) continue
+        const distance = Math.hypot(
+          context.xScale(point.date) - x,
+          context.yScale(point.value) - y
+        )
+        if (!nearest || distance < nearest.distance)
+          nearest = { seriesKey: series.key, point, distance }
+      }
+    }
+    if (nearest && activateChartPoint(nearest.seriesKey, nearest.point))
+      event.stopPropagation()
   }
 
   /** Chart-area click under bisect-x tooltip — disambiguate series by
@@ -644,16 +723,13 @@
     slope: rateSlopeViewSymbol(),
   }
 
-  /** Hover target thickness (px) for min/max/avg/slope overlay guides. */
-  const STAT_LINE_HIT_PX = 12
-
   type SeriesStatMark = {
     kind: 'min' | 'max' | 'avg' | 'slope'
     statLabel: string
     valueText: string
     title: string
     color: string
-    /** Dot anchor on the chart (extremum x for min/max; selection x for avg/slope). */
+    /** Time anchor for extrema and the selected slope segment. */
     dotDate: Date
     /** Rule anchor y in data space (rate at selection for slope). */
     y: number
@@ -662,8 +738,6 @@
     /** Bucket endpoints for slope segment (rate view only). */
     slopeFrom?: ChartPoint
     slopeTo?: ChartPoint
-    /** Whether to draw a dedicated vertical rule (min/max extremum x). */
-    showVertical: boolean
   }
 
   /** Min / max / avg (or slope segment in rate view) for the selected series. */
@@ -677,7 +751,7 @@
 
     const stats = seriesStats?.get(selectedSeriesKey)
     if (!stats) return []
-    const color = series.color
+    const color = 'var(--color-primary)'
     const marks: SeriesStatMark[] = []
 
     const minPoint = extremumPoint(series.data, 'min')
@@ -688,10 +762,9 @@
         statLabel: SERIES_STAT_LABEL.min,
         valueText,
         title: `min ${valueText}`,
-        color,
+        color: series.color,
         dotDate: minPoint.date,
         y: stats.min,
-        showVertical: true,
       })
     }
 
@@ -707,10 +780,9 @@
         statLabel: SERIES_STAT_LABEL.max,
         valueText,
         title: `max ${valueText}`,
-        color,
+        color: series.color,
         dotDate: maxPoint.date,
         y: stats.max,
-        showVertical: true,
       })
     }
 
@@ -732,7 +804,6 @@
           slope: segment.slope,
           slopeFrom: segment.from,
           slopeTo: segment.to,
-          showVertical: false,
         })
       }
     } else if (stats.avg !== undefined && series.data.length > 1) {
@@ -745,73 +816,36 @@
         color,
         dotDate: highlightDate,
         y: stats.avg,
-        showVertical: false,
       })
     }
 
     return marks
   })
 
-  /** Horizontal guide at the selected series value on the selection x. */
-  let selectedPointValueY = $derived.by((): number | null => {
-    if (!showStatOverlays || highlightDate === null) return null
-    if (!selectedSeriesKey || isAggregateLineKey(selectedSeriesKey)) return null
-    const series = chartSeries.find(s => s.key === selectedSeriesKey)
-    if (!series) return null
-    const value = exactSelectionPoint(series)?.value
-    if (value === undefined || !Number.isFinite(value)) return null
-    if (
-      aggregationView === 'rate' &&
-      selectedRateSlope !== undefined &&
-      Number.isFinite(selectedRateSlope)
-    ) {
-      return null
-    }
-    return value
-  })
-
-  /** Pixel positions for pinned stat labels at each mark's dot. Min below,
-   *  max above; avg/slope above/below by min proximity. */
+  /** Min/max labels stay on their points; average uses the right edge and slope the point card. */
   let seriesStatTooltipPlacements = $derived.by(() => {
     const ctx = lineChartContext
     if (!ctx || seriesStatMarks.length === 0) return []
 
     const plotLeft = ctx.padding.left
     const plotTop = ctx.padding.top
-    const minY = seriesStatMarks.find(m => m.kind === 'min')?.y
-    const maxY = seriesStatMarks.find(m => m.kind === 'max')?.y
+    return seriesStatMarks
+      .filter(mark => mark.kind !== 'slope')
+      .map(mark => {
+        const left =
+          (mark.kind === 'avg' ? ctx.xRange[1] : ctx.xScale(mark.dotDate)) +
+          plotLeft
+        const top = ctx.yScale(mark.y) + plotTop
 
-    return seriesStatMarks.map(mark => {
-      const left = ctx.xScale(mark.dotDate) + plotLeft
-      const top = ctx.yScale(mark.y) + plotTop
+        const placement =
+          mark.kind === 'avg'
+            ? 'right'
+            : mark.kind === 'min'
+              ? 'below'
+              : 'above'
 
-      let placement: 'above' | 'below'
-      if (mark.kind === 'min') {
-        placement = 'below'
-      } else if (mark.kind === 'max') {
-        placement = 'above'
-      } else if (mark.kind === 'avg' || mark.kind === 'slope') {
-        if (minY !== undefined && maxY !== undefined) {
-          placement =
-            Math.abs(mark.y - minY) <= Math.abs(maxY - mark.y)
-              ? 'above'
-              : 'below'
-        } else if (minY !== undefined) {
-          placement = 'above'
-        } else {
-          placement = 'below'
-        }
-      } else if (minY !== undefined && maxY !== undefined) {
-        placement =
-          Math.abs(mark.y - minY) <= Math.abs(maxY - mark.y) ? 'above' : 'below'
-      } else if (minY !== undefined) {
-        placement = 'above'
-      } else {
-        placement = 'below'
-      }
-
-      return { ...mark, placement, left, top }
-    })
+        return { ...mark, placement, left, top }
+      })
   })
 
   let selectionDots = $derived.by((): SelectionDot[] => {
@@ -846,7 +880,7 @@
     if (selectionDots.length === 0) return []
     const seriesDots = selectionDots.filter(d => !isAggregateLineKey(d.key))
     const labelByKey = new Map(chartSeries.map(s => [s.key, s.label] as const))
-    return seriesDots.map((d): SelectionLegendRow => ({
+    const rows = seriesDots.map((d): SelectionLegendRow => ({
       key: d.key,
       color: d.color,
       label: labelByKey.get(d.key) ?? d.key,
@@ -855,6 +889,16 @@
       valueText: formatMetricValue(d.value),
       isPrimary: d.isSelected,
     }))
+    const slope = seriesStatMarks.find(mark => mark.kind === 'slope')
+    if (slope) {
+      rows.push({
+        key: '__selection:rate-slope',
+        color: slope.color,
+        label: slope.statLabel,
+        valueText: slope.valueText,
+      })
+    }
+    return rows
   })
 
   let selectionAggregateRows = $derived.by((): AggregateSummaryRow[] => {
@@ -867,33 +911,27 @@
       }
     )
   })
+
+  let selectionAnchor = $derived.by(() => {
+    const context = lineChartContext
+    const dot = selectionDots.find(dot => dot.isSelected) ?? selectionDots[0]
+    if (!context || !highlightDate || !dot) return null
+    return {
+      x: context.padding.left + context.xScale(highlightDate),
+      y: context.padding.top + context.yScale(dot.value),
+    }
+  })
 </script>
 
 {#if visiblePointCount > 0}
   <div class="metric-time-series-chart" style:height="{height}px">
-    {#if timeRange || selectionLegendRows.length > 0 || selectionAggregateRows.length > 0}
-      <div class="metric-time-series-chart__header">
-        {#if timeRange}
-          <ChartTimeRangeHeader
-            startMs={timeRange.startMs}
-            endMs={timeRange.endMs}
-            variant="legend"
-          />
-        {/if}
-        {#if selectionLegendRows.length > 0 || selectionAggregateRows.length > 0}
-          <div class="metric-time-series-chart__selection-legend">
-            <ChartSelectionLegend
-              timestamp={selectionTimestampText}
-              rows={selectionLegendRows}
-              aggregateRows={selectionAggregateRows}
-            />
-          </div>
-        {/if}
-      </div>
-    {/if}
+    <!-- The separate ChartKeyboardSurface provides equivalent keyboard interaction. -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="metric-time-series-chart__plot chart-keyboard-surface-host"
       bind:clientHeight={plotAreaHeight}
+      onclick={handlePlotClick}
     >
       <MetricChartPlot height={plotAreaHeight > 0 ? plotAreaHeight : height}>
         <LineChart
@@ -909,6 +947,25 @@
           onTooltipClick={handleTooltipClick}
           props={chartProps}
         >
+          {#snippet belowMarks({ context }: { context: any })}
+            {@const average = seriesStatMarks.find(mark => mark.kind === 'avg')}
+            {#if average}
+              {@const averageY = context.yScale(average.y)}
+              <g
+                class="series-stat-marker series-average-marker"
+                aria-hidden="true"
+              >
+                <title>{average.title}</title>
+                <Line
+                  x1={context.xRange[0]}
+                  x2={context.xRange[1]}
+                  y1={averageY}
+                  y2={averageY}
+                  class="series-average-line"
+                />
+              </g>
+            {/if}
+          {/snippet}
           {#snippet tooltip({ context }: { context: any })}
             {@const xDate = tooltipXDate(context)}
             {@const rawItems = chartSeries
@@ -969,43 +1026,17 @@
           {/snippet}
 
           {#snippet aboveMarks({ context }: { context: any })}
-            {@const xLeft = context.xRange[0]}
-            {@const xRight = context.xRange[1]}
             {@const yTop = context.yRange[1]}
             {@const yBot = context.yRange[0]}
-            {#if seriesStatMarks.length > 0 || selectedPointValueY !== null}
+            {#if seriesStatMarks.length > 0}
               <g
                 class="series-stat-overlay"
                 style:--marker-color={seriesStatMarks[0]?.color ??
                   chartSeries.find(s => s.key === selectedSeriesKey)?.color}
               >
-                {#if selectedPointValueY !== null}
-                  {@const yPx = context.yScale(selectedPointValueY)}
-                  {@const hitHalf = STAT_LINE_HIT_PX / 2}
-                  <g class="series-stat-line-group">
-                    <rect
-                      class="series-stat-hitbox"
-                      x={xLeft}
-                      y={yPx - hitHalf}
-                      width={xRight - xLeft}
-                      height={STAT_LINE_HIT_PX}
-                    />
-                    <Line
-                      x1={xLeft}
-                      x2={xRight}
-                      y1={yPx}
-                      y2={yPx}
-                      class="series-stat-line series-stat-line--point-value"
-                    />
-                  </g>
-                {/if}
-                {#each seriesStatMarks as mark (mark.kind)}
+                {#each seriesStatMarks.filter(mark => mark.kind !== 'avg') as mark (mark.kind)}
                   {@const dotPx = context.xScale(mark.dotDate)}
                   {@const dotYPx = context.yScale(mark.y)}
-                  {@const vPx = context.xScale(mark.dotDate)}
-                  {@const plotBandTop = Math.min(yTop, yBot)}
-                  {@const plotBandHeight = Math.abs(yBot - yTop)}
-                  {@const hitHalf = STAT_LINE_HIT_PX / 2}
                   <g class="series-stat-marker">
                     <title>{mark.title}</title>
                     {#if mark.kind === 'slope' && mark.slopeFrom && mark.slopeTo}
@@ -1019,53 +1050,10 @@
                           y1={segY1}
                           x2={segX2}
                           y2={segY2}
-                          class="series-stat-hitbox series-stat-hitbox--line"
-                        />
-                        <Line
-                          x1={segX1}
-                          y1={segY1}
-                          x2={segX2}
-                          y2={segY2}
                           class="series-stat-line"
                           markerEnd="arrow"
                         />
                       </g>
-                    {:else}
-                      {@const yPx = dotYPx}
-                      <g class="series-stat-line-group">
-                        <rect
-                          class="series-stat-hitbox"
-                          x={xLeft}
-                          y={yPx - hitHalf}
-                          width={xRight - xLeft}
-                          height={STAT_LINE_HIT_PX}
-                        />
-                        <Line
-                          x1={xLeft}
-                          x2={xRight}
-                          y1={yPx}
-                          y2={yPx}
-                          class="series-stat-line"
-                        />
-                      </g>
-                      {#if mark.showVertical}
-                        <g class="series-stat-line-group">
-                          <rect
-                            class="series-stat-hitbox"
-                            x={vPx - hitHalf}
-                            y={plotBandTop}
-                            width={STAT_LINE_HIT_PX}
-                            height={plotBandHeight}
-                          />
-                          <Line
-                            x1={vPx}
-                            x2={vPx}
-                            y1={yTop}
-                            y2={yBot}
-                            class="series-stat-line"
-                          />
-                        </g>
-                      {/if}
                     {/if}
                     <circle
                       cx={dotPx}
@@ -1079,13 +1067,6 @@
                 {#if highlightDate}
                   {@const px = context.xScale(highlightDate)}
                   <g class="selection-overlay" aria-hidden="true">
-                    <Line
-                      x1={px}
-                      x2={px}
-                      y1={yTop}
-                      y2={yBot}
-                      class="highlight-rule"
-                    />
                     {#each selectionDots as dot (dot.key)}
                       {@const py = context.yScale(dot.value)}
                       <!-- Halo ring drawn first so the colored dot sits on
@@ -1097,7 +1078,6 @@
                         cy={py}
                         r="8"
                         class="selection-dot-halo"
-                        class:selection-dot-halo--selected={dot.isSelected}
                       />
                       <circle
                         cx={px}
@@ -1114,22 +1094,9 @@
             {:else if highlightDate}
               {@const px = context.xScale(highlightDate)}
               <g class="selection-overlay" aria-hidden="true">
-                <Line
-                  x1={px}
-                  x2={px}
-                  y1={yTop}
-                  y2={yBot}
-                  class="highlight-rule"
-                />
                 {#each selectionDots as dot (dot.key)}
                   {@const py = context.yScale(dot.value)}
-                  <circle
-                    cx={px}
-                    cy={py}
-                    r="8"
-                    class="selection-dot-halo"
-                    class:selection-dot-halo--selected={dot.isSelected}
-                  />
+                  <circle cx={px} cy={py} r="8" class="selection-dot-halo" />
                   <circle
                     cx={px}
                     cy={py}
@@ -1163,11 +1130,23 @@
             {/if}
           {/snippet}
         </LineChart>
+        {#if selectionLegendRows.length > 0 || selectionAggregateRows.length > 0}
+          <ChartSticky anchor={selectionAnchor}>
+            <div class="metric-time-series-chart__selection-legend">
+              <ChartSelectionLegend
+                timestamp={selectionTimestampText}
+                rows={selectionLegendRows}
+                aggregateRows={selectionAggregateRows}
+              />
+            </div>
+          </ChartSticky>
+        {/if}
         {#each seriesStatTooltipPlacements as mark (mark.kind)}
           <div
             class="series-stat-tooltip"
             class:series-stat-tooltip--above={mark.placement === 'above'}
             class:series-stat-tooltip--below={mark.placement === 'below'}
+            class:series-stat-tooltip--right={mark.placement === 'right'}
             style:left="{mark.left}px"
             style:top="{mark.top}px"
             title={mark.title}
@@ -1216,20 +1195,15 @@
     @apply flex min-h-0 w-full min-w-0 flex-col;
   }
 
-  .metric-time-series-chart__header {
-    @apply flex shrink-0 items-start justify-between gap-2 px-1 pb-1 pt-0.5;
-  }
-
   .metric-time-series-chart__plot {
     @apply relative min-h-0 min-w-0 flex-1;
   }
 
   .metric-time-series-chart__selection-legend {
-    @apply ml-auto shrink-0;
-    pointer-events: none;
+    @apply min-w-0 max-w-full;
   }
 
-  /* Pinned min/max/avg labels: selection-legend card at each stat dot. */
+  /* Stat cards: min/max at their points and average at the right edge. */
   .series-stat-tooltip {
     position: absolute;
     pointer-events: none;
@@ -1244,6 +1218,10 @@
 
   .series-stat-tooltip--below {
     transform: translate(-50%, 8px);
+  }
+
+  .series-stat-tooltip--right {
+    transform: translate(-100%, calc(-100% - 8px));
   }
 
   /* Aggregate summary rows span the tooltip grid when embedded. */

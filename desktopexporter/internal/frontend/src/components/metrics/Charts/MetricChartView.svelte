@@ -157,9 +157,6 @@
             datapoint={ctx.histogramChartDatapoint}
             unit={ctx.metric!.unit}
             height={plotHeight}
-            timeRange={ctx.histogramScope === 'window'
-              ? (ctx.chartDataTimeRange ?? null)
-              : null}
             selectionTimestamp={histogramBucketTimestamp}
             enableValueBucketPin={ctx.histogramScope === 'window'}
             onClearSelection={ctx.clearChartSelection}
@@ -201,9 +198,9 @@
         colorByKey={ctx.timeseriesColorByKey}
         aggregationView={ctx.aggregationView}
         showStatOverlays={ctx.showSelectionStatOverlays}
-        selectedRateSlope={ctx.selectedRateSlope}
         timeRange={ctx.chartDataTimeRange ?? null}
         onChartPointClick={ctx.onChartPointClick}
+        onRateChartPointClick={ctx.onRateChartPointClick}
         onClearSelection={ctx.clearChartSelection}
         seriesStats={ctx.seriesStatsByKey}
         emptyMessage={ctx.gaugeSumSeriesKeys.length === 0

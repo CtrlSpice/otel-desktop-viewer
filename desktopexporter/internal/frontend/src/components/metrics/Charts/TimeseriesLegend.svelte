@@ -138,16 +138,12 @@
     @apply flex flex-col gap-1 m-0 p-0 list-none;
   }
 
-  .timeseries-legend__row {
-    @apply rounded;
-  }
-
   .timeseries-legend__row--disabled {
     @apply opacity-50;
   }
 
   .timeseries-legend__label {
-    @apply flex items-center gap-2 px-2 py-1 rounded cursor-pointer;
+    @apply flex items-center gap-2 px-2 py-1 cursor-pointer;
     min-height: 1.75rem;
   }
 

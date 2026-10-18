@@ -40,7 +40,7 @@
   @reference "../../../app.css";
 
   .metric-chart-control-bar {
-    @apply flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 bg-base-200 px-3 py-2;
+    @apply flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 bg-base-100 px-3 py-2;
   }
 
   .histogram-scope-radios {

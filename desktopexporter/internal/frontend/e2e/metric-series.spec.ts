@@ -126,6 +126,299 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
+test('extrema use the series colour and the average sits behind the series without a data dot', async ({
+  page,
+}) => {
+  await page.route('**/rpc', async route => {
+    const request = route.request().postDataJSON() as {
+      id: number
+      method: string
+    }
+    if (request.method !== 'getMetricView') return route.fallback()
+    const withStats: JsonMetricViewData = {
+      ...metric,
+      timeseries: metric.timeseries.map(series => ({
+        ...series,
+        stats: { count: 40, min: 1, max: 40, sum: 820, avg: 20.5 },
+      })),
+    }
+    await route.fulfill({
+      json: { jsonrpc: '2.0', id: request.id, result: withStats },
+    })
+  })
+  await page.goto(
+    `/metrics/${metric.metricRef}?agg=raw&series=first&dp=first-10`
+  )
+  const average = page.locator('.series-average-marker')
+  await expect(average).toBeAttached()
+  await expect(average.locator('circle')).toHaveCount(0)
+  const averageLabel = page.locator('.series-stat-tooltip--right')
+  await expect(
+    averageLabel.locator('.chart-selection-legend__label')
+  ).toHaveText('avg')
+  await expect(
+    averageLabel.locator('.chart-selection-legend__value')
+  ).toHaveText('20.5')
+  await expect(
+    averageLabel.locator('.chart-selection-legend--stat')
+  ).toBeVisible()
+  await expect(average.locator('.series-average-line')).toHaveCSS(
+    'stroke-dasharray',
+    '4px, 3px'
+  )
+  await expect(average.locator('.series-average-line')).toHaveCSS(
+    'opacity',
+    '0.35'
+  )
+  const drawing = await page
+    .locator('.metric-time-series-chart')
+    .evaluate(chart => {
+      const min = [...chart.querySelectorAll('.series-stat-marker')].find(
+        marker => marker.querySelector('title')?.textContent?.startsWith('min ')
+      )!
+      const max = [...chart.querySelectorAll('.series-stat-marker')].find(
+        marker => marker.querySelector('title')?.textContent?.startsWith('max ')
+      )!
+      const minColour = getComputedStyle(min.querySelector('circle')!).fill
+      const maxColour = getComputedStyle(max.querySelector('circle')!).fill
+      const series = [...chart.querySelectorAll('path')].find(
+        path => getComputedStyle(path).stroke === minColour
+      )
+      const reference = chart.querySelector('.series-average-line')!
+      const label = chart.querySelector(
+        '.series-stat-tooltip--right .chart-selection-legend__dot'
+      )!
+      const labelBox = chart
+        .querySelector('.series-stat-tooltip--right')!
+        .getBoundingClientRect()
+      const lineBox = reference.getBoundingClientRect()
+      return {
+        extremaMatch: minColour === maxColour,
+        seriesFound: !!series,
+        averageBehindSeries:
+          !!series &&
+          !!(
+            reference.compareDocumentPosition(series) &
+            Node.DOCUMENT_POSITION_FOLLOWING
+          ),
+        averageHasOwnColour: getComputedStyle(reference).stroke !== minColour,
+        averageLabelMatches:
+          getComputedStyle(reference).stroke ===
+          getComputedStyle(label).backgroundColor,
+        averageLabelAtRight: Math.abs(labelBox.right - lineBox.right) < 1,
+      }
+    })
+  expect(drawing).toEqual({
+    extremaMatch: true,
+    seriesFound: true,
+    averageBehindSeries: true,
+    averageHasOwnColour: true,
+    averageLabelMatches: true,
+    averageLabelAtRight: true,
+  })
+})
+
+test('a new single-point cumulative counter opens in Raw without preferences', async ({
+  page,
+}) => {
+  const point = {
+    ...timeseries[0]!.datapoints[0]!,
+    metricType: 'Sum' as const,
+    isMonotonic: true,
+    aggregationTemporalityCode: 2,
+    aggregationTemporality: 'Cumulative',
+  }
+  const counter = {
+    ...metric,
+    metricType: 'Sum',
+    isMonotonic: true,
+    aggregationTemporalityCode: 2,
+    aggregationTemporality: 'Cumulative',
+    datapointCount: 1,
+    timeseries: [{ ...timeseries[0]!, datapoints: [point], datapointCount: 1 }],
+  }
+  await page.route('**/rpc', async route => {
+    const request = route.request().postDataJSON() as {
+      id: number
+      method: string
+    }
+    if (request.method === 'getMetricView') {
+      await route.fulfill({
+        json: { jsonrpc: '2.0', id: request.id, result: counter },
+      })
+    } else if (request.method === 'searchMetricSummaries') {
+      await route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id: request.id,
+          result: [
+            {
+              ...summary,
+              metricType: 'Sum',
+              isMonotonic: true,
+              aggregationTemporalityCode: 2,
+              aggregationTemporality: 'Cumulative',
+              seriesCount: 1,
+              seriesCardinality: 1,
+              dataPointCount: 1,
+            },
+          ],
+        },
+      })
+    } else await route.fallback()
+  })
+  await page.goto(`/metrics/${metric.metricRef}`)
+  await expect(
+    page.getByRole('tab', { name: 'Raw', exact: true })
+  ).toHaveAttribute('aria-selected', 'true')
+  await expect(
+    page.getByRole('tab', { name: 'Rate', exact: true })
+  ).toHaveAttribute('aria-selected', 'false')
+  await expect(page.locator('.metric-time-series-chart')).toBeVisible()
+  await expect(
+    page.getByText('No datapoints in selected timeseries', { exact: true })
+  ).toHaveCount(0)
+  await expect(
+    page
+      .getByRole('region', { name: 'Metric chart', exact: true })
+      .locator('[aria-label="Chart time range"]')
+  ).toBeVisible()
+})
+
+test('Rate clicks pin the exact bucket and keep slope in the same card', async ({
+  page,
+}) => {
+  const counter = {
+    ...metric,
+    metricType: 'Sum',
+    isMonotonic: true,
+    aggregationTemporalityCode: 2,
+    aggregationTemporality: 'Cumulative',
+    datapointCount: 3,
+    timeseries: [
+      {
+        ...timeseries[0]!,
+        datapoints: timeseries[0]!.datapoints.slice(0, 3).map(point => ({
+          ...point,
+          metricType: 'Sum',
+          isMonotonic: true,
+          aggregationTemporalityCode: 2,
+          aggregationTemporality: 'Cumulative',
+        })),
+        datapointCount: 3,
+        rateStats: { min: 2, max: 4, avg: 3 },
+        views: [0, 1, 2].map(index => ({
+          bucketStart: String(BigInt(startMs + index * 1000) * 1_000_000n),
+          sampleCount: 1,
+          sum: index + 1,
+          avg: index + 1,
+          rate: index === 0 ? null : index * 2,
+          slope: index === 2 ? 2 : null,
+          hasReset: false,
+        })),
+      },
+    ],
+  }
+  await page.route('**/rpc', async route => {
+    const request = route.request().postDataJSON() as {
+      id: number
+      method: string
+    }
+    const result =
+      request.method === 'getMetricView'
+        ? counter
+        : request.method === 'searchMetricSummaries'
+          ? [
+              {
+                ...summary,
+                metricType: 'Sum',
+                isMonotonic: true,
+                aggregationTemporalityCode: 2,
+                aggregationTemporality: 'Cumulative',
+                seriesCount: 1,
+                seriesCardinality: 1,
+                dataPointCount: 3,
+              },
+            ]
+          : undefined
+    if (result === undefined) await route.fallback()
+    else
+      await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result } })
+  })
+  await page.setViewportSize({ width: 1920, height: 1000 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto(`/metrics/${metric.metricRef}?agg=rate`)
+  await expect(page.locator('.metric-time-series-chart')).toBeVisible()
+  await expect(page.locator('.chart-sticky__card')).toHaveCount(0)
+  await expect(page.locator('.selection-dot--selected')).toHaveCount(0)
+  expect(new URL(page.url()).searchParams.has('dp')).toBe(false)
+  const graph = page.getByRole('application', {
+    name: 'Metric time series chart',
+    exact: true,
+  })
+  await graph.focus()
+  await graph.press('Home')
+  await graph.press('Enter')
+  const sticky = page.locator('.chart-sticky__card')
+  await expect(sticky).toBeVisible()
+  await graph.press('ArrowRight')
+  await graph.press('Enter')
+  await expect(sticky.getByText('slope', { exact: true })).toBeVisible()
+  await expect(
+    page.locator('.series-stat-tooltip').filter({ hasText: 'slope' })
+  ).toHaveCount(0)
+  const selected = page.locator('.selection-dot--selected')
+  const box = (await selected.boundingBox())!
+  const x = box.x + box.width / 2
+  const y = box.y + box.height / 2
+  await graph.press('Escape')
+  await expect(sticky).toHaveCount(0)
+  await page.mouse.move(x, y)
+  await expect(page.locator('.lc-tooltip-header').first()).toBeVisible()
+  await page.mouse.click(x, y)
+  await expect(sticky.getByText('slope', { exact: true })).toBeVisible()
+  expect(new URL(page.url()).searchParams.has('dp')).toBe(false)
+  await expect(page.locator('.selection-overlay .highlight-rule')).toHaveCount(
+    0
+  )
+  const guideColors = await page
+    .locator('.series-stat-line')
+    .evaluateAll(lines => lines.map(line => getComputedStyle(line).stroke))
+  expect(guideColors.length).toBeGreaterThan(0)
+  expect(new Set(guideColors).size).toBe(1)
+})
+
+test('raw plot clicks still select source points beneath passive overlays', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1000 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto(`/metrics/${metric.metricRef}?agg=raw`)
+  const graph = page.getByRole('application', {
+    name: 'Metric time series chart',
+    exact: true,
+  })
+  await graph.focus()
+  await graph.press('Home')
+  await graph.press('ArrowRight')
+  await graph.press('Enter')
+  await expect(page).toHaveURL(/dp=first-/)
+  const selectedID = new URL(page.url()).searchParams.get('dp')!
+  const selectedMark = page.locator('.selection-dot--selected')
+  await expect(selectedMark).toBeVisible()
+  const mark = (await selectedMark.boundingBox())!
+  const x = mark.x + mark.width / 2
+  const y = mark.y + mark.height / 2
+  await graph.press('Escape')
+  await expect(page.locator('.chart-sticky__card')).toHaveCount(0)
+  await page.mouse.move(x, y)
+  await expect(page.locator('.lc-tooltip-header').first()).toBeVisible()
+  await page.mouse.click(x, y)
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get('dp'))
+    .toBe(selectedID)
+})
+
 test('series open by their headers, one at a time, with one combined table', async ({
   page,
 }) => {
@@ -138,6 +431,73 @@ test('series open by their headers, one at a time, with one combined table', asy
   })
   const seriesBubble = details.locator('details.collapse').nth(0)
   const fieldsBubble = details.locator('details.collapse').nth(1)
+  const mainHeader = page.getByRole('region', {
+    name: 'Metric chart',
+    exact: true,
+  })
+  const darkest = await page.evaluate(() => {
+    const probe = document.createElement('span')
+    probe.style.backgroundColor = 'var(--color-base-100)'
+    document.body.append(probe)
+    const color = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    return color
+  })
+  await expect(page.locator('.page-layout__main-chrome')).toHaveCSS(
+    'background-color',
+    darkest
+  )
+  await expect(page.locator('.page-layout__main-chrome')).toHaveCSS(
+    'border-width',
+    '0px'
+  )
+  for (const bar of await page.locator('.metric-chart-control-bar').all())
+    await expect(bar).toHaveCSS('background-color', darkest)
+  await expect(mainHeader).toHaveCSS('border-radius', '12px')
+  const range = mainHeader.locator('[aria-label="Chart time range"]')
+  await expect(
+    mainHeader.getByRole('checkbox', { name: 'Show chart stat overlays' })
+  ).toBeVisible()
+  await expect(
+    page
+      .locator('.metric-chart-view')
+      .getByRole('checkbox', { name: 'Show chart stat overlays' })
+  ).toHaveCount(0)
+  await expect(range).toHaveCount(1)
+  await expect(range).toContainText('start:')
+  await expect(range).toContainText('end:')
+  await expect(
+    page.locator('.metric-chart-view [aria-label="Chart time range"]')
+  ).toHaveCount(0)
+  const headerLayout = await mainHeader.evaluate(header => {
+    const top = header
+      .querySelector('.pane-header__top')!
+      .getBoundingClientRect()
+    const badges = header
+      .querySelector('.pane-header__badges')!
+      .getBoundingClientRect()
+    const tabs = header
+      .querySelector('[role="tablist"]')!
+      .getBoundingClientRect()
+    const range = header
+      .querySelector('[aria-label="Chart time range"]')!
+      .getBoundingClientRect()
+    return {
+      badgeInset: top.right - badges.right,
+      topBottom: top.bottom,
+      tabsTop: tabs.top,
+      rangeTop: range.top,
+    }
+  })
+  expect(Math.abs(headerLayout.badgeInset)).toBeLessThan(1)
+  expect(headerLayout.tabsTop).toBeGreaterThanOrEqual(headerLayout.topBottom)
+  expect(headerLayout.rangeTop).toBeGreaterThanOrEqual(headerLayout.topBottom)
+  await expect(mainHeader).toHaveCSS(
+    'background-color',
+    await fieldsBubble
+      .locator(':scope > summary')
+      .evaluate(element => getComputedStyle(element).backgroundColor)
+  )
   const series = page.locator('details[name="metric-series"]')
   await expect(series).toHaveCount(2)
   for (const item of await series.all()) {
@@ -184,8 +544,81 @@ test('series open by their headers, one at a time, with one combined table', asy
   const attribute = table.locator('[data-field="route"]')
   await expect(attribute.locator('.detail-property__key')).toHaveText('route')
   await expect(attribute.locator('.detail-property__type')).toHaveText('string')
+  const fieldLayout = await attribute
+    .locator('.detail-property__header')
+    .evaluate(header => {
+      const key = header
+        .querySelector('.detail-property__key')!
+        .getBoundingClientRect()
+      const badges = header
+        .querySelector('.detail-property__badges')!
+        .getBoundingClientRect()
+      const copy = header.querySelector('button')!.getBoundingClientRect()
+      return {
+        keyRight: key.right,
+        badgeLeft: badges.left,
+        badgeRight: badges.right,
+        copyLeft: copy.left,
+        copyInset: header.getBoundingClientRect().right - copy.right,
+      }
+    })
+  expect(fieldLayout.badgeLeft).toBeGreaterThan(fieldLayout.keyRight)
+  expect(fieldLayout.copyLeft - fieldLayout.badgeRight).toBeCloseTo(8, 0)
+  expect(Math.abs(fieldLayout.copyInset)).toBeLessThan(1)
   await expect(table).toContainText('/first')
   await expect(table.locator('tr[data-dp-id]')).toHaveCount(25)
+  const datapoint = table.locator('tr[data-dp-id]').first()
+  await datapoint.hover()
+  await expect(datapoint.locator('td').first()).toHaveCSS(
+    'border-top-left-radius',
+    '12px'
+  )
+  await expect(datapoint.locator('td').last()).toHaveCSS(
+    'border-bottom-right-radius',
+    '12px'
+  )
+  const plot = page.locator('.metric-time-series-chart__plot')
+  const plotBeforeSelection = (await plot.boundingBox())!
+  await datapoint.click()
+  await expect(datapoint).toHaveAttribute('aria-selected', 'true')
+  const sticky = page.locator('.chart-sticky__card')
+  await expect(sticky).toBeVisible()
+  await expect(sticky).toHaveCSS('pointer-events', 'none')
+  expect(
+    await sticky.evaluate(element => {
+      const box = element.getBoundingClientRect()
+      const hit = document.elementFromPoint(
+        box.x + box.width / 2,
+        box.y + box.height / 2
+      )
+      return !!hit && !element.contains(hit)
+    })
+  ).toBe(true)
+  const selectedMark = page.locator('.selection-dot--selected')
+  await expect(selectedMark).toBeVisible()
+  const plotAfterSelection = (await plot.boundingBox())!
+  expect(plotAfterSelection.height).toBeCloseTo(plotBeforeSelection.height, 0)
+  const cardBox = (await sticky.boundingBox())!
+  const markBox = (await selectedMark.boundingBox())!
+  expect(cardBox.x).toBeGreaterThanOrEqual(plotAfterSelection.x)
+  expect(cardBox.y).toBeGreaterThanOrEqual(plotAfterSelection.y)
+  expect(cardBox.x + cardBox.width).toBeLessThanOrEqual(
+    plotAfterSelection.x + plotAfterSelection.width + 1
+  )
+  expect(cardBox.y + cardBox.height).toBeLessThanOrEqual(
+    plotAfterSelection.y + plotAfterSelection.height + 1
+  )
+  const markX = markBox.x + markBox.width / 2
+  const markY = markBox.y + markBox.height / 2
+  const distance = Math.hypot(
+    Math.max(cardBox.x - markX, 0, markX - cardBox.x - cardBox.width),
+    Math.max(cardBox.y - markY, 0, markY - cardBox.y - cardBox.height)
+  )
+  expect(distance).toBeLessThanOrEqual(24)
+  await expect(datapoint.locator('td').first()).toHaveCSS(
+    'border-top-left-radius',
+    '12px'
+  )
   const nextPage = series.nth(0).getByRole('button', {
     name: 'Next page',
     exact: true,

@@ -46,11 +46,10 @@
       display: 'none',
     },
     '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
-      backgroundColor: `${c.overlay} !important`,
+      backgroundColor: `${c.highlightMed} !important`,
     },
     '.cm-activeLine': {
-      backgroundColor:
-        'color-mix(in oklab, var(--color-base-300) 35%, transparent)',
+      backgroundColor: c.highlightLow,
     },
     '.cm-gutters': {
       display: 'none',

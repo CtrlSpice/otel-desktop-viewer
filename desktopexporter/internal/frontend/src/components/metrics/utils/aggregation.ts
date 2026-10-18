@@ -87,38 +87,8 @@ export function isCumulativeTemporality(temporality: string): boolean {
   return temporality === 'Cumulative'
 }
 
-/**
- * Default view for a metric on first open (no persisted choice).
- *
- *   - Cumulative *monotonic* Sum metrics → 'rate'. The raw chart is a
- *     featureless climbing staircase; rate (Δvalue / Δt) is what an
- *     operator is almost always looking for.
- *   - Everything else → 'raw'. Delta Sums, Gauges, and Sums of unknown
- *     temporality all look meaningful as-is, and the user can opt
- *     into aggregation from the menu.
- *
- * Monotonicity is part of the test, and must stay in step with
- * {@link availableAggregationViews}, which applies the same condition.
- * Rate differences consecutive readings and reads a fall as a counter
- * restart; a non-monotonic cumulative Sum is allowed to fall for real,
- * so every decrease would be reported as a reset and the rate would be
- * fiction.
- */
-export function defaultAggregationViewFor(
-  metricType: string,
-  temporality: string,
-  isMonotonic: boolean | null,
-  _seriesCount: number = 2
-): AggregationView {
-  if (
-    metricType === 'Sum' &&
-    isCumulativeTemporality(temporality) &&
-    isMonotonic === true
-  ) {
-    return 'rate'
-  }
-  return 'raw'
-}
+/** Show received values unless a valid URL or saved preference chooses a view. */
+export const DEFAULT_AGGREGATION_VIEW: AggregationView = 'raw'
 
 /**
  * Which AggregationView options the dropdown should offer for the

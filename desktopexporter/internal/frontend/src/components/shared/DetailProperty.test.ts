@@ -93,7 +93,7 @@ describe('DetailProperty copy controls', () => {
     ['map', 'badge-primary'],
     ['empty', 'badge-neutral'],
   ])(
-    'places the %s type badge directly beside the key with its type color',
+    'groups the %s type and origin badges before the trailing copy control',
     (fieldType, tone) => {
       const { container } = render(DetailProperty, {
         fieldName: 'example',
@@ -105,14 +105,21 @@ describe('DetailProperty copy controls', () => {
       const badge = container.querySelector<HTMLElement>(
         '.detail-property__type'
       )!
-      expect(key.nextElementSibling).toBe(badge)
+      const actions = container.querySelector('.detail-property__actions')!
+      const badges = container.querySelector('.detail-property__badges')!
+      expect(key.nextElementSibling).toBe(actions)
+      expect(actions.firstElementChild).toBe(badges)
+      expect(badges.firstElementChild).toBe(badge)
       expect(badge.style.color).toBe('')
       expect(badge).toHaveClass('badge-soft', tone)
       expect(badge).not.toHaveClass('badge-outline')
       const origin = container.querySelector('.detail-property__origin')!
       expect(badge.nextElementSibling).toBe(origin)
-      expect(origin).toHaveClass('badge-neutral', 'badge-soft')
+      expect(origin).toHaveClass('badge-primary', 'badge-soft')
       expect(origin).not.toHaveClass('badge-outline')
+      expect(badges.nextElementSibling).toBe(
+        screen.getByRole('button', { name: 'Copy example (scope)' })
+      )
     }
   )
 
@@ -137,6 +144,32 @@ describe('DetailProperty copy controls', () => {
     )
     expect(screen.getByText('"checkout"')).toBeInTheDocument()
   })
+
+  it.each([undefined, 'resource'])(
+    'keeps Copy at the end when the type is hidden and origin is %s',
+    origin => {
+      const { container } = render(DetailProperty, {
+        fieldName: 'name',
+        fieldType: 'string',
+        fieldValue: 'value',
+        showType: false,
+        origin,
+      })
+      const actions = container.querySelector('.detail-property__actions')!
+      const copy = screen.getByRole('button', {
+        name: origin ? 'Copy name (resource)' : 'Copy name',
+      })
+      expect(actions).toContainElement(copy)
+      expect(container.querySelector('.detail-property__type')).toBeNull()
+      if (origin) {
+        expect(actions.firstElementChild).toHaveClass('detail-property__badges')
+        expect(actions.firstElementChild!.nextElementSibling).toBe(copy)
+      } else {
+        expect(container.querySelector('.detail-property__badges')).toBeNull()
+        expect(actions.firstElementChild).toBe(copy)
+      }
+    }
+  )
 
   it('copies the entire formatted structured value, with exact int64 digits', async () => {
     const user = userEvent.setup()

@@ -346,6 +346,7 @@
 
 <div class="traces-page">
   <PageLayout
+    mainSurface="base"
     items={page.sortedItems}
     selectedID={page.selectedID}
     drawerID="signal-drawer"

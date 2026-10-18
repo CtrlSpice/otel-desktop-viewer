@@ -294,6 +294,6 @@
   }
 
   .waterfall-row--matched {
-    --item-idle-bg: color-mix(in oklab, var(--color-primary) 12%, transparent);
+    --item-idle-bg: var(--color-highlight-high);
   }
 </style>

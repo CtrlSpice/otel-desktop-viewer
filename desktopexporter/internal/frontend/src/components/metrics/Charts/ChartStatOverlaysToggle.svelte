@@ -1,7 +1,7 @@
 <script lang="ts">
   /*
-   * Master toggle for selection stat overlays (min / max / avg lines
-   * and labels on the selected series). Lives in the chart control bar.
+   * Master toggle for selection stat annotations.
+   * Lives in the metric header.
    */
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
 
@@ -12,8 +12,8 @@
   <label
     class="chart-stat-overlays-toggle chart-control-toggle tooltip tooltip-top"
     data-tip={ctx.rateSlopeOverlayAvailable
-      ? 'Min/max + rate slope'
-      : 'Min/max + avg'}
+      ? 'Min/max and selected rate slope'
+      : 'Min/max and average'}
   >
     <input
       type="checkbox"

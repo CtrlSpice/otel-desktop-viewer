@@ -289,7 +289,7 @@
   }
 
   .ts-row__stats-row {
-    @apply flex min-w-0 flex-wrap items-center gap-0.5;
+    @apply flex min-w-0 flex-wrap items-center justify-end gap-0.5;
     padding-left: var(--ts-content-inset);
   }
 

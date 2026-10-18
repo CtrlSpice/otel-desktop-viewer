@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ChartSticky from '@/components/metrics/Charts/ChartSticky.svelte'
   import {
     Chart,
     Cell,
@@ -24,7 +25,6 @@
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
   import ChartSelectionLegend from '@/components/metrics/Charts/ChartSelectionLegend.svelte'
   import { histogramColumnSelectionLegendRows } from '@/components/metrics/utils/heatmap-column-selection'
-  import ChartTimeRangeHeader from '@/components/metrics/Charts/ChartTimeRangeHeader.svelte'
   import {
     axisBucketBounds,
     axisTime,
@@ -295,6 +295,20 @@
     return idx * columnPitch
   })
 
+  let scrollLeft = $state(0)
+  let selectionAnchor = $derived(
+    selectedColumnX === null
+      ? null
+      : {
+          x:
+            heatmapPlotPadding.left +
+            selectedColumnX +
+            columnPitch / 2 -
+            scrollLeft,
+          y: heatmapPlotPadding.top + maxPlotHeight / 2,
+        }
+  )
+
   let columnSelectionTimestamp = $derived.by((): string => {
     const sel = ctx.heatmapColumnSelection
     if (!sel) return ''
@@ -346,28 +360,6 @@
   <MetricChartEmpty {height} message="No bucket data in range" />
 {:else}
   <div class="metric-heatmap-chart" style:height="{height}px">
-    {#if timeRange || onSelect}
-      <div class="metric-heatmap-chart__header">
-        {#if timeRange}
-          <ChartTimeRangeHeader
-            startMs={timeRange.startMs}
-            endMs={timeRange.endMs}
-            variant="legend"
-          />
-        {/if}
-        {#if onSelect}
-          <div class="metric-heatmap-chart__selection-legend">
-            {#if hasColumnSelectionSummary}
-              <ChartSelectionLegend
-                variant="columns"
-                timestamp={columnSelectionTimestamp}
-                rowColumns={columnSelectionRowColumns}
-              />
-            {/if}
-          </div>
-        {/if}
-      </div>
-    {/if}
     <div
       class="metric-heatmap-chart__plot chart-keyboard-surface-host"
       bind:clientWidth={containerWidth}
@@ -377,6 +369,7 @@
         class="heatmap-scroll"
         class:heatmap-scroll--active={heatmapScrolls}
         bind:this={heatmapScrollElement}
+        onscroll={event => (scrollLeft = event.currentTarget.scrollLeft)}
       >
         <!-- Pointer coordinates stay on the scroll-sized chart target; the
              named outer surface owns all equivalent keyboard handling. -->
@@ -459,6 +452,17 @@
           </Chart>
         </div>
       </div>
+      {#if onSelect && hasColumnSelectionSummary}
+        <ChartSticky anchor={selectionAnchor}>
+          <div class="metric-heatmap-chart__selection-legend">
+            <ChartSelectionLegend
+              variant="columns"
+              timestamp={columnSelectionTimestamp}
+              rowColumns={columnSelectionRowColumns}
+            />
+          </div>
+        </ChartSticky>
+      {/if}
       <ChartKeyboardSurface
         id="metric-heatmap-keyboard-surface"
         label="Histogram heatmap"
@@ -480,30 +484,15 @@
     @apply flex min-h-0 w-full min-w-0 flex-col;
   }
 
-  .metric-heatmap-chart__header {
-    @apply flex shrink-0 items-start justify-between gap-2 px-1 pb-1 pt-0.5;
-  }
-
-  .metric-heatmap-chart__header :global(.chart-time-range-legend__prefix) {
-    color: var(--color-subtle);
-  }
-
-  .metric-heatmap-chart__header :global(.chart-time-range-legend__value) {
-    @apply text-base-content;
-  }
-
   .metric-heatmap-chart__selection-legend {
-    /* Reserve stats card height so the plot does not shift on select. */
-    @apply ml-auto shrink-0;
-    min-height: 4rem;
-    pointer-events: none;
+    @apply min-w-0 max-w-full;
   }
 
   .metric-heatmap-chart__selection-legend
     :global(.chart-selection-legend--columns) {
     width: max-content;
     min-width: 0;
-    max-width: none;
+    max-width: 100%;
   }
 
   .metric-heatmap-chart__selection-legend

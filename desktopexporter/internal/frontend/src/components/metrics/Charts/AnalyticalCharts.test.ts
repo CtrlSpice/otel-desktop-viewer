@@ -200,6 +200,99 @@ afterEach(() => {
 })
 
 describe('MetricTimeSeriesChart keyboard model', () => {
+  it.each(['raw', 'rate'] as const)(
+    'uses the selected series colour for min/max dots in %s, but iris for derived annotations',
+    async aggregationView => {
+      const first = gaugeDatapoint('first', BASE_NS, 2)
+      const second = gaugeDatapoint('second', BASE_NS + 1_000_000_000n, 4)
+      const metric = metricWithDatapoints('Gauge', [first, second])
+      const props = {
+        timeseries: ['series-a', 'series-b'].map(key => ({
+          key,
+          label: key,
+          points: [
+            {
+              date: new Date(BASE_MS),
+              timestampNs: first.timestamp,
+              sourceDatapointID: first.id,
+              value: 2,
+            },
+            {
+              date: new Date(BASE_MS + 1000),
+              timestampNs: second.timestamp,
+              sourceDatapointID: second.id,
+              value: 4,
+              slope: 2,
+            },
+          ],
+        })),
+        colorByKey: new Map([
+          ['series-a', '#123456'],
+          ['series-b', '#abcdef'],
+        ]),
+        highlightedTimestamp: second.timestamp,
+        highlightedPointID: second.id,
+        selectedSeriesKey: 'series-a',
+        aggregationView,
+        seriesStats: new Map(
+          ['series-a', 'series-b'].map(key => [key, { min: 2, max: 4, avg: 3 }])
+        ),
+      }
+      const view = renderChart(MetricTimeSeriesChart, props, metric)
+      function expectMarkerColours(seriesColour: string) {
+        const markers = [...document.querySelectorAll('.series-stat-marker')]
+        for (const kind of ['min', 'max']) {
+          const marker = markers.find(marker =>
+            marker.querySelector('title')?.textContent?.startsWith(`${kind} `)
+          )
+          expect(marker?.querySelector('.series-stat-dot')).toHaveAttribute(
+            'fill',
+            seriesColour
+          )
+        }
+        const derived = markers.find(marker =>
+          marker
+            .querySelector('title')
+            ?.textContent?.startsWith(
+              aggregationView === 'rate' ? 'rate slope ' : 'avg '
+            )
+        )
+        if (aggregationView === 'rate') {
+          expect(derived?.querySelector('.series-stat-dot')).toHaveAttribute(
+            'fill',
+            'var(--color-primary)'
+          )
+          expect(document.querySelector('.series-average-marker')).toBeNull()
+        } else {
+          expect(derived?.querySelector('.series-stat-dot')).toBeNull()
+          const averageLabel = document.querySelector(
+            '.series-stat-tooltip--right'
+          )
+          expect(
+            averageLabel?.querySelector('.chart-selection-legend__label')
+          ).toHaveTextContent('avg')
+          expect(
+            averageLabel?.querySelector('.chart-selection-legend__value')
+          ).toHaveTextContent('3')
+          const line = derived?.querySelector('.series-average-line')
+          expect(line).not.toBeNull()
+          expect(line?.getAttribute('y1')).toBe(line?.getAttribute('y2'))
+          expect(line?.getAttribute('x1')).not.toBe(line?.getAttribute('x2'))
+          expect(
+            document.querySelectorAll('.series-stat-tooltip')
+          ).toHaveLength(3)
+        }
+      }
+      expectMarkerColours('#123456')
+      await view.rerender({
+        component: MetricTimeSeriesChart,
+        componentProps: { ...props, selectedSeriesKey: 'series-b' },
+        metric,
+      })
+      expectMarkerColours('#abcdef')
+    }
+  )
+
   it('distinguishes sub-millisecond source points, follows external selection on focus, and activates the exact id', async () => {
     const first = gaugeDatapoint('first', BASE_NS + 100n, 10)
     const second = gaugeDatapoint('second', BASE_NS + 900n, 20)
@@ -317,7 +410,6 @@ describe('MetricTimeSeriesChart keyboard model', () => {
         selectedSeriesKey: 'series-a',
         aggregationView: 'rate',
         unit: 'requests',
-        selectedRateSlope: 6,
         seriesStats: new Map([['series-a', { min: 2, max: 4, avg: 3 }]]),
       },
       metric
@@ -335,10 +427,79 @@ describe('MetricTimeSeriesChart keyboard model', () => {
       document.querySelector('.metric-time-series-chart__selection-legend')
     ).toHaveTextContent('4')
     expect(
+      document.querySelector('.metric-time-series-chart__selection-legend')
+    ).toHaveTextContent('slope')
+    expect(
+      [...document.querySelectorAll('.series-stat-tooltip')].some(tooltip =>
+        tooltip.textContent?.includes('slope')
+      )
+    ).toBe(false)
+    expect(
       [...document.querySelectorAll('.series-stat-marker title')].some(title =>
         title.textContent?.startsWith('rate slope')
       )
     ).toBe(true)
+    expect(
+      document.querySelector('.selection-overlay .highlight-rule')
+    ).toBeNull()
+    expect(document.querySelector('.series-stat-hitbox')).toBeNull()
+    expect(
+      document
+        .querySelector(
+          '.metric-time-series-chart__selection-legend .chart-selection-legend__row:last-child .chart-selection-legend__dot'
+        )
+        ?.getAttribute('style')
+    ).toContain('--color: var(--color-primary)')
+  })
+
+  it('activates exact Rate buckets with keyboard without fabricating raw identities', async () => {
+    const onRateChartPointClick = vi.fn()
+    const onChartPointClick = vi.fn()
+    const metric = metricWithDatapoints('Gauge', [
+      gaugeDatapoint('source', BASE_NS, 10),
+    ])
+    renderChart(
+      MetricTimeSeriesChart,
+      {
+        timeseries: [
+          {
+            key: 'series-a',
+            label: 'series A',
+            points: [
+              {
+                date: new Date(BASE_MS),
+                timestampNs: BASE_NS + 300n,
+                value: 2,
+              },
+              {
+                date: new Date(BASE_MS),
+                timestampNs: BASE_NS + 600n,
+                value: 4,
+                slope: 6,
+              },
+            ],
+          },
+        ],
+        aggregationView: 'rate',
+        onRateChartPointClick,
+        onChartPointClick,
+        colorByKey: new Map([['series-a', '#123456']]),
+      },
+      metric
+    )
+    const surface = screen.getByRole('application', {
+      name: 'Metric time series chart',
+    })
+    await fireEvent.focus(surface)
+    await fireEvent.keyDown(surface, { key: 'Home' })
+    await fireEvent.keyDown(surface, { key: 'ArrowRight' })
+    await fireEvent.keyDown(surface, { key: 'Enter' })
+    expect(onRateChartPointClick).toHaveBeenCalledWith(
+      'series-a',
+      BASE_NS + 600n
+    )
+    expect(onChartPointClick).not.toHaveBeenCalled()
+    expect(readout()).not.toContain('Read-only synthetic point')
   })
 
   it('does not advertise or perform activation for a synthetic point', async () => {
@@ -462,7 +623,7 @@ describe('MetricTimeSeriesChart keyboard model', () => {
       metric
     )
 
-    expect(document.querySelector('.highlight-rule')).not.toBeNull()
+    expect(document.querySelector('.highlight-rule')).toBeNull()
     expect(document.querySelector('.selection-dot')).toBeNull()
     expect(
       document.querySelector('.metric-time-series-chart__selection-legend')

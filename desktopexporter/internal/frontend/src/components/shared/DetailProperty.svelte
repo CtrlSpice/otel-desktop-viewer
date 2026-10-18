@@ -86,15 +86,19 @@
   <div class="detail-property__header">
     {#if conflict}<ConflictMarker label={conflict} />{/if}
     <span class="detail-property__key">{fieldName}</span>
-    {#if showType}<span
-        class="badge badge-xs badge-soft {typeTone} detail-property__type"
-        >{fieldType}</span
-      >{/if}
-    {#if origin}<span
-        class="badge badge-xs badge-soft badge-neutral detail-property__origin"
-        >{origin}</span
-      >{/if}
     <span class="detail-property__actions">
+      {#if showType || origin}
+        <span class="detail-property__badges">
+          {#if showType}<span
+              class="badge badge-xs badge-soft {typeTone} detail-property__type"
+              >{fieldType}</span
+            >{/if}
+          {#if origin}<span
+              class="badge badge-xs badge-soft badge-primary detail-property__origin"
+              >{origin}</span
+            >{/if}
+        </span>
+      {/if}
       <ValueCopyButton
         bind:this={copyControl}
         text={copyText}
@@ -171,7 +175,10 @@
     overflow-wrap: anywhere;
   }
   .detail-property__actions {
-    @apply ml-auto flex shrink-0 items-center;
+    @apply ml-auto flex shrink-0 items-center gap-2;
+  }
+  .detail-property__badges {
+    @apply flex shrink-0 items-center justify-end gap-2;
   }
   .detail-property__body {
     @apply min-w-0 pt-0.5;

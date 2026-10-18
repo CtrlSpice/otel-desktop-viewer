@@ -170,6 +170,41 @@ test('associated logs reuse summary cards and open the full log without losing t
   const associated = page.getByRole('region', { name: 'Log summary' })
   const card = associated.getByRole('button')
   await expect(card).toBeVisible()
+  const selectedRow = page.locator('.waterfall-row[aria-selected="true"]')
+  await expect(selectedRow).toHaveCSS('border-radius', '12px')
+  await expect(selectedRow).toHaveCSS('overflow', 'visible')
+  const mainHeader = page.getByRole('region', {
+    name: 'Trace waterfall',
+    exact: true,
+  })
+  const darkest = await page.evaluate(() => {
+    const probe = document.createElement('span')
+    probe.style.backgroundColor = 'var(--color-base-100)'
+    document.body.append(probe)
+    const color = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    return color
+  })
+  await expect(page.locator('.page-layout__main-chrome')).toHaveCSS(
+    'background-color',
+    darkest
+  )
+  await expect(page.locator('.page-layout__main-chrome')).toHaveCSS(
+    'border-width',
+    '0px'
+  )
+  await expect(page.locator('.waterfall-view')).toHaveCSS(
+    'background-color',
+    darkest
+  )
+  await expect(mainHeader).toHaveCSS('border-radius', '12px')
+  await expect(mainHeader).toHaveCSS(
+    'background-color',
+    await page
+      .locator('.detail-bubble__heading')
+      .first()
+      .evaluate(element => getComputedStyle(element).backgroundColor)
+  )
   await expect(card).toHaveClass(/signal-row/)
   await expect(card).toHaveAttribute('aria-pressed', 'true')
   await expect(card).toContainText('checkout-api')
