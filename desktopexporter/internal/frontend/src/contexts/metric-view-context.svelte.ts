@@ -78,6 +78,7 @@ import {
 } from '@/utils/chart-palette'
 import { metricTypeStem } from '@/components/metrics/utils/metric-type'
 import { themeSignal } from '@/state/theme.svelte'
+import { detailPanel } from '@/state/detail-panel.svelte'
 import {
   DEFAULT_VISIBLE_TIMESERIES,
   MAX_VISIBLE_TIMESERIES,
@@ -183,9 +184,7 @@ export interface MetricViewContext {
   readonly totalDatapointCount: number
 
   readonly selectedDatapointID: string | null
-  /** Where the current datapoint selection came from. Chart clicks
-   *  drive the plot overlay only; detail-pane scroll/expand waits for
-   *  unified routing. */
+  /** Where the current datapoint selection came from. */
   readonly selectionSource: 'chart' | 'detail' | null
   readonly expandedDatapoints: SvelteSet<string>
   /** Per-timeseries expansion (keyed by seriesRef). Used by the
@@ -1754,6 +1753,7 @@ export function createMetricViewContext(
     rejectedUrlDatapoint = null
     view.selectionSource = 'chart'
     view.selectedDatapointID = datapointID
+    detailPanel.reveal()
     writeMetricUrl('push')
   }
 

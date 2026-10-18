@@ -80,20 +80,31 @@ test('run selection, assessments, filtering and browser history stay connected',
     page.getByRole('region', { name: 'Guide-assisted agent', exact: true })
   ).toBeVisible()
   await page.getByRole('button', { name: /Find the slow request/ }).click()
-  await page.getByRole('tab', { name: /^Assessments/ }).click()
+  const detail = page.getByRole('region', {
+    name: 'Attempt details',
+    exact: true,
+  })
+  const bubbles = detail.locator('details.collapse')
+  await expect(bubbles).toHaveCount(3)
+  await expect(detail.getByRole('tablist')).toHaveCount(0)
+  for (const bubble of await bubbles.all()) {
+    await expect(bubble).toHaveAttribute('open')
+    await expect(bubble.locator(':scope > summary')).toBeInViewport({
+      ratio: 1,
+    })
+  }
   await expect(
     page.getByText('The causal claim about total latency', { exact: false })
   ).toBeVisible()
-  await page.getByRole('tab', { name: /^Tool calls/ }).click()
   await page.locator('summary').filter({ hasText: 'Error' }).click()
   await expect(
     page.getByText('SQL binder error:', { exact: false })
   ).toBeVisible()
   await page.reload()
-  await expect(page.getByRole('tab', { name: /^Tool calls/ })).toHaveAttribute(
-    'aria-selected',
-    'true'
+  await expect(bubbles.nth(2).locator(':scope > summary')).toHaveText(
+    /Tool calls/
   )
+  await expect(bubbles.nth(2)).toHaveAttribute('open')
   await page.getByRole('searchbox', { name: 'Search evals' }).fill('Mixed')
   await expect(
     page
@@ -112,12 +123,11 @@ test('run selection, assessments, filtering and browser history stay connected',
     page.getByRole('region', { name: 'Direct agent', exact: true })
   ).toBeVisible()
   await page.getByRole('button', { name: /Compare CPU evidence/ }).click()
-  await page.getByRole('tab', { name: 'Fields', exact: true }).click()
   await expect(
     page.getByText('The investigator process exited', { exact: false })
   ).toBeVisible()
   await expect(
-    page.getByRole('tabpanel').getByText('Unknown', { exact: true })
+    bubbles.nth(0).getByText('Unknown', { exact: true })
   ).toHaveCount(2)
   await page.goBack()
   await expect(
@@ -137,6 +147,44 @@ test('run selection, assessments, filtering and browser history stay connected',
   ).toHaveCount(2)
 })
 
+test('detail actions reopen the panel, including the selected attempt', async ({
+  page,
+}) => {
+  await enableEvals(page)
+  await page.setViewportSize({ width: 1920, height: 1000 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.addInitScript(() =>
+    localStorage.setItem('signal-detail:open', 'false')
+  )
+  await page.goto('/evals')
+  const detail = page.locator('#signal-drawer-detail')
+  await expect(detail).toBeHidden()
+  const attempt = page.getByRole('button', { name: /Find the slow request/ })
+  for (let selection = 0; selection < 2; selection++) {
+    await attempt.click()
+    await expect(detail).toBeVisible()
+    await expect(page).toHaveURL(/attempt=request-latency/)
+    await expect(
+      detail.getByRole('region', { name: 'Attempt details', exact: true })
+    ).toBeVisible()
+    const fields = detail.locator('details.collapse').first()
+    await expect(fields).toHaveAttribute('open')
+    await fields.locator(':scope > summary').click()
+    await expect(fields).not.toHaveAttribute('open')
+    await expect(detail.locator('details.collapse').nth(1)).toHaveAttribute(
+      'open'
+    )
+    await fields.locator(':scope > summary').click()
+    await page.getByRole('button', { name: 'Collapse details' }).click()
+    await expect(detail).toBeHidden()
+  }
+  await page.getByRole('button', { name: 'Run details', exact: true }).click()
+  await expect(
+    detail.getByRole('region', { name: 'Run details', exact: true })
+  ).toBeVisible()
+  expect(new URL(page.url()).searchParams.has('attempt')).toBe(false)
+})
+
 for (const theme of ['rose-pine', 'rose-pine-dawn']) {
   for (const width of [1440, 390]) {
     test(`Evals is accessible in ${theme} at ${width}px`, async ({ page }) => {
@@ -149,11 +197,9 @@ for (const theme of ['rose-pine', 'rose-pine-dawn']) {
         },
         { theme, width }
       )
-      await page.goto(
-        '/evals?run=guide-assisted&attempt=request-latency&detail=Assessments'
-      )
+      await page.goto('/evals?run=guide-assisted&attempt=request-latency')
       await expect(
-        page.getByRole('tabpanel', { name: /^Assessments/ })
+        page.getByRole('region', { name: 'Attempt details', exact: true })
       ).toBeVisible()
       expect(
         await page.evaluate(

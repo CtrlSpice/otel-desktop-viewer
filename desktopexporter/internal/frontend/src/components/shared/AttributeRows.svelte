@@ -3,8 +3,13 @@
   import ConflictMarker from './ConflictMarker.svelte'
   import AttributeValueView from './AttributeValue.svelte'
 
-  type Props = { attributes: Attributes; owner: string }
-  let { attributes, owner }: Props = $props()
+  type Props = {
+    attributes: Attributes
+    owner: string
+    /** Display label only; the received key is unchanged. */
+    prefix?: string
+  }
+  let { attributes, owner, prefix = '' }: Props = $props()
 </script>
 
 {#each attributes as attribute, index (`${owner}:${attribute.id ?? 'unidentified'}:${index}`)}
@@ -17,7 +22,7 @@
           />
         {/if}
         <span class="detail-cell__key"
-          >{attribute.key}
+          >{prefix}{attribute.key}
           <span class="detail-cell__type">({attribute.value.kind})</span>:</span
         >
       </span>

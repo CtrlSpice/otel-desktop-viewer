@@ -57,15 +57,12 @@
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
     BiohazardIcon,
-    LeftToRightListBulletIcon,
+    BarChartHorizontalIcon,
     Link01Icon,
-    StopWatchIcon,
   } from '@hugeicons/core-free-icons'
-  import PaneHeader, {
-    paneTabID,
-    type PaneTab,
-  } from '@/components/shared/PaneHeader.svelte'
-  import FieldGroup from '@/components/shared/FieldGroup.svelte'
+  import DetailStack from '@/components/shared/DetailStack.svelte'
+  import { LogIcon } from '@/icons'
+  import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import SpanField from './SpanField.svelte'
   import ActivityPanel from './ActivityPanel.svelte'
   import LinksPanel from './LinksPanel.svelte'
@@ -73,8 +70,6 @@
   import { formatDuration, formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { setSpanInQuery } from '@/route'
-
-  const SPAN_DETAIL_PANEL_ID = 'span-detail-tabpanel'
 
   type Props = {
     span: SpanData | undefined
@@ -116,422 +111,265 @@
       span.statusCodeValue !== 1 &&
       span.statusCodeValue !== 2
   )
-
-  type Tab = 'fields' | 'activity' | 'links'
-  let activeTab = $state<Tab>('fields')
-
-  $effect(() => {
-    if (selectedEventIndex !== null || selectedLogRef !== null) {
-      activeTab = 'activity'
-    }
-  })
-
-  let spanOpen = $state(true)
-  let resourceOpen = $state(true)
-  let scopeOpen = $state(true)
-
-  let spanFieldCount = $derived.by(() => {
-    if (!span) return 0
-    const f = columnFilter
-    let n = 0
-    if (detailSearchFieldVisible(f, 'name')) n++
-    if (detailSearchFieldVisible(f, 'kind')) n++
-    if (detailSearchFieldVisible(f, 'kindCode')) n++
-    if (detailSearchFieldVisible(f, 'startTime')) n++
-    if (detailSearchFieldVisible(f, 'endTime')) n++
-    if (detailDurationVisible(f)) n++
-    if (detailSearchFieldVisible(f, 'statusCode')) n++
-    if (detailSearchFieldVisible(f, 'statusCodeValue')) n++
-    if (
-      span.statusCodeValue !== 0 &&
-      span.statusCodeValue !== 1 &&
-      detailSearchFieldVisible(f, 'statusMessage')
-    ) {
-      n++
-    }
-    if (detailSearchFieldVisible(f, 'traceID')) n++
-    if (!isRoot && detailSearchFieldVisible(f, 'parentSpanID')) n++
-    if (detailSearchFieldVisible(f, 'spanID')) n++
-    if (span.flags > 0 && detailFlagsVisible(f)) n++
-    for (const attr of span.attributes) {
-      if (detailAttributeVisible(f, attr.key, 'span')) n++
-    }
-    if (
-      span.droppedAttributesCount > 0 &&
-      detailSearchFieldVisible(f, 'droppedAttributesCount')
-    ) {
-      n++
-    }
-    if (
-      span.droppedEventsCount > 0 &&
-      detailSearchFieldVisible(f, 'droppedEventsCount')
-    ) {
-      n++
-    }
-    if (
-      span.droppedLinksCount > 0 &&
-      detailSearchFieldVisible(f, 'droppedLinksCount')
-    ) {
-      n++
-    }
-    return n
-  })
-
-  let resourceFieldCount = $derived.by(() => {
-    if (!span) return 0
-    const f = columnFilter
-    let n = 0
-    for (const attr of span.resource.attributes) {
-      if (detailAttributeVisible(f, attr.key, 'resource')) n++
-    }
-    if (
-      span.resource.droppedAttributesCount > 0 &&
-      detailSearchFieldVisible(f, 'resource.droppedAttributesCount')
-    ) {
-      n++
-    }
-    return n
-  })
-
-  let scopeFieldCount = $derived.by(() => {
-    if (!span) return 0
-    const f = columnFilter
-    let n = 0
-    if (span.scope.name && detailSearchFieldVisible(f, 'scope.name')) n++
-    if (span.scope.version && detailSearchFieldVisible(f, 'scope.version')) n++
-    for (const attr of span.scope.attributes) {
-      if (detailAttributeVisible(f, attr.key, 'scope')) n++
-    }
-    if (
-      span.scope.droppedAttributesCount > 0 &&
-      detailSearchFieldVisible(f, 'scope.droppedAttributesCount')
-    ) {
-      n++
-    }
-    return n
-  })
 </script>
 
 {#if span}
-  {#snippet fieldsIcon()}<HugeiconsIcon
-      icon={LeftToRightListBulletIcon}
-      size="1em"
+  {#snippet spanIcon()}<HugeiconsIcon
+      icon={BarChartHorizontalIcon}
+      size={16}
+      class="shrink-0 text-rp-muted"
       strokeWidth={1.5}
     />{/snippet}
 
-  {#snippet eventsIcon()}<HugeiconsIcon
-      icon={StopWatchIcon}
-      size="1em"
-      strokeWidth={1.5}
+  {#snippet activityIcon()}<LogIcon
+      class="size-4 shrink-0 text-rp-muted"
+      aria-hidden="true"
     />{/snippet}
   {#snippet linksIcon()}<HugeiconsIcon
       icon={Link01Icon}
-      size="1em"
+      size={16}
+      class="shrink-0 text-rp-muted"
       strokeWidth={1.5}
     />{/snippet}
 
-  {@const tabs: PaneTab[] = [
-    { id: 'fields', label: 'Fields', icon: fieldsIcon },
-    {
-      id: 'activity',
-      label: 'Activity',
-      icon: eventsIcon,
-      count: numActivity,
-    },
-    { id: 'links', label: 'Links', icon: linksIcon, count: numLinks },
-  ]}
-
-  <div class="detail-view">
-    <PaneHeader
-      mode="tabs"
-      {tabs}
-      activeID={activeTab}
-      onSelect={id => (activeTab = id as Tab)}
-      ariaLabel="Span detail tabs"
-      tabLayout="equal"
-      tabPanelID={SPAN_DETAIL_PANEL_ID}
-    />
-
-    <div
-      class="detail-view__scroll"
-      id={SPAN_DETAIL_PANEL_ID}
-      role="tabpanel"
-      aria-labelledby={paneTabID(SPAN_DETAIL_PANEL_ID, activeTab)}
-    >
-      {#if activeTab === 'fields'}
-        {#if cyclePoint}
-          <div
-            class="detail-view__paradox detail-view__paradox--cycle-point"
-            role="alert"
-          >
-            <HugeiconsIcon
-              icon={BiohazardIcon}
-              size="1em"
-              strokeWidth={1.5}
-              aria-hidden="true"
-            /> Cycle detected: this span's reported parent is at or below it in the
-            recovered branch, so following parent IDs would loop instead of reaching
-            the trace root. Check the parent assignments in the emitting service.
-          </div>
-        {:else if salvaged}
-          <div class="detail-view__paradox" role="alert">
-            {'\u26A0'} Recovered from a broken part of this trace: a parent link forms
-            a loop, so this span has no place under the root.
-          </div>
-        {/if}
-        {#snippet spanHeading()}
-          <span
-            >Span{#if isRoot}
-              {' '}<span class="detail-view__root">(root)</span>{/if}</span
-          >
-        {/snippet}
-        <FieldGroup
-          label="Span"
-          heading={spanHeading}
-          badge={`${spanFieldCount} ${spanFieldCount === 1 ? 'field' : 'fields'}`}
-          detail
-          bind:open={spanOpen}
+  <DetailStack label="Span details">
+    <DetailBubble label="Span" icon={spanIcon}>
+      {#if cyclePoint}
+        <div
+          class="detail-view__paradox detail-view__paradox--cycle-point"
+          role="alert"
         >
-          <table class="detail-fields w-full" aria-label="Span fields">
-            <tbody>
-              {#if detailSearchFieldVisible(columnFilter, 'name')}
-                <SpanField
-                  fieldName="name"
-                  fieldValue={span.name}
-                  fieldType="string"
-                />
-              {/if}
-              {#if detailSearchFieldVisible(columnFilter, 'kind')}
-                <SpanField
-                  fieldName="kind"
-                  fieldValue={span.kind}
-                  fieldType="string"
-                />
-              {/if}
-              {#if detailSearchFieldVisible(columnFilter, 'kindCode')}
-                <SpanField
-                  fieldName="kind code"
-                  fieldValue={span.kindCode.toString()}
-                  fieldType="int64"
-                />
-              {/if}
-              {#if detailSearchFieldVisible(columnFilter, 'startTime')}
-                <SpanField
-                  fieldName="start time"
-                  fieldValue={formatTimestamp(
-                    span.startTime,
-                    timeContext.tz,
-                    'nanoseconds'
-                  )}
-                  fieldType="timestamp"
-                />
-              {/if}
-              {#if detailSearchFieldVisible(columnFilter, 'endTime')}
-                <SpanField
-                  fieldName="end time"
-                  fieldValue={formatTimestamp(
-                    span.endTime,
-                    timeContext.tz,
-                    'nanoseconds'
-                  )}
-                  fieldType="timestamp"
-                />
-              {/if}
-              {#if detailDurationVisible(columnFilter)}
-                <SpanField
-                  fieldName="duration"
-                  fieldValue={durationLabel}
-                  fieldType="string"
-                />
-              {/if}
-              {#if detailSearchFieldVisible(columnFilter, 'statusCode')}
-                <SpanField
-                  fieldName="status code"
-                  fieldValue={span.statusCode}
-                  fieldType="string"
-                  defectLabel={hasUnrecognisedStatusCode
-                    ? 'Unrecognised status code'
-                    : undefined}
-                />
-              {/if}
-              {#if detailSearchFieldVisible(columnFilter, 'statusCodeValue')}
-                <SpanField
-                  fieldName="status code value"
-                  fieldValue={span.statusCodeValue.toString()}
-                  fieldType="int64"
-                  defectLabel={hasUnrecognisedStatusCode &&
-                  !detailSearchFieldVisible(columnFilter, 'statusCode')
-                    ? 'Unrecognised status code'
-                    : undefined}
-                />
-              {/if}
-              {#if span.statusCodeValue !== 0 && span.statusCodeValue !== 1 && detailSearchFieldVisible(columnFilter, 'statusMessage')}
-                <SpanField
-                  fieldName="status message"
-                  fieldValue={span.statusMessage}
-                  fieldType="string"
-                />
-              {/if}
-              {#if detailSearchFieldVisible(columnFilter, 'traceID')}
-                <SpanField
-                  fieldName="trace id"
-                  fieldValue={span.traceID}
-                  fieldType="string"
-                />
-              {/if}
-              {#if !isRoot && detailSearchFieldVisible(columnFilter, 'parentSpanID')}
-                <tr class="table-row">
-                  <td class="detail-cell">
-                    <span class="detail-cell__key">
-                      parent span id <span class="detail-cell__type"
-                        >(string)</span
-                      >:
-                    </span>
-                    <div class="detail-cell__stacked-value">
-                      <button
-                        type="button"
-                        class="detail-cell__value link link-primary font-mono"
-                        onclick={() =>
-                          setSpanInQuery(span.parentSpanID!, 'push')}
-                        >{span.parentSpanID}</button
-                      >
-                    </div>
-                  </td>
-                </tr>
-              {/if}
-              {#if detailSearchFieldVisible(columnFilter, 'spanID')}
-                <SpanField
-                  fieldName="span id"
-                  fieldValue={span.spanID}
-                  fieldType="string"
-                />
-              {/if}
-              {#if span.flags > 0 && detailFlagsVisible(columnFilter)}
-                <SpanField
-                  fieldName="flags"
-                  fieldValue={span.flags.toString()}
-                  fieldType="uint32"
-                />
-              {/if}
-              <AttributeRows
-                attributes={spanAttributes.filter(attr =>
-                  detailAttributeVisible(columnFilter, attr.key, 'span')
-                )}
-                owner="span"
-              />
-              {#if span.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedAttributesCount')}
-                <SpanField
-                  fieldName="dropped attributes count"
-                  fieldValue={span.droppedAttributesCount.toString()}
-                  fieldType="uint32"
-                />
-              {/if}
-              {#if span.droppedEventsCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedEventsCount')}
-                <SpanField
-                  fieldName="dropped events count"
-                  fieldValue={span.droppedEventsCount.toString()}
-                  fieldType="uint32"
-                />
-              {/if}
-              {#if span.droppedLinksCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedLinksCount')}
-                <SpanField
-                  fieldName="dropped links count"
-                  fieldValue={span.droppedLinksCount.toString()}
-                  fieldType="uint32"
-                />
-              {/if}
-            </tbody>
-          </table>
-        </FieldGroup>
-
-        <FieldGroup
-          label="Resource"
-          count={resourceFieldCount}
-          countLabel="fields"
-          detail
-          bind:open={resourceOpen}
-        >
-          <table class="detail-fields w-full" aria-label="Resource attributes">
-            <tbody>
-              <AttributeRows
-                attributes={resourceAttributes.filter(attr =>
-                  detailAttributeVisible(columnFilter, attr.key, 'resource')
-                )}
-                owner="resource"
-              />
-              {#if span.resource.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'resource.droppedAttributesCount')}
-                <SpanField
-                  fieldName="dropped attributes count"
-                  fieldValue={span.resource.droppedAttributesCount.toString()}
-                  fieldType="uint32"
-                />
-              {/if}
-            </tbody>
-          </table>
-        </FieldGroup>
-
-        <FieldGroup
-          label="Scope"
-          count={scopeFieldCount}
-          countLabel="fields"
-          detail
-          bind:open={scopeOpen}
-        >
-          <table class="detail-fields w-full" aria-label="Scope attributes">
-            <tbody>
-              {#if span.scope.name && detailSearchFieldVisible(columnFilter, 'scope.name')}
-                <SpanField
-                  fieldName="scope name"
-                  fieldValue={span.scope.name}
-                  fieldType="string"
-                />
-              {/if}
-              {#if span.scope.version && detailSearchFieldVisible(columnFilter, 'scope.version')}
-                <SpanField
-                  fieldName="scope version"
-                  fieldValue={span.scope.version}
-                  fieldType="string"
-                />
-              {/if}
-              <AttributeRows
-                attributes={scopeAttributes.filter(attr =>
-                  detailAttributeVisible(columnFilter, attr.key, 'scope')
-                )}
-                owner="scope"
-              />
-              {#if span.scope.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'scope.droppedAttributesCount')}
-                <SpanField
-                  fieldName="dropped attributes count"
-                  fieldValue={span.scope.droppedAttributesCount.toString()}
-                  fieldType="uint32"
-                />
-              {/if}
-            </tbody>
-          </table>
-        </FieldGroup>
-      {:else if activeTab === 'activity'}
-        {#if numActivity === 0}
-          <p class="detail-view__tab-empty">
-            No activity recorded for this span
-          </p>
-        {:else}
-          <ActivityPanel
-            events={span.events}
-            {logs}
-            spanStartTime={span.startTime}
-            {selectedEventIndex}
-            {selectedLogRef}
-          />
-        {/if}
-      {:else if activeTab === 'links'}
-        {#if numLinks === 0}
-          <p class="detail-view__tab-empty">No links recorded for this span</p>
-        {:else}
-          <LinksPanel links={span.links} />
-        {/if}
+          <HugeiconsIcon
+            icon={BiohazardIcon}
+            size="1em"
+            strokeWidth={1.5}
+            aria-hidden="true"
+          /> Cycle detected: this span's reported parent is at or below it in the
+          recovered branch, so following parent IDs would loop instead of reaching
+          the trace root. Check the parent assignments in the emitting service.
+        </div>
+      {:else if salvaged}
+        <div class="detail-view__paradox" role="alert">
+          {'\u26A0'} Recovered from a broken part of this trace: a parent link forms
+          a loop, so this span has no place under the root.
+        </div>
       {/if}
-    </div>
-  </div>
+      <table class="detail-fields w-full" aria-label="Span fields">
+        <tbody>
+          {#if detailSearchFieldVisible(columnFilter, 'name')}
+            <SpanField
+              fieldName="name"
+              fieldValue={span.name}
+              fieldType="string"
+            />
+          {/if}
+          {#if detailSearchFieldVisible(columnFilter, 'kind')}
+            <SpanField
+              fieldName="kind"
+              fieldValue={span.kind}
+              fieldType="string"
+            />
+          {/if}
+          {#if detailSearchFieldVisible(columnFilter, 'kindCode')}
+            <SpanField
+              fieldName="kind code"
+              fieldValue={span.kindCode.toString()}
+              fieldType="int64"
+            />
+          {/if}
+          {#if detailSearchFieldVisible(columnFilter, 'startTime')}
+            <SpanField
+              fieldName="start time"
+              fieldValue={formatTimestamp(
+                span.startTime,
+                timeContext.tz,
+                'nanoseconds'
+              )}
+              fieldType="timestamp"
+            />
+          {/if}
+          {#if detailSearchFieldVisible(columnFilter, 'endTime')}
+            <SpanField
+              fieldName="end time"
+              fieldValue={formatTimestamp(
+                span.endTime,
+                timeContext.tz,
+                'nanoseconds'
+              )}
+              fieldType="timestamp"
+            />
+          {/if}
+          {#if detailDurationVisible(columnFilter)}
+            <SpanField
+              fieldName="duration"
+              fieldValue={durationLabel}
+              fieldType="string"
+            />
+          {/if}
+          {#if detailSearchFieldVisible(columnFilter, 'statusCode')}
+            <SpanField
+              fieldName="status code"
+              fieldValue={span.statusCode}
+              fieldType="string"
+              defectLabel={hasUnrecognisedStatusCode
+                ? 'Unrecognised status code'
+                : undefined}
+            />
+          {/if}
+          {#if detailSearchFieldVisible(columnFilter, 'statusCodeValue')}
+            <SpanField
+              fieldName="status code value"
+              fieldValue={span.statusCodeValue.toString()}
+              fieldType="int64"
+              defectLabel={hasUnrecognisedStatusCode &&
+              !detailSearchFieldVisible(columnFilter, 'statusCode')
+                ? 'Unrecognised status code'
+                : undefined}
+            />
+          {/if}
+          {#if span.statusCodeValue !== 0 && span.statusCodeValue !== 1 && detailSearchFieldVisible(columnFilter, 'statusMessage')}
+            <SpanField
+              fieldName="status message"
+              fieldValue={span.statusMessage}
+              fieldType="string"
+            />
+          {/if}
+          {#if detailSearchFieldVisible(columnFilter, 'traceID')}
+            <SpanField
+              fieldName="trace id"
+              fieldValue={span.traceID}
+              fieldType="string"
+            />
+          {/if}
+          {#if !isRoot && detailSearchFieldVisible(columnFilter, 'parentSpanID')}
+            <tr class="table-row">
+              <td class="detail-cell">
+                <span class="detail-cell__key">
+                  parent span id <span class="detail-cell__type">(string)</span
+                  >:
+                </span>
+                <div class="detail-cell__stacked-value">
+                  <button
+                    type="button"
+                    class="detail-cell__value link link-primary font-mono"
+                    onclick={() => setSpanInQuery(span.parentSpanID!, 'push')}
+                    >{span.parentSpanID}</button
+                  >
+                </div>
+              </td>
+            </tr>
+          {/if}
+          {#if detailSearchFieldVisible(columnFilter, 'spanID')}
+            <SpanField
+              fieldName="span id"
+              fieldValue={span.spanID}
+              fieldType="string"
+            />
+          {/if}
+          {#if span.flags > 0 && detailFlagsVisible(columnFilter)}
+            <SpanField
+              fieldName="flags"
+              fieldValue={span.flags.toString()}
+              fieldType="uint32"
+            />
+          {/if}
+          <AttributeRows
+            attributes={spanAttributes.filter(attr =>
+              detailAttributeVisible(columnFilter, attr.key, 'span')
+            )}
+            owner="span"
+          />
+          {#if span.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedAttributesCount')}
+            <SpanField
+              fieldName="dropped attributes count"
+              fieldValue={span.droppedAttributesCount.toString()}
+              fieldType="uint32"
+            />
+          {/if}
+          {#if span.droppedEventsCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedEventsCount')}
+            <SpanField
+              fieldName="dropped events count"
+              fieldValue={span.droppedEventsCount.toString()}
+              fieldType="uint32"
+            />
+          {/if}
+          {#if span.droppedLinksCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedLinksCount')}
+            <SpanField
+              fieldName="dropped links count"
+              fieldValue={span.droppedLinksCount.toString()}
+              fieldType="uint32"
+            />
+          {/if}
+          <AttributeRows
+            attributes={resourceAttributes.filter(attr =>
+              detailAttributeVisible(columnFilter, attr.key, 'resource')
+            )}
+            owner="resource"
+            prefix="resource."
+          />
+          {#if span.resource.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'resource.droppedAttributesCount')}
+            <SpanField
+              fieldName="resource.droppedAttributesCount"
+              fieldValue={span.resource.droppedAttributesCount.toString()}
+              fieldType="uint32"
+            />
+          {/if}
+          {#if span.scope.name && detailSearchFieldVisible(columnFilter, 'scope.name')}
+            <SpanField
+              fieldName="scope.name"
+              fieldValue={span.scope.name}
+              fieldType="string"
+            />
+          {/if}
+          {#if span.scope.version && detailSearchFieldVisible(columnFilter, 'scope.version')}
+            <SpanField
+              fieldName="scope.version"
+              fieldValue={span.scope.version}
+              fieldType="string"
+            />
+          {/if}
+          <AttributeRows
+            attributes={scopeAttributes.filter(attr =>
+              detailAttributeVisible(columnFilter, attr.key, 'scope')
+            )}
+            owner="scope"
+            prefix="scope."
+          />
+          {#if span.scope.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'scope.droppedAttributesCount')}
+            <SpanField
+              fieldName="scope.droppedAttributesCount"
+              fieldValue={span.scope.droppedAttributesCount.toString()}
+              fieldType="uint32"
+            />
+          {/if}
+        </tbody>
+      </table>
+    </DetailBubble>
+    <DetailBubble label="Activity" icon={activityIcon} count={numActivity}>
+      {#if numActivity === 0}
+        <p class="detail-view__section-empty">
+          No activity recorded for this span
+        </p>
+      {:else}
+        <ActivityPanel
+          events={span.events}
+          {logs}
+          spanStartTime={span.startTime}
+          {selectedEventIndex}
+          {selectedLogRef}
+        />
+      {/if}
+    </DetailBubble>
+    <DetailBubble label="Links" icon={linksIcon} count={numLinks}>
+      {#if numLinks === 0}
+        <p class="detail-view__section-empty">
+          No links recorded for this span
+        </p>
+      {:else}
+        <LinksPanel links={span.links} />
+      {/if}
+    </DetailBubble>
+  </DetailStack>
 {:else}
   <div class="detail-view detail-view--empty">
     <p class="detail-view__empty">No span selected</p>
@@ -547,11 +385,6 @@
 
   .detail-view--empty {
     @apply items-center justify-center;
-  }
-
-  .detail-view__scroll {
-    @apply flex-1 min-h-0 overflow-y-auto;
-    scrollbar-width: thin;
   }
 
   /* Repeats the waterfall's cycle marks where the reader is actually
@@ -577,17 +410,12 @@
     @apply py-8 text-center text-sm text-base-content/60;
   }
 
-  .detail-view__tab-empty {
+  .detail-view__section-empty {
     @apply m-0 px-3 py-6 text-center text-sm italic;
     color: var(--color-muted);
   }
 
   .detail-cell__type {
-    color: var(--color-subtle);
-    @apply font-normal;
-  }
-
-  .detail-view__root {
     color: var(--color-subtle);
     @apply font-normal;
   }

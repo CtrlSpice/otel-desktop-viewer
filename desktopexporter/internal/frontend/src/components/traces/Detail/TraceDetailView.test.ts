@@ -61,7 +61,7 @@ describe('TraceDetailView numeric enum fields', () => {
     expect(table).not.toHaveTextContent('Unknown (-1)')
     expect(
       table.closest('details')?.querySelector('summary')
-    ).toHaveTextContent(/Span\s*1 field/)
+    ).toHaveTextContent(/^Span$/)
   })
 
   it('shows only the authoritative unknown status code when filtered by statusCodeValue', () => {
@@ -80,7 +80,7 @@ describe('TraceDetailView numeric enum fields', () => {
     ).toBeInTheDocument()
     expect(
       table.closest('details')?.querySelector('summary')
-    ).toHaveTextContent(/Span\s*1 field/)
+    ).toHaveTextContent(/^Span$/)
   })
 
   it.each([
@@ -142,27 +142,77 @@ describe('TraceDetailView parent span link', () => {
     })
     expect(screen.queryByRole('button', { name: 'parent-span' })).toBeNull()
 
-    const rootLabel = screen.getByText('(root)')
-    const heading = rootLabel.closest('summary')
-    expect(heading).toHaveTextContent(/^Span\s*\(root\)\s*\d+ fields/)
     const nameKey = document.querySelector('.detail-fields .detail-cell__key')
     expect(nameKey).toHaveTextContent(/^name\s*\(string\):$/)
     expect(nameKey).not.toHaveTextContent('(root)')
   })
 })
 
-describe('TraceDetailView tabs', () => {
-  it('associates the selected tab with the visible detail panel', () => {
-    setTestUrl('/traces/trace-1?span=child-span&start=0&end=1')
-    renderWithContexts(TraceDetailView, { span: makeSpan() })
-    const fields = screen.getByRole('tab', { name: 'Fields' })
-    const panel = screen.getByRole('tabpanel')
-
-    expect(fields).toHaveAttribute('aria-controls', panel.id)
-    expect(panel).toHaveAttribute('aria-labelledby', fields.id)
+describe('TraceDetailView detail bubbles', () => {
+  it('renders span, resource and scope fields in one flat table without changing stored keys', () => {
+    const span = makeSpan({
+      attributes: [
+        {
+          key: 'service.name',
+          value: { kind: 'string', value: 'span-service' },
+        },
+      ],
+      resource: {
+        attributes: [
+          {
+            key: 'service.name',
+            value: { kind: 'string', value: 'resource-service' },
+          },
+        ],
+        droppedAttributesCount: 1,
+      },
+      scope: {
+        name: 'test-scope',
+        version: '1.2',
+        attributes: [{ key: 'build', value: { kind: 'int64', value: 42n } }],
+        droppedAttributesCount: 2,
+      },
+    })
+    renderWithContexts(TraceDetailView, { span })
+    const table = screen.getByRole('table', { name: 'Span fields' })
+    expect(table).toHaveTextContent('service.name (string):')
+    expect(table).toHaveTextContent('resource.service.name (string):')
+    expect(table).toHaveTextContent('scope.name (string):')
+    expect(table).toHaveTextContent('scope.version (string):')
+    expect(table).toHaveTextContent('scope.build (int64):')
+    expect(table).toHaveTextContent('resource.droppedAttributesCount (uint32):')
+    expect(table).toHaveTextContent('scope.droppedAttributesCount (uint32):')
+    expect(table.closest('details')!.querySelectorAll('details')).toHaveLength(
+      0
+    )
+    expect(span.resource.attributes[0]!.key).toBe('service.name')
+    expect(span.scope.attributes[0]!.value).toEqual({
+      kind: 'int64',
+      value: 42n,
+    })
   })
 
-  it('uses one Activity count and opens separate event and log groups', () => {
+  it('stacks the former tabs as independently collapsible sections', async () => {
+    setTestUrl('/traces/trace-1?span=child-span&start=0&end=1')
+    renderWithContexts(TraceDetailView, { span: makeSpan() })
+    expect(screen.queryByRole('tablist')).toBeNull()
+    const fields = screen
+      .getByText('Span', { exact: true, selector: '.collapse-title > span' })
+      .closest('details')!
+    const activity = screen
+      .getByText('Activity', { exact: true })
+      .closest('details')!
+    const links = screen.getByText('Links', { exact: true }).closest('details')!
+    expect(fields.open).toBe(true)
+    expect(activity.open).toBe(true)
+    expect(links.open).toBe(true)
+    await userEvent.click(fields.querySelector('summary')!)
+    expect(fields.open).toBe(false)
+    expect(activity.open).toBe(true)
+    expect(links.open).toBe(true)
+  })
+
+  it('uses one Activity count and badges the flat event and log records', () => {
     const logs: TraceLogSummary[] = [
       {
         logRef: 'log-1',
@@ -190,13 +240,20 @@ describe('TraceDetailView tabs', () => {
       selectedLogRef: 'log-1',
     })
 
-    expect(screen.queryByRole('tab', { name: /Events/ })).toBeNull()
-    expect(screen.getByRole('tab', { name: /Activity.*2/ })).toHaveAttribute(
-      'aria-selected',
-      'true'
-    )
-    expect(screen.getByText('Events')).toBeVisible()
-    expect(screen.getByText('Logs')).toBeVisible()
+    expect(
+      screen.getByText('Activity', { exact: true }).closest('summary')
+    ).toHaveTextContent('2 activity')
+    expect(
+      screen.getByText('Activity', { exact: true }).closest('details')
+    ).toHaveAttribute('open')
+    expect(screen.getByText('Event', { exact: true })).toBeVisible()
+    expect(screen.getByText('Log', { exact: true })).toBeVisible()
+    expect(
+      screen
+        .getByText('Activity', { exact: true })
+        .closest('details')!
+        .querySelectorAll('details')
+    ).toHaveLength(0)
   })
 })
 

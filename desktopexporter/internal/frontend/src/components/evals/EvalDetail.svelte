@@ -1,5 +1,7 @@
 <script lang="ts">
-  import PaneHeader, { paneTabID } from '@/components/shared/PaneHeader.svelte'
+  import PaneHeader from '@/components/shared/PaneHeader.svelte'
+  import DetailStack from '@/components/shared/DetailStack.svelte'
+  import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import DetailField from '@/components/shared/DetailField.svelte'
   import type { EvalRun, EvalAttempt, TelemetryReference } from './model'
@@ -10,33 +12,15 @@
   let {
     run,
     attempt,
-    tab,
-    onTab,
   }: {
     run: EvalRun
     attempt?: EvalAttempt
-    tab: string
-    onTab: (tab: string) => void
   } = $props()
   const investigator = $derived(estimatedCost(run.attempts, 'investigatorCost'))
   const grader = $derived(estimatedCost(run.attempts, 'graderCost'))
   const startedAt = $derived(
     attempt?.startedAt ?? (!attempt ? run.startedAt : undefined)
   )
-  const panelID = 'eval-detail-tabpanel'
-  const tabs = $derived([
-    { id: 'Overview', label: 'Fields' },
-    {
-      id: 'Assessments',
-      label: 'Assessments',
-      count: attempt?.assessments.length ?? 0,
-    },
-    {
-      id: 'Tool calls',
-      label: 'Tool calls',
-      count: attempt?.tools.length ?? 0,
-    },
-  ])
 </script>
 
 {#snippet telemetry(reference: TelemetryReference)}
@@ -54,28 +38,15 @@
     </DetailField>{/if}
 {/snippet}
 
-{#if attempt}
-  <PaneHeader
-    mode="tabs"
-    {tabs}
-    activeID={tab}
-    onSelect={onTab}
-    tabPanelID={panelID}
-    ariaLabel="Attempt details"
-  />
-{:else}<PaneHeader mode="title" title="Run details" />{/if}
+{#if !attempt}<PaneHeader
+    mode="title"
+    title="Run details"
+    ariaLabel="Run detail heading"
+  />{/if}
 
-<!-- svelte-ignore a11y_no_noninteractive_tabindex (The scrollable inspector must be keyboard accessible when it contains no controls.) -->
-<div
-  class="min-h-0 flex-1 overflow-y-auto"
-  id={panelID}
-  role={attempt ? 'tabpanel' : 'region'}
-  tabindex="0"
-  aria-labelledby={attempt ? paneTabID(panelID, tab) : undefined}
-  aria-label={attempt ? undefined : 'Run details'}
->
+<DetailStack label={attempt ? 'Attempt details' : 'Run details'}>
   {#if !attempt}
-    <FieldGroup label="Run" detail>
+    <DetailBubble label="Run">
       <table class="detail-fields w-full" aria-label="Run fields">
         <tbody>
           <DetailField
@@ -108,12 +79,11 @@
             >{/if}
         </tbody>
       </table>
-    </FieldGroup>
-    <FieldGroup
+    </DetailBubble>
+    <DetailBubble
       label="Configuration"
       count={run.configuration.length}
       countLabel="fields"
-      detail
     >
       <table class="detail-fields w-full" aria-label="Run configuration">
         <tbody
@@ -124,8 +94,8 @@
             />{/each}</tbody
         >
       </table>
-    </FieldGroup>
-    <FieldGroup label="Grading" detail>
+    </DetailBubble>
+    <DetailBubble label="Grading">
       <table class="detail-fields w-full" aria-label="Grading for this run">
         <tbody>
           <DetailField
@@ -150,156 +120,162 @@
           />
         </tbody>
       </table>
-    </FieldGroup>
-  {:else if tab === 'Overview'}
-    <FieldGroup label="Attempt" detail>
-      <table class="detail-fields w-full" aria-label="Attempt fields">
-        <tbody>
-          <DetailField
-            fieldName="name"
-            fieldType="string"
-            fieldValue={attempt.name}
-          />
-          <DetailField fieldName="state" fieldType="string"
-            >{#snippet value()}<span
-                class:text-papaya={attempt.state === 'Error'}
-                >{attempt.state}</span
-              >{/snippet}</DetailField
-          >
-          <DetailField
-            fieldName="repetition"
-            fieldType="integer"
-            fieldValue={String(attempt.repetition)}
-          />
-          {#if startedAt}<DetailField fieldName="started" fieldType="timestamp"
-              >{#snippet value()}<time
-                  class="text-sm text-rp-subtle tabular-nums"
-                  datetime={startedAt}
-                  title={startedAt}>{localTimestamp(startedAt)}</time
-                >{/snippet}</DetailField
-            >{/if}
-          {#if attempt.error}<DetailField
-              fieldName="execution error"
-              fieldType="string"
-              multiline
-              >{#snippet value()}<span class="text-papaya whitespace-pre-wrap"
-                  >{attempt.error}</span
-                >{/snippet}</DetailField
-            >{/if}
-          <DetailField
-            fieldName="question"
-            fieldType="string"
-            fieldValue={attempt.question}
-            multiline
-          />
-          <DetailField
-            fieldName="answer"
-            fieldType="string"
-            fieldValue={attempt.answer ?? 'No answer recorded'}
-            multiline
-          />
-        </tbody>
-      </table>
-    </FieldGroup>
-    <FieldGroup label="Accounting" detail>
-      <table class="detail-fields w-full" aria-label="Attempt accounting">
-        <tbody>
-          <DetailField
-            fieldName="duration"
-            fieldType="string"
-            fieldValue={attempt.seconds === undefined
-              ? 'Unknown'
-              : `${attempt.seconds} s`}
-          />
-          <DetailField
-            fieldName="investigator estimate (CAD)"
-            fieldType="string"
-            fieldValue={cost(attempt.investigatorCost)}
-          />
-          <DetailField
-            fieldName="grader estimate (CAD)"
-            fieldType="string"
-            fieldValue={cost(attempt.graderCost)}
-          />
-        </tbody>
-      </table>
-    </FieldGroup>
-    {#if attempt.telemetry}<FieldGroup label="Telemetry" detail
-        ><table class="detail-fields w-full" aria-label="Attempt telemetry">
-          <tbody>{@render telemetry(attempt.telemetry)}</tbody>
-        </table></FieldGroup
-      >{/if}
-  {:else if tab === 'Assessments'}
-    {#each run.assessments as definition}
-      {@const assessment = attempt.assessments.find(
-        item => item.id === definition.id
-      )}
-      <FieldGroup label={definition.name} detail>
-        {#snippet heading()}<span>{definition.name}</span><AssessmentBadge
-            {assessment}
-            maximum={definition.maximum}
-          />{/snippet}
-        <table class="detail-fields w-full" aria-label={definition.name}>
-          <tbody>
-            {#if assessment}
-              <DetailField
-                fieldName="score"
-                fieldType="string"
-                fieldValue={`${assessment.value ?? 'Unscored'} / ${definition.maximum}`}
-              />
-              <DetailField
-                fieldName="evaluator"
-                fieldType="string"
-                fieldValue={assessment.evaluator}
-              />
-              <DetailField
-                fieldName="rubric"
-                fieldType="string"
-                fieldValue={assessment.rubric}
-              />
-              <DetailField
-                fieldName="explanation"
-                fieldType="string"
-                fieldValue={assessment.explanation}
-                multiline
-              />
-              {#if assessment.telemetry}{@render telemetry(
-                  assessment.telemetry
-                )}{/if}
-            {:else}<DetailField
-                fieldName="score"
-                fieldType="string"
-                fieldValue="Unscored"
-              />{/if}
-          </tbody>
-        </table>
-      </FieldGroup>
-    {/each}
+    </DetailBubble>
   {:else}
-    {#each attempt.tools as tool, index}
-      <FieldGroup label={`${tool.name} ${index + 1}`} detail open={false}>
-        {#snippet heading()}<span>{tool.name}</span
-          >{#if tool.state === 'Error'}<span
-              class="badge badge-xs badge-soft badge-error">Error</span
-            >{/if}{/snippet}
-        <table
-          class="detail-fields w-full"
-          aria-label={`${tool.name} ${index + 1}`}
-        >
+    <DetailBubble label="Fields">
+      <FieldGroup label="Attempt" detail>
+        <table class="detail-fields w-full" aria-label="Attempt fields">
           <tbody>
             <DetailField
-              fieldName="output"
+              fieldName="name"
               fieldType="string"
-              fieldValue={tool.message}
+              fieldValue={attempt.name}
+            />
+            <DetailField fieldName="state" fieldType="string"
+              >{#snippet value()}<span
+                  class:text-papaya={attempt.state === 'Error'}
+                  >{attempt.state}</span
+                >{/snippet}</DetailField
+            >
+            <DetailField
+              fieldName="repetition"
+              fieldType="integer"
+              fieldValue={String(attempt.repetition)}
+            />
+            {#if startedAt}<DetailField
+                fieldName="started"
+                fieldType="timestamp"
+                >{#snippet value()}<time
+                    class="text-sm text-rp-subtle tabular-nums"
+                    datetime={startedAt}
+                    title={startedAt}>{localTimestamp(startedAt)}</time
+                  >{/snippet}</DetailField
+              >{/if}
+            {#if attempt.error}<DetailField
+                fieldName="execution error"
+                fieldType="string"
+                multiline
+                >{#snippet value()}<span class="text-papaya whitespace-pre-wrap"
+                    >{attempt.error}</span
+                  >{/snippet}</DetailField
+              >{/if}
+            <DetailField
+              fieldName="question"
+              fieldType="string"
+              fieldValue={attempt.question}
               multiline
             />
-            {#if tool.telemetry}{@render telemetry(tool.telemetry)}{/if}
+            <DetailField
+              fieldName="answer"
+              fieldType="string"
+              fieldValue={attempt.answer ?? 'No answer recorded'}
+              multiline
+            />
           </tbody>
         </table>
       </FieldGroup>
-    {/each}
-    {#if !attempt.tools.length}<p class="p-4 text-sm">
-        No tool calls recorded
-      </p>{/if}
+      <FieldGroup label="Accounting" detail>
+        <table class="detail-fields w-full" aria-label="Attempt accounting">
+          <tbody>
+            <DetailField
+              fieldName="duration"
+              fieldType="string"
+              fieldValue={attempt.seconds === undefined
+                ? 'Unknown'
+                : `${attempt.seconds} s`}
+            />
+            <DetailField
+              fieldName="investigator estimate (CAD)"
+              fieldType="string"
+              fieldValue={cost(attempt.investigatorCost)}
+            />
+            <DetailField
+              fieldName="grader estimate (CAD)"
+              fieldType="string"
+              fieldValue={cost(attempt.graderCost)}
+            />
+          </tbody>
+        </table>
+      </FieldGroup>
+      {#if attempt.telemetry}<FieldGroup label="Telemetry" detail
+          ><table class="detail-fields w-full" aria-label="Attempt telemetry">
+            <tbody>{@render telemetry(attempt.telemetry)}</tbody>
+          </table></FieldGroup
+        >{/if}
+    </DetailBubble>
+    <DetailBubble label="Assessments" count={attempt.assessments.length}>
+      {#each run.assessments as definition}
+        {@const assessment = attempt.assessments.find(
+          item => item.id === definition.id
+        )}
+        <FieldGroup label={definition.name} detail>
+          {#snippet heading()}<span>{definition.name}</span><AssessmentBadge
+              {assessment}
+              maximum={definition.maximum}
+            />{/snippet}
+          <table class="detail-fields w-full" aria-label={definition.name}>
+            <tbody>
+              {#if assessment}
+                <DetailField
+                  fieldName="score"
+                  fieldType="string"
+                  fieldValue={`${assessment.value ?? 'Unscored'} / ${definition.maximum}`}
+                />
+                <DetailField
+                  fieldName="evaluator"
+                  fieldType="string"
+                  fieldValue={assessment.evaluator}
+                />
+                <DetailField
+                  fieldName="rubric"
+                  fieldType="string"
+                  fieldValue={assessment.rubric}
+                />
+                <DetailField
+                  fieldName="explanation"
+                  fieldType="string"
+                  fieldValue={assessment.explanation}
+                  multiline
+                />
+                {#if assessment.telemetry}{@render telemetry(
+                    assessment.telemetry
+                  )}{/if}
+              {:else}<DetailField
+                  fieldName="score"
+                  fieldType="string"
+                  fieldValue="Unscored"
+                />{/if}
+            </tbody>
+          </table>
+        </FieldGroup>
+      {/each}
+    </DetailBubble>
+    <DetailBubble label="Tool calls" count={attempt.tools.length}>
+      {#each attempt.tools as tool, index}
+        <FieldGroup label={`${tool.name} ${index + 1}`} detail open={false}>
+          {#snippet heading()}<span>{tool.name}</span
+            >{#if tool.state === 'Error'}<span
+                class="badge badge-xs badge-soft badge-error">Error</span
+              >{/if}{/snippet}
+          <table
+            class="detail-fields w-full"
+            aria-label={`${tool.name} ${index + 1}`}
+          >
+            <tbody>
+              <DetailField
+                fieldName="output"
+                fieldType="string"
+                fieldValue={tool.message}
+                multiline
+              />
+              {#if tool.telemetry}{@render telemetry(tool.telemetry)}{/if}
+            </tbody>
+          </table>
+        </FieldGroup>
+      {/each}
+      {#if !attempt.tools.length}<p class="p-4 text-sm">
+          No tool calls recorded
+        </p>{/if}
+    </DetailBubble>
   {/if}
-</div>
+</DetailStack>

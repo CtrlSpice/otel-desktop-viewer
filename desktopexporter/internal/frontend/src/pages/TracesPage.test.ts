@@ -272,10 +272,9 @@ describe('TracesPage trace detail lifecycle', () => {
     renderWithContexts(TracesPage)
 
     await waitFor(() =>
-      expect(screen.getByRole('tab', { name: /Activity.*2/ })).toHaveAttribute(
-        'aria-selected',
-        'true'
-      )
+      expect(
+        screen.getByText('Activity', { exact: true }).closest('summary')
+      ).toHaveTextContent('2 activity')
     )
     expect(window.location.search).toBe('?span=root&log=log-1')
   })

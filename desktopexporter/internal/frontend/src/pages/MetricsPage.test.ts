@@ -219,7 +219,7 @@ describe('Metric main-header export', () => {
       })
       setTestUrl('/metrics/metric-1')
       renderWithContexts(MetricsPage)
-      await screen.findByRole('tablist', { name: 'Metric detail tabs' })
+      await screen.findByRole('region', { name: 'Metric details' })
 
       const header = screen.getByRole('region', { name: 'Metric chart' })
       const button = within(header).getByRole('button', {
@@ -402,15 +402,17 @@ describe('MetricsPage raw series fetching', () => {
     renderWithContexts(MetricsPage)
     await vi.waitFor(() =>
       expect(
-        screen.getByRole('button', { name: 'Expand default series' })
+        screen.getByText('default series', { exact: true }).closest('summary')
       ).toBeInTheDocument()
     )
     expect(rawSeriesCalls()).toHaveLength(0)
 
     vi.setSystemTime(requestNow)
-    await fireEvent.click(
-      screen.getByRole('button', { name: 'Expand default series' })
-    )
+    const summary = screen
+      .getByText('default series', { exact: true })
+      .closest('summary')!
+    await fireEvent.click(summary)
+    await fireEvent(summary.parentElement!, new Event('toggle'))
     await tick()
 
     expect(rawSeriesCalls()).toHaveLength(1)
@@ -507,12 +509,13 @@ describe('MetricsPage raw series fetching', () => {
       )
 
       const user = userEvent.setup()
-      await user.click(
-        screen.getByRole('button', { name: 'Collapse default series' })
-      )
-      await user.click(
-        screen.getByRole('button', { name: 'Expand default series' })
-      )
+      const summary = screen
+        .getByText('default series', { exact: true })
+        .closest('summary')!
+      await user.click(summary)
+      await fireEvent(summary.parentElement!, new Event('toggle'))
+      await user.click(summary)
+      await fireEvent(summary.parentElement!, new Event('toggle'))
       await tick()
       expect(rawSeriesCalls()).toHaveLength(1)
     }

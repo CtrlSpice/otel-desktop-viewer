@@ -231,6 +231,7 @@ test.describe('home page accessibility', () => {
       await expect(
         page.getByRole('navigation', { name: 'Primary' }).locator('.tab-active')
       ).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+      await page.goto('/')
       const paneTab = page.locator('.pane-header__tab.tab-active').first()
       await paneTab.hover()
       await expect(paneTab).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')

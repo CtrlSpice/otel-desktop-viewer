@@ -128,6 +128,27 @@ describe('LogsPage refresh', () => {
 })
 
 describe('LogsPage direct selection outside the list range', () => {
+  it('keeps resource and scope metadata inline with dot-prefixed labels', async () => {
+    const log = makeLogData('flat record')
+    log.resource.attributes = [
+      { key: 'service.name', value: { kind: 'string', value: 'checkout-api' } },
+    ]
+    log.scope.name = 'test-scope'
+    log.scope.version = '1.2'
+    searchLogSummaries.mockResolvedValue([makeLogSummary()])
+    getStats.mockResolvedValue(makeStats())
+    getLog.mockResolvedValue(log)
+    setTestUrl('/logs/log-1')
+    renderWithContexts(LogsPage)
+    const table = await screen.findByRole('table', { name: 'Log fields' })
+    expect(table).toHaveTextContent('resource.service.name (string):')
+    expect(table).toHaveTextContent('scope.name (string):')
+    expect(table).toHaveTextContent('scope.version (string):')
+    expect(table.closest('details')).toBeNull()
+    expect(screen.queryByText('Resource', { selector: 'summary' })).toBeNull()
+    expect(screen.queryByText('Scope', { selector: 'summary' })).toBeNull()
+  })
+
   it('keeps the requested ID and renders its fetched detail', async () => {
     searchLogSummaries.mockResolvedValue([])
     getStats.mockResolvedValue(makeStats())

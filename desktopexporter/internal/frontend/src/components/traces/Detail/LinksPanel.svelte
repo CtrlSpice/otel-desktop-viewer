@@ -4,6 +4,7 @@
   import SpanField from './SpanField.svelte'
   import { itemHref, navigateToItem } from '@/route'
   import { SPAN_PARAM } from '@/route/query-params'
+  import { detailPanel } from '@/state/detail-panel.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { Alert02Icon } from '@hugeicons/core-free-icons'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
@@ -29,6 +30,7 @@
   function goToLink(e: MouseEvent, link: LinkData) {
     e.preventDefault()
     if (!link.traceID) return
+    detailPanel.reveal()
     navigateToItem('traces', link.traceID, 'push', spanPatch(link))
   }
 </script>

@@ -29,21 +29,25 @@ const logs: TraceLogSummary[] = [
 ]
 
 describe('ActivityPanel', () => {
-  it('keeps separate event and log groups and shows useful log summary fields', async () => {
+  it('uses event and log badges without nested disclosure containers', async () => {
     Object.defineProperty(Element.prototype, 'scrollIntoView', {
       configurable: true,
       value: vi.fn(),
     })
     setTestUrl('/traces/trace-1?span=span-1&log=log-1&start=1&end=2')
-    renderWithContexts(ActivityPanel, {
+    const { container } = renderWithContexts(ActivityPanel, {
       events,
       logs,
       spanStartTime: 100n,
       selectedLogRef: 'log-1',
     })
 
-    expect(screen.getByText('Events').closest('summary')).toHaveTextContent('1')
-    expect(screen.getByText('Logs').closest('summary')).toHaveTextContent('1')
+    expect(screen.getByText('Event', { exact: true })).toBeVisible()
+    expect(screen.getByText('Log', { exact: true })).toBeVisible()
+    expect(container.querySelectorAll('details, summary')).toHaveLength(0)
+    expect(
+      screen.getByRole('table', { name: 'Event cache.hit' }).parentElement
+    ).toBe(screen.getByRole('table', { name: 'Log summary' }).parentElement)
     expect(
       screen.getByRole('table', { name: 'Log summary' })
     ).toHaveTextContent(

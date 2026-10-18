@@ -16,6 +16,7 @@
   import { navigate, buildSearch, withQueryPatch } from '@/route'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
   import type { ImportFailure } from '@/types/import-types'
+  import { detailPanel } from '@/state/detail-panel.svelte'
 
   let {
     importFailure = null,
@@ -30,11 +31,6 @@
     exampleRuns.find(item => item.id === query.run) ?? exampleRuns[0]
   )
   const attempt = $derived(run.attempts.find(item => item.id === query.attempt))
-  const tab = $derived(
-    ['Overview', 'Assessments', 'Tool calls'].includes(query.detail ?? '')
-      ? (query.detail ?? 'Overview')
-      : 'Overview'
-  )
   const results = $derived.by(() => {
     const text = (query.q ?? '').toLowerCase().trim()
     return run.attempts.filter(item => {
@@ -69,9 +65,13 @@
   function selectRun(id: string) {
     update({ run: id, attempt: null })
   }
+  function showDetail(attempt: string | null) {
+    detailPanel.reveal()
+    update({ run: run.id, attempt })
+  }
   function selectIndex(index: number) {
     const item = results[index]
-    if (item) update({ run: run.id, attempt: item.id })
+    if (item) showDetail(item.id)
   }
 </script>
 
@@ -139,7 +139,7 @@
         />{/snippet}
       {#snippet right()}<button
           class="btn btn-ghost btn-xs"
-          onclick={() => update({ attempt: null })}>Run details</button
+          onclick={() => showDetail(null)}>Run details</button
         >{/snippet}
     </PaneHeader>
     <div class="min-h-0 flex-1 overflow-auto">
@@ -166,8 +166,7 @@
                 ><button
                   class="btn btn-ghost btn-sm h-auto justify-start text-left whitespace-normal hover:bg-transparent"
                   aria-pressed={attempt?.id === item.id}
-                  onclick={() => update({ run: run.id, attempt: item.id })}
-                  >{item.name}</button
+                  onclick={() => showDetail(item.id)}>{item.name}</button
                 >
                 <div class="flex flex-wrap items-center gap-2 px-3 text-xs">
                   <span
@@ -202,12 +201,7 @@
     </div>
   {/snippet}
   {#snippet detail()}
-    {#key `${run.id}/${attempt?.id ?? ''}`}<EvalDetail
-        {run}
-        {attempt}
-        {tab}
-        onTab={detail => update({ detail }, true)}
-      />{/key}
+    {#key `${run.id}/${attempt?.id ?? ''}`}<EvalDetail {run} {attempt} />{/key}
   {/snippet}
   {#snippet pageFooter()}
     <div class="flex min-w-0 flex-wrap items-center">

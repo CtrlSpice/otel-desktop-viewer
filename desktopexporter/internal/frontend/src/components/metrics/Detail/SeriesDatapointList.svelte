@@ -12,12 +12,17 @@
   import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
   import { attributeValueLabel } from '@/components/shared/attribute-label'
   import DetailNav from '@/components/shared/DetailNav.svelte'
+  import AttributeValueView from '@/components/shared/AttributeValue.svelte'
+  import ConflictMarker from '@/components/shared/ConflictMarker.svelte'
   import { itemHref, navigateToItem } from '@/route'
+  import { detailPanel } from '@/state/detail-panel.svelte'
   import { SPAN_PARAM } from '@/route/query-params'
-  import type { DataPoint, Exemplar } from '@/types/api-types'
+  import type { Attributes, DataPoint, Exemplar } from '@/types/api-types'
 
   type Props = {
     datapoints: DataPoint[]
+    attributes?: Attributes
+    attributeOwner?: string
     /** Show a color swatch column (flat cross-series lists). */
     showSwatch?: boolean
     seriesColor?: string
@@ -27,6 +32,8 @@
 
   let {
     datapoints,
+    attributes = [],
+    attributeOwner = 'series',
     showSwatch = false,
     seriesColor,
     flush = false,
@@ -254,6 +261,7 @@
 
   function goToExemplarTrace(e: MouseEvent, ex: Exemplar) {
     if (!ex.traceID) return
+    detailPanel.reveal()
     e.preventDefault()
     navigateToItem('traces', ex.traceID, 'push', exemplarSpanPatch(ex))
   }
@@ -420,7 +428,7 @@
   {/if}
 {/snippet}
 
-{#if datapoints.length === 0}
+{#if datapoints.length === 0 && attributes.length === 0}
   <p class="dp-list__empty" class:dp-list__empty--flush={flush}>
     No datapoints
   </p>
@@ -436,68 +444,103 @@
         class:dp-list--flush={flush}
         aria-label="Datapoints"
       >
-        <thead>
-          <tr class="dp-list__header-row">
-            {#if showSwatch}
-              <th scope="col" class="dp-list__th dp-list__th--swatch">
-                <span class="sr-only">Series</span>
-              </th>
-            {/if}
-            <th scope="col" class="dp-list__th dp-list__th--time"> Time </th>
-            <th scope="col" class="dp-list__th dp-list__th--value">
-              Value{#if valueUnit}
-                <span class="dp-list__header-unit">{' '}({valueUnit})</span>
-              {/if}
-            </th>
-            {#if hasDetails}
-              <th scope="col" class="dp-list__th dp-list__th--details">
-                Details
-              </th>
-            {/if}
-          </tr>
-        </thead>
+        {#if attributes.length > 0}
+          <tbody aria-label="Series attributes">
+            {#each attributes as attribute, index (`${attributeOwner}:${attribute.id ?? 'unidentified'}:${index}`)}
+              <tr>
+                <th
+                  scope="row"
+                  colspan={showSwatch ? 2 : 1}
+                  class="dp-list__th"
+                >
+                  {#if attribute.hasConflict}
+                    <ConflictMarker
+                      label={`Conflicting typed values retained for ${attribute.key} in ${attributeOwner}.`}
+                    />
+                  {/if}
+                  <span class="detail-cell__key"
+                    >{attribute.key} ({attribute.value.kind})</span
+                  >
+                </th>
+                <td colspan={hasDetails ? 2 : 1} class="dp-list__td">
+                  <AttributeValueView
+                    value={attribute.value}
+                    path={`${attributeOwner}.${attribute.key}`}
+                  />
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        {/if}
         <tbody>
-          {#each visible as dp, offset (dp.id)}
-            {@render datapointRows(dp, rangeStart + offset)}
-          {/each}
+          {#if datapoints.length > 0}
+            <tr class="dp-list__header-row">
+              {#if showSwatch}
+                <th scope="col" class="dp-list__th dp-list__th--swatch">
+                  <span class="sr-only">Series</span>
+                </th>
+              {/if}
+              <th scope="col" class="dp-list__th dp-list__th--time"> Time </th>
+              <th scope="col" class="dp-list__th dp-list__th--value">
+                Value{#if valueUnit}
+                  <span class="dp-list__header-unit">{' '}({valueUnit})</span>
+                {/if}
+              </th>
+              {#if hasDetails}
+                <th scope="col" class="dp-list__th dp-list__th--details">
+                  Details
+                </th>
+              {/if}
+            </tr>
+            {#each visible as dp, offset (dp.id)}
+              {@render datapointRows(dp, rangeStart + offset)}
+            {/each}
+          {:else}
+            <tr
+              ><td
+                colspan={2 + (showSwatch ? 1 : 0) + (hasDetails ? 1 : 0)}
+                class="dp-list__empty">No datapoints</td
+              ></tr
+            >
+          {/if}
         </tbody>
       </table>
     </div>
 
-    <div class="dp-list__pagination">
-      <span
-        class="dp-list__range tabular-nums"
-        aria-live="polite"
-        aria-atomic="true"
-      >
-        {rangeStart + 1}-{rangeEnd} of {datapoints.length}
-        {datapoints.length === 1 ? 'datapoint' : 'datapoints'}
-      </span>
-      <div class="dp-list__page-nav">
-        <DetailNav
-          index={pageIndex}
-          total={pageCount}
-          label="page"
-          onFirst={() => setPage(0)}
-          onPrev={() => setPage(pageIndex - 1)}
-          onNext={() => setPage(pageIndex + 1)}
-          onLast={() => setPage(pageCount - 1)}
-        />
-      </div>
-      <label class="dp-list__page-size">
-        <span>Rows per page</span>
-        <select
-          class="select select-xs"
-          aria-label="Rows per page"
-          value={pageSize}
-          onchange={changePageSize}
+    {#if datapoints.length > 0}<div class="dp-list__pagination">
+        <span
+          class="dp-list__range tabular-nums"
+          aria-live="polite"
+          aria-atomic="true"
         >
-          {#each PAGE_SIZES as size}
-            <option value={size}>{size}</option>
-          {/each}
-        </select>
-      </label>
-    </div>
+          {rangeStart + 1}-{rangeEnd} of {datapoints.length}
+          {datapoints.length === 1 ? 'datapoint' : 'datapoints'}
+        </span>
+        <div class="dp-list__page-nav">
+          <DetailNav
+            index={pageIndex}
+            total={pageCount}
+            label="page"
+            onFirst={() => setPage(0)}
+            onPrev={() => setPage(pageIndex - 1)}
+            onNext={() => setPage(pageIndex + 1)}
+            onLast={() => setPage(pageCount - 1)}
+          />
+        </div>
+        <label class="dp-list__page-size">
+          <span>Rows per page</span>
+          <select
+            class="select select-xs"
+            aria-label="Rows per page"
+            value={pageSize}
+            onchange={changePageSize}
+          >
+            {#each PAGE_SIZES as size}
+              <option value={size}>{size}</option>
+            {/each}
+          </select>
+        </label>
+      </div>{/if}
   </div>
 {/if}
 

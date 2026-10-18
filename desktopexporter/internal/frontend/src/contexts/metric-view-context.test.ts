@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
 import { tick } from 'svelte'
-import { fireEvent, screen } from '@testing-library/svelte'
+import { fireEvent, screen, within } from '@testing-library/svelte'
 import { navigateCurrentRoute, readRoute, withQueryPatch } from '@/route'
 import {
   aggregateToSlices,
@@ -17,10 +17,69 @@ import type {
 import MetricViewProbe from '@/test/MetricViewProbe.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 import { metricViewStorageKey } from '@/components/metrics/utils/metric-timeseries-visible'
+import { detailPanel } from '@/state/detail-panel.svelte'
 
 const BASE_TIMESTAMP_MS = 1_700_000_000_000
 
-it('resets nested datapoint expansion when the metric changes with shared series keys', async () => {
+it('keeps chart selection and native disclosures independent', async () => {
+  setTestUrl('/metrics/m1')
+  let context!: MetricViewContext
+  const scroll = vi.fn()
+  const original = Element.prototype.scrollIntoView
+  Element.prototype.scrollIntoView = scroll
+  try {
+    const metric = makeCumulativeSumMetric()
+    const view = renderWithContexts(MetricViewProbe, {
+      metric,
+      showDetail: true,
+      oncontext: ctx => (context = ctx),
+    })
+    const series = screen
+      .getByText('Series', { exact: true })
+      .closest('details')!
+    const fields = screen
+      .getByText('Metric', { exact: true })
+      .closest('details')!
+    expect(series.open).toBe(true)
+    expect(fields.open).toBe(true)
+    expect(
+      series.compareDocumentPosition(fields) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).not.toBe(0)
+    expect(screen.queryByRole('tablist')).toBeNull()
+    const metadata = screen.getByRole('table', { name: 'Metric fields' })
+    expect(metadata).toHaveTextContent('scope.name (string):')
+    expect(metadata).toHaveTextContent('scope.version (string):')
+    expect(fields.querySelectorAll('details')).toHaveLength(0)
+    for (let selection = 0; selection < 2; selection++) {
+      detailPanel.setOpen(false)
+      context.onChartPointClick('route=/a', 'dp-a1')
+      await tick()
+      await tick()
+      expect(detailPanel.open).toBe(true)
+      expect(series.open).toBe(true)
+      expect(fields.open).toBe(true)
+      expect(document.querySelector('[data-dp-id="dp-a1"]')).toBeVisible()
+      expect(context.expandedTimeseries.has('route=/a')).toBe(true)
+    }
+    expect(scroll).toHaveBeenCalledWith({ block: 'nearest' })
+    await fireEvent.click(series.querySelector('summary')!)
+    detailPanel.setOpen(false)
+    await tick()
+    detailPanel.setOpen(true)
+    await tick()
+    expect(series.open).toBe(false)
+    detailPanel.setOpen(false)
+    await view.rerender({
+      componentProps: { metric: { ...metric }, showDetail: true },
+    })
+    await tick()
+    expect(detailPanel.open).toBe(false)
+  } finally {
+    Element.prototype.scrollIntoView = original
+  }
+})
+
+it('keeps series attributes and datapoints in one table without nested disclosures', async () => {
   setTestUrl('/metrics/m1')
   const metric = makeCumulativeSumMetric()
   const view = renderWithContexts(MetricViewProbe, {
@@ -29,20 +88,25 @@ it('resets nested datapoint expansion when the metric changes with shared series
     oncontext: ctx => ctx.expandedTimeseries.add('route=/a'),
   })
   await tick()
-  const datapoints = screen.getByText('Datapoints').closest('details')
-  if (!datapoints) throw new Error('Missing datapoints disclosure')
-  expect(datapoints.open).toBe(false)
-  datapoints.open = true
-  await fireEvent(datapoints, new Event('toggle'))
-  expect(datapoints.open).toBe(true)
+  const series = view.container.querySelector<HTMLDetailsElement>(
+    'details[name="metric-series"][open]'
+  )!
+  const table = within(series).getByRole('table', { name: 'Datapoints' })
+  expect(series.querySelectorAll('table')).toHaveLength(1)
+  expect(series.querySelectorAll('details')).toHaveLength(0)
+  expect(table).toHaveTextContent('route (string)')
+  expect(table).toHaveTextContent('/a')
+  expect(table).toHaveTextContent('Time')
+  expect(table).toHaveTextContent('Value')
+  expect(series.querySelector('.field-group__caret')).toBeNull()
+  expect(series).toHaveAttribute('name', 'metric-series')
+  expect(screen.queryByText('Resource attributes')).toBeNull()
 
   await view.rerender({
     componentProps: { metric: { ...metric, id: 'm2' }, showTimeseries: true },
   })
   await tick()
-  expect(screen.getByText('Datapoints').closest('details')).not.toHaveAttribute(
-    'open'
-  )
+  expect(series.querySelectorAll('table')).toHaveLength(1)
 })
 
 const EMPTY_RESOURCE: ResourceData = {
@@ -774,12 +838,25 @@ describe('metric view context datapoint URL sync', () => {
     expect(new URLSearchParams(window.location.search).get('dp')).toBeNull()
   })
 
+  it('reopens details when selecting the same chart datapoint again', async () => {
+    const ctx = renderProbe('/metrics/m1')
+    for (let selection = 0; selection < 2; selection++) {
+      detailPanel.setOpen(false)
+      ctx.onChartPointClick('route=/a', 'dp-a1')
+      await tick()
+      expect(detailPanel.open).toBe(true)
+      expect(reportedSelectedDatapointID()).toBe('dp-a1')
+    }
+  })
+
   it('does not select a neighboring datapoint for an unknown source id', () => {
     const ctx = renderProbe('/metrics/m1')
+    detailPanel.setOpen(false)
 
     ctx.onChartPointClick('route=/a', 'missing-datapoint')
 
     expect(reportedSelectedDatapointID()).toBe('')
+    expect(detailPanel.open).toBe(false)
   })
 
   it('does not change selection or URL for an aggregate chart point', async () => {
@@ -788,12 +865,14 @@ describe('metric view context datapoint URL sync', () => {
     ctx.onChartPointClick('route=/a', 'dp-a1')
     await tick()
     const selectionUrl = window.location.href
+    detailPanel.setOpen(false)
 
     ctx.onChartPointClick('__agg:selected__', 'dp-a1')
     await tick()
 
     expect(reportedSelectedDatapointID()).toBe('dp-a1')
     expect(window.location.href).toBe(selectionUrl)
+    expect(detailPanel.open).toBe(false)
   })
 
   it('does not clear a raw datapoint selected from the detail pane', async () => {

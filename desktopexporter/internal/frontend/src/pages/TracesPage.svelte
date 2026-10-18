@@ -86,6 +86,7 @@
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
   import type { ImportFailure } from '@/types/import-types'
+  import { detailPanel } from '@/state/detail-panel.svelte'
 
   let {
     importFailure = null,
@@ -228,10 +229,12 @@
   }
 
   function handleSelectSpan(spanID: string) {
+    detailPanel.reveal()
     setSpanInQuery(spanID, 'push')
   }
 
   function handleSelectTimelineRecord(spanID: string, record: TimelineRecord) {
+    detailPanel.reveal()
     if (record.kind === 'event') {
       selectSpanEvent(spanID, record.eventIndex, 'push')
     } else {

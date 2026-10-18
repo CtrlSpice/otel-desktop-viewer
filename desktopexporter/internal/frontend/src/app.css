@@ -1279,7 +1279,7 @@ button:focus-visible:not(.btn) {
      than from its content, and it is still what keeps the value column from
      being sized by its longest string. align-top because a wrapped value makes
      the row taller than its key. */
-  @apply py-1 pl-4 pr-2 text-sm align-top;
+  @apply px-0 py-1 text-sm align-top;
   max-width: 0;
   overflow: hidden;
 }
@@ -1305,7 +1305,7 @@ button:focus-visible:not(.btn) {
 
 /* Badge cell: shrink-to-fit, right-aligned */
 .detail-cell--badges {
-  @apply py-1 pr-4 pl-0 text-xs align-middle whitespace-nowrap text-right;
+  @apply px-0 py-1 text-xs align-middle whitespace-nowrap text-right;
   width: 1px;
 }
 

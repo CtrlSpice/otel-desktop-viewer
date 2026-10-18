@@ -8,8 +8,7 @@
    *      the toolbar stays available on every route and at every drawer width.
    *   2. The content area: a `main` snippet (required) with an
    *      optional `detail` snippet that, when present, splits the
-   *      content area into a horizontally resizable main+detail pair
-   *      with the detail wrapped in standard inspector chrome.
+   *      content area into a horizontally resizable main+detail pair.
    *
    * The page-level footer (delete + prev/next nav) lives INSIDE the
    * `main` snippet -- it acts on the main view's selection, not on
@@ -21,6 +20,7 @@
   import SignalListDrawer from './Drawer/SignalListDrawer.svelte'
   import PanelToggle from './PanelToggle.svelte'
   import { detailWidth } from '@/state/detail-width.svelte'
+  import { detailPanel } from '@/state/detail-panel.svelte'
   import {
     PANEL_DEFAULT_REM,
     PANEL_MIN_REM,
@@ -87,17 +87,7 @@
     pageFooter,
   }: Props<T> = $props()
 
-  const DETAIL_OPEN_KEY = 'signal-detail:open'
-  let detailOpen = $state(
-    typeof localStorage === 'undefined' ||
-      localStorage.getItem(DETAIL_OPEN_KEY) !== 'false'
-  )
   const detailPanelID = $derived(`${drawerID}-detail`)
-
-  function setDetailOpen(open: boolean) {
-    detailOpen = open
-    localStorage.setItem(DETAIL_OPEN_KEY, String(detailOpen))
-  }
 
   // Empty-drawer pages have no item renderer; the shared drawer still requires one.
   const noopItem: Snippet<[item: T, selected: boolean]> = $derived(
@@ -110,9 +100,9 @@
 {#snippet detailToggle()}
   <PanelToggle
     side="right"
-    open={detailOpen}
+    open={detailPanel.open}
     controls={detailPanelID}
-    onclick={() => setDetailOpen(!detailOpen)}
+    onclick={() => detailPanel.setOpen(!detailPanel.open)}
   />
 {/snippet}
 
@@ -139,8 +129,9 @@
       <div class="page-layout__region">
         {#if detail}
           <ResizablePanels
-            rightCollapsed={!detailOpen}
-            onRightCollapsedChange={collapsed => setDetailOpen(!collapsed)}
+            rightCollapsed={!detailPanel.open}
+            onRightCollapsedChange={collapsed =>
+              detailPanel.setOpen(!collapsed)}
             rightPanelID={detailPanelID}
             rightWidthRem={detailWidth.rem}
             onRightWidthChange={rem => detailWidth.set(rem)}
@@ -156,9 +147,7 @@
               </div>
             {/snippet}
             {#snippet rightPanel()}
-              <div class="page-layout__detail-chrome">
-                {@render detail()}
-              </div>
+              {@render detail()}
             {/snippet}
           </ResizablePanels>
         {:else}
@@ -212,13 +201,6 @@
      border-top, which is now the seam between content and footer. */
   .page-layout__footer {
     @apply shrink-0 min-w-0;
-  }
-
-  /* Inspector chrome for the detail pane. Elevated card surface with
-     rounded corners so it reads as a distinct panel against the
-     base-100 page background. */
-  .page-layout__detail-chrome {
-    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl bg-base-200 border border-base-300;
   }
 
   .page-layout__main-chrome {

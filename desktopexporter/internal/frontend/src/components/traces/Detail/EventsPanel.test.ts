@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { screen } from '@testing-library/svelte'
+import { tick } from 'svelte'
 import EventsPanel from './EventsPanel.svelte'
 import type { EventData } from '@/types/api-types'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
@@ -19,25 +21,38 @@ describe('EventsPanel selected event', () => {
     Element.prototype.scrollIntoView = vi.fn()
   })
 
-  it('opens the first event by default', () => {
+  it('shows every event without disclosure wrappers', () => {
     const { container } = renderWithContexts(EventsPanel, {
       events: [makeEvent('first', 0n), makeEvent('second', 100n)],
       spanStartTime: 1_000n,
     })
-    const details = container.querySelectorAll('details')
-    expect(details).toHaveLength(2)
-    expect(details[0]?.open).toBe(true)
-    expect(details[1]?.open).toBe(false)
+    expect(container.querySelectorAll('details, summary')).toHaveLength(0)
+    expect(screen.getByRole('table', { name: 'Event first' })).toBeVisible()
+    expect(screen.getByRole('table', { name: 'Event second' })).toBeVisible()
+    expect(screen.getAllByText('Event', { exact: true })).toHaveLength(2)
+    const warning = screen.getAllByRole('link', { name: 'API deprecation' })[0]!
+    expect(warning).toHaveAttribute(
+      'href',
+      'https://opentelemetry.io/blog/2026/deprecating-span-events/'
+    )
+    expect(warning).toHaveAttribute(
+      'title',
+      expect.stringContaining('Existing span-event data remains supported.')
+    )
   })
 
-  it('opens the selected event index', () => {
+  it('scrolls to the selected event without hiding other events', async () => {
     const { container } = renderWithContexts(EventsPanel, {
       events: [makeEvent('first', 0n), makeEvent('second', 100n)],
       spanStartTime: 1_000n,
       selectedEventIndex: 1,
     })
-    const details = container.querySelectorAll('details')
-    expect(details[0]?.open).toBe(false)
-    expect(details[1]?.open).toBe(true)
+    await tick()
+    expect(container.querySelectorAll('details, summary')).toHaveLength(0)
+    expect(screen.getByRole('table', { name: 'Event first' })).toBeVisible()
+    expect(screen.getByRole('table', { name: 'Event second' })).toBeVisible()
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
+      block: 'nearest',
+    })
   })
 })

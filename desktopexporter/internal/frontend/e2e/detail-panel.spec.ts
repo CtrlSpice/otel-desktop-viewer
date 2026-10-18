@@ -1,0 +1,214 @@
+import { expect, test } from '@playwright/test'
+import type { JsonTraceData } from '../src/types/wire-types'
+
+const traceID = '12345678901234567890123456789012'
+const spanID = '1234567890123456'
+const trace: JsonTraceData = {
+  traceID,
+  traceStart: '1700000000000000000',
+  resources: {
+    0: {
+      attributes: [
+        {
+          key: 'service.name',
+          value: { kind: 'string', value: 'checkout-api' },
+        },
+      ],
+      droppedAttributesCount: 0,
+    },
+  },
+  scopes: {
+    0: {
+      name: 'test-scope',
+      version: '1.2',
+      attributes: [],
+      droppedAttributesCount: 0,
+    },
+  },
+  unplacedSpanCount: 0,
+  spans: [
+    {
+      depth: 0,
+      matched: true,
+      spanData: {
+        spanID,
+        parentSpanID: null,
+        traceState: '',
+        flags: 0,
+        name: 'detail target',
+        kindCode: 1,
+        kind: 'Internal',
+        start: '0',
+        dur: '1000000000',
+        r: 0,
+        s: 0,
+        attributes: [],
+        links: [],
+        events: [
+          {
+            name: 'target event',
+            timestamp: '1700000000500000000',
+            attributes: [],
+            droppedAttributesCount: 0,
+          },
+        ],
+        droppedAttributesCount: 0,
+        droppedEventsCount: 0,
+        droppedLinksCount: 0,
+        statusCodeValue: 0,
+        statusCode: 'Unset',
+        statusMessage: '',
+      },
+    },
+  ],
+}
+
+test('detail targets reopen the panel with independent native disclosures', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1000 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.addInitScript(() =>
+    localStorage.setItem('signal-detail:open', 'false')
+  )
+  await page.route('**/rpc', async route => {
+    const request = route.request().postDataJSON() as {
+      id: number
+      method: string
+    }
+    await route.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id: request.id,
+        result:
+          request.method === 'getTraceView'
+            ? trace
+            : request.method === 'searchTraceSummaries'
+              ? [
+                  {
+                    traceID,
+                    hasRootSpan: true,
+                    rootSpan: { serviceName: null, name: 'detail target' },
+                    startTime: trace.traceStart,
+                    durationNs: '1000000000',
+                    spanCount: 1,
+                    errorCount: 0,
+                  },
+                ]
+              : request.method === 'getStats'
+                ? {
+                    storage: { sizeBytes: 0, maxSizeBytes: 0 },
+                    traces: {
+                      traceCount: 1,
+                      spanCount: 1,
+                      serviceCount: 0,
+                      errorCount: 0,
+                      lastReceived: null,
+                    },
+                    logs: { logCount: 0, errorCount: 0, lastReceived: null },
+                    metrics: {
+                      metricCount: 0,
+                      dataPointCount: 0,
+                      lastReceived: null,
+                    },
+                    rejections: [],
+                  }
+                : [],
+      },
+    })
+  })
+  await page.goto(`/traces/${traceID}?span=${spanID}`)
+  const detail = page.locator('#signal-drawer-detail')
+  const span = page
+    .locator('.waterfall-row')
+    .filter({ hasText: 'detail target' })
+  await expect(span).toBeVisible()
+  // Loading a selected trace must not override the persisted collapsed state.
+  await expect(detail).toBeHidden()
+  const fields = detail.locator('details.collapse').nth(0)
+  const activity = detail.locator('details.collapse').nth(1)
+  const links = detail.locator('details.collapse').nth(2)
+  const darkestSurface = await page.evaluate(() => {
+    const probe = document.createElement('div')
+    probe.style.backgroundColor = 'var(--color-base-100)'
+    document.body.append(probe)
+    const colour = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    return colour
+  })
+  await expect(fields).toHaveCSS('background-color', darkestSurface)
+  await expect(fields).toHaveCSS('border-top-width', '0px')
+  expect(
+    await fields.evaluate(element =>
+      parseFloat(getComputedStyle(element).borderTopLeftRadius)
+    )
+  ).toBeGreaterThan(0)
+  for (let selection = 0; selection < 2; selection++) {
+    await span.click()
+    await expect(detail).toBeVisible()
+    await expect(detail.getByRole('tablist')).toHaveCount(0)
+    await expect(fields.locator(':scope > summary')).toHaveText('Span')
+    await expect(fields.locator('details')).toHaveCount(0)
+    const table = fields.getByRole('table', { name: 'Span fields' })
+    await expect(table).toContainText('resource.service.name')
+    await expect(table).toContainText('scope.name')
+    await expect(
+      detail.getByRole('region', { name: 'Span details' })
+    ).toHaveCSS('padding-left', '0px')
+    await expect(table.locator('td').first()).toHaveCSS('padding-left', '0px')
+    await expect(fields).toHaveAttribute('open')
+    await expect(activity).toHaveAttribute('open')
+    await expect(activity.locator('details')).toHaveCount(0)
+    await expect(links).toHaveAttribute('open')
+    for (const section of [fields, activity, links]) {
+      await expect(section.locator(':scope > summary')).toBeInViewport({
+        ratio: 1,
+      })
+    }
+    await expect(fields).toHaveCSS('overflow-y', 'auto')
+    await fields.evaluate(element => {
+      element.scrollTop = element.scrollHeight
+    })
+    await expect(fields.locator(':scope > summary')).toBeInViewport({
+      ratio: 1,
+    })
+    await fields.locator(':scope > summary').focus()
+    await page.keyboard.press('Enter')
+    await expect(fields).not.toHaveAttribute('open')
+    await expect(activity).toHaveAttribute('open')
+    const extraHeight = await links.evaluate(element => {
+      const content = element.querySelector('.collapse-content')!
+      const message = content.querySelector('p')!
+      return (
+        element.getBoundingClientRect().bottom -
+        message.getBoundingClientRect().bottom -
+        parseFloat(getComputedStyle(content).paddingBottom)
+      )
+    })
+    expect(Math.abs(extraHeight)).toBeLessThan(1)
+    await page.keyboard.press('Enter')
+    await expect(fields).toHaveAttribute('open')
+    await page.getByRole('button', { name: 'Collapse details' }).click()
+    await expect(detail).toBeHidden()
+  }
+  for (let selection = 0; selection < 2; selection++) {
+    await page
+      .getByRole('button', { name: 'Select 1 event', exact: true })
+      .click()
+    await expect(detail).toBeVisible()
+    await expect(activity).toHaveAttribute('open')
+    await expect(fields).toHaveAttribute('open')
+    await expect(
+      detail.getByRole('table', { name: 'Event target event' })
+    ).toBeVisible()
+    await activity.locator(':scope > summary').click()
+    await expect(activity).not.toHaveAttribute('open')
+    await expect(fields).toHaveAttribute('open')
+    await activity.locator(':scope > summary').click()
+    await page.getByRole('button', { name: 'Collapse details' }).click()
+    await expect(detail).toBeHidden()
+  }
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await expect(span).toBeVisible()
+  await expect(detail).toBeHidden()
+})

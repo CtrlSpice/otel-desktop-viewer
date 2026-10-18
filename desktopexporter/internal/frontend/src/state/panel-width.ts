@@ -5,14 +5,8 @@
  * @remarks
  * Two panels flank the main view -- the signal list drawer and the detail
  * panel -- and they follow the same rules so "the same width" means what it
- * says. The numbers are derived, not picked:
+ * says.
  *
- * - The floor comes from the tightest content either panel holds: the detail
- *   pane's tab strip. `PaneHeader.svelte` floors each tab at
- *   `--pane-tab-min: 7rem`, so three tabs need 336px, plus 6px of chrome
- *   (1px border each side of `.page-layout__detail-chrome`, 2px padding each
- *   side of `.pane-header`) = 342px. 22rem is the clean value above it.
- *   If `--pane-tab-min` ever moves, this floor must move with it.
  * - The default matches the signal drawer's standard width.
  * - The ceiling is the layout's, not the content's -- content has no upper
  *   bound (Kubernetes names run arbitrarily long). It is what a 1440px
@@ -25,7 +19,6 @@
  */
 
 export const PANEL_DEFAULT_REM = 28
-/** >= 3 x --pane-tab-min + 6px chrome; see the derivation above. */
 export const PANEL_MIN_REM = 22
 export const PANEL_MAX_REM = 40
 export const PANEL_CLOSE_OVERSHOOT_REM = 4
