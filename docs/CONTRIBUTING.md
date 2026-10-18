@@ -114,6 +114,12 @@ checkout-failure scenario:
 make populate-traces populate-logs populate-metrics OTLP_DATASET=testdata/otlp/checkout
 ```
 
+For the busy histogram and exponential-histogram heatmap playground:
+
+```bash
+make populate-metrics OTLP_DATASET=testdata/otlp/heatmap-playground
+```
+
 Dataset contents and counts are documented in [`testdata/otlp/README.md`](../testdata/otlp/README.md).
 
 ### Stop dev servers

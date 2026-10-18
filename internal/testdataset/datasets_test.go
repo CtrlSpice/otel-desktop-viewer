@@ -93,13 +93,16 @@ func TestDatasetManifests(t *testing.T) {
 				assert.FileExists(t, filepath.Join(filepath.Dir(filename), request.File))
 			}
 			for _, signal := range []string{"traces", "logs", "metrics"} {
-				for _, file := range datasetFiles(t, dataset, signal) {
+				files, err := filepath.Glob(filepath.Join(filepath.Dir(filename), signal+"*.json"))
+				require.NoError(t, err)
+				for _, file := range files {
 					assert.True(t, listed[filepath.Base(file)], "request missing from manifest")
 				}
 			}
-			assert.Positive(t, manifest.StoredCounts.Spans)
-			assert.Positive(t, manifest.StoredCounts.Logs)
-			assert.Positive(t, manifest.StoredCounts.Datapoints)
+			assert.GreaterOrEqual(t, manifest.StoredCounts.Spans, 0)
+			assert.GreaterOrEqual(t, manifest.StoredCounts.Logs, 0)
+			assert.GreaterOrEqual(t, manifest.StoredCounts.Datapoints, 0)
+			assert.Positive(t, manifest.StoredCounts.Spans+manifest.StoredCounts.Logs+manifest.StoredCounts.Datapoints)
 		})
 	}
 }

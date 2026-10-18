@@ -307,9 +307,6 @@ for (const [theme, hoverColour, selectedColour, focusColour] of [
           }
           const legend = page.getByRole('list', { name: 'Heatmap count scale' })
           await expect(legend).toBeVisible()
-          await expect(
-            page.getByText('Observations per cell', { exact: true })
-          ).toBeVisible()
           const legendBox = (await page
             .locator('.heatmap-legend')
             .boundingBox())!

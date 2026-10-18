@@ -10,23 +10,37 @@
     if (!points || points.length === 0) return []
     return computeHeatmapLegendEntries(points, themeSignal.value)
   })
+  let legendRows = $derived(
+    [
+      legendEntries.slice(0, Math.ceil(legendEntries.length / 2)),
+      legendEntries.slice(Math.ceil(legendEntries.length / 2)),
+    ].filter(row => row.length > 0)
+  )
 </script>
 
 {#if legendEntries.length > 0}
   <div class="heatmap-legend">
-    <span class="heatmap-legend__label">Observations per cell</span>
-    <ul class="heatmap-legend__entries" aria-label="Heatmap count scale">
-      {#each legendEntries as entry (entry.label)}
-        <li class="heatmap-legend__entry">
-          <span
-            class="heatmap-legend__swatch"
-            style:background-color={entry.color}
-            aria-hidden="true"
-          ></span>
-          <span>{entry.label}</span>
-        </li>
+    <div
+      class="heatmap-legend__entries"
+      style:--legend-columns={Math.ceil(legendEntries.length / 2)}
+      role="list"
+      aria-label="Heatmap count scale"
+    >
+      {#each legendRows as row, index (index)}
+        <div class="heatmap-legend__row" role="presentation">
+          {#each row as entry (entry.label)}
+            <div class="heatmap-legend__entry" role="listitem">
+              <span
+                class="heatmap-legend__swatch"
+                style:background-color={entry.color}
+                aria-hidden="true"
+              ></span>
+              <span>{entry.label}</span>
+            </div>
+          {/each}
+        </div>
       {/each}
-    </ul>
+    </div>
   </div>
 {/if}
 
@@ -34,15 +48,37 @@
   @reference "../../../app.css";
 
   .heatmap-legend {
-    @apply flex min-w-0 shrink-0 flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2 text-xs text-base-content;
-  }
-
-  .heatmap-legend__label {
-    @apply shrink-0 font-medium;
+    @apply flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-x-4 gap-y-2 px-3 py-2 text-xs text-base-content;
+    container-type: inline-size;
   }
 
   .heatmap-legend__entries {
-    @apply m-0 flex min-w-0 list-none flex-wrap items-center gap-x-4 gap-y-2 p-0;
+    @apply grid min-w-0 gap-x-4 gap-y-2;
+    grid-template-columns: repeat(var(--legend-columns), max-content);
+  }
+
+  .heatmap-legend__row {
+    @apply grid min-w-0 items-center gap-x-4 gap-y-2;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+  }
+
+  @container (max-width: 36rem) {
+    .heatmap-legend__entries {
+      grid-template-columns: repeat(min(var(--legend-columns), 3), max-content);
+    }
+  }
+
+  @container (max-width: 20rem) {
+    .heatmap-legend__entries {
+      grid-template-columns: repeat(min(var(--legend-columns), 2), max-content);
+    }
+  }
+
+  @container (max-width: 12rem) {
+    .heatmap-legend__entries {
+      grid-template-columns: max-content;
+    }
   }
 
   .heatmap-legend__entry {
