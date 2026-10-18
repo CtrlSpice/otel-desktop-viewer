@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, beforeEach } from 'vitest'
-import { screen } from '@testing-library/svelte'
+import { screen, within } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import TraceDetailView from './TraceDetailView.svelte'
 import type { SpanData, TraceLogSummary } from '@/types/api-types'
@@ -55,9 +55,14 @@ describe('TraceDetailView numeric enum fields', () => {
     })
 
     const table = screen.getByRole('table', { name: 'Span fields' })
-    expect(table).toHaveTextContent('kind code (int64):')
-    expect(table).toHaveTextContent('-1')
-    expect(table).not.toHaveTextContent('kind (string):')
+    const field = table.querySelector('[data-field="kind"]')!
+    expect(field.querySelector('.detail-property__type')).toHaveTextContent(
+      'enum'
+    )
+    expect(field.querySelector('.detail-property__value')).toHaveTextContent(
+      /^-1$/
+    )
+    expect(table.querySelectorAll('[data-field]')).toHaveLength(1)
     expect(table).not.toHaveTextContent('Unknown (-1)')
     expect(
       table.closest('details')?.querySelector('summary')
@@ -71,9 +76,14 @@ describe('TraceDetailView numeric enum fields', () => {
     })
 
     const table = screen.getByRole('table', { name: 'Span fields' })
-    expect(table).toHaveTextContent('status code value (int64):')
-    expect(table).toHaveTextContent('99')
-    expect(table).not.toHaveTextContent('status code (string):')
+    const field = table.querySelector('[data-field="status.code"]')!
+    expect(field.querySelector('.detail-property__type')).toHaveTextContent(
+      'enum'
+    )
+    expect(field.querySelector('.detail-property__value')).toHaveTextContent(
+      /^99$/
+    )
+    expect(table.querySelectorAll('[data-field]')).toHaveLength(1)
     expect(table).not.toHaveTextContent('Unknown (99)')
     expect(
       screen.getByRole('img', { name: 'Unrecognised status code' })
@@ -142,8 +152,10 @@ describe('TraceDetailView parent span link', () => {
     })
     expect(screen.queryByRole('button', { name: 'parent-span' })).toBeNull()
 
-    const nameKey = document.querySelector('.detail-fields .detail-cell__key')
-    expect(nameKey).toHaveTextContent(/^name\s*\(string\):$/)
+    const nameKey = document.querySelector(
+      '[data-field="name"] .detail-property__key'
+    )
+    expect(nameKey).toHaveTextContent(/^name$/)
     expect(nameKey).not.toHaveTextContent('(root)')
   })
 })
@@ -175,13 +187,33 @@ describe('TraceDetailView detail bubbles', () => {
     })
     renderWithContexts(TraceDetailView, { span })
     const table = screen.getByRole('table', { name: 'Span fields' })
-    expect(table).toHaveTextContent('service.name (string):')
-    expect(table).toHaveTextContent('resource.service.name (string):')
-    expect(table).toHaveTextContent('scope.name (string):')
-    expect(table).toHaveTextContent('scope.version (string):')
-    expect(table).toHaveTextContent('scope.build (int64):')
-    expect(table).toHaveTextContent('resource.droppedAttributesCount (uint32):')
-    expect(table).toHaveTextContent('scope.droppedAttributesCount (uint32):')
+    for (const [key, origin, type, value] of [
+      ['service.name', '', 'string', 'span-service'],
+      ['service.name', 'resource', 'string', 'resource-service'],
+      ['name', 'scope', 'string', 'test-scope'],
+      ['version', 'scope', 'string', '1.2'],
+      ['build', 'scope', 'int64', '42'],
+      ['droppedAttributesCount', 'resource', 'uint32', '1'],
+      ['droppedAttributesCount', 'scope', 'uint32', '2'],
+    ]) {
+      const label = origin ? `Copy ${key} (${origin})` : `Copy ${key}`
+      const row = within(table)
+        .getByRole('button', { name: label })
+        .closest('tr')!
+      expect(row.querySelector('.detail-property__key')).toHaveTextContent(key!)
+      expect(row.querySelector('.detail-property__type')).toHaveTextContent(
+        type!
+      )
+      expect(row.querySelector('.detail-property__body')).toHaveTextContent(
+        value!
+      )
+      if (origin)
+        expect(row.querySelector('.detail-property__origin')).toHaveTextContent(
+          origin
+        )
+      else expect(row.querySelector('.detail-property__origin')).toBeNull()
+    }
+    expect(table).not.toHaveTextContent('resource.service.name')
     expect(table.closest('details')!.querySelectorAll('details')).toHaveLength(
       0
     )
@@ -194,7 +226,28 @@ describe('TraceDetailView detail bubbles', () => {
 
   it('stacks the former tabs as independently collapsible sections', async () => {
     setTestUrl('/traces/trace-1?span=child-span&start=0&end=1')
-    renderWithContexts(TraceDetailView, { span: makeSpan() })
+    renderWithContexts(TraceDetailView, {
+      span: makeSpan({
+        events: [
+          {
+            name: 'ready',
+            timestamp: 1n,
+            attributes: [],
+            droppedAttributesCount: 0,
+          },
+        ],
+        links: [
+          {
+            traceID: 'linked-trace',
+            spanID: 'linked-span',
+            traceState: '',
+            attributes: [],
+            droppedAttributesCount: 0,
+            flags: 0,
+          },
+        ],
+      }),
+    })
     expect(screen.queryByRole('tablist')).toBeNull()
     const fields = screen
       .getByText('Span', { exact: true, selector: '.collapse-title > span' })
@@ -210,6 +263,20 @@ describe('TraceDetailView detail bubbles', () => {
     expect(fields.open).toBe(false)
     expect(activity.open).toBe(true)
     expect(links.open).toBe(true)
+  })
+
+  it('keeps zero-count Activity and Links headers visible without expandable bodies', async () => {
+    renderWithContexts(TraceDetailView, { span: makeSpan() })
+    for (const label of ['Activity', 'Links']) {
+      const section = screen.getByRole('region', { name: label })
+      expect(section).toHaveTextContent(
+        label === 'Activity' ? '0 activity' : '0 links'
+      )
+      await userEvent.click(within(section).getByText(label, { exact: true }))
+      expect(
+        section.querySelector('details, summary, .collapse-content')
+      ).toBeNull()
+    }
   })
 
   it('uses one Activity count and badges the flat event and log records', () => {

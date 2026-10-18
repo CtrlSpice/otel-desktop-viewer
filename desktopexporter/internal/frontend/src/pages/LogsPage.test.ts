@@ -128,7 +128,7 @@ describe('LogsPage refresh', () => {
 })
 
 describe('LogsPage direct selection outside the list range', () => {
-  it('keeps resource and scope metadata inline with dot-prefixed labels', async () => {
+  it('keeps original resource and scope keys inline with separate provenance badges', async () => {
     const log = makeLogData('flat record')
     log.resource.attributes = [
       { key: 'service.name', value: { kind: 'string', value: 'checkout-api' } },
@@ -141,9 +141,25 @@ describe('LogsPage direct selection outside the list range', () => {
     setTestUrl('/logs/log-1')
     renderWithContexts(LogsPage)
     const table = await screen.findByRole('table', { name: 'Log fields' })
-    expect(table).toHaveTextContent('resource.service.name (string):')
-    expect(table).toHaveTextContent('scope.name (string):')
-    expect(table).toHaveTextContent('scope.version (string):')
+    for (const [key, origin, value] of [
+      ['service.name', 'resource', 'checkout-api'],
+      ['name', 'scope', 'test-scope'],
+      ['version', 'scope', '1.2'],
+    ]) {
+      const row = table.querySelector(`[data-field="${key}"]`)!
+      expect(row.querySelector('.detail-property__key')).toHaveTextContent(key!)
+      expect(row.querySelector('.detail-property__origin')).toHaveTextContent(
+        origin!
+      )
+      expect(row.querySelector('.detail-property__type')).toHaveTextContent(
+        'string'
+      )
+      expect(row.querySelector('.detail-property__body')).toHaveTextContent(
+        value!
+      )
+    }
+    expect(table).not.toHaveTextContent('resource.service.name')
+    expect(log.resource.attributes[0]!.key).toBe('service.name')
     expect(table.closest('details')).toBeNull()
     expect(screen.queryByText('Resource', { selector: 'summary' })).toBeNull()
     expect(screen.queryByText('Scope', { selector: 'summary' })).toBeNull()

@@ -47,8 +47,24 @@ it('keeps chart selection and native disclosures independent', async () => {
     ).not.toBe(0)
     expect(screen.queryByRole('tablist')).toBeNull()
     const metadata = screen.getByRole('table', { name: 'Metric fields' })
-    expect(metadata).toHaveTextContent('scope.name (string):')
-    expect(metadata).toHaveTextContent('scope.version (string):')
+    for (const [key, value] of [
+      ['name', 'test-scope'],
+      ['version', '1.0.0'],
+    ]) {
+      const row = within(metadata)
+        .getByRole('button', { name: `Copy ${key} (scope)` })
+        .closest('tr')!
+      expect(row.querySelector('.detail-property__key')).toHaveTextContent(key!)
+      expect(row.querySelector('.detail-property__origin')).toHaveTextContent(
+        'scope'
+      )
+      expect(row.querySelector('.detail-property__type')).toHaveTextContent(
+        'string'
+      )
+      expect(row.querySelector('.detail-property__body')).toHaveTextContent(
+        value!
+      )
+    }
     expect(fields.querySelectorAll('details')).toHaveLength(0)
     for (let selection = 0; selection < 2; selection++) {
       detailPanel.setOpen(false)
@@ -94,7 +110,13 @@ it('keeps series attributes and datapoints in one table without nested disclosur
   const table = within(series).getByRole('table', { name: 'Datapoints' })
   expect(series.querySelectorAll('table')).toHaveLength(1)
   expect(series.querySelectorAll('details')).toHaveLength(0)
-  expect(table).toHaveTextContent('route (string)')
+  const attribute = table.querySelector('[data-field="route"]')!
+  expect(attribute.querySelector('.detail-property__key')).toHaveTextContent(
+    'route'
+  )
+  expect(attribute.querySelector('.detail-property__type')).toHaveTextContent(
+    'string'
+  )
   expect(table).toHaveTextContent('/a')
   expect(table).toHaveTextContent('Time')
   expect(table).toHaveTextContent('Value')

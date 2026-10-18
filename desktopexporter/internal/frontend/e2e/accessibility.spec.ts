@@ -20,6 +20,13 @@ const EMPTY_STATS = {
   rejections: [],
 }
 
+const EMPTY_ATTRIBUTE_METHODS = new Set([
+  'getTraceAttributeDefinitions',
+  'getTraceAttributeDefinitionsByTraceID',
+  'getLogAttributeDefinitions',
+  'getMetricAttributeDefinitions',
+])
+
 async function interceptRpc(page: Page): Promise<void> {
   await page.route('**/rpc', async route => {
     // SAFETY: This page's /rpc requests come from callRPC, which supplies a
@@ -28,14 +35,16 @@ async function interceptRpc(page: Page): Promise<void> {
     const response =
       request.method === 'getStats'
         ? { jsonrpc: '2.0', id: request.id, result: EMPTY_STATS }
-        : {
-            jsonrpc: '2.0',
-            id: request.id,
-            error: {
-              code: -32601,
-              message: `No accessibility-test fixture for ${request.method}`,
-            },
-          }
+        : EMPTY_ATTRIBUTE_METHODS.has(request.method)
+          ? { jsonrpc: '2.0', id: request.id, result: [] }
+          : {
+              jsonrpc: '2.0',
+              id: request.id,
+              error: {
+                code: -32601,
+                message: `No accessibility-test fixture for ${request.method}`,
+              },
+            }
 
     await route.fulfill({
       status: 200,

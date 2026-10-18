@@ -79,7 +79,7 @@ describe('LinksPanel trace correlation', () => {
 describe('LinksPanel field count', () => {
   beforeEach(() => setTestUrl('/traces/trace-1?start=0&end=1'))
 
-  const rows = () => document.querySelectorAll('tr.table-row').length
+  const rows = () => document.querySelectorAll('tr[data-field]').length
   const badge = () =>
     document.querySelector('.badge-count')?.textContent?.trim()
 
@@ -97,5 +97,23 @@ describe('LinksPanel field count', () => {
     })
     expect(document.body.textContent).not.toContain('flags')
     expect(badge()).toBe(`${rows()} fields`)
+  })
+
+  it('counts duplicate typed attributes and dropped-attribute metadata without merging rows', () => {
+    renderWithContexts(LinksPanel, {
+      links: [
+        makeLink({
+          flags: 1,
+          droppedAttributesCount: 2,
+          attributes: [
+            { key: 'attempt', value: { kind: 'int64', value: 1n } },
+            { key: 'attempt', value: { kind: 'string', value: '1' } },
+          ],
+        }),
+      ],
+    })
+    expect(rows()).toBe(7)
+    expect(badge()).toBe('7 fields')
+    expect(document.querySelectorAll('[data-field="attempt"]')).toHaveLength(2)
   })
 })

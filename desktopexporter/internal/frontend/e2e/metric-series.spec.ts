@@ -164,7 +164,9 @@ test('series open by their headers, one at a time, with one combined table', asy
   await expect(series.nth(0)).toHaveAttribute('open')
   await expect(series.nth(0).locator('table')).toHaveCount(1)
   const table = series.nth(0).getByRole('table', { name: 'Datapoints' })
-  await expect(table).toContainText('route (string)')
+  const attribute = table.locator('[data-field="route"]')
+  await expect(attribute.locator('.detail-property__key')).toHaveText('route')
+  await expect(attribute.locator('.detail-property__type')).toHaveText('string')
   await expect(table).toContainText('/first')
   await expect(table.locator('tr[data-dp-id]')).toHaveCount(25)
   const nextPage = series.nth(0).getByRole('button', {
@@ -196,13 +198,22 @@ test('series open by their headers, one at a time, with one combined table', asy
     .selectOption('50')
   await expect(table.locator('tr[data-dp-id]')).toHaveCount(40)
   await expect(nextPage).toBeInViewport({ ratio: 1 })
-  await page.setViewportSize({ width: 1920, height: 1000 })
+  // Both long sections can share the available height when constrained.
+  // With enough room, each section must size to its own content instead.
+  await page.setViewportSize({ width: 1920, height: 2400 })
   await expect(series.nth(0).locator('details')).toHaveCount(0)
   await expect(series.nth(0)).not.toContainText('service.name')
-  await expect(fieldsBubble).toContainText('resource.service.name')
+  const resource = fieldsBubble.locator('[data-field="service.name"]')
+  await expect(resource.locator('.detail-property__key')).toHaveText(
+    'service.name'
+  )
+  await expect(resource.locator('.detail-property__origin')).toHaveText(
+    'resource'
+  )
   await expect
     .poll(async () => (await seriesBubble.boundingBox())!.height)
     .toBeGreaterThan((await fieldsBubble.boundingBox())!.height)
+  await page.setViewportSize({ width: 1920, height: 1000 })
   await page
     .getByRole('checkbox', { name: 'Show route: /first in chart' })
     .uncheck()

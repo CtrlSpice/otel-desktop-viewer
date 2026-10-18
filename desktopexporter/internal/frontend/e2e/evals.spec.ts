@@ -126,9 +126,14 @@ test('run selection, assessments, filtering and browser history stay connected',
   await expect(
     page.getByText('The investigator process exited', { exact: false })
   ).toBeVisible()
-  await expect(
-    bubbles.nth(0).getByText('Unknown', { exact: true })
-  ).toHaveCount(2)
+  const accounting = bubbles
+    .nth(0)
+    .getByRole('table', { name: 'Attempt accounting' })
+  for (const key of ['investigator estimate (CAD)', 'grader estimate (CAD)']) {
+    await expect(
+      accounting.locator(`[data-field="${key}"] .detail-property__body`)
+    ).toHaveText('"Unknown"')
+  }
   await page.goBack()
   await expect(
     page.getByRole('table', { name: 'Grading for this run' })
@@ -143,7 +148,7 @@ test('run selection, assessments, filtering and browser history stay connected',
   await expect(
     page
       .getByRole('table', { name: 'Grading for this run' })
-      .getByText('Unknown', { exact: true })
+      .getByText('"Unknown"', { exact: true })
   ).toHaveCount(2)
 })
 

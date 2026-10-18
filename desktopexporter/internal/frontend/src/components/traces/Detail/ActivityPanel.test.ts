@@ -48,11 +48,25 @@ describe('ActivityPanel', () => {
     expect(
       screen.getByRole('table', { name: 'Event cache.hit' }).parentElement
     ).toBe(screen.getByRole('table', { name: 'Log summary' }).parentElement)
+    const summary = screen.getByRole('table', { name: 'Log summary' })
     expect(
-      screen.getByRole('table', { name: 'Log summary' })
-    ).toHaveTextContent(
-      /timestamp.*offset.*severity.*service.*event name.*body preview/s
-    )
+      [...summary.querySelectorAll('[data-field]')].map(row =>
+        row.getAttribute('data-field')
+      )
+    ).toEqual([
+      'timeUnixNano',
+      'offset',
+      'severityText',
+      'severityNumber',
+      'service.name',
+      'eventName',
+      'body preview',
+    ])
+    expect(
+      summary.querySelector(
+        '[data-field="service.name"] .detail-property__origin'
+      )
+    ).toHaveTextContent('resource')
     expect(screen.getByText('preview only')).toBeVisible()
 
     const link = screen.getByRole('link', { name: 'Open log' })
@@ -80,8 +94,12 @@ describe('ActivityPanel', () => {
     const badges = screen.getAllByText('-1.000 s')
     expect(badges).toHaveLength(3)
     const summary = screen.getByRole('table', { name: 'Log summary' })
-    expect(summary).toHaveTextContent(/severity number.*0/s)
-    expect(summary).not.toHaveTextContent('severity text')
+    expect(
+      summary.querySelector(
+        '[data-field="severityNumber"] .detail-property__body'
+      )
+    ).toHaveTextContent(/^0$/)
+    expect(summary.querySelector('[data-field="severityText"]')).toBeNull()
     expect(summary).not.toHaveTextContent('TRACE')
   })
 })

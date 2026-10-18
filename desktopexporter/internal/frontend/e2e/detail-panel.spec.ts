@@ -127,7 +127,7 @@ test('detail targets reopen the panel with independent native disclosures', asyn
   await expect(detail).toBeHidden()
   const fields = detail.locator('details.collapse').nth(0)
   const activity = detail.locator('details.collapse').nth(1)
-  const links = detail.locator('details.collapse').nth(2)
+  const links = detail.getByRole('region', { name: 'Links', exact: true })
   const darkestSurface = await page.evaluate(() => {
     const probe = document.createElement('div')
     probe.style.backgroundColor = 'var(--color-base-100)'
@@ -150,8 +150,20 @@ test('detail targets reopen the panel with independent native disclosures', asyn
     await expect(fields.locator(':scope > summary')).toHaveText('Span')
     await expect(fields.locator('details')).toHaveCount(0)
     const table = fields.getByRole('table', { name: 'Span fields' })
-    await expect(table).toContainText('resource.service.name')
-    await expect(table).toContainText('scope.name')
+    const resource = table.locator('[data-field="service.name"]')
+    await expect(resource.locator('.detail-property__key')).toHaveText(
+      'service.name'
+    )
+    await expect(resource.locator('.detail-property__origin')).toHaveText(
+      'resource'
+    )
+    const scopeName = table
+      .getByRole('button', { name: 'Copy name (scope)', exact: true })
+      .locator('xpath=ancestor::tr[1]')
+    await expect(scopeName.locator('.detail-property__key')).toHaveText('name')
+    await expect(scopeName.locator('.detail-property__origin')).toHaveText(
+      'scope'
+    )
     await expect(
       detail.getByRole('region', { name: 'Span details' })
     ).toHaveCSS('padding-left', '0px')
@@ -159,9 +171,14 @@ test('detail targets reopen the panel with independent native disclosures', asyn
     await expect(fields).toHaveAttribute('open')
     await expect(activity).toHaveAttribute('open')
     await expect(activity.locator('details')).toHaveCount(0)
-    await expect(links).toHaveAttribute('open')
+    await expect(links).toContainText('0 links')
+    await expect(
+      links.locator('details, summary, .collapse-content')
+    ).toHaveCount(0)
     for (const section of [fields, activity, links]) {
-      await expect(section.locator(':scope > summary')).toBeInViewport({
+      await expect(
+        section.locator(':scope > .detail-bubble__heading')
+      ).toBeInViewport({
         ratio: 1,
       })
     }
@@ -177,12 +194,10 @@ test('detail targets reopen the panel with independent native disclosures', asyn
     await expect(fields).not.toHaveAttribute('open')
     await expect(activity).toHaveAttribute('open')
     const extraHeight = await links.evaluate(element => {
-      const content = element.querySelector('.collapse-content')!
-      const message = content.querySelector('p')!
+      const heading = element.querySelector('.detail-bubble__heading')!
       return (
-        element.getBoundingClientRect().bottom -
-        message.getBoundingClientRect().bottom -
-        parseFloat(getComputedStyle(content).paddingBottom)
+        element.getBoundingClientRect().height -
+        heading.getBoundingClientRect().height
       )
     })
     expect(Math.abs(extraHeight)).toBeLessThan(1)
