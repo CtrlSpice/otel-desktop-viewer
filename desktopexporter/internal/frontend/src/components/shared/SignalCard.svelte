@@ -167,21 +167,26 @@
      * .signal-row__time-label). Badges → badge-xs on the snippet markup.
      */
     --signal-card-row-h: 1.5rem;
-    /* The composited surface of this row, per state. The badge zone and
-       its fade must paint exactly what the row shows behind the title,
-       and the state backgrounds are translucent tints over the panel's
-       base-200 -- so each state declares its composite here (srgb mix,
-       matching alpha compositing). Hover is base-200/50 over base-200,
-       which composites back to base-200. */
+    /* Share the card surface with the badge background and title fade. */
     --row-surface: var(--color-base-200);
-    @apply flex w-full flex-col gap-0 px-3 py-1.5 text-left text-sm leading-snug transition-colors duration-100;
-    @apply hover:bg-base-200/50;
+    @apply flex w-full flex-col gap-0 rounded-xl px-3 py-2.5 text-left text-sm leading-snug transition-colors duration-100;
+    background: var(--row-surface);
+    box-shadow: 0 2px 6px rgb(0 0 0 / 0.1);
     cursor: pointer;
   }
 
+  .signal-row:hover {
+    --row-surface: color-mix(
+      in srgb,
+      var(--color-base-300) 50%,
+      var(--color-base-200)
+    );
+  }
+
   .signal-row--selected {
-    @apply bg-primary/[0.07];
-    box-shadow: inset 2px 0 0 0 var(--color-primary);
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 40%, transparent),
+      0 2px 6px rgb(0 0 0 / 0.1);
     --row-surface: color-mix(
       in srgb,
       var(--color-primary) 7%,
@@ -190,7 +195,6 @@
   }
 
   .signal-row--selected:hover {
-    @apply bg-primary/10;
     --row-surface: color-mix(
       in srgb,
       var(--color-primary) 10%,
@@ -204,9 +208,8 @@
       var(--color-primary) 12%,
       var(--color-base-200)
     );
-    outline: none;
-    background: var(--row-surface);
-    box-shadow: inset 3px 0 0 0 var(--color-primary);
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
   }
 
   @media (forced-colors: active) {

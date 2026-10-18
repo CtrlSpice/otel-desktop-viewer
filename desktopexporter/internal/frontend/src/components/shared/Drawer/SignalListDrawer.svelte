@@ -506,7 +506,7 @@
     <div class="drawer-side">
       <div
         id={drawerPanelID}
-        class="signal-drawer__panel flex h-full flex-col is-drawer-close:w-2 is-drawer-open:bg-base-200"
+        class="signal-drawer__panel flex h-full flex-col is-drawer-close:w-2"
         class:signal-drawer__panel--instant={(skipWidthTransition ||
           isResizing) &&
           !snapTween}
@@ -623,9 +623,7 @@
   }
 
   .signal-drawer__panel {
-    @apply relative transition-[width] duration-200;
-    border-right: 1px solid
-      color-mix(in oklab, var(--color-base-300) 70%, transparent);
+    @apply relative bg-base-100 transition-[width] duration-200;
   }
 
   .signal-drawer__panel--instant {
@@ -639,8 +637,7 @@
     transition: width 220ms cubic-bezier(0.2, 0, 0, 1) !important;
   }
 
-  /* Sits on the panel's trailing edge, over the border it replaces as the
-     grab target. The shared .col-resize-bar supplies the cursor, hit width
+  /* Sits on the panel's trailing edge. The shared .col-resize-bar supplies the cursor, hit width
      and line; this only places it. */
   .signal-drawer__resize {
     @apply absolute top-0 right-0 bottom-0 z-30;
@@ -656,11 +653,11 @@
 
   /* ── Body (list) ── */
   .signal-drawer__body {
-    @apply flex-1 min-h-0 overflow-hidden;
+    @apply flex-1 min-h-0 overflow-hidden pt-3;
   }
 
   .signal-drawer__item {
-    @apply min-w-0;
+    @apply min-w-0 px-3;
   }
 
   /* ── Empty state (zero results with filters still reachable above) ── */
@@ -704,7 +701,7 @@
      The single direct child stretches to fill the row so consumers
      don't have to remember to add w-full themselves. */
   .signal-drawer__footer {
-    @apply flex shrink-0 items-center bg-base-200 px-3;
+    @apply flex shrink-0 items-center px-3;
     min-height: var(--app-footer-height);
   }
 
