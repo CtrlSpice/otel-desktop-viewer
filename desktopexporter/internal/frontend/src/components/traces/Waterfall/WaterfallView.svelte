@@ -229,6 +229,15 @@
     waterfallTimeAxis,
   } from './WaterfallTimeAxisHeader.svelte'
   import WaterfallRow from './WaterfallRow.svelte'
+  import WaterfallColumnsPicker from './WaterfallColumnsPicker.svelte'
+  import {
+    columnID,
+    columnLabel,
+    columnOptions,
+    loadColumns,
+    saveColumns,
+    type WaterfallColumn,
+  } from './waterfall-columns'
   import {
     escapeForSelector,
     keyDeltaFor,
@@ -387,7 +396,6 @@
 
   import {
     flex,
-    initialWidths,
     fitWidths,
     reconcileWidths,
     resizeBar,
@@ -397,19 +405,46 @@
   } from '@/components/shared/utils/column-resize'
   import type { DragHandle } from '@/components/shared/utils/drag'
 
-  const wfCols = [
+  let selectedColumns = $state(loadColumns())
+  let availableColumns = $derived(columnOptions(spans, selectedColumns))
+  let wfCols = $derived([
     flex('span', 140, 2),
-    flex('service', 100, 1),
+    ...selectedColumns.map(column => flex(columnID(column), 100, 1)),
     flex('timeline', 240, 4),
-  ]
+  ])
 
-  /* Widths key by column id, never position: the column set is about to
-   * become user-configurable, and a stored or derived width must land on
+  /* Widths key by column id, never position: the column set
+   * is user-configurable, and a stored or derived width must land on
    * the column it belongs to no matter what was added or removed around
    * it. Stored widths from a different column set reconcile on load. */
   const COLUMN_WIDTHS_KEY = 'waterfall-column-widths'
   const COLUMN_RESIZE_STEP_PX = 16
   const COLUMN_RESIZE_LARGE_STEP_PX = 64
+
+  function reconcileColumnWidths(
+    containerPx: number,
+    stored: ColumnWidths,
+    specs = wfCols
+  ): ColumnWidths {
+    const width = Math.max(576, containerPx)
+    const widths = {
+      ...Object.fromEntries(specs.map(column => [column.id, column.min])),
+      ...stored,
+    }
+    if (!Number.isFinite(stored.timeline)) {
+      widths.timeline = Math.max(
+        240,
+        width -
+          specs
+            .filter(column => column.id !== 'timeline')
+            .reduce(
+              (sum, column) => sum + Math.max(column.min, widths[column.id]),
+              0
+            )
+      )
+    }
+    return reconcileWidths(specs, widths, width)
+  }
 
   function isStoredWidthsObject(value: unknown): value is object {
     return value !== null && typeof value === 'object'
@@ -443,24 +478,53 @@
   function saveColumnWidths() {
     if (typeof localStorage === 'undefined') return
     try {
-      localStorage.setItem(COLUMN_WIDTHS_KEY, JSON.stringify(colWidths))
+      localStorage.setItem(
+        COLUMN_WIDTHS_KEY,
+        JSON.stringify({ ...loadStoredWidths(), ...colWidths })
+      )
     } catch {
       // A full or blocked store costs the preference, not the drag.
     }
   }
 
   let activeResizeCol = $state<string | null>(null)
-  let colWidths = $state<ColumnWidths>(initialWidths(wfCols, 800))
+  let colWidths = $state<ColumnWidths>(
+    untrack(() => reconcileColumnWidths(800, loadStoredWidths()))
+  )
   let colDrag: DragHandle | null = null
 
   let spanColWidth = $derived(colWidths['span'] ?? 0)
-  let serviceColWidth = $derived(colWidths['service'] ?? 0)
+  let optionalColumns = $derived(
+    selectedColumns.map(column => ({
+      ...column,
+      id: columnID(column),
+      width: colWidths[columnID(column)] ?? 100,
+    }))
+  )
+  let gridWidth = $derived(
+    wfCols.reduce(
+      (width, column) => width + (colWidths[column.id] ?? column.min),
+      0
+    )
+  )
 
   let barPositions = $derived(computeBarPositions(wfCols, colWidths))
 
+  function resizeColumnLabel(id: string): string {
+    const selected = selectedColumns.find(column => columnID(column) === id)
+    return selected ? columnLabel(selected) : id
+  }
+
+  function setColumns(next: WaterfallColumn[]) {
+    colDrag?.cancel()
+    saveColumnWidths()
+    selectedColumns = next
+    saveColumns(next)
+  }
+
   function resizeBarPercent(positionPx: number): number {
-    if (scrollContainerW <= 0) return 0
-    return Math.round((positionPx / scrollContainerW) * 100)
+    if (gridWidth <= 0) return 0
+    return Math.round((positionPx / gridWidth) * 100)
   }
 
   function handleStartResize(barId: string, e: PointerEvent) {
@@ -486,7 +550,7 @@
     if (e.key === 'Home') {
       e.preventDefault()
       const containerPx = scrollContainerEl?.clientWidth || scrollContainerW
-      colWidths = reconcileWidths(wfCols, {}, containerPx)
+      colWidths = reconcileColumnWidths(containerPx, {})
       saveColumnWidths()
       return
     }
@@ -517,30 +581,39 @@
     const container = scrollContainerEl
     if (!container) return
     untrack(() => {
-      colWidths = reconcileWidths(
-        wfCols,
-        loadStoredWidths(),
-        container.clientWidth
+      colWidths = reconcileColumnWidths(
+        container.clientWidth,
+        loadStoredWidths()
       )
     })
     const ro = new ResizeObserver(entries => {
       const w = entries[0]?.contentRect.width ?? 800
       scrollContainerW = w
       if (activeResizeCol === null) {
-        colWidths = fitWidths(wfCols, colWidths, w)
+        colWidths = fitWidths(wfCols, colWidths, Math.max(576, w))
       }
     })
     ro.observe(container)
     return () => ro.disconnect()
   })
 
-  const TICK_LABEL_SLOT_PX = 80
-  const RULER_PADDING_PX = 48
-  const TICK_COUNT_STEPS = [2, 4, 6]
+  // A changed column set keeps surviving widths attached to their identities.
+  $effect(() => {
+    const specs = wfCols
+    untrack(() => {
+      colDrag?.cancel()
+      colWidths = reconcileColumnWidths(
+        scrollContainerEl?.clientWidth || scrollContainerW,
+        { ...loadStoredWidths(), ...colWidths },
+        specs
+      )
+    })
+  })
 
-  let timelineColPx = $derived(
-    scrollContainerW - spanColWidth - serviceColWidth
-  )
+  const TICK_LABEL_SLOT_PX = 96
+  const TICK_COUNT_STEPS = [1, 2, 4, 6]
+
+  let timelineColPx = $derived(colWidths['timeline'] ?? 0)
   let timelinePlotPx = $derived(
     Math.max(
       0,
@@ -551,10 +624,19 @@
     )
   )
   let targetTickCount = $derived.by(() => {
-    const fits = Math.floor(
-      (timelineColPx - RULER_PADDING_PX) / TICK_LABEL_SLOT_PX
+    // Nice intervals can produce more ticks than requested. Check their actual
+    // spacing inside the bar area, excluding label and activity-marker gutters.
+    return (
+      TICK_COUNT_STEPS.findLast(count => {
+        const { ticks } = waterfallTimeAxis(bounds.duration, count)
+        return (
+          ticks.length < 2 ||
+          ((ticks[1].offsetPercent - ticks[0].offsetPercent) * timelinePlotPx) /
+            100 >=
+            TICK_LABEL_SLOT_PX
+        )
+      }) ?? TICK_COUNT_STEPS[0]
     )
-    return TICK_COUNT_STEPS.findLast(n => n <= fits) ?? TICK_COUNT_STEPS[0]
   })
 
   let barGridPercents = $derived(
@@ -745,6 +827,7 @@
   $effect(() => {
     const grid = gridHostEl
     const rowCount = rows.length
+    const columnCount = 2 + optionalColumns.length
     if (!grid) return
 
     // The package owns the scroll viewport, so apply the treegrid semantics to
@@ -759,7 +842,7 @@
       viewport.role = 'treegrid'
       viewport.setAttribute('aria-label', 'Span waterfall')
       viewport.setAttribute('aria-rowcount', String(rowCount))
-      viewport.setAttribute('aria-colcount', '3')
+      viewport.setAttribute('aria-colcount', String(columnCount))
       // Rows own keyboard entry; the viewport would otherwise add a redundant
       // Tab stop immediately before the roving row.
       viewport.tabIndex = -1
@@ -963,11 +1046,16 @@
         <ExportButton signal="trace" id={traceID} />
       {/key}
     {/snippet}
-    {#snippet right()}
+    {#snippet metaRight()}
+      <WaterfallColumnsPicker
+        options={availableColumns}
+        selected={selectedColumns}
+        onchange={setColumns}
+      />
       {#if collapsibleSpanIDs.length > 0}
         <button
           type="button"
-          class="btn btn-circle btn-ghost btn-xs tooltip tooltip-left"
+          class="btn btn-xs join-item chart-header-control tooltip tooltip-left"
           onclick={() => setAll(false)}
           aria-label="Expand all spans"
           data-tip="Expand all spans"
@@ -982,7 +1070,7 @@
         </button>
         <button
           type="button"
-          class="btn btn-circle btn-ghost btn-xs tooltip tooltip-left"
+          class="btn btn-xs join-item chart-header-control tooltip tooltip-left"
           onclick={() => setAll(true)}
           aria-label="Collapse all spans"
           data-tip="Collapse all spans"
@@ -999,7 +1087,10 @@
     {/snippet}
   </PaneHeader>
   <div class="waterfall-view__scroll" bind:this={scrollContainerEl}>
-    <div class="col-resize-context waterfall-view__grid-host">
+    <div
+      class="col-resize-context waterfall-view__grid-host"
+      style:width="{gridWidth}px"
+    >
       {#each barPositions as bar (bar.id)}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -1009,7 +1100,7 @@
           style:left="{bar.left}px"
           role="separator"
           aria-orientation="vertical"
-          aria-label="Resize {bar.id} column"
+          aria-label="Resize {resizeColumnLabel(bar.id)} column"
           aria-valuenow={resizeBarPercent(bar.left)}
           aria-valuemin={resizeBarPercent(bar.min)}
           aria-valuemax={resizeBarPercent(bar.max)}
@@ -1030,7 +1121,7 @@
             {targetTickCount}
             tickLabelWidth={TICK_LABEL_SLOT_PX}
             {spanColWidth}
-            {serviceColWidth}
+            {optionalColumns}
             onStartResize={handleStartResize}
           />
         </thead>
@@ -1065,7 +1156,7 @@
               rowIndex={rowIndexBySpanID.get(sid) ?? index + 1}
               matched={searchActive && matchedIDs.has(sid)}
               {spanColWidth}
-              {serviceColWidth}
+              {optionalColumns}
               timelineWidth={timelinePlotPx}
               traceStart={bounds.start}
               traceEnd={bounds.end}
@@ -1125,16 +1216,16 @@
   }
 
   .waterfall-view__scroll {
-    @apply flex min-h-0 flex-1 flex-col;
+    @apply flex min-h-0 flex-1 flex-col overflow-x-auto;
   }
 
   /* Local override on top of `.header-surface`: drop the warm
      primary-tinted fill so the thead inherits the panel's
      bg-base-100, and remove the inset top highlight + primary-mix
-     bottom border that were tuned for a brighter body. The thead
-     keeps its `.header-surface` height + sizing rules but visually
-     merges into the panel surface. */
+     bottom border that were tuned for a brighter body. Let the header
+     grow with its labels so provenance never overlaps the first span. */
   .waterfall-view__thead {
+    height: auto;
     background-color: transparent;
     box-shadow: none;
     border-bottom-color: transparent;

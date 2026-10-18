@@ -7,7 +7,7 @@ export const MARKER_CLUSTER_DISTANCE_REM = 1
 export const TIMELINE_LEFT_INSET_REM = 1.25
 export const DURATION_GUTTER_REM = 5
 export const OUTSIDE_RECORD_SLOT_REM = 2
-export const BAR_LABEL_GAP_REM = 0.625
+export const BAR_LABEL_GAP_REM = 1
 
 export type TimelineRecord =
   | {

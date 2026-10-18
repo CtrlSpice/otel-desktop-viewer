@@ -205,6 +205,7 @@
 </script>
 
 <script lang="ts">
+  import { columnLabel, type SizedWaterfallColumn } from './waterfall-columns'
   import {
     DURATION_GUTTER_REM,
     OUTSIDE_RECORD_SLOT_REM,
@@ -216,12 +217,12 @@
     targetTickCount?: number
     tickLabelWidth?: number
     spanColWidth: number
-    serviceColWidth: number
+    optionalColumns?: SizedWaterfallColumn[]
     /** The header's separators are alternative grab handles for the
      *  view's column bars -- the drag itself (mechanics, cascade,
      *  persistence) lives in one place, with the view. This component
      *  only says which bar was grabbed. */
-    onStartResize: (barId: 'span' | 'service', e: PointerEvent) => void
+    onStartResize: (barId: string, e: PointerEvent) => void
   }
 
   let {
@@ -229,7 +230,7 @@
     targetTickCount = 6,
     tickLabelWidth = 80,
     spanColWidth,
-    serviceColWidth,
+    optionalColumns = [],
     onStartResize,
   }: Props = $props()
 
@@ -247,26 +248,43 @@
     scope="col"
     class="waterfall-time-axis-header__th-label waterfall-time-axis-header__th-span"
     style:width="{spanColWidth}px"
+    aria-label="Span name"
   >
-    Span
+    <span class="block truncate">name</span>
+    <span class="flex h-4 items-center">
+      <span class="badge badge-xs badge-soft badge-primary font-normal"
+        >Span</span
+      >
+    </span>
     <div
       class="resize-handle"
       aria-hidden="true"
       onpointerdown={e => onStartResize('span', e)}
     ></div>
   </th>
-  <th
-    scope="col"
-    class="waterfall-time-axis-header__th-label waterfall-time-axis-header__th-service"
-    style:width="{serviceColWidth}px"
-  >
-    Service
-    <div
-      class="resize-handle"
-      aria-hidden="true"
-      onpointerdown={e => onStartResize('service', e)}
-    ></div>
-  </th>
+  {#each optionalColumns as column (column.id)}
+    <th
+      scope="col"
+      class="waterfall-time-axis-header__th-label waterfall-time-axis-header__th-attribute"
+      style:width="{column.width}px"
+      title={columnLabel(column)}
+      aria-label={columnLabel(column)}
+      data-column-id={column.id}
+    >
+      <span class="block truncate">{column.key || '(empty key)'}</span>
+      <span class="flex h-4 items-center">
+        <span
+          class="badge badge-xs badge-soft badge-primary font-normal capitalize"
+          >{column.source}</span
+        >
+      </span>
+      <div
+        class="resize-handle"
+        aria-hidden="true"
+        onpointerdown={e => onStartResize(column.id, e)}
+      ></div>
+    </th>
+  {/each}
   <th scope="col" class="waterfall-time-axis-header__th-ruler">
     <div class="waterfall-time-axis-header__ruler">
       {#each axis.ticks as tick}
@@ -288,11 +306,12 @@
 <style lang="postcss">
   @reference "../../../app.css";
   .waterfall-time-axis-header {
-    height: var(--table-header-h);
+    --primary-label-center: calc(50% - 0.5rem);
+    height: 3.25rem;
   }
 
   .waterfall-time-axis-header__th-label {
-    @apply relative align-middle text-left text-xs font-semibold tracking-normal;
+    @apply relative py-2 align-middle text-left text-sm font-semibold tracking-normal;
     color: var(--color-subtle);
   }
 
@@ -301,8 +320,8 @@
     padding-left: 38px;
   }
 
-  .waterfall-time-axis-header__th-service {
-    @apply pl-2 pr-1;
+  .waterfall-time-axis-header__th-attribute {
+    @apply px-2;
   }
 
   .waterfall-time-axis-header__th-ruler {
@@ -323,7 +342,8 @@
   }
 
   .waterfall-time-axis-header__tick-label {
-    @apply absolute top-1/2 text-xs tracking-normal text-center;
+    @apply absolute text-sm font-semibold tracking-normal text-center;
+    top: var(--primary-label-center);
     color: var(--color-subtle);
     width: var(--tick-label-w);
     margin-left: calc(var(--tick-label-w) / -2);
@@ -333,7 +353,7 @@
   .waterfall-time-axis-header__tick-line {
     @apply absolute bottom-0 w-px bg-base-content/20;
     left: 0;
-    top: calc(50% + 10px);
+    top: calc(var(--primary-label-center) + 0.625rem);
     transform: translateX(-50%);
   }
 

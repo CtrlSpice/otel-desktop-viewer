@@ -10,6 +10,13 @@ import type { SpanNode } from '@/types/api-types'
 import { renderWithContexts } from '@/test/render-helpers'
 import { resetCollapseStoreForTests } from './waterfall-collapse-store'
 import { scrollMock } from '@/test/mock-virtual-list'
+import {
+  columnCell,
+  columnOptions,
+  columnID,
+  loadColumns,
+  saveColumns,
+} from './waterfall-columns'
 
 vi.mock('@humanspeak/svelte-virtual-list', async () => {
   const { default: MockVirtualList } =
@@ -55,6 +62,115 @@ function spanNode(
     },
   }
 }
+
+describe('Waterfall attribute values', () => {
+  it('keeps built-in fields separate from identically named attributes and preserves precision', () => {
+    const span = spanNode('first', null, 0).spanData
+    span.startTime = 18446744073709551614n
+    span.endTime = 18446744073709551615n
+    span.kindCode = 99
+    span.kind = 'Unknown (99)'
+    span.attributes = [
+      { key: 'kind', value: { kind: 'string', value: 'received attribute' } },
+    ]
+    const field = { source: 'span', key: 'kind', field: true } as const
+    const attribute = { source: 'span', key: 'kind' } as const
+    expect(columnID(field)).not.toBe(columnID(attribute))
+    expect(columnCell(span, field).text).toBe('99 (Unknown (99))')
+    expect(columnCell(span, attribute).text).toBe('received attribute')
+    expect(
+      columnCell(span, {
+        source: 'span',
+        key: 'startTimeUnixNano',
+        field: true,
+      })
+    ).toMatchObject({ text: '18446744073709551614', numeric: true })
+    expect(
+      columnCell(span, { source: 'span', key: 'duration', field: true }).title
+    ).toContain('1 ns')
+    expect(
+      columnCell(span, { source: 'span', key: 'parentSpanId', field: true })
+        .missing
+    ).toBe(true)
+    expect(
+      columnCell(span, { source: 'span', key: 'flags', field: true })
+    ).toMatchObject({ text: '0', missing: false })
+    expect(
+      columnCell(span, { source: 'scope', key: 'name', field: true })
+    ).toMatchObject({ text: '""', missing: false })
+  })
+
+  it('defaults service.name on while remembering empty layouts and field identities', () => {
+    localStorage.clear()
+    expect(loadColumns()).toEqual([{ source: 'resource', key: 'service.name' }])
+    saveColumns([])
+    expect(loadColumns()).toEqual([])
+    const columns = [
+      { source: 'scope', key: 'name', field: true },
+      { source: 'scope', key: 'name' },
+    ] as const
+    saveColumns(columns)
+    expect(loadColumns()).toEqual(columns)
+    localStorage.clear()
+  })
+
+  it('keeps owners separate, counts spans once, and retains selected absent keys', () => {
+    const span = spanNode('first', null, 0)
+    span.spanData.attributes = [
+      { key: 'same', value: { kind: 'int64', value: 9223372036854775807n } },
+      { key: 'same', value: { kind: 'bool', value: false } },
+    ]
+    span.spanData.resource.attributes = [
+      { key: 'same', value: { kind: 'string', value: 'resource value' } },
+    ]
+    expect(
+      columnOptions([span], [{ source: 'scope', key: 'absent' }]).filter(
+        column => !column.field
+      )
+    ).toMatchObject([
+      { source: 'span', key: 'same', count: 1 },
+      { source: 'resource', key: 'same', count: 1 },
+      { source: 'scope', key: 'absent', count: 0 },
+    ])
+    expect(
+      columnCell(span.spanData, { source: 'span', key: 'same' }).text
+    ).toBe('9223372036854775807 | false')
+    expect(
+      columnCell(span.spanData, { source: 'resource', key: 'same' }).text
+    ).toBe('resource value')
+    expect(
+      columnCell(span.spanData, { source: 'scope', key: 'absent' }).missing
+    ).toBe(true)
+  })
+
+  it('distinguishes absent, empty, null, zero and negative zero without losing nested values', () => {
+    const span = spanNode('first', null, 0).spanData
+    span.attributes = [
+      { key: 'empty string', value: { kind: 'string', value: '' } },
+      { key: 'null', value: { kind: 'empty', value: null } },
+      { key: 'zero', value: { kind: 'int64', value: 0n } },
+      { key: 'negative zero', value: { kind: 'double', value: -0 } },
+      {
+        key: 'map',
+        value: {
+          kind: 'map',
+          value: [
+            { key: 'a', value: { kind: 'int64', value: 9223372036854775807n } },
+            { key: 'a', value: { kind: 'string', value: 'two  spaces' } },
+          ],
+        },
+      },
+    ]
+    const cell = (key: string) => columnCell(span, { source: 'span', key })
+    expect(cell('absent')).toMatchObject({ text: '—', missing: true })
+    expect(cell('empty string')).toMatchObject({ text: '""', missing: false })
+    expect(cell('null').text).toBe('null')
+    expect(cell('zero').text).toBe('0')
+    expect(cell('negative zero').text).toBe('-0')
+    expect(cell('map').text).toContain('"a": 9223372036854775807,')
+    expect(cell('map').text).toContain('"a": "two  spaces"')
+  })
+})
 
 describe('WaterfallView bigint domain geometry', () => {
   it('uses domain bigint span and event times without reparsing', () => {
@@ -129,11 +245,11 @@ function renderTree(overrides: Record<string, unknown> = {}) {
   })
 }
 
-type PersistedColumnWidths = {
-  span: number
-  service: number
-  timeline: number
-}
+const SERVICE_COLUMN_ID = '["resource","service.name"]'
+type PersistedColumnWidths = Record<
+  'span' | 'timeline' | typeof SERVICE_COLUMN_ID,
+  number
+>
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
@@ -146,10 +262,10 @@ function isPersistedColumnWidths(
     value !== null &&
     typeof value === 'object' &&
     'span' in value &&
-    'service' in value &&
+    SERVICE_COLUMN_ID in value &&
     'timeline' in value &&
     isFiniteNumber(value.span) &&
-    isFiniteNumber(value.service) &&
+    isFiniteNumber(value[SERVICE_COLUMN_ID]) &&
     isFiniteNumber(value.timeline)
   )
 }
@@ -881,6 +997,10 @@ describe('WaterfallView column separators', () => {
   })
 
   it('nudges through the shared cascade and persists each keyboard change', async () => {
+    localStorage.setItem(
+      'waterfall-column-widths',
+      JSON.stringify({ span: 200, [SERVICE_COLUMN_ID]: 100, timeline: 500 })
+    )
     renderTree()
     await tick()
 
@@ -924,16 +1044,18 @@ describe('WaterfallView column separators', () => {
     expect(spanBar).toHaveAttribute('aria-valuenow', defaultPosition)
 
     const stored = readPersistedColumnWidths()
-    expect(stored.span + stored.service + stored.timeline).toBeCloseTo(600, 6)
+    expect(
+      stored.span + stored[SERVICE_COLUMN_ID] + stored.timeline
+    ).toBeCloseTo(600, 6)
     expect(stored.span).toBeGreaterThanOrEqual(140)
-    expect(stored.service).toBeGreaterThanOrEqual(100)
+    expect(stored[SERVICE_COLUMN_ID]).toBeGreaterThanOrEqual(100)
     expect(stored.timeline).toBeGreaterThanOrEqual(240)
   })
 
   it('salvages finite widths while ignoring malformed entries', async () => {
     const stored = {
       span: 400,
-      service: 'wide',
+      [SERVICE_COLUMN_ID]: 'wide',
       timeline: null,
       removedColumn: 123,
     }
@@ -954,10 +1076,8 @@ describe('WaterfallView column separators', () => {
     expect(() => renderTree()).not.toThrow()
     await tick()
 
-    expect(Number.parseFloat(separators()[0]!.style.left)).toBeCloseTo(
-      (800 * 2) / 7,
-      5
-    )
+    expect(Number.parseFloat(separators()[0]!.style.left)).toBe(140)
+    expect(Number.parseFloat(separators()[1]!.style.left)).toBe(240)
   })
 
   it('rejects extreme finite widths before layout arithmetic overflows', async () => {
@@ -965,7 +1085,7 @@ describe('WaterfallView column separators', () => {
       'waterfall-column-widths',
       JSON.stringify({
         span: Number.MAX_VALUE,
-        service: Number.MAX_VALUE,
+        [SERVICE_COLUMN_ID]: Number.MAX_VALUE,
         timeline: Number.MAX_VALUE,
       })
     )

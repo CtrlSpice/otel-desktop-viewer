@@ -197,6 +197,193 @@ for (const [theme, errorColour] of [
   })
 }
 
+test('Waterfall columns persist across traces and align through resizing and overflow', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1100 })
+  const nextTraceID = 'abcdefabcdefabcdefabcdefabcdefab'
+  await page.route('**/rpc', async route => {
+    const request = route.request().postDataJSON() as {
+      id: number
+      method: string
+    }
+    const nextTrace = page.url().includes(nextTraceID)
+    const result =
+      request.method === 'getTraceView'
+        ? {
+            ...trace,
+            traceID: nextTrace ? nextTraceID : traceID,
+            spans: trace.spans.map(node => ({
+              ...node,
+              spanData: {
+                ...node.spanData,
+                attributes: nextTrace
+                  ? []
+                  : [
+                      {
+                        key: 'request.count',
+                        value: { kind: 'int64', value: '9223372036854775807' },
+                      },
+                      {
+                        key: 'kind',
+                        value: { kind: 'string', value: 'attribute kind' },
+                      },
+                    ],
+              },
+            })),
+          }
+        : request.method === 'searchTraceSummaries'
+          ? [traceID, nextTraceID].map(id => ({
+              traceID: id,
+              hasRootSpan: true,
+              rootSpan: { serviceName: 'checkout', name: 'other span' },
+              startTime: trace.traceStart,
+              durationNs: '1000000000',
+              spanCount: 2,
+              errorCount: 0,
+            }))
+          : request.method === 'getStats'
+            ? {
+                storage: { sizeBytes: 0, maxSizeBytes: 0 },
+                traces: {
+                  traceCount: 2,
+                  spanCount: 4,
+                  serviceCount: 1,
+                  errorCount: 0,
+                  lastReceived: null,
+                },
+                logs: { logCount: 0, errorCount: 0, lastReceived: null },
+                metrics: {
+                  metricCount: 0,
+                  dataPointCount: 0,
+                  lastReceived: null,
+                },
+                rejections: [],
+              }
+            : []
+    await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result } })
+  })
+  await page.goto(`/traces/${traceID}?span=${selectedID}`)
+  await expect(
+    page.getByRole('columnheader', { name: 'Span name', exact: true })
+  ).toBeVisible()
+  await expect(
+    page.getByRole('columnheader', {
+      name: 'resource: service.name',
+      exact: true,
+    })
+  ).toBeVisible()
+  await page.getByRole('button', { name: 'Columns', exact: true }).click()
+  const picker = page.getByRole('group', { name: 'Waterfall columns' })
+  await page.getByRole('searchbox', { name: 'Find columns' }).fill('request')
+  await picker
+    .getByRole('checkbox', { name: 'span: request.count', exact: true })
+    .check()
+  await expect(picker).toBeVisible()
+  await page.keyboard.press('Escape')
+  const header = page.getByRole('columnheader', {
+    name: 'span: request.count',
+    exact: true,
+  })
+  const row = page.locator(`.waterfall-row[data-span-id="${selectedID}"]`)
+  const cell = row.getByRole('gridcell').nth(1)
+  await expect(cell).toHaveText('9223372036854775807')
+  await expect(cell.locator('span').first()).toHaveCSS('text-align', 'right')
+  await expect(
+    row.getByRole('gridcell').first().locator('span').first()
+  ).toHaveCSS('text-align', 'left')
+  await expect(row).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('treegrid')).toHaveAttribute('aria-colcount', '4')
+  const before = (await header.boundingBox())!.width
+  await page
+    .getByRole('separator', {
+      name: 'Resize span: request.count column',
+      exact: true,
+    })
+    .press('ArrowRight')
+  await expect
+    .poll(async () => (await header.boundingBox())!.width)
+    .toBeGreaterThan(before)
+  const resized = (await header.boundingBox())!.width
+  await page.reload()
+  await expect(header).toBeVisible()
+  await expect
+    .poll(async () => Math.abs((await header.boundingBox())!.width - resized))
+    .toBeLessThan(2)
+  await page.goto(`/traces/${nextTraceID}?span=${selectedID}`)
+  await expect(cell).toHaveText('—')
+  await page.getByRole('button', { name: 'Columns', exact: true }).click()
+  await expect(
+    picker.getByRole('checkbox', { name: 'span: request.count', exact: true })
+  ).toBeChecked()
+  await picker
+    .getByRole('checkbox', { name: 'resource: service.name', exact: true })
+    .check()
+  await page.keyboard.press('Escape')
+  await page.setViewportSize({ width: 1000, height: 900 })
+  await expect(row.getByRole('gridcell').first()).toHaveText('checkout')
+  await expect
+    .poll(async () => {
+      const h = await header.boundingBox()
+      const c = await cell.boundingBox()
+      if (!h || !c) return Infinity
+      return Math.max(Math.abs(h.x - c.x), Math.abs(h.width - c.width))
+    })
+    .toBeLessThan(2)
+  await page.locator('.waterfall-view__scroll').evaluate(el => {
+    el.scrollLeft = el.scrollWidth
+  })
+  await expect
+    .poll(async () =>
+      Math.abs((await header.boundingBox())!.x - (await cell.boundingBox())!.x)
+    )
+    .toBeLessThan(2)
+  await page.getByRole('button', { name: 'Columns', exact: true }).click()
+  await picker
+    .getByRole('checkbox', { name: 'span: request.count', exact: true })
+    .click()
+  await expect(header).toHaveCount(0)
+  await expect(row).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('treegrid')).toHaveAttribute('aria-colcount', '3')
+  await picker
+    .getByRole('checkbox', { name: 'resource: service.name', exact: true })
+    .uncheck()
+  await expect(page.getByRole('treegrid')).toHaveAttribute('aria-colcount', '2')
+  await expect(page.getByRole('columnheader')).toHaveCount(2)
+  await page.reload()
+  await expect(page.getByRole('treegrid')).toHaveAttribute('aria-colcount', '2')
+  await expect(
+    page.getByRole('columnheader', { name: 'Span name', exact: true })
+  ).toBeVisible()
+  await expect(
+    page.getByRole('columnheader', {
+      name: 'resource: service.name',
+      exact: true,
+    })
+  ).toHaveCount(0)
+  await page.goto(`/traces/${traceID}?span=${selectedID}`)
+  await page.getByRole('button', { name: 'Columns', exact: true }).click()
+  await page.getByRole('searchbox', { name: 'Find columns' }).fill('kind')
+  await picker
+    .getByRole('checkbox', { name: 'span field: kind', exact: true })
+    .check()
+  await picker
+    .getByRole('checkbox', { name: 'span: kind', exact: true })
+    .check()
+  await page.keyboard.press('Escape')
+  await expect(row.getByRole('gridcell').nth(0)).toHaveText('2 (Server)')
+  await expect(row.getByRole('gridcell').nth(1)).toHaveText('attribute kind')
+  await page.reload()
+  await expect(
+    page.getByRole('columnheader', { name: 'span field: kind', exact: true })
+  ).toBeVisible()
+  await expect(
+    page.getByRole('columnheader', { name: 'span: kind', exact: true })
+  ).toBeVisible()
+  await expect(row.getByRole('gridcell').nth(0)).toHaveText('2 (Server)')
+  await expect(row.getByRole('gridcell').nth(1)).toHaveText('attribute kind')
+})
+
 test('Copy span sits opposite the span icon and copies only the selected span with context', async ({
   page,
   context,

@@ -230,7 +230,9 @@
       {/if}
     </div>
     {#if showControls && props.metaRight}
-      <div class="pane-header__meta-right">{@render props.metaRight()}</div>
+      <div class="join pane-header__joined-controls">
+        {@render props.metaRight()}
+      </div>
     {/if}
   </div>
 {/snippet}
@@ -479,7 +481,7 @@
   }
 
   .pane-header--stacked {
-    @apply flex-col items-stretch gap-0;
+    @apply flex-col items-stretch gap-2;
   }
 
   .pane-header--stacked.pane-header--title {
@@ -505,10 +507,6 @@
 
   .pane-header__time-range {
     @apply min-w-0 flex-1 text-xs;
-  }
-
-  .pane-header__meta-right {
-    @apply ml-auto flex min-w-0 max-w-full shrink-0 flex-wrap items-center gap-2;
   }
 
   .pane-header--toolbar {
@@ -598,7 +596,7 @@
   }
 
   .pane-header__tabs-row {
-    @apply flex min-w-0 w-full flex-wrap items-center gap-x-4 gap-y-1 py-1;
+    @apply flex min-w-0 w-full flex-wrap items-center gap-x-4 gap-y-1 pb-1;
   }
 
   .pane-header__tabs-row .pane-header__meta-row {

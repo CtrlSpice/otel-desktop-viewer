@@ -91,7 +91,7 @@ describe('timeline marker projection', () => {
       barHeight: 0.875,
       durationGutter: 5,
       outsideSlot: 2,
-      barLabelGap: 0.625,
+      barLabelGap: 1,
       timelineInset: 1.25,
       glyph: 0.875,
       hitArea: 1.5,

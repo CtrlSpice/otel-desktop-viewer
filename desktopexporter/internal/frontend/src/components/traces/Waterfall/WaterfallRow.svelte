@@ -2,7 +2,6 @@
   import type { SpanData } from '@/types/api-types'
   import type { WaterfallRowData } from './WaterfallView.svelte'
   import { formatDuration } from '@/utils/time'
-  import { getServiceName } from '@/utils/resource'
   import WaterfallTreeGutter from './WaterfallTreeGutter.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { BiohazardIcon } from '@hugeicons/core-free-icons'
@@ -17,6 +16,7 @@
     clusterTimelineRecords,
   } from './timeline-markers'
   import { remToPx } from '@/state/panel-width'
+  import { columnCell, type SizedWaterfallColumn } from './waterfall-columns'
 
   type Props = {
     row: WaterfallRowData
@@ -27,7 +27,7 @@
     subtreeCollapsed: boolean
     rowIndex: number
     spanColWidth: number
-    serviceColWidth: number
+    optionalColumns?: SizedWaterfallColumn[]
     timelineWidth: number
     traceStart: bigint
     traceEnd: bigint
@@ -48,7 +48,7 @@
     subtreeCollapsed,
     rowIndex,
     spanColWidth,
-    serviceColWidth,
+    optionalColumns = [],
     timelineWidth,
     traceStart,
     traceEnd,
@@ -79,7 +79,6 @@
       : ''
   )
   let durationLabel = $derived(formatDuration(span.endTime - span.startTime))
-  let serviceName = $derived(getServiceName(span.resource) ?? 'unknown')
 
   let hasChildren = $derived(row.tree.childrenCount > 0)
   let ariaLevel = $derived(row.spanNode.depth + 1)
@@ -115,7 +114,7 @@
 >
   <td
     role="rowheader"
-    class="waterfall-row__td-name p-0 pl-2 align-middle"
+    class="waterfall-row__td-name px-2 py-0 align-middle"
     style:width="{spanColWidth}px"
   >
     <div class="flex min-w-0 items-center gap-1">
@@ -127,7 +126,7 @@
         {onToggleExpand}
       />
       <span
-        class="waterfall-row__title truncate text-sm text-base-content"
+        class="waterfall-row__title flex-1 truncate text-left text-sm text-base-content"
         title={span.name}
       >
         {span.name}
@@ -161,15 +160,25 @@
       <span class="col-resize-marker" aria-hidden="true"></span>
     </div>
   </td>
-  <td
-    role="gridcell"
-    class="waterfall-row__td-service p-0 align-middle text-sm"
-    title={serviceName}
-    style:width="{serviceColWidth}px"
-  >
-    <span class="block truncate pl-2 pr-1">{serviceName}</span>
-    <span class="col-resize-marker" aria-hidden="true"></span>
-  </td>
+  {#each optionalColumns as column (column.id)}
+    {@const cell = columnCell(span, column)}
+    <td
+      role="gridcell"
+      class="p-0 align-middle text-sm"
+      style:width="{column.width}px"
+      data-column-id={column.id}
+      title={cell.title}
+    >
+      <span
+        class={[
+          'block truncate px-2',
+          cell.numeric ? 'text-right' : 'text-left',
+          cell.missing && 'text-base-content/50',
+        ]}>{cell.text}</span
+      >
+      <span class="col-resize-marker" aria-hidden="true"></span>
+    </td>
+  {/each}
   <td role="gridcell" class="waterfall-row__td-bar p-0 align-middle">
     <div
       class="waterfall-row__bar-area"
@@ -235,10 +244,6 @@
 
   .waterfall-row__cycle--cycle-point {
     @apply text-error text-sm font-bold;
-  }
-
-  .waterfall-row__td-service {
-    color: var(--color-base-content);
   }
 
   .waterfall-row__bar-area {

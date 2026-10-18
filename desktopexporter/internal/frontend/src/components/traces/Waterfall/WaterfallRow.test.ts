@@ -78,7 +78,6 @@ function renderRow(
       subtreeCollapsed: false,
       rowIndex: 1,
       spanColWidth: 200,
-      serviceColWidth: 100,
       timelineWidth: 400,
       traceStart: 0n,
       traceEnd: 1_000_000n,
