@@ -382,6 +382,18 @@ export function formatDateTimeMs(
   }
 }
 
+/** Separate calendar and clock labels without parsing locale punctuation. */
+export function formatDateTimeParts(ms: number, timezone: Timezone) {
+  const date = new Date(ms)
+  const wall = wallClockAt(date.getTime(), resolveTimezoneName(timezone))
+  const pad = (value: number, width = 2) => String(value).padStart(width, '0')
+  return {
+    date: `${pad(wall.year, 4)}-${pad(wall.month)}-${pad(wall.day)}`,
+    time: `${pad(wall.hour)}:${pad(wall.minute)}:${pad(wall.second)}.${pad(wall.millisecond, 3)}`,
+    timezone: formatTimezoneLabel(timezone, date),
+  }
+}
+
 // UI time: number = Unix ms (from Date.now(), time pickers, etc.)
 export function formatDateTime(
   ms: number,

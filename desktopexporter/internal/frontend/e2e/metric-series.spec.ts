@@ -1328,8 +1328,8 @@ test('series open by their headers, one at a time, with one combined table', asy
       .getByRole('checkbox', { name: 'Show chart stat overlays' })
   ).toHaveCount(0)
   await expect(range).toHaveCount(1)
-  await expect(range).toContainText('start:')
-  await expect(range).toContainText('end:')
+  await expect(range).toContainText('Start')
+  await expect(range).toContainText('End')
   await expect(
     page.locator('.metric-chart-view [aria-label="Chart time range"]')
   ).toHaveCount(0)

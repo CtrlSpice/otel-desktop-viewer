@@ -235,8 +235,8 @@ describe('Metric main-header range', () => {
         name: 'Metric chart',
       })
       const range = header.querySelector('[aria-label="Chart time range"]')!
-      expect(range).toHaveTextContent('start:')
-      expect(range).toHaveTextContent('end:')
+      expect(range).toHaveTextContent('Start')
+      expect(range).toHaveTextContent('End')
       expect(
         document.querySelectorAll('[aria-label="Chart time range"]')
       ).toHaveLength(1)
