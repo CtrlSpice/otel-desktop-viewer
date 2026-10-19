@@ -1111,6 +1111,17 @@ button:focus-visible:not(.btn) {
   color: var(--number-circle-color);
 }
 
+html[data-theme='rose-pine-dawn'] .number-circle,
+html[data-theme='rose-pine-dawn'] .number-circle:hover {
+  background-color: color-mix(
+    in oklab,
+    var(--number-circle-color) 8%,
+    var(--color-base-200)
+  );
+  border: 1px solid var(--number-circle-color);
+  color: var(--color-base-content);
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root {
     --panel-motion-duration: 0ms;

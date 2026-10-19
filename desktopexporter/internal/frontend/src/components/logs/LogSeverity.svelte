@@ -20,4 +20,8 @@
   .log-severity__label {
     @apply min-w-0 truncate text-base-content/60;
   }
+
+  :global(html[data-theme='rose-pine-dawn']) .log-severity__label {
+    color: var(--color-base-content);
+  }
 </style>
