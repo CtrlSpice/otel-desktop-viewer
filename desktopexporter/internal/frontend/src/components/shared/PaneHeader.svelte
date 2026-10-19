@@ -584,7 +584,7 @@
        `.badge`-only rule silently missed it -- the span-count badge
        stayed xs while its neighbours upsized. */
     --size: calc(var(--size-selector, 0.25rem) * 6);
-    font-size: 0.8125rem;
+    font-size: calc(0.8125rem + 1pt);
   }
 
   /* Left layout (drawer / tabs-only): tabs pack to the start at intrinsic
