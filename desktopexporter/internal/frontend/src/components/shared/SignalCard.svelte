@@ -82,9 +82,6 @@
         class:signal-row__title--muted={titleMuted}
         >{#if titleContent}{@render titleContent()}{:else}{title}{/if}</span
       >
-      {#if subtitle}
-        <span class="signal-row__subtitle"> ({subtitle})</span>
-      {/if}
       {#if badge && badgePlacement === 'inline'}
         <span class="flex shrink-0 items-center gap-1">{@render badge()}</span>
       {/if}
@@ -95,6 +92,10 @@
       </span>
     {/if}
   </div>
+
+  {#if subtitle}
+    <div class="signal-row__subtitle" title={subtitle}>{subtitle}</div>
+  {/if}
 
   {#if description}
     <div class="signal-row__lead">
@@ -230,7 +231,7 @@
   }
 
   .signal-row__subtitle {
-    @apply min-w-0 flex-1 truncate text-sm font-normal leading-none;
+    @apply min-w-0 truncate py-0.5 text-sm font-normal leading-snug;
     color: var(--color-subtle);
   }
 

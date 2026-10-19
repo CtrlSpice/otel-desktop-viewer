@@ -4,6 +4,8 @@
    * one table. Resource metadata belongs to the metric Fields section.
    */
   import { tick } from 'svelte'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
   import {
     getMetricViewContext,
     SPARKLINE_WIDTH_PX,
@@ -163,10 +165,24 @@
     >
       {#snippet headerAction()}
         <span class="ts-row__header">
-          <span
-            class="ts-row__title-row"
-            class:ts-row__title-row--no-sparkline={sparklineSuppressed}
-          >
+          <span class="ts-row__title-row">
+            <span
+              class="ts-row__caret"
+              class:rotate-90={expanded}
+              title={`${expanded ? 'Collapse' : 'Expand'} ${headerLabel}`}
+              aria-hidden="true"
+            >
+              <HugeiconsIcon
+                icon={ArrowRight01Icon}
+                size={16}
+                strokeWidth={1.5}
+              />
+            </span>
+            <span
+              class="ts-row__attrs ts-row__attrs-text"
+              class:ts-row__default-label={!hasAttrs}
+              title={tooltip}>{headerLabel}</span
+            >
             <label
               class="ts-row__check-label"
               class:ts-row__check-label--disabled={checkboxDisabled}
@@ -174,7 +190,7 @@
             >
               <input
                 type="checkbox"
-                class="checkbox checkbox-xs checkbox-soft ts-row__checkbox"
+                class="checkbox checkbox-xs rounded-full ts-row__checkbox"
                 style:--input-color={color}
                 style:color={fg}
                 {checked}
@@ -183,37 +199,36 @@
                 onchange={e => toggle(ts.key, e.currentTarget.checked)}
               />
             </label>
-            <span
-              class="ts-row__attrs ts-row__attrs-text"
-              class:ts-row__default-label={!hasAttrs}
-              title={tooltip}
-              >{hasAttrs
-                ? attrsTooltip(rowHeaderAttrs)
-                : 'default series'}</span
-            >
-            {#if !sparklineSuppressed}
-              <!-- The store reduced these points to this width, so the
-                       constant is shared rather than repeated here. -->
-              <span class="ts-row__sparkline">
-                <Sparkline
-                  points={sparklinePoints}
-                  color={sparklineColor}
-                  width={SPARKLINE_WIDTH_PX}
-                />
-              </span>
-            {/if}
           </span>
-          {#if showStatBadges}
-            <span class="ts-row__stats-row" aria-label="Series stats">
-              {#each statBadges as stat (stat)}
-                {@const value = rowStats[stat]}
-                {#if value !== undefined}
-                  <span class="badge-count" title={statBadgeTitle(stat, value)}>
-                    {STAT_LABEL[stat]}
-                    {formatMetricValue(value)}
-                  </span>
-                {/if}
-              {/each}
+          {#if !sparklineSuppressed || showStatBadges}
+            <span class="ts-row__summary-row">
+              {#if !sparklineSuppressed}
+                <!-- The store reduced these points to this width, so the
+                       constant is shared rather than repeated here. -->
+                <span class="ts-row__sparkline">
+                  <Sparkline
+                    points={sparklinePoints}
+                    color={sparklineColor}
+                    width={SPARKLINE_WIDTH_PX}
+                  />
+                </span>
+              {/if}
+              {#if showStatBadges}
+                <span class="ts-row__stats-row" aria-label="Series stats">
+                  {#each statBadges as stat (stat)}
+                    {@const value = rowStats[stat]}
+                    {#if value !== undefined}
+                      <span
+                        class="badge-count"
+                        title={statBadgeTitle(stat, value)}
+                      >
+                        {STAT_LABEL[stat]}
+                        {formatMetricValue(value)}
+                      </span>
+                    {/if}
+                  {/each}
+                </span>
+              {/if}
             </span>
           {/if}
         </span>
@@ -251,10 +266,8 @@
 
   .ts-panel {
     @apply flex min-w-0 flex-col gap-1;
-    /* Fixed chrome widths for sparkline inset (checkbox-xs + label pad). */
-    --ts-check-col: 1.5rem;
-    --ts-header-gap: 0.5rem;
-    --ts-content-inset: calc(var(--ts-check-col) + var(--ts-header-gap));
+    /* Align secondary facts with the attribute label after the caret. */
+    --ts-content-inset: 1.5rem;
   }
 
   .ts-panel :global(.field-group) {
@@ -267,7 +280,7 @@
 
   .ts-row__title-row {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) minmax(0, 128px);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
     gap: 0.5rem;
     min-height: var(--table-row-h);
@@ -275,8 +288,13 @@
     width: 100%;
   }
 
-  .ts-row__title-row--no-sparkline {
-    grid-template-columns: auto minmax(0, 1fr);
+  .ts-row__caret {
+    @apply inline-flex size-4 shrink-0 items-center justify-center text-base-content/60;
+  }
+
+  .ts-row__summary-row {
+    @apply flex min-w-0 items-center justify-between gap-2;
+    padding-left: var(--ts-content-inset);
   }
 
   .ts-row__sparkline {
@@ -289,12 +307,11 @@
   }
 
   .ts-row__stats-row {
-    @apply flex min-w-0 flex-wrap items-center justify-end gap-0.5;
-    padding-left: var(--ts-content-inset);
+    @apply ml-auto flex min-w-0 flex-wrap items-center justify-end gap-0.5;
   }
 
   .ts-row__check-label {
-    @apply flex shrink-0 cursor-pointer items-center py-1 pr-2;
+    @apply flex shrink-0 cursor-pointer items-center py-1 pl-2;
   }
 
   .ts-row__check-label--disabled {

@@ -37,7 +37,7 @@ describe('MetricCard', () => {
   it('renders the metric name and service name', () => {
     renderCard({ metric: makeMetric() })
     expect(screen.getByText('http.server.duration')).toBeInTheDocument()
-    expect(screen.getByRole('button')).toHaveTextContent('(orders-service)')
+    expect(screen.getByText('orders-service')).toBeInTheDocument()
   })
 
   it('renders the description', () => {

@@ -31,7 +31,7 @@ describe('TraceCard', () => {
     renderCard({ trace: makeTrace() })
     const button = screen.getByRole('button')
     expect(within(button).getByText('GET /api/orders')).toBeInTheDocument()
-    expect(button).toHaveTextContent('(orders-service)')
+    expect(within(button).getByText('orders-service')).toBeInTheDocument()
   })
 
   it('falls back to a placeholder title when the trace has no root span', () => {
