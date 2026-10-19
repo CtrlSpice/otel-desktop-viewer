@@ -41,13 +41,13 @@ export function themeTokens(theme: Theme) {
     '--color-on-dark': light
       ? 'var(--color-base-100)'
       : 'var(--color-base-content)',
-    '--waterfall-bar-opacity': light ? '0.6' : '1',
+    '--waterfall-bar-opacity': light ? '0.6' : '0.75',
     '--waterfall-bar-label-color': light
       ? 'var(--color-base-content)'
       : 'var(--color-base-200)',
     '--waterfall-marker-mix-target': 'var(--color-base-content)',
     '--waterfall-marker-mix-strength': light ? '0%' : '40%',
-    '--metric-series-line-opacity': 'var(--waterfall-bar-opacity)',
+    '--metric-series-line-opacity': light ? '0.6' : '1',
     '--waterfall-tick-mix-target': 'white',
     '--waterfall-tick-mix-strength': light ? '60%' : '45%',
     // Dawn's existing small-code colours preserve contrast at 13px.

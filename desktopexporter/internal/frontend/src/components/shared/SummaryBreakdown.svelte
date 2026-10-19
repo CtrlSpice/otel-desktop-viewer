@@ -61,7 +61,7 @@
     --tt-bg: var(--color-base-200);
     background-color: color-mix(
       in srgb,
-      var(--service-color) calc(min(var(--waterfall-bar-opacity), 0.75) * 100%),
+      var(--service-color) calc(var(--waterfall-bar-opacity) * 100%),
       transparent
     );
   }
