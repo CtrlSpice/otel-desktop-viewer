@@ -335,7 +335,6 @@
   $effect(() => {
     if (!viewport || pageNumber === lastPage) return
     lastPage = pageNumber
-    lastSelection = selectedID
     viewport.scrollTop = 0
   })
   $effect(() => {

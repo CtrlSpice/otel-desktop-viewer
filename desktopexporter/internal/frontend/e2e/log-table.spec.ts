@@ -1388,8 +1388,8 @@ test('header error navigation crosses pages within the current result', async ({
         ? firstID
         : `00000000-0000-0000-0002-${String(index).padStart(12, '0')}`,
     timestamp: String(1700000000000000000n + BigInt(index)),
-    severityText: [1, 101, 201].includes(index) ? 'ERROR' : 'INFO',
-    severityNumber: [1, 101, 201].includes(index) ? 17 : 9,
+    severityText: [1, 180, 201].includes(index) ? 'ERROR' : 'INFO',
+    severityNumber: [1, 180, 201].includes(index) ? 17 : 9,
     serviceName: 'api',
     bodyPreview: `Record ${index + 1}`,
     bodyType: 'string',
@@ -1444,9 +1444,26 @@ test('header error navigation crosses pages within the current result', async ({
     page.getByRole('button', { name: 'Page 2', exact: true })
   ).toHaveAttribute('aria-current', 'page')
   await expect(header).toContainText('2/3 errors')
-  await expect(
-    page.locator(`[data-log-ref="${records[101]!.logRef}"]`)
-  ).toHaveAttribute('aria-selected', 'true')
+  const selected = page.locator(`[data-log-ref="${records[180]!.logRef}"]`)
+  await expect(selected).toHaveAttribute('aria-selected', 'true')
+  const viewport = page.locator('.log-table__scroll')
+  async function expectSelectedInViewport() {
+    await expect
+      .poll(() =>
+        selected.evaluate(element => {
+          const viewport = element.closest('.log-table__scroll')!
+          const bounds = viewport.getBoundingClientRect()
+          const header = viewport.querySelector('.log-table__header')!
+          const row = element.getBoundingClientRect()
+          return (
+            row.top >= header.getBoundingClientRect().bottom &&
+            row.bottom <= bounds.bottom
+          )
+        })
+      )
+      .toBe(true)
+  }
+  await expectSelectedInViewport()
   await header.getByRole('button', { name: 'Next error', exact: true }).click()
   await expect(
     page.getByRole('button', { name: 'Page 3', exact: true })
@@ -1462,6 +1479,39 @@ test('header error navigation crosses pages within the current result', async ({
   await expect(
     page.getByRole('button', { name: 'Page 2', exact: true })
   ).toHaveAttribute('aria-current', 'page')
+  await expectSelectedInViewport()
+  // Browsing away and back retains Details, but ordinary pagination starts
+  // at the top even when the selected error is near the bottom of that page.
+  await page.getByRole('button', { name: 'Page 1', exact: true }).click()
+  await expect(page.locator('[data-log-ref]').first()).toHaveAttribute(
+    'data-log-ref',
+    firstID
+  )
+  await expect
+    .poll(() => viewport.evaluate(element => element.scrollTop))
+    .toBe(0)
+  await page.getByRole('button', { name: 'Page 2', exact: true }).click()
+  await expect(selected).toHaveAttribute('aria-selected', 'true')
+  await expect
+    .poll(() => viewport.evaluate(element => element.scrollTop))
+    .toBe(0)
+  // A same-selection rerender must not pull the viewport back to the error.
+  await viewport.evaluate(element => (element.scrollTop = 320))
+  const refreshed = page.waitForResponse(
+    response =>
+      response.url().endsWith('/rpc') &&
+      response.request().postDataJSON().method === 'searchLogPage'
+  )
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await refreshed
+  await expect(
+    page.getByRole('grid', { name: 'Logs', exact: true })
+  ).toHaveAttribute('aria-busy', 'false')
+  await expect(header).toContainText('2/3 errors')
+  await expect(selected).toHaveAttribute('aria-selected', 'true')
+  await expect
+    .poll(() => viewport.evaluate(element => element.scrollTop))
+    .toBe(320)
   await expect(
     header.getByRole('button', { name: 'Filters', exact: true })
   ).toBeVisible()
