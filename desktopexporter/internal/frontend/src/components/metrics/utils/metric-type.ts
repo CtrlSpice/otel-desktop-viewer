@@ -1,5 +1,12 @@
 import type { MetricType } from '@/types/api-types'
+
 const METRIC_TYPE_BADGE_BASE = 'badge badge-xs badge-soft'
+const METRIC_TYPE_BADGE_TONES = new Map<string, string>([
+  ['Gauge', 'badge-info'],
+  ['Sum', 'badge-secondary'],
+  ['Histogram', 'badge-rose'],
+  ['ExponentialHistogram', 'badge-warning'],
+])
 
 export function metricTypeLabel(metricType: string): string {
   if (metricType === 'ExponentialHistogram') return 'ExpHist'
@@ -67,6 +74,6 @@ export function metricTypeCardBadge(
       : titleParts.join(' · '),
     className: temporality?.isUnspecified
       ? `${METRIC_TYPE_BADGE_BASE} badge-error`
-      : `${METRIC_TYPE_BADGE_BASE} badge-neutral`,
+      : `${METRIC_TYPE_BADGE_BASE} ${METRIC_TYPE_BADGE_TONES.get(metricType) ?? 'badge-neutral'}`,
   }
 }

@@ -26,7 +26,9 @@ with lavender/bluebell additions giving 20 colours. Normal spans retain
 distinct service/operation colours; errors use Love. Exact Love/error colours,
 primary annotation colours, and papaya are not categorical series colours.
 
-Metric-type badges are neutral. Sum and Gauge share the same sequence, with
+Metric-type badges use foam/info for Gauge, pine/secondary for Sum, rose
+for Histogram, and gold/warning for ExpHist. Unspecified temporality uses error.
+Sum and Gauge share the same series sequence, with
 stable assignments for their lines/bars, legends, and sparklines. Histogram
 series selectors are neutral because the distribution combines their data.
 
