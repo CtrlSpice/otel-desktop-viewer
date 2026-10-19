@@ -39,7 +39,7 @@ var methodParamNames = map[string][]string{
 	"getTraceOverview":      {"traceID"},
 	"getSpan":               {"spanID", "traceID", "limit"},
 	"searchLogSummaries":    {"startTime", "endTime", "query", "limit", "sort"},
-	"searchLogPage":         {"startTime", "endTime", "query", "limit", "sort", "pageSize", "offset"},
+	"searchLogPage":         {"startTime", "endTime", "query", "limit", "sort", "pageSize", "offset", "columns"},
 	"getLogErrorNavigation": {"startTime", "endTime", "query", "limit", "sort", "selectedLogRef"},
 	"getTraceLogSummaries":  {"traceID"},
 	"getLog":                {"logRef"},

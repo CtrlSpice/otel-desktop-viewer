@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
-import type { JsonLogData, JsonTraceData } from '../src/types/wire-types'
-import type { LogErrorNavigation } from '../src/types/api-types'
+import type { JsonLogData, JsonTraceData, JsonAttributeValue } from '../src/types/wire-types'
+import type { LogErrorNavigation, LogColumn } from '../src/types/api-types'
 
 const firstID = '00000000-0000-0000-0000-000000000001'
 const secondID = '00000000-0000-0000-0000-000000000002'
@@ -1010,21 +1010,95 @@ test('extreme severity labels have bounded width and retain their exact inspecta
   )
 })
 
-test('toolbar filters edit the visible query, respect drafts and clear from query edits', async ({
+test('discovered columns retain typed values, provenance, drafts and saved selections', async ({ page }) => {
+  const values: { column: LogColumn; values: JsonAttributeValue[] }[] = [
+    { column: { source: 'log', kind: 'field', key: 'flags' }, values: [{ kind: 'int64', value: '0' }] },
+    { column: { source: 'log', kind: 'attribute', key: 'flags' }, values: [{ kind: 'int64', value: '9223372036854775807' }] },
+    { column: { source: 'log', kind: 'attribute', key: 'timestamp' }, values: [{ kind: 'string', value: 'received attribute' }] },
+    { column: { source: 'resource', kind: 'attribute', key: 'flags' }, values: [{ kind: 'bool', value: false }] },
+    { column: { source: 'scope', kind: 'attribute', key: 'flags' }, values: [{ kind: 'double', value: '0x8000000000000000' }] },
+    { column: { source: 'scope', kind: 'field', key: 'name' }, values: [{ kind: 'string', value: '' }] },
+    { column: { source: 'resource', kind: 'field', key: 'schemaUrl' }, values: [{ kind: 'string', value: 'https://example.test/schema' }] },
+    { column: { source: 'log', kind: 'attribute', key: 'missing' }, values: [] },
+  ]
+  const detail: JsonLogData = {
+    ...logs[0]!,
+    resourceSchemaURL: 'https://example.test/schema',
+    attributes: values.filter(entry => entry.column.source === 'log' && entry.column.kind === 'attribute').flatMap(entry => entry.values.map(value => ({ key: entry.column.key, value }))),
+    resource: { ...logs[0]!.resource, attributes: [{ key: 'flags', value: { kind: 'bool', value: false } }] },
+    scope: { ...logs[0]!.scope, attributes: [{ key: 'flags', value: { kind: 'double', value: '0x8000000000000000' } }] },
+  }
+  const requests: { columns?: LogColumn[]; query?: unknown }[] = []
+  let discovery = true
+  await page.route('**/rpc', async route => {
+    const { id, method, params } = route.request().postDataJSON()
+    let result
+    if (method === 'getLog') result = detail
+    else if (method === 'getLogAttributeDefinitions') result = discovery ? values.filter(entry => entry.column.kind === 'attribute').map(entry => ({ name: entry.column.key, attributeScope: entry.column.source, type: 'string' })) : []
+    else if (method === 'searchLogPage') {
+      requests.push(params)
+      result = { total: 1, logs: [{ ...detail, timestamp: detail.observedTimestamp, serviceName: 'api', bodyPreview: 'body preview', columnValues: (params.columns ?? []).map((column: LogColumn) => ({ ...column, values: values.find(entry => entry.column.source === column.source && entry.column.kind === column.kind && entry.column.key === column.key)!.values })) }] }
+    } else return route.fallback()
+    await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
+  })
+  await page.reload()
+  const editor = page.locator('.cm-content')
+  await editor.fill('body CONTAINS "unsent draft"')
+  await page.getByRole('button', { name: 'Columns', exact: true }).click()
+  const picker = page.getByRole('group', { name: 'Log columns' })
+  for (const entry of values) {
+    const { source, kind, key } = entry.column
+    const label = `${source[0]!.toUpperCase()}${source.slice(1)} ${kind}: ${key}`
+    await picker.getByRole('checkbox', { name: label, exact: true }).check()
+  }
+  await page.keyboard.press('Escape')
+  const row = page.locator(`[data-log-ref="${firstID}"]`)
+  for (const [name, text] of [
+    ['log field: flags', '0'],
+    ['log attribute: flags', '9223372036854775807'],
+    ['resource attribute: flags', 'false'],
+    ['scope attribute: flags', '-0'],
+    ['scope field: name', '""'],
+    ['log attribute: missing', '—'],
+  ]) await expect(row.getByRole('button', { name: `Show ${name} in details`, exact: true })).toHaveText(text!)
+  await expect.poll(() => requests.at(-1)?.columns?.length).toBe(values.length)
+  expect(requests.at(-1)?.query).toBeUndefined()
+  await expect(editor).toHaveText('body CONTAINS "unsent draft"')
+  await expect(page.getByRole('button', { name: 'Sort by flags', exact: true })).toHaveCount(0)
+  for (const { column } of values.filter(entry => entry.values.length)) {
+    const { source, kind, key } = column
+    await row.getByRole('button', { name: `Show ${source} ${kind}: ${key} in details`, exact: true }).click()
+    const target = page.getByRole('table', { name: 'Log fields' }).locator(`[data-field="${key}"][data-field-kind="${kind}"]${source === 'log' ? ':not([data-field-source="resource"]):not([data-field-source="scope"])' : `[data-field-source="${source}"]`}`)
+    await expect(target).toHaveClass(/detail-property--revealed/)
+    await expect(page).toHaveURL(new RegExp(`/logs/${firstID}`))
+  }
+  // Stored descriptors survive even if discovery no longer returns their keys.
+  discovery = false
+  await page.reload()
+  await expect(row.getByRole('button', { name: 'Show log attribute: flags in details', exact: true })).toHaveText('9223372036854775807')
+  await page.getByRole('button', { name: 'Columns', exact: true }).click()
+  await expect(picker.getByRole('checkbox', { name: 'Scope attribute: flags', exact: true })).toBeChecked()
+})
+
+test('toolbar filters draft service and severity chips and search once on Apply', async ({
   page,
 }) => {
   const editor = page.locator('.cm-content')
-  const service = page.getByRole('checkbox', {
+  const service = page.getByRole('button', {
     name: 'Service api',
     exact: true,
   })
-  const error = page.getByRole('checkbox', {
+  const error = page.getByRole('button', {
     name: 'Severity Error',
     exact: true,
   })
   const filtersToggle = page.getByRole('button', {
     name: 'Filters',
     exact: true,
+  })
+  let searches = 0
+  page.on('request', request => {
+    if (request.url().endsWith('/rpc') && request.postDataJSON().method === 'searchLogPage') searches++
   })
   await expect(page.locator('.drawer-side')).toHaveCount(0)
   await expect(page.locator('.log-table__row').first()).toHaveCSS(
@@ -1036,20 +1110,40 @@ test('toolbar filters edit the visible query, respect drafts and clear from quer
     '40px'
   )
   await filtersToggle.click()
-  await service.check()
+  await service.click()
   await expect(filtersToggle).toHaveAttribute('aria-expanded', 'true')
-  await expect(filtersToggle).toContainText('(1)')
+  await expect(service).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('button', { name: 'Remove service api' })).toBeVisible()
+  await error.click()
+  await expect(error).toHaveClass(/badge-error/)
+  await expect(error).toHaveAttribute('aria-pressed', 'true')
+  await expect(editor.locator('.cm-placeholder')).toBeVisible()
+  expect(searches).toBe(0)
+  await page.getByRole('button', { name: 'Apply', exact: true }).click()
+  await expect.poll(() => searches).toBe(1)
+  await expect(filtersToggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(filtersToggle).toBeFocused()
+  await expect(filtersToggle).toContainText('(2)')
   await expect(editor).toContainText(
     'attr(resource, "service.name", string) IN ["api"]'
   )
-  await error.check()
   await expect(editor).toContainText(
     'severityNumber >= 17 AND severityNumber <= 20'
   )
+  await filtersToggle.click()
+  await page.getByRole('button', { name: 'Remove service api' }).click()
+  await expect(service).toHaveAttribute('aria-pressed', 'false')
+  await expect(error).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(editor).toContainText('service.name')
+  expect(searches).toBe(1)
+  await filtersToggle.click()
+  await expect(service).toHaveAttribute('aria-pressed', 'true')
   await page.getByRole('button', { name: 'Clear service filter' }).click()
-  await expect(service).not.toBeChecked()
-  await expect(error).toBeChecked()
-  await expect(editor).not.toContainText('service.name')
+  await page.keyboard.press('Escape')
+  await filtersToggle.click()
+  await expect(service).toHaveAttribute('aria-pressed', 'true')
+  expect(searches).toBe(1)
   await editor.click()
   await editor.fill('severityNumber =')
   await filtersToggle.click()
@@ -1058,7 +1152,7 @@ test('toolbar filters edit the visible query, respect drafts and clear from quer
   await editor.click()
   await editor.fill('')
   await filtersToggle.click()
-  await expect(error).not.toBeChecked()
+  await expect(error).toHaveAttribute('aria-pressed', 'false')
   await expect(error).toBeEnabled()
   await editor.click()
   await editor.fill('body CONTAINS "exact" | LIMIT 10')
@@ -1069,12 +1163,12 @@ test('toolbar filters edit the visible query, respect drafts and clear from quer
       request.postDataJSON().params.limit === 10
   )
   await filtersToggle.click()
-  await service.check()
+  await service.click()
+  await page.getByRole('button', { name: 'Apply', exact: true }).click()
   expect((await search).postDataJSON().params.query).toBeTruthy()
   await expect(editor).toContainText('body CONTAINS "exact"')
   await expect(editor).toContainText('| LIMIT 10')
   await expect(page).toHaveURL(new RegExp(`/logs/${firstID}`))
-  await page.keyboard.press('Escape')
   await expect(filtersToggle).toHaveAttribute('aria-expanded', 'false')
   await expect(filtersToggle).toBeFocused()
 })
@@ -1160,7 +1254,9 @@ test('fetches numbered pages, retains Details, and resets paging for sort, query
   expect(requests.at(-1)).toMatchObject({ offset: 25, pageSize: 25 })
   await expect(detail).toContainText('Full body 0: exact retained text')
   await page.getByRole('button', { name: 'Filters', exact: true }).click()
-  await page.getByRole('checkbox', { name: 'Service api', exact: true }).check()
+  await page.getByRole('button', { name: 'Service api', exact: true }).click()
+  await expect(range).toContainText('26–50 of 235 logs')
+  await page.getByRole('button', { name: 'Apply', exact: true }).click()
   await expect(range).toContainText('1–7 of 7 logs')
   expect(requests.at(-1)).toMatchObject({ offset: 0, pageSize: 25 })
   expect(requests.at(-1)?.query).toBeTruthy()

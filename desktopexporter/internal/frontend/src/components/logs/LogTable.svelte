@@ -3,7 +3,7 @@
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { LayoutThreeColumnIcon } from '@hugeicons/core-free-icons'
   import type {
-    LogSummary,
+    LogTableRow,
     LogErrorNavigation,
     LogErrorTarget,
   } from '@/types/api-types'
@@ -11,6 +11,8 @@
   import ErrorNavigationBadge from '@/components/shared/ErrorNavigationBadge.svelte'
   import TableColumnHeading from '@/components/shared/TableColumnHeading.svelte'
   import TableValueCell from '@/components/shared/TableValueCell.svelte'
+  import Identifier from '@/components/shared/Identifier.svelte'
+  import type { FieldDefinition } from '@/search/model'
   import ValueSyntax from '@/components/shared/ValueSyntax.svelte'
   import { compactValueTokens } from '@/components/shared/detail-value'
   import ScrollToTopButton from '@/components/shared/ScrollToTopButton.svelte'
@@ -44,7 +46,11 @@
   import { severityLabel } from './log-severity'
   import LogSeverity from './LogSeverity.svelte'
   import {
-    LOG_COLUMNS,
+    LOG_COLUMN_SOURCES,
+    logColumnOptions,
+    logColumnLabel,
+    logColumnCell,
+    type LogColumnOption,
     LOG_SEVERITY_MIN_WIDTH,
     loadLogColumns,
     type LogSortColumn,
@@ -67,8 +73,11 @@
     errorNavigationError = '',
     errorNavigationLoading = false,
     onSelectError,
+    fields = [],
+    selectedColumns = $bindable(loadLogColumns()),
+    onColumnsChange,
   }: {
-    logs: LogSummary[]
+    logs: LogTableRow[]
     total: number
     pageNumber?: number
     selectedID: string | null
@@ -83,6 +92,9 @@
     errorNavigationError?: string
     errorNavigationLoading?: boolean
     onSelectError: (target: LogErrorTarget) => void
+    fields?: FieldDefinition[]
+    selectedColumns?: string[]
+    onColumnsChange?: () => void
   } = $props()
   const time = getTimeContext()
   let table = $state<HTMLDivElement>()
@@ -126,9 +138,9 @@
         ].join(' / ')
       : formatTimezoneLabel(time.tz)
   )
-  let selectedColumns = $state(loadLogColumns())
+  let options = $derived(logColumnOptions(fields, selectedColumns))
   let columns = $derived(
-    LOG_COLUMNS.filter(column => selectedColumns.includes(column.id))
+    options.filter(column => selectedColumns.includes(column.id))
   )
   let severityWidth = $state(LOG_SEVERITY_MIN_WIDTH)
   let specs = $derived(
@@ -205,7 +217,9 @@
     Math.max(
       0,
       ...columns
-        .filter(column => column.id === 'service' || column.id === 'name')
+        .filter(
+          column => !['severity', 'timestamp', 'body'].includes(column.id)
+        )
         .map(column => widths[column.id])
     )
   )
@@ -345,9 +359,9 @@
       onOpenChange: open => (pickerOpen = open),
     })
   })
-  function toggleColumn(id: LogSortColumn, checked: boolean) {
+  function toggleColumn(id: string, checked: boolean) {
     drag?.cancel()
-    const next = LOG_COLUMNS.filter(column =>
+    const next = options.filter(column =>
       column.id === id ? checked : selectedColumns.includes(column.id)
     )
     selectedColumns = next.map(column => column.id)
@@ -375,6 +389,7 @@
     } catch {
       /* Keep session columns. */
     }
+    onColumnsChange?.()
   }
 
   let scrolled = $state(false)
@@ -429,7 +444,13 @@
       ?.querySelector<HTMLElement>(`[data-log-ref="${escapeForSelector(id)}"]`)
       ?.focus({ preventScroll: true })
   }
-  function text(log: LogSummary, id: LogSortColumn) {
+  function text(log: LogTableRow, column: LogColumnOption) {
+    const id = column.id
+    if (column.projection)
+      return (
+        logColumnCell(log, column)?.text ??
+        (loading ? 'Loading…' : 'Unavailable')
+      )
     if (id === 'timestamp')
       return formatTimestamp(log.timestamp, time.tz, 'milliseconds')
     if (id === 'severity')
@@ -439,6 +460,20 @@
     return log.bodyPreview
   }
 </script>
+
+{#snippet columnHeading(column: LogColumnOption)}
+  <TableColumnHeading
+    label={column.id === 'timestamp'
+      ? `${column.key} (${timestampTimezone})`
+      : column.key || '(empty key)'}
+    source={column.source}
+    signal="Log"
+  />
+  {#if sortColumn === column.sort}<span
+      class="log-table__sort-direction"
+      aria-hidden="true">{sortDirection === 'asc' ? '↑' : '↓'}</span
+    >{/if}
+{/snippet}
 
 <div class="log-table" class:log-table--pinned={pinColumns} bind:this={table}>
   <PaneHeader pill mode="title" title="Logs" ariaLabel="Log table summary">
@@ -460,7 +495,7 @@
           }}
         />{/if}
       {#if errorNavigationError}<span
-          class="badge badge-xs badge-soft badge-error"
+          class="badge badge-xs badge-error"
           role="status"
           title={errorNavigationError}>Errors unavailable</span
         >{/if}
@@ -500,27 +535,49 @@
       placeholder="Find columns…"
       bind:value={columnSearch}
     />
-    {#each LOG_COLUMNS.filter(column => `${column.key} ${column.source}`
-        .toLowerCase()
-        .includes(columnSearch.toLowerCase())) as column (column.id)}
-      <label
-        class="item-state flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm"
-      >
-        <input
-          type="checkbox"
-          class="checkbox checkbox-xs"
-          aria-label={`${column.source}: ${column.key}`}
-          checked={selectedColumns.includes(column.id)}
-          disabled={selectedColumns.length === 1 &&
-            selectedColumns.includes(column.id)}
-          onchange={event =>
-            toggleColumn(column.id, event.currentTarget.checked)}
-        />
-        <span class="flex-1">{column.key}</span><span
-          class="badge badge-xs badge-soft badge-primary">{column.source}</span
-        >
-      </label>
+    {#each LOG_COLUMN_SOURCES as source}
+      {#each ['field', 'attribute'] as kind}
+        {@const group = options.filter(
+          column =>
+            column.target.source === source &&
+            column.target.kind === kind &&
+            logColumnLabel(column)
+              .toLowerCase()
+              .includes(columnSearch.trim().toLowerCase())
+        )}
+        {#if group.length}
+          <fieldset class="min-w-0">
+            <legend class="px-2 py-1 text-xs font-medium capitalize"
+              >{source} {kind === 'field' ? 'fields' : 'attributes'}</legend
+            >
+            {#each group as column (column.id)}
+              <label
+                class="item-state flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm"
+              >
+                <input
+                  type="checkbox"
+                  class="checkbox checkbox-xs"
+                  aria-label={logColumnLabel(column)}
+                  checked={selectedColumns.includes(column.id)}
+                  disabled={selectedColumns.length === 1 &&
+                    selectedColumns.includes(column.id)}
+                  onchange={event =>
+                    toggleColumn(column.id, event.currentTarget.checked)}
+                />
+                <span class="min-w-0 flex-1 break-words"
+                  >{column.key || '(empty key)'}</span
+                >
+              </label>
+            {/each}
+          </fieldset>
+        {/if}
+      {/each}
     {/each}
+    {#if !options.some(column => logColumnLabel(column)
+        .toLowerCase()
+        .includes(columnSearch.trim().toLowerCase()))}
+      <p class="p-2 text-sm text-base-content/70">No matching columns.</p>
+    {/if}
   </div>
   <div class="log-table__frame">
     {#each paintedBars as bar (bar.id)}
@@ -531,7 +588,7 @@
         class:col-resize-bar--active={activeResize === bar.id}
         style:left="{bar.left}px"
         role="separator"
-        aria-label={`Resize ${LOG_COLUMNS.find(column => column.id === bar.id)?.key} column`}
+        aria-label={`Resize ${options.find(column => column.id === bar.id)?.key} column`}
         aria-orientation="vertical"
         aria-valuenow={Math.round(widths[bar.id] ?? 0)}
         aria-valuemin={Math.round(
@@ -575,43 +632,35 @@
         >
           <div class="log-table__header" role="row" aria-rowindex={1}>
             {#each columns as column (column.id)}
+              {@const sort = column.sort}
               <div
                 role="columnheader"
-                aria-sort={sortColumn === column.id
-                  ? sortDirection === 'asc'
-                    ? 'ascending'
-                    : 'descending'
-                  : 'none'}
+                aria-sort={!column.sort
+                  ? undefined
+                  : sortColumn === column.sort
+                    ? sortDirection === 'asc'
+                      ? 'ascending'
+                      : 'descending'
+                    : 'none'}
                 class="log-table__heading"
                 class:log-table__pin-left={column.id === 'timestamp'}
                 class:log-table__pin-severity={column.id === 'severity'}
                 class:log-table__pin-body={column.id === 'body'}
               >
-                <button
-                  type="button"
-                  class="log-table__sort"
-                  aria-label={`Sort by ${column.key}`}
-                  onclick={() =>
-                    onSort(
-                      column.id,
-                      sortColumn === column.id && sortDirection === 'desc'
-                        ? 'asc'
-                        : 'desc'
-                    )}
-                >
-                  <TableColumnHeading
-                    label={column.id === 'timestamp'
-                      ? `${column.key} (${timestampTimezone})`
-                      : column.key}
-                    source={column.source}
-                    signal="Log"
-                  />
-                  {#if sortColumn === column.id}<span
-                      class="log-table__sort-direction"
-                      aria-hidden="true"
-                      >{sortDirection === 'asc' ? '↑' : '↓'}</span
-                    >{/if}
-                </button>
+                {#if sort}<button
+                    type="button"
+                    class="log-table__sort"
+                    aria-label={`Sort by ${column.key}`}
+                    onclick={() =>
+                      onSort(
+                        sort,
+                        sortColumn === column.sort && sortDirection === 'desc'
+                          ? 'asc'
+                          : 'desc'
+                      )}
+                  >
+                    {@render columnHeading(column)}
+                  </button>{:else}{@render columnHeading(column)}{/if}
               </div>
             {/each}
           </div>
@@ -642,6 +691,9 @@
                 }}
               >
                 {#each columns as column (column.id)}
+                  {@const cell = column.projection
+                    ? logColumnCell(log, column)
+                    : null}
                   <div
                     role="gridcell"
                     class="log-table__cell"
@@ -653,8 +705,9 @@
                     class:log-table__pin-body={column.id === 'body'}
                   >
                     <TableValueCell
-                      label={`${column.source.toLowerCase()}: ${column.key}`}
-                      text={text(log, column.id)}
+                      label={`${column.source.toLowerCase()}${column.projection ? ` ${column.target.kind}` : ''}: ${column.key || '(empty key)'}`}
+                      text={text(log, column)}
+                      numeric={cell?.numeric}
                       onInspect={() => onInspect(log.logRef, column.target)}
                     >
                       {#snippet children()}{#if column.id === 'severity'}<LogSeverity
@@ -667,7 +720,9 @@
                           )
                             .value}{:else if column.id === 'body' && (log.bodyType === 'map' || log.bodyType === 'array')}<ValueSyntax
                             tokens={compactValueTokens(log.bodyPreview)}
-                          />{:else}{text(log, column.id)}{/if}{/snippet}
+                          />{:else if column.identifier && cell?.present}<Identifier
+                            value={cell.text}
+                          />{:else}{text(log, column)}{/if}{/snippet}
                     </TableValueCell>
                   </div>
                 {/each}
@@ -779,6 +834,8 @@
   }
   .log-table__columns {
     @apply w-80 max-w-[calc(100vw-1.5rem)] p-2;
+    max-height: min(70vh, 32rem);
+    overflow-y: auto;
   }
   .log-table__empty {
     @apply p-8 text-center text-sm;

@@ -1,4 +1,8 @@
-import type { JsonAggregateBucket, JsonLinkSummary } from '@/types/wire-types'
+import type {
+  JsonAggregateBucket,
+  JsonLinkSummary,
+  JsonLogColumn,
+} from '@/types/wire-types'
 
 export type RootSpan = {
   serviceName: string
@@ -159,6 +163,8 @@ export type LogData = {
   droppedAttributesCount: number
   flags: number
   eventName: string
+  resourceSchemaURL?: string
+  scopeSchemaURL?: string
 }
 
 // LogSummary is the lightweight card-shaped projection returned by
@@ -185,6 +191,11 @@ export type LogSummary = {
   bodyPreview: string
   bodyType?: AttributeValue['kind']
   eventName?: string
+}
+
+export type LogColumn = JsonLogColumn
+export type LogTableRow = LogSummary & {
+  columnValues?: (LogColumn & { values: AttributeValue[] })[]
 }
 
 export type LogErrorTarget = { logRef: string; offset: number }

@@ -5,6 +5,14 @@
   } from '@/contexts/time-context.svelte'
 
   const ctx = getTimeContext()
+  const selectedIndex = $derived(
+    TIME_RANGE_PRESETS.findIndex(preset =>
+      preset.durationMs === undefined
+        ? ctx.selection.type === 'all'
+        : ctx.selection.type === 'preset' &&
+          ctx.selection.durationMs === preset.durationMs
+    )
+  )
 
   function applyPreset(preset: (typeof TIME_RANGE_PRESETS)[number]) {
     ctx.setSelection(
@@ -16,19 +24,16 @@
 </script>
 
 <div
-  class="preset-time-ranges tabs tabs-border flex min-w-0 w-full flex-nowrap overflow-x-auto"
+  class="preset-time-ranges header-tabs min-w-0 w-full"
+  style:--header-tab-count={TIME_RANGE_PRESETS.length}
+  style:--header-active-index={selectedIndex}
+  style:--header-control-padding="0.25rem"
 >
-  {#each TIME_RANGE_PRESETS as preset (preset.label)}
-    {@const selected =
-      preset.durationMs === undefined
-        ? ctx.selection.type === 'all'
-        : ctx.selection.type === 'preset' &&
-          ctx.selection.durationMs === preset.durationMs}
+  {#each TIME_RANGE_PRESETS as preset, index (preset.label)}
     <button
       type="button"
-      class="tab flex-auto justify-center whitespace-nowrap px-3 text-sm tabular-nums"
-      class:tab-active={selected}
-      aria-pressed={selected}
+      class="btn btn-xs header-tab min-w-0 w-full tabular-nums"
+      aria-pressed={selectedIndex === index}
       aria-label={preset.label === 'All' ? 'All time' : `Last ${preset.label}`}
       onclick={() => applyPreset(preset)}
     >

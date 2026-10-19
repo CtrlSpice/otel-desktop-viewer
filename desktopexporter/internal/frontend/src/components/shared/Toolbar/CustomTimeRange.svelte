@@ -40,7 +40,7 @@
   let endDateText = $state('')
   let endTimeText = $state('')
   let endTracksNow = $state(true)
-  let openCalendar = $state<Endpoint | null>(null)
+  let openCalendar = $state<Endpoint | null>('start')
   let nowTimestamp = $state(initialNow)
   let startChoice = $state<Choice | null>(null)
   let endChoice = $state<Choice | null>(null)
@@ -185,7 +185,6 @@
       endChoice = null
       endAmbiguity = null
     }
-    openCalendar = null
     customFieldIssue = null
   }
 
@@ -432,7 +431,6 @@
       <button
         type="button"
         class="endpoint-calendar-button btn btn-circle btn-ghost btn-xs"
-        class:endpoint-calendar-button--active={openCalendar === 'start'}
         aria-label="Choose start date"
         aria-expanded={openCalendar === 'start'}
         aria-controls="custom-start-calendar"
@@ -518,7 +516,6 @@
       <button
         type="button"
         class="endpoint-calendar-button btn btn-circle btn-ghost btn-xs"
-        class:endpoint-calendar-button--active={openCalendar === 'end'}
         aria-label="Choose end date"
         aria-expanded={openCalendar === 'end'}
         aria-controls="custom-end-calendar"
@@ -638,8 +635,8 @@
     @apply hover:bg-base-300/40 hover:text-base-content;
   }
 
-  .endpoint-calendar-button--active {
-    @apply border-primary/40 bg-base-300/50 text-primary;
+  .endpoint-calendar-button[aria-expanded='true'] :global(svg) {
+    color: var(--color-primary);
   }
 
   .ambiguity-choices {

@@ -196,6 +196,16 @@ export type JsonTraceLogSummary = JsonLogSummary & {
   eventName: string
 }
 
+export type JsonLogColumn = {
+  source: 'log' | 'resource' | 'scope'
+  kind: 'field' | 'attribute'
+  key: string
+}
+
+export type JsonLogTableRow = JsonLogSummary & {
+  columnValues?: (JsonLogColumn & { values: JsonAttributeValue[] })[]
+}
+
 export type JsonLogData = {
   logRef: string
   timestamp: string
@@ -211,6 +221,8 @@ export type JsonLogData = {
   flags: number
   eventName: string
   attributes: JsonAttribute[]
+  resourceSchemaURL?: string
+  scopeSchemaURL?: string
 }
 
 // Same closed set as MetricType, kept independent for the wire contract.

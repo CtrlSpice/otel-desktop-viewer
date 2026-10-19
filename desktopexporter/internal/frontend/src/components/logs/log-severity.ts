@@ -15,12 +15,12 @@ export function severityBand(severityNumber: number): SeverityBand {
 }
 
 const BADGE_CLASS: Record<SeverityBand, string> = {
-  trace: 'badge badge-xs badge-soft badge-neutral',
-  debug: 'badge badge-xs badge-soft badge-success',
-  info: 'badge badge-xs badge-soft badge-info',
-  warn: 'badge badge-xs badge-soft badge-warning',
-  error: 'badge badge-xs badge-soft badge-error',
-  fatal: 'badge badge-xs badge-soft badge-error',
+  trace: 'badge badge-xs badge-neutral',
+  debug: 'badge badge-xs badge-success',
+  info: 'badge badge-xs badge-info',
+  warn: 'badge badge-xs badge-warning',
+  error: 'badge badge-xs badge-error',
+  fatal: 'badge badge-xs badge-error',
 }
 
 const BORDER_CLASS: Record<SeverityBand, string> = {

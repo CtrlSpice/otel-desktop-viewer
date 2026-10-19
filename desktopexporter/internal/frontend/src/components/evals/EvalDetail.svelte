@@ -276,7 +276,7 @@
         <FieldGroup label={`${tool.name} ${index + 1}`} detail open={false}>
           {#snippet heading()}<span>{tool.name}</span
             >{#if tool.state === 'Error'}<span
-                class="badge badge-xs badge-soft badge-error">Error</span
+                class="badge badge-xs badge-error">Error</span
               >{/if}{/snippet}
           <table
             class="detail-fields w-full"

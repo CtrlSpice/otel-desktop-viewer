@@ -7,7 +7,7 @@
 </script>
 
 <span
-  class="badge badge-xs badge-soft tabular-nums"
+  class="badge badge-xs tabular-nums"
   class:badge-success={assessment?.value === maximum}
   class:badge-warning={assessment?.value != null &&
     assessment.value > 0 &&

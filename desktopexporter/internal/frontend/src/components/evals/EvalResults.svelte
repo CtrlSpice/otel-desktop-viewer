@@ -41,7 +41,7 @@
 >
   {#snippet badge()}
     <span
-      class="badge badge-md badge-soft badge-primary tabular-nums"
+      class="badge badge-md badge-primary tabular-nums"
       title="Shown attempts / total attempts"
       >{attempts.length}/{run.attempts.length} attempts</span
     >
@@ -107,7 +107,7 @@
             >
             <div class="flex items-center gap-2 pb-2 text-xs">
               <span
-                class="badge badge-xs badge-soft"
+                class="badge badge-xs"
                 class:badge-papaya={item.state === 'Error'}
                 >{item.state === 'Error' ? 'Execution error' : item.state}</span
               >

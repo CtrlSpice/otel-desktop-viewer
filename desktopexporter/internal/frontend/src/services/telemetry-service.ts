@@ -3,6 +3,8 @@ import type {
   TraceSummary,
   LogData,
   LogSummary,
+  LogColumn,
+  LogTableRow,
   LogErrorNavigation,
   TraceLogSummary,
   MetricViewData,
@@ -28,6 +30,7 @@ import type {
   JsonExemplar,
   JsonLogData,
   JsonLogSummary,
+  JsonLogTableRow,
   JsonTraceLogSummary,
   JsonMetricViewData,
   JsonMetricSummary,
@@ -68,6 +71,7 @@ type JsonRpcParamValue =
   | SearchSort
   | readonly string[]
   | readonly number[]
+  | readonly LogColumn[]
 
 type JsonRpcNamedParams = Record<string, JsonRpcParamValue | undefined>
 type JsonRpcParams = JsonRpcNamedParams | readonly string[]
@@ -1008,9 +1012,11 @@ export let telemetryAPI = {
     offset: number,
     queryTree?: QueryNode,
     limit?: number,
-    sort?: SearchSort
-  ): Promise<{ logs: LogSummary[]; total: number }> => {
-    const data = await callRPC<{ logs: JsonLogSummary[]; total: number }>(
+    sort?: SearchSort,
+    columns?: LogColumn[],
+    signal?: AbortSignal
+  ): Promise<{ logs: LogTableRow[]; total: number }> => {
+    const data = await callRPC<{ logs: JsonLogTableRow[]; total: number }>(
       'searchLogPage',
       named({
         startTime: serializeNanoseconds(startTime),
@@ -1020,9 +1026,20 @@ export let telemetryAPI = {
         sort,
         pageSize,
         offset,
-      })
+        columns: columns?.length ? columns : undefined,
+      }),
+      signal
     )
-    return { logs: logSummariesFromJSON(data.logs), total: data.total }
+    return {
+      logs: data.logs.map(log => ({
+        ...logSummaryFromJSON(log),
+        columnValues: log.columnValues?.map(column => ({
+          ...column,
+          values: column.values.map(attributeValueFromJSON),
+        })),
+      })),
+      total: data.total,
+    }
   },
 
   getLogErrorNavigation: async (

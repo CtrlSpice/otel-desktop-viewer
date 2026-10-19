@@ -42,7 +42,7 @@
   }: Props = $props()
   const detailViewID = $props.id()
   let resolvedTarget = $derived(
-    fieldTarget?.key === 'timestamp' && log
+    fieldTarget?.source === 'log' && fieldTarget.kind === 'field' && fieldTarget.key === 'timestamp' && log
       ? {
           ...fieldTarget,
           key: log.timestamp === 0n ? 'observedTimeUnixNano' : 'timeUnixNano',
@@ -214,53 +214,59 @@
                   typedValue={log.body}
                 />
               {/if}
-              {#if log.eventName}
-                <LogField
-                  fieldName="eventName"
-                  fieldType="string"
-                  fieldValue={log.eventName}
-                />
-              {/if}
+              <LogField
+                fieldName="eventName"
+                fieldType="string"
+                fieldValue={log.eventName}
+              />
               <LogField
                 fieldName="flags"
                 fieldType="uint32"
                 fieldValue={String(log.flags)}
               />
-              {#if log.droppedAttributesCount > 0}
-                <LogField
-                  fieldName="droppedAttributesCount"
-                  fieldType="uint32"
-                  fieldValue={String(log.droppedAttributesCount)}
-                />
-              {/if}
+              <LogField
+                fieldName="droppedAttributesCount"
+                fieldType="uint32"
+                fieldValue={String(log.droppedAttributesCount)}
+              />
               <AttributeRows attributes={log.attributes} owner="log" />
               <AttributeRows
                 attributes={log.resource.attributes}
                 owner="resource"
                 origin="resource"
               />
-              {#if log.resource.droppedAttributesCount > 0}
+              <LogField
+                fieldName="droppedAttributesCount"
+                origin="resource"
+                fieldType="uint32"
+                fieldValue={String(log.resource.droppedAttributesCount)}
+              />
+              {#if log.resourceSchemaURL !== undefined}
                 <LogField
-                  fieldName="droppedAttributesCount"
+                  fieldName="schemaUrl"
                   origin="resource"
-                  fieldType="uint32"
-                  fieldValue={String(log.resource.droppedAttributesCount)}
+                  fieldType="string"
+                  fieldValue={log.resourceSchemaURL}
                 />
               {/if}
-              {#if log.scope.name}
+              <LogField
+                fieldName="name"
+                origin="scope"
+                fieldType="string"
+                fieldValue={log.scope.name}
+              />
+              <LogField
+                fieldName="version"
+                origin="scope"
+                fieldType="string"
+                fieldValue={log.scope.version}
+              />
+              {#if log.scopeSchemaURL !== undefined}
                 <LogField
-                  fieldName="name"
+                  fieldName="schemaUrl"
                   origin="scope"
                   fieldType="string"
-                  fieldValue={log.scope.name}
-                />
-              {/if}
-              {#if log.scope.version}
-                <LogField
-                  fieldName="version"
-                  origin="scope"
-                  fieldType="string"
-                  fieldValue={log.scope.version}
+                  fieldValue={log.scopeSchemaURL}
                 />
               {/if}
               <AttributeRows
@@ -268,14 +274,12 @@
                 owner="scope"
                 origin="scope"
               />
-              {#if log.scope.droppedAttributesCount > 0}
-                <LogField
-                  fieldName="droppedAttributesCount"
-                  origin="scope"
-                  fieldType="uint32"
-                  fieldValue={String(log.scope.droppedAttributesCount)}
-                />
-              {/if}
+              <LogField
+                fieldName="droppedAttributesCount"
+                origin="scope"
+                fieldType="uint32"
+                fieldValue={String(log.scope.droppedAttributesCount)}
+              />
             </tbody>
           </table>
           {#if log.traceID}

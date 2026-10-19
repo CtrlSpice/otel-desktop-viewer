@@ -244,7 +244,7 @@
         >
           {#if record.kind === 'event'}
             <span
-              class="badge badge-xs badge-soft"
+              class="badge badge-xs"
               style:--badge-color={spanColor}>Span event</span
             >
           {:else}

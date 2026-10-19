@@ -485,7 +485,7 @@ func (h *JSONRPCHandler) searchLogSummaries(ctx context.Context, req *jsonrpc2.R
 }
 
 func (h *JSONRPCHandler) searchLogPage(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	values, err := decodePositionalParams(req.Params, 2, 7)
+	values, err := decodePositionalParams(req.Params, 2, 8)
 	if err != nil {
 		return nil, err
 	}
@@ -507,8 +507,31 @@ func (h *JSONRPCHandler) searchLogPage(ctx context.Context, req *jsonrpc2.Reques
 	if size < 1 || size > 250 {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
+	var columns []logs.Column
+	if len(values) > 7 && values[7] != nil {
+		list, ok := values[7].([]any)
+		if !ok {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		for _, value := range list {
+			column, ok := value.(map[string]any)
+			if !ok || len(column) != 3 {
+				return nil, jsonrpc2.ErrInvalidParams
+			}
+			source, sourceOK := column["source"].(string)
+			kind, kindOK := column["kind"].(string)
+			key, keyOK := column["key"].(string)
+			if !sourceOK || !kindOK || !keyOK {
+				return nil, jsonrpc2.ErrInvalidParams
+			}
+			columns = append(columns, logs.Column{Source: source, Kind: kind, Key: key})
+		}
+		if logs.ValidateColumns(columns) != nil {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+	}
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return logs.SearchPage(ctx, db, params.timeRange, params.query, params.options, logs.PageOptions{Size: size, Offset: offset})
+		return logs.SearchPage(ctx, db, params.timeRange, params.query, params.options, logs.PageOptions{Size: size, Offset: offset, Columns: columns})
 	})
 }
 

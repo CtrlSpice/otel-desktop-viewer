@@ -82,11 +82,11 @@
     {#if showType || origin}
       <span class="detail-property__badges">
         {#if showType}<span
-            class="badge badge-xs badge-soft {typeTone} detail-property__type"
+            class="badge badge-xs {typeTone} detail-property__type"
             >{fieldType}</span
           >{/if}
         {#if origin}<span
-            class="badge badge-xs badge-soft badge-primary detail-property__origin"
+            class="metadata-origin detail-property__origin"
             >{origin}</span
           >{/if}
       </span>

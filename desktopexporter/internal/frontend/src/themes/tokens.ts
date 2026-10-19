@@ -4,7 +4,8 @@ import type { Theme } from './index'
 export function themeTokens(theme: Theme) {
   const c = theme.colors
   const light = theme.scheme === 'light'
-  const content = light ? 'var(--color-base-100)' : 'var(--color-base-content)'
+  const inverseContent = light ? '#ffffff' : 'var(--color-base-100)'
+  const content = light ? inverseContent : 'var(--color-base-content)'
   return {
     'color-scheme': theme.scheme,
     '--color-base-100': c.canvas,
@@ -18,11 +19,11 @@ export function themeTokens(theme: Theme) {
     '--color-highlight-med': c.highlightMedium,
     '--color-highlight-high': c.highlightHigh,
     '--color-primary': c.primary,
-    '--color-primary-content': 'var(--color-base-100)',
+    '--color-primary-content': inverseContent,
     '--color-secondary': c.secondary,
     '--color-secondary-content': content,
     '--color-accent': c.accent,
-    '--color-accent-content': 'var(--color-base-100)',
+    '--color-accent-content': inverseContent,
     '--color-neutral': 'var(--color-muted)',
     '--color-neutral-content': 'var(--color-base-content)',
     '--color-info': 'var(--color-accent)',
@@ -30,9 +31,9 @@ export function themeTokens(theme: Theme) {
     '--color-success': 'var(--color-secondary)',
     '--color-success-content': 'var(--color-secondary-content)',
     '--color-warning': c.warning,
-    '--color-warning-content': 'var(--color-base-100)',
+    '--color-warning-content': inverseContent,
     '--color-error': c.error,
-    '--color-error-content': content,
+    '--color-error-content': inverseContent,
     '--color-on-light': light
       ? 'var(--color-base-content)'
       : theme.id === 'rose-pine'

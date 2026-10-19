@@ -11,4 +11,4 @@
   )
 </script>
 
-<span class="badge badge-xs badge-soft shrink-0 {tone}">{type}</span>
+<span class="badge badge-xs shrink-0 {tone}">{type}</span>

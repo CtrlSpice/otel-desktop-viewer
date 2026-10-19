@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
+	"math"
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
@@ -14,6 +15,79 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 )
+
+func TestSearchLogPageSelectedColumns(t *testing.T) {
+	s, ctx := storetest.New(t)
+	data := plog.NewLogs()
+	rl := data.ResourceLogs().AppendEmpty()
+	rl.SetSchemaUrl("https://example.test/resource")
+	rl.Resource().Attributes().PutStr("same", "resource")
+	sl := rl.ScopeLogs().AppendEmpty()
+	sl.Scope().SetName("instrumentation")
+	sl.Scope().Attributes().PutBool("same", false)
+	l := sl.LogRecords().AppendEmpty()
+	l.SetTimestamp(pcommon.Timestamp(math.MaxUint64))
+	l.SetFlags(128)
+	l.Attributes().PutInt("same", math.MaxInt64)
+	l.Attributes().PutInt("flags", 0)
+	l.Attributes().PutStr("x' OR 1=1 --", "literal key")
+	l.Attributes().PutEmpty("")
+	l.Attributes().PutDouble("negative-zero", math.Copysign(0, -1))
+	l.Body().SetStr("body")
+	other := sl.LogRecords().AppendEmpty()
+	other.SetTimestamp(1)
+	other.Body().SetStr("outside page")
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, data, s.FlushedIDs()) }))
+	columns := []logs.Column{
+		{Source: "log", Kind: "field", Key: "timeUnixNano"},
+		{Source: "log", Kind: "field", Key: "flags"},
+		{Source: "log", Kind: "attribute", Key: "flags"},
+		{Source: "log", Kind: "attribute", Key: "same"},
+		{Source: "resource", Kind: "attribute", Key: "same"},
+		{Source: "scope", Kind: "attribute", Key: "same"},
+		{Source: "log", Kind: "attribute", Key: "missing"},
+		{Source: "log", Kind: "attribute", Key: ""},
+		{Source: "log", Kind: "attribute", Key: "x' OR 1=1 --"},
+		{Source: "log", Kind: "attribute", Key: "negative-zero"},
+		{Source: "log", Kind: "field", Key: "traceId"},
+		{Source: "resource", Kind: "field", Key: "schemaUrl"},
+		{Source: "scope", Kind: "field", Key: "name"},
+	}
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.SearchPage(ctx, db, store.BoundedTimeRange(uint64(0), uint64(math.MaxUint64)), nil, search.ResultOptions{}, logs.PageOptions{Size: 1, Columns: columns})
+	})
+	require.NoError(t, err)
+	var page struct {
+		Total int `json:"total"`
+		Logs  []struct {
+			ColumnValues []struct {
+				logs.Column
+				Values json.RawMessage `json:"values"`
+			} `json:"columnValues"`
+		} `json:"logs"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &page))
+	require.Equal(t, 2, page.Total)
+	require.Len(t, page.Logs, 1)
+	want := []string{
+		`[{"kind":"string","value":"18446744073709551615"}]`,
+		`[{"kind":"int64","value":"128"}]`,
+		`[{"kind":"int64","value":"0"}]`,
+		`[{"kind":"int64","value":"9223372036854775807"}]`,
+		`[{"kind":"string","value":"resource"}]`,
+		`[{"kind":"bool","value":false}]`,
+		`[]`, `[{"kind":"empty","value":null}]`,
+		`[{"kind":"string","value":"literal key"}]`,
+		`[{"kind":"double","value":"0x8000000000000000"}]`,
+		`[]`, `[{"kind":"string","value":"https://example.test/resource"}]`,
+		`[{"kind":"string","value":"instrumentation"}]`,
+	}
+	require.Len(t, page.Logs[0].ColumnValues, len(columns))
+	for i, cell := range page.Logs[0].ColumnValues {
+		require.Equal(t, columns[i], cell.Column)
+		require.JSONEq(t, want[i], string(cell.Values), "%+v", columns[i])
+	}
+}
 
 func TestSearchLogPage(t *testing.T) {
 	t.Parallel()

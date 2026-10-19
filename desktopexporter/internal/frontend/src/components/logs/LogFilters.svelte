@@ -5,6 +5,9 @@
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { FilterIcon } from '@hugeicons/core-free-icons'
+  import { severityBadgeClass } from './log-severity'
+  import { traceServiceColor } from '@/utils/trace-service-color'
+  import { themeSignal } from '@/state/theme.svelte'
   import {
     LOG_SEVERITIES,
     readLogFilters,
@@ -24,7 +27,9 @@
     editor: SearchEditorAPI | null
   } = $props()
   let serviceSearch = $state('')
-  let filters = $derived(readLogFilters(query, fields))
+  let draftQuery = $state('')
+  let filters = $derived(readLogFilters(draftQuery, fields))
+  let appliedFilters = $derived(readLogFilters(query, fields))
   let choices = $derived(
     [...new Set([...services, ...filters.service.values])].sort((a, b) =>
       a.localeCompare(b)
@@ -45,16 +50,16 @@
     apply(kind, values)
   }
   function apply(kind: LogFilter, values: string[]) {
-    const next = setLogFilter(query, fields, kind, values)
-    if (next !== null) editor?.setQuery?.(next)
+    const next = setLogFilter(draftQuery, fields, kind, values)
+    if (next !== null) draftQuery = next
   }
   function clearFilters() {
-    let next = query
+    let next = draftQuery
     for (const kind of ['service', 'severity'] as const) {
       if (!filters[kind].custom)
         next = setLogFilter(next, fields, kind, []) ?? next
     }
-    if (next !== query) editor?.setQuery?.(next)
+    draftQuery = next
   }
 </script>
 
@@ -67,9 +72,17 @@
 <FilterPopover
   label="Filters"
   compact
-  count={filters.service.values.length + filters.severity.values.length}
-  custom={filters.editable &&
-    (filters.service.custom || filters.severity.custom)}
+  count={appliedFilters.service.values.length +
+    appliedFilters.severity.values.length}
+  custom={appliedFilters.editable &&
+    (appliedFilters.service.custom || appliedFilters.severity.custom)}
+  clearable={filters.service.values.length + filters.severity.values.length > 0}
+  onOpenChange={open => {
+    if (open) {
+      draftQuery = query
+      serviceSearch = ''
+    }
+  }}
   onClear={clearFilters}
 >
   {#snippet icon()}<HugeiconsIcon
@@ -78,6 +91,17 @@
       strokeWidth={1.5}
       aria-hidden="true"
     />{/snippet}
+  {#snippet footer(close)}
+    <button
+      type="button"
+      class="btn btn-primary btn-sm"
+      disabled={!editor?.setQuery || draftQuery === query || !filters.editable}
+      onclick={() => {
+        editor?.setQuery?.(draftQuery)
+        close()
+      }}>Apply</button
+    >
+  {/snippet}
   <FieldGroup label="Service">
     {#snippet heading()}
       <span class="flex-1">Service</span>
@@ -93,6 +117,30 @@
         >{/if}
     {/snippet}
     {@render queryHint()}
+    {#if filters.service.values.length}
+      <div
+        class="log-filters__chips mb-2"
+        role="group"
+        aria-label="Selected services"
+      >
+        {#each filters.service.values as service (service)}
+          <button
+            type="button"
+            class="log-filters__service item-state"
+            aria-label={`Remove service ${service}`}
+            onclick={() => change('service', service, false)}
+          >
+            <span
+              class="log-filters__dot"
+              style:background-color={traceServiceColor(service, themeSignal.value)}
+              aria-hidden="true"
+            ></span>
+            <span class="min-w-0 truncate" title={service}>{service}</span>
+            <span aria-hidden="true">×</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
     <input
       class="typed-field typed-field--pill mb-2 w-full"
       type="search"
@@ -106,24 +154,37 @@
       >
         Edit this service condition in search.
       </p>{/if}
-    {#each visibleServices as service (service)}
-      <label class="log-filters__choice item-state">
-        <input
-          type="checkbox"
-          class="checkbox checkbox-sm"
+    <div class="log-filters__chips">
+      {#each visibleServices as service (service)}
+        <button
+          type="button"
+          class="log-filters__service item-state"
           aria-label={`Service ${service}`}
-          checked={filters.service.values.includes(service)}
+          aria-pressed={filters.service.values.includes(service)}
           disabled={filters.service.custom || !editor?.setQuery}
-          onchange={event =>
-            change('service', service, event.currentTarget.checked)}
-        />
-        <span class="min-w-0 truncate" title={service}>{service}</span>
-      </label>
-    {:else}<p class="log-filters__hint">
-        {serviceSearch
-          ? 'No matching services.'
-          : 'No named services in the loaded logs.'}
-      </p>{/each}
+          onclick={() =>
+            change(
+              'service',
+              service,
+              !filters.service.values.includes(service)
+            )}
+        >
+          <span
+            class="log-filters__dot"
+            style:background-color={traceServiceColor(service, themeSignal.value)}
+            aria-hidden="true"
+          ></span>
+          <span class="min-w-0 truncate" title={service}>{service}</span>
+          {#if filters.service.values.includes(service)}<span aria-hidden="true"
+              >✓</span
+            >{/if}
+        </button>
+      {:else}<p class="log-filters__hint">
+          {serviceSearch
+            ? 'No matching services.'
+            : 'No named services in the loaded logs.'}
+        </p>{/each}
+    </div>
   </FieldGroup>
   <FieldGroup label="Severity">
     {#snippet heading()}
@@ -145,27 +206,61 @@
       >
         Edit this severity condition in search.
       </p>{/if}
-    {#each LOG_SEVERITIES as level (level.label)}
-      <label class="log-filters__choice item-state">
-        <input
-          type="checkbox"
-          class="checkbox checkbox-sm"
+    <div class="log-filters__chips">
+      {#each LOG_SEVERITIES as level (level.label)}
+        <button
+          type="button"
+          class="{severityBadgeClass(level.min)} log-filters__severity"
           aria-label={`Severity ${level.label}`}
-          checked={filters.severity.values.includes(level.label)}
+          aria-pressed={filters.severity.values.includes(level.label)}
           disabled={filters.severity.custom || !editor?.setQuery}
-          onchange={event =>
-            change('severity', level.label, event.currentTarget.checked)}
-        />
-        <span>{level.label}</span>
-      </label>
-    {/each}
+          onclick={() =>
+            change(
+              'severity',
+              level.label,
+              !filters.severity.values.includes(level.label)
+            )}
+        >
+          <span>{level.label}</span>
+          <span
+            class="log-filters__check"
+            class:log-filters__check--selected={filters.severity.values.includes(
+              level.label
+            )}
+            aria-hidden="true">✓</span
+          >
+        </button>
+      {/each}
+    </div>
   </FieldGroup>
 </FilterPopover>
 
 <style lang="postcss">
   @reference "../../app.css";
-  .log-filters__choice {
-    @apply flex min-h-9 cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-sm;
+  .log-filters__chips {
+    @apply flex min-w-0 flex-wrap gap-2 px-2 py-1;
+  }
+  .log-filters__service {
+    @apply inline-flex min-h-8 max-w-full cursor-pointer items-center gap-2 rounded-full border border-base-300 px-3 py-1 text-sm text-base-content;
+  }
+  .log-filters__service[aria-pressed='true'] {
+    background: var(--item-selected-bg);
+  }
+  .log-filters__dot {
+    @apply size-2 shrink-0 rounded-full;
+  }
+  .log-filters__severity {
+    @apply h-auto min-h-8 cursor-pointer gap-2 rounded-full px-3 py-1 text-sm;
+  }
+  .log-filters__check {
+    opacity: 0;
+  }
+  .log-filters__check--selected {
+    opacity: 1;
+  }
+  .log-filters__service:disabled,
+  .log-filters__severity:disabled {
+    @apply cursor-default opacity-50;
   }
   .log-filters__hint {
     @apply px-2 text-sm;

@@ -712,7 +712,9 @@ svg {
   grid-template-columns: repeat(var(--header-tab-count), minmax(0, 1fr));
 }
 
-.header-tabs:has(> :is([aria-selected='true'], [aria-current='page']))::before {
+.header-tabs:has(
+    > :is([aria-selected='true'], [aria-current='page'], [aria-pressed='true'])
+  )::before {
   content: '';
   position: absolute;
   inset: 0.125rem auto 0.125rem 0.125rem;
@@ -753,7 +755,7 @@ svg {
   }
 }
 
-.header-tab:is([aria-selected='true'], [aria-current='page'])
+.header-tab:is([aria-selected='true'], [aria-current='page'], [aria-pressed='true'])
   .header-tab__icon {
   color: var(--color-primary);
 }
@@ -762,8 +764,9 @@ svg {
   .btn.chart-header-control:hover:not(:disabled, [aria-disabled='true']),
   .btn.header-tab:hover:not(
       :disabled,
-      [aria-selected='true'],
-      [aria-current='page']
+       [aria-selected='true'],
+       [aria-current='page'],
+       [aria-pressed='true']
     ) {
     background: var(--item-hover-bg);
   }
@@ -859,15 +862,8 @@ svg {
 .anchor-popover {
   @apply overflow-hidden rounded-xl border border-base-300 bg-base-100 text-sm text-base-content;
   margin: 0;
-  box-shadow:
-    0 2px 6px rgb(0 0 0 / 0.1),
-    0 12px 28px rgb(0 0 0 / 0.16);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.1);
   inset: unset;
-}
-
-.anchor-popover::backdrop {
-  background-color: rgb(0 0 0 / 0.15);
-  backdrop-filter: blur(4px);
 }
 
 .anchor-popover--anchored {
@@ -890,9 +886,9 @@ svg {
   overscroll-behavior: contain;
 }
 
-.anchor-popover--wide {
-  @apply gap-2 px-4 pb-4 pt-2;
-  width: 34rem;
+.anchor-popover--form {
+  @apply p-3;
+  width: 24rem;
   max-width: calc(100vw - 1.5rem);
   max-height: min(85vh, calc(100vh - 2rem));
 }
@@ -1185,29 +1181,15 @@ button:focus-visible:not(.btn) {
 
 /* Shared numbered hub: interactive in the waterfall, static for log severity. */
 .number-circle {
-  @apply inline-flex items-center justify-center rounded-full border border-base-content/15 p-0 font-semibold leading-none tabular-nums;
+  @apply inline-flex items-center justify-center rounded-full p-0 font-semibold leading-none tabular-nums;
   min-width: var(--number-circle-size);
   min-height: var(--number-circle-size);
   width: var(--number-circle-size);
   height: var(--number-circle-size);
   font-size: 8px;
-  background-color: color-mix(
-    in srgb,
-    var(--number-circle-color) 18%,
-    transparent
-  );
-  color: var(--number-circle-color);
-}
-
-html[data-theme='rose-pine-dawn'] .number-circle,
-html[data-theme='rose-pine-dawn'] .number-circle:hover {
-  background-color: color-mix(
-    in oklab,
-    var(--number-circle-color) 8%,
-    var(--color-base-200)
-  );
-  border: 1px solid var(--number-circle-color);
-  color: var(--color-base-content);
+  background-color: var(--number-circle-color);
+  color: var(--color-on-light);
+  color: contrast-color(var(--number-circle-color));
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1639,22 +1621,27 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
 }
 
 /* Rosé Pine rose token — used for Gauge metric type (not a built-in Daisy semantic). */
-.badge.badge-soft.badge-rose {
+.badge.badge-rose {
   --badge-color: var(--color-rose);
 }
 
-.badge.badge-soft.badge-papaya {
+.badge.badge-papaya {
   --badge-color: var(--color-papaya);
 }
 
 /* Detail / toolbar metadata origins. */
-.badge-origin {
-  @apply badge badge-sm text-xs badge-soft badge-primary leading-tight;
+.metadata-origin {
+  @apply text-xs font-normal leading-tight;
+  color: var(--color-subtle);
 }
 
-/* Item / field / tab counts (xs soft primary). */
+.error-count {
+  @apply text-xs font-normal tabular-nums text-error;
+}
+
+/* Item / field / tab counts. */
 .badge-count {
-  @apply badge badge-xs badge-soft badge-primary tabular-nums;
+  @apply badge badge-xs badge-primary tabular-nums;
 }
 
 /* Conflict containers retain count semantics but use Daisy's warning palette. */
@@ -1662,28 +1649,19 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
   @apply badge-warning;
 }
 
-html[data-theme='rose-pine-dawn']
-  :is(.badge-soft, .badge-count, .badge-origin) {
-  border: 1px solid var(--badge-color, var(--color-base-content));
-  color: var(--color-base-content);
-}
-
 /* Badges — pills, including the classes that apply DaisyUI badge styles. */
 .badge,
-.badge-count,
-.badge-origin {
+.badge-count {
   @apply rounded-full font-medium tracking-tight;
   font-size: calc(0.875rem + 1pt);
 }
 
-.badge.badge-sm,
-.badge-origin {
+.badge.badge-sm {
   @apply min-h-[1.25rem] gap-1 px-2 py-0.5 leading-tight;
   font-size: calc(0.75rem + 1pt);
 }
 
 .badge.badge-xs,
 .badge-count {
-  @apply min-h-[1.125rem] gap-0.5 px-1.5 py-px text-[0.625rem] leading-none;
-  font-size: calc(0.625rem + 1pt);
+  @apply min-h-5 gap-0.5 px-1.5 py-px text-xs leading-none;
 }

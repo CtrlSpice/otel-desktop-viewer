@@ -103,7 +103,7 @@
   bind:this={popoverEl}
   popover="auto"
   id={popoverID}
-  class="anchor-popover anchor-popover--anchored anchor-popover--wide"
+  class="anchor-popover anchor-popover--anchored anchor-popover--form gap-2"
 >
   <div class="min-w-0 shrink-0" role="toolbar" aria-label="Time range presets">
     <PresetTimeRanges />

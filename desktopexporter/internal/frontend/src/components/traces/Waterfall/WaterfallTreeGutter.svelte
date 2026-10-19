@@ -244,16 +244,6 @@
     @apply focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1 focus-visible:ring-offset-base-100;
   }
 
-  /* `--tree-accent` is set inline on `.gutter` from the row's colour
-     (palette HCL or `--color-error`). All button states mix against it. */
-
-  /* ───── Button states ───── */
-
-  .gutter__btn--expanded:hover,
-  .gutter__btn--collapsed:hover {
-    background-color: color-mix(in srgb, var(--tree-accent) 28%, transparent);
-  }
-
   .gutter__btn--leaf {
     @apply cursor-default rounded-full p-0;
     width: var(--leaf-dot-size);

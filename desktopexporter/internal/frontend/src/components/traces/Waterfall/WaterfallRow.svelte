@@ -148,7 +148,7 @@
       </div>
       {#if matched}
         <span
-          class="badge badge-xs badge-soft badge-primary waterfall-row__match flex-none"
+          class="badge badge-xs badge-primary waterfall-row__match flex-none"
           >Match</span
         >
       {/if}

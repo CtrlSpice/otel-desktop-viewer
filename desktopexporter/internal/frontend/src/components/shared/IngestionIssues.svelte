@@ -42,7 +42,7 @@
         <div class="issues-section">
           <h3 class="issues-heading">
             File import issues
-            <span class="badge badge-xs badge-soft badge-error">
+            <span class="badge badge-xs badge-error">
               {importFailures.length}
               {importFailures.length === 1 ? 'file' : 'files'}
             </span>
@@ -67,7 +67,7 @@
         <div class="issues-section">
           <h3 class="issues-heading">
             Rejected telemetry
-            <span class="badge badge-xs badge-soft badge-warning">
+            <span class="badge badge-xs badge-warning">
               {rejectedTotal} records
             </span>
           </h3>

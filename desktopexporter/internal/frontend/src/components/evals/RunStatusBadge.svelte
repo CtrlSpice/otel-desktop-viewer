@@ -15,7 +15,7 @@
 </script>
 
 <span
-  class="badge badge-{size} badge-soft"
+  class="badge badge-{size}"
   class:badge-success={state === 'Complete'}
   class:badge-warning={state === 'Paused' && !internalError}
   class:badge-papaya={internalError}

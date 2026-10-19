@@ -24,7 +24,7 @@
 
 {#if count > 0}
   <span
-    class="badge badge-xs badge-soft badge-error error-nav shrink-0 tabular-nums"
+    class="error-nav"
     role="group"
     aria-label="Error navigation"
   >
@@ -43,8 +43,8 @@
         aria-hidden="true"
       /></button
     >
-    <span aria-live="polite"
-      >{index !== null ? `${index}/${count} errors` : `${count} err`}</span
+    <span class="error-count" aria-live="polite"
+      >{index !== null ? `${index}/${count} err` : `${count} err`}</span
     >
     <button
       type="button"
@@ -67,7 +67,7 @@
 <style lang="postcss">
   @reference "../../app.css";
   .error-nav {
-    @apply gap-0.5 px-0.5;
+    @apply inline-flex min-h-5 shrink-0 items-center gap-1 text-xs text-base-content;
   }
   .error-nav__button {
     @apply -my-1 inline-flex cursor-pointer items-center justify-center px-0.5 py-1 transition-colors duration-100;

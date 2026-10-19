@@ -114,7 +114,9 @@ describe('LogsPage refresh', () => {
       0,
       undefined,
       undefined,
-      { field: 'severity', direction: 'desc' }
+      { field: 'severity', direction: 'desc' },
+      [],
+      expect.any(AbortSignal)
     )
   })
 

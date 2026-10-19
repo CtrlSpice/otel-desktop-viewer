@@ -55,7 +55,7 @@
           >{event.name}</span
         >{/snippet}
       {#snippet badge()}<span
-          class="badge badge-xs badge-soft"
+          class="badge badge-xs"
           class:badge-error={exception}
           class:badge-primary={!exception}>Span event</span
         >{/snippet}

@@ -86,7 +86,7 @@
     {props.spanCount} span{props.spanCount !== 1 ? 's' : ''}
   </span>
   {#if props.errorCount > 0}
-    <span class="badge badge-xs badge-soft badge-error tabular-nums">
+    <span class="error-count">
       {props.errorCount} err
     </span>
   {/if}

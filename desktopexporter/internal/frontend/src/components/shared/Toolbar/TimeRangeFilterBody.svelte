@@ -188,6 +188,10 @@
     color: var(--color-muted);
   }
 
+  .timezone-group[open] :global(.timezone-icon) {
+    color: var(--color-primary);
+  }
+
   .timezone-content {
     @apply pb-2;
   }

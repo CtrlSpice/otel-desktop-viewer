@@ -275,14 +275,18 @@ func searchLogSummaries(ctx context.Context, db *sql.DB, timeRange timerange.Tim
 
 // PageOptions bounds a page inside the sorted, optionally limited search result.
 type PageOptions struct {
-	Size   int64
-	Offset int64
+	Size    int64
+	Offset  int64
+	Columns []Column
 }
 
 // SearchPage computes the count and page in one database statement.
 func SearchPage(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions, page PageOptions) (json.RawMessage, error) {
 	if page.Size < 1 || page.Size > 250 || page.Offset < 0 {
 		return nil, fmt.Errorf("page size must be 1..250 and offset must be non-negative: %w", ErrInvalidLogLimit)
+	}
+	if err := ValidateColumns(page.Columns); err != nil {
+		return nil, err
 	}
 	return searchLogResults(ctx, db, timeRange, criteria, options, &page, nil)
 }
@@ -326,17 +330,25 @@ func searchLogResults(ctx context.Context, db *sql.DB, timeRange timerange.TimeR
 	if page != nil {
 		queryName = queries.SearchLogPage
 		args = append(args, page.Size, page.Offset)
+		if len(page.Columns) > 0 {
+			columns, err := json.Marshal(page.Columns)
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, string(columns))
+		}
 	}
 	if selectedID != nil {
 		queryName = queries.GetLogErrorNavigation
 		args = append(args, *selectedID)
 	}
 	finalQuery, err := queries.Render(queryName, searchLogSummariesParams{
-		CTEs:  cteSQL,
-		From:  logSearchFrom,
-		Where: whereWithTime,
-		Order: orderBy,
-		Limit: limitClause,
+		CTEs:    cteSQL,
+		From:    logSearchFrom,
+		Where:   whereWithTime,
+		Order:   orderBy,
+		Limit:   limitClause,
+		Columns: page != nil && len(page.Columns) > 0,
 	})
 	if err != nil {
 		return nil, err
@@ -709,11 +721,12 @@ func mapLogGlobalExpressions() ([]search.ResolvedExpression, error) {
 // searchLogSummariesParams are the fragments Search assembles into
 // queries/logs/search_log_summaries.sql.
 //
-// Every field is a SQL fragment; values travel as bound arguments.
+// SQL fragments and projection switches; values travel as bound arguments.
 type searchLogSummariesParams struct {
-	CTEs  string
-	From  string
-	Where string
-	Order string
-	Limit string
+	CTEs    string
+	From    string
+	Where   string
+	Order   string
+	Limit   string
+	Columns bool
 }

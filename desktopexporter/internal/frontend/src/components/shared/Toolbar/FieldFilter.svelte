@@ -208,7 +208,7 @@
             {/if}
             <span class="field-filter__field-name">{field.name}</span>
             {#if field.searchScope === 'attribute' && 'attributeScope' in field}
-              <span class="badge-origin">{field.attributeScope}</span>
+              <span class="metadata-origin">{field.attributeScope}</span>
             {/if}
           </button>
         {/each}

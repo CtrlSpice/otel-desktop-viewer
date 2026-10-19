@@ -41,7 +41,7 @@
 </script>
 
 <script lang="ts">
-  import { untrack } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import { confirmDeleteAll } from '@/utils/confirm-delete'
   import {
@@ -51,6 +51,7 @@
   import { navigateToItem } from '@/route'
   import type {
     LogData,
+    LogTableRow,
     LogErrorNavigation,
     LogErrorTarget,
   } from '@/types/api-types'
@@ -60,6 +61,10 @@
   import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
   import DateTimeFilter from '@/components/shared/Toolbar/DateTimeFilter.svelte'
   import LogTable from '@/components/logs/LogTable.svelte'
+  import {
+    loadLogColumns,
+    logColumnRequests,
+  } from '@/components/logs/log-table'
   import LogFilters from '@/components/logs/LogFilters.svelte'
   import type { FieldDefinition, ParsedSearchRequest } from '@/search/model'
   import type { DetailFieldTarget } from '@/components/shared/utils/reveal-detail-field'
@@ -86,6 +91,7 @@
   let detailView = $state<DetailViewMode>('fields')
   let query = $state('')
   let fields = $state<FieldDefinition[]>([])
+  let selectedColumns = $state(loadLogColumns())
   let submittedQuery: ParsedSearchRequest | null = null
   let submittedText = ''
   let pageNumber = $state(1)
@@ -98,6 +104,8 @@
   let requestedPage = 1
   let requestedSize = 100
   let fetchVersion = 0
+  let listRequest: AbortController | undefined
+  onDestroy(() => listRequest?.abort())
   let lastTimeSelection = untrack(() => timeContext.selection)
   let queryWindow: ReturnType<typeof selectionToQueryRangeNs> | null = null
   let services = $state<string[]>([])
@@ -105,15 +113,18 @@
     null
   )
 
-  const page = createSignalListPage<LogSummary, LogSortColumn>({
+  const page = createSignalListPage<LogTableRow, LogSortColumn>({
     signal: 'logs',
     getItemID: log => log.logRef,
     initialSort: { column: 'severity', direction: 'desc' },
     preserveMissingSelection: true,
     serverSorted: true,
     compare: compareLogs,
-    fetchList: async (): Promise<LogSummary[]> => {
+    fetchList: async (): Promise<LogTableRow[]> => {
       const version = ++fetchVersion
+      listRequest?.abort()
+      const controller = new AbortController()
+      listRequest = controller
       const request = untrack(() => {
         if (lastTimeSelection !== timeContext.selection) {
           requestedPage = 1
@@ -130,6 +141,7 @@
           size: requestedSize,
           query: submittedQuery,
           sort: { field: page.sortColumn, direction: page.sortDirection },
+          columns: logColumnRequests(selectedColumns),
         }
       })
       const fetchPage = (number: number) =>
@@ -140,7 +152,9 @@
           (number - 1) * request.size,
           request.query?.predicate ?? undefined,
           request.query?.limit ?? undefined,
-          request.sort
+          request.sort,
+          request.columns,
+          controller.signal
         )
       let result = await fetchPage(request.number)
       if (version !== fetchVersion) return result.logs
@@ -394,6 +408,9 @@
           onSelect={selectLog}
           onInspect={inspectLog}
           onSort={changeSort}
+          {fields}
+          bind:selectedColumns
+          onColumnsChange={() => void page.runListFetch()}
         >
           {#snippet filters()}<LogFilters
               {query}

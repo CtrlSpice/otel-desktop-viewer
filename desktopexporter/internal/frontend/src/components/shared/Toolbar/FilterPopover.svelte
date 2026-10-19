@@ -12,6 +12,9 @@
     compact = false,
     icon,
     onClear,
+    clearable = count > 0,
+    onOpenChange,
+    footer,
     children,
   }: {
     label: string
@@ -20,6 +23,9 @@
     compact?: boolean
     icon?: Snippet
     onClear: () => void
+    clearable?: boolean
+    onOpenChange?: (open: boolean) => void
+    footer?: Snippet<[close: () => void]>
     children: Snippet
   } = $props()
 
@@ -33,9 +39,17 @@
       trigger,
       popover,
       anchor: 'below-end',
-      onOpenChange: value => (open = value),
+      onOpenChange: value => {
+        open = value
+        onOpenChange?.(value)
+      },
     })
   })
+
+  function close() {
+    popover?.hidePopover()
+    trigger?.focus()
+  }
 </script>
 
 <button
@@ -70,11 +84,11 @@
   popover="auto"
   role="group"
   aria-label={`${label} options`}
-  class="anchor-popover anchor-popover--anchored filter-popover"
+  class="anchor-popover anchor-popover--anchored anchor-popover--form filter-popover"
 >
   <div class="filter-popover__header">
     <span class="font-semibold">{label}</span>
-    {#if count > 0}<button
+    {#if clearable}<button
         type="button"
         class="btn btn-ghost btn-sm text-sm"
         aria-label={`Clear ${label.toLowerCase()} filter`}
@@ -82,14 +96,20 @@
       >{/if}
   </div>
   {@render children()}
+  {#if footer}<div class="filter-popover__footer">
+      {@render footer(close)}
+    </div>{/if}
 </div>
 
 <style lang="postcss">
   @reference "../../../app.css";
   .filter-popover {
-    @apply w-80 max-w-[calc(100vw-1rem)] overflow-y-auto p-3 text-sm;
+    @apply overflow-y-auto;
   }
   .filter-popover__header {
     @apply mb-2 flex min-h-8 items-center justify-between gap-2;
+  }
+  .filter-popover__footer {
+    @apply sticky -bottom-3 -mx-3 -mb-3 mt-3 flex justify-end gap-2 border-t border-base-300 bg-base-100 p-3;
   }
 </style>

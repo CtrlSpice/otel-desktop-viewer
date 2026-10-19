@@ -1,6 +1,6 @@
 import type { MetricType } from '@/types/api-types'
 
-const METRIC_TYPE_BADGE_BASE = 'badge badge-xs badge-soft'
+const METRIC_TYPE_BADGE_BASE = 'badge badge-xs'
 const METRIC_TYPE_BADGE_TONES = new Map<string, string>([
   ['Gauge', 'badge-info'],
   ['Sum', 'badge-secondary'],
