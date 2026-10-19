@@ -36,7 +36,7 @@
       <span
         class="service-segment tooltip tooltip-bottom min-w-0 first:rounded-l-full last:rounded-r-full"
         style:flex={part.count}
-        style:background-color={part.color}
+        style:--service-color={part.color}
       >
         <span
           class="tooltip-content flex items-center gap-1.5 bg-base-200 text-sm font-normal text-base-content"
@@ -59,6 +59,11 @@
 
   .service-segment {
     --tt-bg: var(--color-base-200);
+    background-color: color-mix(
+      in srgb,
+      var(--service-color) calc(var(--waterfall-bar-opacity) * 100%),
+      transparent
+    );
   }
 
   .service-segment:hover {
