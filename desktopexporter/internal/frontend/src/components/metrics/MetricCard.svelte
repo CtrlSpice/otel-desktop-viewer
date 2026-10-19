@@ -55,20 +55,22 @@
     />
   {/snippet}
 
+  {#snippet date()}
+    <span
+      class="flex min-w-0 items-center gap-1"
+      title={`Last seen: ${lastSeenParts.value} ${lastSeenParts.unit}`}
+    >
+      <span class="shrink-0">Last seen:</span>
+      <span class="truncate text-base-content">{lastSeenParts.value}</span>
+      {#if lastSeenParts.unit}<span class="shrink-0">{lastSeenParts.unit}</span
+        >{/if}
+    </span>
+  {/snippet}
+
   {#snippet meta()}
     <div
       class="grid w-full min-w-0 grid-cols-2 gap-x-4 gap-y-1.5 pt-1 text-xs tabular-nums"
     >
-      <span
-        class="col-span-2 flex min-w-0 items-center gap-1"
-        title={`Last seen: ${lastSeenParts.value} ${lastSeenParts.unit}`}
-      >
-        <span class="shrink-0">Last seen:</span>
-        <span class="truncate text-base-content">{lastSeenParts.value}</span>
-        {#if lastSeenParts.unit}<span class="shrink-0"
-            >{lastSeenParts.unit}</span
-          >{/if}
-      </span>
       {#if lastValueLabel}
         <span class="flex min-w-0 items-center gap-1">
           <span class="shrink-0">Last value:</span>

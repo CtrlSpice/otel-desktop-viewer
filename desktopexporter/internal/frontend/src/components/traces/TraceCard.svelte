@@ -52,20 +52,22 @@
       errorCount={trace.errorCount}
     />
   {/snippet}
+  {#snippet date()}
+    <span
+      class="flex min-w-0 items-center gap-1"
+      title={`Start: ${startParts.value} ${startParts.unit}`}
+    >
+      <span class="shrink-0">Start:</span>
+      <span class="truncate text-base-content">{startParts.value}</span>
+      {#if startParts.unit}<span class="shrink-0">{startParts.unit}</span>{/if}
+    </span>
+  {/snippet}
+
   {#snippet meta()}
     <div class="flex w-full min-w-0 flex-col gap-2 pt-1">
       <div
         class="grid min-w-0 grid-cols-2 gap-x-4 gap-y-1.5 text-xs tabular-nums"
       >
-        <span
-          class="col-span-2 flex min-w-0 items-center gap-1"
-          title={`Start: ${startParts.value} ${startParts.unit}`}
-        >
-          <span class="shrink-0">Start:</span>
-          <span class="truncate text-base-content">{startParts.value}</span>
-          {#if startParts.unit}<span class="shrink-0">{startParts.unit}</span
-            >{/if}
-        </span>
         {#if durationParts}
           <span class="flex min-w-0 items-center gap-1">
             <span class="shrink-0">Duration:</span>

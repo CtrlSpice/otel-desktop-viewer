@@ -15,6 +15,8 @@
     /** Italic muted title (e.g. placeholder while data is still arriving). */
     titleMuted?: boolean
     subtitle?: string
+    /** Full-width date between identity and description. */
+    date?: Snippet
     /** `plain`: value grid. `interval`: Start + Duration (traces). `labeled`: one labeled timestamp (logs/metrics). */
     timeLayout?: 'plain' | 'interval' | 'labeled'
     /** Label for `labeled` layout (e.g. "Timestamp:", "Last seen:"). */
@@ -50,6 +52,7 @@
     titleContent,
     titleMuted = false,
     subtitle,
+    date,
     timeLayout = 'plain',
     timestampLabel,
     timestamp,
@@ -102,6 +105,10 @@
       <div class="signal-row__subtitle" title={subtitle}>{subtitle}</div>
     {/if}
   </div>
+
+  {#if date}
+    <div class="signal-row__date">{@render date()}</div>
+  {/if}
 
   {#if description}
     <div class="signal-row__lead">
@@ -211,6 +218,11 @@
 
   .signal-row__lead {
     @apply my-1.5 flex min-h-[var(--signal-card-row-h)] min-w-0 items-center;
+  }
+
+  .signal-row__date {
+    @apply min-w-0 w-full pt-1 text-xs tabular-nums;
+    color: var(--color-subtle);
   }
 
   .signal-row__description {
