@@ -291,31 +291,33 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
         <PaneHeader mode="title" title="Overview" ariaLabel="Overview" />
 
         <div class="home-page__detail-scroll">
-          {#snippet signalOverviewHeader(
+          {#snippet signalOverviewLink(
             href: string,
             label: string,
             icon: IconSvgElement | null,
-            CustomIcon: Component | null,
-            count: number
+            CustomIcon: Component | null
           )}
+            <a
+              {href}
+              class="home-summary__icon-link"
+              aria-label="View all {label.toLowerCase()}"
+            >
+              {#if icon}
+                <HugeiconsIcon
+                  {icon}
+                  size="1em"
+                  strokeWidth={1.5}
+                  class="h-4 w-4 shrink-0"
+                  aria-hidden="true"
+                />
+              {:else if CustomIcon}
+                <CustomIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
+              {/if}
+            </a>
+          {/snippet}
+
+          {#snippet signalOverviewHeader(label: string, count: number)}
             <div class="home-summary__header">
-              <a
-                {href}
-                class="home-summary__icon-link"
-                aria-label="View all {label.toLowerCase()}"
-              >
-                {#if icon}
-                  <HugeiconsIcon
-                    {icon}
-                    size="1em"
-                    strokeWidth={1.5}
-                    class="h-4 w-4 shrink-0"
-                    aria-hidden="true"
-                  />
-                {:else if CustomIcon}
-                  <CustomIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
-                {/if}
-              </a>
               <span class="home-summary__title">{label}</span>
               <span class="badge-count home-summary__badge"
                 >{count} {label.toLowerCase()}</span
@@ -323,107 +325,117 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
             </div>
           {/snippet}
 
-          <FieldGroup label="Traces">
-            {#snippet headerAction()}
-              {@render signalOverviewHeader(
-                '/traces',
-                'Traces',
-                BarChartHorizontalIcon,
-                null,
-                stats?.traces.traceCount ?? 0
-              )}
-            {/snippet}
-            <table class="detail-fields w-full" aria-label="Traces overview">
-              <tbody>
-                <LogField
-                  fieldName="spans"
-                  fieldType="uint32"
-                  showType={false}
-                  fieldValue={String(stats?.traces.spanCount ?? 0)}
-                />
-                <LogField
-                  fieldName="services"
-                  fieldType="uint32"
-                  showType={false}
-                  fieldValue={String(stats?.traces.serviceCount ?? 0)}
-                />
-                <LogField
-                  fieldName="errors"
-                  fieldType="uint32"
-                  showType={false}
-                  fieldValue={String(stats?.traces.errorCount ?? 0)}
-                />
-                <LogField
-                  fieldName="last received"
-                  fieldType="string"
-                  showType={false}
-                  fieldValue={formatRelativeTime(
-                    stats?.traces.lastReceived ?? null
-                  )}
-                />
-              </tbody>
-            </table>
-          </FieldGroup>
+          <div class="home-summary">
+            {@render signalOverviewLink(
+              '/traces',
+              'Traces',
+              BarChartHorizontalIcon,
+              null
+            )}
+            <FieldGroup label="Traces">
+              {#snippet headerAction()}
+                {@render signalOverviewHeader(
+                  'Traces',
+                  stats?.traces.traceCount ?? 0
+                )}
+              {/snippet}
+              <table class="detail-fields w-full" aria-label="Traces overview">
+                <tbody>
+                  <LogField
+                    fieldName="spans"
+                    fieldType="uint32"
+                    showType={false}
+                    fieldValue={String(stats?.traces.spanCount ?? 0)}
+                  />
+                  <LogField
+                    fieldName="services"
+                    fieldType="uint32"
+                    showType={false}
+                    fieldValue={String(stats?.traces.serviceCount ?? 0)}
+                  />
+                  <LogField
+                    fieldName="errors"
+                    fieldType="uint32"
+                    showType={false}
+                    fieldValue={String(stats?.traces.errorCount ?? 0)}
+                  />
+                  <LogField
+                    fieldName="last received"
+                    fieldType="string"
+                    showType={false}
+                    fieldValue={formatRelativeTime(
+                      stats?.traces.lastReceived ?? null
+                    )}
+                  />
+                </tbody>
+              </table>
+            </FieldGroup>
+          </div>
 
-          <FieldGroup label="Metrics">
-            {#snippet headerAction()}
-              {@render signalOverviewHeader(
-                '/metrics',
-                'Metrics',
-                ChartHistogramIcon,
-                null,
-                stats?.metrics.metricCount ?? 0
-              )}
-            {/snippet}
-            <table class="detail-fields w-full" aria-label="Metrics overview">
-              <tbody>
-                <LogField
-                  fieldName="data points"
-                  fieldType="uint32"
-                  showType={false}
-                  fieldValue={String(stats?.metrics.dataPointCount ?? 0)}
-                />
-                <LogField
-                  fieldName="last received"
-                  fieldType="string"
-                  showType={false}
-                  fieldValue={formatRelativeTime(
-                    stats?.metrics.lastReceived ?? null
-                  )}
-                />
-              </tbody>
-            </table>
-          </FieldGroup>
+          <div class="home-summary">
+            {@render signalOverviewLink(
+              '/metrics',
+              'Metrics',
+              ChartHistogramIcon,
+              null
+            )}
+            <FieldGroup label="Metrics">
+              {#snippet headerAction()}
+                {@render signalOverviewHeader(
+                  'Metrics',
+                  stats?.metrics.metricCount ?? 0
+                )}
+              {/snippet}
+              <table class="detail-fields w-full" aria-label="Metrics overview">
+                <tbody>
+                  <LogField
+                    fieldName="data points"
+                    fieldType="uint32"
+                    showType={false}
+                    fieldValue={String(stats?.metrics.dataPointCount ?? 0)}
+                  />
+                  <LogField
+                    fieldName="last received"
+                    fieldType="string"
+                    showType={false}
+                    fieldValue={formatRelativeTime(
+                      stats?.metrics.lastReceived ?? null
+                    )}
+                  />
+                </tbody>
+              </table>
+            </FieldGroup>
+          </div>
 
-          <FieldGroup label="Logs">
-            {#snippet headerAction()}
-              {@render signalOverviewHeader(
-                '/logs',
-                'Logs',
-                null,
-                LogIcon,
-                stats?.logs.logCount ?? 0
-              )}
-            {/snippet}
-            <table class="detail-fields w-full" aria-label="Logs overview">
-              <tbody>
-                <LogField
-                  fieldName="errors"
-                  fieldType="uint32"
-                  showType={false}
-                  fieldValue={String(stats?.logs.errorCount ?? 0)}
-                />
-                <LogField
-                  fieldName="last received"
-                  fieldType="string"
-                  showType={false}
-                  fieldValue={formatRelativeTime(
-                    stats?.logs.lastReceived ?? null
-                  )}
-                />
-              </tbody>
-            </table>
-          </FieldGroup>
+          <div class="home-summary">
+            {@render signalOverviewLink('/logs', 'Logs', null, LogIcon)}
+            <FieldGroup label="Logs">
+              {#snippet headerAction()}
+                {@render signalOverviewHeader(
+                  'Logs',
+                  stats?.logs.logCount ?? 0
+                )}
+              {/snippet}
+              <table class="detail-fields w-full" aria-label="Logs overview">
+                <tbody>
+                  <LogField
+                    fieldName="errors"
+                    fieldType="uint32"
+                    showType={false}
+                    fieldValue={String(stats?.logs.errorCount ?? 0)}
+                  />
+                  <LogField
+                    fieldName="last received"
+                    fieldType="string"
+                    showType={false}
+                    fieldValue={formatRelativeTime(
+                      stats?.logs.lastReceived ?? null
+                    )}
+                  />
+                </tbody>
+              </table>
+            </FieldGroup>
+          </div>
 
           <IngestionIssues
             {rejections}
@@ -491,11 +503,21 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
     color: var(--home-secondary-text);
   }
 
+  .home-summary {
+    @apply relative;
+  }
+
+  .home-summary :global(.field-group__heading) {
+    /* Reserve the original 32px icon and 8px gap outside the disclosure. */
+    @apply min-h-11 pl-13;
+  }
+
   .home-summary__header {
     @apply flex min-w-0 flex-1 items-center gap-2;
   }
 
   .home-summary__icon-link {
+    @apply absolute left-3 top-1.5;
     @apply btn btn-soft btn-primary btn-sm btn-circle h-8 w-8 min-h-8 shrink-0 border-transparent bg-primary/10 text-primary no-underline shadow-none;
   }
 
