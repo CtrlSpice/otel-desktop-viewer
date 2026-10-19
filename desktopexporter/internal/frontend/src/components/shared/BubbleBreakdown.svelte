@@ -193,7 +193,7 @@
 
   .breakdown-label {
     @apply flex min-w-0 items-center gap-1.5 text-sm font-normal text-base-content;
-    animation: breakdown-label-in 140ms ease-out;
+    animation: breakdown-label-in var(--motion-fade-duration) linear;
   }
 
   .breakdown-dot {

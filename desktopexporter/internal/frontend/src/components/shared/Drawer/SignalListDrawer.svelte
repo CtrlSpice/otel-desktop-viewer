@@ -621,10 +621,14 @@
               {#if !emptyDrawer}
                 <div class="signal-drawer__footer">
                   <div class="min-w-0 flex-1">{@render footer?.()}</div>
-                  {#if !showEmptyState && (listScrolled || scrollTopFocused)}
+                  {#if !showEmptyState}
                     <button
                       type="button"
-                      class="pointy-uppy btn btn-circle btn-soft btn-primary"
+                      class="pointy-uppy btn btn-circle btn-primary"
+                      class:pointy-uppy--visible={listScrolled ||
+                        scrollTopFocused}
+                      inert={!listScrolled && !scrollTopFocused}
+                      aria-hidden={!listScrolled && !scrollTopFocused}
                       aria-label="Scroll to top"
                       title="Scroll to top"
                       onclick={scrollToTop}
@@ -633,7 +637,7 @@
                     >
                       <HugeiconsIcon
                         icon={ArrowUp02Icon}
-                        size={24}
+                        size={20}
                         strokeWidth={1.75}
                         aria-hidden="true"
                       />
@@ -714,8 +718,8 @@
   }
 
   .pointy-uppy {
-    /* A 48px button with a 24px flow footprint: its bottom aligns with the row. */
-    @apply relative z-10 -mt-6 size-12 shrink-0 p-0;
+    /* Keep a 24px flow footprint so its bottom stays aligned with the row. */
+    @apply relative z-10 -mt-[0.9rem] size-[2.4rem] shrink-0 p-0;
   }
 
   .signal-drawer__item {

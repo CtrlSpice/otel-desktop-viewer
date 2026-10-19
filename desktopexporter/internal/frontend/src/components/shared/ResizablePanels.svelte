@@ -516,7 +516,9 @@
   }
 
   .panel-split--initializing .panel-shell,
-  .panel-split--dragging .panel-shell {
+  .panel-split--dragging,
+  .panel-split--dragging .panel-shell,
+  .panel-split--dragging .col-resize-bar {
     transition: none;
   }
 </style>

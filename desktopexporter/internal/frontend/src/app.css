@@ -28,7 +28,15 @@
   --focus-ring-color: var(--color-primary);
   --item-hover-bg: var(--color-highlight-low);
   --item-selected-bg: var(--color-highlight-med);
-  --item-motion-duration: 100ms;
+  /* Quick feedback, quiet fades, and a shared settle for moving surfaces. */
+  --motion-feedback-duration: 120ms;
+  --motion-fade-duration: 160ms;
+  --motion-compact-duration: 180ms;
+  --motion-panel-duration: 240ms;
+  --motion-settle-easing: cubic-bezier(0.22, 1, 0.36, 1);
+  --item-motion-duration: var(--motion-feedback-duration);
+  --panel-motion-duration: var(--motion-panel-duration);
+  --panel-motion-easing: var(--motion-settle-easing);
 }
 
 /* Tooltips — inverted against the page.
@@ -656,7 +664,29 @@ svg {
 
 /* Global button styles */
 .btn {
-  @apply transition-[color,background-color,border-color,transform,box-shadow] duration-200 ease-out;
+  @apply transition-[color,background-color,border-color,transform,box-shadow];
+  transition-duration: var(--motion-feedback-duration);
+  transition-timing-function: var(--motion-settle-easing);
+}
+
+/* Keep the control mounted so a scroll reversal reverses the fade in place. */
+.btn.pointy-uppy {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--motion-fade-duration) linear,
+    visibility 0s linear var(--motion-fade-duration),
+    background-color var(--motion-feedback-duration) var(--motion-settle-easing),
+    border-color var(--motion-feedback-duration) var(--motion-settle-easing),
+    color var(--motion-feedback-duration) var(--motion-settle-easing),
+    box-shadow var(--motion-feedback-duration) var(--motion-settle-easing),
+    transform var(--motion-feedback-duration) var(--motion-settle-easing);
+}
+
+.btn.pointy-uppy--visible {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
 }
 
 /* Compact chart choices: full-contrast labels, iris marks for active controls. */
@@ -725,7 +755,8 @@ svg {
 
 /* DaisyUI cards — avoid generic "lift" hover; feels template-y */
 .card {
-  @apply transition-shadow duration-200;
+  transition: box-shadow var(--motion-feedback-duration)
+    var(--motion-settle-easing);
 }
 
 .card:hover {
@@ -757,7 +788,8 @@ svg {
 
 /* Popover indicator styles (curved chevron) */
 .popover-indicator {
-  @apply transition-transform duration-200;
+  transition: transform var(--motion-compact-duration)
+    var(--motion-settle-easing);
 }
 
 .popover-indicator--open {
@@ -895,7 +927,7 @@ svg {
   @apply btn btn-circle btn-ghost btn-neutral btn-sm shrink-0 gap-0 border-transparent px-0 py-0 text-xs font-medium tracking-tight shadow-none;
   color: var(--color-subtle);
   transition-property: color, background-color, box-shadow, transform;
-  transition-duration: 200ms, 200ms, 200ms, 100ms;
+  transition-duration: var(--motion-feedback-duration);
 }
 
 .drawer-header-btn:hover {
@@ -1068,8 +1100,6 @@ button:focus-visible:not(.btn) {
   --layout-gap: 0.75rem;
   /* Main/detail split: gap equals the invisible hit strip (no flex gutter). */
   --resize-bar-hit-width: 0.75rem;
-  --panel-motion-duration: 240ms;
-  --panel-motion-easing: cubic-bezier(0.22, 1, 0.36, 1);
   --panel-split-total: 0.75rem;
   --panel-split-flex-gap: calc(
     (var(--panel-split-total) - var(--resize-bar-hit-width)) / 2
@@ -1123,8 +1153,10 @@ html[data-theme='rose-pine-dawn'] .number-circle:hover {
 
 @media (prefers-reduced-motion: reduce) {
   :root {
-    --panel-motion-duration: 0ms;
-    --item-motion-duration: 0ms;
+    --motion-feedback-duration: 0ms;
+    --motion-fade-duration: 0ms;
+    --motion-compact-duration: 0ms;
+    --motion-panel-duration: 0ms;
   }
 }
 
@@ -1142,7 +1174,8 @@ html[data-theme='rose-pine-dawn'] .number-circle:hover {
   border-radius: 0.75rem;
   --item-state-bg: var(--item-idle-bg, transparent);
   background-color: var(--item-state-bg);
-  transition: background-color var(--item-motion-duration);
+  transition: background-color var(--item-motion-duration)
+    var(--motion-settle-easing);
 }
 
 /* Real table rows paint their state on the cells so the outer corners round
@@ -1161,7 +1194,8 @@ tr:is(.item-state, .table-row) {
 
 tr:is(.item-state, .table-row) > :is(td, th) {
   background-color: var(--item-state-bg);
-  transition: background-color var(--item-motion-duration);
+  transition: background-color var(--item-motion-duration)
+    var(--motion-settle-easing);
 }
 
 tr:is(.item-state, .table-row) > :is(td, th):first-child {
@@ -1385,8 +1419,8 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
   background-color: var(--color-neutral);
   opacity: 0;
   transition:
-    opacity 0.15s,
-    background-color 0.15s;
+    opacity var(--motion-fade-duration) linear,
+    background-color var(--motion-feedback-duration) var(--motion-settle-easing);
 }
 
 .resize-handle:hover::after {
@@ -1446,9 +1480,9 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
   background-color: var(--color-neutral);
   opacity: 0;
   transition:
-    width 0.15s,
-    background-color 0.15s,
-    opacity 0.15s;
+    width var(--motion-feedback-duration) var(--motion-settle-easing),
+    background-color var(--motion-feedback-duration) var(--motion-settle-easing),
+    opacity var(--motion-fade-duration) linear;
 }
 
 .col-resize-bar--guide::before {

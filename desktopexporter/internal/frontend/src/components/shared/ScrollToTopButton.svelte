@@ -14,24 +14,25 @@
   let focused = $state(false)
 </script>
 
-{#if visible || focused}
-  <button
-    type="button"
-    class="scroll-to-top btn btn-circle btn-soft btn-primary"
-    aria-label={label}
-    title="Scroll to top"
-    {onclick}
-    onfocus={() => (focused = true)}
-    onblur={() => (focused = false)}
-  >
-    <HugeiconsIcon
-      icon={ArrowUp02Icon}
-      size={20}
-      strokeWidth={1.75}
-      aria-hidden="true"
-    />
-  </button>
-{/if}
+<button
+  type="button"
+  class="scroll-to-top pointy-uppy btn btn-circle btn-primary"
+  class:pointy-uppy--visible={visible || focused}
+  inert={!visible && !focused}
+  aria-hidden={!visible && !focused}
+  aria-label={label}
+  title="Scroll to top"
+  {onclick}
+  onfocus={() => (focused = true)}
+  onblur={() => (focused = false)}
+>
+  <HugeiconsIcon
+    icon={ArrowUp02Icon}
+    size={20}
+    strokeWidth={1.75}
+    aria-hidden="true"
+  />
+</button>
 
 <style lang="postcss">
   @reference "../../app.css";

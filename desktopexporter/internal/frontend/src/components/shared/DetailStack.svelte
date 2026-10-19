@@ -30,8 +30,8 @@
 
 <style>
   .detail-stack {
-    --detail-motion-duration: 140ms;
-    --detail-motion-easing: cubic-bezier(0.2, 0, 0.2, 1);
+    --detail-motion-duration: var(--motion-compact-duration);
+    --detail-motion-easing: var(--motion-settle-easing);
   }
 
   .detail-stack--resizable {
