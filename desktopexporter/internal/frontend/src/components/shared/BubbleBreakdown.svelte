@@ -16,6 +16,7 @@
     label,
     barLabel,
     unit,
+    showSingleCount = true,
     emptyLabel,
     right,
   }: {
@@ -24,6 +25,7 @@
     label: string
     barLabel: string
     unit: string
+    showSingleCount?: boolean
     emptyLabel?: string
     right?: Snippet
   } = $props()
@@ -135,10 +137,12 @@
     ></span>
     <span class="breakdown-label__text">
       <span class="min-w-0 truncate">{part.label}</span>
-      <span class="shrink-0 text-rp-subtle tabular-nums"
-        >({countLabel(part)}{#if colouredParts.length > 1},
-          {percent.format(part.count / total)}{/if})</span
-      >
+      {#if showSingleCount || colouredParts.length > 1}
+        <span class="shrink-0 text-rp-subtle tabular-nums"
+          >({countLabel(part)}{#if colouredParts.length > 1},
+            {percent.format(part.count / total)}{/if})</span
+        >
+      {/if}
     </span>
   {/snippet}
 

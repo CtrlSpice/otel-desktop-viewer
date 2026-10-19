@@ -35,7 +35,8 @@ describe('TraceCard', () => {
     expect(
       screen.queryByRole('group', { name: /Service breakdown/ })
     ).not.toBeInTheDocument()
-    expect(screen.getByText('(4 spans)')).toBeInTheDocument()
+    expect(within(button).getByText('4 spans')).toBeInTheDocument()
+    expect(screen.queryByText('(4 spans)')).not.toBeInTheDocument()
   })
 
   it('falls back to a placeholder title when the trace has no root span', () => {
@@ -49,7 +50,7 @@ describe('TraceCard', () => {
     const traceID = '1234567890abcdef1234567890abcdef'
     renderCard({ trace: makeTrace({ traceID }) })
     const row = document.querySelector('.ball-pit')
-    expect(row).toHaveTextContent('orders-service (4 spans)')
+    expect(row).toHaveTextContent('orders-service')
     expect(row?.querySelector('.identifier')).toHaveAttribute('title', traceID)
     expect(row).toHaveTextContent(traceID)
     expect(screen.getByRole('button').querySelector('.identifier')).toBeNull()

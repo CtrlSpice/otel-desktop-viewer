@@ -39,5 +39,6 @@
   label="Spans by service"
   barLabel="Service breakdown by span count"
   unit="span"
+  showSingleCount={false}
   {right}
 />
