@@ -1,5 +1,6 @@
 <script lang="ts">
   import ChartSticky from '@/components/metrics/Charts/ChartSticky.svelte'
+  import HistogramContributionPattern from './HistogramContributionPattern.svelte'
   import type { ChartStickySize } from '@/components/metrics/utils/chart-sticky-position'
   import { heatmapCardPosition } from '@/components/metrics/utils/heatmap-card-position'
   import {
@@ -59,6 +60,7 @@
   const ctx = getMetricViewContext()
   const blobClipPrefix = $props.id()
   const quantileChannelID = `${blobClipPrefix}-quantile-channels`
+  const contributionPatternID = `${blobClipPrefix}-contribution-hatch`
 
   // The context owns fetching and state; this component only renders points.
   type Props = {
@@ -107,6 +109,23 @@
   let heatmapModel = $derived(buildHistogramHeatmapData(points))
   let heatmapColumns = $derived(heatmapModel.columns)
   let heatmapData = $derived(heatmapModel.cells)
+
+  let contributionCells = $derived(
+    buildHistogramHeatmapData(
+      ctx.histogramContribution?.point ? [ctx.histogramContribution.point] : []
+    ).cells
+  )
+  let contributionByBucket = $derived(
+    new Map(contributionCells.map(cell => [cell.bucketKey, cell.count]))
+  )
+  let contributionTimestamp = $derived(
+    ctx.histogramContribution?.point?.timestamp
+  )
+  function contributionCount(cell: HeatmapDatum): number {
+    return cell.timestampNs === contributionTimestamp
+      ? (contributionByBucket.get(cell.bucketKey) ?? 0)
+      : 0
+  }
 
   // Exact domains are O(columns + rows), independent of conceptual cells.
   let timeDomain = $derived(heatmapColumns.map(column => column.key))
@@ -446,6 +465,23 @@
   )
 
   let blobDetail = $derived(heatmapBlobDetail(columnPitch, keyboardRowHeight))
+  let contributionRegions = $derived(
+    buildHeatmapBlobs(
+      {
+        ...heatmapModel,
+        cells: heatmapData.filter(cell => contributionCount(cell) > 0),
+      },
+      cellColorThresholds
+    ).map((blob, index) => ({
+      key: blob.key,
+      patternID: `${contributionPatternID}-${index}`,
+      color: cellColorRange[blob.band],
+      path: heatmapBlobPath(blob, columnPitch, keyboardRowHeight, {
+        columns: timeDomain.length,
+        rows: bucketDomain.length,
+      }),
+    }))
+  )
   // Geometry depends on the grid and viewport, not pointer/selection state.
   let renderedBlobs = $derived.by(() => {
     const columns = new Map(timeDomain.map((key, index) => [key, index]))
@@ -635,6 +671,9 @@
                           selectedColumnKey &&
                           (!selectedCell ||
                             cell.datum.bucketKey === selectedCell.bucketKey)}
+                        data-contribution-count={contributionCount(
+                          cell.datum
+                        ) || undefined}
                       />
                     {/each}
                     <path
@@ -676,6 +715,32 @@
                   </path>
                 {/each}
               </g>
+              <g class="heatmap-contributions" aria-hidden="true">
+                {#each contributionRegions as region (region.key)}
+                  <HistogramContributionPattern
+                    id={region.patternID}
+                    color={region.color}
+                  />
+                  <defs>
+                    <clipPath
+                      id={`${region.patternID}-clip`}
+                      clipPathUnits="userSpaceOnUse"
+                    >
+                      <path d={region.path} />
+                    </clipPath>
+                  </defs>
+                  <g clip-path={`url(#${region.patternID}-clip)`}>
+                    <path d={region.path} fill={region.color} />
+                    <path
+                      class="heatmap-contribution-texture"
+                      d={region.path}
+                      fill={`url(#${region.patternID})`}
+                      style:--contribution-color={region.color}
+                      style:--contribution-outline-width={blobDetail.liner * 2}
+                    />
+                  </g>
+                {/each}
+              </g>
               {#if keyboardFocused && activeKeyboardCursor && keyboardRowHeight > 0}
                 <Rect
                   x={activeKeyboardCursor.columnIndex * columnPitch}
@@ -702,6 +767,12 @@
                   </dd>
                   <dt>count</dt>
                   <dd>{data.count.toLocaleString()}</dd>
+                  {#if ctx.histogramContribution}
+                    <dt>selected contribution</dt>
+                    <dd>
+                      {contributionCount(data).toLocaleString()} of {data.count.toLocaleString()}
+                    </dd>
+                  {/if}
                 </dl>
               {/snippet}
             </Tooltip.Root>
@@ -780,6 +851,20 @@
 
   .metric-heatmap-chart {
     @apply flex min-h-0 w-full min-w-0 flex-col;
+  }
+
+  .heatmap-contributions {
+    pointer-events: none;
+  }
+
+  .heatmap-contribution-texture {
+    stroke: color-mix(
+      in oklab,
+      var(--contribution-color) 85%,
+      var(--color-base-content)
+    );
+    stroke-width: var(--contribution-outline-width);
+    stroke-linejoin: round;
   }
 
   .heatmap-quantile-label {

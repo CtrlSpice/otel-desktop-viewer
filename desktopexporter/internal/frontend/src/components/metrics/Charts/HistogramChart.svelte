@@ -1,5 +1,6 @@
 <script lang="ts">
   import ChartSticky from '@/components/metrics/Charts/ChartSticky.svelte'
+  import HistogramContributionPattern from './HistogramContributionPattern.svelte'
   import type { ChartStickySize } from '@/components/metrics/utils/chart-sticky-position'
   import { histogramCardPosition } from '@/components/metrics/utils/histogram-card-position'
   import {
@@ -48,7 +49,10 @@
     orderedCursorCommandForKey,
   } from '@/components/metrics/utils/chart-keyboard-cursor'
   import { createOrderedChartKeyboardCursor } from '@/components/metrics/utils/chart-keyboard-state.svelte'
-  import type { HistogramChartDataPoint } from '@/components/metrics/utils/histogram-aggregation'
+  import {
+    histogramSliceToChartDatapoint,
+    type HistogramChartDataPoint,
+  } from '@/components/metrics/utils/histogram-aggregation'
 
   // lo/hi position quantile markers and may be infinite or both zero.
   type Bucket = {
@@ -84,6 +88,7 @@
 
   let plotAreaHeight = $state(0)
   const ctx = getMetricViewContext()
+  const contributionPatternID = $props.id()
   let pinnedBucketKey = $state<string | null>(null)
 
   // Keys must match Go's strconv.FormatFloat(q, 'f', -1, 64) output.
@@ -111,6 +116,22 @@
   let bucketByKey = $derived(
     new Map(buckets.map(bucket => [bucket.key, bucket]))
   )
+
+  let contributionByKey = $derived.by(() => {
+    const selection = ctx.histogramContribution
+    if (!selection?.point) return new Map<string, number>()
+    const point = histogramSliceToChartDatapoint(
+      selection.point,
+      selection.datapointID,
+      'Delta',
+      1
+    )
+    const selectedBuckets =
+      point.metricType === 'Histogram'
+        ? buildHistogramBuckets(point)
+        : buildExpHistogramBuckets(point)
+    return new Map(selectedBuckets.map(bucket => [bucket.key, bucket.count]))
+  })
 
   let pinnedBucket = $derived.by((): Bucket | null => {
     if (!pinnedBucketKey) return null
@@ -157,7 +178,7 @@
   let pinDatapointID = $state<string | undefined>(undefined)
 
   $effect(() => {
-    const id = datapoint.id
+    const id = `${datapoint.id}:${ctx.histogramContribution?.datapointID ?? ''}`
     if (pinDatapointID !== undefined && pinDatapointID !== id) {
       pinnedBucketKey = null
     }
@@ -690,6 +711,12 @@
                         value={data.count}
                         format="integer"
                       />
+                      {#if ctx.histogramContribution}
+                        <Tooltip.Item
+                          label="selected contribution"
+                          value={`${contributionByKey.get(data.key) ?? 0} of ${data.count}`}
+                        />
+                      {/if}
                       <Tooltip.Item
                         label="of total"
                         value={formatPct(data.count)}
@@ -754,6 +781,45 @@
                     />
                   </g>
                 {/each}
+                <g class="histogram-contributions" aria-hidden="true">
+                  {#each barGeometry as bar, index (bar.bucket.key)}
+                    {@const contribution =
+                      contributionByKey.get(bar.bucket.key) ?? 0}
+                    {#if contribution > 0}
+                      {@const y = context.yScale(contribution)}
+                      {@const contributionHeight = Math.max(
+                        0,
+                        context.yScale(0) - y
+                      )}
+                      {@const radius = Math.min(
+                        bar.radius,
+                        contributionHeight / 2
+                      )}
+                      {@const color = barColorScale(bar.bucket.count)}
+                      {@const patternID = `${contributionPatternID}-${index}`}
+                      <HistogramContributionPattern id={patternID} {color} />
+                      <rect
+                        x={bar.x}
+                        {y}
+                        width={bar.width}
+                        height={contributionHeight}
+                        rx={radius}
+                        fill={color}
+                      />
+                      <rect
+                        class="histogram-bar__contribution"
+                        data-contribution-count={contribution}
+                        x={bar.x}
+                        {y}
+                        width={bar.width}
+                        height={contributionHeight}
+                        rx={radius}
+                        fill={`url(#${patternID})`}
+                        style:--contribution-color={color}
+                      />
+                    {/if}
+                  {/each}
+                </g>
               {/snippet}
             </BarChart>
             {#each quantileLabelPlacements as mark (mark.key)}
@@ -838,6 +904,20 @@
     stroke: color-mix(
       in oklab,
       var(--histogram-bar-color) 80%,
+      var(--color-base-content)
+    );
+    stroke-opacity: 0.4;
+    stroke-width: 1;
+  }
+
+  .histogram-contributions {
+    pointer-events: none;
+  }
+
+  .histogram-bar__contribution {
+    stroke: color-mix(
+      in oklab,
+      var(--contribution-color) 80%,
       var(--color-base-content)
     );
     stroke-opacity: 0.4;

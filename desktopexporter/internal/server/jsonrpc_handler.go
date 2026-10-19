@@ -763,7 +763,7 @@ func (h *JSONRPCHandler) getMetricAggregateView(ctx context.Context, req *jsonrp
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
 		return metrics.GetMetricAggregateView(ctx, db, args.metricRef, args.timeRange,
 			args.targetBuckets, args.seriesRefs, args.quantiles, args.tzOffsetNs,
-			args.viewBuckets, args.selectedSeriesRefs, args.tzName)
+			args.viewBuckets, args.selectedSeriesRefs, args.tzName, args.datapointRef)
 	})
 }
 

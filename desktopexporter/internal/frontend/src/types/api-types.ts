@@ -411,6 +411,8 @@ export type AggregateBucket = Omit<
 export type MetricAggregateViewData = {
   aggregate: AggregateBucket[] | null
   scalarAggregate: ScalarAggregate | null
+  /** Selected source's activity, on the aggregate's bucket schema. */
+  contribution?: AggregateBucket[] | null
 }
 
 /** Per-series value statistics, computed server-side over the full window. */

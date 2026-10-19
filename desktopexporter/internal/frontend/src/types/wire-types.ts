@@ -464,6 +464,7 @@ export type JsonScalarAggregate = {
 export type JsonMetricAggregateViewData = {
   aggregate: JsonAggregateBucket[] | null
   scalarAggregate: JsonScalarAggregate | null
+  contribution?: JsonAggregateBucket[] | null
 }
 
 export type JsonExactMetricResource = {

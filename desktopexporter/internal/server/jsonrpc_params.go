@@ -55,7 +55,7 @@ var methodParamNames = map[string][]string{
 	"getMetricAggregateView": {
 		"metricRef", "startTime", "endTime", "targetBuckets", "seriesRefs",
 		"quantiles", "tzOffsetNs", "viewBuckets",
-		"selectedSeriesRefs", "tzName",
+		"selectedSeriesRefs", "tzName", "datapointRef",
 	},
 	"searchAttributeMatches":                {"term"},
 	"getFieldValueCompletions":              {"signal", "field", "term", "limit"},
@@ -270,6 +270,7 @@ type getMetricViewParams struct {
 	selectedSeriesRefs   []string
 	datapointSeriesRefs  []string
 	datapointSeriesLimit int64
+	datapointRef         string
 	tzName               string
 }
 
@@ -355,7 +356,7 @@ func parseOptionalString(params []any, index int) (string, error) {
 func parseGetMetricViewParams(raw json.RawMessage, aggregateOnly bool) (getMetricViewParams, error) {
 	maxParams := 13
 	if aggregateOnly {
-		maxParams = 10
+		maxParams = 11
 	}
 	params, err := decodePositionalParams(raw, 3, maxParams)
 	if err != nil {
@@ -422,12 +423,19 @@ func parseGetMetricViewParams(raw json.RawMessage, aggregateOnly bool) (getMetri
 		}
 	}
 
+	var datapointRef string
+	if aggregateOnly && len(params) > 10 && params[10] != nil {
+		datapointRef, err = parseIDParam(params[10], jsonrpc2.ErrInvalidParams, normalizeUUID)
+		if err != nil {
+			return getMetricViewParams{}, err
+		}
+	}
 	return getMetricViewParams{
 		metricRef: metricRef, timeRange: timeRange, targetBuckets: targetBuckets,
 		seriesRefs: seriesRefs, quantiles: quantiles, tzOffsetNs: tzOffsetNs,
 		viewBuckets: viewBuckets, sparklineBuckets: sparklineBuckets,
 		selectedSeriesRefs: selectedSeriesRefs, datapointSeriesRefs: datapointSeriesRefs,
-		datapointSeriesLimit: datapointSeriesLimit, tzName: tzName,
+		datapointSeriesLimit: datapointSeriesLimit, tzName: tzName, datapointRef: datapointRef,
 	}, nil
 }
 

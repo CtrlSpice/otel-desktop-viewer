@@ -1423,7 +1423,7 @@ func getMetricView(ctx context.Context, db *sql.DB, params getMetricViewParams, 
 	if timeRange.End != nil {
 		endTime = []uint64{*timeRange.End}
 	}
-	if err := db.QueryRowContext(ctx, query, metricID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs, viewBuckets, sparklineBuckets, selectedArg, tzArg, datapointArg, datapointSeriesLimit).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(ctx, query, metricID, startTime, endTime, targetBuckets, seriesArg, quantiles, tzOffsetNs, viewBuckets, sparklineBuckets, selectedArg, tzArg, datapointArg, datapointSeriesLimit, params.ContributionID).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("GetMetricView: %w", ErrMetricIDNotFound)
 		}
@@ -1448,9 +1448,13 @@ func getMetricView(ctx context.Context, db *sql.DB, params getMetricViewParams, 
 //
 // A scalar needs both selectedSeriesIDs and the complete metric so it can
 // compute Selected and All without narrowing the latter.
-func GetMetricAggregateView(ctx context.Context, db *sql.DB, metricID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, viewBuckets int64, selectedSeriesIDs []string, tzName string) (json.RawMessage, error) {
+func GetMetricAggregateView(ctx context.Context, db *sql.DB, metricID string, timeRange timerange.TimeRange, targetBuckets int64, seriesIDs []string, quantiles []float64, tzOffsetNs int64, viewBuckets int64, selectedSeriesIDs []string, tzName string, contributionID ...string) (json.RawMessage, error) {
 	// The aggregate projection lets DuckDB prune per-series CTEs.
-	raw, err := getMetricView(ctx, db, aggregateViewShapeFor(ctx, db, metricID),
+	shape := aggregateViewShapeFor(ctx, db, metricID)
+	if len(contributionID) > 0 {
+		shape.ContributionID = contributionID[0]
+	}
+	raw, err := getMetricView(ctx, db, shape,
 		metricID, timeRange, targetBuckets, seriesIDs, quantiles,
 		tzOffsetNs, viewBuckets, 0, selectedSeriesIDs, tzName,
 		[]string{}, 0)
@@ -1862,6 +1866,8 @@ func boolValueToIdentityString(v driver.Value, metricType string) string {
 // final projection.
 type getMetricViewParams struct {
 	TimeFilter string
+	// ContributionID selects interval activity after differencing, never before.
+	ContributionID string
 	// AggregateOnly emits just the cross-series aggregates, which is all
 	// GetMetricAggregateView returns. It drops `timeseries` -- the field that
 	// carries the per-series pipelines and most of the planning cost.

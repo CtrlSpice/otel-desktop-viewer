@@ -84,7 +84,7 @@ func TestMetricNamedParamContracts(t *testing.T) {
 	}, methodParamNames["getMetricView"])
 	require.Equal(t, []string{
 		"metricRef", "startTime", "endTime", "targetBuckets", "seriesRefs",
-		"quantiles", "tzOffsetNs", "viewBuckets", "selectedSeriesRefs", "tzName",
+		"quantiles", "tzOffsetNs", "viewBuckets", "selectedSeriesRefs", "tzName", "datapointRef",
 	}, methodParamNames["getMetricAggregateView"])
 }
 

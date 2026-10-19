@@ -131,6 +131,12 @@ export const SPARKLINE_BUCKETS = SPARKLINE_WIDTH_PX / 2
 
 export type HistogramTab = 'heatmap' | 'quantiles' | 'histogram'
 
+export type HistogramContributionSelection = {
+  datapointID: string
+  /** Null means the source has no activity in this aggregate (e.g. a baseline). */
+  point: HistogramSlicePoint | null
+}
+
 export type BucketSeriesError =
   | { kind: 'unspecified'; message: string }
   | { kind: 'boundsMismatch'; message: string }
@@ -250,6 +256,7 @@ export interface MetricViewContext {
   readonly aggregatedError: BucketSeriesError | null
   readonly histogramChartDatapoint: HistogramChartDataPoint | undefined
   readonly histogramChartError: BucketSeriesError | null
+  readonly histogramContribution: HistogramContributionSelection | null
   readonly activeHistogramDp:
     HistogramDataPoint | ExponentialHistogramDataPoint | undefined
   /** Selected column bounds. End is one nanosecond before the next column. */
@@ -378,7 +385,9 @@ export function createMetricViewContext(
   getSeriesDatapoints: (seriesKey: string) => DataPoint[] | undefined = () =>
     undefined,
   /** Per-series merges over the selected heatmap column, once fetched. */
-  getColumnDistribution: () => MetricViewData | undefined = () => undefined
+  getColumnDistribution: () => MetricViewData | undefined = () => undefined,
+  getHistogramContribution: () => HistogramContributionSelection | null = () =>
+    null
 ): MetricViewContext {
   // The only mutable per-metric state cell.
   const view = $state<MetricViewState>({
@@ -1810,7 +1819,7 @@ export function createMetricViewContext(
       return
     }
 
-    if (view.selectionSource !== 'chart') return
+    if (view.selectionSource !== 'chart' && !isHistogramKind) return
     const hadDatapointSelection = view.selectedDatapointID !== null
     view.selectedDatapointID = null
     view.selectionSource = null
@@ -1822,6 +1831,15 @@ export function createMetricViewContext(
   }
 
   const ctx: MetricViewContext = {
+    get histogramContribution() {
+      const contribution = getHistogramContribution()
+      return view.selectionSource === 'detail' &&
+        contribution?.datapointID === view.selectedDatapointID &&
+        selectedSeriesKey !== null &&
+        view.visibleSeries.has(selectedSeriesKey)
+        ? contribution
+        : null
+    },
     get metric() {
       return getMetric()
     },

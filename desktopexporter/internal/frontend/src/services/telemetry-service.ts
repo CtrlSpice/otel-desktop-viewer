@@ -1177,7 +1177,9 @@ export let telemetryAPI = {
     /** Series included in the scalar Selected pool without narrowing All. */
     selectedSeriesRefs?: string[],
     /** Bucket time zone. It must match the per-series view. */
-    tzName?: string
+    tzName?: string,
+    /** Highlight this source's interval activity inside the aggregate. */
+    datapointRef?: string
   ): Promise<MetricAggregateViewData | null> => {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
@@ -1195,13 +1197,18 @@ export let telemetryAPI = {
           viewBuckets,
           selectedSeriesRefs: selectedSeriesRefs ?? null,
           tzName,
+          datapointRef,
         })
       )
       if (!raw) return null
-      return {
+      const result: MetricAggregateViewData = {
         aggregate: aggregateBucketsFromJSON(raw.aggregate),
         scalarAggregate: scalarAggregateFromJSON(raw.scalarAggregate),
       }
+      if (raw.contribution !== undefined) {
+        result.contribution = aggregateBucketsFromJSON(raw.contribution)
+      }
+      return result
     } catch (error) {
       if (
         error instanceof JsonRpcError &&

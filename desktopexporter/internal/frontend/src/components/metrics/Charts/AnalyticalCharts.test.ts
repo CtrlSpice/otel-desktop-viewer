@@ -789,6 +789,113 @@ describe('HistogramChart keyboard model', () => {
   })
 })
 
+describe('histogram source contributions', () => {
+  it.each(['heatmap', 'histogram'] as const)(
+    'highlights activity on the existing %s and clears on repeat selection',
+    async chart => {
+      const source = histogramDatapoint('source', [1, 2], [40, 30, 20])
+      const aggregate = histogramDatapoint('aggregate', [1, 2], [10, 12, 8])
+      aggregate.quantiles = { '0.5': 1.5 }
+      const metric = metricWithDatapoints('Histogram', [source])
+      const point: HistogramSlicePoint = {
+        kind: 'histogram',
+        timestamp: BASE_NS,
+        seriesRef: '',
+        bounds: [1, 2],
+        counts: [2, 0, 3],
+        quantiles: { '0.5': 1.5 },
+        totals: { count: 5, sum: undefined, min: undefined, max: undefined },
+      }
+      let ctx!: MetricViewContext
+      render(MetricChartHarness, {
+        props: {
+          component: chart === 'heatmap' ? HistogramHeatmap : HistogramChart,
+          componentProps:
+            chart === 'heatmap'
+              ? {
+                  points: [
+                    {
+                      ...point,
+                      counts: [10, 12, 8],
+                      totals: { ...point.totals, count: 30 },
+                    },
+                  ],
+                }
+              : { datapoint: histogramDatapointToChartDatapoint(aggregate) },
+          metric,
+          contribution: { datapointID: source.id, point },
+          oncontext: context => {
+            ctx = context
+          },
+        },
+      })
+      ctx.onDatapointClick(source)
+      await tick()
+      expect(
+        [...document.querySelectorAll('[data-contribution-count]')].map(e =>
+          e.getAttribute('data-contribution-count')
+        )
+      ).toEqual(['2', '3'])
+      expect(
+        screen.queryByRole('status', { name: 'Datapoint contribution' })
+      ).toBeNull()
+      const contributionLayer = document.querySelector(
+        chart === 'heatmap'
+          ? '.heatmap-contributions'
+          : '.histogram-contributions'
+      )!
+      const quantile = document.querySelector(
+        chart === 'heatmap' ? '.heatmap-quantile-line' : '.quantile-marker'
+      )!
+      expect(quantile).not.toBeNull()
+      expect(
+        quantile.compareDocumentPosition(contributionLayer) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+      ).not.toBe(0)
+      const textures = contributionLayer.querySelectorAll('[fill^="url(#"]')
+      expect(textures.length).toBeGreaterThan(0)
+      for (const texture of textures) {
+        const id = texture.getAttribute('fill')!.slice(5, -1)
+        expect(document.getElementById(id)?.tagName.toLowerCase()).toBe(
+          'pattern'
+        )
+      }
+      expect(ctx.selectedDatapoint).toMatchObject({ count: 90n })
+      ctx.onDatapointClick(source)
+      await tick()
+      expect(
+        document.querySelectorAll('[data-contribution-count]')
+      ).toHaveLength(0)
+      expect(screen.queryByText('Selected contribution:')).toBeNull()
+      expect(ctx.selectedDatapointID).toBeNull()
+    }
+  )
+
+  it('does not display stale or unchecked source contributions', async () => {
+    const source = histogramDatapoint('source', [], [5])
+    const other = histogramDatapoint('other', [], [8])
+    let ctx!: MetricViewContext
+    render(MetricChartHarness, {
+      props: {
+        component: HistogramHeatmap,
+        componentProps: { points: [] },
+        metric: metricWithDatapoints('Histogram', [source, other]),
+        contribution: { datapointID: source.id, point: null },
+        oncontext: context => {
+          ctx = context
+        },
+      },
+    })
+    ctx.onDatapointClick(source)
+    expect(ctx.histogramContribution?.point).toBeNull()
+    ctx.onDatapointClick(other)
+    expect(ctx.histogramContribution).toBeNull()
+    ctx.onDatapointClick(source)
+    ctx.toggleTimeseriesVisible('series-a', false)
+    expect(ctx.histogramContribution).toBeNull()
+  })
+})
+
 describe('HistogramHeatmap keyboard model', () => {
   it('formats explicit string-domain ticks as time and bucket labels', async () => {
     localStorage.setItem('time-tz', 'UTC')

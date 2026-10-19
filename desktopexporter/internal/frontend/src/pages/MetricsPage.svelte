@@ -113,6 +113,8 @@
   import { histogramViewTabs } from '@/components/metrics/utils/histogram-view-tabs'
   import {
     createMetricViewContext,
+    aggregateToSlices,
+    type HistogramContributionSelection,
     getMetricViewContext,
     type HistogramTab,
   } from '@/contexts/metric-view-context.svelte'
@@ -198,6 +200,9 @@
   // Per-series distributions for the selected heatmap column.
   let columnDistribution = $state<MetricViewData | undefined>(undefined)
   let columnToken = 0
+  let histogramContribution = $state<HistogramContributionSelection | null>(
+    null
+  )
 
   createMetricViewContext(
     () => selectedMetric,
@@ -205,7 +210,8 @@
     () => selectedAggregateSummary,
     () => selectedScalarAggregate,
     key => seriesDatapoints.get(key),
-    () => columnDistribution
+    () => columnDistribution,
+    () => histogramContribution
   )
   const metricCtx = getMetricViewContext()
 
@@ -507,6 +513,63 @@
     const name = resolveTimezoneName(timeContext.tz)
     return name === 'UTC' ? undefined : name
   }
+
+  // Request a source contribution with the exact window, grid and checked-series
+  // pool of the existing chart. Never narrow to the selected source before delta.
+  $effect(() => {
+    const metric = selectedMetric
+    const datapointID = metricCtx.selectedDatapointID
+    const seriesKey = metricCtx.selectedSeriesKey
+    const visibleKeys = [...metricCtx.visibleSeries].sort()
+    const wholeWindow = metricCtx.activeHistogramTab === 'histogram'
+    const source = metricCtx.selectionSource
+    const offset = tzOffsetNs()
+    const zone = tzName()
+    histogramContribution = null
+    if (
+      !metric ||
+      detailLoading ||
+      metric.metricRef !== page.selectedSummary?.metricRef ||
+      !metricCtx.isHistogramKind ||
+      source !== 'detail' ||
+      !datapointID ||
+      !seriesKey ||
+      !visibleKeys.includes(seriesKey)
+    )
+      return
+    const bounds = effectiveMetricBounds(metric)
+    if (!bounds) return
+    let cancelled = false
+    void telemetryAPI
+      .getMetricAggregateView(
+        metric.metricRef,
+        bounds.startTime,
+        bounds.endTime,
+        wholeWindow ? 1 : HEATMAP_BUCKET_TARGET,
+        visibleKeys,
+        [],
+        offset,
+        0,
+        undefined,
+        zone,
+        datapointID
+      )
+      .then(result => {
+        if (!cancelled && result?.contribution !== undefined) {
+          histogramContribution = {
+            datapointID,
+            point: aggregateToSlices(result.contribution)[0] ?? null,
+          }
+        }
+      })
+      .catch(error => {
+        if (!cancelled)
+          console.error('Failed to fetch histogram contribution:', error)
+      })
+    return () => {
+      cancelled = true
+    }
+  })
 
   // Fetch one merged distribution per series for the selected heatmap column.
   $effect(() => {
