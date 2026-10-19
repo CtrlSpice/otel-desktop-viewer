@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, beforeEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/svelte'
+import { screen, waitFor, within } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import { tick } from 'svelte'
 import type {
@@ -169,15 +169,51 @@ describe('SeriesDatapointList pagination and keyboard access', () => {
     expect(datapointRow('dp-1')).toHaveAccessibleName(/value 1 ms, ID dp-1$/)
   })
 
-  it('shows an absent histogram sum as unavailable and a supplied zero as zero', () => {
-    renderList([
-      makeHistogramDatapoint('hist-absent', null),
-      makeHistogramDatapoint('hist-zero', 0),
-    ])
+  it.each(['Histogram', 'ExponentialHistogram'] as const)(
+    'separates %s counts and sums, preserving exact counts, omitted sums and zero',
+    metricType => {
+      const datapoints = [
+        {
+          ...makeHistogramDatapoint('hist-absent', null),
+          count: 18_446_744_073_709_551_615n,
+        },
+        makeHistogramDatapoint('hist-zero', 0),
+      ]
+      renderList(
+        datapoints.map(dp =>
+          metricType === 'Histogram'
+            ? dp
+            : {
+                ...dp,
+                metricType,
+                scale: 0,
+                zeroCount: 0n,
+                zeroThreshold: 0,
+                positiveBucketOffset: 0,
+                positiveBucketCounts: [dp.count],
+                negativeBucketOffset: 0,
+                negativeBucketCounts: [],
+              }
+        ),
+        'ms'
+      )
 
-    expect(datapointRow('hist-absent')).toHaveTextContent('count 1, sum —')
-    expect(datapointRow('hist-zero')).toHaveTextContent('count 1, sum 0')
-  })
+      expect(
+        screen
+          .getAllByRole('columnheader')
+          .map(header => header.textContent?.trim())
+      ).toEqual(['Time', 'Count', 'Sum (ms)'])
+      const absent = within(datapointRow('hist-absent')).getAllByRole('cell')
+      expect(absent[1]).toHaveTextContent(/^18446744073709551615$/)
+      expect(absent[2]).toHaveTextContent(/^—$/)
+      const zero = within(datapointRow('hist-zero')).getAllByRole('cell')
+      expect(zero[1]).toHaveTextContent(/^1$/)
+      expect(zero[2]).toHaveTextContent(/^0$/)
+      expect(datapointRow('hist-zero')).toHaveAccessibleName(
+        /count 1, sum 0 ms/
+      )
+    }
+  )
 
   it('keeps Details hidden unless any datapoint in the set has details', async () => {
     const user = userEvent.setup()

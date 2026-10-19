@@ -47,6 +47,9 @@
   let hasDetails = $derived(
     datapoints.some(dp => dp.flags > 0 || dp.exemplars.length > 0)
   )
+  let columnCount = $derived(
+    (ctx.isHistogramKind ? 3 : 2) + (showSwatch ? 1 : 0) + (hasDetails ? 1 : 0)
+  )
 
   const PAGE_SIZES = [25, 50, 100] as const
   type PageSize = (typeof PAGE_SIZES)[number]
@@ -281,33 +284,42 @@
     const unit = displayUnit(metricUnit)
     if (dp.metricType === 'Gauge' || dp.metricType === 'Sum') {
       if (dp.doubleValue !== null) {
-        return { number: formatMetricValuePlain(dp.doubleValue), unit }
+        return {
+          number: formatMetricValuePlain(dp.doubleValue),
+          unit,
+          count: null,
+        }
       }
       if (dp.intValue !== null) {
-        return { number: dp.intValue.toString(), unit }
+        return { number: dp.intValue.toString(), unit, count: null }
       }
-      return { number: '—', unit: null }
+      return { number: '—', unit: null, count: null }
     }
     if (
       dp.metricType === 'Histogram' ||
       dp.metricType === 'ExponentialHistogram'
     ) {
       return {
-        number: `count ${dp.count}, sum ${dp.sum === null ? '—' : formatMetricValuePlain(dp.sum)}`,
+        number: dp.sum === null ? '—' : formatMetricValuePlain(dp.sum),
         unit,
+        count: dp.count.toString(),
       }
     }
-    return { number: '—', unit: null }
+    return { number: '—', unit: null, count: null }
   }
 
   function datapointRowLabel(
     datapointID: string,
     formattedTime: string,
-    valueParts: { number: string; unit: string | null }
+    valueParts: { number: string; unit: string | null; count: string | null }
   ): string {
-    const value = valueParts.unit
+    const number = valueParts.unit
       ? `${valueParts.number} ${valueParts.unit}`
       : valueParts.number
+    const value =
+      valueParts.count === null
+        ? number
+        : `count ${valueParts.count}, sum ${number}`
     return `Datapoint at ${formattedTime}, value ${value}, ID ${datapointID}`
   }
 </script>
@@ -341,11 +353,10 @@
     <td class="dp-list__td dp-list__td--time tabular-nums">
       {formattedTime}
     </td>
-    <td class="dp-list__td dp-list__td--value">
-      <span class="dp-list__value-group">
-        <span class="dp-list__value tabular-nums">{valueParts.number}</span>
-      </span>
-    </td>
+    {#if ctx.isHistogramKind}
+      <td class="dp-list__td dp-list__td--value">{valueParts.count}</td>
+    {/if}
+    <td class="dp-list__td dp-list__td--value">{valueParts.number}</td>
     {#if hasDetails}
       <td class="dp-list__td dp-list__td--details">
         {#if dp.exemplars.length > 0}
@@ -365,10 +376,7 @@
   </tr>
   {#if expanded}
     <tr class="dp-list__expansion-row">
-      <td
-        colspan={2 + (showSwatch ? 1 : 0) + (hasDetails ? 1 : 0)}
-        class="dp-list__expansion-cell"
-      >
+      <td colspan={columnCount} class="dp-list__expansion-cell">
         <div class="dp-list__expansion">
           {#if dp.flags > 0}
             <div class="dp-list__detail">
@@ -450,7 +458,7 @@
                 fieldName={attribute.key}
                 fieldType={attribute.value.kind}
                 typedValue={attribute.value}
-                colspan={2 + (showSwatch ? 1 : 0) + (hasDetails ? 1 : 0)}
+                colspan={columnCount}
                 defectLabel={attribute.hasConflict
                   ? `Conflicting typed values retained for ${attribute.key} in ${attributeOwner}.`
                   : undefined}
@@ -467,8 +475,12 @@
                 </th>
               {/if}
               <th scope="col" class="dp-list__th dp-list__th--time"> Time </th>
+              {#if ctx.isHistogramKind}
+                <th scope="col" class="dp-list__th dp-list__th--value">Count</th
+                >
+              {/if}
               <th scope="col" class="dp-list__th dp-list__th--value">
-                Value{#if valueUnit}
+                {ctx.isHistogramKind ? 'Sum' : 'Value'}{#if valueUnit}
                   <span class="dp-list__header-unit">{' '}({valueUnit})</span>
                 {/if}
               </th>
@@ -483,9 +495,8 @@
             {/each}
           {:else}
             <tr
-              ><td
-                colspan={2 + (showSwatch ? 1 : 0) + (hasDetails ? 1 : 0)}
-                class="dp-list__empty">No datapoints</td
+              ><td colspan={columnCount} class="dp-list__empty"
+                >No datapoints</td
               ></tr
             >
           {/if}
@@ -603,21 +614,13 @@
     color: var(--color-subtle);
   }
 
-  .dp-list__value-group {
-    @apply inline-flex min-w-0 items-baseline justify-end gap-1;
-  }
-
   .dp-list__td--value {
-    @apply text-right;
+    @apply whitespace-nowrap text-right font-mono tabular-nums;
+    color: var(--color-base-content);
   }
 
   .dp-list__td--details {
     @apply whitespace-nowrap;
-  }
-
-  .dp-list__value {
-    @apply font-mono;
-    color: var(--color-base-content);
   }
 
   .dp-list__header-unit {
