@@ -1572,7 +1572,8 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
 
 html[data-theme='rose-pine-dawn']
   :is(.badge-soft, .badge-count, .badge-origin) {
-  border: 1px solid currentColor;
+  border: 1px solid var(--badge-color, var(--color-base-content));
+  color: var(--color-muted);
 }
 
 /* Badges — pills, including the classes that apply DaisyUI badge styles. */
