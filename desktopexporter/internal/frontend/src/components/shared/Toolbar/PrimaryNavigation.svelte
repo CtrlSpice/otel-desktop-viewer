@@ -101,6 +101,8 @@
   import { evalsEnabled } from '@/state/features'
   import { getRouteContext } from '@/contexts/route-context.svelte'
 
+  let { count }: { count?: number } = $props()
+  const countID = $props.id()
   const routeContext = getRouteContext()
   const items = $derived(
     $evalsEnabled
@@ -131,6 +133,8 @@
       class="tab shrink-0 flex-nowrap items-center gap-2 px-4 text-sm"
       class:tab-active={active}
       aria-current={active ? 'page' : undefined}
+      aria-label={item.label}
+      aria-describedby={active && count !== undefined ? countID : undefined}
       onclick={event => goto(item.id, event)}
     >
       {#if item.iconType === 'hugeicon'}
@@ -144,6 +148,13 @@
         <item.icon class="size-4 shrink-0 {active ? 'text-primary' : ''}" />
       {/if}
       <span>{item.label}</span>
+      {#if active && count !== undefined}
+        <span id={countID} class="badge-count shrink-0 tabular-nums"
+          ><span class="sr-only"
+            >{item.id === 'evals' ? 'Runs: ' : 'Results: '}</span
+          >{count}</span
+        >
+      {/if}
     </a>
   {/each}
 </nav>

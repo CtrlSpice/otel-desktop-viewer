@@ -10,6 +10,7 @@
     controls,
     navigationLeading,
     navigationTrailing,
+    navigationCount,
     onRefresh,
     refreshPulse = false,
     refreshAsideTip = '',
@@ -18,6 +19,7 @@
     controls?: Snippet
     navigationLeading?: Snippet
     navigationTrailing?: Snippet
+    navigationCount?: number
     onRefresh?: () => void
     refreshPulse?: boolean
     refreshAsideTip?: string
@@ -40,7 +42,7 @@
         </div>
         <div class="workspace-toolbar__centre">
           <div class="workspace-toolbar__navigation">
-            <PrimaryNavigation />
+            <PrimaryNavigation count={navigationCount} />
           </div>
           <div class="workspace-toolbar__search">
             <SearchBar

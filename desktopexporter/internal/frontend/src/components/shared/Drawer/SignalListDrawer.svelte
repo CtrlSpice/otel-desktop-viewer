@@ -60,6 +60,7 @@
     drawerControls?: Snippet
     hideDrawer?: boolean
     navigationTrailing?: Snippet
+    navigationCount?: number
     footer?: Snippet
     children: Snippet
   }
@@ -85,6 +86,7 @@
     drawerControls,
     hideDrawer = false,
     navigationTrailing,
+    navigationCount,
     footer,
     children,
   }: Props<T> = $props()
@@ -492,6 +494,7 @@
     search={drawerSearch}
     controls={drawerChromeToolbar}
     {navigationTrailing}
+    {navigationCount}
     {onRefresh}
     {refreshPulse}
     {refreshAsideTip}
@@ -610,32 +613,32 @@
                         </div>
                       {/snippet}
                     </VirtualList>
-                    {#if listScrolled || scrollTopFocused}
-                      <button
-                        type="button"
-                        class="navigator-scroll-top btn btn-circle btn-soft btn-primary"
-                        aria-label="Scroll to top"
-                        title="Scroll to top"
-                        onclick={scrollToTop}
-                        onfocus={() => (scrollTopFocused = true)}
-                        onblur={() => (scrollTopFocused = false)}
-                      >
-                        <HugeiconsIcon
-                          icon={ArrowUp02Icon}
-                          size={20}
-                          strokeWidth={1.75}
-                          aria-hidden="true"
-                        />
-                      </button>
-                    {/if}
                   {/if}
                 </div>
               {/if}
 
               <!-- Expanded: footer -->
-              {#if !emptyDrawer && footer}
+              {#if !emptyDrawer}
                 <div class="signal-drawer__footer">
-                  {@render footer()}
+                  <div class="min-w-0 flex-1">{@render footer?.()}</div>
+                  {#if !showEmptyState && (listScrolled || scrollTopFocused)}
+                    <button
+                      type="button"
+                      class="navigator-scroll-top btn btn-circle btn-soft btn-primary"
+                      aria-label="Scroll to top"
+                      title="Scroll to top"
+                      onclick={scrollToTop}
+                      onfocus={() => (scrollTopFocused = true)}
+                      onblur={() => (scrollTopFocused = false)}
+                    >
+                      <HugeiconsIcon
+                        icon={ArrowUp02Icon}
+                        size={20}
+                        strokeWidth={1.75}
+                        aria-hidden="true"
+                      />
+                    </button>
+                  {/if}
                 </div>
               {/if}
             </PanelClip>
@@ -711,7 +714,7 @@
   }
 
   .navigator-scroll-top {
-    @apply absolute bottom-5 right-6 z-10 size-9 p-0;
+    @apply size-9 shrink-0 p-0;
   }
 
   .signal-drawer__item {
@@ -752,11 +755,7 @@
 
   /* Align with the page footer, including its compact padding. */
   .signal-drawer__footer {
-    @apply flex shrink-0 items-center bg-base-100 px-4 py-1.5;
+    @apply flex shrink-0 items-center gap-2 bg-base-100 px-4 py-1;
     min-height: var(--app-footer-height);
-  }
-
-  .signal-drawer__footer > :global(*) {
-    @apply min-w-0 flex-1;
   }
 </style>

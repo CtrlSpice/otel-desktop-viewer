@@ -7,7 +7,6 @@
   import EvalRunSummary from '@/components/evals/EvalRunSummary.svelte'
   import EvalResults from '@/components/evals/EvalResults.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
-  import SignalDrawerFooter from '@/components/shared/Drawer/SignalDrawerFooter.svelte'
   import EvalDetail from '@/components/evals/EvalDetail.svelte'
   import { exampleRuns } from '@/components/evals/examples'
   import { getRouteContext } from '@/contexts/route-context.svelte'
@@ -76,6 +75,7 @@
 
 <PageLayout
   items={exampleRuns}
+  navigationCount={exampleRuns.length}
   selectedID={run.id}
   drawerID="signal-drawer"
   drawerLabel="Evals"
@@ -120,10 +120,6 @@
   {#snippet itemSnippet(item, selected)}
     <EvalRunSummary run={item} {selected} onclick={selectRun} />
   {/snippet}
-  {#snippet drawerFooter()}<SignalDrawerFooter
-      count={exampleRuns.length}
-      label="run"
-    />{/snippet}
   {#snippet main()}
     {#if importFailure}<div class="alert alert-error">
         Import issue in {importFailure.fileName}.

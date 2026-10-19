@@ -48,6 +48,8 @@
     refreshPulse?: boolean
     refreshAsideTip?: string
     loading?: boolean
+    /** Current result count shown in the active navigation tab. */
+    navigationCount?: number
     drawerChromeToolbar?: Snippet
     drawerSearch?: Snippet
     drawerControls?: Snippet
@@ -82,6 +84,7 @@
     refreshPulse,
     refreshAsideTip,
     loading,
+    navigationCount,
     drawerChromeToolbar,
     drawerSearch,
     drawerControls,
@@ -130,6 +133,7 @@
     {refreshPulse}
     {refreshAsideTip}
     {loading}
+    {navigationCount}
     {drawerChromeToolbar}
     {drawerSearch}
     {drawerControls}

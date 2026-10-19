@@ -382,6 +382,7 @@
   <PageLayout
     mainSurface="base"
     items={page.sortedItems}
+    navigationCount={page.sortedItems.length}
     selectedID={page.selectedID}
     drawerID="signal-drawer"
     drawerLabel="Traces"
@@ -432,11 +433,7 @@
     {/snippet}
 
     {#snippet drawerFooter()}
-      <SignalDrawerFooter
-        count={page.sortedItems.length}
-        label="trace"
-        onDeleteAll={handleDeleteAllTraces}
-      />
+      <SignalDrawerFooter label="trace" onDeleteAll={handleDeleteAllTraces} />
     {/snippet}
 
     {#snippet main()}

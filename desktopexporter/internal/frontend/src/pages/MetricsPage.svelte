@@ -732,6 +732,7 @@
   <PageLayout
     mainSurface="base"
     items={page.sortedItems}
+    navigationCount={page.sortedItems.length}
     selectedID={page.selectedID}
     drawerID="signal-drawer"
     drawerLabel="Metrics"
@@ -783,11 +784,7 @@
     {/snippet}
 
     {#snippet drawerFooter()}
-      <SignalDrawerFooter
-        count={page.sortedItems.length}
-        label="metric"
-        onDeleteAll={handleDeleteAllMetrics}
-      />
+      <SignalDrawerFooter label="metric" onDeleteAll={handleDeleteAllMetrics} />
     {/snippet}
 
     {#snippet main()}

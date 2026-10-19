@@ -326,6 +326,7 @@
     hideDrawer
     mainSurface="base"
     items={page.sortedItems}
+    navigationCount={total}
     selectedID={page.selectedID}
     drawerID="signal-drawer"
     drawerLabel="Filters"
