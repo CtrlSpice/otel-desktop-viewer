@@ -36,8 +36,6 @@
 </script>
 
 <script lang="ts">
-  import { themeSignal } from '@/state/theme.svelte'
-
   let props: SignalBadgesProps = $props()
 
   let metricTypeBadge = $derived.by(() => {
@@ -51,12 +49,7 @@
 </script>
 
 {#if props.signal === 'metric' && metricTypeBadge}
-  <span
-    class="metric-type-badge {themeSignal.value === 'rose-pine-dawn'
-      ? metricTypeBadge.className.replace('badge-soft', '')
-      : metricTypeBadge.className}"
-    title={metricTypeBadge.title}
-  >
+  <span class={metricTypeBadge.className} title={metricTypeBadge.title}>
     {metricTypeBadge.label}
   </span>
   {#if props.seriesCount !== undefined}
@@ -106,18 +99,3 @@
     {label} ({props.severityNumber})
   </span>
 {/if}
-
-<style>
-  :global(html[data-theme='rose-pine-dawn']) .metric-type-badge {
-    --badge-fg: #191724;
-  }
-
-  :global(html[data-theme='rose-pine-dawn'])
-    .metric-type-badge.badge-secondary {
-    --badge-fg: var(--color-base-100);
-  }
-
-  .metric-type-badge.badge-rose {
-    --badge-color: var(--color-rose);
-  }
-</style>
