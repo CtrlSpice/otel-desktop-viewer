@@ -41,6 +41,15 @@ export function columnLabel(column: WaterfallColumn): string {
   return `${column.source}${column.field ? ' field' : ''}: ${column.key}`
 }
 
+/** Include cell padding and both visible ends of the shared Identifier. */
+export function columnMinimumWidth(column: WaterfallColumn): number {
+  if (column.field && column.source === 'span') {
+    if (column.key === 'traceId') return 180
+    if (column.key === 'spanId' || column.key === 'parentSpanId') return 120
+  }
+  return 100
+}
+
 type ColumnCell = {
   text: string
   title: string

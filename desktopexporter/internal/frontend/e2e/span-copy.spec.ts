@@ -423,6 +423,39 @@ test('Waterfall columns persist across traces and align through resizing and ove
   ).toBeVisible()
   await expect(row.getByRole('gridcell').nth(0)).toHaveText('2 (Server)')
   await expect(row.getByRole('gridcell').nth(1)).toHaveText('attribute kind')
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.getByRole('button', { name: 'Columns', exact: true }).click()
+  await page.getByRole('searchbox', { name: 'Find columns' }).fill('')
+  for (const key of ['traceId', 'spanId', 'parentSpanId']) {
+    await picker
+      .getByRole('checkbox', { name: `span field: ${key}`, exact: true })
+      .check()
+  }
+  await page.keyboard.press('Escape')
+  for (const [key, value] of [
+    ['traceId', traceID],
+    ['spanId', selectedID],
+    ['parentSpanId', rootID],
+  ]) {
+    const button = row.getByRole('button', {
+      name: `Show span field: ${key} in details`,
+    })
+    await button.scrollIntoViewIfNeeded()
+    await expect(button).toHaveAttribute('title', value)
+    await expect(
+      button.locator('.identifier > [aria-hidden="true"]')
+    ).toContainText(value.slice(-4))
+    expect(
+      await button.evaluate(element => {
+        const visible = element.querySelector(
+          '.identifier > [aria-hidden="true"]'
+        )!
+        const bounds = visible.getBoundingClientRect()
+        const clip = element.getBoundingClientRect()
+        return bounds.left >= clip.left && bounds.right <= clip.right
+      })
+    ).toBe(true)
+  }
 })
 
 test('Copy span sits opposite the span icon and copies only the selected span with context', async ({

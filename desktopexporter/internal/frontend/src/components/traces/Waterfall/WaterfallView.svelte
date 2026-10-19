@@ -235,6 +235,7 @@
     columnLabel,
     columnOptions,
     loadColumns,
+    columnMinimumWidth,
     saveColumns,
     type WaterfallColumn,
   } from './waterfall-columns'
@@ -414,7 +415,9 @@
   let availableColumns = $derived(columnOptions(spans, selectedColumns))
   let wfCols = $derived([
     flex('span', 140, 2),
-    ...selectedColumns.map(column => flex(columnID(column), 100, 1)),
+    ...selectedColumns.map(column =>
+      flex(columnID(column), columnMinimumWidth(column), 1)
+    ),
     flex('timeline', 240, 4),
   ])
 
