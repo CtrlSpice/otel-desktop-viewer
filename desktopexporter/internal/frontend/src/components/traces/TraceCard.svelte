@@ -8,6 +8,7 @@
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import SignalCard from '@/components/shared/SignalCard.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
+  import Identifier from '@/components/shared/Identifier.svelte'
   import SummaryBreakdown from '@/components/shared/SummaryBreakdown.svelte'
 
   type Props = {
@@ -41,8 +42,6 @@
   {selected}
   title={titleLabel}
   subtitle={serviceLabel}
-  description={trace.traceID}
-  descriptionIsID
   {titleMuted}
   {onclick}
 >
@@ -75,6 +74,15 @@
             <span class="shrink-0 text-base-content">{durationParts.unit}</span>
           </span>
         {/if}
+        <span class="flex min-w-0 items-center gap-1">
+          <span class="shrink-0" title="Trace ID">ID:</span>
+          <span
+            class="truncate font-mono text-base-content"
+            title={trace.traceID}
+          >
+            <Identifier value={trace.traceID} />
+          </span>
+        </span>
       </div>
       <SummaryBreakdown parts={trace.serviceBreakdown ?? []} />
     </div>
