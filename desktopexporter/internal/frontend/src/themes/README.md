@@ -43,3 +43,7 @@ The metric-type adapter starts Sum on indigo, Gauge on sky, Histogram on peony,
 and ExponentialHistogram on kerria gold. These are identity colours, not statuses.
 Error and persimmon accents are excluded; papaya is never a series colour.
 No graph uses error red or papaya as an identity or density colour.
+Percentile overlays and their legends use semantic status colours: p50 success,
+p95 warning, and p99 error. Severity badges and status indicators also retain
+their semantic roles. These tokens follow the selected season and day/night mode;
+papaya remains reserved for internal errors.

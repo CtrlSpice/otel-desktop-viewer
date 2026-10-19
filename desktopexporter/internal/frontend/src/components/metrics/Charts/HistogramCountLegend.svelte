@@ -16,7 +16,7 @@
     }
     const points = ctx.heatmapBucketSeries
     if (!points || points.length === 0) return []
-    return computeHeatmapLegendEntries(points, themeSignal.value)
+    return computeHeatmapLegendEntries(points, themeSignal.value, ctx.metricType)
   })
   let legendRows = $derived(
     [
