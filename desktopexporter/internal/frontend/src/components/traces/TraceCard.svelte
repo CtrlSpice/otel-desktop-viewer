@@ -62,39 +62,34 @@
     />
   {/snippet}
   {#snippet date()}
-    <span
-      class="flex min-w-0 items-center gap-1"
-      title={`Start: ${startParts.value} ${startParts.unit}`}
+    <div
+      class="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1"
     >
-      <span class="shrink-0">Start:</span>
-      <span class="truncate text-base-content">{startParts.value}</span>
-      {#if startParts.unit}<span class="shrink-0">{startParts.unit}</span>{/if}
-    </span>
+      <span
+        class="flex min-w-0 max-w-full items-center gap-1"
+        title={`Start: ${startParts.value} ${startParts.unit}`}
+      >
+        <span class="shrink-0">Start:</span>
+        <span class="truncate text-base-content">{startParts.value}</span>
+        {#if startParts.unit}<span class="shrink-0">{startParts.unit}</span
+          >{/if}
+      </span>
+      {#if durationParts}
+        <span class="flex shrink-0 items-center gap-1">
+          <span>Duration:</span>
+          <span class="text-base-content">{durationParts.value}</span>
+          <span class="text-base-content">{durationParts.unit}</span>
+        </span>
+      {/if}
+    </div>
   {/snippet}
 
   {#snippet meta()}
-    <div class="flex w-full min-w-0 flex-col gap-2 pt-1">
-      <div
-        class="grid min-w-0 grid-cols-2 gap-x-4 gap-y-1.5 text-xs tabular-nums"
-      >
-        {#if durationParts}
-          <span class="flex min-w-0 items-center gap-1">
-            <span class="shrink-0">Duration:</span>
-            <span class="truncate text-base-content">{durationParts.value}</span
-            >
-            <span class="shrink-0 text-base-content">{durationParts.unit}</span>
-          </span>
-        {/if}
-        <span class="flex min-w-0 items-center gap-1">
-          <span class="shrink-0" title="Trace ID">ID:</span>
-          <span
-            class="truncate font-mono text-base-content"
-            title={trace.traceID}
-          >
-            <Identifier value={trace.traceID} />
-          </span>
-        </span>
-      </div>
-    </div>
+    <span class="flex w-full min-w-0 items-center gap-1 pt-1 text-xs">
+      <span class="shrink-0 font-mono">trace_id:</span>
+      <span class="truncate font-mono text-base-content" title={trace.traceID}>
+        <Identifier value={trace.traceID} />
+      </span>
+    </span>
   {/snippet}
 </SignalCard>
