@@ -27,6 +27,19 @@
 </script>
 
 {#if colouredParts.length > 1}
+  <div
+    class="mt-2 flex h-2 w-full overflow-hidden rounded-full"
+    role="img"
+    aria-label={`Service breakdown by span count: ${colouredParts.map(part => `${part.label}: ${part.count} spans`).join('; ')}`}
+  >
+    {#each colouredParts as part (part.key)}
+      <span
+        style:flex={part.count}
+        style:background-color={part.color}
+        title={`${part.label}: ${part.count} spans`}
+      ></span>
+    {/each}
+  </div>
   <ul class="service-grid" aria-label="Spans by service">
     {#each colouredParts as part (part.key)}
       <li
