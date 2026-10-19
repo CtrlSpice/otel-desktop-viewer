@@ -1570,7 +1570,7 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
   @apply badge-warning;
 }
 
-/* Dawn pills pair a faint colour wash with a thin outline and readable labels. */
+/* Dawn pills pair a faint colour wash with normal text and no visible outline. */
 html[data-theme='rose-pine-dawn']
   :is(.badge-soft, .badge-count, .badge-origin) {
   color: var(--color-base-content);
@@ -1579,7 +1579,7 @@ html[data-theme='rose-pine-dawn']
     var(--badge-color, var(--color-primary)) 8%,
     var(--color-base-200)
   );
-  border: 1px solid var(--badge-color, var(--color-primary));
+  border: 1px solid transparent;
 }
 
 /* Badges — pills, including the classes that apply DaisyUI badge styles. */
