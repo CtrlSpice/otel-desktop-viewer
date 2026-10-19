@@ -1529,24 +1529,22 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
   @apply badge-warning;
 }
 
-/* Dawn soft pills pair pale fills with AA-contrast, same-hue labels. */
+/* Dawn pills retain their colour families with AA-contrast white labels. */
 html[data-theme='rose-pine-dawn']
   :is(.badge-soft, .badge-count, .badge-origin):not(.badge-papaya) {
-  --dawn-badge-lightness: 0.54;
-  color: oklch(
-    from var(--badge-color, var(--color-base-content))
-      min(l, var(--dawn-badge-lightness)) calc(c * 1.4) h
+  --dawn-badge-lightness: 0.57;
+  --badge-bg: oklch(
+    from var(--badge-color, var(--color-primary))
+      min(l, var(--dawn-badge-lightness)) c h
   );
+  color: #fff;
+  background-color: var(--badge-bg);
+  border-color: var(--badge-bg);
 }
 
 html[data-theme='rose-pine-dawn']
   :is(.badge-soft, .badge-count, .badge-origin):is(.badge-accent, .badge-info) {
-  --dawn-badge-lightness: 0.52;
-}
-
-html[data-theme='rose-pine-dawn']
-  :is(.badge-soft, .badge-count, .badge-origin):is(.badge-warning, .badge-error, .badge-rose) {
-  --dawn-badge-lightness: 0.55;
+  --dawn-badge-lightness: 0.56;
 }
 
 /* Badges — pills, including the classes that apply DaisyUI badge styles. */
