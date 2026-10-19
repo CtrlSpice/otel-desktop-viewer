@@ -17,13 +17,7 @@
   const summary = $derived(runSummary(run))
 </script>
 
-<SignalCard
-  id={run.id}
-  title={run.name}
-  badgePlacement="inline"
-  {selected}
-  {onclick}
->
+<SignalCard id={run.id} title={run.name} {selected} {onclick}>
   {#snippet badge()}<RunStatusBadge
       state={run.state}
       pauseReason={run.pauseReason}
