@@ -624,7 +624,7 @@
                   {#if !showEmptyState && (listScrolled || scrollTopFocused)}
                     <button
                       type="button"
-                      class="navigator-scroll-top btn btn-circle btn-soft btn-primary"
+                      class="pointy-uppy btn btn-circle btn-soft btn-primary"
                       aria-label="Scroll to top"
                       title="Scroll to top"
                       onclick={scrollToTop}
@@ -633,7 +633,7 @@
                     >
                       <HugeiconsIcon
                         icon={ArrowUp02Icon}
-                        size={20}
+                        size={24}
                         strokeWidth={1.75}
                         aria-hidden="true"
                       />
@@ -713,8 +713,9 @@
     @apply relative flex-1 min-h-0 overflow-hidden pt-3;
   }
 
-  .navigator-scroll-top {
-    @apply size-9 shrink-0 p-0;
+  .pointy-uppy {
+    /* A 48px button with a 24px flow footprint: its bottom aligns with the row. */
+    @apply relative z-10 -mt-6 size-12 shrink-0 p-0;
   }
 
   .signal-drawer__item {
