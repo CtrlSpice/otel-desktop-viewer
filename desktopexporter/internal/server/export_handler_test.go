@@ -108,11 +108,27 @@ func TestExportPreviewBoundsAndMetricSelection(t *testing.T) {
 	for _, query := range []string{
 		"?unknown=1", "?seriesRef=invalid", "?datapointRef=invalid",
 		"?seriesRef=" + seriesID + "&seriesRef=" + seriesID,
+		"?datapointRef=%ZZ", "?seriesRef=%", "?format=%ZZ",
+		"?datapointRef=" + pointID + ";ignored=1",
+		"?seriesRef=" + seriesID + "&datapointRef=%ZZ",
 	} {
-		response, err := http.Get(url + query)
+		t.Run("rejects "+query, func(t *testing.T) {
+			response, err := http.Get(url + query)
+			require.NoError(t, err)
+			defer response.Body.Close()
+			body, err := io.ReadAll(response.Body)
+			require.NoError(t, err)
+			assert.Equal(t, http.StatusBadRequest, response.StatusCode)
+			assert.Empty(t, response.Header.Get("Content-Disposition"))
+			assert.NotContains(t, string(body), "resourceMetrics")
+		})
+	}
+	for _, query := range []string{"?spanId=%ZZ", "?spanId=0000000000000001;ignored=1"} {
+		response, err := http.Get(server.URL + "/export/traces/00000000000000000000000000000001" + query)
 		require.NoError(t, err)
 		require.NoError(t, response.Body.Close())
 		assert.Equal(t, http.StatusBadRequest, response.StatusCode)
+		assert.Empty(t, response.Header.Get("Content-Disposition"))
 	}
 	for _, query := range []string{"?seriesRef=" + seriesID, "?datapointRef=" + pointID} {
 		response, err := http.Get(server.URL + "/export/metrics/" + otherMetricID + query)

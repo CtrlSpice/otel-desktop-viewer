@@ -7,6 +7,7 @@ import (
 	"errors"
 	"mime"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -24,7 +25,12 @@ func (s *Server) exportHandler(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	formats := r.URL.Query()["format"]
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		http.Error(w, "invalid export query", http.StatusBadRequest)
+		return
+	}
+	formats := query["format"]
 	if len(formats) > 1 || (len(formats) == 1 && formats[0] != "json") {
 		http.Error(w, "format must be json", http.StatusBadRequest)
 		return
@@ -38,7 +44,7 @@ func (s *Server) exportHandler(w http.ResponseWriter, r *http.Request) {
 		id = strings.ReplaceAll(id, "-", "")
 	}
 	selection := make(map[string]string)
-	for key, values := range r.URL.Query() {
+	for key, values := range query {
 		if key == "format" {
 			continue
 		}
