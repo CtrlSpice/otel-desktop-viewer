@@ -45,8 +45,8 @@
     "name": "Dawn",
     "scheme": "light",
     "colors": {
-      "canvas": "#faf4ed",
-      "panel": "#fffaf3",
+      "canvas": "#fffaf3",
+      "panel": "#faf4ed",
       "chrome": "#f2e9e1",
       "text": "#464261",
       "subtle": "#797593",
