@@ -182,8 +182,11 @@
             <input
               type="checkbox"
               class="checkbox checkbox-xs rounded-full ts-row__checkbox"
+              class:ts-row__checkbox--histogram={ctx.isHistogramKind}
               style:--input-color={color}
-              style:color={fg}
+              style:color={ctx.isHistogramKind
+                ? 'var(--color-base-content)'
+                : fg}
               {checked}
               disabled={checkboxDisabled}
               aria-label={`Show ${headerLabel} in chart`}
@@ -268,6 +271,16 @@
 
   .ts-row__checkbox {
     @apply shrink-0;
+  }
+
+  .ts-row__checkbox--histogram {
+    background-color: transparent;
+    border-color: color-mix(
+      in oklab,
+      var(--color-base-content) 45%,
+      transparent
+    );
+    box-shadow: none;
   }
 
   .ts-row__attrs {
