@@ -257,6 +257,16 @@
     z-index: 1;
     min-width: 0;
     margin-inline: 0.75rem;
+    pointer-events: none;
+  }
+
+  /* Static label space remains part of the card's click target. Only the
+     independent controls and hover titles intercept that selection button. */
+  .signal-card-shell__subtitle
+    :global(
+      :is(button, a, input, select, textarea, label, [tabindex], [title])
+    ) {
+    pointer-events: auto;
   }
 
   .signal-row {

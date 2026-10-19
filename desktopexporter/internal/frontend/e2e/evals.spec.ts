@@ -258,7 +258,7 @@ test('detail actions reopen the panel, including the selected attempt', async ({
     await page.getByRole('button', { name: 'Collapse details' }).click()
     await expect(detail).toBeHidden()
   }
-  await page.getByRole('button', { name: 'Run details', exact: true }).click()
+  await page.getByRole('button', { name: /Guide-assisted agent/ }).click()
   await expect(
     detail.getByRole('region', { name: 'Run details', exact: true })
   ).toBeVisible()

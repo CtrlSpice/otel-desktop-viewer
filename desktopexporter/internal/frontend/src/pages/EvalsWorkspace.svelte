@@ -61,6 +61,7 @@
     )
   }
   function selectRun(id: string) {
+    detailPanel.reveal()
     update({ run: id, attempt: null })
   }
   function showDetail(attempt: string | null) {

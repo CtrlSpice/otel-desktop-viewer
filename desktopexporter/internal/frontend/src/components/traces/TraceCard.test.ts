@@ -136,7 +136,7 @@ describe('TraceCard', () => {
       'cache: 1 span, 25% of total',
     ])
     const [root, database, cache] = choices
-    const label = () => group.querySelector('.service-summary')
+    const label = () => group.querySelector('.breakdown-label')
     expect(root).toHaveAttribute('aria-pressed', 'true')
     expect(label()).toHaveTextContent('orders-service (1 span, 25%)')
     await user.hover(database)
@@ -151,8 +151,7 @@ describe('TraceCard', () => {
     )
     await user.unhover(cache)
     expect(label()).toHaveTextContent('database (2 spans, 50%)')
-    expect(group.querySelectorAll('.service-summary')).toHaveLength(1)
-    expect(group.querySelectorAll('.service-choice')).toHaveLength(0)
+    expect(group.querySelectorAll('.breakdown-label')).toHaveLength(1)
     expect(onclick).not.toHaveBeenCalled()
     expect(document.querySelector('button button')).toBeNull()
   })
@@ -174,11 +173,11 @@ describe('TraceCard', () => {
       const probe = document.createElement('span')
       probe.style.backgroundColor = (
         child as HTMLElement
-      ).style.getPropertyValue('--service-color')
+      ).style.getPropertyValue('--part-color')
       return probe.style.backgroundColor
     })
-    const label = () => group.querySelector('.service-summary')
-    const dot = () => label()?.querySelector<HTMLElement>('.service-dot')
+    const label = () => group.querySelector('.breakdown-label')
+    const dot = () => label()?.querySelector<HTMLElement>('.breakdown-dot')
     await user.tab()
     await user.tab()
     expect(choices[0]).toHaveFocus()
