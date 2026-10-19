@@ -96,7 +96,7 @@
 >
   {#if colouredParts.length > 1}
     <div
-      class="mt-2 flex h-2 w-full gap-0.5"
+      class="mt-2 flex h-2 w-full gap-1"
       role="group"
       aria-label={`Service breakdown by span count: ${colouredParts.map(part => `${part.label}: ${spanCount(part)}`).join('; ')}`}
     >
