@@ -13,7 +13,7 @@
 
 {#if ctx.showChartStatOverlaysToggleVisible}
   <label
-    class="btn btn-xs chart-header-control chart-stat-overlays-toggle chart-control-toggle tooltip tooltip-top"
+    class="btn btn-xs chart-header-control chart-stat-overlays-toggle tooltip tooltip-top"
     data-tip={ctx.isHistogramKind
       ? 'p50, p95 and p99 of the combined checked series'
       : ctx.rateSlopeOverlayAvailable
@@ -34,17 +34,19 @@
 <style lang="postcss">
   @reference "../../../app.css";
 
-  .btn.chart-stat-overlays-toggle {
+  .chart-stat-overlays-toggle {
     @apply relative shrink-0 gap-2;
-    box-shadow: none;
   }
 
   .chart-stat-overlays-toggle__checkbox {
     @apply rounded-full;
-    border-color: var(--color-muted);
+    border-color: currentColor;
     background: var(--color-base-200);
-    color: var(--color-primary);
     box-shadow: none;
+  }
+
+  .chart-stat-overlays-toggle__checkbox:checked {
+    color: var(--color-primary);
   }
 
   .chart-stat-overlays-toggle__checkbox::before {
