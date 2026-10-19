@@ -572,11 +572,7 @@
     inset: 0.125rem auto 0.125rem 0.125rem;
     width: calc((100% - 0.25rem) / var(--pane-tab-count));
     border-radius: 0.5rem;
-    background: color-mix(
-      in oklab,
-      var(--color-primary) 16%,
-      var(--color-base-100)
-    );
+    background: var(--item-selected-bg);
     transform: translateX(calc(var(--pane-active-index) * 100%));
     transition: transform var(--motion-compact-duration)
       var(--motion-settle-easing);
@@ -594,7 +590,7 @@
 
   @media (hover: hover) {
     .pane-header__segment:not(.pane-header__segment--active):hover {
-      background: var(--color-highlight-low);
+      background: var(--item-hover-bg);
     }
   }
 
