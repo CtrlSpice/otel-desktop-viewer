@@ -12,7 +12,7 @@ DaisyUI tokens so the experiment also covers existing controls.
 | Background          | `--surface-canvas`                      | kami by day; chitsu by night, per viewer preference |
 | Secondary panels    | `--surface-panel`                       | hyōshi                                              |
 | Outer chrome        | `--surface-chrome`                      | chitsu by day; kami by night                        |
-| Hover / selection   | `--surface-hover`, `--surface-selected` | diluted nijimi                                      |
+| Hover / selection   | `--surface-hover`, `--surface-selected` | diluted nijimi / primary accent                     |
 | Borders             | `--border-default`, `--border-strong`   | nijimi 1 / kasure 0                                 |
 | Main text           | `--text-primary`                        | sumi                                                |
 | Secondary text      | `--text-secondary`                      | usuzumi 1                                           |
@@ -28,16 +28,20 @@ DaisyUI tokens so the experiment also covers existing controls.
 ## Graph colours
 
 `chart-series.json` names ten source colours: **chart.series.01–10**.
-The slots are stable when series visibility changes. The brush selects a season;
-the adjacent day/night button selects its mode. Both choices persist separately.
+The slots are stable when series visibility changes. The appearance dropdown
+selects a season and Light/Dark mode together. Both saved preferences are restored.
+The original Dawn, Moon, and Pine themes remain available in the same dropdown.
 Metrics and traces use the same pool; error spans keep the error token.
 
-All graph swatches are exact published accents. Line charts start with the
+Line-series swatches are exact published accents. Line charts start with the
 selected season, then use other seasons of the same day/night mode to fill 24
 distinct slots. The existing 22-series visibility cap is unchanged.
-Histograms and heatmaps use only the selected season's metric-type accent:
-peony for Histogram and kerria gold for ExponentialHistogram. Their density ramp
-runs from the selected season's canvas to that accent.
+Histograms, heatmaps, and their count legends share the selected season and mode's
+primary-to-pink density ramp (fuji to botan). RGB interpolation keeps the ramp
+within purple and pink without rotating through unrelated hues. The ink is
+diluted with the season's canvas: 6–70% by day and 8–82% by night. Sparse counts
+are a faint primary wash; high counts are soft pink. Light-mode density darkens
+as counts rise; dark-mode density brightens. Metric-type badges remain independent.
 The source is `palettes/madoromi.json` in the upstream repo.
 The metric-type adapter starts Sum on indigo, Gauge on sky, Histogram on peony,
 and ExponentialHistogram on kerria gold. These are identity colours, not statuses.

@@ -6,8 +6,9 @@ html[data-theme='madoromi-day'] {
   --surface-canvas: #f0f1f8;
   --surface-panel: #e5e7f3;
   --surface-chrome: #dbdde9;
-  --surface-hover: #ccd0e4;
-  --surface-selected: color-mix(in srgb, #acb0c3 58%, var(--surface-canvas));
+  --surface-overlay: #ccd0e4;
+  --selection-ink: 9%;
+  --series-opacity: 0.6;
   --border-default: #bcc0d3;
   --border-strong: #9ca0b3;
   --text-primary: #4a4e63;
@@ -30,8 +31,9 @@ html[data-theme='madoromi-night'] {
   --surface-canvas: #0f111b;
   --surface-panel: #151722;
   --surface-chrome: #1c1e2a;
-  --surface-hover: #2f3241;
-  --surface-selected: color-mix(in srgb, #565a6b 58%, var(--surface-canvas));
+  --surface-overlay: #2f3241;
+  --selection-ink: 12%;
+  --series-opacity: 1;
   --border-default: #434757;
   --border-strong: #6a6e7f;
   --text-primary: #d2d6eb;
@@ -50,6 +52,16 @@ html[data-theme='madoromi-night'] {
 }
 
 html[data-theme^='madoromi-'] {
+  --surface-hover: color-mix(
+    in srgb,
+    var(--surface-overlay) 35%,
+    var(--surface-canvas)
+  );
+  --surface-selected: color-mix(
+    in srgb,
+    var(--action-accent) var(--selection-ink),
+    var(--surface-canvas)
+  );
   --action-focus: var(--action-accent);
   --status-internal-error: var(--color-papaya);
   --text-on-light: #1c1e2a;
@@ -88,13 +100,27 @@ html[data-theme^='madoromi-'] {
   --focus-ring-color: var(--action-focus);
   --item-hover-bg: var(--surface-hover);
   --item-selected-bg: var(--surface-selected);
-  --waterfall-bar-opacity: 1;
+  --waterfall-bar-opacity: var(--series-opacity);
   --waterfall-bar-label-color: var(--text-on-accent);
   --waterfall-marker-mix-target: var(--text-primary);
   --waterfall-marker-mix-strength: 25%;
   --waterfall-tick-mix-target: var(--surface-canvas);
   --waterfall-tick-mix-strength: 55%;
-  --metric-series-line-opacity: 1;
+  --metric-series-line-opacity: var(--series-opacity);
+  --readonly-code-subtle: var(--text-secondary);
+  --readonly-code-gold: var(--status-warning);
+  --readonly-code-rose: var(--data-category-detail);
+  --readonly-code-foam: var(--action-link);
+  --readonly-code-iris: var(--action-accent);
+}
+
+/* Shared by structured values and JSON editors in every season and mode. */
+html[data-theme^='madoromi-']
+  :where(.detail-property, .value-syntax, .cm-editor) {
+  --detail-code-key: var(--text-secondary);
+  --detail-code-string: var(--action-link);
+  --detail-code-number: var(--text-primary);
+  --detail-code-literal: var(--action-accent);
 }
 
 html[data-theme^='madoromi-'] .border-base-300 {
@@ -106,8 +132,7 @@ html[data-palette='spring'][data-theme='madoromi-day'] {
   --surface-canvas: #f6eff8;
   --surface-panel: #ece5ef;
   --surface-chrome: #e2dbe5;
-  --surface-hover: #d9ccdd;
-  --surface-selected: color-mix(in srgb, #b8acbd 58%, var(--surface-canvas));
+  --surface-overlay: #d9ccdd;
   --border-default: #c8bccd;
   --border-strong: #a99cad;
   --text-primary: #584a5c;
@@ -129,8 +154,7 @@ html[data-palette='spring'][data-theme='madoromi-night'] {
   --surface-canvas: #160f18;
   --surface-panel: #1c151f;
   --surface-chrome: #241c26;
-  --surface-hover: #392e3c;
-  --surface-selected: color-mix(in srgb, #615665 58%, var(--surface-canvas));
+  --surface-overlay: #392e3c;
   --border-default: #4e4352;
   --border-strong: #756a7a;
   --text-primary: #e1d1e7;
@@ -152,8 +176,7 @@ html[data-palette='summer'][data-theme='madoromi-day'] {
   --surface-canvas: #e9f4f8;
   --surface-panel: #ddeaf0;
   --surface-chrome: #d3e1e6;
-  --surface-hover: #bed6df;
-  --surface-selected: color-mix(in srgb, #9fb5be 58%, var(--surface-canvas));
+  --surface-overlay: #bed6df;
   --border-default: #aec5ce;
   --border-strong: #8fa6ae;
   --text-primary: #3b545e;
@@ -175,8 +198,7 @@ html[data-palette='summer'][data-theme='madoromi-night'] {
   --surface-canvas: #091317;
   --surface-panel: #0e1a1f;
   --surface-chrome: #132227;
-  --surface-hover: #23363d;
-  --surface-selected: color-mix(in srgb, #4a5f66 58%, var(--surface-canvas));
+  --surface-overlay: #23363d;
   --border-default: #374b53;
   --border-strong: #5d737b;
   --text-primary: #c0dde8;
@@ -198,8 +220,7 @@ html[data-palette='autumn'][data-theme='madoromi-day'] {
   --surface-canvas: #f8f0e9;
   --surface-panel: #f0e6dd;
   --surface-chrome: #e6dcd3;
-  --surface-hover: #dfcebf;
-  --surface-selected: color-mix(in srgb, #beae9f 58%, var(--surface-canvas));
+  --surface-overlay: #dfcebf;
   --border-default: #cebeaf;
   --border-strong: #ae9e90;
   --text-primary: #5d4c3c;
@@ -221,8 +242,7 @@ html[data-palette='autumn'][data-theme='madoromi-night'] {
   --surface-canvas: #181008;
   --surface-panel: #20160e;
   --surface-chrome: #271d14;
-  --surface-hover: #3d3024;
-  --surface-selected: color-mix(in srgb, #66584b 58%, var(--surface-canvas));
+  --surface-overlay: #3d3024;
   --border-default: #534538;
   --border-strong: #7b6c5e;
   --text-primary: #e8d3c1;

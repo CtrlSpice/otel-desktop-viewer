@@ -178,10 +178,30 @@ describe('Madoromi graph roles', () => {
   )
 
   it.each(Object.entries(chartSeries))(
-    'themes histogram density to the selected season in %s',
+    'builds a soft, progressively stronger density ramp in %s',
     (theme, slots) => {
-      expect(heatmapSwatches(1, theme, 'gold')).toEqual([slots['03']])
-      expect(heatmapSwatches(1, theme, 'rose')).toEqual([slots['04']])
+      const ramp = heatmapSwatches(12, theme)
+      expect(heatmapSwatches(1, theme)).toEqual([ramp.at(-1)])
+      expect(new Set(ramp).size).toBe(12)
+      const channels = ramp.map(color => color.match(/\d+/g)!.map(Number))
+      const night = theme.endsWith('-night')
+      const luminance = channels.map(color => {
+        const linear = color.map(value => {
+          const channel = value / 255
+          return channel <= 0.04045
+            ? channel / 12.92
+            : ((channel + 0.055) / 1.055) ** 2.4
+        })
+        return linear[0]! * 0.2126 + linear[1]! * 0.7152 + linear[2]! * 0.0722
+      })
+      // Density must brighten at night and darken by day, with no reversals.
+      for (let i = 1; i < luminance.length; i++) {
+        const change = luminance[i]! - luminance[i - 1]!
+        expect(night ? change : -change).toBeGreaterThan(0)
+      }
+      // Even the highest band stays diluted, rather than reaching solid ink.
+      const pink = [1, 3, 5].map(i => parseInt(slots['04'].slice(i, i + 2), 16))
+      expect(channels.at(-1)).not.toEqual(pink)
     }
   )
 })

@@ -32,8 +32,7 @@ export function collectHeatmapCounts(points: HistogramSlicePoint[]): number[] {
 
 export function computeHeatmapLegendEntries(
   points: HistogramSlicePoint[],
-  theme: string,
-  metricType: string
+  theme: string
 ): HeatmapLegendEntry[] {
   const counts = collectHeatmapCounts(points)
   let maxCount = 0
@@ -47,6 +46,5 @@ export function computeHeatmapLegendEntries(
     maxCount,
     distinctNonZeroCount: distinctNonZero.size,
     theme,
-    metricType,
   }).legendEntries
 }

@@ -1,4 +1,4 @@
-// Reactive view of the current theme. The ThemeToggle component flips
+// Reactive view of the current theme. The AppearancePicker component updates
 // `data-theme` on <html> to switch palettes -- anything that needs to
 // re-derive when that happens (chart palettes, computed swatches, etc.)
 // can read `themeSignal.value` inside a $derived and Svelte will

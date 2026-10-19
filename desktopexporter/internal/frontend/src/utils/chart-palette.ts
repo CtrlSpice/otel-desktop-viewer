@@ -4,12 +4,11 @@
 //     histogram heatmap legends, and trace waterfall bars. Uses the approved
 //     five-family static table, rotated so the caller's requested family leads.
 //
-//   - `heatmapSwatches()` -- per-theme count ramp, interpolated in HCL.
+//   - `heatmapSwatches()` -- seasonal primary-to-pink count ramp in RGB.
 //
-// Error spans use `var(--color-error)` directly. The heatmap also uses that
-// theme token for its love endpoint; the categorical palette is separate.
+// Error spans and percentile overlays use semantic status colours separately.
 
-import { interpolateHcl } from 'd3-interpolate'
+import { interpolateHcl, interpolateRgb } from 'd3-interpolate'
 import chartPalettes from './chart-palettes.json'
 import chartSeries from '@/themes/chart-series.json'
 
@@ -41,36 +40,44 @@ const HEATMAP_ENDPOINTS = new Map<string, readonly [string, string]>([
   ['rose-pine', ['#1f1d2e', '#eb6f92']],
   ['rose-pine-moon', DEFAULT_HEATMAP_ENDPOINTS],
   ['rose-pine-dawn', ['#faf4ed', '#907aa9']],
-  ['madoromi-winter-day', ['#f0f1f8', '#2678af']],
-  ['madoromi-winter-night', ['#0f111b', '#78d5fc']],
-  ['madoromi-spring-day', ['#f6eff8', '#008bae']],
-  ['madoromi-spring-night', ['#160f18', '#88d9eb']],
-  ['madoromi-summer-day', ['#e9f4f8', '#008bae']],
-  ['madoromi-summer-night', ['#091317', '#5cd7f5']],
-  ['madoromi-autumn-day', ['#f8f0e9', '#178d9d']],
-  ['madoromi-autumn-night', ['#181008', '#5ac6f1']],
+])
+
+// Match --surface-canvas. Accents come from the shared seasonal swatches above.
+const HEATMAP_SURFACES = new Map([
+  ['madoromi-winter-day', '#f0f1f8'],
+  ['madoromi-winter-night', '#0f111b'],
+  ['madoromi-spring-day', '#f6eff8'],
+  ['madoromi-spring-night', '#160f18'],
+  ['madoromi-summer-day', '#e9f4f8'],
+  ['madoromi-summer-night', '#091317'],
+  ['madoromi-autumn-day', '#f8f0e9'],
+  ['madoromi-autumn-night', '#181008'],
 ])
 
 /**
- * Sample the HCL ramp at 1/steps through 1, excluding the cold endpoint.
+ * Seasonal ramps build from a faint primary wash to soft pink. Increasing ink
+ * strength provides the density contrast, rather than solid categorical fills.
  * A single step uses the hot endpoint. Unknown themes
  * use the Moon ramp.
  */
-export function heatmapSwatches(
-  steps: number,
-  theme: string = '',
-  stem?: CategoricalStem
-): string[] {
+export function heatmapSwatches(steps: number, theme: string = ''): string[] {
   const safeSteps = Math.max(1, Math.floor(steps))
   if (!Number.isFinite(safeSteps) || safeSteps >= 2 ** 32) {
     throw new RangeError('steps must produce a valid array length')
   }
-  const [start, defaultEnd] =
-    HEATMAP_ENDPOINTS.get(theme) ?? DEFAULT_HEATMAP_ENDPOINTS
-  const end =
-    stem && SEMANTIC_ACCENTS.has(theme)
-      ? categoricalPalette(1, stem, theme)[0]!
-      : defaultEnd
+  const surface = HEATMAP_SURFACES.get(theme)
+  const accents = SEMANTIC_ACCENTS.get(theme)
+  if (surface && accents) {
+    const hue = interpolateRgb(accents[5]!, accents[3]!)
+    const night = theme.endsWith('-night')
+    const low = night ? 0.08 : 0.06
+    const high = night ? 0.82 : 0.7
+    return Array.from({ length: safeSteps }, (_, index) => {
+      const density = safeSteps === 1 ? 1 : index / (safeSteps - 1)
+      return interpolateRgb(surface, hue(density))(low + (high - low) * density)
+    })
+  }
+  const [start, end] = HEATMAP_ENDPOINTS.get(theme) ?? DEFAULT_HEATMAP_ENDPOINTS
   if (safeSteps === 1) return [end]
   const interpolator = interpolateHcl(start, end)
   const out: string[] = []
