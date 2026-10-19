@@ -34,16 +34,13 @@
         title={`${part.label}: ${part.count} spans${part.key === rootKey ? ' · root service' : ''}`}
       >
         <span
-          class="size-1.5 shrink-0 rounded-full"
-          style:background-color={part.color}
-          aria-hidden="true"
-        ></span>
-        <span class="min-w-0 truncate">{part.label}</span>
-        <span class="ml-auto shrink-0 tabular-nums"
+          class="number-circle service-grid__count shrink-0"
+          style:--number-circle-color={part.color}
           >{part.count.toLocaleString()}<span class="sr-only">
             spans</span
           ></span
         >
+        <span class="min-w-0 truncate">{part.label}</span>
       </li>
     {/each}
   </ul>
@@ -60,5 +57,12 @@
 
   .service-grid__item {
     @apply flex min-w-0 items-center gap-1.5;
+  }
+
+  .service-grid__count {
+    width: auto;
+    height: auto;
+    aspect-ratio: 1;
+    padding: 3px;
   }
 </style>
