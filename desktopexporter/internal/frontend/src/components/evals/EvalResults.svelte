@@ -9,13 +9,11 @@
     attempts,
     selectedID,
     onSelect,
-    onRunDetails,
   }: {
     run: EvalRun
     attempts: EvalAttempt[]
     selectedID?: string
     onSelect: (id: string) => void
-    onRunDetails: () => void
   } = $props()
   const panelID = $props.id()
   const views = [
@@ -41,16 +39,12 @@
   tabLayout="left"
   tabPanelID={panelID}
 >
-  {#snippet badge()}<RunStatusBadge
-      state={run.state}
-      pauseReason={run.pauseReason}
-    />{/snippet}
-  {#snippet right()}<button class="btn btn-ghost btn-xs" onclick={onRunDetails}
-      >Run details</button
-    >{/snippet}
-  {#snippet metaRight()}<span class="text-xs text-base-content"
-      >{attempts.length} / {run.attempts.length} attempts</span
-    >{/snippet}
+  {#snippet badge()}
+    <span class="badge-count" title="Shown attempts / total attempts"
+      >{attempts.length}/{run.attempts.length} attempts</span
+    >
+    <RunStatusBadge state={run.state} pauseReason={run.pauseReason} />
+  {/snippet}
 </PaneHeader>
 
 <div

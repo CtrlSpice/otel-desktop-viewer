@@ -135,7 +135,6 @@
       attempts={results}
       selectedID={attempt?.id}
       onSelect={showDetail}
-      onRunDetails={() => showDetail(null)}
     />
     {#if !results.length}<div class="p-6 text-sm">
         <p>No matching attempts</p>
