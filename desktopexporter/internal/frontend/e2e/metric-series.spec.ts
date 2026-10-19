@@ -1602,7 +1602,7 @@ test('Copy metric stays in its heading and copies exact OTLP only for the select
   expect(
     headingBox.x + headingBox.width - copyBox.x - copyBox.width
   ).toBeCloseTo(12, 0)
-  await heading.click()
+  await heading.getByText('Metric', { exact: true }).click()
   await expect(bubble.locator('details')).not.toHaveAttribute('open')
   await expect(copy).toBeVisible()
   await page.evaluate(() => navigator.clipboard.writeText('keep my clipboard'))

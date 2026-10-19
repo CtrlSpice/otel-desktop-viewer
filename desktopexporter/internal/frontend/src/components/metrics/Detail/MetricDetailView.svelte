@@ -13,6 +13,9 @@
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import DetailStack from '@/components/shared/DetailStack.svelte'
   import DetailViews from '@/components/shared/DetailViews.svelte'
+  import DetailViewTabs, {
+    type DetailViewMode,
+  } from '@/components/shared/DetailViewTabs.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
@@ -27,6 +30,8 @@
 
   const ctx = getMetricViewContext()
   const timeContext = getTimeContext()
+  const detailViewID = $props.id()
+  let detailView = $state<DetailViewMode>('fields')
 
   let seriesCount = $derived.by(() => {
     if (!ctx.metric) return 0
@@ -38,26 +43,6 @@
     ctx.metric ? `/export/metrics/${ctx.metric.metricRef}` : ''
   )
   let rawScopes = $derived([
-    {
-      id: 'datapoint',
-      label: 'Datapoint',
-      url:
-        ctx.selectedDatapointID &&
-        /^[0-9a-f-]{36}$/i.test(ctx.selectedDatapointID)
-          ? `${metricURL}?datapointRef=${ctx.selectedDatapointID}`
-          : undefined,
-      unavailable:
-        'Select a received datapoint in Series to inspect its OTLP JSON. Aggregate chart buckets are not received datapoints.',
-    },
-    {
-      id: 'series',
-      label: 'Series',
-      url: ctx.selectedSeriesKey
-        ? `${metricURL}?seriesRef=${ctx.selectedSeriesKey}`
-        : undefined,
-      unavailable:
-        'Select a series to inspect its complete retained OTLP JSON.',
-    },
     { id: 'metric', label: 'Whole metric', url: metricURL },
   ])
 </script>
@@ -88,16 +73,27 @@
     </DetailBubble>
     <DetailBubble label="Metric" icon={metricIcon}>
       {#snippet action()}
-        {#key metric.metricRef}
-          <ValueCopyButton
-            loadText={signal =>
-              readOTLPText('metric', metric.metricRef, signal)}
-            label="metric"
-            tooltip="Copy metric as OTLP JSON"
-          />
-        {/key}
+        <DetailViewTabs id={detailViewID} bind:view={detailView}>
+          {#snippet action()}
+            {#key metric.metricRef}
+              <ValueCopyButton
+                grouped
+                loadText={signal =>
+                  readOTLPText('metric', metric.metricRef, signal)}
+                label="metric"
+                tooltip="Copy metric as OTLP JSON"
+              />
+            {/key}
+          {/snippet}
+        </DetailViewTabs>
       {/snippet}
-      <DetailViews scopes={rawScopes} wholeURL={metricURL}>
+      <DetailViews
+        id={detailViewID}
+        showTabs={false}
+        bind:view={detailView}
+        scopes={rawScopes}
+        wholeURL={metricURL}
+      >
         <table class="detail-fields w-full" aria-label="Metric fields">
           <tbody>
             <MetricField

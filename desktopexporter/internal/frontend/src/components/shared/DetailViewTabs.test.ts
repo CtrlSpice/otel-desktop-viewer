@@ -33,7 +33,7 @@ describe('DetailViewTabs', () => {
     expect(fields).not.toHaveFocus()
   })
 
-  it('uses the Metrics-style joined icon and text controls without Overlays', async () => {
+  it('uses compact joined icon and text tabs with left-facing tooltips', async () => {
     render(DetailViewTabs, { id: 'log-view' })
     const fields = screen.getByRole('tab', { name: 'Properties' })
     const raw = screen.getByRole('tab', { name: 'Raw JSON' })
@@ -44,13 +44,14 @@ describe('DetailViewTabs', () => {
     expect(fields).toHaveAttribute('aria-selected', 'true')
     expect(fields).toHaveAttribute('aria-controls', 'log-view-fields')
     expect(raw).toHaveAttribute('aria-controls', 'log-view-raw')
-    expect(fields).toHaveAttribute('title', 'Properties')
-    expect(raw).toHaveAttribute('title', 'Raw JSON')
+    expect(fields).toHaveAttribute('data-tip', 'Properties')
+    expect(raw).toHaveAttribute('data-tip', 'Raw JSON')
     for (const tab of [fields, raw]) {
       expect(tab).toHaveClass(
         'btn',
         'btn-xs',
         'join-item',
+        'tooltip-left',
         'chart-header-control'
       )
       expect(tab.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')

@@ -518,29 +518,6 @@
     overflow: visible;
   }
 
-  /* Header badges read at a slightly larger size than their
-     drawer-card counterparts. xs is right for stacked card density;
-     the header has more breathing room and benefits from sm so the
-     type / severity reads at a glance. Same `<SignalBadges>` markup,
-     contextually upsized via this scoped override.
-
-     Targets the daisyUI `.badge` class globally because the badges
-     originate in a child component (SignalBadges) whose classes
-     Svelte's scoped selectors don't reach. Bounded to
-     `.pane-header__badges` so it doesn't leak. Values mirror
-     daisyUI's `.badge-sm` definition exactly. */
-  .pane-header__badges :global(.badge),
-  .pane-header__badges :global(.badge-count) {
-    /* Height from daisyUI's `.badge-md`, type held a half-step under
-       md so the badges grow without shouting. The second selector is
-       load-bearing: `.badge-count` takes daisy's badge styles via
-       @apply, so the literal `badge` class never reaches its DOM and a
-       `.badge`-only rule silently missed it -- the span-count badge
-       stayed xs while its neighbours upsized. */
-    --size: calc(var(--size-selector, 0.25rem) * 6);
-    font-size: calc(0.8125rem + 1pt);
-  }
-
   /* Left layout (drawer / tabs-only): tabs pack to the start at intrinsic
      width, a flexible trail fills the remaining space so a `right` slot
      can be pushed to the edge. Title-tabs uses its own rules below. */

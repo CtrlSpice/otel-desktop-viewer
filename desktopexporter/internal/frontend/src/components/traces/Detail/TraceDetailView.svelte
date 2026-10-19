@@ -63,6 +63,9 @@
   } from '@hugeicons/core-free-icons'
   import DetailStack from '@/components/shared/DetailStack.svelte'
   import DetailViews from '@/components/shared/DetailViews.svelte'
+  import DetailViewTabs, {
+    type DetailViewMode,
+  } from '@/components/shared/DetailViewTabs.svelte'
   import { LogIcon } from '@/icons'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import SpanField from '@/components/shared/DetailProperty.svelte'
@@ -104,6 +107,8 @@
   }: Props = $props()
 
   let timeContext = getTimeContext()
+  const detailViewID = $props.id()
+  let detailView = $state<DetailViewMode>('fields')
 
   function requestedField(key: string, source = 'span') {
     return (
@@ -153,23 +158,26 @@
 
   <DetailStack label="Span details" storageKey="trace-detail-section-sizes">
     <DetailBubble label="Span" icon={spanIcon}>
-      {#snippet action()}<ValueCopyButton
-          text={spanJSON}
-          label="span"
-          tooltip="Copy span as JSON"
-        />{/snippet}
+      {#snippet action()}
+        <DetailViewTabs id={detailViewID} bind:view={detailView}>
+          {#snippet action()}<ValueCopyButton
+              grouped
+              text={spanJSON}
+              label="span"
+              tooltip="Copy span as JSON"
+            />{/snippet}
+        </DetailViewTabs>
+      {/snippet}
       <DetailViews
+        id={detailViewID}
+        showTabs={false}
+        bind:view={detailView}
         wholeURL={`/export/traces/${span.traceID}`}
         scopes={[
           {
             id: 'span',
             label: 'Span',
             url: `/export/traces/${span.traceID}?spanId=${span.spanID}`,
-          },
-          {
-            id: 'trace',
-            label: 'Whole trace',
-            url: `/export/traces/${span.traceID}`,
           },
         ]}
         reveal={fieldTarget}

@@ -646,7 +646,7 @@ test('Copy span sits opposite the span icon and copies only the selected span wi
   })
   await expect(bubble.locator('details').first()).toHaveAttribute('open')
   await expect(page).toHaveURL(new RegExp(`span=${selectedID}`))
-  await summary.click()
+  await summary.getByText('Span', { exact: true }).click()
   await expect(bubble.locator('details').first()).not.toHaveAttribute('open')
   await expect(copy).toBeVisible()
   const scan = await new AxeBuilder({ page })

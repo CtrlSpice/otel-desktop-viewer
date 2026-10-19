@@ -182,6 +182,12 @@
   .detail-bubble__heading--action {
     padding-inline-end: calc(3rem - 1px);
   }
+  .detail-bubble__with-action:has(
+      .detail-bubble__action :global([role='tablist'])
+    )
+    .detail-bubble__heading--action {
+    padding-inline-end: calc(15rem - 1px);
+  }
   .detail-bubble__with-action {
     @apply relative flex min-h-0 flex-col;
   }
@@ -189,7 +195,10 @@
     @apply flex-1;
   }
   .detail-bubble__action {
-    @apply absolute right-3 top-1.5 z-20;
+    @apply absolute right-3 top-1.5 z-20 flex items-center gap-1;
+  }
+  .detail-bubble__action:has(:global([role='tablist'])) {
+    top: 0.5rem;
   }
   .detail-bubble__content {
     @apply px-0;

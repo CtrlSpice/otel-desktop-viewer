@@ -10,6 +10,7 @@
     label,
     tooltip = 'Copy value',
     contextual = false,
+    grouped = false,
   }: {
     text?: string
     /** Fetch exact source text only when the user requests a copy. */
@@ -17,6 +18,8 @@
     label: string
     tooltip?: string
     contextual?: boolean
+    /** Match the compact joined inspector tabs when used in their header. */
+    grouped?: boolean
   } = $props()
   let status = $state('')
   let copied = $state(false)
@@ -98,7 +101,9 @@
 
 <button
   type="button"
-  class="header-icon-button value-copy tooltip"
+  class="{grouped
+    ? 'btn btn-xs btn-square join-item chart-header-control value-copy--grouped'
+    : 'header-icon-button'} value-copy tooltip"
   class:tooltip-right={contextual}
   class:tooltip-left={!contextual}
   class:value-copy--copied={copied}
@@ -121,6 +126,9 @@
 
 <style lang="postcss">
   @reference "../../app.css";
+  .value-copy--grouped {
+    @apply size-6 min-h-6 min-w-6 p-0;
+  }
   .value-copy--copied {
     color: var(--color-accent);
   }
