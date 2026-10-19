@@ -287,20 +287,28 @@
 
   /* `--bar-color` on the bar area tints the span pill. */
   .waterfall-row__bar {
+    --bar-fill-opacity: var(--waterfall-bar-opacity, 0.7);
     @apply absolute z-[1] rounded-full top-1/2 -translate-y-1/2 border-0 overflow-hidden;
     height: var(--waterfall-bar-height);
     min-width: 2px;
-    background-color: var(--bar-color);
-    opacity: var(--waterfall-bar-opacity, 0.7);
-    transition: opacity 0.12s ease;
+    background-color: color-mix(
+      in srgb,
+      var(--bar-color) calc(var(--bar-fill-opacity) * 100%),
+      transparent
+    );
+    transition: background-color 0.12s ease;
   }
 
   .waterfall-row:hover .waterfall-row__bar {
-    opacity: min(1, calc(var(--waterfall-bar-opacity, 0.7) + 0.1));
+    --bar-fill-opacity: min(1, calc(var(--waterfall-bar-opacity, 0.7) + 0.1));
   }
 
   .waterfall-row:global(.table-row--selected) .waterfall-row__bar {
-    opacity: min(1, calc(var(--waterfall-bar-opacity, 0.7) + 0.15));
+    --bar-fill-opacity: min(1, calc(var(--waterfall-bar-opacity, 0.7) + 0.15));
+  }
+
+  :global(html[data-theme='rose-pine-dawn']) .waterfall-row__bar {
+    border: 1px solid var(--bar-color);
   }
 
   .waterfall-row__bar-grid {
