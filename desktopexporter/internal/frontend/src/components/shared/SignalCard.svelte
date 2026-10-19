@@ -75,7 +75,10 @@
   aria-expanded={expanded}
   aria-controls={controls}
 >
-  <div class="signal-row__identity">
+  <div
+    class="signal-row__identity"
+    class:signal-row__identity--service={!!subtitle}
+  >
     <div class="signal-row__header">
       <span class="signal-row__title-cluster" {title}>
         <span
@@ -223,6 +226,10 @@
     @apply min-w-0;
   }
 
+  .signal-row__identity--service .signal-row__header {
+    @apply h-5;
+  }
+
   .signal-row__title-cluster {
     @apply flex min-w-0 flex-1 items-center gap-1;
   }
@@ -238,7 +245,7 @@
   }
 
   .signal-row__subtitle {
-    @apply min-w-0 truncate py-0.5 text-sm font-normal leading-snug;
+    @apply min-w-0 truncate text-sm font-normal leading-tight;
     color: var(--color-subtle);
   }
 

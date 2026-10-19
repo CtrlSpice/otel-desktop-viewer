@@ -56,9 +56,11 @@
   {/snippet}
 
   {#snippet meta()}
-    <div class="flex w-full min-w-0 flex-col gap-2 pt-1">
+    <div
+      class="grid w-full min-w-0 grid-cols-2 gap-x-4 gap-y-1.5 pt-1 text-xs tabular-nums"
+    >
       <span
-        class="flex min-w-0 items-center gap-1 text-xs tabular-nums"
+        class="col-span-2 flex min-w-0 items-center gap-1"
         title={`Last seen: ${lastSeenParts.value} ${lastSeenParts.unit}`}
       >
         <span class="shrink-0">Last seen:</span>
@@ -67,27 +69,21 @@
             >{lastSeenParts.unit}</span
           >{/if}
       </span>
-      {#if lastValueLabel || metric.unit}
-        <div
-          class="flex min-w-0 items-center justify-between gap-3 text-xs tabular-nums"
-        >
-          {#if lastValueLabel}
-            <span class="flex min-w-0 items-center gap-1">
-              <span class="shrink-0">Last value:</span>
-              <span class="truncate text-base-content" title={lastValueLabel}>
-                {lastValueLabel}
-              </span>
-            </span>
-          {/if}
-          {#if metric.unit}
-            <span class="ml-auto flex min-w-0 items-center gap-1">
-              <span class="shrink-0">Units:</span>
-              <span class="truncate text-base-content" title={metric.unit}
-                >{metric.unit}</span
-              >
-            </span>
-          {/if}
-        </div>
+      {#if lastValueLabel}
+        <span class="flex min-w-0 items-center gap-1">
+          <span class="shrink-0">Last value:</span>
+          <span class="truncate text-base-content" title={lastValueLabel}>
+            {lastValueLabel}
+          </span>
+        </span>
+      {/if}
+      {#if metric.unit}
+        <span class="flex min-w-0 items-center gap-1">
+          <span class="shrink-0">Units:</span>
+          <span class="truncate text-base-content" title={metric.unit}
+            >{metric.unit}</span
+          >
+        </span>
       {/if}
     </div>
   {/snippet}

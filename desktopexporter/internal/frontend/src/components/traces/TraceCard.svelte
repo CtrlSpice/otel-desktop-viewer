@@ -56,10 +56,10 @@
   {#snippet meta()}
     <div class="flex w-full min-w-0 flex-col gap-2 pt-1">
       <div
-        class="flex min-w-0 items-center justify-between gap-3 text-xs tabular-nums"
+        class="grid min-w-0 grid-cols-2 gap-x-4 gap-y-1.5 text-xs tabular-nums"
       >
         <span
-          class="flex min-w-0 items-center gap-1"
+          class="col-span-2 flex min-w-0 items-center gap-1"
           title={`Start: ${startParts.value} ${startParts.unit}`}
         >
           <span class="shrink-0">Start:</span>
@@ -68,10 +68,11 @@
             >{/if}
         </span>
         {#if durationParts}
-          <span class="flex shrink-0 items-center gap-1">
-            <span>Duration:</span>
-            <span class="text-base-content">{durationParts.value}</span>
-            <span class="text-base-content">{durationParts.unit}</span>
+          <span class="flex min-w-0 items-center gap-1">
+            <span class="shrink-0">Duration:</span>
+            <span class="truncate text-base-content">{durationParts.value}</span
+            >
+            <span class="shrink-0 text-base-content">{durationParts.unit}</span>
           </span>
         {/if}
       </div>
