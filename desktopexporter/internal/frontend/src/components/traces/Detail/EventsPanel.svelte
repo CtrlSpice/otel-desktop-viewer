@@ -33,6 +33,7 @@
 </script>
 
 {#each events as event, index (index)}
+  {@const exception = event.name === 'exception'}
   {@const timestamp = formatTimestampParts(
     event.timestamp,
     timeContext.tz,
@@ -50,7 +51,14 @@
       timestampSuffix={`(${formatSignedDuration(event.timestamp - spanStartTime)})`}
       reveal={selectedEventIndex === index}
     >
-      {#snippet badge()}<span class="badge-count">Span event</span>{/snippet}
+      {#snippet titleContent()}<span class:text-error={exception}
+          >{event.name}</span
+        >{/snippet}
+      {#snippet badge()}<span
+          class="badge badge-xs badge-soft"
+          class:badge-error={exception}
+          class:badge-primary={!exception}>Span event</span
+        >{/snippet}
       <table class="detail-fields w-full" aria-label="Event {event.name}">
         <tbody>
           <SpanField

@@ -59,4 +59,16 @@ describe('EventsPanel selected event', () => {
       block: 'nearest',
     })
   })
+
+  it('uses the love/error tone for exception titles and badges, without a deprecation notice', () => {
+    const { container } = renderWithContexts(EventsPanel, {
+      events: [makeEvent('exception', 0n)],
+      spanStartTime: 1_000n,
+    })
+    expect(screen.getByText('exception')).toHaveClass('text-error')
+    expect(container.querySelector('.badge-error')).toHaveTextContent(
+      'Span event'
+    )
+    expect(screen.queryByRole('link', { name: 'API deprecation' })).toBeNull()
+  })
 })
