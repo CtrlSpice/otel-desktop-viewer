@@ -622,7 +622,17 @@ test('detail targets reopen the panel with independent native disclosures', asyn
   for (let selection = 0; selection < 2; selection++) {
     await span.click()
     await expect(detail).toBeVisible()
-    await expect(detail.getByRole('tablist')).toHaveCount(0)
+    const views = detail.getByRole('tablist', { name: 'Detail view' })
+    await expect(views.getByRole('tab')).toHaveCount(2)
+    await expect(
+      views.getByRole('tab', { name: 'Properties', exact: true })
+    ).toHaveAttribute('aria-selected', 'true')
+    await expect(
+      views.getByRole('tab', { name: 'Raw JSON', exact: true })
+    ).toHaveAttribute('aria-selected', 'false')
+    await expect(
+      detail.getByRole('tabpanel', { name: 'Properties', exact: true })
+    ).toBeVisible()
     await expect(fields.locator(':scope > summary')).toHaveText('Span')
     await expect(fields.locator('details')).toHaveCount(0)
     const table = fields.getByRole('table', { name: 'Span fields' })

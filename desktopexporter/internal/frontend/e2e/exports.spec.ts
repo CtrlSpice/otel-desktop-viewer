@@ -12,7 +12,12 @@ const log: JsonLogData = {
   severityText: 'INFO',
   severityNumber: 9,
   body: { kind: 'double', value: '0x8000000000000000' },
-  resource: { attributes: [], droppedAttributesCount: 0 },
+  resource: {
+    attributes: [
+      { key: 'service.name', value: { kind: 'string', value: 'checkout-api' } },
+    ],
+    droppedAttributesCount: 0,
+  },
   scope: { name: '', version: '', attributes: [], droppedAttributesCount: 0 },
   attributes: [],
   droppedAttributesCount: 0,
@@ -22,17 +27,20 @@ const log: JsonLogData = {
 
 function rpcFixture(method: string) {
   if (method === 'getLog') return log
-  if (method === 'searchLogSummaries') {
-    return [
+  if (method === 'getLogErrorNavigation')
+    return { count: 0, index: null, previous: null, next: null }
+  if (method === 'searchLogSummaries' || method === 'searchLogPage') {
+    const logs = [
       {
         logRef,
         timestamp: log.timestamp,
-        serviceName: null,
+        serviceName: 'checkout-api',
         severityText: 'INFO',
         severityNumber: 9,
         bodyPreview: '-0',
       },
     ]
+    return method === 'searchLogPage' ? { total: logs.length, logs } : logs
   }
   if (method === 'getStats') {
     return {
@@ -72,18 +80,23 @@ test.beforeEach(async ({ page }) => {
   await expect(
     page.getByRole('region', { name: 'Log record', exact: true })
   ).toHaveCSS('border-radius', '12px')
-  const badgeInset = await page
+  const tabsInset = await page
     .getByRole('region', { name: 'Log record', exact: true })
     .evaluate(header => {
       const top = header
         .querySelector('.pane-header__top')!
         .getBoundingClientRect()
-      const badges = header
-        .querySelector('.pane-header__badges')!
+      const tabs = header
+        .querySelector('[role="tablist"]')!
         .getBoundingClientRect()
-      return top.right - badges.right
+      return top.right - tabs.right
     })
-  expect(Math.abs(badgeInset)).toBeLessThan(1)
+  expect(Math.abs(tabsInset)).toBeLessThan(1)
+  await expect(
+    page
+      .getByRole('region', { name: 'Log record', exact: true })
+      .getByRole('tab', { name: 'Properties', exact: true })
+  ).toHaveAttribute('aria-selected', 'true')
   const darkest = await page.evaluate(() => {
     const probe = document.createElement('span')
     probe.style.backgroundColor = 'var(--color-base-100)'
@@ -152,15 +165,12 @@ test('uses the shared tooltip style on hover and keyboard focus without clipping
   page,
 }) => {
   const trigger = page.getByRole('button', { name: 'Export log', exact: true })
-  const placement = await trigger.evaluate(button => {
-    const rect = button.getBoundingClientRect()
-    const title = button
-      .closest('.pane-header')!
-      .querySelector('.pane-header__title')!
-      .getBoundingClientRect()
-    return { buttonRight: rect.right, titleLeft: title.left }
-  })
-  expect(placement.buttonRight).toBeLessThan(placement.titleLeft)
+  const buttonBox = (await trigger.boundingBox())!
+  const titleBox = (await page
+    .getByRole('region', { name: 'Log record', exact: true })
+    .getByText('checkout-api', { exact: true })
+    .boundingBox())!
+  expect(buttonBox.x + buttonBox.width).toBeLessThan(titleBox.x)
   await expect(trigger).toHaveAttribute('data-tip', 'Export log')
   await expect(trigger).not.toHaveAttribute('title')
   await expect(trigger.locator('svg')).toHaveAttribute('aria-hidden', 'true')

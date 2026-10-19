@@ -25,7 +25,9 @@ test.beforeEach(async ({ page }) => {
         ? stats
         : request.method === 'getImportConfig'
           ? { otlpHttpPort: 54318 }
-          : []
+          : request.method === 'searchLogPage'
+            ? { total: 0, logs: [] }
+            : []
     await route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({ jsonrpc: '2.0', id: request.id, result }),
