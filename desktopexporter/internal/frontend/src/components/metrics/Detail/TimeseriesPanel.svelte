@@ -13,8 +13,6 @@
   import type { LegendTimeseries as PanelTimeseries } from '@/types/metric-chart-types'
   import type { MetricSeriesViewData } from '@/types/api-types'
   import { MAX_VISIBLE_TIMESERIES } from '@/components/metrics/utils/metric-timeseries-visible'
-  import { formatMetricValue } from '@/components/metrics/utils/format-metric-value'
-  import type { SeriesStat } from '@/components/metrics/utils/aggregation'
   import { chartNeutral, readableTextColor } from '@/utils/chart-palette'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import SeriesDatapointList from '@/components/metrics/Detail/SeriesDatapointList.svelte'
@@ -92,27 +90,6 @@
     else ctx.expandedTimeseries.delete(key)
   }
 
-  const STAT_LABEL: Record<SeriesStat, string> = {
-    min: 'min',
-    max: 'max',
-    avg: 'avg',
-    total: 'Σ',
-  }
-
-  function statBadgeTitle(stat: SeriesStat, value: number): string {
-    const unit = ctx.metric?.unit ?? ''
-    const formatted = formatMetricValue(value)
-    if (ctx.aggregationView === 'rate') {
-      const rateUnit =
-        unit.trim() === '' || unit === '1' ? '/s' : `${unit.trim()}/s`
-      return `${stat} ${formatted}${rateUnit ? ` ${rateUnit}` : ''}`
-    }
-    if (unit.trim() && unit !== '1') {
-      return `${stat} ${formatted} ${unit.trim()}`
-    }
-    return `${stat} ${formatted}`
-  }
-
   $effect(() => {
     const dpID = ctx.selectedDatapointID
     void detailPanel.revealRequest
@@ -149,12 +126,10 @@
     {@const sparklinePoints = ctx.sparklineByKey.get(ts.key) ?? []}
     {@const sparklineColor =
       checked && seriesColor ? seriesColor : chartNeutral()}
-    {@const sparklineSuppressed =
-      ctx.isHistogramKind || ctx.isUnsafeTemporality}
-    {@const rowStats = ctx.seriesStatsByKey.get(ts.key)}
-    {@const statBadges = ctx.availableSeriesStatBadges}
-    {@const showStatBadges =
-      !sparklineSuppressed && statBadges.length > 0 && rowStats !== undefined}
+    {@const showSparkline =
+      !ctx.isHistogramKind &&
+      !ctx.isUnsafeTemporality &&
+      sparklinePoints.length > 0}
 
     <FieldGroup
       label={headerLabel}
@@ -164,73 +139,52 @@
       onOpenChange={open => setTimeseriesOpen(ts.key, open)}
     >
       {#snippet headerAction()}
-        <span class="ts-row__header">
-          <span class="ts-row__title-row">
-            <span
-              class="ts-row__caret"
-              class:rotate-90={expanded}
-              title={`${expanded ? 'Collapse' : 'Expand'} ${headerLabel}`}
-              aria-hidden="true"
-            >
-              <HugeiconsIcon
-                icon={ArrowRight01Icon}
-                size={16}
-                strokeWidth={1.5}
-              />
-            </span>
-            <span
-              class="ts-row__attrs ts-row__attrs-text"
-              class:ts-row__default-label={!hasAttrs}
-              title={tooltip}>{headerLabel}</span
-            >
-            <label
-              class="ts-row__check-label"
-              class:ts-row__check-label--disabled={checkboxDisabled}
-              title={tooltip}
-            >
-              <input
-                type="checkbox"
-                class="checkbox checkbox-xs rounded-full ts-row__checkbox"
-                style:--input-color={color}
-                style:color={fg}
-                {checked}
-                disabled={checkboxDisabled}
-                aria-label={`Show ${headerLabel} in chart`}
-                onchange={e => toggle(ts.key, e.currentTarget.checked)}
-              />
-            </label>
+        <span
+          class="ts-row__title-row"
+          class:ts-row__title-row--preview={showSparkline}
+        >
+          <span
+            class="ts-row__caret"
+            class:rotate-90={expanded}
+            title={`${expanded ? 'Collapse' : 'Expand'} ${headerLabel}`}
+            aria-hidden="true"
+          >
+            <HugeiconsIcon
+              icon={ArrowRight01Icon}
+              size={16}
+              strokeWidth={1.5}
+            />
           </span>
-          {#if !sparklineSuppressed || showStatBadges}
-            <span class="ts-row__summary-row">
-              {#if !sparklineSuppressed}
-                <!-- The store reduced these points to this width, so the
-                       constant is shared rather than repeated here. -->
-                <span class="ts-row__sparkline">
-                  <Sparkline
-                    points={sparklinePoints}
-                    color={sparklineColor}
-                    width={SPARKLINE_WIDTH_PX}
-                  />
-                </span>
-              {/if}
-              {#if showStatBadges}
-                <span class="ts-row__stats-row" aria-label="Series stats">
-                  {#each statBadges as stat (stat)}
-                    {@const value = rowStats[stat]}
-                    {#if value !== undefined}
-                      <span
-                        class="badge-count"
-                        title={statBadgeTitle(stat, value)}
-                      >
-                        {STAT_LABEL[stat]}
-                        {formatMetricValue(value)}
-                      </span>
-                    {/if}
-                  {/each}
-                </span>
-              {/if}
+          <span
+            class="ts-row__attrs ts-row__attrs-text"
+            class:ts-row__default-label={!hasAttrs}
+            title={tooltip}>{headerLabel}</span
+          >
+          {#if showSparkline}
+            <span class="ts-row__sparkline">
+              <Sparkline
+                points={sparklinePoints}
+                color={sparklineColor}
+                width={SPARKLINE_WIDTH_PX}
+              />
             </span>
           {/if}
+          <label
+            class="ts-row__check-label"
+            class:ts-row__check-label--disabled={checkboxDisabled}
+            title={tooltip}
+          >
+            <input
+              type="checkbox"
+              class="checkbox checkbox-xs rounded-full ts-row__checkbox"
+              style:--input-color={color}
+              style:color={fg}
+              {checked}
+              disabled={checkboxDisabled}
+              aria-label={`Show ${headerLabel} in chart`}
+              onchange={e => toggle(ts.key, e.currentTarget.checked)}
+            />
+          </label>
         </span>
       {/snippet}
 
@@ -266,16 +220,10 @@
 
   .ts-panel {
     @apply flex min-w-0 flex-col gap-1;
-    /* Align secondary facts with the attribute label after the caret. */
-    --ts-content-inset: 1.5rem;
   }
 
   .ts-panel :global(.field-group) {
     --fg-inline: 0;
-  }
-
-  .ts-row__header {
-    @apply flex min-w-0 w-full flex-col gap-0.5;
   }
 
   .ts-row__title-row {
@@ -292,22 +240,17 @@
     @apply inline-flex size-4 shrink-0 items-center justify-center text-base-content/60;
   }
 
-  .ts-row__summary-row {
-    @apply flex min-w-0 items-center justify-between gap-2;
-    padding-left: var(--ts-content-inset);
+  .ts-row__title-row--preview {
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, 96px) auto;
   }
 
   .ts-row__sparkline {
     @apply min-w-0 shrink-0 justify-self-end;
-    max-width: 128px;
+    max-width: 96px;
   }
 
   .ts-row__sparkline :global(.sparkline) {
-    @apply block h-[18px] w-full max-w-[128px];
-  }
-
-  .ts-row__stats-row {
-    @apply ml-auto flex min-w-0 flex-wrap items-center justify-end gap-0.5;
+    @apply block h-[18px] w-full max-w-[96px];
   }
 
   .ts-row__check-label {
