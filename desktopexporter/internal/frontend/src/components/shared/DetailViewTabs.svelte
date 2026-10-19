@@ -49,8 +49,8 @@
       id={`${id}-raw-tab`}
       type="button"
       role="tab"
-      aria-label="Raw JSON"
-      data-tip="Raw JSON"
+      aria-label="JSON"
+      data-tip="JSON"
       class="btn btn-xs join-item chart-header-control tooltip tooltip-left"
       class:chart-header-control--active={view === 'raw'}
       aria-selected={view === 'raw'}
@@ -65,7 +65,7 @@
           class="shrink-0"
           aria-hidden="true"
         /></span
-      ><span>Raw JSON</span></button
+      ><span>JSON</span></button
     >
   </div>
   {#if action}{@render action()}{/if}

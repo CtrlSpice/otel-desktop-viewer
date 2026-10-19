@@ -312,7 +312,7 @@ test('Properties appends the shared associated Trace card without a collapsible 
       )
     })
   ).toBe(true)
-  await panel.getByRole('tab', { name: 'Raw JSON', exact: true }).click()
+  await panel.getByRole('tab', { name: 'JSON', exact: true }).click()
   await expect(card).toBeHidden()
   await panel.getByRole('tab', { name: 'Properties', exact: true }).click()
   await expect(panel.getByRole('table', { name: 'Log fields' })).toBeVisible()
@@ -374,7 +374,7 @@ test('Raw JSON stays selected across log navigation until a field is inspected',
       body: route.request().method() === 'HEAD' ? '' : payload,
     })
   })
-  const rawTab = page.getByRole('tab', { name: 'Raw JSON', exact: true })
+  const rawTab = page.getByRole('tab', { name: 'JSON', exact: true })
   const inspector = page.getByRole('region', { name: 'Raw JSON inspector' })
   await rawTab.click()
   await expect(inspector.locator('.cm-content')).toContainText(firstID)
@@ -423,7 +423,7 @@ test('Raw JSON folding uses waterfall-style icon controls on the top line', asyn
       body: route.request().method() === 'HEAD' ? '' : payload,
     })
   })
-  await page.getByRole('tab', { name: 'Raw JSON', exact: true }).click()
+  await page.getByRole('tab', { name: 'JSON', exact: true }).click()
   const inspector = page.getByRole('region', { name: 'Raw JSON inspector' })
   const editor = inspector.locator('.raw-json-editor')
   await expect(editor).toBeVisible()

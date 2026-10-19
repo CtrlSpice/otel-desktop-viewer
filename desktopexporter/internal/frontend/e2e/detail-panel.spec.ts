@@ -628,7 +628,7 @@ test('detail targets reopen the panel with independent native disclosures', asyn
       views.getByRole('tab', { name: 'Properties', exact: true })
     ).toHaveAttribute('aria-selected', 'true')
     await expect(
-      views.getByRole('tab', { name: 'Raw JSON', exact: true })
+      views.getByRole('tab', { name: 'JSON', exact: true })
     ).toHaveAttribute('aria-selected', 'false')
     await expect(
       detail.getByRole('tabpanel', { name: 'Properties', exact: true })

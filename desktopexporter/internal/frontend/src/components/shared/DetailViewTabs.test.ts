@@ -9,7 +9,7 @@ describe('DetailViewTabs', () => {
     const user = userEvent.setup()
     render(DetailViewTabs, { id: 'keyboard-view' })
     const fields = screen.getByRole('tab', { name: 'Properties' })
-    const raw = screen.getByRole('tab', { name: 'Raw JSON' })
+    const raw = screen.getByRole('tab', { name: 'JSON' })
     await user.tab()
     expect(fields).toHaveFocus()
     expect(fields).toHaveAttribute('tabindex', '0')
@@ -36,16 +36,16 @@ describe('DetailViewTabs', () => {
   it('uses compact joined icon and text tabs with left-facing tooltips', async () => {
     render(DetailViewTabs, { id: 'log-view' })
     const fields = screen.getByRole('tab', { name: 'Properties' })
-    const raw = screen.getByRole('tab', { name: 'Raw JSON' })
+    const raw = screen.getByRole('tab', { name: 'JSON' })
     expect(screen.getByRole('tablist')).toHaveClass('join')
     expect(screen.getAllByRole('tab')).toHaveLength(2)
     expect(fields).toHaveTextContent('Properties')
-    expect(raw).toHaveTextContent('Raw JSON')
+    expect(raw).toHaveTextContent('JSON')
     expect(fields).toHaveAttribute('aria-selected', 'true')
     expect(fields).toHaveAttribute('aria-controls', 'log-view-fields')
     expect(raw).toHaveAttribute('aria-controls', 'log-view-raw')
     expect(fields).toHaveAttribute('data-tip', 'Properties')
-    expect(raw).toHaveAttribute('data-tip', 'Raw JSON')
+    expect(raw).toHaveAttribute('data-tip', 'JSON')
     for (const tab of [fields, raw]) {
       expect(tab).toHaveClass(
         'btn',
