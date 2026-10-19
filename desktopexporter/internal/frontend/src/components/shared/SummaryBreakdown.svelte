@@ -114,7 +114,7 @@
   {/snippet}
 
   {#if colouredParts.length > 1}
-    <div class="service-disclosure">
+    <div class="ball-pit">
       {#each colouredParts as part (part.key)}
         <button
           type="button"
@@ -157,18 +157,21 @@
     );
   }
 
-  .service-disclosure {
-    @apply mt-1 flex h-7 min-w-0 items-center gap-1;
+  .ball-pit {
+    @apply mt-1 flex min-h-7 min-w-0 flex-wrap items-center gap-1;
   }
 
   .service-choice {
     @apply flex h-7 min-w-6 cursor-pointer items-center gap-1.5 overflow-hidden rounded-sm px-2 text-left text-sm font-normal text-base-content;
     flex: 0 0 1.5rem;
-    transition: flex-grow 240ms cubic-bezier(0.2, 0, 0.2, 1);
+    transition:
+      flex-grow 240ms cubic-bezier(0.2, 0, 0.2, 1),
+      flex-basis 240ms cubic-bezier(0.2, 0, 0.2, 1);
   }
 
   .service-choice--open {
     flex-grow: 1;
+    flex-basis: min(100%, 10rem);
   }
 
   .service-choice:focus-visible {
