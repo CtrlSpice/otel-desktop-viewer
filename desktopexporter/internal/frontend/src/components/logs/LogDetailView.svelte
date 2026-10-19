@@ -31,11 +31,16 @@
     log: LogData | undefined
     footer?: Snippet
     fieldTarget?: DetailFieldTarget
+    detailView?: DetailViewMode
   }
 
-  let { log, footer, fieldTarget }: Props = $props()
+  let {
+    log,
+    footer,
+    fieldTarget,
+    detailView = $bindable<DetailViewMode>('fields'),
+  }: Props = $props()
   const detailViewID = $props.id()
-  let detailView = $state<DetailViewMode>('fields')
   let resolvedTarget = $derived(
     fieldTarget?.key === 'timestamp' && log
       ? {

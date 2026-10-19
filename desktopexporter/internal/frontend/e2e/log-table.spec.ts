@@ -362,6 +362,43 @@ test('Properties appends the shared associated Trace card without a collapsible 
   expect(new URL(page.url()).searchParams.get('time')).toBe('all')
 })
 
+test('Raw JSON stays selected across log navigation until a field is inspected', async ({
+  page,
+}) => {
+  await page.route('**/export/logs/*', async route => {
+    const id = route.request().url().split('/').at(-1)
+    const payload = JSON.stringify({ logRef: id })
+    await route.fulfill({
+      contentType: 'application/json',
+      headers: { 'Content-Length': String(Buffer.byteLength(payload)) },
+      body: route.request().method() === 'HEAD' ? '' : payload,
+    })
+  })
+  const rawTab = page.getByRole('tab', { name: 'Raw JSON', exact: true })
+  const inspector = page.getByRole('region', { name: 'Raw JSON inspector' })
+  await rawTab.click()
+  await expect(inspector.locator('.cm-content')).toContainText(firstID)
+  const first = page.locator(`[data-log-ref="${firstID}"]`)
+  await first.focus()
+  await page.keyboard.press('ArrowDown')
+  const second = page.locator(`[data-log-ref="${secondID}"]`)
+  await expect(second).toHaveAttribute('aria-selected', 'true')
+  await expect(rawTab).toHaveAttribute('aria-selected', 'true')
+  await expect(inspector.locator('.cm-content')).toContainText(secondID)
+  await expect(inspector.locator('.cm-content')).not.toContainText(firstID)
+  await second
+    .getByRole('button', { name: 'Show log: body in details' })
+    .click()
+  await expect(
+    page.getByRole('tab', { name: 'Properties', exact: true })
+  ).toHaveAttribute('aria-selected', 'true')
+  await expect(
+    page
+      .getByRole('table', { name: 'Log fields' })
+      .locator('[data-field="body"]')
+  ).toHaveClass(/detail-property--revealed/)
+})
+
 test('Raw JSON folding uses waterfall-style icon controls on the top line', async ({
   page,
 }) => {

@@ -65,6 +65,7 @@
   import type { DetailFieldTarget } from '@/components/shared/utils/reveal-detail-field'
   import { detailPanel } from '@/state/detail-panel.svelte'
   import LogDetailPanel from '@/components/logs/LogDetailView.svelte'
+  import type { DetailViewMode } from '@/components/shared/DetailViewTabs.svelte'
   import Pagination from '@/components/shared/Pagination.svelte'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
   import type { ImportFailure } from '@/types/import-types'
@@ -82,6 +83,7 @@
   let baselineLogCount = $state(0)
   let polledLogCount = $state(0)
   let actionError = $state<string | null>(null)
+  let detailView = $state<DetailViewMode>('fields')
   let query = $state('')
   let fields = $state<FieldDefinition[]>([])
   let submittedQuery: ParsedSearchRequest | null = null
@@ -427,6 +429,7 @@
       {:else}
         <LogDetailPanel
           log={selectedLog}
+          bind:detailView
           fieldTarget={inspection?.id === selectedLog?.logRef
             ? inspection?.target
             : undefined}
