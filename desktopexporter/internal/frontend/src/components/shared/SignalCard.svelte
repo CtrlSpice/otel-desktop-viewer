@@ -16,6 +16,8 @@
     titleMuted?: boolean
     subtitle?: string
     subtitleContent?: Snippet
+    /** Independent controls below the title, outside the card selection button. */
+    interactiveSubtitle?: Snippet
     /** Full-width date between identity and description. */
     date?: Snippet
     /** `plain`: value grid. `interval`: Start + Duration (traces). `labeled`: one labeled timestamp (logs/metrics). */
@@ -54,6 +56,7 @@
     titleMuted = false,
     subtitle,
     subtitleContent,
+    interactiveSubtitle,
     date,
     timeLayout = 'plain',
     timestampLabel,
@@ -72,132 +75,189 @@
   }: Props = $props()
 </script>
 
-<button
-  type="button"
-  class="signal-row item-state {selected ? 'signal-row--selected' : ''}"
-  onclick={() => onclick?.(id)}
-  aria-pressed={expanded === undefined ? selected : undefined}
-  aria-expanded={expanded}
-  aria-controls={controls}
->
-  <div
-    class="signal-row__identity"
-    class:signal-row__identity--service={!!subtitle || !!subtitleContent}
+{#snippet card()}
+  <button
+    type="button"
+    class="signal-row item-state {selected ? 'signal-row--selected' : ''}"
+    class:signal-row--interactive-subtitle={!!interactiveSubtitle}
+    onclick={() => onclick?.(id)}
+    aria-pressed={expanded === undefined ? selected : undefined}
+    aria-expanded={expanded}
+    aria-controls={controls}
   >
-    <div class="signal-row__header">
-      <span class="signal-row__title-cluster" {title}>
-        <span
-          class="signal-row__title"
-          class:signal-row__title--muted={titleMuted}
-          >{#if titleContent}{@render titleContent()}{:else}{title}{/if}</span
-        >
-        {#if badge && badgePlacement === 'inline'}
-          <span class="flex shrink-0 items-center gap-1">{@render badge()}</span
+    <div
+      class="signal-row__identity"
+      class:signal-row__identity--service={!!subtitle ||
+        !!subtitleContent ||
+        !!interactiveSubtitle}
+    >
+      <div class="signal-row__header">
+        <span class="signal-row__title-cluster" {title}>
+          <span
+            class="signal-row__title"
+            class:signal-row__title--muted={titleMuted}
+            >{#if titleContent}{@render titleContent()}{:else}{title}{/if}</span
           >
-        {/if}
-      </span>
-      {#if badge && badgePlacement === 'end'}
-        <span class="signal-row__badge">
-          {@render badge()}
+          {#if badge && badgePlacement === 'inline'}
+            <span class="flex shrink-0 items-center gap-1"
+              >{@render badge()}</span
+            >
+          {/if}
         </span>
-      {/if}
-    </div>
-
-    {#if subtitleContent}
-      {@render subtitleContent()}
-    {:else if subtitle}
-      <div class="signal-row__subtitle" title={subtitle}>{subtitle}</div>
-    {/if}
-  </div>
-
-  {#if date}
-    <div class="signal-row__date">{@render date()}</div>
-  {/if}
-
-  {#if description}
-    <div class="signal-row__lead">
-      <p class="signal-row__description" title={description}>
-        {#if descriptionIsID}<Identifier
-            value={description}
-          />{:else}{description}{/if}
-      </p>
-    </div>
-  {:else if lead}
-    <div class="signal-row__lead">
-      {@render lead()}
-    </div>
-  {/if}
-
-  {#if timestamp || duration}
-    {#if timeLayout === 'interval'}
-      {#if timestamp}
-        <div class="signal-row__time signal-row__time--interval">
-          <span class="signal-row__time-group">
-            <span class="signal-row__time-label">Start:</span>
-            <span class="signal-row__time-value signal-row__timestamp"
-              >{timestamp}</span
-            >
-            {#if timestampUnit}
-              <span class="signal-row__time-unit">{timestampUnit}</span>
-            {/if}
-          </span>
-        </div>
-      {/if}
-      {#if duration}
-        <div class="signal-row__time signal-row__time--interval">
-          <span class="signal-row__time-group">
-            <span class="signal-row__time-label">Duration:</span>
-            <span class="signal-row__time-value signal-row__duration"
-              >{duration}</span
-            >
-            {#if durationUnit}
-              <span class="signal-row__time-unit">{durationUnit}</span>
-            {/if}
-          </span>
-        </div>
-      {/if}
-    {:else if timeLayout === 'labeled'}
-      <div class="signal-row__time signal-row__time--interval">
-        {#if timestamp}
-          <span class="signal-row__time-group">
-            {#if timestampLabel}
-              <span class="signal-row__time-label">{timestampLabel}</span>
-            {/if}
-            <span class="signal-row__time-value signal-row__timestamp"
-              >{timestamp}</span
-            >
-            {#if timestampUnit}
-              <span class="signal-row__time-unit">{timestampUnit}</span>
-            {/if}
-            {#if timestampSuffix}
-              <span class="text-rp-muted">{timestampSuffix}</span>
-            {/if}
+        {#if badge && badgePlacement === 'end'}
+          <span class="signal-row__badge">
+            {@render badge()}
           </span>
         {/if}
       </div>
-    {:else}
-      <div class="signal-row__time">
-        <span class="signal-row__timestamp">{timestamp ?? ''}</span>
-        <span class="signal-row__duration">{duration ?? ''}</span>
-      </div>
-    {/if}
-  {/if}
 
-  {#if meta}
-    <div class="signal-row__meta-row">
-      {@render meta()}
+      {#if !interactiveSubtitle && subtitleContent}
+        {@render subtitleContent()}
+      {:else if !interactiveSubtitle && subtitle}
+        <div class="signal-row__subtitle" title={subtitle}>{subtitle}</div>
+      {/if}
     </div>
-  {/if}
 
-  {#if idLine}
-    <div class="signal-row__id-line" title={idLine}>
-      <Identifier value={idLine} />
+    <div class="signal-row__body">
+      {#if date}
+        <div class="signal-row__date">{@render date()}</div>
+      {/if}
+
+      {#if description}
+        <div class="signal-row__lead">
+          <p class="signal-row__description" title={description}>
+            {#if descriptionIsID}<Identifier
+                value={description}
+              />{:else}{description}{/if}
+          </p>
+        </div>
+      {:else if lead}
+        <div class="signal-row__lead">
+          {@render lead()}
+        </div>
+      {/if}
+
+      {#if timestamp || duration}
+        {#if timeLayout === 'interval'}
+          {#if timestamp}
+            <div class="signal-row__time signal-row__time--interval">
+              <span class="signal-row__time-group">
+                <span class="signal-row__time-label">Start:</span>
+                <span class="signal-row__time-value signal-row__timestamp"
+                  >{timestamp}</span
+                >
+                {#if timestampUnit}
+                  <span class="signal-row__time-unit">{timestampUnit}</span>
+                {/if}
+              </span>
+            </div>
+          {/if}
+          {#if duration}
+            <div class="signal-row__time signal-row__time--interval">
+              <span class="signal-row__time-group">
+                <span class="signal-row__time-label">Duration:</span>
+                <span class="signal-row__time-value signal-row__duration"
+                  >{duration}</span
+                >
+                {#if durationUnit}
+                  <span class="signal-row__time-unit">{durationUnit}</span>
+                {/if}
+              </span>
+            </div>
+          {/if}
+        {:else if timeLayout === 'labeled'}
+          <div class="signal-row__time signal-row__time--interval">
+            {#if timestamp}
+              <span class="signal-row__time-group">
+                {#if timestampLabel}
+                  <span class="signal-row__time-label">{timestampLabel}</span>
+                {/if}
+                <span class="signal-row__time-value signal-row__timestamp"
+                  >{timestamp}</span
+                >
+                {#if timestampUnit}
+                  <span class="signal-row__time-unit">{timestampUnit}</span>
+                {/if}
+                {#if timestampSuffix}
+                  <span class="text-rp-muted">{timestampSuffix}</span>
+                {/if}
+              </span>
+            {/if}
+          </div>
+        {:else}
+          <div class="signal-row__time">
+            <span class="signal-row__timestamp">{timestamp ?? ''}</span>
+            <span class="signal-row__duration">{duration ?? ''}</span>
+          </div>
+        {/if}
+      {/if}
+
+      {#if meta}
+        <div class="signal-row__meta-row">
+          {@render meta()}
+        </div>
+      {/if}
+
+      {#if idLine}
+        <div class="signal-row__id-line" title={idLine}>
+          <Identifier value={idLine} />
+        </div>
+      {/if}
     </div>
-  {/if}
-</button>
+  </button>
+{/snippet}
+
+{#if interactiveSubtitle}
+  <div class="signal-card-shell">
+    {@render card()}
+    <div class="signal-card-shell__subtitle">
+      {@render interactiveSubtitle()}
+    </div>
+  </div>
+{:else}
+  {@render card()}
+{/if}
 
 <style lang="postcss">
   @reference "../../app.css";
+
+  /* A shared grid keeps independent disclosure controls inside the visual card
+     without nesting their buttons inside the card's selection button. */
+  .signal-card-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    min-width: 0;
+  }
+
+  .signal-row__body {
+    display: contents;
+  }
+
+  .signal-row.signal-row--interactive-subtitle {
+    display: grid;
+    grid-area: 1 / 1 / 4 / 2;
+    grid-template-rows: subgrid;
+    min-width: 0;
+  }
+
+  .signal-row--interactive-subtitle .signal-row__identity {
+    grid-row: 1;
+  }
+
+  .signal-row--interactive-subtitle .signal-row__body {
+    display: flex;
+    flex-direction: column;
+    grid-row: 3;
+    min-width: 0;
+  }
+
+  .signal-card-shell__subtitle {
+    grid-area: 2 / 1;
+    z-index: 1;
+    min-width: 0;
+    margin-inline: 0.75rem;
+  }
 
   .signal-row {
     /*

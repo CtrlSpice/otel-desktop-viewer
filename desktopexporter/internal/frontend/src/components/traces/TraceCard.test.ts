@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
-import { screen, within } from '@testing-library/svelte'
+import { screen, waitFor, within } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'svelte'
 import TraceCard from './TraceCard.svelte'
@@ -31,7 +31,10 @@ describe('TraceCard', () => {
     renderCard({ trace: makeTrace() })
     const button = screen.getByRole('button')
     expect(within(button).getByText('GET /api/orders')).toBeInTheDocument()
-    expect(within(button).getByText('orders-service')).toBeInTheDocument()
+    expect(screen.getByText('orders-service')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('img', { name: /Service breakdown/ })
+    ).not.toBeInTheDocument()
   })
 
   it('falls back to a placeholder title when the trace has no root span', () => {
@@ -98,5 +101,80 @@ describe('TraceCard', () => {
     screen.getByRole('button').focus()
     await user.keyboard('{Enter}')
     expect(onclick).toHaveBeenCalledWith('trace-42')
+  })
+
+  it('previews one service at a time and restores the clicked choice after hover', async () => {
+    const user = userEvent.setup()
+    const onclick = vi.fn()
+    renderCard({
+      trace: makeTrace({
+        serviceBreakdown: [
+          { key: 'service:database', label: 'database', count: 2 },
+          { key: 'service:orders-service', label: 'orders-service', count: 1 },
+          { key: 'service:cache', label: 'cache', count: 1 },
+        ],
+      }),
+      onclick,
+    })
+    const group = screen.getByRole('group', { name: 'Spans by service' })
+    const choices = within(group).getAllByRole('button')
+    expect(choices.map(button => button.getAttribute('aria-label'))).toEqual([
+      'orders-service: 1 spans',
+      'database: 2 spans',
+      'cache: 1 spans',
+    ])
+    const [root, database, cache] = choices
+    expect(root).toHaveAttribute('aria-expanded', 'true')
+    await user.hover(database)
+    await waitFor(() =>
+      expect(database).toHaveAttribute('aria-expanded', 'true')
+    )
+    expect(root).toHaveAttribute('aria-expanded', 'false')
+    await user.click(database)
+    expect(database).toHaveAttribute('aria-pressed', 'true')
+    await user.hover(cache)
+    await waitFor(() => expect(cache).toHaveAttribute('aria-expanded', 'true'))
+    await user.unhover(cache)
+    expect(database).toHaveAttribute('aria-expanded', 'true')
+    expect(group.querySelectorAll('[aria-expanded="true"]')).toHaveLength(1)
+    expect(onclick).not.toHaveBeenCalled()
+    expect(document.querySelector('button button')).toBeNull()
+  })
+
+  it('reveals services with keyboard focus and keeps the bar and row colours in order', async () => {
+    const user = userEvent.setup()
+    renderCard({
+      trace: makeTrace({
+        serviceBreakdown: [
+          { key: 'service:orders-service', label: 'orders-service', count: 3 },
+          { key: 'service:cache', label: 'cache', count: 1 },
+        ],
+      }),
+    })
+    const group = screen.getByRole('group', { name: 'Spans by service' })
+    const choices = within(group).getAllByRole('button')
+    await user.tab()
+    await user.tab()
+    expect(choices[0]).toHaveFocus()
+    await user.tab()
+    expect(choices[1]).toHaveFocus()
+    expect(choices[1]).toHaveAttribute('aria-expanded', 'true')
+    expect(choices[0]).toHaveAttribute('aria-expanded', 'false')
+    const bar = screen.getByRole('img', { name: /Service breakdown/ })
+    expect(
+      Array.from(bar.children, child => {
+        const probe = document.createElement('span')
+        probe.style.backgroundColor = (
+          child as HTMLElement
+        ).style.getPropertyValue('--service-color')
+        return probe.style.backgroundColor
+      })
+    ).toEqual(
+      choices.map(
+        button =>
+          (button.querySelector('.service-dot') as HTMLElement).style
+            .backgroundColor
+      )
+    )
   })
 })

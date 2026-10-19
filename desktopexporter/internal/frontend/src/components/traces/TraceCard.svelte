@@ -30,9 +30,18 @@
   let titleLabel = $derived(trace.rootSpan?.name ?? 'No root span')
   let serviceLabel = $derived(trace.rootSpan?.serviceName)
   let titleMuted = $derived(!trace.hasRootSpan)
-  const services = $derived(trace.serviceBreakdown ?? [])
-  const hasServiceGrid = $derived(
-    services.filter(part => part.count > 0).length > 1
+  const services = $derived(
+    trace.serviceBreakdown?.some(part => part.count > 0)
+      ? trace.serviceBreakdown
+      : serviceLabel === undefined
+        ? []
+        : [
+            {
+              key: `service:${serviceLabel}`,
+              label: serviceLabel,
+              count: trace.spanCount,
+            },
+          ]
   )
 
   let durationParts = $derived.by(() => {
@@ -41,7 +50,7 @@
   })
 </script>
 
-{#snippet serviceGrid()}
+{#snippet serviceBreakdown()}
   <SummaryBreakdown parts={services} rootService={serviceLabel} />
 {/snippet}
 
@@ -50,7 +59,7 @@
   {selected}
   title={titleLabel}
   subtitle={serviceLabel}
-  subtitleContent={hasServiceGrid ? serviceGrid : undefined}
+  interactiveSubtitle={services.length ? serviceBreakdown : undefined}
   {titleMuted}
   {onclick}
 >
