@@ -41,7 +41,7 @@ export function themeTokens(theme: Theme) {
     '--color-on-dark': light
       ? 'var(--color-base-100)'
       : 'var(--color-base-content)',
-    '--waterfall-bar-opacity': '0.75',
+    '--waterfall-bar-opacity': light ? '0.8' : '1',
     '--waterfall-bar-label-color': light
       ? 'var(--color-base-content)'
       : 'var(--color-base-200)',
