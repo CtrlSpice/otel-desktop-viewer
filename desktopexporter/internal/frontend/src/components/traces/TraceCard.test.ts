@@ -45,6 +45,17 @@ describe('TraceCard', () => {
     expect(screen.getByText('No root span')).toBeInTheDocument()
   })
 
+  it('keeps the full trace ID alongside the service label instead of in a footer', () => {
+    const traceID = '1234567890abcdef1234567890abcdef'
+    renderCard({ trace: makeTrace({ traceID }) })
+    const row = document.querySelector('.ball-pit')
+    expect(row).toHaveTextContent('orders-service (4 spans)')
+    expect(row?.querySelector('.identifier')).toHaveAttribute('title', traceID)
+    expect(row).toHaveTextContent(traceID)
+    expect(screen.getByRole('button').querySelector('.identifier')).toBeNull()
+    expect(document.querySelector('.signal-row__meta-row')).toBeNull()
+  })
+
   it('renders the formatted start time and duration', () => {
     const trace = makeTrace()
     renderCard({ trace })

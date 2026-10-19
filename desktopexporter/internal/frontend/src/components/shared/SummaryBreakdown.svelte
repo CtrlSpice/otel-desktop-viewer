@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte'
+  import { onDestroy, type Snippet } from 'svelte'
   import type { SummaryBreakdownPart } from '@/types/api-types'
   import { traceServiceColor } from '@/utils/trace-service-color'
   import { themeSignal } from '@/state/theme.svelte'
@@ -7,7 +7,9 @@
   let {
     parts,
     rootService,
-  }: { parts: SummaryBreakdownPart[]; rootService?: string } = $props()
+    right,
+  }: { parts: SummaryBreakdownPart[]; rootService?: string; right?: Snippet } =
+    $props()
   const rootKey = $derived(
     rootService === undefined ? undefined : `service:${rootService}`
   )
@@ -139,13 +141,20 @@
     </span>
   {/snippet}
 
-  {#if activePart}
+  {#if activePart || right}
     <div class="ball-pit">
-      {#key activeKey}
-        <div class="service-summary">
-          {@render serviceLabel(activePart)}
-        </div>
-      {/key}
+      <div class="min-w-0 flex-1">
+        {#if activePart}
+          {#key activeKey}
+            <div class="service-summary">
+              {@render serviceLabel(activePart)}
+            </div>
+          {/key}
+        {/if}
+      </div>
+      {#if right}
+        <div class="shrink-0">{@render right()}</div>
+      {/if}
     </div>
   {/if}
 </div>
@@ -172,7 +181,7 @@
   }
 
   .ball-pit {
-    @apply mt-1 flex h-7 min-w-0 items-center;
+    @apply mt-1 flex h-7 min-w-0 items-center gap-3;
   }
 
   .service-summary {

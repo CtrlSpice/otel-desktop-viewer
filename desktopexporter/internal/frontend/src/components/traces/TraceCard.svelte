@@ -51,7 +51,14 @@
 </script>
 
 {#snippet serviceBreakdown()}
-  <SummaryBreakdown parts={services} rootService={serviceLabel} />
+  <SummaryBreakdown parts={services} rootService={serviceLabel}>
+    {#snippet right()}
+      <span class="font-mono text-xs text-base-content" title={trace.traceID}>
+        <span class="sr-only">Trace ID: </span>
+        <Identifier value={trace.traceID} />
+      </span>
+    {/snippet}
+  </SummaryBreakdown>
 {/snippet}
 
 <SignalCard
@@ -59,7 +66,7 @@
   {selected}
   title={titleLabel}
   subtitle={serviceLabel}
-  interactiveSubtitle={services.length ? serviceBreakdown : undefined}
+  interactiveSubtitle={serviceBreakdown}
   {titleMuted}
   {onclick}
 >
@@ -91,14 +98,5 @@
         </span>
       {/if}
     </div>
-  {/snippet}
-
-  {#snippet meta()}
-    <span class="flex w-full min-w-0 items-center gap-1 pt-1 text-xs">
-      <span class="shrink-0 font-mono">trace_id:</span>
-      <span class="truncate font-mono text-base-content" title={trace.traceID}>
-        <Identifier value={trace.traceID} />
-      </span>
-    </span>
   {/snippet}
 </SignalCard>
