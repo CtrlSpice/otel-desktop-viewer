@@ -264,13 +264,4 @@
     background-color: var(--tree-accent);
     pointer-events: none;
   }
-
-  :global(html[data-theme='rose-pine-dawn']) .gutter__btn--leaf {
-    background-color: color-mix(
-      in oklab,
-      var(--tree-accent) 8%,
-      var(--color-base-200)
-    );
-    border: 1px solid var(--tree-accent);
-  }
 </style>
