@@ -9,7 +9,7 @@
    *                   "Timeseries", "Log Record").
    *   • tabs        — flat tab strip with an underlined active item. Use
    *                   when the pane has 2+ views or route destinations.
-   *   • title-tabs  — title and badges above compact joined chart controls.
+   *   • title-tabs  — title and badges above a compact segmented view switch.
    *                   Use when the pane has a stable label AND tabs that
    *                   switch a sub-view inside the same pane.
    *   • toolbar     — chrome strip with no title or tabs. Use the
@@ -236,29 +236,34 @@
   layout: PaneTabLayout,
   navigation = false,
   tabPanelID?: string,
-  joined = false
+  segmented = false
 )}
   <div
-    class={joined
-      ? 'join pane-header__joined-controls'
+    class={segmented
+      ? 'pane-header__view-controls'
       : `pane-header__tab-scroll pane-header__tab-scroll--${layout}`}
   >
-    {#if joined && props.metaRight}{@render props.metaRight()}{/if}
     <div
       role={navigation ? 'navigation' : 'tablist'}
       aria-label={ariaLabel}
-      class={joined
-        ? 'join pane-header__joined-tabs'
+      class={segmented
+        ? 'pane-header__segments'
         : `tabs tabs-border ${tabSizeClass} pane-header__tabs pane-header__tabs--${layout}`}
+      class:pane-header__segments--selected={segmented &&
+        tabs.some(tab => tab.id === activeID)}
+      style:--pane-tab-count={segmented ? tabs.length : undefined}
+      style:--pane-active-index={segmented
+        ? tabs.findIndex(tab => tab.id === activeID)
+        : undefined}
       onkeydown={navigation ? undefined : handleTablistKeydown}
     >
-      {#if !joined && layout === 'right'}
+      {#if !segmented && layout === 'right'}
         <span class="pane-header__tab-lead" aria-hidden="true"></span>
       {/if}
       {#each tabs as tab (tab.id)}
         {@const active = tab.id === activeID}
-        {@const tabClass = joined
-          ? `btn btn-xs join-item chart-header-control ${active ? 'chart-header-control--active' : ''}`
+        {@const tabClass = segmented
+          ? `btn btn-xs pane-header__segment ${active ? 'pane-header__segment--active' : ''}`
           : `tab pane-header__tab gap-2 whitespace-nowrap px-3 ${active ? 'tab-active' : ''}`}
         {#if navigation && tab.href}
           <a
@@ -271,10 +276,7 @@
             onclick={event => !tab.disabled && onSelect(tab.id, event)}
           >
             {#if tab.icon}
-              <span
-                class="pane-header__tab-icon shrink-0"
-                class:chart-header-control__icon={joined}
-              >
+              <span class="pane-header__tab-icon shrink-0">
                 {@render tab.icon()}
               </span>
             {/if}
@@ -299,10 +301,7 @@
             onclick={event => !tab.disabled && onSelect(tab.id, event)}
           >
             {#if tab.icon}
-              <span
-                class="pane-header__tab-icon shrink-0"
-                class:chart-header-control__icon={joined}
-              >
+              <span class="pane-header__tab-icon shrink-0">
                 {@render tab.icon()}
               </span>
             {/if}
@@ -315,10 +314,11 @@
           </button>
         {/if}
       {/each}
-      {#if !joined && layout === 'left'}
+      {#if !segmented && layout === 'left'}
         <span class="pane-header__tab-trail" aria-hidden="true"></span>
       {/if}
     </div>
+    {#if segmented && props.metaRight}{@render props.metaRight()}{/if}
   </div>
 {/snippet}
 
@@ -555,6 +555,47 @@
 
   .pane-header__joined-controls {
     @apply ml-auto shrink-0;
+  }
+
+  .pane-header__view-controls {
+    @apply ml-auto flex max-w-full flex-wrap items-center justify-end gap-2 rounded-xl bg-base-300 p-0.5;
+  }
+
+  .pane-header__segments {
+    @apply relative isolate inline-grid shrink-0 rounded-[10px] p-0.5;
+    grid-template-columns: repeat(var(--pane-tab-count), minmax(0, 1fr));
+  }
+
+  .pane-header__segments--selected::before {
+    content: '';
+    position: absolute;
+    inset: 0.125rem auto 0.125rem 0.125rem;
+    width: calc((100% - 0.25rem) / var(--pane-tab-count));
+    border-radius: 0.5rem;
+    background: color-mix(
+      in oklab,
+      var(--color-primary) 16%,
+      var(--color-base-100)
+    );
+    transform: translateX(calc(var(--pane-active-index) * 100%));
+    transition: transform var(--motion-compact-duration)
+      var(--motion-settle-easing);
+    pointer-events: none;
+  }
+
+  .pane-header__segment {
+    @apply relative z-[1] h-7 min-h-7 gap-2 whitespace-nowrap rounded-lg border-0 bg-transparent px-3 text-sm font-normal text-base-content shadow-none;
+    --btn-noise: none;
+  }
+
+  .pane-header__segment--active .pane-header__tab-icon {
+    color: var(--color-primary);
+  }
+
+  @media (hover: hover) {
+    .pane-header__segment:not(.pane-header__segment--active):hover {
+      background: var(--color-highlight-low);
+    }
   }
 
   /* Right layout: lead spacer pushes tabs to the end. */

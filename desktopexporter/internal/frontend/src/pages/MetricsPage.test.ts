@@ -390,7 +390,7 @@ describe('MetricsPage chart control keyboard navigation', () => {
       name: 'Show rate across all series',
     })
     const overlays = screen.getByRole('checkbox', {
-      name: 'Show chart stat overlays',
+      name: 'Show Statistics',
     })
 
     rate.focus()

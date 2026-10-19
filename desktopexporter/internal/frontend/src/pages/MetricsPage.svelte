@@ -800,7 +800,7 @@
         {/snippet}
 
         {#snippet overlayControl()}
-          <ChartStatOverlaysToggle joined={showChartTitleTabs} />
+          <ChartStatOverlaysToggle />
         {/snippet}
 
         {#snippet heatmapIcon()}

@@ -269,6 +269,9 @@
   let drawerBodyEl = $state<HTMLDivElement | null>(null)
   let listScrolled = $state(false)
   let scrollTopFocused = $state(false)
+  const scrollTopVisible = $derived(
+    drawerShown && (listScrolled || scrollTopFocused)
+  )
 
   function handleListScroll(event: Event) {
     const viewport = event.target
@@ -621,32 +624,31 @@
               {#if !emptyDrawer}
                 <div class="signal-drawer__footer">
                   <div class="min-w-0 flex-1">{@render footer?.()}</div>
-                  {#if !showEmptyState}
-                    <button
-                      type="button"
-                      class="pointy-uppy btn btn-circle btn-primary"
-                      class:pointy-uppy--visible={listScrolled ||
-                        scrollTopFocused}
-                      inert={!listScrolled && !scrollTopFocused}
-                      aria-hidden={!listScrolled && !scrollTopFocused}
-                      aria-label="Scroll to top"
-                      title="Scroll to top"
-                      onclick={scrollToTop}
-                      onfocus={() => (scrollTopFocused = true)}
-                      onblur={() => (scrollTopFocused = false)}
-                    >
-                      <HugeiconsIcon
-                        icon={ArrowUp02Icon}
-                        size={20}
-                        strokeWidth={1.75}
-                        aria-hidden="true"
-                      />
-                    </button>
-                  {/if}
                 </div>
               {/if}
             </PanelClip>
           </div>
+          {#if !emptyDrawer && !showEmptyState}
+            <button
+              type="button"
+              class="pointy-uppy btn btn-circle btn-primary"
+              class:pointy-uppy--visible={scrollTopVisible}
+              inert={!scrollTopVisible}
+              aria-hidden={!scrollTopVisible}
+              aria-label="Scroll to top"
+              title="Scroll to top"
+              onclick={scrollToTop}
+              onfocus={() => (scrollTopFocused = true)}
+              onblur={() => (scrollTopFocused = false)}
+            >
+              <HugeiconsIcon
+                icon={ArrowUp02Icon}
+                size={20}
+                strokeWidth={1.75}
+                aria-hidden="true"
+              />
+            </button>
+          {/if}
         </div>
       </div>
     {/if}
@@ -718,8 +720,10 @@
   }
 
   .pointy-uppy {
-    /* Keep a 24px flow footprint so its bottom stays aligned with the row. */
-    @apply relative z-10 -mt-[0.9rem] size-[2.4rem] shrink-0 p-0;
+    /* Centre on the list/footer corner, outside the clipped list content. */
+    @apply absolute right-0 z-40 size-[2.4rem] p-0;
+    bottom: var(--app-footer-height);
+    translate: 50% 50%;
   }
 
   .signal-drawer__item {

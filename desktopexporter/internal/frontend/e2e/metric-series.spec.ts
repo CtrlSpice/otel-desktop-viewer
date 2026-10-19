@@ -844,7 +844,7 @@ for (const [theme, hoverColour, selectedColour, focusColour] of [
             page.locator('.heatmap-quantile-channel').nth(1)
           ).toHaveCSS('stroke-width', '4px')
         const overlaysToggle = page.getByRole('checkbox', {
-          name: 'Show chart stat overlays',
+          name: 'Show Percentiles',
           exact: true,
         })
         await overlaysToggle.uncheck()
@@ -872,20 +872,20 @@ for (const [theme, hoverColour, selectedColour, focusColour] of [
           .click()
         await page
           .getByRole('checkbox', {
-            name: 'Show chart stat overlays',
+            name: 'Show Percentiles',
             exact: true,
           })
           .uncheck()
         await page.setViewportSize({ width: 390, height: 1000 })
         await expect(
           page.getByRole('checkbox', {
-            name: 'Show chart stat overlays',
+            name: 'Show Percentiles',
             exact: true,
           })
         ).not.toBeChecked()
         await expect(
           page.locator('.pane-header').getByRole('checkbox', {
-            name: 'Show chart stat overlays',
+            name: 'Show Percentiles',
             exact: true,
           })
         ).toBeVisible()
@@ -1320,12 +1320,12 @@ test('series open by their headers, one at a time, with one combined table', asy
   await expect(mainHeader).toHaveCSS('border-radius', '12px')
   const range = mainHeader.locator('[aria-label="Chart time range"]')
   await expect(
-    mainHeader.getByRole('checkbox', { name: 'Show chart stat overlays' })
+    mainHeader.getByRole('checkbox', { name: 'Show Statistics' })
   ).toBeVisible()
   await expect(
     page
       .locator('.metric-chart-view')
-      .getByRole('checkbox', { name: 'Show chart stat overlays' })
+      .getByRole('checkbox', { name: 'Show Statistics' })
   ).toHaveCount(0)
   await expect(range).toHaveCount(1)
   await expect(range).toContainText('Start')

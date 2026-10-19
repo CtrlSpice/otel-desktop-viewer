@@ -6,13 +6,14 @@
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
 
   const ctx = getMetricViewContext()
-  let { joined = false }: { joined?: boolean } = $props()
+  const overlayLabel = $derived(
+    ctx.isHistogramKind ? 'Percentiles' : 'Statistics'
+  )
 </script>
 
 {#if ctx.showChartStatOverlaysToggleVisible}
   <label
     class="btn btn-xs chart-header-control chart-stat-overlays-toggle chart-control-toggle tooltip tooltip-top"
-    class:join-item={joined}
     data-tip={ctx.isHistogramKind
       ? 'p50, p95 and p99 of the combined checked series'
       : ctx.rateSlopeOverlayAvailable
@@ -23,10 +24,10 @@
       type="checkbox"
       class="checkbox checkbox-xs chart-stat-overlays-toggle__checkbox"
       checked={ctx.showSelectionStatOverlays}
-      aria-label="Show chart stat overlays"
+      aria-label="Show {overlayLabel}"
       onchange={e => ctx.setShowSelectionStatOverlays(e.currentTarget.checked)}
     />
-    <span class="chart-stat-overlays-toggle__label">Overlays</span>
+    <span class="chart-stat-overlays-toggle__label">{overlayLabel}</span>
   </label>
 {/if}
 
