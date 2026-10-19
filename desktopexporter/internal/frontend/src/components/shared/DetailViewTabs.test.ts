@@ -5,6 +5,34 @@ import userEvent from '@testing-library/user-event'
 import DetailViewTabs from './DetailViewTabs.svelte'
 
 describe('DetailViewTabs', () => {
+  it('supports wrapping arrow navigation and Home/End with one tab stop', async () => {
+    const user = userEvent.setup()
+    render(DetailViewTabs, { id: 'keyboard-view' })
+    const fields = screen.getByRole('tab', { name: 'Properties' })
+    const raw = screen.getByRole('tab', { name: 'Raw JSON' })
+    await user.tab()
+    expect(fields).toHaveFocus()
+    expect(fields).toHaveAttribute('tabindex', '0')
+    expect(raw).toHaveAttribute('tabindex', '-1')
+    for (const [key, selected, other] of [
+      ['{ArrowRight}', raw, fields],
+      ['{ArrowRight}', fields, raw],
+      ['{ArrowLeft}', raw, fields],
+      ['{Home}', fields, raw],
+      ['{End}', raw, fields],
+    ] as const) {
+      await user.keyboard(key)
+      expect(selected).toHaveFocus()
+      expect(selected).toHaveAttribute('aria-selected', 'true')
+      expect(selected).toHaveAttribute('tabindex', '0')
+      expect(other).toHaveAttribute('aria-selected', 'false')
+      expect(other).toHaveAttribute('tabindex', '-1')
+    }
+    await user.tab()
+    expect(raw).not.toHaveFocus()
+    expect(fields).not.toHaveFocus()
+  })
+
   it('uses the Metrics-style joined icon and text controls without Overlays', async () => {
     render(DetailViewTabs, { id: 'log-view' })
     const fields = screen.getByRole('tab', { name: 'Properties' })
