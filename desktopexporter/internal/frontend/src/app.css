@@ -1529,9 +1529,12 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
   @apply badge-warning;
 }
 
-/* Dawn keeps soft coloured pills with high-contrast theme text. */
-html[data-theme='rose-pine-dawn'] :is(.badge-soft, .badge-count, .badge-origin) {
-  color: var(--color-base-content);
+/* Dawn keeps soft pills with more saturated, colour-matched labels. */
+html[data-theme='rose-pine-dawn']
+  :is(.badge-soft, .badge-count, .badge-origin):not(.badge-papaya) {
+  color: oklch(
+    from var(--badge-color, var(--color-base-content)) l calc(c * 1.6) h
+  );
 }
 
 /* Badges — pills, including the classes that apply DaisyUI badge styles. */
