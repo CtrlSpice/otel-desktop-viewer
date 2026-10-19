@@ -28,50 +28,51 @@
 
 {#if colouredParts.length > 1}
   <div
-    class="mt-2 flex h-2 w-full overflow-hidden rounded-full"
+    class="mt-2 mb-1 flex h-2 w-full rounded-full"
     role="img"
     aria-label={`Service breakdown by span count: ${colouredParts.map(part => `${part.label}: ${part.count} spans`).join('; ')}`}
   >
     {#each colouredParts as part (part.key)}
       <span
+        class="service-segment tooltip tooltip-bottom min-w-0 first:rounded-l-full last:rounded-r-full"
         style:flex={part.count}
         style:background-color={part.color}
-        title={`${part.label}: ${part.count} spans`}
-      ></span>
-    {/each}
-  </div>
-  <ul class="service-grid" aria-label="Spans by service">
-    {#each colouredParts as part (part.key)}
-      <li
-        class="service-grid__item"
-        title={`${part.label}: ${part.count} spans${part.key === rootKey ? ' · root service' : ''}`}
       >
         <span
-          class="size-1.5 shrink-0 rounded-full"
-          style:background-color={part.color}
-          aria-hidden="true"
-        ></span>
-        <span class="min-w-0 truncate">{part.label}</span>
-        <span class="ml-auto shrink-0 tabular-nums"
-          >{part.count.toLocaleString()}<span class="sr-only">
-            spans</span
-          ></span
+          class="tooltip-content flex items-center gap-1.5 bg-base-200 text-sm font-normal text-base-content"
         >
-      </li>
+          <span
+            class="size-1.5 shrink-0 rounded-full"
+            style:background-color={part.color}
+            aria-hidden="true"
+          ></span>
+          <span>{part.label}</span>
+          <span class="badge-count">{part.count.toLocaleString()} spans</span>
+        </span>
+      </span>
     {/each}
-  </ul>
+  </div>
 {/if}
 
 <style lang="postcss">
   @reference "../../app.css";
 
-  .service-grid {
-    @apply m-0 grid min-w-0 list-none gap-x-3 gap-y-1 pt-1 pb-0.5 text-sm font-normal leading-tight;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
-    color: var(--color-subtle);
+  .service-segment {
+    --tt-bg: var(--color-base-200);
   }
 
-  .service-grid__item {
-    @apply flex min-w-0 items-center gap-1.5;
+  .service-segment:hover {
+    z-index: 10;
+  }
+
+  .service-segment:first-child .tooltip-content {
+    left: 0;
+    transform: translateY(var(--tt-pos, 0.25rem));
+  }
+
+  .service-segment:last-child .tooltip-content {
+    left: auto;
+    right: 0;
+    transform: translateY(var(--tt-pos, 0.25rem));
   }
 </style>
