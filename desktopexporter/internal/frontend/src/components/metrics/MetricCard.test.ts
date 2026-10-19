@@ -55,7 +55,8 @@ describe('MetricCard', () => {
     const expectedValue = new Intl.NumberFormat(undefined, {
       maximumFractionDigits: 6,
     }).format(42.5)
-    expect(screen.getByText(`${expectedValue} ms`)).toBeInTheDocument()
+    expect(screen.getByText(expectedValue)).toBeInTheDocument()
+    expect(screen.getByText('ms')).toBeInTheDocument()
   })
 
   it('renders the unit alone when there is no last value', () => {
@@ -119,7 +120,8 @@ describe('MetricCard series counts', () => {
       screen.getByText(
         (_, el) =>
           el?.classList.contains('badge-count') === true &&
-          el.textContent?.replace(/\s+/g, ' ').trim() === '3 of 21 series'
+          el.textContent?.replace(/\s+/g, ' ').trim() ===
+            '3 of 21 series | 120 pts'
       )
     ).toBeInTheDocument()
   })
@@ -134,7 +136,7 @@ describe('MetricCard series counts', () => {
       screen.getByText(
         (_, el) =>
           el?.classList.contains('badge-count') === true &&
-          el.textContent?.replace(/\s+/g, ' ').trim() === '21 series'
+          el.textContent?.replace(/\s+/g, ' ').trim() === '21 series | 120 pts'
       )
     ).toBeInTheDocument()
     expect(screen.queryByText(/of 21 series/)).not.toBeInTheDocument()

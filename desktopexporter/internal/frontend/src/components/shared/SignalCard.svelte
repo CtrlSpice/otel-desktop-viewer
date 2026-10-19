@@ -75,27 +75,30 @@
   aria-expanded={expanded}
   aria-controls={controls}
 >
-  <div class="signal-row__header">
-    <span class="signal-row__title-cluster" {title}>
-      <span
-        class="signal-row__title"
-        class:signal-row__title--muted={titleMuted}
-        >{#if titleContent}{@render titleContent()}{:else}{title}{/if}</span
-      >
-      {#if badge && badgePlacement === 'inline'}
-        <span class="flex shrink-0 items-center gap-1">{@render badge()}</span>
-      {/if}
-    </span>
-    {#if badge && badgePlacement === 'end'}
-      <span class="signal-row__badge">
-        {@render badge()}
+  <div class="signal-row__identity">
+    <div class="signal-row__header">
+      <span class="signal-row__title-cluster" {title}>
+        <span
+          class="signal-row__title"
+          class:signal-row__title--muted={titleMuted}
+          >{#if titleContent}{@render titleContent()}{:else}{title}{/if}</span
+        >
+        {#if badge && badgePlacement === 'inline'}
+          <span class="flex shrink-0 items-center gap-1">{@render badge()}</span
+          >
+        {/if}
       </span>
+      {#if badge && badgePlacement === 'end'}
+        <span class="signal-row__badge">
+          {@render badge()}
+        </span>
+      {/if}
+    </div>
+
+    {#if subtitle}
+      <div class="signal-row__subtitle" title={subtitle}>{subtitle}</div>
     {/if}
   </div>
-
-  {#if subtitle}
-    <div class="signal-row__subtitle" title={subtitle}>{subtitle}</div>
-  {/if}
 
   {#if description}
     <div class="signal-row__lead">
@@ -204,7 +207,7 @@
   }
 
   .signal-row__lead {
-    @apply flex min-h-[var(--signal-card-row-h)] min-w-0 items-center;
+    @apply my-1.5 flex min-h-[var(--signal-card-row-h)] min-w-0 items-center;
   }
 
   .signal-row__description {
@@ -214,6 +217,10 @@
 
   .signal-row__header {
     @apply relative flex h-[var(--signal-card-row-h)] min-w-0 items-center gap-1;
+  }
+
+  .signal-row__identity {
+    @apply min-w-0;
   }
 
   .signal-row__title-cluster {

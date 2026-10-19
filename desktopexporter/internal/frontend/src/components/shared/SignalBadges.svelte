@@ -17,6 +17,7 @@
      *  callers there omit it. */
     seriesCount?: number
     seriesCardinality?: number
+    dataPointCount?: number
   }
 
   type TraceProps = {
@@ -53,28 +54,29 @@
   </span>
   {#if props.seriesCount !== undefined}
     {@const total = props.seriesCardinality}
-    {#if total !== undefined && total > props.seriesCount}
-      <!-- Both, because they answer different questions and the difference is
-           the interesting part: series go quiet, and a count that silently
-           drops looks like data loss rather than a narrower window. Shown as
-           one badge rather than two so the relationship is legible at a
-           glance. -->
+    {@const partial = total !== undefined && total > props.seriesCount}
+    {@const seriesTitle = partial
+      ? `${props.seriesCount} of ${total} series reported in this range; the stream has ${total} in all`
+      : `${props.seriesCount} time series in range`}
+    <span
+      class="badge-count"
+      title={seriesTitle +
+        (props.dataPointCount !== undefined
+          ? `; ${props.dataPointCount} datapoints in range`
+          : '')}
+    >
       <span
-        class="badge-count"
-        title="{props.seriesCount} of {total} series reported in this range; the stream has {total} in all"
+        >{partial
+          ? `${props.seriesCount} of ${total} series`
+          : `${props.seriesCount} series`}</span
       >
-        {props.seriesCount} of {total} series
-      </span>
-    {:else}
-      <!-- Equal, which is the unbounded-window case: one number, because
-           "12 of 12" is noise. -->
-      <span
-        class="badge-count"
-        title="{props.seriesCount} time series in range"
-      >
-        {props.seriesCount} series
-      </span>
-    {/if}
+      {#if props.dataPointCount !== undefined}
+        <span class="opacity-40" aria-hidden="true">|</span>
+        <span aria-label={`${props.dataPointCount} datapoints`}
+          >{props.dataPointCount.toLocaleString()} pts</span
+        >
+      {/if}
+    </span>
   {/if}
 {:else if props.signal === 'trace'}
   <span

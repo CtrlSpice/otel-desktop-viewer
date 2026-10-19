@@ -30,12 +30,9 @@
     }).format(value)
   }
 
-  let lastValueLabel = $derived.by(() => {
-    if (metric.lastValue == null) return null
-    const value = formatLastValue(metric.lastValue)
-    const unit = metric.unit?.trim()
-    return unit ? `${value} ${unit}` : value
-  })
+  let lastValueLabel = $derived(
+    metric.lastValue == null ? null : formatLastValue(metric.lastValue)
+  )
 </script>
 
 <SignalCard
@@ -54,6 +51,7 @@
       isMonotonic={metric.isMonotonic}
       seriesCount={metric.seriesCount}
       seriesCardinality={metric.seriesCardinality}
+      dataPointCount={metric.dataPointCount}
     />
   {/snippet}
 
@@ -69,29 +67,28 @@
             >{lastSeenParts.unit}</span
           >{/if}
       </span>
-      <div
-        class="flex min-w-0 items-center justify-between gap-3 text-xs tabular-nums"
-      >
-        {#if lastValueLabel || metric.unit}
-          <span class="flex min-w-0 items-center gap-1">
-            <span class="shrink-0"
-              >{lastValueLabel ? 'Last value:' : 'Units:'}</span
-            >
-            <span
-              class="truncate text-base-content"
-              title={lastValueLabel ?? metric.unit}
-            >
-              {lastValueLabel ?? metric.unit}
+      {#if lastValueLabel || metric.unit}
+        <div
+          class="flex min-w-0 items-center justify-between gap-3 text-xs tabular-nums"
+        >
+          {#if lastValueLabel}
+            <span class="flex min-w-0 items-center gap-1">
+              <span class="shrink-0">Last value:</span>
+              <span class="truncate text-base-content" title={lastValueLabel}>
+                {lastValueLabel}
+              </span>
             </span>
-          </span>
-        {/if}
-        <span class="ml-auto flex shrink-0 items-center gap-1">
-          <span>Datapoints:</span>
-          <span class="text-base-content"
-            >{metric.dataPointCount.toLocaleString()}</span
-          >
-        </span>
-      </div>
+          {/if}
+          {#if metric.unit}
+            <span class="ml-auto flex min-w-0 items-center gap-1">
+              <span class="shrink-0">Units:</span>
+              <span class="truncate text-base-content" title={metric.unit}
+                >{metric.unit}</span
+              >
+            </span>
+          {/if}
+        </div>
+      {/if}
     </div>
   {/snippet}
 </SignalCard>
