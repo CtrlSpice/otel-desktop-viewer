@@ -117,17 +117,22 @@
   let activeResize = $state<string | null>(null)
   let drag: DragHandle | null = null
 
+  function isStoredWidths(value: unknown): value is object {
+    return value !== null && typeof value === 'object' && !Array.isArray(value)
+  }
+
+  function isPositiveWidth(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value) && value > 0
+  }
+
   function loadWidths(): ColumnWidths {
     try {
       const value: unknown = JSON.parse(
         localStorage.getItem('logs-column-widths') ?? 'null'
       )
-      if (value && typeof value === 'object' && !Array.isArray(value))
+      if (isStoredWidths(value))
         return Object.fromEntries(
-          Object.entries(value).filter(
-            ([, size]) =>
-              typeof size === 'number' && Number.isFinite(size) && size > 0
-          )
+          Object.entries(value).filter(([, size]) => isPositiveWidth(size))
         )
     } catch {
       /* Retain default sizes. */

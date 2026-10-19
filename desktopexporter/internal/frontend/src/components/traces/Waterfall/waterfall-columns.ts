@@ -48,12 +48,15 @@ type ColumnCell = {
   numeric: boolean
 }
 
-function scalarCell(value: string | number | bigint | null): ColumnCell {
+function scalarCell(
+  value: string | number | bigint | null,
+  numeric = false
+): ColumnCell {
   return {
     text: value === null ? '—' : value === '' ? '""' : String(value),
     title: value === null ? 'Not present on this span' : String(value),
     missing: value === null,
-    numeric: typeof value === 'number' || typeof value === 'bigint',
+    numeric,
   }
 }
 
@@ -69,8 +72,8 @@ const FIELD_CELLS: Record<
 > = {
   span: {
     kind: span => enumCell(span.kindCode, span.kind),
-    startTimeUnixNano: span => scalarCell(span.startTime),
-    endTimeUnixNano: span => scalarCell(span.endTime),
+    startTimeUnixNano: span => scalarCell(span.startTime, true),
+    endTimeUnixNano: span => scalarCell(span.endTime, true),
     duration: span => ({
       text: formatDuration(span.endTime - span.startTime),
       title: `endTimeUnixNano − startTimeUnixNano: ${span.endTime - span.startTime} ns`,
@@ -83,20 +86,21 @@ const FIELD_CELLS: Record<
     traceState: span => scalarCell(span.traceState),
     spanId: span => scalarCell(span.spanID),
     parentSpanId: span => scalarCell(span.parentSpanID),
-    flags: span => scalarCell(span.flags),
-    droppedAttributesCount: span => scalarCell(span.droppedAttributesCount),
-    droppedEventsCount: span => scalarCell(span.droppedEventsCount),
-    droppedLinksCount: span => scalarCell(span.droppedLinksCount),
+    flags: span => scalarCell(span.flags, true),
+    droppedAttributesCount: span =>
+      scalarCell(span.droppedAttributesCount, true),
+    droppedEventsCount: span => scalarCell(span.droppedEventsCount, true),
+    droppedLinksCount: span => scalarCell(span.droppedLinksCount, true),
   },
   resource: {
     droppedAttributesCount: span =>
-      scalarCell(span.resource.droppedAttributesCount),
+      scalarCell(span.resource.droppedAttributesCount, true),
   },
   scope: {
     name: span => scalarCell(span.scope.name),
     version: span => scalarCell(span.scope.version),
     droppedAttributesCount: span =>
-      scalarCell(span.scope.droppedAttributesCount),
+      scalarCell(span.scope.droppedAttributesCount, true),
   },
 }
 

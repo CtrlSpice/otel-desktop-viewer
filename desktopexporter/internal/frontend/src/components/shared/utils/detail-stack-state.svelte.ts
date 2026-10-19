@@ -16,15 +16,20 @@ type Section = {
   setExpanded: (open: boolean) => void
 }
 
+function isStoredWeights(value: unknown): value is object {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isPositiveWeight(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+}
+
 function loadWeights(key: string): Record<string, number> {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(key) ?? 'null')
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+    if (!isStoredWeights(value)) return {}
     return Object.fromEntries(
-      Object.entries(value).filter(
-        ([, weight]) =>
-          typeof weight === 'number' && Number.isFinite(weight) && weight > 0
-      )
+      Object.entries(value).filter(([, weight]) => isPositiveWeight(weight))
     )
   } catch {
     return {}

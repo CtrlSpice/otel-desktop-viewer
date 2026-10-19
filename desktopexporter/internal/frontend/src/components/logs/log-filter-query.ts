@@ -35,6 +35,13 @@ function mentions(node: QueryNode | null, kind: LogFilter): boolean {
     : isField(node, kind)
 }
 
+function isServiceList(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.every((item): item is string => typeof item === 'string')
+  )
+}
+
 function facet(node: QueryNode | null): Facet | null {
   if (!node) return null
   if (node.type === 'condition') {
@@ -43,11 +50,7 @@ function facet(node: QueryNode | null): Facet | null {
         return { kind: 'service', values: [node.query.value] }
       if (node.query.operator.symbol === 'IN') {
         const values: unknown = JSON.parse(node.query.value)
-        if (
-          Array.isArray(values) &&
-          values.every(value => typeof value === 'string')
-        )
-          return { kind: 'service', values }
+        if (isServiceList(values)) return { kind: 'service', values }
       }
     }
     if (
