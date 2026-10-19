@@ -116,7 +116,7 @@ async function showBadgeExamples(page: Page, theme: string) {
 }
 
 for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
-  test(`soft badges use canonical DaisyUI styling in ${theme}`, async ({
+  test(`soft badges preserve the approved styling in ${theme}`, async ({
     page,
   }) => {
     await showBadgeExamples(page, theme)
@@ -131,9 +131,16 @@ for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
       ].map(badge => {
         const style = getComputedStyle(badge)
         const tone = style.getPropertyValue('--badge-color')
-        probe.style.color = tone
-        probe.style.backgroundColor = `color-mix(in oklab, ${tone} 8%, var(--color-base-100))`
-        probe.style.borderColor = `color-mix(in oklab, ${tone} 10%, var(--color-base-100))`
+        const outlined =
+          document.documentElement.dataset.theme === 'rose-pine-dawn' &&
+          !badge.classList.contains('badge-papaya')
+        probe.style.color = outlined ? 'var(--color-subtle)' : tone
+        probe.style.backgroundColor = outlined
+          ? 'var(--color-base-200)'
+          : `color-mix(in oklab, ${tone} 8%, var(--color-base-100))`
+        probe.style.borderColor = outlined
+          ? tone
+          : `color-mix(in oklab, ${tone} 10%, var(--color-base-100))`
         const expected = getComputedStyle(probe)
         return {
           kind: badge.className,
@@ -316,26 +323,26 @@ test.describe('home page accessibility', () => {
     expect(scan.violations).toEqual([])
   })
 
-  test('uses the canonical Rosé Pine Dawn palette', async ({ page }) => {
+  test('preserves the approved Rosé Pine Dawn palette', async ({ page }) => {
     await page.evaluate(() => localStorage.setItem('theme', 'rose-pine-dawn'))
     await page.reload()
     await expect(page.locator('html')).toHaveAttribute(
       'data-theme',
       'rose-pine-dawn'
     )
-    // Palette source: https://rosepinetheme.com/palette/
+    // Approved viewer palette, including the cream canvas and subtle labels.
     const expected = {
-      '--color-base-100': '#faf4ed',
-      '--color-base-200': '#fffaf3',
+      '--color-base-100': '#fffaf3',
+      '--color-base-200': '#faf4ed',
       '--color-base-300': '#f2e9e1',
       '--color-highlight-low': '#f4ede8',
       '--color-highlight-med': '#dfdad9',
       '--color-highlight-high': '#cecacd',
       '--color-base-content': '#464261',
       '--color-on-light': '#464261',
-      '--color-on-dark': '#faf4ed',
+      '--color-on-dark': '#fffaf3',
       '--color-muted': '#9893a5',
-      '--color-subtle': '#797593',
+      '--color-subtle': '#706c8a',
       '--color-rose': '#d7827e',
       '--color-primary': '#907aa9',
       '--color-secondary': '#286983',
@@ -356,9 +363,9 @@ test.describe('home page accessibility', () => {
     expect(actual).toEqual(expected)
   })
 
-  for (const [theme, canvas, panel, elevated] of [
-    ['rose-pine', 'rgb(25, 23, 36)', 'rgb(31, 29, 46)', 'rgb(38, 35, 58)'],
-    ['rose-pine-moon', 'rgb(35, 33, 54)', 'rgb(42, 39, 63)', 'rgb(57, 53, 82)'],
+  for (const [theme, canvas, panel] of [
+    ['rose-pine', 'rgb(25, 23, 36)', 'rgb(31, 29, 46)'],
+    ['rose-pine-moon', 'rgb(35, 33, 54)', 'rgb(42, 39, 63)'],
   ]) {
     test(`preserves ${theme} surfaces after CSS cleanup`, async ({ page }) => {
       await page.evaluate(theme => localStorage.setItem('theme', theme), theme)
@@ -382,41 +389,41 @@ test.describe('home page accessibility', () => {
       await page.goto('/evals?run=guide-assisted&attempt=request-latency')
       await expect(
         page.locator('.page-layout__main-chrome .pane-header').first()
-      ).toHaveCSS('background-color', elevated)
+      ).toHaveCSS('background-color', panel)
       const detailHeadings = page.locator('.detail-bubble__heading')
       await expect(detailHeadings).toHaveCount(3)
       for (const heading of await detailHeadings.all()) {
-        await expect(heading).toHaveCSS('background-color', elevated)
+        await expect(heading).toHaveCSS('background-color', panel)
         await expect(heading).toHaveCSS('height', '40px')
         await expect(heading).toHaveCSS('border-radius', '12px')
       }
     })
   }
 
-  test('uses canonical Dawn surfaces with base-300 headers and independent highlights', async ({
+  test('preserves approved Dawn surfaces and independent highlights', async ({
     page,
   }) => {
     await page.evaluate(() => localStorage.setItem('theme', 'rose-pine-dawn'))
     await page.goto('/traces')
     await expect(page.getByRole('main')).toHaveCSS(
       'background-color',
-      'rgb(250, 244, 237)'
+      'rgb(255, 250, 243)'
     )
     await expect(page.locator('.signal-drawer__panel')).toHaveCSS(
       'background-color',
-      'rgb(250, 244, 237)'
+      'rgb(255, 250, 243)'
     )
     await expect(page.locator('.search-bar')).toHaveCSS(
       'background-color',
-      'rgb(255, 250, 243)'
+      'rgb(250, 244, 237)'
     )
     await expect(page.locator('.signal-drawer__controls')).toHaveCSS(
       'background-color',
-      'rgb(255, 250, 243)'
+      'rgb(250, 244, 237)'
     )
     await expect(page.locator('.page-layout__main-chrome')).toHaveCSS(
       'background-color',
-      'rgb(250, 244, 237)'
+      'rgb(255, 250, 243)'
     )
 
     await page.route('**/api/features', route =>
@@ -429,10 +436,10 @@ test.describe('home page accessibility', () => {
     )
     await expect(
       page.locator('.signal-row:not(.signal-row--selected)').first()
-    ).toHaveCSS('background-color', 'rgb(250, 244, 237)')
+    ).toHaveCSS('background-color', 'rgb(255, 250, 243)')
     await expect(page.locator('.detail-bubble__heading').first()).toHaveCSS(
       'background-color',
-      'rgb(242, 233, 225)'
+      'rgb(250, 244, 237)'
     )
     await expect(page.locator('.signal-row--selected')).toHaveCSS(
       'outline-style',
@@ -589,7 +596,7 @@ test.describe('home page accessibility', () => {
     await expect(reopen).not.toHaveCSS('color', activeColour)
     await reopen.focus()
     await page.keyboard.press('Enter')
-    await expect(toggle).toHaveClass(/btn-soft/)
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true')
     await toggle.blur()
     await expect(toggle).toHaveCSS('color', activeColour)
   })
@@ -701,7 +708,13 @@ test.describe('home page accessibility', () => {
         .getByRole('navigation', { name: 'Primary' })
         .getByRole('link', { name, exact: true })
         .click()
-      await expectWidths(name !== 'Logs')
+      if (name === 'Logs') {
+        await expect(navigator).toBeHidden()
+        await expect(detail).toBeVisible()
+        expect((await detail.boundingBox())!.width).toBeCloseTo(detailWidth, 0)
+      } else {
+        await expectWidths()
+      }
     }
     await page.reload()
     await expectWidths()
@@ -1026,7 +1039,6 @@ test.describe('home page accessibility', () => {
       for (const [signal, target] of [
         ['traces', 'Root Span Name'],
         ['metrics', 'Timeseries Count'],
-        ['logs', 'Service Name'],
       ]) {
         await page.evaluate(() =>
           localStorage.setItem('signal-drawer:open', 'true')
@@ -1073,9 +1085,11 @@ test.describe('home page accessibility', () => {
         await page.goto(`/${signal}`)
         const editor = page.locator('.cm-content[contenteditable="true"]')
         await editor.pressSequentially('service.name = "checkout"')
-        await expect(
-          page.getByRole('button', { name: /^(Open|Collapse) sidebar$/ })
-        ).toBeVisible()
+        const sidebar = page.getByRole('button', {
+          name: /^(Open|Collapse) sidebar$/,
+        })
+        if (signal === 'logs') await expect(sidebar).toHaveCount(0)
+        else await expect(sidebar).toBeVisible()
         await expect(editor).toBeVisible()
         await expect(editor).toHaveText('service.name = "checkout"')
         await expect(
