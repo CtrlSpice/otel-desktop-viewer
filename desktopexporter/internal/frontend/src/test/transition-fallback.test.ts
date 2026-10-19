@@ -47,10 +47,10 @@ describe('Svelte transition fallback', () => {
     const button = screen.getByRole('button')
 
     await fireEvent.click(button)
-    await fireEvent.click(screen.getByRole('radio', { name: 'Winter Dark' }))
+    await fireEvent.click(screen.getByRole('radio', { name: 'Moon Dark' }))
     await Promise.resolve()
     await fireEvent.click(button)
-    await fireEvent.click(screen.getByRole('radio', { name: 'Winter Light' }))
+    await fireEvent.click(screen.getByRole('radio', { name: 'Dawn Light' }))
     await Promise.resolve()
     await Promise.resolve()
 

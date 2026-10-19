@@ -13,13 +13,7 @@ import { createSubscriber } from 'svelte/reactivity'
 
 function readDataTheme(): string {
   if (typeof document === 'undefined') return ''
-  const theme = document.documentElement.getAttribute('data-theme') ?? ''
-  if (theme === 'madoromi-day' || theme === 'madoromi-night') {
-    const palette =
-      document.documentElement.getAttribute('data-palette') ?? 'winter'
-    return `madoromi-${palette}-${theme.slice('madoromi-'.length)}`
-  }
-  return theme
+  return document.documentElement.getAttribute('data-theme') ?? ''
 }
 
 const subscribe = createSubscriber(update => {
@@ -27,13 +21,13 @@ const subscribe = createSubscriber(update => {
   const observer = new MutationObserver(() => update())
   observer.observe(document.documentElement, {
     attributes: true,
-    attributeFilter: ['data-theme', 'data-palette'],
+    attributeFilter: ['data-theme'],
   })
   return () => observer.disconnect()
 })
 
 /**
- * `themeSignal.value` returns the current palette/mode identity and
+ * `themeSignal.value` returns the current theme identity and
  * registers the calling reactive scope as a dependency, so it will
  * re-run when the theme changes.
  */

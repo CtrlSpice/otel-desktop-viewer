@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import chartSeries from '@/themes/chart-series.json'
+import chartAccents from '@/themes/chart-accents.json'
 import {
   CHART_PALETTES,
   categoricalPalette,
@@ -20,7 +20,7 @@ describe('heatmapSwatches', () => {
 
   it('ends on the theme hot endpoint colour', () => {
     const swatches = heatmapSwatches(3, 'rose-pine-dawn')
-    expect(swatches.at(-1)).toBe('rgb(144, 122, 169)')
+    expect(swatches.at(-1)).toBe('rgb(180, 99, 122)')
   })
 
   it('floors fractional steps and clamps non-positive steps to 1', () => {
@@ -96,18 +96,24 @@ describe('categoricalPalette', () => {
 describe('traceSpanPalette', () => {
   it('excludes orange shades across themes, including after palette reuse', () => {
     for (const [theme, families] of Object.entries(CHART_PALETTES)) {
-      const pool = traceSpanPalette(40, theme)
+      const pool = traceSpanPalette(48, theme)
+      const accents = new Map(Object.entries(chartAccents)).get(theme)!
       expect(new Set(pool)).toEqual(
         new Set([
           ...families.iris,
           ...families.pine,
           ...families.foam,
           ...families.rose,
+          accents.green,
+          accents.blue,
+          accents.pink,
+          accents.teal,
         ])
       )
       for (const orange of families.gold) expect(pool).not.toContain(orange)
       expect(pool).not.toContain('#ff8000')
-      expect(pool.slice(20)).toEqual(pool.slice(0, 20))
+      expect(pool).not.toContain(accents.yellow)
+      expect(pool.slice(24)).toEqual(pool.slice(0, 24))
       expect(traceSpanPalette(3, theme)).toEqual(pool.slice(0, 3))
     }
     expect(traceSpanPalette(20, 'unknown')).toEqual(
@@ -119,9 +125,15 @@ describe('traceSpanPalette', () => {
 describe('metricSeriesPalette', () => {
   it('reserves iris for overlays without reducing unique series capacity', () => {
     for (const [theme, families] of Object.entries(CHART_PALETTES)) {
-      const pool = metricSeriesPalette(24, 'pine', theme)
-      expect(pool).toHaveLength(24)
-      expect(new Set(pool).size).toBe(24)
+      const pool = metricSeriesPalette(25, 'pine', theme)
+      expect(pool).toHaveLength(25)
+      expect(new Set(pool).size).toBe(25)
+      expect(pool.slice(4, 9)).toEqual(
+        Object.values(new Map(Object.entries(chartAccents)).get(theme)!)
+      )
+      for (const reserved of ['#ff8000', '#eb6f92', '#b4637a']) {
+        expect(pool).not.toContain(reserved)
+      }
       expect(new Set(pool.slice(0, 22)).size).toBe(22)
       for (const iris of families.iris) expect(pool).not.toContain(iris)
       expect(pool.slice(0, 4)).toEqual([
@@ -137,73 +149,13 @@ describe('metricSeriesPalette', () => {
   it('keeps deterministic fallbacks, repetition, and count validation', () => {
     const pool = metricSeriesPalette(28, 'foam', 'rose-pine-moon')
     expect(pool[0]).toBe(CHART_PALETTES['rose-pine-moon'].foam[2])
-    expect(pool.slice(24)).toEqual(pool.slice(0, 4))
+    expect(pool.slice(25)).toEqual(pool.slice(0, 3))
     expect(metricSeriesPalette(24, 'iris', 'unknown')).toEqual(
       metricSeriesPalette(24, 'pine', 'rose-pine-moon')
     )
     expect(metricSeriesPalette(0, 'pine')).toEqual([])
     expect(() => metricSeriesPalette(NaN, 'pine')).toThrow(RangeError)
   })
-})
-
-describe('Madoromi graph roles', () => {
-  it.each(Object.keys(chartSeries))(
-    'keeps 24 stable published non-error colours for line charts in %s',
-    theme => {
-      const pool = metricSeriesPalette(24, 'pine', theme)
-      expect(pool).toHaveLength(24)
-      expect(new Set(pool).size).toBe(24)
-      for (const reserved of ['#ff8000', '#bb355a', '#ff8799']) {
-        expect(pool).not.toContain(reserved)
-      }
-      expect(metricSeriesPalette(3, 'pine', theme)).toEqual(pool.slice(0, 3))
-      expect(metricSeriesPalette(27, 'pine', theme).slice(24)).toEqual(
-        pool.slice(0, 3)
-      )
-      expect(new Set(traceSpanPalette(24, theme))).toEqual(new Set(pool))
-      expect(new Set(categoricalPalette(24, 'rose', theme))).toEqual(
-        new Set(pool)
-      )
-      const slots = new Map(Object.entries(chartSeries)).get(theme)!
-      expect(pool.slice(0, 10)).toEqual(
-        Object.entries(slots)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([, color]) => color)
-      )
-      expect(pool[0]).toBe(slots['01'])
-      expect(metricSeriesPalette(1, 'gold', theme)).toEqual([slots['03']])
-      expect(metricSeriesPalette(1, 'foam', theme)).toEqual([slots['07']])
-      expect(metricSeriesPalette(1, 'rose', theme)).toEqual([slots['04']])
-    }
-  )
-
-  it.each(Object.entries(chartSeries))(
-    'builds a soft, progressively stronger density ramp in %s',
-    (theme, slots) => {
-      const ramp = heatmapSwatches(12, theme)
-      expect(heatmapSwatches(1, theme)).toEqual([ramp.at(-1)])
-      expect(new Set(ramp).size).toBe(12)
-      const channels = ramp.map(color => color.match(/\d+/g)!.map(Number))
-      const night = theme.endsWith('-night')
-      const luminance = channels.map(color => {
-        const linear = color.map(value => {
-          const channel = value / 255
-          return channel <= 0.04045
-            ? channel / 12.92
-            : ((channel + 0.055) / 1.055) ** 2.4
-        })
-        return linear[0]! * 0.2126 + linear[1]! * 0.7152 + linear[2]! * 0.0722
-      })
-      // Density must brighten at night and darken by day, with no reversals.
-      for (let i = 1; i < luminance.length; i++) {
-        const change = luminance[i]! - luminance[i - 1]!
-        expect(night ? change : -change).toBeGreaterThan(0)
-      }
-      // Even the highest band stays diluted, rather than reaching solid ink.
-      const pink = [1, 3, 5].map(i => parseInt(slots['04'].slice(i, i + 2), 16))
-      expect(channels.at(-1)).not.toEqual(pink)
-    }
-  )
 })
 
 describe('readableTextColor', () => {

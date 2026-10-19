@@ -4,59 +4,30 @@
 //     histogram heatmap legends, and trace waterfall bars. Uses the approved
 //     five-family static table, rotated so the caller's requested family leads.
 //
-//   - `heatmapSwatches()` -- seasonal primary-to-pink count ramp in RGB.
+//   - `heatmapSwatches()` -- per-theme count ramp, interpolated in HCL.
 //
-// Error spans and percentile overlays use semantic status colours separately.
+// Error spans use `var(--color-error)` directly. The heatmap also uses that
+// theme token for its love endpoint; the categorical palette is separate.
 
-import { interpolateHcl, interpolateRgb } from 'd3-interpolate'
+import { interpolateHcl } from 'd3-interpolate'
 import chartPalettes from './chart-palettes.json'
-import chartSeries from '@/themes/chart-series.json'
+import chartAccents from '@/themes/chart-accents.json'
 
-// Numeric-looking object keys enumerate before zero-prefixed keys in JS.
-// Sort slot names explicitly so chart.series.01 always remains the first slot.
-const SEMANTIC_ACCENTS = new Map(
-  Object.entries(chartSeries).map(([theme, slots]) => [
-    theme,
-    Object.entries(slots)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([, color]) => color),
-  ])
-)
+const EXTRA_ACCENTS = new Map(Object.entries(chartAccents))
 
-// Line charts can use other seasons' published accents to fill 24 distinct slots.
-// The selected season always leads, so metric-type fills keep their own colour.
-const SEMANTIC_SERIES = new Map(
-  [...SEMANTIC_ACCENTS].map(([theme, own]) => {
-    const mode = theme.endsWith('-day') ? '-day' : '-night'
-    const others = [...SEMANTIC_ACCENTS]
-      .filter(([name]) => name !== theme && name.endsWith(mode))
-      .flatMap(([, colors]) => colors)
-    return [theme, [...new Set([...own, ...others])].slice(0, 24)]
-  })
-)
+function extraAccents(theme: string) {
+  return EXTRA_ACCENTS.get(theme) ?? chartAccents['rose-pine-moon']
+}
 
 const DEFAULT_HEATMAP_ENDPOINTS = ['#2a273f', '#eb6f92'] as const
 const HEATMAP_ENDPOINTS = new Map<string, readonly [string, string]>([
   ['rose-pine', ['#1f1d2e', '#eb6f92']],
   ['rose-pine-moon', DEFAULT_HEATMAP_ENDPOINTS],
-  ['rose-pine-dawn', ['#faf4ed', '#907aa9']],
-])
-
-// Match --surface-canvas. Accents come from the shared seasonal swatches above.
-const HEATMAP_SURFACES = new Map([
-  ['madoromi-winter-day', '#f0f1f8'],
-  ['madoromi-winter-night', '#0f111b'],
-  ['madoromi-spring-day', '#f6eff8'],
-  ['madoromi-spring-night', '#160f18'],
-  ['madoromi-summer-day', '#e9f4f8'],
-  ['madoromi-summer-night', '#091317'],
-  ['madoromi-autumn-day', '#f8f0e9'],
-  ['madoromi-autumn-night', '#181008'],
+  ['rose-pine-dawn', ['#faf4ed', '#b4637a']],
 ])
 
 /**
- * Seasonal ramps build from a faint primary wash to soft pink. Increasing ink
- * strength provides the density contrast, rather than solid categorical fills.
+ * Sample the HCL ramp at 1/steps through 1, excluding the cold endpoint.
  * A single step uses the hot endpoint. Unknown themes
  * use the Moon ramp.
  */
@@ -64,18 +35,6 @@ export function heatmapSwatches(steps: number, theme: string = ''): string[] {
   const safeSteps = Math.max(1, Math.floor(steps))
   if (!Number.isFinite(safeSteps) || safeSteps >= 2 ** 32) {
     throw new RangeError('steps must produce a valid array length')
-  }
-  const surface = HEATMAP_SURFACES.get(theme)
-  const accents = SEMANTIC_ACCENTS.get(theme)
-  if (surface && accents) {
-    const hue = interpolateRgb(accents[5]!, accents[3]!)
-    const night = theme.endsWith('-night')
-    const low = night ? 0.08 : 0.06
-    const high = night ? 0.82 : 0.7
-    return Array.from({ length: safeSteps }, (_, index) => {
-      const density = safeSteps === 1 ? 1 : index / (safeSteps - 1)
-      return interpolateRgb(surface, hue(density))(low + (high - low) * density)
-    })
   }
   const [start, end] = HEATMAP_ENDPOINTS.get(theme) ?? DEFAULT_HEATMAP_ENDPOINTS
   if (safeSteps === 1) return [end]
@@ -139,17 +98,6 @@ export function categoricalPalette(
   }
   if (safeCount === 0) return []
 
-  const series = SEMANTIC_SERIES.get(theme)
-  if (series) {
-    // Preserve the metric-type colour families through the legacy stem adapter:
-    // Sum blue, Gauge sky, Histogram peony, ExponentialHistogram gold.
-    const offset = { pine: 0, foam: 6, gold: 2, rose: 3, iris: 5 }[start]
-    return Array.from(
-      { length: safeCount },
-      (_, index) => series[(index + offset) % series.length]!
-    )
-  }
-
   const palette = PALETTES_BY_THEME.get(theme) ?? DEFAULT_CATEGORICAL_PALETTE
   const startIdx = FAMILY_ORDER.indexOf(start)
   const rotated =
@@ -170,24 +118,25 @@ export function categoricalPalette(
 /** Keep orange tones out of trace identities so papaya remains an internal-error cue. */
 export function traceSpanPalette(count: number, theme: string = ''): string[] {
   const requested = categoricalPalette(count, 'iris', theme)
-  if (SEMANTIC_SERIES.has(theme)) return requested
   if (requested.length === 0) return []
   const palette = PALETTES_BY_THEME.get(theme) ?? DEFAULT_CATEGORICAL_PALETTE
   const gold = new Set<string>(palette.gold)
   const pool = categoricalPalette(25, 'iris', theme).filter(
     color => !gold.has(color)
   )
+  // Introduce new hues before repeating the original families at other levels.
+  const { green, blue, pink, teal } = extraAccents(theme)
+  pool.splice(4, 0, green, blue, pink, teal)
   return requested.map((_, index) => pool[index % pool.length]!)
 }
 
-/** Reserve iris for metric annotations, retaining 24 stable slots for the 22-series cap. */
+/** Reserve iris for metric annotations, retaining 25 stable slots for the 22-series cap. */
 export function metricSeriesPalette(
   count: number,
   start: CategoricalStem,
   theme: string = ''
 ): string[] {
   const requested = categoricalPalette(count, start, theme)
-  if (SEMANTIC_SERIES.has(theme)) return requested
   if (requested.length === 0) return []
   const palette = PALETTES_BY_THEME.get(theme) ?? DEFAULT_CATEGORICAL_PALETTE
   const families = FAMILY_ORDER.filter(family => family !== 'iris')
@@ -199,12 +148,8 @@ export function metricSeriesPalette(
   const pool = LEVEL_ORDER.flatMap(level =>
     rotated.map(family => palette[family][level]!)
   )
-  // One intermediate shade per non-iris family extends the pool without reusing a colour.
-  pool.push(
-    ...rotated.map(family =>
-      interpolateHcl(palette[family][1]!, palette[family][2]!)(0.5)
-    )
-  )
+  // Measured Madoromi accents add hue variety instead of more tonal steps.
+  pool.splice(4, 0, ...Object.values(extraAccents(theme)))
   return requested.map((_, index) => pool[index % pool.length]!)
 }
 

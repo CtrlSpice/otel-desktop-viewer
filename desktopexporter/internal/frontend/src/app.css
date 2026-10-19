@@ -1,6 +1,5 @@
 @import 'tailwindcss';
 @import 'layerchart/daisyui-5.css';
-@import './themes/madoromi.css';
 @plugin "daisyui" {
   logs: false;
   themes: false;

@@ -9,76 +9,52 @@ afterEach(() => {
 })
 
 describe('AppearancePicker', () => {
-  it('selects each season/mode pair together and returns focus to the trigger', async () => {
+  it('offers the three original themes and persists each choice', async () => {
     render(AppearancePicker)
     const trigger = screen.getByRole('button', {
-      name: 'Appearance: Winter Light',
+      name: 'Appearance: Dawn Light',
     })
-    for (const season of ['Spring', 'Summer', 'Autumn', 'Winter']) {
-      for (const [mode, theme] of [
-        ['Light', 'madoromi-day'],
-        ['Dark', 'madoromi-night'],
-      ]) {
-        await fireEvent.click(trigger)
-        expect(screen.getAllByRole('radio')).toHaveLength(11)
-        const choice = screen.getByRole('radio', { name: `${season} ${mode}` })
-        await fireEvent.click(choice)
-        expect(choice).toBeChecked()
-        expect(trigger).toHaveAccessibleName(`Appearance: ${season} ${mode}`)
-        expect(trigger).toHaveAttribute('aria-expanded', 'false')
-        expect(trigger).toHaveFocus()
-        expect(document.documentElement.dataset.theme).toBe(theme)
-        expect(document.documentElement.dataset.palette).toBe(
-          season.toLowerCase()
-        )
-        expect(localStorage.getItem('theme')).toBe(theme)
-        expect(localStorage.getItem('theme-palette')).toBe(season.toLowerCase())
-      }
+    for (const [label, theme] of [
+      ['Moon Dark', 'rose-pine-moon'],
+      ['Pine Dark', 'rose-pine'],
+      ['Dawn Light', 'rose-pine-dawn'],
+    ]) {
+      await fireEvent.click(trigger)
+      expect(screen.getAllByRole('radio')).toHaveLength(3)
+      const choice = screen.getByRole('radio', { name: label })
+      await fireEvent.click(choice)
+      expect(choice).toBeChecked()
+      expect(trigger).toHaveAccessibleName(`Appearance: ${label}`)
+      expect(trigger).toHaveAttribute('aria-expanded', 'false')
+      expect(trigger).toHaveFocus()
+      expect(document.documentElement.dataset.theme).toBe(theme)
+      expect(localStorage.getItem('theme')).toBe(theme)
     }
-  })
-
-  it('restores the saved pair', () => {
-    localStorage.setItem('theme', 'madoromi-night')
-    localStorage.setItem('theme-palette', 'summer')
-    render(AppearancePicker)
-    expect(
-      screen.getByRole('button', { name: 'Appearance: Summer Dark' })
-    ).toBeInTheDocument()
-    expect(document.documentElement.dataset.palette).toBe('summer')
-    expect(document.documentElement.dataset.theme).toBe('madoromi-night')
   })
 
   it.each([
     ['rose-pine-dawn', 'Dawn Light'],
     ['rose-pine-moon', 'Moon Dark'],
     ['rose-pine', 'Pine Dark'],
-  ])('restores the original %s theme', (saved, label) => {
+  ])('restores %s', (saved, label) => {
     localStorage.setItem('theme', saved)
-    localStorage.setItem('theme-palette', 'spring')
     render(AppearancePicker)
-    expect(document.documentElement.dataset.theme).toBe(saved)
-    expect(document.documentElement.dataset.palette).toBeUndefined()
     expect(
       screen.getByRole('button', { name: `Appearance: ${label}` })
     ).toBeInTheDocument()
+    expect(document.documentElement.dataset.theme).toBe(saved)
   })
 
-  it('can switch between original themes and seasonal pairs', async () => {
+  it.each([
+    ['madoromi-day', 'rose-pine-dawn'],
+    ['madoromi-night', 'rose-pine-moon'],
+  ])('keeps the light/dark preference when leaving %s', (saved, next) => {
+    localStorage.setItem('theme', saved)
+    localStorage.setItem('theme-palette', 'spring')
+    document.documentElement.dataset.palette = 'spring'
     render(AppearancePicker)
-    const trigger = screen.getByRole('button')
-    for (const [label, theme] of [
-      ['Dawn Light', 'rose-pine-dawn'],
-      ['Moon Dark', 'rose-pine-moon'],
-      ['Pine Dark', 'rose-pine'],
-    ]) {
-      await fireEvent.click(trigger)
-      await fireEvent.click(screen.getByRole('radio', { name: label }))
-      expect(localStorage.getItem('theme')).toBe(theme)
-      expect(document.documentElement.dataset.palette).toBeUndefined()
-    }
-    await fireEvent.click(trigger)
-    await fireEvent.click(screen.getByRole('radio', { name: 'Spring Light' }))
-    expect(document.documentElement.dataset.theme).toBe('madoromi-day')
-    expect(document.documentElement.dataset.palette).toBe('spring')
+    expect(document.documentElement.dataset.theme).toBe(next)
+    expect(document.documentElement.dataset.palette).toBeUndefined()
+    expect(localStorage.getItem('theme-palette')).toBeNull()
   })
 })

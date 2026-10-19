@@ -1,53 +1,36 @@
-# Madoromi experiment
+# Rosé Pine chart accents
 
-Seasonal day/night colours from [Madoromi](https://madoromi.moonwit.ch/)
-by samhain, [source](https://github.com/the-moonwitch/madoromi), MPL-2.0.
-The upstream colours are measured from Pilot Iroshizuku ink scans.
+The interface uses its original Dawn, Moon, and Pine themes. Madoromi contributes
+only five extra series colours per mode, stored in `chart-accents.json`.
 
-Use semantic names in components. `madoromi.css` maps these roles to existing
-DaisyUI tokens so the experiment also covers existing controls.
+These are exact published [Madoromi](https://madoromi.moonwit.ch/) values by
+samhain ([source](https://github.com/the-moonwitch/madoromi), MPL-2.0).
 
-| Role                | CSS token                               | Upstream source                                     |
-| ------------------- | --------------------------------------- | --------------------------------------------------- |
-| Background          | `--surface-canvas`                      | kami by day; chitsu by night, per viewer preference |
-| Secondary panels    | `--surface-panel`                       | hyōshi                                              |
-| Outer chrome        | `--surface-chrome`                      | chitsu by day; kami by night                        |
-| Hover / selection   | `--surface-hover`, `--surface-selected` | diluted nijimi / primary accent                     |
-| Borders             | `--border-default`, `--border-strong`   | nijimi 1 / kasure 0                                 |
-| Main text           | `--text-primary`                        | sumi                                                |
-| Secondary text      | `--text-secondary`                      | usuzumi 1                                           |
-| Muted text          | `--text-muted`                          | kasure 2                                            |
-| Disabled text       | `--text-disabled`                       | kasure 1                                            |
-| Accent / focus      | `--action-accent`, `--action-focus`     | fuji                                                |
-| Links / information | `--action-link`, `--status-info`        | sora                                                |
-| Success             | `--status-success`                      | wakaba                                              |
-| Warning             | `--status-warning`                      | yamabuki, exact published value                     |
-| Telemetry error     | `--status-error`                        | beni                                                |
-| Internal error      | `--status-internal-error`               | existing papaya, #ff8000                            |
+| Role       | Dawn      | Moon / Pine | Madoromi source                             |
+| ---------- | --------- | ----------- | ------------------------------------------- |
+| Green      | `#618c32` | `#7bd6b6`   | Winter Day / Spring Night |
+| Blue       | `#526ccb` | `#829eeb`   | Summer Day / Winter Night |
+| Pink       | `#b25d9d` | `#d18bb7`   | Spring Day / Winter Night |
+| Teal / sky | `#028e7f` | `#5ea3d4`   | Winter Day teal / Autumn Night sky blue     |
+| Yellow     | `#e3940b` | `#ffc849`   | Winter Day yamabuki / Spring Night yamabuki |
 
-## Graph colours
+## Fit with Rosé Pine
 
-`chart-series.json` names ten source colours: **chart.series.01–10**.
-The slots are stable when series visibility changes. The appearance dropdown
-selects a season and Light/Dark mode together. Both saved preferences are restored.
-The original Dawn, Moon, and Pine themes remain available in the same dropdown.
-Metrics and traces use the same pool; error spans keep the error token.
+Selection used OKLCH lightness/chroma and comparison with Rosé Pine's existing
+accents. Excluding yellow, Dawn additions have L 0.56–0.60 and C 0.10–0.15;
+dark-mode additions have L 0.69–0.81 and C 0.10–0.12. They extend the subdued
+green, blue, and pink families. The yellow adds a clear golden/butter tone alongside
+Rosé Pine's existing gold; olive and mustard yellows are excluded.
+The pink is cooler than Rosé Pine's warm rose and error red. These are categorical
+colours, not status indicators; existing success/warning/error roles are retained.
 
-Line-series swatches are exact published accents. Line charts start with the
-selected season, then use other seasons of the same day/night mode to fill 24
-distinct slots. The existing 22-series visibility cap is unchanged.
-Histograms, heatmaps, and their count legends share the selected season and mode's
-primary-to-pink density ramp (fuji to botan). RGB interpolation keeps the ramp
-within purple and pink without rotating through unrelated hues. The ink is
-diluted with the season's canvas: 6–70% by day and 8–82% by night. Sparse counts
-are a faint primary wash; high counts are soft pink. Light-mode density darkens
-as counts rise; dark-mode density brightens. Metric-type badges remain independent.
-The source is `palettes/madoromi.json` in the upstream repo.
-The metric-type adapter starts Sum on indigo, Gauge on sky, Histogram on peony,
-and ExponentialHistogram on kerria gold. These are identity colours, not statuses.
-Error and persimmon accents are excluded; papaya is never a series colour.
-No graph uses error red or papaya as an identity or density colour.
-Percentile overlays and their legends use semantic status colours: p50 success,
-p95 warning, and p99 error. Severity badges and status indicators also retain
-their semantic roles. These tokens follow the selected season and day/night mode;
-papaya remains reserved for internal errors.
+The accents follow the first four original series colours, before subsequent
+lightness variants. Metric palettes contain 25 distinct colours; traces use the
+four cool additions for 24 distinct colours. Both
+retain stable prefixes as visibility changes. Metrics reserve iris for
+annotations; traces exclude the gold/orange family. Exact telemetry-error colours
+and papaya `#ff8000` are never added as series colours.
+
+Heatmap density is separate: Rosé Pine's surface-to-love ramp is used in all
+three themes, including Dawn's own love shade. Heatmaps may use love; categorical
+series do not. Count legends use the same scale as their cells and bars.
