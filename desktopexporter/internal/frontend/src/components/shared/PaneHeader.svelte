@@ -558,7 +558,7 @@
   }
 
   .pane-header__view-controls {
-    @apply ml-auto flex max-w-full flex-wrap items-center justify-end gap-2 rounded-xl bg-base-300 p-0.5;
+    @apply ml-auto flex max-w-full flex-wrap items-center justify-end gap-2 rounded-xl p-0.5;
   }
 
   .pane-header__segments {
