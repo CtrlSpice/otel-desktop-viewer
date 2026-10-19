@@ -56,6 +56,19 @@
       colouredParts.find(part => part.key === rootKey)?.key ??
       colouredParts[0]?.key
   )
+  const activePart = $derived(
+    colouredParts.find(part => part.key === activeKey)
+  )
+  const total = $derived(
+    colouredParts.reduce((sum, part) => sum + part.count, 0)
+  )
+  const percent = new Intl.NumberFormat(undefined, {
+    style: 'percent',
+    maximumFractionDigits: 1,
+  })
+  function spanCount(part: SummaryBreakdownPart): string {
+    return `${part.count.toLocaleString()} ${part.count === 1 ? 'span' : 'spans'}`
+  }
 </script>
 
 <div
@@ -83,17 +96,30 @@
 >
   {#if colouredParts.length > 1}
     <div
-      class="mt-2 flex h-2 w-full overflow-hidden rounded-full"
-      role="img"
-      aria-label={`Service breakdown by span count: ${colouredParts.map(part => `${part.label}: ${part.count} spans`).join('; ')}`}
+      class="mt-2 flex h-2 w-full gap-0.5"
+      role="group"
+      aria-label={`Service breakdown by span count: ${colouredParts.map(part => `${part.label}: ${spanCount(part)}`).join('; ')}`}
     >
       {#each colouredParts as part (part.key)}
-        <span
-          class="service-segment min-w-0"
+        <button
+          type="button"
+          class="service-segment min-w-[2px] rounded-full"
           data-service-key={part.key}
           style:flex={part.count}
           style:--service-color={part.color}
-        ></span>
+          aria-label={`${part.label}: ${spanCount(part)}, ${percent.format(part.count / total)} of total`}
+          aria-pressed={keptKey === part.key}
+          onfocus={() => {
+            cancelHoverPreview()
+            hoveredKey = null
+            focusedKey = part.key
+          }}
+          onclick={() => {
+            cancelHoverPreview()
+            hoveredKey = null
+            pinnedKey = part.key
+          }}
+        ></button>
       {/each}
     </div>
   {/if}
@@ -106,42 +132,20 @@
     ></span>
     <span class="service-label">
       <span class="min-w-0 truncate">{part.label}</span>
-      <span
-        class="shrink-0 text-rp-subtle tabular-nums"
-        aria-label={`${part.count} spans`}>({part.count.toLocaleString()})</span
+      <span class="shrink-0 text-rp-subtle tabular-nums"
+        >({spanCount(part)}{#if colouredParts.length > 1},
+          {percent.format(part.count / total)}{/if})</span
       >
     </span>
   {/snippet}
 
-  {#if colouredParts.length > 1}
+  {#if activePart}
     <div class="ball-pit">
-      {#each colouredParts as part (part.key)}
-        <button
-          type="button"
-          class="service-choice"
-          class:service-choice--open={activeKey === part.key}
-          data-service-key={part.key}
-          aria-label={`${part.label}: ${part.count} spans`}
-          aria-expanded={activeKey === part.key}
-          aria-pressed={keptKey === part.key}
-          onfocus={() => {
-            cancelHoverPreview()
-            hoveredKey = null
-            focusedKey = part.key
-          }}
-          onclick={() => {
-            cancelHoverPreview()
-            hoveredKey = null
-            pinnedKey = part.key
-          }}
-        >
-          {@render serviceLabel(part)}
-        </button>
-      {/each}
-    </div>
-  {:else if colouredParts.length === 1}
-    <div class="service-single">
-      {@render serviceLabel(colouredParts[0])}
+      {#key activeKey}
+        <div class="service-summary">
+          {@render serviceLabel(activePart)}
+        </div>
+      {/key}
     </div>
   {/if}
 </div>
@@ -150,6 +154,7 @@
   @reference "../../app.css";
 
   .service-segment {
+    @apply cursor-pointer border-0 p-0;
     background-color: color-mix(
       in srgb,
       var(--service-color) calc(var(--waterfall-bar-opacity) * 100%),
@@ -157,26 +162,22 @@
     );
   }
 
-  .ball-pit {
-    @apply mt-1 flex min-h-7 min-w-0 flex-wrap items-center gap-1;
-  }
-
-  .service-choice {
-    @apply flex h-7 min-w-6 cursor-pointer items-center gap-1.5 overflow-hidden rounded-sm px-2 text-left text-sm font-normal text-base-content;
-    flex: 0 0 1.5rem;
-    transition:
-      flex-grow 240ms cubic-bezier(0.2, 0, 0.2, 1),
-      flex-basis 240ms cubic-bezier(0.2, 0, 0.2, 1);
-  }
-
-  .service-choice--open {
-    flex-grow: 1;
-    flex-basis: min(100%, 10rem);
-  }
-
-  .service-choice:focus-visible {
+  .service-segment:focus-visible {
     outline: 2px solid var(--color-primary);
     outline-offset: -2px;
+  }
+
+  :global(html[data-theme='rose-pine-dawn']) .service-segment {
+    border: 1px solid var(--service-color);
+  }
+
+  .ball-pit {
+    @apply mt-1 flex h-7 min-w-0 items-center;
+  }
+
+  .service-summary {
+    @apply flex min-w-0 items-center gap-1.5 text-sm font-normal text-base-content;
+    animation: service-label-in 140ms ease-out;
   }
 
   .service-dot {
@@ -187,23 +188,18 @@
     @apply flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap;
   }
 
-  .service-choice .service-label {
-    opacity: 0;
-    transition: opacity 160ms ease-out;
-  }
-
-  .service-choice--open .service-label {
-    opacity: 1;
-  }
-
-  .service-single {
-    @apply mt-1 flex h-7 min-w-0 items-center gap-1.5 text-sm font-normal text-base-content;
+  @keyframes service-label-in {
+    from {
+      opacity: 0.5;
+    }
+    to {
+      opacity: 1;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .service-choice,
-    .service-choice .service-label {
-      transition: none;
+    .service-summary {
+      animation: none;
     }
   }
 </style>

@@ -33,8 +33,9 @@ describe('TraceCard', () => {
     expect(within(button).getByText('GET /api/orders')).toBeInTheDocument()
     expect(screen.getByText('orders-service')).toBeInTheDocument()
     expect(
-      screen.queryByRole('img', { name: /Service breakdown/ })
+      screen.queryByRole('group', { name: /Service breakdown/ })
     ).not.toBeInTheDocument()
+    expect(screen.getByText('(4 spans)')).toBeInTheDocument()
   })
 
   it('falls back to a placeholder title when the trace has no root span', () => {
@@ -119,35 +120,33 @@ describe('TraceCard', () => {
     const group = screen.getByRole('group', { name: 'Spans by service' })
     const choices = within(group).getAllByRole('button')
     expect(choices.map(button => button.getAttribute('aria-label'))).toEqual([
-      'orders-service: 1 spans',
-      'database: 2 spans',
-      'cache: 1 spans',
+      'orders-service: 1 span, 25% of total',
+      'database: 2 spans, 50% of total',
+      'cache: 1 span, 25% of total',
     ])
     const [root, database, cache] = choices
-    expect(root).toHaveAttribute('aria-expanded', 'true')
+    const label = () => group.querySelector('.service-summary')
+    expect(root).toHaveAttribute('aria-pressed', 'true')
+    expect(label()).toHaveTextContent('orders-service (1 span, 25%)')
     await user.hover(database)
     await waitFor(() =>
-      expect(database).toHaveAttribute('aria-expanded', 'true')
+      expect(label()).toHaveTextContent('database (2 spans, 50%)')
     )
-    expect(root).toHaveAttribute('aria-expanded', 'false')
     await user.click(database)
     expect(database).toHaveAttribute('aria-pressed', 'true')
     await user.hover(cache)
-    await waitFor(() => expect(cache).toHaveAttribute('aria-expanded', 'true'))
+    await waitFor(() =>
+      expect(label()).toHaveTextContent('cache (1 span, 25%)')
+    )
     await user.unhover(cache)
-    expect(database).toHaveAttribute('aria-expanded', 'true')
-    const bar = screen.getByRole('img', { name: /Service breakdown/ })
-    await user.hover(bar.children[2])
-    await waitFor(() => expect(cache).toHaveAttribute('aria-expanded', 'true'))
-    expect(database).toHaveAttribute('aria-pressed', 'true')
-    await user.unhover(bar.children[2])
-    expect(database).toHaveAttribute('aria-expanded', 'true')
-    expect(group.querySelectorAll('[aria-expanded="true"]')).toHaveLength(1)
+    expect(label()).toHaveTextContent('database (2 spans, 50%)')
+    expect(group.querySelectorAll('.service-summary')).toHaveLength(1)
+    expect(group.querySelectorAll('.service-choice')).toHaveLength(0)
     expect(onclick).not.toHaveBeenCalled()
     expect(document.querySelector('button button')).toBeNull()
   })
 
-  it('reveals services with keyboard focus and keeps the bar and row colours in order', async () => {
+  it('reveals services with keyboard focus and matches their bar colour', async () => {
     const user = userEvent.setup()
     renderCard({
       trace: makeTrace({
@@ -159,28 +158,26 @@ describe('TraceCard', () => {
     })
     const group = screen.getByRole('group', { name: 'Spans by service' })
     const choices = within(group).getAllByRole('button')
+    const bar = screen.getByRole('group', { name: /Service breakdown/ })
+    const barColors = Array.from(bar.children, child => {
+      const probe = document.createElement('span')
+      probe.style.backgroundColor = (
+        child as HTMLElement
+      ).style.getPropertyValue('--service-color')
+      return probe.style.backgroundColor
+    })
+    const label = () => group.querySelector('.service-summary')
+    const dot = () => label()?.querySelector<HTMLElement>('.service-dot')
     await user.tab()
     await user.tab()
     expect(choices[0]).toHaveFocus()
+    expect(label()).toHaveTextContent('orders-service (3 spans, 75%)')
+    expect(dot()?.style.backgroundColor).toBe(barColors[0])
     await user.tab()
     expect(choices[1]).toHaveFocus()
-    expect(choices[1]).toHaveAttribute('aria-expanded', 'true')
-    expect(choices[0]).toHaveAttribute('aria-expanded', 'false')
-    const bar = screen.getByRole('img', { name: /Service breakdown/ })
-    expect(
-      Array.from(bar.children, child => {
-        const probe = document.createElement('span')
-        probe.style.backgroundColor = (
-          child as HTMLElement
-        ).style.getPropertyValue('--service-color')
-        return probe.style.backgroundColor
-      })
-    ).toEqual(
-      choices.map(
-        button =>
-          (button.querySelector('.service-dot') as HTMLElement).style
-            .backgroundColor
-      )
-    )
+    expect(label()).toHaveTextContent('cache (1 span, 25%)')
+    expect(dot()?.style.backgroundColor).toBe(barColors[1])
+    await user.keyboard('{Enter}')
+    expect(choices[1]).toHaveAttribute('aria-pressed', 'true')
   })
 })
