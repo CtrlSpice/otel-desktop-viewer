@@ -921,6 +921,32 @@ export let telemetryAPI = {
     return traceSummariesFromJSON(rawData)
   },
 
+  /** Look up the associated trace without the Logs time/query filters or a waterfall fetch. */
+  getTraceSummary: async (
+    traceID: string,
+    signal?: AbortSignal
+  ): Promise<TraceSummary | null> => {
+    const result = await callRPC<JsonTraceSummary[]>(
+      'searchTraceSummaries',
+      named({
+        startTime: null,
+        endTime: null,
+        limit: 1,
+        query: {
+          id: 'associated-trace',
+          type: 'condition',
+          query: {
+            field: { name: 'traceID', searchScope: 'field', type: 'string' },
+            fieldOperator: '=',
+            value: traceID,
+          },
+        },
+      }),
+      signal
+    )
+    return traceSummariesFromJSON(result)[0] ?? null
+  },
+
   getTraceView: async (
     traceID: string,
     queryTree?: QueryNode,

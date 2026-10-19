@@ -1,4 +1,7 @@
 <script lang="ts">
+  import ChartOverlayLabel from './ChartOverlayLabel.svelte'
+  import { createOverlayEmphasis } from '@/components/metrics/utils/overlay-emphasis.svelte'
+
   import ChartSticky from '@/components/metrics/Charts/ChartSticky.svelte'
   import HistogramContributionPattern from './HistogramContributionPattern.svelte'
   import type { ChartStickySize } from '@/components/metrics/utils/chart-sticky-position'
@@ -57,6 +60,7 @@
   import { createGridChartKeyboardCursor } from '@/components/metrics/utils/chart-keyboard-state.svelte'
 
   const timeContext = getTimeContext()
+  const emphasis = createOverlayEmphasis()
   const ctx = getMetricViewContext()
   const blobClipPrefix = $props.id()
   const quantileChannelID = `${blobClipPrefix}-quantile-channels`
@@ -633,9 +637,11 @@
                     <path
                       d={quantile.path}
                       class="heatmap-quantile-channel"
+                      class:chart-overlay--emphasized={emphasis.has(
+                        quantile.key
+                      )}
                       fill="none"
                       stroke="black"
-                      stroke-width={4}
                       stroke-linecap="round"
                       stroke-linejoin="round"
                     />
@@ -698,21 +704,25 @@
               {/if}
               <g class="heatmap-quantile-overlays" aria-hidden="true">
                 {#each quantilePaths as quantile (quantile.key)}
-                  <path d={quantile.path} class="quantile-line-backing" />
-                  <path
-                    d={quantile.path}
-                    class="heatmap-quantile-line"
-                    style:--quantile-color={histogramQuantileColor(
-                      quantile.key
-                    )}
-                    stroke-dasharray={quantile.dash}
-                    data-quantile={quantile.key}
+                  <g
+                    class:chart-overlay--emphasized={emphasis.has(quantile.key)}
                   >
-                    <title
-                      >{quantile.label}: bucket-derived estimate of the combined
-                      checked series</title
+                    <path d={quantile.path} class="quantile-line-backing" />
+                    <path
+                      d={quantile.path}
+                      class="heatmap-quantile-line"
+                      style:--quantile-color={histogramQuantileColor(
+                        quantile.key
+                      )}
+                      stroke-dasharray={quantile.dash}
+                      data-quantile={quantile.key}
                     >
-                  </path>
+                      <title
+                        >{quantile.label}: bucket-derived estimate of the
+                        combined checked series</title
+                      >
+                    </path>
+                  </g>
                 {/each}
               </g>
               <g class="heatmap-contributions" aria-hidden="true">
@@ -782,13 +792,16 @@
               class="heatmap-quantile-label chart-selection-legend chart-selection-legend--stat"
               style:left="{heatmapPlotPadding.left + quantile.end.x + 8}px"
               style:top="{heatmapPlotPadding.top + quantile.labelY}px"
-              aria-hidden="true"
             >
               <span
                 class="chart-selection-legend__dot"
                 style:--color={histogramQuantileColor(quantile.key)}
               ></span>
-              <span>{quantile.label}</span>
+              <ChartOverlayLabel
+                label={quantile.label}
+                active={emphasis.has(quantile.key)}
+                onclick={() => emphasis.toggle(quantile.key)}
+              />
             </div>
           {/each}
         </div>

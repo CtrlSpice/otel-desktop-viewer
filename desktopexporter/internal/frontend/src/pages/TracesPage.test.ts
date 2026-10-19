@@ -199,7 +199,7 @@ describe('TracesPage unplaced spans banner', () => {
     expect(button).toBeEnabled()
     const title = header.querySelector('.pane-header__title')!
     expect(
-      title.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING
+      button.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING
     ).not.toBe(0)
     expect(
       screen.getAllByRole('button', { name: 'Export trace' })
@@ -453,6 +453,7 @@ describe('TracesPage trace detail lifecycle', () => {
   it.each(['success', 'failure'] as const)(
     'ignores pending detail %s after all traces are deleted',
     async outcome => {
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
       const pendingDetail = deferred<TraceData>()
       let detailSignal: AbortSignal | undefined
       searchTraceSummaries
@@ -493,6 +494,7 @@ describe('TracesPage trace detail lifecycle', () => {
       expect(document.querySelector('tr[data-span-id="old-span"]')).toBeNull()
       expect(consoleError).not.toHaveBeenCalled()
       consoleError.mockRestore()
+      confirm.mockRestore()
     }
   )
 

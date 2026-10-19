@@ -81,8 +81,6 @@
   type CommonProps = {
     /** Optional action before the title in title and title-tabs headers. */
     leading?: Snippet
-    /** Optional action immediately after the title and subtitle. */
-    titleAction?: Snippet
     /** Right-aligned badges (counts, severity, offsets) as
      *  plain strings. Use for ad-hoc badges where there's no shared
      *  rendering rule. Pinned to the right edge of the strip. */
@@ -372,11 +370,6 @@
         {#if props.subtitle?.trim()}
           <span class="pane-header__subtitle">({props.subtitle.trim()})</span>
         {/if}
-        {#if props.titleAction}
-          <div class="pane-header__title-action">
-            {@render props.titleAction()}
-          </div>
-        {/if}
       </div>
       {@render badgeBlock(props.badges, props.badge)}
       {#if props.right}
@@ -431,11 +424,6 @@
         <span class="pane-header__title">{props.title}</span>
         {#if props.subtitle?.trim()}
           <span class="pane-header__subtitle">({props.subtitle.trim()})</span>
-        {/if}
-        {#if props.titleAction}
-          <div class="pane-header__title-action">
-            {@render props.titleAction()}
-          </div>
         {/if}
       </div>
       {@render badgeBlock(props.badges, props.badge)}
@@ -542,8 +530,7 @@
     @apply truncate text-sm font-semibold tracking-tight text-base-content;
   }
 
-  .pane-header__leading,
-  .pane-header__title-action {
+  .pane-header__leading {
     @apply flex shrink-0 items-center self-center;
   }
 

@@ -7,6 +7,7 @@
   } from './detail-value'
   import ExpandableValue from './ExpandableValue.svelte'
   import ValueSyntax from './ValueSyntax.svelte'
+  import JsonEditor from './JsonEditor.svelte'
 
   let {
     value,
@@ -33,15 +34,13 @@
 >
   {#if readable && value.kind === 'string'}
     {#if clamp}<ExpandableValue value={value.value} />{:else}{value.value}{/if}
+  {:else if structured}
+    <JsonEditor
+      text={tokens.map(token => token.text).join('')}
+      label={path ? `JSON value of ${path}` : 'JSON value'}
+    />
   {:else}
-    <pre><code
-        ><ValueSyntax
-          {tokens}
-          foldable={structured}
-          highlight={structured}
-          path={path ?? 'value'}
-        /></code
-      ></pre>
+    <pre><code><ValueSyntax {tokens} highlight={false} /></code></pre>
   {/if}
 </div>
 
@@ -66,6 +65,6 @@
     color: inherit;
   }
   .attribute-value--structured {
-    @apply mt-1 border-l border-base-content/15 py-1 pl-3 text-xs;
+    @apply mt-1 py-1 pl-3 text-xs;
   }
 </style>

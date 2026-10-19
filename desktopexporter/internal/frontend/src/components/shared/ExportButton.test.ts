@@ -10,6 +10,13 @@ vi.mock('@/services/export-service', () => ({ downloadOTLP: vi.fn() }))
 afterEach(() => vi.resetAllMocks())
 
 describe('ExportButton', () => {
+  it('uses a round primary icon-only control with an accessible export name', () => {
+    render(ExportButton, { signal: 'log', id: 'log-id' })
+    const button = screen.getByRole('button', { name: 'Export log' })
+    expect(button).toHaveClass('btn-circle', 'btn-primary', 'btn-soft')
+    expect(button.textContent?.trim()).toBe('')
+    expect(button.querySelector('svg')).not.toBeNull()
+  })
   it('does not export without a selected identifier', async () => {
     render(ExportButton, { signal: 'trace', id: '' })
     const trigger = screen.getByRole('button', { name: 'Export trace' })

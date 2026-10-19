@@ -1331,6 +1331,12 @@ func supportedReceivedMetricType(metricType string) bool {
 // GetMetricOTLP returns a Metric as a standard OTLP JSON object. Callers
 // must transport the returned bytes unchanged because re-encoding can lose -0.0.
 func GetMetricOTLP(ctx context.Context, db *sql.DB, metricID string) (json.RawMessage, error) {
+	return GetMetricSelectionOTLP(ctx, db, metricID, "", "")
+}
+
+// GetMetricSelectionOTLP exports only the exact selected stored series or datapoint.
+// Empty selectors export the whole retained Metric. Selection never uses chart reductions.
+func GetMetricSelectionOTLP(ctx context.Context, db *sql.DB, metricID, seriesID, datapointID string) (json.RawMessage, error) {
 	query, err := queries.Render(queries.GetMetricOTLP, nil)
 	if err != nil {
 		return nil, fmt.Errorf("GetMetricOTLP: %w: %w", ErrMetricsStoreInternal, err)
@@ -1338,7 +1344,7 @@ func GetMetricOTLP(ctx context.Context, db *sql.DB, metricID string) (json.RawMe
 
 	var metricType string
 	var raw []byte
-	if err := db.QueryRowContext(ctx, query, metricID).Scan(&metricType, &raw); err != nil {
+	if err := db.QueryRowContext(ctx, query, seriesID, datapointID, metricID).Scan(&metricType, &raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("GetMetricOTLP: %w", ErrMetricIDNotFound)
 		}

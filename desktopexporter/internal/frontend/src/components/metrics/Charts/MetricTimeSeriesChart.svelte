@@ -1,4 +1,7 @@
 <script lang="ts">
+  import ChartOverlayLabel from './ChartOverlayLabel.svelte'
+  import { createOverlayEmphasis } from '@/components/metrics/utils/overlay-emphasis.svelte'
+
   import ChartSticky from '@/components/metrics/Charts/ChartSticky.svelte'
   import { LineChart, Line, Spline, Tooltip, type ChartState } from 'layerchart'
   import { bisector } from 'd3-array'
@@ -49,6 +52,8 @@
   } from '@/components/metrics/utils/chart-keyboard-cursor'
   import { createLineChartKeyboardCursor } from '@/components/metrics/utils/chart-keyboard-state.svelte'
   import { timeSeriesChartPointSelection } from '@/components/metrics/utils/time-series-point-selection'
+
+  const emphasis = createOverlayEmphasis()
 
   function aggregateSummaryRowsAt(
     keys: readonly string[],
@@ -937,6 +942,10 @@
         color: slope.color,
         label: slope.statLabel,
         valueText: slope.valueText,
+        emphasis: {
+          active: emphasis.has('slope'),
+          toggle: () => emphasis.toggle('slope'),
+        },
       })
     }
     return rows
@@ -1075,6 +1084,7 @@
               {@const averageY = context.yScale(average.y)}
               <g
                 class="series-stat-marker series-average-marker"
+                class:chart-overlay--emphasized={emphasis.has('avg')}
                 aria-hidden="true"
               >
                 <title>{average.title}</title>
@@ -1106,7 +1116,11 @@
                 }
               )}
               {#if guide}
-                <g class="series-slope-guide" aria-hidden="true">
+                <g
+                  class="series-slope-guide"
+                  class:chart-overlay--emphasized={emphasis.has('slope')}
+                  aria-hidden="true"
+                >
                   <title>{slope.title}</title>
                   <Line {...guide} class="series-slope-line" />
                 </g>
@@ -1230,7 +1244,7 @@
             style:left="{mark.left}px"
             style:top="{mark.top}px"
             title={mark.title}
-            aria-hidden="true"
+            aria-hidden={mark.kind === 'avg' ? undefined : true}
           >
             <div class="chart-selection-legend chart-selection-legend--stat">
               <ul class="chart-selection-legend__rows">
@@ -1241,7 +1255,11 @@
                     aria-hidden="true"
                   ></span>
                   <span class="chart-selection-legend__label"
-                    >{mark.statLabel}</span
+                    >{#if mark.kind === 'avg'}<ChartOverlayLabel
+                        label={mark.statLabel}
+                        active={emphasis.has(mark.kind)}
+                        onclick={() => emphasis.toggle(mark.kind)}
+                      />{:else}{mark.statLabel}{/if}</span
                   >
                   <span class="chart-selection-legend__value"
                     >{mark.valueText}</span

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Identifier from '@/components/shared/Identifier.svelte'
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import DetailStack from '@/components/shared/DetailStack.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
@@ -31,17 +32,17 @@
   >
     {#snippet value()}<a
         class="detail-cell__value link link-primary font-mono"
-        href={traceHref(reference)}>{reference.traceID}</a
+        href={traceHref(reference)}><Identifier value={reference.traceID} /></a
       >{/snippet}
   </DetailField>
-  {#if reference.spanID}<DetailField
+  {#if reference.spanID}{@const spanID = reference.spanID}<DetailField
       fieldName="spanId"
       fieldType="bytes"
       fieldValue={reference.spanID}
     >
       {#snippet value()}<a
           class="detail-cell__value link link-primary font-mono"
-          href={traceHref(reference)}>{reference.spanID}</a
+          href={traceHref(reference)}><Identifier value={spanID} /></a
         >{/snippet}
     </DetailField>{/if}
 {/snippet}

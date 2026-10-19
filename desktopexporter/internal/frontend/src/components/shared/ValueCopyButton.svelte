@@ -98,7 +98,9 @@
 
 <button
   type="button"
-  class="header-icon-button value-copy tooltip tooltip-left"
+  class="header-icon-button value-copy tooltip"
+  class:tooltip-right={contextual}
+  class:tooltip-left={!contextual}
   class:value-copy--copied={copied}
   class:value-copy--failed={failed}
   class:value-copy--contextual={contextual}

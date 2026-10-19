@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Identifier from '@/components/shared/Identifier.svelte'
   /*
    * Paginated datapoint rows for a single timeseries. Nested under an expanded
    * series row in TimeseriesPanel. Selection, flags/exemplar expansion, and
@@ -401,17 +402,20 @@
                     class="dp-list__detail-value link link-primary font-mono"
                     href={itemHref('traces', ex.traceID, patch)}
                     onclick={e => goToExemplarTrace(e, ex)}
-                    >trace: {ex.traceID}</a
+                    >trace: <Identifier value={ex.traceID} /></a
                   >
                 {/if}
                 {#if ex.spanID && ex.traceID}
                   <a
                     class="dp-list__detail-value link link-primary font-mono"
                     href={itemHref('traces', ex.traceID, exemplarSpanPatch(ex))}
-                    onclick={e => goToExemplarTrace(e, ex)}>span: {ex.spanID}</a
+                    onclick={e => goToExemplarTrace(e, ex)}
+                    >span: <Identifier value={ex.spanID} /></a
                   >
                 {:else if ex.spanID}
-                  <span class="dp-list__detail-value">span: {ex.spanID}</span>
+                  <span class="dp-list__detail-value"
+                    >span: <Identifier value={ex.spanID} /></span
+                  >
                 {/if}
                 {#each dedupeAttributes(ex.filteredAttributes) as attr, attributeIndex (`exemplar:${i}:${attr.id ?? 'unidentified'}:${attributeIndex}`)}
                   <span class="dp-list__detail-value"

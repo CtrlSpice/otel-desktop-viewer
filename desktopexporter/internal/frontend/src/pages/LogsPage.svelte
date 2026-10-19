@@ -43,6 +43,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
+  import { confirmDeleteAll } from '@/utils/confirm-delete'
   import {
     getTimeContext,
     selectionToQueryRangeNs,
@@ -307,6 +308,7 @@
   }
 
   async function handleDeleteAllLogs() {
+    if (!confirmDeleteAll('log')) return
     actionError = null
     try {
       await telemetryAPI.clearLogs()

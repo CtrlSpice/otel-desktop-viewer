@@ -17,6 +17,7 @@
     copyValue,
     valueLabel,
     valueTone,
+    valueColor,
     timestampLabel,
     origin,
     multiline = false,
@@ -36,6 +37,7 @@
     copyValue?: string
     valueLabel?: string
     valueTone?: 'error'
+    valueColor?: string
     timestampLabel?: string
     origin?: string
     multiline?: boolean
@@ -72,6 +74,11 @@
   <div class="detail-property__header">
     {#if conflict}<ConflictMarker label={conflict} />{/if}
     <span class="detail-property__key">{fieldName}</span>
+    <ValueCopyButton
+      text={copyText}
+      label={origin ? `${fieldName} (${origin})` : fieldName}
+      contextual
+    />
     {#if showType || origin}
       <span class="detail-property__badges">
         {#if showType}<span
@@ -92,6 +99,7 @@
     class="detail-property"
     class:detail-property--error-value={valueTone === 'error'}
     class:table-row--nested={nested}
+    style:--detail-property-value-color={valueColor}
     data-field={fieldName}
     data-field-source={origin}
     data-field-kind={fieldKind}
@@ -143,11 +151,6 @@
               />
             {/if}
           </div>
-          <ValueCopyButton
-            text={copyText}
-            label={origin ? `${fieldName} (${origin})` : fieldName}
-            contextual
-          />
         </div>
       </div>
     </td>
@@ -175,6 +178,9 @@
   .detail-property__header {
     @apply flex min-h-5 min-w-0 items-center gap-2;
   }
+  .detail-property__header > :global(.value-copy) {
+    @apply size-5;
+  }
   .detail-property__key {
     @apply min-w-0 font-mono text-xs;
     color: var(--detail-code-key);
@@ -184,14 +190,7 @@
     @apply ml-auto flex shrink-0 items-center justify-end gap-2;
   }
   .detail-property__body {
-    @apply grid min-w-0 grid-cols-[minmax(0,1fr)_1.5rem] items-start gap-x-2 pt-0.5;
-  }
-  .detail-property__body > :global(.value-copy) {
-    @apply size-6 -mt-0.5;
-  }
-  .detail-property__body:has(:global(.attribute-value--structured))
-    > :global(.value-copy) {
-    @apply mt-1;
+    @apply min-w-0 pt-0.5;
   }
   .detail-property__content {
     @apply min-w-0;

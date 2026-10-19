@@ -45,7 +45,13 @@ it('keeps chart selection and native disclosures independent', async () => {
     expect(
       series.compareDocumentPosition(fields) & Node.DOCUMENT_POSITION_FOLLOWING
     ).not.toBe(0)
-    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(
+      screen.getByRole('tablist', { name: 'Detail view' })
+    ).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Properties' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
     const metadata = screen.getByRole('table', { name: 'Metric fields' })
     for (const [key, value] of [
       ['name', 'test-scope'],

@@ -7,6 +7,18 @@ import LogDetailView from './LogDetailView.svelte'
 import type { LogData } from '@/types/api-types'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
+vi.mock('@/services/telemetry-service', async importOriginal => {
+  const actual =
+    await importOriginal<typeof import('@/services/telemetry-service')>()
+  return {
+    ...actual,
+    telemetryAPI: {
+      ...actual.telemetryAPI,
+      getTraceSummary: vi.fn().mockResolvedValue(null),
+    },
+  }
+})
+
 function makeLog(overrides: Partial<LogData> = {}): LogData {
   return {
     logRef: 'log-1',
@@ -43,6 +55,38 @@ function renderLog(log: LogData) {
 }
 
 describe('LogDetailView trace correlation', () => {
+  it.each([
+    [1, 'neutral'],
+    [5, 'success'],
+    [9, 'info'],
+    [13, 'warning'],
+    [17, 'error'],
+    [21, 'error'],
+  ] as const)(
+    'colours both received severity values for level %s',
+    (severityNumber, colour) => {
+      const { container } = renderLog(
+        makeLog({
+          traceID: null,
+          spanID: null,
+          severityNumber,
+          severityText: 'received custom label',
+        })
+      )
+      for (const name of ['severityText', 'severityNumber']) {
+        const row = container.querySelector<HTMLElement>(
+          `[data-field="${name}"]`
+        )!
+        expect(
+          row.style.getPropertyValue('--detail-property-value-color')
+        ).toBe(`var(--color-${colour})`)
+      }
+      expect(
+        container.querySelector('[data-field="severityText"]')
+      ).toHaveTextContent('received custom label')
+    }
+  )
+
   it('offers scroll to top for a scrolled log without changing the route or log', async () => {
     const view = renderLog(makeLog())
     await tick()
@@ -93,13 +137,53 @@ describe('LogDetailView trace correlation', () => {
     const header = screen.getByRole('region', { name: 'Log record' })
     const button = within(header).getByRole('button', { name: 'Export log' })
     expect(button).toBeEnabled()
+    expect(button).toHaveClass('btn-circle', 'btn-primary')
+    expect(button).toHaveTextContent('')
+    const tabs = within(header).getByRole('tablist', { name: 'Detail view' })
+    expect(within(header).queryByLabelText('Log timestamp')).toBeNull()
+    expect(tabs.closest('.pane-header__top')).not.toBeNull()
+    expect(header.querySelector('.pane-header__meta-row')).toBeNull()
+    expect(header.querySelector('.badge')).toBeNull()
+    expect(
+      within(tabs).getByRole('tab', { name: 'Properties' })
+    ).toHaveAttribute('aria-selected', 'true')
+    expect(
+      within(tabs).getByRole('tab', { name: 'Raw JSON' })
+    ).toBeInTheDocument()
     const title = within(header).getByText('checkout', { exact: true })
     expect(
-      title.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING
+      button.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING
     ).not.toBe(0)
     expect(screen.getAllByRole('button', { name: 'Export log' })).toHaveLength(
       1
     )
+  })
+
+  it('appends the associated trace to Properties without a collapsible section', () => {
+    const { container } = renderLog(makeLog())
+    const headings = container.querySelectorAll(
+      'summary.detail-bubble__heading'
+    )
+    expect(headings).toHaveLength(0)
+    const fields = screen.getByRole('table', { name: 'Log fields' })
+    const trace = screen.getByRole('region', { name: 'Associated trace' })
+    expect(fields.closest('[role="tabpanel"]')).toContainElement(trace)
+    expect(
+      fields.compareDocumentPosition(trace) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).not.toBe(0)
+    expect(trace.closest('details')).toBeNull()
+    expect(
+      screen.getByRole('table', { name: 'Log fields' }).closest('details')
+    ).toBeNull()
+    expect(container.querySelector('.waterfall-view')).toBeNull()
+  })
+
+  it('omits the associated trace when the log has no trace ID', () => {
+    renderLog(makeLog({ traceID: null, spanID: null }))
+    expect(screen.queryByRole('region', { name: 'Trace' })).toBeNull()
+    expect(
+      screen.queryByRole('region', { name: 'Associated trace' })
+    ).toBeNull()
   })
 
   it('links trace and span ids with span in the href', () => {

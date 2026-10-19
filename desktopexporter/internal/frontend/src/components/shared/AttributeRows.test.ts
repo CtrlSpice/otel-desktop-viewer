@@ -4,6 +4,7 @@ import { screen, within } from '@testing-library/svelte'
 import AttributeRows from './AttributeRows.svelte'
 import { renderWithContexts } from '@/test/render-helpers'
 import type { Attributes } from '@/types/api-types'
+import { jsonEditorView } from '@/test/json-editor-helpers'
 
 function renderAttributes(attributes: Attributes, origin?: string) {
   return renderWithContexts(AttributeRows, {
@@ -38,7 +39,7 @@ describe('AttributeRows', () => {
         value: { kind: 'string', value: 'raw' },
       },
     ])
-    expect(JSON.parse(container.querySelector('pre')!.textContent!)).toEqual({
+    expect(JSON.parse(jsonEditorView(container).state.doc.toString())).toEqual({
       attempts: 2,
       flags: [true],
     })
@@ -70,7 +71,7 @@ describe('AttributeRows', () => {
     expect(
       screen
         .getByRole('button', { name: 'Copy service.name (resource)' })
-        .closest('.detail-property__body')
+        .closest('.detail-property__header')
     ).not.toBeNull()
     expect(container).not.toHaveTextContent('resource.service.name')
     expect(attributes[0]!.key).toBe('service.name')
@@ -98,13 +99,10 @@ describe('AttributeRows', () => {
         },
       },
     ])
-    expect(container.querySelector('pre')!.textContent).toBe(
+    expect(jsonEditorView(container).state.doc.toString()).toBe(
       '[\n  "line\\n\\"quoted\\"",\n  9223372036854775807,\n  -0\n]'
     )
-    expect(screen.getByText('9223372036854775807')).toHaveAttribute(
-      'title',
-      'int64'
-    )
+    expect(screen.getByLabelText('JSON value of payload')).toBeInTheDocument()
   })
 
   it('uses JSON array syntax rather than injecting indices into the copied value', () => {
@@ -123,7 +121,7 @@ describe('AttributeRows', () => {
         },
       },
     ])
-    expect(JSON.parse(container.querySelector('pre')!.textContent!)).toEqual([
+    expect(JSON.parse(jsonEditorView(container).state.doc.toString())).toEqual([
       'first',
       { '[0]': 'key' },
     ])
@@ -148,7 +146,7 @@ describe('AttributeRows', () => {
     expect(screen.getByRole('img')).toHaveAccessibleName(
       /Conflicting typed values retained in payload/
     )
-    expect(container.querySelector('pre')!.textContent).toBe(
+    expect(jsonEditorView(container).state.doc.toString()).toBe(
       '{\n  "same": 1,\n  "same": "1",\n  "clear": true\n}'
     )
   })

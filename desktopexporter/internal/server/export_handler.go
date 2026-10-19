@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
@@ -35,7 +37,43 @@ func (s *Server) exportHandler(w http.ResponseWriter, r *http.Request) {
 	if signal == "traces" {
 		id = strings.ReplaceAll(id, "-", "")
 	}
+	selection := make(map[string]string)
+	for key, values := range r.URL.Query() {
+		if key == "format" {
+			continue
+		}
+		if len(values) != 1 || values[0] == "" ||
+			!(signal == "metrics" && (key == "seriesRef" || key == "datapointRef") || signal == "traces" && key == "spanId") {
+			http.Error(w, "invalid export selection", http.StatusBadRequest)
+			return
+		}
+		if key == "spanId" {
+			if len(values[0]) != 16 {
+				http.Error(w, "invalid span ID", http.StatusBadRequest)
+				return
+			}
+			value, err := strconv.ParseUint(values[0], 16, 64)
+			if err != nil {
+				http.Error(w, "invalid span ID", http.StatusBadRequest)
+				return
+			}
+			selection[key] = strconv.FormatUint(value, 10)
+		} else {
+			value, err := normalizeUUID(values[0])
+			if err != nil {
+				http.Error(w, "invalid export reference", http.StatusBadRequest)
+				return
+			}
+			selection[key] = value
+		}
+	}
 	data, err := storeRead(s.store, func(db *sql.DB) ([]byte, error) {
+		if signal == "metrics" {
+			return metrics.GetMetricSelectionOTLP(r.Context(), db, id, selection["seriesRef"], selection["datapointRef"])
+		}
+		if signal == "traces" {
+			return spans.GetTraceSelectionOTLP(r.Context(), db, id, selection["spanId"])
+		}
 		return readExport(r.Context(), db, signal, id)
 	})
 	if err != nil {
@@ -54,12 +92,16 @@ func (s *Server) exportHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filename := strings.TrimSuffix(signal, "s") + "-" + id + ".json"
+	for _, key := range []string{"spanId", "seriesRef", "datapointRef"} {
+		if value := selection[key]; value != "" {
+			filename = strings.TrimSuffix(filename, ".json") + "-" + key + "-" + value + ".json"
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
-	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(data)
-	}
+	// ServeContent supports HEAD for size checks and byte ranges for explicitly
+	// bounded inspector previews. Download requests still receive the full export.
+	http.ServeContent(w, r, filename, time.Time{}, bytes.NewReader(data))
 }
 
 func readExport(ctx context.Context, db *sql.DB, signal, id string) ([]byte, error) {

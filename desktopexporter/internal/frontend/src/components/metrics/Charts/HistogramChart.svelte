@@ -1,4 +1,7 @@
 <script lang="ts">
+  import ChartOverlayLabel from './ChartOverlayLabel.svelte'
+  import { createOverlayEmphasis } from '@/components/metrics/utils/overlay-emphasis.svelte'
+
   import ChartSticky from '@/components/metrics/Charts/ChartSticky.svelte'
   import HistogramContributionPattern from './HistogramContributionPattern.svelte'
   import type { ChartStickySize } from '@/components/metrics/utils/chart-sticky-position'
@@ -53,6 +56,8 @@
     histogramSliceToChartDatapoint,
     type HistogramChartDataPoint,
   } from '@/components/metrics/utils/histogram-aggregation'
+
+  const emphasis = createOverlayEmphasis()
 
   // lo/hi position quantile markers and may be infinite or both zero.
   type Bucket = {
@@ -760,6 +765,7 @@
                   {@const px = x0 + bw * m.fraction}
                   <g
                     class="quantile-marker"
+                    class:chart-overlay--emphasized={emphasis.has(m.key)}
                     style:--marker-color={m.color}
                     style:--quantile-color={m.color}
                   >
@@ -828,7 +834,6 @@
                 style:left="{mark.left}px"
                 style:top="{mark.top}px"
                 title={mark.title}
-                aria-hidden="true"
               >
                 <div
                   class="chart-selection-legend chart-selection-legend--stat"
@@ -841,7 +846,11 @@
                         aria-hidden="true"
                       ></span>
                       <span class="chart-selection-legend__label"
-                        >{mark.statLabel}</span
+                        ><ChartOverlayLabel
+                          label={mark.statLabel}
+                          active={emphasis.has(mark.key)}
+                          onclick={() => emphasis.toggle(mark.key)}
+                        /></span
                       >
                       <span class="chart-selection-legend__value"
                         >{mark.valueText}</span

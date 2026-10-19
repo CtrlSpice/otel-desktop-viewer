@@ -1,11 +1,17 @@
 -- Reconstruct one retained Metric and its ResourceMetrics/ScopeMetrics wrappers.
-with selected_metric as materialized (
+with export_selection as (
+	select try_cast(? as uuid) as series_id, try_cast(? as uuid) as datapoint_id
+),
+selected_metric as materialized (
 	select * from metrics where id = try_cast(? as uuid)
 ),
 selected_datapoints as materialized (
 	select d.*
 	from metric_datapoints d
 	join selected_metric s on s.id = d.metric_id
+	cross join export_selection e
+	where (e.series_id is null or d.series_id = e.series_id)
+	  and (e.datapoint_id is null or d.id = e.datapoint_id)
 ),
 used_attribute_ids as materialized (
 	select unnest(r.attribute_ids) as id
@@ -192,4 +198,6 @@ select s.metric_type,
 	end as document
 from selected_metric s
 left join resource_documents r on true
+where ((select series_id from export_selection) is null and (select datapoint_id from export_selection) is null)
+   or exists (select 1 from selected_datapoints)
 group by s.metric_type

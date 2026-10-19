@@ -1225,6 +1225,53 @@ describe('telemetryAPI.searchTraceSummaries', () => {
   })
 })
 
+describe('telemetryAPI.getTraceSummary', () => {
+  it('looks up one exact trace independently of the Logs time range and preserves exact times', async () => {
+    stubRpcResult([
+      {
+        traceID: '00000000000000000000000000000011',
+        hasRootSpan: true,
+        rootSpan: { name: 'checkout', serviceName: 'api' },
+        startTime: '1700000000000000001',
+        durationNs: '9007199254740993',
+        spanCount: 5,
+        errorCount: 2,
+      },
+    ] satisfies JsonTraceSummary[])
+    const result = await telemetryAPI.getTraceSummary(
+      '00000000000000000000000000000011'
+    )
+    expect(result).toMatchObject({
+      startTime: 1700000000000000001n,
+      durationNs: 9007199254740993n,
+    })
+    const request = JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]!.body))
+    expect(request).toMatchObject({
+      method: 'searchTraceSummaries',
+      params: {
+        startTime: null,
+        endTime: null,
+        limit: 1,
+        query: {
+          type: 'condition',
+          query: {
+            field: { name: 'traceID', searchScope: 'field' },
+            fieldOperator: '=',
+            value: '00000000000000000000000000000011',
+          },
+        },
+      },
+    })
+  })
+
+  it('reports no stored trace without fabricating a summary', async () => {
+    stubRpcResult([])
+    expect(
+      await telemetryAPI.getTraceSummary('00000000000000000000000000000011')
+    ).toBeNull()
+  })
+})
+
 describe('telemetryAPI.getTraceView rehydration', () => {
   const wire = {
     traceID: 'abc123',

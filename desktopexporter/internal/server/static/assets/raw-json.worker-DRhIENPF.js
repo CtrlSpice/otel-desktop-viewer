@@ -1,0 +1,2 @@
+(function(){function e(e){let t=[],n=0,r=!1,i=!1,a=()=>t.push(`
+`,`  `.repeat(n));for(let o=0;o<e.length;o++){let s=e[o];if(r){t.push(s),i?i=!1:s===`\\`?i=!0:s===`"`&&(r=!1);continue}/\s/.test(s)||(s===`"`?(r=!0,t.push(s)):s===`{`||s===`[`?(t.push(s),n++,a()):s===`}`||s===`]`?(n=Math.max(0,n-1),a(),t.push(s)):s===`,`?(t.push(s),a()):s===`:`?t.push(`: `):t.push(s))}return t.join(``)}self.onmessage=t=>{self.postMessage(e(t.data))}})();

@@ -17,9 +17,7 @@ for (const fallback of [false, true]) {
       .getByRole('table', { name: 'Attempt fields' })
       .locator('[data-field="name"]')
     const copy = field.getByRole('button', { name: 'Copy name', exact: true })
-    const expected = JSON.parse(
-      await field.locator('.detail-pair__value').innerText()
-    ) as string
+    const expected = await field.locator('.detail-pair__value').innerText()
     await expect(copy).toHaveCSS('opacity', '0')
     const before = (await field.boundingBox())!
     await copy.focus()
@@ -29,6 +27,13 @@ for (const fallback of [false, true]) {
     await field.hover()
     await expect(copy).toHaveCSS('opacity', '1')
     expect((await field.boundingBox())!.height).toBe(before.height)
+    await page.evaluate(() =>
+      navigator.clipboard.writeText('clipboard unchanged')
+    )
+    await field.locator('.detail-property__body').click()
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      'clipboard unchanged'
+    )
     if (fallback) {
       await page.evaluate(() => {
         Object.defineProperty(navigator.clipboard, 'writeText', {
@@ -41,7 +46,7 @@ for (const fallback of [false, true]) {
     if (fallback) {
       await copy.focus()
       await page.keyboard.press('Enter')
-    } else await field.locator('.detail-property__body').click()
+    } else await copy.click()
     await expect(field.getByRole('status')).toHaveText('Copied name.')
     await expect(copy).toHaveCSS('opacity', '1')
     await expect
@@ -52,7 +57,7 @@ for (const fallback of [false, true]) {
   })
 }
 
-test('touch devices keep Copy visible and also copy by tapping the card', async ({
+test('touch devices keep Copy visible and copy only through its button', async ({
   browser,
   baseURL,
 }) => {
@@ -77,10 +82,15 @@ test('touch devices keep Copy visible and also copy by tapping the card', async 
       .locator('[data-field="name"]')
     const copy = field.getByRole('button', { name: 'Copy name', exact: true })
     await expect(copy).toHaveCSS('opacity', '1')
-    const expected = JSON.parse(
-      await field.locator('.detail-pair__value').innerText()
-    ) as string
+    const expected = await field.locator('.detail-pair__value').innerText()
+    await page.evaluate(() =>
+      navigator.clipboard.writeText('clipboard unchanged')
+    )
     await field.locator('.detail-property__body').tap()
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      'clipboard unchanged'
+    )
+    await copy.tap()
     await expect(copy).toHaveCSS('opacity', '1')
     await expect
       .poll(() => page.evaluate(() => navigator.clipboard.readText()))

@@ -60,6 +60,7 @@
 </script>
 
 <script lang="ts">
+  import { confirmDeleteAll } from '@/utils/confirm-delete'
   import {
     METRIC_BUCKET_TARGET,
     SCALAR_VIEW_BUCKETS,
@@ -713,6 +714,7 @@
   }
 
   async function handleDeleteAllMetrics() {
+    if (!confirmDeleteAll('metric')) return
     actionError = null
     try {
       await telemetryAPI.clearMetrics()
@@ -850,7 +852,7 @@
             metaRight={showChartOverlayControls ? overlayControl : undefined}
           >
             {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
-            {#snippet titleAction()}
+            {#snippet leading()}
               {#key selectedSummary.metricRef}
                 <ExportButton signal="metric" id={selectedSummary.metricRef} />
               {/key}
@@ -867,7 +869,7 @@
             metaRight={showChartOverlayControls ? overlayControl : undefined}
           >
             {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
-            {#snippet titleAction()}
+            {#snippet leading()}
               {#key selectedSummary.metricRef}
                 <ExportButton signal="metric" id={selectedSummary.metricRef} />
               {/key}

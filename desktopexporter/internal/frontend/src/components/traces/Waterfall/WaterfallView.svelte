@@ -1037,7 +1037,7 @@
         />
       {/if}
     {/snippet}
-    {#snippet titleAction()}
+    {#snippet leading()}
       {#key traceID}
         <ExportButton signal="trace" id={traceID} />
       {/key}

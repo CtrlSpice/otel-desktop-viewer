@@ -26,12 +26,14 @@ const {
   getMetricView,
   getMetricAggregateView,
   getMetricAttributeDefinitions,
+  clearMetrics,
 } = vi.hoisted(() => ({
   searchMetricSummaries: vi.fn(),
   getStats: vi.fn(),
   getMetricView: vi.fn(),
   getMetricAggregateView: vi.fn(),
   getMetricAttributeDefinitions: vi.fn(),
+  clearMetrics: vi.fn(),
 }))
 
 vi.mock('@/services/telemetry-service', async importOriginal => {
@@ -46,6 +48,7 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
       getMetricView,
       getMetricAggregateView,
       getMetricAttributeDefinitions,
+      clearMetrics,
     },
   }
 })
@@ -173,6 +176,8 @@ function makeStats(): Stats {
 }
 
 beforeEach(() => {
+  clearMetrics.mockReset()
+  clearMetrics.mockResolvedValue(undefined)
   vi.mocked(downloadOTLP).mockReset()
   vi.mocked(downloadOTLP).mockResolvedValue()
   searchMetricSummaries.mockReset()
@@ -207,6 +212,21 @@ async function renderSelected(metricType: MetricType) {
 }
 
 describe('Metric main-header range', () => {
+  it('requires confirmation before deleting all stored metrics', async () => {
+    await renderSelected('Gauge')
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const button = screen.getByRole('button', { name: 'Delete all metrics' })
+    await fireEvent.click(button)
+    expect(confirm).toHaveBeenCalledWith(
+      expect.stringContaining('including those outside the current filters')
+    )
+    expect(clearMetrics).not.toHaveBeenCalled()
+    expect(window.location.pathname).toBe('/metrics/metric-1')
+    confirm.mockReturnValue(true)
+    await fireEvent.click(button)
+    await waitFor(() => expect(clearMetrics).toHaveBeenCalledTimes(1))
+    confirm.mockRestore()
+  })
   it.each(['Gauge', 'Sum', 'Histogram', 'ExponentialHistogram'] as const)(
     'keeps the %s effective range in the header rather than the plot',
     async metricType => {
@@ -250,7 +270,7 @@ describe('Metric main-header export', () => {
       })
       const title = within(header).getByText('demo.metric', { exact: true })
       expect(
-        title.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING
+        button.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING
       ).not.toBe(0)
       const chartTabs = within(header).queryByRole('tablist')
       if (chartTabs) {

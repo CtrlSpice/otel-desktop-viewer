@@ -12,6 +12,7 @@
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import DetailStack from '@/components/shared/DetailStack.svelte'
+  import DetailViews from '@/components/shared/DetailViews.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
@@ -33,6 +34,32 @@
       ? ctx.histogramTimeseriesCount
       : ctx.gaugeSumLegendTimeseries.length
   })
+  let metricURL = $derived(
+    ctx.metric ? `/export/metrics/${ctx.metric.metricRef}` : ''
+  )
+  let rawScopes = $derived([
+    {
+      id: 'datapoint',
+      label: 'Datapoint',
+      url:
+        ctx.selectedDatapointID &&
+        /^[0-9a-f-]{36}$/i.test(ctx.selectedDatapointID)
+          ? `${metricURL}?datapointRef=${ctx.selectedDatapointID}`
+          : undefined,
+      unavailable:
+        'Select a received datapoint in Series to inspect its OTLP JSON. Aggregate chart buckets are not received datapoints.',
+    },
+    {
+      id: 'series',
+      label: 'Series',
+      url: ctx.selectedSeriesKey
+        ? `${metricURL}?seriesRef=${ctx.selectedSeriesKey}`
+        : undefined,
+      unavailable:
+        'Select a series to inspect its complete retained OTLP JSON.',
+    },
+    { id: 'metric', label: 'Whole metric', url: metricURL },
+  ])
 </script>
 
 {#if !ctx.metric}
@@ -70,117 +97,122 @@
           />
         {/key}
       {/snippet}
-      <table class="detail-fields w-full" aria-label="Metric fields">
-        <tbody>
-          <MetricField
-            fieldName="name"
-            fieldValue={metric.name}
-            fieldType="string"
-          />
-          {#if metric.description}
+      <DetailViews scopes={rawScopes} wholeURL={metricURL}>
+        <table class="detail-fields w-full" aria-label="Metric fields">
+          <tbody>
             <MetricField
-              fieldName="description"
-              fieldValue={metric.description}
-              fieldType="string"
-            />
-          {/if}
-          <AttributeRows attributes={metric.metadata} owner="metric metadata" />
-          <MetricField
-            fieldName="type"
-            fieldValue={ctx.metricType}
-            fieldType="string"
-          />
-          {#if metric.unit}
-            <MetricField
-              fieldName="unit"
-              fieldValue={metric.unit}
-              fieldType="string"
-            />
-          {/if}
-          {#if ctx.temporality}
-            <MetricField
-              fieldName="aggregationTemporality"
-              fieldValue={ctx.temporality}
-              fieldType="string"
-            />
-          {/if}
-          {#if ctx.isMonotonic !== null}
-            <MetricField
-              fieldName="isMonotonic"
-              fieldValue={String(ctx.isMonotonic)}
-              fieldType="bool"
-            />
-          {/if}
-          {#if metric.lastSeenNs !== null}
-            <!-- Metric-wide value; narrowed responses may omit its source series. -->
-            <MetricField
-              fieldName="lastSeen"
-              fieldValue={metric.lastSeenNs.toString()}
-              timestampLabel={formatTimestamp(
-                metric.lastSeenNs,
-                timeContext.tz,
-                'milliseconds'
-              )}
-              fieldType="timestamp"
-            />
-          {/if}
-          <MetricField
-            fieldName="dataPointCount"
-            fieldValue={ctx.totalDatapointCount.toString()}
-            fieldType="uint32"
-          />
-          {#if metric.resourceSchemaUrl}<MetricField
-              fieldName="schemaUrl"
-              origin="resource"
-              fieldValue={metric.resourceSchemaUrl}
-              fieldType="string"
-            />{/if}
-          {#if metric.resourceDroppedAttributesCount > 0}
-            <MetricField
-              fieldName="droppedAttributesCount"
-              origin="resource"
-              fieldValue={metric.resourceDroppedAttributesCount.toString()}
-              fieldType="uint32"
-            />
-          {/if}
-          <AttributeRows
-            attributes={metric.resource.attributes}
-            owner="resource"
-            origin="resource"
-          />
-          {#if metric.scope.name}<MetricField
               fieldName="name"
-              origin="scope"
-              fieldValue={metric.scope.name}
+              fieldValue={metric.name}
               fieldType="string"
-            />{/if}
-          {#if metric.scope.version}<MetricField
-              fieldName="version"
-              origin="scope"
-              fieldValue={metric.scope.version}
-              fieldType="string"
-            />{/if}
-          {#if metric.scopeSchemaUrl}<MetricField
-              fieldName="schemaUrl"
-              origin="scope"
-              fieldValue={metric.scopeSchemaUrl}
-              fieldType="string"
-            />{/if}
-          {#if metric.scopeDroppedAttributesCount > 0}
+            />
+            {#if metric.description}
+              <MetricField
+                fieldName="description"
+                fieldValue={metric.description}
+                fieldType="string"
+              />
+            {/if}
+            <AttributeRows
+              attributes={metric.metadata}
+              owner="metric metadata"
+            />
             <MetricField
-              fieldName="droppedAttributesCount"
-              origin="scope"
-              fieldValue={metric.scopeDroppedAttributesCount.toString()}
+              fieldName="type"
+              fieldValue={ctx.metricType}
+              fieldType="string"
+            />
+            {#if metric.unit}
+              <MetricField
+                fieldName="unit"
+                fieldValue={metric.unit}
+                fieldType="string"
+              />
+            {/if}
+            {#if ctx.temporality}
+              <MetricField
+                fieldName="aggregationTemporality"
+                fieldValue={ctx.temporality}
+                fieldType="string"
+              />
+            {/if}
+            {#if ctx.isMonotonic !== null}
+              <MetricField
+                fieldName="isMonotonic"
+                fieldValue={String(ctx.isMonotonic)}
+                fieldType="bool"
+              />
+            {/if}
+            {#if metric.lastSeenNs !== null}
+              <!-- Metric-wide value; narrowed responses may omit its source series. -->
+              <MetricField
+                fieldName="lastSeen"
+                fieldValue={metric.lastSeenNs.toString()}
+                timestampLabel={formatTimestamp(
+                  metric.lastSeenNs,
+                  timeContext.tz,
+                  'milliseconds'
+                )}
+                fieldType="timestamp"
+              />
+            {/if}
+            <MetricField
+              fieldName="dataPointCount"
+              fieldValue={ctx.totalDatapointCount.toString()}
               fieldType="uint32"
             />
-          {/if}
-          <AttributeRows
-            attributes={metric.scope.attributes}
-            owner="scope"
-            origin="scope"
-          />
-        </tbody>
-      </table>
+            {#if metric.resourceSchemaUrl}<MetricField
+                fieldName="schemaUrl"
+                origin="resource"
+                fieldValue={metric.resourceSchemaUrl}
+                fieldType="string"
+              />{/if}
+            {#if metric.resourceDroppedAttributesCount > 0}
+              <MetricField
+                fieldName="droppedAttributesCount"
+                origin="resource"
+                fieldValue={metric.resourceDroppedAttributesCount.toString()}
+                fieldType="uint32"
+              />
+            {/if}
+            <AttributeRows
+              attributes={metric.resource.attributes}
+              owner="resource"
+              origin="resource"
+            />
+            {#if metric.scope.name}<MetricField
+                fieldName="name"
+                origin="scope"
+                fieldValue={metric.scope.name}
+                fieldType="string"
+              />{/if}
+            {#if metric.scope.version}<MetricField
+                fieldName="version"
+                origin="scope"
+                fieldValue={metric.scope.version}
+                fieldType="string"
+              />{/if}
+            {#if metric.scopeSchemaUrl}<MetricField
+                fieldName="schemaUrl"
+                origin="scope"
+                fieldValue={metric.scopeSchemaUrl}
+                fieldType="string"
+              />{/if}
+            {#if metric.scopeDroppedAttributesCount > 0}
+              <MetricField
+                fieldName="droppedAttributesCount"
+                origin="scope"
+                fieldValue={metric.scopeDroppedAttributesCount.toString()}
+                fieldType="uint32"
+              />
+            {/if}
+            <AttributeRows
+              attributes={metric.scope.attributes}
+              owner="scope"
+              origin="scope"
+            />
+          </tbody>
+        </table>
+      </DetailViews>
     </DetailBubble>
   </DetailStack>
 {/if}

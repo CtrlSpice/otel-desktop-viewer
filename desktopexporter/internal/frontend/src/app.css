@@ -307,26 +307,36 @@ html[data-theme='rose-pine-dawn']
   fill: none;
   stroke: var(--quantile-color, var(--color-subtle));
   stroke-width: 1;
-  opacity: 0.35;
+  opacity: var(--overlay-line-opacity, 0.35);
   pointer-events: none;
 }
 
 .metric-chart-view :where(.series-average-line, .series-slope-line) {
   stroke-dasharray: 6 4;
-  stroke-width: 2;
+  stroke-width: var(--overlay-line-width, 2);
   stroke: var(--color-primary);
 }
 
 .metric-chart-view :where(.quantile-line, .heatmap-quantile-line) {
-  stroke-width: 2;
+  stroke-width: var(--overlay-line-width, 2);
 }
 
 .metric-chart-view :where(.quantile-line-backing) {
   fill: none;
   stroke: var(--color-base-100);
-  stroke-width: 4;
+  stroke-width: var(--overlay-backing-width, 4);
   stroke-linejoin: round;
   pointer-events: none;
+}
+
+.metric-chart-view :where(.chart-overlay--emphasized) {
+  --overlay-line-width: 4;
+  --overlay-line-opacity: 0.95;
+  --overlay-backing-width: 8;
+}
+
+.metric-chart-view :where(.heatmap-quantile-channel) {
+  stroke-width: var(--overlay-backing-width, 4);
 }
 
 .metric-chart-view :where(.series-stat-overlay) {
@@ -1305,6 +1315,26 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
 }
 .value-syntax .detail-code--literal {
   color: var(--detail-code-literal);
+}
+
+/* Shared JSON fold affordances for typed values and raw JSON. */
+.json-fold-control {
+  position: relative;
+}
+
+.json-fold-icon {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1rem;
+  height: 1rem;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.json-fold-control[aria-expanded='true'] .json-fold-icon,
+.json-fold-control[data-expanded='true'] .json-fold-icon {
+  transform: translate(-50%, -50%) rotate(90deg);
 }
 
 .detail-cell__stacked-value {

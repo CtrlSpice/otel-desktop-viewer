@@ -133,7 +133,7 @@
           disabled={loading}
           onchange={event => onPageSize(Number(event.currentTarget.value))}
         >
-          {#each [50, 100, 250] as size}<option value={size}>{size}</option
+          {#each [25, 50, 100, 250] as size}<option value={size}>{size}</option
             >{/each}
         </select>
       </label>

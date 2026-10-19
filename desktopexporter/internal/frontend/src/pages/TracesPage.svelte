@@ -48,6 +48,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
   import { telemetryAPI, isAbortError } from '@/services/telemetry-service'
+  import { confirmDeleteAll } from '@/utils/confirm-delete'
   import {
     getTimeContext,
     selectionToQueryRangeNs,
@@ -342,6 +343,7 @@
   }
 
   async function handleDeleteAllTraces() {
+    if (!confirmDeleteAll('trace')) return
     actionError = null
     try {
       await telemetryAPI.clearTraces()

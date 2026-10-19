@@ -25,6 +25,27 @@ import (
 
 const otlpTraceID = "fedcba98765432100123456789abcdef"
 
+func TestGetTraceSelectionOTLP(t *testing.T) {
+	s, ctx := storetest.New(t)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return spans.Ingest(ctx, conn, otlpTraceFixture(), s.FlushedIDs())
+	}))
+	raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.GetTraceSelectionOTLP(ctx, db, otlpTraceID, "18446744073709551615")
+	})
+	require.NoError(t, err)
+	decoded, err := (&ptrace.JSONUnmarshaler{}).UnmarshalTraces(raw)
+	require.NoError(t, err)
+	assert.Equal(t, 1, decoded.SpanCount())
+	assert.Contains(t, string(raw), `"spanId":"ffffffffffffffff"`)
+	assert.Contains(t, string(raw), `"traceId":"`+otlpTraceID+`"`)
+	assert.Contains(t, string(raw), `"doubleValue":-0.0`)
+	_, err = readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+		return spans.GetTraceSelectionOTLP(ctx, db, otlpTraceID, "0")
+	})
+	require.ErrorIs(t, err, spans.ErrTraceIDNotFound)
+}
+
 var (
 	otlpHex16   = regexp.MustCompile(`^[0-9a-f]{16}$`)
 	otlpHex32   = regexp.MustCompile(`^[0-9a-f]{32}$`)

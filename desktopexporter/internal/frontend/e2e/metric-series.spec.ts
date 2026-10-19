@@ -752,7 +752,7 @@ for (const [theme, hoverColour, selectedColour, focusColour] of [
             )
           )
           for (const channel of await channels.all()) {
-            await expect(channel).toHaveAttribute('stroke-width', '4')
+            await expect(channel).toHaveCSS('stroke-width', '4px')
           }
           await expect(page.locator('.heatmap-blobs')).toHaveAttribute(
             'mask',
@@ -800,6 +800,49 @@ for (const [theme, hoverColour, selectedColour, focusColour] of [
           tab === 'heatmap' ? '.heatmap-quantile-label' : '.series-stat-tooltip'
         )
         await expect(quantileLabels).toHaveCount(3)
+        const emphasis = page.getByRole('button', {
+          name: 'Emphasize p95 overlay',
+          exact: true,
+        })
+        const urlBeforeEmphasis = page.url()
+        const geometry = await quantileLines.evaluateAll(lines =>
+          lines.map(line =>
+            ['d', 'x1', 'x2', 'y1', 'y2'].map(attr => line.getAttribute(attr))
+          )
+        )
+        await emphasis.click()
+        await expect(emphasis).toHaveAttribute('aria-pressed', 'true')
+        await expect(quantileLines.nth(1)).toHaveCSS('stroke-width', '4px')
+        await expect(quantileLines.nth(1)).toHaveCSS('opacity', '0.95')
+        await expect(quantileLines.first()).toHaveCSS('stroke-width', '2px')
+        await expect(page.locator('.quantile-line-backing').nth(1)).toHaveCSS(
+          'stroke-width',
+          '8px'
+        )
+        if (tab === 'heatmap')
+          await expect(
+            page.locator('.heatmap-quantile-channel').nth(1)
+          ).toHaveCSS('stroke-width', '8px')
+        await expect(page).toHaveURL(urlBeforeEmphasis)
+        expect(
+          await quantileLines.evaluateAll(lines =>
+            lines.map(line =>
+              ['d', 'x1', 'x2', 'y1', 'y2'].map(attr => line.getAttribute(attr))
+            )
+          )
+        ).toEqual(geometry)
+        await emphasis.press('Space')
+        await expect(emphasis).toHaveAttribute('aria-pressed', 'false')
+        await expect(quantileLines.nth(1)).toHaveCSS('stroke-width', '2px')
+        await expect(quantileLines.nth(1)).toHaveCSS('opacity', '0.35')
+        await expect(page.locator('.quantile-line-backing').nth(1)).toHaveCSS(
+          'stroke-width',
+          '4px'
+        )
+        if (tab === 'heatmap')
+          await expect(
+            page.locator('.heatmap-quantile-channel').nth(1)
+          ).toHaveCSS('stroke-width', '4px')
         const overlaysToggle = page.getByRole('checkbox', {
           name: 'Show chart stat overlays',
           exact: true,
@@ -953,6 +996,29 @@ test('extrema use the series colour and the average crosses above the series wit
     averageColour: 'rgb(144, 122, 169)',
     averageLabelAtRight: true,
   })
+  const emphasis = averageLabel.getByRole('button', {
+    name: 'Emphasize avg overlay',
+  })
+  const before = page.url()
+  await emphasis.click()
+  await expect(average.locator('.series-average-line')).toHaveCSS(
+    'stroke-width',
+    '4px'
+  )
+  await expect(average.locator('.series-average-line')).toHaveCSS(
+    'opacity',
+    '0.95'
+  )
+  await expect(page).toHaveURL(before)
+  await emphasis.click()
+  await expect(average.locator('.series-average-line')).toHaveCSS(
+    'stroke-width',
+    '2px'
+  )
+  await expect(average.locator('.series-average-line')).toHaveCSS(
+    'opacity',
+    '0.35'
+  )
 })
 
 test('a new single-point cumulative counter opens in Raw without preferences', async ({
@@ -1151,6 +1217,17 @@ test('Rate clicks pin the exact bucket and keep slope in the same card', async (
   expect(slopeDrawing.distanceFromPoint).toBeLessThan(0.01)
   expect(slopeDrawing.colour).toBe(slopeDrawing.cardColour)
   expect(slopeDrawing.colour).toBe('rgb(144, 122, 169)')
+  const slopeEmphasis = sticky.getByRole('button', {
+    name: 'Emphasize slope overlay',
+  })
+  const urlBeforeEmphasis = page.url()
+  await slopeEmphasis.click()
+  await expect(slopeGuide).toHaveCSS('stroke-width', '4px')
+  await expect(slopeGuide).toHaveCSS('opacity', '0.95')
+  await expect(page).toHaveURL(urlBeforeEmphasis)
+  await slopeEmphasis.press('Enter')
+  await expect(slopeGuide).toHaveCSS('stroke-width', '2px')
+  await expect(slopeGuide).toHaveCSS('opacity', '0.35')
   await expect(
     page.locator('.series-stat-tooltip').filter({ hasText: 'slope' })
   ).toHaveCount(0)
@@ -1333,26 +1410,37 @@ test('series open by their headers, one at a time, with one combined table', asy
   await expect(attribute.locator('.detail-property__key')).toHaveText('route')
   await expect(attribute.locator('.detail-property__type')).toHaveText('string')
   const fieldLayout = await attribute
-    .locator('.detail-property__header')
-    .evaluate(header => {
+    .locator('.detail-property__card')
+    .evaluate(card => {
+      const header = card.querySelector('.detail-property__header')!
       const key = header
         .querySelector('.detail-property__key')!
         .getBoundingClientRect()
       const badges = header
         .querySelector('.detail-property__badges')!
         .getBoundingClientRect()
-      const copy = header.querySelector('button')!.getBoundingClientRect()
+      const copy = card
+        .querySelector('.detail-property__header button')!
+        .getBoundingClientRect()
       return {
         keyRight: key.right,
         badgeLeft: badges.left,
-        badgeRight: badges.right,
+        keyTop: key.top,
+        keyHeight: key.height,
+        copyTop: copy.top,
+        copyHeight: copy.height,
+        copyRight: copy.right,
         copyLeft: copy.left,
         copyInset: header.getBoundingClientRect().right - copy.right,
       }
     })
   expect(fieldLayout.badgeLeft).toBeGreaterThan(fieldLayout.keyRight)
-  expect(fieldLayout.copyLeft - fieldLayout.badgeRight).toBeCloseTo(8, 0)
-  expect(Math.abs(fieldLayout.copyInset)).toBeLessThan(1)
+  expect(fieldLayout.copyLeft - fieldLayout.keyRight).toBeCloseTo(8, 0)
+  expect(fieldLayout.badgeLeft).toBeGreaterThanOrEqual(fieldLayout.copyRight)
+  expect(fieldLayout.copyTop + fieldLayout.copyHeight / 2).toBeCloseTo(
+    fieldLayout.keyTop + fieldLayout.keyHeight / 2,
+    0
+  )
   await expect(table).toContainText('/first')
   await expect(table.locator('tr[data-dp-id]')).toHaveCount(25)
   const datapoint = table.locator('tr[data-dp-id]').first()
@@ -1436,8 +1524,14 @@ test('series open by their headers, one at a time, with one combined table', asy
     .selectOption('50')
   await expect(table.locator('tr[data-dp-id]')).toHaveCount(40)
   await expect(nextPage).toBeInViewport({ ratio: 1 })
-  // Both long sections can share the available height when constrained.
-  // With enough room, each section must size to its own content instead.
+  // Section allocation stays stable when more vertical room becomes available.
+  const sectionRatio = async () => {
+    const seriesHeight = (await seriesBubble.boundingBox())!.height
+    return (
+      seriesHeight / (seriesHeight + (await fieldsBubble.boundingBox())!.height)
+    )
+  }
+  const beforeResize = await sectionRatio()
   await page.setViewportSize({ width: 1920, height: 2400 })
   await expect(series.nth(0).locator('details')).toHaveCount(0)
   await expect(series.nth(0)).not.toContainText('service.name')
@@ -1448,9 +1542,7 @@ test('series open by their headers, one at a time, with one combined table', asy
   await expect(resource.locator('.detail-property__origin')).toHaveText(
     'resource'
   )
-  await expect
-    .poll(async () => (await seriesBubble.boundingBox())!.height)
-    .toBeGreaterThan((await fieldsBubble.boundingBox())!.height)
+  await expect.poll(sectionRatio).toBeCloseTo(beforeResize, 2)
   await page.setViewportSize({ width: 1920, height: 1000 })
   await page
     .getByRole('checkbox', { name: 'Show route: /first in chart' })

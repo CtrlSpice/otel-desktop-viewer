@@ -18,11 +18,14 @@
     /** Marks the user-picked row. Bolder weight + a colored left
      *  accent so the eye anchors on it even amongst aggregates. */
     isPrimary?: boolean
+    /** Optional presentation-only emphasis for a reference overlay. */
+    emphasis?: { active: boolean; toggle: () => void }
   }
 </script>
 
 <script lang="ts">
   import type { Snippet } from 'svelte'
+  import ChartOverlayLabel from './ChartOverlayLabel.svelte'
   import type { AggregateSummaryRow } from '@/components/metrics/utils/aggregation'
   import ChartAggregateSummaryRows from '@/components/metrics/Charts/ChartAggregateSummaryRows.svelte'
   /* Callers position the card and provide preformatted rows. */
@@ -101,7 +104,11 @@
                           aria-label={row.glyphTitle ?? undefined}
                           >{row.glyph}</span
                         >
-                      {/if}{row.label}
+                      {/if}{#if row.emphasis}<ChartOverlayLabel
+                          label={row.label}
+                          active={row.emphasis.active}
+                          onclick={row.emphasis.toggle}
+                        />{:else}{row.label}{/if}
                     </span>
                     <span class="chart-selection-legend__value"
                       >{row.valueText}</span
@@ -131,7 +138,11 @@
                   title={row.glyphTitle ?? undefined}
                   aria-label={row.glyphTitle ?? undefined}>{row.glyph}</span
                 >
-              {/if}{row.label}
+              {/if}{#if row.emphasis}<ChartOverlayLabel
+                  label={row.label}
+                  active={row.emphasis.active}
+                  onclick={row.emphasis.toggle}
+                />{:else}{row.label}{/if}
             </span>
             <span class="chart-selection-legend__value">{row.valueText}</span>
           </li>

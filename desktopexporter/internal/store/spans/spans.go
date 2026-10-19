@@ -541,13 +541,19 @@ func GetSpan(ctx context.Context, db queryRower, traceID string, spanID uint64) 
 // not the search and display projection. Callers must transport the returned
 // bytes unchanged: parsing and re-encoding in JavaScript loses negative zero.
 func GetTraceOTLP(ctx context.Context, db *sql.DB, traceID string) (json.RawMessage, error) {
+	return GetTraceSelectionOTLP(ctx, db, traceID, "")
+}
+
+// GetTraceSelectionOTLP keeps resource/scope wrappers and filters by exact span identity.
+// spanID is decimal unsigned text, or empty for the complete retained trace.
+func GetTraceSelectionOTLP(ctx context.Context, db *sql.DB, traceID, spanID string) (json.RawMessage, error) {
 	query, err := queries.Render(queries.GetTraceOTLP, nil)
 	if err != nil {
 		return nil, fmt.Errorf("GetTraceOTLP: %w: %w", ErrSpansStoreInternal, err)
 	}
 
 	var raw []byte
-	if err := db.QueryRowContext(ctx, query, traceID).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(ctx, query, traceID, spanID, spanID).Scan(&raw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("GetTraceOTLP: %w", ErrTraceIDNotFound)
 		}

@@ -355,7 +355,13 @@ describe('TraceDetailView detail bubbles', () => {
         ],
       }),
     })
-    expect(screen.queryByRole('tablist')).toBeNull()
+    expect(
+      screen.getByRole('tablist', { name: 'Detail view' })
+    ).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Properties' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
     const fields = screen
       .getByText('Span', { exact: true, selector: '.collapse-title > span' })
       .closest('details')!

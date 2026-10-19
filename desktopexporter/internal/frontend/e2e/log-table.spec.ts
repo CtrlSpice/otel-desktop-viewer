@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import type { JsonLogData } from '../src/types/wire-types'
+import type { JsonLogData, JsonTraceData } from '../src/types/wire-types'
 import type { LogErrorNavigation } from '../src/types/api-types'
 
 const firstID = '00000000-0000-0000-0000-000000000001'
@@ -193,6 +193,333 @@ test('table cells reveal exact fields in separate Details, with observed-time fa
   )
 })
 
+test('Properties appends the shared associated Trace card without a collapsible section', async ({
+  page,
+}) => {
+  const traceID = '00000000000000000000000000000011'
+  const spanID = '0000000000000001'
+  const traceData: JsonTraceData = {
+    traceID,
+    traceStart: '1700000000000000000',
+    unplacedSpanCount: 0,
+    resources: { '0': { attributes: [], droppedAttributesCount: 0 } },
+    scopes: {
+      '0': { name: '', version: '', attributes: [], droppedAttributesCount: 0 },
+    },
+    spans: [
+      {
+        depth: 0,
+        matched: true,
+        spanData: {
+          traceState: '',
+          spanID,
+          parentSpanID: null,
+          flags: 0,
+          name: 'POST /checkout',
+          kindCode: 2,
+          kind: 'Server',
+          start: '0',
+          dur: '1000000000',
+          attributes: [],
+          events: [],
+          links: [],
+          r: 0,
+          s: 0,
+          droppedAttributesCount: 0,
+          droppedEventsCount: 0,
+          droppedLinksCount: 0,
+          statusCodeValue: 0,
+          statusCode: 'Unset',
+          statusMessage: '',
+        },
+      },
+    ],
+  }
+  let waterfallFetches = 0
+  let associatedFetches = 0
+  await page.route('**/rpc', async route => {
+    const { id, method, params } = route.request().postDataJSON()
+    if (method === 'getLog' && params.logRef === firstID) {
+      return route.fulfill({
+        json: { jsonrpc: '2.0', id, result: { ...logs[0]!, traceID, spanID } },
+      })
+    }
+    if (method === 'searchTraceSummaries') {
+      if (params.query) {
+        associatedFetches++
+        expect(params).toMatchObject({
+          startTime: null,
+          endTime: null,
+          limit: 1,
+          query: {
+            query: {
+              field: { name: 'traceID' },
+              fieldOperator: '=',
+              value: traceID,
+            },
+          },
+        })
+      }
+      return route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result: [
+            {
+              traceID,
+              hasRootSpan: true,
+              rootSpan: { name: 'POST /checkout', serviceName: 'api' },
+              startTime: '1700000000000000000',
+              durationNs: '1000000000',
+              spanCount: 5,
+              errorCount: 2,
+            },
+          ],
+        },
+      })
+    }
+    if (method === 'getTraceView') {
+      waterfallFetches++
+      return route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result: traceData,
+        },
+      })
+    }
+    return route.fallback()
+  })
+  await page.reload()
+  const panel = page.locator('.log-detail-panel')
+  const headings = panel.locator('summary.detail-bubble__heading')
+  await expect(headings).toHaveCount(0)
+  const trace = panel.getByRole('region', { name: 'Associated trace' })
+  const card = trace.getByRole('button', { name: /POST \/checkout/ })
+  await expect(card).toBeVisible()
+  await expect(card).toHaveClass(/signal-row/)
+  expect(waterfallFetches).toBe(0)
+  expect(associatedFetches).toBe(1)
+  expect(await trace.evaluate(element => element.closest('details'))).toBeNull()
+  expect(
+    await trace.evaluate(element => {
+      const fields = element
+        .closest('[role="tabpanel"]')!
+        .querySelector('table[aria-label="Log fields"]')!
+      return !!(
+        fields.compareDocumentPosition(element) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+      )
+    })
+  ).toBe(true)
+  await panel.getByRole('tab', { name: 'Raw JSON', exact: true }).click()
+  await expect(card).toBeHidden()
+  await panel.getByRole('tab', { name: 'Properties', exact: true }).click()
+  await expect(panel.getByRole('table', { name: 'Log fields' })).toBeVisible()
+  await expect(card).toBeVisible()
+  const exportButton = panel.getByRole('button', { name: 'Export log' })
+  const header = panel.getByRole('region', { name: 'Log record' })
+  const tabs = header.getByRole('tablist', { name: 'Detail view' })
+  await expect(tabs).toBeVisible()
+  await expect(header.getByLabel('Log timestamp')).toHaveCount(0)
+  await expect(header.locator('.badge')).toHaveCount(0)
+  await expect(header.locator('.pane-header__meta-row')).toHaveCount(0)
+  const tabsBounds = (await tabs.boundingBox())!
+  const headerBounds = (await header.boundingBox())!
+  expect(tabsBounds.x + tabsBounds.width).toBeGreaterThan(
+    headerBounds.x + headerBounds.width - 24
+  )
+  await expect(
+    panel.locator('.log-detail-panel__scroll').getByRole('tablist')
+  ).toHaveCount(0)
+  await expect(exportButton).toHaveClass(/btn-circle/)
+  await expect(exportButton).toHaveClass(/btn-primary/)
+  await expect(exportButton).toHaveText('')
+  const exportBounds = (await exportButton.boundingBox())!
+  const titleBounds = (await panel
+    .locator('.pane-header__title')
+    .boundingBox())!
+  expect(exportBounds.x).toBeLessThan(titleBounds.x)
+  expect(tabsBounds.y).toBeLessThan(titleBounds.y + titleBounds.height)
+  expect(tabsBounds.y + tabsBounds.height).toBeGreaterThan(titleBounds.y)
+  const errorColour = await panel.evaluate(element => {
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--color-error)'
+    element.append(probe)
+    const colour = getComputedStyle(probe).color
+    probe.remove()
+    return colour
+  })
+  await expect(
+    panel.locator('[data-field="severityText"] .attribute-value')
+  ).toHaveCSS('color', errorColour)
+  await expect(
+    panel.locator('[data-field="severityNumber"] .detail-property__value')
+  ).toHaveCSS('color', errorColour)
+  await card.click()
+  await expect(page).toHaveURL(new RegExp(`/traces/${traceID}\\?`))
+  expect(new URL(page.url()).searchParams.get('span')).toBe(spanID)
+  expect(new URL(page.url()).searchParams.get('time')).toBe('all')
+})
+
+test('Raw JSON folding uses waterfall-style icon controls on the top line', async ({
+  page,
+}) => {
+  const payload = JSON.stringify({
+    resourceLogs: [
+      {
+        scopeLogs: [
+          {
+            logRecords: [
+              { body: { stringValue: 'Folding fixture' }, severityNumber: 17 },
+            ],
+          },
+        ],
+      },
+    ],
+  })
+  await page.route(`**/export/logs/${firstID}`, async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      headers: { 'Content-Length': String(Buffer.byteLength(payload)) },
+      body: route.request().method() === 'HEAD' ? '' : payload,
+    })
+  })
+  await page.getByRole('tab', { name: 'Raw JSON', exact: true }).click()
+  const inspector = page.getByRole('region', { name: 'Raw JSON inspector' })
+  const editor = inspector.locator('.raw-json-editor')
+  await expect(editor).toBeVisible()
+  await expect(editor).toHaveClass(/value-syntax/)
+  await expect(editor).toHaveCSS('border-width', '0px')
+  await expect(editor).toHaveCSS('font-size', '12px')
+  await expect(editor.locator('.cm-lineNumbers')).toHaveCount(0)
+  await expect(editor.locator('.json-indent-guides')).toHaveCount(0)
+  await expect(editor.locator('.json-indent-bands')).toHaveCount(0)
+  await expect(editor.locator('.cm-gutters')).toHaveCSS(
+    'background-color',
+    'rgba(0, 0, 0, 0)'
+  )
+  await expect(editor.locator('.cm-foldGutter')).not.toContainText('⌄')
+  await expect(editor.locator('.cm-foldGutter')).not.toContainText('›')
+  const rawFold = editor.locator('.cm-foldGutter [title="Fold line"]').first()
+  const rawCaretBounds = (await rawFold.locator('svg').boundingBox())!
+  const rawTextBounds = await editor
+    .locator('.cm-line')
+    .first()
+    .evaluate(element => {
+      const range = document.createRange()
+      range.selectNodeContents(element)
+      const bounds = range.getBoundingClientRect()
+      return { y: bounds.y, height: bounds.height }
+    })
+  expect(
+    Math.abs(
+      rawCaretBounds.y +
+        rawCaretBounds.height / 2 -
+        (rawTextBounds.y + rawTextBounds.height / 2)
+    )
+  ).toBeLessThan(1.5)
+  await expect
+    .poll(() =>
+      rawFold.evaluate(
+        element =>
+          getComputedStyle(element.querySelector('.json-fold-icon')!).opacity
+      )
+    )
+    .toBe('1')
+  await rawFold.hover()
+  await expect
+    .poll(() =>
+      rawFold.evaluate(
+        element =>
+          getComputedStyle(element.querySelector('.json-fold-icon')!).opacity
+      )
+    )
+    .toBe('1')
+  await page.mouse.move(0, 0)
+  await editor.locator('.cm-content').focus()
+  await expect
+    .poll(() =>
+      rawFold.evaluate(
+        element =>
+          getComputedStyle(element.querySelector('.json-fold-icon')!).opacity
+      )
+    )
+    .toBe('1')
+  const stringColour = await editor.evaluate(element => {
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--detail-code-string)'
+    element.append(probe)
+    const colour = getComputedStyle(probe).color
+    probe.remove()
+    return colour
+  })
+  await expect(
+    editor.getByText('"Folding fixture"', { exact: true })
+  ).toHaveCSS('color', stringColour)
+  const folding = inspector.getByRole('group', { name: 'JSON folding' })
+  const collapse = folding.getByRole('button', {
+    name: 'Collapse JSON',
+    exact: true,
+  })
+  const expand = folding.getByRole('button', {
+    name: 'Expand JSON',
+    exact: true,
+  })
+  for (const button of [collapse, expand]) {
+    await expect(button).toBeEnabled()
+    await expect(button).toHaveText('')
+    await expect(button).toHaveClass(/chart-header-control/)
+    await expect(button.locator('svg')).toBeVisible()
+  }
+  const metadataBounds = (await inspector
+    .getByRole('status')
+    .filter({ hasText: /^OTLP JSON/ })
+    .boundingBox())!
+  const groupBounds = (await folding.boundingBox())!
+  expect(groupBounds.x).toBeGreaterThan(metadataBounds.x)
+  expect(groupBounds.y).toBeLessThan(metadataBounds.y + metadataBounds.height)
+  expect(groupBounds.y + groupBounds.height).toBeGreaterThan(metadataBounds.y)
+  const copy = inspector.getByRole('button', {
+    name: 'Copy OTLP JSON',
+    exact: true,
+  })
+  expect((await copy.boundingBox())!.x).toBeGreaterThanOrEqual(
+    groupBounds.x + groupBounds.width
+  )
+  await expect(
+    inspector.getByRole('button', { name: 'Search JSON' })
+  ).toHaveCount(0)
+  await expect(
+    inspector.getByRole('link', { name: 'Download log' })
+  ).toHaveCount(0)
+  const section = editor.locator('.cm-foldGutter [title="Fold line"]').nth(1)
+  await section.locator('..').click({ position: { x: 2, y: 8 } })
+  await expect(editor.locator('.cm-foldPlaceholder')).toHaveCount(1)
+  await expect(editor.locator('.cm-line').first()).toHaveText('{')
+  await expect(
+    editor.getByText('"Folding fixture"', { exact: true })
+  ).toHaveCount(0)
+  await editor
+    .locator('.cm-foldGutter [title="Unfold line"]:visible')
+    .first()
+    .locator('..')
+    .click()
+  await expect(
+    editor.getByText('"Folding fixture"', { exact: true })
+  ).toBeVisible()
+  await collapse.click()
+  await expect(editor.locator('.cm-foldPlaceholder').first()).toBeVisible()
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  await copy.click()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    payload
+  )
+  await expand.click()
+  await expect(editor.locator('.cm-foldPlaceholder')).toHaveCount(0)
+})
+
 test('external provenance is inline, shortens before crowding the title and expands again', async ({
   page,
 }) => {
@@ -338,44 +665,134 @@ test('structured previews have static syntax colours and Details folds Body and 
 
   const detailBody = page.locator('[data-field="body"]')
   await expect(detailBody).toContainText('9223372036854775807')
-  await detailBody
-    .getByRole('button', { name: 'Collapse body.request', exact: true })
-    .click()
+  const bodyHeader = detailBody.locator('.detail-property__header')
+  const copyBody = bodyHeader.getByRole('button', {
+    name: 'Copy body',
+    exact: true,
+  })
+  const keyBounds = (await bodyHeader
+    .locator('.detail-property__key')
+    .boundingBox())!
+  const copyBounds = (await copyBody.boundingBox())!
+  const badgeBounds = (await bodyHeader
+    .locator('.detail-property__badges')
+    .boundingBox())!
+  expect(copyBounds.x - (keyBounds.x + keyBounds.width)).toBeCloseTo(8, 0)
+  expect(badgeBounds.x).toBeGreaterThan(copyBounds.x + copyBounds.width)
+  expect(copyBounds.y + copyBounds.height / 2).toBeCloseTo(
+    keyBounds.y + keyBounds.height / 2,
+    0
+  )
+  await expect(
+    detailBody.locator('.detail-property__body button.value-copy')
+  ).toHaveCount(0)
+  await expect(detailBody.locator('.json-indent-guides')).toHaveCount(0)
+  await expect(detailBody.locator('.json-indent-bands')).toHaveCount(0)
+  await expect(detailBody.locator('.cm-editor')).toHaveCount(1)
+  await expect(body.locator('.cm-editor')).toHaveCount(0)
+  const bodyFold = detailBody
+    .locator('.cm-foldGutter [title="Fold line"]')
+    .nth(1)
+  const bodyCenterOffset = await bodyFold.evaluate(element => {
+    const icon = element.querySelector('svg')!.getBoundingClientRect()
+    const editor = element.closest('.cm-editor')!
+    const line = [...editor.querySelectorAll('.cm-line')].find(line =>
+      line.textContent?.includes('"request"')
+    )!
+    const range = document.createRange()
+    range.selectNodeContents(line)
+    const text = range.getBoundingClientRect()
+    return Math.abs(icon.y + icon.height / 2 - (text.y + text.height / 2))
+  })
+  expect(bodyCenterOffset).toBeLessThan(1.5)
+  await expect
+    .poll(() =>
+      bodyFold.evaluate(
+        element =>
+          getComputedStyle(element.querySelector('.json-fold-icon')!).opacity
+      )
+    )
+    .toBe('1')
+  await bodyFold.hover()
+  await expect
+    .poll(() =>
+      bodyFold.evaluate(
+        element =>
+          getComputedStyle(element.querySelector('.json-fold-icon')!).opacity
+      )
+    )
+    .toBe('1')
+  const bodyContent = detailBody.getByLabel('JSON value of body', {
+    exact: true,
+  })
+  await expect(bodyContent).toHaveAttribute('contenteditable', 'false')
+  await bodyContent.focus()
+  await page.mouse.move(0, 0)
+  await expect
+    .poll(() =>
+      bodyFold.evaluate(
+        element =>
+          getComputedStyle(element.querySelector('.json-fold-icon')!).opacity
+      )
+    )
+    .toBe('1')
+  await bodyFold.click()
   await expect(detailBody).not.toContainText('9223372036854775807')
-  await expect(detailBody).toContainText('… 1 field')
-  await detailBody
-    .getByRole('button', { name: 'Expand body.request', exact: true })
-    .focus()
-  await page.keyboard.press('Enter')
+  await expect(detailBody.locator('.cm-foldPlaceholder')).toHaveText('…')
+  await detailBody.locator('.cm-foldPlaceholder').click()
   await expect(detailBody).toContainText('9223372036854775807')
+  await bodyContent.focus()
+  await page.keyboard.press('Control+Alt+[')
+  await expect(detailBody.locator('.cm-foldPlaceholder')).toHaveText('…')
+  await expect(detailBody).not.toContainText('9223372036854775807')
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  await detailBody
+    .getByRole('button', { name: 'Copy body', exact: true })
+    .click()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    '{\n  "message": "ready",\n  "request": {\n    "sequence": 9223372036854775807\n  }\n}'
+  )
+  await detailBody.locator('.cm-foldPlaceholder').click()
+  await bodyContent.focus()
+  await page.keyboard.insertText('MUTATED')
+  await expect(bodyContent).not.toContainText('MUTATED')
+  await expect(bodyContent).toContainText('9223372036854775807')
+  await page.keyboard.press('ControlOrMeta+f')
+  const searchInput = detailBody.locator('.cm-search input[name="search"]')
+  await expect(searchInput).toBeVisible()
+  await searchInput.fill('9223372036854775807')
+  await searchInput.press('Enter')
+  await expect(detailBody.locator('.cm-searchMatch')).toHaveText(
+    '9223372036854775807'
+  )
+  await page.keyboard.press('Escape')
+  await expect(searchInput).toHaveCount(0)
 
   const input = page.locator('[data-field="gen_ai.input.messages"]')
+  await expect(input.locator('.json-indent-guides')).toHaveCount(0)
+  await expect(input.locator('.json-indent-bands')).toHaveCount(0)
+  await expect(input.locator('.json-fold-icon').first()).toHaveCSS(
+    'opacity',
+    '1'
+  )
   await input.scrollIntoViewIfNeeded()
-  await input
-    .getByRole('button', {
-      name: 'Collapse gen_ai.input.messages[0]',
-      exact: true,
-    })
-    .click()
+  await input.locator('.cm-foldGutter [title="Fold line"]').nth(1).click()
   await expect(input).not.toContainText('Explain the trace')
-  await input
-    .getByRole('button', {
-      name: 'Expand gen_ai.input.messages[0]',
-      exact: true,
-    })
-    .click()
+  await expect(input.locator('.cm-foldPlaceholder')).toHaveText('…')
+  await input.locator('.cm-foldPlaceholder').click()
   await expect(input).toContainText('Explain the trace')
   const output = page.locator('[data-field="gen_ai.output.messages"]')
+  await expect(output.locator('.json-indent-guides')).toHaveCount(0)
+  await expect(output.locator('.json-indent-bands')).toHaveCount(0)
+  await expect(output.locator('.json-fold-icon').first()).toHaveCSS(
+    'opacity',
+    '1'
+  )
   await output.scrollIntoViewIfNeeded()
   await expect(output).toContainText('9007199254740993')
-  await output
-    .getByRole('button', {
-      name: 'Collapse gen_ai.output.messages',
-      exact: true,
-    })
-    .click()
+  await output.locator('.cm-foldGutter [title="Fold line"]').first().click()
   await expect(output).not.toContainText('9007199254740993')
-  await expect(output).toContainText('[… 1 item]')
+  await expect(output.locator('.cm-foldPlaceholder')).toHaveText('…')
   await expect(row).toHaveAttribute('aria-selected', 'true')
 })
 
@@ -639,10 +1056,17 @@ test('fetches numbered pages, retains Details, and resets paging for sort, query
   expect(requests.at(-1)).toMatchObject({ offset: 0, pageSize: 50 })
   await page.getByRole('button', { name: 'Page 2', exact: true }).click()
   await expect(range).toContainText('51–100')
+  await page.getByRole('combobox', { name: 'Logs per page' }).selectOption('25')
+  await expect(range).toContainText('1–25 of 235 logs')
+  expect(requests.at(-1)).toMatchObject({ offset: 0, pageSize: 25 })
+  await page.getByRole('button', { name: 'Page 2', exact: true }).click()
+  await expect(range).toContainText('26–50 of 235 logs')
+  expect(requests.at(-1)).toMatchObject({ offset: 25, pageSize: 25 })
+  await expect(detail).toContainText('Full body 0: exact retained text')
   await page.getByRole('button', { name: 'Filters', exact: true }).click()
   await page.getByRole('checkbox', { name: 'Service api', exact: true }).check()
   await expect(range).toContainText('1–7 of 7 logs')
-  expect(requests.at(-1)).toMatchObject({ offset: 0, pageSize: 50 })
+  expect(requests.at(-1)).toMatchObject({ offset: 0, pageSize: 25 })
   expect(requests.at(-1)?.query).toBeTruthy()
   await expect(detail).toContainText('Full body 0: exact retained text')
 })
@@ -933,6 +1357,18 @@ test('footer delete controls dispatch only their intended mocked operations', as
   await expect(page.locator(`[data-log-ref="${firstID}"]`)).toHaveCount(0)
   await expect(page.locator(`[data-log-ref="${secondID}"]`)).toBeVisible()
   expect(cleared).toBe(false)
+  page.once('dialog', async dialog => {
+    expect(dialog.message()).toContain(
+      'including those outside the current filters'
+    )
+    await dialog.dismiss()
+  })
+  await page
+    .getByRole('button', { name: 'Delete all logs', exact: true })
+    .click()
+  expect(cleared).toBe(false)
+  await expect(page.locator(`[data-log-ref="${secondID}"]`)).toBeVisible()
+  page.once('dialog', dialog => dialog.accept())
   await page
     .getByRole('button', { name: 'Delete all logs', exact: true })
     .click()
