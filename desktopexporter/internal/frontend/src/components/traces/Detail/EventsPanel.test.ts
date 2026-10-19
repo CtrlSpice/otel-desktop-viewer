@@ -42,15 +42,7 @@ describe('EventsPanel selected event', () => {
     expect(cards[1]).toHaveAttribute('aria-expanded', 'false')
     expect(cards[0]!.querySelector('a, button')).toBeNull()
     expect(screen.getAllByText('Span event', { exact: true })).toHaveLength(2)
-    const warning = screen.getAllByRole('link', { name: 'API deprecation' })[0]!
-    expect(warning).toHaveAttribute(
-      'href',
-      'https://opentelemetry.io/blog/2026/deprecating-span-events/'
-    )
-    expect(warning).toHaveAttribute(
-      'title',
-      expect.stringContaining('Existing span-event data remains supported.')
-    )
+    expect(screen.queryByRole('link', { name: 'API deprecation' })).toBeNull()
   })
 
   it('reveals and scrolls to the selected event while other cards remain available', async () => {

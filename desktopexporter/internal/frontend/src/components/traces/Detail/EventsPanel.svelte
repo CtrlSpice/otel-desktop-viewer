@@ -51,16 +51,6 @@
       reveal={selectedEventIndex === index}
     >
       {#snippet badge()}<span class="badge-count">Span event</span>{/snippet}
-      <div class="px-3 py-2">
-        <a
-          class="badge badge-xs badge-soft badge-warning"
-          href="https://opentelemetry.io/blog/2026/deprecating-span-events/"
-          target="_blank"
-          rel="noopener noreferrer"
-          title="OpenTelemetry is deprecating the Span Event API in favour of the Logs API. Existing span-event data remains supported."
-          >API deprecation</a
-        >
-      </div>
       <table class="detail-fields w-full" aria-label="Event {event.name}">
         <tbody>
           <SpanField
