@@ -82,8 +82,9 @@
   ></span>
   <span class="service-label">
     <span class="min-w-0 truncate">{part.label}</span>
-    <span class="badge-count" aria-label={`${part.count} spans`}
-      >{part.count.toLocaleString()}</span
+    <span
+      class="shrink-0 text-rp-subtle tabular-nums"
+      aria-label={`${part.count} spans`}>({part.count.toLocaleString()})</span
     >
   </span>
 {/snippet}
