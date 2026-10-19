@@ -108,6 +108,18 @@ export function categoricalPalette(
   return out
 }
 
+/** Keep orange tones out of trace identities so papaya remains an internal-error cue. */
+export function traceSpanPalette(count: number, theme: string = ''): string[] {
+  const requested = categoricalPalette(count, 'iris', theme)
+  if (requested.length === 0) return []
+  const palette = PALETTES_BY_THEME.get(theme) ?? DEFAULT_CATEGORICAL_PALETTE
+  const gold = new Set<string>(palette.gold)
+  const pool = categoricalPalette(25, 'iris', theme).filter(
+    color => !gold.has(color)
+  )
+  return requested.map((_, index) => pool[index % pool.length]!)
+}
+
 /** Reserve iris for metric annotations, retaining 24 stable slots for the 22-series cap. */
 export function metricSeriesPalette(
   count: number,

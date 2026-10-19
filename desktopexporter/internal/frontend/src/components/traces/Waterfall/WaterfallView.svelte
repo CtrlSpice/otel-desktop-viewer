@@ -3,7 +3,7 @@
   import type { TreeConnectorMeta } from './WaterfallTreeGutter.svelte'
   import { getServiceName } from '@/utils/resource'
   import ExportButton from '@/components/shared/ExportButton.svelte'
-  import { categoricalPalette } from '@/utils/chart-palette'
+  import { traceSpanPalette } from '@/utils/chart-palette'
   import { traceServiceColor } from '@/utils/trace-service-color'
   import { themeSignal } from '@/state/theme.svelte'
   import { recordsForSpan, type TimelineRecord } from './timeline-markers'
@@ -166,9 +166,8 @@
         orderedKeys.map(key => [key, traceServiceColor(key, theme)])
       )
     }
-    const palette = categoricalPalette(
+    const palette = traceSpanPalette(
       Math.max(orderedKeys.length, MIN_TRACE_PALETTE),
-      'iris',
       theme
     )
     return new Map(orderedKeys.map((k, i) => [k, palette[i]!]))

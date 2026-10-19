@@ -5,6 +5,7 @@ import {
   heatmapSwatches,
   metricSeriesPalette,
   readableTextColor,
+  traceSpanPalette,
 } from './chart-palette'
 
 describe('heatmapSwatches', () => {
@@ -88,6 +89,29 @@ describe('categoricalPalette', () => {
       RangeError
     )
     expect(() => categoricalPalette(2 ** 32, 'pine')).toThrow(RangeError)
+  })
+})
+
+describe('traceSpanPalette', () => {
+  it('excludes orange shades across themes, including after palette reuse', () => {
+    for (const [theme, families] of Object.entries(CHART_PALETTES)) {
+      const pool = traceSpanPalette(40, theme)
+      expect(new Set(pool)).toEqual(
+        new Set([
+          ...families.iris,
+          ...families.pine,
+          ...families.foam,
+          ...families.rose,
+        ])
+      )
+      for (const orange of families.gold) expect(pool).not.toContain(orange)
+      expect(pool).not.toContain('#ff8000')
+      expect(pool.slice(20)).toEqual(pool.slice(0, 20))
+      expect(traceSpanPalette(3, theme)).toEqual(pool.slice(0, 3))
+    }
+    expect(traceSpanPalette(20, 'unknown')).toEqual(
+      traceSpanPalette(20, 'rose-pine-moon')
+    )
   })
 })
 
