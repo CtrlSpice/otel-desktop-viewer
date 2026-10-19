@@ -132,7 +132,7 @@ test('run selection, assessments, filtering and browser history stay connected',
   for (const key of ['investigator estimate (CAD)', 'grader estimate (CAD)']) {
     await expect(
       accounting.locator(`[data-field="${key}"] .detail-property__body`)
-    ).toHaveText('"Unknown"')
+    ).toHaveText('Unknown')
   }
   await page.goBack()
   await expect(
@@ -148,8 +148,83 @@ test('run selection, assessments, filtering and browser history stay connected',
   await expect(
     page
       .getByRole('table', { name: 'Grading for this run' })
-      .getByText('"Unknown"', { exact: true })
+      .getByText('Unknown', { exact: true })
   ).toHaveCount(2)
+})
+
+test('result views retain selection and keep costs and missing measurements distinct', async ({
+  page,
+}) => {
+  await enableEvals(page)
+  await page.goto('/evals?run=direct&attempt=cpu-evidence')
+  const selected = page.getByRole('button', {
+    name: 'Compare CPU evidence',
+    exact: true,
+  })
+  const url = page.url()
+  await expect(selected).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('tab', { name: 'Time', exact: true }).click()
+  const time = page.getByRole('table', { name: 'Time for Direct agent' })
+  await expect(
+    time.getByRole('row', { name: /Compare CPU evidence/ })
+  ).toContainText('89 s')
+  await expect(
+    time.getByRole('row', { name: /Compare checkout latency/ })
+  ).toContainText('Unknown')
+  await expect(
+    time.getByRole('row', { name: /Find the slow request/ })
+  ).toContainText('1 failed')
+  await page.getByRole('tab', { name: 'Cost', exact: true }).click()
+  const costs = page.getByRole('table', { name: 'Cost for Direct agent' })
+  await expect(
+    costs.getByRole('columnheader', { name: /Investigator/ })
+  ).toBeVisible()
+  await expect(
+    costs.getByRole('columnheader', { name: /Grader/ })
+  ).toBeVisible()
+  await expect(
+    costs
+      .getByRole('row', { name: /Compare CPU evidence/ })
+      .getByRole('cell', { name: 'Unknown', exact: true })
+  ).toHaveCount(2)
+  await expect(
+    costs.getByRole('row', { name: /Shown attempts/ })
+  ).toContainText('Incomplete')
+  await expect(selected).toHaveAttribute('aria-pressed', 'true')
+  expect(page.url()).toBe(url)
+  await page.getByRole('tab', { name: 'Results', exact: true }).click()
+  const results = page.getByRole('table', { name: 'Results for Direct agent' })
+  await expect(
+    results
+      .getByRole('row', { name: /Compare CPU evidence/ })
+      .getByText('Unscored', { exact: true })
+  ).toHaveCount(3)
+  await expect(
+    results.getByRole('row', { name: /Correlate the trace and logs/ })
+  ).toContainText('0 / 1')
+  await expect(selected).toHaveAttribute('aria-pressed', 'true')
+  expect(page.url()).toBe(url)
+  const resultTab = page.getByRole('tab', { name: 'Results', exact: true })
+  await resultTab.focus()
+  await page.keyboard.press('End')
+  await expect(
+    page.getByRole('tab', { name: 'Cost', exact: true })
+  ).toBeFocused()
+  await expect(costs).toBeVisible()
+  expect(page.url()).toBe(url)
+  await page
+    .getByRole('searchbox', { name: 'Search evals' })
+    .fill('CPU evidence')
+  await expect(costs.locator('tbody tr')).toHaveCount(1)
+  await expect(
+    costs
+      .getByRole('row', { name: /Shown attempts/ })
+      .getByRole('cell', { name: 'Unknown', exact: true })
+  ).toHaveCount(2)
+  await expect(selected).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: 'Clear search', exact: true }).click()
+  await expect(costs.locator('tbody tr')).toHaveCount(8)
+  expect(page.url()).toBe(url)
 })
 
 test('detail actions reopen the panel, including the selected attempt', async ({

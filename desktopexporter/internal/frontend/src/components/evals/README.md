@@ -24,6 +24,13 @@ Run/attempt selection and the result filter are URL-backed. Browser history
 returns to the selected run/attempt; detail disclosures are local UI state and
 existing panel widths remain resizable. Storage-backed sorting is not implemented.
 
+The main pane has Results, Time and Cost views. Results keep each named assessment
+and its numeric score separate. Time shows recorded attempt durations and tool
+counts; its bars share the selected run's longest recorded duration. Cost keeps
+investigator and grader estimates separate, with currency, unknown values and
+incomplete totals explicit. View switching preserves the selected attempt and
+filter. Totals cover the shown attempts; drawer summaries cover the whole run.
+
 The standalone saved-results report remains a separate presentation. Its
 Trace / Span links target this viewer's existing trace routes; the report's
 score-column positions do not define Evals run identities. Import, storage-backed

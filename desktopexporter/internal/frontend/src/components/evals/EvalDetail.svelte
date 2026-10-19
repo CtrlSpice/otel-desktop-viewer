@@ -47,11 +47,12 @@
     </DetailField>{/if}
 {/snippet}
 
-{#if !attempt}<PaneHeader
-    mode="title"
-    title="Run details"
-    ariaLabel="Run detail heading"
-  />{/if}
+<PaneHeader
+  mode="title"
+  title={attempt?.name ?? 'Run details'}
+  subtitle={attempt ? `Rep ${attempt.repetition}` : undefined}
+  ariaLabel={attempt ? 'Attempt detail heading' : 'Run detail heading'}
+/>
 
 <DetailStack label={attempt ? 'Attempt details' : 'Run details'}>
   {#if !attempt}
@@ -138,64 +139,62 @@
       </table>
     </DetailBubble>
   {:else}
-    <DetailBubble label="Fields">
-      <FieldGroup label="Attempt" detail>
-        <table class="detail-fields w-full" aria-label="Attempt fields">
-          <tbody>
-            <DetailField
-              fieldName="name"
-              fieldType="string"
-              fieldValue={attempt.name}
-            />
-            <DetailField
-              fieldName="state"
-              fieldType="string"
-              fieldValue={attempt.state}
-              >{#snippet value()}<span
-                  class:text-papaya={attempt.state === 'Error'}
-                  >{attempt.state}</span
+    <DetailBubble label="Attempt">
+      <table class="detail-fields w-full" aria-label="Attempt fields">
+        <tbody>
+          <DetailField
+            fieldName="name"
+            fieldType="string"
+            fieldValue={attempt.name}
+          />
+          <DetailField
+            fieldName="state"
+            fieldType="string"
+            fieldValue={attempt.state}
+            >{#snippet value()}<span
+                class:text-papaya={attempt.state === 'Error'}
+                >{attempt.state}</span
+              >{/snippet}</DetailField
+          >
+          <DetailField
+            fieldName="repetition"
+            fieldType="integer"
+            fieldValue={String(attempt.repetition)}
+          />
+          {#if startedAt}<DetailField
+              fieldName="started"
+              fieldType="timestamp"
+              fieldValue={startedAt}
+              timestampLabel={localTimestamp(startedAt)}
+              >{#snippet value()}<time
+                  class="text-sm text-rp-subtle tabular-nums"
+                  datetime={startedAt}
+                  title={startedAt}>{localTimestamp(startedAt)}</time
                 >{/snippet}</DetailField
-            >
-            <DetailField
-              fieldName="repetition"
-              fieldType="integer"
-              fieldValue={String(attempt.repetition)}
-            />
-            {#if startedAt}<DetailField
-                fieldName="started"
-                fieldType="timestamp"
-                fieldValue={startedAt}
-                timestampLabel={localTimestamp(startedAt)}
-                >{#snippet value()}<time
-                    class="text-sm text-rp-subtle tabular-nums"
-                    datetime={startedAt}
-                    title={startedAt}>{localTimestamp(startedAt)}</time
-                  >{/snippet}</DetailField
-              >{/if}
-            {#if attempt.error}<DetailField
-                fieldName="execution error"
-                fieldType="string"
-                fieldValue={attempt.error}
-                multiline
-                >{#snippet value()}<span class="text-papaya whitespace-pre-wrap"
-                    >{attempt.error}</span
-                  >{/snippet}</DetailField
-              >{/if}
-            <DetailField
-              fieldName="question"
+            >{/if}
+          {#if attempt.error}<DetailField
+              fieldName="execution error"
               fieldType="string"
-              fieldValue={attempt.question}
+              fieldValue={attempt.error}
               multiline
-            />
-            <DetailField
-              fieldName="answer"
-              fieldType="string"
-              fieldValue={attempt.answer ?? 'No answer recorded'}
-              multiline
-            />
-          </tbody>
-        </table>
-      </FieldGroup>
+              >{#snippet value()}<span class="text-papaya whitespace-pre-wrap"
+                  >{attempt.error}</span
+                >{/snippet}</DetailField
+            >{/if}
+          <DetailField
+            fieldName="question"
+            fieldType="string"
+            fieldValue={attempt.question}
+            multiline
+          />
+          <DetailField
+            fieldName="answer"
+            fieldType="string"
+            fieldValue={attempt.answer ?? 'No answer recorded'}
+            multiline
+          />
+        </tbody>
+      </table>
       <FieldGroup label="Accounting" detail>
         <table class="detail-fields w-full" aria-label="Attempt accounting">
           <tbody>

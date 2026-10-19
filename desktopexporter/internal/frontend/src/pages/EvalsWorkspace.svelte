@@ -3,14 +3,12 @@
   import { Cancel01Icon } from '@hugeicons/core-free-icons'
   import { QuestionMarkIcon } from '@/icons'
   import PageLayout from '@/components/shared/PageLayout.svelte'
-  import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import DateTimeFilter from '@/components/shared/Toolbar/DateTimeFilter.svelte'
   import EvalRunSummary from '@/components/evals/EvalRunSummary.svelte'
-  import RunStatusBadge from '@/components/evals/RunStatusBadge.svelte'
+  import EvalResults from '@/components/evals/EvalResults.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import SignalDrawerFooter from '@/components/shared/Drawer/SignalDrawerFooter.svelte'
   import EvalDetail from '@/components/evals/EvalDetail.svelte'
-  import AssessmentBadge from '@/components/evals/AssessmentBadge.svelte'
   import { exampleRuns } from '@/components/evals/examples'
   import { getRouteContext } from '@/contexts/route-context.svelte'
   import { navigate, buildSearch, withQueryPatch } from '@/route'
@@ -132,73 +130,20 @@
           >View issue</a
         >
       </div>{/if}
-    <PaneHeader mode="title" title={run.name} subtitle={run.evaluation}>
-      {#snippet badge()}<RunStatusBadge
-          state={run.state}
-          pauseReason={run.pauseReason}
-        />{/snippet}
-      {#snippet right()}<button
-          class="btn btn-ghost btn-xs"
-          onclick={() => showDetail(null)}>Run details</button
-        >{/snippet}
-    </PaneHeader>
-    <div class="min-h-0 flex-1 overflow-auto">
-      <table class="table w-full">
-        <caption class="sr-only">Results for {run.name}</caption>
-        <thead class="header-surface sticky top-0 z-10"
-          ><tr
-            ><th class="table-header-cell text-left" scope="col"
-              >Case / attempt</th
-            >{#each run.assessments as definition}<th
-                class="table-header-cell text-right"
-                scope="col"
-                title={definition.scale}>{definition.name}</th
-              >{/each}</tr
-          ></thead
+    <EvalResults
+      {run}
+      attempts={results}
+      selectedID={attempt?.id}
+      onSelect={showDetail}
+      onRunDetails={() => showDetail(null)}
+    />
+    {#if !results.length}<div class="p-6 text-sm">
+        <p>No matching attempts</p>
+        <button
+          class="btn btn-ghost btn-sm"
+          onclick={() => update({ q: null }, true)}>Clear search</button
         >
-        <tbody class="table-body-surface">
-          {#each results as item (item.id)}
-            <tr
-              class="table-row"
-              class:table-row--selected={attempt?.id === item.id}
-            >
-              <th scope="row" class="table-cell text-left font-normal"
-                ><button
-                  class="btn btn-ghost btn-sm h-auto justify-start text-left whitespace-normal hover:bg-transparent"
-                  aria-pressed={attempt?.id === item.id}
-                  onclick={() => showDetail(item.id)}>{item.name}</button
-                >
-                <div class="flex flex-wrap items-center gap-2 px-3 text-xs">
-                  <span
-                    class="badge badge-xs badge-soft"
-                    class:badge-papaya={item.state === 'Error'}
-                    >{item.state}</span
-                  >{#if item.seconds !== undefined}<span class="tabular-nums"
-                      >{item.seconds} s</span
-                    >{/if}<span>Rep {item.repetition}</span>
-                </div></th
-              >
-              {#each run.assessments as definition}<td
-                  class="table-cell text-right"
-                  ><AssessmentBadge
-                    assessment={item.assessments.find(
-                      score => score.id === definition.id
-                    )}
-                    maximum={definition.maximum}
-                  /></td
-                >{/each}
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-      {#if !results.length}<div class="p-6 text-sm">
-          <p>No matching attempts</p>
-          <button
-            class="btn btn-ghost btn-sm"
-            onclick={() => update({ q: null }, true)}>Clear search</button
-          >
-        </div>{/if}
-    </div>
+      </div>{/if}
   {/snippet}
   {#snippet detail()}
     {#key `${run.id}/${attempt?.id ?? ''}`}<EvalDetail {run} {attempt} />{/key}
