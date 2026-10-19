@@ -50,6 +50,13 @@ export type JsonMatchedSpan = {
   spanID: string
 }
 
+export type JsonSummaryBreakdownPart = {
+  key: string
+  label: string
+  count: number
+  other?: boolean
+}
+
 export type JsonTraceSummary = {
   traceID: string
   hasRootSpan: boolean
@@ -59,6 +66,7 @@ export type JsonTraceSummary = {
   durationNs: string | null
   spanCount: number
   errorCount: number
+  serviceBreakdown?: JsonSummaryBreakdownPart[]
   /** Computed identities of matching spans; present only for filtered searches. */
   matchedSpans?: JsonMatchedSpan[]
 }
@@ -613,6 +621,7 @@ export type JsonMetricSummary = {
    *  seriesCount on an unbounded range, lower than it never. */
   seriesCardinality: number
   dataPointCount: number
+  seriesBreakdown?: JsonSummaryBreakdownPart[]
   /** @derived Latest Gauge/Sum value by timestamp in the requested window.
    * SQL coalesces the double/int arms into an IEEE-754 metric-unit number, so
    * an integer source may be approximate past 2^53. Null for histograms. */

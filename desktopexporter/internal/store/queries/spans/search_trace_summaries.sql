@@ -27,6 +27,31 @@
 			select *
 			from trace_summaries
 			order by {{.Order}}{{.Limit}}
+		),
+		service_counts as (
+			select s.trace_id, coalesce(s.service_name, '') as service_name, count(*) as span_count
+			from spans s
+			join selected_summaries selected on selected.trace_id = s.trace_id
+			group by s.trace_id, coalesce(s.service_name, '')
+		),
+		ranked_services as (
+			select *, row_number() over (partition by trace_id order by span_count desc, service_name) as rank
+			from service_counts
+		),
+		service_parts as (
+			select trace_id, 'service:' || service_name as key,
+				coalesce(nullif(service_name, ''), 'Unknown service') as label,
+				span_count, false as other
+			from ranked_services where rank <= 8
+			union all
+			select trace_id, 'other-services', 'Other services', sum(span_count), true
+			from ranked_services where rank > 8 group by trace_id
+		),
+		service_breakdowns as (
+			select trace_id, to_json(list(json_object(
+				'key', key, 'label', label, 'count', span_count, 'other', other
+			) order by other, span_count desc, key)) as parts
+			from service_parts group by trace_id
 		)
 		select cast(coalesce(to_json(list(json_object(
 			'traceID',      replace(sub.trace_id::varchar, '-', ''),
@@ -43,7 +68,8 @@
 				else null
 			end,
 			'spanCount',    sub.span_count,
-			'errorCount',   sub.error_count{{.MatchProjection}}
+			'errorCount',   sub.error_count,
+			'serviceBreakdown', (select parts from service_breakdowns where trace_id = sub.trace_id){{.MatchProjection}}
 		) order by {{.Order}}
 		)), '[]') as varchar) as summaries
 		from selected_summaries sub{{.MatchJoin}}

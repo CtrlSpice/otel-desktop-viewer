@@ -1060,28 +1060,45 @@ func SearchSummariesWithOptions(ctx context.Context, db *sql.DB, timeRange timer
 }
 
 func searchSummaries(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (json.RawMessage, error) {
+	query, args, err := searchSummariesSQL(timeRange, criteria, options)
+	if err != nil {
+		return nil, err
+	}
+	var raw []byte
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("SearchSummaries: %w: %w", ErrMetricsStoreInternal, err)
+	}
+	if raw == nil {
+		return json.RawMessage("[]"), nil
+	}
+	return json.RawMessage(raw), nil
+}
+
+// searchSummariesSQL builds the query and bound arguments without database I/O.
+// Validation, filtering, sorting, and limit placement depend only on the inputs.
+func searchSummariesSQL(timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (string, []any, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
 		searchTree, err = search.ParseQueryTree(criteria)
 		if err != nil {
-			return nil, fmt.Errorf("SearchSummaries: %w: %w", ErrInvalidMetricQuery, err)
+			return "", nil, fmt.Errorf("SearchSummaries: %w: %w", ErrInvalidMetricQuery, err)
 		}
 	}
 	cteSQL, whereClause, args, err := buildMetricSQL(searchTree, timeRange)
 	if err != nil {
-		return nil, fmt.Errorf("SearchSummaries: %w: %w", ErrInvalidMetricQuery, err)
+		return "", nil, fmt.Errorf("SearchSummaries: %w: %w", ErrInvalidMetricQuery, err)
 	}
 
 	candidateOrder, summaryOrder, earlyLimit, err := metricSummaryOrderBy(options.Sort)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 	candidateLimit := ""
 	summaryLimit := ""
 	if options.Limit != nil {
 		if *options.Limit < 1 {
-			return nil, fmt.Errorf("SearchSummaries: limit must be positive: %w", ErrInvalidMetricLimit)
+			return "", nil, fmt.Errorf("SearchSummaries: limit must be positive: %w", ErrInvalidMetricLimit)
 		}
 		if earlyLimit {
 			candidateLimit = "\n\t\t\tlimit ?"
@@ -1101,16 +1118,9 @@ func searchSummaries(ctx context.Context, db *sql.DB, timeRange timerange.TimeRa
 		SummaryLimit:   summaryLimit,
 	})
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	var raw []byte
-	if err := db.QueryRowContext(ctx, query, args...).Scan(&raw); err != nil {
-		return nil, fmt.Errorf("SearchSummaries: %w: %w", ErrMetricsStoreInternal, err)
-	}
-	if raw == nil {
-		return json.RawMessage("[]"), nil
-	}
-	return json.RawMessage(raw), nil
+	return query, args, nil
 }
 
 func metricSummaryOrderBy(sortOption *search.Sort) (candidateOrder, summaryOrder string, earlyLimit bool, err error) {

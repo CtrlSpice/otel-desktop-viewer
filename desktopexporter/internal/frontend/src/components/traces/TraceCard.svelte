@@ -8,6 +8,7 @@
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import SignalCard from '@/components/shared/SignalCard.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
+  import SummaryBreakdown from '@/components/shared/SummaryBreakdown.svelte'
 
   type Props = {
     trace: TraceSummary
@@ -43,11 +44,6 @@
   description={trace.traceID}
   descriptionIsID
   {titleMuted}
-  timeLayout="interval"
-  timestamp={startParts.value}
-  timestampUnit={startParts.unit || undefined}
-  duration={durationParts?.value}
-  durationUnit={durationParts?.unit}
   {onclick}
 >
   {#snippet badge()}
@@ -56,5 +52,30 @@
       spanCount={trace.spanCount}
       errorCount={trace.errorCount}
     />
+  {/snippet}
+  {#snippet meta()}
+    <div class="flex w-full min-w-0 flex-col gap-2 pt-1">
+      <div
+        class="flex min-w-0 items-center justify-between gap-3 text-xs tabular-nums"
+      >
+        <span
+          class="flex min-w-0 items-center gap-1"
+          title={`Start: ${startParts.value} ${startParts.unit}`}
+        >
+          <span class="shrink-0">Start:</span>
+          <span class="truncate text-base-content">{startParts.value}</span>
+          {#if startParts.unit}<span class="shrink-0">{startParts.unit}</span
+            >{/if}
+        </span>
+        {#if durationParts}
+          <span class="flex shrink-0 items-center gap-1">
+            <span>Duration:</span>
+            <span class="text-primary">{durationParts.value}</span>
+            <span class="text-primary">{durationParts.unit}</span>
+          </span>
+        {/if}
+      </div>
+      <SummaryBreakdown signal="trace" parts={trace.serviceBreakdown ?? []} />
+    </div>
   {/snippet}
 </SignalCard>

@@ -3,6 +3,7 @@
     label: string
     count: number
     tone: 'success' | 'warning' | 'error' | 'papaya' | 'neutral'
+    color?: string
   }
 </script>
 
@@ -29,6 +30,7 @@
       class:bg-papaya={part.tone === 'papaya'}
       class:bg-neutral={part.tone === 'neutral'}
       style:flex={part.count}
+      style:background-color={part.color}
     ></span>
   {/each}
 </div>

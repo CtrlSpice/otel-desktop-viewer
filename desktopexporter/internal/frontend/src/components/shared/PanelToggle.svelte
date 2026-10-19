@@ -3,8 +3,6 @@
   import {
     PanelLeftCloseIcon,
     PanelLeftOpenIcon,
-    PanelRightCloseIcon,
-    PanelRightOpenIcon,
   } from '@hugeicons/core-free-icons'
 
   let {
@@ -22,39 +20,35 @@
   const label = $derived(
     `${open ? 'Collapse' : 'Open'} ${side === 'left' ? 'sidebar' : 'details'}`
   )
-  const icon = $derived(
-    side === 'left'
-      ? open
-        ? PanelLeftCloseIcon
-        : PanelLeftOpenIcon
-      : open
-        ? PanelRightCloseIcon
-        : PanelRightOpenIcon
-  )
+  const icon = $derived(open ? PanelLeftCloseIcon : PanelLeftOpenIcon)
 </script>
 
 <button
   type="button"
-  class="panel-toggle btn btn-circle {open
-    ? 'btn-soft btn-primary'
-    : 'btn-ghost'}"
+  class="panel-toggle btn btn-circle btn-ghost btn-sm shrink-0 text-sm tooltip tooltip-bottom"
   aria-label={label}
-  title={label}
+  data-tip={label}
   aria-expanded={open}
   aria-controls={controls}
   {onclick}
 >
-  <HugeiconsIcon {icon} size={16} strokeWidth={1.5} aria-hidden="true" />
+  <span class="inline-flex" class:panel-toggle__mirror={side === 'right'}>
+    <HugeiconsIcon {icon} size={17} strokeWidth={1.5} aria-hidden="true" />
+  </span>
 </button>
 
 <style lang="postcss">
   @reference "../../app.css";
 
   .panel-toggle {
-    @apply size-10 shrink-0 border-0 p-0 shadow-none;
+    @apply text-base-content;
   }
 
-  .panel-toggle[aria-expanded='false'] {
-    @apply text-base-content/50 hover:text-base-content;
+  .panel-toggle[aria-expanded='true'] {
+    @apply text-primary;
+  }
+
+  .panel-toggle__mirror {
+    transform: scaleX(-1);
   }
 </style>

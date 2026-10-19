@@ -3,6 +3,7 @@
   import { metricSummaryKey } from '@/types/api-types'
   import SignalCard from '@/components/shared/SignalCard.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
+  import SummaryBreakdown from '@/components/shared/SummaryBreakdown.svelte'
   import { formatTimestampParts } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
 
@@ -44,10 +45,6 @@
   title={metric.name}
   subtitle={metric.serviceName?.trim() || undefined}
   description={description || undefined}
-  timeLayout="labeled"
-  timestampLabel="Last seen:"
-  timestamp={lastSeenParts.value}
-  timestampUnit={lastSeenParts.unit || undefined}
   {onclick}
 >
   {#snippet badge()}
@@ -62,29 +59,31 @@
   {/snippet}
 
   {#snippet meta()}
-    {#if lastValueLabel}
-      <span class="metric-card__labeled">
-        <span class="signal-row__label">Last value:</span>
-        <span class="metric-card__labeled-value">{lastValueLabel}</span>
+    <div class="flex w-full min-w-0 flex-col gap-2 pt-1">
+      <span
+        class="flex min-w-0 items-center gap-1 text-xs tabular-nums"
+        title={`Last seen: ${lastSeenParts.value} ${lastSeenParts.unit}`}
+      >
+        <span class="shrink-0">Last seen:</span>
+        <span class="truncate text-base-content">{lastSeenParts.value}</span>
+        {#if lastSeenParts.unit}<span class="shrink-0"
+            >{lastSeenParts.unit}</span
+          >{/if}
       </span>
-    {/if}
-    {#if metric.unit && metric.lastValue == null}
-      <span class="metric-card__labeled">
-        <span class="signal-row__label">Units:</span>
-        <span class="metric-card__labeled-value">{metric.unit}</span>
-      </span>
-    {/if}
+      {#if lastValueLabel || metric.unit}
+        <span class="flex min-w-0 items-center gap-1 text-xs tabular-nums">
+          <span class="shrink-0"
+            >{lastValueLabel ? 'Last value:' : 'Units:'}</span
+          >
+          <span
+            class="truncate text-secondary"
+            title={lastValueLabel ?? metric.unit}
+          >
+            {lastValueLabel ?? metric.unit}
+          </span>
+        </span>
+      {/if}
+      <SummaryBreakdown signal="metric" parts={metric.seriesBreakdown ?? []} />
+    </div>
   {/snippet}
 </SignalCard>
-
-<style lang="postcss">
-  @reference "../../app.css";
-
-  .metric-card__labeled {
-    @apply inline-flex min-w-0 items-center gap-x-1;
-  }
-
-  .metric-card__labeled-value {
-    @apply truncate leading-none text-base-content;
-  }
-</style>
