@@ -8,14 +8,19 @@ import {
 } from './chart-palette'
 
 describe('heatmapSwatches', () => {
-  it.each(THEMES)('uses $name Love for the maximum count', theme => {
-    expect(heatmapSwatches(1, theme.id)).toEqual([theme.colors.error])
-    expect(heatmapSwatches(12, theme.id)).toHaveLength(12)
-  })
+  it.each(THEMES)(
+    'uses the $name density endpoint for the maximum count',
+    theme => {
+      expect(heatmapSwatches(1, theme.id)).toEqual([
+        theme.scheme === 'light' ? theme.colors.primary : theme.colors.error,
+      ])
+      expect(heatmapSwatches(12, theme.id)).toHaveLength(12)
+    }
+  )
 
-  it('ends on Dawn Love rather than its categorical primary', () => {
+  it('ends on Dawn Iris purple', () => {
     expect(heatmapSwatches(3, 'rose-pine-dawn').at(-1)).toBe(
-      'rgb(180, 99, 122)'
+      'rgb(144, 122, 169)'
     )
   })
 

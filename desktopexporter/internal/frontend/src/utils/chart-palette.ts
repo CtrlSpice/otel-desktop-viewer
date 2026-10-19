@@ -5,8 +5,8 @@
 //
 //   - `heatmapSwatches()` -- per-theme count ramp, interpolated in HCL.
 //
-// Error spans use `var(--color-error)` directly. The heatmap also uses that
-// theme token for its love endpoint; the categorical palette is separate.
+// Density ramps end at Iris in Dawn and Love in the dark themes.
+// Error spans use `var(--color-error)` directly.
 
 import { interpolateHcl } from 'd3-interpolate'
 import { getTheme, METRIC_SERIES, TRACE_SERIES } from '@/themes'
@@ -24,7 +24,7 @@ export function heatmapSwatches(steps: number, theme: string = ''): string[] {
   const definition = getTheme(theme)
   const { colors } = definition
   const start = definition.scheme === 'light' ? colors.canvas : colors.panel
-  const end = colors.error
+  const end = definition.scheme === 'light' ? colors.primary : colors.error
   if (safeSteps === 1) return [end]
   const interpolator = interpolateHcl(start, end)
   const out: string[] = []
