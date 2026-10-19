@@ -3,15 +3,19 @@
   let {
     state,
     pauseReason,
-  }: { state: EvalRun['state']; pauseReason?: EvalRun['pauseReason'] } =
-    $props()
+    size = 'xs',
+  }: {
+    state: EvalRun['state']
+    pauseReason?: EvalRun['pauseReason']
+    size?: 'xs' | 'md'
+  } = $props()
   const internalError = $derived(
     state === 'Paused' && pauseReason === 'internal-error'
   )
 </script>
 
 <span
-  class="badge badge-xs badge-soft"
+  class="badge badge-{size} badge-soft"
   class:badge-success={state === 'Complete'}
   class:badge-warning={state === 'Paused' && !internalError}
   class:badge-papaya={internalError}

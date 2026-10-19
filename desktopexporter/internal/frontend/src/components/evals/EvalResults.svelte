@@ -40,10 +40,12 @@
   tabPanelID={panelID}
 >
   {#snippet badge()}
-    <span class="badge-count" title="Shown attempts / total attempts"
+    <span
+      class="badge badge-md badge-soft badge-primary tabular-nums"
+      title="Shown attempts / total attempts"
       >{attempts.length}/{run.attempts.length} attempts</span
     >
-    <RunStatusBadge state={run.state} pauseReason={run.pauseReason} />
+    <RunStatusBadge state={run.state} pauseReason={run.pauseReason} size="md" />
   {/snippet}
 </PaneHeader>
 
