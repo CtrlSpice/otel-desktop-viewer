@@ -728,6 +728,7 @@
   )
 
   async function toggleCollapse(spanID: string) {
+    cancelExpansionScroll()
     const expanding = effectiveCollapsed.has(spanID)
     const toggledTraceID = traceID
     if (searchCollapsedParents) {
@@ -745,11 +746,8 @@
       traceID === toggledTraceID &&
       !effectiveCollapsed.has(spanID)
     ) {
-      await revealAndScrollToSpan(
-        spanID,
-        !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-        'center'
-      )
+      activeScroll = centerExpandedBranch(spanID)
+      await activeScroll
     }
   }
 
@@ -765,6 +763,7 @@
 
   // Separate idempotent verbs support mixed collapse states.
   function setAll(collapsed: boolean) {
+    cancelExpansionScroll()
     if (searchCollapsedParents) {
       const next = new Map<string, boolean>()
       for (const id of collapsibleSpanIDs) next.set(id, collapsed)
@@ -810,7 +809,67 @@
   let vlistRef = $state<VirtualListRef | null>(null)
   let lastScrolledSelection: string | null = null
   let activeScroll: Promise<void> = Promise.resolve()
+  let cancelExpansionScroll = () => {}
+  onDestroy(() => cancelExpansionScroll())
   let treeScrolled = $state(false)
+
+  function centerExpandedBranch(spanID: string): Promise<void> {
+    const viewport = scrollContainerEl?.querySelector<HTMLElement>(
+      '.waterfall-vlist-viewport'
+    )
+    const row = viewport?.querySelector<HTMLTableRowElement>(
+      `tr[data-span-id="${escapeForSelector(spanID)}"]`
+    )
+    if (!viewport || !row) return Promise.resolve()
+
+    const rowBounds = row.getBoundingClientRect()
+    const viewportBounds = viewport.getBoundingClientRect()
+    const start = viewport.scrollTop
+    const target = Math.max(
+      0,
+      Math.min(
+        viewport.scrollHeight - viewport.clientHeight,
+        start +
+          rowBounds.top +
+          rowBounds.height / 2 -
+          viewportBounds.top -
+          viewport.clientHeight / 2
+      )
+    )
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      viewport.scrollTop = target
+      return Promise.resolve()
+    }
+
+    // Scroll the measured row directly: the virtual-list index API can snap
+    // to its estimated destination while a native smooth scroll is in flight.
+    return new Promise(resolve => {
+      const listeners = new AbortController()
+      let frame = 0
+      const finish = () => {
+        cancelAnimationFrame(frame)
+        listeners.abort()
+        cancelExpansionScroll = () => {}
+        resolve()
+      }
+      cancelExpansionScroll = finish
+      for (const event of ['wheel', 'touchstart', 'pointerdown', 'keydown']) {
+        viewport.addEventListener(event, finish, {
+          passive: true,
+          signal: listeners.signal,
+        })
+      }
+      const started = performance.now()
+      const step = (now: number) => {
+        const progress = Math.min(1, (now - started) / 180)
+        const eased = progress * progress * (3 - 2 * progress)
+        viewport.scrollTop = start + (target - start) * eased
+        if (progress < 1) frame = requestAnimationFrame(step)
+        else finish()
+      }
+      frame = requestAnimationFrame(step)
+    })
+  }
 
   function handleTreeScroll(event: Event) {
     const viewport = event.target
@@ -823,6 +882,7 @@
   }
 
   function scrollTreeToTop() {
+    cancelExpansionScroll()
     void vlistRef?.scroll({
       index: 0,
       align: 'top',
@@ -839,9 +899,9 @@
   // Preserve collapsed branches; scroll hidden selections to a visible ancestor.
   async function revealAndScrollToSpan(
     spanID: string,
-    smoothScroll = true,
-    align: 'nearest' | 'center' = 'nearest'
+    smoothScroll = true
   ): Promise<void> {
+    cancelExpansionScroll()
     let idx = visibleRowIndex(spanID)
     if (idx < 0) {
       for (const aid of ancestorIdsOf(spanID, parentBySpanID)) {
@@ -852,7 +912,7 @@
     if (idx < 0 || !vlistRef) return
     activeScroll = vlistRef.scroll({
       index: idx,
-      align,
+      align: 'nearest',
       smoothScroll,
       shouldThrowOnBounds: false,
     })
