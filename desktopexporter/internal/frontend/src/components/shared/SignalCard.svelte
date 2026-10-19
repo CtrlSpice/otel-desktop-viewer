@@ -15,6 +15,7 @@
     /** Italic muted title (e.g. placeholder while data is still arriving). */
     titleMuted?: boolean
     subtitle?: string
+    subtitleContent?: Snippet
     /** Full-width date between identity and description. */
     date?: Snippet
     /** `plain`: value grid. `interval`: Start + Duration (traces). `labeled`: one labeled timestamp (logs/metrics). */
@@ -52,6 +53,7 @@
     titleContent,
     titleMuted = false,
     subtitle,
+    subtitleContent,
     date,
     timeLayout = 'plain',
     timestampLabel,
@@ -80,7 +82,7 @@
 >
   <div
     class="signal-row__identity"
-    class:signal-row__identity--service={!!subtitle}
+    class:signal-row__identity--service={!!subtitle || !!subtitleContent}
   >
     <div class="signal-row__header">
       <span class="signal-row__title-cluster" {title}>
@@ -101,7 +103,9 @@
       {/if}
     </div>
 
-    {#if subtitle}
+    {#if subtitleContent}
+      {@render subtitleContent()}
+    {:else if subtitle}
       <div class="signal-row__subtitle" title={subtitle}>{subtitle}</div>
     {/if}
   </div>

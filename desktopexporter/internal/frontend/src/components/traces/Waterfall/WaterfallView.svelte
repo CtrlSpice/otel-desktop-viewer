@@ -4,6 +4,7 @@
   import { getServiceName } from '@/utils/resource'
   import ExportButton from '@/components/shared/ExportButton.svelte'
   import { categoricalPalette } from '@/utils/chart-palette'
+  import { traceServiceColor } from '@/utils/trace-service-color'
   import { themeSignal } from '@/state/theme.svelte'
   import { recordsForSpan, type TimelineRecord } from './timeline-markers'
 
@@ -141,26 +142,30 @@
   }
 
   function isMultiService(spans: SpanNode[]): boolean {
-    const services = spans.reduce((acc, n) => {
-      const s = getServiceName(n.spanData.resource)
-      return s !== undefined ? acc.add(s) : acc
-    }, new Set<string>())
-    return services.size > 1
+    return (
+      new Set(spans.map(node => getServiceName(node.spanData.resource) ?? ''))
+        .size > 1
+    )
   }
 
-  /** Build a Map<key, color> by folding spans in order. The palette uses
-   *  finite reviewed colours with deterministic reuse for additional keys.
-   *  Iris is the start stem for the first key seen. */
+  /** Use stable service colours for multi-service traces; otherwise assign
+   *  operation colours in first-seen order from the Iris-first palette. */
   function buildColorMap(
     spans: SpanNode[],
     keyFn: (s: SpanData) => string | null,
-    theme: string
+    theme: string,
+    byService: boolean
   ): Map<string, string> {
     const orderedKeys = spans.reduce<string[]>((acc, node) => {
       const k = keyFn(node.spanData)
       if (k !== null && !acc.includes(k)) acc.push(k)
       return acc
     }, [])
+    if (byService) {
+      return new Map(
+        orderedKeys.map(key => [key, traceServiceColor(key, theme)])
+      )
+    }
     const palette = categoricalPalette(
       Math.max(orderedKeys.length, MIN_TRACE_PALETTE),
       'iris',
@@ -169,9 +174,8 @@
     return new Map(orderedKeys.map((k, i) => [k, palette[i]!]))
   }
 
-  /** Palette is assigned in first-seen order of categorical keys; error
-   *  spans short-circuit to `--color-error` so the semantic colour wins
-   *  over the rotation. */
+  /** Services share stable summary colours; single-service operations use
+   *  first-seen palette order. Error spans retain their semantic colour. */
   export function buildWaterfallRows(
     spans: SpanNode[],
     bounds: TraceBounds,
@@ -180,7 +184,7 @@
   ): WaterfallRowData[] {
     const multi = isMultiService(spans)
     const keyFn = (s: SpanData) => categoricalKeyFor(s, multi)
-    const colorMap = buildColorMap(spans, keyFn, theme)
+    const colorMap = buildColorMap(spans, keyFn, theme, multi)
     const treeMeta = computeTreeMeta(spans)
 
     return spans.map((node, i) => {

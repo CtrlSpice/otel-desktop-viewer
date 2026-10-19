@@ -1,38 +1,64 @@
 <script lang="ts">
   import type { SummaryBreakdownPart } from '@/types/api-types'
-  import { categoricalPalette } from '@/utils/chart-palette'
+  import { traceServiceColor } from '@/utils/trace-service-color'
   import { themeSignal } from '@/state/theme.svelte'
-  import OutcomeBar from './OutcomeBar.svelte'
 
-  let { parts }: { parts: SummaryBreakdownPart[] } = $props()
-  const label = 'Spans by service'
-  const total = $derived(parts.reduce((sum, part) => sum + part.count, 0))
-  const palette = $derived(categoricalPalette(25, 'iris', themeSignal.value))
-  function slot(key: string): number {
-    let hash = 2166136261
-    for (let i = 0; i < key.length; i++)
-      hash = Math.imul(hash ^ key.charCodeAt(i), 16777619)
-    return (hash >>> 0) % palette.length
-  }
+  let {
+    parts,
+    rootService,
+  }: { parts: SummaryBreakdownPart[]; rootService?: string } = $props()
+  const rootKey = $derived(
+    rootService === undefined ? undefined : `service:${rootService}`
+  )
   const colouredParts = $derived(
-    parts.map(part => ({
-      ...part,
-      tone: 'neutral' as const,
-      color: part.other ? 'var(--color-neutral)' : palette[slot(part.key)],
-    }))
+    parts
+      .filter(part => part.count > 0)
+      .map(part => ({
+        ...part,
+        color: part.other
+          ? 'var(--color-neutral)'
+          : traceServiceColor(
+              part.key.slice('service:'.length),
+              themeSignal.value
+            ),
+      }))
+      .sort((a, b) => Number(b.key === rootKey) - Number(a.key === rootKey))
   )
 </script>
 
-{#if parts.filter(part => part.count > 0).length > 1}
-  <div
-    class="flex w-full min-w-0 flex-col gap-1.5 border-t border-base-content/5 pt-2 pb-0.5"
-  >
-    <div class="flex min-w-0 items-center justify-between gap-2 text-xs">
-      <span class="truncate">{label}</span>
-      <span class="shrink-0 text-base-content tabular-nums"
-        >{total.toLocaleString()}</span
+{#if colouredParts.length > 1}
+  <ul class="service-grid" aria-label="Spans by service">
+    {#each colouredParts as part (part.key)}
+      <li
+        class="service-grid__item"
+        title={`${part.label}: ${part.count} spans${part.key === rootKey ? ' · root service' : ''}`}
       >
-    </div>
-    <OutcomeBar parts={colouredParts} {label} />
-  </div>
+        <span
+          class="size-1.5 shrink-0 rounded-full"
+          style:background-color={part.color}
+          aria-hidden="true"
+        ></span>
+        <span class="min-w-0 truncate">{part.label}</span>
+        <span class="ml-auto shrink-0 tabular-nums"
+          >{part.count.toLocaleString()}<span class="sr-only">
+            spans</span
+          ></span
+        >
+      </li>
+    {/each}
+  </ul>
 {/if}
+
+<style lang="postcss">
+  @reference "../../app.css";
+
+  .service-grid {
+    @apply m-0 grid min-w-0 list-none gap-x-3 gap-y-1 pt-1 pb-0.5 text-sm font-normal leading-tight;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+    color: var(--color-subtle);
+  }
+
+  .service-grid__item {
+    @apply flex min-w-0 items-center gap-1.5;
+  }
+</style>

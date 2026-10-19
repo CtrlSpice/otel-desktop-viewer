@@ -30,6 +30,10 @@
   let titleLabel = $derived(trace.rootSpan?.name ?? 'No root span')
   let serviceLabel = $derived(trace.rootSpan?.serviceName)
   let titleMuted = $derived(!trace.hasRootSpan)
+  const services = $derived(trace.serviceBreakdown ?? [])
+  const hasServiceGrid = $derived(
+    services.filter(part => part.count > 0).length > 1
+  )
 
   let durationParts = $derived.by(() => {
     const ns = traceSummaryDurationNs(trace)
@@ -37,11 +41,16 @@
   })
 </script>
 
+{#snippet serviceGrid()}
+  <SummaryBreakdown parts={services} rootService={serviceLabel} />
+{/snippet}
+
 <SignalCard
   id={trace.traceID}
   {selected}
   title={titleLabel}
   subtitle={serviceLabel}
+  subtitleContent={hasServiceGrid ? serviceGrid : undefined}
   {titleMuted}
   {onclick}
 >
@@ -86,7 +95,6 @@
           </span>
         </span>
       </div>
-      <SummaryBreakdown parts={trace.serviceBreakdown ?? []} />
     </div>
   {/snippet}
 </SignalCard>
