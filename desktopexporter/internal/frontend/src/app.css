@@ -1536,8 +1536,8 @@ html[data-theme='rose-pine-dawn']
   background-color: var(--color-base-200);
   border: 1px solid var(--badge-color, var(--color-primary));
   box-shadow:
-    inset 3px 0 0 var(--badge-color, var(--color-primary)),
-    inset -3px 0 0 var(--badge-color, var(--color-primary));
+    inset 2px 0 0 var(--badge-color, var(--color-primary)),
+    inset -2px 0 0 var(--badge-color, var(--color-primary));
 }
 
 /* Badges — pills, including the classes that apply DaisyUI badge styles. */
