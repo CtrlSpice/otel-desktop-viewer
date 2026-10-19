@@ -85,6 +85,34 @@
     onSelectError: (target: LogErrorTarget) => void
   } = $props()
   const time = getTimeContext()
+  let table = $state<HTMLDivElement>()
+  $effect.pre(() => {
+    if (!errorNavigationLoading) return
+    const button = document.activeElement
+    if (
+      !(button instanceof HTMLButtonElement) ||
+      !table?.contains(button) ||
+      !button.closest('[aria-label="Error navigation"]')
+    )
+      return
+    // Disabling the focused button blurs it. Restore it only if the user
+    // has not moved focus elsewhere while navigation was loading.
+    let moved = false
+    const onFocus = () => (moved = true)
+    document.addEventListener('focusin', onFocus)
+    return () => {
+      document.removeEventListener('focusin', onFocus)
+      void tick().then(() => {
+        if (
+          !moved &&
+          button.isConnected &&
+          !button.disabled &&
+          document.activeElement === document.body
+        )
+          button.focus({ preventScroll: true })
+      })
+    }
+  })
   let timestampTimezone = $derived(
     logs.length
       ? [
@@ -113,7 +141,9 @@
   let viewport = $state<HTMLDivElement>()
   let width = $state(800)
   let scrollLeft = $state(0)
-  let resized = false
+  const storedWidths = loadWidths()
+  let resized = Object.keys(storedWidths).length > 0
+  let measured = false
   let activeResize = $state<string | null>(null)
   let drag: DragHandle | null = null
 
@@ -153,18 +183,7 @@
       )
     return widths
   }
-  let widths = $state<ColumnWidths>(
-    untrack(() => {
-      const stored = loadWidths()
-      resized = Object.keys(stored).length > 0
-      return reconcileWidths(
-        specs,
-        { ...defaultWidths(width), ...stored },
-        width,
-        'body'
-      )
-    })
-  )
+  let widths = $state<ColumnWidths>(untrack(() => defaultWidths(width)))
   let template = $derived(
     columns.map(column => `${widths[column.id]}px`).join(' ')
   )
@@ -182,18 +201,31 @@
   let pinnedBodyWidth = $derived(
     columns.some(column => column.id === 'body') ? widths.body : 0
   )
+  let middleWidth = $derived(
+    Math.max(
+      0,
+      ...columns
+        .filter(column => column.id === 'service' || column.id === 'name')
+        .map(column => widths[column.id])
+    )
+  )
+  let pinColumns = $derived(
+    pinnedLeftWidth + pinnedBodyWidth + middleWidth <= width
+  )
   let paintedBars = $derived(
     bars.flatMap(bar => {
       const beforeBody =
         columns[columns.findIndex(column => column.id === bar.id) + 1]?.id ===
         'body'
-      const left =
-        bar.id === 'timestamp'
+      const left = !pinColumns
+        ? bar.left - scrollLeft
+        : bar.id === 'timestamp'
           ? pinnedLeftWidth
           : beforeBody
             ? width - pinnedBodyWidth
             : bar.left - scrollLeft
-      return left >= pinnedLeftWidth && left <= width - pinnedBodyWidth
+      return left >= (pinColumns ? pinnedLeftWidth : 0) &&
+        left <= width - (pinColumns ? pinnedBodyWidth : 0)
         ? [{ ...bar, left }]
         : []
     })
@@ -203,6 +235,16 @@
     if (!viewport) return
     const observer = new ResizeObserver(entries => {
       width = entries[0]!.contentRect.width
+      if (!measured) {
+        widths = reconcileWidths(
+          specs,
+          { ...defaultWidths(width), ...storedWidths },
+          width,
+          'body'
+        )
+        measured = true
+        return
+      }
       if (!activeResize)
         widths = resized
           ? fitWidths(specs, widths, width, 'body')
@@ -239,6 +281,7 @@
           )
         )
       }
+      required = Math.min(required, LOG_SEVERITY_MIN_WIDTH * 2)
       if (required === severityWidth) return
       severityWidth = required
       widths = reconcileWidths(specs, widths, width, 'body')
@@ -397,7 +440,7 @@
   }
 </script>
 
-<div class="log-table">
+<div class="log-table" class:log-table--pinned={pinColumns} bind:this={table}>
   <PaneHeader pill mode="title" title="Logs" ariaLabel="Log table summary">
     {#snippet badge()}<span class="badge-count"
         >{total.toLocaleString()} {total === 1 ? 'record' : 'records'}</span
@@ -706,23 +749,23 @@
   .log-table__cell > :global(.table-value-cell) {
     @apply w-full;
   }
-  .log-table__pin-left,
-  .log-table__pin-body,
-  .log-table__pin-severity {
+  .log-table--pinned .log-table__pin-left,
+  .log-table--pinned .log-table__pin-body,
+  .log-table--pinned .log-table__pin-severity {
     @apply sticky z-10 bg-base-100;
     background-image: linear-gradient(
       var(--item-state-bg, transparent),
       var(--item-state-bg, transparent)
     );
   }
-  .log-table__pin-left {
+  .log-table--pinned .log-table__pin-left {
     left: var(--log-severity-width);
     z-index: 11;
   }
-  .log-table__pin-body {
+  .log-table--pinned .log-table__pin-body {
     right: 0;
   }
-  .log-table__pin-severity {
+  .log-table--pinned .log-table__pin-severity {
     left: 0;
     z-index: 12;
   }

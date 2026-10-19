@@ -213,8 +213,7 @@
     const mounted = page.mounted
     errorNavigationError = ''
     if (!mounted || loading) {
-      errorNavigation = null
-      errorNavigationLoading = false
+      errorNavigationLoading = loading
       return
     }
     const controller = new AbortController()

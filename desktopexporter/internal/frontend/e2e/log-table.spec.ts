@@ -951,6 +951,65 @@ test('Severity fits the longest received label without adding a resize handle', 
   await expect(labels.first()).toHaveText(longest)
 })
 
+test('extreme severity labels have bounded width and retain their exact inspectable value', async ({
+  page,
+}) => {
+  const label = 'VERY_LONG_ERROR_LABEL_'.repeat(25)
+  await page.setViewportSize({ width: 1700, height: 900 })
+  await page.route('**/rpc', async route => {
+    const { id, method } = route.request().postDataJSON()
+    if (method === 'getLog')
+      return route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result: { ...logs[0]!, severityText: label },
+        },
+      })
+    if (method !== 'searchLogPage') return route.fallback()
+    await route.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          total: 1,
+          logs: [
+            {
+              logRef: firstID,
+              timestamp: '1700000000123456789',
+              severityNumber: 17,
+              severityText: label,
+              serviceName: 'api',
+              bodyPreview: 'Retained body',
+              bodyType: 'string',
+            },
+          ],
+        },
+      },
+    })
+  })
+  await page.reload()
+  const severity = page.locator(
+    `[data-log-ref="${firstID}"] .log-table__pin-severity`
+  )
+  await expect(severity.locator('.log-severity__label')).toHaveText(label)
+  await expect.poll(async () => (await severity.boundingBox())!.width).toBe(320)
+  const viewport = (await page.locator('.log-table__scroll').boundingBox())!
+  expect((await severity.boundingBox())!.width).toBeLessThan(viewport.width / 2)
+  await expect(severity.getByRole('button')).toHaveAttribute(
+    'title',
+    `${label} (17)`
+  )
+  await severity.getByRole('button').click()
+  const detail = page.getByRole('table', { name: 'Log fields' })
+  await expect(detail.locator('[data-field="severityNumber"]')).toHaveClass(
+    /detail-property--revealed/
+  )
+  await expect(detail.locator('[data-field="severityText"]')).toContainText(
+    label
+  )
+})
+
 test('toolbar filters edit the visible query, respect drafts and clear from query edits', async ({
   page,
 }) => {
@@ -1145,6 +1204,48 @@ test('column visibility and keyboard resizing persist without changing selection
   )
 })
 
+test('reload restores resized columns against the measured wide viewport', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 2400, height: 1000 })
+  const viewport = page.locator('.log-table__scroll')
+  await expect
+    .poll(() => viewport.evaluate(element => element.clientWidth))
+    .toBeGreaterThan(1200)
+  for (const name of ['timestamp', 'service.name']) {
+    const separator = page.getByRole('separator', {
+      name: `Resize ${name} column`,
+      exact: true,
+    })
+    await separator.focus()
+    await page.keyboard.press('Shift+ArrowRight')
+    await page.keyboard.press('ArrowRight')
+  }
+  const saved = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem('logs-column-widths')!)
+  )
+  expect(saved).toMatchObject({ severity: 160, timestamp: 320, service: 240 })
+  const cells = page.locator(`[data-log-ref="${firstID}"] [role="gridcell"]`)
+  const expected = ['severity', 'timestamp', 'service', 'body'].map(
+    column => saved[column]
+  )
+  await expect
+    .poll(() =>
+      cells.evaluateAll(elements =>
+        elements.map(element => element.getBoundingClientRect().width)
+      )
+    )
+    .toEqual(expected)
+  await page.reload()
+  await expect
+    .poll(() =>
+      cells.evaluateAll(elements =>
+        elements.map(element => element.getBoundingClientRect().width)
+      )
+    )
+    .toEqual(expected)
+})
+
 test('resize guides align with header boundaries and follow pointer resizing', async ({
   page,
 }) => {
@@ -1194,7 +1295,12 @@ test('resize guides align with header boundaries and follow pointer resizing', a
 test('pins Severity first, Timestamp next and Body right while the middle scrolls', async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 1050, height: 900 })
+  await page.setViewportSize({ width: 1360, height: 900 })
+  await page.getByRole('button', { name: 'Columns', exact: true }).click()
+  await page
+    .getByRole('checkbox', { name: 'Log: eventName', exact: true })
+    .check()
+  await page.keyboard.press('Escape')
   const viewport = page.locator('.log-table__scroll')
   const row = page.locator(`[data-log-ref="${firstID}"]`)
   const timestamp = row.locator('.log-table__pin-left')
@@ -1239,6 +1345,77 @@ test('pins Severity first, Timestamp next and Body right while the middle scroll
   await expect(page.getByRole('table', { name: 'Log fields' })).toContainText(
     'exact retained text'
   )
+})
+
+test('narrow panes expose every column by scrolling instead of overlapping pinned cells', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1024, height: 900 })
+  const preview = 'id: abc123-END'
+  await page.route('**/rpc', async route => {
+    const { id, method } = route.request().postDataJSON()
+    if (method !== 'searchLogPage') return route.fallback()
+    await route.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id,
+        result: {
+          total: 1,
+          logs: [
+            {
+              logRef: firstID,
+              timestamp: '1700000000123456789',
+              severityNumber: 17,
+              severityText: 'ERROR',
+              serviceName: 'api-service',
+              bodyPreview: preview,
+              bodyType: 'string',
+            },
+          ],
+        },
+      },
+    })
+  })
+  await page.reload()
+  const viewport = page.locator('.log-table__scroll')
+  await expect
+    .poll(() => viewport.evaluate(element => element.clientWidth))
+    .toBeLessThan(640)
+  const cells = page.locator(`[data-log-ref="${firstID}"] [role="gridcell"]`)
+  for (const index of [2, 3, 1, 0]) {
+    const cell = cells.nth(index)
+    await cell.scrollIntoViewIfNeeded()
+    await expect
+      .poll(() =>
+        cell.evaluate(element => {
+          const bounds = element.getBoundingClientRect()
+          const viewport = element
+            .closest('.log-table__scroll')!
+            .getBoundingClientRect()
+          const y = bounds.y + bounds.height / 2
+          return (
+            bounds.left >= viewport.left &&
+            bounds.right <= viewport.right &&
+            [bounds.left + 8, bounds.right - 8].every(x =>
+              element.contains(document.elementFromPoint(x, y))
+            )
+          )
+        })
+      )
+      .toBe(true)
+    expect(
+      await cell
+        .getByRole('button')
+        .evaluate(element => element.scrollWidth <= element.clientWidth)
+    ).toBe(true)
+  }
+  await expect(cells.nth(3).getByRole('button')).toHaveText(preview)
+  await cells.nth(2).getByRole('button').click()
+  await expect(
+    page
+      .getByRole('table', { name: 'Log fields' })
+      .locator('[data-field="service.name"][data-field-source="resource"]')
+  ).toHaveClass(/detail-property--revealed/)
 })
 
 test('Body fills available space first and can be hidden and restored at the right edge', async ({
@@ -1419,6 +1596,7 @@ test('footer delete controls dispatch only their intended mocked operations', as
 test('header error navigation crosses pages within the current result', async ({
   page,
 }) => {
+  let pageResponse: Promise<void> | undefined
   const records = Array.from({ length: 205 }, (_, index) => ({
     logRef:
       index === 0
@@ -1435,12 +1613,13 @@ test('header error navigation crosses pages within the current result', async ({
     const { id, method, params } = route.request().postDataJSON()
     let result:
       { total: number; logs: typeof records } | JsonLogData | LogErrorNavigation
-    if (method === 'searchLogPage')
+    if (method === 'searchLogPage') {
+      await pageResponse
       result = {
         total: records.length,
         logs: records.slice(params.offset, params.offset + params.pageSize),
       }
-    else if (method === 'getLog')
+    } else if (method === 'getLog')
       result = { ...logs[0]!, logRef: params.logRef }
     else if (method === 'getLogErrorNavigation') {
       const position = records.findIndex(
@@ -1476,11 +1655,17 @@ test('header error navigation crosses pages within the current result', async ({
   ).toBeDisabled()
   await header.getByRole('button', { name: 'Next error', exact: true }).click()
   await expect(header).toContainText('1/3 errors')
-  await header.getByRole('button', { name: 'Next error', exact: true }).click()
+  const nextError = header.getByRole('button', {
+    name: 'Next error',
+    exact: true,
+  })
+  await nextError.focus()
+  await page.keyboard.press('Enter')
   await expect(
     page.getByRole('button', { name: 'Page 2', exact: true })
   ).toHaveAttribute('aria-current', 'page')
   await expect(header).toContainText('2/3 errors')
+  await expect(nextError).toBeFocused()
   const selected = page.locator(`[data-log-ref="${records[180]!.logRef}"]`)
   await expect(selected).toHaveAttribute('aria-selected', 'true')
   const viewport = page.locator('.log-table__scroll')
@@ -1501,7 +1686,7 @@ test('header error navigation crosses pages within the current result', async ({
       .toBe(true)
   }
   await expectSelectedInViewport()
-  await header.getByRole('button', { name: 'Next error', exact: true }).click()
+  await page.keyboard.press('Enter')
   await expect(
     page.getByRole('button', { name: 'Page 3', exact: true })
   ).toHaveAttribute('aria-current', 'page')
@@ -1509,10 +1694,19 @@ test('header error navigation crosses pages within the current result', async ({
   await expect(
     header.getByRole('button', { name: 'Next error', exact: true })
   ).toBeDisabled()
+  let releasePage!: () => void
+  pageResponse = new Promise(resolve => (releasePage = resolve))
   await header
     .getByRole('button', { name: 'Previous error', exact: true })
     .click()
+  await expect(
+    page.getByRole('grid', { name: 'Logs', exact: true })
+  ).toHaveAttribute('aria-busy', 'true')
+  const columns = header.getByRole('button', { name: 'Columns', exact: true })
+  await columns.focus()
+  releasePage()
   await expect(header).toContainText('2/3 errors')
+  await expect(columns).toBeFocused()
   await expect(
     page.getByRole('button', { name: 'Page 2', exact: true })
   ).toHaveAttribute('aria-current', 'page')
