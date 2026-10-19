@@ -838,7 +838,7 @@
     if (idx < 0 || !vlistRef) return
     activeScroll = vlistRef.scroll({
       index: idx,
-      align: 'center',
+      align: 'nearest',
       smoothScroll,
       shouldThrowOnBounds: false,
     })
