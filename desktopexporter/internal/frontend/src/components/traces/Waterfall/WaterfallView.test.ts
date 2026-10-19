@@ -710,7 +710,7 @@ describe('WaterfallView collapse ownership', () => {
     )
   })
 
-  it('center-scrolls a newly selected visible span', async () => {
+  it('reveals a newly selected span without centering a visible row', async () => {
     const { rerender } = renderTree()
     await tick()
     scrollMock.mockClear()
@@ -726,7 +726,7 @@ describe('WaterfallView collapse ownership', () => {
       expect(scrollMock).toHaveBeenCalledWith(
         expect.objectContaining({
           index: expect.any(Number),
-          align: 'center',
+          align: 'nearest',
           smoothScroll: true,
           shouldThrowOnBounds: false,
         })

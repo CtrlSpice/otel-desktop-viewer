@@ -727,7 +727,9 @@
     rowVisibilityMap(spans, parentBySpanID, effectiveCollapsed)
   )
 
-  function toggleCollapse(spanID: string) {
+  async function toggleCollapse(spanID: string) {
+    const expanding = effectiveCollapsed.has(spanID)
+    const toggledTraceID = traceID
     if (searchCollapsedParents) {
       const next = new Map(searchOverrides)
       next.set(spanID, !effectiveCollapsed.has(spanID))
@@ -737,7 +739,18 @@
       if (!next.delete(spanID)) next.add(spanID)
       setCollapsedForTrace(traceID, next)
     }
-    void clampScroll()
+    await clampScroll()
+    if (
+      expanding &&
+      traceID === toggledTraceID &&
+      !effectiveCollapsed.has(spanID)
+    ) {
+      await revealAndScrollToSpan(
+        spanID,
+        !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+        'center'
+      )
+    }
   }
 
   /** Every parent that has children, for collapse-all. */
@@ -826,7 +839,8 @@
   // Preserve collapsed branches; scroll hidden selections to a visible ancestor.
   async function revealAndScrollToSpan(
     spanID: string,
-    smoothScroll = true
+    smoothScroll = true,
+    align: 'nearest' | 'center' = 'nearest'
   ): Promise<void> {
     let idx = visibleRowIndex(spanID)
     if (idx < 0) {
@@ -838,7 +852,7 @@
     if (idx < 0 || !vlistRef) return
     activeScroll = vlistRef.scroll({
       index: idx,
-      align: 'nearest',
+      align,
       smoothScroll,
       shouldThrowOnBounds: false,
     })
