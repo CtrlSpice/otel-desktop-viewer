@@ -69,7 +69,7 @@
   aria-expanded={open}
   aria-label="Columns"
   data-tip="Select columns"
-  class="btn btn-xs join-item chart-header-control tooltip tooltip-left"
+  class="btn btn-xs chart-header-control tooltip tooltip-left"
 >
   <HugeiconsIcon
     icon={LayoutThreeColumnIcon}

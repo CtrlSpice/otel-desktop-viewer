@@ -689,25 +689,84 @@ svg {
   transition-delay: 0s;
 }
 
-/* Compact chart choices: full-contrast labels, iris marks for active controls. */
-.btn.chart-header-control {
-  @apply h-8 min-h-8 rounded-none border-0 px-3 text-sm font-normal;
+/* Header controls share neutral highlights and iris active icons. */
+.btn.chart-header-control,
+.btn.header-tab {
+  @apply rounded-lg border-0 text-sm font-normal;
+  height: var(--header-control-height, 2rem);
+  min-height: var(--header-control-height, 2rem);
+  padding-inline: var(--header-control-padding, 0.75rem);
   --btn-noise: none;
   background: transparent;
   color: var(--color-base-content);
   box-shadow: none;
 }
 
-.btn.chart-header-control--active {
-  box-shadow: inset 0 -1px 0 var(--color-primary);
+.header-controls {
+  @apply inline-flex min-w-0 items-center gap-2;
 }
 
-.chart-header-control__icon {
+.header-tabs {
+  @apply relative isolate inline-grid shrink-0 p-0.5;
+  --header-control-height: 1.75rem;
+  grid-template-columns: repeat(var(--header-tab-count), minmax(0, 1fr));
+}
+
+.header-tabs:has(> :is([aria-selected='true'], [aria-current='page']))::before {
+  content: '';
+  position: absolute;
+  inset: 0.125rem auto 0.125rem 0.125rem;
+  width: calc((100% - 0.25rem) / var(--header-tab-count));
+  border-radius: 0.5rem;
+  background: var(--item-selected-bg);
+  transform: translateX(calc(var(--header-active-index) * 100%));
+  transition: transform var(--motion-compact-duration)
+    var(--motion-settle-easing);
+  pointer-events: none;
+}
+
+.btn.header-tab {
+  @apply relative z-[1] gap-2 whitespace-nowrap;
+}
+
+.header-tab__icon {
   display: flex;
 }
 
-.chart-header-control--active .chart-header-control__icon {
+.header-tab.tooltip::before,
+.header-tab.tooltip::after {
+  display: none;
+}
+
+@container header (width < 25rem) {
+  .header-tab:has(> .header-tab__icon) {
+    --header-control-padding: 0.5rem;
+  }
+
+  .header-tab:has(> .header-tab__icon) > .header-tab__label {
+    @apply sr-only;
+  }
+
+  .header-tab.tooltip::before,
+  .header-tab.tooltip::after {
+    display: block;
+  }
+}
+
+.header-tab:is([aria-selected='true'], [aria-current='page'])
+  .header-tab__icon {
   color: var(--color-primary);
+}
+
+@media (hover: hover) {
+  .btn.chart-header-control:hover:not(:disabled, [aria-disabled='true']),
+  .btn.header-tab:hover:not(
+      :disabled,
+      [aria-selected='true'],
+      [aria-current='page']
+    ) {
+    background: var(--item-hover-bg);
+  }
 }
 
 /*

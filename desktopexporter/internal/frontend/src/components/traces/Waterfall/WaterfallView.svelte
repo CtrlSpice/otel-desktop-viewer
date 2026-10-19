@@ -1128,7 +1128,7 @@
     {#snippet metaRight()}
       <button
         type="button"
-        class="btn btn-xs join-item chart-header-control tooltip tooltip-left"
+        class="btn btn-xs chart-header-control tooltip tooltip-left"
         onclick={() => setAll(true)}
         disabled={collapsibleSpanIDs.length === 0}
         aria-label="Collapse all spans"
@@ -1144,7 +1144,7 @@
       </button>
       <button
         type="button"
-        class="btn btn-xs join-item chart-header-control tooltip tooltip-left"
+        class="btn btn-xs chart-header-control tooltip tooltip-left"
         onclick={() => setAll(false)}
         disabled={collapsibleSpanIDs.length === 0}
         aria-label="Expand all spans"

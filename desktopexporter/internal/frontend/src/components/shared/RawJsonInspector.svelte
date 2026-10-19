@@ -184,10 +184,14 @@
         href={scope.url}
         download>Download {scope.label.toLowerCase()}</a
       >{/if}
-    <div class="join ml-auto shrink-0" role="group" aria-label="JSON folding">
+    <div
+      class="header-controls ml-auto shrink-0"
+      role="group"
+      aria-label="JSON folding"
+    >
       <button
         type="button"
-        class="btn btn-xs join-item chart-header-control tooltip tooltip-left"
+        class="btn btn-xs chart-header-control tooltip tooltip-left"
         aria-label="Collapse JSON"
         data-tip="Collapse JSON"
         disabled={!editor || loading || !!error}
@@ -203,7 +207,7 @@
       </button>
       <button
         type="button"
-        class="btn btn-xs join-item chart-header-control tooltip tooltip-left"
+        class="btn btn-xs chart-header-control tooltip tooltip-left"
         aria-label="Expand JSON"
         data-tip="Expand JSON"
         disabled={!editor || loading || !!error}

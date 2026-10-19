@@ -15,12 +15,14 @@
   }: { id: string; view?: DetailViewMode; action?: Snippet } = $props()
 </script>
 
-<div class="join" role="group" aria-label="Detail controls">
+<div class="header-controls" role="group" aria-label="Detail controls">
   <div
     role="tablist"
     tabindex="-1"
     aria-label="Detail view"
-    class="detail-view-tabs join"
+    class="detail-view-tabs header-tabs"
+    style:--header-tab-count={2}
+    style:--header-active-index={view === 'fields' ? 0 : 1}
     onkeydown={handleTablistKeydown}
   >
     <button
@@ -29,13 +31,12 @@
       role="tab"
       aria-label="Properties"
       data-tip="Properties"
-      class="btn btn-xs join-item chart-header-control tooltip tooltip-left"
-      class:chart-header-control--active={view === 'fields'}
+      class="btn btn-xs header-tab tooltip tooltip-left"
       aria-selected={view === 'fields'}
       tabindex={view === 'fields' ? 0 : -1}
       aria-controls={`${id}-fields`}
       onclick={() => (view = 'fields')}
-      ><span class="chart-header-control__icon shrink-0"
+      ><span class="header-tab__icon shrink-0"
         ><HugeiconsIcon
           icon={Telescope01Icon}
           size={16}
@@ -43,7 +44,7 @@
           class="shrink-0"
           aria-hidden="true"
         /></span
-      ><span>Properties</span></button
+      ><span class="header-tab__label">Properties</span></button
     >
     <button
       id={`${id}-raw-tab`}
@@ -51,13 +52,12 @@
       role="tab"
       aria-label="JSON"
       data-tip="JSON"
-      class="btn btn-xs join-item chart-header-control tooltip tooltip-left"
-      class:chart-header-control--active={view === 'raw'}
+      class="btn btn-xs header-tab tooltip tooltip-left"
       aria-selected={view === 'raw'}
       tabindex={view === 'raw' ? 0 : -1}
       aria-controls={`${id}-raw`}
       onclick={() => (view = 'raw')}
-      ><span class="chart-header-control__icon shrink-0"
+      ><span class="header-tab__icon shrink-0"
         ><HugeiconsIcon
           icon={ThirdBracketIcon}
           size={16}
@@ -65,16 +65,15 @@
           class="shrink-0"
           aria-hidden="true"
         /></span
-      ><span>JSON</span></button
+      ><span class="header-tab__label">JSON</span></button
     >
   </div>
   {#if action}{@render action()}{/if}
 </div>
 
-<style lang="postcss">
-  @reference "../../app.css";
-
-  .detail-view-tabs .chart-header-control {
-    @apply h-6 min-h-6 px-2;
+<style>
+  .detail-view-tabs {
+    --header-control-height: 1.5rem;
+    --header-control-padding: 0.5rem;
   }
 </style>

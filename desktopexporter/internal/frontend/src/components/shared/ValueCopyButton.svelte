@@ -102,7 +102,7 @@
 <button
   type="button"
   class="{grouped
-    ? 'btn btn-xs btn-square join-item chart-header-control value-copy--grouped'
+    ? 'btn btn-xs btn-square chart-header-control value-copy--grouped'
     : 'header-icon-button'} value-copy tooltip"
   class:tooltip-right={contextual}
   class:tooltip-left={!contextual}
@@ -127,7 +127,9 @@
 <style lang="postcss">
   @reference "../../app.css";
   .value-copy--grouped {
-    @apply size-6 min-h-6 min-w-6 p-0;
+    @apply size-6 min-w-6;
+    --header-control-height: 1.5rem;
+    --header-control-padding: 0;
   }
   .value-copy--copied {
     color: var(--color-accent);

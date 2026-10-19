@@ -233,7 +233,7 @@ for (const { theme, selected: selectedColor } of HIGHLIGHT_THEMES) {
       await expect(tab.locator('svg')).toHaveCSS('color', textColor)
     }
     const paneTabs = page.locator(
-      '.pane-header__tab:not(:disabled, [aria-disabled="true"])'
+      '.pane-header .header-tab:not(:disabled, [aria-disabled="true"])'
     )
     expect(await paneTabs.count()).toBeGreaterThan(1)
     for (const tab of await paneTabs.all()) {
@@ -458,7 +458,7 @@ test.describe('home page accessibility', () => {
     selected: selectedColor,
     high,
   } of HIGHLIGHT_THEMES) {
-    test(`shares item hover and selection states in ${theme} without changing tabs`, async ({
+    test(`shares theme hover and selection colours across items and header tabs in ${theme}`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: 1920, height: 1000 })
@@ -510,15 +510,20 @@ test.describe('home page accessibility', () => {
         page.getByRole('navigation', { name: 'Primary' }).locator('.tab-active')
       ).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
       await page.goto('/')
-      const paneTab = page.locator('.pane-header__tab.tab-active').first()
+      const paneTab = page
+        .locator('.pane-header .header-tab[aria-selected="true"]')
+        .first()
       await paneTab.hover()
       await expect(paneTab).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
       await expect(paneTab).toHaveCSS('box-shadow', 'none')
-      const underline = await paneTab.evaluate(element => {
-        const style = getComputedStyle(element, '::before')
-        return { height: style.height, border: style.borderTopWidth }
+      const highlight = await paneTab.evaluate(element => {
+        const style = getComputedStyle(
+          element.closest('.header-tabs')!,
+          '::before'
+        )
+        return { fill: style.backgroundColor, radius: style.borderRadius }
       })
-      expect(underline).toEqual({ height: '1px', border: '1px' })
+      expect(highlight).toEqual({ fill: selectedColor, radius: '8px' })
 
       await page.goto('/traces')
       await page.getByRole('button', { name: /^Sort by:/ }).click()
@@ -1396,20 +1401,17 @@ test.describe('home page accessibility', () => {
 
     const selectedStyle = await grpcTab.evaluate(element => {
       const styles = getComputedStyle(element)
-      const underline = getComputedStyle(element, '::before')
       return {
         borderWidth: styles.borderTopWidth,
         boxShadow: styles.boxShadow,
         outlineStyle: styles.outlineStyle,
         background: styles.backgroundColor,
-        underlineWidth: underline.borderTopWidth,
       }
     })
     expect(selectedStyle.borderWidth).toBe('0px')
     expect(selectedStyle.boxShadow).toBe('none')
     expect(selectedStyle.outlineStyle).toBe('solid')
     expect(selectedStyle.background).toBe('rgba(0, 0, 0, 0)')
-    expect(selectedStyle.underlineWidth).toBe('1px')
 
     await page.keyboard.press('Tab')
     await expect(

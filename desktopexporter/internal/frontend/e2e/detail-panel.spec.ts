@@ -798,10 +798,16 @@ test('detail targets reopen the panel with independent native disclosures', asyn
   await resize.focus()
   await resize.press('Shift+ArrowDown')
   await expect.poll(sectionHeight).toBeCloseTo(savedHeight, 0)
-  await fields.locator(':scope > summary').click()
+  await fields
+    .locator(':scope > summary')
+    .getByText('Span', { exact: true })
+    .click()
   await expect(resize).toHaveAttribute('aria-disabled', 'false')
   await expect.poll(sectionHeight).toBeLessThan(60)
-  await fields.locator(':scope > summary').click()
+  await fields
+    .locator(':scope > summary')
+    .getByText('Span', { exact: true })
+    .click()
   await expect(resize).toHaveAttribute('aria-disabled', 'false')
   await fields.evaluate(async element => {
     await new Promise(requestAnimationFrame)

@@ -154,7 +154,7 @@ describe('RawJsonInspector metadata', () => {
     expect(folding.closest('.raw-inspector__controls')).not.toBeNull()
     for (const label of ['Collapse JSON', 'Expand JSON']) {
       const button = screen.getByRole('button', { name: label })
-      expect(button).toHaveClass('btn-xs', 'join-item', 'chart-header-control')
+      expect(button).toHaveClass('btn-xs', 'chart-header-control')
       expect(button).toHaveTextContent('')
       expect(button).toHaveAttribute('data-tip', label)
       expect(button).toBeDisabled()

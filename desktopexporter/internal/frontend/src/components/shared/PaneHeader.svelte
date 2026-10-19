@@ -7,7 +7,7 @@
    *   • title       — plain bold label on the bar background, no tabs.
    *                   Use for panes with no tab navigation (e.g. "Fields",
    *                   "Timeseries", "Log Record").
-   *   • tabs        — flat tab strip with an underlined active item. Use
+   *   • tabs        — compact tab strip with a sliding selected fill. Use
    *                   when the pane has 2+ views or route destinations.
    *   • title-tabs  — title and badges above a compact segmented view switch.
    *                   Use when the pane has a stable label AND tabs that
@@ -17,12 +17,10 @@
    *                   time-range preset pills in the datetime popover).
    *
    * tabLayout (for `tabs` and `title-tabs`)
-   *   • 'left'   — tabs pack to the start at their intrinsic width and
-   *                a flexible trail fills the remaining space. Use for
-   *                primary nav strips (e.g. the drawer) where a `right`
-   *                slot needs to be pushed all the way to the edge.
-   *   • 'right'  — tabs pack to the end; a lead spacer pushes them over.
-   *                Default for the second row in `title-tabs`. No trail.
+   *   • 'left'   — the tab group packs to the start, leaving space for
+   *                the header's right-aligned actions.
+   *   • 'right'  — the tab group packs to the end.
+   *                Default for the second row in `title-tabs`.
    *   • 'equal'  — tabs share the row evenly, each taking 1fr of the
    *                tablist. Use for inspector tab strips (Fields /
    *                Events / Links) so labels line up across panes.
@@ -165,7 +163,6 @@
         ? 'pane-header--rounded'
         : 'pane-header--flush'
   )
-  let tabSizeClass = $derived(props.rounded !== false ? 'tabs-sm' : '')
   let stackedClass = $derived(
     props.timeRange !== undefined ||
       props.timestampMs !== undefined ||
@@ -197,7 +194,7 @@
       {/if}
     </div>
     {#if showControls && props.metaRight}
-      <div class="join pane-header__joined-controls">
+      <div class="header-controls pane-header__meta-controls">
         {@render props.metaRight()}
       </div>
     {/if}
@@ -236,51 +233,40 @@
   layout: PaneTabLayout,
   navigation = false,
   tabPanelID?: string,
-  segmented = false
+  withControls = false
 )}
   <div
-    class={segmented
-      ? 'pane-header__view-controls'
-      : `pane-header__tab-scroll pane-header__tab-scroll--${layout}`}
+    class="header-controls pane-header__tab-group pane-header__tab-group--{layout}"
+    class:pane-header__tab-group--controls={withControls}
   >
     <div
       role={navigation ? 'navigation' : 'tablist'}
       aria-label={ariaLabel}
-      class={segmented
-        ? 'pane-header__segments'
-        : `tabs tabs-border ${tabSizeClass} pane-header__tabs pane-header__tabs--${layout}`}
-      class:pane-header__segments--selected={segmented &&
-        tabs.some(tab => tab.id === activeID)}
-      style:--pane-tab-count={segmented ? tabs.length : undefined}
-      style:--pane-active-index={segmented
-        ? tabs.findIndex(tab => tab.id === activeID)
-        : undefined}
+      class="header-tabs"
+      style:--header-tab-count={tabs.length}
+      style:--header-active-index={tabs.findIndex(tab => tab.id === activeID)}
       onkeydown={navigation ? undefined : handleTablistKeydown}
     >
-      {#if !segmented && layout === 'right'}
-        <span class="pane-header__tab-lead" aria-hidden="true"></span>
-      {/if}
       {#each tabs as tab (tab.id)}
         {@const active = tab.id === activeID}
-        {@const tabClass = segmented
-          ? `btn btn-xs pane-header__segment ${active ? 'pane-header__segment--active' : ''}`
-          : `tab pane-header__tab gap-2 whitespace-nowrap px-3 ${active ? 'tab-active' : ''}`}
         {#if navigation && tab.href}
           <a
             href={tab.disabled ? undefined : tab.href}
-            class={tabClass}
+            class="btn btn-xs header-tab"
+            class:tooltip={Boolean(tab.icon)}
+            class:tooltip-left={Boolean(tab.icon)}
             aria-current={active ? 'page' : undefined}
             aria-disabled={tab.disabled ? 'true' : undefined}
             tabindex={tab.disabled ? -1 : undefined}
-            title={tab.label}
+            data-tip={tab.icon ? tab.label : undefined}
             onclick={event => !tab.disabled && onSelect(tab.id, event)}
           >
             {#if tab.icon}
-              <span class="pane-header__tab-icon shrink-0">
+              <span class="header-tab__icon shrink-0">
                 {@render tab.icon()}
               </span>
             {/if}
-            <span class="pane-header__tab-label">{tab.label}</span>
+            <span class="header-tab__label">{tab.label}</span>
             {#if tab.count !== undefined}
               <span class="badge-count"
                 >{tab.count} {tab.countLabel ?? tab.label.toLowerCase()}</span
@@ -293,19 +279,21 @@
             role="tab"
             id={tabPanelID ? paneTabID(tabPanelID, tab.id) : undefined}
             aria-controls={tabPanelID}
-            class={tabClass}
+            class="btn btn-xs header-tab"
+            class:tooltip={Boolean(tab.icon)}
+            class:tooltip-left={Boolean(tab.icon)}
             aria-selected={active}
             tabindex={tab.id === tabbableTabID(tabs, activeID) ? 0 : -1}
             disabled={tab.disabled}
-            title={tab.label}
+            data-tip={tab.icon ? tab.label : undefined}
             onclick={event => !tab.disabled && onSelect(tab.id, event)}
           >
             {#if tab.icon}
-              <span class="pane-header__tab-icon shrink-0">
+              <span class="header-tab__icon shrink-0">
                 {@render tab.icon()}
               </span>
             {/if}
-            <span class="pane-header__tab-label">{tab.label}</span>
+            <span class="header-tab__label">{tab.label}</span>
             {#if tab.count !== undefined}
               <span class="badge-count"
                 >{tab.count} {tab.countLabel ?? tab.label.toLowerCase()}</span
@@ -314,11 +302,8 @@
           </button>
         {/if}
       {/each}
-      {#if !segmented && layout === 'left'}
-        <span class="pane-header__tab-trail" aria-hidden="true"></span>
-      {/if}
     </div>
-    {#if segmented && props.metaRight}{@render props.metaRight()}{/if}
+    {#if withControls && props.metaRight}{@render props.metaRight()}{/if}
   </div>
 {/snippet}
 
@@ -349,7 +334,7 @@
   </div>
 {:else if props.mode === 'tabs'}
   <div class="pane-header pane-header--tabs {roundedClass} {stackedClass}">
-    <div class="pane-header__top pane-header__top--tabs">
+    <div class="pane-header__top">
       {@render tabStrip(
         props.tabs,
         props.activeID,
@@ -383,7 +368,7 @@
     role="region"
     aria-label={props.ariaLabel ?? props.title}
   >
-    <div class="pane-header__top pane-header__top--title-tabs">
+    <div class="pane-header__top">
       <div class="pane-header__title-row">
         {#if props.leading}
           <div class="pane-header__leading">{@render props.leading()}</div>
@@ -422,6 +407,7 @@
   /* Shared theme surface; the workspace toolbar can override the fill. */
   .pane-header {
     @apply flex min-w-0 shrink-0 flex-nowrap items-end gap-2 overflow-hidden px-0.5 pt-0.5;
+    container: header / inline-size;
     background-color: var(--pane-header-bg, var(--color-base-200));
   }
 
@@ -460,15 +446,6 @@
   .pane-header__top {
     @apply flex min-w-0 w-full flex-nowrap items-center gap-2;
     min-height: var(--pane-header-row-h);
-  }
-
-  .pane-header__top--tabs,
-  .pane-header__top--title-tabs {
-    @apply items-end;
-  }
-
-  .pane-header--title-tabs .pane-header__top--title-tabs {
-    @apply min-w-0 items-center;
   }
 
   .pane-header__meta-row {
@@ -521,22 +498,6 @@
     overflow: visible;
   }
 
-  /* Left layout (drawer / tabs-only): tabs pack to the start at intrinsic
-     width, a flexible trail fills the remaining space so a `right` slot
-     can be pushed to the edge. Title-tabs uses its own rules below. */
-  .pane-header:not(.pane-header--title-tabs)
-    :global(.tabs.pane-header__tabs--left) {
-    display: inline-flex !important;
-    width: max-content !important;
-    min-width: 100%;
-  }
-
-  .pane-header:not(.pane-header--title-tabs)
-    :global(.tabs.pane-header__tabs--left > .tab) {
-    flex: 0 0 auto !important;
-    min-width: max-content;
-  }
-
   /* Graph tabs have their own row, leaving title and badges on the first. */
   .pane-header--title-tabs {
     @apply flex-col items-stretch gap-2;
@@ -553,132 +514,35 @@
     flex-basis: 20rem;
   }
 
-  .pane-header__joined-controls {
+  .pane-header__meta-controls {
     @apply ml-auto shrink-0;
   }
 
-  .pane-header__view-controls {
-    @apply ml-auto flex max-w-full flex-wrap items-center justify-end gap-2 rounded-xl p-0.5;
+  .pane-header__tab-group {
+    @apply max-w-full overflow-x-auto;
   }
 
-  .pane-header__segments {
-    @apply relative isolate inline-grid shrink-0 rounded-[10px] p-0.5;
-    grid-template-columns: repeat(var(--pane-tab-count), minmax(0, 1fr));
+  .pane-header__tab-group--controls {
+    @apply flex-wrap overflow-visible p-0.5;
   }
 
-  .pane-header__segments--selected::before {
-    content: '';
-    position: absolute;
-    inset: 0.125rem auto 0.125rem 0.125rem;
-    width: calc((100% - 0.25rem) / var(--pane-tab-count));
-    border-radius: 0.5rem;
-    background: var(--item-selected-bg);
-    transform: translateX(calc(var(--pane-active-index) * 100%));
-    transition: transform var(--motion-compact-duration)
-      var(--motion-settle-easing);
-    pointer-events: none;
+  .pane-header__tab-group--left {
+    @apply mr-auto;
   }
 
-  .pane-header__segment {
-    @apply relative z-[1] h-7 min-h-7 gap-2 whitespace-nowrap rounded-lg border-0 bg-transparent px-3 text-sm font-normal text-base-content shadow-none;
-    --btn-noise: none;
+  .pane-header__tab-group--right {
+    @apply ml-auto justify-end;
   }
 
-  .pane-header__segment--active .pane-header__tab-icon {
-    color: var(--color-primary);
+  .pane-header__tab-group--equal {
+    @apply flex-1;
   }
 
-  @media (hover: hover) {
-    .pane-header__segment:not(.pane-header__segment--active):hover {
-      background: var(--item-hover-bg);
-    }
-  }
-
-  /* Right layout: lead spacer pushes tabs to the end. */
-  .pane-header :global(.tabs.pane-header__tabs--right) {
-    display: flex !important;
-    width: 100% !important;
-    min-width: 0 !important;
-  }
-
-  .pane-header__tab-lead {
-    @apply min-w-0 flex-1 self-stretch;
-  }
-
-  .pane-header :global(.tabs.pane-header__tabs--right > .tab) {
-    flex: 0 0 auto !important;
-    min-width: max-content;
+  .pane-header__tab-group--equal .header-tabs {
+    @apply w-full;
   }
 
   .pane-header__right {
     @apply ml-auto flex shrink-0 items-center gap-2;
-  }
-
-  /* flex-1 + width:0 lets this shrink inside the header. Scroll
-     behaviour differs by layout: 'left' allows overflow so a long
-     tab list keeps its intrinsic widths and scrolls horizontally;
-     'equal' clips so each tab can compress to share the row. */
-  .pane-header__tab-scroll {
-    @apply min-h-0 min-w-0 flex-1;
-    width: 0;
-  }
-
-  .pane-header__tab-scroll--left {
-    @apply overflow-x-auto overflow-y-hidden;
-    scrollbar-width: thin;
-  }
-
-  .pane-header__tab-scroll--right {
-    @apply overflow-hidden;
-  }
-
-  .pane-header__tab-scroll--equal {
-    @apply overflow-hidden;
-  }
-
-  /* DaisyUI's `.tabs` is `display:flex; flex-wrap:wrap` and each
-     `.tab` is itself `inline-flex; flex-wrap:wrap`. Both layers
-     can wrap when the pane gets narrow, which knocks the tabs out
-     of alignment. Force nowrap on both for every layout. */
-  .pane-header :global(.tabs.pane-header__tabs) {
-    flex-wrap: nowrap !important;
-    align-items: flex-end;
-    @apply gap-1;
-  }
-
-  .pane-header :global(.tabs.pane-header__tabs > .tab) {
-    flex-wrap: nowrap !important;
-    white-space: nowrap;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
-  }
-
-  /* Equal layout: each tab gets 1fr of the row. No trail; no
-     horizontal scroll — labels truncate before the row overflows. */
-  .pane-header :global(.tabs.pane-header__tabs--equal) {
-    display: flex !important;
-    width: 100% !important;
-  }
-
-  /* Each tab has a per-tab minimum so labels never crowd. Sized to
-     fit our longest detail-view label ("Datapoints") with badge +
-     gaps. Override at the call site with style="--pane-tab-min: …"
-     if a future tab strip uses longer labels.
-
-     The pixel min on the resize panel (minDetailPx) prevents these mins from
-     ever forcing the strip wider than the pane. */
-  .pane-header :global(.tabs.pane-header__tabs--equal) {
-    --pane-tab-min: 7rem;
-  }
-
-  .pane-header :global(.tabs.pane-header__tabs--equal > .tab) {
-    flex: 1 1 0 !important;
-    min-width: var(--pane-tab-min) !important;
-  }
-
-  .pane-header__tab-trail {
-    @apply min-w-4 shrink-0 grow self-stretch;
   }
 </style>

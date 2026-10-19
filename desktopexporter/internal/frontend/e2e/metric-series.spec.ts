@@ -1561,6 +1561,78 @@ test('series open by their headers, one at a time, with one combined table', asy
   await expect(series.nth(1)).not.toHaveAttribute('open')
 })
 
+test('header tabs use icons and tooltips only when their panel is narrow', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1000 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.route('**/export/metrics/**', route =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: '{"resourceMetrics":[]}',
+    })
+  )
+  await page.goto(`/metrics/${metric.metricRef}?agg=raw`)
+  const bubble = page
+    .getByRole('region', { name: 'Metric details', exact: true })
+    .locator('.detail-bubble__with-action')
+  const properties = bubble.getByRole('tab', {
+    name: 'Properties',
+    exact: true,
+  })
+  const json = bubble.getByRole('tab', { name: 'JSON', exact: true })
+  const labelWidth = () =>
+    properties
+      .locator('.header-tab__label')
+      .evaluate(element => element.getBoundingClientRect().width)
+  const tooltipDisplay = () =>
+    properties.evaluate(
+      element => getComputedStyle(element, '::before').display
+    )
+  await expect.poll(labelWidth).toBeGreaterThan(20)
+  await properties.hover()
+  expect(await tooltipDisplay()).toBe('none')
+
+  const resize = page.getByRole('separator', {
+    name: 'Resize the panels',
+    exact: true,
+  })
+  await resize.focus()
+  await resize.press('Shift+ArrowRight')
+  await resize.press('Shift+ArrowRight')
+  await expect.poll(labelWidth).toBe(1)
+  await expect(properties).toHaveAccessibleName('Properties')
+  await expect(json).toHaveAccessibleName('JSON')
+  const titleBox = (await bubble
+    .locator('summary')
+    .getByText('Metric', { exact: true })
+    .boundingBox())!
+  const controlsBox = (await bubble
+    .getByRole('group', { name: 'Detail controls' })
+    .boundingBox())!
+  expect(controlsBox.x).toBeGreaterThan(titleBox.x + titleBox.width)
+  await properties.hover()
+  await expect
+    .poll(() =>
+      properties.evaluate(
+        element => getComputedStyle(element, '::before').opacity
+      )
+    )
+    .toBe('1')
+  expect(await tooltipDisplay()).toBe('block')
+  await properties.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(json).toBeFocused()
+  await expect(json).toHaveAttribute('aria-selected', 'true')
+
+  await resize.focus()
+  await resize.press('Shift+ArrowLeft')
+  await resize.press('Shift+ArrowLeft')
+  await expect.poll(labelWidth).toBeGreaterThan(20)
+  expect(await tooltipDisplay()).toBe('none')
+  await expect(json).toHaveAttribute('aria-selected', 'true')
+})
+
 test('Copy metric stays in its heading and copies exact OTLP only for the selected metric', async ({
   page,
   context,
