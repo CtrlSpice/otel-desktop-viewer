@@ -103,7 +103,7 @@
       {#each colouredParts as part (part.key)}
         <button
           type="button"
-          class="service-segment min-w-[2px] rounded-full"
+          class="service-segment min-w-2 rounded-full"
           data-service-key={part.key}
           style:flex={part.count}
           style:--service-color={part.color}
