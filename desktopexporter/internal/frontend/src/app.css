@@ -1529,7 +1529,7 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
   @apply badge-warning;
 }
 
-/* Dawn pills retain their colour families with AA-contrast white labels. */
+/* Dawn pills use white labels; rose and gold retain the exact theme fills. */
 html[data-theme='rose-pine-dawn']
   :is(.badge-soft, .badge-count, .badge-origin):not(.badge-papaya) {
   --dawn-badge-lightness: 0.57;
@@ -1545,6 +1545,11 @@ html[data-theme='rose-pine-dawn']
 html[data-theme='rose-pine-dawn']
   :is(.badge-soft, .badge-count, .badge-origin):is(.badge-accent, .badge-info) {
   --dawn-badge-lightness: 0.56;
+}
+
+html[data-theme='rose-pine-dawn']
+  :is(.badge-soft, .badge-count, .badge-origin):is(.badge-rose, .badge-warning) {
+  --badge-bg: var(--badge-color);
 }
 
 /* Badges — pills, including the classes that apply DaisyUI badge styles. */
