@@ -58,90 +58,93 @@
   )
 </script>
 
-{#if colouredParts.length > 1}
-  <div
-    class="mt-2 flex h-2 w-full overflow-hidden rounded-full"
-    role="img"
-    aria-label={`Service breakdown by span count: ${colouredParts.map(part => `${part.label}: ${part.count} spans`).join('; ')}`}
-  >
-    {#each colouredParts as part (part.key)}
-      <span
-        class="service-segment min-w-0"
-        style:flex={part.count}
-        style:--service-color={part.color}
-      ></span>
-    {/each}
-  </div>
-{/if}
-
-{#snippet serviceLabel(part: (typeof colouredParts)[number])}
-  <span
-    class="service-dot"
-    style:background-color={part.color}
-    aria-hidden="true"
-  ></span>
-  <span class="service-label">
-    <span class="min-w-0 truncate">{part.label}</span>
-    <span
-      class="shrink-0 text-rp-subtle tabular-nums"
-      aria-label={`${part.count} spans`}>({part.count.toLocaleString()})</span
+<div
+  class="flow-root min-w-0"
+  role="group"
+  aria-label="Spans by service"
+  onpointermove={event => {
+    if (event.pointerType === 'touch') return
+    const target = event.target
+    if (!(target instanceof Element)) return
+    const choice = target.closest<HTMLElement>('[data-service-key]')
+    if (choice?.dataset.serviceKey) previewService(choice.dataset.serviceKey)
+  }}
+  onpointerleave={() => {
+    cancelHoverPreview()
+    hoveredKey = null
+  }}
+  onfocusout={event => {
+    if (
+      !(event.relatedTarget instanceof Node) ||
+      !event.currentTarget.contains(event.relatedTarget)
+    )
+      focusedKey = null
+  }}
+>
+  {#if colouredParts.length > 1}
+    <div
+      class="mt-2 flex h-2 w-full overflow-hidden rounded-full"
+      role="img"
+      aria-label={`Service breakdown by span count: ${colouredParts.map(part => `${part.label}: ${part.count} spans`).join('; ')}`}
     >
-  </span>
-{/snippet}
+      {#each colouredParts as part (part.key)}
+        <span
+          class="service-segment min-w-0"
+          data-service-key={part.key}
+          style:flex={part.count}
+          style:--service-color={part.color}
+        ></span>
+      {/each}
+    </div>
+  {/if}
 
-{#if colouredParts.length > 1}
-  <div
-    class="service-disclosure"
-    role="group"
-    aria-label="Spans by service"
-    onpointermove={event => {
-      if (event.pointerType === 'touch') return
-      const target = event.target
-      if (!(target instanceof Element)) return
-      const choice = target.closest<HTMLElement>('[data-service-key]')
-      if (choice?.dataset.serviceKey) previewService(choice.dataset.serviceKey)
-    }}
-    onpointerleave={() => {
-      cancelHoverPreview()
-      hoveredKey = null
-    }}
-    onfocusout={event => {
-      if (
-        !(event.relatedTarget instanceof Node) ||
-        !event.currentTarget.contains(event.relatedTarget)
-      )
-        focusedKey = null
-    }}
-  >
-    {#each colouredParts as part (part.key)}
-      <button
-        type="button"
-        class="service-choice"
-        class:service-choice--open={activeKey === part.key}
-        data-service-key={part.key}
-        aria-label={`${part.label}: ${part.count} spans`}
-        aria-expanded={activeKey === part.key}
-        aria-pressed={keptKey === part.key}
-        onfocus={() => {
-          cancelHoverPreview()
-          hoveredKey = null
-          focusedKey = part.key
-        }}
-        onclick={() => {
-          cancelHoverPreview()
-          hoveredKey = null
-          pinnedKey = part.key
-        }}
+  {#snippet serviceLabel(part: (typeof colouredParts)[number])}
+    <span
+      class="service-dot"
+      style:background-color={part.color}
+      aria-hidden="true"
+    ></span>
+    <span class="service-label">
+      <span class="min-w-0 truncate">{part.label}</span>
+      <span
+        class="shrink-0 text-rp-subtle tabular-nums"
+        aria-label={`${part.count} spans`}>({part.count.toLocaleString()})</span
       >
-        {@render serviceLabel(part)}
-      </button>
-    {/each}
-  </div>
-{:else if colouredParts.length === 1}
-  <div class="service-single">
-    {@render serviceLabel(colouredParts[0])}
-  </div>
-{/if}
+    </span>
+  {/snippet}
+
+  {#if colouredParts.length > 1}
+    <div class="service-disclosure">
+      {#each colouredParts as part (part.key)}
+        <button
+          type="button"
+          class="service-choice"
+          class:service-choice--open={activeKey === part.key}
+          data-service-key={part.key}
+          aria-label={`${part.label}: ${part.count} spans`}
+          aria-expanded={activeKey === part.key}
+          aria-pressed={keptKey === part.key}
+          onfocus={() => {
+            cancelHoverPreview()
+            hoveredKey = null
+            focusedKey = part.key
+          }}
+          onclick={() => {
+            cancelHoverPreview()
+            hoveredKey = null
+            pinnedKey = part.key
+          }}
+        >
+          {@render serviceLabel(part)}
+        </button>
+      {/each}
+    </div>
+  {:else if colouredParts.length === 1}
+    <div class="service-single">
+      {@render serviceLabel(colouredParts[0])}
+    </div>
+  {/if}
+</div>
 
 <style lang="postcss">
   @reference "../../app.css";
