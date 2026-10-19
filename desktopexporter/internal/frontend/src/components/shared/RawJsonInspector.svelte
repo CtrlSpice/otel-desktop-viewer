@@ -45,14 +45,16 @@
   $effect(() => {
     void retry
     const url = scope?.url
-    if (!active || !url || url === untrack(() => currentURL)) return
-    currentURL = url
+    if (url && (!active || url === untrack(() => currentURL))) return
+    currentURL = url ?? ''
     requestedURL = ''
     raw = ''
     formatted = ''
     error = ''
     bytes = null
     partial = false
+    loading = false
+    if (!url) return
     const controller = new AbortController()
     loading = true
     void fetch(url, { method: 'HEAD', signal: controller.signal })
@@ -113,14 +115,15 @@
           )
         const blob = await response.blob()
         if (controller.signal.aborted) return
+        const buffer = await blob.arrayBuffer()
+        if (controller.signal.aborted) return
         partial =
           response.status === 206 &&
           !!response.headers.get('Content-Range') &&
           !response.headers.get('Content-Range')!.endsWith(`/${blob.size}`)
-        raw = new TextDecoder().decode(await blob.arrayBuffer(), {
+        raw = new TextDecoder().decode(buffer, {
           stream: partial,
         })
-        if (controller.signal.aborted) return
         worker = new Worker(
           new URL('./utils/raw-json.worker.ts', import.meta.url),
           { type: 'module' }
