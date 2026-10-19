@@ -1,4 +1,7 @@
 <script lang="ts">
+  import Identifier from '@/components/shared/Identifier.svelte'
+  import TableValueCell from '@/components/shared/TableValueCell.svelte'
+  import { columnLabel, type WaterfallColumn } from './waterfall-columns'
   import type { SpanData } from '@/types/api-types'
   import type { WaterfallRowData } from './WaterfallView.svelte'
   import { formatDuration } from '@/utils/time'
@@ -33,6 +36,7 @@
     traceEnd: bigint
     matched?: boolean
     onRowClick: () => void
+    onInspectColumn?: (column: WaterfallColumn) => void
     onToggleExpand: () => void
     onSelectTimelineRecord: (
       record: import('./timeline-markers').TimelineRecord
@@ -54,6 +58,7 @@
     traceEnd,
     matched = false,
     onRowClick,
+    onInspectColumn,
     onToggleExpand,
     onSelectTimelineRecord,
   }: Props = $props()
@@ -105,7 +110,9 @@
   data-span-id={span.spanID}
   style:visibility={visible ? 'visible' : 'collapse'}
   tabindex={tabbable && visible ? 0 : -1}
-  onclick={onRowClick}
+  onclick={() => {
+    if (window.getSelection()?.isCollapsed !== false) onRowClick()
+  }}
   aria-hidden={!visible ? true : undefined}
   aria-level={ariaLevel}
   aria-rowindex={rowIndex}
@@ -125,12 +132,20 @@
         {subtreeCollapsed}
         {onToggleExpand}
       />
-      <span
-        class="waterfall-row__title flex-1 truncate text-left text-sm text-base-content"
+      <div
+        class="waterfall-row__title flex-1 text-left text-sm text-base-content"
         title={span.name}
       >
-        {span.name}
-      </span>
+        <TableValueCell
+          label="span field: name"
+          text={span.name}
+          inset={false}
+          onInspect={() =>
+            onInspectColumn
+              ? onInspectColumn({ source: 'span', key: 'name', field: true })
+              : onRowClick()}
+        />
+      </div>
       {#if matched}
         <span
           class="badge badge-xs badge-soft badge-primary waterfall-row__match flex-none"
@@ -169,13 +184,23 @@
       data-column-id={column.id}
       title={cell.title}
     >
-      <span
-        class={[
-          'block truncate px-2',
-          cell.numeric ? 'text-right' : 'text-left',
-          cell.missing && 'text-base-content/50',
-        ]}>{cell.text}</span
-      >
+      {#if cell.missing}
+        <span class="waterfall-row__missing block truncate text-base-content/50"
+          >{cell.text}</span
+        >
+      {:else}
+        <TableValueCell
+          label={columnLabel(column)}
+          text={cell.text}
+          numeric={cell.numeric}
+          onInspect={() =>
+            onInspectColumn ? onInspectColumn(column) : onRowClick()}
+        >
+          {#if column.field && column.source === 'span' && ['traceId', 'spanId', 'parentSpanId'].includes(column.key)}<Identifier
+              value={cell.text}
+            />{:else}{cell.text}{/if}
+        </TableValueCell>
+      {/if}
       <span class="col-resize-marker" aria-hidden="true"></span>
     </td>
   {/each}
@@ -231,6 +256,9 @@
 
   .waterfall-row__title {
     @apply min-w-0 flex-1;
+  }
+  .waterfall-row__missing {
+    padding-inline: var(--table-cell-inline-padding, 0.5rem);
   }
 
   /* Marks a span the cycle-aware walk recovered. flex-none so it survives the

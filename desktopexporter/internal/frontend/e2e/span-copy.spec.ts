@@ -288,12 +288,39 @@ test('Waterfall columns persist across traces and align through resizing and ove
   const row = page.locator(`.waterfall-row[data-span-id="${selectedID}"]`)
   const cell = row.getByRole('gridcell').nth(1)
   await expect(cell).toHaveText('9223372036854775807')
-  await expect(cell.locator('span').first()).toHaveCSS('text-align', 'right')
+  await expect(cell.locator('.table-value-cell__inspect')).toHaveCSS(
+    'text-align',
+    'right'
+  )
   await expect(
-    row.getByRole('gridcell').first().locator('span').first()
+    row.getByRole('gridcell').first().locator('.table-value-cell__inspect')
   ).toHaveCSS('text-align', 'left')
   await expect(row).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('treegrid')).toHaveAttribute('aria-colcount', '4')
+  const details = page.getByRole('region', {
+    name: 'Span details',
+    exact: true,
+  })
+  const root = page.locator(`.waterfall-row[data-span-id="${rootID}"]`)
+  await page.getByRole('button', { name: 'Collapse details' }).click()
+  await expect(details).toBeHidden()
+  await root
+    .getByRole('button', { name: 'Show resource: service.name in details' })
+    .click()
+  await expect(details).toBeVisible()
+  await expect(
+    details.locator('[data-field="service.name"][data-field-source="resource"]')
+  ).toHaveClass(/detail-property--revealed/)
+  await expect(root).toHaveAttribute('aria-selected', 'true')
+  await details.locator('details').first().locator(':scope > summary').click()
+  await cell
+    .getByRole('button', { name: 'Show span: request.count in details' })
+    .click()
+  await expect(details.locator('details').first()).toHaveAttribute('open')
+  await expect(details.locator('[data-field="request.count"]')).toHaveClass(
+    /detail-property--revealed/
+  )
+  await expect(row).toHaveAttribute('aria-selected', 'true')
   const before = (await header.boundingBox())!.width
   await page
     .getByRole('separator', {
@@ -373,6 +400,20 @@ test('Waterfall columns persist across traces and align through resizing and ove
   await page.keyboard.press('Escape')
   await expect(row.getByRole('gridcell').nth(0)).toHaveText('2 (Server)')
   await expect(row.getByRole('gridcell').nth(1)).toHaveText('attribute kind')
+  const builtinKind = details.locator(
+    '[data-field="kind"][data-field-kind="field"]'
+  )
+  const attributeKind = details.locator(
+    '[data-field="kind"][data-field-kind="attribute"]'
+  )
+  await row
+    .getByRole('button', { name: 'Show span field: kind in details' })
+    .click()
+  await expect(builtinKind).toHaveClass(/detail-property--revealed/)
+  await expect(attributeKind).not.toHaveClass(/detail-property--revealed/)
+  await row.getByRole('button', { name: 'Show span: kind in details' }).click()
+  await expect(attributeKind).toHaveClass(/detail-property--revealed/)
+  await expect(builtinKind).not.toHaveClass(/detail-property--revealed/)
   await page.reload()
   await expect(
     page.getByRole('columnheader', { name: 'span field: kind', exact: true })
@@ -475,6 +516,31 @@ test('Copy span sits opposite the span icon and copies only the selected span wi
     return colors
   })
   const fields = detail.getByRole('table', { name: 'Span fields' })
+  const originalURL = page.url()
+  for (const [fieldName, full, compact] of [
+    ['traceId', traceID, '12345678…56789012'],
+    ['spanId', selectedID, '2222…2222'],
+    ['parentSpanId', rootID, '1111…1111'],
+  ]) {
+    const field = fields.locator(`[data-field="${fieldName}"]`)
+    await expect(
+      field.locator('.identifier > [aria-hidden="true"]')
+    ).toHaveText(compact!)
+    await expect(field.locator('.identifier')).toHaveAttribute('title', full!)
+    const copyID = field.getByRole('button', {
+      name: `Copy ${fieldName}`,
+      exact: true,
+    })
+    await copyID.focus()
+    await copyID.press('Enter')
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe(full)
+  }
+  await expect(
+    fields.getByRole('button', { name: rootID, exact: true })
+  ).toBeVisible()
+  await expect(page).toHaveURL(originalURL)
   await expect(
     fields.locator('[data-field="name"]').first().locator('.detail-pair__value')
   ).toHaveCSS('color', palette['base-content']!)

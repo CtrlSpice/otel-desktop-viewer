@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Identifier from '@/components/shared/Identifier.svelte'
   import type { LinkData } from '@/types/api-types'
   import DisclosureSignalCard from '@/components/shared/DisclosureSignalCard.svelte'
   import SpanField from '@/components/shared/DetailProperty.svelte'
@@ -75,7 +76,22 @@
   <DisclosureSignalCard
     title={linkLabel(link)}
     description={link.summary ? undefined : (link.spanID ?? 'Missing span ID')}
+    descriptionIsID={!link.summary && !!link.spanID}
   >
+    {#snippet titleContent()}
+      {#if !link.summary}
+        {#if link.traceID}<Identifier value={link.traceID} />{:else}Invalid link
+          target{/if}
+      {:else if link.summary.target}
+        {#if link.summary.target.name.trim()}{link.summary.target.name.trim()}
+        {:else if link.spanID}<Identifier value={link.spanID} />{:else}Unnamed
+          span{/if}
+        {#if link.summary.target.serviceName.trim()}
+          ({link.summary.target.serviceName.trim()}){/if}
+      {:else if link.spanID && link.traceID}
+        <Identifier value={link.traceID} /> / <Identifier value={link.spanID} />
+      {:else}Invalid link target{/if}
+    {/snippet}
     {#snippet badge()}
       {#if invalid}{@render invalidLinkIcon()}{/if}
       <span class="badge-count">Link</span>
@@ -96,7 +112,8 @@
               <a
                 class="detail-cell__value link link-primary font-mono"
                 {href}
-                onclick={e => goToLink(e, link)}>{link.traceID}</a
+                onclick={e => goToLink(e, link)}
+                ><Identifier value={link.traceID!} /></a
               >
             {:else}
               <span class="detail-cell__value font-mono">null</span>
@@ -113,11 +130,14 @@
               <a
                 class="detail-cell__value link link-primary font-mono"
                 {href}
-                onclick={e => goToLink(e, link)}>{link.spanID}</a
+                onclick={e => goToLink(e, link)}
+                ><Identifier value={link.spanID} /></a
               >
             {:else}
               <span class="detail-cell__value font-mono"
-                >{link.spanID ?? 'null'}</span
+                >{#if link.spanID}<Identifier
+                    value={link.spanID}
+                  />{:else}null{/if}</span
               >
             {/if}
           {/snippet}

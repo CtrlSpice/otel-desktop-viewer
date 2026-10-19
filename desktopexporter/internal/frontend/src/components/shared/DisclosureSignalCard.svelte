@@ -4,7 +4,9 @@
 
   let {
     title,
+    titleContent,
     description,
+    descriptionIsID,
     timestamp,
     timestampUnit,
     timestampSuffix,
@@ -13,7 +15,9 @@
     children,
   }: {
     title: string
+    titleContent?: Snippet
     description?: string
+    descriptionIsID?: boolean
     timestamp?: string
     timestampUnit?: string
     timestampSuffix?: string
@@ -34,7 +38,9 @@
   <SignalCard
     id={contentID}
     {title}
+    {titleContent}
     {description}
+    {descriptionIsID}
     {timestamp}
     {timestampUnit}
     {timestampSuffix}

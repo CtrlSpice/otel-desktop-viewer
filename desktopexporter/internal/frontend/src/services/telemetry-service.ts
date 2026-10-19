@@ -3,6 +3,7 @@ import type {
   TraceSummary,
   LogData,
   LogSummary,
+  LogErrorNavigation,
   TraceLogSummary,
   MetricViewData,
   MetricSeriesViewData,
@@ -973,6 +974,52 @@ export let telemetryAPI = {
     )
     return logSummariesFromJSON(rawData)
   },
+
+  searchLogPage: async (
+    startTime: QueryTimeBound,
+    endTime: QueryTimeBound,
+    pageSize: number,
+    offset: number,
+    queryTree?: QueryNode,
+    limit?: number,
+    sort?: SearchSort
+  ): Promise<{ logs: LogSummary[]; total: number }> => {
+    const data = await callRPC<{ logs: JsonLogSummary[]; total: number }>(
+      'searchLogPage',
+      named({
+        startTime: serializeNanoseconds(startTime),
+        endTime: serializeNanoseconds(endTime),
+        query: queryTree && convertQueryTreeForBackend(queryTree),
+        limit,
+        sort,
+        pageSize,
+        offset,
+      })
+    )
+    return { logs: logSummariesFromJSON(data.logs), total: data.total }
+  },
+
+  getLogErrorNavigation: async (
+    startTime: QueryTimeBound,
+    endTime: QueryTimeBound,
+    selectedLogRef: string | null,
+    queryTree?: QueryNode,
+    limit?: number,
+    sort?: SearchSort,
+    signal?: AbortSignal
+  ): Promise<LogErrorNavigation> =>
+    callRPC<LogErrorNavigation>(
+      'getLogErrorNavigation',
+      named({
+        startTime: serializeNanoseconds(startTime),
+        endTime: serializeNanoseconds(endTime),
+        selectedLogRef,
+        query: queryTree && convertQueryTreeForBackend(queryTree),
+        limit,
+        sort,
+      }),
+      signal
+    ),
 
   getLog: async (logRef: string): Promise<LogData> => {
     const rawData = await callRPC<JsonLogData>('getLog', named({ logRef }))

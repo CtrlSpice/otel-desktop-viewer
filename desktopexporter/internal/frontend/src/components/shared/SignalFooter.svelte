@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte'
   import DetailNav from './DetailNav.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { Delete02Icon } from '@hugeicons/core-free-icons'
@@ -12,6 +13,9 @@
     onNext: () => void
     onLast: () => void
     onDelete?: () => void
+    leading?: Snippet
+    navigation?: Snippet
+    trailing?: Snippet
   }
 
   let {
@@ -23,35 +27,48 @@
     onNext,
     onLast,
     onDelete,
+    leading,
+    navigation,
+    trailing,
   }: Props = $props()
 </script>
 
 <div class="signal-footer">
-  <span aria-hidden="true"></span>
-  <DetailNav {index} {total} {label} {onFirst} {onPrev} {onNext} {onLast} />
-  {#if onDelete}
-    <div
-      class="tooltip tooltip-left tooltip-error"
-      data-tip="Delete this {label}"
-    >
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm btn-square text-error"
-        onclick={onDelete}
-        aria-label="Delete this {label}"
+  {#if leading}<div>{@render leading()}</div>{:else}<span aria-hidden="true"
+    ></span>{/if}
+  {#if navigation}{@render navigation()}{:else}<DetailNav
+      {index}
+      {total}
+      {label}
+      {onFirst}
+      {onPrev}
+      {onNext}
+      {onLast}
+    />{/if}
+  <div class="signal-footer__actions">
+    {@render trailing?.()}
+    {#if onDelete}
+      <div
+        class="tooltip tooltip-left tooltip-error"
+        data-tip="Delete this {label}"
       >
-        <HugeiconsIcon
-          icon={Delete02Icon}
-          size="1em"
-          strokeWidth={1.5}
-          class="h-3.5 w-3.5"
-          aria-hidden="true"
-        />
-      </button>
-    </div>
-  {:else}
-    <span aria-hidden="true"></span>
-  {/if}
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm btn-square text-error"
+          onclick={onDelete}
+          aria-label="Delete this {label}"
+        >
+          <HugeiconsIcon
+            icon={Delete02Icon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-3.5 w-3.5"
+            aria-hidden="true"
+          />
+        </button>
+      </div>
+    {/if}
+  </div>
 </div>
 
 <style lang="postcss">
@@ -76,5 +93,8 @@
 
   .signal-footer > :global(*:last-child) {
     @apply justify-self-end;
+  }
+  .signal-footer__actions {
+    @apply flex items-center gap-2;
   }
 </style>

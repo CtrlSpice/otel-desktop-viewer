@@ -55,7 +55,7 @@
       strokeWidth={1.5}
     />{/snippet}
 
-  <DetailStack label="Metric details">
+  <DetailStack label="Metric details" storageKey="metric-detail-section-sizes">
     <DetailBubble label="Series" icon={seriesIcon} count={seriesCount}>
       <TimeseriesPanel />
     </DetailBubble>

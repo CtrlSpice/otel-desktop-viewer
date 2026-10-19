@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
+  import Identifier from './Identifier.svelte'
 
   type Props = {
     id: string
@@ -10,6 +11,7 @@
     /** Optional monospace id line at the bottom of the card (e.g. trace id). */
     idLine?: string
     title: string
+    titleContent?: Snippet
     /** Italic muted title (e.g. placeholder while data is still arriving). */
     titleMuted?: boolean
     subtitle?: string
@@ -31,6 +33,7 @@
     badgePlacement?: 'inline' | 'end'
     /** Subtle line under the title (e.g. metric description). */
     description?: string
+    descriptionIsID?: boolean
     /** Secondary line under header (custom content; prefer description). */
     lead?: Snippet
     meta?: Snippet
@@ -44,6 +47,7 @@
     controls,
     idLine,
     title,
+    titleContent,
     titleMuted = false,
     subtitle,
     timeLayout = 'plain',
@@ -56,6 +60,7 @@
     badge,
     badgePlacement = 'end',
     description,
+    descriptionIsID = false,
     lead,
     meta,
     onclick,
@@ -74,7 +79,8 @@
     <span class="signal-row__title-cluster" {title}>
       <span
         class="signal-row__title"
-        class:signal-row__title--muted={titleMuted}>{title}</span
+        class:signal-row__title--muted={titleMuted}
+        >{#if titleContent}{@render titleContent()}{:else}{title}{/if}</span
       >
       {#if subtitle}
         <span class="signal-row__subtitle"> ({subtitle})</span>
@@ -93,7 +99,9 @@
   {#if description}
     <div class="signal-row__lead">
       <p class="signal-row__description" title={description}>
-        {description}
+        {#if descriptionIsID}<Identifier
+            value={description}
+          />{:else}{description}{/if}
       </p>
     </div>
   {:else if lead}
@@ -165,7 +173,7 @@
 
   {#if idLine}
     <div class="signal-row__id-line" title={idLine}>
-      {idLine}
+      <Identifier value={idLine} />
     </div>
   {/if}
 </button>

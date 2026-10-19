@@ -19,22 +19,27 @@
   } = $props()
 
   const refreshLabel = $derived(
-    refreshPulse && refreshAsideTip ? `Refresh — ${refreshAsideTip}` : 'Refresh'
+    refreshPulse && refreshAsideTip ? `Refresh: ${refreshAsideTip}` : 'Refresh'
   )
 </script>
 
 <div
   class="search-bar flex w-full min-w-0 items-center gap-1 rounded-full text-sm text-base-content {search
-    ? 'border border-base-300 bg-base-200 px-1.5'
+    ? 'border border-base-300 bg-base-200'
     : ''}"
   role={search ? 'search' : undefined}
   aria-label={search ? 'Workspace search' : undefined}
 >
   {#if onRefresh || search}
-    <div class="shrink-0 rounded-full {search ? 'bg-base-200' : ''}">
+    <div
+      class="shrink-0 rounded-full {search ? 'bg-base-200' : ''} {refreshPulse
+        ? 'aura aura-xs search-bar__freshness text-primary'
+        : ''}"
+    >
       <button
         type="button"
-        class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-bottom"
+        class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-left"
+        class:bg-base-200={refreshPulse}
         aria-label={refreshLabel}
         data-tip={refreshLabel}
         disabled={!onRefresh}
@@ -48,9 +53,9 @@
         />
       </button>
     </div>
-    {#if refreshPulse}<span class="badge-count text-sm!" role="status"
-        >{refreshAsideTip || 'New data'}</span
-      >{/if}
+    {#if refreshPulse}
+      <span class="sr-only" role="status">{refreshAsideTip || 'New data'}</span>
+    {/if}
   {/if}
   <div
     class="search-bar__query flex min-w-0 flex-1 items-center rounded-full {search
@@ -75,6 +80,29 @@
 
 <style lang="postcss">
   @reference "../../../app.css";
+
+  .search-bar__freshness {
+    --aura-radius: 9999px;
+    line-height: 0;
+  }
+
+  .search-bar__freshness::before {
+    filter: blur(2px);
+    opacity: 0.35;
+    pointer-events: none;
+  }
+
+  .search-bar__freshness::after {
+    filter: blur(4px);
+    opacity: 0.2;
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .search-bar__freshness {
+      animation: none;
+    }
+  }
 
   .search-bar__query {
     height: 2rem;

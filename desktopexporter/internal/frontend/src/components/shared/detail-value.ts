@@ -6,6 +6,88 @@ export type ValueToken = {
   type?: AttributeValue['kind']
 }
 
+/** Colour bounded display summaries without parsing or changing their text. */
+export function compactValueTokens(text: string): ValueToken[] {
+  const parts = text.matchAll(
+    /"(?:[^"\\]|\\.)*"|[^{}[\],:"\s][^{}[\],:"]*(?=: )|[{}[\],:]|\s+|[^{}[\],:"\s]+|"/g
+  )
+  return Array.from(parts, part => {
+    const lexeme = part[0]
+    const key = /^\s*:/.test(text.slice(part.index + lexeme.length))
+    return {
+      text: lexeme,
+      kind: key
+        ? 'key'
+        : lexeme.startsWith('"')
+          ? 'string'
+          : /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(lexeme)
+            ? 'number'
+            : /^(true|false|null)$/.test(lexeme)
+              ? 'literal'
+              : 'punctuation',
+    }
+  })
+}
+
+export type ValueContainer = {
+  kind: 'container'
+  id: number
+  path: string
+  opening: ValueToken
+  closing: ValueToken
+  children: ValueNode[]
+  count: number
+}
+export type ValueNode = ValueToken | ValueContainer
+
+/** Group already-formatted tokens for folding, retaining every source lexeme. */
+export function valueTokenTree(
+  tokens: ValueToken[],
+  path: string
+): ValueNode[] {
+  let cursor = 0
+  function read(path: string, map: boolean, root = false): ValueNode[] {
+    const nodes: ValueNode[] = []
+    let key = ''
+    let index = 0
+    while (cursor < tokens.length) {
+      const token = tokens[cursor]
+      if (token.text === '}' || token.text === ']') break
+      const id = cursor++
+      if (token.text === '{' || token.text === '[') {
+        const childPath = root
+          ? path
+          : map
+            ? `${path}.${key}`
+            : `${path}[${index}]`
+        const children = read(childPath, token.text === '{')
+        const closing = tokens[cursor++]
+        nodes.push({
+          kind: 'container',
+          id,
+          path: childPath,
+          opening: token,
+          closing,
+          children,
+          count: children.filter(child =>
+            token.text === '{'
+              ? child.kind === 'key'
+              : child.kind !== 'key' && child.kind !== 'punctuation'
+          ).length,
+        })
+        index++
+      } else {
+        nodes.push(token)
+        if (token.kind === 'key') key = token.text.slice(1, -1)
+        else if (token.kind !== 'punctuation') index++
+      }
+    }
+    return nodes
+  }
+  // The outer token list is a single value, not an array entry.
+  return read(path, false, true)
+}
+
 /** Recognize only complete JSON containers; format lexemes, never parsed numbers. */
 export function jsonContainerTokens(text: string): ValueToken[] | null {
   if (!/^\s*[[{]/.test(text)) return null

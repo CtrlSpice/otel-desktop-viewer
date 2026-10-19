@@ -66,10 +66,13 @@
         <div class="seg seg--passthrough"></div>
       {:else if kind === 'tee'}
         <div class="seg seg--tee"></div>
-        <div class="seg__arm"></div>
+        <div class="seg__arm" class:seg__arm--leaf={!hasChildren}></div>
       {:else if kind === 'elbow'}
         <div class="seg seg--elbow"></div>
-        <div class="seg__arm seg__arm--elbow"></div>
+        <div
+          class="seg__arm seg__arm--elbow"
+          class:seg__arm--leaf={!hasChildren}
+        ></div>
       {/if}
     </div>
   {/each}
@@ -85,7 +88,7 @@
       {/if}
       <button
         type="button"
-        class="gutter__btn gutter__btn--hub shrink-0"
+        class="gutter__btn gutter__btn--hub number-circle shrink-0"
         class:gutter__btn--expanded={!subtreeCollapsed}
         class:gutter__btn--collapsed={subtreeCollapsed}
         aria-expanded={!subtreeCollapsed}
@@ -105,13 +108,6 @@
           fill="none"
           aria-hidden="true"
         >
-          <circle
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            stroke-width="1.5"
-          />
           <path
             d="M10 8l4 4-4 4"
             stroke="currentColor"
@@ -128,9 +124,7 @@
         tabindex="-1"
         aria-disabled="true"
         aria-label="No child spans"
-      >
-        <span class="tabular-nums">0</span>
-      </button>
+      ></button>
     {/if}
   </div>
 </div>
@@ -138,6 +132,8 @@
 <style lang="postcss">
   @reference "../../../app.css";
   .gutter {
+    --leaf-dot-size: 0.5rem;
+    --number-circle-color: var(--tree-accent);
     @apply relative flex-shrink-0;
     height: 28px;
   }
@@ -186,6 +182,10 @@
 
   .seg__arm--elbow {
     border-bottom-left-radius: 4px;
+  }
+
+  .seg__arm--leaf {
+    width: calc(var(--waterfall-gutter-col) - var(--leaf-dot-size) / 2);
   }
 
   /* ───── Node slot (hub button column) ───── */
@@ -240,13 +240,8 @@
   /* ───── Button base ───── */
 
   .gutter__btn {
-    @apply inline-flex cursor-pointer items-center justify-center rounded-full border-0 p-0 font-semibold leading-none outline-none transition-[background-color,color] duration-100;
+    @apply cursor-pointer outline-none transition-[background-color,color] duration-100;
     @apply focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1 focus-visible:ring-offset-base-100;
-    min-width: var(--waterfall-gutter-hub);
-    min-height: var(--waterfall-gutter-hub);
-    width: var(--waterfall-gutter-hub);
-    height: var(--waterfall-gutter-hub);
-    font-size: 8px;
   }
 
   /* `--tree-accent` is set inline on `.gutter` from the row's colour
@@ -254,20 +249,19 @@
 
   /* ───── Button states ───── */
 
-  .gutter__btn--expanded,
-  .gutter__btn--collapsed {
-    background-color: color-mix(in srgb, var(--tree-accent) 18%, transparent);
-    color: var(--tree-accent);
-  }
-
   .gutter__btn--expanded:hover,
   .gutter__btn--collapsed:hover {
     background-color: color-mix(in srgb, var(--tree-accent) 28%, transparent);
   }
 
   .gutter__btn--leaf {
-    @apply cursor-default bg-base-300/35 opacity-80 ring-1 ring-inset ring-base-content/10;
+    @apply cursor-default rounded-full p-0;
+    width: var(--leaf-dot-size);
+    height: var(--leaf-dot-size);
+    min-width: var(--leaf-dot-size);
+    min-height: var(--leaf-dot-size);
+    border: 0;
+    background-color: var(--tree-accent);
     pointer-events: none;
-    color: var(--tree-accent);
   }
 </style>

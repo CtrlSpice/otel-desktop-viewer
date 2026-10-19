@@ -16,6 +16,7 @@
     fieldName={attribute.key}
     fieldType={attribute.value.kind}
     typedValue={attribute.value}
+    fieldKind="attribute"
     {origin}
     defectLabel={attribute.hasConflict
       ? `Conflicting typed values retained for ${attribute.key} in ${owner}.`

@@ -11,7 +11,11 @@
   import { keymap } from '@codemirror/view'
   import { getStaticFieldsForSearch } from '@/constants/fields'
   import { getDynamicAttributes } from '@/services/search-field-service'
-  import type { FieldDefinition, SearchSignal } from '@/search/model'
+  import type {
+    FieldDefinition,
+    SearchSignal,
+    ParsedSearchRequest,
+  } from '@/search/model'
   import { parseSearchRequest } from './queryParser'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
@@ -55,6 +59,10 @@
     onReady?: (api: SearchEditorAPI) => void
     /** Called whenever the search error state changes. */
     onSearchError?: (error: string | null) => void
+    onQueryChange?: (text: string, fields: FieldDefinition[]) => void
+    onQuerySubmit?: (text: string) => void
+    /** A paged caller owns fetching after the editor validates the query. */
+    onSearchRequest?: (request: ParsedSearchRequest | null) => void
     /** Actions pinned top-right inside the editor container (drawer variant only). */
     headerActions?: Snippet
   }
@@ -70,6 +78,9 @@
     variant = 'default',
     onReady,
     onSearchError,
+    onQueryChange,
+    onQuerySubmit,
+    onSearchRequest,
     headerActions,
     filters = [],
   }: SearchEditorProps & { filters?: FilterDescriptor[] } = $props()
@@ -101,6 +112,9 @@
   const supportsClosedBy = 'closedBy' in HTMLDialogElement.prototype
 
   let availableFields = $state<FieldDefinition[]>([])
+  let queryText = $state('')
+
+  $effect(() => onQueryChange?.(queryText, availableFields))
 
   let signalLabel = $derived(capitalize(signal))
   let staticFieldsList = $derived([...getStaticFieldsForSearch(signal)])
@@ -220,6 +234,11 @@
 
     if (!text.trim()) {
       searchError = null
+      onQuerySubmit?.(text)
+      if (onSearchRequest) {
+        onSearchRequest(null)
+        return
+      }
       fetchClean(beginListUpdate(signal))
       return
     }
@@ -227,6 +246,11 @@
     try {
       const request = parseSearchRequest(text, availableFields, signal)
       searchError = null
+      onQuerySubmit?.(text)
+      if (onSearchRequest) {
+        onSearchRequest(request)
+        return
+      }
       if (!request) {
         fetchClean(beginListUpdate(signal))
         return
@@ -341,6 +365,9 @@
         tooltips({ position: 'fixed' }),
         closeBrackets(),
         history(),
+        EditorView.updateListener.of(update => {
+          if (update.docChanged) queryText = update.state.doc.toString()
+        }),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         placeholderCompartment.of(cmPlaceholder(placeholderText)),
         // Single-line input: no soft-wrap, swallow Enter (we map it to submit
@@ -361,6 +388,13 @@
     onReady?.({
       submit: onSubmit,
       clear: clearSearch,
+      setQuery: text => {
+        if (!editorView) return
+        editorView.dispatch({
+          changes: { from: 0, to: editorView.state.doc.length, insert: text },
+        })
+        onSubmit()
+      },
     })
   })
 

@@ -250,7 +250,7 @@ describe('Metric main-header export', () => {
       })
       const title = within(header).getByText('demo.metric', { exact: true })
       expect(
-        button.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING
+        title.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING
       ).not.toBe(0)
       const chartTabs = within(header).queryByRole('tablist')
       if (chartTabs) {

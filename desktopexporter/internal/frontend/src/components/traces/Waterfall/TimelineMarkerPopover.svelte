@@ -63,17 +63,17 @@
   }
 
   function showPreview() {
-    if (restoringTriggerFocus || !singleton || !popover?.showPopover) return
+    if (restoringTriggerFocus || !popover?.showPopover) return
     cancelClose()
     closeOtherActivityPopovers()
     popover.showPopover()
   }
 
-  function closeAndRestoreTriggerFocus() {
+  function closePopover(restoreFocus = false) {
     restoringTriggerFocus = true
     try {
       popover?.hidePopover()
-      trigger?.focus()
+      if (restoreFocus) trigger?.focus()
     } finally {
       restoringTriggerFocus = false
     }
@@ -88,7 +88,7 @@
   }
 
   function scheduleClose() {
-    if (!singleton || pinned) return
+    if (pinned) return
     cancelClose()
     closeTimer = setTimeout(() => {
       closeTimer = null
@@ -122,12 +122,12 @@
   }
 
   function hidePreviewIfUnowned() {
-    if (!singleton || pinned || previewHasOwner()) return
-    popover?.hidePopover()
+    if (pinned || previewHasOwner()) return
+    closePopover()
   }
 
   function handleFocusOut() {
-    if (!singleton || pinned) return
+    if (pinned) return
     setTimeout(hidePreviewIfUnowned)
   }
 
@@ -136,8 +136,7 @@
       event?.detail === 0 &&
       document.activeElement instanceof Node &&
       popover?.contains(document.activeElement)
-    if (restoreFocus) closeAndRestoreTriggerFocus()
-    else popover?.hidePopover()
+    closePopover(restoreFocus === true)
     onSelectRecord(record)
   }
 
@@ -148,9 +147,14 @@
       if (record) select(record)
       return
     }
-    pinned = true
-    closeOtherActivityPopovers()
-    popover?.togglePopover()
+    if (pinned) {
+      closePopover(true)
+    } else {
+      pinned = true
+      cancelClose()
+      closeOtherActivityPopovers()
+      popover?.showPopover()
+    }
   }
 
   $effect(() => {
@@ -175,7 +179,7 @@
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       event.preventDefault()
-      closeAndRestoreTriggerFocus()
+      closePopover(true)
     }
     document.addEventListener('keydown', handleEscape)
     return () => document.removeEventListener('keydown', handleEscape)
@@ -241,7 +245,7 @@
           {#if record.kind === 'event'}
             <span
               class="badge badge-xs badge-soft"
-              style:--badge-color={spanColor}>Event</span
+              style:--badge-color={spanColor}>Span event</span
             >
           {:else}
             <span class={severityBadgeClass(record.log.severityNumber)}

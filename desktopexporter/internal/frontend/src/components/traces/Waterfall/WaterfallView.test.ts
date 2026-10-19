@@ -345,6 +345,8 @@ describe('WaterfallView error navigation', () => {
     const onSelectSpan = vi.fn()
     const view = renderTree({ spans, onSelectSpan })
     await tick()
+    const badge = view.getByRole('group', { name: 'Error navigation' })
+    expect(badge).toHaveTextContent(/^2 err$/)
 
     buttonByLabel('Next error').click()
     expect(onSelectSpan).toHaveBeenLastCalledWith('error-1')
@@ -352,14 +354,27 @@ describe('WaterfallView error navigation', () => {
     await view.rerender({
       componentProps: { spans, selectedSpanID: 'error-1', onSelectSpan },
     })
+    expect(badge).toHaveTextContent(/^1\/2 errors$/)
     buttonByLabel('Next error').click()
     expect(onSelectSpan).toHaveBeenLastCalledWith('error-2')
 
     await view.rerender({
       componentProps: { spans, selectedSpanID: 'error-2', onSelectSpan },
     })
+    expect(badge).toHaveTextContent(/^2\/2 errors$/)
     buttonByLabel('Previous error').click()
     expect(onSelectSpan).toHaveBeenLastCalledWith('error-1')
+
+    await view.rerender({
+      componentProps: { spans, selectedSpanID: 'error-1', onSelectSpan },
+    })
+    expect(badge).toHaveTextContent(/^1\/2 errors$/)
+    for (const selectedSpanID of ['healthy-middle', 'exception-only', null]) {
+      await view.rerender({
+        componentProps: { spans, selectedSpanID, onSelectSpan },
+      })
+      expect(badge).toHaveTextContent(/^2 err$/)
+    }
   })
 
   it('chooses the nearest directional status error from a healthy span', async () => {
@@ -466,6 +481,51 @@ describe('WaterfallView error navigation', () => {
     })
     await waitFor(() => expect(scrollMock).toHaveBeenCalled())
     expect(rowIDs()).toEqual(['a', 'b', 'c'])
+  })
+})
+
+describe('WaterfallView scroll to top', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('scrolls without changing selection or collapsed branches and retains keyboard focus', async () => {
+    resetCollapseStoreForTests()
+    const onSelectSpan = vi.fn()
+    const view = renderTree({ selectedSpanID: 'b', onSelectSpan })
+    await tick()
+    await collapseRow('c')
+    const visible = rowIDs()
+    const viewport = view.container.querySelector<HTMLElement>(
+      '.waterfall-vlist-viewport'
+    )!
+    const label = 'Scroll span tree to top'
+    expect(view.queryByRole('button', { name: label })).not.toBeInTheDocument()
+    viewport.scrollTop = 200
+    viewport.dispatchEvent(new Event('scroll'))
+    await tick()
+    const button = view.getByRole('button', { name: label })
+    button.focus()
+    await tick()
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)')
+    vi.spyOn(window, 'matchMedia').mockReturnValue({ ...media, matches: true })
+    scrollMock.mockClear()
+    button.click()
+    await tick()
+    expect(scrollMock).toHaveBeenCalledWith({
+      index: 0,
+      align: 'top',
+      smoothScroll: false,
+      shouldThrowOnBounds: false,
+    })
+    expect(onSelectSpan).not.toHaveBeenCalled()
+    expect(rowIDs()).toEqual(visible)
+    expect(spanRow('b')).toHaveAttribute('aria-selected', 'true')
+    viewport.scrollTop = 0
+    viewport.dispatchEvent(new Event('scroll'))
+    await tick()
+    expect(button).toHaveFocus()
+    button.blur()
+    await tick()
+    expect(view.queryByRole('button', { name: label })).not.toBeInTheDocument()
   })
 })
 
@@ -864,7 +924,7 @@ describe('WaterfallView row keyboard navigation', () => {
     const first = spanRow('a')
     first.focus()
     const traceIDText = first.querySelector<HTMLElement>(
-      '.waterfall-row__title'
+      '.waterfall-row__title .table-value-cell__inspect'
     )
     expect(traceIDText).toHaveTextContent(traceID)
     const selection = window.getSelection()!

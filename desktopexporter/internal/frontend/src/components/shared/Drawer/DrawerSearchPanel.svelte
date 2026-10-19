@@ -3,6 +3,7 @@
   import SearchEditor from '@/components/shared/Search/SearchEditor.svelte'
   import type { SearchResultEvent } from '@/types/api-types'
   import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
+  import type { FieldDefinition, ParsedSearchRequest } from '@/search/model'
 
   import type { SortDirection } from '@/contexts/signal-list-page.svelte'
 
@@ -17,6 +18,9 @@
     onSearchResults?: (event: SearchResultEvent) => void
     onSearchError?: (error: string | null) => void
     onSearchReady?: (api: SearchEditorAPI) => void
+    onQueryChange?: (text: string, fields: FieldDefinition[]) => void
+    onQuerySubmit?: (text: string) => void
+    onSearchRequest?: (request: ParsedSearchRequest | null) => void
   }
 
   let {
@@ -27,6 +31,9 @@
     onSearchResults,
     onSearchError,
     onSearchReady,
+    onQueryChange,
+    onQuerySubmit,
+    onSearchRequest,
   }: Props = $props()
 </script>
 
@@ -49,6 +56,9 @@
       variant="drawer"
       {onSearchResults}
       {onSearchError}
+      {onQueryChange}
+      {onQuerySubmit}
+      {onSearchRequest}
       onReady={onSearchReady}
     />
   {/if}

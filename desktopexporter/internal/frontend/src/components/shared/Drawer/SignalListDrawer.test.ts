@@ -378,7 +378,7 @@ describe('SignalListDrawer refresh control', () => {
       refreshAsideTip: '3 new traces',
     })
     expect(
-      screen.getByRole('button', { name: 'Refresh — 3 new traces' })
+      screen.getByRole('button', { name: 'Refresh: 3 new traces' })
     ).toBeInTheDocument()
     expect(screen.getByText('3 new traces')).toBeInTheDocument()
   })

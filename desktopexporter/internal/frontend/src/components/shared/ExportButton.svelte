@@ -32,7 +32,7 @@
 
 <button
   type="button"
-  class="btn btn-circle btn-primary btn-soft btn-xs tooltip tooltip-right"
+  class="btn btn-xs tooltip tooltip-right"
   class:btn-disabled={pending}
   onclick={download}
   aria-label="Export {signal}"
@@ -47,6 +47,7 @@
     strokeWidth={1.5}
     aria-hidden="true"
   />
+  <span>Export</span>
 </button>
 
 {#if error}

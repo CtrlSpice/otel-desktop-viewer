@@ -70,7 +70,7 @@ describe('AttributeRows', () => {
     expect(
       screen
         .getByRole('button', { name: 'Copy service.name (resource)' })
-        .closest('.detail-property__header')
+        .closest('.detail-property__body')
     ).not.toBeNull()
     expect(container).not.toHaveTextContent('resource.service.name')
     expect(attributes[0]!.key).toBe('service.name')

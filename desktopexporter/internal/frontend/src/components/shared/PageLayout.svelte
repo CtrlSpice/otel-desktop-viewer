@@ -52,6 +52,8 @@
     drawerSearch?: Snippet
     drawerControls?: Snippet
     drawerFooter?: Snippet
+    /** Omit the list pane and its toggle without changing the saved preference. */
+    hideDrawer?: boolean
 
     // ── Content slots ──────────────────────────────────────────────
     /** Primary view (waterfall, chart, logs table, home content). */
@@ -84,6 +86,7 @@
     drawerSearch,
     drawerControls,
     drawerFooter,
+    hideDrawer,
     main,
     detail,
     pageFooter,
@@ -130,6 +133,7 @@
     {drawerChromeToolbar}
     {drawerSearch}
     {drawerControls}
+    {hideDrawer}
     navigationTrailing={detail ? detailToggle : undefined}
     footer={drawerFooter}
   >

@@ -53,6 +53,7 @@
 </script>
 
 <script lang="ts">
+  import Identifier from '@/components/shared/Identifier.svelte'
   import type { SpanData, TraceLogSummary } from '@/types/api-types'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
@@ -72,9 +73,14 @@
   import { setSpanInQuery } from '@/route'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import { spanCopyJSON } from './span-copy'
+  import {
+    revealDetailField,
+    type DetailFieldTarget,
+  } from '@/components/shared/utils/reveal-detail-field'
 
   type Props = {
     span: SpanData | undefined
+    fieldTarget?: DetailFieldTarget
     /** Node-level flags from the salvage walk; absent on healthy traces. */
     salvaged?: boolean
     cyclePoint?: boolean
@@ -87,6 +93,7 @@
 
   let {
     span,
+    fieldTarget,
     salvaged = false,
     cyclePoint = false,
     selectedEventIndex = null,
@@ -96,6 +103,14 @@
   }: Props = $props()
 
   let timeContext = getTimeContext()
+
+  function requestedField(key: string, source = 'span') {
+    return (
+      fieldTarget?.kind === 'field' &&
+      fieldTarget.key === key &&
+      fieldTarget.source === source
+    )
+  }
 
   let isRoot = $derived(!span?.parentSpanID)
   let spanJSON = $derived(span ? spanCopyJSON(span) : '')
@@ -135,7 +150,7 @@
       strokeWidth={1.5}
     />{/snippet}
 
-  <DetailStack label="Span details">
+  <DetailStack label="Span details" storageKey="trace-detail-section-sizes">
     <DetailBubble label="Span" icon={spanIcon}>
       {#snippet action()}<ValueCopyButton
           text={spanJSON}
@@ -162,7 +177,12 @@
           a loop, so this span has no place under the root.
         </div>
       {/if}
-      <table class="detail-fields span-fields w-full" aria-label="Span fields">
+      <table
+        class="detail-fields span-fields w-full"
+        aria-label="Span fields"
+        data-field-source="span"
+        use:revealDetailField={fieldTarget}
+      >
         <tbody>
           {#if detailSearchFieldVisible(columnFilter, 'name')}
             <SpanField
@@ -226,7 +246,7 @@
                 : undefined}
             />
           {/if}
-          {#if span.statusCodeValue !== 0 && span.statusCodeValue !== 1 && detailSearchFieldVisible(columnFilter, 'statusMessage')}
+          {#if requestedField('status.message') || (span.statusCodeValue !== 0 && span.statusCodeValue !== 1 && detailSearchFieldVisible(columnFilter, 'statusMessage'))}
             <SpanField
               fieldName="status.message"
               valueTone={span.statusCodeValue === 2 ? 'error' : undefined}
@@ -234,9 +254,17 @@
               fieldType="string"
             />
           {/if}
+          {#if requestedField('traceState') || (span.traceState && detailSearchFieldVisible(columnFilter, 'traceState'))}
+            <SpanField
+              fieldName="traceState"
+              fieldValue={span.traceState}
+              fieldType="string"
+            />
+          {/if}
           {#if detailSearchFieldVisible(columnFilter, 'traceID')}
             <SpanField
               fieldName="traceId"
+              identifier
               fieldValue={span.traceID}
               fieldType="bytes"
             />
@@ -252,7 +280,7 @@
                   type="button"
                   class="detail-cell__value link link-primary font-mono"
                   onclick={() => setSpanInQuery(span.parentSpanID!, 'push')}
-                  >{span.parentSpanID}</button
+                  ><Identifier value={span.parentSpanID ?? ''} /></button
                 >
               {/snippet}
             </SpanField>
@@ -260,11 +288,12 @@
           {#if detailSearchFieldVisible(columnFilter, 'spanID')}
             <SpanField
               fieldName="spanId"
+              identifier
               fieldValue={span.spanID}
               fieldType="bytes"
             />
           {/if}
-          {#if span.flags > 0 && detailFlagsVisible(columnFilter)}
+          {#if requestedField('flags') || (span.flags > 0 && detailFlagsVisible(columnFilter))}
             <SpanField
               fieldName="flags"
               fieldValue={span.flags.toString()}
@@ -277,21 +306,21 @@
             )}
             owner="span"
           />
-          {#if span.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedAttributesCount')}
+          {#if requestedField('droppedAttributesCount') || (span.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedAttributesCount'))}
             <SpanField
               fieldName="droppedAttributesCount"
               fieldValue={span.droppedAttributesCount.toString()}
               fieldType="uint32"
             />
           {/if}
-          {#if span.droppedEventsCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedEventsCount')}
+          {#if requestedField('droppedEventsCount') || (span.droppedEventsCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedEventsCount'))}
             <SpanField
               fieldName="droppedEventsCount"
               fieldValue={span.droppedEventsCount.toString()}
               fieldType="uint32"
             />
           {/if}
-          {#if span.droppedLinksCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedLinksCount')}
+          {#if requestedField('droppedLinksCount') || (span.droppedLinksCount > 0 && detailSearchFieldVisible(columnFilter, 'droppedLinksCount'))}
             <SpanField
               fieldName="droppedLinksCount"
               fieldValue={span.droppedLinksCount.toString()}
@@ -305,7 +334,7 @@
             owner="resource"
             origin="resource"
           />
-          {#if span.resource.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'resource.droppedAttributesCount')}
+          {#if requestedField('droppedAttributesCount', 'resource') || (span.resource.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'resource.droppedAttributesCount'))}
             <SpanField
               fieldName="droppedAttributesCount"
               origin="resource"
@@ -313,7 +342,7 @@
               fieldType="uint32"
             />
           {/if}
-          {#if span.scope.name && detailSearchFieldVisible(columnFilter, 'scope.name')}
+          {#if requestedField('name', 'scope') || (span.scope.name && detailSearchFieldVisible(columnFilter, 'scope.name'))}
             <SpanField
               fieldName="name"
               origin="scope"
@@ -321,7 +350,7 @@
               fieldType="string"
             />
           {/if}
-          {#if span.scope.version && detailSearchFieldVisible(columnFilter, 'scope.version')}
+          {#if requestedField('version', 'scope') || (span.scope.version && detailSearchFieldVisible(columnFilter, 'scope.version'))}
             <SpanField
               fieldName="version"
               origin="scope"
@@ -336,7 +365,7 @@
             owner="scope"
             origin="scope"
           />
-          {#if span.scope.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'scope.droppedAttributesCount')}
+          {#if requestedField('droppedAttributesCount', 'scope') || (span.scope.droppedAttributesCount > 0 && detailSearchFieldVisible(columnFilter, 'scope.droppedAttributesCount'))}
             <SpanField
               fieldName="droppedAttributesCount"
               origin="scope"

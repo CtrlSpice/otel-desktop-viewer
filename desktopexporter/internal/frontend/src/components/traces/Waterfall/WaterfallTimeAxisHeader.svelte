@@ -205,6 +205,7 @@
 </script>
 
 <script lang="ts">
+  import TableColumnHeading from '@/components/shared/TableColumnHeading.svelte'
   import { columnLabel, type SizedWaterfallColumn } from './waterfall-columns'
   import {
     DURATION_GUTTER_REM,
@@ -250,12 +251,7 @@
     style:width="{spanColWidth}px"
     aria-label="Span name"
   >
-    <span class="block truncate">name</span>
-    <span class="flex h-4 items-center">
-      <span class="badge badge-xs badge-soft badge-primary font-normal"
-        >Span</span
-      >
-    </span>
+    <TableColumnHeading label="name" source="Span" signal="Span" />
     <div
       class="resize-handle"
       aria-hidden="true"
@@ -271,13 +267,11 @@
       aria-label={columnLabel(column)}
       data-column-id={column.id}
     >
-      <span class="block truncate">{column.key || '(empty key)'}</span>
-      <span class="flex h-4 items-center">
-        <span
-          class="badge badge-xs badge-soft badge-primary font-normal capitalize"
-          >{column.source}</span
-        >
-      </span>
+      <TableColumnHeading
+        label={column.key || '(empty key)'}
+        source={column.source}
+        signal="Span"
+      />
       <div
         class="resize-handle"
         aria-hidden="true"
@@ -306,13 +300,13 @@
 <style lang="postcss">
   @reference "../../../app.css";
   .waterfall-time-axis-header {
-    --primary-label-center: calc(50% - 0.5rem);
-    height: 3.25rem;
+    --primary-label-center: 50%;
+    height: 2.5rem;
   }
 
   .waterfall-time-axis-header__th-label {
     @apply relative py-2 align-middle text-left text-sm font-semibold tracking-normal;
-    color: var(--color-subtle);
+    color: var(--table-heading-color);
   }
 
   .waterfall-time-axis-header__th-span {
@@ -321,12 +315,12 @@
   }
 
   .waterfall-time-axis-header__th-attribute {
-    @apply px-2;
+    padding-inline: var(--table-cell-inline-padding, 0.5rem);
   }
 
   .waterfall-time-axis-header__th-ruler {
     @apply relative min-w-[12rem] align-middle text-xs tracking-normal;
-    color: var(--color-subtle);
+    color: var(--table-heading-color);
     padding-left: var(--timeline-left-inset);
     padding-right: calc(var(--duration-gutter) + var(--outside-record-slot));
   }
@@ -344,7 +338,6 @@
   .waterfall-time-axis-header__tick-label {
     @apply absolute text-sm font-semibold tracking-normal text-center;
     top: var(--primary-label-center);
-    color: var(--color-subtle);
     width: var(--tick-label-w);
     margin-left: calc(var(--tick-label-w) / -2);
     transform: translateY(-50%);

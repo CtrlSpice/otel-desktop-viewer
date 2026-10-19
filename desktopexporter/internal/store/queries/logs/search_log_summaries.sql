@@ -9,7 +9,9 @@
 			'timestamp',      cast(coalesce(nullif(l.timestamp, 0), l.observed_timestamp) as varchar),
 			'severityText',   l.severity_text,
 			'severityNumber', l.severity_number,
+			'eventName',      l.event_name,
 			'serviceName',    l.service_name,
-			'bodyPreview',    body_preview(l.body)
+			'bodyPreview',    body_preview(l.body),
+			'bodyType',       json_extract_string(l.body, '$.kind')
 		) order by {{.Order}})), '[]') as varchar) as logs
 		from filtered l

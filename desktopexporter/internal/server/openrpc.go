@@ -82,8 +82,10 @@ func openRPCDocument() map[string]any {
 			"startTime": decimal, "durationNs": nullableText, "spanCount": integer, "errorCount": integer, "matchedSpans": rpcArray(object),
 		}, "traceID", "hasRootSpan", "rootSpan", "startTime", "durationNs", "spanCount", "errorCount")),
 		"LogSummaries": rpcArray(rpcObject(map[string]any{"logRef": text, "timestamp": decimal, "severityText": text, "severityNumber": integer,
-			"serviceName": text, "bodyPreview": text, "spanID": nullableText, "eventName": text,
+			"serviceName": text, "bodyPreview": text, "bodyType": text, "spanID": nullableText, "eventName": text,
 		}, "logRef", "timestamp", "severityText", "severityNumber", "serviceName", "bodyPreview")),
+		"LogPage":            rpcObject(map[string]any{"logs": rpcSchemaRef("LogSummaries"), "total": integer}, "logs", "total"),
+		"LogErrorNavigation": rpcObject(map[string]any{"count": integer, "index": nullableInteger, "previous": map[string]any{"anyOf": []any{rpcObject(map[string]any{"logRef": text, "offset": integer}, "logRef", "offset"), map[string]any{"type": "null"}}}, "next": map[string]any{"anyOf": []any{rpcObject(map[string]any{"logRef": text, "offset": integer}, "logRef", "offset"), map[string]any{"type": "null"}}}}, "count", "index", "previous", "next"),
 		"MetricSummaries": rpcArray(rpcObject(map[string]any{"metricRef": text, "name": text, "description": text, "unit": text, "metricType": text,
 			"aggregationTemporalityCode": nullableInteger, "aggregationTemporality": nullableText, "isMonotonic": map[string]any{"type": []string{"boolean", "null"}},
 			"serviceName": text, "seriesCount": nullableInteger, "seriesCardinality": integer, "dataPointCount": nullableInteger,
@@ -145,6 +147,8 @@ func openRPCDocument() map[string]any {
 		{"getTraceOverview", "TraceOverview", "Returns compact spans and trace-linked log previews. trace.startTime = minimum received span start; durationNs = maximum end-minimum start. startOffsetNs = span start-trace start; span durationNs = end-start. All are exact decimal nanoseconds. spanCount/logCount count retained records. logs.body is a display preview, not the received typed body; severity uses received text or a computed number-range label. Use getSpan/getLog for full data.", 1},
 		{"getSpan", "SpanResult", "Looks up a received 16-hex span ID, optionally restricted to a trace. status=found has traceID, span and logs; status=notFound has spanID and nullable traceID; status=ambiguous has spanID, matchCount, summaries and truncated. Without traceID, repeated span IDs across traces are ambiguous, never silently selected. limit defaults to 25 and bounds ambiguity summaries only. Full span startTime/endTime use exact decimal Unix nanoseconds; associated logs preserve typed bodies. Each link.summary.target contains name/serviceName derived at read time, or null unless the exact target traceID/spanID pair is stored. Summary metadata is not received OTLP and is excluded from OTLP export.", 1},
 		{"searchLogSummaries", "LogSummaries", "Returns logRef, timestamp, severityText/Number, serviceName and bodyPreview. timestamp is received timestamp unless zero, then observedTimestamp; exact unsigned decimal Unix nanoseconds. bodyPreview is computed display text, not the complete typed body. No truncation flag; omitted/null limit is unbounded.", 2},
+		{"searchLogPage", "LogPage", "Returns one bounded page of LogSummaries and total matching logs, computed in the same database statement. Time/query and sort apply before pagination; ties sort by logRef ascending. Optional limit caps the full result and total before pageSize/offset. Default pageSize is 100 (1..250); offset defaults to 0. An offset past the result returns logs:[] with total intact. Each request reads current retained data; this is not a cross-request snapshot.", 2},
+		{"getLogErrorNavigation", "LogErrorNavigation", "Returns the count and neighbouring error logs (severityNumber >= 17) across the full time/query/sort result, capped by optional limit before navigation. Each target has logRef and zero-based result offset. index is the selected error's one-based position, or null for a missing/non-error selection. Previous/next do not wrap; a missing selection has no previous target and next points to the first error. Counts and targets come from one database statement.", 2},
 		{"getTraceLogSummaries", "LogSummaries", "Returns log summaries carrying the received trace ID, including eventName and nullable spanID. Effective timestamp uses observedTimestamp when received timestamp is zero. bodyPreview is display text.", 1},
 		{"getLog", "Log", "Returns one complete normalized log. logRef is a generated database-local ID, not an OTel log ID. timestamp/observedTimestamp are separate received uint64 Unix nanoseconds as decimal strings. Absent trace/span IDs are null. body and attributes retain recursive tagged values. Resource/Scope and schema URLs remain associated with this log.", 1},
 		{"searchMetricSummaries", "MetricSummaries", "Returns Metric summaries, not exact datapoints. seriesCount/dataPointCount are window-scoped computed counts; seriesCardinality covers retained datapoints. lastSeen is the maximum window-scoped datapoint timestamp, decimal Unix nanoseconds. lastValue selects the latest scalar value, a computed numeric display projection that may coerce int64 to double. aggregationTemporalityCode is received; its label is computed. Use getMetric/getMetricSeries for exact values. Omitted/null limit is unbounded; no truncation flag.", 2},
@@ -187,7 +191,7 @@ func openRPCDocument() map[string]any {
 			schema := rpcSchemaRef("String")
 			description := ""
 			switch name {
-			case "traceID", "logRef", "metricRef", "seriesRef":
+			case "traceID", "logRef", "metricRef", "seriesRef", "selectedLogRef":
 				schema = rpcSchemaRef("EntityID")
 				description = "Received trace ID (32 hex or dashed UUID)."
 				if name != "traceID" {
@@ -202,6 +206,12 @@ func openRPCDocument() map[string]any {
 				schema = rpcSchemaRef("SearchQuery")
 			case "sort":
 				schema = rpcSchemaRef("Sort")
+			case "pageSize":
+				schema = rpcSchemaRef("IntInput")
+				description = "Whole number from 1 through 250; omitted/null defaults to 100."
+			case "offset":
+				schema = rpcSchemaRef("IntInput")
+				description = "Non-negative whole number of matching rows to skip; omitted/null defaults to 0."
 			case "limit":
 				schema = rpcSchemaRef("IntInput")
 				description = "Positive int64 whole number; omitted/null search limit is unbounded."
@@ -249,7 +259,7 @@ func openRPCDocument() map[string]any {
 		case "getMetric", "getMetricSeries", "getMetricView", "getMetricAggregateView":
 			method.Errors = append(method.Errors, map[string]any{"code": ErrCodeMetricNotFound, "message": "Metric not found"})
 		}
-		if spec.name == "query" || spec.name == "getTraceView" || spec.name == "searchTraceSummaries" || spec.name == "searchLogSummaries" || spec.name == "searchMetricSummaries" || spec.name == "getFieldValueCompletions" {
+		if spec.name == "query" || spec.name == "getTraceView" || spec.name == "searchTraceSummaries" || spec.name == "searchLogSummaries" || spec.name == "searchLogPage" || spec.name == "getLogErrorNavigation" || spec.name == "searchMetricSummaries" || spec.name == "getFieldValueCompletions" {
 			method.Errors = append(method.Errors, map[string]any{"code": ErrCodeInvalidQuery, "message": "Invalid query"})
 		}
 		method.Examples = rpcExamples(spec.name)

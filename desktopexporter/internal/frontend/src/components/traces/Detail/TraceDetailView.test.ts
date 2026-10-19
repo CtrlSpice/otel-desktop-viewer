@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, beforeEach } from 'vitest'
-import { screen, within } from '@testing-library/svelte'
+import { screen, within, waitFor } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import TraceDetailView from './TraceDetailView.svelte'
 import type { SpanData, TraceLogSummary } from '@/types/api-types'
@@ -42,6 +42,79 @@ function makeSpan(overrides: Partial<SpanData> = {}): SpanData {
 function spanField(name: string) {
   return SPAN_FIELDS.find(field => 'name' in field && field.name === name)!
 }
+
+describe('TraceDetailView table field inspection', () => {
+  it.each([
+    ['span', 'field'],
+    ['span', 'attribute'],
+    ['resource', 'attribute'],
+    ['scope', 'field'],
+    ['scope', 'attribute'],
+  ] as const)(
+    'reveals only the %s %s when keys collide',
+    async (source, kind) => {
+      const attributes = [
+        {
+          key: 'name',
+          value: { kind: 'string' as const, value: 'attribute name' },
+        },
+      ]
+      const span = makeSpan({
+        attributes,
+        resource: { attributes, droppedAttributesCount: 0 },
+        scope: {
+          name: 'scope field name',
+          version: '',
+          attributes,
+          droppedAttributesCount: 0,
+        },
+      })
+      const view = renderWithContexts(TraceDetailView, { span })
+      const table = screen.getByRole('table', { name: 'Span fields' })
+      const disclosure = table.closest('details')!
+      disclosure.open = false
+      await view.rerender({
+        component: TraceDetailView,
+        componentProps: { span, fieldTarget: { source, key: 'name', kind } },
+      })
+      await waitFor(() =>
+        expect(
+          table.querySelectorAll('.detail-property--revealed')
+        ).toHaveLength(1)
+      )
+      const target = table.querySelector<HTMLElement>(
+        '.detail-property--revealed'
+      )!
+      expect(target.dataset.fieldSource ?? table.dataset.fieldSource).toBe(
+        source
+      )
+      expect(target.dataset.fieldKind).toBe(kind)
+      expect(disclosure.open).toBe(true)
+    }
+  )
+
+  it.each([
+    ['span', 'flags'],
+    ['span', 'droppedEventsCount'],
+    ['span', 'traceState'],
+    ['scope', 'version'],
+    ['resource', 'droppedAttributesCount'],
+  ])(
+    'reveals omitted zero or empty %s.%s fields on request',
+    async (source, key) => {
+      renderWithContexts(TraceDetailView, {
+        span: makeSpan(),
+        fieldTarget: { source, key, kind: 'field' },
+      })
+      const table = screen.getByRole('table', { name: 'Span fields' })
+      await waitFor(() =>
+        expect(
+          table.querySelector('.detail-property--revealed')
+        ).toHaveAttribute('data-field', key)
+      )
+    }
+  )
+})
 
 describe('TraceDetailView numeric enum fields', () => {
   beforeEach(() => {

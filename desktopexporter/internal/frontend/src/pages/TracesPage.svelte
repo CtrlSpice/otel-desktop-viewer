@@ -83,6 +83,8 @@
   import TraceCard from '@/components/traces/TraceCard.svelte'
   import DetailView from '@/components/traces/Detail/TraceDetailView.svelte'
   import WaterfallView from '@/components/traces/Waterfall/WaterfallView.svelte'
+  import type { WaterfallColumn } from '@/components/traces/Waterfall/waterfall-columns'
+  import type { DetailFieldTarget } from '@/components/shared/utils/reveal-detail-field'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
   import type { ImportFailure } from '@/types/import-types'
@@ -229,11 +231,13 @@
   }
 
   function handleSelectSpan(spanID: string) {
+    fieldRequest = undefined
     detailPanel.reveal()
     setSpanInQuery(spanID, 'push')
   }
 
   function handleSelectTimelineRecord(spanID: string, record: TimelineRecord) {
+    fieldRequest = undefined
     detailPanel.reveal()
     if (record.kind === 'event') {
       selectSpanEvent(spanID, record.eventIndex, 'push')
@@ -241,6 +245,34 @@
       selectSpanLog(spanID, record.log.logRef, 'push')
     }
   }
+
+  let fieldRequest = $state<{
+    traceID: string | null
+    spanID: string
+    target: DetailFieldTarget
+  }>()
+
+  function handleInspectColumn(spanID: string, column: WaterfallColumn) {
+    handleSelectSpan(spanID)
+    fieldRequest = {
+      traceID: page.selectedID,
+      spanID,
+      target: {
+        source: column.source,
+        key: column.key,
+        kind: column.field ? 'field' : 'attribute',
+      },
+    }
+  }
+
+  $effect(() => {
+    if (
+      fieldRequest &&
+      (fieldRequest.spanID !== selectedSpanID ||
+        fieldRequest.traceID !== page.selectedID)
+    )
+      fieldRequest = undefined
+  })
 
   function handleSearchResults(event: SearchResultEvent) {
     page.handleSearchResults(event)
@@ -446,6 +478,7 @@
           {selectedSpanID}
           searchActive={activeQueryTree !== undefined}
           onSelectSpan={handleSelectSpan}
+          onInspectColumn={handleInspectColumn}
           onSelectTimelineRecord={handleSelectTimelineRecord}
           loading={detailLoading}
         />
@@ -463,6 +496,9 @@
     {#snippet detail()}
       <DetailView
         span={selectedSpan}
+        fieldTarget={fieldRequest?.spanID === selectedSpanID
+          ? fieldRequest.target
+          : undefined}
         salvaged={selectedNode?.salvaged ?? false}
         cyclePoint={selectedNode?.cyclePoint ?? false}
         selectedEventIndex={resolvedEventIndex}

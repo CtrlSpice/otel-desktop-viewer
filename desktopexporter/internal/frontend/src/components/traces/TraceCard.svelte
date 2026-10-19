@@ -41,6 +41,7 @@
   title={titleLabel}
   subtitle={serviceLabel}
   description={trace.traceID}
+  descriptionIsID
   {titleMuted}
   timeLayout="interval"
   timestamp={startParts.value}

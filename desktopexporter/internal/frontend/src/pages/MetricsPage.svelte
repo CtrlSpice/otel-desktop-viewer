@@ -790,7 +790,7 @@
             metaRight={showChartOverlayControls ? overlayControl : undefined}
           >
             {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
-            {#snippet leading()}
+            {#snippet titleAction()}
               {#key selectedSummary.metricRef}
                 <ExportButton signal="metric" id={selectedSummary.metricRef} />
               {/key}
@@ -807,7 +807,7 @@
             metaRight={showChartOverlayControls ? overlayControl : undefined}
           >
             {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
-            {#snippet leading()}
+            {#snippet titleAction()}
               {#key selectedSummary.metricRef}
                 <ExportButton signal="metric" id={selectedSummary.metricRef} />
               {/key}

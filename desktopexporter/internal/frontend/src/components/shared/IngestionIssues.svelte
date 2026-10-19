@@ -3,6 +3,7 @@
 </script>
 
 <script lang="ts">
+  import Identifier from './Identifier.svelte'
   import FieldGroup from './FieldGroup.svelte'
   import LogField from '@/components/shared/DetailField.svelte'
   import { itemHref, SPAN_PARAM } from '@/route'
@@ -101,7 +102,7 @@
                               [SPAN_PARAM]: sample.spanID,
                             })}
                           >
-                            {sample.spanID}
+                            <Identifier value={sample.spanID} />
                           </a>
                         {/each}
                       </span>

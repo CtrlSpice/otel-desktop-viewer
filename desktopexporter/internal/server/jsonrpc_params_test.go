@@ -44,6 +44,8 @@ func TestNamedParamsMatchPositional(t *testing.T) {
 		// Order in the object must not matter.
 		{"searchLogSummaries",
 			`{"endTime":"2","startTime":"1"}`, `["1","2"]`},
+		{"searchLogPage",
+			`{"offset":100,"pageSize":50,"endTime":"2","startTime":"1"}`, `["1","2",null,null,null,50,100]`},
 		// The wide one, fully populated, in a deliberately shuffled order.
 		{"getMetricView",
 			`{"tzName":"UTC","metricRef":"s","startTime":"1","endTime":"2",

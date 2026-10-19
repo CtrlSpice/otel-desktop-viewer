@@ -5,13 +5,19 @@ import LogsPage from './LogsPage.svelte'
 import type { LogSummary, LogData, Stats } from '@/types/api-types'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 
-const { searchLogSummaries, getLog, getStats, getLogAttributeDefinitions } =
-  vi.hoisted(() => ({
-    searchLogSummaries: vi.fn(),
-    getLog: vi.fn(),
-    getStats: vi.fn(),
-    getLogAttributeDefinitions: vi.fn(),
-  }))
+const {
+  searchLogPage,
+  getLog,
+  getStats,
+  getLogAttributeDefinitions,
+  getLogErrorNavigation,
+} = vi.hoisted(() => ({
+  searchLogPage: vi.fn(),
+  getLog: vi.fn(),
+  getStats: vi.fn(),
+  getLogAttributeDefinitions: vi.fn(),
+  getLogErrorNavigation: vi.fn(),
+}))
 
 vi.mock('@/services/telemetry-service', async importOriginal => {
   const actual =
@@ -20,10 +26,11 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
     ...actual,
     telemetryAPI: {
       ...actual.telemetryAPI,
-      searchLogSummaries,
+      searchLogPage,
       getLog,
       getStats,
       getLogAttributeDefinitions,
+      getLogErrorNavigation,
     },
   }
 })
@@ -74,15 +81,22 @@ function makeStats(): Stats {
 }
 
 beforeEach(() => {
-  searchLogSummaries.mockReset()
+  searchLogPage.mockReset()
   getLog.mockReset()
   getStats.mockReset()
   getLogAttributeDefinitions.mockReset()
   getLogAttributeDefinitions.mockResolvedValue([])
+  getLogErrorNavigation.mockReset()
+  getLogErrorNavigation.mockResolvedValue({
+    count: 0,
+    index: null,
+    previous: null,
+    next: null,
+  })
 })
 
 async function renderSelectedLog() {
-  searchLogSummaries.mockResolvedValue([makeLogSummary()])
+  searchLogPage.mockResolvedValue({ logs: [makeLogSummary()], total: 1 })
   getStats.mockResolvedValue(makeStats())
   getLog.mockResolvedValue(makeLogData('payment declined'))
   setTestUrl('/logs/log-1')
@@ -91,9 +105,17 @@ async function renderSelectedLog() {
 }
 
 describe('LogsPage refresh', () => {
-  it('queries the list with null bounds for the default All selection', async () => {
+  it('queries all logs with numeric severity descending by default', async () => {
     await renderSelectedLog()
-    expect(searchLogSummaries).toHaveBeenCalledWith(null, null, undefined)
+    expect(searchLogPage).toHaveBeenCalledWith(
+      null,
+      null,
+      100,
+      0,
+      undefined,
+      undefined,
+      { field: 'severity', direction: 'desc' }
+    )
   })
 
   it('refetches the open record, not just the list', async () => {
@@ -103,24 +125,24 @@ describe('LogsPage refresh', () => {
     refresh.click()
 
     await waitFor(() =>
-      expect(searchLogSummaries.mock.calls.length).toBeGreaterThan(1)
+      expect(searchLogPage.mock.calls.length).toBeGreaterThan(1)
     )
     await waitFor(() => expect(getLog).toHaveBeenCalledTimes(2))
   })
 
   it('does not refetch a record nobody has selected', async () => {
-    searchLogSummaries.mockResolvedValue([makeLogSummary()])
+    searchLogPage.mockResolvedValue({ logs: [], total: 0 })
     getStats.mockResolvedValue(makeStats())
     getLog.mockResolvedValue(makeLogData('payment declined'))
     setTestUrl('/logs')
     renderWithContexts(LogsPage)
-    await waitFor(() => expect(searchLogSummaries).toHaveBeenCalled())
+    await waitFor(() => expect(searchLogPage).toHaveBeenCalled())
 
     const refresh = screen.getByRole('button', { name: /refresh/i })
     refresh.click()
 
     await waitFor(() =>
-      expect(searchLogSummaries.mock.calls.length).toBeGreaterThan(1)
+      expect(searchLogPage.mock.calls.length).toBeGreaterThan(1)
     )
     // A detail fetch with no selection would race the pane's empty state.
     expect(getLog).not.toHaveBeenCalled()
@@ -135,7 +157,7 @@ describe('LogsPage direct selection outside the list range', () => {
     ]
     log.scope.name = 'test-scope'
     log.scope.version = '1.2'
-    searchLogSummaries.mockResolvedValue([makeLogSummary()])
+    searchLogPage.mockResolvedValue({ logs: [makeLogSummary()], total: 1 })
     getStats.mockResolvedValue(makeStats())
     getLog.mockResolvedValue(log)
     setTestUrl('/logs/log-1')
@@ -166,7 +188,7 @@ describe('LogsPage direct selection outside the list range', () => {
   })
 
   it('keeps the requested ID and renders its fetched detail', async () => {
-    searchLogSummaries.mockResolvedValue([])
+    searchLogPage.mockResolvedValue({ logs: [], total: 0 })
     getStats.mockResolvedValue(makeStats())
     getLog.mockResolvedValue(makeLogData('outside current range'))
     setTestUrl('/logs/log-1?start=1&end=2')

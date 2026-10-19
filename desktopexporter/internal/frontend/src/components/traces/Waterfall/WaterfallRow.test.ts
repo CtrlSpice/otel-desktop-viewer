@@ -141,7 +141,9 @@ describe('WaterfallRow activity selection', () => {
     })
 
     await fireEvent.focus(view.getByRole('button', { name: 'Select 1 event' }))
-    await fireEvent.click(view.getByRole('button', { name: /Event.*ready/ }))
+    await fireEvent.click(
+      view.getByRole('button', { name: /Span event.*ready/ })
+    )
 
     expect(onSelectTimelineRecord).toHaveBeenCalledTimes(1)
     expect(onRowClick).not.toHaveBeenCalled()

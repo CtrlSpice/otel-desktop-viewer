@@ -4,10 +4,70 @@ import {
   attributeValueTokens,
   hasConflictingKeys,
   jsonContainerTokens,
+  compactValueTokens,
+  valueTokenTree,
+  type ValueNode,
 } from './detail-value'
 import type { AttributeValue } from '@/types/api-types'
 
 describe('detail value formatting', () => {
+  it.each([
+    '{message: "checkout: ready, now", paid: true, total: 49.95, … (+1 fields)}',
+    '["line\\n\\\"quoted", object (3 fields), array (2 items), … (+2 items)]',
+    '{sequence: 9223372036854775807, zero: -0, empty: null}',
+    '{odd key: "<script>not HTML</script>", nested: object (2 fields)}',
+  ])('colours compact previews without changing their text: %s', text => {
+    expect(
+      compactValueTokens(text)
+        .map(token => token.text)
+        .join('')
+    ).toBe(text)
+  })
+
+  it('recognizes compact keys, strings, exact numbers and literals', () => {
+    const tokens = compactValueTokens(
+      '{message: "a:b", paid: true, total: 9223372036854775807}'
+    )
+    expect(
+      tokens.filter(token => token.kind === 'key').map(token => token.text)
+    ).toEqual(['message', 'paid', 'total'])
+    expect(tokens.find(token => token.kind === 'string')?.text).toBe('"a:b"')
+    expect(tokens.find(token => token.kind === 'literal')?.text).toBe('true')
+    expect(tokens.find(token => token.kind === 'number')?.text).toBe(
+      '9223372036854775807'
+    )
+  })
+
+  it('groups nested tokens for folding without losing duplicate keys or numeric lexemes', () => {
+    const tokens = jsonContainerTokens(
+      '{"same":9007199254740993,"same":-0,"items":[{}, {"a":1.2300e+40},false]}'
+    )!
+    const tree = valueTokenTree(tokens, 'payload')
+    function flatten(nodes: ValueNode[]): string {
+      return nodes
+        .map(node =>
+          node.kind === 'container'
+            ? node.opening.text + flatten(node.children) + node.closing.text
+            : node.text
+        )
+        .join('')
+    }
+    expect(flatten(tree)).toBe(tokens.map(token => token.text).join(''))
+    const root = tree[0]!
+    expect(root.kind).toBe('container')
+    if (root.kind !== 'container') throw new Error('Expected root container')
+    expect(root).toMatchObject({ path: 'payload', count: 3 })
+    const items = root.children.find(node => node.kind === 'container')!
+    expect(items).toMatchObject({ path: 'payload.items', count: 3 })
+    if (items.kind !== 'container') throw new Error('Expected array container')
+    expect(
+      items.children.filter(node => node.kind === 'container')
+    ).toMatchObject([
+      { path: 'payload.items[0]', count: 0 },
+      { path: 'payload.items[1]', count: 1 },
+    ])
+  })
+
   it('indents JSON source without changing order, duplicate keys, numeric lexemes or escapes', () => {
     const source = String.raw` {"z":9007199254740993,"z":-0,"a":[1.2300e+40,{},[],"x\n\"y"],"ok":true} `
     const tokens = jsonContainerTokens(source)!

@@ -2,6 +2,7 @@
   import type { Snippet } from 'svelte'
   import type { AttributeValue } from '@/types/api-types'
   import ExpandableValue from './ExpandableValue.svelte'
+  import Identifier from './Identifier.svelte'
   import AttributeValueView from './AttributeValue.svelte'
   import ConflictMarker from './ConflictMarker.svelte'
   import ValueCopyButton from './ValueCopyButton.svelte'
@@ -24,6 +25,8 @@
     showType = true,
     defectLabel,
     colspan = 1,
+    identifier = false,
+    fieldKind = 'field',
   }: {
     fieldName: string
     fieldType: string
@@ -41,6 +44,8 @@
     showType?: boolean
     defectLabel?: string
     colspan?: number
+    identifier?: boolean
+    fieldKind?: 'field' | 'attribute'
   } = $props()
 
   let conflict = $derived(
@@ -61,48 +66,24 @@
           ? 'badge-neutral'
           : 'badge-primary'
   )
-  let copyControl = $state<{ copy: () => Promise<void> }>()
-
-  function copyCard(event: PointerEvent) {
-    if (event.button !== 0 || !event.isPrimary) return
-    const target = event.target
-    if (!(target instanceof Element)) return
-    if (
-      target.closest(
-        'a, button, input, select, textarea, summary, [contenteditable]'
-      )
-    )
-      return
-    // Selecting text is not a request to replace the clipboard with the whole value.
-    if (window.getSelection()?.isCollapsed === false) return
-    void copyControl?.copy()
-  }
 </script>
 
 {#snippet header()}
   <div class="detail-property__header">
     {#if conflict}<ConflictMarker label={conflict} />{/if}
     <span class="detail-property__key">{fieldName}</span>
-    <span class="detail-property__actions">
-      {#if showType || origin}
-        <span class="detail-property__badges">
-          {#if showType}<span
-              class="badge badge-xs badge-soft {typeTone} detail-property__type"
-              >{fieldType}</span
-            >{/if}
-          {#if origin}<span
-              class="badge badge-xs badge-soft badge-primary detail-property__origin"
-              >{origin}</span
-            >{/if}
-        </span>
-      {/if}
-      <ValueCopyButton
-        bind:this={copyControl}
-        text={copyText}
-        label={origin ? `${fieldName} (${origin})` : fieldName}
-        contextual
-      />
-    </span>
+    {#if showType || origin}
+      <span class="detail-property__badges">
+        {#if showType}<span
+            class="badge badge-xs badge-soft {typeTone} detail-property__type"
+            >{fieldType}</span
+          >{/if}
+        {#if origin}<span
+            class="badge badge-xs badge-soft badge-primary detail-property__origin"
+            >{origin}</span
+          >{/if}
+      </span>
+    {/if}
   </div>
 {/snippet}
 
@@ -112,51 +93,61 @@
     class:detail-property--error-value={valueTone === 'error'}
     class:table-row--nested={nested}
     data-field={fieldName}
+    data-field-source={origin}
+    data-field-kind={fieldKind}
   >
     <td class="detail-property__cell" {colspan}>
       <div
         class="detail-property__card item-state"
         role="group"
         aria-label={fieldName}
-        onpointerup={copyCard}
       >
         {@render header()}
-        {#if timestampLabel !== undefined}
-          <div class="detail-property__value detail-property__timestamp">
-            {#if value}{@render value()}{:else}{timestampLabel}{/if}
-          </div>
-        {/if}
         <div class="detail-property__body">
-          {#if timestampLabel !== undefined}
-            <div class="detail-property__raw-timestamp">{fieldValue}</div>
-          {:else if !value && !valueLabel && !typedValue && fieldType === 'string'}
-            <AttributeValueView
-              value={{ kind: 'string', value: fieldValue }}
-              path={fieldName}
-              clamp={!multiline}
-            />
-          {:else if value || typedValue || multiline || valueLabel}
-            <div class="detail-property__value">
-              {#if value}{@render value()}
-              {:else if typedValue}<AttributeValueView
-                  value={typedValue}
-                  path={fieldName}
-                />
-              {:else}{fieldValue}{#if valueLabel}<span
-                    class="detail-property__annotation"
-                    class:detail-property__annotation--enum={fieldType ===
-                      'enum'}
-                    >{fieldType === 'enum'
-                      ? ` (${valueLabel})`
-                      : valueLabel}</span
-                  >{/if}{/if}
-            </div>
-          {:else}
-            <ExpandableValue
-              value={fieldValue}
-              valueClass="detail-property__value"
-            />
-          {/if}
+          <div class="detail-property__content">
+            {#if timestampLabel !== undefined}
+              <div class="detail-property__value">
+                {#if value}{@render value()}{:else}{timestampLabel}{/if}
+              </div>
+              <div class="detail-property__raw-timestamp">{fieldValue}</div>
+            {:else if identifier && !value}
+              <div class="detail-property__value">
+                <Identifier value={fieldValue} />
+              </div>
+            {:else if !value && !valueLabel && !typedValue && fieldType === 'string'}
+              <AttributeValueView
+                value={{ kind: 'string', value: fieldValue }}
+                path={fieldName}
+                clamp={!multiline}
+              />
+            {:else if value || typedValue || multiline || valueLabel}
+              <div class="detail-property__value">
+                {#if value}{@render value()}
+                {:else if typedValue}<AttributeValueView
+                    value={typedValue}
+                    path={fieldName}
+                  />
+                {:else}{fieldValue}{#if valueLabel}<span
+                      class="detail-property__annotation"
+                      class:detail-property__annotation--enum={fieldType ===
+                        'enum'}
+                      >{fieldType === 'enum'
+                        ? ` (${valueLabel})`
+                        : valueLabel}</span
+                    >{/if}{/if}
+              </div>
+            {:else}
+              <ExpandableValue
+                value={fieldValue}
+                valueClass="detail-property__value"
+              />
+            {/if}
+          </div>
+          <ValueCopyButton
+            text={copyText}
+            label={origin ? `${fieldName} (${origin})` : fieldName}
+            contextual
+          />
         </div>
       </div>
     </td>
@@ -169,26 +160,41 @@
     @apply p-0 pb-1 align-top text-sm;
     max-width: 0;
   }
+
+  .detail-property {
+    scroll-margin-block: 3rem 0.5rem;
+  }
+
+  :global(.detail-property--revealed) .detail-property__card {
+    --item-idle-bg: var(--color-highlight-low);
+  }
   .detail-property__card {
     --item-idle-bg: var(--color-base-100);
-    @apply min-w-0 cursor-pointer rounded-xl px-3 py-2;
+    @apply min-w-0 rounded-xl px-3 py-2;
   }
   .detail-property__header {
-    @apply flex min-h-7 min-w-0 items-center gap-2;
+    @apply flex min-h-5 min-w-0 items-center gap-2;
   }
   .detail-property__key {
     @apply min-w-0 font-mono text-xs;
     color: var(--detail-code-key);
     overflow-wrap: anywhere;
   }
-  .detail-property__actions {
-    @apply ml-auto flex shrink-0 items-center gap-2;
-  }
   .detail-property__badges {
-    @apply flex shrink-0 items-center justify-end gap-2;
+    @apply ml-auto flex shrink-0 items-center justify-end gap-2;
   }
   .detail-property__body {
-    @apply min-w-0 pt-0.5;
+    @apply grid min-w-0 grid-cols-[minmax(0,1fr)_1.5rem] items-start gap-x-2 pt-0.5;
+  }
+  .detail-property__body > :global(.value-copy) {
+    @apply size-6 -mt-0.5;
+  }
+  .detail-property__body:has(:global(.attribute-value--structured))
+    > :global(.value-copy) {
+    @apply mt-1;
+  }
+  .detail-property__content {
+    @apply min-w-0;
   }
   .detail-property--error-value {
     --detail-property-value-color: var(--color-error);
@@ -206,9 +212,6 @@
   }
   .detail-property__annotation--enum {
     @apply ml-0;
-  }
-  .detail-property__timestamp {
-    @apply pt-0.5;
   }
   .detail-property__raw-timestamp {
     @apply min-w-0 font-mono text-xs leading-5;

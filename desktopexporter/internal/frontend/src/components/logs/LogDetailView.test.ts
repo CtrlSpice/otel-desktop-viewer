@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { tick } from 'svelte'
 import { screen, within } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import LogDetailView from './LogDetailView.svelte'
@@ -42,16 +43,45 @@ function renderLog(log: LogData) {
 }
 
 describe('LogDetailView trace correlation', () => {
+  it('offers scroll to top for a scrolled log without changing the route or log', async () => {
+    const view = renderLog(makeLog())
+    await tick()
+    const viewport = view.container.querySelector<HTMLElement>(
+      '.log-detail-panel__scroll'
+    )!
+    const scroll = vi.spyOn(viewport, 'scrollTo')
+    const route = window.location.href
+    expect(
+      screen.queryByRole('button', { name: 'Scroll log to top' })
+    ).not.toBeInTheDocument()
+    viewport.scrollTop = 200
+    viewport.dispatchEvent(new Event('scroll'))
+    await tick()
+    screen.getByRole('button', { name: 'Scroll log to top' }).click()
+    expect(scroll).toHaveBeenCalledWith({ top: 0, behavior: 'smooth' })
+    expect(window.location.href).toBe(route)
+    expect(screen.getByRole('table', { name: 'Log fields' })).toHaveTextContent(
+      'hello'
+    )
+    viewport.scrollTop = 0
+    viewport.dispatchEvent(new Event('scroll'))
+    await tick()
+    expect(
+      screen.queryByRole('button', { name: 'Scroll log to top' })
+    ).not.toBeInTheDocument()
+    scroll.mockRestore()
+  })
+
   it('shows readable millisecond timestamps above unchanged raw nanoseconds', () => {
     const { container } = renderLog(
       makeLog({ timestamp: 1_700_000_000_123_456_789n })
     )
     const field = container.querySelector('[data-field="timeUnixNano"]')!
+    expect(field.querySelector('.detail-property__value')!.textContent).toMatch(
+      /\.123\s/
+    )
     expect(
-      field.querySelector('.detail-property__timestamp')!.textContent
-    ).toMatch(/\.123\s/)
-    expect(
-      field.querySelector('.detail-property__timestamp')!.textContent
+      field.querySelector('.detail-property__value')!.textContent
     ).not.toContain('.123456789')
     expect(
       field.querySelector('.detail-property__raw-timestamp')
@@ -65,7 +95,7 @@ describe('LogDetailView trace correlation', () => {
     expect(button).toBeEnabled()
     const title = within(header).getByText('checkout', { exact: true })
     expect(
-      button.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING
+      title.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING
     ).not.toBe(0)
     expect(screen.getAllByRole('button', { name: 'Export log' })).toHaveLength(
       1

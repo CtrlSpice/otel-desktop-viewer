@@ -163,7 +163,7 @@ export type LogData = {
 // otherwise ObservedTimestamp. The summary doesn't carry observed
 // separately; consumers that need both fall back to the detail row.
 //
-// `bodyPreview` is server-truncated to the first N characters.
+// `bodyPreview` is bounded display text: abbreviated strings or a typed summary.
 // Full body, traceID, and spanID are available on LogData
 // (fetched on demand for the detail pane).
 export type LogSummary = {
@@ -173,6 +173,16 @@ export type LogSummary = {
   severityNumber: number
   serviceName: string
   bodyPreview: string
+  bodyType?: AttributeValue['kind']
+  eventName?: string
+}
+
+export type LogErrorTarget = { logRef: string; offset: number }
+export type LogErrorNavigation = {
+  count: number
+  index: number | null
+  previous: LogErrorTarget | null
+  next: LogErrorTarget | null
 }
 
 /** Complete trace-scoped log projection used for span correlation. */

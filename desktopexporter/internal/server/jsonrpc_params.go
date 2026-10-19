@@ -39,6 +39,8 @@ var methodParamNames = map[string][]string{
 	"getTraceOverview":      {"traceID"},
 	"getSpan":               {"spanID", "traceID", "limit"},
 	"searchLogSummaries":    {"startTime", "endTime", "query", "limit", "sort"},
+	"searchLogPage":         {"startTime", "endTime", "query", "limit", "sort", "pageSize", "offset"},
+	"getLogErrorNavigation": {"startTime", "endTime", "query", "limit", "sort", "selectedLogRef"},
 	"getTraceLogSummaries":  {"traceID"},
 	"getLog":                {"logRef"},
 	"searchMetricSummaries": {"startTime", "endTime", "query", "limit", "sort"},
@@ -198,6 +200,10 @@ func parseSearchParams(raw json.RawMessage) (searchParams, error) {
 	if err != nil {
 		return searchParams{}, err
 	}
+	return searchParamsFromValues(params)
+}
+
+func searchParamsFromValues(params []any) (searchParams, error) {
 	timeRange, err := parseTimeRange(params[0], params[1])
 	if err != nil {
 		return searchParams{}, err

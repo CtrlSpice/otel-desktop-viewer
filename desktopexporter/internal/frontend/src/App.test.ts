@@ -16,7 +16,8 @@ import type { ImportFailure } from '@/types/import-types'
 const {
   getStats,
   searchTraceSummaries,
-  searchLogSummaries,
+  searchLogPage,
+  getLogErrorNavigation,
   getLog,
   searchMetricSummaries,
   getMetricView,
@@ -26,7 +27,8 @@ const {
 } = vi.hoisted(() => ({
   getStats: vi.fn(),
   searchTraceSummaries: vi.fn(),
-  searchLogSummaries: vi.fn(),
+  searchLogPage: vi.fn(),
+  getLogErrorNavigation: vi.fn(),
   getLog: vi.fn(),
   searchMetricSummaries: vi.fn(),
   getMetricView: vi.fn(),
@@ -44,7 +46,8 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
       ...actual.telemetryAPI,
       getStats,
       searchTraceSummaries,
-      searchLogSummaries,
+      searchLogPage,
+      getLogErrorNavigation,
       getLog,
       searchMetricSummaries,
       getMetricView,
@@ -74,7 +77,13 @@ beforeEach(() => {
   vi.clearAllMocks()
   getStats.mockResolvedValue(EMPTY_STATS)
   searchTraceSummaries.mockResolvedValue([])
-  searchLogSummaries.mockResolvedValue([])
+  searchLogPage.mockResolvedValue({ total: 0, logs: [] })
+  getLogErrorNavigation.mockResolvedValue({
+    count: 0,
+    index: null,
+    previous: null,
+    next: null,
+  })
   getLog.mockResolvedValue(null)
   searchMetricSummaries.mockResolvedValue([])
   getMetricView.mockResolvedValue(null)
@@ -177,7 +186,7 @@ describe('App real-page composition', () => {
     })
     expect(within(panel).getByText('example.json')).toBeInTheDocument()
     navigate('/logs')
-    await screen.findByText('No logs in this time range')
+    await screen.findByText('No logs match this search and time range.')
     expect(screen.queryByText('Import issue in example.json.')).toBeNull()
     await view.rerender({
       importFailures: [
@@ -198,7 +207,7 @@ describe('App real-page composition', () => {
   })
 
   it.each([
-    { path: '/logs', fetchList: searchLogSummaries },
+    { path: '/logs', fetchList: searchLogPage },
     { path: '/traces', fetchList: searchTraceSummaries },
     { path: '/metrics', fetchList: searchMetricSummaries },
   ])(
@@ -235,7 +244,7 @@ describe('App real-page composition', () => {
       screen.getByRole('button', { name: 'Import files' })
     ).toBeInTheDocument()
     navigate('/logs')
-    await screen.findByText('No logs in this time range')
+    await screen.findByText('No logs match this search and time range.')
     expect(screen.queryByRole('button', { name: 'Import files' })).toBeNull()
     const file = new File(['{"resourceLogs":[]}'], 'renamed.json')
     const dataTransfer = { types: ['Files'], files: [file] }
@@ -260,8 +269,8 @@ describe('App real-page composition', () => {
     expect(searchMetricSummaries).toHaveBeenCalled()
 
     navigate('/logs/log-1')
-    await screen.findByText('No logs in this time range')
-    expect(searchLogSummaries).toHaveBeenCalled()
+    await screen.findByText('No logs match this search and time range.')
+    expect(searchLogPage).toHaveBeenCalled()
 
     navigate('/unknown')
     await screen.findByRole('heading', {

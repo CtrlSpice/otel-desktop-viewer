@@ -127,6 +127,10 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.getSpan(ctx, req)
 	case "searchLogSummaries":
 		return h.searchLogSummaries(ctx, req)
+	case "searchLogPage":
+		return h.searchLogPage(ctx, req)
+	case "getLogErrorNavigation":
+		return h.getLogErrorNavigation(ctx, req)
 	case "getTraceLogSummaries":
 		return h.getTraceLogSummaries(ctx, req)
 	case "getLog":
@@ -477,6 +481,59 @@ func (h *JSONRPCHandler) searchLogSummaries(ctx context.Context, req *jsonrpc2.R
 	}
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
 		return logs.SearchSummariesWithOptions(ctx, db, params.timeRange, params.query, params.options)
+	})
+}
+
+func (h *JSONRPCHandler) searchLogPage(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	values, err := decodePositionalParams(req.Params, 2, 7)
+	if err != nil {
+		return nil, err
+	}
+	params, err := searchParamsFromValues(values)
+	if err != nil {
+		return nil, err
+	}
+	size := int64(100)
+	if len(values) > 5 && values[5] != nil {
+		size, err = parseTimestampParam(values[5], "pageSize")
+		if err != nil {
+			return nil, err
+		}
+	}
+	offset, err := parseOptionalNonNegativeInt(values, 6, "offset")
+	if err != nil {
+		return nil, err
+	}
+	if size < 1 || size > 250 {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.SearchPage(ctx, db, params.timeRange, params.query, params.options, logs.PageOptions{Size: size, Offset: offset})
+	})
+}
+
+func (h *JSONRPCHandler) getLogErrorNavigation(ctx context.Context, req *jsonrpc2.Request) (any, error) {
+	values, err := decodePositionalParams(req.Params, 2, 6)
+	if err != nil {
+		return nil, err
+	}
+	params, err := searchParamsFromValues(values)
+	if err != nil {
+		return nil, err
+	}
+	selectedID := ""
+	if len(values) > 5 && values[5] != nil {
+		value, ok := values[5].(string)
+		if !ok {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+		selectedID, err = normalizeUUID(value)
+		if err != nil {
+			return nil, jsonrpc2.ErrInvalidParams
+		}
+	}
+	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
+		return logs.GetErrorNavigation(ctx, db, params.timeRange, params.query, params.options, selectedID)
 	})
 }
 

@@ -4,7 +4,7 @@
     remToFraction,
     remToPx,
     PANEL_CLOSE_OVERSHOOT_REM,
-    PANEL_DRAG_RESISTANCE,
+    resolvePanelResize,
   } from '@/state/panel-width'
   import { startDrag, type DragHandle } from './utils/drag'
   import PanelClip from './PanelClip.svelte'
@@ -281,22 +281,27 @@
           effectiveMinLeft,
           Math.min(effectiveMaxLeft, desired)
         )
-        dragLeftWidth =
-          onRightCollapsedChange && desired > effectiveMaxLeft
-            ? Math.min(
-                1,
-                effectiveMaxLeft +
-                  (desired - effectiveMaxLeft) * PANEL_DRAG_RESISTANCE
-              )
-            : clamped
+        dragLeftWidth = onRightCollapsedChange
+          ? 1 -
+            resolvePanelResize(
+              1 - desired,
+              1 - effectiveMaxLeft,
+              1 - effectiveMinLeft,
+              remToPx(PANEL_CLOSE_OVERSHOOT_REM) / flexSpace
+            ).preview
+          : clamped
       },
       onEnd: () => {
         isDragging = false
         drag = null
         if (
           onRightCollapsedChange &&
-          (desired - effectiveMaxLeft) * flexSpace >
-            remToPx(PANEL_CLOSE_OVERSHOOT_REM)
+          resolvePanelResize(
+            1 - desired,
+            1 - effectiveMaxLeft,
+            1 - effectiveMinLeft,
+            remToPx(PANEL_CLOSE_OVERSHOOT_REM) / flexSpace
+          ).collapsed
         ) {
           onRightCollapsedChange(true)
         } else {

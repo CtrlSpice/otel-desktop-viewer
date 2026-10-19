@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event'
 import DetailProperty from './DetailProperty.svelte'
 
 describe('DetailProperty copy controls', () => {
-  it('keeps the name first and a contextual copy control on the right', () => {
+  it('keeps the name first and places contextual Copy beside the value', () => {
     const { container } = render(DetailProperty, {
       fieldName: 'name',
       fieldType: 'string',
@@ -15,10 +15,11 @@ describe('DetailProperty copy controls', () => {
     expect(header.firstElementChild).toHaveClass('detail-property__key')
     const copy = screen.getByRole('button', { name: 'Copy name' })
     expect(copy).toHaveClass('value-copy--contextual')
-    expect(copy.closest('.detail-property__actions')).not.toBeNull()
+    expect(copy.closest('.detail-property__body')).not.toBeNull()
+    expect(header).not.toContainElement(copy)
   })
 
-  it('copies the value when the card is clicked without aiming at the icon', async () => {
+  it('copies only through the explicit copy button, not the card or value', async () => {
     const user = userEvent.setup()
     const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
     const { container } = render(DetailProperty, {
@@ -26,7 +27,11 @@ describe('DetailProperty copy controls', () => {
       fieldType: 'string',
       fieldValue: 'whole card',
     })
+    await user.click(container.querySelector('.detail-property__header')!)
     await user.click(container.querySelector('.detail-property__body')!)
+    await user.click(screen.getByText('whole card'))
+    expect(copy).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Copy name' }))
     expect(copy).toHaveBeenCalledExactlyOnceWith('whole card')
   })
 
@@ -44,7 +49,7 @@ describe('DetailProperty copy controls', () => {
     expect(card.querySelector('.detail-property__body')).not.toBeNull()
   })
 
-  it('places readable timestamps above exact raw values, with Copy in the header', async () => {
+  it('places readable timestamps above exact raw values, with Copy beside them', async () => {
     const user = userEvent.setup()
     const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
     const { container } = render(DetailProperty, {
@@ -54,16 +59,18 @@ describe('DetailProperty copy controls', () => {
       timestampLabel: '2023-11-14, 14:13:20.000 PST',
     })
     const cell = container.querySelector('.detail-property__card')!
-    expect(cell.children).toHaveLength(3)
+    expect(cell.children).toHaveLength(2)
     expect(cell.children[0]).toHaveClass('detail-property__header')
-    expect(cell.children[1]).toHaveClass('detail-property__timestamp')
-    expect(cell.children[2]).toHaveClass('detail-property__body')
-    expect(cell.children[1]).toHaveTextContent('2023-11-14, 14:13:20.000 PST')
-    expect(cell.children[2]).toHaveTextContent('1700000000000000001')
+    expect(cell.children[1]).toHaveClass('detail-property__body')
+    const content = cell.querySelector('.detail-property__content')!
+    expect(content.children[0]).toHaveTextContent(
+      '2023-11-14, 14:13:20.000 PST'
+    )
+    expect(content.children[1]).toHaveTextContent('1700000000000000001')
     const button = screen.getByRole('button', {
       name: 'Copy startTimeUnixNano',
     })
-    expect(cell.children[0]!.contains(button)).toBe(true)
+    expect(content.nextElementSibling).toBe(button)
     await user.click(button)
     expect(copy).toHaveBeenCalledWith('1700000000000000001')
   })
@@ -116,7 +123,7 @@ describe('DetailProperty copy controls', () => {
     ['map', 'badge-primary'],
     ['empty', 'badge-neutral'],
   ])(
-    'groups the %s type and origin badges before the trailing copy control',
+    'groups the %s type and origin badges in the header without a copy control',
     (fieldType, tone) => {
       const { container } = render(DetailProperty, {
         fieldName: 'example',
@@ -128,10 +135,8 @@ describe('DetailProperty copy controls', () => {
       const badge = container.querySelector<HTMLElement>(
         '.detail-property__type'
       )!
-      const actions = container.querySelector('.detail-property__actions')!
       const badges = container.querySelector('.detail-property__badges')!
-      expect(key.nextElementSibling).toBe(actions)
-      expect(actions.firstElementChild).toBe(badges)
+      expect(key.nextElementSibling).toBe(badges)
       expect(badges.firstElementChild).toBe(badge)
       expect(badge.style.color).toBe('')
       expect(badge).toHaveClass('badge-soft', tone)
@@ -140,13 +145,15 @@ describe('DetailProperty copy controls', () => {
       expect(badge.nextElementSibling).toBe(origin)
       expect(origin).toHaveClass('badge-primary', 'badge-soft')
       expect(origin).not.toHaveClass('badge-outline')
-      expect(badges.nextElementSibling).toBe(
+      expect(
+        container.querySelector('.detail-property__body')
+      ).toContainElement(
         screen.getByRole('button', { name: 'Copy example (scope)' })
       )
     }
   )
 
-  it('copies raw strings from the header without presentation quotes', async () => {
+  it('copies raw strings beside the value without presentation quotes', async () => {
     const user = userEvent.setup()
     const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
     const { container } = render(DetailProperty, {
@@ -158,8 +165,10 @@ describe('DetailProperty copy controls', () => {
     const button = screen.getByRole('button', {
       name: 'Copy service.name (resource)',
     })
-    expect(button.closest('.detail-property__header')).not.toBeNull()
-    expect(container.querySelector('.detail-property__body button')).toBeNull()
+    expect(button.closest('.detail-property__body')).not.toBeNull()
+    expect(
+      container.querySelector('.detail-property__header button')
+    ).toBeNull()
     await user.click(button)
     expect(copy).toHaveBeenCalledWith('checkout')
     expect(screen.getByRole('status')).toHaveTextContent(
@@ -178,18 +187,20 @@ describe('DetailProperty copy controls', () => {
         showType: false,
         origin,
       })
-      const actions = container.querySelector('.detail-property__actions')!
+      const body = container.querySelector('.detail-property__body')!
       const copy = screen.getByRole('button', {
         name: origin ? 'Copy name (resource)' : 'Copy name',
       })
-      expect(actions).toContainElement(copy)
+      expect(body).toContainElement(copy)
       expect(container.querySelector('.detail-property__type')).toBeNull()
       if (origin) {
-        expect(actions.firstElementChild).toHaveClass('detail-property__badges')
-        expect(actions.firstElementChild!.nextElementSibling).toBe(copy)
+        expect(
+          container.querySelector(
+            '.detail-property__header .detail-property__badges'
+          )
+        ).toHaveTextContent(origin)
       } else {
         expect(container.querySelector('.detail-property__badges')).toBeNull()
-        expect(actions.firstElementChild).toBe(copy)
       }
     }
   )
@@ -219,6 +230,43 @@ describe('DetailProperty copy controls', () => {
       container.querySelector('pre')!.textContent
     )
   })
+
+  it.each(['body', 'gen_ai.input.messages'])(
+    'copies the complete %s even while its structure is collapsed',
+    async fieldName => {
+      const user = userEvent.setup()
+      const copy = vi
+        .spyOn(navigator.clipboard, 'writeText')
+        .mockResolvedValue()
+      render(DetailProperty, {
+        fieldName,
+        fieldType: 'map',
+        typedValue: {
+          kind: 'map',
+          value: [
+            {
+              key: 'same',
+              value: { kind: 'int64', value: 9_223_372_036_854_775_807n },
+            },
+            { key: 'same', value: { kind: 'double', value: -0 } },
+          ],
+        },
+      })
+      await user.click(
+        screen.getByRole('button', {
+          name: `Collapse ${fieldName}`,
+        })
+      )
+      expect(screen.queryByText('9223372036854775807')).toBeNull()
+      expect(copy).not.toHaveBeenCalled()
+      await user.click(
+        screen.getByRole('button', { name: `Copy ${fieldName}` })
+      )
+      expect(copy).toHaveBeenCalledWith(
+        '{\n  "same": 9223372036854775807,\n  "same": -0\n}'
+      )
+    }
+  )
 
   it.each([false, true])(
     'renders ordinary strings as text (typed: %s) while copying exact whitespace',
@@ -269,6 +317,10 @@ describe('DetailProperty copy controls', () => {
       )
       expect(container.querySelector('.detail-code--key')).toHaveTextContent(
         '"id"'
+      )
+      await user.click(screen.getByRole('button', { name: 'Collapse body' }))
+      expect(container.querySelector('pre')).not.toHaveTextContent(
+        '9223372036854775807'
       )
       await user.click(screen.getByRole('button', { name: 'Copy body' }))
       expect(copy).toHaveBeenCalledWith(text)

@@ -48,7 +48,7 @@ describe('SearchBar', () => {
       refreshAsideTip: 'New traces',
     })
     expect(
-      screen.getByRole('button', { name: 'Refresh — New traces' })
+      screen.getByRole('button', { name: 'Refresh: New traces' })
     ).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('New traces')
   })

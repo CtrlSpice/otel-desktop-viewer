@@ -217,14 +217,11 @@
   import type { Snippet } from 'svelte'
   import VirtualList from '@humanspeak/svelte-virtual-list'
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
+  import ErrorNavigationBadge from '@/components/shared/ErrorNavigationBadge.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
+  import ScrollToTopButton from '@/components/shared/ScrollToTopButton.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import {
-    ChevronLeftIcon,
-    ChevronRightIcon,
-    UnfoldMoreIcon,
-    UnfoldLessIcon,
-  } from '@hugeicons/core-free-icons'
+  import { UnfoldMoreIcon, UnfoldLessIcon } from '@hugeicons/core-free-icons'
   import WaterfallTimeAxisHeader, {
     waterfallTimeAxis,
   } from './WaterfallTimeAxisHeader.svelte'
@@ -309,6 +306,7 @@
     selectedSpanID: string | null
     searchActive?: boolean
     onSelectSpan: (spanID: string) => void
+    onInspectColumn?: (spanID: string, column: WaterfallColumn) => void
     onSelectTimelineRecord: (spanID: string, record: TimelineRecord) => void
     loading?: boolean
     footer?: Snippet
@@ -321,6 +319,7 @@
     selectedSpanID,
     searchActive = false,
     onSelectSpan,
+    onInspectColumn,
     onSelectTimelineRecord,
     loading = false,
     footer,
@@ -361,6 +360,9 @@
     spans.filter(node => node.spanData.statusCodeValue === 2)
   )
   let headerErrorCount = $derived(errorSpans.length)
+  let selectedErrorIndex = $derived(
+    errorSpans.findIndex(node => node.spanData.spanID === selectedSpanID)
+  )
 
   let selectedSpanIndex = $derived(
     selectedSpanID === null
@@ -783,6 +785,27 @@
   let vlistRef = $state<VirtualListRef | null>(null)
   let lastScrolledSelection: string | null = null
   let activeScroll: Promise<void> = Promise.resolve()
+  let treeScrolled = $state(false)
+
+  function handleTreeScroll(event: Event) {
+    const viewport = event.target
+    if (
+      viewport instanceof HTMLElement &&
+      viewport.classList.contains('waterfall-vlist-viewport')
+    ) {
+      treeScrolled = viewport.scrollTop > 1
+    }
+  }
+
+  function scrollTreeToTop() {
+    void vlistRef?.scroll({
+      index: 0,
+      align: 'top',
+      smoothScroll: !window.matchMedia('(prefers-reduced-motion: reduce)')
+        .matches,
+      shouldThrowOnBounds: false,
+    })
+  }
 
   function visibleRowIndex(spanID: string): number {
     return visibleRows.findIndex(row => row.spanNode.spanData.spanID === spanID)
@@ -839,6 +862,7 @@
         '.waterfall-vlist-viewport'
       )
       if (!viewport) return
+      treeScrolled = viewport.scrollTop > 1
       viewport.role = 'treegrid'
       viewport.setAttribute('aria-label', 'Span waterfall')
       viewport.setAttribute('aria-rowcount', String(rowCount))
@@ -1000,178 +1024,162 @@
            the plain one. -->
       <SignalBadges signal="trace" spanCount={spans.length} errorCount={0} />
       {#if errorSpans.length > 0}
-        <span
-          class="badge badge-xs badge-soft badge-error waterfall-view__error-nav shrink-0 tabular-nums"
-          role="group"
-          aria-label="Error navigation"
-        >
-          <button
-            type="button"
-            class="waterfall-view__error-nav-btn"
-            onclick={selectPreviousError}
-            disabled={previousErrorSpanID === null}
-            aria-label="Previous error"
-            title="Previous error"
-          >
-            <HugeiconsIcon
-              icon={ChevronLeftIcon}
-              size="1em"
-              strokeWidth={1.5}
-              class="h-3 w-3"
-              aria-hidden="true"
-            />
-          </button>
-          <span>{headerErrorCount} err</span>
-          <button
-            type="button"
-            class="waterfall-view__error-nav-btn"
-            onclick={selectNextError}
-            disabled={nextErrorSpanID === null}
-            aria-label="Next error"
-            title="Next error"
-          >
-            <HugeiconsIcon
-              icon={ChevronRightIcon}
-              size="1em"
-              strokeWidth={1.5}
-              class="h-3 w-3"
-              aria-hidden="true"
-            />
-          </button>
-        </span>
+        <ErrorNavigationBadge
+          count={headerErrorCount}
+          index={selectedErrorIndex >= 0 ? selectedErrorIndex + 1 : null}
+          previous={previousErrorSpanID !== null}
+          next={nextErrorSpanID !== null}
+          onPrevious={selectPreviousError}
+          onNext={selectNextError}
+        />
       {/if}
     {/snippet}
-    {#snippet leading()}
+    {#snippet titleAction()}
       {#key traceID}
         <ExportButton signal="trace" id={traceID} />
       {/key}
     {/snippet}
     {#snippet metaRight()}
+      <button
+        type="button"
+        class="btn btn-xs join-item chart-header-control tooltip tooltip-left"
+        onclick={() => setAll(true)}
+        disabled={collapsibleSpanIDs.length === 0}
+        aria-label="Collapse all spans"
+        data-tip="Collapse all spans"
+      >
+        <HugeiconsIcon
+          icon={UnfoldLessIcon}
+          size="1em"
+          strokeWidth={1.5}
+          class="h-4 w-4"
+          aria-hidden="true"
+        />
+      </button>
+      <button
+        type="button"
+        class="btn btn-xs join-item chart-header-control tooltip tooltip-left"
+        onclick={() => setAll(false)}
+        disabled={collapsibleSpanIDs.length === 0}
+        aria-label="Expand all spans"
+        data-tip="Expand all spans"
+      >
+        <HugeiconsIcon
+          icon={UnfoldMoreIcon}
+          size="1em"
+          strokeWidth={1.5}
+          class="h-4 w-4"
+          aria-hidden="true"
+        />
+      </button>
       <WaterfallColumnsPicker
         options={availableColumns}
         selected={selectedColumns}
         onchange={setColumns}
       />
-      {#if collapsibleSpanIDs.length > 0}
-        <button
-          type="button"
-          class="btn btn-xs join-item chart-header-control tooltip tooltip-left"
-          onclick={() => setAll(false)}
-          aria-label="Expand all spans"
-          data-tip="Expand all spans"
-        >
-          <HugeiconsIcon
-            icon={UnfoldMoreIcon}
-            size="1em"
-            strokeWidth={1.5}
-            class="h-4 w-4"
-            aria-hidden="true"
-          />
-        </button>
-        <button
-          type="button"
-          class="btn btn-xs join-item chart-header-control tooltip tooltip-left"
-          onclick={() => setAll(true)}
-          aria-label="Collapse all spans"
-          data-tip="Collapse all spans"
-        >
-          <HugeiconsIcon
-            icon={UnfoldLessIcon}
-            size="1em"
-            strokeWidth={1.5}
-            class="h-4 w-4"
-            aria-hidden="true"
-          />
-        </button>
-      {/if}
     {/snippet}
   </PaneHeader>
-  <div class="waterfall-view__scroll" bind:this={scrollContainerEl}>
+  <div class="waterfall-view__tree">
     <div
-      class="col-resize-context waterfall-view__grid-host"
-      style:width="{gridWidth}px"
+      class="waterfall-view__scroll"
+      bind:this={scrollContainerEl}
+      onscrollcapture={handleTreeScroll}
     >
-      {#each barPositions as bar (bar.id)}
-        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-        <div
-          class="col-resize-bar col-resize-bar--guide"
-          class:col-resize-bar--active={activeResizeCol === bar.id}
-          style:left="{bar.left}px"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize {resizeColumnLabel(bar.id)} column"
-          aria-valuenow={resizeBarPercent(bar.left)}
-          aria-valuemin={resizeBarPercent(bar.min)}
-          aria-valuemax={resizeBarPercent(bar.max)}
-          aria-valuetext="{resizeBarPercent(bar.left)} percent from left"
-          tabindex="0"
-          onpointerdown={e => handleStartResize(bar.id, e)}
-          onkeydown={e => handleResizeKeydown(bar.id, e)}
-        >
-          <div class="col-resize-bar__line"></div>
-        </div>
-      {/each}
-      <table
-        class="split-table waterfall-view__header-table table table-sm w-full min-w-[36rem] border-collapse"
-      >
-        <thead class="header-surface waterfall-view__thead">
-          <WaterfallTimeAxisHeader
-            traceDurationNs={bounds.duration}
-            {targetTickCount}
-            tickLabelWidth={TICK_LABEL_SLOT_PX}
-            {spanColWidth}
-            {optionalColumns}
-            onStartResize={handleStartResize}
-          />
-        </thead>
-      </table>
-      <!-- Keyboard events bubble from the runtime treegrid; this host stays semantic. -->
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
-        bind:this={gridHostEl}
-        class="waterfall-view__vlist-host"
-        onkeydown={handleGridKeydown}
+        class="col-resize-context waterfall-view__grid-host"
+        style:width="{gridWidth}px"
       >
-        <VirtualList
-          bind:this={vlistRef}
-          items={visibleRows}
-          defaultEstimatedItemHeight={WATERFALL_ROW_HEIGHT_PX}
-          bufferSize={12}
-          itemKey={row => row.spanNode.spanData.spanID}
-          containerClass="waterfall-vlist"
-          viewportClass="waterfall-vlist-viewport"
-          viewportLabel="Span waterfall rows"
-          itemsClass="waterfall-vlist-items"
+        {#each barPositions as bar (bar.id)}
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <div
+            class="col-resize-bar col-resize-bar--guide"
+            class:col-resize-bar--active={activeResizeCol === bar.id}
+            style:left="{bar.left}px"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize {resizeColumnLabel(bar.id)} column"
+            aria-valuenow={resizeBarPercent(bar.left)}
+            aria-valuemin={resizeBarPercent(bar.min)}
+            aria-valuemax={resizeBarPercent(bar.max)}
+            aria-valuetext="{resizeBarPercent(bar.left)} percent from left"
+            tabindex="0"
+            onpointerdown={e => handleStartResize(bar.id, e)}
+            onkeydown={e => handleResizeKeydown(bar.id, e)}
+          >
+            <div class="col-resize-bar__line"></div>
+          </div>
+        {/each}
+        <table
+          class="split-table waterfall-view__header-table table table-sm w-full min-w-[36rem] border-collapse"
         >
-          {#snippet renderItem(row, index)}
-            {@const sid = row.spanNode.spanData.spanID}
-            <WaterfallRow
-              {row}
-              {barGridPercents}
-              selected={sid === selectedSpanID}
-              tabbable={sid === keyboardAnchorID}
-              visible={true}
-              subtreeCollapsed={effectiveCollapsed.has(sid)}
-              rowIndex={rowIndexBySpanID.get(sid) ?? index + 1}
-              matched={searchActive && matchedIDs.has(sid)}
+          <thead class="header-surface waterfall-view__thead">
+            <WaterfallTimeAxisHeader
+              traceDurationNs={bounds.duration}
+              {targetTickCount}
+              tickLabelWidth={TICK_LABEL_SLOT_PX}
               {spanColWidth}
               {optionalColumns}
-              timelineWidth={timelinePlotPx}
-              traceStart={bounds.start}
-              traceEnd={bounds.end}
-              onRowClick={() => {
-                onSelectSpan(sid)
-                void focusRowTr(sid)
-              }}
-              onToggleExpand={() => toggleCollapse(sid)}
-              onSelectTimelineRecord={record =>
-                onSelectTimelineRecord(sid, record)}
+              onStartResize={handleStartResize}
             />
-          {/snippet}
-        </VirtualList>
+          </thead>
+        </table>
+        <!-- Keyboard events bubble from the runtime treegrid; this host stays semantic. -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          bind:this={gridHostEl}
+          class="waterfall-view__vlist-host"
+          onkeydown={handleGridKeydown}
+        >
+          <VirtualList
+            bind:this={vlistRef}
+            items={visibleRows}
+            defaultEstimatedItemHeight={WATERFALL_ROW_HEIGHT_PX}
+            bufferSize={12}
+            itemKey={row => row.spanNode.spanData.spanID}
+            containerClass="waterfall-vlist"
+            viewportClass="waterfall-vlist-viewport"
+            viewportLabel="Span waterfall rows"
+            itemsClass="waterfall-vlist-items"
+          >
+            {#snippet renderItem(row, index)}
+              {@const sid = row.spanNode.spanData.spanID}
+              <WaterfallRow
+                {row}
+                {barGridPercents}
+                selected={sid === selectedSpanID}
+                tabbable={sid === keyboardAnchorID}
+                visible={true}
+                subtreeCollapsed={effectiveCollapsed.has(sid)}
+                rowIndex={rowIndexBySpanID.get(sid) ?? index + 1}
+                matched={searchActive && matchedIDs.has(sid)}
+                {spanColWidth}
+                {optionalColumns}
+                timelineWidth={timelinePlotPx}
+                traceStart={bounds.start}
+                traceEnd={bounds.end}
+                onRowClick={() => {
+                  onSelectSpan(sid)
+                  void focusRowTr(sid)
+                }}
+                onToggleExpand={() => toggleCollapse(sid)}
+                onInspectColumn={column => {
+                  if (onInspectColumn) onInspectColumn(sid, column)
+                  else onSelectSpan(sid)
+                }}
+                onSelectTimelineRecord={record =>
+                  onSelectTimelineRecord(sid, record)}
+              />
+            {/snippet}
+          </VirtualList>
+        </div>
       </div>
     </div>
+    <ScrollToTopButton
+      visible={treeScrolled}
+      label="Scroll span tree to top"
+      onclick={scrollTreeToTop}
+    />
   </div>
   {#if footer}
     {@render footer()}
@@ -1182,41 +1190,16 @@
   @reference "../../../app.css";
 
   .waterfall-view {
+    --table-cell-inline-padding: 1rem;
     @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-base-100 transition-opacity duration-200;
-  }
-
-  /* The error badge is the navigation: chevrons flank the count inside
-     one pill. Tight side padding so the chevrons read as part of the
-     badge rather than buttons that happen to be near it. */
-  .waterfall-view__error-nav {
-    @apply gap-0.5 pr-0.5 pl-0.5;
-  }
-
-  /* The visible target is small, so the hit target is quietly larger:
-     vertical padding cancelled by negative margin extends the clickable
-     area past the badge without changing its look.
-
-     Hover is a colour change, not a background: the chevrons rest a
-     step quieter than the count and come up to the badge's full colour
-     under the pointer. Derived from currentColor, so it follows the
-     badge through both themes. */
-  .waterfall-view__error-nav-btn {
-    @apply -my-1 inline-flex cursor-pointer items-center justify-center px-0.5 py-1 transition-colors duration-100;
-    color: color-mix(in oklab, currentColor 60%, transparent);
-  }
-
-  .waterfall-view__error-nav-btn:hover:not(:disabled),
-  .waterfall-view__error-nav-btn:focus-visible {
-    color: inherit;
-  }
-
-  .waterfall-view__error-nav-btn:disabled {
-    @apply cursor-default;
-    color: color-mix(in oklab, currentColor 30%, transparent);
   }
 
   .waterfall-view__scroll {
     @apply flex min-h-0 flex-1 flex-col overflow-x-auto;
+  }
+
+  .waterfall-view__tree {
+    @apply relative flex min-h-0 flex-1 flex-col;
   }
 
   /* Local override on top of `.header-surface`: drop the warm

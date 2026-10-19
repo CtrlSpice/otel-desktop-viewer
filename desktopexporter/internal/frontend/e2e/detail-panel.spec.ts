@@ -63,6 +63,243 @@ const trace: JsonTraceData = {
   ],
 }
 
+test('detail dividers collapse, reopen and redistribute space across collapsed neighbours', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1000 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.addInitScript(() =>
+    localStorage.setItem('signal-detail:open', 'true')
+  )
+  const linked = structuredClone(trace)
+  linked.spans[0]!.spanData.links.push({
+    traceID,
+    spanID,
+    traceState: '',
+    flags: 0,
+    attributes: [],
+    droppedAttributesCount: 0,
+  })
+  await page.route('**/rpc', async route => {
+    const { id, method } = route.request().postDataJSON()
+    await route.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id,
+        result:
+          method === 'getTraceView'
+            ? linked
+            : method === 'searchTraceSummaries'
+              ? [
+                  {
+                    traceID,
+                    hasRootSpan: true,
+                    rootSpan: {
+                      serviceName: 'checkout-api',
+                      name: 'detail target',
+                    },
+                    startTime: trace.traceStart,
+                    durationNs: '1000000000',
+                    spanCount: 1,
+                    errorCount: 0,
+                  },
+                ]
+              : method === 'getStats'
+                ? {
+                    storage: { sizeBytes: 0, maxSizeBytes: 0 },
+                    traces: {
+                      traceCount: 1,
+                      spanCount: 1,
+                      serviceCount: 1,
+                      errorCount: 0,
+                      lastReceived: null,
+                    },
+                    logs: { logCount: 0, errorCount: 0, lastReceived: null },
+                    metrics: {
+                      metricCount: 0,
+                      dataPointCount: 0,
+                      lastReceived: null,
+                    },
+                    rejections: [],
+                  }
+                : [],
+      },
+    })
+  })
+  await page.goto(`/traces/${traceID}?span=${spanID}`)
+  const stack = page.getByRole('region', { name: 'Span details', exact: true })
+  const sections = stack.locator('.detail-bubble--resizable')
+  const span = sections.nth(0)
+  const events = sections.nth(1)
+  const links = sections.nth(2)
+  const top = stack.getByRole('separator', {
+    name: 'Resize Span and Events sections',
+  })
+  const bottom = stack.getByRole('separator', {
+    name: 'Resize Events and Links sections',
+  })
+  const open = (section: typeof span) => section.locator(':scope > details')
+  const height = (section: typeof span) =>
+    section.evaluate(element => element.getBoundingClientRect().height)
+  const heading = (section: typeof span) =>
+    section.locator(':scope > details > summary')
+  async function drag(handle: typeof top, delta: number, reverse = false) {
+    const rect = (await handle.boundingBox())!
+    const x = rect.x + rect.width / 2
+    const y = rect.y + rect.height / 2
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x, y + delta, { steps: 8 })
+    if (reverse) await page.mouse.move(x, y, { steps: 8 })
+    await page.mouse.up()
+  }
+  async function anchored() {
+    const bounds = (await stack.boundingBox())!
+    const first = (await span.boundingBox())!
+    const last = (await links.boundingBox())!
+    expect(first.y).toBeCloseTo(bounds.y, 0)
+    expect(last.y + last.height).toBeCloseTo(bounds.y + bounds.height, 0)
+    expect(
+      await stack.locator('.detail-bubble__disclosure[open]').count()
+    ).toBeGreaterThan(0)
+  }
+  await expect(sections).toHaveCount(3)
+  await anchored()
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  // Events must track the pointer one-for-one while pushing Links down,
+  // including a reversal before the previous release animation settles.
+  for (const delta of [80, -80, 80, -80]) {
+    const before = (await bottom.boundingBox())!
+    const beforeHeights = await Promise.all([
+      height(span),
+      height(events),
+      height(links),
+    ])
+    const x = before.x + before.width / 2
+    const y = before.y + before.height / 2
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x, y + delta, { steps: 5 })
+    expect((await bottom.boundingBox())!.y).toBeCloseTo(before.y + delta, 0)
+    expect(await height(span)).toBeCloseTo(beforeHeights[0]!, 0)
+    expect(await height(events)).toBeCloseTo(beforeHeights[1]! + delta, 0)
+    expect(await height(links)).toBeCloseTo(beforeHeights[2]! - delta, 0)
+    await page.mouse.up()
+  }
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  // One continuous Links drag exhausts Events, then takes space from Span.
+  // Reversing that same gesture restores both donors without a second grab.
+  const cascadeHeights = await Promise.all([
+    height(span),
+    height(events),
+    height(links),
+  ])
+  const cascadeHandle = (await bottom.boundingBox())!
+  const cascadeX = cascadeHandle.x + cascadeHandle.width / 2
+  const cascadeY = cascadeHandle.y + cascadeHandle.height / 2
+  await page.mouse.move(cascadeX, cascadeY)
+  await page.mouse.down()
+  await page.mouse.move(cascadeX, cascadeY - cascadeHeights[1]! - 180, {
+    steps: 12,
+  })
+  await expect(open(events)).not.toHaveAttribute('open')
+  expect(await height(span)).toBeLessThan(cascadeHeights[0]! - 80)
+  expect(await height(links)).toBeGreaterThan(
+    cascadeHeights[2]! + cascadeHeights[1]!
+  )
+  await anchored()
+  await page.mouse.move(cascadeX, cascadeY, { steps: 12 })
+  await page.mouse.up()
+  await expect(open(events)).toHaveAttribute('open')
+  for (const [index, section] of [span, events, links].entries()) {
+    expect(await height(section)).toBeCloseTo(cascadeHeights[index]!, 0)
+  }
+  // Growing Span first compresses Events through its resistance region.
+  // Links must not also shrink while Events still has content space.
+  const lowerHeight = await height(links)
+  const eventHeight = await height(events)
+  const topRect = (await top.boundingBox())!
+  await page.mouse.move(
+    topRect.x + topRect.width / 2,
+    topRect.y + topRect.height / 2
+  )
+  await page.mouse.down()
+  await page.mouse.move(
+    topRect.x + topRect.width / 2,
+    topRect.y + topRect.height / 2 + eventHeight,
+    { steps: 8 }
+  )
+  expect(await height(events)).toBeGreaterThan(40)
+  expect(await height(links)).toBeCloseTo(lowerHeight, 0)
+  await page.mouse.up()
+  await expect(open(events)).not.toHaveAttribute('open')
+  expect(await height(links)).toBeCloseTo(lowerHeight, 0)
+  await heading(events).click()
+  const initial = await height(span)
+  await drag(top, -initial - 80, true)
+  await expect(open(span)).toHaveAttribute('open')
+  expect(await height(span)).toBeCloseTo(initial, 0)
+  await drag(top, -initial - 80)
+  await expect(open(span)).not.toHaveAttribute('open')
+  await anchored()
+  await drag(top, 120)
+  await expect(open(span)).toHaveAttribute('open')
+  expect(await height(span)).toBeGreaterThan(140)
+
+  await top.focus()
+  await top.press('End')
+  await expect(open(links)).not.toHaveAttribute('open')
+  await expect(open(events)).not.toHaveAttribute('open')
+  await anchored()
+  expect(await height(span)).toBeGreaterThan(700)
+  await heading(span).focus()
+  await heading(span).press('Enter')
+  await expect(open(span)).not.toHaveAttribute('open')
+  await expect(open(events)).toHaveAttribute('open')
+  await expect(open(links)).not.toHaveAttribute('open')
+  expect(await height(events)).toBeGreaterThan(700)
+  await anchored()
+  await heading(events).click()
+  await expect(open(events)).not.toHaveAttribute('open')
+  await expect(open(links)).toHaveAttribute('open')
+  await heading(links).click()
+  await expect(open(links)).not.toHaveAttribute('open')
+  await expect(open(events)).toHaveAttribute('open')
+  await top.focus()
+  await top.press('End')
+  await expect(open(span)).toHaveAttribute('open')
+  await expect(open(events)).not.toHaveAttribute('open')
+
+  // Both neighbours of this divider are collapsed; borrow from Span above them.
+  await expect(bottom).toHaveAttribute('aria-disabled', 'false')
+  await drag(bottom, -120)
+  await expect(open(links)).toHaveAttribute('open')
+  await expect(open(events)).not.toHaveAttribute('open')
+  await anchored()
+  await drag(top, -120)
+  await expect(open(events)).toHaveAttribute('open')
+  await anchored()
+  await bottom.focus()
+  await bottom.press('End')
+  await expect(open(links)).not.toHaveAttribute('open')
+  await bottom.press('ArrowUp')
+  await expect(open(links)).toHaveAttribute('open')
+  await anchored()
+  await page.setViewportSize({ width: 1440, height: 650 })
+  await anchored()
+  const sizes = await page.evaluate(() =>
+    localStorage.getItem('trace-detail-section-sizes')
+  )
+  await page.reload()
+  await expect(sections).toHaveCount(3)
+  expect(
+    await page.evaluate(() =>
+      localStorage.getItem('trace-detail-section-sizes')
+    )
+  ).toBe(sizes)
+  await anchored()
+})
+
 test('associated logs reuse summary cards and open the full log without losing the range', async ({
   page,
 }) => {
@@ -78,7 +315,13 @@ test('associated logs reuse summary cards and open the full log without losing t
     body: { kind: 'string', value: 'Associated warning' },
     resource: trace.resources[0]!,
     scope: trace.scopes[0]!,
-    attributes: [],
+    attributes: Array.from({ length: 20 }, (_, index) => ({
+      key: `sample.${index}`,
+      value: {
+        kind: 'string' as const,
+        value: `Retained log attribute ${index}`,
+      },
+    })),
     droppedAttributesCount: 0,
     flags: 0,
     eventName: 'order.delayed',
@@ -123,6 +366,9 @@ test('associated logs reuse summary cards and open the full log without losing t
       }
     if (method === 'getTraceLogSummaries' || method === 'searchLogSummaries')
       return [summary]
+    if (method === 'searchLogPage') return { total: 1, logs: [summary] }
+    if (method === 'getLogErrorNavigation')
+      return { count: 0, index: null, previous: null, next: null }
     if (method === 'getLog') return log
     if (method === 'searchTraceSummaries')
       return [
@@ -274,6 +520,18 @@ test('associated logs reuse summary cards and open the full log without losing t
   await page.keyboard.press('Enter')
   await expect(page).toHaveURL(`/logs/${logRef}?start=0&end=2000000000000`)
   await expect(page.getByRole('table', { name: 'Log fields' })).toBeVisible()
+  const logScroll = page.locator('.log-detail-panel__scroll')
+  await logScroll.evaluate(element => {
+    element.scrollTop = element.scrollHeight
+  })
+  await expect
+    .poll(() => logScroll.evaluate(element => element.scrollTop))
+    .toBeGreaterThan(0)
+  await page.getByRole('button', { name: 'Scroll log to top' }).click()
+  await expect
+    .poll(() => logScroll.evaluate(element => element.scrollTop))
+    .toBe(0)
+  await expect(page).toHaveURL(`/logs/${logRef}?start=0&end=2000000000000`)
   await page.goBack()
   await expect(page).toHaveURL(tracePath)
   await expect(card).toHaveAttribute('aria-pressed', 'true')
@@ -282,6 +540,8 @@ test('associated logs reuse summary cards and open the full log without losing t
 test('detail targets reopen the panel with independent native disclosures', async ({
   page,
 }) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', error => pageErrors.push(error.message))
   await page.setViewportSize({ width: 1920, height: 1000 })
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.addInitScript(() =>
@@ -423,9 +683,18 @@ test('detail targets reopen the panel with independent native disclosures', asyn
     await expect(detail).toBeHidden()
   }
   for (let selection = 0; selection < 2; selection++) {
-    await page
-      .getByRole('button', { name: 'Select 1 event', exact: true })
-      .click()
+    const marker = page.getByRole('button', {
+      name: 'Select 1 event',
+      exact: true,
+    })
+    const beforeHover = page.url()
+    await marker.hover()
+    const preview = page.getByRole('dialog', { name: 'Span activity' })
+    await expect(preview).toBeVisible()
+    await expect(preview.getByText('Span event', { exact: true })).toBeVisible()
+    await expect(detail).toBeHidden()
+    await expect(page).toHaveURL(beforeHover)
+    await marker.click()
     await expect(detail).toBeVisible()
     await expect(activity).toHaveAttribute('open')
     await expect(fields).toHaveAttribute('open')
@@ -442,4 +711,106 @@ test('detail targets reopen the panel with independent native disclosures', asyn
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
   await expect(span).toBeVisible()
   await expect(detail).toBeHidden()
+  await page.route('**/rpc', async route => {
+    const request = route.request().postDataJSON() as {
+      id: number
+      method: string
+    }
+    if (request.method !== 'getTraceView') return route.fallback()
+    const clustered = structuredClone(trace)
+    const events = clustered.spans[0]!.spanData.events
+    events.push({ ...events[0]!, name: 'second event' })
+    await route.fulfill({
+      json: { jsonrpc: '2.0', id: request.id, result: clustered },
+    })
+  })
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  const cluster = page.getByRole('button', {
+    name: 'Open 2 events',
+    exact: true,
+  })
+  const preview = page.getByRole('dialog', { name: 'Span activity' })
+  const beforeHover = page.url()
+  await cluster.hover()
+  await expect(preview).toBeVisible()
+  await expect(preview.getByText('Span event', { exact: true })).toHaveCount(2)
+  await expect(detail).toBeHidden()
+  await expect(page).toHaveURL(beforeHover)
+  await preview.hover()
+  await expect(preview).toBeVisible()
+  await page.locator('.pane-header__title').first().hover()
+  await expect(preview).toBeHidden()
+  await cluster.hover()
+  await cluster.click()
+  await page.locator('.pane-header__title').first().hover()
+  await expect(preview).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(preview).toBeHidden()
+  await expect(cluster).toBeFocused()
+  await cluster.hover()
+  await preview.getByRole('button', { name: /second event/ }).click()
+  await expect(
+    detail.getByRole('table', { name: 'Event second event' })
+  ).toBeVisible()
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  const resize = detail.getByRole('separator', {
+    name: 'Resize Span and Events sections',
+    exact: true,
+  })
+  const sectionHeight = () =>
+    fields.evaluate(
+      element => element.parentElement!.getBoundingClientRect().height
+    )
+  const originalHeight = await sectionHeight()
+  const handle = (await resize.boundingBox())!
+  await page.mouse.move(
+    handle.x + handle.width / 2,
+    handle.y + handle.height / 2
+  )
+  await page.mouse.down()
+  await page.mouse.move(
+    handle.x + handle.width / 2,
+    handle.y + handle.height / 2 - 50,
+    { steps: 5 }
+  )
+  await page.mouse.up()
+  await expect.poll(sectionHeight).toBeCloseTo(originalHeight - 50, 0)
+  const pairHeight =
+    (await sectionHeight()) +
+    (await activity.evaluate(
+      element => element.parentElement!.getBoundingClientRect().height
+    ))
+  const headerHeight = await fields
+    .locator(':scope > summary')
+    .evaluate(element => element.getBoundingClientRect().height)
+  const savedHeight =
+    originalHeight - 50 + (pairHeight - headerHeight * 2) * 0.05
+  await resize.focus()
+  await resize.press('Shift+ArrowDown')
+  await expect.poll(sectionHeight).toBeCloseTo(savedHeight, 0)
+  await fields.locator(':scope > summary').click()
+  await expect(resize).toHaveAttribute('aria-disabled', 'false')
+  await expect.poll(sectionHeight).toBeLessThan(60)
+  await fields.locator(':scope > summary').click()
+  await expect(resize).toHaveAttribute('aria-disabled', 'false')
+  await fields.evaluate(async element => {
+    await new Promise(requestAnimationFrame)
+    await Promise.all(
+      element
+        .parentElement!.getAnimations()
+        .map(animation => animation.finished)
+    )
+  })
+  const reopenedHeight = await sectionHeight()
+  expect(reopenedHeight).toBeGreaterThan(60)
+  await page.reload()
+  await span.click()
+  await expect.poll(sectionHeight).toBeCloseTo(reopenedHeight, 0)
+  await resize.dblclick()
+  await expect
+    .poll(() =>
+      page.evaluate(() => localStorage.getItem('trace-detail-section-sizes'))
+    )
+    .toBe('{}')
+  expect(pageErrors).toEqual([])
 })

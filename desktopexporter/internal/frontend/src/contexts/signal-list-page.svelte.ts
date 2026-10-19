@@ -39,6 +39,8 @@ export type SignalListPageOptions<TItem, TSortColumn extends string> = {
   initialSort: { column: TSortColumn; direction: SortDirection }
   /** Keep a route-selected ID that is absent from the current filtered list. */
   preserveMissingSelection?: boolean
+  /** Paged results already have a stable server order. */
+  serverSorted?: boolean
   /** Called after each poll interval; update polled stat counters here. */
   pollStats?: () => Promise<void>
   /** Derive refresh pulse + aside tip from baseline vs polled counters. */
@@ -125,6 +127,7 @@ export function createSignalListPage<TItem, TSortColumn extends string>(
   )
 
   let sortedItems = $derived.by(() => {
+    if (opts.serverSorted) return items
     const col = sortColumn
     const dir = sortDirection
     const rows = [...items]

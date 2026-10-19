@@ -24,6 +24,31 @@ export const PANEL_MAX_REM = 40
 export const PANEL_CLOSE_OVERSHOOT_REM = 4
 export const PANEL_DRAG_RESISTANCE = 0.35
 
+/** All arguments use the caller's units (pixels, rem, or a split fraction). */
+export function resolvePanelResize(
+  desired: number,
+  minimum: number,
+  maximum: number,
+  closeOvershoot: number
+) {
+  const resisted = minimum + (desired - minimum) * PANEL_DRAG_RESISTANCE
+  return {
+    preview:
+      desired < minimum ? Math.max(0, resisted) : Math.min(maximum, desired),
+    size: Math.max(minimum, Math.min(maximum, desired)),
+    collapsed: desired < minimum - closeOvershoot,
+    // A stacked resize can pass movement onward only after this pane has
+    // exhausted its preview AND crossed the shared release threshold.
+    remainingCloseTravel: Math.max(
+      0,
+      Math.min(
+        -resisted / PANEL_DRAG_RESISTANCE,
+        minimum - closeOvershoot - desired
+      )
+    ),
+  }
+}
+
 function rootFontPx(): number {
   if (typeof document === 'undefined') return 16
   const px = Number.parseFloat(

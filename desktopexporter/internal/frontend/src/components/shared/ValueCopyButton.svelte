@@ -45,8 +45,8 @@
     activeRequest?.abort()
   })
 
-  export async function copy(event?: MouseEvent) {
-    event?.stopPropagation()
+  async function copy(event: MouseEvent) {
+    event.stopPropagation()
     if (pending) return
     const current = text
     const currentLoader = loadText
@@ -76,7 +76,7 @@
         return
       copied = true
       status = `Copied ${label}.`
-      timer = setTimeout(reset, 2000)
+      timer = setTimeout(reset, 1000)
     } catch {
       if (
         !controller.signal.aborted &&

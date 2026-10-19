@@ -43,6 +43,49 @@ function mixedMarker(): TimelineMarker {
 }
 
 describe('TimelineMarkers', () => {
+  it.each(['event', 'log', 'mixed'] as const)(
+    'previews %s clusters on hover and focus, and pins them on click',
+    async kind => {
+      const marker = mixedMarker()
+      if (kind !== 'mixed') {
+        const record = marker.members.find(member => member.kind === kind)!
+        marker.members = [record, { ...record, id: `${record.id}-second` }]
+      }
+      const onSelectRecord = vi.fn()
+      renderWithContexts(TimelineMarkers, {
+        markers: [marker],
+        spanColor: '#abc',
+        spanStartTime: 40n,
+        onSelectRecord,
+      })
+      const trigger = screen.getByRole('button', { name: /^Open/ })
+      await fireEvent.mouseEnter(trigger)
+      expect(trigger).toHaveAttribute('aria-expanded', 'true')
+      expect(onSelectRecord).not.toHaveBeenCalled()
+      const popover = screen.getByRole('dialog', { name: 'Span activity' })
+      await fireEvent.mouseLeave(trigger)
+      await fireEvent.mouseEnter(popover)
+      await new Promise(resolve => setTimeout(resolve, 100))
+      expect(trigger).toHaveAttribute('aria-expanded', 'true')
+      await fireEvent.mouseLeave(popover)
+      await waitFor(() =>
+        expect(trigger).toHaveAttribute('aria-expanded', 'false')
+      )
+
+      trigger.focus()
+      await waitFor(() =>
+        expect(trigger).toHaveAttribute('aria-expanded', 'true')
+      )
+      await fireEvent.click(trigger)
+      trigger.blur()
+      await new Promise(resolve => setTimeout(resolve, 100))
+      expect(trigger).toHaveAttribute('aria-expanded', 'true')
+      await fireEvent.click(trigger)
+      expect(trigger).toHaveAttribute('aria-expanded', 'false')
+      expect(onSelectRecord).not.toHaveBeenCalled()
+    }
+  )
+
   it('renders every cluster at the bar height in a 1.5rem labelled button', () => {
     renderWithContexts(TimelineMarkers, {
       markers: [mixedMarker()],
@@ -72,10 +115,10 @@ describe('TimelineMarkers', () => {
       name: 'Open 1 event and 1 log',
     })
     await fireEvent.click(button)
-    const rows = screen.getAllByRole('button', { name: /Event|Log/ })
-    expect(rows[0]).toHaveTextContent(/Event\s+\+10 ns\s+exception/)
+    const rows = screen.getAllByRole('button', { name: /Span event|Log/ })
+    expect(rows[0]).toHaveTextContent(/Span event\s+\+10 ns\s+exception/)
     expect(rows[1]).toHaveTextContent(/Log\s+\+11 ns\s+payment\.failed/)
-    expect(screen.getByText('Event')).toHaveStyle('--badge-color: #abc')
+    expect(screen.getByText('Span event')).toHaveStyle('--badge-color: #abc')
     expect(screen.getByText('Log')).toHaveClass('badge-error')
 
     await fireEvent.click(rows[1]!)
@@ -118,8 +161,8 @@ describe('TimelineMarkers', () => {
 
     const trigger = screen.getByRole('button', { name: 'Select 1 event' })
     await fireEvent.focus(trigger)
-    const row = screen.getByRole('button', { name: /Event/ })
-    expect(row).toHaveTextContent(/Event\s+-1\.000 s\s+exception/)
+    const row = screen.getByRole('button', { name: /Span event/ })
+    expect(row).toHaveTextContent(/Span event\s+-1\.000 s\s+exception/)
     await fireEvent.click(row)
     expect(onSelectRecord).toHaveBeenLastCalledWith(marker.members[0])
 
@@ -169,7 +212,7 @@ describe('TimelineMarkers', () => {
     const trigger = screen.getByRole('button', { name: 'Select 1 event' })
 
     trigger.focus()
-    const row = screen.getByRole('button', { name: /Event/ })
+    const row = screen.getByRole('button', { name: /Span event/ })
     row.focus()
     await new Promise(resolve => setTimeout(resolve))
     expect(trigger).toHaveAttribute('aria-expanded', 'true')
@@ -195,7 +238,7 @@ describe('TimelineMarkers', () => {
     document.body.append(outside)
     const trigger = screen.getByRole('button', { name: 'Select 1 event' })
     trigger.focus()
-    const row = screen.getByRole('button', { name: /Event/ })
+    const row = screen.getByRole('button', { name: /Span event/ })
     row.focus()
     const popover = document.querySelector('.activity-popover')!
     await fireEvent.mouseEnter(popover)
@@ -225,7 +268,7 @@ describe('TimelineMarkers', () => {
       })
       const trigger = screen.getByRole('button', { name: 'Select 1 event' })
       trigger.focus()
-      const row = screen.getByRole('button', { name: /Event/ })
+      const row = screen.getByRole('button', { name: /Span event/ })
       const focusedElement = focusOwner === 'trigger' ? trigger : row
       const pointerTarget =
         focusOwner === 'trigger'
@@ -254,7 +297,7 @@ describe('TimelineMarkers', () => {
       name: 'Open 1 event and 1 log',
     })
     await fireEvent.click(trigger)
-    const row = screen.getAllByRole('button', { name: /Event|Log/ })[0]!
+    const row = screen.getAllByRole('button', { name: /Span event|Log/ })[0]!
     row.focus()
 
     await userEvent.keyboard('{Enter}')
@@ -264,7 +307,11 @@ describe('TimelineMarkers', () => {
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it.each(['Escape', 'keyboard row selection'] as const)(
+  it.each([
+    'Escape',
+    'keyboard row selection',
+    'pointer row selection',
+  ] as const)(
     'does not reopen a singleton during %s focus restoration',
     async closeAction => {
       const marker = mixedMarker()
@@ -281,7 +328,7 @@ describe('TimelineMarkers', () => {
       document.body.append(outside)
       const trigger = screen.getByRole('button', { name: 'Select 1 event' })
       trigger.focus()
-      const row = screen.getByRole('button', { name: /Event/ })
+      const row = screen.getByRole('button', { name: /Span event/ })
       row.focus()
       const popover = document.querySelector<HTMLElement>('.activity-popover')!
       const nativeHidePopover = popover.hidePopover.bind(popover)
@@ -302,7 +349,9 @@ describe('TimelineMarkers', () => {
       if (closeAction === 'Escape') {
         await fireEvent.keyDown(document, { key: 'Escape' })
       } else {
-        await userEvent.keyboard('{Enter}')
+        if (closeAction === 'pointer row selection')
+          await fireEvent.click(row, { detail: 1 })
+        else await userEvent.keyboard('{Enter}')
         expect(onSelectRecord).toHaveBeenCalledWith(marker.members[0])
       }
 

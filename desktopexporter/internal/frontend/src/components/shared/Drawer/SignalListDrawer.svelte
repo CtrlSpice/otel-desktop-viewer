@@ -27,7 +27,7 @@
   import {
     remToPx,
     PANEL_CLOSE_OVERSHOOT_REM,
-    PANEL_DRAG_RESISTANCE,
+    resolvePanelResize,
   } from '@/state/panel-width'
   import {
     drawerWidth,
@@ -58,6 +58,7 @@
     drawerChromeToolbar?: Snippet
     drawerSearch?: Snippet
     drawerControls?: Snippet
+    hideDrawer?: boolean
     navigationTrailing?: Snippet
     footer?: Snippet
     children: Snippet
@@ -82,6 +83,7 @@
     drawerChromeToolbar,
     drawerSearch,
     drawerControls,
+    hideDrawer = false,
     navigationTrailing,
     footer,
     children,
@@ -147,20 +149,26 @@
           0,
           Math.min(MAX_DRAWER_WIDTH_REM, seedRem + delta * perPx)
         )
-        dragWidthRem =
-          wasOpen && lastDesired < MIN_DRAWER_WIDTH_REM
-            ? MIN_DRAWER_WIDTH_REM -
-              (MIN_DRAWER_WIDTH_REM - lastDesired) * PANEL_DRAG_RESISTANCE
-            : lastDesired
+        dragWidthRem = wasOpen
+          ? resolvePanelResize(
+              lastDesired,
+              MIN_DRAWER_WIDTH_REM,
+              MAX_DRAWER_WIDTH_REM,
+              PANEL_CLOSE_OVERSHOOT_REM
+            ).preview
+          : lastDesired
       },
       onEnd: () => {
         isResizing = false
         drag = null
-        drawerOpen =
-          lastDesired >=
-          (wasOpen
-            ? MIN_DRAWER_WIDTH_REM - PANEL_CLOSE_OVERSHOOT_REM
-            : REOPEN_THRESHOLD_REM)
+        drawerOpen = wasOpen
+          ? !resolvePanelResize(
+              lastDesired,
+              MIN_DRAWER_WIDTH_REM,
+              MAX_DRAWER_WIDTH_REM,
+              PANEL_CLOSE_OVERSHOOT_REM
+            ).collapsed
+          : lastDesired >= REOPEN_THRESHOLD_REM
         if (drawerOpen) {
           drawerWidth.preview(
             !wasOpen && lastDesired < MIN_DRAWER_WIDTH_REM
@@ -489,147 +497,152 @@
     {refreshAsideTip}
   >
     {#snippet navigationLeading()}
-      <PanelToggle
-        side="left"
-        open={drawerOpen}
-        controls={drawerPanelID}
-        onclick={() => {
-          drawerOpen = !drawerOpen
-          persistDrawerOpen(drawerOpen)
-        }}
-      />
+      {#if !hideDrawer}
+        <PanelToggle
+          side="left"
+          open={drawerOpen}
+          controls={drawerPanelID}
+          onclick={() => {
+            drawerOpen = !drawerOpen
+            persistDrawerOpen(drawerOpen)
+          }}
+        />
+      {/if}
     {/snippet}
   </WorkspaceToolbar>
   <div class="signal-drawer drawer drawer-open">
-    <input
-      id={drawerID}
-      type="checkbox"
-      class="drawer-toggle signal-drawer-toggle"
-      checked={drawerOpen}
-      disabled
-      aria-hidden="true"
-      tabindex="-1"
-    />
+    {#if !hideDrawer}
+      <input
+        id={drawerID}
+        type="checkbox"
+        class="drawer-toggle signal-drawer-toggle"
+        checked={drawerOpen}
+        disabled
+        aria-hidden="true"
+        tabindex="-1"
+      />
 
-    <div class="drawer-side">
-      <div
-        id={drawerPanelID}
-        class="signal-drawer__panel flex h-full flex-col"
-        class:signal-drawer__panel--instant={skipWidthTransition || isResizing}
-        style:width={`${dragWidthRem ?? (drawerOpen ? drawerWidth.rem : 0)}rem`}
-      >
-        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <div class="drawer-side">
         <div
-          class="col-resize-bar col-resize-bar--in-flow signal-drawer__resize"
-          class:col-resize-bar--active={isResizing}
-          onpointerdown={handleResizeStart}
-          ondblclick={handleResizeDblclick}
-          onkeydown={handleResizeKeydown}
-          role="separator"
-          aria-orientation="vertical"
-          aria-label={drawerOpen ? 'Resize the list' : 'Open the list'}
-          aria-valuenow={Math.round(drawerWidth.rem)}
-          aria-valuemin={MIN_DRAWER_WIDTH_REM}
-          aria-valuemax={MAX_DRAWER_WIDTH_REM}
-          tabindex="0"
+          id={drawerPanelID}
+          class="signal-drawer__panel flex h-full flex-col"
+          class:signal-drawer__panel--instant={skipWidthTransition ||
+            isResizing}
+          style:width={`${dragWidthRem ?? (drawerOpen ? drawerWidth.rem : 0)}rem`}
         >
-          <div class="col-resize-bar__line"></div>
-        </div>
-        <div
-          class="signal-drawer__contents"
-          class:signal-drawer__contents--closed={!drawerShown}
-          inert={!drawerShown}
-          aria-hidden={!drawerShown}
-        >
-          <PanelClip
-            minimumSize={emptyDrawer ? 0 : remToPx(MIN_DRAWER_WIDTH_REM)}
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <div
+            class="col-resize-bar col-resize-bar--in-flow signal-drawer__resize"
+            class:col-resize-bar--active={isResizing}
+            onpointerdown={handleResizeStart}
+            ondblclick={handleResizeDblclick}
+            onkeydown={handleResizeKeydown}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={drawerOpen ? 'Resize the list' : 'Open the list'}
+            aria-valuenow={Math.round(drawerWidth.rem)}
+            aria-valuemin={MIN_DRAWER_WIDTH_REM}
+            aria-valuemax={MAX_DRAWER_WIDTH_REM}
+            tabindex="0"
           >
-            {#if !emptyDrawer && drawerControls}
-              <div
-                class="signal-drawer__controls"
-                role="group"
-                aria-label={`${label} list controls`}
-              >
-                {@render drawerControls()}
-              </div>
-            {/if}
-            {#if !emptyDrawer}
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <div
-                class="signal-drawer__body"
-                bind:this={drawerBodyEl}
-                onfocusin={handleListFocusin}
-                onkeydown={handleListKeydown}
-                onscrollcapture={handleListScroll}
-              >
-                {#if showEmptyState}
-                  <div class="signal-drawer__empty" role="status">
-                    <p class="signal-drawer__empty-title">
-                      No {label.toLowerCase()} found
-                    </p>
-                    <p class="signal-drawer__empty-hint">
-                      Try widening the time range or clearing the search.
-                    </p>
-                  </div>
-                {:else}
-                  <VirtualList
-                    bind:this={vlistRef}
-                    {items}
-                    {itemKey}
-                    defaultEstimatedItemHeight={72}
-                    bufferSize={10}
-                    containerClass="signal-drawer__vlist"
-                    viewportClass="signal-drawer__vlist-viewport"
-                    viewportLabel={`${label} list`}
-                    itemsClass="signal-drawer__vlist-items"
-                    onRangeChange={handleRenderedRange}
-                  >
-                    {#snippet renderItem(item)}
-                      {@const key = itemKey(item)}
-                      <div
-                        class="signal-drawer__item"
-                        data-drawer-item-key={key}
-                        use:navigableDrawerItem={{
-                          tabIndex: key === rovingItemKey ? 0 : -1,
-                        }}
-                      >
-                        {@render itemSnippet(item, selectedID === key)}
-                      </div>
-                    {/snippet}
-                  </VirtualList>
-                  {#if listScrolled || scrollTopFocused}
-                    <button
-                      type="button"
-                      class="navigator-scroll-top btn btn-circle btn-primary"
-                      aria-label="Scroll to top"
-                      title="Scroll to top"
-                      onclick={scrollToTop}
-                      onfocus={() => (scrollTopFocused = true)}
-                      onblur={() => (scrollTopFocused = false)}
+            <div class="col-resize-bar__line"></div>
+          </div>
+          <div
+            class="signal-drawer__contents"
+            class:signal-drawer__contents--closed={!drawerShown}
+            inert={!drawerShown}
+            aria-hidden={!drawerShown}
+          >
+            <PanelClip
+              minimumSize={emptyDrawer ? 0 : remToPx(MIN_DRAWER_WIDTH_REM)}
+            >
+              {#if !emptyDrawer && drawerControls}
+                <div
+                  class="signal-drawer__controls"
+                  role="group"
+                  aria-label={`${label} list controls`}
+                >
+                  {@render drawerControls()}
+                </div>
+              {/if}
+              {#if !emptyDrawer}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div
+                  class="signal-drawer__body"
+                  bind:this={drawerBodyEl}
+                  onfocusin={handleListFocusin}
+                  onkeydown={handleListKeydown}
+                  onscrollcapture={handleListScroll}
+                >
+                  {#if showEmptyState}
+                    <div class="signal-drawer__empty" role="status">
+                      <p class="signal-drawer__empty-title">
+                        No {label.toLowerCase()} found
+                      </p>
+                      <p class="signal-drawer__empty-hint">
+                        Try widening the time range or clearing the search.
+                      </p>
+                    </div>
+                  {:else}
+                    <VirtualList
+                      bind:this={vlistRef}
+                      {items}
+                      {itemKey}
+                      defaultEstimatedItemHeight={72}
+                      bufferSize={10}
+                      containerClass="signal-drawer__vlist"
+                      viewportClass="signal-drawer__vlist-viewport"
+                      viewportLabel={`${label} list`}
+                      itemsClass="signal-drawer__vlist-items"
+                      onRangeChange={handleRenderedRange}
                     >
-                      <HugeiconsIcon
-                        icon={ArrowUp02Icon}
-                        size={16}
-                        strokeWidth={1.5}
-                        aria-hidden="true"
-                      />
-                    </button>
+                      {#snippet renderItem(item)}
+                        {@const key = itemKey(item)}
+                        <div
+                          class="signal-drawer__item"
+                          data-drawer-item-key={key}
+                          use:navigableDrawerItem={{
+                            tabIndex: key === rovingItemKey ? 0 : -1,
+                          }}
+                        >
+                          {@render itemSnippet(item, selectedID === key)}
+                        </div>
+                      {/snippet}
+                    </VirtualList>
+                    {#if listScrolled || scrollTopFocused}
+                      <button
+                        type="button"
+                        class="navigator-scroll-top btn btn-circle btn-primary"
+                        aria-label="Scroll to top"
+                        title="Scroll to top"
+                        onclick={scrollToTop}
+                        onfocus={() => (scrollTopFocused = true)}
+                        onblur={() => (scrollTopFocused = false)}
+                      >
+                        <HugeiconsIcon
+                          icon={ArrowUp02Icon}
+                          size={16}
+                          strokeWidth={1.5}
+                          aria-hidden="true"
+                        />
+                      </button>
+                    {/if}
                   {/if}
-                {/if}
-              </div>
-            {/if}
+                </div>
+              {/if}
 
-            <!-- Expanded: footer -->
-            {#if !emptyDrawer && footer}
-              <div class="signal-drawer__footer">
-                {@render footer()}
-              </div>
-            {/if}
-          </PanelClip>
+              <!-- Expanded: footer -->
+              {#if !emptyDrawer && footer}
+                <div class="signal-drawer__footer">
+                  {@render footer()}
+                </div>
+              {/if}
+            </PanelClip>
+          </div>
         </div>
       </div>
-    </div>
+    {/if}
 
     <div class="drawer-content min-h-0 min-w-0">
       {@render children()}

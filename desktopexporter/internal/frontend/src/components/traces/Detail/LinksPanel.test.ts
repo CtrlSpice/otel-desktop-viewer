@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { screen } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import LinksPanel from './LinksPanel.svelte'
@@ -56,8 +56,8 @@ describe('LinksPanel trace correlation', () => {
         }),
       ],
     })
-    expect(screen.getByRole('button')).toHaveTextContent(
-      'linked-trace / linked-span'
+    expect(screen.getByRole('button')).toHaveAccessibleName(
+      'linked-trace / linked-span Link 3 fields'
     )
   })
 
@@ -117,6 +117,31 @@ describe('LinksPanel trace correlation', () => {
     expect(window.location.pathname).toBe('/traces/linked-trace')
     expect(window.location.search).toBe('?start=0&end=1&span=linked-span')
     expect(window.history.length).toBe(historyLength + 1)
+  })
+
+  it('reserves copying linked fields for the copy button while link clicks navigate', async () => {
+    const user = userEvent.setup()
+    const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+    const { container } = renderWithContexts(LinksPanel, {
+      links: [makeLink()],
+    })
+    await user.click(screen.getByRole('button', { expanded: false }))
+    const originalURL = window.location.href
+    const field = container.querySelector('[data-field="spanId"]')!
+    await user.click(field.querySelector('.detail-property__header')!)
+    await user.click(field.querySelector('.detail-property__body')!)
+    expect(copy).not.toHaveBeenCalled()
+    expect(window.location.href).toBe(originalURL)
+
+    await user.click(screen.getByRole('button', { name: 'Copy spanId' }))
+    expect(copy).toHaveBeenCalledExactlyOnceWith('linked-span')
+    expect(window.location.href).toBe(originalURL)
+    copy.mockClear()
+
+    await user.click(screen.getByRole('link', { name: 'linked-span' }))
+    expect(window.location.pathname).toBe('/traces/linked-trace')
+    expect(window.location.search).toBe('?start=0&end=1&span=linked-span')
+    expect(copy).not.toHaveBeenCalled()
   })
 
   it('keeps an invalid link without inventing zero IDs or navigation', () => {

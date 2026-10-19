@@ -270,6 +270,30 @@ func SearchSummariesWithOptions(ctx context.Context, db *sql.DB, timeRange timer
 }
 
 func searchLogSummaries(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions) (json.RawMessage, error) {
+	return searchLogResults(ctx, db, timeRange, criteria, options, nil, nil)
+}
+
+// PageOptions bounds a page inside the sorted, optionally limited search result.
+type PageOptions struct {
+	Size   int64
+	Offset int64
+}
+
+// SearchPage computes the count and page in one database statement.
+func SearchPage(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions, page PageOptions) (json.RawMessage, error) {
+	if page.Size < 1 || page.Size > 250 || page.Offset < 0 {
+		return nil, fmt.Errorf("page size must be 1..250 and offset must be non-negative: %w", ErrInvalidLogLimit)
+	}
+	return searchLogResults(ctx, db, timeRange, criteria, options, &page, nil)
+}
+
+// GetErrorNavigation reports neighbours in the complete sorted and limited result,
+// not only the currently loaded page. Offsets let the UI load the target page.
+func GetErrorNavigation(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions, selectedID string) (json.RawMessage, error) {
+	return searchLogResults(ctx, db, timeRange, criteria, options, nil, &selectedID)
+}
+
+func searchLogResults(ctx context.Context, db *sql.DB, timeRange timerange.TimeRange, criteria any, options search.ResultOptions, page *PageOptions, selectedID *string) (json.RawMessage, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -298,7 +322,16 @@ func searchLogSummaries(ctx context.Context, db *sql.DB, timeRange timerange.Tim
 		limitClause = "\n\t\t\tlimit ?"
 		args = append(args, *options.Limit)
 	}
-	finalQuery, err := queries.Render(queries.SearchLogSummaries, searchLogSummariesParams{
+	queryName := queries.SearchLogSummaries
+	if page != nil {
+		queryName = queries.SearchLogPage
+		args = append(args, page.Size, page.Offset)
+	}
+	if selectedID != nil {
+		queryName = queries.GetLogErrorNavigation
+		args = append(args, *selectedID)
+	}
+	finalQuery, err := queries.Render(queryName, searchLogSummariesParams{
 		CTEs:  cteSQL,
 		From:  logSearchFrom,
 		Where: whereWithTime,
@@ -327,6 +360,7 @@ func logSummaryOrderBy(sortOption *search.Sort) (string, error) {
 		"timestamp": "coalesce(nullif(l.timestamp, 0), l.observed_timestamp)",
 		"severity":  "coalesce(l.severity_number, 0)",
 		"service":   "coalesce(l.service_name, '')",
+		"name":      "coalesce(l.event_name, '')",
 		"body":      "coalesce(body_preview(l.body), '')",
 	}
 	expression, ok := expressions[sortOption.Field]

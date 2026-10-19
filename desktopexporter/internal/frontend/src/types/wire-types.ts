@@ -179,6 +179,8 @@ export type JsonLogSummary = {
   severityNumber: number
   serviceName: string
   bodyPreview: string
+  bodyType?: JsonAttributeValue['kind']
+  eventName?: string
 }
 
 export type JsonTraceLogSummary = JsonLogSummary & {

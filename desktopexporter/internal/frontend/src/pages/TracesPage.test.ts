@@ -199,7 +199,7 @@ describe('TracesPage unplaced spans banner', () => {
     expect(button).toBeEnabled()
     const title = header.querySelector('.pane-header__title')!
     expect(
-      button.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING
+      title.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING
     ).not.toBe(0)
     expect(
       screen.getAllByRole('button', { name: 'Export trace' })

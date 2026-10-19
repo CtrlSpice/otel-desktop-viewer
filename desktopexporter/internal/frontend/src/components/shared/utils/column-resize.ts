@@ -63,18 +63,32 @@ export function initialWidths(
  * flex columns in proportion to their current widths, so the layout
  * keeps its shape; shrinkage is spread in proportion to each column's
  * slack above its min, which respects every floor and lands exactly on
- * the target whenever the target is reachable at all.
+ * the target whenever the target is reachable at all. An optional preferred
+ * flex column absorbs the change first, down to its minimum.
  */
 export function fitWidths(
   specs: ColumnSpec[],
   current: ColumnWidths,
-  containerPx: number
+  containerPx: number,
+  preferredID?: string
 ): ColumnWidths {
   const next: ColumnWidths = {}
   for (const d of specs) next[d.id] = current[d.id] ?? d.min
 
-  const delta = containerPx - totalOf(specs, next)
+  let delta = containerPx - totalOf(specs, next)
   if (Math.abs(delta) < 0.5) return next
+
+  // A fill column absorbs container changes first. Once it reaches its floor,
+  // the proportional fit handles any remaining shortage.
+  const preferred = specs.find(
+    column => column.id === preferredID && column.flex > 0
+  )
+  if (preferred) {
+    const before = next[preferred.id]
+    next[preferred.id] = Math.max(preferred.min, before + delta)
+    delta -= next[preferred.id] - before
+    if (Math.abs(delta) < 0.5) return next
+  }
 
   const flexSpecs = specs.filter(d => d.flex > 0)
   if (flexSpecs.length === 0) return next
@@ -111,7 +125,8 @@ export function fitWidths(
 export function reconcileWidths(
   specs: ColumnSpec[],
   stored: ColumnWidths,
-  containerPx: number
+  containerPx: number,
+  preferredID?: string
 ): ColumnWidths {
   const base = initialWidths(specs, containerPx)
   const merged: ColumnWidths = {}
@@ -124,7 +139,7 @@ export function reconcileWidths(
           ? Math.max(d.min, kept)
           : base[d.id]
   }
-  return fitWidths(specs, merged, containerPx)
+  return fitWidths(specs, merged, containerPx, preferredID)
 }
 
 /**
