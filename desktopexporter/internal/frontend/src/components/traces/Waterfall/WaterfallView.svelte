@@ -474,6 +474,12 @@
       for (const [id, w] of Object.entries(parsed)) {
         if (isFiniteWidth(w)) out[id] = w
       }
+      // The fixed service column used this key before configurable columns.
+      const serviceID = columnID({ source: 'resource', key: 'service.name' })
+      if (out[serviceID] === undefined && out.service !== undefined) {
+        out[serviceID] = out.service
+      }
+      delete out.service
       return out
     } catch {
       return {}

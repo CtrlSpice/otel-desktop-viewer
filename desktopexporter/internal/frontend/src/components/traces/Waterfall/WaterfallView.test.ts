@@ -1087,6 +1087,29 @@ describe('WaterfallView column separators', () => {
     expect(Number.parseFloat(spanBar.style.left)).toBe(start - 48)
   })
 
+  it.each([
+    { span: 200, service: 200, timeline: 400 },
+    { span: 200, service: 300, [SERVICE_COLUMN_ID]: 200, timeline: 400 },
+  ])(
+    'preserves upgraded service widths without overriding newer widths: %j',
+    async stored => {
+      containerWidth = 800
+      localStorage.setItem('waterfall-column-widths', JSON.stringify(stored))
+      renderTree()
+      await tick()
+
+      expect(Number.parseFloat(separators()[0]!.style.left)).toBe(200)
+      expect(Number.parseFloat(separators()[1]!.style.left)).toBe(400)
+      press(separators()[0]!, 'ArrowRight')
+      await tick()
+      expect(readPersistedColumnWidths()).toEqual({
+        span: 216,
+        [SERVICE_COLUMN_ID]: 184,
+        timeline: 400,
+      })
+    }
+  )
+
   it('uses Home to restore and persist the current-container default', async () => {
     containerWidth = 600
     renderTree()
