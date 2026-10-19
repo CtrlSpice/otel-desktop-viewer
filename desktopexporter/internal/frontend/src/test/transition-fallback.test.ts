@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/svelte'
-import AppearancePicker from '../components/shared/AppearancePicker.svelte'
+import ThemeToggle from '../components/shared/ThemeToggle.svelte'
 
 describe('Svelte transition fallback', () => {
   const animate = Element.prototype.animate
@@ -38,19 +38,17 @@ describe('Svelte transition fallback', () => {
   it('keeps main durations finite when reversing a keyed fade', async () => {
     const calls: Array<{ options: KeyframeAnimationOptions }> = []
     Element.prototype.animate = function (_keyframes, options) {
-      // SAFETY: AppearancePicker's locked Svelte 5.57.0 fade runtime passes options objects at both animate call sites.
+      // SAFETY: ThemeToggle's locked Svelte 5.57.0 fade runtime passes options objects at both animate call sites.
       calls.push({ options: options as KeyframeAnimationOptions })
       return animate.call(this, _keyframes, options)
     }
 
-    render(AppearancePicker)
+    render(ThemeToggle)
     const button = screen.getByRole('button')
 
     await fireEvent.click(button)
-    await fireEvent.click(screen.getByRole('radio', { name: 'Moon Dark' }))
     await Promise.resolve()
     await fireEvent.click(button)
-    await fireEvent.click(screen.getByRole('radio', { name: 'Dawn Light' }))
     await Promise.resolve()
     await Promise.resolve()
 

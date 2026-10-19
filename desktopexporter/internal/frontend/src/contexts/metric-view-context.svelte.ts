@@ -74,7 +74,6 @@ import {
   AGG_COLOR_SELECTED,
   metricSeriesPalette,
 } from '@/utils/chart-palette'
-import { metricTypeStem } from '@/components/metrics/utils/metric-type'
 import { themeSignal } from '@/state/theme.svelte'
 import { detailPanel } from '@/state/detail-panel.svelte'
 import {
@@ -1345,13 +1344,12 @@ export function createMetricViewContext(
   })
 
   const timeseriesChartColors = $derived.by(() => {
-    const stem = metricTypeStem(metricType)
     const theme = themeSignal.value
     if (isHistogramKind) {
       const n = Math.max(legendOrderKeys.length, view.visibleSeries.size, 1)
-      return metricSeriesPalette(n, stem, theme)
+      return metricSeriesPalette(n, theme)
     }
-    return metricSeriesPalette(MAX_VISIBLE_TIMESERIES, stem, theme)
+    return metricSeriesPalette(MAX_VISIBLE_TIMESERIES, theme)
   })
 
   const legendFilterActive = $derived(visibleDpCanonicalKeys !== null)
@@ -1435,7 +1433,6 @@ export function createMetricViewContext(
       view.visibleSeries = histVisible
       const histPool = metricSeriesPalette(
         Math.max(histKeys.length, 1),
-        metricTypeStem(metricType),
         themeSignal.value
       )
       replaceColorAssignments(
@@ -1451,7 +1448,6 @@ export function createMetricViewContext(
       view.visibleSeries = gsVisible
       const pool = metricSeriesPalette(
         MAX_VISIBLE_TIMESERIES,
-        metricTypeStem(metricType),
         themeSignal.value
       )
       replaceColorAssignments(seedColorAssignments(pool, gsVisible, gsKeys))
@@ -1660,7 +1656,6 @@ export function createMetricViewContext(
         if (!isHistogramKind) return
         pool = metricSeriesPalette(
           Math.max(pool.length, assigned.size + 1, legendOrderKeys.length),
-          metricTypeStem(metricType),
           themeSignal.value
         )
         if (acquireColor(pool, assigned, key) === null) return

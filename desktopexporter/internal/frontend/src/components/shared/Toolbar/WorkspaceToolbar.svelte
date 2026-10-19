@@ -3,7 +3,7 @@
   import PrimaryNavigation from './PrimaryNavigation.svelte'
   import SearchBar from '../Search/SearchBar.svelte'
   import PaneHeader from '../PaneHeader.svelte'
-  import AppearancePicker from '../AppearancePicker.svelte'
+  import ThemeToggle from '../ThemeToggle.svelte'
 
   let {
     search,
@@ -53,7 +53,9 @@
           </div>
         </div>
         <div class="workspace-toolbar__actions">
-          <AppearancePicker />
+          <ThemeToggle
+            class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-bottom"
+          />
           {@render navigationTrailing?.()}
         </div>
       </div>

@@ -200,7 +200,7 @@ describe('WaterfallView bigint domain geometry', () => {
     expect(rows[1]).toMatchObject({ offsetPercent: 50, widthPercent: 50 })
   })
 
-  it('uses the active Iris-first palette while preserving error semantics', () => {
+  it('uses the shared span palette while preserving error semantics', () => {
     const spans = [
       spanNode('first', null, 0),
       spanNode('second', null, 0),
@@ -215,8 +215,8 @@ describe('WaterfallView bigint domain geometry', () => {
     )
 
     expect(rows.map(row => row.color)).toEqual([
-      '#917cab',
-      '#2b6c85',
+      '#829eeb',
+      '#7bd6b6',
       'var(--color-error)',
     ])
   })

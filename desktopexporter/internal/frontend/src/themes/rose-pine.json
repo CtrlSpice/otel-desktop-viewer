@@ -1,0 +1,65 @@
+{
+  "rose-pine": {
+    "name": "Pine",
+    "scheme": "dark",
+    "colors": {
+      "canvas": "#191724",
+      "panel": "#1f1d2e",
+      "chrome": "#26233a",
+      "text": "#e0def4",
+      "subtle": "#908caa",
+      "muted": "#6e6a86",
+      "primary": "#c4a7e7",
+      "secondary": "#31748f",
+      "accent": "#9ccfd8",
+      "rose": "#ebbcba",
+      "warning": "#f6c177",
+      "error": "#eb6f92",
+      "highlightLow": "#21202e",
+      "highlightMedium": "#403d52",
+      "highlightHigh": "#524f67"
+    }
+  },
+  "rose-pine-moon": {
+    "name": "Moon",
+    "scheme": "dark",
+    "colors": {
+      "canvas": "#232136",
+      "panel": "#2a273f",
+      "chrome": "#393552",
+      "text": "#e0def4",
+      "subtle": "#908caa",
+      "muted": "#6e6a86",
+      "primary": "#c4a7e7",
+      "secondary": "#3e8fb0",
+      "accent": "#9ccfd8",
+      "rose": "#ea9a97",
+      "warning": "#f6c177",
+      "error": "#eb6f92",
+      "highlightLow": "#2a283e",
+      "highlightMedium": "#44415a",
+      "highlightHigh": "#56526e"
+    }
+  },
+  "rose-pine-dawn": {
+    "name": "Dawn",
+    "scheme": "light",
+    "colors": {
+      "canvas": "#faf4ed",
+      "panel": "#fffaf3",
+      "chrome": "#f2e9e1",
+      "text": "#464261",
+      "subtle": "#797593",
+      "muted": "#9893a5",
+      "primary": "#907aa9",
+      "secondary": "#286983",
+      "accent": "#56949f",
+      "rose": "#d7827e",
+      "warning": "#ea9d34",
+      "error": "#b4637a",
+      "highlightLow": "#f4ede8",
+      "highlightMedium": "#dfdad9",
+      "highlightHigh": "#cecacd"
+    }
+  }
+}

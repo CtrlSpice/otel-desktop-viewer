@@ -149,7 +149,7 @@
   }
 
   /** Use stable service colours for multi-service traces; otherwise assign
-   *  operation colours in first-seen order from the Iris-first palette. */
+   *  operation colours in first-seen order from the shared span palette. */
   function buildColorMap(
     spans: SpanNode[],
     keyFn: (s: SpanData) => string | null,

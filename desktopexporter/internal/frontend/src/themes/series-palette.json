@@ -1,0 +1,31 @@
+{
+  "series": {
+    "cornflower": "#829eeb",
+    "orchid": "#d18bb7",
+    "mint": "#7bd6b6",
+    "golden": "#e3940b",
+    "sky": "#5ea3d4",
+    "peony": "#f894d8",
+    "leaf": "#618c32",
+    "lemon": "#eec307",
+    "plum": "#88679d",
+    "cyan": "#3ec7e8",
+    "raspberry": "#ce37a6",
+    "sage": "#6fa59c",
+    "indigo": "#526ccb",
+    "teal": "#028e7f",
+    "violet": "#b479cc",
+    "steel": "#4191b1",
+    "mauve": "#b560a0",
+    "emerald": "#008b57",
+    "lilac": "#d3a1ff",
+    "azure": "#4ab8ff",
+    "chartreuse": "#aece34",
+    "periwinkle": "#aaa4ff"
+  },
+  "metricOnly": ["orchid", "peony", "raspberry", "mauve"],
+  "traceOnly": {
+    "lavender": "#bd91da",
+    "bluebell": "#99b2f5"
+  }
+}

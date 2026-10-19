@@ -1,8 +1,9 @@
 import { traceSpanPalette } from './chart-palette'
+import { TRACE_SERIES } from '@/themes'
 
 /** Stable service colours shared by trace summaries and multi-service waterfalls. */
 export function traceServiceColor(serviceName: string, theme: string): string {
-  const palette = [...new Set(traceSpanPalette(24, theme))]
+  const palette = traceSpanPalette(TRACE_SERIES.length, theme)
   let hash = 2166136261
   for (let i = 0; i < serviceName.length; i++) {
     hash = Math.imul(hash ^ serviceName.charCodeAt(i), 16777619)

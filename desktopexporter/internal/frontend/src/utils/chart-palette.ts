@@ -1,8 +1,7 @@
-// Single source of truth for chart colors. Two flavours live here:
+// Colour allocation from the shared theme definitions.
 //
-//   - `categoricalPalette()` -- series-identity colours for line charts,
-//     histogram heatmap legends, and trace waterfall bars. Uses the approved
-//     five-family static table, rotated so the caller's requested family leads.
+//   - `metricSeriesPalette()` -- one type-independent sequence for plotted series.
+//   - `traceSpanPalette()` -- operation/service identities, without error-like pinks.
 //
 //   - `heatmapSwatches()` -- per-theme count ramp, interpolated in HCL.
 //
@@ -10,21 +9,7 @@
 // theme token for its love endpoint; the categorical palette is separate.
 
 import { interpolateHcl } from 'd3-interpolate'
-import chartPalettes from './chart-palettes.json'
-import chartAccents from '@/themes/chart-accents.json'
-
-const EXTRA_ACCENTS = new Map(Object.entries(chartAccents))
-
-function extraAccents(theme: string) {
-  return EXTRA_ACCENTS.get(theme) ?? chartAccents['rose-pine-moon']
-}
-
-const DEFAULT_HEATMAP_ENDPOINTS = ['#2a273f', '#eb6f92'] as const
-const HEATMAP_ENDPOINTS = new Map<string, readonly [string, string]>([
-  ['rose-pine', ['#1f1d2e', '#eb6f92']],
-  ['rose-pine-moon', DEFAULT_HEATMAP_ENDPOINTS],
-  ['rose-pine-dawn', ['#faf4ed', '#b4637a']],
-])
+import { getTheme, METRIC_SERIES, TRACE_SERIES } from '@/themes'
 
 /**
  * Sample the HCL ramp at 1/steps through 1, excluding the cold endpoint.
@@ -36,7 +21,10 @@ export function heatmapSwatches(steps: number, theme: string = ''): string[] {
   if (!Number.isFinite(safeSteps) || safeSteps >= 2 ** 32) {
     throw new RangeError('steps must produce a valid array length')
   }
-  const [start, end] = HEATMAP_ENDPOINTS.get(theme) ?? DEFAULT_HEATMAP_ENDPOINTS
+  const definition = getTheme(theme)
+  const { colors } = definition
+  const start = definition.scheme === 'light' ? colors.canvas : colors.panel
+  const end = colors.error
   if (safeSteps === 1) return [end]
   const interpolator = interpolateHcl(start, end)
   const out: string[] = []
@@ -46,111 +34,32 @@ export function heatmapSwatches(steps: number, theme: string = ''): string[] {
   return out
 }
 
-// ── Categorical series palette ──
-//
-// Fixed static palette interleaving five colour families at five levels. The
-// family order rotates to put `start` first; the level order deliberately
-// spreads the first few series across family and lightness.
-//
-// Callers pass the *cap* (MAX_VISIBLE_TIMESERIES), never the current
-// series count. That is the load-bearing part: a count-aware palette
-// would shift every series's colour whenever the user toggled visibility
-// on a metric with a different number of timeseries -- a series's colour
-// shouldn't depend on how many neighbours it has. Passing a constant
-// means "the 4th visible timeseries" always gets the same hue, no matter
-// the metric.
-//
-// The scalar cap is independent of the finite table size. It keeps dense line
-// charts readable without changing their selection policy.
-//
-export type CategoricalStem = 'pine' | 'foam' | 'gold' | 'rose' | 'iris'
-
-// Families rotate in this order. Each level is emitted across all families
-// before moving to the next level.
-const FAMILY_ORDER: readonly CategoricalStem[] = [
-  'pine',
-  'foam',
-  'gold',
-  'rose',
-  'iris',
-] as const
-
-const DEFAULT_CATEGORICAL_PALETTE = chartPalettes['rose-pine-moon']
-const PALETTES_BY_THEME = new Map(Object.entries(chartPalettes))
-const LEVEL_ORDER = [2, 0, 4, 1, 3] as const
-
-export const CHART_PALETTES = chartPalettes
-
-/**
- * Categorical chart palette of length `count`. The 25 approved colours are
- * emitted as family/level interleaves and repeat deterministically past that
- * finite pool. Unknown / empty `theme` falls back to moon. `count <= 0`
- * returns `[]`.
- */
-export function categoricalPalette(
-  count: number,
-  start: CategoricalStem,
-  theme: string = ''
-): string[] {
+/** Stable prefixes: visibility and theme changes never shuffle colour identities. */
+function repeatPalette(count: number, pool: readonly string[]): string[] {
   const safeCount = Math.max(0, Math.floor(count))
   if (!Number.isFinite(safeCount) || safeCount >= 2 ** 32) {
     throw new RangeError('count must produce a valid array length')
   }
   if (safeCount === 0) return []
 
-  const palette = PALETTES_BY_THEME.get(theme) ?? DEFAULT_CATEGORICAL_PALETTE
-  const startIdx = FAMILY_ORDER.indexOf(start)
-  const rotated =
-    startIdx >= 0
-      ? [...FAMILY_ORDER.slice(startIdx), ...FAMILY_ORDER.slice(0, startIdx)]
-      : [...FAMILY_ORDER]
-  const approvedPool = LEVEL_ORDER.flatMap(level =>
-    rotated.map(family => palette[family][level]!)
-  )
-
   const out: string[] = []
   for (let i = 0; i < safeCount; i++) {
-    out.push(approvedPool[i % approvedPool.length]!)
+    out.push(pool[i % pool.length]!)
   }
   return out
 }
 
-/** Keep orange tones out of trace identities so papaya remains an internal-error cue. */
-export function traceSpanPalette(count: number, theme: string = ''): string[] {
-  const requested = categoricalPalette(count, 'iris', theme)
-  if (requested.length === 0) return []
-  const palette = PALETTES_BY_THEME.get(theme) ?? DEFAULT_CATEGORICAL_PALETTE
-  const gold = new Set<string>(palette.gold)
-  const pool = categoricalPalette(25, 'iris', theme).filter(
-    color => !gold.has(color)
-  )
-  // Introduce new hues before repeating the original families at other levels.
-  const { green, blue, pink, teal } = extraAccents(theme)
-  pool.splice(4, 0, green, blue, pink, teal)
-  return requested.map((_, index) => pool[index % pool.length]!)
+/** Keep error-like pinks out of trace identities; exact papaya stays reserved. */
+export function traceSpanPalette(count: number, _theme: string = ''): string[] {
+  return repeatPalette(count, TRACE_SERIES)
 }
 
-/** Reserve iris for metric annotations, retaining 25 stable slots for the 22-series cap. */
+/** One shared 22-colour sequence; no metric-type colour coding. */
 export function metricSeriesPalette(
   count: number,
-  start: CategoricalStem,
-  theme: string = ''
+  _theme: string = ''
 ): string[] {
-  const requested = categoricalPalette(count, start, theme)
-  if (requested.length === 0) return []
-  const palette = PALETTES_BY_THEME.get(theme) ?? DEFAULT_CATEGORICAL_PALETTE
-  const families = FAMILY_ORDER.filter(family => family !== 'iris')
-  const startIdx = Math.max(
-    0,
-    families.indexOf(start === 'iris' ? 'pine' : start)
-  )
-  const rotated = [...families.slice(startIdx), ...families.slice(0, startIdx)]
-  const pool = LEVEL_ORDER.flatMap(level =>
-    rotated.map(family => palette[family][level]!)
-  )
-  // Measured Madoromi accents add hue variety instead of more tonal steps.
-  pool.splice(4, 0, ...Object.values(extraAccents(theme)))
-  return requested.map((_, index) => pool[index % pool.length]!)
+  return repeatPalette(count, METRIC_SERIES)
 }
 
 /** Neutral swatch / unchecked-checkbox colour. */
@@ -173,7 +82,7 @@ export const AGG_COLOR_ALL = 'var(--color-secondary)'
  *  background swatch. Accepts d3's `rgb(r, g, b)` (from interpolateHcl) or
  *  `#rrggbb`. Returns one of two CSS variables -- `--color-on-light` for
  *  dark glyphs on bright swatches, `--color-on-dark` for light glyphs on
- *  dark swatches -- both defined per theme in app.css. Using vars (not
+ *  dark swatches -- both defined by the shared theme tokens. Using vars (not
  *  literal hex) means a theme switch reroutes glyphs without touching
  *  this function. Uses Rec. 709 luminance: WCAG-style without gamma, fine
  *  for "which of two glyphs reads better here". Unparseable input falls

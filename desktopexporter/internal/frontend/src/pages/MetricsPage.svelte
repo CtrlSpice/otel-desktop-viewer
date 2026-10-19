@@ -56,10 +56,7 @@
       : metricSummaryKey(a).localeCompare(metricSummaryKey(b))
   }
 
-  export {
-    metricTypeBadgeClass,
-    metricTypeLabel,
-  } from '@/components/metrics/utils/metric-type'
+  export { metricTypeLabel } from '@/components/metrics/utils/metric-type'
 </script>
 
 <script lang="ts">

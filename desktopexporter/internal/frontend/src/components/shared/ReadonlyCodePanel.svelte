@@ -6,11 +6,11 @@
 
   // Share the CodeMirror theme across component instances.
   const shellColors = {
-    subtle: `var(--readonly-code-subtle, ${c.subtle})`,
-    gold: `var(--readonly-code-gold, ${c.gold})`,
-    rose: `var(--readonly-code-rose, ${c.rose})`,
-    foam: `var(--readonly-code-foam, ${c.foam})`,
-    iris: `var(--readonly-code-iris, ${c.iris})`,
+    subtle: 'var(--readonly-code-subtle)',
+    gold: 'var(--readonly-code-gold)',
+    rose: 'var(--readonly-code-rose)',
+    foam: 'var(--readonly-code-foam)',
+    iris: 'var(--readonly-code-iris)',
   }
 
   const shellHighlightStyle = HighlightStyle.define([
@@ -183,16 +183,6 @@
 
   .readonly-code-panel {
     @apply relative w-full overflow-hidden rounded-xl border border-base-300 bg-base-100;
-  }
-
-  /* Rosé Pine Dawn's display accents are too light for 13px code on Base.
-     These stay in the same hue families while clearing AA for small text. */
-  :global(html[data-theme='rose-pine-dawn']) .readonly-code-panel {
-    --readonly-code-subtle: var(--color-base-content);
-    --readonly-code-gold: #6d4f00;
-    --readonly-code-rose: #8f435b;
-    --readonly-code-foam: var(--color-secondary);
-    --readonly-code-iris: #6e577f;
   }
 
   .readonly-code-panel--embedded {

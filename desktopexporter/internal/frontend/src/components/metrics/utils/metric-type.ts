@@ -1,86 +1,5 @@
 import type { MetricType } from '@/types/api-types'
-import { categoricalPalette, type CategoricalStem } from '@/utils/chart-palette'
-import { themeSignal } from '@/state/theme.svelte'
-
-// Single source of truth: metric type → categorical palette stem. Drives both
-// the badge tone (via STEM_TO_BADGE) and the chart series colour (via
-// categoricalPalette). Adding a new metric type? Add it here and everything
-// downstream picks it up.
-type ConfiguredMetricType = Exclude<MetricType, 'Empty'>
-
-const METRIC_TYPE_STEM = {
-  Gauge: 'foam',
-  Sum: 'pine',
-  Histogram: 'rose',
-  ExponentialHistogram: 'gold',
-} satisfies Record<ConfiguredMetricType, CategoricalStem>
-
-type ConfiguredMetricTypeStem = (typeof METRIC_TYPE_STEM)[ConfiguredMetricType]
-
-function isConfiguredMetricType(
-  metricType: string
-): metricType is ConfiguredMetricType {
-  switch (metricType) {
-    case 'Gauge':
-    case 'Sum':
-    case 'Histogram':
-    case 'ExponentialHistogram':
-      return true
-    default:
-      return false
-  }
-}
-
-function configuredMetricTypeStem(
-  metricType: string
-): ConfiguredMetricTypeStem | undefined {
-  return isConfiguredMetricType(metricType)
-    ? METRIC_TYPE_STEM[metricType]
-    : undefined
-}
-
-const STEM_TO_BADGE: Record<ConfiguredMetricTypeStem, string> = {
-  pine: 'badge-secondary',
-  foam: 'badge-info',
-  gold: 'badge-warning',
-  rose: 'badge-rose',
-}
-
 const METRIC_TYPE_BADGE_BASE = 'badge badge-xs badge-soft'
-
-/** Categorical palette stem for a metric type. Always returns a stem so
- *  callers building a palette array (legend + chart) get aligned indices
- *  even when the metric type is briefly `'Empty'` mid-load -- otherwise
- *  the chart and legend would have to guard `null` independently and
- *  risk picking different fallbacks. `'foam'` is an arbitrary cool-end
- *  pick for the unknown case; once the real metric type arrives the
- *  palette settles to that type's stem. Badge tone uses the raw lookup
- *  (without this fallback) so unknown types still read as neutral. */
-export function metricTypeStem(
-  metricType: MetricType | string
-): CategoricalStem {
-  return configuredMetricTypeStem(metricType) ?? 'foam'
-}
-
-export function metricTypeBadgeTone(metricType: MetricType | string): string {
-  const stem = configuredMetricTypeStem(metricType)
-  return stem ? STEM_TO_BADGE[stem] : 'badge-neutral'
-}
-
-export function metricTypeBadgeClass(metricType: MetricType | string): string {
-  return `${METRIC_TYPE_BADGE_BASE} ${metricTypeBadgeTone(metricType)}`
-}
-
-/** Single-colour chart fill for a metric type (e.g. histogram bars). Pulls
- *  slot 0 of the categorical palette starting at the metric type's stem,
- *  so it stays in lockstep with the series palette used by line charts.
- *  Unknown metric types get neutral (no palette fallback) -- a single fill
- *  shouldn't lie about which type is rendering. */
-export function metricTypeSeriesColor(metricType: MetricType | string): string {
-  const stem = configuredMetricTypeStem(metricType)
-  if (!stem) return 'var(--color-neutral)'
-  return categoricalPalette(1, stem, themeSignal.value)[0]
-}
 
 export function metricTypeLabel(metricType: string): string {
   if (metricType === 'ExponentialHistogram') return 'ExpHist'
@@ -148,6 +67,6 @@ export function metricTypeCardBadge(
       : titleParts.join(' · '),
     className: temporality?.isUnspecified
       ? `${METRIC_TYPE_BADGE_BASE} badge-error`
-      : metricTypeBadgeClass(metricType),
+      : `${METRIC_TYPE_BADGE_BASE} badge-neutral`,
   }
 }

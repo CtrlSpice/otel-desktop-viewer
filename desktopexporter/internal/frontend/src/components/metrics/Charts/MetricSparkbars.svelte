@@ -7,7 +7,7 @@
     buckets: number[]
     height?: number
     width?: number
-    /** Bar fill — use `metricTypeSeriesColor()` to match type badge */
+    /** Bar fill matches its plotted series. */
     seriesColor?: string
   }
 

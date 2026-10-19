@@ -197,7 +197,7 @@ afterEach(() => {
 
 describe('MetricTimeSeriesChart keyboard model', () => {
   it.each(['raw', 'rate'] as const)(
-    'uses the selected series colour for min/max dots in %s, but the axis tone for derived annotations',
+    'uses the selected series colour for min/max dots in %s, but the primary tone for derived annotations',
     async aggregationView => {
       const first = gaugeDatapoint('first', BASE_NS, 2)
       const second = gaugeDatapoint('second', BASE_NS + 1_000_000_000n, 4)
@@ -256,7 +256,7 @@ describe('MetricTimeSeriesChart keyboard model', () => {
         if (aggregationView === 'rate') {
           expect(derived?.querySelector('.series-stat-dot')).toHaveAttribute(
             'fill',
-            'var(--color-subtle)'
+            'var(--color-primary)'
           )
           expect(document.querySelector('.series-average-marker')).toBeNull()
         } else {
@@ -445,7 +445,7 @@ describe('MetricTimeSeriesChart keyboard model', () => {
           '.metric-time-series-chart__selection-legend .chart-selection-legend__row:last-child .chart-selection-legend__dot'
         )
         ?.getAttribute('style')
-    ).toContain('--color: var(--color-subtle)')
+    ).toContain('--color: var(--color-primary)')
   })
 
   it('activates exact Rate buckets with keyboard without fabricating raw identities', async () => {

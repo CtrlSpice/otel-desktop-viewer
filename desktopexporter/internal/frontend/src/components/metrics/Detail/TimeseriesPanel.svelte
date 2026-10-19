@@ -110,10 +110,15 @@
   {#each rows as ts (ts.key)}
     {@const checked = visibleKeys.has(ts.key)}
     {@const checkboxDisabled = !checked && capReached}
-    {@const seriesColor = ctx.timeseriesColorByKey.get(ts.key)}
+    {@const seriesColor = ctx.isHistogramKind
+      ? undefined
+      : ctx.timeseriesColorByKey.get(ts.key)}
     {@const color = checked && seriesColor ? seriesColor : chartNeutral()}
-    {@const fg =
-      checked && seriesColor ? readableTextColor(seriesColor) : chartNeutral()}
+    {@const fg = checked
+      ? seriesColor
+        ? readableTextColor(seriesColor)
+        : 'var(--color-neutral-content)'
+      : chartNeutral()}
     {@const hasAttrs = dedupeAttributes(ts.attributes).length > 0}
     {@const rowHeaderAttrs = headerAttrs(ts.attributes)}
     {@const tooltip = attrsTooltip(ts.attributes)}

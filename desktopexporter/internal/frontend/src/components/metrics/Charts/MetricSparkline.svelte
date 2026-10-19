@@ -8,7 +8,7 @@
     points: SparklinePoint[]
     height?: number
     width?: number
-    /** Spark stroke/fill — use `metricTypeSeriesColor()` to match type badge */
+    /** Spark stroke/fill matches its plotted series. */
     seriesColor?: string
   }
 

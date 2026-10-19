@@ -686,7 +686,7 @@ describe('metric view context visibility seeding', () => {
     }
   })
 
-  it('keeps visible key slots while changing to the current theme palette', async () => {
+  it('keeps visible key slots and colour identities across theme changes', async () => {
     const previousTheme = document.documentElement.getAttribute('data-theme')
     document.documentElement.setAttribute('data-theme', 'rose-pine')
     try {
@@ -697,11 +697,11 @@ describe('metric view context visibility seeding', () => {
       await tick()
 
       expect([...ctx.timeseriesColorByKey.keys()]).toEqual([...before.keys()])
-      expect([...ctx.timeseriesColorByKey.values()]).not.toEqual([
+      expect([...ctx.timeseriesColorByKey.values()]).toEqual([
         ...before.values(),
       ])
-      expect(ctx.timeseriesColorByKey.get('route=/a')).toBe('#2b6c85')
-      expect(ctx.timeseriesColorByKey.get('route=/b')).toBe('#559695')
+      expect(ctx.timeseriesColorByKey.get('route=/a')).toBe('#829eeb')
+      expect(ctx.timeseriesColorByKey.get('route=/b')).toBe('#d18bb7')
     } finally {
       if (previousTheme === null)
         document.documentElement.removeAttribute('data-theme')
