@@ -2,20 +2,16 @@
   import { onMount } from 'svelte'
   import { fade } from 'svelte/transition'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import {
-    FallingStarIcon,
-    Moon02Icon,
-    Sun03Icon,
-  } from '@hugeicons/core-free-icons'
+  import { Moon02Icon, Sun03Icon } from '@hugeicons/core-free-icons'
 
-  type ThemeName = 'rose-pine-dawn' | 'rose-pine-moon' | 'rose-pine'
+  type ThemeName = 'madoromi-day' | 'madoromi-night'
 
-  const CYCLE: ThemeName[] = ['rose-pine-dawn', 'rose-pine-moon', 'rose-pine']
+  const CYCLE: ThemeName[] = ['madoromi-day', 'madoromi-night']
   const VALID = new Set<string>(CYCLE)
 
   let { class: className = '' }: { class?: string } = $props()
 
-  let currentTheme = $state<ThemeName>('rose-pine-moon')
+  let currentTheme = $state<ThemeName>('madoromi-night')
 
   function setTheme(theme: ThemeName) {
     currentTheme = theme
@@ -38,21 +34,19 @@
     if (saved && VALID.has(saved)) {
       // SAFETY: VALID is initialized from the complete ThemeName literal list.
       setTheme(saved as ThemeName)
+    } else if (saved === 'rose-pine-dawn') {
+      setTheme('madoromi-day')
+    } else if (saved === 'rose-pine' || saved === 'rose-pine-moon') {
+      setTheme('madoromi-night')
     } else {
       const prefersDark = window.matchMedia(
         '(prefers-color-scheme: dark)'
       ).matches
-      setTheme(prefersDark ? 'rose-pine-moon' : 'rose-pine-dawn')
+      setTheme(prefersDark ? 'madoromi-night' : 'madoromi-day')
     }
   })
 
-  const themeName = $derived(
-    currentTheme === 'rose-pine-dawn'
-      ? 'Dawn'
-      : currentTheme === 'rose-pine-moon'
-        ? 'Moon'
-        : 'Pine'
-  )
+  const themeName = $derived(currentTheme === 'madoromi-day' ? 'Day' : 'Night')
   // aria-label states current state ("active"); the tooltip just names the
   // theme, since a hovering user already sees which one is showing.
   const label = $derived(`${themeName} theme active`)
@@ -72,23 +66,16 @@
   <span class="theme-toggle__icon">
     {#key currentTheme}
       <span class="theme-toggle__fade" transition:fade={{ duration: 300 }}>
-        {#if currentTheme === 'rose-pine-dawn'}
+        {#if currentTheme === 'madoromi-day'}
           <HugeiconsIcon
             icon={Sun03Icon}
             size="1em"
             strokeWidth={1.5}
             class="h-[17px] w-[17px] shrink-0"
           />
-        {:else if currentTheme === 'rose-pine-moon'}
-          <HugeiconsIcon
-            icon={Moon02Icon}
-            size="1em"
-            strokeWidth={1.5}
-            class="h-[17px] w-[17px] shrink-0"
-          />
         {:else}
           <HugeiconsIcon
-            icon={FallingStarIcon}
+            icon={Moon02Icon}
             size="1em"
             strokeWidth={1.5}
             class="h-[17px] w-[17px] shrink-0"

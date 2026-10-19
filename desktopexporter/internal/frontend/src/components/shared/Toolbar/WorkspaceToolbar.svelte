@@ -4,6 +4,7 @@
   import SearchBar from '../Search/SearchBar.svelte'
   import PaneHeader from '../PaneHeader.svelte'
   import ThemeToggle from '../ThemeToggle.svelte'
+  import PalettePicker from '../PalettePicker.svelte'
 
   let {
     search,
@@ -53,6 +54,7 @@
           </div>
         </div>
         <div class="workspace-toolbar__actions">
+          <PalettePicker />
           <ThemeToggle
             class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-bottom"
           />
@@ -68,11 +70,11 @@
 
   .workspace-toolbar {
     @apply grid w-full min-w-0 items-center gap-x-4 gap-y-2;
-    grid-template-columns: 3rem minmax(0, 1fr) 3rem;
+    grid-template-columns: 5.5rem minmax(0, 1fr) 5.5rem;
   }
 
   .workspace-toolbar--details {
-    grid-template-columns: 5.5rem minmax(0, 1fr) 5.5rem;
+    grid-template-columns: 8rem minmax(0, 1fr) 8rem;
   }
 
   .workspace-toolbar__leading,

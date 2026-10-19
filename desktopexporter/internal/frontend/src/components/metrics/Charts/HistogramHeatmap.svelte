@@ -141,6 +141,7 @@
       maxCount,
       distinctNonZeroCount: distinctNonZeroCounts,
       theme: themeSignal.value,
+      metricType: ctx.metricType,
     })
   )
 

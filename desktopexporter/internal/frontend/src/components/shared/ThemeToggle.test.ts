@@ -15,25 +15,25 @@ afterEach(() => {
 })
 
 describe('ThemeToggle', () => {
-  it('defaults to the dawn theme when nothing is saved and the OS prefers light', () => {
+  it('defaults to Day when nothing is saved and the OS prefers light', () => {
     render(ThemeToggle)
     expect(document.documentElement.getAttribute('data-theme')).toBe(
-      'rose-pine-dawn'
+      'madoromi-day'
     )
     expect(
-      screen.getByRole('button', { name: 'Dawn theme active' })
+      screen.getByRole('button', { name: 'Day theme active' })
     ).toBeInTheDocument()
-    expect(localStorage.getItem('theme')).toBe('rose-pine-dawn')
+    expect(localStorage.getItem('theme')).toBe('madoromi-day')
   })
 
   it('restores a previously saved theme from localStorage', () => {
-    localStorage.setItem('theme', 'rose-pine')
+    localStorage.setItem('theme', 'madoromi-night')
     render(ThemeToggle)
     expect(document.documentElement.getAttribute('data-theme')).toBe(
-      'rose-pine'
+      'madoromi-night'
     )
     expect(
-      screen.getByRole('button', { name: 'Pine theme active' })
+      screen.getByRole('button', { name: 'Night theme active' })
     ).toBeInTheDocument()
   })
 
@@ -41,23 +41,33 @@ describe('ThemeToggle', () => {
     render(ThemeToggle)
     await userEvent.click(screen.getByRole('button'))
     expect(document.documentElement.getAttribute('data-theme')).toBe(
-      'rose-pine-moon'
+      'madoromi-night'
     )
-    expect(localStorage.getItem('theme')).toBe('rose-pine-moon')
+    expect(localStorage.getItem('theme')).toBe('madoromi-night')
     expect(
-      screen.getByRole('button', { name: 'Moon theme active' })
+      screen.getByRole('button', { name: 'Night theme active' })
     ).toBeInTheDocument()
   })
 
-  it('wraps back to the dawn theme after cycling through all themes', async () => {
+  it('wraps back to Day after cycling through both themes', async () => {
     render(ThemeToggle)
     const button = screen.getByRole('button')
     await userEvent.click(button)
     await userEvent.click(button)
-    await userEvent.click(button)
     expect(document.documentElement.getAttribute('data-theme')).toBe(
-      'rose-pine-dawn'
+      'madoromi-day'
     )
-    expect(localStorage.getItem('theme')).toBe('rose-pine-dawn')
+    expect(localStorage.getItem('theme')).toBe('madoromi-day')
+  })
+
+  it.each([
+    ['rose-pine-dawn', 'madoromi-day'],
+    ['rose-pine-moon', 'madoromi-night'],
+    ['rose-pine', 'madoromi-night'],
+  ])('preserves the light/dark preference when migrating %s', (old, next) => {
+    localStorage.setItem('theme', old)
+    render(ThemeToggle)
+    expect(document.documentElement.getAttribute('data-theme')).toBe(next)
+    expect(localStorage.getItem('theme')).toBe(next)
   })
 })

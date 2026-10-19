@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import chartSeries from '@/themes/chart-series.json'
 import {
   CHART_PALETTES,
   categoricalPalette,
@@ -143,6 +144,46 @@ describe('metricSeriesPalette', () => {
     expect(metricSeriesPalette(0, 'pine')).toEqual([])
     expect(() => metricSeriesPalette(NaN, 'pine')).toThrow(RangeError)
   })
+})
+
+describe('Madoromi graph roles', () => {
+  it.each(Object.keys(chartSeries))(
+    'keeps 24 stable published non-error colours for line charts in %s',
+    theme => {
+      const pool = metricSeriesPalette(24, 'pine', theme)
+      expect(pool).toHaveLength(24)
+      expect(new Set(pool).size).toBe(24)
+      for (const reserved of ['#ff8000', '#bb355a', '#ff8799']) {
+        expect(pool).not.toContain(reserved)
+      }
+      expect(metricSeriesPalette(3, 'pine', theme)).toEqual(pool.slice(0, 3))
+      expect(metricSeriesPalette(27, 'pine', theme).slice(24)).toEqual(
+        pool.slice(0, 3)
+      )
+      expect(new Set(traceSpanPalette(24, theme))).toEqual(new Set(pool))
+      expect(new Set(categoricalPalette(24, 'rose', theme))).toEqual(
+        new Set(pool)
+      )
+      const slots = new Map(Object.entries(chartSeries)).get(theme)!
+      expect(pool.slice(0, 10)).toEqual(
+        Object.entries(slots)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([, color]) => color)
+      )
+      expect(pool[0]).toBe(slots['01'])
+      expect(metricSeriesPalette(1, 'gold', theme)).toEqual([slots['03']])
+      expect(metricSeriesPalette(1, 'foam', theme)).toEqual([slots['07']])
+      expect(metricSeriesPalette(1, 'rose', theme)).toEqual([slots['04']])
+    }
+  )
+
+  it.each(Object.entries(chartSeries))(
+    'themes histogram density to the selected season in %s',
+    (theme, slots) => {
+      expect(heatmapSwatches(1, theme, 'gold')).toEqual([slots['03']])
+      expect(heatmapSwatches(1, theme, 'rose')).toEqual([slots['04']])
+    }
+  )
 })
 
 describe('readableTextColor', () => {

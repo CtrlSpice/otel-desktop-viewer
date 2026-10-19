@@ -11,12 +11,44 @@
 
 import { interpolateHcl } from 'd3-interpolate'
 import chartPalettes from './chart-palettes.json'
+import chartSeries from '@/themes/chart-series.json'
+
+// Numeric-looking object keys enumerate before zero-prefixed keys in JS.
+// Sort slot names explicitly so chart.series.01 always remains the first slot.
+const SEMANTIC_ACCENTS = new Map(
+  Object.entries(chartSeries).map(([theme, slots]) => [
+    theme,
+    Object.entries(slots)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, color]) => color),
+  ])
+)
+
+// Line charts can use other seasons' published accents to fill 24 distinct slots.
+// The selected season always leads, so metric-type fills keep their own colour.
+const SEMANTIC_SERIES = new Map(
+  [...SEMANTIC_ACCENTS].map(([theme, own]) => {
+    const mode = theme.endsWith('-day') ? '-day' : '-night'
+    const others = [...SEMANTIC_ACCENTS]
+      .filter(([name]) => name !== theme && name.endsWith(mode))
+      .flatMap(([, colors]) => colors)
+    return [theme, [...new Set([...own, ...others])].slice(0, 24)]
+  })
+)
 
 const DEFAULT_HEATMAP_ENDPOINTS = ['#2a273f', '#eb6f92'] as const
 const HEATMAP_ENDPOINTS = new Map<string, readonly [string, string]>([
   ['rose-pine', ['#1f1d2e', '#eb6f92']],
   ['rose-pine-moon', DEFAULT_HEATMAP_ENDPOINTS],
   ['rose-pine-dawn', ['#faf4ed', '#907aa9']],
+  ['madoromi-winter-day', ['#f0f1f8', '#2678af']],
+  ['madoromi-winter-night', ['#0f111b', '#78d5fc']],
+  ['madoromi-spring-day', ['#f6eff8', '#008bae']],
+  ['madoromi-spring-night', ['#160f18', '#88d9eb']],
+  ['madoromi-summer-day', ['#e9f4f8', '#008bae']],
+  ['madoromi-summer-night', ['#091317', '#5cd7f5']],
+  ['madoromi-autumn-day', ['#f8f0e9', '#178d9d']],
+  ['madoromi-autumn-night', ['#181008', '#5ac6f1']],
 ])
 
 /**
@@ -24,12 +56,21 @@ const HEATMAP_ENDPOINTS = new Map<string, readonly [string, string]>([
  * A single step uses the hot endpoint. Unknown themes
  * use the Moon ramp.
  */
-export function heatmapSwatches(steps: number, theme: string = ''): string[] {
+export function heatmapSwatches(
+  steps: number,
+  theme: string = '',
+  stem?: CategoricalStem
+): string[] {
   const safeSteps = Math.max(1, Math.floor(steps))
   if (!Number.isFinite(safeSteps) || safeSteps >= 2 ** 32) {
     throw new RangeError('steps must produce a valid array length')
   }
-  const [start, end] = HEATMAP_ENDPOINTS.get(theme) ?? DEFAULT_HEATMAP_ENDPOINTS
+  const [start, defaultEnd] =
+    HEATMAP_ENDPOINTS.get(theme) ?? DEFAULT_HEATMAP_ENDPOINTS
+  const end =
+    stem && SEMANTIC_ACCENTS.has(theme)
+      ? categoricalPalette(1, stem, theme)[0]!
+      : defaultEnd
   if (safeSteps === 1) return [end]
   const interpolator = interpolateHcl(start, end)
   const out: string[] = []
@@ -91,6 +132,17 @@ export function categoricalPalette(
   }
   if (safeCount === 0) return []
 
+  const series = SEMANTIC_SERIES.get(theme)
+  if (series) {
+    // Preserve the metric-type colour families through the legacy stem adapter:
+    // Sum blue, Gauge sky, Histogram peony, ExponentialHistogram gold.
+    const offset = { pine: 0, foam: 6, gold: 2, rose: 3, iris: 5 }[start]
+    return Array.from(
+      { length: safeCount },
+      (_, index) => series[(index + offset) % series.length]!
+    )
+  }
+
   const palette = PALETTES_BY_THEME.get(theme) ?? DEFAULT_CATEGORICAL_PALETTE
   const startIdx = FAMILY_ORDER.indexOf(start)
   const rotated =
@@ -111,6 +163,7 @@ export function categoricalPalette(
 /** Keep orange tones out of trace identities so papaya remains an internal-error cue. */
 export function traceSpanPalette(count: number, theme: string = ''): string[] {
   const requested = categoricalPalette(count, 'iris', theme)
+  if (SEMANTIC_SERIES.has(theme)) return requested
   if (requested.length === 0) return []
   const palette = PALETTES_BY_THEME.get(theme) ?? DEFAULT_CATEGORICAL_PALETTE
   const gold = new Set<string>(palette.gold)
@@ -127,6 +180,7 @@ export function metricSeriesPalette(
   theme: string = ''
 ): string[] {
   const requested = categoricalPalette(count, start, theme)
+  if (SEMANTIC_SERIES.has(theme)) return requested
   if (requested.length === 0) return []
   const palette = PALETTES_BY_THEME.get(theme) ?? DEFAULT_CATEGORICAL_PALETTE
   const families = FAMILY_ORDER.filter(family => family !== 'iris')

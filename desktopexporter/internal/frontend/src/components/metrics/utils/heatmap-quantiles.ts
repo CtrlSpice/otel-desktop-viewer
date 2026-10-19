@@ -11,7 +11,7 @@ export function histogramQuantileColor(key: string): string {
     ? 'var(--color-success)'
     : key === '0.95'
       ? 'var(--color-warning)'
-      : 'var(--color-error)'
+      : 'var(--color-primary)'
 }
 
 /** Project the store's merged-distribution quantiles onto the heatmap's

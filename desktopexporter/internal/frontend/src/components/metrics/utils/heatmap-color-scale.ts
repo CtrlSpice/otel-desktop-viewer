@@ -1,4 +1,5 @@
 import { heatmapSwatches } from '@/utils/chart-palette'
+import { metricTypeStem } from './metric-type'
 import type { HistogramChartDataPoint } from './histogram-aggregation'
 
 const MIN_STEPS = 1
@@ -65,6 +66,7 @@ export function computeHeatmapColorScale(opts: {
   maxCount: number
   distinctNonZeroCount: number
   theme?: string
+  metricType?: string
   emptySwatch?: string
 }): HeatmapColorScale {
   const emptySwatch = opts.emptySwatch ?? 'var(--color-base-200)'
@@ -84,7 +86,11 @@ export function computeHeatmapColorScale(opts: {
   )
   const thresholds = heatmapCountThresholds(opts.maxCount, targetSteps)
   const swatchSteps = thresholds.length
-  const swatches = heatmapSwatches(swatchSteps, opts.theme)
+  const swatches = heatmapSwatches(
+    swatchSteps,
+    opts.theme,
+    opts.metricType ? metricTypeStem(opts.metricType) : undefined
+  )
   const range = [emptySwatch, ...swatches]
 
   const legendEntries: HeatmapLegendEntry[] = []
@@ -117,5 +123,6 @@ export function computeHistogramBarColorScale(
     maxCount: counts.reduce((max, count) => Math.max(max, count), 0),
     distinctNonZeroCount: new Set(counts.filter(count => count > 0)).size,
     theme,
+    metricType: datapoint.metricType,
   })
 }
