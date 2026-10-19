@@ -213,12 +213,9 @@
     padding-top: var(--layout-gap);
   }
 
-  /* Page-level footer strip. Stays anchored at the bottom; never
-     contributes to the resizable region's height budget. The
-     SignalFooter (or whatever the page slots in) brings its own
-     border-top, which is now the seam between content and footer. */
+  /* Keep the footer surface continuous across custom page content. */
   .page-layout__footer {
-    @apply shrink-0 min-w-0;
+    @apply shrink-0 min-w-0 bg-base-100;
   }
 
   .page-layout__main-chrome {

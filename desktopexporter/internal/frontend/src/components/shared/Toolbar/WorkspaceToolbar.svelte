@@ -25,7 +25,7 @@
 </script>
 
 <header
-  class="shrink-0 bg-base-100 text-sm"
+  class="relative z-30 shrink-0 bg-base-100 text-sm"
   style="--pane-header-bg: var(--color-base-100)"
   aria-label="Workspace navigation and search"
 >
@@ -54,7 +54,7 @@
         </div>
         <div class="workspace-toolbar__actions">
           <ThemeToggle
-            class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-bottom"
+            class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-left"
           />
           {@render navigationTrailing?.()}
         </div>

@@ -1083,16 +1083,15 @@ button:focus-visible:not(.btn) {
    * footers center their contents so smaller controls (btn-xs) don't
    * collapse the strip.
    */
-  --app-footer-height: 2.5rem;
+  --app-footer-height: 2.75rem;
 
   /*
-   * Pane content header height (for .pane-header). Used by the
-   * metric + trace detail tab strips and any other pane-level
-   * header band. Distinct from --table-header-h (2.25rem) which
-   * sizes table column header rows; pane headers are taller so
-   * they read as a real title bar rather than a table thead.
+   * Shared pane heading rhythm. Additional rows grow the header;
+   * the first row stays aligned with drawer and detail headings.
    */
-  --pane-header-h: 3rem;
+  --pane-header-h: 2.5rem;
+  --pane-inline-inset: 1rem;
+  --pane-header-row-h: 1.5rem;
 }
 
 /* Shared numbered hub: interactive in the waterfall, static for log severity. */

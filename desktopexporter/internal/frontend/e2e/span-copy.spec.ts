@@ -527,7 +527,7 @@ test('Copy span sits opposite the span icon and copies only the selected span wi
     Math.abs(iconBox.y + iconBox.height / 2 - copyBox.y - copyBox.height / 2)
   ).toBeLessThan(1)
   expect(headerBox.x + headerBox.width - copyBox.x - copyBox.width).toBeCloseTo(
-    12,
+    16,
     0
   )
   const valueBox = (await detail

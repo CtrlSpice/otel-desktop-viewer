@@ -25,7 +25,9 @@
 
 <button
   type="button"
-  class="panel-toggle btn btn-circle btn-ghost btn-sm shrink-0 text-sm tooltip tooltip-bottom"
+  class="panel-toggle btn btn-circle btn-ghost btn-sm shrink-0 text-sm tooltip"
+  class:tooltip-right={side === 'left'}
+  class:tooltip-left={side === 'right'}
   aria-label={label}
   data-tip={label}
   aria-expanded={open}

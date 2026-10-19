@@ -613,7 +613,7 @@
                     {#if listScrolled || scrollTopFocused}
                       <button
                         type="button"
-                        class="navigator-scroll-top btn btn-circle btn-primary"
+                        class="navigator-scroll-top btn btn-circle btn-soft btn-primary"
                         aria-label="Scroll to top"
                         title="Scroll to top"
                         onclick={scrollToTop}
@@ -622,8 +622,8 @@
                       >
                         <HugeiconsIcon
                           icon={ArrowUp02Icon}
-                          size={16}
-                          strokeWidth={1.5}
+                          size={20}
+                          strokeWidth={1.75}
                           aria-hidden="true"
                         />
                       </button>
@@ -702,7 +702,8 @@
 
   /* ── Body (list) ── */
   .signal-drawer__controls {
-    @apply mx-3 mt-3 flex min-h-10 min-w-0 shrink-0 items-center rounded-xl border border-base-300 bg-base-200;
+    @apply mx-3 mt-3 flex min-w-0 shrink-0 items-center rounded-xl border border-base-300 bg-base-200 px-1;
+    min-height: var(--pane-header-h);
   }
 
   .signal-drawer__body {
@@ -710,7 +711,7 @@
   }
 
   .navigator-scroll-top {
-    @apply absolute bottom-3 right-6 z-10 size-8 p-0 shadow-lg shadow-primary/25;
+    @apply absolute bottom-5 right-6 z-10 size-9 p-0;
   }
 
   .signal-drawer__item {
@@ -749,16 +750,9 @@
     @apply pb-2;
   }
 
-  /* ── Footer ──
-     Pinned to --app-footer-height (defined in app.css) so the
-     drawer's bottom strip aligns pixel-for-pixel with the page
-     footer in PageLayout. Vertical padding is replaced by
-     min-height + items-center so the strip doesn't collapse around
-     small controls (btn-xs) or grow with larger ones (btn-sm).
-     The single direct child stretches to fill the row so consumers
-     don't have to remember to add w-full themselves. */
+  /* Align with the page footer, including its compact padding. */
   .signal-drawer__footer {
-    @apply flex shrink-0 items-center px-3;
+    @apply flex shrink-0 items-center bg-base-100 px-4 py-1.5;
     min-height: var(--app-footer-height);
   }
 

@@ -17,7 +17,7 @@
 {#if visible || focused}
   <button
     type="button"
-    class="scroll-to-top btn btn-circle btn-primary"
+    class="scroll-to-top btn btn-circle btn-soft btn-primary"
     aria-label={label}
     title="Scroll to top"
     {onclick}
@@ -26,8 +26,8 @@
   >
     <HugeiconsIcon
       icon={ArrowUp02Icon}
-      size={16}
-      strokeWidth={1.5}
+      size={20}
+      strokeWidth={1.75}
       aria-hidden="true"
     />
   </button>
@@ -36,6 +36,6 @@
 <style lang="postcss">
   @reference "../../app.css";
   .scroll-to-top {
-    @apply absolute bottom-3 right-6 z-30 size-8 p-0 shadow-lg shadow-primary/25;
+    @apply absolute bottom-5 right-6 z-30 size-9 p-0;
   }
 </style>

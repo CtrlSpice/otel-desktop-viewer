@@ -1194,6 +1194,122 @@ test.describe('home page accessibility', () => {
     }
   })
 
+  test('keeps workspace tooltips inward, visible and unclipped at desktop and mobile widths', async ({
+    page,
+  }) => {
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.goto('/traces')
+      const header = page.getByRole('toolbar', {
+        name: 'Workspace controls',
+      })
+      const editor = header.locator('.cm-content[contenteditable="true"]')
+      const draft = `service.name = "${'long-service-name-'.repeat(30)}"`
+      await editor.fill(draft)
+      const controls = [
+        { name: /^(Open|Collapse) sidebar$/, direction: 'right' },
+        { name: /^(Open|Collapse) details$/, direction: 'left' },
+        { name: /theme active$/, direction: 'left' },
+        { name: /^Refresh$/, direction: 'bottom' },
+        { name: /^Clear search$/, direction: 'bottom' },
+        { name: /^Search query help$/, direction: 'bottom' },
+        { name: /^Change time range/, direction: 'bottom' },
+      ]
+      for (const { name, direction } of controls) {
+        const button = header.getByRole('button', { name })
+        await expect(button).toHaveAttribute('data-tip', /\S/)
+        await button.hover()
+        await expect
+          .poll(() =>
+            button.evaluate(
+              element => getComputedStyle(element, '::before').opacity
+            )
+          )
+          .toBe('1')
+        const bounds = await button.evaluate(element => {
+          const trigger = element.getBoundingClientRect()
+          const host = getComputedStyle(element)
+          const style = getComputedStyle(element, '::before')
+          const transform = new DOMMatrixReadOnly(style.transform)
+          const width = parseFloat(style.width)
+          const height = parseFloat(style.height)
+          const left =
+            trigger.left +
+            parseFloat(host.borderLeftWidth) +
+            (style.left === 'auto'
+              ? element.clientWidth - parseFloat(style.right) - width
+              : parseFloat(style.left)) +
+            transform.m41
+          const top =
+            trigger.top +
+            parseFloat(host.borderTopWidth) +
+            parseFloat(style.top) +
+            transform.m42
+          const bubble = {
+            left,
+            top,
+            right: left + width,
+            bottom: top + height,
+          }
+          const clippedBy: string[] = []
+          for (
+            let parent = element.parentElement;
+            parent;
+            parent = parent.parentElement
+          ) {
+            const css = getComputedStyle(parent)
+            const box = parent.getBoundingClientRect()
+            if (
+              (/(hidden|clip|auto|scroll)/.test(css.overflowX) &&
+                (bubble.left < box.left - 1 || bubble.right > box.right + 1)) ||
+              (/(hidden|clip|auto|scroll)/.test(css.overflowY) &&
+                (bubble.top < box.top - 1 || bubble.bottom > box.bottom + 1))
+            ) {
+              clippedBy.push(parent.className)
+            }
+          }
+          return { bubble, trigger: trigger.toJSON(), clippedBy }
+        })
+        expect(bounds.clippedBy, `${name} at ${width}px`).toEqual([])
+        expect(bounds.bubble.left).toBeGreaterThanOrEqual(0)
+        expect(bounds.bubble.right).toBeLessThanOrEqual(width)
+        expect(bounds.bubble.top).toBeGreaterThanOrEqual(0)
+        if (direction === 'right')
+          expect(bounds.bubble.left).toBeGreaterThan(bounds.trigger.right)
+        else if (direction === 'left')
+          expect(bounds.bubble.right).toBeLessThan(bounds.trigger.left)
+        else expect(bounds.bubble.top).toBeGreaterThan(bounds.trigger.bottom)
+      }
+      const help = header.getByRole('button', { name: 'Search query help' })
+      await page.mouse.move(0, 899)
+      await help.focus()
+      await page.keyboard.press('Tab')
+      await page.keyboard.press('Shift+Tab')
+      await expect(help).toBeFocused()
+      await expect
+        .poll(() =>
+          help.evaluate(
+            element => getComputedStyle(element, '::before').opacity
+          )
+        )
+        .toBe('1')
+      await page.keyboard.press('Escape')
+      await expect
+        .poll(() =>
+          help.evaluate(
+            element => getComputedStyle(element, '::before').opacity
+          )
+        )
+        .toBe('0')
+      await expect(editor).toHaveText(draft)
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth
+        )
+      ).toBe(true)
+    }
+  })
+
   test('keeps the search bar visible without an active outline or collapse control', async ({
     page,
   }) => {

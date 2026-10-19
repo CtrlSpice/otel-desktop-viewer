@@ -587,7 +587,7 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
   }
 
   .home-page__footer {
-    @apply flex min-h-[var(--app-footer-height)] shrink-0 items-center justify-center bg-base-100 px-4;
+    @apply flex min-h-[var(--app-footer-height)] shrink-0 items-center justify-center bg-base-100 px-4 py-1.5;
   }
 
   .home-page__footer-text {

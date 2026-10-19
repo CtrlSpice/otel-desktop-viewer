@@ -173,7 +173,8 @@
   }
   .detail-property__card {
     --item-idle-bg: var(--color-base-100);
-    @apply min-w-0 rounded-xl px-3 py-2;
+    @apply min-w-0 rounded-xl py-2;
+    padding-inline: var(--pane-inline-inset);
   }
   .detail-property__header {
     @apply flex min-h-5 min-w-0 items-center gap-2;

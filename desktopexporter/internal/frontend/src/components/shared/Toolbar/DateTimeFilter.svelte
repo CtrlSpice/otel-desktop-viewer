@@ -78,10 +78,11 @@
 <button
   bind:this={triggerEl}
   type="button"
-  class="time-filter-trigger {className}"
+  class="time-filter-trigger tooltip tooltip-bottom {className}"
   popovertarget={popoverID}
   aria-expanded={popoverOpen}
   aria-label={ariaLabel}
+  data-tip={popoverOpen ? '' : 'Time range'}
 >
   <svg
     class="h-[17px] w-[17px] shrink-0"
@@ -121,5 +122,11 @@
 
   .time-filter-trigger:hover {
     background-color: var(--color-base-300);
+  }
+
+  .time-filter-trigger::before {
+    left: auto;
+    right: 0;
+    --tt-trans: 0%;
   }
 </style>

@@ -150,8 +150,9 @@
 <style lang="postcss">
   @reference "../../app.css";
   .detail-bubble__heading {
-    @apply sticky top-0 z-10 flex min-h-10 items-center gap-2 rounded-xl border border-base-300 bg-base-200 text-sm font-medium;
-    padding: calc(0.625rem - 1px) calc(0.75rem - 1px);
+    @apply sticky top-0 z-10 flex items-center gap-2 rounded-xl border border-base-300 bg-base-200 text-sm font-medium;
+    min-height: var(--pane-header-h);
+    padding: calc(0.625rem - 1px) calc(var(--pane-inline-inset) - 1px);
   }
 
   .detail-bubble--resizable {
@@ -180,7 +181,7 @@
     }
   }
   .detail-bubble__heading--action {
-    padding-inline-end: calc(3rem - 1px);
+    padding-inline-end: calc(var(--pane-inline-inset) + 2.25rem - 1px);
   }
   .detail-bubble__with-action:has(
       .detail-bubble__action :global([role='tablist'])
@@ -195,7 +196,8 @@
     @apply flex-1;
   }
   .detail-bubble__action {
-    @apply absolute right-3 top-1.5 z-20 flex items-center gap-1;
+    @apply absolute top-1.5 z-20 flex items-center gap-1;
+    right: var(--pane-inline-inset);
   }
   .detail-bubble__action:has(:global([role='tablist'])) {
     top: 0.5rem;

@@ -434,29 +434,32 @@
   }
 
   .pane-header--pill {
-    @apply min-h-10 rounded-xl;
+    @apply rounded-xl;
+    min-height: var(--pane-header-h);
   }
 
   .pane-header--flush {
     @apply pt-1;
   }
 
-  /* Title-only: centered vertically since there are no tabs.
-     px-3 matches FieldGroup headings and detail row inset. */
+  /* Match the first row of detail and drawer headers, including the border. */
   .pane-header--title {
-    @apply items-center px-3 py-2;
+    @apply items-center;
+    padding: calc((var(--pane-header-h) - var(--pane-header-row-h)) / 2 - 1px)
+      calc(var(--pane-inline-inset) - 1px);
   }
 
   .pane-header--stacked {
-    @apply flex-col items-stretch gap-3;
+    @apply flex-col items-stretch gap-2;
   }
 
   .pane-header--stacked.pane-header--title {
-    @apply items-stretch py-2 pb-0;
+    @apply items-stretch;
   }
 
   .pane-header__top {
     @apply flex min-w-0 w-full flex-nowrap items-center gap-2;
+    min-height: var(--pane-header-row-h);
   }
 
   .pane-header__top--tabs,
@@ -469,7 +472,7 @@
   }
 
   .pane-header__meta-row {
-    @apply flex w-full min-w-0 flex-wrap items-center justify-between gap-2 pb-1.5;
+    @apply flex w-full min-w-0 flex-wrap items-center justify-between gap-2;
   }
 
   .pane-header__time-range {
@@ -536,11 +539,13 @@
 
   /* Graph tabs have their own row, leaving title and badges on the first. */
   .pane-header--title-tabs {
-    @apply flex-col items-stretch gap-3 px-3 pt-2 pb-1;
+    @apply flex-col items-stretch gap-2;
+    padding: calc((var(--pane-header-h) - var(--pane-header-row-h)) / 2 - 1px)
+      calc(var(--pane-inline-inset) - 1px);
   }
 
   .pane-header__tabs-row {
-    @apply flex min-w-0 w-full flex-wrap items-center gap-x-4 gap-y-1 pb-1;
+    @apply flex min-w-0 w-full flex-wrap items-center gap-x-4 gap-y-2;
   }
 
   .pane-header__tabs-row .pane-header__meta-row {

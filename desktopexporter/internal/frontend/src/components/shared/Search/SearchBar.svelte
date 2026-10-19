@@ -38,7 +38,7 @@
     >
       <button
         type="button"
-        class="btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-left"
+        class="search-bar__refresh btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-bottom"
         class:bg-base-200={refreshPulse}
         aria-label={refreshLabel}
         data-tip={refreshLabel}
@@ -113,7 +113,17 @@
     align-items: center;
     width: 0;
     height: 2rem;
-    overflow: hidden;
+    overflow: visible;
+  }
+
+  /* Keep the bubble inside the viewport when search spans the mobile header. */
+  .search-bar__refresh::before {
+    left: 0;
+    --tt-trans: 0%;
+  }
+
+  .search-bar :global(.tooltip[data-tip]::before) {
+    max-width: min(20rem, calc(100vw - 2rem));
   }
 
   .search-bar__query:has(

@@ -16,7 +16,7 @@
     count?: number
     /** Visible unit inside the count badge; defaults to the group label. */
     countLabel?: string
-    /** Detail headings use the same 12px inset as the field cards. */
+    /** Detail headings use the same inset as the field cards. */
     detail?: boolean
     /** Use the same rounded, interactive surface as signal summary cards. */
     card?: boolean
@@ -100,7 +100,7 @@
   }
 
   .field-group--detail {
-    --field-group-inline: 0.75rem;
+    --field-group-inline: var(--pane-inline-inset);
   }
 
   /* Content aligns with heading inset (icon or label). */

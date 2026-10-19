@@ -74,15 +74,9 @@
 <style lang="postcss">
   @reference "../../app.css";
 
-  /*
-   * Page-level footer strip. Pinned to --app-footer-height (app.css)
-   * so it aligns pixel-for-pixel with the drawer footer; both read
-   * as one continuous bottom edge across the app shell. Vertical
-   * padding is dropped in favor of min-height + items-center so the
-   * row size is decoupled from whatever buttons live inside.
-   */
+  /* Share the drawer footer's height and inset for a continuous bottom strip. */
   .signal-footer {
-    @apply grid shrink-0 items-center gap-2 bg-base-100 px-4;
+    @apply grid shrink-0 items-center gap-2 bg-base-100 px-4 py-1.5;
     grid-template-columns: 1fr auto 1fr;
     min-height: var(--app-footer-height);
   }
