@@ -70,12 +70,12 @@
         {#if durationParts}
           <span class="flex shrink-0 items-center gap-1">
             <span>Duration:</span>
-            <span class="text-primary">{durationParts.value}</span>
-            <span class="text-primary">{durationParts.unit}</span>
+            <span class="text-base-content">{durationParts.value}</span>
+            <span class="text-base-content">{durationParts.unit}</span>
           </span>
         {/if}
       </div>
-      <SummaryBreakdown signal="trace" parts={trace.serviceBreakdown ?? []} />
+      <SummaryBreakdown parts={trace.serviceBreakdown ?? []} />
     </div>
   {/snippet}
 </SignalCard>

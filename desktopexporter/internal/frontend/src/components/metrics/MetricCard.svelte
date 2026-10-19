@@ -3,7 +3,6 @@
   import { metricSummaryKey } from '@/types/api-types'
   import SignalCard from '@/components/shared/SignalCard.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
-  import SummaryBreakdown from '@/components/shared/SummaryBreakdown.svelte'
   import { formatTimestampParts } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
 
@@ -70,20 +69,29 @@
             >{lastSeenParts.unit}</span
           >{/if}
       </span>
-      {#if lastValueLabel || metric.unit}
-        <span class="flex min-w-0 items-center gap-1 text-xs tabular-nums">
-          <span class="shrink-0"
-            >{lastValueLabel ? 'Last value:' : 'Units:'}</span
-          >
-          <span
-            class="truncate text-secondary"
-            title={lastValueLabel ?? metric.unit}
-          >
-            {lastValueLabel ?? metric.unit}
+      <div
+        class="flex min-w-0 items-center justify-between gap-3 text-xs tabular-nums"
+      >
+        {#if lastValueLabel || metric.unit}
+          <span class="flex min-w-0 items-center gap-1">
+            <span class="shrink-0"
+              >{lastValueLabel ? 'Last value:' : 'Units:'}</span
+            >
+            <span
+              class="truncate text-base-content"
+              title={lastValueLabel ?? metric.unit}
+            >
+              {lastValueLabel ?? metric.unit}
+            </span>
           </span>
+        {/if}
+        <span class="ml-auto flex shrink-0 items-center gap-1">
+          <span>Datapoints:</span>
+          <span class="text-base-content"
+            >{metric.dataPointCount.toLocaleString()}</span
+          >
         </span>
-      {/if}
-      <SummaryBreakdown signal="metric" parts={metric.seriesBreakdown ?? []} />
+      </div>
     </div>
   {/snippet}
 </SignalCard>

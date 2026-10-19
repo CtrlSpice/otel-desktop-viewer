@@ -6529,8 +6529,7 @@ func TestSeriesCountsAreWindowAndLifetime(t *testing.T) {
 		if i < 3 {
 			at = base.Add(time.Duration(i) * 10 * time.Second)
 		}
-		// Unequal per-series counts distinguish datapoint totals from series
-		// cardinality and give the breakdown a deterministic top eight.
+		// Unequal per-series counts distinguish datapoint totals from series cardinality.
 		for j := range i + 1 {
 			dps = append(dps, sumTestDP{timestamp: at.Add(time.Duration(j) * time.Second), value: float64(i), attrs: pod})
 		}
@@ -6558,17 +6557,6 @@ func TestSeriesCountsAreWindowAndLifetime(t *testing.T) {
 	assert.Equal(t, float64(12), whole["seriesCardinality"],
 		"and the lifetime total agrees there, which is why one number hid this")
 	assert.EqualValues(t, 78, whole["dataPointCount"])
-	wholeParts := whole["seriesBreakdown"].([]any)
-	require.Len(t, wholeParts, 9)
-	for i, rawPart := range wholeParts[:8] {
-		part := rawPart.(map[string]any)
-		assert.EqualValues(t, 12-i, part["count"])
-		assert.Equal(t, fmt.Sprintf("pod=%q", string(rune('l'-i))), part["label"])
-		assert.Equal(t, false, part["other"])
-	}
-	assert.Equal(t, map[string]any{
-		"key": "other-series", "label": "Other series", "count": float64(10), "other": true,
-	}, wholeParts[8])
 
 	narrow := summarise(base.Add(-time.Second), base.Add(time.Minute))
 	assert.Equal(t, float64(3), narrow["seriesCount"],
@@ -6576,14 +6564,6 @@ func TestSeriesCountsAreWindowAndLifetime(t *testing.T) {
 	assert.Equal(t, float64(12), narrow["seriesCardinality"],
 		"the Metric still has twelve series; narrowing the window did not delete nine")
 	assert.EqualValues(t, 6, narrow["dataPointCount"])
-	narrowParts := narrow["seriesBreakdown"].([]any)
-	require.Len(t, narrowParts, 3)
-	for i, rawPart := range narrowParts {
-		part := rawPart.(map[string]any)
-		assert.EqualValues(t, 3-i, part["count"])
-		assert.Equal(t, fmt.Sprintf("pod=%q", string(rune('c'-i))), part["label"])
-		assert.Equal(t, false, part["other"])
-	}
 }
 
 // TestIngest_SingleBucketHistogram verifies the valid OTLP shape with one

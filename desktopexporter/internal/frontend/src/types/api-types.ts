@@ -590,8 +590,6 @@ export type MetricSummary = {
   seriesCardinality: number
   // In-range datapoints for this Metric.
   dataPointCount: number
-  /** In-range received datapoints by series, with a bounded preview and an Other remainder. */
-  seriesBreakdown?: SummaryBreakdownPart[]
   /** @derived Most recent Gauge/Sum value by timestamp in the requested
    * window. SQL coalesces double/int sources into an IEEE-754 metric-unit
    * number, so integer measurements past 2^53 are approximate. Null for
