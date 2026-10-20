@@ -139,11 +139,33 @@ func openRPCDocument() map[string]any {
 		"ImportConfig": rpcObject(map[string]any{"otlpHttpPort": integer}, "otlpHttpPort"),
 		"Object":       object, "Integer": integer, "String": text,
 	}
+	schemas["EvalSnapshotID"] = map[string]any{"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Lowercase SHA-256 of the original UTF-8 JSON bytes."}
+	schemas["EvalSnapshotFormat"] = map[string]any{"type": "string", "enum": []string{"promptfoo-v3", "viewer-kit", "unknown-json"}}
+	evalFields := map[string]any{
+		"id": rpcSchemaRef("EvalSnapshotID"), "digest": rpcSchemaRef("EvalSnapshotID"),
+		"source": text, "format": rpcSchemaRef("EvalSnapshotFormat"), "name": text,
+		"importedAt": map[string]any{"type": "string", "format": "date-time"},
+		"byteSize":   map[string]any{"type": "integer", "minimum": 1, "maximum": 16 << 20},
+	}
+	schemas["EvalSnapshotMetadata"] = rpcObject(evalFields, "id", "digest", "source", "format", "name", "importedAt", "byteSize")
+	evalDetailFields := make(map[string]any, len(evalFields)+1)
+	for key, value := range evalFields {
+		evalDetailFields[key] = value
+	}
+	evalDetailFields["originalJSON"] = text
+	schemas["EvalSnapshot"] = rpcObject(evalDetailFields, "id", "digest", "source", "format", "name", "importedAt", "byteSize", "originalJSON")
+	schemas["EvalSnapshotImport"] = rpcObject(map[string]any{"snapshot": rpcSchemaRef("EvalSnapshotMetadata"), "created": boolean}, "snapshot", "created")
+	schemas["EvalSnapshotPage"] = rpcObject(map[string]any{"snapshots": rpcArray(rpcSchemaRef("EvalSnapshotMetadata")), "hasMore": boolean}, "snapshots", "hasMore")
+	schemas["EvalSnapshotDelete"] = rpcObject(map[string]any{"id": rpcSchemaRef("EvalSnapshotID"), "deleted": map[string]any{"const": true}}, "id", "deleted")
 
 	specs := []struct {
 		name, result, description string
 		required                  int
 	}{
+		{"importEvalSnapshot", "EvalSnapshotImport", "Requires evals.enabled; disabled returns -32601. Archives originalJSON as native DuckDB JSON without parsing/re-encoding. Source and format are labels, never fetched or executed; format labels do not trigger semantic validation. ID/digest is SHA-256 of original UTF-8 bytes. Exact repeats return created=false and immutable first-import metadata; changed bytes create a separate snapshot. Payload limit 16 MiB; RPC body limit 20 MiB including string escaping when Evals is enabled (otherwise 1 MiB). Requires valid UTF-8 and JSON accepted by DuckDB; lone surrogate escapes are rejected. Snapshots survive telemetry clear/retention and require explicit deletion.", 4},
+		{"searchEvalSnapshots", "EvalSnapshotPage", "Requires evals.enabled; disabled returns -32601. Returns metadata only, ordered importedAt descending then id ascending. limit defaults to 50 (1..100); offset defaults to 0 (0..1000000). Omitted/null parameters use defaults. hasMore uses a single look-ahead row. Pages read current data and are not a cross-request transaction.", 0},
+		{"getEvalSnapshot", "EvalSnapshot", "Requires evals.enabled; disabled returns -32601. Returns metadata and originalJSON as an exact string, not a parsed object. Download original bytes with GET /api/evals/snapshots/{id}/download; HEAD and byte ranges are supported. Missing snapshot returns -32011.", 1},
+		{"deleteEvalSnapshot", "EvalSnapshotDelete", "Requires evals.enabled; disabled returns -32601. Explicitly deletes one archived snapshot. Returns deleted=true on success; missing/already deleted returns -32011. Telemetry clear and retention do not delete snapshots. Reimport after deletion creates new first-import metadata with the same content ID.", 1},
 		{"rpc.discover", "", "Returns the same OpenRPC document as GET /openrpc.json. No store access is needed.", 0},
 		{"getImportConfig", "ImportConfig", "Returns the configured OTLP HTTP import port for the UI. Fails with -32603 when HTTP import is not configured.", 0},
 		{"query", "QueryResult", "Runs one read-only SQL SELECT or supported introspection statement, including SHOW TABLES and DESCRIBE. Defaults to 25 rows; limit 0 returns no rows. A look-ahead row determines truncated. Rows are arrays aligned with columns; SQL NULL is JSON null. Native integer/decimal JSON tokens and JSON columns retain their exact text, not decimal-string conversion: use a precision-preserving parser or SQL VARCHAR casts. Top-level FLOAT/DOUBLE uses finite numbers or OTLP non-finite strings.", 1},
@@ -196,6 +218,16 @@ func openRPCDocument() map[string]any {
 			schema := rpcSchemaRef("String")
 			description := ""
 			switch name {
+			case "id":
+				schema = rpcSchemaRef("EvalSnapshotID")
+			case "format":
+				schema = rpcSchemaRef("EvalSnapshotFormat")
+			case "source":
+				description = "Required nonempty UTF-8 source label, at most 1024 bytes, without NUL. No URL or path is fetched."
+			case "name":
+				description = "Required nonempty UTF-8 display name, at most 256 bytes, without NUL."
+			case "originalJSON":
+				description = "Original JSON text as a string, at most 16777216 UTF-8 bytes. Preserve whitespace, duplicate keys, unknown fields and numeric lexemes before sending."
 			case "traceID", "logRef", "metricRef", "seriesRef", "selectedLogRef":
 				schema = rpcSchemaRef("EntityID")
 				description = "Received trace ID (32 hex or dashed UUID)."
@@ -217,6 +249,9 @@ func openRPCDocument() map[string]any {
 			case "offset":
 				schema = rpcSchemaRef("IntInput")
 				description = "Non-negative whole number of matching rows to skip; omitted/null defaults to 0."
+				if spec.name == "searchEvalSnapshots" {
+					description = "Whole number 0..1000000; omitted/null defaults to 0."
+				}
 			case "columns":
 				schema = rpcArray(rpcSchemaRef("LogColumn"))
 				description = "Unique source/kind/key selections. Attributes accept exact keys, including empty keys. Log fields: timeUnixNano, observedTimeUnixNano, severityText, severityNumber, traceId, spanId, eventName, body, flags, droppedAttributesCount. Resource fields: schemaUrl, droppedAttributesCount. Scope fields: name, version, schemaUrl, droppedAttributesCount. Field and attribute identities are distinct."
@@ -230,6 +265,8 @@ func openRPCDocument() map[string]any {
 					description = "Default 25 when omitted/null; 1 through 9223372036854775806. Bounds ambiguity summaries only."
 				} else if spec.name == "getFieldValueCompletions" {
 					description = "Signed int64 whole number, clamped to 1..500. Required and non-null."
+				} else if spec.name == "searchEvalSnapshots" {
+					description = "Whole number 1..100; omitted/null defaults to 50."
 				}
 			case "targetBuckets", "viewBuckets", "sparklineBuckets", "datapointSeriesLimit", "tzOffsetNs":
 				schema = rpcSchemaRef("IntInput")
@@ -263,6 +300,8 @@ func openRPCDocument() map[string]any {
 			}
 		}
 		switch spec.name {
+		case "getEvalSnapshot", "deleteEvalSnapshot":
+			method.Errors = append(method.Errors, map[string]any{"code": ErrCodeEvalSnapshotNotFound, "message": "Eval snapshot not found"})
 		case "getTraceView", "getTraceOverview":
 			method.Errors = append(method.Errors, map[string]any{"code": ErrCodeTraceNotFound, "message": "Trace not found"})
 		case "getLog":

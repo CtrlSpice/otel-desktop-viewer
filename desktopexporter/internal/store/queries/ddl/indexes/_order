@@ -22,3 +22,4 @@ idx_metric_datapoints_series.sql
 idx_metric_series_metric.sql
 idx_metric_series_identity.sql
 idx_exemplars_metric_datapoint.sql
+idx_eval_snapshots_imported.sql

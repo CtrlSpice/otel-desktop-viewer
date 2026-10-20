@@ -106,6 +106,7 @@ func TestOpenRPCMethodsParametersAndRequirednessMatchHandlers(t *testing.T) {
 	methods := document["methods"].([]rpcMethodDescription)
 	names := make([]string, 0, len(methods))
 	handler := setupHandler(t)
+	handler.features = enabledEvalFlags(t)
 	for _, method := range methods {
 		names = append(names, method.Name)
 		t.Run(method.Name, func(t *testing.T) {
