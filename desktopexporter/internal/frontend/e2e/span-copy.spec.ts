@@ -81,7 +81,7 @@ for (const [theme, errorColour] of [
   ['rose-pine-moon', 'rgb(235, 111, 146)'],
   ['rose-pine-dawn', 'rgb(180, 99, 122)'],
 ]) {
-  test(`span status values use the theme error colour only for code 2 in ${theme}`, async ({
+  test(`span status values use neutral text and an error dot only for code 2 in ${theme}`, async ({
     page,
   }) => {
     let statusCodeValue = 2
@@ -173,26 +173,27 @@ for (const [theme, errorColour] of [
       const neutralColour = await nameValue.evaluate(
         value => getComputedStyle(value).color
       )
-      await expect(codeValue).toHaveCSS(
-        'color',
-        code === 2 ? errorColour : neutralColour
-      )
-      if (code === 2)
+      await expect(codeValue).toHaveCSS('color', neutralColour)
+      const codeDot = codeField.locator('.detail-property__error-dot')
+      await expect(codeDot).toHaveCount(code === 2 ? 1 : 0)
+      if (code === 2) {
+        await expect(codeDot).toHaveCSS('background-color', errorColour)
         await expect(
           codeField.locator('.detail-property__annotation')
-        ).toHaveCSS('color', errorColour)
+        ).toHaveCSS('color', neutralColour)
+      }
       if (code === 0 || code === 1) await expect(message).toHaveCount(0)
       else {
         await expect(message).toHaveText('received error message')
-        await expect(message).toHaveCSS(
-          'color',
-          code === 2 ? errorColour : neutralColour
+        await expect(message).toHaveCSS('color', neutralColour)
+        const messageDot = detail.locator(
+          '[data-field="status.message"] .detail-property__error-dot'
         )
+        await expect(messageDot).toHaveCount(code === 2 ? 1 : 0)
+        if (code === 2)
+          await expect(messageDot).toHaveCSS('background-color', errorColour)
       }
       await expect(nameValue).toHaveCSS('color', neutralColour)
-      await expect(codeField.locator('.detail-property__type')).toHaveClass(
-        /badge-primary/
-      )
     }
   })
 }

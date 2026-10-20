@@ -337,6 +337,9 @@
   let rowIndexBySpanID = $derived(
     new Map(rows.map((row, index) => [row.spanNode.spanData.spanID, index + 1]))
   )
+  let rootChildCount = $derived(
+    rows.find(row => row.spanNode.depth === 0)?.tree.childrenCount ?? 0
+  )
 
   let headerName = $derived.by(() => {
     if (spans.length === 0) return 'Trace'
@@ -644,10 +647,8 @@
     )
   })
 
-  let barGridPercents = $derived(
-    waterfallTimeAxis(bounds.duration, targetTickCount).ticks.map(
-      t => t.offsetPercent
-    )
+  let barGridGuides = $derived(
+    waterfallTimeAxis(bounds.duration, targetTickCount).guides
   )
 
   let matchedIDs = $derived(
@@ -1191,6 +1192,7 @@
         >
           <thead class="header-surface waterfall-view__thead">
             <WaterfallTimeAxisHeader
+              {rootChildCount}
               traceDurationNs={bounds.duration}
               {targetTickCount}
               tickLabelWidth={TICK_LABEL_SLOT_PX}
@@ -1221,7 +1223,7 @@
               {@const sid = row.spanNode.spanData.spanID}
               <WaterfallRow
                 {row}
-                {barGridPercents}
+                {barGridGuides}
                 selected={sid === selectedSpanID}
                 tabbable={sid === keyboardAnchorID}
                 visible={true}
@@ -1247,6 +1249,23 @@
               />
             {/snippet}
           </VirtualList>
+          {#if visibleRows.length > 0}
+            <div
+              class="waterfall-view__grid-tail"
+              aria-hidden="true"
+              style:--span-rows-height="calc({visibleRows.length} * var(--table-row-h))"
+              style:left="calc({gridWidth - timelineColPx}px + {TIMELINE_LEFT_INSET_REM}rem)"
+              style:width="{timelinePlotPx}px"
+            >
+              {#each barGridGuides as guide}
+                <div
+                  class="waterfall-view__tail-guide dot-guide-vertical"
+                  class:dot-guide-vertical--minor={!guide.major}
+                  style:left="{guide.offsetPercent}%"
+                ></div>
+              {/each}
+            </div>
+          {/if}
         </div>
       </div>
     </div>
@@ -1309,6 +1328,21 @@
 
   .waterfall-view__vlist-host {
     @apply relative min-h-0 flex-1 overflow-hidden outline-none;
+  }
+
+  .waterfall-view__grid-tail {
+    @apply pointer-events-none absolute overflow-hidden;
+    top: var(--span-rows-height);
+    height: min(
+      var(--table-row-h),
+      max(0px, calc(100% - var(--span-rows-height)))
+    );
+    mask-image: linear-gradient(to bottom, black, transparent);
+  }
+
+  .waterfall-view__tail-guide {
+    @apply absolute top-0 -translate-x-1/2;
+    height: var(--table-row-h);
   }
 
   .waterfall-view__vlist-host :global(.waterfall-vlist) {

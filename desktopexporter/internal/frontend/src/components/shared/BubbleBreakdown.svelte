@@ -171,20 +171,12 @@
 
   .breakdown-segment {
     @apply cursor-pointer border-0 p-0;
-    background-color: color-mix(
-      in srgb,
-      var(--part-color) calc(var(--waterfall-bar-opacity) * 100%),
-      transparent
-    );
+    background-color: var(--part-color);
   }
 
   .breakdown-segment:focus-visible {
     outline: 2px solid var(--color-primary);
     outline-offset: -2px;
-  }
-
-  :global(html[data-theme='rose-pine-dawn']) .breakdown-segment {
-    border: 1px solid var(--part-color);
   }
 
   .ball-pit {

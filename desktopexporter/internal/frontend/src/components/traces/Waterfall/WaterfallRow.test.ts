@@ -71,7 +71,7 @@ function renderRow(
   return render(WaterfallRowHarness, {
     props: {
       row,
-      barGridPercents: [],
+      barGridGuides: [],
       selected: false,
       tabbable: false,
       visible: true,
@@ -113,6 +113,35 @@ describe('WaterfallRow timeline layout', () => {
     )
     expect(label).not.toHaveClass('waterfall-row__bar-label--inside')
     expect(bar).toHaveClass('waterfall-row__bar')
+  })
+})
+
+describe('WaterfallRow child counts', () => {
+  it('places the direct-child count between the parent dot and title', () => {
+    const row = makeRow()
+    row.tree.childrenCount = 4
+    const { container, getByTitle } = renderRow(row)
+    const count = getByTitle('4 child spans')
+    expect(count.textContent).toBe('4')
+    expect(count).toHaveClass('text-sm')
+    expect(count.previousElementSibling).toHaveClass('gutter')
+    expect(count.nextElementSibling).toHaveClass('waterfall-row__title')
+    expect(container.querySelector('.gutter__btn-dot')).toBeEmptyDOMElement()
+  })
+
+  it('omits the count for leaves', () => {
+    const { container } = renderRow(makeRow())
+    expect(container.querySelector('.waterfall-row__child-count')).toBeNull()
+  })
+
+  it('keeps the count when collapsed and uses singular text for one child', async () => {
+    const row = makeRow()
+    row.tree.childrenCount = 1
+    const view = renderRow(row)
+    await view.rerender({ subtreeCollapsed: true })
+    expect(view.getByTitle('1 child span').textContent).toBe('1')
+    expect(view.getByRole('button', { name: 'Expand 1 child spans' }))
+      .toHaveAttribute('aria-expanded', 'false')
   })
 })
 

@@ -65,9 +65,7 @@
   <div class="detail-property__header">
     {#if conflict}<ConflictMarker label={conflict} />{/if}
     <span class="detail-property__key"
-      >{fieldName}{#if origin}<span class="text-rp-subtle">{' · '}</span><span
-          class="detail-property__origin">{origin}</span
-        >{/if}{#if showType}<span class="text-rp-subtle">{' · '}</span><span
+      >{fieldName}{#if showType}<span class="text-rp-subtle">{' · '}</span><span
           class="detail-property__type">{fieldType}</span
         >{/if}</span
     >
@@ -96,7 +94,11 @@
         aria-label={fieldName}
       >
         {@render header()}
+        {#if origin}<div class="detail-property__origin">{origin}</div>{/if}
         <div class="detail-property__body">
+          {#if valueTone === 'error'}
+            <span class="detail-property__error-dot" aria-hidden="true"></span>
+          {/if}
           {#if timestampLabel !== undefined}
             <div class="detail-property__value">
               {#if value}{@render value()}{:else}{timestampLabel}{/if}
@@ -177,8 +179,17 @@
   .detail-property__body {
     @apply min-w-0 pt-0.5;
   }
-  .detail-property--error-value {
-    --detail-property-value-color: var(--color-error);
+  .detail-property--error-value .detail-property__body {
+    display: grid;
+    grid-template-columns: 0.5rem minmax(0, 1fr);
+    column-gap: 0.5rem;
+  }
+  .detail-property__error-dot {
+    @apply size-2 rounded-full bg-error;
+    margin-top: calc((1lh - 0.5rem) / 2);
+  }
+  .detail-property--error-value .detail-property__annotation {
+    color: inherit;
   }
   .detail-property__value,
   :global(.detail-property .detail-property__value) {

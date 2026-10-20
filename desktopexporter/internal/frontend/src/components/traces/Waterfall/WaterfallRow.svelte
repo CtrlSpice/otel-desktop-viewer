@@ -6,6 +6,7 @@
   import type { WaterfallRowData } from './WaterfallView.svelte'
   import { formatDuration } from '@/utils/time'
   import WaterfallTreeGutter from './WaterfallTreeGutter.svelte'
+  import type { TimeAxisGuide } from './WaterfallTimeAxisHeader.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { BiohazardIcon } from '@hugeicons/core-free-icons'
   import TimelineMarkers from './TimelineMarkers.svelte'
@@ -23,7 +24,7 @@
 
   type Props = {
     row: WaterfallRowData
-    barGridPercents: readonly number[]
+    barGridGuides: readonly TimeAxisGuide[]
     selected: boolean
     tabbable: boolean
     visible: boolean
@@ -45,7 +46,7 @@
 
   let {
     row,
-    barGridPercents,
+    barGridGuides,
     selected,
     tabbable,
     visible,
@@ -105,7 +106,6 @@
   role="row"
   class="waterfall-row item-state"
   class:table-row--selected={selected}
-  class:waterfall-row--error={row.isError}
   class:waterfall-row--matched={matched}
   data-span-id={span.spanID}
   style:visibility={visible ? 'visible' : 'collapse'}
@@ -132,6 +132,12 @@
         {subtreeCollapsed}
         {onToggleExpand}
       />
+      {#if hasChildren}
+        <span
+          class="waterfall-row__child-count shrink-0 text-sm tabular-nums"
+          title="{row.tree.childrenCount} child {row.tree.childrenCount === 1 ? 'span' : 'spans'}"
+        >{row.tree.childrenCount}</span>
+      {/if}
       <div
         class="waterfall-row__title flex-1 text-left text-sm text-base-content"
         title={span.name}
@@ -221,10 +227,11 @@
           style:width="{row.widthPercent}%"
         ></div>
         <div class="waterfall-row__bar-grid" aria-hidden="true">
-          {#each barGridPercents as p}
+          {#each barGridGuides as guide}
             <div
               class="waterfall-row__grid-line dot-guide-vertical"
-              style:left="{p}%"
+              class:dot-guide-vertical--minor={!guide.major}
+              style:left="{guide.offsetPercent}%"
             ></div>
           {/each}
         </div>
@@ -252,6 +259,16 @@
 
 <style lang="postcss">
   @reference "../../../app.css";
+  .waterfall-row__child-count {
+    color: var(--color-subtle);
+    /* Centre the count over the next level's dots, removing the gutter tail
+       and the row gap before the count slot. */
+    width: var(--waterfall-gutter-col);
+    text-align: center;
+    margin-left: calc(0px - var(--waterfall-gutter-tail) - 0.25rem);
+    margin-right: 0.25rem;
+  }
+
   .waterfall-row {
     @apply cursor-pointer border-none;
     height: var(--table-row-h);
@@ -290,32 +307,15 @@
 
   /* `--bar-color` on the bar area tints the span pill. */
   .waterfall-row__bar {
-    --bar-fill-opacity: var(--waterfall-bar-opacity, 0.7);
     @apply absolute z-[1] rounded-full top-1/2 -translate-y-1/2 border-0 overflow-hidden;
     height: var(--waterfall-bar-height);
     min-width: 2px;
-    background-color: color-mix(
-      in srgb,
-      var(--bar-color) calc(var(--bar-fill-opacity) * 100%),
-      transparent
-    );
+    background-color: var(--bar-color);
     transition: background-color 0.12s ease;
   }
 
-  .waterfall-row:hover .waterfall-row__bar {
-    --bar-fill-opacity: min(1, calc(var(--waterfall-bar-opacity, 0.7) + 0.1));
-  }
-
-  .waterfall-row:global(.table-row--selected) .waterfall-row__bar {
-    --bar-fill-opacity: min(1, calc(var(--waterfall-bar-opacity, 0.7) + 0.15));
-  }
-
-  :global(html[data-theme='rose-pine-dawn']) .waterfall-row__bar {
-    border: 1px solid var(--bar-color);
-  }
-
   .waterfall-row__bar-grid {
-    @apply pointer-events-none absolute inset-0 z-[2];
+    @apply pointer-events-none absolute inset-0 z-0;
   }
 
   .waterfall-row__grid-line {
@@ -331,10 +331,6 @@
     top: 50%;
     transform: translateY(-50%);
     color: var(--color-base-content);
-  }
-
-  .waterfall-row--error .waterfall-row__title {
-    @apply text-error;
   }
 
   .waterfall-row--matched {

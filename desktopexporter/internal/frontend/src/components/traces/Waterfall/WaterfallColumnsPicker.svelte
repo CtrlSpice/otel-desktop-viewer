@@ -1,6 +1,7 @@
 <script lang="ts">
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { LayoutThreeColumnIcon } from '@hugeicons/core-free-icons'
+  import FilterInput from '@/components/shared/Search/FilterInput.svelte'
   import {
     createPopoverID,
     setupAnchorPopover,
@@ -26,7 +27,6 @@
   const popoverID = createPopoverID('waterfall-columns')
   let triggerEl = $state<HTMLButtonElement | null>(null)
   let popoverEl = $state<HTMLDivElement | null>(null)
-  let searchEl = $state<HTMLInputElement | null>(null)
   let open = $state(false)
   let query = $state('')
   let selectedIDs = $derived(new Set(selected.map(columnID)))
@@ -46,7 +46,8 @@
       anchor: 'below-end',
       onOpenChange: next => {
         open = next
-        if (next) searchEl?.focus()
+        if (next)
+          popover.querySelector<HTMLInputElement>('input[type="search"]')?.focus()
       },
     })
   })
@@ -86,14 +87,13 @@
   aria-label="Waterfall columns"
   class="anchor-popover anchor-popover--anchored waterfall-columns-picker"
 >
-  <input
-    bind:this={searchEl}
-    bind:value={query}
-    type="search"
-    aria-label="Find columns"
-    placeholder="Find columns…"
-    class="typed-field typed-field--pill mb-2 w-full"
-  />
+  <div class="mb-2">
+    <FilterInput
+      bind:value={query}
+      label="Find columns"
+      placeholder="Find columns…"
+    />
+  </div>
   {#each COLUMN_SOURCES as source}
     {#each [true, false] as field}
       {@const group = filtered.filter(

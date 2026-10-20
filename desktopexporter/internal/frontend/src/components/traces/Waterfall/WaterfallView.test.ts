@@ -63,6 +63,22 @@ function spanNode(
   }
 }
 
+describe('Waterfall direct-child counts', () => {
+  it('counts children separately from deeper descendants in the rendered tree', () => {
+    const spans = [
+      spanNode('root', null, 0),
+      spanNode('a', 'root', 1),
+      spanNode('a1', 'a', 2),
+      spanNode('a2', 'a', 2),
+      spanNode('b', 'root', 1),
+      spanNode('orphan', 'missing', 0),
+      spanNode('recovered', 'wrong-parent', 1),
+    ]
+    const rows = buildWaterfallRows(spans, getTraceBounds(spans), 'rose-pine')
+    expect(rows.map(row => row.tree.childrenCount)).toEqual([2, 2, 0, 0, 0, 1, 0])
+  })
+})
+
 describe('Waterfall attribute values', () => {
   it('keeps built-in fields separate from identically named attributes and preserves precision', () => {
     const span = spanNode('first', null, 0).spanData

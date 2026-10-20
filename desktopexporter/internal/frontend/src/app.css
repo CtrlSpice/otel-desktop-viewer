@@ -62,6 +62,7 @@
   --item-selected-bg: var(--color-highlight-med);
   --guide-dot-radius: 0.75px;
   --guide-dot-color: var(--color-subtle);
+  --guide-dot-opacity: 0.5;
   --resize-grip-length: 3rem;
   --resize-grip-thickness: 0.1875rem;
   /* Quick feedback, quiet fades, and a shared settle for moving surfaces. */
@@ -1232,19 +1233,6 @@ button:focus-visible:not(.btn) {
   --pane-header-row-h: 2rem;
 }
 
-/* Shared numbered hub: interactive in the waterfall, static for log severity. */
-.number-circle {
-  @apply inline-flex items-center justify-center rounded-full p-0 font-semibold leading-none tabular-nums;
-  min-width: var(--number-circle-size);
-  min-height: var(--number-circle-size);
-  width: var(--number-circle-size);
-  height: var(--number-circle-size);
-  font-size: var(--number-circle-font-size);
-  background-color: var(--number-circle-color);
-  color: var(--color-on-light);
-  color: contrast-color(var(--number-circle-color));
-}
-
 @media (prefers-reduced-motion: reduce) {
   :root {
     --motion-feedback-duration: 0ms;
@@ -1452,16 +1440,19 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
   padding-left: calc(1rem + var(--waterfall-gutter-col, 0px));
 }
 
-/* Dots meet at row boundaries even when the header has a different height. */
+/* Three equal intervals per span row, anchored at the bottom so ruler dots meet
+   the first row even when the header has a different height. */
 .dot-guide-vertical {
+  --guide-dot-color: var(--color-muted);
+  --guide-dot-step: calc(var(--table-row-h) / 3);
   width: calc(2 * var(--guide-dot-radius));
   background-image: radial-gradient(
     circle,
     var(--guide-dot-color) var(--guide-dot-radius),
     transparent var(--guide-dot-radius)
   );
-  background-size: 100% var(--table-row-h);
-  background-position: center calc(100% + var(--table-row-h) / 2);
+  background-size: 100% var(--guide-dot-step);
+  background-position: center calc(100% + var(--guide-dot-step) / 2);
   opacity: var(--guide-dot-opacity);
 }
 
@@ -1583,7 +1574,7 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
 /* Detail / toolbar metadata origins. */
 .metadata-origin {
   @apply font-sans text-xs font-normal;
-  color: var(--color-subtle);
+  color: var(--color-secondary);
 }
 
 /* Item / field / tab counts. */

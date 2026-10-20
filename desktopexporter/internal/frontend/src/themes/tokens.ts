@@ -14,7 +14,6 @@ export function themeTokens(theme: Theme) {
     '--color-base-content': c.text,
     '--color-subtle': c.subtle,
     '--color-muted': c.muted,
-    '--guide-dot-opacity': light ? '0.6' : '0.4',
     '--color-rose': c.rose,
     '--color-code-literal': 'var(--color-primary)',
     '--color-highlight-low': c.highlightLow,
@@ -44,12 +43,11 @@ export function themeTokens(theme: Theme) {
     '--color-on-dark': light
       ? 'var(--color-base-100)'
       : 'var(--color-base-content)',
-    '--waterfall-bar-opacity': light ? '0.75' : '1',
-    // Shared numbered circles and tree spacing alongside the DaisyUI tokens.
-    '--number-circle-size': '16px',
-    '--number-circle-font-size': '8px',
+    // Waterfall tree geometry.
     '--waterfall-gutter-col': '22px',
-    '--waterfall-gutter-hub': 'var(--number-circle-size)',
+    '--waterfall-gutter-hub': '8px',
+    '--waterfall-gutter-leaf': '8px',
+    '--waterfall-gutter-hit': '16px',
     '--waterfall-bar-label-color': light
       ? 'var(--color-base-content)'
       : 'var(--color-base-200)',

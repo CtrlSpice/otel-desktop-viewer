@@ -86,7 +86,7 @@ describe('TimelineMarkers', () => {
     }
   )
 
-  it('renders every cluster at the bar height in a 1.5rem labelled button', () => {
+  it('marks grouped records with a small plus while retaining counts in the accessible label', () => {
     renderWithContexts(TimelineMarkers, {
       markers: [mixedMarker()],
       spanColor: '#abc',
@@ -100,7 +100,10 @@ describe('TimelineMarkers', () => {
     const icon = button.querySelector('svg')
     expect(icon).toHaveAttribute('width', '0.875rem')
     expect(icon?.firstElementChild).toHaveAttribute('stroke-width', '1.5')
-    expect(button).toHaveTextContent('2')
+    const plus = button.querySelector('.timeline-marker__plus')
+    expect(plus).toHaveAttribute('width', '8')
+    expect(plus).toHaveAttribute('aria-hidden', 'true')
+    expect(button.textContent?.trim()).toBe('')
   })
 
   it('opens an ordered interactive activity list and selects its records', async () => {
@@ -116,10 +119,15 @@ describe('TimelineMarkers', () => {
     })
     await fireEvent.click(button)
     const rows = screen.getAllByRole('button', { name: /Span event|Log/ })
-    expect(rows[0]).toHaveTextContent(/Span event\s+\+10 ns\s+exception/)
-    expect(rows[1]).toHaveTextContent(/Log\s+\+11 ns\s+payment\.failed/)
-    expect(screen.getByText('Span event')).toHaveClass('text-error')
-    expect(screen.getByText('Log')).toHaveClass('text-rp-subtle')
+    expect(rows[0]).toHaveTextContent(/exception\s+\+10 ns\s+Span event/)
+    expect(rows[1]).toHaveTextContent(/ERROR \(17\)\s+\+11 ns\s+Log\s+·\s+payment\.failed/)
+    expect(screen.getByText('exception')).toHaveAttribute('title', 'exception')
+    expect(screen.getByText('Span event').closest('.activity-popover__metadata'))
+      .toHaveClass('text-rp-subtle')
+    expect(rows[0]!.querySelector('.bg-error')).toHaveAttribute('aria-hidden', 'true')
+    expect(rows[0]!.querySelector('.text-error')).toBeNull()
+    expect(screen.getByText('Log').closest('.activity-popover__metadata'))
+      .toHaveClass('text-rp-subtle')
     expect(rows.every(row => !row.querySelector('.badge'))).toBe(true)
 
     await fireEvent.click(rows[1]!)
@@ -141,8 +149,13 @@ describe('TimelineMarkers', () => {
     })
 
     await fireEvent.focus(screen.getByRole('button', { name: 'Select 1 log' }))
+    expect(
+      screen.getByRole('button', { name: 'Select 1 log' })
+        .querySelector('.timeline-marker__plus')
+    ).toBeNull()
     const row = screen.getByRole('button', { name: /Log/ })
-    expect(row).toHaveTextContent(/Log\s+\+11 ns/)
+    expect(row).toHaveTextContent(/ERROR \(17\)\s+\+11 ns\s+Log/)
+    expect(row).not.toHaveTextContent('·')
     expect(row).not.toHaveTextContent('failed')
     expect(row).not.toHaveTextContent('checkout')
     expect(row).not.toHaveTextContent('log-1')
@@ -163,7 +176,7 @@ describe('TimelineMarkers', () => {
     const trigger = screen.getByRole('button', { name: 'Select 1 event' })
     await fireEvent.focus(trigger)
     const row = screen.getByRole('button', { name: /Span event/ })
-    expect(row).toHaveTextContent(/Span event\s+-1\.000 s\s+exception/)
+    expect(row).toHaveTextContent(/exception\s+-1\.000 s\s+Span event/)
     await fireEvent.click(row)
     expect(onSelectRecord).toHaveBeenLastCalledWith(marker.members[0])
 

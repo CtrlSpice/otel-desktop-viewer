@@ -19,9 +19,15 @@
   Dawn's other foreground colours also use the contrast-adjusted values in
   `src/themes/rose-pine.json`, documented in `src/themes/README.md`. Keep these
   theme-wide; do not restore original low-contrast colours in individual views.
-  Moon's Subtle is #928eac app-wide, slightly brighter to meet 4.5:1 on Highlight
-  Low. It still falls below 4.5:1 on chrome and Highlight Medium. Pine and Moon's
-  remaining foreground colours retain their original values.
+  Subtle is #aba7c5 in Pine and #b1adcc in Moon app-wide. Both meet 4.5:1 on
+  canvas, panel, chrome, Highlight Low and Highlight Medium. Highlight High
+  remains below 4.5:1 for Subtle. Pine and Moon's remaining foreground colours
+  retain their original values.
+  Love/Error uses the original palette colour in every theme, including Dawn
+  #b4637a. Do not use a separate darkened error-text colour.
+  Span and summary breakdown bars use solid palette fills without Dawn-specific
+  fading or borders. Error status code/message values use neutral Text with an
+  8px Love dot before the value, only when the received status code is 2.
 - Shared item states use Highlight Low for hover and Highlight Medium for
   persistent selection. Hover temporarily uses Low even on selected items;
   leaving the item restores Medium. Text selection also uses Medium.
@@ -32,10 +38,14 @@
   their parentheses.
   Card counts sit in the title row's normal layout. Do not paint a separate
   wrapper background or gradient over the title; truncate the title beside them.
-- Trace counts read `x spans, y err` (singular `span` for one), with error text
-  in Rosé Pine love (`text-error`). Omit the error suffix when there are no errors.
-  Error navigation uses open Hugeicons left/right carets and plain theme-error text, without
-  a badge background: `err (x/y)` when an error is selected, otherwise `err`.
+- Trace counts read `● x err · y spans` (singular `span` for one), with both counts
+  and the separator in Subtle, and an 8px Love dot before the error count.
+  Error span names use neutral Text
+  without an extra dot; the waterfall already has coloured tree markers and bars.
+  Omit the error count, dot and separator when there are no errors.
+  Error navigation uses open Hugeicons left/right carets and neutral Text, with
+  an 8px Love dot between the left caret and label, without a badge background:
+  `err (x/y)` when an error is selected, otherwise `err`.
 - Main header order: title · (service) · counts on the left, optional error
   navigation and Download on the right; time and view controls below. The separate
   service/count row was rejected because it wastes space.
@@ -47,6 +57,8 @@
   Keep one record-level Copy action in the section header; do not add another
   Copy action inside the raw JSON toolbar. Field-level copy actions remain in
   Properties.
+  Raw JSON places Download at the far right after its circular Collapse/Expand
+  controls.
   Details field cards place Copy at the top-right, aligned with the first heading
   line even when the heading wraps. Its tooltip opens left into the card.
 - Trace waterfall headers use two rows: title / Download, then service · span
@@ -97,37 +109,56 @@
   Keep header surfaces separate; retain shared hover and selection highlights.
   Structured attribute wrappers add no extra left padding. JSON has no fold-arrow
   gutter; retain existing folding commands and raw-inspector controls. The current
-  notebook-guide trial uses 1.5px Subtle dots at 60% opacity in Dawn and 40% in
-  Pine/Moon, in leading indentation
+  notebook-guide trial uses 1.5px Subtle dots at 50% opacity in all themes,
+  in leading indentation
   only, spaced 2ch horizontally and one text line vertically. Place dots on text
   row boundaries (top/bottom), not at the middle of each row. JSON stays Mono.
   JSON strings soft-wrap with continuation text aligned after the opening quote.
   Wrapping and guides are display-only; preserve document text, Copy and Download.
-  JSON and waterfall guides share dot radius, colour and opacity through the
-  --guide-dot-* CSS tokens. Waterfall dots align to time ticks and span-row
-  boundaries. Its ruler uses --table-header-h and meets the first span row without
-  an extra border or gap. Graph spacing follows axes, not JSON character spacing.
+  JSON and waterfall guides share dot radius and 50% opacity through the
+  --guide-dot-* CSS tokens. JSON dots use Subtle; waterfall grid dots use
+  Muted at 50% opacity for both labelled and unlabelled guides.
+  Add three unlabelled guides between labelled guides, dividing each interval
+  into quarters. Use fewer divisions when needed to retain whole nanoseconds.
+  Keep label spacing independent of these guides; ruler, rows and tail align.
+  Paint the waterfall grid behind span bars, labels and activity markers.
+  Waterfall dots align to time ticks and span-row
+  boundaries, with two equally spaced dot rows inside each span row to divide
+  it into thirds. Its ruler uses --table-header-h and meets the first span row
+  without an extra border or gap. Graph spacing follows axes, not JSON character spacing.
+  When span rows leave empty space below them, continue the bar-area dots for up
+  to one row and fade them to transparent across that space. This decoration must
+  not add scrollable height or appear below a table that fills its viewport.
   Column and panel resizing share a short 3rem by 0.1875rem grip, rotated for
   horizontal dividers. Hide it at rest; show Text on hover and Iris on keyboard
   focus or drag at full opacity. Preserve full hit strips and keyboard controls.
+  Table-heading source names use Secondary and normal flex shrinking/ellipsis,
+  not fixed-width initials. Column/service picker searches reuse FilterInput's
+  shared 32px height rather than the taller query-entry field.
   Do not restore persistent column guide lines or duplicate header grab handles.
   Keep row hover continuous across the full column resize hit strips. Pinned log
   cells inherit the row's animated background; do not overlay a separate state
   gradient. Compact JSON in a row must not cover its hover/selection background.
   The time-range trigger uses the shared ghost-button style without its own
   background, border or hover-background overrides.
-  In Details, group the heading as `key · provenance · type`, omitting absent
-  provenance or hidden types. Provenance and type use plain Secondary text to
-  distinguish metadata from the Subtle field name, without pills or right-aligned
-  badges. The `·` separators always use Subtle, independently of adjacent text
-  colours. Preserve the actual field name.
-  Span-event summary labels are plain Subtle text; exception labels use the
-  theme error colour. Do not restore their pill backgrounds.
+  In Details, use `key · type` in the heading, omitting hidden types. Put provenance
+  such as Resource/Scope on its own line below the heading when present.
+  Provenance and type use plain Secondary text to distinguish metadata from the
+  Subtle field name, without pills or right-aligned badges. The `·` separator
+  uses Subtle. Preserve the actual field name.
+  Span-event metadata labels are plain Subtle text. Exception events use an 8px
+  Love dot with neutral Text titles in cards and neutral metadata in timeline
+  popovers. Do not colour exception text red or restore pill backgrounds.
   Apply the same plain-label rules to activity popovers, link summaries and
   dropdown metadata. Search suggestions use Next at 14px/21px, with plain
   Secondary metadata and Subtle dot separators. Service/severity filter options
   use plain text with meaningful colour dots and the shared item selection/hover
   highlights, not coloured pills. Datapoint flags use plain warning text.
+  Timeline activity popover entries use two lines: event name or shared log
+  severity in Text, with the Subtle offset at the right; Subtle record type below.
+  Logs put a received event name after `Log ·` on the second line when present.
+  Align metadata under the title text after a dot when present. Keep chronological
+  order; nameless entries have no separator or invented name.
   Log summary labels are plain Subtle text. Shared log severity labels use
   normal text with a small dot in the existing severity colour, not a pill.
   Retain the severity text and number alongside the dot.
@@ -156,9 +187,29 @@
 - Trace, log and metric summary timestamps use the selected timezone without
   repeating its suffix on each card. Keep timezone labels in Details.
   Trace summaries omit the visible `Start:` label; keep `Duration:` labelled.
-- User-requested exception: waterfall tree controls and log severity use shared
-  16px numbered circles and 8px numerals. Tree columns use 22px spacing. Guides must span
+- Log severity uses an 8px coloured dot followed by neutral `LABEL (number)`
+  text in summaries and tables through LogSeverity; no numbered circles.
+  Waterfall tree nodes
+  use filled 8px dots matching the span bar colour for both parents and leaves,
+  without a visible number inside the dot. Parent rows read `●4   Parent Title`:
+  plain Subtle 14px regular direct-child counts sit between the dot and title,
+  without parentheses or a badge. Centre each count in a 22px slot aligned with
+  the children's dots one level below; leave 8px between that slot and the title.
+  Align the waterfall table's name heading with the root title, reserving the
+  same count slot when present.
+  Keep counts visible when collapsed; omit counts for leaves.
+  Do not add separate count gutters.
+  Preserve parent
+  controls' 16px hit areas and accessible child-count labels. Parent dots stay
+  visible on hover; there is no caret. The user plans a separate bar interaction.
+  Timeline activity markers use the same 14px circle icon for single and grouped
+  records. Grouped markers show a small 8px plus icon instead of a visible count;
+  keep exact event/log counts in the accessible label and tooltip.
+  Tree columns use 22px spacing. Guides must span
   the shared table row height so they remain connected.
+  Tree connector trunks, arms and stems use solid 1px Muted lines at 50% opacity.
+  Centre the line strokes on node centres; elbow connectors use the cards'
+  --radius-xl corner radius as one continuous rounded bend.
   Configure these sizes in `src/themes/tokens.ts` alongside the DaisyUI theme
   tokens; components consume them without hardcoded size overrides.
 

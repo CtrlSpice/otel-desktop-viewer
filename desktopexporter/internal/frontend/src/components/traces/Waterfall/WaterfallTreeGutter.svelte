@@ -12,16 +12,21 @@
   type Props = {
     depth: number
     tree: TreeConnectorMeta
-    /** Concrete colour (palette HCL or `--color-*` var). Threaded into the
-     *  `--tree-accent` custom property so the button states (expanded /
-     *  collapsed / leaf) can mix against it. Error spans already pass
+    /** Concrete colour (palette HCL or `--color-*` var) for the node dot.
+     *  Error spans already pass
      *  `--color-error` here, so no separate `isError` branch is needed. */
     color: string
     subtreeCollapsed: boolean
     onToggleExpand: () => void
   }
 
-  let { depth, tree, color, subtreeCollapsed, onToggleExpand }: Props = $props()
+  let {
+    depth,
+    tree,
+    color,
+    subtreeCollapsed,
+    onToggleExpand,
+  }: Props = $props()
 
   let hasChildren = $derived(tree.childrenCount > 0)
   let childCount = $derived(tree.childrenCount)
@@ -68,7 +73,6 @@
         <div class="seg seg--tee"></div>
         <div class="seg__arm" class:seg__arm--leaf={!hasChildren}></div>
       {:else if kind === 'elbow'}
-        <div class="seg seg--elbow"></div>
         <div
           class="seg__arm seg__arm--elbow"
           class:seg__arm--leaf={!hasChildren}
@@ -88,9 +92,7 @@
       {/if}
       <button
         type="button"
-        class="gutter__btn gutter__btn--hub number-circle shrink-0"
-        class:gutter__btn--expanded={!subtreeCollapsed}
-        class:gutter__btn--collapsed={subtreeCollapsed}
+        class="gutter__btn gutter__btn--hub shrink-0"
         aria-expanded={!subtreeCollapsed}
         aria-label={subtreeCollapsed
           ? `Expand ${childCount} child spans`
@@ -100,22 +102,7 @@
           onToggleExpand()
         }}
       >
-        <span class="gutter__btn-label tabular-nums">{childCount}</span>
-        <svg
-          class="gutter__btn-caret"
-          class:gutter__btn-caret--down={!subtreeCollapsed}
-          viewBox="0 0 24 24"
-          fill="none"
-          aria-hidden="true"
-        >
-          <path
-            d="M10 8l4 4-4 4"
-            stroke="currentColor"
-            stroke-width="1.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
+        <span class="gutter__btn-dot" aria-hidden="true"></span>
       </button>
     {:else}
       <button
@@ -132,8 +119,8 @@
 <style lang="postcss">
   @reference "../../../app.css";
   .gutter {
-    --leaf-dot-size: 0.5rem;
-    --number-circle-color: var(--tree-accent);
+    --leaf-dot-size: var(--waterfall-gutter-leaf);
+    --tree-line-color: color-mix(in srgb, var(--color-muted) 50%, transparent);
     @apply relative flex-shrink-0;
     height: var(--table-row-h);
   }
@@ -145,7 +132,8 @@
   /* ───── Segment shapes ───── */
 
   .seg {
-    @apply pointer-events-none absolute w-px bg-base-content/15;
+    @apply pointer-events-none absolute w-px;
+    background-color: var(--tree-line-color);
     left: 50%;
     transform: translateX(-50%);
   }
@@ -162,30 +150,31 @@
     bottom: 0;
   }
 
-  /* └  top-half vertical (arm added separately) */
-  .seg--elbow {
-    top: 0;
-    bottom: 50%;
-  }
-
   /* ── horizontal arm from column center rightward */
   .seg__arm {
-    @apply pointer-events-none absolute border-b border-base-content/15;
-    top: 50%;
+    --target-dot-size: var(--waterfall-gutter-hub);
+    @apply pointer-events-none absolute border-b;
+    border-color: var(--tree-line-color);
+    top: calc(50% - 0.5px);
     left: 50%;
     height: 0;
     /* Static, so it lives here rather than as a style: directive. Inline, the
        calc exceeded printWidth and prettier-plugin-svelte wrapped it inside
        the quotes, which svelte-check reads as an unterminated string. */
-    width: calc(var(--waterfall-gutter-col) - var(--waterfall-gutter-hub) / 2);
+    width: calc(var(--waterfall-gutter-col) - var(--target-dot-size) / 2);
   }
 
   .seg__arm--elbow {
-    border-bottom-left-radius: 4px;
+    top: 0;
+    left: calc(50% - 0.5px);
+    height: calc(50% + 0.5px);
+    width: calc(var(--waterfall-gutter-col) - var(--target-dot-size) / 2 + 0.5px);
+    border-left: 1px solid var(--tree-line-color);
+    border-bottom-left-radius: var(--radius-xl);
   }
 
   .seg__arm--leaf {
-    width: calc(var(--waterfall-gutter-col) - var(--leaf-dot-size) / 2);
+    --target-dot-size: var(--leaf-dot-size);
   }
 
   /* ───── Node slot (hub button column) ───── */
@@ -196,45 +185,25 @@
   }
 
   .gutter__stem {
-    @apply pointer-events-none absolute z-0 w-px -translate-x-1/2 bg-base-content/15;
+    @apply pointer-events-none absolute z-0 w-px -translate-x-1/2;
+    background-color: var(--tree-line-color);
     left: 50%;
     top: calc(50% + (var(--hub-px) / 2));
     bottom: 0;
   }
 
   .gutter__btn--hub {
-    @apply relative z-[1];
+    @apply relative z-[1] inline-flex items-center justify-center rounded-full border-0 bg-transparent p-0 text-base-content;
+    width: var(--waterfall-gutter-hit);
+    height: var(--waterfall-gutter-hit);
   }
 
-  .gutter__btn-label,
-  .gutter__btn-caret {
+  .gutter__btn-dot {
     @apply absolute;
-    transition: opacity 0.1s;
-  }
-
-  .gutter__btn-label {
-    opacity: 1;
-  }
-
-  .gutter__btn-caret {
     width: var(--waterfall-gutter-hub);
     height: var(--waterfall-gutter-hub);
-    opacity: 0;
-    transition:
-      opacity 0.1s,
-      transform 0.15s;
-  }
-
-  .gutter__btn-caret--down {
-    transform: rotate(90deg);
-  }
-
-  .gutter__btn--hub:hover .gutter__btn-label {
-    opacity: 0;
-  }
-
-  .gutter__btn--hub:hover .gutter__btn-caret {
-    opacity: 1;
+    border-radius: 50%;
+    background-color: var(--tree-accent);
   }
 
   /* ───── Button base ───── */

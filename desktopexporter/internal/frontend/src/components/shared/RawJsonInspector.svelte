@@ -181,19 +181,6 @@
       >OTLP JSON{#if bytes !== null}{' · '}{sizeLabel(bytes)}{/if}</span
     >
     <span id={formatHintID} class="sr-only">{formatHint}</span>
-    {#if scope?.url && scope.url !== wholeURL}<a
-        class="header-icon-button tooltip tooltip-left"
-        href={scope.url}
-        aria-label="Download {scope.label.toLowerCase()}"
-        data-tip="Download {scope.label.toLowerCase()}"
-        download
-        ><HugeiconsIcon
-          icon={Download01Icon}
-          size={16}
-          strokeWidth={1.5}
-          aria-hidden="true"
-        /></a
-      >{/if}
     <div
       class="header-controls ml-auto shrink-0"
       role="group"
@@ -232,6 +219,19 @@
         />
       </button>
     </div>
+    {#if scope?.url && scope.url !== wholeURL}<a
+        class="header-icon-button tooltip tooltip-left"
+        href={scope.url}
+        aria-label="Download {scope.label.toLowerCase()}"
+        data-tip="Download {scope.label.toLowerCase()}"
+        download
+        ><HugeiconsIcon
+          icon={Download01Icon}
+          size={16}
+          strokeWidth={1.5}
+          aria-hidden="true"
+        /></a
+      >{/if}
   </div>
   {#if !scope?.url}<p class="p-3 text-sm">
       {scope?.unavailable ?? 'Select a record to inspect its raw JSON.'}
@@ -274,6 +274,11 @@
   }
   .raw-inspector__controls {
     @apply flex flex-wrap items-center gap-2 px-2;
+  }
+  .raw-inspector__controls .chart-header-control {
+    @apply rounded-full;
+    width: var(--header-control-height, 2rem);
+    padding-inline: 0;
   }
   .raw-inspector__notice {
     @apply m-2 rounded-lg bg-warning/10 p-3 text-sm text-warning;

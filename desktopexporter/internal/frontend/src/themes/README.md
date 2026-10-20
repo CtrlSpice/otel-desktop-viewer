@@ -22,9 +22,20 @@ to sRGB hex values. Each colour reaches at least 4.5:1 on bg-100, bg-200,
 bg-300, Highlight Low and Highlight Medium. Medium is the limiting background:
 4.502:1 in Pine, 4.504:1 in Moon and 4.542:1 in Dawn.
 
-Moon's Subtle is slightly brighter app-wide: `#908caa` → `#928eac`.
-Contrast passes on canvas (4.982:1), panel (4.579:1) and Highlight Low
-(4.544:1). It still fails on chrome (3.705:1) and Highlight Medium (3.111:1).
+Subtle is adjusted app-wide in Pine (`#908caa` → `#aba7c5`) and Moon
+(`#928eac` → `#b1adcc`). Only OKLCH lightness was increased before rounding
+to sRGB hex values, retaining the hue and chroma. All five backgrounds pass:
+
+| Subtle contrast | Pine | Moon |
+| --- | --- | --- |
+| Canvas | 7.622:1 | 7.241:1 |
+| Panel | 7.119:1 | 6.655:1 |
+| Chrome | 6.550:1 | 5.384:1 |
+| Highlight Low | 6.916:1 | 6.605:1 |
+| Highlight Medium | 4.516:1 | 4.521:1 |
+
+Highlight High, used for matched waterfall rows, is outside that five-background
+target. The Subtle/High pairs still fall below 4.5:1 (Pine 3.391:1, Moon 3.437:1).
 
 Dawn's foreground adjustments below use the same minimum contrast on those
 five backgrounds. Text already passes at its original value. These colours
@@ -38,11 +49,49 @@ within sRGB. These are shared theme colours, including for syntax and metadata.
 | Iris/Primary | `#907aa9` | `#6d5784` | 4.532:1 |
 | Foam/Accent | `#56949f` | `#296974` | 4.505:1 |
 | Gold/Warning | `#ea9d34` | `#895500` | 4.510:1 |
-| Love/Error | `#b4637a` | `#95485f` | 4.501:1 |
 
 The user rejected the darkened Dawn Rose. Its palette value is restored to
 `#d7827e`; it does not meet 4.5:1 on these surfaces. Dawn literals instead use
 the adjusted Iris (`#6d5784`), which meets the contrast target.
+
+Love/Error also uses its original colour across the app: Dawn `#b4637a`,
+Pine/Moon `#eb6f92`. The darkened Dawn error colour was rejected; there is no
+separate error-text colour. Error navigation uses neutral Text for its carets
+and label, with an 8px Love dot before `err` or `err (x/y)`. Other Love-coloured
+text retains the original palette's contrast limitations.
+Across canvas, panel, chrome, Low and Medium, neutral Text has a minimum of
+5.252:1. Love text fails 4.5:1 on Dawn's five backgrounds (minimum 3.030:1),
+Moon chrome (4.001:1) and Medium (3.359:1), and Pine Medium (3.597:1).
+The navigation dot repeats the written error label; it is not the sole signal.
+Trace counts read `● x err · y spans`, with both counts and the separator in
+Subtle and an 8px Love dot. Error status code/message values use neutral Text
+with 8px Love dots. Error span names use neutral Text without an additional dot;
+the waterfall retains its coloured tree markers and bars. Span and summary
+breakdown bars use solid palette fills without borders in Dawn as well as the
+dark themes.
+Waterfall tree nodes use filled 8px dots matching the span bar colour for both
+parents and leaves, without counts inside the dots. Parent
+buttons retain 16px hit areas and accessible child-count labels. Dots stay
+visible on hover; there is no caret.
+Parent rows read `●4   Parent Title`, with the direct-child count in plain Subtle
+14px regular text between the dot and title. Counts remain visible when collapsed;
+leaves have no count. Counts have no parentheses or badge background. Each count
+is centred in a 22px slot above its children's dots, with 8px from slot to title.
+The name column heading reserves the same root count slot to align with the title.
+Tree columns retain 22px spacing without separate count gutters.
+Tree connector trunks, arms and stems are solid 1px lines in Muted at 50% opacity.
+Their strokes align with node centres; elbows share the cards' `--radius-xl`
+corner radius and use a continuous rounded border.
+Timeline activity markers use a 14px circle icon for both single and grouped
+records. Groups show an 8px plus icon; exact counts remain in their accessible
+labels and tooltips.
+Log tables and summaries share `LogSeverity`: an 8px severity-coloured dot
+followed by neutral `LABEL (number)` text. Received labels are retained; only
+missing labels are derived from the severity number.
+Exception event cards use an 8px Love dot with a neutral Text title. Timeline
+popovers put the dot beside the neutral event name, with `Span event` below in
+Subtle. Log entries put shared severity first, with `Log` and any received event
+name below. Offsets use Subtle and align right on the first line.
 
 ## Editor syntax
 
@@ -78,22 +127,32 @@ Low-hover/Medium-selection rules.
 Code surfaces and search inputs use bg-100: the darkest surface in Pine/Moon
 and the brightest in Dawn. This includes JSON editors, shell examples, compact
 JSON previews, help snippets, query inputs and filter searches. Comments use
-Subtle, which passes 4.5:1 on these normal backgrounds (Pine 5.48:1,
-Moon 4.98:1, Dawn 6.01:1). Subtle still fails on Medium selection in the dark
-themes (Pine 3.25:1, Moon 3.11:1); Moon Subtle now passes on Low at 4.54:1.
+Subtle, which passes 4.5:1 on these normal backgrounds (Pine 7.62:1,
+Moon 7.24:1, Dawn 6.01:1) and on Low hover and Medium selection in every theme.
 
 JSON strings soft-wrap at word boundaries with a hanging indent after the opening
 quote. The document text is unchanged. JSON's notebook-guide trial replaces the
 fold-arrow gutter with a sparse grid only in leading indentation: 1.5px dots
-in Subtle at 60% opacity in Dawn and 40% in Pine/Moon, 2ch apart horizontally
+in Subtle at 50% opacity in all themes, 2ch apart horizontally
 and one text line apart vertically,
 positioned on row boundaries rather than the middle of the text.
 The Mono font keeps dots aligned with character columns. These decorative dots
 do not carry text or replace the existing folding commands and inspector controls.
 
-The shared `--guide-dot-radius`, `--guide-dot-color` and `--guide-dot-opacity`
-tokens also style waterfall time guides. Their positions follow time ticks and
-span-row boundaries; the ruler and first span row meet without a gap.
+The shared `--guide-dot-radius` and `--guide-dot-opacity` tokens apply to
+waterfall time guides and all raw/nested JSON grids. Every grid uses 50% opacity;
+waterfall guides use Muted and JSON guides use Subtle.
+Three unlabelled guides divide each labelled interval into quarters.
+Use fewer divisions when needed to retain whole nanoseconds.
+Labels keep their existing spacing; ruler, span rows and faded tail use the
+same guide positions. These positions are display-only, calculated from exact
+nanosecond offsets as `floor(offsetNs * 10000 / durationNs) / 100` percent.
+It is painted behind span bars, labels and activity markers.
+Their positions follow time ticks and
+span-row boundaries, with two additional dot rows at one-third and two-thirds
+of each span row's height. The ruler and first span row meet without a gap.
+If the spans leave empty space below the table, the guides continue for up to
+one row and fade to transparent. The continuation adds no scrollable height.
 Column and panel resize controls use a shared short grip, hidden at rest and
 visible on hover, keyboard focus or drag. Hover uses Text; focus and drag use Iris
 at full opacity. The full drag areas and keyboard behaviour remain available.

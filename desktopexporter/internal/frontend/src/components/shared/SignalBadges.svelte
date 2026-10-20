@@ -2,7 +2,7 @@
   /* Shared drawer-card and detail-header badges from primitive signal facts. */
   import type { MetricType } from '@/types/api-types'
   import { metricTypeSummary } from '@/components/metrics/utils/metric-type'
-  import { severityColor, severityLabel } from '@/components/logs/log-severity'
+  import LogSeverity from '@/components/logs/LogSeverity.svelte'
 
   type MetricProps = {
     signal: 'metric'
@@ -83,22 +83,15 @@
     class="badge-count"
     title="{props.spanCount} span{props.spanCount !== 1 ? 's' : ''}"
   >
-    {props.spanCount} span{props.spanCount !== 1
-      ? 's'
-      : ''}{#if props.errorCount > 0},
-      <span class="text-error">{props.errorCount} err</span>{/if}
+    {#if props.errorCount > 0}
+      <span class="inline-flex items-center gap-2">
+        <span class="size-2 shrink-0 rounded-full bg-error" aria-hidden="true"
+        ></span>
+        {props.errorCount} err</span
+      >{' · '}
+    {/if}
+    {props.spanCount} span{props.spanCount !== 1 ? 's' : ''}
   </span>
 {:else if props.signal === 'log'}
-  {@const label = severityLabel(props.severityText, props.severityNumber)}
-  <span
-    class="inline-flex items-center gap-2 text-xs text-base-content tabular-nums"
-    title={label}
-  >
-    <span
-      class="size-2 shrink-0 rounded-full"
-      style:background-color={severityColor(props.severityNumber)}
-      aria-hidden="true"
-    ></span>
-    {label} ({props.severityNumber})
-  </span>
+  <LogSeverity number={props.severityNumber} text={props.severityText} />
 {/if}

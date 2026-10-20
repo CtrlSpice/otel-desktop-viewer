@@ -38,6 +38,7 @@
         aria-hidden="true"
       /></button
     >
+    <span class="error-nav__dot" aria-hidden="true"></span>
     <span aria-live="polite"
       >{index !== null ? `err (${index}/${count})` : 'err'}</span
     >
@@ -61,7 +62,10 @@
 <style lang="postcss">
   @reference "../../app.css";
   .error-nav {
-    @apply inline-flex shrink-0 items-center gap-2 text-sm font-normal whitespace-nowrap tabular-nums text-error;
+    @apply inline-flex shrink-0 items-center gap-2 text-sm font-normal whitespace-nowrap tabular-nums text-base-content;
+  }
+  .error-nav__dot {
+    @apply size-2 shrink-0 rounded-full bg-error;
   }
   .error-nav__button {
     @apply inline-flex size-8 cursor-pointer items-center justify-center border-0 bg-transparent p-0;

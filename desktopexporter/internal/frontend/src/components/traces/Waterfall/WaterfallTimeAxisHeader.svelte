@@ -1,5 +1,6 @@
 <script module lang="ts">
   export type TimeAxisTick = { offsetPercent: number; label: string }
+  export type TimeAxisGuide = { offsetPercent: number; major: boolean }
 
   export type TimeAxisResult = {
     unit: string
@@ -50,6 +51,7 @@
     unit: string
     intervalNs: bigint
     ticks: TimeAxisTick[]
+    guides: TimeAxisGuide[]
   }
 
   // Round a raw interval to a "nice" human-friendly step size.
@@ -106,15 +108,33 @@
     return `${wholePart}.${fracStr}${suffix}`
   }
 
+  function offsetPercent(pos: bigint, durationNs: bigint): number {
+    return Number((pos * 10000n) / durationNs) / 100
+  }
+
   function tickAt(
     pos: bigint,
     durationNs: bigint,
     unit: UnitDef
   ): TimeAxisTick {
     return {
-      offsetPercent: Number((pos * 10000n) / durationNs) / 100,
+      offsetPercent: offsetPercent(pos, durationNs),
       label: formatTickValue(pos, unit),
     }
+  }
+
+  function gridGuides(durationNs: bigint, intervalNs: bigint): TimeAxisGuide[] {
+    // Quarter-interval guides, using fewer divisions at whole-nanosecond limits.
+    const divisions =
+      intervalNs % 4n === 0n ? 4n : intervalNs % 2n === 0n ? 2n : 1n
+    return collectTickPositions(
+      durationNs,
+      intervalNs / divisions,
+      MAX_AXIS_TICKS * Number(divisions)
+    ).map(pos => ({
+      offsetPercent: offsetPercent(pos, durationNs),
+      major: pos % intervalNs === 0n,
+    }))
   }
 
   // Two-pass unit selection for human-friendly tick labels.
@@ -146,6 +166,7 @@
         unit: 'ns',
         intervalNs: 1n,
         ticks: [{ offsetPercent: 0, label: '0ns' }],
+        guides: [{ offsetPercent: 0, major: true }],
       }
     }
 
@@ -172,6 +193,7 @@
       unit: displayUnit.name,
       intervalNs,
       ticks,
+      guides: gridGuides(traceDurationNs, intervalNs),
     }
   }
 
@@ -218,6 +240,7 @@
     targetTickCount?: number
     tickLabelWidth?: number
     spanColWidth: number
+    rootChildCount?: number
     optionalColumns?: SizedWaterfallColumn[]
   }
 
@@ -226,6 +249,7 @@
     targetTickCount = 6,
     tickLabelWidth = 80,
     spanColWidth,
+    rootChildCount = 0,
     optionalColumns = [],
   }: Props = $props()
 
@@ -242,10 +266,18 @@
   <th
     scope="col"
     class="waterfall-time-axis-header__th-label waterfall-time-axis-header__th-span"
+    class:waterfall-time-axis-header__th-span--parent={rootChildCount > 0}
     style:width="{spanColWidth}px"
     aria-label="Span name"
   >
-    <TableColumnHeading label="name" source="Span" signal="Span" />
+    <span class="flex min-w-0 items-center gap-2">
+      {#if rootChildCount > 0}
+        <span class="waterfall-time-axis-header__count-spacer invisible shrink-0 font-normal tabular-nums" aria-hidden="true"
+          >{rootChildCount}</span
+        >
+      {/if}
+      <TableColumnHeading label="name" source="Span" signal="Span" />
+    </span>
   </th>
   {#each optionalColumns as column (column.id)}
     <th
@@ -273,11 +305,15 @@
           <span class="waterfall-time-axis-header__tick-label"
             >{tick.label}</span
           >
-          <span
-            class="waterfall-time-axis-header__tick-line dot-guide-vertical"
-            aria-hidden="true"
-          ></span>
         </div>
+      {/each}
+      {#each axis.guides as guide}
+        <span
+          class="waterfall-time-axis-header__tick-line dot-guide-vertical"
+          class:dot-guide-vertical--minor={!guide.major}
+          style:left="{guide.offsetPercent}%"
+          aria-hidden="true"
+        ></span>
       {/each}
     </div>
   </th>
@@ -296,8 +332,17 @@
   }
 
   .waterfall-time-axis-header__th-span {
-    /* Row inset (8px) + gutter(26px) + gap-1(4px) = 38px */
-    padding-left: 38px;
+    padding-left: calc(
+      0.5rem + var(--waterfall-gutter-col) + var(--waterfall-gutter-tail) + 0.25rem
+    );
+  }
+
+  .waterfall-time-axis-header__th-span--parent {
+    padding-left: calc(0.5rem + var(--waterfall-gutter-col));
+  }
+
+  .waterfall-time-axis-header__count-spacer {
+    width: var(--waterfall-gutter-col);
   }
 
   .waterfall-time-axis-header__th-attribute {

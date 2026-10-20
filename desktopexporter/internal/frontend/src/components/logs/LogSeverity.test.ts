@@ -13,16 +13,17 @@ describe('LogSeverity', () => {
     [24, 'FATAL', 'error'],
     [0, 'UNSPECIFIED', 'neutral'],
   ])(
-    'shows severity %s in a correctly coloured circle beside its label',
+    'shows severity %s as a coloured dot followed by its label and number',
     (number, text, colour) => {
       const { container } = render(LogSeverity, { number, text })
-      const circle = container.querySelector<HTMLElement>('.number-circle')!
-      expect(circle).toHaveTextContent(String(number))
-      expect(circle.style.getPropertyValue('--number-circle-color')).toBe(
+      const dot = container.querySelector<HTMLElement>('.log-severity__dot')!
+      expect(dot).toBeEmptyDOMElement()
+      expect(dot).toHaveAttribute('aria-hidden', 'true')
+      expect(dot.style.backgroundColor).toBe(
         `var(--color-${colour})`
       )
       expect(container.querySelector('.log-severity__label')).toHaveTextContent(
-        text
+        `${text} (${number})`
       )
       expect(screen.queryByRole('button')).toBeNull()
       expect(container.querySelector('.badge')).toBeNull()
@@ -31,8 +32,8 @@ describe('LogSeverity', () => {
 
   it('retains received labels and derives a label only when none was received', async () => {
     const view = render(LogSeverity, { number: 18, text: 'CUSTOM ERROR' })
-    expect(screen.getByText('CUSTOM ERROR')).toBeInTheDocument()
+    expect(screen.getByText('CUSTOM ERROR (18)')).toBeInTheDocument()
     await view.rerender({ text: '' })
-    expect(screen.getByText('ERROR')).toBeInTheDocument()
+    expect(screen.getByText('ERROR (18)')).toBeInTheDocument()
   })
 })

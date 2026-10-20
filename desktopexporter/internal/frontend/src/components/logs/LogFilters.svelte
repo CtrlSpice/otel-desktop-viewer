@@ -2,6 +2,7 @@
   import type { FieldDefinition } from '@/search/model'
   import type { SearchEditorAPI } from '@/components/shared/Search/search-editor-api'
   import FilterPopover from '@/components/shared/Toolbar/FilterPopover.svelte'
+  import FilterInput from '@/components/shared/Search/FilterInput.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { FilterIcon } from '@hugeicons/core-free-icons'
@@ -144,13 +145,13 @@
         {/each}
       </div>
     {/if}
-    <input
-      class="typed-field typed-field--pill mb-2 w-full"
-      type="search"
-      aria-label="Find services"
-      placeholder="Find services…"
-      bind:value={serviceSearch}
-    />
+    <div class="mb-2">
+      <FilterInput
+        label="Find services"
+        placeholder="Find services…"
+        bind:value={serviceSearch}
+      />
+    </div>
     <p class="log-filters__hint mb-1">Services seen in loaded logs</p>
     {#if filters.service.custom && filters.editable}<p
         class="log-filters__hint"

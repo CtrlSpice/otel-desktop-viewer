@@ -1,11 +1,11 @@
 <script lang="ts">
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { CircleIcon } from '@hugeicons/core-free-icons'
+  import { CircleIcon, PlusSignIcon } from '@hugeicons/core-free-icons'
   import {
     createPopoverID,
     setupAnchorPopover,
   } from '@/components/shared/utils/anchor-popover'
-  import { severityColor } from '@/components/logs/log-severity'
+  import LogSeverity from '@/components/logs/LogSeverity.svelte'
   import { formatSignedDuration } from '@/utils/time'
   import {
     MARKER_GLYPH_REM,
@@ -214,7 +214,13 @@
     aria-hidden="true"
   />
   {#if marker.members.length > 1}
-    <span class="timeline-marker__count">{marker.members.length}</span>
+    <HugeiconsIcon
+      icon={PlusSignIcon}
+      size={8}
+      strokeWidth={2}
+      class="timeline-marker__plus"
+      aria-hidden="true"
+    />
   {/if}
 </button>
 
@@ -242,27 +248,37 @@
             select(record, event)
           }}
         >
-          {#if record.kind === 'event'}
-            <span
-              class={record.event.name === 'exception'
-                ? 'text-error'
-                : 'text-rp-subtle'}>Span event</span
-            >
-          {:else}
-            <span class="inline-flex items-center gap-2 text-rp-subtle">
-              <span
-                class="size-2 shrink-0 rounded-full"
-                style:background-color={severityColor(
-                  record.log.severityNumber
-                )}
-                aria-hidden="true"
-              ></span>Log
-            </span>
-          {/if}
-          <span class="activity-popover__offset">{offsetLabel(record)}</span>
-          {#if name}
-            <span class="activity-popover__name">{name}</span>
-          {/if}
+          <span class="activity-popover__heading">
+            {#if record.kind === 'event'}
+              <span class="activity-popover__name">
+                {#if name === 'exception'}
+                  <span class="size-2 shrink-0 rounded-full bg-error" aria-hidden="true"
+                  ></span>
+                {/if}
+                <span class="min-w-0 truncate" title={name}>{name}</span>
+              </span>
+            {:else}
+              <LogSeverity
+                number={record.log.severityNumber}
+                text={record.log.severityText}
+              />
+            {/if}
+            <span class="activity-popover__offset">{offsetLabel(record)}</span>
+          </span>
+          <span
+            class="activity-popover__metadata text-rp-subtle"
+            class:activity-popover__metadata--with-dot={record.kind === 'log' || name === 'exception'}
+          >
+            {#if record.kind === 'event'}
+              <span>Span event</span>
+            {:else}
+              <span>Log</span>
+              {#if name}
+                <span aria-hidden="true">·</span>
+                <span class="min-w-0 truncate" title={name}>{name}</span>
+              {/if}
+            {/if}
+          </span>
         </button>
       </div>
     {/each}
@@ -294,8 +310,8 @@
     color: var(--color-base-200);
   }
 
-  .timeline-marker__count {
-    @apply pointer-events-none absolute inset-0 flex items-center justify-center text-base font-bold leading-none;
+  .timeline-marker :global(.timeline-marker__plus) {
+    @apply pointer-events-none absolute;
     color: var(--color-base-200);
   }
 
@@ -309,14 +325,27 @@
   }
 
   .activity-popover__row {
-    @apply grid w-full cursor-pointer grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-2 px-3 py-2 text-left text-sm font-normal;
+    @apply flex w-full cursor-pointer flex-col gap-0 px-3 py-2 text-left text-sm font-normal;
+  }
+
+  .activity-popover__heading {
+    @apply flex w-full min-w-0 items-center gap-2;
   }
 
   .activity-popover__offset {
-    @apply whitespace-nowrap font-sans tabular-nums text-base-content;
+    @apply ml-auto shrink-0 whitespace-nowrap text-right font-sans tabular-nums;
+    color: var(--color-subtle);
   }
 
   .activity-popover__name {
-    @apply truncate text-base-content;
+    @apply flex min-w-0 items-center gap-2 text-base-content;
+  }
+
+  .activity-popover__metadata {
+    @apply flex w-full min-w-0 items-center gap-2 whitespace-nowrap;
+  }
+
+  .activity-popover__metadata--with-dot {
+    padding-left: 1rem;
   }
 </style>

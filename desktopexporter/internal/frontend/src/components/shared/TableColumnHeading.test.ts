@@ -32,11 +32,12 @@ describe('TableColumnHeading', () => {
       })
       const heading = container.querySelector('.table-column-heading')!
       expect(heading.children[0]).toBe(screen.getByText('service.name'))
-      const badge = screen.getByRole('img', { name: 'Source: Resource' })
-      expect(heading.children[1]).toBe(badge)
-      expect(badge).toHaveClass('badge', 'badge-soft')
-      expect(badge).toHaveTextContent('Resource')
-      expect(badge).toHaveAttribute('title', 'Resource')
+      const provenance = screen.getByRole('img', { name: 'Source: resource' })
+      expect(heading.children[1]).toBe(provenance)
+      expect(provenance).toHaveClass('metadata-origin', 'min-w-0', 'truncate')
+      expect(provenance).not.toHaveClass('badge', 'shrink-0')
+      expect(provenance).toHaveTextContent('resource')
+      expect(provenance).toHaveAttribute('title', 'resource')
     }
   )
 })

@@ -60,15 +60,17 @@ describe('EventsPanel selected event', () => {
     })
   })
 
-  it('uses the love/error tone for exception titles and badges, without a deprecation notice', () => {
+  it('marks only exception events with a Love dot and keeps their title neutral', () => {
     const { container } = renderWithContexts(EventsPanel, {
-      events: [makeEvent('exception', 0n)],
+      events: [makeEvent('exception', 0n), makeEvent('checkpoint', 1n)],
       spanStartTime: 1_000n,
     })
-    expect(screen.getByText('exception')).toHaveClass('text-error')
-    expect(container.querySelector('.badge-error')).toHaveTextContent(
-      'Span event'
-    )
+    const title = screen.getByText('exception')
+    expect(title.parentElement).toHaveClass('text-base-content')
+    expect(title.previousElementSibling).toHaveClass('bg-error', 'size-2')
+    expect(title.previousElementSibling).toHaveAttribute('aria-hidden', 'true')
+    expect(container.querySelectorAll('.bg-error')).toHaveLength(1)
+    expect(container.querySelector('.text-error, .badge-error')).toBeNull()
     expect(screen.queryByRole('link', { name: 'API deprecation' })).toBeNull()
   })
 })

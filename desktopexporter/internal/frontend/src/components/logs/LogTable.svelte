@@ -10,6 +10,7 @@
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import ErrorNavigationBadge from '@/components/shared/ErrorNavigationBadge.svelte'
   import TableColumnHeading from '@/components/shared/TableColumnHeading.svelte'
+  import FilterInput from '@/components/shared/Search/FilterInput.svelte'
   import TableValueCell from '@/components/shared/TableValueCell.svelte'
   import Identifier from '@/components/shared/Identifier.svelte'
   import type { FieldDefinition } from '@/search/model'
@@ -282,13 +283,13 @@
       )) {
         if (value.getBoundingClientRect().width === 0) continue
         const label = value.querySelector<HTMLElement>('.log-severity__label')!
-        const circle = value.querySelector<HTMLElement>('.number-circle')!
+        const dot = value.querySelector<HTMLElement>('.log-severity__dot')!
         const inset = getComputedStyle(value.closest('.table-value-cell')!)
         required = Math.max(
           required,
           Math.ceil(
             label.scrollWidth +
-              circle.getBoundingClientRect().width +
+              dot.getBoundingClientRect().width +
               parseFloat(getComputedStyle(value).columnGap) +
               parseFloat(inset.paddingLeft) +
               parseFloat(inset.paddingRight) +
@@ -529,13 +530,13 @@
     aria-label="Log columns"
     class="anchor-popover anchor-popover--anchored log-table__columns"
   >
-    <input
-      class="typed-field typed-field--pill mb-2 w-full"
-      type="search"
-      aria-label="Find columns"
-      placeholder="Find columns…"
-      bind:value={columnSearch}
-    />
+    <div class="mb-2">
+      <FilterInput
+        label="Find columns"
+        placeholder="Find columns…"
+        bind:value={columnSearch}
+      />
+    </div>
     {#each LOG_COLUMN_SOURCES as source}
       {#each ['field', 'attribute'] as kind}
         {@const group = options.filter(

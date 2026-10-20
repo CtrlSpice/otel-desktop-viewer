@@ -121,8 +121,13 @@ test('table cells reveal exact fields in separate Details, with observed-time fa
   })
   await expect(bodyCell.locator('.badge')).toHaveCount(0)
   await expect(severityCell.locator('.badge')).toHaveCount(0)
-  await expect(severityCell.locator('.number-circle')).toHaveText('17')
-  await expect(severityCell.locator('.log-severity__label')).toHaveText('ERROR')
+  await expect(severityCell.locator('.log-severity__dot')).toHaveCSS(
+    'width',
+    '8px'
+  )
+  await expect(severityCell.locator('.log-severity__label')).toHaveText(
+    'ERROR (17)'
+  )
   await expect(page.getByRole('columnheader').nth(1)).toHaveCSS(
     'padding-left',
     '16px'
@@ -552,22 +557,24 @@ test('Raw JSON folding uses waterfall-style icon controls on the top line', asyn
   await expect(editor.locator('.cm-foldPlaceholder')).toHaveCount(0)
 })
 
-test('external provenance is inline, shortens before crowding the title and expands again', async ({
+test('external provenance shrinks inline without replacing its source name', async ({
   page,
 }) => {
   const heading = page
     .getByRole('columnheader')
     .filter({ hasText: 'service.name' })
-  const badge = heading.getByRole('img', { name: 'Source: Resource' })
+  const provenance = heading.getByRole('img', { name: 'Source: resource' })
   const title = heading.locator('.table-column-heading__title')
-  await expect(badge).toHaveText('R')
-  await expect(badge).toHaveAttribute('title', 'Resource')
+  await expect(provenance).toHaveText('resource')
+  await expect(provenance).toHaveAttribute('title', 'resource')
+  await expect(provenance).toHaveCSS('flex-shrink', '1')
+  await expect(provenance).toHaveCSS('text-overflow', 'ellipsis')
   const titleBounds = (await title.boundingBox())!
-  const badgeBounds = (await badge.boundingBox())!
-  expect(badgeBounds.x).toBeGreaterThanOrEqual(
+  const sourceBounds = (await provenance.boundingBox())!
+  expect(sourceBounds.x).toBeGreaterThanOrEqual(
     titleBounds.x + titleBounds.width
   )
-  expect(badgeBounds.y + badgeBounds.height / 2).toBeCloseTo(
+  expect(sourceBounds.y + sourceBounds.height / 2).toBeCloseTo(
     titleBounds.y + titleBounds.height / 2,
     0
   )
@@ -577,14 +584,32 @@ test('external provenance is inline, shortens before crowding the title and expa
   })
   await guide.focus()
   await page.keyboard.press('Shift+ArrowRight')
-  await expect(badge).toHaveText('Resource')
+  await expect(provenance).toHaveText('resource')
+  expect((await provenance.boundingBox())!.width).toBeGreaterThan(
+    sourceBounds.width
+  )
   await page.keyboard.press('Shift+ArrowLeft')
-  await expect(badge).toHaveText('R')
+  await expect(provenance).toHaveText('resource')
   await expect(title).toHaveAttribute('title', 'service.name')
   await expect(page.getByRole('columnheader').first()).toHaveCSS(
     'height',
     '40px'
   )
+})
+
+test('column search uses the compact shared filter input and retains filtering', async ({ page }) => {
+  await page.getByRole('button', { name: 'Columns', exact: true }).click()
+  const picker = page.getByRole('group', { name: 'Log columns' })
+  const search = picker.getByRole('searchbox', { name: 'Find columns' })
+  await expect(search).toHaveCSS('height', '32px')
+  await expect(search).toHaveCSS('line-height', '21px')
+  await search.fill('service.name')
+  await expect(picker.getByRole('checkbox')).toHaveCount(1)
+  await expect(
+    picker.getByRole('checkbox', { name: 'Resource: service.name', exact: true })
+  ).toBeVisible()
+  await search.fill('not-a-column')
+  await expect(picker.getByRole('checkbox')).toHaveCount(0)
 })
 
 test('structured previews have static syntax colours and Details folds Body and agent attributes', async ({
@@ -828,7 +853,7 @@ test('structured previews have static syntax colours and Details folds Body and 
   await expect(row).toHaveAttribute('aria-selected', 'true')
 })
 
-test('Severity header sorts by the circle number rather than the received label', async ({
+test('Severity header sorts by the severity number rather than the received label', async ({
   page,
 }) => {
   const records = [
@@ -865,23 +890,23 @@ test('Severity header sorts by the circle number rather than the received label'
     })
   })
   await page.reload()
-  const circles = page.locator('[data-log-ref] .number-circle')
-  await expect(circles).toHaveCount(3)
+  const labels = page.locator('[data-log-ref] .log-severity__label')
+  await expect(labels).toHaveCount(3)
   const heading = page.getByRole('columnheader').first()
   await expect(heading).toHaveAttribute('aria-sort', 'descending')
-  await expect(circles).toHaveText(['17', '10', '2'])
+  await expect(labels).toHaveText(['MMM (17)', 'AAA (10)', 'ZZZ (2)'])
   expect(sorts.at(-1)).toEqual({ field: 'severity', direction: 'desc' })
   await heading
     .getByRole('button', { name: 'Sort by severity', exact: true })
     .click()
   await expect(heading).toHaveAttribute('aria-sort', 'ascending')
-  await expect(circles).toHaveText(['2', '10', '17'])
+  await expect(labels).toHaveText(['ZZZ (2)', 'AAA (10)', 'MMM (17)'])
   expect(sorts.at(-1)).toEqual({ field: 'severity', direction: 'asc' })
   await heading
     .getByRole('button', { name: 'Sort by severity', exact: true })
     .click()
   await expect(heading).toHaveAttribute('aria-sort', 'descending')
-  await expect(circles).toHaveText(['17', '10', '2'])
+  await expect(labels).toHaveText(['MMM (17)', 'AAA (10)', 'ZZZ (2)'])
 })
 
 test('Severity fits the longest received label without adding a resize handle', async ({
@@ -923,7 +948,7 @@ test('Severity fits the longest received label without adding a resize handle', 
   })
   await page.reload()
   const labels = page.locator('[data-log-ref] .log-severity__label')
-  await expect(labels).toHaveText([longest, 'UNSPECIFIED'])
+  await expect(labels).toHaveText([`${longest} (17)`, 'UNSPECIFIED (0)'])
   await expect
     .poll(async () =>
       labels.evaluateAll(elements =>
@@ -943,7 +968,7 @@ test('Severity fits the longest received label without adding a resize handle', 
   await expect
     .poll(async () => (await severity.boundingBox())!.width)
     .toBe(before)
-  await expect(labels.first()).toHaveText(longest)
+  await expect(labels.first()).toHaveText(`${longest} (17)`)
 })
 
 test('extreme severity labels have bounded width and retain their exact inspectable value', async ({
@@ -987,7 +1012,9 @@ test('extreme severity labels have bounded width and retain their exact inspecta
   const severity = page.locator(
     `[data-log-ref="${firstID}"] .log-table__pin-severity`
   )
-  await expect(severity.locator('.log-severity__label')).toHaveText(label)
+  await expect(severity.locator('.log-severity__label')).toHaveText(
+    `${label} (17)`
+  )
   await expect.poll(async () => (await severity.boundingBox())!.width).toBe(320)
   const viewport = (await page.locator('.log-table__scroll').boundingBox())!
   expect((await severity.boundingBox())!.width).toBeLessThan(viewport.width / 2)
