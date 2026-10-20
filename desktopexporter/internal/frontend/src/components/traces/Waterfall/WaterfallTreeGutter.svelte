@@ -17,7 +17,6 @@
      *  `--color-error` here, so no separate `isError` branch is needed. */
     color: string
     subtreeCollapsed: boolean
-    onToggleExpand: () => void
   }
 
   let {
@@ -25,11 +24,9 @@
     tree,
     color,
     subtreeCollapsed,
-    onToggleExpand,
   }: Props = $props()
 
   let hasChildren = $derived(tree.childrenCount > 0)
-  let childCount = $derived(tree.childrenCount)
 
   /**
    * Picks the line shape for one gutter column.
@@ -56,72 +53,50 @@
   )
 </script>
 
-<div
+<span
   class="gutter"
+  aria-hidden="true"
   style:width="calc({depth + 1} * var(--waterfall-gutter-col) + var(--waterfall-gutter-tail))"
   style:--tree-accent={color}
 >
   {#each segments as kind, d}
-    <div
+    <span
       class="gutter__col"
       style:left="calc({d} * var(--waterfall-gutter-col))"
       style:width="var(--waterfall-gutter-col)"
     >
       {#if kind === 'passthrough'}
-        <div class="seg seg--passthrough"></div>
+        <span class="seg seg--passthrough"></span>
       {:else if kind === 'tee'}
-        <div class="seg seg--tee"></div>
-        <div class="seg__arm" class:seg__arm--leaf={!hasChildren}></div>
+        <span class="seg seg--tee"></span>
+        <span class="seg__arm" class:seg__arm--leaf={!hasChildren}></span>
       {:else if kind === 'elbow'}
-        <div
+        <span
           class="seg__arm seg__arm--elbow"
           class:seg__arm--leaf={!hasChildren}
-        ></div>
+        ></span>
       {/if}
-    </div>
+    </span>
   {/each}
 
-  <div
+  <span
     class="gutter__node"
     style:left="calc({depth} * var(--waterfall-gutter-col))"
     style:width="var(--waterfall-gutter-col)"
   >
-    {#if hasChildren}
-      {#if !subtreeCollapsed}
-        <span class="gutter__stem" aria-hidden="true"></span>
-      {/if}
-      <button
-        type="button"
-        class="gutter__btn gutter__btn--hub shrink-0"
-        aria-expanded={!subtreeCollapsed}
-        aria-label={subtreeCollapsed
-          ? `Expand ${childCount} child spans`
-          : `Collapse ${childCount} child spans`}
-        onclick={e => {
-          e.stopPropagation()
-          onToggleExpand()
-        }}
-      >
-        <span class="gutter__btn-dot" aria-hidden="true"></span>
-      </button>
-    {:else}
-      <button
-        type="button"
-        class="gutter__btn gutter__btn--leaf shrink-0"
-        tabindex="-1"
-        aria-disabled="true"
-        aria-label="No child spans"
-      ></button>
+    {#if hasChildren && !subtreeCollapsed}
+      <span class="gutter__stem"></span>
     {/if}
-  </div>
-</div>
+    <span class="gutter__dot" class:gutter__dot--leaf={!hasChildren}></span>
+  </span>
+</span>
 
 <style lang="postcss">
   @reference "../../../app.css";
   .gutter {
     --leaf-dot-size: var(--waterfall-gutter-leaf);
     --tree-line-color: color-mix(in srgb, var(--color-muted) 50%, transparent);
-    @apply relative flex-shrink-0;
+    @apply relative block flex-shrink-0;
     height: var(--table-row-h);
   }
 
@@ -177,7 +152,7 @@
     --target-dot-size: var(--leaf-dot-size);
   }
 
-  /* ───── Node slot (hub button column) ───── */
+  /* ───── Decorative node slot ───── */
 
   .gutter__node {
     --hub-px: var(--waterfall-gutter-hub);
@@ -192,35 +167,15 @@
     bottom: 0;
   }
 
-  .gutter__btn--hub {
-    @apply relative z-[1] inline-flex items-center justify-center rounded-full border-0 bg-transparent p-0 text-base-content;
-    width: var(--waterfall-gutter-hit);
-    height: var(--waterfall-gutter-hit);
-  }
-
-  .gutter__btn-dot {
-    @apply absolute;
+  .gutter__dot {
+    @apply relative z-[1] rounded-full;
     width: var(--waterfall-gutter-hub);
     height: var(--waterfall-gutter-hub);
-    border-radius: 50%;
     background-color: var(--tree-accent);
   }
 
-  /* ───── Button base ───── */
-
-  .gutter__btn {
-    @apply cursor-pointer outline-none transition-[background-color,color] duration-100;
-    @apply focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1 focus-visible:ring-offset-base-100;
-  }
-
-  .gutter__btn--leaf {
-    @apply cursor-default rounded-full p-0;
+  .gutter__dot--leaf {
     width: var(--leaf-dot-size);
     height: var(--leaf-dot-size);
-    min-width: var(--leaf-dot-size);
-    min-height: var(--leaf-dot-size);
-    border: 0;
-    background-color: var(--tree-accent);
-    pointer-events: none;
   }
 </style>

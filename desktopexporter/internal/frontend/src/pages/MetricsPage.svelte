@@ -108,6 +108,7 @@
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
   import type { ImportFailure } from '@/types/import-types'
   import PaneHeader, { paneTabID } from '@/components/shared/PaneHeader.svelte'
+  import HistogramCountLegend from '@/components/metrics/Charts/HistogramCountLegend.svelte'
   import ExportButton from '@/components/shared/ExportButton.svelte'
   import type { AggregationView } from '@/components/metrics/utils/aggregation'
   import { aggregationViewTabs } from '@/components/metrics/utils/aggregation-view-tabs'
@@ -803,6 +804,10 @@
           <ChartStatOverlaysToggle />
         {/snippet}
 
+        {#snippet countLegend()}
+          <HistogramCountLegend />
+        {/snippet}
+
         {#snippet heatmapIcon()}
           <HugeiconsIcon
             icon={GridTableIcon}
@@ -845,7 +850,8 @@
             }}
             ariaLabel="Metric chart"
             tabPanelID={METRIC_CHART_PANEL_ID}
-            timeRange={chartHeaderTimeRange}
+            timeRange={showChartHistogramTabs ? undefined : chartHeaderTimeRange}
+            metaLeft={showChartHistogramTabs ? countLegend : undefined}
             metaRight={showChartOverlayControls ? overlayControl : undefined}
           >
             {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}

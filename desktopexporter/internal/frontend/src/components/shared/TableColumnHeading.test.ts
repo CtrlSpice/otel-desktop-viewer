@@ -19,6 +19,8 @@ describe('TableColumnHeading', () => {
       })
       expect(screen.getByText(label)).toBeInTheDocument()
       expect(container.querySelector('.badge')).toBeNull()
+      expect(container.querySelector('.metadata-origin')).toBeNull()
+      expect(container.querySelector('[aria-hidden="true"]')).toBeNull()
     }
   )
 
@@ -33,7 +35,11 @@ describe('TableColumnHeading', () => {
       const heading = container.querySelector('.table-column-heading')!
       expect(heading.children[0]).toBe(screen.getByText('service.name'))
       const provenance = screen.getByRole('img', { name: 'Source: resource' })
-      expect(heading.children[1]).toBe(provenance)
+      const separator = heading.children[1]
+      expect(separator).toHaveTextContent('·')
+      expect(separator).toHaveClass('text-rp-subtle')
+      expect(separator).toHaveAttribute('aria-hidden', 'true')
+      expect(heading.children[2]).toBe(provenance)
       expect(provenance).toHaveClass('metadata-origin', 'min-w-0', 'truncate')
       expect(provenance).not.toHaveClass('badge', 'shrink-0')
       expect(provenance).toHaveTextContent('resource')

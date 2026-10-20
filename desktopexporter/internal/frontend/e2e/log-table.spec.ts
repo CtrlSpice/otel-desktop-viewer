@@ -565,6 +565,7 @@ test('external provenance shrinks inline without replacing its source name', asy
     .filter({ hasText: 'service.name' })
   const provenance = heading.getByRole('img', { name: 'Source: resource' })
   const title = heading.locator('.table-column-heading__title')
+  await expect(heading.getByText('·', { exact: true })).toHaveAttribute('aria-hidden', 'true')
   await expect(provenance).toHaveText('resource')
   await expect(provenance).toHaveAttribute('title', 'resource')
   await expect(provenance).toHaveCSS('flex-shrink', '1')

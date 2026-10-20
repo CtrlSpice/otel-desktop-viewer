@@ -1,6 +1,10 @@
 <script module lang="ts">
   export type TimeAxisTick = { offsetPercent: number; label: string }
   export type TimeAxisGuide = { offsetPercent: number; major: boolean }
+  export type WaterfallGridLayout = {
+    widthPx: number
+    guides: { offsetPx: number; major: boolean; opacity: number }[]
+  }
 
   export type TimeAxisResult = {
     unit: string
@@ -21,6 +25,7 @@
   const NICE_MULTIPLIERS = [1n, 2n, 5n]
 
   const MAX_AXIS_TICKS = 100
+  const GRID_FADE_COLUMNS = 5
 
   function collectTickPositions(
     durationNs: bigint,
@@ -123,10 +128,13 @@
     }
   }
 
+  function gridDivisions(intervalNs: bigint): bigint {
+    return intervalNs % 4n === 0n ? 4n : intervalNs % 2n === 0n ? 2n : 1n
+  }
+
   function gridGuides(durationNs: bigint, intervalNs: bigint): TimeAxisGuide[] {
     // Quarter-interval guides, using fewer divisions at whole-nanosecond limits.
-    const divisions =
-      intervalNs % 4n === 0n ? 4n : intervalNs % 2n === 0n ? 2n : 1n
+    const divisions = gridDivisions(intervalNs)
     return collectTickPositions(
       durationNs,
       intervalNs / divisions,
@@ -197,6 +205,51 @@
     }
   }
 
+  /** Decorative continuation into the existing right gutter; does not extend the time axis. */
+  export function waterfallGrid(
+    axis: WaterfallAxis,
+    plotWidthPx: number,
+    trailingWidthPx: number
+  ): WaterfallGridLayout {
+    const widthPx = Math.max(0, plotWidthPx) + Math.max(0, trailingWidthPx)
+    if (plotWidthPx <= 0) return { widthPx, guides: [] }
+    const guides = axis.guides.map(guide => ({
+      offsetPx: (guide.offsetPercent * Math.max(0, plotWidthPx)) / 100,
+      major: guide.major,
+      opacity: 1,
+    }))
+    if (trailingWidthPx <= 0 || axis.layoutDurationNs <= 0n) {
+      return { widthPx, guides }
+    }
+    const divisions = gridDivisions(axis.intervalNs)
+    const stepNs = axis.intervalNs / divisions
+    const stepPx = (Number(stepNs) * plotWidthPx) / Number(axis.layoutDurationNs)
+    const count = Math.min(
+      MAX_AXIS_TICKS * Number(divisions),
+      Math.floor(widthPx / stepPx) + 1
+    )
+    const continuation = Array.from(
+      { length: Math.max(0, count - guides.length) },
+      (_, index) => {
+        const positionNs = BigInt(guides.length + index) * stepNs
+        return {
+          offsetPx: (offsetPercent(positionNs, axis.layoutDurationNs) * plotWidthPx) / 100,
+          major: positionNs % axis.intervalNs === 0n,
+          opacity: 1,
+        }
+      }
+    )
+    if (continuation.length === 0) return { widthPx, guides }
+    const extended = [...guides, ...continuation]
+    return {
+      widthPx,
+      guides: extended.map((guide, index) => ({
+        ...guide,
+        opacity: Math.min(1, (extended.length - index - 1) / GRID_FADE_COLUMNS),
+      })),
+    }
+  }
+
   /** Generic nice time axis (same tick math, no waterfall end padding). */
   export function niceTimeAxis(
     durationNs: bigint,
@@ -228,6 +281,7 @@
 
 <script lang="ts">
   import TableColumnHeading from '@/components/shared/TableColumnHeading.svelte'
+  import WaterfallGrid from './WaterfallGrid.svelte'
   import { columnLabel, type SizedWaterfallColumn } from './waterfall-columns'
   import {
     DURATION_GUTTER_REM,
@@ -241,6 +295,7 @@
     tickLabelWidth?: number
     spanColWidth: number
     rootChildCount?: number
+    barGrid: WaterfallGridLayout
     optionalColumns?: SizedWaterfallColumn[]
   }
 
@@ -250,6 +305,7 @@
     tickLabelWidth = 80,
     spanColWidth,
     rootChildCount = 0,
+    barGrid,
     optionalColumns = [],
   }: Props = $props()
 
@@ -297,6 +353,7 @@
   {/each}
   <th scope="col" class="waterfall-time-axis-header__th-ruler">
     <div class="waterfall-time-axis-header__ruler">
+      <WaterfallGrid layout={barGrid} />
       {#each axis.ticks as tick}
         <div
           class="waterfall-time-axis-header__tick"
@@ -306,14 +363,6 @@
             >{tick.label}</span
           >
         </div>
-      {/each}
-      {#each axis.guides as guide}
-        <span
-          class="waterfall-time-axis-header__tick-line dot-guide-vertical"
-          class:dot-guide-vertical--minor={!guide.major}
-          style:left="{guide.offsetPercent}%"
-          aria-hidden="true"
-        ></span>
       {/each}
     </div>
   </th>
@@ -362,6 +411,10 @@
     right: calc(var(--duration-gutter) + var(--outside-record-slot));
   }
 
+  .waterfall-time-axis-header__ruler :global(.waterfall-grid) {
+    top: calc(var(--primary-label-center) + 0.5lh);
+  }
+
   .waterfall-time-axis-header__tick {
     @apply absolute bottom-0 h-full;
   }
@@ -374,10 +427,4 @@
     transform: translateY(-50%);
   }
 
-  .waterfall-time-axis-header__tick-line {
-    @apply absolute bottom-0;
-    left: 0;
-    top: calc(var(--primary-label-center) + 0.5lh);
-    transform: translateX(-50%);
-  }
 </style>

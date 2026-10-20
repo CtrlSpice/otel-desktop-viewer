@@ -59,6 +59,8 @@ Pine/Moon `#eb6f92`. The darkened Dawn error colour was rejected; there is no
 separate error-text colour. Error navigation uses neutral Text for its carets
 and label, with an 8px Love dot before `err` or `err (x/y)`. Other Love-coloured
 text retains the original palette's contrast limitations.
+The parenthesised `(x/y)` error-navigation position uses Subtle; `err` and the
+carets remain Text.
 Across canvas, panel, chrome, Low and Medium, neutral Text has a minimum of
 5.252:1. Love text fails 4.5:1 on Dawn's five backgrounds (minimum 3.030:1),
 Moon chrome (4.001:1) and Medium (3.359:1), and Pine Medium (3.597:1).
@@ -71,8 +73,11 @@ breakdown bars use solid palette fills without borders in Dawn as well as the
 dark themes.
 Waterfall tree nodes use filled 8px dots matching the span bar colour for both
 parents and leaves, without counts inside the dots. Parent
-buttons retain 16px hit areas and accessible child-count labels. Dots stay
-visible on hover; there is no caret.
+buttons cover the entire left gutter, including ancestor columns, dot and count,
+at full row height. Each toggles its own row without selecting the span; its
+accessible label includes the action, span name and direct-child count. Hover
+uses Highlight Low and keyboard focus uses the shared outline. Leaf gutters are
+decorative and have no collapse button. Dots stay visible on hover; there is no caret.
 Parent rows read `●4   Parent Title`, with the direct-child count in plain Subtle
 14px regular text between the dot and title. Counts remain visible when collapsed;
 leaves have no count. Counts have no parentheses or badge background. Each count
@@ -82,9 +87,32 @@ Tree columns retain 22px spacing without separate count gutters.
 Tree connector trunks, arms and stems are solid 1px lines in Muted at 50% opacity.
 Their strokes align with node centres; elbows share the cards' `--radius-xl`
 corner radius and use a continuous rounded border.
+Metric line, histogram and heatmap charts use solid 1px Muted axes/tick marks.
+The left and bottom axes share a continuous rounded bottom-left join using
+`--radius-xl`, matching cards and waterfall connectors. The border is centred
+on the original plot bounds; plot insets and scales stay unchanged. It is
+decorative and does not intercept pointer or keyboard input.
+Line charts, histograms and heatmaps share a full grid of 1.5px Muted dots at
+full opacity, behind data. Each labelled X/Y interval has two equal subdivisions,
+with a dot at every intersection. Cells need not be square. The nearest interval's
+spacing continues to the plot edges, plus one row above and one column to the
+right. The top three rows and rightmost three columns fade to transparent; the
+top-right combines both fades. The bottom does not fade. Decoration stays inside
+existing chart margins without changing plot
+size, data bounds or scrolling. Tick positions include filtered heatmap
+ticks; the grid adds no labels. Dot size, colour and opacity use the shared
+`--guide-dot-*` tokens.
+Histogram and heatmap count legends replace the displayed time range on the
+left of the header's lower row. Entries wrap at the regular working text size;
+chart controls remain on the right and the global time selector remains available.
+Count-range markers are plain 8px round dots without borders or outlines;
+numeric ranges retain the meaning independently of colour.
 Timeline activity markers use a 14px circle icon for both single and grouped
 records. Groups show an 8px plus icon; exact counts remain in their accessible
 labels and tooltips.
+Table headings show external provenance as `name · source`: the name and middle
+dot use Subtle, and the source uses Pine/Secondary. Name and source can shrink
+and truncate normally; the full source name remains available on hover.
 Log tables and summaries share `LogSeverity`: an 8px severity-coloured dot
 followed by neutral `LABEL (number)` text. Received labels are retained; only
 missing labels are derived from the severity number.
@@ -133,15 +161,15 @@ Moon 7.24:1, Dawn 6.01:1) and on Low hover and Medium selection in every theme.
 JSON strings soft-wrap at word boundaries with a hanging indent after the opening
 quote. The document text is unchanged. JSON's notebook-guide trial replaces the
 fold-arrow gutter with a sparse grid only in leading indentation: 1.5px dots
-in Subtle at 50% opacity in all themes, 2ch apart horizontally
+in Muted at full opacity in all themes, 2ch apart horizontally
 and one text line apart vertically,
 positioned on row boundaries rather than the middle of the text.
 The Mono font keeps dots aligned with character columns. These decorative dots
 do not carry text or replace the existing folding commands and inspector controls.
 
 The shared `--guide-dot-radius` and `--guide-dot-opacity` tokens apply to
-waterfall time guides and all raw/nested JSON grids. Every grid uses 50% opacity;
-waterfall guides use Muted and JSON guides use Subtle.
+waterfall time guides and all raw/nested JSON grids. Every grid uses Muted at
+full opacity through the shared `--guide-dot-color` token.
 Three unlabelled guides divide each labelled interval into quarters.
 Use fewer divisions when needed to retain whole nanoseconds.
 Labels keep their existing spacing; ruler, span rows and faded tail use the
@@ -153,6 +181,14 @@ span-row boundaries, with two additional dot rows at one-third and two-thirds
 of each span row's height. The ruler and first span row meet without a gap.
 If the spans leave empty space below the table, the guides continue for up to
 one row and fade to transparent. The continuation adds no scrollable height.
+The grid also continues through the existing right gutter at the same horizontal
+spacing. Its final five guide columns fade to transparent; earlier columns
+retain Muted at full opacity. Ruler, rows and below-table continuation share positions and
+the right fade. This decoration adds no labels, changes no time bounds and adds
+no horizontal scroll width. Added guide positions use the same whole-nanosecond
+steps and 0.01%-resolution calculation; their opacity decreases linearly across
+the last five columns, ending at zero. When fewer than five extra columns fit,
+the fade also includes the final existing guide columns; time labels do not fade.
 Column and panel resize controls use a shared short grip, hidden at rest and
 visible on hover, keyboard focus or drag. Hover uses Text; focus and drag use Iris
 at full opacity. The full drag areas and keyboard behaviour remain available.

@@ -39,8 +39,9 @@
       /></button
     >
     <span class="error-nav__dot" aria-hidden="true"></span>
-    <span aria-live="polite"
-      >{index !== null ? `err (${index}/${count})` : 'err'}</span
+    <span aria-live="polite">err{#if index !== null}{' '}<span
+          class="error-nav__position">({index}/{count})</span
+        >{/if}</span
     >
     <button
       type="button"
@@ -66,6 +67,9 @@
   }
   .error-nav__dot {
     @apply size-2 shrink-0 rounded-full bg-error;
+  }
+  .error-nav__position {
+    color: var(--color-subtle);
   }
   .error-nav__button {
     @apply inline-flex size-8 cursor-pointer items-center justify-center border-0 bg-transparent p-0;

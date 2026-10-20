@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MetricDotGrid from './MetricDotGrid.svelte'
   import ChartOverlayLabel from './ChartOverlayLabel.svelte'
   import { createOverlayEmphasis } from '@/components/metrics/utils/overlay-emphasis.svelte'
 
@@ -620,6 +621,10 @@
       },
     })
   }
+  let chartAxes = $derived({
+    xAxis: { ...axisBuckets(unit), format: bucketLabelForKey },
+    yAxis: axisCount(),
+  })
 </script>
 
 {#if buckets.length > 0}
@@ -661,14 +666,11 @@
               bandPadding={0.2}
               tooltipContext
               highlight={{ area: { class: 'histogram-hover-column' } }}
-              props={{
-                xAxis: {
-                  ...axisBuckets(unit),
-                  format: bucketLabelForKey,
-                },
-                yAxis: axisCount(),
-              }}
+              props={chartAxes}
             >
+              {#snippet grid()}
+                <MetricDotGrid xAxis={chartAxes.xAxis} yAxis={chartAxes.yAxis} />
+              {/snippet}
               {#snippet marks()}
                 {#each barGeometry as bar (bar.bucket.key)}
                   <g

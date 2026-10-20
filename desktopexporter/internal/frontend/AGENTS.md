@@ -46,6 +46,7 @@
   Error navigation uses open Hugeicons left/right carets and neutral Text, with
   an 8px Love dot between the left caret and label, without a badge background:
   `err (x/y)` when an error is selected, otherwise `err`.
+  Only the parenthesised `(x/y)` position uses Subtle; `err` and carets use Text.
 - Main header order: title · (service) · counts on the left, optional error
   navigation and Download on the right; time and view controls below. The separate
   service/count row was rejected because it wastes space.
@@ -109,15 +110,15 @@
   Keep header surfaces separate; retain shared hover and selection highlights.
   Structured attribute wrappers add no extra left padding. JSON has no fold-arrow
   gutter; retain existing folding commands and raw-inspector controls. The current
-  notebook-guide trial uses 1.5px Subtle dots at 50% opacity in all themes,
+  notebook-guide trial uses 1.5px Muted dots at full opacity in all themes,
   in leading indentation
   only, spaced 2ch horizontally and one text line vertically. Place dots on text
   row boundaries (top/bottom), not at the middle of each row. JSON stays Mono.
   JSON strings soft-wrap with continuation text aligned after the opening quote.
   Wrapping and guides are display-only; preserve document text, Copy and Download.
-  JSON and waterfall guides share dot radius and 50% opacity through the
-  --guide-dot-* CSS tokens. JSON dots use Subtle; waterfall grid dots use
-  Muted at 50% opacity for both labelled and unlabelled guides.
+  JSON and waterfall guides share dot radius and full opacity through the
+  --guide-dot-* CSS tokens. All raw/nested JSON and waterfall dots use Muted at
+  full opacity, including both labelled and unlabelled waterfall guides.
   Add three unlabelled guides between labelled guides, dividing each interval
   into quarters. Use fewer divisions when needed to retain whole nanoseconds.
   Keep label spacing independent of these guides; ruler, rows and tail align.
@@ -129,10 +130,15 @@
   When span rows leave empty space below them, continue the bar-area dots for up
   to one row and fade them to transparent across that space. This decoration must
   not add scrollable height or appear below a table that fills its viewport.
+  Continue the same dot columns horizontally through the existing right gutter;
+  fade the final five columns to transparent. Keep ruler/rows/tail aligned,
+  retain Muted at full opacity before the fade, and do not extend time labels, data bounds
+  or horizontal scrolling. The right fade and below-table fade are decorative.
   Column and panel resizing share a short 3rem by 0.1875rem grip, rotated for
   horizontal dividers. Hide it at rest; show Text on hover and Iris on keyboard
   focus or drag at full opacity. Preserve full hit strips and keyboard controls.
-  Table-heading source names use Secondary and normal flex shrinking/ellipsis,
+  Table headings use `name · source` for external provenance: name and separator
+  use Subtle, and source names use Secondary with normal flex shrinking/ellipsis,
   not fixed-width initials. Column/service picker searches reuse FilterInput's
   shared 32px height rather than the taller query-entry field.
   Do not restore persistent column guide lines or duplicate header grab handles.
@@ -199,9 +205,14 @@
   same count slot when present.
   Keep counts visible when collapsed; omit counts for leaves.
   Do not add separate count gutters.
-  Preserve parent
-  controls' 16px hit areas and accessible child-count labels. Parent dots stay
-  visible on hover; there is no caret. The user plans a separate bar interaction.
+  Each parent has one native expand/collapse button covering the whole left
+  gutter (ancestor columns, dot and count), at full row height. Clicking any
+  part toggles that row, not an ancestor, and does not select the span. Names
+  still open Details. Include the span name, direct-child count and action in
+  the button label, and expose aria-expanded. Retain native Enter/Space and a
+  visible focus outline; use Highlight Low on hover. Leaves have decorative,
+  non-focusable gutters without collapse buttons. Dots stay visible on hover;
+  there is no caret.
   Timeline activity markers use the same 14px circle icon for single and grouped
   records. Grouped markers show a small 8px plus icon instead of a visible count;
   keep exact event/log counts in the accessible label and tooltip.
@@ -212,6 +223,28 @@
   --radius-xl corner radius as one continuous rounded bend.
   Configure these sizes in `src/themes/tokens.ts` alongside the DaisyUI theme
   tokens; components consume them without hardcoded size overrides.
+  Metric line, histogram and heatmap charts use a continuous solid 1px Muted
+  left/bottom axis border with the cards' --radius-xl bottom-left join. Keep
+  existing plot insets, labels and scales; disable the old
+  separate axis rules. Axis tick marks also use 1px Muted. The shared border is
+  decorative, hidden from assistive technology and cannot intercept pointers.
+   All metric line/histogram/heatmap charts use a full dot grid behind data,
+   anchored to visible X/Y ticks with two equal subdivisions of each labelled
+   interval on both axes. Put a dot at every X/Y intersection; do not draw
+   independently dotted lines or force square cells. Continue the nearest
+   interval's spacing to plot edges, then add one dot row above and one column
+   to the right. Fade the top three rows and rightmost three columns to
+   transparent; combine both fades at the top-right. Do not fade the bottom.
+   Clip decoration to existing chart margins without
+   changing data bounds, plot size or scrolling. Reuse visible-axis options for tick
+   calculation, including heatmap tick filtering, and add no duplicate labels.
+   Match the shared guide tokens: 1.5px Muted dots at full opacity.
+   Do not retain separate solid-grid or theme-specific grid styling.
+  Histogram/heatmap count legends sit on the left of the chart header's lower
+  row, replacing the displayed chart time range. Keep chart tabs/controls on the
+  right and retain the global time-range selector. Legend entries flow inline
+  and wrap at the regular 14px size; do not keep a separate legend above the plot.
+  Use plain 8px colour dots beside numeric count ranges, without borders or outlines.
 
 - Display opaque identifiers with the shared `Identifier.svelte` component, which
   uses Atkinson Hyperlegible Next and truncates the middle while retaining both

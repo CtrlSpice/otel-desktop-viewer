@@ -12,18 +12,21 @@
   <span class="table-column-heading__title" title={label}
     >{label}</span
   >
-  {#if external}<span
+  {#if external}
+    <span class="shrink-0 text-rp-subtle" aria-hidden="true">·</span>
+    <span
       class="metadata-origin min-w-0 truncate"
       role="img"
       aria-label={`Source: ${sourceLabel}`}
       title={sourceLabel}>{sourceLabel}</span
-    >{/if}
+    >
+  {/if}
 </span>
 
 <style lang="postcss">
   @reference "../../app.css";
   .table-column-heading {
-    @apply flex min-w-0 items-center gap-1.5;
+    @apply flex min-w-0 items-center gap-1.5 font-normal;
     color: var(--table-heading-color);
   }
   .table-column-heading__title {

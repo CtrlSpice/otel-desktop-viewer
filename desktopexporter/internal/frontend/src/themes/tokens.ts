@@ -47,7 +47,6 @@ export function themeTokens(theme: Theme) {
     '--waterfall-gutter-col': '22px',
     '--waterfall-gutter-hub': '8px',
     '--waterfall-gutter-leaf': '8px',
-    '--waterfall-gutter-hit': '16px',
     '--waterfall-bar-label-color': light
       ? 'var(--color-base-content)'
       : 'var(--color-base-200)',

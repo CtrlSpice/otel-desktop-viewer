@@ -1,5 +1,7 @@
 <script lang="ts">
   import ChartOverlayLabel from './ChartOverlayLabel.svelte'
+  import MetricAxes from './MetricAxes.svelte'
+  import MetricDotGrid from './MetricDotGrid.svelte'
   import { createOverlayEmphasis } from '@/components/metrics/utils/overlay-emphasis.svelte'
 
   import ChartSticky from '@/components/metrics/Charts/ChartSticky.svelte'
@@ -557,6 +559,10 @@
   function formatBucketTick(key: string): string {
     return bucketLabelByKey.get(key) ?? key
   }
+  let chartAxes = $derived({
+    xAxis: { ...axisTime(timeContext.tz), ticks: visibleTimeTicks, format: formatTimeTick },
+    yAxis: { ...axisBucketBounds(unit), ticks: visibleBucketTicks, format: formatBucketTick },
+  })
 </script>
 
 {#if timeDomain.length === 0 || bucketDomain.length === 0}
@@ -604,17 +610,14 @@
             tooltipContext={{ mode: 'band' }}
           >
             <Layer>
+              <MetricDotGrid xAxis={chartAxes.xAxis} yAxis={chartAxes.yAxis} />
               <Axis
                 placement="bottom"
-                {...axisTime(timeContext.tz)}
-                ticks={visibleTimeTicks}
-                format={formatTimeTick}
+                {...chartAxes.xAxis}
               />
               <Axis
                 placement="left"
-                {...axisBucketBounds(unit)}
-                ticks={visibleBucketTicks}
-                format={formatBucketTick}
+                {...chartAxes.yAxis}
               />
               <defs>
                 <mask
@@ -787,6 +790,7 @@
               {/snippet}
             </Tooltip.Root>
           </Chart>
+          <MetricAxes padding={heatmapPlotPadding} />
           {#each quantileLabels as quantile (quantile.key)}
             <div
               class="heatmap-quantile-label chart-selection-legend chart-selection-legend--stat"

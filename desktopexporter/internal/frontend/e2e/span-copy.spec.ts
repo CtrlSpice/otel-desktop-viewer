@@ -76,6 +76,95 @@ const trace: JsonTraceData = {
   })),
 }
 
+test('full gutter toggles its row with pointer and keyboard without selecting it', async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1100 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  const leafID = '3333333333333333'
+  const nestedTrace: JsonTraceData = {
+    ...trace,
+    spans: [
+      ...trace.spans,
+      {
+        ...trace.spans[1],
+        depth: 2,
+        spanData: {
+          ...trace.spans[1].spanData,
+          spanID: leafID,
+          parentSpanID: selectedID,
+          name: 'leaf',
+        },
+      },
+    ],
+  }
+  await page.route('**/rpc', async route => {
+    const { id, method } = route.request().postDataJSON()
+    const result = method === 'getTraceView'
+      ? nestedTrace
+      : method === 'searchTraceSummaries'
+        ? [{
+            traceID,
+            hasRootSpan: true,
+            rootSpan: { serviceName: 'checkout', name: 'other span' },
+            startTime: trace.traceStart,
+            durationNs: '1000000000',
+            spanCount: 3,
+            errorCount: 0,
+          }]
+      : method === 'getStats'
+        ? {
+            storage: { sizeBytes: 0, maxSizeBytes: 0 },
+            traces: { traceCount: 1, spanCount: 3, serviceCount: 1, errorCount: 0, lastReceived: null },
+            logs: { logCount: 0, errorCount: 0, lastReceived: null },
+            metrics: { metricCount: 0, dataPointCount: 0, lastReceived: null },
+            rejections: [],
+          }
+        : []
+    await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
+  })
+  await page.goto(`/traces/${traceID}?span=${rootID}&time=all`)
+  const root = page.locator(`.waterfall-row[data-span-id="${rootID}"]`)
+  const branch = page.locator(`.waterfall-row[data-span-id="${selectedID}"]`)
+  const leaf = page.locator(`.waterfall-row[data-span-id="${leafID}"]`)
+  const toggle = branch.locator('.waterfall-row__tree-toggle')
+  await expect(toggle).toHaveAccessibleName('Collapse selected span, 1 child span')
+  await expect(toggle).toHaveCSS('height', '40px')
+  await expect(toggle.locator('button')).toHaveCount(0)
+  await expect(leaf.locator('.waterfall-row__tree-toggle')).toHaveCount(0)
+
+  // The top-left corner is well outside the dot, in an ancestor's gutter column.
+  await toggle.click({ position: { x: 1, y: 1 } })
+  await expect(leaf).toHaveCount(0)
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  await expect(root).toHaveAttribute('aria-expanded', 'true')
+  await expect(root).toHaveAttribute('aria-selected', 'true')
+
+  await toggle.press('Enter')
+  await expect(leaf).toBeVisible()
+  await expect(toggle).toBeFocused()
+  await expect(toggle).toHaveCSS('outline-style', 'solid')
+  await toggle.press('Space')
+  await expect(leaf).toHaveCount(0)
+  await toggle.locator('.waterfall-row__child-count').click()
+  await expect(leaf).toBeVisible()
+  const bounds = (await toggle.boundingBox())!
+  await toggle.click({ position: { x: bounds.width - 1, y: bounds.height - 1 } })
+  await expect(leaf).toHaveCount(0)
+  await expect(root).toHaveAttribute('aria-selected', 'true')
+
+  await toggle.focus()
+  await page.keyboard.press('Tab')
+  const name = branch.getByRole('button', { name: 'Show span field: name in details' })
+  await expect(name).toBeFocused()
+  const accessibility = await new AxeBuilder({ page })
+    .include('.waterfall-row__tree-toggle')
+    .withRules(['button-name', 'nested-interactive', 'aria-valid-attr-value', 'aria-allowed-attr'])
+    .analyze()
+  expect(accessibility.violations).toEqual([])
+  await name.click()
+  await expect(branch).toHaveAttribute('aria-selected', 'true')
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false')
+})
+
 for (const [theme, errorColour] of [
   ['rose-pine', 'rgb(235, 111, 146)'],
   ['rose-pine-moon', 'rgb(235, 111, 146)'],

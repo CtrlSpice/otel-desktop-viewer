@@ -227,7 +227,9 @@
   import { UnfoldMoreIcon, UnfoldLessIcon } from '@hugeicons/core-free-icons'
   import WaterfallTimeAxisHeader, {
     waterfallTimeAxis,
+    waterfallGrid,
   } from './WaterfallTimeAxisHeader.svelte'
+  import WaterfallGrid from './WaterfallGrid.svelte'
   import WaterfallRow from './WaterfallRow.svelte'
   import WaterfallColumnsPicker from './WaterfallColumnsPicker.svelte'
   import {
@@ -647,8 +649,12 @@
     )
   })
 
-  let barGridGuides = $derived(
-    waterfallTimeAxis(bounds.duration, targetTickCount).guides
+  let barGrid = $derived(
+    waterfallGrid(
+      waterfallTimeAxis(bounds.duration, targetTickCount),
+      timelinePlotPx,
+      remToPx(DURATION_GUTTER_REM + OUTSIDE_RECORD_SLOT_REM)
+    )
   )
 
   let matchedIDs = $derived(
@@ -1192,6 +1198,7 @@
         >
           <thead class="header-surface waterfall-view__thead">
             <WaterfallTimeAxisHeader
+              {barGrid}
               {rootChildCount}
               traceDurationNs={bounds.duration}
               {targetTickCount}
@@ -1223,7 +1230,7 @@
               {@const sid = row.spanNode.spanData.spanID}
               <WaterfallRow
                 {row}
-                {barGridGuides}
+                {barGrid}
                 selected={sid === selectedSpanID}
                 tabbable={sid === keyboardAnchorID}
                 visible={true}
@@ -1255,15 +1262,9 @@
               aria-hidden="true"
               style:--span-rows-height="calc({visibleRows.length} * var(--table-row-h))"
               style:left="calc({gridWidth - timelineColPx}px + {TIMELINE_LEFT_INSET_REM}rem)"
-              style:width="{timelinePlotPx}px"
+              style:width="{barGrid.widthPx}px"
             >
-              {#each barGridGuides as guide}
-                <div
-                  class="waterfall-view__tail-guide dot-guide-vertical"
-                  class:dot-guide-vertical--minor={!guide.major}
-                  style:left="{guide.offsetPercent}%"
-                ></div>
-              {/each}
+              <WaterfallGrid layout={barGrid} continuation />
             </div>
           {/if}
         </div>
@@ -1338,11 +1339,6 @@
       max(0px, calc(100% - var(--span-rows-height)))
     );
     mask-image: linear-gradient(to bottom, black, transparent);
-  }
-
-  .waterfall-view__tail-guide {
-    @apply absolute top-0 -translate-x-1/2;
-    height: var(--table-row-h);
   }
 
   .waterfall-view__vlist-host :global(.waterfall-vlist) {

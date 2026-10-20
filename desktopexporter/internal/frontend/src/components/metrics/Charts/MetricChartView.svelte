@@ -26,7 +26,6 @@
     chartPadding,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
   import MetricChartControlBar from '@/components/metrics/Charts/MetricChartControlBar.svelte'
-  import HistogramCountLegend from '@/components/metrics/Charts/HistogramCountLegend.svelte'
   import MetricChartEmpty from '@/components/metrics/Charts/MetricChartEmpty.svelte'
 
   const ctx = getMetricViewContext()
@@ -57,7 +56,6 @@
 
 {#snippet histogramChartSlot()}
   <div class="metric-chart-view metric-chart-view--fill">
-    <HistogramCountLegend />
     <div
       class="metric-chart-view__plot-host"
       bind:clientHeight={plotHostHeight}

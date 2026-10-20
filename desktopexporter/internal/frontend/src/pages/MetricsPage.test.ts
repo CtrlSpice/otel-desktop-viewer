@@ -227,7 +227,7 @@ describe('Metric main-header range', () => {
     await waitFor(() => expect(clearMetrics).toHaveBeenCalledTimes(1))
     confirm.mockRestore()
   })
-  it.each(['Gauge', 'Sum', 'Histogram', 'ExponentialHistogram'] as const)(
+  it.each(['Gauge', 'Sum'] as const)(
     'keeps the %s effective range in the header rather than the plot',
     async metricType => {
       await renderSelected(metricType)
@@ -245,6 +245,16 @@ describe('Metric main-header range', () => {
           '.metric-chart-view [aria-label="Chart time range"]'
         )
       ).toBeNull()
+    }
+  )
+
+  it.each(['Histogram', 'ExponentialHistogram'] as const)(
+    'removes the redundant %s time range from the count-legend header',
+    async metricType => {
+      await renderSelected(metricType)
+      const header = screen.getByRole('region', { name: 'Metric chart' })
+      expect(header.querySelector('[aria-label="Chart time range"]')).toBeNull()
+      expect(document.querySelector('.metric-chart-view .heatmap-legend')).toBeNull()
     }
   )
 })

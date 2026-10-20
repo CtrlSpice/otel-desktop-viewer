@@ -128,6 +128,103 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
+async function expectRoundedAxes(page: Page, colour: string) {
+  const axes = page.locator('.metric-axes')
+  await expect(axes).toHaveCount(1)
+  await expect(axes).toHaveCSS('border-left-width', '1px')
+  await expect(axes).toHaveCSS('border-bottom-width', '1px')
+  await expect(axes).toHaveCSS('border-left-color', colour)
+  await expect(axes).toHaveCSS('border-bottom-left-radius', '12px')
+  await expect(axes).toHaveCSS('pointer-events', 'none')
+  await expect(axes).toHaveAttribute('aria-hidden', 'true')
+  await expect(page.locator('.metric-chart-view .lc-axis-rule')).toHaveCount(0)
+  const grid = page.locator('.metric-dot-grid')
+  await expect(grid).toHaveCount(1)
+  await expect(grid).toHaveAttribute('aria-hidden', 'true')
+  const dot = grid.locator('circle').first()
+  await expect(dot).toHaveCSS('fill', colour)
+  await expect(dot).toHaveCSS('stroke', 'none')
+  await expect(dot).toHaveCSS('r', '0.75px')
+  await expect(dot).toHaveCSS('pointer-events', 'none')
+  await expect(grid.locator('line')).toHaveCount(0)
+  await expect(grid.locator('.lc-axis-tick-label')).toHaveCount(0)
+  await expect(page.locator('.metric-chart-view .lc-grid')).toHaveCount(0)
+  const alignment = await grid.evaluate(element => {
+    const plot = element.closest('.metric-chart-view')!
+    return ['bottom', 'left'].map(placement => {
+      const coordinate = (graphic: SVGGraphicsElement, x: string, y: string) => {
+        const point = new DOMPoint(
+          Number(graphic.getAttribute(x)),
+          Number(graphic.getAttribute(y))
+        ).matrixTransform(graphic.getScreenCTM()!)
+        return placement === 'bottom' ? point.x : point.y
+      }
+      const guides = [...new Set([...element.querySelectorAll<SVGCircleElement>('circle')]
+        .map(dot => coordinate(dot, 'cx', 'cy')))].sort((a, b) => a - b)
+      const axis = plot.querySelector(`.lc-axis[data-placement="${placement}"]`)!
+      const ticks = [...axis.querySelectorAll<SVGGraphicsElement>('.lc-axis-tick')]
+        .map(tick => coordinate(tick, 'x1', 'y1')).sort((a, b) => a - b)
+      return { guides, ticks }
+    })
+  })
+  for (const { guides, ticks } of alignment) {
+    for (let index = 0; index < ticks.length - 1; index++) {
+      const start = guides.findIndex(value => Math.abs(value - ticks[index]!) < 0.001)
+      expect(start).toBeGreaterThanOrEqual(0)
+      for (let half = 0; half <= 2; half++) {
+        const expected = ticks[index]! + (ticks[index + 1]! - ticks[index]!) * half / 2
+        expect(guides[start + half]).toBeCloseTo(expected, 4)
+      }
+    }
+  }
+  await expect(grid.locator('circle')).toHaveCount(
+    alignment[0]!.guides.length * alignment[1]!.guides.length
+  )
+  const fade = await grid.evaluate(element => {
+    const dots = [...element.querySelectorAll<SVGCircleElement>('circle')]
+    const columns = [...new Set(dots.map(dot => dot.cx.baseVal.value))].sort((a, b) => a - b)
+    const rows = [...new Set(dots.map(dot => dot.cy.baseVal.value))].sort((a, b) => a - b)
+    const opacity = (positions: number[], position: number, edge: 'start' | 'end') => {
+      if (positions.length === 1) return 1
+      const index = positions.indexOf(position)
+      return Math.min(1, (edge === 'start' ? index : positions.length - index - 1) / 3)
+    }
+    return dots.map(dot => ({
+      actual: Number(getComputedStyle(dot).opacity),
+      expected: opacity(columns, dot.cx.baseVal.value, 'end') * opacity(rows, dot.cy.baseVal.value, 'start'),
+    }))
+  })
+  for (const { actual, expected } of fade) expect(actual).toBeCloseTo(expected, 5)
+  const layout = await grid.evaluate(element => {
+    const ancestors: Element[] = []
+    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+      ancestors.push(parent)
+    }
+    const measure = () => ancestors.map(parent => ({
+      width: parent.scrollWidth, height: parent.scrollHeight,
+    }))
+    const before = measure()
+    const graphic = element as SVGGraphicsElement
+    graphic.style.display = 'none'
+    const withoutGrid = measure()
+    graphic.style.removeProperty('display')
+    return { before, withoutGrid }
+  })
+  expect(layout.before).toEqual(layout.withoutGrid)
+  expect(await grid.evaluate(element => {
+    const mark = element.closest('.metric-chart-view')!
+      .querySelector('.metric-series-line,.histogram-bar,.heatmap-blobs')!
+    return !!(element.compareDocumentPosition(mark) & Node.DOCUMENT_POSITION_FOLLOWING)
+  })).toBe(true)
+}
+
+test('time-series axes use the shared rounded Muted border', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('theme', 'rose-pine-moon'))
+  await page.goto(`/metrics/${metric.metricRef}`)
+  await expect(page.locator('.metric-time-series-chart')).toBeVisible()
+  await expectRoundedAxes(page, 'rgb(110, 106, 134)')
+})
+
 test.describe('independent histogram aggregate loading', () => {
   const bucket: JsonAggregateBucket = {
     timestamp: startNs,
@@ -216,6 +313,45 @@ test.describe('independent histogram aggregate loading', () => {
           ? { error: { code: -32603, message: 'Aggregate unavailable' } }
           : { result: { aggregate: [value], scalarAggregate: null } }),
       },
+    })
+  }
+
+  for (const [theme, colour] of [
+    ['rose-pine', 'rgb(110, 106, 134)'],
+    ['rose-pine-moon', 'rgb(110, 106, 134)'],
+    ['rose-pine-dawn', 'rgb(99, 94, 111)'],
+  ]) {
+    test(`rounded axes and header count legends stay legible in ${theme}`, async ({ page }) => {
+      await page.addInitScript(theme => localStorage.setItem('theme', theme), theme)
+      await page.setViewportSize({ width: 1440, height: 1000 })
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      const pending = await holdAggregates(page)
+      for (const { route } of pending) await respond(route)
+      for (const tab of ['Heatmap', 'Histogram']) {
+        await page.getByRole('tab', { name: tab, exact: true }).click()
+        const header = page.getByRole('region', { name: 'Metric chart', exact: true })
+        const legend = header.getByRole('list', { name: `${tab} count scale`, exact: true })
+        await expect(legend).toBeVisible()
+        await expect(legend.locator('.heatmap-legend__swatch').first()).toHaveCSS('width', '8px')
+        await expect(legend.locator('.heatmap-legend__swatch').first()).toHaveCSS('height', '8px')
+        await expect(legend.locator('.heatmap-legend__swatch').first()).toHaveCSS('border-top-width', '0px')
+        await expect(legend).toHaveCSS('font-size', '14px')
+        await expect(header.locator('[aria-label="Chart time range"]')).toHaveCount(0)
+        await expect(page.locator('#metric-chart-tabpanel .heatmap-legend')).toHaveCount(0)
+        await expectRoundedAxes(page, colour)
+      }
+      await page.setViewportSize({ width: 900, height: 1000 })
+      const header = page.getByRole('region', { name: 'Metric chart', exact: true })
+      const entries = header.locator('.heatmap-legend__entries')
+      await expect(entries).toHaveCSS('flex-wrap', 'wrap')
+      await expect.poll(() => header.evaluate(e => {
+        const header = e.getBoundingClientRect()
+        return [...e.querySelectorAll('.heatmap-legend__entry')].every(entry => {
+          const box = entry.getBoundingClientRect()
+          return box.left >= header.left && box.right <= header.right && box.bottom <= header.bottom
+        })
+      })).toBe(true)
+      await expectRoundedAxes(page, colour)
     })
   }
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MetricDotGrid from './MetricDotGrid.svelte'
   import ChartOverlayLabel from './ChartOverlayLabel.svelte'
   import { createOverlayEmphasis } from '@/components/metrics/utils/overlay-emphasis.svelte'
 
@@ -998,6 +999,9 @@
           onTooltipClick={handleTooltipClick}
           props={chartProps}
         >
+          {#snippet grid()}
+            <MetricDotGrid xAxis={chartProps.xAxis} yAxis={chartProps.yAxis} />
+          {/snippet}
           {#snippet marks()}
             {#each chartSeries as series (series.key)}
               {@const emphasized =

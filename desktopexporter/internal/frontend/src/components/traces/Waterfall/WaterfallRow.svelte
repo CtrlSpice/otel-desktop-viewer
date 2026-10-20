@@ -6,7 +6,8 @@
   import type { WaterfallRowData } from './WaterfallView.svelte'
   import { formatDuration } from '@/utils/time'
   import WaterfallTreeGutter from './WaterfallTreeGutter.svelte'
-  import type { TimeAxisGuide } from './WaterfallTimeAxisHeader.svelte'
+  import type { WaterfallGridLayout } from './WaterfallTimeAxisHeader.svelte'
+  import WaterfallGrid from './WaterfallGrid.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { BiohazardIcon } from '@hugeicons/core-free-icons'
   import TimelineMarkers from './TimelineMarkers.svelte'
@@ -24,7 +25,7 @@
 
   type Props = {
     row: WaterfallRowData
-    barGridGuides: readonly TimeAxisGuide[]
+    barGrid: WaterfallGridLayout
     selected: boolean
     tabbable: boolean
     visible: boolean
@@ -46,7 +47,7 @@
 
   let {
     row,
-    barGridGuides,
+    barGrid,
     selected,
     tabbable,
     visible,
@@ -100,6 +101,22 @@
   )
 </script>
 
+{#snippet treeContent()}
+  <WaterfallTreeGutter
+    depth={row.spanNode.depth}
+    tree={row.tree}
+    color={row.color}
+    {subtreeCollapsed}
+  />
+  {#if hasChildren}
+    <span
+      class="waterfall-row__child-count shrink-0 text-sm tabular-nums"
+      aria-hidden="true"
+      title="{row.tree.childrenCount} child {row.tree.childrenCount === 1 ? 'span' : 'spans'}"
+    >{row.tree.childrenCount}</span>
+  {/if}
+{/snippet}
+
 <!-- The virtual list wraps this row in divs, so its production role must be explicit. -->
 <!-- svelte-ignore a11y_no_redundant_roles -->
 <tr
@@ -125,18 +142,21 @@
     style:width="{spanColWidth}px"
   >
     <div class="flex min-w-0 items-center gap-1">
-      <WaterfallTreeGutter
-        depth={row.spanNode.depth}
-        tree={row.tree}
-        color={row.color}
-        {subtreeCollapsed}
-        {onToggleExpand}
-      />
       {#if hasChildren}
-        <span
-          class="waterfall-row__child-count shrink-0 text-sm tabular-nums"
-          title="{row.tree.childrenCount} child {row.tree.childrenCount === 1 ? 'span' : 'spans'}"
-        >{row.tree.childrenCount}</span>
+        <button
+          type="button"
+          class="waterfall-row__tree-toggle"
+          aria-label="{subtreeCollapsed ? 'Expand' : 'Collapse'} {span.name}, {row.tree.childrenCount} child {row.tree.childrenCount === 1 ? 'span' : 'spans'}"
+          aria-expanded={!subtreeCollapsed}
+          onclick={event => {
+            event.stopPropagation()
+            onToggleExpand()
+          }}
+        >
+          {@render treeContent()}
+        </button>
+      {:else}
+        {@render treeContent()}
       {/if}
       <div
         class="waterfall-row__title flex-1 text-left text-sm text-base-content"
@@ -226,15 +246,7 @@
           style:left="{row.offsetPercent}%"
           style:width="{row.widthPercent}%"
         ></div>
-        <div class="waterfall-row__bar-grid" aria-hidden="true">
-          {#each barGridGuides as guide}
-            <div
-              class="waterfall-row__grid-line dot-guide-vertical"
-              class:dot-guide-vertical--minor={!guide.major}
-              style:left="{guide.offsetPercent}%"
-            ></div>
-          {/each}
-        </div>
+        <WaterfallGrid layout={barGrid} />
         <span
           class="waterfall-row__bar-label"
           style:left="calc({row.offsetPercent + row.widthPercent}% +
@@ -259,6 +271,16 @@
 
 <style lang="postcss">
   @reference "../../../app.css";
+  .waterfall-row__tree-toggle {
+    /* Keep the hit area rectangular so its empty corners also toggle. */
+    @apply flex shrink-0 cursor-pointer items-center gap-1 rounded-none border-0 bg-transparent p-0 text-sm font-normal;
+    height: var(--table-row-h);
+  }
+
+  .waterfall-row__tree-toggle:hover {
+    background-color: var(--color-highlight-low);
+  }
+
   .waterfall-row__child-count {
     color: var(--color-subtle);
     /* Centre the count over the next level's dots, removing the gutter tail
@@ -312,14 +334,6 @@
     min-width: 2px;
     background-color: var(--bar-color);
     transition: background-color 0.12s ease;
-  }
-
-  .waterfall-row__bar-grid {
-    @apply pointer-events-none absolute inset-0 z-0;
-  }
-
-  .waterfall-row__grid-line {
-    @apply absolute top-0 bottom-0 -translate-x-1/2;
   }
 
   .waterfall-row__markers {

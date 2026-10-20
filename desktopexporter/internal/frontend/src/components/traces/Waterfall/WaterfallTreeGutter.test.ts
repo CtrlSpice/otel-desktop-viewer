@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render } from '@testing-library/svelte'
+import { describe, expect, it } from 'vitest'
+import { render } from '@testing-library/svelte'
 import WaterfallTreeGutter from './WaterfallTreeGutter.svelte'
 
 describe('WaterfallTreeGutter dots', () => {
@@ -10,15 +10,15 @@ describe('WaterfallTreeGutter dots', () => {
       tree: { childrenCount: 0, ancestorHasNextSibling: [], isLastChild: false },
       color: 'var(--color-primary)',
       subtreeCollapsed: false,
-      onToggleExpand: vi.fn(),
     })
-    expect(container.querySelector('.gutter__btn--leaf')).toBeEmptyDOMElement()
+    expect(container.querySelector('.gutter__dot--leaf')).toBeEmptyDOMElement()
+    expect(container.querySelector('button')).toBeNull()
+    expect(container.querySelector('.gutter')).toHaveAttribute('aria-hidden', 'true')
     expect(container.querySelector('svg')).toBeNull()
   })
 
-  it('retains parent activation and accessible child counts without a caret or dot text', async () => {
-    const onToggleExpand = vi.fn()
-    const { container, getByRole } = render(WaterfallTreeGutter, {
+  it('keeps parent connectors decorative and removes the stem when collapsed', async () => {
+    const { container, rerender } = render(WaterfallTreeGutter, {
       depth: 2,
       tree: {
         childrenCount: 2,
@@ -27,11 +27,12 @@ describe('WaterfallTreeGutter dots', () => {
       },
       color: 'var(--color-primary)',
       subtreeCollapsed: false,
-      onToggleExpand,
     })
-    expect(container.querySelector('.gutter__btn-dot')).toBeEmptyDOMElement()
+    expect(container.querySelector('.gutter__dot')).toBeEmptyDOMElement()
     expect(container.querySelector('svg')).toBeNull()
-    await fireEvent.click(getByRole('button', { name: 'Collapse 2 child spans' }))
-    expect(onToggleExpand).toHaveBeenCalledOnce()
+    expect(container.querySelector('button')).toBeNull()
+    expect(container.querySelector('.gutter__stem')).not.toBeNull()
+    await rerender({ subtreeCollapsed: true })
+    expect(container.querySelector('.gutter__stem')).toBeNull()
   })
 })

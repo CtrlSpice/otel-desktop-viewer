@@ -28,7 +28,7 @@
   function valueYAxis(label: string) {
     return {
       label: label.trim() || 'value',
-      rule: true as const,
+      rule: false as const,
       // Custom formatter: SI prefixes at BOTH ends of the range (k/M
       // for big numbers, m/µ/n for small). LayerChart's built-in
       // 'metric' style only handles the big end and renders sub-unit
@@ -41,7 +41,7 @@
   /** Time on the x-axis (line charts, heatmap). */
   export function axisTime(timezone: Timezone) {
     return {
-      rule: true as const,
+      rule: false as const,
       format: (tick: Date | number) => formatChartAxisTime(tick, timezone),
       tickLabelProps: rotatedX,
     }
@@ -60,7 +60,7 @@
     const trimmed = unit.trim()
     return {
       label: trimmed ? `value (${trimmed})` : 'value',
-      rule: true as const,
+      rule: false as const,
     }
   }
 
@@ -76,6 +76,7 @@
 
 <script lang="ts">
   import type { Snippet } from 'svelte'
+  import MetricAxes from './MetricAxes.svelte'
 
   type Props = {
     /** Plot height in px. Omit when the parent already sizes the box. */
@@ -95,6 +96,7 @@
   style:width={width != null ? `${width}px` : undefined}
 >
   {@render children()}
+  <MetricAxes padding={chartPadding} />
 </div>
 
 <style lang="postcss">
