@@ -39,6 +39,11 @@ bucket.
 
 - Delta counts are added.
 - Cumulative counts use the difference between consecutive readings.
+- The first cumulative reading in the requested window establishes the baseline;
+  it is not an interval observation. One reading cannot supply an interval.
+  Repeated unchanged readings produce zero interval activity even when their
+  recorded cumulative counts are nonzero. Charts explain this empty state;
+  received counts and buckets remain available in Details and exact downloads.
 - A negative cumulative difference is treated as a reset.
 - Optional `sum`, `min`, and `max` preserve absence. Zero remains distinct from
   absence.

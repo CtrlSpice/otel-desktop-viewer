@@ -358,14 +358,24 @@
 
   $effect(() => {
     if (!containerRef) return
+    let frame: number | undefined
+    let bounds: DOMRectReadOnly
     const ro = new ResizeObserver(entries => {
-      for (const entry of entries) {
-        containerWidth = entry.contentRect.width
-        containerHeight = entry.contentRect.height
-      }
+      bounds = entries[entries.length - 1]!.contentRect
+      // Switching the split direction replaces measured descendants. Apply
+      // the new layout outside observer delivery so they can report next frame.
+      if (frame !== undefined) return
+      frame = requestAnimationFrame(() => {
+        frame = undefined
+        containerWidth = bounds.width
+        containerHeight = bounds.height
+      })
     })
     ro.observe(containerRef)
-    return () => ro.disconnect()
+    return () => {
+      ro.disconnect()
+      if (frame !== undefined) cancelAnimationFrame(frame)
+    }
   })
 </script>
 

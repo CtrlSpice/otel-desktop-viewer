@@ -14,13 +14,17 @@ const labels = [
   'Planned',
 ]
 
-async function openLegend(page: Page) {
+async function openLegend(page: Page, narrow = false) {
   await page.addInitScript(() => {
     window.legendResizeErrors = []
     window.addEventListener('error', event => {
       window.legendResizeErrors.push(event.message)
     })
   })
+  if (narrow)
+    await page.addInitScript(() =>
+      localStorage.setItem('signal-drawer:open', 'false')
+    )
   await page.route('**/api/features', route =>
     route.fulfill({ json: { evals: { enabled: true } } })
   )
@@ -56,8 +60,12 @@ async function openLegend(page: Page) {
     }
     await route.fulfill({ json: { jsonrpc: '2.0', id, result: result() } })
   })
-  await page.setViewportSize({ width: 1440, height: 1000 })
-  await page.goto('/evals?run=direct&row=case%2Frequest-latency')
+  await page.setViewportSize({ width: narrow ? 390 : 1440, height: 1000 })
+  await page.goto(
+    narrow
+      ? '/evals?run=guide-assisted&attempt=request-latency'
+      : '/evals?run=direct&row=case%2Frequest-latency'
+  )
   const legend = page.getByRole('list', { name: 'Execution status legend' })
   await expect(legend).toBeVisible()
   await page.evaluate(() => document.fonts.ready)
@@ -137,6 +145,21 @@ test('legend resizing and eval view changes settle without observer feedback', a
   await page.setViewportSize({ width: 1440, height: 1000 })
   await expectStableLayout(legend)
   await expect.poll(() => rows(legend)).toEqual(wideRows)
+  expect(await page.evaluate(() => window.legendResizeErrors)).toEqual([])
+})
+
+test('initial narrow Details layout settles without observer delivery loops', async ({
+  page,
+}) => {
+  const legend = await openLegend(page, true)
+  await expect(
+    page.getByRole('region', { name: 'Attempt details', exact: true })
+  ).toBeVisible()
+  await expectStableLayout(legend)
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await expectStableLayout(legend)
+  await page.setViewportSize({ width: 390, height: 1000 })
+  await expectStableLayout(legend)
   expect(await page.evaluate(() => window.legendResizeErrors)).toEqual([])
 })
 

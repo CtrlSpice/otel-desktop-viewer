@@ -38,6 +38,23 @@
       ? Math.max(MIN_METRIC_CHART_HEIGHT, Math.floor(plotHostHeight))
       : DEFAULT_METRIC_CHART_HEIGHT
   )
+
+  function histogramEmptyMessage(hasIntervals: boolean) {
+    if (ctx.visibleSeries.size === 0)
+      return 'Nothing to see here — select a timeseries below'
+    const hasReadings = ctx.metric?.timeseries.some(
+      series =>
+        ctx.visibleSeries.has(series.seriesRef) && series.datapointCount > 0
+    )
+    if (ctx.temporalityCode === 2 && hasReadings) {
+      return hasIntervals
+        ? 'No interval observations in this range. Cumulative charts show changes between readings; recorded totals are available in Details.'
+        : 'Not enough cumulative readings to calculate interval activity. Recorded totals are available in Details.'
+    }
+    return hasIntervals
+      ? 'No observations in this range'
+      : 'No bucket data in range'
+  }
 </script>
 
 {#snippet bucketSeriesErrorMessage(err: BucketSeriesError)}
@@ -65,10 +82,10 @@
           {@render bucketSeriesErrorMessage(ctx.bucketSeriesError)}
         {:else if ctx.heatmapBucketSeries === null}
           <div class="metric-chart-view__placeholder">No histogram data</div>
-        {:else if ctx.heatmapBucketSeries.length === 0}
+        {:else if ctx.heatmapBucketSeries.length === 0 || ctx.heatmapBucketSeries.every(point => point.totals.count === 0)}
           <MetricChartEmpty
             height={plotHeight}
-            message="No bucket data in range"
+            message={histogramEmptyMessage(ctx.heatmapBucketSeries.length > 0)}
           />
         {:else}
           <HistogramHeatmap
@@ -85,10 +102,12 @@
       {:else if ctx.activeHistogramTab === 'histogram'}
         {#if ctx.histogramChartError}
           {@render bucketSeriesErrorMessage(ctx.histogramChartError)}
-        {:else if !ctx.histogramChartDatapoint}
+        {:else if !ctx.histogramChartDatapoint || ctx.histogramChartDatapoint.count === 0}
           <MetricChartEmpty
             height={plotHeight}
-            message="No aggregate in range"
+            message={histogramEmptyMessage(
+              Boolean(ctx.histogramChartDatapoint)
+            )}
           />
         {:else}
           <HistogramChart

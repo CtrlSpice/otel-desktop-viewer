@@ -7,10 +7,10 @@
   },
   "scripts": {
     "test": "node --test *.test.ts presentation/*.test.ts",
-    "typecheck": "node ../../desktopexporter/internal/frontend/node_modules/typescript/bin/tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json",
     "typecheck:presentation": "node ../../desktopexporter/internal/frontend/node_modules/svelte-check/bin/svelte-check --tsconfig presentation/tsconfig.json",
     "stage": "node stage-dataset.ts",
-    "prepare": "node prepare.ts",
+    "prepare:run": "node prepare.ts",
     "verify": "node verify.ts",
     "pilot": "node run-pilot.ts",
     "overnight": "node run-overnight.ts",
@@ -22,5 +22,9 @@
     "@opentelemetry/api": "1.9.1",
     "promptfoo": "0.124.1",
     "tar": "7.5.22"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.4",
+    "typescript": "6.0.3"
   }
 }

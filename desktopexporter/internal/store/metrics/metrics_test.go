@@ -3577,6 +3577,48 @@ func TestCumulativeHistogramMerge_DifferencesAcrossBuckets(t *testing.T) {
 	}
 }
 
+func TestCumulativeHistogramMerge_UnchangedReadingsRetainRecordedCounts(t *testing.T) {
+	t.Parallel()
+	s, ctx := storetest.New(t)
+	base := time.Date(2026, 10, 20, 13, 0, 0, 0, time.UTC)
+	var dps []histTestDP
+	for i := range 3 {
+		dps = append(dps, histTestDP{
+			timestamp: base.Add(time.Duration(i) * time.Minute),
+			bounds:    []float64{10}, counts: []uint64{12, 0},
+			count: 12, sum: 60, min: 5, max: 5,
+		})
+	}
+	fixture := makeHistogramFixtureT("unchanged.hist", pmetric.AggregationTemporalityCumulative, dps)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, fixture, s.FlushedIDs())
+	}))
+	metricID := searchMetricsAll(t, s, ctx)[0]["metricRef"].(string)
+	for _, targetBuckets := range []int64{0, 1, 100} {
+		raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+			return metrics.GetMetricView(ctx, db, metricID, store.TimeRange{},
+				targetBuckets, nil, nil, 0, 0, 0, nil, "", nil, 0)
+		})
+		require.NoError(t, err)
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(raw, &m))
+		points := m["timeseries"].([]any)[0].(map[string]any)["datapoints"].([]any)
+		require.NotEmpty(t, points)
+		var count uint64
+		var sum float64
+		if targetBuckets == 0 {
+			require.Len(t, points, 3)
+			count, sum = 12, 60
+		}
+		for _, point := range points {
+			dp := point.(map[string]any)
+			assert.Equal(t, count, metricWireUint64(t, dp["count"]))
+			assert.Equal(t, sum, dp["sum"])
+			assert.Equal(t, count, metricWireUint64(t, dp["bucketCounts"].([]any)[0]))
+		}
+	}
+}
+
 // TestCumulativeHistogramMerge_ResetIsConsistentAcrossFields covers a counter
 // restart inside a merged bucket.
 //

@@ -48,12 +48,14 @@ const command = [
   'loader-results.json',
 ]
 function runLoader(root: string, command: string[], prefix: string) {
+  const env = cleanEnvironment({ root, inherited: {} })
+  fs.mkdirSync(env.TMPDIR, { recursive: true, mode: 0o700 })
   const result = spawnSync(command[0], command.slice(1), {
     cwd: root,
     encoding: 'utf8',
     timeout: 300000,
     env: {
-      ...cleanEnvironment({ root, inherited: {} }),
+      ...env,
       OTEL_EVAL_RUN_DIR: root,
       OTEL_EVAL_ISOLATION_FILE: path.join(root, 'isolation.json'),
       PROMPTFOO_DISABLE_TELEMETRY: '1',

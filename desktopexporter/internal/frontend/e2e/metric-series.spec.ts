@@ -166,21 +166,32 @@ test.describe('independent histogram aggregate loading', () => {
     bucketCounts: [2, 7, 3],
   }
 
-  async function holdAggregates(page: Page, includeNextMetric = false) {
+  async function holdAggregates(
+    page: Page,
+    includeNextMetric = false,
+    cumulativeReadings?: number
+  ) {
     const pending: { route: Route; wholeWindow: boolean }[] = []
+    const temporality =
+      cumulativeReadings === undefined
+        ? { aggregationTemporalityCode: 1, aggregationTemporality: 'Delta' }
+        : {
+            aggregationTemporalityCode: 2,
+            aggregationTemporality: 'Cumulative',
+          }
     const histogramMetric: JsonMetricViewData = {
       ...metric,
       metricType: 'Histogram',
-      aggregationTemporalityCode: 1,
-      aggregationTemporality: 'Delta',
+      ...temporality,
       timeseries: timeseries.map(series => ({
         ...series,
-        datapoints: [
-          {
-            ...series.datapoints[0]!,
+        datapointCount: cumulativeReadings ?? series.datapointCount,
+        datapoints: series.datapoints
+          .slice(0, cumulativeReadings ?? 1)
+          .map(datapoint => ({
+            ...datapoint,
             metricType: 'Histogram',
-            aggregationTemporalityCode: 1,
-            aggregationTemporality: 'Delta',
+            ...temporality,
             count: '12',
             sum: 18,
             min: 0,
@@ -188,15 +199,13 @@ test.describe('independent histogram aggregate loading', () => {
             explicitBounds: [1, 2],
             bucketCounts: ['2', '7', '3'],
             quantiles: bucket.quantiles,
-          },
-        ],
+          })),
       })),
     }
     const histogramSummary: JsonMetricSummary = {
       ...summary,
       metricType: 'Histogram',
-      aggregationTemporalityCode: 1,
-      aggregationTemporality: 'Delta',
+      ...temporality,
     }
     await page.route('**/rpc', async route => {
       const request = route.request().postDataJSON()
@@ -241,6 +250,60 @@ test.describe('independent histogram aggregate loading', () => {
           ? { error: { code: -32603, message: 'Aggregate unavailable' } }
           : { result: { aggregate: [value], scalarAggregate: null } }),
       },
+    })
+  }
+
+  for (const [readings, message] of [
+    [
+      2,
+      'No interval observations in this range. Cumulative charts show changes between readings; recorded totals are available in Details.',
+    ],
+    [
+      1,
+      'Not enough cumulative readings to calculate interval activity. Recorded totals are available in Details.',
+    ],
+    [0, 'No bucket data in range'],
+  ] as const) {
+    test(`cumulative histogram empty state distinguishes ${readings} received readings`, async ({
+      page,
+    }) => {
+      const pending = await holdAggregates(page, false, readings)
+      for (const { route } of pending) {
+        await route.fulfill({
+          json: {
+            jsonrpc: '2.0',
+            id: route.request().postDataJSON().id,
+            result: {
+              aggregate:
+                readings > 1
+                  ? [
+                      {
+                        ...bucket,
+                        count: 0,
+                        sum: 0,
+                        bucketCounts: [0, 0, 0],
+                        quantiles: null,
+                        min: undefined,
+                        max: undefined,
+                      },
+                    ]
+                  : [],
+              scalarAggregate: null,
+            },
+          },
+        })
+      }
+      for (const tab of ['Heatmap', 'Histogram']) {
+        const button = page.getByRole('tab', { name: tab, exact: true })
+        await button.click()
+        await expect(button).toHaveAttribute('aria-selected', 'true')
+        await expect(
+          page.locator('#metric-chart-tabpanel').getByRole('status')
+        ).toHaveText(message)
+        await expect(
+          page.locator('.heatmap-cell, .histogram-hover-column')
+        ).toHaveCount(0)
+      }
     })
   }
 

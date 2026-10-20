@@ -157,8 +157,11 @@ Requirements: Node >=22.22.0, Go/CGO to build the viewer, and OpenCode
 1.18.10 with working model access for separately authorised model runs. All first-party
 helpers and tests use TypeScript through Node's native type stripping. Dependencies
 are pinned in the local lockfile. Migration checks ran on Node v26.7.0; the documented
-22.22.0 minimum has not been exercised. Type checking uses the existing frontend
-compiler read-only; no TypeScript dependency was added to this suite.
+22.22.0 minimum has not been exercised. The suite pins its own TypeScript compiler
+and Node types, so its tests and type check do not require a frontend install.
+The optional `typecheck:presentation` command requires the frontend dependencies.
+Run preparation is explicit (`npm run prepare:run`); installing dependencies
+does not create a run or start a viewer.
 The `go.mod` here is a module boundary: application `go test ./...` must not
 compile the Go provider templates shipped inside Promptfoo's dependencies.
 
