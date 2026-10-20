@@ -57,16 +57,53 @@ describe('MetricCard', () => {
     }).format(42.5)
     expect(screen.getByText(expectedValue)).toBeInTheDocument()
     expect(screen.getByText('ms')).toBeInTheDocument()
+    expect(screen.getByText('Last value:').parentElement).toHaveTextContent(
+      `${expectedValue} ms`
+    )
+    expect(screen.queryByText('Units:')).not.toBeInTheDocument()
   })
 
-  it('renders the unit alone when there is no last value', () => {
-    renderCard({ metric: makeMetric({ lastValue: null, unit: 'By' }) })
-    expect(screen.getByText('Units:')).toBeInTheDocument()
-    expect(screen.getByText('By')).toBeInTheDocument()
+  it('omits a unit-only row or type cluster when there is no last value', () => {
+    const { container } = renderCard({
+      metric: makeMetric({ lastValue: null, unit: 'By' }),
+    })
+    expect(screen.getByText('Gauge', { exact: true })).toBeInTheDocument()
+    expect(screen.queryByText('By')).not.toBeInTheDocument()
     expect(screen.queryByText('Last value:')).not.toBeInTheDocument()
+    expect(screen.queryByText('Units:')).not.toBeInTheDocument()
+    expect(container.querySelector('.signal-row__meta-row')).toBeNull()
   })
 
-  it('renders the metric type badge', () => {
+  it('does not invent a histogram point value or an empty metadata row', () => {
+    const { container } = renderCard({
+      metric: makeMetric({
+        metricType: 'Histogram',
+        aggregationTemporality: 'delta',
+        lastValue: null,
+        unit: 's',
+      }),
+    })
+    expect(screen.getByText('Histogram', { exact: true })).toHaveAttribute(
+      'title',
+      'Histogram · Delta'
+    )
+    expect(
+      container.querySelector('.metric-card__classification')
+    ).not.toHaveTextContent('Δ')
+    expect(screen.queryByText('s', { exact: true })).not.toBeInTheDocument()
+    expect(screen.queryByText('Last value:')).not.toBeInTheDocument()
+    expect(screen.queryByText('Units:')).not.toBeInTheDocument()
+    expect(container.querySelector('.signal-row__meta-row')).toBeNull()
+  })
+
+  it('keeps a received zero last value with its unit', () => {
+    renderCard({ metric: makeMetric({ lastValue: 0, unit: 's' }) })
+    expect(screen.getByText('Last value:').parentElement).toHaveTextContent(
+      /Last value:\s*0\s+s/
+    )
+  })
+
+  it('renders the plain metric type summary', () => {
     renderCard({
       metric: makeMetric({
         metricType: 'Sum',
@@ -74,10 +111,25 @@ describe('MetricCard', () => {
         isMonotonic: true,
       }),
     })
-    expect(screen.getByText('Sum Δ ↗')).toBeInTheDocument()
+    expect(screen.getByText('Sum', { exact: true })).toHaveAttribute(
+      'title',
+      'Sum · Delta · Monotonic'
+    )
+    expect(screen.queryByText(/Δ|↗/)).not.toBeInTheDocument()
   })
 
-  it('renders the formatted last-seen timestamp', () => {
+  it.each([
+    ['Histogram', 'Histogram'],
+    ['ExponentialHistogram', 'Exp. Histogram'],
+  ] as const)('keeps the full %s name on hover for %s', (metricType, label) => {
+    renderCard({ metric: makeMetric({ metricType }) })
+    expect(screen.getByText(label, { exact: true })).toHaveAttribute(
+      'title',
+      metricType
+    )
+  })
+
+  it('places the labelled last-seen timestamp after description and last reading', () => {
     const metric = makeMetric()
     renderCard({ metric })
     const lastSeenParts = formatTimestampParts(
@@ -87,6 +139,15 @@ describe('MetricCard', () => {
     )
     expect(screen.getByText('Last seen:')).toBeInTheDocument()
     expect(screen.getByText(lastSeenParts.value)).toBeInTheDocument()
+    const date = document.querySelector('.signal-date')
+    expect(date).toHaveAttribute(
+      'title',
+      `Last seen: ${lastSeenParts.value} ${lastSeenParts.unit}`
+    )
+    expect(date).not.toHaveTextContent(lastSeenParts.unit)
+    expect(
+      document.querySelector('.signal-row__body')?.lastElementChild
+    ).toContainElement(date as HTMLElement)
   })
 
   it('reflects the selected prop via aria-pressed', () => {
@@ -121,7 +182,7 @@ describe('MetricCard series counts', () => {
         (_, el) =>
           el?.classList.contains('badge-count') === true &&
           el.textContent?.replace(/\s+/g, ' ').trim() ===
-            '3 of 21 series · 120 pts'
+            '[3 of 21 series | 120 pts]'
       )
     ).toBeInTheDocument()
   })
@@ -136,9 +197,47 @@ describe('MetricCard series counts', () => {
       screen.getByText(
         (_, el) =>
           el?.classList.contains('badge-count') === true &&
-          el.textContent?.replace(/\s+/g, ' ').trim() === '21 series · 120 pts'
+          el.textContent?.replace(/\s+/g, ' ').trim() ===
+            '[21 series | 120 pts]'
       )
     ).toBeInTheDocument()
     expect(screen.queryByText(/of 21 series/)).not.toBeInTheDocument()
+  })
+
+  it.each([
+    {
+      seriesCount: 1,
+      seriesCardinality: 1,
+      dataPointCount: 30,
+      label: '[1 series | 30 pts]',
+    },
+    {
+      seriesCount: 1,
+      seriesCardinality: 3,
+      dataPointCount: 30,
+      label: '[1 of 3 series | 30 pts]',
+    },
+    {
+      seriesCount: 0,
+      seriesCardinality: 3,
+      dataPointCount: 0,
+      label: '[0 of 3 series | 0 pts]',
+    },
+    {
+      seriesCount: 0,
+      seriesCardinality: 0,
+      dataPointCount: 0,
+      label: '[0 series | 0 pts]',
+    },
+  ])('uses one bracketed count group: $label', ({ label, ...counts }) => {
+    const { container } = renderCard({ metric: makeMetric(counts) })
+    const count = container.querySelector('.badge-count')
+    expect(container.querySelectorAll('.badge-count')).toHaveLength(1)
+    expect(count?.textContent?.replace(/\s+/g, ' ').trim()).toBe(label)
+    expect(count).toHaveAttribute(
+      'title',
+      expect.stringContaining(`${counts.dataPointCount} datapoints in range`)
+    )
+    expect(count?.querySelector('.badge')).toBeNull()
   })
 })

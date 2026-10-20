@@ -66,11 +66,15 @@
 {#snippet header()}
   <div class="detail-property__header">
     {#if conflict}<ConflictMarker label={conflict} />{/if}
-    <span class="detail-property__key"
-      >{fieldName}{#if showType}<span class="text-rp-subtle">{' · '}</span><span
-          class="detail-property__type">{fieldType}</span
-        >{/if}</span
-    >
+    <div class="detail-property__heading">
+      <span class="detail-property__key"
+        >{fieldName}{#if showType}<span class="text-rp-subtle">{' · '}</span
+          ><span class="detail-property__type">{fieldType}</span>{/if}</span
+      >
+      {#if origin}<span class="text-rp-subtle">{' · '}</span><span
+          class="detail-property__origin">{origin}</span
+        >{/if}
+    </div>
     <ValueCopyButton
       text={copyText}
       {loadText}
@@ -97,7 +101,6 @@
         aria-label={fieldName}
       >
         {@render header()}
-        {#if origin}<div class="detail-property__origin">{origin}</div>{/if}
         <div class="detail-property__body">
           {#if valueTone === 'error'}
             <span class="detail-property__error-dot" aria-hidden="true"></span>
@@ -170,6 +173,10 @@
   }
   .detail-property__header > :global(.value-copy) {
     @apply ml-auto size-5 shrink-0 self-start;
+  }
+  .detail-property__heading {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .detail-property__key {
     @apply min-w-0 font-sans text-xs;

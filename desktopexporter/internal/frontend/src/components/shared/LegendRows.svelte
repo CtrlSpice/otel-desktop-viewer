@@ -18,9 +18,25 @@
   let gapWidth = $state(0)
   let element = $state<HTMLDivElement>()
   $effect(() => {
-    void availableWidth
-    if (element)
-      gapWidth = Number.parseFloat(getComputedStyle(element).columnGap)
+    const node = element
+    if (!node) return
+    let frame: number | undefined
+    const measure = () => {
+      frame = undefined
+      availableWidth = node.clientWidth
+      gapWidth = Number.parseFloat(getComputedStyle(node).columnGap)
+    }
+    measure()
+    // Regrouping entries changes this container's height. Apply its width
+    // outside ResizeObserver delivery so that height can be delivered next frame.
+    const observer = new ResizeObserver(() => {
+      if (frame === undefined) frame = requestAnimationFrame(measure)
+    })
+    observer.observe(node)
+    return () => {
+      observer.disconnect()
+      if (frame !== undefined) cancelAnimationFrame(frame)
+    }
   })
   const rowEnds = $derived(
     legendRowEnds(
@@ -31,13 +47,7 @@
   )
 </script>
 
-<div
-  class="legend-rows"
-  bind:this={element}
-  bind:clientWidth={availableWidth}
-  role="list"
-  aria-label={label}
->
+<div class="legend-rows" bind:this={element} role="list" aria-label={label}>
   {#each rowEnds as end, row}
     {@const start = row === 0 ? 0 : rowEnds[row - 1]!}
     <div class="legend-rows__row" role="presentation">

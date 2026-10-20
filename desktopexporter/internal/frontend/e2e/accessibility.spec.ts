@@ -104,7 +104,7 @@ async function showMetadataExamples(page: Page, theme: string) {
       const row = document.createElement('div')
       row.style.cssText = `display:flex;gap:16px;padding:8px;background:var(--color-${surface})`
       for (const [className, text] of [
-        ['badge-count', '42 spans'],
+        ['badge-count', '[42 spans]'],
         ['metadata-origin', 'Resource'],
       ]) {
         const label = document.createElement('span')
@@ -189,6 +189,126 @@ for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
 }
 
 for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
+  test(`run summary segment tooltips stay isolated and above neighbouring cards in ${theme}`, async ({
+    page,
+  }) => {
+    await interceptRpc(page)
+    await page.route('**/api/features', route =>
+      route.fulfill({ json: { evals: { enabled: true } } })
+    )
+    await page.addInitScript(
+      theme => localStorage.setItem('theme', theme),
+      theme
+    )
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await page.goto('/evals?run=guide-assisted')
+    const card = page.getByRole('button', {
+      name: /^Guide-assisted agent Complete Started:/,
+    })
+    const shell = page.locator('.signal-card-shell').filter({ has: card })
+    const bar = shell.getByRole('button', {
+      name: 'Pass: 11 attempts',
+    })
+    await expect(card).toHaveAttribute('aria-pressed', 'true')
+    const runLegend = page.getByRole('list', {
+      name: 'Run outcome legend',
+      exact: true,
+    })
+    await expect(runLegend.getByRole('listitem')).toHaveText([
+      'Pass [11]',
+      'Partial [3]',
+      'Fail [2]',
+    ])
+    await expect(runLegend).toBeVisible()
+    await expect(card.locator('.signal-row__header')).toHaveText(
+      'Guide-assisted agent Complete'
+    )
+    await expect(shell).not.toHaveText(/tool calls|Score:|Pass:|Est\. cost:/)
+    await expect(card.locator('.signal-date__label')).toHaveText('Started:')
+    const dateSpacing = await card.locator('.signal-date').evaluate(element => {
+      const label = element.querySelector('.signal-date__label')!
+      const text = document.createRange()
+      text.selectNodeContents(label)
+      const labelBounds = label.getBoundingClientRect()
+      const valueBounds = label.nextElementSibling!.getBoundingClientRect()
+      return {
+        unusedLabelWidth:
+          labelBounds.width - text.getBoundingClientRect().width,
+        gap: valueBounds.left - labelBounds.right,
+      }
+    })
+    expect(Math.abs(dateSpacing.unusedLabelWidth)).toBeLessThan(1)
+    expect(dateSpacing.gap).toBeCloseTo(8, 0)
+    const datePlacement = await shell.evaluate(element => {
+      const date = element
+        .querySelector('.signal-date')!
+        .getBoundingClientRect()
+      const header = element
+        .querySelector('.signal-row__header')!
+        .getBoundingClientRect()
+      const body = element
+        .querySelector('.signal-row__body')!
+        .getBoundingClientRect()
+      const bar = element
+        .querySelector('.breakdown-bar')!
+        .getBoundingClientRect()
+      return {
+        leftOffset: date.left - header.left,
+        bottomOffset: body.bottom - date.bottom,
+        followsBar: date.top >= bar.bottom,
+      }
+    })
+    expect(Math.abs(datePlacement.leftOffset)).toBeLessThan(1)
+    expect(Math.abs(datePlacement.bottomOffset)).toBeLessThan(1)
+    expect(datePlacement.followsBar).toBe(true)
+    await expect(bar).toHaveAccessibleName('Pass: 11 attempts')
+    await expect(
+      shell.locator('button button, .legend-rows, .signal-row__meta-row')
+    ).toHaveCount(0)
+    const tooltip = page.locator('.breakdown-tooltip:popover-open')
+    await page.mouse.move(0, 0)
+    await expect(tooltip).toHaveCount(0)
+    await bar.hover()
+    await expect(tooltip).toBeVisible()
+    await expect(tooltip).toHaveText('Pass [11]')
+    await expect
+      .poll(() =>
+        tooltip.evaluate(element => {
+          const rect = element.getBoundingClientRect()
+          return element.contains(
+            document.elementFromPoint(
+              rect.x + rect.width / 2,
+              rect.y + rect.height / 2
+            )
+          )
+        })
+      )
+      .toBe(true)
+    await shell.getByRole('button', { name: 'Fail: 2 attempts' }).hover()
+    await expect(tooltip).toHaveCount(1)
+    await expect(tooltip).toHaveText('Fail [2]')
+    const scan = await new AxeBuilder({ page })
+      .include('.signal-card-shell:has(.signal-row--selected)')
+      .withRules(['color-contrast'])
+      .analyze()
+    expect(scan.violations).toEqual([])
+    await page.mouse.move(0, 0)
+    await expect(tooltip).toHaveCount(0)
+    await card.focus()
+    await page.keyboard.press('Tab')
+    await expect(bar).toBeFocused()
+    await expect(tooltip).toHaveText('Pass [11]')
+    await expect(bar).toHaveCSS('outline-style', 'solid')
+    const url = page.url()
+    await page.keyboard.press('Enter')
+    expect(page.url()).toBe(url)
+    await expect(card).toHaveAttribute('aria-pressed', 'true')
+    await page.keyboard.press('Tab')
+    await expect(tooltip).toHaveText('Partial [3]')
+    await page.keyboard.press('Escape')
+    await expect(tooltip).toHaveCount(0)
+  })
+
   test(`sort target uses full text contrast in ${theme}`, async ({ page }) => {
     await interceptRpc(page)
     await page.addInitScript(
@@ -410,7 +530,7 @@ test.describe('home page accessibility', () => {
         page.locator('.page-layout__main-chrome .pane-header').first()
       ).toHaveCSS('background-color', panel)
       const detailHeadings = page.locator('.detail-bubble__heading')
-      await expect(detailHeadings).toHaveCount(3)
+      await expect(detailHeadings).toHaveCount(2)
       for (const heading of await detailHeadings.all()) {
         await expect(heading).toHaveCSS('background-color', panel)
         // Shared 32px controls plus 8px vertical padding on each side.
@@ -456,7 +576,7 @@ test.describe('home page accessibility', () => {
     )
     await expect(
       page.locator('.signal-row:not(.signal-row--selected)').first()
-    ).toHaveCSS('background-color', 'rgb(255, 250, 243)')
+    ).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
     await expect(page.locator('.detail-bubble__heading').first()).toHaveCSS(
       'background-color',
       'rgb(250, 244, 237)'
@@ -465,7 +585,7 @@ test.describe('home page accessibility', () => {
       'outline-style',
       'none'
     )
-    await page.locator('.signal-row--selected').hover()
+    await page.locator('.signal-row--selected .signal-row__header').hover()
     await expect(page.locator('.signal-row--selected')).toHaveCSS(
       'background-color',
       'rgb(244, 237, 232)'
@@ -506,9 +626,11 @@ test.describe('home page accessibility', () => {
       const idleCard = page
         .locator('.signal-row:not(.signal-row--selected)')
         .first()
-      await idleCard.hover()
+      await expect(idleCard).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+      await idleCard.locator('.signal-row__header').hover()
       await expect(idleCard).toHaveCSS('background-color', low)
-      await selectedCard.hover()
+      await selectedCard.locator('.signal-row__header').hover()
+      await expect(idleCard).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
       await expect(selectedCard).toHaveCSS('background-color', low)
       await page.mouse.move(0, 0)
       await expect(selectedCard).toHaveCSS('background-color', selectedColor)

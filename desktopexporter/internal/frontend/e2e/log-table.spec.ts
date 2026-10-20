@@ -385,6 +385,14 @@ test('Details pins enriched trace context above scrolling fields', async ({
   await expect(page).toHaveURL(new RegExp(`/traces/${traceID}\\?`))
   expect(new URL(page.url()).searchParams.get('span')).toBe(spanID)
   expect(new URL(page.url()).searchParams.get('time')).toBe('all')
+  const counts = page
+    .locator('.signal-row .badge-count')
+    .filter({ hasText: '[2 err | 5 spans]' })
+  const errorDot = counts.locator('.bg-error')
+  await expect(errorDot).toBeVisible()
+  await expect(errorDot).toHaveCSS('width', '8px')
+  await expect(errorDot).toHaveCSS('height', '8px')
+  await expect(errorDot).toHaveCSS('background-color', errorColour)
 })
 
 test('Raw JSON stays selected across log navigation until a field is inspected', async ({
@@ -1205,8 +1213,11 @@ test('structured previews have static syntax colours and Details folds Body and 
     headerBounds.x + headerBounds.width,
     0
   )
-  // Copy is top-aligned with the first heading line (20px control, 21px text).
-  expect(copyBounds.y).toBeCloseTo(keyBounds.y, 0)
+  // Align to the heading line box, not the inset bounds of its inline glyphs.
+  const headingBounds = (await bodyHeader
+    .locator('.detail-property__heading')
+    .boundingBox())!
+  expect(copyBounds.y).toBeCloseTo(headingBounds.y, 0)
   await expect(
     detailBody.locator('.detail-property__body button.value-copy')
   ).toHaveCount(0)
@@ -1416,6 +1427,7 @@ test('Severity fits the longest received label without adding a resize handle', 
   await page.reload()
   const labels = page.locator('[data-log-ref] .log-severity__label')
   await expect(labels).toHaveText([`${longest} (17)`, 'UNSPECIFIED (0)'])
+  await page.evaluate(() => document.fonts.ready)
   await expect
     .poll(async () =>
       labels.evaluateAll(elements =>
@@ -2485,12 +2497,12 @@ test('header error navigation crosses pages within the current result', async ({
     header
       .getByRole('group', { name: 'Error navigation' })
       .locator('[aria-live]')
-  ).toHaveText('err')
+  ).toHaveText('[3 err]')
   await expect(
     header.getByRole('button', { name: 'Previous error', exact: true })
   ).toBeDisabled()
   await header.getByRole('button', { name: 'Next error', exact: true }).click()
-  await expect(header).toContainText('err (1/3)')
+  await expect(header).toContainText('[1/3 err]')
   const nextError = header.getByRole('button', {
     name: 'Next error',
     exact: true,
@@ -2500,7 +2512,7 @@ test('header error navigation crosses pages within the current result', async ({
   await expect(
     page.getByRole('button', { name: 'Page 2', exact: true })
   ).toHaveAttribute('aria-current', 'page')
-  await expect(header).toContainText('err (2/3)')
+  await expect(header).toContainText('[2/3 err]')
   await expect(nextError).toBeFocused()
   const selected = page.locator(`[data-log-ref="${records[180]!.logRef}"]`)
   await expect(selected).toHaveAttribute('aria-selected', 'true')
@@ -2526,7 +2538,7 @@ test('header error navigation crosses pages within the current result', async ({
   await expect(
     page.getByRole('button', { name: 'Page 3', exact: true })
   ).toHaveAttribute('aria-current', 'page')
-  await expect(header).toContainText('err (3/3)')
+  await expect(header).toContainText('[3/3 err]')
   await expect(
     header.getByRole('button', { name: 'Next error', exact: true })
   ).toBeDisabled()
@@ -2541,7 +2553,7 @@ test('header error navigation crosses pages within the current result', async ({
   const columns = header.getByRole('button', { name: 'Columns', exact: true })
   await columns.focus()
   releasePage()
-  await expect(header).toContainText('err (2/3)')
+  await expect(header).toContainText('[2/3 err]')
   await expect(columns).toBeFocused()
   await expect(
     page.getByRole('button', { name: 'Page 2', exact: true })
@@ -2574,7 +2586,7 @@ test('header error navigation crosses pages within the current result', async ({
   await expect(
     page.getByRole('grid', { name: 'Logs', exact: true })
   ).toHaveAttribute('aria-busy', 'false')
-  await expect(header).toContainText('err (2/3)')
+  await expect(header).toContainText('[2/3 err]')
   await expect(selected).toHaveAttribute('aria-selected', 'true')
   await expect
     .poll(() => viewport.evaluate(element => element.scrollTop))

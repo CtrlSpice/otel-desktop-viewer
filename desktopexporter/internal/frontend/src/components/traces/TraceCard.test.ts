@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
-import { screen, waitFor, within } from '@testing-library/svelte'
+import { screen, within } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'svelte'
 import TraceCard from './TraceCard.svelte'
@@ -26,16 +26,26 @@ function renderCard(props: ComponentProps<typeof TraceCard>) {
   return renderWithContexts(TraceCard, props)
 }
 
+function cardButton() {
+  return screen.getByRole('button', { name: /^GET \/api\/orders/ })
+}
+
 describe('TraceCard', () => {
-  it("renders the root span's name and service", () => {
+  it('shows a single service as a decorative dot and name with its own count', () => {
     renderCard({ trace: makeTrace() })
-    const button = screen.getByRole('button')
+    const button = cardButton()
     expect(within(button).getByText('GET /api/orders')).toBeInTheDocument()
-    expect(screen.getByText('orders-service')).toBeInTheDocument()
-    expect(
-      screen.queryByRole('group', { name: /Service breakdown/ })
-    ).not.toBeInTheDocument()
-    expect(within(button).getByText('4 spans')).toBeInTheDocument()
+    const bar = screen.getByRole('button', { name: 'orders-service: 4 spans' })
+    expect(within(bar).getByText('orders-service')).toBeInTheDocument()
+    expect(bar).toHaveTextContent(/^orders-service$/)
+    expect(bar.querySelector('.breakdown-segment__fill')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    )
+    expect(document.querySelector('[role="tooltip"]')).toHaveTextContent(
+      'orders-service [4]'
+    )
+    expect(within(button).getByText('[4 spans]')).toBeInTheDocument()
     expect(screen.queryByText('(4 spans)')).not.toBeInTheDocument()
   })
 
@@ -46,18 +56,23 @@ describe('TraceCard', () => {
     expect(screen.getByText('No root span')).toBeInTheDocument()
   })
 
-  it('keeps the full trace ID alongside the service label instead of in a footer', () => {
+  it('keeps trace IDs out of the segment tooltip and preserves exact selection', async () => {
     const traceID = '1234567890abcdef1234567890abcdef'
-    renderCard({ trace: makeTrace({ traceID }) })
-    const row = document.querySelector('.ball-pit')
-    expect(row).toHaveTextContent('orders-service')
-    expect(row?.querySelector('.identifier')).toHaveAttribute('title', traceID)
-    expect(row).toHaveTextContent(traceID)
-    expect(screen.getByRole('button').querySelector('.identifier')).toBeNull()
-    expect(document.querySelector('.signal-row__meta-row')).toBeNull()
+    const onclick = vi.fn()
+    renderCard({ trace: makeTrace({ traceID }), onclick })
+    expect(document.querySelector('[role="tooltip"]')).not.toHaveTextContent(
+      traceID
+    )
+    await userEvent.click(cardButton())
+    expect(onclick).toHaveBeenCalledWith(traceID)
+    expect(screen.queryByText(traceID)).not.toBeInTheDocument()
+    expect(document.querySelector('.identifier, .ball-pit')).toBeNull()
+    expect(
+      document.querySelector('.signal-row__meta-row')
+    ).not.toHaveTextContent(traceID)
   })
 
-  it('renders the formatted start time and duration', () => {
+  it('renders the duration before the labelled start time at the bottom', () => {
     const trace = makeTrace()
     renderCard({ trace })
     const startParts = formatTimestampParts(
@@ -71,6 +86,32 @@ describe('TraceCard', () => {
     expect(screen.getByText(startParts.value)).toBeInTheDocument()
     expect(screen.getByText(durationParts.value)).toBeInTheDocument()
     expect(screen.getByText(durationParts.unit)).toBeInTheDocument()
+    const date = document.querySelector('.signal-date')
+    expect(date).toHaveTextContent(`Started: ${startParts.value}`)
+    expect(date).toHaveAttribute(
+      'title',
+      `Started: ${startParts.value} ${startParts.unit}`
+    )
+    expect(date).not.toHaveTextContent(startParts.unit)
+    expect(
+      document.querySelector('.signal-row__body')?.lastElementChild
+    ).toContainElement(date as HTMLElement)
+    expect(document.querySelector('.signal-row__meta-row')).toContainElement(
+      screen.getByText('Duration:')
+    )
+  })
+
+  it('preserves a received zero duration', () => {
+    renderCard({ trace: makeTrace({ durationNs: 0n }) })
+    expect(screen.getByText('Duration:').parentElement).toHaveTextContent(
+      /Duration:\s*0\s*ns/
+    )
+  })
+
+  it('does not invent a zero duration when timing is missing', () => {
+    renderCard({ trace: makeTrace({ durationNs: null }) })
+    expect(screen.queryByText('Duration:')).not.toBeInTheDocument()
+    expect(cardButton()).toHaveTextContent('GET /api/orders')
   })
 
   it('renders the span and error counts', () => {
@@ -79,31 +120,49 @@ describe('TraceCard', () => {
       screen.getByText(
         (_, el) =>
           el?.classList.contains('badge-count') === true &&
-          el.textContent?.replace(/\s+/g, ' ').trim() === '2 err · 4 spans'
+          el.textContent?.replace(/\s+/g, ' ').trim() === '[2 err | 4 spans]'
       )
     ).toBeInTheDocument()
-    expect(screen.getByText('2 err')).toBeInTheDocument()
+    expect(document.querySelector('.badge-count .bg-error')).toBeInTheDocument()
   })
 
-  it('omits the error badge when there are no errors', () => {
+  it('omits the error label, dot and separator when there are no errors', () => {
     renderCard({ trace: makeTrace({ errorCount: 0 }) })
     expect(screen.queryByText(/err/)).not.toBeInTheDocument()
+    expect(document.querySelector('.badge-count')).toHaveTextContent(
+      '[4 spans]'
+    )
+    expect(document.querySelector('.badge-count .bg-error')).toBeNull()
+    expect(document.querySelector('.badge-count')).not.toHaveTextContent('·')
   })
+
+  it.each([
+    { spanCount: 0, label: '[0 spans]' },
+    { spanCount: 1, label: '[1 span]' },
+  ])(
+    'keeps the exact span count and singular form: $label',
+    ({ spanCount, label }) => {
+      renderCard({ trace: makeTrace({ spanCount }) })
+      expect(document.querySelector('.badge-count')?.textContent?.trim()).toBe(
+        label
+      )
+    }
+  )
 
   it('reflects the selected prop via aria-pressed', () => {
     renderCard({ trace: makeTrace(), selected: true })
-    expect(screen.getByRole('button')).toHaveAttribute('aria-pressed', 'true')
+    expect(cardButton()).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('is not pressed by default', () => {
     renderCard({ trace: makeTrace() })
-    expect(screen.getByRole('button')).toHaveAttribute('aria-pressed', 'false')
+    expect(cardButton()).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('calls onclick with the trace id when clicked', async () => {
     const onclick = vi.fn()
     renderCard({ trace: makeTrace({ traceID: 'trace-42' }), onclick })
-    await userEvent.click(screen.getByRole('button'))
+    await userEvent.click(cardButton())
     expect(onclick).toHaveBeenCalledWith('trace-42')
   })
 
@@ -111,12 +170,12 @@ describe('TraceCard', () => {
     const onclick = vi.fn()
     const user = userEvent.setup()
     renderCard({ trace: makeTrace({ traceID: 'trace-42' }), onclick })
-    screen.getByRole('button').focus()
+    cardButton().focus()
     await user.keyboard('{Enter}')
     expect(onclick).toHaveBeenCalledWith('trace-42')
   })
 
-  it('previews one service at a time and restores the clicked choice after hover', async () => {
+  it('gives each service only its own tooltip without selecting the trace', async () => {
     const user = userEvent.setup()
     const onclick = vi.fn()
     renderCard({
@@ -130,65 +189,61 @@ describe('TraceCard', () => {
       onclick,
     })
     const group = screen.getByRole('group', { name: 'Spans by service' })
-    const choices = within(group).getAllByRole('button')
-    expect(choices.map(button => button.getAttribute('aria-label'))).toEqual([
-      'orders-service: 1 span, 25% of total',
-      'database: 2 spans, 50% of total',
-      'cache: 1 span, 25% of total',
-    ])
-    const [root, database, cache] = choices
-    const label = () => group.querySelector('.breakdown-label')
-    expect(root).toHaveAttribute('aria-pressed', 'true')
-    expect(label()).toHaveTextContent('orders-service (1 span, 25%)')
-    await user.hover(database)
-    await waitFor(() =>
-      expect(label()).toHaveTextContent('database (2 spans, 50%)')
-    )
-    await user.click(database)
-    expect(database).toHaveAttribute('aria-pressed', 'true')
-    await user.hover(cache)
-    await waitFor(() =>
-      expect(label()).toHaveTextContent('cache (1 span, 25%)')
-    )
-    await user.unhover(cache)
-    expect(label()).toHaveTextContent('database (2 spans, 50%)')
-    expect(group.querySelectorAll('.breakdown-label')).toHaveLength(1)
+    const bar = within(group).getByRole('button', { name: 'database: 2 spans' })
+    expect(
+      [...group.querySelectorAll('[role="tooltip"]')].map(node =>
+        node.textContent?.trim()
+      )
+    ).toEqual(['orders-service [1]', 'database [2]', 'cache [1]'])
+    expect(group.querySelectorAll('.breakdown-segment')).toHaveLength(3)
+    expect(group.querySelector('.breakdown-label, .legend-rows')).toBeNull()
+    await user.click(bar)
     expect(onclick).not.toHaveBeenCalled()
     expect(document.querySelector('button button')).toBeNull()
   })
 
-  it('reveals services with keyboard focus and matches their bar colour', async () => {
-    const user = userEvent.setup()
-    renderCard({
-      trace: makeTrace({
-        serviceBreakdown: [
-          { key: 'service:orders-service', label: 'orders-service', count: 3 },
-          { key: 'service:cache', label: 'cache', count: 1 },
-        ],
-      }),
-    })
-    const group = screen.getByRole('group', { name: 'Spans by service' })
-    const choices = within(group).getAllByRole('button')
-    const bar = screen.getByRole('group', { name: /Service breakdown/ })
-    const barColors = Array.from(bar.children, child => {
-      const probe = document.createElement('span')
-      probe.style.backgroundColor = (
-        child as HTMLElement
-      ).style.getPropertyValue('--part-color')
-      return probe.style.backgroundColor
-    })
-    const label = () => group.querySelector('.breakdown-label')
-    const dot = () => label()?.querySelector<HTMLElement>('.breakdown-dot')
-    await user.tab()
-    await user.tab()
-    expect(choices[0]).toHaveFocus()
-    expect(label()).toHaveTextContent('orders-service (3 spans, 75%)')
-    expect(dot()?.style.backgroundColor).toBe(barColors[0])
-    await user.tab()
-    expect(choices[1]).toHaveFocus()
-    expect(label()).toHaveTextContent('cache (1 span, 25%)')
-    expect(dot()?.style.backgroundColor).toBe(barColors[1])
-    await user.keyboard('{Enter}')
-    expect(choices[1]).toHaveAttribute('aria-pressed', 'true')
-  })
+  it.each([true, false])(
+    'makes the service tooltip keyboard reachable without selecting the trace (single category: %s)',
+    async single => {
+      const user = userEvent.setup()
+      const onclick = vi.fn()
+      renderCard({
+        trace: makeTrace({
+          serviceBreakdown: single
+            ? [
+                {
+                  key: 'service:orders-service',
+                  label: 'orders-service',
+                  count: 4,
+                },
+              ]
+            : [
+                {
+                  key: 'service:orders-service',
+                  label: 'orders-service',
+                  count: 3,
+                },
+                { key: 'service:cache', label: 'cache', count: 1 },
+              ],
+        }),
+        onclick,
+      })
+      const group = screen.getByRole('group', { name: 'Spans by service' })
+      const bar = within(group).getByRole('button', {
+        name: /^orders-service:/,
+      })
+      await user.tab()
+      expect(cardButton()).toHaveFocus()
+      await user.tab()
+      expect(bar).toHaveFocus()
+      expect(bar).toHaveAccessibleName(
+        expect.stringContaining(
+          single ? 'orders-service: 4 spans' : 'orders-service: 3 spans'
+        )
+      )
+      await user.keyboard('{Enter}')
+      expect(onclick).not.toHaveBeenCalled()
+      expect(cardButton()).toHaveAttribute('aria-pressed', 'false')
+    }
+  )
 })

@@ -33,6 +33,7 @@
   import type { ImportFailure } from '@/types/import-types'
   import { detailPanel } from '@/state/detail-panel.svelte'
   import type { TraceData } from '@/types/api-types'
+  import type { EvalView } from '@/components/evals/model'
 
   let {
     importFailure = null,
@@ -89,10 +90,9 @@
   let traceViews = $state<TraceData[]>([])
   let telemetryLoading = $state(false)
   const telemetryNodes = $derived(indexEvalTraces(traceViews).nodes)
-  let evalView = $state('results')
+  let evalView = $state<EvalView>('results')
   const detailRowID = $derived(
-    query.row ??
-      (evalView === 'time' && attempt ? `attempt/${attempt.id}` : undefined)
+    query.row ?? (attempt ? `attempt/${attempt.id}` : undefined)
   )
   const fallbackOutline = $derived(
     run
@@ -314,19 +314,17 @@
   {/snippet}
   {#snippet detail()}
     {#if run}
-      {#key `${run.id}/${attempt?.id ?? ''}/${selectedRow?.id ?? ''}/${evalView}`}
+      {#key `${run.id}/${attempt?.id ?? ''}/${selectedRow?.id ?? ''}`}
         {#if selectedRow}<EvalRowDetail
             {run}
             row={selectedRow}
             {sourceCopy}
-            traceLevel={evalView === 'time'}
+            mode={evalView}
             {parentName}
             {telemetryNodes}
             {telemetryLoading}
           />{:else}<EvalDetail
             {run}
-            {attempt}
-            {sourceCopy}
             {runCopy}
             {telemetryNodes}
             {telemetryLoading}

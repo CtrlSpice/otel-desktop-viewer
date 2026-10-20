@@ -53,7 +53,7 @@ describe('AttributeRows', () => {
     expect(container.querySelector('details')).toBeNull()
   })
 
-  it('keeps type beside the unchanged key and provenance below the heading', () => {
+  it('keeps the unchanged key, type and provenance on the heading line', () => {
     const attributes: Attributes = [
       { key: 'service.name', value: { kind: 'string', value: 'checkout' } },
     ]
@@ -62,9 +62,16 @@ describe('AttributeRows', () => {
     expect(
       within(header as HTMLElement).getByText('service.name')
     ).toBeInTheDocument()
-    const origin = container.querySelector('.detail-property__origin')!
+    const origin = container.querySelector<HTMLElement>(
+      '.detail-property__origin'
+    )!
     expect(origin).toHaveTextContent(/^resource$/)
-    expect(header.nextElementSibling).toBe(origin)
+    expect(header.querySelector('.detail-property__heading')).toContainElement(
+      origin
+    )
+    expect(header.querySelector('.detail-property__heading')).toHaveTextContent(
+      'service.name · string · resource'
+    )
     expect(origin).not.toHaveClass('badge-soft')
     const type = within(header as HTMLElement).getByText('string')
     expect(header.querySelector('.detail-property__key')).toContainElement(type)

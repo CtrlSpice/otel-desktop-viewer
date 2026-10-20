@@ -609,7 +609,7 @@ test('associated logs reuse summary cards and open the full log without losing t
   ).toBeVisible()
   await expect(
     card
-      .locator('.signal-row__time')
+      .locator('.signal-row__date')
       .getByText('(+500.000 ms)', { exact: true })
   ).toBeVisible()
   await expect(associated.locator('table, details, [data-field]')).toHaveCount(
@@ -767,7 +767,7 @@ test('detail targets reopen the panel with independent native disclosures', asyn
     await expect(
       detail.getByRole('tabpanel', { name: 'Properties', exact: true })
     ).toBeVisible()
-    await expect(fields.locator(':scope > summary')).toHaveText('Span')
+    await expect(fields.locator(':scope > summary')).toHaveText('Span * root')
     await expect(fields.locator('details')).toHaveCount(0)
     const table = fields.getByRole('table', { name: 'Span fields' })
     const resource = table.locator('[data-field="service.name"]')

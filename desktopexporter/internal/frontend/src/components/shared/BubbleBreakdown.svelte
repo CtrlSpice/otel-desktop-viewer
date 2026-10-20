@@ -10,6 +10,7 @@
 <script lang="ts">
   import { onDestroy, type Snippet } from 'svelte'
   import LegendRows from './LegendRows.svelte'
+  import BreakdownSegment from './BreakdownSegment.svelte'
 
   let {
     parts,
@@ -20,6 +21,7 @@
     showSingleCount = true,
     countFormat = 'detailed',
     showAll = false,
+    tooltipOnly = false,
     emptyLabel,
     right,
   }: {
@@ -32,6 +34,8 @@
     countFormat?: 'detailed' | 'compact'
     /** Show every label with a decorative bar instead of interactive previews. */
     showAll?: boolean
+    /** Keep the breakdown visible while moving labels into hover/focus context. */
+    tooltipOnly?: boolean
     emptyLabel?: string
     right?: Snippet
   } = $props()
@@ -105,7 +109,18 @@
       focusedKey = null
   }}
 >
-  {#if colouredParts.length > 1}
+  {#if tooltipOnly && colouredParts.length}
+    <div
+      class="breakdown-bar"
+      class:breakdown-bar--single={colouredParts.length === 1}
+      role="group"
+      aria-label={barLabel}
+    >
+      {#each colouredParts as part (part.key)}
+        <BreakdownSegment {part} {unit} single={colouredParts.length === 1} />
+      {/each}
+    </div>
+  {:else if colouredParts.length > 1}
     <div
       class="breakdown-bar"
       role="group"
@@ -166,7 +181,7 @@
     </span>
   {/snippet}
 
-  {#if activePart || right || emptyLabel}
+  {#if !tooltipOnly && (activePart || right || emptyLabel)}
     <div
       class="ball-pit"
       class:ball-pit--list={showAll}
@@ -204,6 +219,10 @@
   .breakdown-bar {
     @apply flex w-full gap-1;
     height: var(--signal-card-row-h);
+  }
+
+  .breakdown-bar--single {
+    @apply items-center gap-2 text-sm;
   }
 
   .breakdown-segment {

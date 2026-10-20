@@ -157,6 +157,24 @@ source format, and import it. Importing leaves the current synthetic preview in
 place. Open an archived file to inspect its projected runs. **Synthetic preview**
 returns to the examples without deleting the archive.
 
+Select a run by its name, then click a table row to inspect it. Results brings
+forward its question, answer or assessment; Tool calls shows execution/output
+and timing; Cost shows that level's estimates. Each run retains its own sorting
+and expanded branches. The Details and Telemetry sections stay in the same
+positions when switching modes, retaining manual disclosure and saved sizes.
+They open together initially when telemetry references are available.
+
+Run-card outcome segments show only their own colour dot, label and count on
+hover or keyboard focus. The tooltip stays above neighbouring cards. Outcomes
+are also visible in the selected run's section header beside its view controls,
+separately labelled from the execution-status legend. The card's
+Started date is at the bottom; an unavailable date stays `—`, with its reason
+on hover. Referenced telemetry cards show the received span status and duration
+when available, and open the exact native Traces location.
+Each Telemetry card includes compact TID/SID rows with exact Copy controls.
+The card itself is the navigation link. A trace-only reference has no invented
+span ID, and unavailable spans retain their recorded identifiers.
+
 The library reads metadata in pages of 25. File decoding rejects invalid UTF-8;
 the browser sends the untouched decoded file text rather than parsing and
 reserializing it. The UI checks both file and escaped-envelope byte limits.

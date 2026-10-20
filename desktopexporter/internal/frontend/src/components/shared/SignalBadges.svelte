@@ -66,31 +66,30 @@
           : '')}
     >
       <span
-        >{partial
+        >[{partial
           ? `${props.seriesCount} of ${total} series`
-          : `${props.seriesCount} series`}</span
+          : `${props.seriesCount} series`}{#if props.dataPointCount !== undefined}
+          <span aria-hidden="true">{' | '}</span><span
+            aria-label={`${props.dataPointCount} datapoints`}
+            >{props.dataPointCount.toLocaleString()} pts</span
+          >{/if}]</span
       >
-      {#if props.dataPointCount !== undefined}
-        <span aria-hidden="true">·</span>
-        <span aria-label={`${props.dataPointCount} datapoints`}
-          >{props.dataPointCount.toLocaleString()} pts</span
-        >
-      {/if}
     </span>
   {/if}
 {:else if props.signal === 'trace'}
   <span
-    class="badge-count"
+    class="badge-count inline-flex items-center gap-2"
     title="{props.spanCount} span{props.spanCount !== 1 ? 's' : ''}"
   >
-    {#if props.errorCount > 0}
-      <span class="inline-flex items-center gap-2">
-        <span class="size-2 shrink-0 rounded-full bg-error" aria-hidden="true"
-        ></span>
-        {props.errorCount} err</span
-      >{' · '}
-    {/if}
-    {props.spanCount} span{props.spanCount !== 1 ? 's' : ''}
+    {#if props.errorCount > 0}<span
+        class="size-2 shrink-0 rounded-full bg-error"
+        aria-hidden="true"
+      ></span>{/if}
+    <span
+      >[{props.errorCount > 0
+        ? `${props.errorCount} err | `
+        : ''}{props.spanCount} span{props.spanCount !== 1 ? 's' : ''}]</span
+    >
   </span>
 {:else if props.signal === 'log'}
   <LogSeverity number={props.severityNumber} text={props.severityText} />

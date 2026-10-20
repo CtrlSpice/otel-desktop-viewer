@@ -373,7 +373,7 @@ describe('WaterfallView error navigation', () => {
     const view = renderTree({ spans, onSelectSpan })
     await tick()
     const badge = view.getByRole('group', { name: 'Error navigation' })
-    expect(badge).toHaveTextContent(/^err$/)
+    expect(badge).toHaveTextContent(/^\[2 err\]$/)
 
     buttonByLabel('Next error').click()
     expect(onSelectSpan).toHaveBeenLastCalledWith('error-1')
@@ -381,26 +381,26 @@ describe('WaterfallView error navigation', () => {
     await view.rerender({
       componentProps: { spans, selectedSpanID: 'error-1', onSelectSpan },
     })
-    expect(badge).toHaveTextContent(/^err \(1\/2\)$/)
+    expect(badge).toHaveTextContent(/^\[1\/2 err\]$/)
     buttonByLabel('Next error').click()
     expect(onSelectSpan).toHaveBeenLastCalledWith('error-2')
 
     await view.rerender({
       componentProps: { spans, selectedSpanID: 'error-2', onSelectSpan },
     })
-    expect(badge).toHaveTextContent(/^err \(2\/2\)$/)
+    expect(badge).toHaveTextContent(/^\[2\/2 err\]$/)
     buttonByLabel('Previous error').click()
     expect(onSelectSpan).toHaveBeenLastCalledWith('error-1')
 
     await view.rerender({
       componentProps: { spans, selectedSpanID: 'error-1', onSelectSpan },
     })
-    expect(badge).toHaveTextContent(/^err \(1\/2\)$/)
+    expect(badge).toHaveTextContent(/^\[1\/2 err\]$/)
     for (const selectedSpanID of ['healthy-middle', 'exception-only', null]) {
       await view.rerender({
         componentProps: { spans, selectedSpanID, onSelectSpan },
       })
-      expect(badge).toHaveTextContent(/^err$/)
+      expect(badge).toHaveTextContent(/^\[2 err\]$/)
     }
   })
 
@@ -483,7 +483,7 @@ describe('WaterfallView error navigation', () => {
 
     expect(
       document.querySelector('[role="group"][aria-label="Error navigation"]')
-    ).toHaveTextContent(/^err \(1\/2\)$/)
+    ).toHaveTextContent(/^\[1\/2 err\]$/)
     buttonByLabel('Next error').click()
     expect(onSelectSpan).toHaveBeenCalledWith('error-2')
     expect(onSelectSpan).not.toHaveBeenCalledWith('exception-only')

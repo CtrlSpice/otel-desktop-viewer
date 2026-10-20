@@ -7,6 +7,7 @@
     titleContent,
     description,
     descriptionIsID,
+    date,
     timestamp,
     timestampUnit,
     timestampSuffix,
@@ -19,10 +20,11 @@
     titleContent?: Snippet
     description?: string
     descriptionIsID?: boolean
+    date?: Snippet
     timestamp?: string
     timestampUnit?: string
     timestampSuffix?: string
-    badge: Snippet
+    badge?: Snippet
     badgePlacement?: 'inline' | 'end'
     reveal?: boolean
     children: Snippet
@@ -43,6 +45,7 @@
     {titleContent}
     {description}
     {descriptionIsID}
+    {date}
     {timestamp}
     {timestampUnit}
     {timestampSuffix}

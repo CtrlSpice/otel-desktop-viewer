@@ -4,11 +4,8 @@
   import SpanField from '@/components/shared/DetailProperty.svelte'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
   import DisclosureSignalCard from '@/components/shared/DisclosureSignalCard.svelte'
-  import {
-    formatSignedDuration,
-    formatTimestamp,
-    formatTimestampParts,
-  } from '@/utils/time'
+  import SignalDate from '@/components/shared/SignalDate.svelte'
+  import { formatSignedDuration, formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
 
   type Props = {
@@ -34,11 +31,9 @@
 
 {#each events as event, index (index)}
   {@const exception = event.name === 'exception'}
-  {@const timestamp = formatTimestampParts(
-    event.timestamp,
-    timeContext.tz,
-    'milliseconds'
-  )}
+  {@const message = event.attributes.find(
+    attribute => attribute.key === 'exception.message'
+  )?.value}
   <section
     id={`span-event-${index}`}
     class="w-full"
@@ -46,29 +41,28 @@
   >
     <DisclosureSignalCard
       title={event.name}
-      badgePlacement="inline"
-      timestamp={timestamp.value}
-      timestampUnit={timestamp.unit || undefined}
-      timestampSuffix={`(${formatSignedDuration(event.timestamp - spanStartTime)})`}
+      description={message?.kind === 'string' ? message.value : undefined}
       reveal={selectedEventIndex === index}
     >
       {#snippet titleContent()}
         <span
           class="inline-flex max-w-full items-center gap-2 text-base-content"
         >
-          {#if exception}
-            <span
+          {#if exception}<span
               class="size-2 shrink-0 rounded-full bg-error"
               aria-hidden="true"
-            ></span>
-          {/if}
+            ></span>{/if}
           <span class="truncate">{event.name}</span>
+          <span class="shrink-0 text-sm text-secondary"
+            ><span aria-hidden="true">{'· '}</span><span>Span event</span></span
+          >
         </span>
       {/snippet}
-      {#snippet badge()}
-        <span class="text-xs text-rp-subtle" aria-hidden="true">·</span><span
-          class="text-xs text-rp-subtle">Span event</span
-        >{/snippet}
+      {#snippet date()}<SignalDate
+          label="Recorded"
+          timestamp={event.timestamp}
+          suffix={`(${formatSignedDuration(event.timestamp - spanStartTime)})`}
+        />{/snippet}
       <table class="detail-fields w-full" aria-label="Event {event.name}">
         <tbody>
           <SpanField

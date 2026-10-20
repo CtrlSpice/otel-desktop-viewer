@@ -34,7 +34,10 @@ export function evalTelemetrySummaries(
   } else if (row && row.kind !== 'attempt') {
     add(row.reference, row.name)
   } else if (row?.attempt || selectedAttempt) {
-    attemptRoots((row?.attempt ?? selectedAttempt)!, true)
+    const attempt = (row?.attempt ?? selectedAttempt)!
+    attemptRoots(attempt, true)
+    for (const assessment of attempt.assessments)
+      add(assessment.telemetry, assessment.evaluator || assessment.id)
   } else {
     add(run.telemetry, 'Run')
     for (const attempt of run.attempts) attemptRoots(attempt)

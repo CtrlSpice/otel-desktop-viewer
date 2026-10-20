@@ -102,10 +102,6 @@
   </div>
 
   <div class="signal-row__body">
-    {#if date}
-      <div class="signal-row__date">{@render date()}</div>
-    {/if}
-
     {#if description}
       <div class="signal-row__lead">
         <p class="signal-row__description" title={description}>
@@ -185,6 +181,9 @@
       <div class="signal-row__id-line" title={idLine}>
         <Identifier value={idLine} />
       </div>
+    {/if}
+    {#if date}
+      <div class="signal-row__date">{@render date()}</div>
     {/if}
   </div>
 {/snippet}
@@ -276,7 +275,7 @@
 
   .signal-row {
     /* Titles use the heading size; details use the working size. */
-    --item-idle-bg: var(--color-base-100);
+    --item-idle-bg: transparent;
     @apply flex w-full flex-col gap-0 rounded-xl px-3 py-2.5 text-left text-sm;
     cursor: pointer;
   }

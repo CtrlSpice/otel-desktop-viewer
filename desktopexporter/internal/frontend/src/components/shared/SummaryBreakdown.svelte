@@ -9,10 +9,12 @@
     parts,
     rootService,
     right,
+    tooltipOnly = false,
   }: {
     parts: SummaryBreakdownPart[]
     rootService?: string
     right?: Snippet
+    tooltipOnly?: boolean
   } = $props()
   const rootKey = $derived(
     rootService === undefined ? undefined : `service:${rootService}`
@@ -41,5 +43,6 @@
   barLabel="Service breakdown by span count"
   unit="span"
   showSingleCount={false}
+  {tooltipOnly}
   {right}
 />

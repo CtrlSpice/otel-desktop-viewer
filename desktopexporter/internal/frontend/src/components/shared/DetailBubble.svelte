@@ -18,6 +18,7 @@
     const unregister = stack?.register({
       id: sectionID,
       label,
+      layoutKey,
       element,
       available: () => count !== 0,
       expanded: () => count !== 0 && expanded,
@@ -31,6 +32,8 @@
 
   let {
     label,
+    layoutKey,
+    labelSuffix,
     icon,
     count,
     countLabel = label.toLowerCase(),
@@ -40,6 +43,9 @@
     initialOpen = true,
   }: {
     label: string
+    /** Preserve stored section sizing when its visible heading changes. */
+    layoutKey?: string
+    labelSuffix?: Snippet
     icon?: Snippet
     count?: number
     countLabel?: string
@@ -62,6 +68,7 @@
 {#snippet heading()}
   {@render icon?.()}
   <span>{label}</span>
+  {@render labelSuffix?.()}
   {#if count !== undefined}
     <span class="badge-count ml-auto shrink-0">{count} {countLabel}</span>
   {/if}

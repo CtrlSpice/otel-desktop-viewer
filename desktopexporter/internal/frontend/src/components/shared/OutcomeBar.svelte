@@ -14,7 +14,11 @@
     parts,
     label,
     right,
-  }: { parts: OutcomePart[]; label: string; right?: Snippet } = $props()
+  }: {
+    parts: OutcomePart[]
+    label: string
+    right?: Snippet
+  } = $props()
   const colouredParts = $derived(
     parts.map(part => ({
       ...part,
@@ -31,6 +35,7 @@
   unit="attempt"
   emptyLabel="No results"
   showAll
+  tooltipOnly
   countFormat="compact"
   {right}
 />

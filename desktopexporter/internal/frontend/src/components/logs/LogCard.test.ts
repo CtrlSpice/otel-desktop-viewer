@@ -41,7 +41,7 @@ describe('LogCard', () => {
     expect(screen.getByText('Failed to charge card')).toBeInTheDocument()
   })
 
-  it('renders the severity text and number in the badge', () => {
+  it('renders the severity text and number beside its status dot', () => {
     renderCard({ log: makeLog({ severityText: 'ERROR', severityNumber: 17 }) })
     expect(screen.getByText('ERROR (17)')).toBeInTheDocument()
     expect(screen.queryByText('Log', { exact: true })).toBeNull()
@@ -62,7 +62,7 @@ describe('LogCard', () => {
     expect(screen.getByText('DEBUG (5)')).toBeInTheDocument()
   })
 
-  it('renders the formatted timestamp', () => {
+  it('places the labelled recorded timestamp after the body preview', () => {
     const log = makeLog()
     renderCard({ log })
     const timestampParts = formatTimestampParts(
@@ -71,14 +71,25 @@ describe('LogCard', () => {
       'milliseconds'
     )
     expect(screen.getByText(timestampParts.value)).toBeInTheDocument()
+    const date = document.querySelector('.signal-date')
+    expect(date).toHaveTextContent(`Recorded: ${timestampParts.value}`)
+    expect(date).toHaveAttribute(
+      'title',
+      `Recorded: ${timestampParts.value} ${timestampParts.unit}`
+    )
+    expect(date).not.toHaveTextContent(timestampParts.unit)
+    expect(timestampParts.value).toContain('.123')
+    expect(
+      document.querySelector('.signal-row__body')?.lastElementChild
+    ).toContainElement(date as HTMLElement)
   })
 
-  it('shows an associated offset as muted text beside the timestamp', () => {
+  it('shows an associated offset as Subtle text beside the recorded timestamp', () => {
     const log = makeLog()
     renderCard({ log, offset: '+500.000 ms' })
     const offset = screen.getByText('(+500.000 ms)', { exact: true })
     expect(offset).toHaveClass('text-rp-subtle')
-    expect(offset.closest('.signal-row__time')).toHaveTextContent(
+    expect(offset.closest('.signal-date')).toHaveTextContent(
       `${formatTimestampParts(log.timestamp, 'local', 'milliseconds').value} (+500.000 ms)`
     )
     expect(screen.getByRole('button')).toContainElement(offset)

@@ -3,93 +3,83 @@
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import DetailField from '@/components/shared/DetailProperty.svelte'
-  import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
-  import type { EvalRun, EvalAttempt } from './model'
+  import type { EvalRun } from './model'
   import { cost, estimatedCost, localTimestamp } from './model'
-  import AssessmentBadge from './AssessmentBadge.svelte'
   import RunStatusBadge from './RunStatusBadge.svelte'
-  import EvalStatus from './EvalStatus.svelte'
-  import { completionLabel, completionTone } from './group-attempts'
   import EvalTelemetrySummaries from './EvalTelemetrySummaries.svelte'
   import { evalTelemetrySummaries } from './eval-telemetry-summaries'
   import type { SpanNode } from '@/types/api-types'
-  import type { SnapshotFieldCopy, SnapshotRunCopy } from './snapshot-copy'
+  import type { SnapshotRunCopy } from './snapshot-copy'
 
   let {
     run,
-    attempt,
     telemetryNodes,
     telemetryLoading = false,
-    sourceCopy,
     runCopy,
   }: {
     run: EvalRun
-    attempt?: EvalAttempt
     telemetryNodes?: Map<string, SpanNode>
     telemetryLoading?: boolean
-    sourceCopy?: SnapshotFieldCopy
     runCopy?: SnapshotRunCopy
   } = $props()
   const investigator = $derived(estimatedCost(run.attempts, 'investigatorCost'))
-  const references = $derived(evalTelemetrySummaries(run, undefined, attempt))
+  const references = $derived(evalTelemetrySummaries(run))
   const grader = $derived(estimatedCost(run.attempts, 'graderCost'))
-  const startedAt = $derived(
-    attempt?.startedAt ?? (!attempt ? run.startedAt : undefined)
-  )
 </script>
 
-<DetailStack
-  label={attempt ? 'Attempt details' : 'Run details'}
-  storageKey={attempt ? 'eval-attempt-detail-layout' : 'eval-run-detail-layout'}
->
-  {#if !attempt}
-    <DetailBubble label="Run">
-      <table class="detail-fields w-full" aria-label="Run fields">
-        <tbody>
+<DetailStack label="Run details" storageKey="eval-run-detail-layout">
+  <DetailBubble label="Details" layoutKey="Run">
+    <table class="detail-fields w-full" aria-label="Run fields">
+      <tbody>
+        <DetailField
+          fieldName="name"
+          fieldType="string"
+          fieldValue={run.name}
+          loadText={runCopy?.(run.id, 'name')}
+        />
+        <DetailField
+          fieldName="evaluation"
+          fieldType="string"
+          fieldValue={run.evaluation}
+          loadText={runCopy?.(run.id, 'evaluation')}
+        />
+        <DetailField
+          fieldName="state"
+          fieldType="string"
+          fieldValue={run.state}
+        >
+          {#snippet value()}<RunStatusBadge
+              state={run.state}
+              pauseReason={run.pauseReason}
+            />{/snippet}
+        </DetailField>
+        <DetailField
+          fieldName="source"
+          fieldType="string"
+          fieldValue={run.source}
+          loadText={runCopy?.(run.id, 'source')}
+        />
+        {#if run.startedAt}
+          {@const startedAt = run.startedAt}
           <DetailField
-            fieldName="name"
-            fieldType="string"
-            fieldValue={run.name}
-            loadText={runCopy?.(run.id, 'name')}
-          />
-          <DetailField
-            fieldName="evaluation"
-            fieldType="string"
-            fieldValue={run.evaluation}
-            loadText={runCopy?.(run.id, 'evaluation')}
-          />
-          <DetailField
-            fieldName="state"
-            fieldType="string"
-            fieldValue={run.state}
-            >{#snippet value()}<RunStatusBadge
-                state={run.state}
-                pauseReason={run.pauseReason}
-              />{/snippet}</DetailField
+            fieldName="started"
+            fieldType="timestamp"
+            fieldValue={startedAt}
+            timestampLabel={localTimestamp(startedAt)}
           >
-          <DetailField
-            fieldName="source"
-            fieldType="string"
-            fieldValue={run.source}
-            loadText={runCopy?.(run.id, 'source')}
-          />
-          {#if startedAt}<DetailField
-              fieldName="started"
-              fieldType="timestamp"
-              fieldValue={startedAt}
-              timestampLabel={localTimestamp(startedAt)}
-              >{#snippet value()}<time
-                  class="text-sm text-base-content tabular-nums"
-                  datetime={startedAt}
-                  title={startedAt}>{localTimestamp(startedAt)}</time
-                >{/snippet}</DetailField
-            >{/if}
-        </tbody>
-      </table>
-    </DetailBubble>
-    <DetailBubble
+            {#snippet value()}<time
+                class="text-sm text-base-content tabular-nums"
+                datetime={startedAt}
+                title={startedAt}>{localTimestamp(startedAt)}</time
+              >{/snippet}
+          </DetailField>
+        {/if}
+      </tbody>
+    </table>
+    <FieldGroup
       label="Configuration"
-      initialOpen={false}
+      detail
+      open={false}
       count={run.configuration.length}
       countLabel="fields"
     >
@@ -102,8 +92,8 @@
             />{/each}</tbody
         >
       </table>
-    </DetailBubble>
-    <DetailBubble label="Grading" initialOpen={false}>
+    </FieldGroup>
+    <FieldGroup label="Grading" detail open={false}>
       <table class="detail-fields w-full" aria-label="Grading for this run">
         <tbody>
           <DetailField
@@ -128,171 +118,17 @@
           />
         </tbody>
       </table>
-    </DetailBubble>
-  {:else}
-    <DetailBubble label={`Attempt ${attempt.repetition}`}>
-      {#snippet trailing()}<EvalStatus
-          label={completionLabel(attempt.state, true)}
-          tone={completionTone(attempt.state, true)}
-        />{/snippet}
-      {#snippet action()}
-        {#if attempt.answer !== undefined}<ValueCopyButton
-            text={attempt.answer}
-            loadText={sourceCopy?.(attempt.id, 'answer')}
-            label="answer"
-          />{/if}
-      {/snippet}
-      <p class="eval-detail__prose">{attempt.answer ?? 'No answer recorded'}</p>
-      {#if attempt.error !== undefined}
-        <table class="detail-fields w-full" aria-label="Attempt fault">
-          <tbody
-            ><DetailField
-              fieldName="internal fault"
-              fieldType="string"
-              fieldValue={attempt.error}
-              loadText={sourceCopy?.(attempt.id, 'error')}
-              multiline
-            >
-              {#snippet value()}<span
-                  class="text-base-content whitespace-pre-wrap"
-                  >{attempt.error}</span
-                >{/snippet}
-            </DetailField></tbody
-          >
-        </table>
-      {/if}
-      <FieldGroup label="Execution details" detail open={false}>
-        <table class="detail-fields w-full" aria-label="Attempt fields">
-          <tbody>
-            {#if startedAt}<DetailField
-                fieldName="started"
-                fieldType="timestamp"
-                fieldValue={startedAt}
-                timestampLabel={localTimestamp(startedAt)}
-                >{#snippet value()}<time
-                    class="text-sm text-base-content tabular-nums"
-                    datetime={startedAt}
-                    title={startedAt}>{localTimestamp(startedAt)}</time
-                  >{/snippet}</DetailField
-              >{/if}
-          </tbody>
-        </table>
-        <table class="detail-fields w-full" aria-label="Attempt accounting">
-          <tbody>
-            <DetailField
-              fieldName="duration"
-              fieldType="string"
-              fieldValue={attempt.seconds === undefined
-                ? 'Unknown'
-                : `${attempt.seconds} s`}
-            />
-            <DetailField
-              fieldName="investigator estimate (CAD)"
-              fieldType="string"
-              fieldValue={cost(attempt.investigatorCost)}
-            />
-            <DetailField
-              fieldName="grader estimate (CAD)"
-              fieldType="string"
-              fieldValue={cost(attempt.graderCost)}
-            />
-          </tbody>
-        </table>
-      </FieldGroup>
-    </DetailBubble>
-    <DetailBubble
-      label="Assessments"
-      count={attempt.assessments.length}
-      initialOpen={false}
-    >
-      {#each run.assessments as definition}
-        {@const assessment = attempt.assessments.find(
-          item => item.id === definition.id
-        )}
-        <FieldGroup label={definition.name} detail>
-          {#snippet heading()}<span class="font-normal">{definition.name}</span
-            ><AssessmentBadge
-              {assessment}
-              maximum={definition.maximum}
-            />{/snippet}
-          {#if assessment}
-            <table
-              class="detail-fields w-full"
-              aria-label={`${definition.name} explanation`}
-            >
-              <tbody
-                ><DetailField
-                  fieldName="explanation"
-                  fieldType="string"
-                  fieldValue={assessment.explanation}
-                  loadText={sourceCopy?.(attempt.id, 'explanation')}
-                  multiline
-                /></tbody
-              >
-            </table>
-          {/if}
-          <FieldGroup label="Grading details" detail open={false}>
-            <table class="detail-fields w-full" aria-label={definition.name}>
-              <tbody>
-                {#if assessment}
-                  <DetailField
-                    fieldName="score"
-                    fieldType="string"
-                    fieldValue={`${assessment.value ?? 'Unscored'} / ${definition.maximum}`}
-                  />
-                  <DetailField
-                    fieldName="evaluator"
-                    fieldType="string"
-                    fieldValue={assessment.evaluator}
-                  />
-                  <DetailField
-                    fieldName="rubric"
-                    fieldType="string"
-                    fieldValue={assessment.rubric}
-                  />
-                {:else}<DetailField
-                    fieldName="score"
-                    fieldType="string"
-                    fieldValue="Unscored"
-                  />{/if}
-              </tbody>
-            </table>
-            {#if assessment?.telemetry}
-              <EvalTelemetrySummaries
-                entries={[
-                  { reference: assessment.telemetry, label: definition.name },
-                ]}
-                nodes={telemetryNodes}
-                loading={telemetryLoading}
-              />
-            {/if}
-          </FieldGroup>
-        </FieldGroup>
-      {/each}
-    </DetailBubble>
-  {/if}
-  {#if references.length}
-    <DetailBubble
-      label="Telemetry"
-      count={references.length}
-      countLabel="references"
-      initialOpen={false}
-    >
+    </FieldGroup>
+  </DetailBubble>
+  <DetailBubble label="Telemetry" initialOpen={references.length > 0}>
+    {#if references.length}
       <EvalTelemetrySummaries
         entries={references}
         nodes={telemetryNodes}
         loading={telemetryLoading}
       />
-    </DetailBubble>
-  {/if}
+    {:else}<p class="px-3 py-2 text-sm text-rp-subtle">
+        No telemetry reference recorded for this run.
+      </p>{/if}
+  </DetailBubble>
 </DetailStack>
-
-<style lang="postcss">
-  @reference "../../app.css";
-
-  .eval-detail__prose {
-    @apply py-2 text-sm text-base-content whitespace-pre-wrap;
-    padding-inline: var(--pane-inline-inset);
-    overflow-wrap: anywhere;
-  }
-</style>

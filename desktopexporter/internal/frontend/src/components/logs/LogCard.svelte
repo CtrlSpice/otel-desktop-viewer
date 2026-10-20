@@ -2,8 +2,7 @@
   import type { LogSummary } from '@/types/api-types'
   import SignalCard from '@/components/shared/SignalCard.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
-  import { formatTimestampParts } from '@/utils/time'
-  import { getTimeContext } from '@/contexts/time-context.svelte'
+  import SignalDate from '@/components/shared/SignalDate.svelte'
 
   type Props = {
     log: LogSummary
@@ -21,12 +20,6 @@
     onclick,
   }: Props = $props()
 
-  const timeContext = getTimeContext()
-
-  let timestampParts = $derived(
-    formatTimestampParts(log.timestamp, timeContext.tz, 'milliseconds')
-  )
-
   let serviceTitle = $derived(log.serviceName?.trim() || '(unknown service)')
   let bodyPreview = $derived((log.bodyPreview ?? '').trim())
 </script>
@@ -36,11 +29,13 @@
   {selected}
   title={serviceTitle}
   description={bodyPreview || undefined}
-  timeLayout="labeled"
-  timestamp={timestampParts.value}
-  timestampSuffix={offset ? `(${offset})` : undefined}
   {onclick}
 >
+  {#snippet date()}<SignalDate
+      label="Recorded"
+      timestamp={log.timestamp}
+      suffix={offset ? `(${offset})` : undefined}
+    />{/snippet}
   {#snippet titleContent()}
     {serviceTitle}{#if showLogBadge}<span class="text-xs text-rp-subtle"
         >{` · Log`}</span

@@ -60,7 +60,8 @@ describe('DetailProperty copy controls', () => {
       fieldValue: 'value',
     })
     const header = container.querySelector('.detail-property__header')!
-    expect(header.firstElementChild).toHaveClass('detail-property__key')
+    expect(header.firstElementChild).toHaveClass('detail-property__heading')
+    expect(header.firstElementChild).toHaveTextContent('name · string')
     const copy = screen.getByRole('button', { name: 'Copy name' })
     expect(copy).toHaveClass('value-copy--contextual')
     expect(copy).toHaveClass('tooltip-left')
@@ -124,7 +125,7 @@ describe('DetailProperty copy controls', () => {
       name: 'Copy startTimeUnixNano',
     })
     expect(
-      cell.querySelector('.detail-property__key')!.nextElementSibling
+      cell.querySelector('.detail-property__heading')!.nextElementSibling
     ).toBe(button)
     await user.click(button)
     expect(copy).toHaveBeenCalledWith('1700000000000000001')
@@ -172,7 +173,7 @@ describe('DetailProperty copy controls', () => {
   )
 
   it.each(['string', 'int64', 'bool', 'map', 'empty'])(
-    'keeps the %s type beside the key and provenance below the heading',
+    'keeps the %s type and provenance on the heading line',
     fieldType => {
       const { container } = render(DetailProperty, {
         fieldName: 'example',
@@ -184,19 +185,24 @@ describe('DetailProperty copy controls', () => {
       const badge = container.querySelector<HTMLElement>(
         '.detail-property__type'
       )!
-      expect(key.nextElementSibling).toBe(
-        screen.getByRole('button', { name: 'Copy example (scope)' })
-      )
+      expect(
+        container.querySelector('.detail-property__heading')!.nextElementSibling
+      ).toBe(screen.getByRole('button', { name: 'Copy example (scope)' }))
       expect(key).toHaveTextContent(`example · ${fieldType}`)
       expect(key).toContainElement(badge)
       expect(badge).toHaveTextContent(fieldType)
       expect(badge.style.color).toBe('')
       expect(badge).not.toHaveClass('badge-soft')
       expect(badge).not.toHaveClass('badge-outline')
-      const origin = container.querySelector('.detail-property__origin')!
+      const origin = container.querySelector<HTMLElement>(
+        '.detail-property__origin'
+      )!
       expect(
-        container.querySelector('.detail-property__header')!.nextElementSibling
-      ).toBe(origin)
+        container.querySelector('.detail-property__heading')
+      ).toContainElement(origin)
+      expect(
+        container.querySelector('.detail-property__heading')
+      ).toHaveTextContent(`example · ${fieldType} · scope`)
       expect(origin).toHaveTextContent(/^scope$/)
       expect(origin).not.toHaveClass('badge-soft')
       expect(origin).not.toHaveClass('badge-outline')
@@ -246,16 +252,16 @@ describe('DetailProperty copy controls', () => {
       })
       expect(header).toContainElement(copy)
       expect(
-        header.querySelector('.detail-property__key')!.nextElementSibling
+        header.querySelector('.detail-property__heading')!.nextElementSibling
       ).toBe(copy)
       expect(container.querySelector('.detail-property__type')).toBeNull()
       if (origin) {
         expect(
           container.querySelector('.detail-property__origin')
         ).toHaveTextContent(origin)
-        expect(header.nextElementSibling).toBe(
-          container.querySelector('.detail-property__origin')
-        )
+        expect(
+          header.querySelector('.detail-property__heading')
+        ).toContainElement(container.querySelector('.detail-property__origin'))
       } else {
         expect(container.querySelector('.detail-property__origin')).toBeNull()
       }

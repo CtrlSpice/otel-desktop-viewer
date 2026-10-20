@@ -11,6 +11,7 @@
   import RunStatusBadge from './RunStatusBadge.svelte'
   import EvalStatus from './EvalStatus.svelte'
   import { caseSummary } from './case-summary'
+  import { runSummary } from './run-summary'
   import TableSortButton from '@/components/shared/TableSortButton.svelte'
   import TableColumnHeading from '@/components/shared/TableColumnHeading.svelte'
   import ResizableTable from '@/components/shared/ResizableTable.svelte'
@@ -53,6 +54,7 @@
     type AssessmentDefinition,
     type EvalAttempt,
     type EvalRun,
+    type EvalView,
   } from './model'
   import { type AttemptSort, type AttemptSortKey } from './sort-attempts'
 
@@ -75,16 +77,19 @@
     onSelectRun?: () => void
     onResolveSelection?: (row: EvalOutlineRow | undefined) => void
     onTraceViews?: (traces: TraceData[], loading: boolean) => void
-    viewKey?: string
+    viewKey?: EvalView
   } = $props()
   const panelID = $props.id()
-  const views = [
+  const views: { id: EvalView; label: string; icon: typeof CheckListIcon }[] = [
     { id: 'results', label: 'Results', icon: CheckListIcon },
     { id: 'time', label: 'Tool calls', icon: ToolsIcon },
     { id: 'cost', label: 'Cost', icon: Coins01Icon },
   ]
   const enabledViews = $derived([viewKey])
   const viewLabel = $derived(views.find(item => item.id === viewKey)!.label)
+  const outcomeParts = $derived(
+    runSummary(run).parts.filter(part => part.count > 0)
+  )
   function selectView(event: KeyboardEvent, index: number) {
     const direction = ['ArrowRight', 'ArrowDown'].includes(event.key)
       ? 1
@@ -343,7 +348,8 @@
           ]),
   ])
   let sorts = $state<Record<string, AttemptSort | undefined>>({})
-  const activeSort = $derived(sorts[viewKey])
+  const sortScope = $derived(JSON.stringify([run.id, viewKey]))
+  const activeSort = $derived(sorts[sortScope])
   const measuredAttempts = $derived(
     run.attempts.map(attempt => {
       const window = attemptWindows[attempt.id]
@@ -381,7 +387,7 @@
   )
 
   function toggleSort(key: AttemptSortKey) {
-    sorts[viewKey] = {
+    sorts[sortScope] = {
       key,
       direction:
         activeSort?.key === key && activeSort.direction === 'asc'
@@ -406,13 +412,23 @@
   const visibleRows = $derived(
     visibleOutlineRows(outline, enabledViews, overrides)
   )
+  function selectRow(event: MouseEvent, row?: EvalOutlineRow) {
+    if (event.detail !== 0 && window.getSelection()?.isCollapsed === false)
+      return
+    const control =
+      event.target instanceof Element
+        ? event.target.closest('button, a, input, select, textarea')
+        : null
+    if (control && control !== event.currentTarget) return
+    if (row) onSelect?.(row)
+    else onSelectRun?.()
+  }
   function selectBar(event: MouseEvent) {
     const id = (event.currentTarget as HTMLElement).closest<HTMLElement>(
       '[data-outline-id]'
     )?.dataset.outlineId
     const row = outline.find(item => item.id === id)
-    if (row) onSelect?.(row)
-    else onSelectRun?.()
+    selectRow(event, row)
   }
   $effect(() => {
     onResolveSelection?.(
@@ -540,58 +556,86 @@
   </TimingCell>
 {/snippet}
 
-<PaneHeader pill mode="title" title={run.name}>
-  {#snippet right()}<RunStatusBadge
-      state={run.state}
-      pauseReason={run.pauseReason}
-    />{/snippet}
-  {#snippet badge()}
-    <span
-      class="text-sm text-rp-subtle tabular-nums"
-      title="Shown attempts / total attempts"
-      >{attempts.length}/{run.attempts.length} attempts</span
-    >
-  {/snippet}
-  {#snippet metaRight()}
-    <div class="header-controls" role="radiogroup" aria-label="Eval view">
-      {#each views as item, index (item.id)}
-        <button
-          type="button"
-          role="radio"
-          class="btn btn-xs header-tab header-toggle tooltip tooltip-left"
-          aria-checked={viewKey === item.id}
-          tabindex={viewKey === item.id ? 0 : -1}
-          aria-controls={panelID}
-          data-tip={item.label}
-          onclick={() => (viewKey = item.id)}
-          onkeydown={event => selectView(event, index)}
-        >
-          <span class="header-tab__icon shrink-0">
-            <HugeiconsIcon
-              icon={item.icon}
-              size={16}
-              strokeWidth={1.5}
-              aria-hidden="true"
-            />
-          </span>
-          <span class="header-tab__label">{item.label}</span>
-        </button>
-      {/each}
-    </div>
-  {/snippet}
-  {#snippet metaLeft()}
-    <LegendRows
-      items={completionLegend}
-      label="Execution status legend"
-      itemKey={entry => entry.label}
-    >
-      {#snippet children(entry)}<EvalStatus
-          label={entry.label}
-          tone={entry.tone}
-        />{/snippet}
-    </LegendRows>
-  {/snippet}
-</PaneHeader>
+<div class="eval-results__header shrink-0">
+  <PaneHeader pill mode="title" title={run.name}>
+    {#snippet right()}<RunStatusBadge
+        state={run.state}
+        pauseReason={run.pauseReason}
+      />{/snippet}
+    {#snippet badge()}
+      <span
+        class="text-sm text-rp-subtle tabular-nums"
+        title="Shown attempts / total attempts"
+        >{attempts.length}/{run.attempts.length} attempts</span
+      >
+    {/snippet}
+    {#snippet metaRight()}
+      <div class="header-controls" role="radiogroup" aria-label="Eval view">
+        {#each views as item, index (item.id)}
+          <button
+            type="button"
+            role="radio"
+            class="btn btn-xs header-tab header-toggle tooltip tooltip-left"
+            aria-checked={viewKey === item.id}
+            tabindex={viewKey === item.id ? 0 : -1}
+            aria-controls={panelID}
+            data-tip={item.label}
+            onclick={() => (viewKey = item.id)}
+            onkeydown={event => selectView(event, index)}
+          >
+            <span class="header-tab__icon shrink-0">
+              <HugeiconsIcon
+                icon={item.icon}
+                size={16}
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
+            </span>
+            <span class="header-tab__label">{item.label}</span>
+          </button>
+        {/each}
+      </div>
+    {/snippet}
+    {#snippet metaLeft()}
+      <div class="flex min-w-0 flex-col gap-1">
+        <div class="flex min-w-0 items-start gap-2">
+          <span class="shrink-0 text-sm text-rp-subtle">Outcomes</span>
+          <div class="min-w-0 flex-1">
+            <LegendRows
+              items={outcomeParts}
+              label="Run outcome legend"
+              itemKey={entry => entry.label}
+            >
+              {#snippet children(entry)}
+                <span class="inline-flex items-center gap-2 text-sm">
+                  <EvalStatus label={entry.label} tone={entry.tone} />
+                  <span class="text-rp-subtle tabular-nums"
+                    >[{entry.count.toLocaleString()}]</span
+                  >
+                </span>
+              {/snippet}
+            </LegendRows>
+          </div>
+        </div>
+        <div class="flex min-w-0 items-start gap-2">
+          <span class="shrink-0 text-sm text-rp-subtle">Execution</span>
+          <div class="min-w-0 flex-1">
+            <LegendRows
+              items={completionLegend}
+              label="Execution status legend"
+              itemKey={entry => entry.label}
+            >
+              {#snippet children(entry)}<EvalStatus
+                  label={entry.label}
+                  tone={entry.tone}
+                />{/snippet}
+            </LegendRows>
+          </div>
+        </div>
+      </div>
+    {/snippet}
+  </PaneHeader>
+</div>
 
 <div
   id={panelID}
@@ -708,7 +752,14 @@
     {/snippet}
     {#snippet children(layout)}
       {#if run.telemetry || run.seconds !== undefined}
-        <tr class="table-row" aria-label="Run span">
+        <!-- The native title button supplies keyboard access to this expanded pointer target. -->
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+        <tr
+          class="table-row"
+          aria-label="Run span"
+          onclick={event => selectRow(event)}
+        >
           <th
             colspan="2"
             scope="row"
@@ -717,7 +768,11 @@
             style:left={layout.pinned.name === undefined
               ? undefined
               : `${layout.pinned.name}px`}
-            ><span class="truncate">{run.name}</span></th
+            ><button
+              type="button"
+              class="block w-full truncate text-left"
+              onclick={event => selectRow(event)}>{run.name}</button
+            ></th
           >
           {#each columns.slice(2) as column (column.key)}
             <td
@@ -762,8 +817,12 @@
         {@const selected = selectedRowID
           ? selectedRowID === row.id
           : row.kind === 'attempt' && selectedID === item?.id}
+        <!-- Native row-name and duration buttons retain keyboard access. Tree controls stay independent. -->
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
         <tr
           class="table-row"
+          onclick={event => selectRow(event, row)}
           class:eval-results__case={row.kind === 'case'}
           class:eval-results__attempt={row.kind !== 'case'}
           class:table-row--selected={selected}
@@ -804,7 +863,7 @@
                 )}{/snippet}
               <button
                 type="button"
-                onclick={() => onSelect?.(row)}
+                onclick={event => selectRow(event, row)}
                 aria-pressed={selected}
                 class="block w-full min-w-0 truncate text-left"
                 class:eval-results__rep-label={row.kind === 'attempt'}
@@ -965,6 +1024,12 @@
 
 <style lang="postcss">
   @reference "../../app.css";
+  .table-row {
+    cursor: pointer;
+  }
+  .eval-results__header :global(.pane-header__time-range) {
+    flex-basis: 20rem;
+  }
   .eval-results__timing-cell {
     padding-block: 0;
     height: 1px;

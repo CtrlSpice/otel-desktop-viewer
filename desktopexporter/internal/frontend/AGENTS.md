@@ -1,5 +1,11 @@
 # Frontend checks
 
+- During interactive frontend work, always use Vite with hot reload against the
+  existing backend (`VIEWER_PROXY_TARGET`). Keep the user's preview on that dev
+  server. Do not rebuild/restart the Go binary for each UI edit. Build embedded
+  assets for final verification and commits. Concurrent test/preview servers must
+  use separate Vite caches so dependency optimization cannot break the preview.
+
 - For every colour change, proactively report text-contrast pass/fail against
   4.5:1 on the affected base, hover and selected backgrounds. Include the lowest
   measured ratio and any remaining failures; the user should not need to ask.
@@ -43,20 +49,22 @@
   leaving the item restores Medium. Text selection also uses Medium.
   Text selection is transient; it does not use the persistent-selection token.
 - Put item Download actions at the far right of the selected item's header,
-  after other header controls, across traces, logs and metrics. Counts are plain
-  `subtle` text without badge backgrounds or parentheses; service names retain
+  after other header controls, across traces, logs and metrics. Summary counts use
+  plain bracketed counts; metric counts share one group, such as
+  `[3 series | 42 pts]`, in regular Subtle text,
+  without badge backgrounds; service names retain
   their parentheses.
   Card counts sit in the title row's normal layout. Do not paint a separate
   wrapper background or gradient over the title; truncate the title beside them.
-- Trace counts read `● x err · y spans` (singular `span` for one), with both counts
+- Trace counts read `● [x err | y spans]` (singular `span` for one), with both counts
   and the separator in Subtle, and an 8px Love dot before the error count.
   Error span names use neutral Text
   without an extra dot; the waterfall already has coloured tree markers and bars.
   Omit the error count, dot and separator when there are no errors.
-  Error navigation uses open Hugeicons left/right carets and neutral Text, with
-  an 8px Love dot between the left caret and label, without a badge background:
-  `err (x/y)` when an error is selected, otherwise `err`.
-  Only the parenthesised `(x/y)` position uses Subtle; `err` and carets use Text.
+  Error navigation uses open Hugeicons left/right carets in Text, with an 8px
+  Love dot between the left caret and its Subtle label: `[x/y err]` for a selected
+  error, otherwise `[y err]`. No badge background. The Span section heading adds
+  `* root` in Pine/Secondary only when the selected span has no recorded parent.
 - Main header order: title · (service) · counts on the left, optional error
   navigation and Download on the right; time and view controls below. The separate
   service/count row was rejected because it wastes space.
@@ -162,8 +170,8 @@
   gradient. Compact JSON in a row must not cover its hover/selection background.
   The time-range trigger uses the shared ghost-button style without its own
   background, border or hover-background overrides.
-  In Details, use `key · type` in the heading, omitting hidden types. Put provenance
-  such as Resource/Scope on its own line below the heading when present.
+  In Details, use `key · type · provenance` on the heading line, omitting hidden
+  types and absent provenance. Separate Resource/Scope provenance with a small `·`.
   Provenance and type use plain Secondary text to distinguish metadata from the
   Subtle field name, without pills or right-aligned badges. The `·` separator
   uses Subtle. Preserve the actual field name.
@@ -187,13 +195,18 @@
   `api-gateway · Log` or `exception · Span event`. Log severity and its colour
   dot stay at the right of the title row.
   Metric summaries group type, aggregation temporality and monotonicity as one
-  plain Secondary-coloured label, such as `Sum Σ ↗`. On metric cards, place counts
+  plain Secondary-coloured label, such as `Sum Σ ↗` in detailed summaries.
+  On metric cards, use `Histogram` and `Exp. Histogram`; put
+  temporality/monotonicity meanings on hover rather than clustering symbols.
+  Show units beside actual readings, without a separate Units row. Place counts
   at the right of the name and the type group directly below them, right-aligned
   opposite the service. Keep full meanings on hover, counts in Subtle, and no pill
   background or border. Names remain 16px regular; metadata stays 14px/21px.
   Use continuous 24px rows and the shared 8px horizontal gap.
 - Signal card text uses the theme's 1.5 line-height; do not override it with
   `leading-none`, `leading-tight` or `leading-snug` on card text.
+  Resting cards have transparent surfaces, without background fills. Colour
+  belongs in meaningful dots and bars; retain shared hover/selection feedback.
   Card titles use the shared 16px heading size and regular weight; details
   remain 14px. Use continuous rows without an extra gap separating details
   into a visual group.
@@ -209,6 +222,16 @@
   colour dots only for meaningful statuses or outcomes, alongside neutral Text
   labels. Keep Results, Time, Cost, summaries and Details consistent with shared
   table and field-card typography and spacing.
+  Evals run cards show name/state, the outcome bar and the shared date row. Put outcome names,
+  counts in each segment's hover/focus tooltip as `● label [count]`. Each tooltip
+  describes only its segment; do not include other outcomes, progress, score,
+  tool activity or cost. Use the native top layer so neighbouring cards and
+  scroll containers cannot cover or clip these tooltips.
+  The selected run's section header also shows a visible small-dot outcome
+  legend with `[count]` beside the existing view controls. Label Outcomes and
+  Execution separately so assessment results cannot be confused with span status.
+  A single breakdown category uses its colour dot and name instead of a full-width
+  bar. Multiple categories retain the proportionate bar with hover/focus details.
   Results, Tool calls and Cost are a single-select radio group. The active view
   uses Highlight Medium and Highlight Low on hover. Results has recorded score
   with its dot/label, without a duplicate case-percentage Summary column. Tool calls
@@ -259,18 +282,40 @@
   Distinguish Love "Span error" from Papaya "Internal fault" (evaluation
   machinery). A failed assessment is "Fail", not an execution error. Preserve
   these meanings during parent propagation, including in dogfooding datasets.
-  Tool calls Details shows only the selected level in a flat, scrollable pane,
-  with its parent name as a small context label. Question content belongs to
-  the case row; do not repeat question, answer or assessments on attempt,
-  execution or tool details. Show recorded tool output/errors and grader
-  scores/explanations at their own level, with supporting fields beneath.
-  Other Evals Details opens only its first section by default; later sections
-  start collapsed and remain manually expandable.
+  Evals uses two stable sections, Details and Telemetry, across row modes.
+  Keep the selected row name and parent context in Details. Results shows case
+  questions/outcomes, attempt answers/scores, tool output/errors and grader
+  scores/explanations at their own level. Tool calls shows the selected level's
+  execution/output, timing, faults and tool totals. Cost shows the selected
+  level's estimates; case/attempt totals separate investigator and grader costs.
+  The whole table row selects Details; tree controls only expand/collapse.
+  Native row-name buttons preserve keyboard access. Keep text selection intact.
+  Mode changes preserve the selected row, manual disclosure and section sizing.
+  Evals Details opens its Details section and available Telemetry section by
+  default, sharing the available height equally unless saved sizing exists.
+  Other later sections start collapsed. Preserve manual disclosure and resizing.
+  Evals telemetry links reuse SignalCard: service-colour dot and span name,
+  neutral status text with its status dot, Pine/Secondary provenance, duration,
+  and the shared bottom-left Started date. Service identity is on hover. Omit
+  navigation hints; the summary card itself is the exact native trace link.
+  Inside each Telemetry card, show compact TID/SID rows with exact Copy controls
+  and shared Identifier rendering. Keep Telemetry as a sibling section in every
+  row mode, including Tool calls. Do not substitute a parent's IDs or invent a
+  span ID when only a trace reference is recorded.
+  Span-event summaries follow the log-card layout: event identity and plain
+  Pine/Secondary `Span event` provenance, recorded exception message when present,
+  and the shared bottom-left Recorded date/offset. Preserve the exception dot
+  and disclosure controls; do not invent severity or span status for events.
   Keep tool execution in the waterfall; do not repeat its Tool calls list in
   attempt Details.
-- Trace, log and metric summary timestamps use the selected timezone without
-  repeating its suffix on each card. Keep timezone labels in Details.
-  Trace summaries omit the visible `Start:` label; keep `Duration:` labelled.
+- All signal cards place the shared date row at the bottom-left, after summary
+  content. Label its meaning: `Started` for traces/Evals,
+  `Last seen` for metrics and `Recorded` for logs. Align values through the shared
+  SignalDate component. Use the selected timezone without repeating its suffix;
+  retain the full timezone on hover and in Details. Missing dates stay unavailable,
+  not invented. Keep trace `Duration:` separately labelled.
+  Missing dates display `—` with the reason on hover. Let date labels use their
+  natural width with the shared gap; do not reserve a wide empty label column.
 - Log severity uses an 8px coloured dot followed by neutral `LABEL (number)`
   text in summaries and tables through LogSeverity; no numbered circles.
   Waterfall tree nodes

@@ -1,14 +1,9 @@
 <script lang="ts">
   import type { TraceSummary } from '@/types/api-types'
-  import {
-    formatDurationParts,
-    formatTimestampParts,
-    traceSummaryDurationNs,
-  } from '@/utils/time'
-  import { getTimeContext } from '@/contexts/time-context.svelte'
+  import { formatDurationParts, traceSummaryDurationNs } from '@/utils/time'
+  import SignalDate from '@/components/shared/SignalDate.svelte'
   import SignalCard from '@/components/shared/SignalCard.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
-  import Identifier from '@/components/shared/Identifier.svelte'
   import SummaryBreakdown from '@/components/shared/SummaryBreakdown.svelte'
 
   type Props = {
@@ -18,12 +13,6 @@
   }
 
   let { trace, selected = false, onclick }: Props = $props()
-
-  const timeContext = getTimeContext()
-
-  let startParts = $derived(
-    formatTimestampParts(trace.startTime, timeContext.tz, 'milliseconds')
-  )
 
   // Not "yet": a promoted-orphan or salvaged-cycle trace has no null-parent
   // span and is not waiting for one.
@@ -50,14 +39,7 @@
 </script>
 
 {#snippet serviceBreakdown()}
-  <SummaryBreakdown parts={services} rootService={serviceLabel}>
-    {#snippet right()}
-      <span class="text-xs text-rp-subtle" title={trace.traceID}>
-        <span class="sr-only">Trace ID: </span>
-        <Identifier value={trace.traceID} />
-      </span>
-    {/snippet}
-  </SummaryBreakdown>
+  <SummaryBreakdown parts={services} rootService={serviceLabel} tooltipOnly />
 {/snippet}
 
 <SignalCard
@@ -77,23 +59,16 @@
     />
   {/snippet}
   {#snippet date()}
-    <div
-      class="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1"
-    >
-      <span
-        class="flex min-w-0 max-w-full items-center gap-1"
-        title={`Start: ${startParts.value} ${startParts.unit}`}
-      >
-        <span class="truncate text-base-content">{startParts.value}</span>
+    <SignalDate label="Started" timestamp={trace.startTime} />
+  {/snippet}
+  {#snippet meta()}
+    {#if durationParts}
+      <span class="flex shrink-0 items-center gap-1">
+        <span>Duration:</span>
+        <span class="text-base-content">{durationParts.value}</span>
+        <span class="text-base-content">{durationParts.unit}</span>
       </span>
-      {#if durationParts}
-        <span class="flex shrink-0 items-center gap-1">
-          <span>Duration:</span>
-          <span class="text-base-content">{durationParts.value}</span>
-          <span class="text-base-content">{durationParts.unit}</span>
-        </span>
-      {/if}
-    </div>
+    {/if}
   {/snippet}
 </SignalCard>
 

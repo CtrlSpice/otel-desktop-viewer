@@ -1971,7 +1971,9 @@ test('series open by their headers, one at a time, with one combined table', asy
       return {
         keyRight: key.right,
         typeInsideHeading: type.left >= key.left && type.right <= key.right,
-        keyTop: key.top,
+        headingTop: header
+          .querySelector('.detail-property__heading')!
+          .getBoundingClientRect().top,
         copyTop: copy.top,
         copyLeft: copy.left,
         copyInset: header.getBoundingClientRect().right - copy.right,
@@ -1980,7 +1982,7 @@ test('series open by their headers, one at a time, with one combined table', asy
   expect(fieldLayout.typeInsideHeading).toBe(true)
   expect(fieldLayout.copyLeft - fieldLayout.keyRight).toBeGreaterThanOrEqual(8)
   expect(fieldLayout.copyInset).toBeCloseTo(0, 0)
-  expect(fieldLayout.copyTop).toBeCloseTo(fieldLayout.keyTop, 0)
+  expect(fieldLayout.copyTop).toBeCloseTo(fieldLayout.headingTop, 0)
   await expect(table).toContainText('/first')
   await expect(table.locator('tr[data-dp-id]')).toHaveCount(25)
   const datapoint = table.locator('tr[data-dp-id]').first()

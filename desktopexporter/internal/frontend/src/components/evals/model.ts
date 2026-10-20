@@ -1,4 +1,6 @@
 // Presentation data only. This is not the future import/storage contract.
+export type EvalView = 'results' | 'time' | 'cost'
+
 export type AssessmentDefinition = {
   id: string
   name: string

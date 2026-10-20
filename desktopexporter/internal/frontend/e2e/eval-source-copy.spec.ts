@@ -98,7 +98,6 @@ for (const mode of ['field limit', 'aggregate budget']) {
     await expect
       .poll(() => page.evaluate(() => navigator.clipboard.readText()))
       .toBe(exact)
-    await detail.locator('summary').filter({ hasText: 'Assessments' }).click()
     await page.evaluate(() => navigator.clipboard.writeText('sentinel'))
     await detail
       .getByRole('button', { name: 'Copy explanation', exact: true })
@@ -165,16 +164,33 @@ test('switching imported runs preserves each run disclosure and sort', async ({
   const header = table.getByRole('columnheader', { name: /^Duration/ })
   await header.getByRole('button', { name: 'Sort by Duration' }).click()
   await expect(header).toHaveAttribute('aria-sort', 'ascending')
-  await page.getByRole('button', { name: /Copy eval · other/ }).click()
-  await expect(
-    page.getByRole('table', {
-      name: 'Results for Copy eval · other',
-      exact: true,
-    })
-  ).toBeVisible()
-  await page.getByRole('button', { name: /Copy eval · provider/ }).click()
+  await page
+    .getByRole('button', { name: /Copy eval · other/ })
+    .locator('.signal-row__title')
+    .click()
+  const otherTable = page.getByRole('table', {
+    name: 'Results for Copy eval · other',
+    exact: true,
+  })
+  await expect(otherTable).toBeVisible()
+  const otherHeader = otherTable.getByRole('columnheader', {
+    name: /^Duration/,
+  })
+  await expect(otherHeader).not.toHaveAttribute('aria-sort', 'ascending')
+  await otherHeader.getByRole('button', { name: 'Sort by Duration' }).click()
+  await otherHeader.getByRole('button', { name: 'Sort by Duration' }).click()
+  await expect(otherHeader).toHaveAttribute('aria-sort', 'descending')
+  await page
+    .getByRole('button', { name: /Copy eval · provider/ })
+    .locator('.signal-row__title')
+    .click()
   await expect(
     table.getByRole('button', { name: /^Expand Case 0/ })
   ).toHaveAttribute('aria-expanded', 'false')
   await expect(header).toHaveAttribute('aria-sort', 'ascending')
+  await page
+    .getByRole('button', { name: /Copy eval · other/ })
+    .locator('.signal-row__title')
+    .click()
+  await expect(otherHeader).toHaveAttribute('aria-sort', 'descending')
 })

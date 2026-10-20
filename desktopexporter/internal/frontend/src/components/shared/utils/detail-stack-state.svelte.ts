@@ -10,6 +10,7 @@ export const DETAIL_STACK = Symbol('detail-stack')
 type Section = {
   id: string
   label: string
+  layoutKey?: string
   element: HTMLElement
   available: () => boolean
   expanded: () => boolean
@@ -98,7 +99,7 @@ export function createDetailStackState(storageKey: string) {
     // Open the receiver first so the stack never has an all-closed state.
     const received =
       (receiver.expanded() ? weight(receiver) : 0) + weight(section)
-    weights = { ...weights, [receiver.label]: received }
+    weights = { ...weights, [receiver.layoutKey ?? receiver.label]: received }
     receiver.setExpanded(true)
     section.setExpanded(false)
     save()
@@ -106,7 +107,7 @@ export function createDetailStackState(storageKey: string) {
 
   function weight(section: Section) {
     return (
-      weights[section.label] ??
+      weights[section.layoutKey ?? section.label] ??
       1 /
         Math.max(1, sections.filter(candidate => candidate.available()).length)
     )
@@ -156,7 +157,8 @@ export function createDetailStackState(storageKey: string) {
         if (!section.available()) continue
         const height = sizes.get(section.id) ?? 0
         // Keep the last useful size for reopening with the heading.
-        if (height > 0) updated[section.label] = height / total
+        if (height > 0)
+          updated[section.layoutKey ?? section.label] = height / total
         section.setExpanded(height > 0)
       }
       if (settle) {

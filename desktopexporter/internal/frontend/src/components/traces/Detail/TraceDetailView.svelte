@@ -190,6 +190,9 @@
 
   <DetailStack label="Span details" storageKey="trace-detail-section-sizes">
     <DetailBubble label="Span" icon={spanIcon}>
+      {#snippet labelSuffix()}{#if isRoot}<span class="text-secondary"
+            >* root</span
+          >{/if}{/snippet}
       {#snippet action()}
         <DetailViewTabs id={detailViewID} bind:view={detailView}>
           {#snippet action()}<ValueCopyButton

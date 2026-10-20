@@ -335,7 +335,7 @@
     top: 0;
     height: 1px;
     background-color: var(--color-muted);
-    opacity: 0.6;
+    opacity: 0.18;
     pointer-events: none;
     z-index: 3;
   }

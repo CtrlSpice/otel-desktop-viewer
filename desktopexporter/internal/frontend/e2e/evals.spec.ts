@@ -121,7 +121,11 @@ test('case telemetry summarizes every repetition and links to its exact span', a
   await enableEvals(page)
   await page.goto('/evals?run=direct&row=case%2Frequest-latency')
   const detail = page.locator('#signal-drawer-detail')
-  await detail.locator('summary').filter({ hasText: 'Telemetry' }).click()
+  await expect(
+    detail
+      .locator('details')
+      .filter({ has: page.locator('summary').filter({ hasText: 'Telemetry' }) })
+  ).toHaveAttribute('open', '')
   const links = detail
     .locator('[aria-label="Referenced telemetry"]')
     .getByRole('link')
@@ -130,7 +134,7 @@ test('case telemetry summarizes every repetition and links to its exact span', a
     .attempts.filter(item => item.caseID === 'request-latency')
   await expect(links).toHaveCount(attempts.length)
   for (const [index, attempt] of attempts.entries()) {
-    await expect(links.nth(index)).toContainText('eval-agent')
+    await expect(links.nth(index).getByTitle('eval-agent')).toBeVisible()
     await expect(links.nth(index)).toContainText('37.000 s')
     await expect(links.nth(index)).toHaveAttribute(
       'href',
@@ -221,16 +225,14 @@ test('run selection, assessments, filtering and browser history stay connected',
     exact: true,
   })
   const bubbles = detail.locator('details.collapse')
-  await expect(bubbles).toHaveCount(3)
+  await expect(bubbles).toHaveCount(2)
   await expect(detail.getByRole('tablist')).toHaveCount(0)
-  for (const [index, bubble] of (await bubbles.all()).entries()) {
-    if (index === 0) await expect(bubble).toHaveAttribute('open')
-    else await expect(bubble).not.toHaveAttribute('open')
+  for (const bubble of await bubbles.all()) {
+    await expect(bubble).toHaveAttribute('open')
     await expect(bubble.locator(':scope > summary')).toBeInViewport({
       ratio: 1,
     })
   }
-  await bubbles.nth(1).locator(':scope > summary').click()
   await expect(
     page.getByText('The causal claim about total latency', { exact: false })
   ).toBeVisible()
@@ -238,7 +240,7 @@ test('run selection, assessments, filtering and browser history stay connected',
   await expect(
     detail.locator('summary').filter({ hasText: 'Tool calls' })
   ).toHaveCount(0)
-  await expect(bubbles.nth(1)).not.toHaveAttribute('open')
+  await expect(bubbles.nth(1)).toHaveAttribute('open')
   await page.getByRole('searchbox', { name: 'Search evals' }).fill('Mixed')
   await expect(
     page
@@ -252,7 +254,10 @@ test('run selection, assessments, filtering and browser history stay connected',
     page.getByText('No matching attempts', { exact: true })
   ).toBeVisible()
   await toolbar.getByRole('button', { name: 'Clear search' }).click()
-  await page.getByRole('button', { name: /Direct agent/ }).click()
+  await page
+    .getByRole('button', { name: /Direct agent/ })
+    .locator('.signal-row__title')
+    .click()
   await expect(
     page.getByRole('region', { name: 'Direct agent', exact: true })
   ).toBeVisible()
@@ -260,11 +265,8 @@ test('run selection, assessments, filtering and browser history stay connected',
   await expect(
     page.getByText('The investigator process exited', { exact: false })
   ).toBeVisible()
-  await detail
-    .locator('summary')
-    .filter({ hasText: 'Execution details' })
-    .click()
-  const accounting = detail.getByRole('table', { name: 'Attempt accounting' })
+  await showOnly(page, 'Cost')
+  const accounting = detail.getByRole('table', { name: 'Attempt 1 accounting' })
   for (const key of ['investigator estimate (CAD)', 'grader estimate (CAD)']) {
     await expect(
       accounting.locator(`[data-field="${key}"] .detail-property__body`)
@@ -538,7 +540,7 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
     const style = getComputedStyle(element, '::before')
     return { opacity: style.opacity, height: style.height, top: style.top }
   })
-  expect(divider).toEqual({ opacity: '0.6', height: '1px', top: '0px' })
+  expect(divider).toEqual({ opacity: '0.18', height: '1px', top: '0px' })
   expect(
     await costs.evaluate(table => {
       const headers = [
@@ -688,7 +690,7 @@ test('waterfall labels and bars open eval details while tree controls only expan
     details.getByRole('table', { name: 'bash fields', exact: true })
   ).toBeVisible()
   await showOnly(page, 'Tool calls')
-  await expect(details.locator('details')).toHaveCount(0)
+  await expect(details.locator('details.collapse')).toHaveCount(2)
   await expect(
     details.getByRole('table', { name: 'bash output', exact: true })
   ).toBeVisible()
@@ -717,7 +719,7 @@ test('waterfall labels and bars open eval details while tree controls only expan
   await expect(
     details.locator('summary').filter({ hasText: /^(Span|Events|Links)/ })
   ).toHaveCount(0)
-  await expect(details.locator('details')).toHaveCount(0)
+  await expect(details.locator('details.collapse')).toHaveCount(2)
   await expect(
     details.getByRole('table', { name: 'Attempt 1 fields', exact: true })
   ).toBeVisible()
@@ -732,11 +734,19 @@ test('waterfall labels and bars open eval details while tree controls only expan
     )
     .click()
   await expect(
+    details.getByRole('group', { name: 'attempts', exact: true })
+  ).toContainText('3')
+  await expect(
+    details.getByRole('group', { name: 'tool calls', exact: true })
+  ).toContainText('9 total · 3 failed')
+  await showOnly(page, 'Results')
+  await expect(
     details.getByText(
       'Identify the slowest request and explain where it spent its time.',
       { exact: true }
     )
   ).toBeVisible()
+  await showOnly(page, 'Tool calls')
   await row.locator('.tree-row-identity__title button').click()
   await expect(
     details.getByRole('table', { name: 'Attempt 1 fields', exact: true })
@@ -751,7 +761,102 @@ test('waterfall labels and bars open eval details while tree controls only expan
   await expect(
     details.getByRole('region', { name: 'Attempt details', exact: true })
   ).toBeVisible()
-  await expect(details.locator('details.collapse[open]')).toHaveCount(1)
+  await expect(details.locator('details.collapse[open]')).toHaveCount(2)
+  await expect(
+    details
+      .locator('details.collapse[open] > summary')
+      .filter({ hasText: 'Telemetry' })
+  ).toBeVisible()
+})
+
+test('row cells open mode-specific Details with stable Telemetry and exact IDs', async ({
+  page,
+}) => {
+  await enableEvals(page)
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.setViewportSize({ width: 1920, height: 1000 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto('/evals?run=direct')
+  const row = page.locator('[data-attempt-id="request-latency"]')
+  await row.locator('.eval-results__assessment').click()
+  const detail = page.locator('#signal-drawer-detail')
+  await expect(row).toHaveClass(/table-row--selected/)
+  await expect(
+    detail.getByRole('group', { name: 'score', exact: true }).first()
+  ).toBeVisible()
+  const telemetry = detail
+    .locator('details.collapse')
+    .filter({ has: page.locator('summary').filter({ hasText: 'Telemetry' }) })
+  const identity = telemetry.getByRole('group', {
+    name: 'Rep 1 · Execution identifiers',
+  })
+  const reference = exampleRuns
+    .find(run => run.id === 'direct')!
+    .attempts.find(attempt => attempt.id === 'request-latency')!.telemetry!
+  await expect(
+    identity.getByTitle(reference.traceID, { exact: true })
+  ).toBeVisible()
+  await expect(
+    identity.getByTitle(reference.spanID!, { exact: true })
+  ).toBeVisible()
+  const url = page.url()
+  await identity
+    .getByRole('button', { name: 'Copy trace ID', exact: true })
+    .click()
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(reference.traceID)
+  await identity
+    .getByRole('button', { name: 'Copy span ID', exact: true })
+    .click()
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(reference.spanID)
+  expect(page.url()).toBe(url)
+  await expect(telemetry.locator('a').first()).toHaveAttribute(
+    'href',
+    `/traces/${reference.traceID}?span=${reference.spanID}`
+  )
+  await telemetry.locator(':scope > summary').click()
+
+  await showOnly(page, 'Tool calls')
+  await expect(telemetry).not.toHaveAttribute('open')
+  await expect(
+    detail.getByRole('group', { name: 'tool calls', exact: true })
+  ).toBeVisible()
+  await expect(
+    detail.getByRole('group', { name: 'score', exact: true })
+  ).toHaveCount(0)
+  await showOnly(page, 'Cost')
+  await expect(telemetry).not.toHaveAttribute('open')
+  const accounting = detail.getByRole('table', {
+    name: 'Attempt 1 accounting',
+    exact: true,
+  })
+  await expect(
+    accounting.getByRole('group', { name: 'total estimate (CAD)', exact: true })
+  ).toContainText('C$0.123')
+  const caseRow = page.locator('[data-outline-id="case/request-latency"]')
+  await caseRow.locator('td').last().click()
+  await expect(caseRow).toHaveClass(/table-row--selected/)
+  await expect(
+    detail.getByRole('group', { name: 'total estimate (CAD)', exact: true })
+  ).toContainText('C$0.369')
+
+  await showOnly(page, 'Tool calls')
+  const tool = page.locator('[data-outline-id="request-latency/tool/1"]')
+  await tool.locator('td').last().click()
+  await expect(tool).toHaveClass(/table-row--selected/)
+  await expect(
+    detail.getByRole('group', { name: 'error', exact: true })
+  ).toContainText('SQL binder error')
+  const toolIdentity = detail.getByRole('group', { name: 'bash identifiers' })
+  await expect(
+    toolIdentity.getByTitle('eeee000000000003', { exact: true })
+  ).toBeVisible()
+  await expect(
+    detail.locator('details.collapse > summary > span:first-child')
+  ).toHaveText(['Details', 'Telemetry'])
 })
 
 test('column sorting preserves selection and keeps unknown measurements last within cases', async ({
@@ -1223,7 +1328,10 @@ test('waterfall selection reveals closed Details and run selection restores run 
   await expect(
     detail.getByRole('region', { name: 'Attempt details', exact: true })
   ).toBeVisible()
-  await page.getByRole('button', { name: /Guide-assisted agent/ }).click()
+  await page
+    .getByRole('button', { name: /Guide-assisted agent/ })
+    .locator('.signal-row__title')
+    .click()
   await expect(
     detail.getByRole('region', { name: 'Run details', exact: true })
   ).toBeVisible()

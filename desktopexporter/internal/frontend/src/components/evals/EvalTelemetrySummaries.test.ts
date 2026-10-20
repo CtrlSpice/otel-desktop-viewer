@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
-import { expect, it } from 'vitest'
-import { render, screen } from '@testing-library/svelte'
+import { expect, it, vi } from 'vitest'
+import { fireEvent, screen, within } from '@testing-library/svelte'
+import { copyText } from '@/utils/clipboard'
+import { renderWithContexts as render } from '@/test/render-helpers'
 import type { SpanNode } from '@/types/api-types'
 import EvalTelemetrySummaries from './EvalTelemetrySummaries.svelte'
 import { evalTelemetrySummaries } from './eval-telemetry-summaries'
@@ -9,6 +11,8 @@ import { buildEvalOutline } from './eval-outline'
 import { groupAttempts } from './group-attempts'
 import { indexEvalTraces, referenceKey } from './eval-traces'
 import { traceHref } from './model'
+
+vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn() }))
 
 const reference = { traceID: 'a'.repeat(32), spanID: 'b'.repeat(16) }
 const node: SpanNode = {
@@ -51,7 +55,8 @@ it('summarizes stored evidence and provides a native exact-span link, preserving
   const link = screen.getByRole('link', { name: /recorded operation/ })
   expect(link).toHaveAttribute('href', traceHref(reference))
   expect(link).not.toHaveAttribute('aria-pressed')
-  expect(screen.getByText('Rep 1 · Execution · eval-agent')).toBeVisible()
+  expect(screen.getByText('Rep 1 · Execution')).toHaveClass('text-secondary')
+  expect(screen.getByTitle('eval-agent')).toBeVisible()
   expect(screen.getByText('Error')).toBeVisible()
   expect(screen.getByText('0 ns')).toBeVisible()
 })
@@ -62,7 +67,7 @@ it('keeps unavailable references navigable and does not borrow a same-ID span fr
     entries: [{ reference: other, label: 'Execution' }],
     nodes: new Map([[referenceKey(reference), node]]),
   })
-  expect(screen.getByText('Span summary unavailable')).toBeVisible()
+  expect(screen.getByText('Span unavailable')).toBeVisible()
   expect(screen.queryByText('recorded operation')).toBeNull()
   expect(screen.getByRole('link')).toHaveAttribute('href', traceHref(other))
 })
@@ -104,8 +109,40 @@ it('deduplicates an attempt and execution that reference the same stored span', 
     ...exampleRuns[0].attempts[0],
     attemptTelemetry: reference,
     telemetry: { ...reference, traceID: reference.traceID.toUpperCase() },
+    assessments: [],
   }
   expect(evalTelemetrySummaries(exampleRuns[0], undefined, attempt)).toEqual([
     { reference, label: 'Rep 1 · Attempt' },
   ])
+})
+
+it('copies the reference IDs exactly even when the span is unavailable', async () => {
+  const received = { traceID: 'A'.repeat(32), spanID: 'B'.repeat(16) }
+  render(EvalTelemetrySummaries, {
+    entries: [{ reference: received, label: 'Execution' }],
+  })
+  const identity = screen.getByRole('group', { name: 'Execution identifiers' })
+  expect(within(identity).getByTitle(received.traceID)).toBeVisible()
+  expect(within(identity).getByTitle(received.spanID)).toBeVisible()
+  await fireEvent.click(
+    within(identity).getByRole('button', { name: 'Copy trace ID' })
+  )
+  expect(copyText).toHaveBeenLastCalledWith(received.traceID)
+  await fireEvent.click(
+    within(identity).getByRole('button', { name: 'Copy span ID' })
+  )
+  expect(copyText).toHaveBeenLastCalledWith(received.spanID)
+  expect(screen.getByRole('link')).toHaveAttribute('href', traceHref(received))
+})
+
+it('shows a trace-only identity without inventing an unavailable span', () => {
+  const received = { traceID: reference.traceID }
+  render(EvalTelemetrySummaries, {
+    entries: [{ reference: received, label: 'Execution' }],
+  })
+  expect(
+    screen.getByText('Trace reference · no span ID recorded')
+  ).toBeVisible()
+  expect(screen.queryByRole('button', { name: 'Copy span ID' })).toBeNull()
+  expect(screen.getByRole('link')).toHaveAttribute('href', traceHref(received))
 })

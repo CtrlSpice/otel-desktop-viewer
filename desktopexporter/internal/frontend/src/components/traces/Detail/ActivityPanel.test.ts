@@ -96,7 +96,7 @@ describe('ActivityPanel', () => {
     const offset = within(summary).getByText('(-1.000 s)', { exact: true })
     expect(offset).toHaveClass('text-rp-subtle')
     expect(offset).not.toHaveClass('badge-count')
-    expect(offset.closest('.signal-row__time')).not.toBeNull()
+    expect(offset.closest('.signal-date')).not.toBeNull()
     expect(within(summary).getByRole('button')).toContainElement(offset)
     expect(summary).toHaveTextContent('DEBUG (5)')
     expect(summary).not.toHaveTextContent('TRACE')

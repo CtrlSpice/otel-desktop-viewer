@@ -29,4 +29,17 @@ describe('legendRowEnds', () => {
     expect(legendRowEnds([], 100, 16)).toEqual([])
     expect(legendRowEnds([100], 80, 16)).toEqual([1])
   })
+
+  it('keeps fractional measured widths at the exact last-pair boundary', () => {
+    const measured = [40.25, 40.25, 100.5, 100.25]
+    expect(legendRowEnds(measured, 216.74, 16)).toEqual([3, 4])
+    expect(legendRowEnds(measured, 216.75, 16)).toEqual([2, 4])
+    expect(legendRowEnds(measured, 329.25, 16)).toEqual([4])
+  })
+
+  it('does not create a new singleton in the preceding row to pair the last item', () => {
+    expect(legendRowEnds([60, 60, 60, 60, 60], 136, 16)).toEqual([2, 4, 5])
+    expect(legendRowEnds([60, 60, 60, 60, 60], 212, 16)).toEqual([3, 5])
+    expect(legendRowEnds([60, 60, 60, 60, 60], 288, 16)).toEqual([3, 5])
+  })
 })
