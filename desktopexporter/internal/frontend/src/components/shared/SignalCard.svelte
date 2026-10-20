@@ -94,7 +94,7 @@
             >{#if titleContent}{@render titleContent()}{:else}{title}{/if}</span
           >
           {#if badge && badgePlacement === 'inline'}
-            <span class="flex shrink-0 items-center gap-1"
+            <span class="flex shrink-0 items-center gap-2"
               >{@render badge()}</span
             >
           {/if}
@@ -296,7 +296,8 @@
   }
 
   .signal-row__header {
-    @apply flex h-[var(--signal-card-row-h)] min-w-0 items-center gap-1;
+    @apply flex h-[var(--signal-card-row-h)] min-w-0 items-center;
+    gap: var(--header-gap);
   }
 
   .signal-row__identity {
@@ -304,7 +305,8 @@
   }
 
   .signal-row__title-cluster {
-    @apply flex min-w-0 flex-1 items-center gap-1;
+    @apply flex min-w-0 flex-1 items-center;
+    gap: var(--header-gap);
   }
 
   .signal-row__title {
@@ -325,7 +327,8 @@
   }
 
   .signal-row__badge {
-    @apply flex max-w-[55%] shrink-0 items-center justify-end gap-1;
+    @apply flex max-w-[55%] shrink-0 items-center justify-end;
+    gap: var(--header-gap);
   }
 
   .signal-row__time {

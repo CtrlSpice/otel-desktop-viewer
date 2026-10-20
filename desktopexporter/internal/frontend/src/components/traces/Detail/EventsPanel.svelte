@@ -46,6 +46,7 @@
   >
     <DisclosureSignalCard
       title={event.name}
+      badgePlacement="inline"
       timestamp={timestamp.value}
       timestampUnit={timestamp.unit || undefined}
       timestampSuffix={`(${formatSignedDuration(event.timestamp - spanStartTime)})`}
@@ -54,10 +55,10 @@
       {#snippet titleContent()}<span class:text-error={exception}
           >{event.name}</span
         >{/snippet}
-      {#snippet badge()}<span
-          class="badge badge-xs"
-          class:badge-error={exception}
-          class:badge-primary={!exception}>Span event</span
+      {#snippet badge()}
+        <span class="text-xs text-rp-subtle" aria-hidden="true">·</span><span
+          class="text-xs {exception ? 'text-error' : 'text-rp-subtle'}"
+          >Span event</span
         >{/snippet}
       <table class="detail-fields w-full" aria-label="Event {event.name}">
         <tbody>

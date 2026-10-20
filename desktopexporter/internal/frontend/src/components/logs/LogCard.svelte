@@ -41,8 +41,12 @@
   timestampSuffix={offset ? `(${offset})` : undefined}
   {onclick}
 >
+  {#snippet titleContent()}
+    {serviceTitle}{#if showLogBadge}<span class="text-xs text-rp-subtle"
+        >{` · Log`}</span
+      >{/if}
+  {/snippet}
   {#snippet badge()}
-    {#if showLogBadge}<span class="badge badge-xs badge-primary">Log</span>{/if}
     <SignalBadges
       signal="log"
       severityNumber={log.severityNumber}

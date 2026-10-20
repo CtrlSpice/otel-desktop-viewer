@@ -5,6 +5,7 @@
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
   import { formatTimestampParts } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
+  import { metricTypeSummary } from './utils/metric-type'
 
   type Props = {
     metric: MetricSummary
@@ -23,6 +24,13 @@
   )
 
   let description = $derived((metric.description ?? '').trim())
+  let typeSummary = $derived(
+    metricTypeSummary(
+      metric.metricType,
+      metric.aggregationTemporality,
+      metric.isMonotonic
+    )
+  )
 
   function formatLastValue(value: number): string {
     return new Intl.NumberFormat(undefined, {
@@ -39,16 +47,28 @@
   id={key}
   {selected}
   title={metric.name}
-  subtitle={metric.serviceName?.trim() || undefined}
   description={description || undefined}
   {onclick}
 >
+  {#snippet subtitleContent()}
+    <div class="metric-card__classification">
+      {#if metric.serviceName?.trim()}
+        <span class="min-w-0 truncate text-rp-subtle" title={metric.serviceName}
+          >{metric.serviceName.trim()}</span
+        >
+      {/if}
+      <span class="ml-auto shrink-0 text-secondary" title={typeSummary.title}
+        >{typeSummary.label}</span
+      >
+    </div>
+  {/snippet}
   {#snippet badge()}
     <SignalBadges
       signal="metric"
       metricType={metric.metricType}
       aggregationTemporality={metric.aggregationTemporality}
       isMonotonic={metric.isMonotonic}
+      showType={false}
       seriesCount={metric.seriesCount}
       seriesCardinality={metric.seriesCardinality}
       dataPointCount={metric.dataPointCount}
@@ -66,9 +86,7 @@
   {/snippet}
 
   {#snippet meta()}
-    <div
-      class="grid w-full min-w-0 grid-cols-2 gap-x-4 gap-y-1.5 text-xs tabular-nums"
-    >
+    <div class="grid w-full min-w-0 grid-cols-2 gap-x-4 text-xs tabular-nums">
       {#if lastValueLabel}
         <span class="flex min-w-0 items-center gap-1">
           <span class="shrink-0">Last value:</span>
@@ -88,3 +106,13 @@
     </div>
   {/snippet}
 </SignalCard>
+
+<style lang="postcss">
+  @reference "../../app.css";
+
+  .metric-card__classification {
+    @apply flex min-w-0 items-center text-sm;
+    min-height: var(--signal-card-row-h);
+    gap: var(--header-gap);
+  }
+</style>

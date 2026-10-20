@@ -59,38 +59,23 @@
   let copyText = $derived(
     copyValue ?? (typedValue ? attributeValueCopy(typedValue) : fieldValue)
   )
-  let typeTone = $derived(
-    fieldType === 'string' || fieldType === 'bytes'
-      ? 'badge-accent'
-      : /^(u?int|fixed|double|float)/.test(fieldType)
-        ? 'badge-warning'
-        : fieldType === 'empty'
-          ? 'badge-neutral'
-          : 'badge-primary'
-  )
 </script>
 
 {#snippet header()}
   <div class="detail-property__header">
     {#if conflict}<ConflictMarker label={conflict} />{/if}
-    <span class="detail-property__key">{fieldName}</span>
+    <span class="detail-property__key"
+      >{fieldName}{#if origin}<span class="text-rp-subtle">{' · '}</span><span
+          class="detail-property__origin">{origin}</span
+        >{/if}{#if showType}<span class="text-rp-subtle">{' · '}</span><span
+          class="detail-property__type">{fieldType}</span
+        >{/if}</span
+    >
     <ValueCopyButton
       text={copyText}
       label={origin ? `${fieldName} (${origin})` : fieldName}
       contextual
     />
-    {#if showType || origin}
-      <span class="detail-property__badges">
-        {#if showType}<span
-            class="badge badge-xs {typeTone} detail-property__type"
-            >{fieldType}</span
-          >{/if}
-        {#if origin}<span
-            class="metadata-origin detail-property__origin"
-            >{origin}</span
-          >{/if}
-      </span>
-    {/if}
   </div>
 {/snippet}
 
@@ -187,8 +172,9 @@
     color: var(--detail-code-key);
     overflow-wrap: anywhere;
   }
-  .detail-property__badges {
-    @apply ml-auto flex shrink-0 items-center justify-end gap-2;
+  .detail-property__origin,
+  .detail-property__type {
+    color: var(--color-secondary);
   }
   .detail-property__body {
     @apply min-w-0 pt-0.5;

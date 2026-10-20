@@ -53,6 +53,25 @@
   1.5 line-height. JSON editors retain Mono at the shared working size and
   line-height; code views retain Mono. Do not select a display font from the
   data's scalar type.
+  In Details, group the heading as `key · provenance · type`, omitting absent
+  provenance or hidden types. Provenance and type use plain Secondary text to
+  distinguish metadata from the Subtle field name, without pills or right-aligned
+  badges. The `·` separators always use Subtle, independently of adjacent text
+  colours. Preserve the actual field name.
+  Span-event summary labels are plain Subtle text; exception labels use the
+  theme error colour. Do not restore their pill backgrounds.
+  Log summary labels are plain Subtle text. Shared log severity labels use
+  normal text with a small dot in the existing severity colour, not a pill.
+  Retain the severity text and number alongside the dot.
+  Activity summary provenance sits beside its title, separated by `·`, such as
+  `api-gateway · Log` or `exception · Span event`. Log severity and its colour
+  dot stay at the right of the title row.
+  Metric summaries group type, aggregation temporality and monotonicity as one
+  plain Secondary-coloured label, such as `Sum Σ ↗`. On metric cards, place counts
+  at the right of the name and the type group directly below them, right-aligned
+  opposite the service. Keep full meanings on hover, counts in Subtle, and no pill
+  background or border. Names remain 16px regular; metadata stays 14px/21px.
+  Use continuous 24px rows and the shared 8px horizontal gap.
 - Signal card text uses the theme's 1.5 line-height; do not override it with
   `leading-none`, `leading-tight` or `leading-snug` on card text.
   Card titles use the shared 16px heading size and regular weight; details

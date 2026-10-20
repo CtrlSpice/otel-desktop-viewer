@@ -11,6 +11,7 @@
     timestampUnit,
     timestampSuffix,
     badge,
+    badgePlacement = 'end',
     reveal = false,
     children,
   }: {
@@ -22,6 +23,7 @@
     timestampUnit?: string
     timestampSuffix?: string
     badge: Snippet
+    badgePlacement?: 'inline' | 'end'
     reveal?: boolean
     children: Snippet
   } = $props()
@@ -46,6 +48,7 @@
     {timestampSuffix}
     timeLayout="labeled"
     {badge}
+    {badgePlacement}
     selected={reveal}
     expanded={open}
     controls={contentID}

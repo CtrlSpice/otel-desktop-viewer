@@ -10,7 +10,7 @@
     value?: Snippet
     multiline?: boolean
     hidden?: boolean
-    /** Show `(type)` after the field name. Defaults to true. */
+    /** Show `· type` after the field name. Defaults to true. */
     showType?: boolean
   }
 
@@ -31,7 +31,9 @@
       {#snippet keyLabel()}
         <span class="detail-cell__key">
           {fieldName}{#if showType}
-            {' '}<span class="detail-cell__type">({fieldType})</span>{/if}:
+            <span class="text-rp-subtle">{' · '}</span><span
+              class="detail-cell__type">{fieldType}</span
+            >{/if}
         </span>
       {/snippet}
       {#if value}
@@ -59,7 +61,7 @@
   @reference "../../app.css";
 
   .detail-cell__type {
-    color: var(--color-subtle);
+    color: var(--color-secondary);
     @apply font-normal;
   }
 

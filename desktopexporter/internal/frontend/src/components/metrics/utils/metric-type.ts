@@ -1,13 +1,5 @@
 import type { MetricType } from '@/types/api-types'
 
-const METRIC_TYPE_BADGE_BASE = 'badge badge-xs'
-const METRIC_TYPE_BADGE_TONES = new Map<string, string>([
-  ['Gauge', 'badge-info'],
-  ['Sum', 'badge-secondary'],
-  ['Histogram', 'badge-rose'],
-  ['ExponentialHistogram', 'badge-warning'],
-])
-
 export function metricTypeLabel(metricType: string): string {
   if (metricType === 'ExponentialHistogram') return 'ExpHist'
   return metricType
@@ -45,18 +37,17 @@ const MONOTONIC_SYMBOL = { label: '↗', title: 'Monotonic' } as const
 
 const UNSPECIFIED_TEMPORALITY_TITLE = 'aggregationTemporality = Unspecified'
 
-export type MetricTypeCardBadge = {
+export type MetricTypeSummary = {
   label: string
   title: string
-  className: string
 }
 
-/** Drawer card: one type badge with Δ / Σ / ↗ suffixes; error tone when temporality is Unspecified. */
-export function metricTypeCardBadge(
+/** Summary type label with Δ / Σ / ↗ suffixes and the full meaning in its title. */
+export function metricTypeSummary(
   metricType: MetricType | string,
   aggregationTemporality: string | null | undefined,
   isMonotonic: boolean | null
-): MetricTypeCardBadge {
+): MetricTypeSummary {
   const temporality = temporalityBadge(aggregationTemporality)
 
   const titleParts = [metricType]
@@ -72,8 +63,5 @@ export function metricTypeCardBadge(
     title: temporality?.isUnspecified
       ? `${titleParts.join(' · ')} · ${UNSPECIFIED_TEMPORALITY_TITLE}`
       : titleParts.join(' · '),
-    className: temporality?.isUnspecified
-      ? `${METRIC_TYPE_BADGE_BASE} badge-error`
-      : `${METRIC_TYPE_BADGE_BASE} ${METRIC_TYPE_BADGE_TONES.get(metricType) ?? 'badge-neutral'}`,
   }
 }
