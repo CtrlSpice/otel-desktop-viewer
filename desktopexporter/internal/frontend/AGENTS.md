@@ -146,7 +146,7 @@
   No decorative dot grids anywhere, including waterfall timing and all metric
   charts. Retain ruler labels, axis ticks, tree connectors and meaningful data
   markers. Keep data bounds, span geometry, chart cells and scrolling intact.
-  Trace and Evals waterfalls share solid 1px Muted time guides at 35% opacity,
+   Trace and Evals waterfalls share solid 1px Muted time guides at 18% opacity,
   aligned only to labelled ruler ticks behind the bars. Keep ruler text Subtle.
   Guides are decorative and cannot intercept pointer input.
   Column and panel resizing share a short 3rem by 0.1875rem grip, rotated for

@@ -24,6 +24,6 @@
     bottom: 0;
     width: 1px;
     background: var(--color-muted);
-    opacity: 0.35;
+    opacity: 0.18;
   }
 </style>
