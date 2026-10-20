@@ -6,17 +6,27 @@ export function numberIdentity(value: number): string {
   return String(value)
 }
 
-export function formatHistogramBound(value: number, significantDigits = 3): string {
+export function formatHistogramBound(
+  value: number,
+  significantDigits = 3
+): string {
   if (!Number.isFinite(value)) return value > 0 ? '+∞' : '-∞'
   return formatMetricValue(value, { maxSignificantDigits: significantDigits })
 }
 
-export function formatHistogramRange(lo: number, hi: number, minimumDigits = 3): string {
+export function formatHistogramRange(
+  lo: number,
+  hi: number,
+  minimumDigits = 3
+): string {
   const digits = metricNumberPrecision([lo, hi], minimumDigits)
   return `(${formatHistogramBound(lo, digits)}, ${formatHistogramBound(hi, digits)}]`
 }
 
-export function exponentialZeroBucketLabel(zeroThreshold: number, significantDigits = 3): string {
+export function exponentialZeroBucketLabel(
+  zeroThreshold: number,
+  significantDigits = 3
+): string {
   if (!(zeroThreshold > 0)) return '0'
   const threshold = formatHistogramBound(zeroThreshold, significantDigits)
   return `[-${threshold}, +${threshold}]`

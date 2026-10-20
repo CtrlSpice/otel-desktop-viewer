@@ -92,13 +92,11 @@
   and Primary when selected, matching the tab icons.
   Tab counters display `(count)`, including `(0)`; this overrides the plain-count
   rule for tab counters only. An unavailable count is not a received zero.
-  Primary navigation counters use neutral DaisyUI ghost badges and regular Text
-  in active and inactive tabs, rather than Iris. Local pane-tab counters retain
-  their existing active-colour styling.
-  Primary navigation count badges are circles and omit parentheses; grow them
-  to fit the full count. This overrides the parenthesised-count rule above.
-  User-approved typography exception: these small circular navigation badges
-  use 10px regular numerals in a minimum 20px circle. Other working text stays 14px.
+  Primary navigation counters use plain bracketed text, such as `[42]`, in
+  Text at the regular 14px working size, matching the tab labels. No badge
+  background, border, circle or reduced numeral size. Keep full counts and
+  unavailable-count semantics. Local pane-tab counters retain their existing
+  parenthesised-count and active-colour styling.
   Pane titles share the cards' 16px regular-weight heading style and normal letter
   spacing. The title row uses the same 2rem height as its controls.
 - Typography is an accessibility requirement across the entire UI: use 0.875rem
@@ -146,7 +144,7 @@
   No decorative dot grids anywhere, including waterfall timing and all metric
   charts. Retain ruler labels, axis ticks, tree connectors and meaningful data
   markers. Keep data bounds, span geometry, chart cells and scrolling intact.
-   Trace and Evals waterfalls share solid 1px Muted time guides at 18% opacity,
+  Trace and Evals waterfalls share solid 1px Muted time guides at 18% opacity,
   aligned only to labelled ruler ticks behind the bars. Keep ruler text Subtle.
   Guides are decorative and cannot intercept pointer input.
   Column and panel resizing share a short 3rem by 0.1875rem grip, rotated for
@@ -277,12 +275,12 @@
   text in summaries and tables through LogSeverity; no numbered circles.
   Waterfall tree nodes
   use filled 8px dots matching the span bar colour for both parents and leaves,
-   without a visible number inside the dot. Direct-child counts read `[4]` in
-   Subtle 14px regular interface text, after the dot: `● [4] Name`. The dot and count
-   form one group that moves with the row's nesting indentation, without a fixed
-   count column. Centre counts vertically with their dots, without a horizontal
-   line between the dot and count. Counts have no badge background or semantic accent colour.
-   The whole bracketed label uses Subtle, including the brackets; no Mono or Muted.
+  without a visible number inside the dot. Direct-child counts read `[4]` in
+  Subtle 14px regular interface text, after the dot: `● [4] Name`. The dot and count
+  form one group that moves with the row's nesting indentation, without a fixed
+  count column. Centre counts vertically with their dots, without a horizontal
+  line between the dot and count. Counts have no badge background or semantic accent colour.
+  The whole bracketed label uses Subtle, including the brackets; no Mono or Muted.
   Align the waterfall table's name heading with the root title, reserving the
   same count slot when present.
   Keep counts visible when collapsed; omit counts for leaves.
@@ -298,7 +296,7 @@
   Timeline activity markers use the same 14px circle icon for single and grouped
   records. Grouped markers show a small 8px plus icon instead of a visible count;
   keep exact event/log counts in the accessible label and tooltip.
-   Tree columns use 18px spacing. Guides must span
+  Tree columns use 18px spacing. Guides must span
   the shared table row height so they remain connected.
   Tree connector trunks, arms and stems use solid 1px Muted lines at 50% opacity.
   Centre the line strokes on node centres; elbow connectors use the cards'
@@ -317,15 +315,15 @@
   needed to distinguish adjacent bounds. Counts use whole grouped integers.
   Keep the received unit separate; do not append standalone SI-prefix suffixes
   or convert received values/units. These are display rules only.
-   Heatmap labels use the line charts' 80px X / 50px Y spacing targets instead
-   of a fixed seven-label limit. Select labels from existing time columns and
-   bucket rows; preserve exponential-bucket identities, bounds, counts and layout.
-   Heatmap labels remain centred. When either cell dimension is below 12px, join neighbouring occupied
-   cells across colour bands and round only their shared outer boundaries.
-   Keep each cell's count colour and preserve empty buckets and holes.
-   Joined shapes retain the existing density-scaled border around their shared
-   perimeter and holes, following each cell's colour without internal borders.
-   Do not add decorative grid styling.
+  Heatmap labels use the line charts' 80px X / 50px Y spacing targets instead
+  of a fixed seven-label limit. Select labels from existing time columns and
+  bucket rows; preserve exponential-bucket identities, bounds, counts and layout.
+  Heatmap labels remain centred. When either cell dimension is below 12px, join neighbouring occupied
+  cells across colour bands and round only their shared outer boundaries.
+  Keep each cell's count colour and preserve empty buckets and holes.
+  Joined shapes retain the existing density-scaled border around their shared
+  perimeter and holes, following each cell's colour without internal borders.
+  Do not add decorative grid styling.
   Histogram/heatmap count legends sit on the left of the chart header's lower
   row, replacing the displayed chart time range. Keep chart tabs/controls on the
   right and retain the global time-range selector. At the regular 14px size,

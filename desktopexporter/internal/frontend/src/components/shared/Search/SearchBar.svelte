@@ -57,9 +57,7 @@
       <span class="sr-only" role="status">{refreshAsideTip || 'New data'}</span>
     {/if}
   {/if}
-  <div
-    class="search-bar__query flex min-w-0 flex-1 items-center rounded-full"
-  >
+  <div class="search-bar__query flex min-w-0 flex-1 items-center rounded-full">
     <div
       class="search-bar__field min-w-0 flex-1"
       style="--typed-field-bg: transparent"
@@ -67,9 +65,7 @@
       {#if search}{@render search()}{/if}
     </div>
   </div>
-  <div
-    class="flex shrink-0 items-center rounded-full"
-  >
+  <div class="flex shrink-0 items-center rounded-full">
     {#if controls}{@render controls()}{:else}<DateTimeFilter />{/if}
   </div>
 </div>

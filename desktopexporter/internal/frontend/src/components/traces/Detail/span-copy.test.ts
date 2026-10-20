@@ -1,19 +1,19 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/svelte'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { screen, waitFor } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
-import type { AttributeValue, SpanData } from '@/types/api-types'
+import type { SpanData } from '@/types/api-types'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 import { SPAN_FIELDS } from '@/constants/fields'
 import TraceDetailView from './TraceDetailView.svelte'
-import { spanCopyJSON } from './span-copy'
+import { spanCopyJSON, spanExportURL } from './span-copy'
 
 function makeSpan(): SpanData {
   return {
     traceID: '12345678901234567890123456789012',
     spanID: '1234567890123456',
     parentSpanID: null,
-    traceState: 'vendor=value',
+    traceState: '',
     flags: 1,
     name: 'selected span',
     kind: 'Server',
@@ -23,183 +23,192 @@ function makeSpan(): SpanData {
     statusCode: 'Error',
     statusCodeValue: 2,
     statusMessage: 'failed',
-    attributes: [
-      {
-        key: 'sequence',
-        value: { kind: 'int64', value: 9_223_372_036_854_775_807n },
-      },
-    ],
-    resource: {
-      attributes: [
-        { key: 'service.name', value: { kind: 'string', value: 'checkout' } },
-      ],
-      droppedAttributesCount: 1,
-    },
+    attributes: [],
+    resource: { attributes: [], droppedAttributesCount: 1 },
     scope: {
       name: 'instrumentation',
       version: '1.2',
-      attributes: [{ key: 'ready', value: { kind: 'bool', value: false } }],
+      attributes: [],
       droppedAttributesCount: 2,
     },
     events: [
       {
         name: 'event',
         timestamp: 1_700_000_000_999_999_999n,
-        attributes: [{ key: 'value', value: { kind: 'double', value: -0 } }],
-        droppedAttributesCount: 3,
+        attributes: [],
+        droppedAttributesCount: 0,
       },
     ],
-    links: [
-      {
-        traceID: 'linked-trace',
-        spanID: 'linked-span',
-        traceState: 'linked=value',
-        flags: 257,
-        attributes: [{ key: 'bytes', value: { kind: 'bytes', value: 'AQI=' } }],
-        droppedAttributesCount: 4,
-        summary: {
-          target: { name: 'linked span', serviceName: 'worker' },
-        },
-      },
-    ],
+    links: [],
     droppedAttributesCount: 5,
     droppedEventsCount: 6,
     droppedLinksCount: 7,
   }
 }
 
+// Source-only envelope metadata and number spellings cannot be recovered from
+// SpanData. Keep this fixture as text, never JSON.stringify a parsed object.
+const exported = `{"resourceSpans":[{
+  "schemaUrl":"https://opentelemetry.io/schemas/1.21.0",
+  "resource":{"attributes":[],"droppedAttributesCount":1},
+  "scopeSpans":[{
+    "schemaUrl":"https://opentelemetry.io/schemas/1.22.0",
+    "scope":{"name":"instrumentation","version":"1.2","droppedAttributesCount":2},
+    "spans":[{
+      "traceId":"12345678901234567890123456789012",
+      "spanId":"1234567890123456","name":"selected span",
+      "startTimeUnixNano":"1700000000123456789",
+      "attributes":[
+        {"key":"same","value":{"intValue":"9223372036854775807"}},
+        {"key":"same","value":{"doubleValue":-0.0}},
+        {"key":"large","value":{"doubleValue":18446744073709551615}},
+        {"key":"exponent","value":{"doubleValue":1.2300e+40}}
+      ],
+      "events":[{"name":"event","timeUnixNano":"1700000000999999999"}],
+      "links":[{"traceId":"linked-trace","spanId":"linked-span","flags":257}],
+      "status":{"code":2,"message":"failed"},
+      "droppedAttributesCount":5,"droppedEventsCount":6,"droppedLinksCount":7
+    }]
+  }]
+}]}
+`
+
+function response(text = exported) {
+  return new Response(text, {
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+  })
+}
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
+
 describe('selected span JSON', () => {
-  it('copies one span with its resource, scope, received enums, flags, events and links', () => {
-    const source = makeSpan()
-    const json = spanCopyJSON(source)
-    const resourceSpans = JSON.parse(json).resourceSpans
-    expect(resourceSpans).toHaveLength(1)
-    expect(resourceSpans[0].resource).toEqual({
-      attributes: [{ key: 'service.name', value: { stringValue: 'checkout' } }],
-      droppedAttributesCount: 1,
-    })
-    expect(resourceSpans[0].scopeSpans).toHaveLength(1)
-    const scopeSpans = resourceSpans[0].scopeSpans[0]
-    expect(scopeSpans.scope).toEqual({
-      name: 'instrumentation',
-      version: '1.2',
-      attributes: [{ key: 'ready', value: { boolValue: false } }],
-      droppedAttributesCount: 2,
-    })
-    expect(scopeSpans.spans).toHaveLength(1)
-    const span = scopeSpans.spans[0]
-    expect(span).toMatchObject({
-      traceId: source.traceID,
-      spanId: source.spanID,
-      traceState: source.traceState,
-      name: source.name,
-      kind: 2,
-      flags: 1,
-      startTimeUnixNano: '1700000000123456789',
-      endTimeUnixNano: '1700000001987654321',
-      status: { code: 2, message: 'failed' },
-      droppedAttributesCount: 5,
-      droppedEventsCount: 6,
-      droppedLinksCount: 7,
-    })
-    expect(span).not.toHaveProperty('parentSpanId')
-    expect(span.attributes).toEqual([
-      { key: 'sequence', value: { intValue: '9223372036854775807' } },
-    ])
-    expect(span.events[0]).toMatchObject({
-      name: 'event',
-      timeUnixNano: '1700000000999999999',
-      droppedAttributesCount: 3,
-    })
-    expect(Object.is(span.events[0].attributes[0].value.doubleValue, -0)).toBe(
-      true
+  it('reads the selected-span download verbatim, including both schema URLs and numeric lexemes', async () => {
+    const fetch = vi.fn().mockResolvedValue(response())
+    vi.stubGlobal('fetch', fetch)
+    const signal = new AbortController().signal
+    const span = makeSpan()
+    await expect(spanCopyJSON(span, signal)).resolves.toBe(exported)
+    expect(fetch).toHaveBeenCalledExactlyOnceWith(
+      `/export/traces/${span.traceID}?spanId=${span.spanID}`,
+      { signal, headers: { Accept: 'application/json' } }
     )
-    expect(span.links[0]).toMatchObject({
-      traceId: 'linked-trace',
-      spanId: 'linked-span',
-      traceState: 'linked=value',
-      flags: 257,
-      droppedAttributesCount: 4,
-      attributes: [{ key: 'bytes', value: { bytesValue: 'AQI=' } }],
-    })
-    expect(span.links[0]).not.toHaveProperty('summary')
-    expect(json).toContain('\n  "resourceSpans": [')
+    expect(spanExportURL({ traceID: 'trace/1', spanID: 'span&2' })).toBe(
+      '/export/traces/trace%2F1?spanId=span%262'
+    )
   })
 
-  it('retains typed duplicate keys and every AnyValue kind without JSON number coercion', () => {
-    const source = makeSpan()
-    const values: AttributeValue[] = [
-      { kind: 'empty', value: null },
-      { kind: 'string', value: 'line\n"quoted"' },
-      { kind: 'bytes', value: 'AQI=' },
-      { kind: 'bool', value: true },
-      { kind: 'int64', value: -9_223_372_036_854_775_808n },
-      { kind: 'double', value: Infinity },
-      { kind: 'array', value: [{ kind: 'double', value: NaN }] },
-      {
-        kind: 'map',
-        conflictingKeys: ['same'],
-        value: [
-          { key: 'same', value: { kind: 'int64', value: 1n } },
-          { key: 'same', value: { kind: 'string', value: '1' } },
-        ],
-      },
-    ]
-    source.attributes = values.map(value => ({ key: 'same', value }))
-    source.parentSpanID = 'parent'
-    const span = JSON.parse(spanCopyJSON(source)).resourceSpans[0].scopeSpans[0]
-      .spans[0]
-    expect(span.parentSpanId).toBe('parent')
-    expect(
-      span.attributes.map((entry: { value: unknown }) => entry.value)
-    ).toEqual([
-      {},
-      { stringValue: 'line\n"quoted"' },
-      { bytesValue: 'AQI=' },
-      { boolValue: true },
-      { intValue: '-9223372036854775808' },
-      { doubleValue: 'Infinity' },
-      { arrayValue: { values: [{ doubleValue: 'NaN' }] } },
-      {
-        kvlistValue: {
-          values: [
-            { key: 'same', value: { intValue: '1' } },
-            { key: 'same', value: { stringValue: '1' } },
-          ],
-        },
-      },
-    ])
-    expect(source.attributes).toHaveLength(8)
+  it.each([
+    [404, 'text/plain', 'span not found'],
+    [200, 'text/html', '<html>not an export</html>'],
+  ])('rejects HTTP %s %s instead of copying it', async (status, type, body) => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(body, { status, headers: { 'Content-Type': type } })
+        )
+    )
+    await expect(
+      spanCopyJSON(makeSpan(), new AbortController().signal)
+    ).rejects.toThrow()
   })
 })
 
 describe('Copy span action', () => {
-  it('copies all selected-span data even when displayed fields are filtered, without toggling the disclosure', async () => {
+  it('copies the download source only on explicit keyboard activation, independent of field filters', async () => {
     setTestUrl('/traces/trace?span=selected')
     const user = userEvent.setup()
     const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
-    const source = makeSpan()
+    const fetch = vi.fn().mockResolvedValue(response())
+    vi.stubGlobal('fetch', fetch)
     const { container } = renderWithContexts(TraceDetailView, {
-      span: source,
+      span: makeSpan(),
       columnFilter: [
         SPAN_FIELDS.find(field => 'name' in field && field.name === 'name')!,
       ],
     })
-    const button = screen.getByRole('button', {
-      name: 'Copy span',
-    })
+    const button = screen.getByRole('button', { name: 'Copy span' })
     const disclosure = container.querySelector('details')!
     expect(button.closest('summary')).toBeNull()
-    await user.click(button)
-    expect(write).toHaveBeenCalledWith(spanCopyJSON(source))
+    await user.click(screen.getByText('selected span'))
+    expect(fetch).not.toHaveBeenCalled()
+    expect(write).not.toHaveBeenCalled()
+    button.focus()
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(write).toHaveBeenCalledExactlyOnceWith(exported))
     expect(disclosure.open).toBe(true)
-    const copied = JSON.parse(write.mock.calls[0]![0])
-    expect(
-      copied.resourceSpans[0].scopeSpans[0].spans[0].attributes
-    ).toHaveLength(1)
+    expect(screen.getByText('Copied span.')).toBeInTheDocument()
     await user.click(disclosure.querySelector('summary')!)
     expect(disclosure.open).toBe(false)
     expect(button.isConnected).toBe(true)
+  })
+
+  it.each(['selection', 'unmount'] as const)(
+    'cancels an outstanding copy on %s and never writes the stale response',
+    async change => {
+      const user = userEvent.setup()
+      const write = vi
+        .spyOn(navigator.clipboard, 'writeText')
+        .mockResolvedValue()
+      let finish!: (value: Response) => void
+      const fetch = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<Response>(resolve => {
+              finish = resolve
+            })
+        )
+        .mockResolvedValueOnce(response('new selected span'))
+      vi.stubGlobal('fetch', fetch)
+      const view = renderWithContexts(TraceDetailView, { span: makeSpan() })
+      const button = screen.getByRole('button', { name: 'Copy span' })
+      await user.click(button)
+      await user.click(button)
+      expect(fetch).toHaveBeenCalledTimes(1)
+      const signal = fetch.mock.calls[0]![1].signal as AbortSignal
+      if (change === 'unmount') view.unmount()
+      else {
+        await view.rerender({
+          component: TraceDetailView,
+          componentProps: { span: { ...makeSpan(), spanID: 'next-span' } },
+        })
+      }
+      expect(signal.aborted).toBe(true)
+      finish(response())
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(write).not.toHaveBeenCalled()
+      if (change === 'selection') {
+        await user.click(button)
+        await waitFor(() =>
+          expect(write).toHaveBeenCalledExactlyOnceWith('new selected span')
+        )
+        expect(fetch.mock.calls[1]![0]).toContain('?spanId=next-span')
+      }
+    }
+  )
+
+  it('reports a failed download source without copying and permits retry', async () => {
+    const user = userEvent.setup()
+    const write = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response('missing', { status: 404 }))
+        .mockResolvedValueOnce(response())
+    )
+    renderWithContexts(TraceDetailView, { span: makeSpan() })
+    const button = screen.getByRole('button', { name: 'Copy span' })
+    await user.click(button)
+    expect(write).not.toHaveBeenCalled()
+    expect(screen.getByText('Could not copy span.')).toBeInTheDocument()
+    await user.click(button)
+    await waitFor(() => expect(write).toHaveBeenCalledExactlyOnceWith(exported))
   })
 
   it('offers no span-copy action when no span is selected', () => {

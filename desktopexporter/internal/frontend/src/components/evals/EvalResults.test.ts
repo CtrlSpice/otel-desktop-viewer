@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/svelte'
+import { render, screen, within, waitFor } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import EvalResults from './EvalResults.svelte'
 import { exampleRuns } from './examples'
@@ -63,6 +63,57 @@ async function showOnlyTime() {
 }
 
 describe('EvalResults repetitions', () => {
+  it('retains selected tool telemetry when filtering its case out of the table', async () => {
+    const attempt = exampleRuns[0].attempts[0]
+    const tool = attempt.tools[0]
+    const reference = tool.telemetry!
+    const lookup = vi
+      .spyOn(telemetryAPI, 'getReferencedTraceViews')
+      .mockResolvedValue(
+        traceViews([
+          {
+            traceID: reference.traceID,
+            spanID: reference.spanID!,
+            name: 'tool selected',
+            serviceName: 'runner',
+            startTime: 10n,
+            endTime: 30n,
+            statusCodeValue: 2,
+          },
+        ])
+      )
+    const onResolveSelection = vi.fn()
+    try {
+      const run = {
+        ...exampleRuns[0],
+        telemetry: undefined,
+        attempts: [attempt],
+      }
+      const { rerender, container } = render(EvalResults, {
+        run,
+        attempts: run.attempts,
+        selectedRowID: `${attempt.id}/tool/0`,
+        onResolveSelection,
+      })
+      const evidence = expect.objectContaining({
+        id: `${attempt.id}/tool/0`,
+        state: 'Error',
+        spanError: true,
+        window: { startTime: 10n, endTime: 30n },
+      })
+      await waitFor(() =>
+        expect(onResolveSelection).toHaveBeenLastCalledWith(evidence)
+      )
+      await rerender({ attempts: [] })
+      expect(container.querySelectorAll('[data-outline-id]')).toHaveLength(0)
+      await waitFor(() =>
+        expect(onResolveSelection).toHaveBeenLastCalledWith(evidence)
+      )
+    } finally {
+      lookup.mockRestore()
+    }
+  })
+
   it('selects one summary view, combines totals and preserves manual disclosure', async () => {
     const attempt = exampleRuns[0].attempts[0]
     const telemetry = { traceID: 'a'.repeat(32), spanID: 'b'.repeat(16) }
@@ -468,6 +519,8 @@ describe('EvalResults repetitions', () => {
       'Attempt 3',
     ])
     expect(labels[2].closest('tr')).toHaveClass('table-row--selected')
+    expect(labels[2]).toHaveAttribute('aria-pressed', 'true')
+    expect(labels[1]).toHaveAttribute('aria-pressed', 'false')
     expect(labels[2]).toHaveAttribute('title', 'Attempt 2 · Span error')
     const parent = container.querySelector(
       '.eval-results__case[data-case-id="request-latency"]'

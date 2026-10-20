@@ -1007,6 +1007,7 @@
                 series.key === selectedSeriesKey}
               <Spline
                 seriesKey={series.key}
+                curve={series.props?.curve}
                 class="metric-series-line"
                 data-series-key={series.key}
                 data-emphasized={emphasized}

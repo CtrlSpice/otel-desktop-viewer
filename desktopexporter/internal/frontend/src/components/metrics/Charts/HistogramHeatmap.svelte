@@ -23,8 +23,17 @@
     QUANTILE_LABELS_DESCENDING,
     type HistogramSlicePoint,
   } from '@/components/metrics/utils/histogram-aggregation'
-  import { formatMetricValue, formatMetricCount, metricNumberPrecision } from '@/components/metrics/utils/format-metric-value'
-  import { formatHistogramBound, formatHistogramRange, exponentialZeroBucketIdentity, exponentialZeroBucketLabel } from '@/components/metrics/utils/histogram-bucket'
+  import {
+    formatMetricValue,
+    formatMetricCount,
+    metricNumberPrecision,
+  } from '@/components/metrics/utils/format-metric-value'
+  import {
+    formatHistogramBound,
+    formatHistogramRange,
+    exponentialZeroBucketIdentity,
+    exponentialZeroBucketLabel,
+  } from '@/components/metrics/utils/histogram-bucket'
   import { computeHeatmapColorScale } from '@/components/metrics/utils/heatmap-color-scale'
   import { themeSignal } from '@/state/theme.svelte'
   import {
@@ -155,17 +164,27 @@
     const row = heatmapModel.rows[index]
     const point = pointByColumnKey.get(cell.columnKey)
     if (!row || !point) return cell.bucketLabel
-    const digits = metricNumberPrecision([
-      row.lo, row.hi, ...heatmapModel.rows.slice(Math.max(0, index - 1), index + 2).map(row => row.order),
-    ], 6)
+    const digits = metricNumberPrecision(
+      [
+        row.lo,
+        row.hi,
+        ...heatmapModel.rows
+          .slice(Math.max(0, index - 1), index + 2)
+          .map(row => row.order),
+      ],
+      6
+    )
     if (point.kind === 'expHistogram') {
       return row.key === exponentialZeroBucketIdentity(point.zeroThreshold)
         ? exponentialZeroBucketLabel(point.zeroThreshold, digits)
         : formatHistogramBound(row.order, digits)
     }
-    if (!Number.isFinite(row.lo) && !Number.isFinite(row.hi)) return 'all values'
-    if (!Number.isFinite(row.lo)) return `≤${formatHistogramBound(row.hi, digits)}`
-    if (!Number.isFinite(row.hi)) return `>${formatHistogramBound(row.lo, digits)}`
+    if (!Number.isFinite(row.lo) && !Number.isFinite(row.hi))
+      return 'all values'
+    if (!Number.isFinite(row.lo))
+      return `≤${formatHistogramBound(row.hi, digits)}`
+    if (!Number.isFinite(row.hi))
+      return `>${formatHistogramBound(row.lo, digits)}`
     return formatHistogramRange(row.lo, row.hi, digits)
   }
 
@@ -259,7 +278,9 @@
   function dismissSelection() {
     selectedCellKey = null
     onClearSelection?.()
-    document.getElementById('metric-heatmap-keyboard-surface')?.focus({ preventScroll: true })
+    document
+      .getElementById('metric-heatmap-keyboard-surface')
+      ?.focus({ preventScroll: true })
   }
 
   let keyboardReadout = $derived.by((): string => {
@@ -482,7 +503,9 @@
   )
 
   let blobDetail = $derived(heatmapBlobDetail(columnPitch, keyboardRowHeight))
-  let blobs = $derived(buildHeatmapBlobs(heatmapModel, cellColorThresholds, blobDetail.joinColours))
+  let blobs = $derived(
+    buildHeatmapBlobs(heatmapModel, cellColorThresholds, blobDetail.joinColours)
+  )
   let contributionRegions = $derived(
     buildHeatmapBlobs(
       {
@@ -572,8 +595,16 @@
     return bucketLabelByKey.get(key) ?? key
   }
   let chartAxes = $derived({
-    xAxis: { ...axisTime(timeContext.tz), tickSpacing: 80, format: formatTimeTick },
-    yAxis: { ...axisBucketBounds(unit), tickSpacing: 50, format: formatBucketTick },
+    xAxis: {
+      ...axisTime(timeContext.tz),
+      tickSpacing: 80,
+      format: formatTimeTick,
+    },
+    yAxis: {
+      ...axisBucketBounds(unit),
+      tickSpacing: 50,
+      format: formatBucketTick,
+    },
   })
 </script>
 
@@ -622,14 +653,8 @@
             tooltipContext={{ mode: 'band' }}
           >
             <Layer>
-              <Axis
-                placement="bottom"
-                {...chartAxes.xAxis}
-              />
-              <Axis
-                placement="left"
-                {...chartAxes.yAxis}
-              />
+              <Axis placement="bottom" {...chartAxes.xAxis} />
+              <Axis placement="left" {...chartAxes.yAxis} />
               <defs>
                 <mask
                   id={quantileChannelID}
@@ -662,7 +687,11 @@
                   {/each}
                 </mask>
               </defs>
-              <g class="heatmap-blobs" class:heatmap-blobs--joined={blobDetail.joinColours} mask={`url(#${quantileChannelID})`}>
+              <g
+                class="heatmap-blobs"
+                class:heatmap-blobs--joined={blobDetail.joinColours}
+                mask={`url(#${quantileChannelID})`}
+              >
                 {#each renderedBlobs as blob (blob.key)}
                   <defs>
                     <clipPath id={blob.clipID} clipPathUnits="userSpaceOnUse">
@@ -690,18 +719,20 @@
                   </defs>
                   <g class="heatmap-blob" clip-path={`url(#${blob.clipID})`}>
                     {#if !blobDetail.joinColours}<path
-                      class="heatmap-blob-fill"
-                      d={blob.path}
-                      fill={cellColorRange[blob.band]}
-                      fill-rule="evenodd"
-                    />{/if}
+                        class="heatmap-blob-fill"
+                        d={blob.path}
+                        fill={cellColorRange[blob.band]}
+                        fill-rule="evenodd"
+                      />{/if}
                     {#each blob.cells as cell (cell.datum)}
                       <rect
                         x={cell.x}
                         y={cell.y}
                         width={columnPitch}
                         height={keyboardRowHeight}
-                        fill={cellColorRange[bisectRight(cellColorThresholds, cell.datum.count)]}
+                        fill={cellColorRange[
+                          bisectRight(cellColorThresholds, cell.datum.count)
+                        ]}
                         class="heatmap-cell"
                         class:heatmap-cell--hovered={cell.datum.columnKey ===
                           hoveredColumnKey &&
@@ -727,17 +758,19 @@
                             y={cell.y}
                             width={columnPitch}
                             height={keyboardRowHeight}
-                            fill={cellColorRange[bisectRight(cellColorThresholds, cell.datum.count)]}
+                            fill={cellColorRange[
+                              bisectRight(cellColorThresholds, cell.datum.count)
+                            ]}
                           />
                         {/each}
                       </g>
                     {:else}<path
-                      class="heatmap-blob-outline"
-                      d={blob.path}
-                      style:--blob-color={cellColorRange[blob.band]}
-                      style:--blob-outline-width={blobDetail.liner * 2}
-                      aria-hidden="true"
-                    />{/if}
+                        class="heatmap-blob-outline"
+                        d={blob.path}
+                        style:--blob-color={cellColorRange[blob.band]}
+                        style:--blob-outline-width={blobDetail.liner * 2}
+                        aria-hidden="true"
+                      />{/if}
                   </g>
                 {/each}
               </g>
@@ -818,7 +851,8 @@
                 <dl class="heatmap-hover-cell">
                   <dt>bucket</dt>
                   <dd>
-                     {formatBucketHover(data)}{data.bucketLabel !== 'all values' &&
+                    {formatBucketHover(data)}{data.bucketLabel !==
+                      'all values' &&
                     unit.trim() &&
                     unit.trim() !== '1'
                       ? ` ${unit.trim()}`
@@ -829,7 +863,9 @@
                   {#if ctx.histogramContribution}
                     <dt>selected contribution</dt>
                     <dd>
-                      {formatMetricCount(contributionCount(data))} of {formatMetricCount(data.count)}
+                      {formatMetricCount(contributionCount(data))} of {formatMetricCount(
+                        data.count
+                      )}
                     </dd>
                   {/if}
                 </dl>

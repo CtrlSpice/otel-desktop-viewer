@@ -1,9 +1,6 @@
 <script lang="ts">
-  import type {
-    WaterfallAxis,
-  } from './WaterfallTimeAxisHeader.svelte'
-  let { axis }: { axis: WaterfallAxis } =
-    $props()
+  import type { WaterfallAxis } from './WaterfallTimeAxisHeader.svelte'
+  let { axis }: { axis: WaterfallAxis } = $props()
 </script>
 
 <div class="waterfall-time-ruler">

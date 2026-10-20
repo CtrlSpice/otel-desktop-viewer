@@ -19,7 +19,11 @@
   import ResizablePanels from './ResizablePanels.svelte'
   import SignalListDrawer from './Drawer/SignalListDrawer.svelte'
   import PanelToggle from './PanelToggle.svelte'
-  import { detailWidth } from '@/state/detail-width.svelte'
+  import {
+    detailWidth,
+    DETAIL_SPLIT_STORAGE_KEY,
+  } from '@/state/detail-width.svelte'
+  import { getRouteContext } from '@/contexts/route-context.svelte'
   import { detailPanel } from '@/state/detail-panel.svelte'
   import {
     PANEL_DEFAULT_REM,
@@ -96,6 +100,7 @@
   }: Props<T> = $props()
 
   const detailPanelID = $derived(`${drawerID}-detail`)
+  const routeContext = getRouteContext()
 
   // Empty-drawer pages have no item renderer; the shared drawer still requires one.
   const noopItem: Snippet<[item: T, selected: boolean]> = $derived(
@@ -150,10 +155,16 @@
             rightPanelID={detailPanelID}
             rightWidthRem={detailWidth.rem}
             onRightWidthChange={rem => detailWidth.set(rem)}
+            onLayoutMeasure={(space, stacked) =>
+              detailWidth.migrateLegacy(
+                routeContext.route.path,
+                space,
+                stacked
+              )}
             defaultRightRem={PANEL_DEFAULT_REM}
             minLeftPx={remToPx(PANEL_DEFAULT_REM)}
             minRightPx={remToPx(PANEL_MIN_REM)}
-            storageKey="workspace-panel-split"
+            storageKey={DETAIL_SPLIT_STORAGE_KEY}
           >
             {#snippet leftPanel()}
               <div

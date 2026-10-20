@@ -26,12 +26,12 @@ Subtle is adjusted app-wide in Pine (`#908caa` → `#aba7c5`) and Moon
 (`#928eac` → `#b1adcc`). Only OKLCH lightness was increased before rounding
 to sRGB hex values, retaining the hue and chroma. All five backgrounds pass:
 
-| Subtle contrast | Pine | Moon |
-| --- | --- | --- |
-| Canvas | 7.622:1 | 7.241:1 |
-| Panel | 7.119:1 | 6.655:1 |
-| Chrome | 6.550:1 | 5.384:1 |
-| Highlight Low | 6.916:1 | 6.605:1 |
+| Subtle contrast  | Pine    | Moon    |
+| ---------------- | ------- | ------- |
+| Canvas           | 7.622:1 | 7.241:1 |
+| Panel            | 7.119:1 | 6.655:1 |
+| Chrome           | 6.550:1 | 5.384:1 |
+| Highlight Low    | 6.916:1 | 6.605:1 |
 | Highlight Medium | 4.516:1 | 4.521:1 |
 
 Highlight High, used for matched waterfall rows, is outside that five-background
@@ -42,12 +42,12 @@ five backgrounds. Text already passes at its original value. These colours
 are darkened while preserving OKLCH hue. These are shared theme colours,
 including for syntax and metadata.
 
-| Dawn colour | Original | Adjusted | Minimum contrast |
-| --- | --- | --- | --- |
-| Subtle | `#797593` | `#625d7a` | 4.506:1 |
-| Muted | `#9893a5` | `#635e6f` | 4.513:1 |
-| Iris/Primary | `#907aa9` | `#6d5784` | 4.532:1 |
-| Foam/Accent | `#56949f` | `#296974` | 4.505:1 |
+| Dawn colour  | Original  | Adjusted  | Minimum contrast |
+| ------------ | --------- | --------- | ---------------- |
+| Subtle       | `#797593` | `#625d7a` | 4.506:1          |
+| Muted        | `#9893a5` | `#635e6f` | 4.513:1          |
+| Iris/Primary | `#907aa9` | `#6d5784` | 4.532:1          |
+| Foam/Accent  | `#56949f` | `#296974` | 4.505:1          |
 
 Dawn Gold/Warning retains its original `#ea9d34`. The user rejected the darkened
 `#895500`. Do not change Gold or add a local override to satisfy contrast checks;
@@ -158,17 +158,17 @@ Literals use Iris through `--color-code-literal` in all three themes, including
 compact JSON previews. Minimum contrast across the five backgrounds above is
 4.996:1 in Pine, 4.665:1 in Moon and 4.532:1 in Dawn.
 
-| Syntax role                                   | Rosé Pine colour | VS Code scope                           |
-| --------------------------------------------- | ---------------- | --------------------------------------- |
-| JSON keys and query field names               | Pine (override)  | `support.type.property-name.json`       |
-| Strings                                       | Text (override)  | `string`                                |
-| Numbers, booleans, null and bare query values | Iris (override) | `constant.numeric`, `constant.language` |
-| Keywords, operators                           | Pine             | `keyword`                               |
-| Escapes                                       | Pine             | `constant.character.escape`             |
-| Punctuation                                   | Subtle           | `punctuation`                           |
-| Comments                                      | Subtle, italic (override) | `comment`                         |
-| Invalid syntax                                | Love             | `invalid`                               |
-| Other names                                   | Text             | `variable.other`                        |
+| Syntax role                                   | Rosé Pine colour          | VS Code scope                           |
+| --------------------------------------------- | ------------------------- | --------------------------------------- |
+| JSON keys and query field names               | Pine (override)           | `support.type.property-name.json`       |
+| Strings                                       | Text (override)           | `string`                                |
+| Numbers, booleans, null and bare query values | Iris (override)           | `constant.numeric`, `constant.language` |
+| Keywords, operators                           | Pine                      | `keyword`                               |
+| Escapes                                       | Pine                      | `constant.character.escape`             |
+| Punctuation                                   | Subtle                    | `punctuation`                           |
+| Comments                                      | Subtle, italic (override) | `comment`                               |
+| Invalid syntax                                | Love                      | `invalid`                               |
+| Other names                                   | Text                      | `variable.other`                        |
 
 This maps TextMate scope roles to the tags supplied by our Lezer parsers. Query
 field names and bare values use the corresponding JSON roles. Compact JSON

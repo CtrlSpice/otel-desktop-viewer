@@ -239,6 +239,7 @@
 
   .breakdown-label__name {
     @apply min-w-0 truncate;
+    color: var(--breakdown-label-color, inherit);
   }
 
   .breakdown-label__count {

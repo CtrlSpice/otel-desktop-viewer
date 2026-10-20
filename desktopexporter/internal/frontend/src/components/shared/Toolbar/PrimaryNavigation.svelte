@@ -137,7 +137,9 @@
       class:tab-active={active}
       aria-current={active ? 'page' : undefined}
       aria-label={item.label}
-      aria-describedby={count !== undefined ? `${countID}-${item.id}` : undefined}
+      aria-describedby={count !== undefined
+        ? `${countID}-${item.id}`
+        : undefined}
       onclick={event => goto(item.id, event)}
     >
       {#if item.iconType === 'hugeicon'}
@@ -153,12 +155,12 @@
       <span>{item.label}</span>
       <span
         id={`${countID}-${item.id}`}
-        class="badge badge-sm badge-ghost primary-navigation__count"
+        class="primary-navigation__count shrink-0 text-sm"
         class:invisible={count === undefined}
         aria-hidden={count === undefined}
         ><span class="sr-only"
           >{item.id === 'evals' ? 'Runs: ' : 'Results: '}</span
-        >{count === undefined ? '' : count}</span
+        >{count === undefined ? '' : `[${count}]`}</span
       >
     </a>
   {/each}
@@ -170,14 +172,8 @@
   }
 
   .primary-navigation__count {
-    min-width: 1.25rem;
-    width: auto;
-    height: auto;
-    aspect-ratio: 1;
-    padding: 0;
-    border-radius: 50%;
-    font-size: 0.625rem;
-    line-height: 1;
+    min-width: var(--header-counter-min-width);
+    color: var(--color-base-content);
     font-weight: 400;
     font-variant-numeric: tabular-nums;
   }

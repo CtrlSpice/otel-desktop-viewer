@@ -53,6 +53,8 @@
 </script>
 
 <script lang="ts">
+  import { tick, untrack } from 'svelte'
+  import { detailPanel } from '@/state/detail-panel.svelte'
   import Identifier from '@/components/shared/Identifier.svelte'
   import type { SpanData, TraceLogSummary } from '@/types/api-types'
   import { HugeiconsIcon } from '@hugeicons/svelte'
@@ -76,7 +78,7 @@
   import { getTimeContext } from '@/contexts/time-context.svelte'
   import { setSpanInQuery } from '@/route'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
-  import { spanCopyJSON } from './span-copy'
+  import { spanCopyJSON, spanExportURL } from './span-copy'
   import {
     revealDetailField,
     type DetailFieldTarget,
@@ -107,6 +109,31 @@
   }: Props = $props()
 
   let timeContext = getTimeContext()
+  $effect(() => {
+    const eventIndex = selectedEventIndex
+    const logRef = selectedLogRef
+    void detailPanel.revealRequest
+    if (!span || (eventIndex === null && logRef === null)) return
+
+    const target = document.getElementById(
+      logRef !== null ? `span-log-${logRef}` : `span-event-${eventIndex}`
+    )
+    untrack(() => {
+      const disclosure = target?.closest('details')
+      if (disclosure && !disclosure.open) {
+        disclosure.open = true
+        // Sync DetailStack before the child panels' pending scroll effects run.
+        disclosure.dispatchEvent(new Event('toggle'))
+      }
+    })
+    let cancelled = false
+    void tick().then(() => {
+      if (!cancelled) target?.scrollIntoView({ block: 'nearest' })
+    })
+    return () => {
+      cancelled = true
+    }
+  })
   const detailViewID = $props.id()
   let detailView = $state<DetailViewMode>('fields')
 
@@ -119,7 +146,12 @@
   }
 
   let isRoot = $derived(!span?.parentSpanID)
-  let spanJSON = $derived(span ? spanCopyJSON(span) : '')
+  const loadSpanJSON = $derived.by(() => {
+    const selected = span
+    return selected
+      ? (signal: AbortSignal) => spanCopyJSON(selected, signal)
+      : undefined
+  })
   let durationLabel = $derived(
     span ? formatDuration(span.endTime - span.startTime) : ''
   )
@@ -162,7 +194,7 @@
         <DetailViewTabs id={detailViewID} bind:view={detailView}>
           {#snippet action()}<ValueCopyButton
               grouped
-              text={spanJSON}
+              loadText={loadSpanJSON}
               label="span"
               tooltip="Copy span as JSON"
             />{/snippet}
@@ -177,7 +209,7 @@
           {
             id: 'span',
             label: 'Span',
-            url: `/export/traces/${span.traceID}?spanId=${span.spanID}`,
+            url: spanExportURL(span),
           },
         ]}
         reveal={fieldTarget}

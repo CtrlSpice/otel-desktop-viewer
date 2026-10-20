@@ -34,7 +34,12 @@
   import { computeHistogramBarColorScale } from '@/components/metrics/utils/heatmap-color-scale'
   import { themeSignal } from '@/state/theme.svelte'
   import { expBuckets } from '@/components/metrics/utils/histogram-quantile'
-  import { formatMetricValue, formatMetricHoverValue, formatMetricCount, metricNumberPrecision } from '@/components/metrics/utils/format-metric-value'
+  import {
+    formatMetricValue,
+    formatMetricHoverValue,
+    formatMetricCount,
+    metricNumberPrecision,
+  } from '@/components/metrics/utils/format-metric-value'
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import {
     HISTOGRAM_QUANTILE_DASH,
@@ -242,7 +247,9 @@
       dp.positiveBucketOffset,
       dp.positiveBucketCounts
     )
-    const digits = metricNumberPrecision(sourceBuckets.flatMap(bucket => [bucket.lo, bucket.hi]))
+    const digits = metricNumberPrecision(
+      sourceBuckets.flatMap(bucket => [bucket.lo, bucket.hi])
+    )
     return sourceBuckets.map((bucket, index) => {
       let key: string
       const zeroThreshold =
@@ -261,7 +268,7 @@
         label:
           zeroThreshold !== undefined
             ? exponentialZeroBucketLabel(zeroThreshold)
-             : formatHistogramRange(bucket.lo, bucket.hi, digits),
+            : formatHistogramRange(bucket.lo, bucket.hi, digits),
         count: bucket.cnt,
         lo:
           zeroThreshold !== undefined && zeroThreshold > 0
@@ -766,7 +773,9 @@
                     style:--marker-color={m.color}
                     style:--quantile-color={m.color}
                   >
-                    <title>{m.label} {formatMetricHoverValue(m.value)} {unit}</title>
+                    <title
+                      >{m.label} {formatMetricHoverValue(m.value)} {unit}</title
+                    >
                     <Line
                       x1={px}
                       x2={px}

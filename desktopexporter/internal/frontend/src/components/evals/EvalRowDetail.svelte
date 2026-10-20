@@ -6,7 +6,10 @@
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import EvalStatus from './EvalStatus.svelte'
   import AssessmentBadge from './AssessmentBadge.svelte'
-  import { cost, traceHref, type EvalRun } from './model'
+  import { cost, type EvalRun } from './model'
+  import EvalTelemetrySummaries from './EvalTelemetrySummaries.svelte'
+  import { evalTelemetrySummaries } from './eval-telemetry-summaries'
+  import type { SpanNode } from '@/types/api-types'
   import { completionLabel, completionTone } from './group-attempts'
   import type { EvalOutlineRow } from './eval-outline'
   import { formatDuration } from '@/utils/time'
@@ -16,13 +19,18 @@
     row,
     traceLevel = false,
     parentName,
+    telemetryNodes,
+    telemetryLoading = false,
   }: {
     run: EvalRun
     row: EvalOutlineRow
     traceLevel?: boolean
     parentName?: string
+    telemetryNodes?: Map<string, SpanNode>
+    telemetryLoading?: boolean
   } = $props()
   const attempt = $derived(row.attempt)
+  const references = $derived(evalTelemetrySummaries(run, row))
   const members = $derived(
     run.attempts.filter(item => item.caseID === row.caseID)
   )
@@ -42,7 +50,7 @@
         : tool?.message
   )
   const fields = $derived([
-    ...(!traceLevel
+    ...(!traceLevel && row.kind !== 'case'
       ? [{ name: 'case', value: members[0]?.name ?? row.caseID }]
       : []),
     ...(row.kind === 'case'
@@ -85,7 +93,7 @@
     label={completionLabel(row.state, row.internalFault)}
     tone={completionTone(row.state, row.internalFault)}
   />{/snippet}
-{#snippet copy()}{#if prose}<ValueCopyButton
+{#snippet copy()}{#if prose !== undefined}<ValueCopyButton
       text={prose}
       label={row.name}
     />{/if}{/snippet}
@@ -95,21 +103,19 @@
       {#each fields as field}<DetailField
           fieldName={field.name}
           fieldType="string"
-          showType={false}
           fieldValue={field.value}
         />{/each}
     </tbody>
   </table>
 {/snippet}
 {#snippet content()}
-  {#if prose}
+  {#if prose !== undefined}
     {#if traceLevel && tool}
       <table class="detail-fields w-full" aria-label={`${row.name} output`}>
         <tbody>
           <DetailField
             fieldName={tool.state === 'Error' ? 'error' : 'output'}
             fieldType="string"
-            showType={false}
             fieldValue={prose}
             multiline
           />
@@ -133,33 +139,28 @@
         <DetailField
           fieldName="score"
           fieldType="string"
-          showType={false}
           fieldValue={`${assessment.value ?? 'Unscored'} / ${definition?.maximum ?? 1}`}
         />
         <DetailField
           fieldName="explanation"
           fieldType="string"
-          showType={false}
           fieldValue={assessment.explanation}
           multiline
         />
         <DetailField
           fieldName="evaluator"
           fieldType="string"
-          showType={false}
           fieldValue={assessment.evaluator}
         />
         <DetailField
           fieldName="rubric"
           fieldType="string"
-          showType={false}
           fieldValue={assessment.rubric}
           multiline
         />
         <DetailField
           fieldName="estimate (CAD)"
           fieldType="string"
-          showType={false}
           fieldValue={cost(assessment.cost)}
         />
       </tbody>
@@ -168,29 +169,11 @@
   {#if traceLevel}{@render supportingFields()}{/if}
 {/snippet}
 {#snippet telemetry()}
-  {#if row.reference}
-    <table class="detail-fields w-full" aria-label={`${row.name} telemetry`}>
-      <tbody>
-        <DetailField
-          fieldName="traceId"
-          fieldType="bytes"
-          fieldValue={row.reference.traceID}
-          identifier
-        />
-        {#if row.reference.spanID}<DetailField
-            fieldName="spanId"
-            fieldType="bytes"
-            fieldValue={row.reference.spanID}
-            identifier
-          />{/if}
-      </tbody>
-    </table>
-    <p class="eval-row-detail__prose">
-      <a class="link link-primary" href={traceHref(row.reference)}
-        >Open in Traces</a
-      >
-    </p>
-  {/if}
+  <EvalTelemetrySummaries
+    entries={references}
+    nodes={telemetryNodes}
+    loading={telemetryLoading}
+  />
 {/snippet}
 
 {#if traceLevel}
@@ -220,12 +203,19 @@
     label={`${row.name} details`}
     storageKey={`eval-${row.kind}-detail-layout`}
   >
-    <DetailBubble label={row.name} trailing={status} action={copy}>
+    <DetailBubble
+      label={row.kind === 'case' ? 'Question' : row.name}
+      trailing={status}
+      action={copy}
+    >
       {@render content()}
     </DetailBubble>
-    {#if row.reference}
-      <DetailBubble label="Telemetry" initialOpen={false}
-        >{@render telemetry()}</DetailBubble
+    {#if references.length}
+      <DetailBubble
+        label="Telemetry"
+        count={references.length}
+        countLabel="references"
+        initialOpen={false}>{@render telemetry()}</DetailBubble
       >
     {/if}
   </DetailStack>

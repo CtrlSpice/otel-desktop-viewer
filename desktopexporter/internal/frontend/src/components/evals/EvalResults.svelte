@@ -64,6 +64,7 @@
     onSelect,
     onSelectRun,
     onResolveSelection,
+    onTraceViews,
     viewKey = $bindable('results'),
   }: {
     run: EvalRun
@@ -73,6 +74,7 @@
     onSelect?: (row: EvalOutlineRow) => void
     onSelectRun?: () => void
     onResolveSelection?: (row: EvalOutlineRow | undefined) => void
+    onTraceViews?: (traces: TraceData[], loading: boolean) => void
     viewKey?: string
   } = $props()
   const panelID = $props.id()
@@ -168,6 +170,7 @@
   )
   let timingsLoading = $state(false)
   let timingsFailed = $state(false)
+  $effect(() => onTraceViews?.(traceViews, timingsLoading))
   const timingKey = referenceKey
   const timingFor = (reference?: TelemetryReference) =>
     reference?.spanID ? spanTimings[timingKey(reference)] : undefined
@@ -391,6 +394,15 @@
     { key: 'graderCost', ...estimatedCost(attempts, 'graderCost') },
   ])
   const outline = $derived(buildEvalOutline(groups, run, traceIndex))
+  const selectionOutline = $derived(
+    attempts.length === run.attempts.length
+      ? outline
+      : buildEvalOutline(
+          groupAttempts(measuredAttempts, measuredAttempts),
+          run,
+          traceIndex
+        )
+  )
   const visibleRows = $derived(
     visibleOutlineRows(outline, enabledViews, overrides)
   )
@@ -404,7 +416,7 @@
   }
   $effect(() => {
     onResolveSelection?.(
-      outline.find(
+      selectionOutline.find(
         row =>
           row.id ===
           (selectedRowID ?? (selectedID ? `attempt/${selectedID}` : undefined))
@@ -747,13 +759,14 @@
         {@const group = groups.find(group => group.id === row.caseID)!}
         {@const item = row.attempt}
         {@const open = outlineOpen(row, enabledViews, overrides)}
+        {@const selected = selectedRowID
+          ? selectedRowID === row.id
+          : row.kind === 'attempt' && selectedID === item?.id}
         <tr
           class="table-row"
           class:eval-results__case={row.kind === 'case'}
           class:eval-results__attempt={row.kind !== 'case'}
-          class:table-row--selected={selectedRowID
-            ? selectedRowID === row.id
-            : row.kind === 'attempt' && selectedID === item?.id}
+          class:table-row--selected={selected}
           data-outline-id={row.id}
           data-row-kind={row.kind}
           data-depth={row.depth}
@@ -792,6 +805,7 @@
               <button
                 type="button"
                 onclick={() => onSelect?.(row)}
+                aria-pressed={selected}
                 class="block w-full min-w-0 truncate text-left"
                 class:eval-results__rep-label={row.kind === 'attempt'}
                 title={`${row.name} · ${completionLabel(row.state, row.internalFault)}`}

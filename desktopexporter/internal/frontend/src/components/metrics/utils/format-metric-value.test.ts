@@ -57,15 +57,20 @@ describe('shared graph number format', () => {
     expect(formatMetricHoverValue(1289254762)).toBe('1.28925 × 10⁹')
     expect(formatMetricHoverValue(0.123456789)).toBe('0.123457')
     expect(formatMetricCount(1234567)).toBe('1,234,567')
-    expect(formatMetricCount(18446744073709551615n)).toBe('18,446,744,073,709,551,615')
+    expect(formatMetricCount(18446744073709551615n)).toBe(
+      '18,446,744,073,709,551,615'
+    )
   })
 
   it('increases precision for distinct close bounds, without counting repeated bounds', () => {
     const values = [1.00001, 1.00002, 1.00002]
     const digits = metricNumberPrecision(values)
     expect(digits).toBe(6)
-    expect(values.map(value => formatMetricValue(value, { maxSignificantDigits: digits })))
-      .toEqual(['1.00001', '1.00002', '1.00002'])
+    expect(
+      values.map(value =>
+        formatMetricValue(value, { maxSignificantDigits: digits })
+      )
+    ).toEqual(['1.00001', '1.00002', '1.00002'])
     expect(metricNumberPrecision([1, 1 + Number.EPSILON])).toBe(17)
     expect(metricNumberPrecision([1, 2, Infinity])).toBe(3)
   })

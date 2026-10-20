@@ -252,7 +252,9 @@
             {#if record.kind === 'event'}
               <span class="activity-popover__name">
                 {#if name === 'exception'}
-                  <span class="size-2 shrink-0 rounded-full bg-error" aria-hidden="true"
+                  <span
+                    class="size-2 shrink-0 rounded-full bg-error"
+                    aria-hidden="true"
                   ></span>
                 {/if}
                 <span class="min-w-0 truncate" title={name}>{name}</span>
@@ -267,7 +269,8 @@
           </span>
           <span
             class="activity-popover__metadata text-rp-subtle"
-            class:activity-popover__metadata--with-dot={record.kind === 'log' || name === 'exception'}
+            class:activity-popover__metadata--with-dot={record.kind === 'log' ||
+              name === 'exception'}
           >
             {#if record.kind === 'event'}
               <span>Span event</span>

@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/svelte'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/svelte'
 import RawJsonInspector from './RawJsonInspector.svelte'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -94,28 +100,39 @@ describe('RawJsonInspector selection changes', () => {
 
   it('keeps large scopes behind the manual gate and bounds the requested preview', async () => {
     const request = await mockExport('GET')
-    request.fetch.mockResolvedValueOnce(new Response(null, {
-      headers: { 'Content-Length': String(3 * 1024 * 1024) },
-    }))
+    request.fetch.mockResolvedValueOnce(
+      new Response(null, {
+        headers: { 'Content-Length': String(3 * 1024 * 1024) },
+      })
+    )
     render(RawJsonInspector, {
       active: true,
       wholeURL: datapoint.url,
       scopes: [datapoint],
     })
-    await fireEvent.click(await screen.findByRole('button', { name: 'Load 2 MiB preview' }))
+    await fireEvent.click(
+      await screen.findByRole('button', { name: 'Load 2 MiB preview' })
+    )
     await waitFor(() => expect(request.reached).toHaveBeenCalledOnce())
     expect(screen.getByText('Loading JSON…')).toBeVisible()
-    expect(request.fetch.mock.calls[1]![1].headers).toEqual({ Range: 'bytes=0-2097151' })
+    expect(request.fetch.mock.calls[1]![1].headers).toEqual({
+      Range: 'bytes=0-2097151',
+    })
     await act(async () => request.resume())
     await screen.findByLabelText('Raw OTLP JSON')
   })
 
   it.each(['HEAD', 'GET'] as const)('retries after a %s error', async stage => {
     const request = await mockExport()
-    if (stage === 'GET') request.fetch.mockResolvedValueOnce(new Response(null, {
-      headers: { 'Content-Length': String(payload.length) },
-    }))
-    request.fetch.mockResolvedValueOnce(new Response('Export failed', { status: 500 }))
+    if (stage === 'GET')
+      request.fetch.mockResolvedValueOnce(
+        new Response(null, {
+          headers: { 'Content-Length': String(payload.length) },
+        })
+      )
+    request.fetch.mockResolvedValueOnce(
+      new Response('Export failed', { status: 500 })
+    )
     render(RawJsonInspector, {
       active: true,
       wholeURL: datapoint.url,
@@ -165,17 +182,26 @@ describe('RawJsonInspector selection changes', () => {
       return new Promise(resolve => (finishHead = resolve))
     })
     await view.rerender({ scopes: [{ ...datapoint, url: '/export/next' }] })
-    expect(request.signals.slice(0, 2).every(signal => signal.aborted)).toBe(true)
+    expect(request.signals.slice(0, 2).every(signal => signal.aborted)).toBe(
+      true
+    )
     await act(async () => request.resume())
     expect(screen.getByText('Loading JSON…')).toBeVisible()
     expect(screen.queryByLabelText('Raw OTLP JSON')).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
-    await act(async () => finishHead(new Response(null, {
-      headers: { 'Content-Length': String(payload.length) },
-    })))
+    await act(async () =>
+      finishHead(
+        new Response(null, {
+          headers: { 'Content-Length': String(payload.length) },
+        })
+      )
+    )
     await screen.findByLabelText('Raw OTLP JSON')
     expect(request.fetch.mock.calls.map(([url]) => url)).toEqual([
-      datapoint.url, datapoint.url, '/export/next', '/export/next',
+      datapoint.url,
+      datapoint.url,
+      '/export/next',
+      '/export/next',
     ])
   })
 
@@ -239,16 +265,27 @@ describe('RawJsonInspector metadata', () => {
     render(RawJsonInspector, {
       active: true,
       wholeURL: url,
-      scopes: [{ id: 'metric', label: 'Metric', url, previewURL: `${url}?includeDatapoints=false` }],
+      scopes: [
+        {
+          id: 'metric',
+          label: 'Metric',
+          url,
+          previewURL: `${url}?includeDatapoints=false`,
+        },
+      ],
     })
     await screen.findByLabelText('Raw OTLP JSON')
-    expect(request.fetch.mock.calls.map(([url, init]) => [url, init.method ?? 'GET'])).toEqual([
+    expect(
+      request.fetch.mock.calls.map(([url, init]) => [url, init.method ?? 'GET'])
+    ).toEqual([
       [`${url}?includeDatapoints=false`, 'HEAD'],
       [`${url}?includeDatapoints=false`, 'GET'],
     ])
     expect(screen.queryByRole('button', { name: /^Load/ })).toBeNull()
     expect(screen.queryByRole('link', { name: /^Download/ })).toBeNull()
-    expect(screen.getByText(/^OTLP JSON/)).toHaveTextContent('without datapoints')
+    expect(screen.getByText(/^OTLP JSON/)).toHaveTextContent(
+      'without datapoints'
+    )
   })
 
   it('keeps the format indicator and explains its size and provenance on hover instead of in paragraphs', () => {

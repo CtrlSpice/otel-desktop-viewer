@@ -142,8 +142,12 @@ async function expectRoundedAxes(page: Page, colour: string) {
   await expect(page.locator('.metric-chart-view .lc-grid')).toHaveCount(0)
 }
 
-test('time-series axes use the shared rounded Muted border', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('theme', 'rose-pine-moon'))
+test('time-series axes use the shared rounded Muted border', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem('theme', 'rose-pine-moon')
+  )
   await page.goto(`/metrics/${metric.metricRef}`)
   await expect(page.locator('.metric-time-series-chart')).toBeVisible()
   await expectRoundedAxes(page, 'rgb(110, 106, 134)')
@@ -240,7 +244,9 @@ test.describe('independent histogram aggregate loading', () => {
     })
   }
 
-  test('selected contributions paint behind intersecting heatmap quantiles', async ({ page }) => {
+  test('selected contributions paint behind intersecting heatmap quantiles', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 1000 })
     await page.emulateMedia({ reducedMotion: 'reduce' })
     const pending = await holdAggregates(page)
@@ -249,41 +255,79 @@ test.describe('independent histogram aggregate loading', () => {
     const quantiles = page.locator('.heatmap-quantile-line')
     await expect(cells).toHaveCount(3)
     await expect(quantiles).toHaveCount(3)
-    const cellGeometry = () => cells.evaluateAll(elements => elements.map(element =>
-      ['x', 'y', 'width', 'height', 'fill'].map(attr => element.getAttribute(attr))))
-    const paths = () => quantiles.evaluateAll(elements => elements.map(element => element.getAttribute('d')))
+    const cellGeometry = () =>
+      cells.evaluateAll(elements =>
+        elements.map(element =>
+          ['x', 'y', 'width', 'height', 'fill'].map(attr =>
+            element.getAttribute(attr)
+          )
+        )
+      )
+    const paths = () =>
+      quantiles.evaluateAll(elements =>
+        elements.map(element => element.getAttribute('d'))
+      )
     const originalCells = await cellGeometry()
     const originalPaths = await paths()
     await page.route('**/rpc', async route => {
       const request = route.request().postDataJSON()
       if (request.method !== 'getMetricAggregateView') return route.fallback()
-      await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result: {
-        aggregate: [bucket], scalarAggregate: null, contribution: [bucket],
-      } } })
+      await route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id: request.id,
+          result: {
+            aggregate: [bucket],
+            scalarAggregate: null,
+            contribution: [bucket],
+          },
+        },
+      })
     })
     // Route-selected Details datapoints use the same contribution request as a
     // selection in the Details table, without chart pinning changing the source.
-    await page.goto(`/metrics/${metric.metricRef}?time=all&htab=heatmap&hscope=window&series=first&dp=first-0`)
+    await page.goto(
+      `/metrics/${metric.metricRef}?time=all&htab=heatmap&hscope=window&series=first&dp=first-0`
+    )
     const textures = page.locator('.heatmap-contribution-texture')
     await expect(textures).toHaveCount(3)
-    await expect(page.locator('.heatmap-cell[data-contribution-count]')).toHaveCount(3)
+    await expect(
+      page.locator('.heatmap-cell[data-contribution-count]')
+    ).toHaveCount(3)
     expect(await cellGeometry()).toEqual(originalCells)
     expect(await paths()).toEqual(originalPaths)
-    expect(await quantiles.first().evaluate(element => {
-      const line = element as SVGPathElement
-      const point = line.getPointAtLength(line.getTotalLength() / 2)
-      const screenPoint = new DOMPoint(point.x, point.y).matrixTransform(line.getScreenCTM()!)
-      const contributions = document.querySelector('.heatmap-contributions')!
-      const overlays = line.closest('.heatmap-quantile-overlays')!
-      const intersects = [...contributions.querySelectorAll<SVGPathElement>('g[clip-path] > path:first-child')].some(fill =>
-        fill.isPointInFill(screenPoint.matrixTransform(fill.getScreenCTM()!.inverse())))
-      return {
-        intersects,
-        sameLayer: contributions.parentElement === overlays.parentElement,
-        contributionsFirst: Boolean(contributions.compareDocumentPosition(overlays) & Node.DOCUMENT_POSITION_FOLLOWING),
-      }
-    })).toEqual({ intersects: true, sameLayer: true, contributionsFirst: true })
-    const graph = page.getByRole('application', { name: 'Histogram heatmap', exact: true })
+    expect(
+      await quantiles.first().evaluate(element => {
+        const line = element as SVGPathElement
+        const point = line.getPointAtLength(line.getTotalLength() / 2)
+        const screenPoint = new DOMPoint(point.x, point.y).matrixTransform(
+          line.getScreenCTM()!
+        )
+        const contributions = document.querySelector('.heatmap-contributions')!
+        const overlays = line.closest('.heatmap-quantile-overlays')!
+        const intersects = [
+          ...contributions.querySelectorAll<SVGPathElement>(
+            'g[clip-path] > path:first-child'
+          ),
+        ].some(fill =>
+          fill.isPointInFill(
+            screenPoint.matrixTransform(fill.getScreenCTM()!.inverse())
+          )
+        )
+        return {
+          intersects,
+          sameLayer: contributions.parentElement === overlays.parentElement,
+          contributionsFirst: Boolean(
+            contributions.compareDocumentPosition(overlays) &
+            Node.DOCUMENT_POSITION_FOLLOWING
+          ),
+        }
+      })
+    ).toEqual({ intersects: true, sameLayer: true, contributionsFirst: true })
+    const graph = page.getByRole('application', {
+      name: 'Histogram heatmap',
+      exact: true,
+    })
     await graph.focus()
     await graph.press('ArrowRight')
     await expect(page.locator('.chart-keyboard-cursor-cell')).toBeVisible()
@@ -298,46 +342,87 @@ test.describe('independent histogram aggregate loading', () => {
     ['rose-pine-moon', 'rgb(110, 106, 134)'],
     ['rose-pine-dawn', 'rgb(99, 94, 111)'],
   ]) {
-    test(`rounded axes and header count legends stay legible in ${theme}`, async ({ page }) => {
-      await page.addInitScript(theme => localStorage.setItem('theme', theme), theme)
+    test(`rounded axes and header count legends stay legible in ${theme}`, async ({
+      page,
+    }) => {
+      await page.addInitScript(
+        theme => localStorage.setItem('theme', theme),
+        theme
+      )
       await page.setViewportSize({ width: 1440, height: 1000 })
       await page.emulateMedia({ reducedMotion: 'reduce' })
       const pending = await holdAggregates(page)
       for (const { route } of pending) await respond(route)
       for (const tab of ['Heatmap', 'Histogram']) {
         await page.getByRole('tab', { name: tab, exact: true }).click()
-        const header = page.getByRole('region', { name: 'Metric chart', exact: true })
-        const legend = header.getByRole('list', { name: `${tab} count scale`, exact: true })
+        const header = page.getByRole('region', {
+          name: 'Metric chart',
+          exact: true,
+        })
+        const legend = header.getByRole('list', {
+          name: `${tab} count scale`,
+          exact: true,
+        })
         await expect(legend).toBeVisible()
-        await expect(legend.locator('.heatmap-legend__swatch').first()).toHaveCSS('width', '8px')
-        await expect(legend.locator('.heatmap-legend__swatch').first()).toHaveCSS('height', '8px')
-        await expect(legend.locator('.heatmap-legend__swatch').first()).toHaveCSS('border-top-width', '0px')
+        await expect(
+          legend.locator('.heatmap-legend__swatch').first()
+        ).toHaveCSS('width', '8px')
+        await expect(
+          legend.locator('.heatmap-legend__swatch').first()
+        ).toHaveCSS('height', '8px')
+        await expect(
+          legend.locator('.heatmap-legend__swatch').first()
+        ).toHaveCSS('border-top-width', '0px')
         await expect(legend).toHaveCSS('font-size', '14px')
-        await expect(header.locator('[aria-label="Chart time range"]')).toHaveCount(0)
-        await expect(page.locator('#metric-chart-tabpanel .heatmap-legend')).toHaveCount(0)
+        await expect(
+          header.locator('[aria-label="Chart time range"]')
+        ).toHaveCount(0)
+        await expect(
+          page.locator('#metric-chart-tabpanel .heatmap-legend')
+        ).toHaveCount(0)
         await expectRoundedAxes(page, colour)
       }
       await page.setViewportSize({ width: 900, height: 1000 })
-      const header = page.getByRole('region', { name: 'Metric chart', exact: true })
+      const header = page.getByRole('region', {
+        name: 'Metric chart',
+        exact: true,
+      })
       const entries = header.locator('.legend-rows')
       await expect(entries).toHaveCSS('flex-direction', 'column')
-      await expect.poll(() => header.evaluate(e => {
-        const header = e.getBoundingClientRect()
-        return [...e.querySelectorAll('.legend-rows__entry')].every(entry => {
-          const box = entry.getBoundingClientRect()
-          return box.left >= header.left && box.right <= header.right && box.bottom <= header.bottom
-        })
-      })).toBe(true)
+      await expect
+        .poll(() =>
+          header.evaluate(e => {
+            const header = e.getBoundingClientRect()
+            return [...e.querySelectorAll('.legend-rows__entry')].every(
+              entry => {
+                const box = entry.getBoundingClientRect()
+                return (
+                  box.left >= header.left &&
+                  box.right <= header.right &&
+                  box.bottom <= header.bottom
+                )
+              }
+            )
+          })
+        )
+        .toBe(true)
       await expectRoundedAxes(page, colour)
     })
   }
 
-  test('pinned heatmap descriptions dismiss by pointer and keyboard and can reopen', async ({ page }) => {
+  test('pinned heatmap descriptions dismiss by pointer and keyboard and can reopen', async ({
+    page,
+  }) => {
     const pending = await holdAggregates(page)
     for (const { route } of pending) await respond(route)
-    const graph = page.getByRole('application', { name: 'Histogram heatmap', exact: true })
+    const graph = page.getByRole('application', {
+      name: 'Histogram heatmap',
+      exact: true,
+    })
     const card = page.locator('.metric-heatmap-chart .chart-sticky__card')
-    const close = page.getByRole('button', { name: 'Dismiss pinned bucket description' })
+    const close = page.getByRole('button', {
+      name: 'Dismiss pinned bucket description',
+    })
     const url = page.url()
     await graph.focus()
     await graph.press('Enter')
@@ -357,7 +442,9 @@ test.describe('independent histogram aggregate loading', () => {
     expect(page.url()).toBe(url)
   })
 
-  test('dense heatmaps join colours without changing cells or adding dot grids', async ({ page }) => {
+  test('dense heatmaps join colours without changing cells or adding dot grids', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 2400, height: 1000 })
     const pending = await holdAggregates(page)
     const aggregate = Array.from({ length: 81 }, (_, column) => ({
@@ -365,55 +452,107 @@ test.describe('independent histogram aggregate loading', () => {
       timestamp: String(BigInt(startMs + column * 1000) * 1_000_000n),
       explicitBounds: [1, 2, 3, 4],
       bucketCounts: Array.from({ length: 5 }, (_, row) =>
-        column === 70 || (column === 40 && row === 2) ? 0 : 1 + (column + row) % 12),
+        column === 70 || (column === 40 && row === 2)
+          ? 0
+          : 1 + ((column + row) % 12)
+      ),
     }))
-    for (const { route } of pending) await route.fulfill({
-      json: { jsonrpc: '2.0', id: route.request().postDataJSON().id,
-        result: { aggregate, scalarAggregate: null } },
-    })
+    for (const { route } of pending)
+      await route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id: route.request().postDataJSON().id,
+          result: { aggregate, scalarAggregate: null },
+        },
+      })
     const group = page.locator('.heatmap-blobs')
     await expect(page.locator('.heatmap-cell')).toHaveCount(399)
-    const cells = () => page.locator('.heatmap-cell').evaluateAll(elements =>
-      elements.map(element => {
-        const rect = element as SVGRectElement
-        return {
-          column: Math.round(rect.x.baseVal.value / rect.width.baseVal.value),
-          row: Math.round(rect.y.baseVal.value / rect.height.baseVal.value),
-          fill: rect.getAttribute('fill'),
-        }
-      }).sort((a, b) => a.column - b.column || a.row - b.row))
+    const cells = () =>
+      page.locator('.heatmap-cell').evaluateAll(elements =>
+        elements
+          .map(element => {
+            const rect = element as SVGRectElement
+            return {
+              column: Math.round(
+                rect.x.baseVal.value / rect.width.baseVal.value
+              ),
+              row: Math.round(rect.y.baseVal.value / rect.height.baseVal.value),
+              fill: rect.getAttribute('fill'),
+            }
+          })
+          .sort((a, b) => a.column - b.column || a.row - b.row)
+      )
     await expect(group).not.toHaveClass(/heatmap-blobs--joined/)
     const originalCells = await cells()
-    for (const [width, joined] of [[1200, true], [2400, false]] as const) {
+    for (const [width, joined] of [
+      [1200, true],
+      [2400, false],
+    ] as const) {
       await page.setViewportSize({ width, height: 1000 })
-      await expect.poll(() => group.evaluate(element => element.classList.contains('heatmap-blobs--joined'))).toBe(joined)
+      await expect
+        .poll(() =>
+          group.evaluate(element =>
+            element.classList.contains('heatmap-blobs--joined')
+          )
+        )
+        .toBe(joined)
       expect(await cells()).toEqual(originalCells)
       if (joined) {
         await expect(page.locator('.heatmap-blob')).toHaveCount(2)
-        await expect(page.locator('.heatmap-blob-fill,.heatmap-blob-outline')).toHaveCount(0)
+        await expect(
+          page.locator('.heatmap-blob-fill,.heatmap-blob-outline')
+        ).toHaveCount(0)
         await expect(page.locator('.heatmap-joined-outline')).toHaveCount(2)
-        const outlines = await page.locator('.heatmap-blob').evaluateAll(elements =>
-          elements.map(element => {
-            const outline = element.querySelector<SVGGElement>('.heatmap-joined-outline')!
-            const maskID = outline.getAttribute('mask')!.slice(5, -1)
-            const mask = document.getElementById(maskID)!
-            const clipID = element.getAttribute('clip-path')!.slice(5, -1)
-            const clip = document.getElementById(clipID)!
-            return {
-              samePerimeter: mask.querySelector('path')!.getAttribute('d') === clip.querySelector('path')!.getAttribute('d'),
-              rings: (mask.querySelector('path')!.getAttribute('d')!.match(/M/g) ?? []).length,
-              pointerEvents: getComputedStyle(outline).pointerEvents,
-              colourWeight: getComputedStyle(outline).getPropertyValue('--heatmap-cell-colour-weight').trim(),
-              noCellStrokes: [...outline.querySelectorAll('rect')].every(rect => getComputedStyle(rect).stroke === 'none'),
-              sameColours: [...outline.querySelectorAll('rect')].every((rect, index) =>
-                rect.getAttribute('fill') === element.querySelectorAll('.heatmap-cell')[index]!.getAttribute('fill')),
-            }
-          }))
+        const outlines = await page
+          .locator('.heatmap-blob')
+          .evaluateAll(elements =>
+            elements.map(element => {
+              const outline = element.querySelector<SVGGElement>(
+                '.heatmap-joined-outline'
+              )!
+              const maskID = outline.getAttribute('mask')!.slice(5, -1)
+              const mask = document.getElementById(maskID)!
+              const clipID = element.getAttribute('clip-path')!.slice(5, -1)
+              const clip = document.getElementById(clipID)!
+              return {
+                samePerimeter:
+                  mask.querySelector('path')!.getAttribute('d') ===
+                  clip.querySelector('path')!.getAttribute('d'),
+                rings: (
+                  mask.querySelector('path')!.getAttribute('d')!.match(/M/g) ??
+                  []
+                ).length,
+                pointerEvents: getComputedStyle(outline).pointerEvents,
+                colourWeight: getComputedStyle(outline)
+                  .getPropertyValue('--heatmap-cell-colour-weight')
+                  .trim(),
+                noCellStrokes: [...outline.querySelectorAll('rect')].every(
+                  rect => getComputedStyle(rect).stroke === 'none'
+                ),
+                sameColours: [...outline.querySelectorAll('rect')].every(
+                  (rect, index) =>
+                    rect.getAttribute('fill') ===
+                    element
+                      .querySelectorAll('.heatmap-cell')
+                      [index]!.getAttribute('fill')
+                ),
+              }
+            })
+          )
         expect(outlines.map(outline => outline.rings).sort()).toEqual([1, 2])
         for (const outline of outlines) {
-          expect(outline).toMatchObject({ samePerimeter: true, pointerEvents: 'none', colourWeight: '85%', sameColours: true, noCellStrokes: true })
+          expect(outline).toMatchObject({
+            samePerimeter: true,
+            pointerEvents: 'none',
+            colourWeight: '85%',
+            sameColours: true,
+            noCellStrokes: true,
+          })
         }
-        await expect(page.locator('.heatmap-cell').first()).toHaveCSS('fill-opacity', '1')
+        await expect(page.locator('.heatmap-cell').first()).toHaveCSS(
+          'fill-opacity',
+          '1'
+        )
       } else {
         await expect(page.locator('.heatmap-joined-outline')).toHaveCount(0)
       }
@@ -424,44 +563,77 @@ test.describe('independent histogram aggregate loading', () => {
   test('count legends fill available width as it changes', async ({ page }) => {
     await page.setViewportSize({ width: 2400, height: 1000 })
     const pending = await holdAggregates(page)
-    for (const { route } of pending) await respond(route, {
-      ...bucket,
-      count: 78,
-      explicitBounds: Array.from({ length: 11 }, (_, index) => index + 1),
-      bucketCounts: Array.from({ length: 12 }, (_, index) => index + 1),
-    })
+    for (const { route } of pending)
+      await respond(route, {
+        ...bucket,
+        count: 78,
+        explicitBounds: Array.from({ length: 11 }, (_, index) => index + 1),
+        bucketCounts: Array.from({ length: 12 }, (_, index) => index + 1),
+      })
     for (const tab of ['Heatmap', 'Histogram']) {
       await page.getByRole('tab', { name: tab, exact: true }).click()
-      const legend = page.getByRole('list', { name: `${tab} count scale`, exact: true })
+      const legend = page.getByRole('list', {
+        name: `${tab} count scale`,
+        exact: true,
+      })
       await expect(legend.getByRole('listitem')).toHaveCount(12)
       const labels = await legend.getByRole('listitem').allTextContents()
       const dimensions = await legend.evaluate(element => ({
-        widths: [...element.querySelectorAll('.legend-rows__entry')]
-          .map(entry => entry.getBoundingClientRect().width),
+        widths: [...element.querySelectorAll('.legend-rows__entry')].map(
+          entry => entry.getBoundingClientRect().width
+        ),
         gap: Number.parseFloat(getComputedStyle(element).columnGap),
       }))
-      for (const [count, expected] of [[12, [12]], [9, [9, 3]], [6, [6, 6]], [5, [5, 5, 2]], [3, [3, 3, 3, 3]], [12, [12]]] as const) {
+      for (const [count, expected] of [
+        [12, [12]],
+        [9, [9, 3]],
+        [6, [6, 6]],
+        [5, [5, 5, 2]],
+        [3, [3, 3, 3, 3]],
+        [12, [12]],
+      ] as const) {
         const rowWidths = []
         for (let start = 0; start < 12; start += count) {
-          rowWidths.push(dimensions.widths.slice(start, start + count)
-            .reduce((sum, width) => sum + width, 0) + (count - 1) * dimensions.gap)
+          rowWidths.push(
+            dimensions.widths
+              .slice(start, start + count)
+              .reduce((sum, width) => sum + width, 0) +
+              (count - 1) * dimensions.gap
+          )
         }
         const available = Math.ceil(Math.max(...rowWidths))
         await legend.evaluate((element, width) => {
           element.style.maxWidth = `${width}px`
         }, available)
-        await expect.poll(() => legend.locator('.legend-rows__row').evaluateAll(rows =>
-          rows.map(row => row.querySelectorAll('.legend-rows__entry').length)
-        )).toEqual(expected)
-        await expect.poll(() => legend.evaluate(element => {
-          const bounds = element.getBoundingClientRect()
-          return [...element.querySelectorAll('.legend-rows__entry')].every(entry =>
-            entry.getBoundingClientRect().right <= bounds.right + 0.5
+        await expect
+          .poll(() =>
+            legend
+              .locator('.legend-rows__row')
+              .evaluateAll(rows =>
+                rows.map(
+                  row => row.querySelectorAll('.legend-rows__entry').length
+                )
+              )
           )
-        })).toBe(true)
-        expect(await legend.getByRole('listitem').allTextContents()).toEqual(labels)
+          .toEqual(expected)
+        await expect
+          .poll(() =>
+            legend.evaluate(element => {
+              const bounds = element.getBoundingClientRect()
+              return [...element.querySelectorAll('.legend-rows__entry')].every(
+                entry =>
+                  entry.getBoundingClientRect().right <= bounds.right + 0.5
+              )
+            })
+          )
+          .toBe(true)
+        expect(await legend.getByRole('listitem').allTextContents()).toEqual(
+          labels
+        )
       }
-      await legend.evaluate(element => element.style.removeProperty('max-width'))
+      await legend.evaluate(element =>
+        element.style.removeProperty('max-width')
+      )
     }
   })
 
@@ -1529,6 +1701,114 @@ test('raw plot clicks still select source points beneath passive overlays', asyn
     .toBe(selectedID)
 })
 
+test('Raw selection reveals a collapsed Series section and preserves Metric disclosure state', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1000 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto(`/metrics/${metric.metricRef}?agg=raw`)
+  const details = page.getByRole('region', {
+    name: 'Metric details',
+    exact: true,
+  })
+  const sections = details.locator('.detail-bubble__disclosure')
+  const series = sections.nth(0)
+  const fields = sections.nth(1)
+  await series.locator(':scope > summary').click()
+  await expect(series).not.toHaveAttribute('open')
+  await expect(fields).toHaveAttribute('open')
+  const graph = page.getByRole('application', {
+    name: 'Metric time series chart',
+    exact: true,
+  })
+  await graph.focus()
+  await graph.press('Home')
+  await graph.press('Enter')
+  await expect(series).toHaveAttribute('open')
+  await expect(fields).toHaveAttribute('open')
+  const selectedID = new URL(page.url()).searchParams.get('dp')!
+  const selected = series.locator(`[data-dp-id="${selectedID}"]`)
+  await expect(selected).toHaveAttribute('aria-selected', 'true')
+  await expect(selected).toBeInViewport()
+  // A manual close remains closed until the same datapoint is activated again.
+  await series.locator(':scope > summary').click()
+  await expect(series).not.toHaveAttribute('open')
+  await graph.focus()
+  await graph.press('Enter')
+  await expect(series).toHaveAttribute('open')
+  await expect(selected).toBeInViewport()
+  await expect(fields).toHaveAttribute('open')
+})
+
+test('dense pinned legends scroll by wheel and keyboard at the 280px chart floor', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1920, height: 1000 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.goto(`/metrics/${metric.metricRef}?agg=raw`)
+  // Mount the real shared card with a dense readout at the supported chart floor.
+  // Raw currently pins only one series; this isolates overflow from selection policy.
+  await page.evaluate(async () => {
+    const path = '/src/test/DenseChartStickyHarness.svelte'
+    const { default: Harness, mount } = await import(path)
+    mount(Harness, { target: document.body })
+  })
+  await expect(page.locator('.dense-chart-fixture')).toHaveCSS(
+    'height',
+    '280px'
+  )
+  const card = page.getByRole('region', {
+    name: 'Pinned chart selection',
+    exact: true,
+  })
+  await expect(card).toBeVisible()
+  await expect(card).toHaveCSS('pointer-events', 'auto')
+  await expect(page.locator('.chart-sticky')).toHaveCSS(
+    'pointer-events',
+    'none'
+  )
+  expect(
+    await card.evaluate(element => element.scrollHeight > element.clientHeight)
+  ).toBe(true)
+  const selectedURL = page.url()
+  await card.hover()
+  await page.mouse.wheel(0, 160)
+  await expect
+    .poll(() => card.evaluate(element => element.scrollTop))
+    .toBeGreaterThan(0)
+  await card.focus()
+  await card.press('Home')
+  await expect.poll(() => card.evaluate(element => element.scrollTop)).toBe(0)
+  await card.press('End')
+  await expect
+    .poll(() =>
+      card.evaluate(
+        element =>
+          element.scrollTop + element.clientHeight >= element.scrollHeight - 1
+      )
+    )
+    .toBe(true)
+  await expect(
+    card.locator('.chart-selection-legend__value').last()
+  ).toBeInViewport()
+  await expect(page).toHaveURL(selectedURL)
+  await expect(
+    page.getByRole('button', { name: 'Plot selections: 0', exact: true })
+  ).toBeVisible()
+  // The overlay outside the card must still hit the underlying chart.
+  expect(
+    await page.locator('.chart-sticky').evaluate(element => {
+      const box = element.getBoundingClientRect()
+      const hit = document.elementFromPoint(box.left + 2, box.top + 2)
+      return hit !== element && !element.contains(hit)
+    })
+  ).toBe(true)
+  await page.mouse.click(52, 102)
+  await expect(
+    page.getByRole('button', { name: 'Plot selections: 1', exact: true })
+  ).toBeVisible()
+})
+
 test('series open by their headers, one at a time, with one combined table', async ({
   page,
 }) => {
@@ -1879,15 +2159,23 @@ test('header tabs use icons and tooltips only when their panel is narrow', async
   await expect(json).toHaveAttribute('aria-selected', 'true')
 })
 
-test('metric JSON loads without datapoints or a Load button while Copy and Download keep the complete metric', async ({ page, context }) => {
+test('metric JSON loads without datapoints or a Load button while Copy and Download keep the complete metric', async ({
+  page,
+  context,
+}) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.setViewportSize({ width: 1920, height: 1000 })
-  const metadata = '{"resourceMetrics":[{"scopeMetrics":[{"metrics":[{"name":"request.duration","gauge":{}}]}]}]}'
-  const complete = '{"resourceMetrics":[{"scopeMetrics":[{"metrics":[{"name":"request.duration","gauge":{"dataPoints":[{"asInt":"9223372036854775807"}]}}]}]}]}'
+  const metadata =
+    '{"resourceMetrics":[{"scopeMetrics":[{"metrics":[{"name":"request.duration","gauge":{}}]}]}]}'
+  const complete =
+    '{"resourceMetrics":[{"scopeMetrics":[{"metrics":[{"name":"request.duration","gauge":{"dataPoints":[{"asInt":"9223372036854775807"}]}}]}]}]}'
   const requests: string[] = []
   await page.route('**/export/metrics/**', async route => {
     const url = new URL(route.request().url())
-    const text = url.searchParams.get('includeDatapoints') === 'false' ? metadata : complete
+    const text =
+      url.searchParams.get('includeDatapoints') === 'false'
+        ? metadata
+        : complete
     requests.push(`${route.request().method()} ${url.search}`)
     await route.fulfill({
       contentType: 'application/json',
@@ -1896,19 +2184,32 @@ test('metric JSON loads without datapoints or a Load button while Copy and Downl
     })
   })
   await page.goto(`/metrics/${metric.metricRef}?agg=raw`)
-  const detail = page.getByRole('region', { name: 'Metric details', exact: true })
+  const detail = page.getByRole('region', {
+    name: 'Metric details',
+    exact: true,
+  })
   const bubble = detail.locator('.detail-bubble__with-action')
   await bubble.getByRole('tab', { name: 'JSON', exact: true }).click()
-  const json = bubble.getByRole('region', { name: 'Raw JSON inspector', exact: true })
+  const json = bubble.getByRole('region', {
+    name: 'Raw JSON inspector',
+    exact: true,
+  })
   await expect(json.locator('.cm-content')).toContainText('request.duration')
   await expect(json.locator('.cm-content')).not.toContainText('dataPoints')
   await expect(json.getByRole('button', { name: /^Load/ })).toHaveCount(0)
-  expect(requests).toEqual(['HEAD ?includeDatapoints=false', 'GET ?includeDatapoints=false'])
+  expect(requests).toEqual([
+    'HEAD ?includeDatapoints=false',
+    'GET ?includeDatapoints=false',
+  ])
   await bubble.getByRole('button', { name: 'Copy metric', exact: true }).click()
-  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(complete)
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(complete)
   expect(requests.at(-1)).toBe('GET ')
   const download = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Download metric', exact: true }).click()
+  await page
+    .getByRole('button', { name: 'Download metric', exact: true })
+    .click()
   expect(await (await download).failure()).toBeNull()
   expect(requests.at(-1)).toBe('GET ')
 })

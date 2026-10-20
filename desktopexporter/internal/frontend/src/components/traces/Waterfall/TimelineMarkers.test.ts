@@ -120,14 +120,21 @@ describe('TimelineMarkers', () => {
     await fireEvent.click(button)
     const rows = screen.getAllByRole('button', { name: /Span event|Log/ })
     expect(rows[0]).toHaveTextContent(/exception\s+\+10 ns\s+Span event/)
-    expect(rows[1]).toHaveTextContent(/ERROR \(17\)\s+\+11 ns\s+Log\s+·\s+payment\.failed/)
+    expect(rows[1]).toHaveTextContent(
+      /ERROR \(17\)\s+\+11 ns\s+Log\s+·\s+payment\.failed/
+    )
     expect(screen.getByText('exception')).toHaveAttribute('title', 'exception')
-    expect(screen.getByText('Span event').closest('.activity-popover__metadata'))
-      .toHaveClass('text-rp-subtle')
-    expect(rows[0]!.querySelector('.bg-error')).toHaveAttribute('aria-hidden', 'true')
+    expect(
+      screen.getByText('Span event').closest('.activity-popover__metadata')
+    ).toHaveClass('text-rp-subtle')
+    expect(rows[0]!.querySelector('.bg-error')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    )
     expect(rows[0]!.querySelector('.text-error')).toBeNull()
-    expect(screen.getByText('Log').closest('.activity-popover__metadata'))
-      .toHaveClass('text-rp-subtle')
+    expect(
+      screen.getByText('Log').closest('.activity-popover__metadata')
+    ).toHaveClass('text-rp-subtle')
     expect(rows.every(row => !row.querySelector('.badge'))).toBe(true)
 
     await fireEvent.click(rows[1]!)
@@ -150,7 +157,8 @@ describe('TimelineMarkers', () => {
 
     await fireEvent.focus(screen.getByRole('button', { name: 'Select 1 log' }))
     expect(
-      screen.getByRole('button', { name: 'Select 1 log' })
+      screen
+        .getByRole('button', { name: 'Select 1 log' })
         .querySelector('.timeline-marker__plus')
     ).toBeNull()
     const row = screen.getByRole('button', { name: /Log/ })

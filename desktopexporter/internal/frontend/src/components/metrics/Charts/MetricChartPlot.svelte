@@ -1,6 +1,9 @@
 <script module lang="ts">
   import { formatChartAxisTime } from '@/components/metrics/utils/chart-time-axis'
-  import { formatMetricValue, formatMetricCount } from '@/components/metrics/utils/format-metric-value'
+  import {
+    formatMetricValue,
+    formatMetricCount,
+  } from '@/components/metrics/utils/format-metric-value'
   import type { Timezone } from '@/utils/time'
 
   const rotatedX = { rotate: 315, textAnchor: 'end' } as const

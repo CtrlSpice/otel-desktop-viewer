@@ -9,6 +9,13 @@
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import EvalDetail from '@/components/evals/EvalDetail.svelte'
   import EvalRowDetail from '@/components/evals/EvalRowDetail.svelte'
+  import EvalSnapshotLibrary from '@/components/evals/EvalSnapshotLibrary.svelte'
+  import { projectEvalSnapshot } from '@/components/evals/snapshot-adapters'
+  import {
+    telemetryAPI,
+    isAbortError,
+    type EvalSnapshot,
+  } from '@/services/telemetry-service'
   import {
     buildEvalOutline,
     type EvalOutlineRow,
@@ -21,6 +28,7 @@
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
   import type { ImportFailure } from '@/types/import-types'
   import { detailPanel } from '@/state/detail-panel.svelte'
+  import type { TraceData } from '@/types/api-types'
 
   let {
     importFailure = null,
@@ -31,22 +39,52 @@
   } = $props()
   const route = getRouteContext()
   const query = $derived(route.route.query)
-  const run = $derived(
-    exampleRuns.find(item => item.id === query.run) ?? exampleRuns[0]
+  const snapshotID = $derived(query.snapshot)
+  let snapshot = $state<EvalSnapshot>()
+  let snapshotLoading = $state(false)
+  let snapshotError = $state('')
+  const currentSnapshot = $derived(
+    snapshot?.id === query.snapshot ? snapshot : undefined
   )
-  const attempt = $derived(run.attempts.find(item => item.id === query.attempt))
+  const projection = $derived(
+    currentSnapshot
+      ? projectEvalSnapshot({
+          id: currentSnapshot.id,
+          name: currentSnapshot.name,
+          source: currentSnapshot.source,
+          format: currentSnapshot.format,
+          payload: currentSnapshot.originalJSON,
+        })
+      : undefined
+  )
+  const runs = $derived(
+    query.snapshot
+      ? projection?.status === 'supported'
+        ? projection.runs
+        : []
+      : exampleRuns
+  )
+  const run = $derived(runs.find(item => item.id === query.run) ?? runs[0])
+  const attempt = $derived(
+    run?.attempts.find(item => item.id === query.attempt)
+  )
   let resolvedRow = $state<EvalOutlineRow>()
+  let traceViews = $state<TraceData[]>([])
+  let telemetryLoading = $state(false)
+  const telemetryNodes = $derived(indexEvalTraces(traceViews).nodes)
   let evalView = $state('results')
   const detailRowID = $derived(
     query.row ??
       (evalView === 'time' && attempt ? `attempt/${attempt.id}` : undefined)
   )
   const fallbackOutline = $derived(
-    buildEvalOutline(
-      groupAttempts(run.attempts, run.attempts),
-      run,
-      indexEvalTraces([])
-    )
+    run
+      ? buildEvalOutline(
+          groupAttempts(run.attempts, run.attempts),
+          run,
+          indexEvalTraces([])
+        )
+      : []
   )
   const selectedRow = $derived(
     detailRowID && resolvedRow?.id === detailRowID
@@ -59,6 +97,7 @@
     fallbackOutline.find(row => row.id === selectedRow?.parentID)?.name
   )
   const results = $derived.by(() => {
+    if (!run) return []
     const text = (query.q ?? '').toLowerCase().trim()
     return run.attempts.filter(item => {
       const searchable = [
@@ -82,6 +121,49 @@
   const selectedIndex = $derived(
     results.findIndex(item => item.id === attempt?.id)
   )
+  const sourcePointer = $derived(
+    projection?.status === 'supported'
+      ? projection.rows.find(
+          row => row.attemptID === (selectedRow?.attempt?.id ?? attempt?.id)
+        )?.pointer
+      : undefined
+  )
+
+  $effect(() => {
+    const id = snapshotID
+    snapshot = undefined
+    snapshotError = ''
+    snapshotLoading = !!id
+    if (!id) return
+    const controller = new AbortController()
+    telemetryAPI
+      .getEvalSnapshot(id, controller.signal)
+      .then(value => {
+        if (!controller.signal.aborted) snapshot = value
+      })
+      .catch(error => {
+        if (!controller.signal.aborted && !isAbortError(error))
+          snapshotError =
+            error instanceof Error ? error.message : 'Could not open snapshot.'
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) snapshotLoading = false
+      })
+    return () => controller.abort()
+  })
+
+  $effect(() => {
+    void run?.id
+    resolvedRow = undefined
+    traceViews = []
+    telemetryLoading = false
+  })
+
+  // A snapshot locator without a run opens its first projection; store the
+  // projected identity so reloading or sharing the route preserves selection.
+  $effect(() => {
+    if (query.snapshot && run && !query.run) update({ run: run.id }, true)
+  })
 
   function update(changes: Record<string, string | null>, replace = false) {
     navigate(
@@ -94,10 +176,12 @@
     update({ run: id, attempt: null, row: null })
   }
   function showDetail(attempt: string | null) {
+    if (!run) return
     detailPanel.reveal()
     update({ run: run.id, attempt, row: null })
   }
   function selectRow(row: EvalOutlineRow) {
+    if (!run) return
     detailPanel.reveal()
     update({
       run: run.id,
@@ -109,13 +193,16 @@
     const item = results[index]
     if (item) showDetail(item.id)
   }
+  function showSynthetic() {
+    update({ snapshot: null, run: 'direct', attempt: null, row: null, q: null })
+  }
 </script>
 
 <PageLayout
   mainSurface="base"
-  items={exampleRuns}
-  navigationCount={exampleRuns.length}
-  selectedID={run.id}
+  items={runs}
+  navigationCount={runs.length}
+  selectedID={run?.id ?? null}
   drawerID="signal-drawer"
   drawerLabel="Evals"
   itemKey={item => item.id}
@@ -160,39 +247,74 @@
     <EvalRunSummary run={item} {selected} onclick={selectRun} />
   {/snippet}
   {#snippet main()}
+    <EvalSnapshotLibrary
+      snapshot={currentSnapshot}
+      {projection}
+      snapshotID={query.snapshot}
+      loading={snapshotLoading}
+      error={snapshotError}
+      {sourcePointer}
+      onOpen={id =>
+        update({ snapshot: id, run: null, attempt: null, row: null, q: null })}
+      onDelete={id => {
+        if (query.snapshot === id) showSynthetic()
+      }}
+      onSynthetic={showSynthetic}
+    />
     {#if importFailure}<div class="alert alert-error">
         Import issue in {importFailure.fileName}.
         <a class="link" href={`/#${INGESTION_ISSUES_ID}`} onclick={onViewIssue}
           >View issue</a
         >
       </div>{/if}
-    <EvalResults
-      bind:viewKey={evalView}
-      {run}
-      attempts={results}
-      selectedID={attempt?.id}
-      selectedRowID={query.row}
-      onSelect={selectRow}
-      onSelectRun={() => showDetail(null)}
-      onResolveSelection={row => (resolvedRow = row)}
-    />
-    {#if !results.length}<div class="p-6 text-sm">
-        <p>No matching attempts</p>
-        <button
-          class="btn btn-ghost btn-sm"
-          onclick={() => update({ q: null }, true)}>Clear search</button
-        >
-      </div>{/if}
+    {#if run}
+      {#key `${query.snapshot ?? 'synthetic'}/${run.id}`}
+        <EvalResults
+          bind:viewKey={evalView}
+          {run}
+          attempts={results}
+          selectedID={attempt?.id}
+          selectedRowID={query.row}
+          onSelect={selectRow}
+          onSelectRun={() => showDetail(null)}
+          onResolveSelection={row => (resolvedRow = row)}
+          onTraceViews={(traces, loading) => {
+            traceViews = traces
+            telemetryLoading = loading
+          }}
+        />
+      {/key}
+      {#if !results.length}<div class="p-6 text-sm">
+          <p>No matching attempts</p>
+          <button
+            class="btn btn-ghost btn-sm"
+            onclick={() => update({ q: null }, true)}>Clear search</button
+          >
+        </div>{/if}
+    {:else if projection?.status === 'supported'}
+      <p class="p-3 text-sm text-rp-subtle">
+        This snapshot has no projected runs. Inspect its original JSON.
+      </p>
+    {/if}
   {/snippet}
   {#snippet detail()}
-    {#key `${run.id}/${attempt?.id ?? ''}/${selectedRow?.id ?? ''}/${evalView}`}
-      {#if selectedRow}<EvalRowDetail
-          {run}
-          row={selectedRow}
-          traceLevel={evalView === 'time'}
-          {parentName}
-        />{:else}<EvalDetail {run} {attempt} />{/if}
-    {/key}
+    {#if run}
+      {#key `${run.id}/${attempt?.id ?? ''}/${selectedRow?.id ?? ''}/${evalView}`}
+        {#if selectedRow}<EvalRowDetail
+            {run}
+            row={selectedRow}
+            traceLevel={evalView === 'time'}
+            {parentName}
+            {telemetryNodes}
+            {telemetryLoading}
+          />{:else}<EvalDetail
+            {run}
+            {attempt}
+            {telemetryNodes}
+            {telemetryLoading}
+          />{/if}
+      {/key}
+    {/if}
   {/snippet}
   {#snippet pageFooter()}
     <div class="flex min-w-0 flex-wrap items-center">

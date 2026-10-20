@@ -307,7 +307,9 @@ test('Details pins enriched trace context above scrolling fields', async ({
   const card = trace.getByText('POST /checkout', { exact: true })
   await expect(card).toBeVisible()
   await expect(trace.locator('.signal-row')).toHaveCount(0)
-  await expect(trace.getByRole('link', { name: `Open trace ${traceID}`, exact: true })).toHaveAttribute('href', `/traces/${traceID}?time=all`)
+  await expect(
+    trace.getByRole('link', { name: `Open trace ${traceID}`, exact: true })
+  ).toHaveAttribute('href', `/traces/${traceID}?time=all`)
   expect(waterfallFetches).toBe(0)
   expect(associatedFetches).toBe(1)
   expect(await trace.evaluate(element => element.closest('details'))).toBeNull()
@@ -371,7 +373,12 @@ test('Details pins enriched trace context above scrolling fields', async ({
   await expect(
     panel.locator('[data-field="severityNumber"] .detail-property__value')
   ).toHaveCSS('color', errorColour)
-  await trace.getByRole('link', { name: `Open span ${spanID} in trace ${traceID}`, exact: true }).click()
+  await trace
+    .getByRole('link', {
+      name: `Open span ${spanID} in trace ${traceID}`,
+      exact: true,
+    })
+    .click()
   await expect(page).toHaveURL(new RegExp(`/traces/${traceID}\\?`))
   expect(new URL(page.url()).searchParams.get('span')).toBe(spanID)
   expect(new URL(page.url()).searchParams.get('time')).toBe('all')
@@ -561,7 +568,7 @@ test('Raw JSON folding uses waterfall-style icon controls on the top line', asyn
   await collapse.click()
   await expect(editor.locator('.cm-foldPlaceholder').first()).toBeVisible()
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
-  await copy.click()
+  await page.getByRole('button', { name: 'Copy log', exact: true }).click()
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
     payload
   )

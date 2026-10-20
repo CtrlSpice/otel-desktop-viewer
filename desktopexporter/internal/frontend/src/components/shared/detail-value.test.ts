@@ -11,6 +11,23 @@ import {
 import type { AttributeValue } from '@/types/api-types'
 
 describe('detail value formatting', () => {
+  it('leaves deeply nested embedded JSON intact instead of expanding quadratic indentation', () => {
+    const source = '['.repeat(50_000) + '0' + ']'.repeat(50_000)
+    expect(jsonContainerTokens(source, true)).toBeNull()
+    expect(attributeValueCopy({ kind: 'string', value: source })).toBe(source)
+  })
+
+  it('bounds total formatting output across shallow containers and embedded strings', () => {
+    const wide = JSON.stringify(Array(30_000).fill({ a: 0 }))
+    expect(jsonContainerTokens(wide, true)).toBeNull()
+    const nested = JSON.stringify(
+      Array(100).fill(JSON.stringify(Array(2_000).fill(0)))
+    )
+    expect(jsonContainerTokens(nested, true)).toBeNull()
+    const oversized = JSON.stringify({ text: 'x'.repeat(1_048_576) })
+    expect(jsonContainerTokens(oversized, true)).toBeNull()
+  })
+
   it('decodes bounded embedded-JSON previews without inventing their missing suffix', () => {
     const inner = '{"path":"/recorded/long/path…'
     const preview = `["loading", ${JSON.stringify(inner)}]`

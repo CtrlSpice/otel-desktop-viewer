@@ -27,8 +27,13 @@
 </script>
 
 <div class="chart-sticky" bind:clientWidth={width} bind:clientHeight={height}>
+  <!-- Keyboard focus enables native scrolling when the pinned readout overflows. -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div
     class="chart-sticky__card"
+    role="region"
+    aria-label="Pinned chart selection"
+    tabindex="0"
     bind:offsetWidth={cardWidth}
     bind:offsetHeight={cardHeight}
     style:left="{position.left}px"
@@ -44,12 +49,19 @@
     @apply pointer-events-none absolute inset-0 z-[3];
   }
   .chart-sticky__card {
-    @apply absolute flex flex-col items-end gap-1 overflow-auto;
+    @apply pointer-events-auto absolute flex flex-col items-end gap-1 overflow-auto;
     width: max-content;
     max-width: calc(100% - 1rem);
     max-height: calc(100% - 1rem);
+    overscroll-behavior: contain;
+  }
+  .chart-sticky__card:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
   }
   .chart-sticky__card :global(.chart-selection-legend) {
+    pointer-events: auto;
+    flex-shrink: 0;
     max-width: 100%;
     min-width: 0;
   }

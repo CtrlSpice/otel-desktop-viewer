@@ -1,53 +1,37 @@
 <script lang="ts">
-  import Identifier from '@/components/shared/Identifier.svelte'
   import DetailStack from '@/components/shared/DetailStack.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import DetailField from '@/components/shared/DetailProperty.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
-  import type { EvalRun, EvalAttempt, TelemetryReference } from './model'
-  import { cost, estimatedCost, localTimestamp, traceHref } from './model'
+  import type { EvalRun, EvalAttempt } from './model'
+  import { cost, estimatedCost, localTimestamp } from './model'
   import AssessmentBadge from './AssessmentBadge.svelte'
   import RunStatusBadge from './RunStatusBadge.svelte'
   import EvalStatus from './EvalStatus.svelte'
   import { completionLabel, completionTone } from './group-attempts'
+  import EvalTelemetrySummaries from './EvalTelemetrySummaries.svelte'
+  import { evalTelemetrySummaries } from './eval-telemetry-summaries'
+  import type { SpanNode } from '@/types/api-types'
 
   let {
     run,
     attempt,
+    telemetryNodes,
+    telemetryLoading = false,
   }: {
     run: EvalRun
     attempt?: EvalAttempt
+    telemetryNodes?: Map<string, SpanNode>
+    telemetryLoading?: boolean
   } = $props()
   const investigator = $derived(estimatedCost(run.attempts, 'investigatorCost'))
+  const references = $derived(evalTelemetrySummaries(run, undefined, attempt))
   const grader = $derived(estimatedCost(run.attempts, 'graderCost'))
   const startedAt = $derived(
     attempt?.startedAt ?? (!attempt ? run.startedAt : undefined)
   )
 </script>
-
-{#snippet telemetry(reference: TelemetryReference)}
-  <DetailField
-    fieldName="traceId"
-    fieldType="bytes"
-    fieldValue={reference.traceID}
-  >
-    {#snippet value()}<a
-        class="detail-cell__value link link-primary"
-        href={traceHref(reference)}><Identifier value={reference.traceID} /></a
-      >{/snippet}
-  </DetailField>
-  {#if reference.spanID}{@const spanID = reference.spanID}<DetailField
-      fieldName="spanId"
-      fieldType="bytes"
-      fieldValue={reference.spanID}
-    >
-      {#snippet value()}<a
-          class="detail-cell__value link link-primary"
-          href={traceHref(reference)}><Identifier value={spanID} /></a
-        >{/snippet}
-    </DetailField>{/if}
-{/snippet}
 
 <DetailStack
   label={attempt ? 'Attempt details' : 'Run details'}
@@ -138,14 +122,7 @@
       </table>
     </DetailBubble>
   {:else}
-    <DetailBubble label="Question">
-      {#snippet action()}<ValueCopyButton
-          text={attempt.question}
-          label="question"
-        />{/snippet}
-      <p class="eval-detail__prose">{attempt.question}</p>
-    </DetailBubble>
-    <DetailBubble label={`Attempt ${attempt.repetition}`} initialOpen={false}>
+    <DetailBubble label={`Attempt ${attempt.repetition}`}>
       {#snippet trailing()}<EvalStatus
           label={completionLabel(attempt.state, true)}
           tone={completionTone(attempt.state, true)}
@@ -163,7 +140,6 @@
             ><DetailField
               fieldName="internal fault"
               fieldType="string"
-              showType={false}
               fieldValue={attempt.error}
               multiline
             >
@@ -181,7 +157,6 @@
             {#if startedAt}<DetailField
                 fieldName="started"
                 fieldType="timestamp"
-                showType={false}
                 fieldValue={startedAt}
                 timestampLabel={localTimestamp(startedAt)}
                 >{#snippet value()}<time
@@ -197,7 +172,6 @@
             <DetailField
               fieldName="duration"
               fieldType="string"
-              showType={false}
               fieldValue={attempt.seconds === undefined
                 ? 'Unknown'
                 : `${attempt.seconds} s`}
@@ -205,22 +179,15 @@
             <DetailField
               fieldName="investigator estimate (CAD)"
               fieldType="string"
-              showType={false}
               fieldValue={cost(attempt.investigatorCost)}
             />
             <DetailField
               fieldName="grader estimate (CAD)"
               fieldType="string"
-              showType={false}
               fieldValue={cost(attempt.graderCost)}
             />
           </tbody>
         </table>
-        {#if attempt.telemetry}<FieldGroup label="Telemetry" detail
-            ><table class="detail-fields w-full" aria-label="Attempt telemetry">
-              <tbody>{@render telemetry(attempt.telemetry)}</tbody>
-            </table></FieldGroup
-          >{/if}
       </FieldGroup>
     </DetailBubble>
     <DetailBubble
@@ -247,7 +214,6 @@
                 ><DetailField
                   fieldName="explanation"
                   fieldType="string"
-                  showType={false}
                   fieldValue={assessment.explanation}
                   multiline
                 /></tbody
@@ -261,35 +227,51 @@
                   <DetailField
                     fieldName="score"
                     fieldType="string"
-                    showType={false}
                     fieldValue={`${assessment.value ?? 'Unscored'} / ${definition.maximum}`}
                   />
                   <DetailField
                     fieldName="evaluator"
                     fieldType="string"
-                    showType={false}
                     fieldValue={assessment.evaluator}
                   />
                   <DetailField
                     fieldName="rubric"
                     fieldType="string"
-                    showType={false}
                     fieldValue={assessment.rubric}
                   />
-                  {#if assessment.telemetry}{@render telemetry(
-                      assessment.telemetry
-                    )}{/if}
                 {:else}<DetailField
                     fieldName="score"
                     fieldType="string"
-                    showType={false}
                     fieldValue="Unscored"
                   />{/if}
               </tbody>
             </table>
+            {#if assessment?.telemetry}
+              <EvalTelemetrySummaries
+                entries={[
+                  { reference: assessment.telemetry, label: definition.name },
+                ]}
+                nodes={telemetryNodes}
+                loading={telemetryLoading}
+              />
+            {/if}
           </FieldGroup>
         </FieldGroup>
       {/each}
+    </DetailBubble>
+  {/if}
+  {#if references.length}
+    <DetailBubble
+      label="Telemetry"
+      count={references.length}
+      countLabel="references"
+      initialOpen={false}
+    >
+      <EvalTelemetrySummaries
+        entries={references}
+        nodes={telemetryNodes}
+        loading={telemetryLoading}
+      />
     </DetailBubble>
   {/if}
 </DetailStack>

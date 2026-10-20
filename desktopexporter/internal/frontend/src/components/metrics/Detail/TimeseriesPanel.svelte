@@ -25,6 +25,7 @@
   } from '@/components/shared/attribute-label'
 
   const ctx = getMetricViewContext()
+  let panel: HTMLDivElement
 
   let rows = $derived<PanelTimeseries[]>(
     ctx.isHistogramKind
@@ -98,15 +99,28 @@
 
     ctx.expandedTimeseries.add(seriesKey)
 
-    tick().then(() => {
-      document
-        .querySelector(`[data-dp-id="${dpID}"]`)
+    let cancelled = false
+    void tick().then(async () => {
+      if (cancelled) return
+      const disclosure = panel.closest('details')
+      if (disclosure && !disclosure.open) {
+        disclosure.open = true
+        // Apply the native reveal to DetailStack before measuring for scroll.
+        disclosure.dispatchEvent(new Event('toggle'))
+        await tick()
+      }
+      if (cancelled) return
+      panel
+        .querySelector(`[data-dp-id="${CSS.escape(dpID)}"]`)
         ?.scrollIntoView({ block: 'nearest' })
     })
+    return () => {
+      cancelled = true
+    }
   })
 </script>
 
-<div class="ts-panel" role="region" aria-label="Timeseries">
+<div class="ts-panel" role="region" aria-label="Timeseries" bind:this={panel}>
   {#each rows as ts (ts.key)}
     {@const checked = visibleKeys.has(ts.key)}
     {@const checkboxDisabled = !checked && capReached}

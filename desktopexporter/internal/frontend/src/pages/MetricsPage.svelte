@@ -850,7 +850,9 @@
             }}
             ariaLabel="Metric chart"
             tabPanelID={METRIC_CHART_PANEL_ID}
-            timeRange={showChartHistogramTabs ? undefined : chartHeaderTimeRange}
+            timeRange={showChartHistogramTabs
+              ? undefined
+              : chartHeaderTimeRange}
             metaLeft={showChartHistogramTabs ? countLegend : undefined}
             metaRight={showChartOverlayControls ? overlayControl : undefined}
           >

@@ -1,6 +1,10 @@
 /** Display formatting only: received values and units are not converted. */
-const graphNumberFormat = new Intl.NumberFormat('en-US', { maximumSignificantDigits: 3 })
-const hoverNumberFormat = new Intl.NumberFormat('en-US', { maximumSignificantDigits: 6 })
+const graphNumberFormat = new Intl.NumberFormat('en-US', {
+  maximumSignificantDigits: 3,
+})
+const hoverNumberFormat = new Intl.NumberFormat('en-US', {
+  maximumSignificantDigits: 6,
+})
 const countFormat = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 })
 const superscripts = '⁰¹²³⁴⁵⁶⁷⁸⁹'
 
@@ -24,7 +28,9 @@ function trimTrailingZeros(s: string): string {
 function decimalFormat(significantDigits: number): Intl.NumberFormat {
   if (significantDigits === 3) return graphNumberFormat
   if (significantDigits === 6) return hoverNumberFormat
-  return new Intl.NumberFormat('en-US', { maximumSignificantDigits: significantDigits })
+  return new Intl.NumberFormat('en-US', {
+    maximumSignificantDigits: significantDigits,
+  })
 }
 
 export function formatMetricValue(
@@ -40,11 +46,15 @@ export function formatMetricValue(
   const abs = Math.abs(rounded)
   if (abs >= 1e-6 && abs < 1e6) return decimalFormat(sigDigits).format(value)
   const [mantissa, exponent] = value.toExponential(sigDigits - 1).split('e')
-  const power = String(Number(exponent)).replace(/[-\d]/g, digit => digit === '-' ? '⁻' : superscripts[Number(digit)]!)
+  const power = String(Number(exponent)).replace(/[-\d]/g, digit =>
+    digit === '-' ? '⁻' : superscripts[Number(digit)]!
+  )
   return `${Number(mantissa)} × 10${power}`
 }
 
-export function formatMetricHoverValue(value: number | null | undefined): string {
+export function formatMetricHoverValue(
+  value: number | null | undefined
+): string {
   return formatMetricValue(value, { maxSignificantDigits: 6 })
 }
 
@@ -53,7 +63,10 @@ export function formatMetricCount(value: number | bigint): string {
 }
 
 /** Raise display precision only when distinct finite bounds would share a label. */
-export function metricNumberPrecision(values: readonly number[], minimum = 3): number {
+export function metricNumberPrecision(
+  values: readonly number[],
+  minimum = 3
+): number {
   const distinct = [...new Set(values.filter(Number.isFinite))]
   for (let digits = minimum; digits < 17; digits++) {
     const labels = new Set(distinct.map(value => value.toPrecision(digits)))

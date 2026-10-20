@@ -19,9 +19,7 @@ describe('LogSeverity', () => {
       const dot = container.querySelector<HTMLElement>('.log-severity__dot')!
       expect(dot).toBeEmptyDOMElement()
       expect(dot).toHaveAttribute('aria-hidden', 'true')
-      expect(dot.style.backgroundColor).toBe(
-        `var(--color-${colour})`
-      )
+      expect(dot.style.backgroundColor).toBe(`var(--color-${colour})`)
       expect(container.querySelector('.log-severity__label')).toHaveTextContent(
         `${text} (${number})`
       )

@@ -29,6 +29,10 @@ export default defineConfig({
         target: process.env.VIEWER_PROXY_TARGET || 'http://localhost:8000',
         changeOrigin: true,
       },
+      '/api/evals': {
+        target: process.env.VIEWER_PROXY_TARGET || 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
   build: {

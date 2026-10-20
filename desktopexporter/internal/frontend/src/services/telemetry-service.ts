@@ -109,6 +109,57 @@ export type SearchSort = {
   direction: 'asc' | 'desc'
 }
 
+export type EvalSnapshotFormat = 'promptfoo-v3' | 'viewer-kit' | 'unknown-json'
+export type EvalSnapshotMetadata = {
+  id: string
+  digest: string
+  source: string
+  format: EvalSnapshotFormat
+  name: string
+  importedAt: string
+  byteSize: number
+}
+export type EvalSnapshot = EvalSnapshotMetadata & { originalJSON: string }
+export const EVAL_SNAPSHOT_MAX_BYTES = 16 * 1024 * 1024
+const EVAL_SNAPSHOT_RPC_MAX_BYTES = 20 * 1024 * 1024
+
+/** Downloads the stored bytes, without projecting or serializing the JSON. */
+export function evalSnapshotDownloadURL(id: string): string {
+  return `/api/evals/snapshots/${encodeURIComponent(id)}/download`
+}
+
+export async function downloadEvalSnapshot(
+  id: string,
+  signal: AbortSignal
+): Promise<void> {
+  const response = await fetch(evalSnapshotDownloadURL(id), {
+    signal,
+    headers: { Accept: 'application/json' },
+  })
+  if (!response.ok)
+    throw new Error(`Snapshot download failed (${response.status}).`)
+  if (
+    response.headers.get('Content-Type')?.split(';')[0]?.trim() !==
+    'application/json'
+  )
+    throw new Error(
+      'The viewer returned an unexpected snapshot download format.'
+    )
+  const blob = await response.blob()
+  signal.throwIfAborted()
+  const objectURL = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = objectURL
+  anchor.download = `eval-snapshot-${id}.json`
+  try {
+    document.body.append(anchor)
+    anchor.click()
+  } finally {
+    anchor.remove()
+    URL.revokeObjectURL(objectURL)
+  }
+}
+
 const ERR_CODE_METRIC_NOT_FOUND = -32003
 
 /** An absolute query bound in Unix nanoseconds, or null when unbounded. */
@@ -820,6 +871,43 @@ function statsFromJSON(json: JsonStats): Stats {
 }
 
 export let telemetryAPI = {
+  importEvalSnapshot: async (
+    source: string,
+    format: EvalSnapshotFormat,
+    name: string,
+    originalJSON: string,
+    signal?: AbortSignal
+  ): Promise<{ snapshot: EvalSnapshotMetadata; created: boolean }> => {
+    const encoder = new TextEncoder()
+    if (encoder.encode(originalJSON).byteLength > EVAL_SNAPSHOT_MAX_BYTES)
+      throw new Error('Snapshot exceeds the 16 MiB file limit.')
+    const params = { source, format, name, originalJSON }
+    const envelope = JSON.stringify({
+      method: 'importEvalSnapshot',
+      params,
+      id: 999999,
+      jsonrpc: '2.0',
+    })
+    if (encoder.encode(envelope).byteLength > EVAL_SNAPSHOT_RPC_MAX_BYTES)
+      throw new Error(
+        'Snapshot exceeds the 20 MiB request limit after JSON escaping.'
+      )
+    return callRPC('importEvalSnapshot', params, signal)
+  },
+  searchEvalSnapshots: (
+    limit = 25,
+    offset = 0,
+    signal?: AbortSignal
+  ): Promise<{ snapshots: EvalSnapshotMetadata[]; hasMore: boolean }> =>
+    callRPC('searchEvalSnapshots', named({ limit, offset }), signal),
+  getEvalSnapshot: (id: string, signal?: AbortSignal): Promise<EvalSnapshot> =>
+    callRPC('getEvalSnapshot', named({ id }), signal),
+  deleteEvalSnapshot: (
+    id: string,
+    signal?: AbortSignal
+  ): Promise<{ id: string; deleted: true }> =>
+    callRPC('deleteEvalSnapshot', named({ id }), signal),
+
   // Value-first discovery: given text the user can see, which attribute keys
   // hold it. Cross-signal by nature -- the dictionary it reads is shared by
   // traces, logs and metrics -- so unlike getXAttributes it takes no signal and

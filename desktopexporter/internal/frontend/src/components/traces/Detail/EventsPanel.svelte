@@ -53,9 +53,13 @@
       reveal={selectedEventIndex === index}
     >
       {#snippet titleContent()}
-        <span class="inline-flex max-w-full items-center gap-2 text-base-content">
+        <span
+          class="inline-flex max-w-full items-center gap-2 text-base-content"
+        >
           {#if exception}
-            <span class="size-2 shrink-0 rounded-full bg-error" aria-hidden="true"
+            <span
+              class="size-2 shrink-0 rounded-full bg-error"
+              aria-hidden="true"
             ></span>
           {/if}
           <span class="truncate">{event.name}</span>
@@ -63,8 +67,7 @@
       {/snippet}
       {#snippet badge()}
         <span class="text-xs text-rp-subtle" aria-hidden="true">·</span><span
-          class="text-xs text-rp-subtle"
-          >Span event</span
+          class="text-xs text-rp-subtle">Span event</span
         >{/snippet}
       <table class="detail-fields w-full" aria-label="Event {event.name}">
         <tbody>

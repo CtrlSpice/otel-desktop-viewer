@@ -58,7 +58,9 @@ function heatmapLegendLabel(
     bandIndex === swatchSteps - 1
       ? maxCount
       : Math.floor(thresholds[bandIndex + 1]! - 1e-9)
-  return lo === hi ? formatMetricCount(lo) : `${formatMetricCount(lo)}\u2009–\u2009${formatMetricCount(hi)}`
+  return lo === hi
+    ? formatMetricCount(lo)
+    : `${formatMetricCount(lo)}\u2009–\u2009${formatMetricCount(hi)}`
 }
 
 /** Shared count ramp for heatmap cells and legend swatches. */

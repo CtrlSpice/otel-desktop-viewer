@@ -34,7 +34,11 @@ describe('waterfall time labels', () => {
 
   it('retains a final partial interval without extending time', () => {
     const axis = waterfallTimeAxis(250_000_000n, 2)
-    expect(axis.ticks.map(tick => tick.label)).toEqual(['0ms', '100ms', '200ms'])
+    expect(axis.ticks.map(tick => tick.label)).toEqual([
+      '0ms',
+      '100ms',
+      '200ms',
+    ])
     expect(axis.layoutDurationNs).toBe(250_000_000n)
   })
 

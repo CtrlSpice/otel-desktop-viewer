@@ -63,6 +63,135 @@ const trace: JsonTraceData = {
   ],
 }
 
+for (const kind of ['event', 'log'] as const) {
+  test(`${kind} marker reveals collapsed Events without reopening manually closed Span`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1920, height: 1000 })
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    const linked = structuredClone(trace)
+    linked.spans[0]!.spanData.links.push({
+      traceID,
+      spanID,
+      traceState: '',
+      flags: 0,
+      attributes: [],
+      droppedAttributesCount: 0,
+    })
+    const logRef = '00000000-0000-0000-0000-000000000001'
+    await page.route('**/rpc', async route => {
+      const { id, method } = route.request().postDataJSON()
+      const result =
+        method === 'getTraceView'
+          ? linked
+          : method === 'searchTraceSummaries'
+            ? [
+                {
+                  traceID,
+                  hasRootSpan: true,
+                  rootSpan: {
+                    serviceName: 'checkout-api',
+                    name: 'detail target',
+                  },
+                  startTime: trace.traceStart,
+                  durationNs: '1000000000',
+                  spanCount: 1,
+                  errorCount: 0,
+                },
+              ]
+            : method === 'getTraceLogSummaries'
+              ? [
+                  {
+                    logRef,
+                    spanID,
+                    timestamp: '1700000000800000000',
+                    severityText: 'WARN',
+                    severityNumber: 13,
+                    serviceName: 'checkout-api',
+                    bodyPreview: 'Selected warning',
+                    eventName: '',
+                  },
+                ]
+              : method === 'getStats'
+                ? {
+                    storage: { sizeBytes: 0, maxSizeBytes: 0 },
+                    traces: {
+                      traceCount: 1,
+                      spanCount: 1,
+                      serviceCount: 1,
+                      errorCount: 0,
+                      lastReceived: null,
+                    },
+                    logs: { logCount: 1, errorCount: 0, lastReceived: null },
+                    metrics: {
+                      metricCount: 0,
+                      dataPointCount: 0,
+                      lastReceived: null,
+                    },
+                    rejections: [],
+                  }
+                : []
+      await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
+    })
+    await page.goto(`/traces/${traceID}?span=${spanID}`)
+    await page.evaluate(() => {
+      const states: boolean[] = []
+      Object.assign(window, { revealScrollStates: states })
+      const scroll = Element.prototype.scrollIntoView
+      Element.prototype.scrollIntoView = function (options) {
+        if (
+          this.id.startsWith('span-event-') ||
+          this.id.startsWith('span-log-')
+        ) {
+          states.push(this.closest('details')?.open ?? false)
+        }
+        scroll.call(this, options)
+      }
+    })
+    const stack = page.getByRole('region', {
+      name: 'Span details',
+      exact: true,
+    })
+    const sections = stack.locator('.detail-bubble__disclosure')
+    const span = sections.nth(0)
+    const events = sections.nth(1)
+    const links = sections.nth(2)
+    await span.locator(':scope > summary').press('Enter')
+    await expect(span).not.toHaveAttribute('open')
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await events.locator(':scope > summary').click()
+      await expect(events).not.toHaveAttribute('open')
+      await page
+        .getByRole('button', { name: `Select 1 ${kind}`, exact: true })
+        .click()
+      await expect(events).toHaveAttribute('open')
+      await expect(span).not.toHaveAttribute('open')
+      await expect(links).toHaveAttribute('open')
+      const target =
+        kind === 'event'
+          ? events.getByRole('table', {
+              name: 'Event target event',
+              exact: true,
+            })
+          : events.locator(`#span-log-${logRef}`)
+      await expect(target).toBeVisible()
+      await expect(target).toBeInViewport()
+      const scrollStates = await page.evaluate(
+        () =>
+          (window as Window & { revealScrollStates?: boolean[] })
+            .revealScrollStates ?? []
+      )
+      expect(scrollStates.length).toBeGreaterThan(0)
+      expect(scrollStates.every(Boolean)).toBe(true)
+      // The native disclosure's queued event must not undo the stack reveal.
+      await expect(events.locator(':scope > summary')).not.toHaveAttribute(
+        'aria-disabled',
+        'true'
+      )
+    }
+  })
+}
+
 test('detail dividers collapse, reopen and redistribute space across collapsed neighbours', async ({
   page,
 }) => {

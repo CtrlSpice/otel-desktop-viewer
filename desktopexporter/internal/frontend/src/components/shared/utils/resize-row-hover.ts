@@ -13,7 +13,10 @@ export function resizeRowHover(handle: HTMLElement) {
 
   function update() {
     if (!pointer) return
-    const elements = handle.ownerDocument.elementsFromPoint(pointer.x, pointer.y)
+    const elements = handle.ownerDocument.elementsFromPoint(
+      pointer.x,
+      pointer.y
+    )
     if (!handle.contains(elements[0] ?? null)) {
       show(null)
       return

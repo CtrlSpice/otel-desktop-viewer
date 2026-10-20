@@ -41,6 +41,8 @@
     lead?: Snippet
     meta?: Snippet
     onclick?: (id: string) => void
+    /** Navigation cards retain native link and open-in-new-tab behaviour. */
+    href?: string
   }
 
   let {
@@ -69,132 +71,143 @@
     lead,
     meta,
     onclick,
+    href,
   }: Props = $props()
 </script>
 
-{#snippet card()}
-  <button
-    type="button"
-    class="signal-row item-state {selected ? 'signal-row--selected' : ''}"
-    class:signal-row--interactive-subtitle={!!interactiveSubtitle}
-    onclick={() => onclick?.(id)}
-    aria-pressed={expanded === undefined ? selected : undefined}
-    aria-expanded={expanded}
-    aria-controls={controls}
-  >
-    <div class="signal-row__identity">
-      <div class="signal-row__header">
-        <span class="signal-row__title-cluster" {title}>
-          <span class="signal-row__title"
-            >{#if titleContent}{@render titleContent()}{:else}{title}{/if}</span
+{#snippet cardContent()}
+  <div class="signal-row__identity">
+    <div class="signal-row__header">
+      <span class="signal-row__title-cluster" {title}>
+        <span class="signal-row__title"
+          >{#if titleContent}{@render titleContent()}{:else}{title}{/if}</span
+        >
+        {#if badge && badgePlacement === 'inline'}
+          <span class="flex shrink-0 items-center gap-2">{@render badge()}</span
           >
-          {#if badge && badgePlacement === 'inline'}
-            <span class="flex shrink-0 items-center gap-2"
-              >{@render badge()}</span
-            >
-          {/if}
+        {/if}
+      </span>
+      {#if badge && badgePlacement === 'end'}
+        <span class="signal-row__badge">
+          {@render badge()}
         </span>
-        {#if badge && badgePlacement === 'end'}
-          <span class="signal-row__badge">
-            {@render badge()}
-          </span>
-        {/if}
+      {/if}
+    </div>
+
+    {#if !interactiveSubtitle && subtitleContent}
+      {@render subtitleContent()}
+    {:else if !interactiveSubtitle && subtitle}
+      <div class="signal-row__subtitle" title={subtitle}>{subtitle}</div>
+    {/if}
+  </div>
+
+  <div class="signal-row__body">
+    {#if date}
+      <div class="signal-row__date">{@render date()}</div>
+    {/if}
+
+    {#if description}
+      <div class="signal-row__lead">
+        <p class="signal-row__description" title={description}>
+          {#if descriptionIsID}<Identifier
+              value={description}
+            />{:else}{description}{/if}
+        </p>
       </div>
+    {:else if lead}
+      <div class="signal-row__lead">
+        {@render lead()}
+      </div>
+    {/if}
 
-      {#if !interactiveSubtitle && subtitleContent}
-        {@render subtitleContent()}
-      {:else if !interactiveSubtitle && subtitle}
-        <div class="signal-row__subtitle" title={subtitle}>{subtitle}</div>
-      {/if}
-    </div>
-
-    <div class="signal-row__body">
-      {#if date}
-        <div class="signal-row__date">{@render date()}</div>
-      {/if}
-
-      {#if description}
-        <div class="signal-row__lead">
-          <p class="signal-row__description" title={description}>
-            {#if descriptionIsID}<Identifier
-                value={description}
-              />{:else}{description}{/if}
-          </p>
-        </div>
-      {:else if lead}
-        <div class="signal-row__lead">
-          {@render lead()}
-        </div>
-      {/if}
-
-      {#if timestamp || duration}
-        {#if timeLayout === 'interval'}
-          {#if timestamp}
-            <div class="signal-row__time signal-row__time--interval">
-              <span class="signal-row__time-group">
-                <span class="signal-row__time-label">Start:</span>
-                <span class="signal-row__time-value signal-row__timestamp"
-                  >{timestamp}</span
-                >
-                {#if timestampUnit}
-                  <span class="signal-row__time-unit">{timestampUnit}</span>
-                {/if}
-              </span>
-            </div>
-          {/if}
-          {#if duration}
-            <div class="signal-row__time signal-row__time--interval">
-              <span class="signal-row__time-group">
-                <span class="signal-row__time-label">Duration:</span>
-                <span class="signal-row__time-value signal-row__duration"
-                  >{duration}</span
-                >
-                {#if durationUnit}
-                  <span class="signal-row__time-unit">{durationUnit}</span>
-                {/if}
-              </span>
-            </div>
-          {/if}
-        {:else if timeLayout === 'labeled'}
+    {#if timestamp || duration}
+      {#if timeLayout === 'interval'}
+        {#if timestamp}
           <div class="signal-row__time signal-row__time--interval">
-            {#if timestamp}
-              <span class="signal-row__time-group">
-                {#if timestampLabel}
-                  <span class="signal-row__time-label">{timestampLabel}</span>
-                {/if}
-                <span class="signal-row__time-value signal-row__timestamp"
-                  >{timestamp}</span
-                >
-                {#if timestampUnit}
-                  <span class="signal-row__time-unit">{timestampUnit}</span>
-                {/if}
-                {#if timestampSuffix}
-                  <span class="text-rp-subtle">{timestampSuffix}</span>
-                {/if}
-              </span>
-            {/if}
-          </div>
-        {:else}
-          <div class="signal-row__time">
-            <span class="signal-row__timestamp">{timestamp ?? ''}</span>
-            <span class="signal-row__duration">{duration ?? ''}</span>
+            <span class="signal-row__time-group">
+              <span class="signal-row__time-label">Start:</span>
+              <span class="signal-row__time-value signal-row__timestamp"
+                >{timestamp}</span
+              >
+              {#if timestampUnit}
+                <span class="signal-row__time-unit">{timestampUnit}</span>
+              {/if}
+            </span>
           </div>
         {/if}
-      {/if}
-
-      {#if meta}
-        <div class="signal-row__meta-row">
-          {@render meta()}
+        {#if duration}
+          <div class="signal-row__time signal-row__time--interval">
+            <span class="signal-row__time-group">
+              <span class="signal-row__time-label">Duration:</span>
+              <span class="signal-row__time-value signal-row__duration"
+                >{duration}</span
+              >
+              {#if durationUnit}
+                <span class="signal-row__time-unit">{durationUnit}</span>
+              {/if}
+            </span>
+          </div>
+        {/if}
+      {:else if timeLayout === 'labeled'}
+        <div class="signal-row__time signal-row__time--interval">
+          {#if timestamp}
+            <span class="signal-row__time-group">
+              {#if timestampLabel}
+                <span class="signal-row__time-label">{timestampLabel}</span>
+              {/if}
+              <span class="signal-row__time-value signal-row__timestamp"
+                >{timestamp}</span
+              >
+              {#if timestampUnit}
+                <span class="signal-row__time-unit">{timestampUnit}</span>
+              {/if}
+              {#if timestampSuffix}
+                <span class="text-rp-subtle">{timestampSuffix}</span>
+              {/if}
+            </span>
+          {/if}
+        </div>
+      {:else}
+        <div class="signal-row__time">
+          <span class="signal-row__timestamp">{timestamp ?? ''}</span>
+          <span class="signal-row__duration">{duration ?? ''}</span>
         </div>
       {/if}
+    {/if}
 
-      {#if idLine}
-        <div class="signal-row__id-line" title={idLine}>
-          <Identifier value={idLine} />
-        </div>
-      {/if}
-    </div>
-  </button>
+    {#if meta}
+      <div class="signal-row__meta-row">
+        {@render meta()}
+      </div>
+    {/if}
+
+    {#if idLine}
+      <div class="signal-row__id-line" title={idLine}>
+        <Identifier value={idLine} />
+      </div>
+    {/if}
+  </div>
+{/snippet}
+
+{#snippet card()}
+  {#if href}
+    <a
+      {href}
+      class="signal-row item-state {selected ? 'signal-row--selected' : ''}"
+      class:signal-row--interactive-subtitle={!!interactiveSubtitle}
+      >{@render cardContent()}</a
+    >
+  {:else}
+    <button
+      type="button"
+      class="signal-row item-state {selected ? 'signal-row--selected' : ''}"
+      class:signal-row--interactive-subtitle={!!interactiveSubtitle}
+      onclick={() => onclick?.(id)}
+      aria-pressed={expanded === undefined ? selected : undefined}
+      aria-expanded={expanded}
+      aria-controls={controls}>{@render cardContent()}</button
+    >
+  {/if}
 {/snippet}
 
 {#if interactiveSubtitle}

@@ -149,3 +149,58 @@ immutable duplicate metadata, concurrent dedupe, changed content, page bounds,
 UTF-8/JSON/payload bounds, explicit deletion, retention/clear survival, named
 and positional RPC parity, feature gates, cancellation, not-found errors,
 request-body limits, exact downloads, HEAD, byte ranges and OpenRPC discovery.
+
+## Viewer workflow
+
+With Evals enabled, open **Snapshot library**, choose a JSON file and its explicit
+source format, and import it. Importing leaves the current synthetic preview in
+place. Open an archived file to inspect its projected runs. **Synthetic preview**
+returns to the examples without deleting the archive.
+
+The library reads metadata in pages of 25. File decoding rejects invalid UTF-8;
+the browser sends the untouched decoded file text rather than parsing and
+reserializing it. The UI checks both file and escaped-envelope byte limits.
+Cancellation stops awaiting the request; because a server mutation may already
+have completed, the UI asks the user to refresh the archive to establish its state.
+
+`promptfoo-v3` supports the full version-3 result envelope. `viewer-kit` supports
+the explicit `{manifest,pilot}` wrapper. A declared format that does not match
+the envelope is not projected. `unknown-json` remains inspectable without an
+adapter. Unsupported versions and bounded-projection failures do not destroy
+the original file.
+
+**Original JSON and projection context** exposes the retained source in bounded
+32,768-character sections, mapping limitations and a selected-result JSON Pointer
+when available. Download always uses the complete original file, independent of
+the preview page. Routes carry the snapshot digest and snapshot-qualified run/row
+identities. They resolve only against this database; a copied URL does not include
+the file or associated telemetry.
+
+Projection limitations are deliberate: arbitrary Promptfoo scores have no assumed
+maximum, source costs are not relabelled CAD, and absent execution/repetition
+metadata cannot be recovered. Source-native values remain available in the original
+JSON. See [the integration roadmap](eval-integration-roadmap.md) for the richer
+typed-score, content and identity work still needed.
+
+## Code walkthrough
+
+1. `frontend/src/services/telemetry-service.ts`: typed RPC calls, abort signals,
+   UTF-8/envelope bounds and complete-file download.
+2. `frontend/src/components/evals/EvalSnapshotLibrary.svelte`: explicit import,
+   paged archive, source inspection and deletion controls.
+3. `frontend/src/pages/EvalsWorkspace.svelte`: snapshot route resolution and
+   stale-request protection; synthetic examples remain the default source.
+4. `frontend/src/components/evals/snapshot-adapters.ts`: pure bounded source
+   interpretation, provenance pointers and declared projection limitations.
+5. `frontend/src/components/evals/EvalTelemetrySummaries.svelte`: compact received
+   span name/service/status/duration summaries using the existing referenced-trace
+   fetch; native links open the exact span in Traces. Missing references stay
+   navigable without inventing timing or parentage.
+6. `server/eval_snapshots.go`: import Unicode validation and bounded RPC/download
+   handlers; existing feature gating and error taxonomy stay at the server boundary.
+7. `store/evals/snapshots.go` and `store/queries/ddl/tables/eval_snapshots.sql`:
+   content identity, immutable metadata, native JSON storage and exact text reads.
+
+Paths in this walkthrough are relative to `desktopexporter/internal/`. No evaluator
+is invoked by this workflow. Saved UI-view definitions and portable database bundles
+are separate future contracts, not additional meanings of an eval artifact.

@@ -103,14 +103,18 @@ describe('buildHistogramHeatmapData', () => {
       row => Number.isFinite(row.lo) && Number.isFinite(row.hi)
     )
 
-    expect(boundedRows.map(row => row.label)).toEqual(['(1.002, 1.003]', '(1.001, 1.002]'])
-    expect(boundedRows.map(row => row.key)).toEqual(['explicit:1.002:1.003', 'explicit:1.001:1.002'])
+    expect(boundedRows.map(row => row.label)).toEqual([
+      '(1.002, 1.003]',
+      '(1.001, 1.002]',
+    ])
+    expect(boundedRows.map(row => row.key)).toEqual([
+      'explicit:1.002:1.003',
+      'explicit:1.001:1.002',
+    ])
     expect(result.cells).toHaveLength(2)
     expect(result.countByColumn.get(result.columns[0]!.key)?.size).toBe(2)
     expect(
-      result.countByColumn
-        .get(result.columns[0]!.key)
-        ?.get(boundedRows[0]!.key)
+      result.countByColumn.get(result.columns[0]!.key)?.get(boundedRows[0]!.key)
     ).toBeUndefined()
   })
 

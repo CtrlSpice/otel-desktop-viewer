@@ -43,14 +43,29 @@ function area(blob: HeatmapBlob) {
 
 describe('heatmap blobs', () => {
   it('joins neighbouring colours in dense mode while preserving every cell and empty holes', () => {
-    const data = model([[1, 2, 3], [4, 0, 5], [6, 7, 8]])
+    const data = model([
+      [1, 2, 3],
+      [4, 0, 5],
+      [6, 7, 8],
+    ])
     const blobs = buildHeatmapBlobs(data, [2, 4, 6, 8], true)
     expect(blobs).toHaveLength(1)
     expect(blobs[0]!.rings).toHaveLength(2)
     expect(area(blobs[0]!)).toBe(8)
     expect(new Set(blobs[0]!.cells)).toEqual(new Set(data.cells))
-    expect(blobs[0]!.cells.map(cell => cell.count).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
-    expect(buildHeatmapBlobs(model([[1, 0], [0, 2]]), [2], true)).toHaveLength(2)
+    expect(
+      blobs[0]!.cells.map(cell => cell.count).sort((a, b) => a - b)
+    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
+    expect(
+      buildHeatmapBlobs(
+        model([
+          [1, 0],
+          [0, 2],
+        ]),
+        [2],
+        true
+      )
+    ).toHaveLength(2)
   })
 
   it('switches to joined colours only below 12px in either cell dimension', () => {

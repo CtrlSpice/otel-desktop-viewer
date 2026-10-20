@@ -16,6 +16,7 @@ async function enableEvals(page: Page, enabled = true) {
     const rows = exampleRuns.flatMap(run =>
       run.attempts.flatMap(attempt => {
         if (!attempt.telemetry?.spanID) return []
+        const executionSpanID = attempt.telemetry.spanID
         const references = [
           {
             reference: attempt.telemetry,
@@ -43,9 +44,7 @@ async function enableEvals(page: Page, enabled = true) {
                   '1700000000000000001',
                   String(1700000000000000001n + duration),
                   error ? 2 : 1,
-                  reference.spanID === attempt.telemetry.spanID
-                    ? null
-                    : attempt.telemetry.spanID,
+                  reference.spanID === executionSpanID ? null : executionSpanID,
                 ],
               ]
             : []
@@ -115,6 +114,36 @@ async function enableEvals(page: Page, enabled = true) {
     })
   )
 }
+
+test('case telemetry summarizes every repetition and links to its exact span', async ({
+  page,
+}) => {
+  await enableEvals(page)
+  await page.goto('/evals?run=direct&row=case%2Frequest-latency')
+  const detail = page.locator('#signal-drawer-detail')
+  await detail.locator('summary').filter({ hasText: 'Telemetry' }).click()
+  const links = detail
+    .locator('[aria-label="Referenced telemetry"]')
+    .getByRole('link')
+  const attempts = exampleRuns
+    .find(run => run.id === 'direct')!
+    .attempts.filter(item => item.caseID === 'request-latency')
+  await expect(links).toHaveCount(attempts.length)
+  for (const [index, attempt] of attempts.entries()) {
+    await expect(links.nth(index)).toContainText('eval-agent')
+    await expect(links.nth(index)).toContainText('37.000 s')
+    await expect(links.nth(index)).toHaveAttribute(
+      'href',
+      `/traces/${attempt.telemetry!.traceID}?span=${attempt.telemetry!.spanID}`
+    )
+  }
+  await links.first().focus()
+  await expect(links.first()).toBeFocused()
+  await page.goto('/evals?run=direct&attempt=request-latency')
+  await expect(
+    detail.locator('summary').filter({ hasText: /^Question/ })
+  ).toHaveCount(0)
+})
 
 test('Evals stays closed when its capability is disabled', async ({ page }) => {
   await enableEvals(page, false)
@@ -201,7 +230,7 @@ test('run selection, assessments, filtering and browser history stay connected',
       ratio: 1,
     })
   }
-  await bubbles.nth(2).locator(':scope > summary').click()
+  await bubbles.nth(1).locator(':scope > summary').click()
   await expect(
     page.getByText('The causal claim about total latency', { exact: false })
   ).toBeVisible()
@@ -209,7 +238,7 @@ test('run selection, assessments, filtering and browser history stay connected',
   await expect(
     detail.locator('summary').filter({ hasText: 'Tool calls' })
   ).toHaveCount(0)
-  await expect(bubbles.nth(2)).not.toHaveAttribute('open')
+  await expect(bubbles.nth(1)).not.toHaveAttribute('open')
   await page.getByRole('searchbox', { name: 'Search evals' }).fill('Mixed')
   await expect(
     page
@@ -228,7 +257,6 @@ test('run selection, assessments, filtering and browser history stay connected',
     page.getByRole('region', { name: 'Direct agent', exact: true })
   ).toBeVisible()
   await page.goto('/evals?run=direct&attempt=cpu-evidence')
-  await bubbles.nth(1).locator(':scope > summary').click()
   await expect(
     page.getByText('The investigator process exited', { exact: false })
   ).toBeVisible()
@@ -473,7 +501,7 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
   )
   await expect(
     time.locator('[data-attempt-id="checkout-latency"] td').nth(1)
-  ).toHaveText('0 tools · 0 failed')
+  ).toHaveText('')
   await showOnly(page, 'Cost')
   const costs = page.getByRole('table', { name: 'Cost for Direct agent' })
   for (const row of await costs.locator('.eval-results__case').all())
@@ -675,7 +703,7 @@ test('waterfall labels and bars open eval details while tree controls only expan
     details.getByRole('table', { name: 'Grading fields', exact: true })
   ).toBeVisible()
   await expect(
-    details.getByText('evaluator', { exact: true }).first()
+    details.getByRole('group', { name: 'evaluator', exact: true }).first()
   ).toBeVisible()
   await page
     .locator(
@@ -694,7 +722,7 @@ test('waterfall labels and bars open eval details while tree controls only expan
     details.getByRole('table', { name: 'Attempt 1 fields', exact: true })
   ).toBeVisible()
   await expect(
-    details.getByText('internal fault', { exact: true })
+    details.getByRole('group', { name: 'internal fault', exact: true })
   ).toBeVisible()
   await expect(details.getByText('Question', { exact: true })).toHaveCount(0)
   await expect(details.getByText('Assessments', { exact: true })).toHaveCount(0)

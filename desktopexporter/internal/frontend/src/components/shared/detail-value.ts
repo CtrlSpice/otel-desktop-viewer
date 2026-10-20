@@ -108,58 +108,80 @@ export function jsonContainerTokens(
   text: string,
   expandStrings = false
 ): ValueToken[] | null {
-  if (!/^\s*[[{]/.test(text)) return null
-  try {
-    JSON.parse(text)
-  } catch {
-    return null
-  }
-  // Validation above means every non-whitespace character belongs to a token.
-  // Keeping source lexemes preserves duplicate keys, large integers and -0.
-  const parts = text.match(/"(?:[^"\\]|\\.)*"|[{}[\],:]|[^\s{}[\],:]+/g)!
-  const tokens: ValueToken[] = []
-  let depth = 0
-  const punctuation = (text: string) =>
-    tokens.push({ text, kind: 'punctuation' })
-  const newline = () => punctuation('\n' + '  '.repeat(depth))
-  parts.forEach((part, index) => {
-    if (part === '{' || part === '[') {
-      punctuation(part)
-      depth++
-      if (parts[index + 1] !== '}' && parts[index + 1] !== ']') newline()
-    } else if (part === '}' || part === ']') {
-      depth--
-      if (parts[index - 1] !== '{' && parts[index - 1] !== '[') newline()
-      punctuation(part)
-    } else if (part === ',') {
-      punctuation(part)
-      newline()
-    } else if (part === ':') {
-      punctuation(': ')
-    } else {
-      // Decode only string values containing complete containers. Keep keys,
-      // scalar strings and invalid JSON as received. This is display-only;
-      // copy/export callers use the default, lossless mode.
-      if (expandStrings && part.startsWith('"') && parts[index + 1] !== ':') {
-        const nested = jsonContainerTokens(JSON.parse(part) as string, true)
-        if (nested) {
-          for (const token of indentTokens(nested, depth)) tokens.push(token)
-          return
-        }
-      }
-      tokens.push({
-        text: part,
-        kind: part.startsWith('"')
-          ? parts[index + 1] === ':'
-            ? 'key'
-            : 'string'
-          : /^(true|false|null)$/.test(part)
-            ? 'literal'
-            : 'number',
-      })
+  // Embedded JSON is an optional display enhancement, not a reason to expand
+  // a small received string into gigabytes of indentation on the UI thread.
+  const maxCharacters = 1_048_576
+  const maxDepth = 64
+  let remainingCharacters = maxCharacters
+  let remainingTokens = 65_536
+  const limit = Symbol('formatting limit')
+  function format(text: string, baseDepth: number): ValueToken[] | null {
+    if (text.length > maxCharacters || !/^\s*[[{]/.test(text)) return null
+    try {
+      JSON.parse(text)
+    } catch {
+      return null
     }
-  })
-  return tokens
+    // Validation above means every non-whitespace character belongs to a token.
+    // Keeping source lexemes preserves duplicate keys, large integers and -0.
+    const parts = text.match(/"(?:[^"\\]|\\.)*"|[{}[\],:]|[^\s{}[\],:]+/g)!
+    const tokens: ValueToken[] = []
+    let depth = baseDepth
+    const append = (token: ValueToken) => {
+      remainingCharacters -= token.text.length
+      if (remainingCharacters < 0 || --remainingTokens < 0) throw limit
+      tokens.push(token)
+    }
+    const punctuation = (text: string) => append({ text, kind: 'punctuation' })
+    const newline = () => punctuation('\n' + '  '.repeat(depth))
+    parts.forEach((part, index) => {
+      if (part === '{' || part === '[') {
+        punctuation(part)
+        depth++
+        if (depth > maxDepth) throw limit
+        if (parts[index + 1] !== '}' && parts[index + 1] !== ']') newline()
+      } else if (part === '}' || part === ']') {
+        depth--
+        if (parts[index - 1] !== '{' && parts[index - 1] !== '[') newline()
+        punctuation(part)
+      } else if (part === ',') {
+        punctuation(part)
+        newline()
+      } else if (part === ':') {
+        punctuation(': ')
+      } else {
+        // Decode only string values containing complete containers. Keep keys,
+        // scalar strings and invalid JSON as received. This is display-only;
+        // copy/export callers use the default, lossless mode.
+        if (expandStrings && part.startsWith('"') && parts[index + 1] !== ':') {
+          const nested = format(JSON.parse(part) as string, depth)
+          if (nested) {
+            // Nested formatting already includes the parent indentation and
+            // consumes the same budget; do not copy/reindent it a second time.
+            for (const token of nested) tokens.push(token)
+            return
+          }
+        }
+        append({
+          text: part,
+          kind: part.startsWith('"')
+            ? parts[index + 1] === ':'
+              ? 'key'
+              : 'string'
+            : /^(true|false|null)$/.test(part)
+              ? 'literal'
+              : 'number',
+        })
+      }
+    })
+    return tokens
+  }
+  try {
+    return format(text, 0)
+  } catch (error) {
+    if (error === limit) return null
+    throw error
+  }
 }
 
 function indentTokens(tokens: ValueToken[], depth: number): ValueToken[] {

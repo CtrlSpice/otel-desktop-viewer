@@ -158,6 +158,27 @@ describe('ResizablePanels stored splits', () => {
 })
 
 describe('ResizablePanels shared width', () => {
+  it('reports usable space before applying the initial saved split, even while collapsed', async () => {
+    const onLayoutMeasure = vi.fn((space: number, stacked: boolean) => {
+      if (stacked) localStorage.setItem('split', '0.6')
+    })
+    const { rerender } = render(ResizablePanels, {
+      leftPanel,
+      rightPanel,
+      rightCollapsed: true,
+      onLayoutMeasure,
+      storageKey: 'split',
+    })
+    await tick()
+    expect(onLayoutMeasure).not.toHaveBeenCalled()
+    await measure(1000)
+    expect(onLayoutMeasure).toHaveBeenLastCalledWith(FLEX_SPACE, false)
+    await measure(600, 1000)
+    expect(onLayoutMeasure).toHaveBeenLastCalledWith(FLEX_SPACE, true)
+    await rerender({ rightCollapsed: false })
+    expect(leftFraction()).toBe(0.6)
+  })
+
   it('allows wide Details and restores its requested width after the main-pane minimum limits it', async () => {
     const { rerender } = render(ResizablePanels, {
       leftPanel,

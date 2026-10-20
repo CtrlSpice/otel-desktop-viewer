@@ -71,7 +71,11 @@ export function buildHeatmapBlobs(
       for (const [dx, dy] of directions) {
         const neighbourKey = pointKey({ x: cell.x + dx, y: cell.y + dy })
         const neighbour = grid.get(neighbourKey)
-        if (neighbour && (joinColours || neighbour.band === seed.band) && !visited.has(neighbourKey)) {
+        if (
+          neighbour &&
+          (joinColours || neighbour.band === seed.band) &&
+          !visited.has(neighbourKey)
+        ) {
           visited.add(neighbourKey)
           queue.push(neighbour)
         }
@@ -94,8 +98,7 @@ export function buildHeatmapBlobs(
       for (let side = 0; side < 4; side++) {
         const [dx, dy] = neighbours[side]!
         const neighbour = grid.get(pointKey({ x: x + dx, y: y + dy }))
-        if (neighbour && (joinColours || neighbour.band === seed.band))
-          continue
+        if (neighbour && (joinColours || neighbour.band === seed.band)) continue
         edges.push({
           start: corners[side]!,
           end: corners[(side + 1) % 4]!,

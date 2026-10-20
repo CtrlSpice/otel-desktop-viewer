@@ -5,7 +5,10 @@ import {
 import type { HistogramSlicePoint } from '@/components/metrics/utils/histogram-aggregation'
 import type { HistogramTotals } from '@/components/metrics/utils/histogram-aggregation'
 import type { SelectionLegendRow } from '@/components/metrics/Charts/ChartSelectionLegend.svelte'
-import { formatMetricValue, formatMetricCount } from '@/components/metrics/utils/format-metric-value'
+import {
+  formatMetricValue,
+  formatMetricCount,
+} from '@/components/metrics/utils/format-metric-value'
 
 export type HeatmapColumnSelection = {
   timestampMs: number

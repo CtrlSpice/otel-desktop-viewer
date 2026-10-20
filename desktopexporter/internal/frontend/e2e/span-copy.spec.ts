@@ -644,6 +644,117 @@ test('Waterfall columns persist across traces and align through resizing and ove
   }
 })
 
+test('selected-span Copy and Download preserve schema URLs and exact numeric text', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.setViewportSize({ width: 1920, height: 1100 })
+  const source = `{"resourceSpans":[{
+    "schemaUrl":"https://opentelemetry.io/schemas/1.21.0",
+    "resource":{"attributes":[{"key":"service.name","value":{"stringValue":"checkout"}}]},
+    "scopeSpans":[{
+      "schemaUrl":"https://opentelemetry.io/schemas/1.22.0",
+      "scope":{"name":"instrumentation","version":"1.2"},
+      "spans":[{"traceId":"${traceID}","spanId":"${selectedID}",
+        "name":"selected span","startTimeUnixNano":"1700000000123456789",
+        "attributes":[
+          {"key":"zero","value":{"doubleValue":-0.0}},
+          {"key":"large","value":{"doubleValue":18446744073709551615}},
+          {"key":"exponent","value":{"doubleValue":1.2300e+40}}
+        ]
+      }]
+    }]
+  }]}\n`
+  const exportURL = `/export/traces/${traceID}?spanId=${selectedID}`
+  let exportRequests = 0
+  await page.route(`**${exportURL}`, route => {
+    exportRequests++
+    return route.fulfill({
+      body: source,
+      contentType: 'application/json',
+      headers: { 'Content-Length': String(Buffer.byteLength(source)) },
+    })
+  })
+  await page.route('**/api/features', route => route.fulfill({ json: {} }))
+  await page.route('**/rpc', route => {
+    const { id, method } = route.request().postDataJSON()
+    const result =
+      method === 'getTraceView'
+        ? trace
+        : method === 'searchTraceSummaries'
+          ? [
+              {
+                traceID,
+                hasRootSpan: true,
+                rootSpan: { serviceName: 'checkout', name: 'other span' },
+                startTime: trace.traceStart,
+                durationNs: '1000000000',
+                spanCount: 2,
+                errorCount: 0,
+              },
+            ]
+          : method === 'getStats'
+            ? {
+                storage: { sizeBytes: 0, maxSizeBytes: 0 },
+                traces: {
+                  traceCount: 1,
+                  spanCount: 2,
+                  serviceCount: 1,
+                  errorCount: 0,
+                  lastReceived: null,
+                },
+                logs: { logCount: 0, errorCount: 0, lastReceived: null },
+                metrics: {
+                  metricCount: 0,
+                  dataPointCount: 0,
+                  lastReceived: null,
+                },
+                rejections: [],
+              }
+            : []
+    return route.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id,
+        result,
+      },
+    })
+  })
+  await page.goto(`/traces/${traceID}?span=${selectedID}&time=all`)
+  const detail = page.getByRole('region', { name: 'Span details', exact: true })
+  const copy = detail.getByRole('button', { name: 'Copy span', exact: true })
+  await expect(copy).toBeVisible()
+  expect(exportRequests).toBe(0)
+  await copy.press('Enter')
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(source)
+  expect(exportRequests).toBe(1)
+  await expect(page).toHaveURL(new RegExp(`span=${selectedID}`))
+  await expect(detail.locator('details').first()).toHaveAttribute('open')
+  await detail.getByRole('tab', { name: 'JSON', exact: true }).click()
+  const download = detail.getByRole('link', {
+    name: 'Download span',
+    exact: true,
+  })
+  await expect(download).toHaveAttribute('href', exportURL)
+  await expect(download).toHaveAttribute('download', '')
+  const downloadedText = await download.evaluate(async link =>
+    (await fetch(link.getAttribute('href')!)).text()
+  )
+  expect(downloadedText).toBe(
+    await page.evaluate(() => navigator.clipboard.readText())
+  )
+  await page.evaluate(() =>
+    navigator.clipboard.writeText('before pointer copy')
+  )
+  await copy.click()
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(source)
+})
+
 test('Copy span sits opposite the span icon and copies only the selected span with context', async ({
   page,
   context,
@@ -653,6 +764,35 @@ test('Copy span sits opposite the span icon and copies only the selected span wi
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await page.addInitScript(() =>
     localStorage.setItem('theme', 'rose-pine-moon')
+  )
+  const selectedExport = `{"resourceSpans":[{
+    "schemaUrl":"https://opentelemetry.io/schemas/1.21.0",
+    "resource":{"attributes":[{"key":"service.name","value":{"stringValue":"checkout"}}]},
+    "scopeSpans":[{
+      "schemaUrl":"https://opentelemetry.io/schemas/1.22.0",
+      "scope":{"name":"instrumentation","version":"1.2"},
+      "spans":[{
+        "traceId":"${traceID}","spanId":"${selectedID}","parentSpanId":"${rootID}",
+        "name":"selected span","startTimeUnixNano":"1700000000123456789",
+        "attributes":[
+          {"key":"sequence","value":{"intValue":"9223372036854775807"}},
+          {"key":"zero","value":{"doubleValue":-0.0}},
+          {"key":"large","value":{"doubleValue":18446744073709551615}},
+          {"key":"payload","value":{"kvlistValue":{"values":[
+            {"key":"name","value":{"stringValue":"example"}},
+            {"key":"count","value":{"intValue":"42"}},
+            {"key":"ready","value":{"boolValue":false}}
+          ]}}}
+        ]
+      }]
+    }]
+  }]}\n`
+  await page.route(`**/export/traces/${traceID}?spanId=${selectedID}`, route =>
+    route.fulfill({
+      body: selectedExport,
+      contentType: 'application/json',
+      headers: { 'Content-Length': String(Buffer.byteLength(selectedExport)) },
+    })
   )
   await page.route('**/rpc', async route => {
     const request = route.request().postDataJSON() as {
@@ -804,11 +944,15 @@ test('Copy span sits opposite the span icon and copies only the selected span wi
   await expect(
     bubble.locator('.detail-bubble__action').getByRole('status')
   ).toHaveText('Copied span.')
-  const copied = JSON.parse(
-    await page.evaluate(() => navigator.clipboard.readText())
-  )
+  const copiedText = await page.evaluate(() => navigator.clipboard.readText())
+  expect(copiedText).toBe(selectedExport)
+  const copied = JSON.parse(copiedText)
   expect(copied.resourceSpans).toHaveLength(1)
   const resource = copied.resourceSpans[0]
+  expect(resource.schemaUrl).toBe('https://opentelemetry.io/schemas/1.21.0')
+  expect(resource.scopeSpans[0].schemaUrl).toBe(
+    'https://opentelemetry.io/schemas/1.22.0'
+  )
   expect(resource.resource.attributes).toEqual([
     { key: 'service.name', value: { stringValue: 'checkout' } },
   ])

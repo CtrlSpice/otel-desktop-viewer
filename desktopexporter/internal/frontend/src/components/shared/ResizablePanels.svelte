@@ -33,6 +33,8 @@
     /** Shared horizontal width. Stacked splits keep their own height fraction. */
     rightWidthRem?: number
     onRightWidthChange?: (rem: number) => void
+    /** Initialize saved sizing using measured usable space, before applying it. */
+    onLayoutMeasure?: (flexSpacePx: number, stacked: boolean) => void
     /** Minimum left fraction of the container (0..1). */
     minLeftWidth?: number
     /** Minimum right fraction of the container (0..1). */
@@ -62,6 +64,7 @@
     defaultRightRem,
     rightWidthRem,
     onRightWidthChange,
+    onLayoutMeasure,
     minLeftWidth = 0.3,
     minRightWidth = 0.2,
     minLeftPx,
@@ -146,6 +149,7 @@
   }
 
   $effect.pre(() => {
+    if (containerWidth > 0) onLayoutMeasure?.(flexSpacePx(), stacked)
     if (rightCollapsed) return
     if (rightWidthRem != null && !stacked) {
       if (containerWidth <= 0) return

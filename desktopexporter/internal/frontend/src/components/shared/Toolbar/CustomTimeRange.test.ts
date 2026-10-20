@@ -32,7 +32,9 @@ describe('CustomTimeRange', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-01-15T12:00:00.123Z'))
     renderComponent()
-    expect(screen.getByRole('application', { name: /Start date January 2026/ })).toBeInTheDocument()
+    expect(
+      screen.getByRole('application', { name: /Start date January 2026/ })
+    ).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: 'Choose start date' })
     ).toHaveAttribute('aria-expanded', 'true')
@@ -233,10 +235,14 @@ describe('CustomTimeRange', () => {
     expect(
       screen.getByRole('button', { name: 'Choose end date' })
     ).toHaveAttribute('aria-expanded', 'true')
-    await fireEvent.click(screen.getByRole('button', { name: 'Thursday, January 15, 2026' }))
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Thursday, January 15, 2026' })
+    )
     expect(screen.getByLabelText('End')).toHaveValue('2026-01-15')
     expect(screen.getByLabelText('Start')).toHaveValue('2026-01-14')
-    await fireEvent.click(screen.getByRole('button', { name: 'Choose end date' }))
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Choose end date' })
+    )
     await vi.advanceTimersByTimeAsync(150)
     expect(screen.queryByRole('application')).not.toBeInTheDocument()
   })

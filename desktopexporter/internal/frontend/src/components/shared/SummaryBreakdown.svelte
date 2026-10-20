@@ -34,6 +34,7 @@
 </script>
 
 <BubbleBreakdown
+  --breakdown-label-color="var(--color-subtle)"
   parts={colouredParts}
   defaultKey={rootKey}
   label="Spans by service"

@@ -17,7 +17,10 @@ describe('ErrorNavigationBadge position', () => {
     expect(position).toHaveClass('error-nav__position')
     expect(position.parentElement).toHaveTextContent('err (1/2)')
     expect(position.parentElement).toHaveAttribute('aria-live', 'polite')
-    expect(container.querySelector('.error-nav__dot')).toHaveAttribute('aria-hidden', 'true')
+    expect(container.querySelector('.error-nav__dot')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    )
   })
 
   it('omits the position when no error is selected', () => {

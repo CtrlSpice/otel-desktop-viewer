@@ -197,6 +197,67 @@ afterEach(() => {
 })
 
 describe('MetricTimeSeriesChart keyboard model', () => {
+  it('draws aggregate buckets as step-after geometry while preserving raw sample interpolation', async () => {
+    const datapoints = [2, 8, 4].map((value, index) =>
+      gaugeDatapoint(
+        `point-${index}`,
+        BASE_NS + BigInt(index) * 1_000_000_000n,
+        value
+      )
+    )
+    const keys = [
+      'series-a',
+      '__agg:selected__',
+      '__agg:all__',
+      '__agg:total__',
+    ]
+    renderChart(
+      MetricTimeSeriesChart,
+      {
+        timeseries: keys.map(key => ({
+          key,
+          label: key,
+          points: datapoints.map(point => ({
+            date: new Date(point.timestampMs),
+            value: point.doubleValue,
+            timestampNs: point.timestamp,
+          })),
+        })),
+        colorByKey: new Map(keys.map(key => [key, '#123456'])),
+      },
+      metricWithDatapoints('Gauge', datapoints)
+    )
+    await tick()
+
+    for (const key of keys) {
+      const path = document.querySelector(`path[data-series-key="${key}"]`)!
+      const d = path.getAttribute('d')!
+      expect(d).toBeTruthy()
+      if (key === 'series-a') {
+        const samples = [...d.matchAll(/[ML](-?[\d.]+),(-?[\d.]+)/g)]
+        expect(samples).toHaveLength(3)
+        expect(samples[1]![1]).not.toBe(samples[0]![1])
+        expect(samples[1]![2]).not.toBe(samples[0]![2])
+        continue
+      }
+      expect(path).toHaveAttribute('stroke-dasharray', '6 4')
+      expect(d).not.toMatch(/[CQ]/)
+      const vertices = [...d.matchAll(/[ML](-?[\d.]+),(-?[\d.]+)/g)].map(
+        match => [Number(match[1]), Number(match[2])]
+      )
+      expect(vertices).toHaveLength(5)
+      for (let i = 1; i < vertices.length; i++) {
+        const previous = vertices[i - 1]!
+        const current = vertices[i]!
+        // Hold the previous bucket value until the next bucket's X, then jump.
+        expect(current[i % 2 === 1 ? 1 : 0]).toBe(previous[i % 2 === 1 ? 1 : 0])
+        expect(current[i % 2 === 1 ? 0 : 1]).not.toBe(
+          previous[i % 2 === 1 ? 0 : 1]
+        )
+      }
+    }
+  })
+
   it.each(['raw', 'rate'] as const)(
     'uses the selected series colour for min/max dots in %s, but the primary tone for derived annotations',
     async aggregationView => {
@@ -860,9 +921,14 @@ describe('histogram source contributions', () => {
         chart === 'heatmap' ? '.heatmap-quantile-line' : '.quantile-marker'
       )!
       expect(quantile).not.toBeNull()
+      // Heatmap quantiles cross filled cells and must paint above contribution
+      // textures (also covered by the browser intersection test). Histogram
+      // contributions retain their existing layer above vertical quantile guides.
       expect(
         quantile.compareDocumentPosition(contributionLayer) &
-          Node.DOCUMENT_POSITION_FOLLOWING
+          (chart === 'heatmap'
+            ? Node.DOCUMENT_POSITION_PRECEDING
+            : Node.DOCUMENT_POSITION_FOLLOWING)
       ).not.toBe(0)
       const textures = contributionLayer.querySelectorAll('[fill^="url(#"]')
       expect(textures.length).toBeGreaterThan(0)

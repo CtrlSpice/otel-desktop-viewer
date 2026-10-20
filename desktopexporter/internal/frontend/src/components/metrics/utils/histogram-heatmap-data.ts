@@ -288,9 +288,10 @@ function projectHistogramHeatmapData(
     const digits = metricNumberPrecision(descriptors.map(row => row.order))
     return descriptors.map(row => ({
       ...row,
-      label: row.key === exponentialZeroBucketIdentity(point.zeroThreshold)
-        ? exponentialZeroBucketLabel(point.zeroThreshold, digits)
-        : formatHistogramBound(row.order, digits),
+      label:
+        row.key === exponentialZeroBucketIdentity(point.zeroThreshold)
+          ? exponentialZeroBucketLabel(point.zeroThreshold, digits)
+          : formatHistogramBound(row.order, digits),
     }))
   }
 
