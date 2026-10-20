@@ -212,9 +212,9 @@
   labels. Keep Results, Time, Cost, summaries and Details consistent with shared
   table and field-card typography and spacing.
   Results, Tool calls and Cost are a single-select radio group. The active view
-  uses Highlight Medium and Highlight Low on hover. Results and Tool calls have
-  one rightmost summary column: recorded score with its dot/label, or tool total
-  plus failed count. Cost has Investigator, Grader and Total cost columns, in that
+  uses Highlight Medium and Highlight Low on hover. Results has recorded score
+  with its dot/label, followed by Summary for case-level percentages. Tool calls
+  combines tool total and failed count. Cost has Investigator, Grader and Total cost columns, in that
   order. Cells and footer totals show only numeric amounts (Unknown if missing);
   CAD and estimate labels stay in headers, and partial-estimate context is on hover.
   Results reveals
@@ -263,8 +263,8 @@
   use filled 8px dots matching the span bar colour for both parents and leaves,
    without a visible number inside the dot. Direct-child counts read `[4]` in
    Subtle 14px regular Mono, before the dot. Centre counts vertically with their
-   dots. A faint 1px Muted guide connects toward the dot and stops 4px before the
-   brackets. Counts have no badge background or semantic accent colour.
+   dots. A faint 1px Muted guide joins the right bracket to the dot, accounting
+   for the Mono glyph's side-bearing. Counts have no badge background or semantic accent colour.
    Only the digits use Subtle; the decorative brackets match the Muted guide
    at 35% opacity.
   Align the waterfall table's name heading with the root title, reserving the

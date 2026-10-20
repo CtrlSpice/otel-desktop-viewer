@@ -247,7 +247,7 @@
     return () => controller.abort()
   })
   type Column = {
-    key: AttemptSortKey
+    key: AttemptSortKey | 'summary'
     label: string
     group: string
     width: number
@@ -310,6 +310,13 @@
               min: 192,
               hint: headline?.scale,
               assessment: headline,
+            } as Column,
+            {
+              key: 'summary',
+              label: 'Summary',
+              group: 'Results',
+              width: 160,
+              min: 144,
             } as Column,
           ]
         : [
@@ -658,31 +665,36 @@
                 ? undefined
                 : `${layout.pinned[column.key]}px`}
               scope="col"
-              aria-sort={activeSort?.key === column.key
-                ? activeSort.direction === 'asc'
-                  ? 'ascending'
-                  : 'descending'
-                : 'none'}
+              aria-sort={column.key === 'summary'
+                ? undefined
+                : activeSort?.key === column.key
+                  ? activeSort.direction === 'asc'
+                    ? 'ascending'
+                    : 'descending'
+                  : 'none'}
             >
-              <TableSortButton
-                label={column.label}
-                inset={column.key !== 'seconds'}
-                direction={activeSort?.key === column.key
-                  ? activeSort.direction
-                  : undefined}
-                align={column.numeric ? 'right' : 'left'}
-                title={column.hint}
-                onclick={() => toggleSort(column.key)}
-              >
-                {#if column.key === 'seconds'}
-                  <TimingCell maximum={maximumDuration} header />
-                {:else}<TableColumnHeading
-                    label={column.label}
-                    description={column.description}
-                    align={column.numeric ? 'right' : 'left'}
-                  />
-                {/if}
-              </TableSortButton>
+              {#if column.key === 'summary'}
+                <TableColumnHeading label={column.label} />
+              {:else}<TableSortButton
+                  label={column.label}
+                  inset={column.key !== 'seconds'}
+                  direction={activeSort?.key === column.key
+                    ? activeSort.direction
+                    : undefined}
+                  align={column.numeric ? 'right' : 'left'}
+                  title={column.hint}
+                  onclick={() =>
+                    column.key !== 'summary' && toggleSort(column.key)}
+                >
+                  {#if column.key === 'seconds'}
+                    <TimingCell maximum={maximumDuration} header />
+                  {:else}<TableColumnHeading
+                      label={column.label}
+                      description={column.description}
+                      align={column.numeric ? 'right' : 'left'}
+                    />
+                  {/if}
+                </TableSortButton>{/if}
             </th>
           {/if}
         {/each}
@@ -849,7 +861,9 @@
       {#snippet totals(group: (typeof groups)[number], row: EvalOutlineRow)}
         {#each columns as column (column.key)}
           {#if column.assessment}
-            {@const score = group.summary.scores[column.assessment.id]}
+            <td class="table-cell"></td>
+          {:else if column.key === 'summary' && headline}
+            {@const score = group.summary.scores[headline.id]}
             <td
               class="table-cell text-left tabular-nums"
               title={`${score.scored} scored / ${score.denominator} denominator · all case repetitions`}

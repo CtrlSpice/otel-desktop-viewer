@@ -875,7 +875,7 @@ test('column resizing uses shared handles and retains widths, sorting and select
       ),
     }))
     expect(bounds.width).toBeLessThanOrEqual(bounds.viewport + 1)
-    expect(bounds.answers.every(width => width >= 160)).toBe(true)
+    expect(bounds.answers.every(width => width >= 144)).toBe(true)
     const limit = await handle.getAttribute(
       key === 'End' ? 'aria-valuemax' : 'aria-valuemin'
     )
