@@ -286,6 +286,57 @@ describe('EvalResults repetitions', () => {
     }
   })
 
+  it('keeps a case root bar across spaced repetitions, including filtered attempts', async () => {
+    const epoch = 1700000000000000001n
+    const attempts = [0, 1].map(index => ({
+      ...exampleRuns[0].attempts[0],
+      id: `attempt-${index}`,
+      caseID: 'shared-case',
+      repetition: index + 1,
+      telemetry: undefined,
+      attemptTelemetry: {
+        traceID: String(index + 1).repeat(32),
+        spanID: 'a'.repeat(16),
+      },
+      tools: [],
+      assessments: [],
+    }))
+    const lookup = vi
+      .spyOn(telemetryAPI, 'getReferencedTraceViews')
+      .mockResolvedValue(
+        traceViews(
+          attempts.map((attempt, index) => ({
+            ...attempt.attemptTelemetry,
+            name: `attempt span ${index}`,
+            serviceName: 'runner',
+            startTime: epoch + BigInt(index * 20) * 1_000_000_000n,
+            endTime: epoch + BigInt(index * 20 + 10) * 1_000_000_000n,
+            statusCodeValue: 1,
+          }))
+        )
+      )
+    try {
+      const { container } = render(EvalResults, {
+        run: { ...exampleRuns[0], telemetry: undefined, attempts },
+        attempts: [attempts[0]],
+      })
+      const root = await screen.findByRole('button', {
+        name: `${attempts[0].name}, 30.000 s`,
+      })
+      expect(root.querySelector('.span-bar')).toHaveStyle({
+        left: '0%',
+        width: '100%',
+      })
+      expect(container.querySelectorAll('[data-attempt-id]')).toHaveLength(1)
+      expect(root).toHaveAttribute(
+        'title',
+        expect.stringContaining('elapsed time across available references')
+      )
+    } finally {
+      lookup.mockRestore()
+    }
+  })
+
   it('shows a referenced run span and keeps an absent question span as an unlinked recorded duration', async () => {
     const telemetry = { traceID: 'a'.repeat(32), spanID: 'b'.repeat(16) }
     const lookup = vi

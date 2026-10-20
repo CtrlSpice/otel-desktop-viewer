@@ -852,11 +852,13 @@
           {:else if column.key === 'seconds'}
             <td
               class="table-cell eval-results__timing-cell text-left tabular-nums"
-              title={group.allAttempts.length === 1
-                ? 'Attempt elapsed time'
-                : 'Sum of attempt durations across all repetitions'}
+              title={row.window
+                ? 'Elapsed time across available attempt references'
+                : group.allAttempts.length === 1
+                  ? 'Attempt elapsed time'
+                  : 'Sum of attempt durations across all repetitions'}
             >
-              {#if group.allAttempts.length === 1}
+              {#if row.window || group.allAttempts.length === 1}
                 {@render spanBar(
                   undefined,
                   runWindow?.startTime ?? row.window?.startTime,

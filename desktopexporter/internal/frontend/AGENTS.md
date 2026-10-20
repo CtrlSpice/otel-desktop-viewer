@@ -234,6 +234,8 @@
   extent of available references rather than claiming another stored span.
   Align recorded starts to the earliest available span in the run, including
   when there is no enclosing run span. Keep recorded-duration-only fallbacks.
+  Case root bars span available attempt references across all repetitions,
+  including hidden repetitions. Distinguish elapsed windows from summed durations.
   Missing timing on started/completed rows uses a faint 1px Muted line with one
   central break. Planned/unstarted rows stay blank. Ruler ticks
   extend 4px into the header below their labels, aligned with the time guides.

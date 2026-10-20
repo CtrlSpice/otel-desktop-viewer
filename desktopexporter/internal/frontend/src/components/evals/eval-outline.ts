@@ -117,11 +117,17 @@ export function buildEvalOutline(
         state: spanError ? ('Error' as const) : execution.state,
         spanError,
         internalFault: execution.internalFault,
+        timingNodes: [
+          attemptNode,
+          nodeFor(attempt.telemetry),
+          ...execution.rows.map(row => row.node),
+        ],
       }
     })
     caseRow.state = completionState(statuses)
     caseRow.spanError = statuses.some(item => item.spanError)
     caseRow.internalFault = statuses.some(item => item.internalFault)
+    caseRow.window = spanWindow(statuses.flatMap(item => item.timingNodes))
     for (const item of group.attempts) {
       const attempt = source.get(item.id)!
       const execution = evalExecutionRows(
