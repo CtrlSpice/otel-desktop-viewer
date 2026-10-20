@@ -161,7 +161,7 @@
   tabs={views}
   activeID={view}
   onSelect={id => (view = id)}
-  tabLayout="left"
+  tabLayout="right"
   tabPanelID={panelID}
 >
   {#snippet right()}<RunStatusBadge
