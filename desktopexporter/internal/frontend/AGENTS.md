@@ -19,7 +19,9 @@
   Dawn's other foreground colours also use the contrast-adjusted values in
   `src/themes/rose-pine.json`, documented in `src/themes/README.md`. Keep these
   theme-wide; do not restore original low-contrast colours in individual views.
-  Pine and Moon's other foreground colours retain their original values.
+  Moon's Subtle is #928eac app-wide, slightly brighter to meet 4.5:1 on Highlight
+  Low. It still falls below 4.5:1 on chrome and Highlight Medium. Pine and Moon's
+  remaining foreground colours retain their original values.
 - Shared item states use Highlight Low for hover and Highlight Medium for
   persistent selection. Hover temporarily uses Low even on selected items;
   leaving the item restores Medium. Text selection also uses Medium.
@@ -45,6 +47,8 @@
   Keep one record-level Copy action in the section header; do not add another
   Copy action inside the raw JSON toolbar. Field-level copy actions remain in
   Properties.
+  Details field cards place Copy at the top-right, aligned with the first heading
+  line even when the heading wraps. Its tooltip opens left into the card.
 - Trace waterfall headers use two rows: title / Download, then service · span
   count / centred error navigation / right-aligned view controls. Centre error
   navigation horizontally within the row. The service/count replaces the

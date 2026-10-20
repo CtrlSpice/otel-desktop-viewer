@@ -163,7 +163,7 @@
     @apply flex min-h-5 min-w-0 items-center gap-2;
   }
   .detail-property__header > :global(.value-copy) {
-    @apply size-5;
+    @apply ml-auto size-5 shrink-0 self-start;
   }
   .detail-property__key {
     @apply min-w-0 font-sans text-xs;

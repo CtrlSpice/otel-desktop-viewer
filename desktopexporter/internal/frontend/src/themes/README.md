@@ -22,6 +22,10 @@ to sRGB hex values. Each colour reaches at least 4.5:1 on bg-100, bg-200,
 bg-300, Highlight Low and Highlight Medium. Medium is the limiting background:
 4.502:1 in Pine, 4.504:1 in Moon and 4.542:1 in Dawn.
 
+Moon's Subtle is slightly brighter app-wide: `#908caa` → `#928eac`.
+Contrast passes on canvas (4.982:1), panel (4.579:1) and Highlight Low
+(4.544:1). It still fails on chrome (3.705:1) and Highlight Medium (3.111:1).
+
 Dawn's foreground adjustments below use the same minimum contrast on those
 five backgrounds. Text already passes at its original value. These colours
 are darkened while preserving OKLCH hue; Gold also needs reduced chroma to stay
@@ -75,8 +79,8 @@ Code surfaces and search inputs use bg-100: the darkest surface in Pine/Moon
 and the brightest in Dawn. This includes JSON editors, shell examples, compact
 JSON previews, help snippets, query inputs and filter searches. Comments use
 Subtle, which passes 4.5:1 on these normal backgrounds (Pine 5.48:1,
-Moon 4.86:1, Dawn 6.01:1). Subtle still fails on Medium selection in the dark
-themes (Pine 3.25:1, Moon 3.03:1); Moon Subtle also fails on Low at 4.43:1.
+Moon 4.98:1, Dawn 6.01:1). Subtle still fails on Medium selection in the dark
+themes (Pine 3.25:1, Moon 3.11:1); Moon Subtle now passes on Low at 4.54:1.
 
 JSON strings soft-wrap at word boundaries with a hanging indent after the opening
 quote. The document text is unchanged. JSON's notebook-guide trial replaces the

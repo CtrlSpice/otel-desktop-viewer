@@ -103,9 +103,7 @@
   type="button"
   class="{grouped
     ? 'btn btn-xs btn-square chart-header-control value-copy--grouped'
-    : 'header-icon-button'} value-copy tooltip"
-  class:tooltip-right={contextual}
-  class:tooltip-left={!contextual}
+    : 'header-icon-button'} value-copy tooltip tooltip-left"
   class:value-copy--copied={copied}
   class:value-copy--failed={failed}
   class:value-copy--contextual={contextual}
