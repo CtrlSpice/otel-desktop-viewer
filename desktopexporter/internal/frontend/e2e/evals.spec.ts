@@ -238,8 +238,8 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
     '89.000 s'
   )
   await expect(
-    time.locator('[data-attempt-id="checkout-latency"]')
-  ).toContainText('Not linked')
+    time.locator('[data-attempt-id="checkout-latency"] td').first()
+  ).toHaveText('')
   await expect(
     time.getByRole('columnheader', { name: 'Failures' })
   ).toBeVisible()
@@ -286,7 +286,7 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
   await expect(toolRows).toHaveCount(0)
   await expect(
     time.locator('[data-attempt-id="checkout-latency"] td').first()
-  ).toHaveText('Not linked')
+  ).toHaveText('')
   await expect(
     time.locator('[data-attempt-id="checkout-latency"]').getByRole('link')
   ).toHaveCount(0)

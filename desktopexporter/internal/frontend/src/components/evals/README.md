@@ -64,10 +64,17 @@ the pinned columns plus one complete scrolling column. Saved widths and shared
 hover/selection motion remain intact.
 Assessment dots, labels and numeric fractions stay together at the left; case
 percentages align above them. Measurements and their headings also align left.
-Time uses stored span timings for duration bars and sorting. Each bar carries its
-duration and opens that exact trace/span. Bars share the waterfall's SpanBar
-component and a common zero-based duration scale across the run's linked spans;
-they compare duration, not absolute start times. Tool calls include failed calls; Failures counts those
+Duration is always present in Time. Stored span timings take precedence for
+bars, sorting and totals. Otherwise a recorded eval duration draws a plain,
+unlinked bar; absent durations leave the cell empty. Zero is a recorded duration,
+not a missing value. Hover distinguishes recorded eval durations from span data.
+Linked bars open their exact trace/span. Both kinds reuse DurationBar and the
+waterfall's SpanBar component. Tool bars use their recorded start offsets within each question, with
+one duration scale across questions. When a stored run span exists, all linked
+bars use one run-wide timeline. Bounds include early starts and late ends, so
+children outside a parent span are not clipped. With a missing question span,
+its earliest stored tool supplies the local origin. Hover shows the start offset;
+duration labels follow bar ends. Tool calls include failed calls; Failures counts those
 calls separately for each repetition and the full case. Cost keeps
 investigator and grader estimates separate. The Total footer aligns each estimate
 under its visible cost column, with unknown and partial estimates explicit. Its
@@ -78,11 +85,11 @@ using exact trace/span pairs and batches of at most 64 lightweight timing rows.
 It does not load trace trees, attributes or logs. Run spans appear when the run
 has a reference; question rows can fan out to their tool calls using the same
 tree gutter, counts and collapse control as traces. Tool expansion preserves
-attempt selection. Missing references read `Not linked`; references absent from
-the database read `Span not stored`. Request errors read `Span unavailable`.
-Case duration totals sum stored question spans (not their nested tool spans),
-retain exact nanoseconds and mark partial totals explicitly. Recorded eval
-seconds are not substituted for missing span data.
+attempt selection. When neither a stored span nor a recorded duration is available,
+the empty cell's tooltip explains missing references, missing spans or request
+errors. Case duration totals sum question durations (not nested tool durations),
+retain exact span nanoseconds and mark partial totals explicitly. Plain eval
+durations never acquire a trace link or an inferred start offset.
 
 Run cards show a proportional breakdown and every outcome in a visible list,
 with neutral labels, small colour dots and exact attempt counts. Neutral outcome

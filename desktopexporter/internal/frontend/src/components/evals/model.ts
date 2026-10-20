@@ -40,6 +40,7 @@ export type EvalAttempt = {
     name: string
     state: 'OK' | 'Error'
     message: string
+    seconds?: number
     telemetry?: TelemetryReference
   }[]
   telemetry?: TelemetryReference
@@ -57,6 +58,7 @@ export type EvalRun = {
   assessments: AssessmentDefinition[]
   headlineAssessment: string
   attempts: EvalAttempt[]
+  seconds?: number
   telemetry?: TelemetryReference
 }
 

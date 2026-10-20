@@ -20,6 +20,7 @@
   import TreeChildCount from '@/components/shared/TreeChildCount.svelte'
   import LegendRows from '@/components/shared/LegendRows.svelte'
   import CorrelatedSpanBar from '@/components/shared/CorrelatedSpanBar.svelte'
+  import DurationBar from '@/components/shared/DurationBar.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import type { SpanTiming } from '@/types/api-types'
   import { formatDuration } from '@/utils/time'
@@ -82,12 +83,63 @@
     `${reference.traceID.toLowerCase()}/${reference.spanID?.toLowerCase() ?? ''}`
   const timingFor = (reference?: TelemetryReference) =>
     reference?.spanID ? spanTimings[timingKey(reference)] : undefined
-  const maximumDuration = $derived(
-    Object.values(spanTimings).reduce((maximum, span) => {
-      const duration = span.endTime - span.startTime
-      return duration > maximum ? duration : maximum
-    }, 0n)
+  function durationFor(reference?: TelemetryReference, seconds?: number) {
+    const span = timingFor(reference)
+    if (span && span.endTime >= span.startTime)
+      return span.endTime - span.startTime
+    if (seconds === undefined || seconds < 0 || !Number.isFinite(seconds * 1e9))
+      return undefined
+    return BigInt(Math.round(seconds * 1e9))
+  }
+  function missingTiming(reference?: TelemetryReference) {
+    if (!reference?.spanID) return 'No recorded duration'
+    if (timingsLoading) return 'Loading span'
+    if (timingsFailed) return 'Span unavailable'
+    return timingFor(reference) ? 'Invalid span duration' : 'Span not stored'
+  }
+  function spanWindow(spans: (SpanTiming | undefined)[]) {
+    let window: { startTime: bigint; endTime: bigint } | undefined
+    for (const span of spans) {
+      if (!span || span.endTime < span.startTime) continue
+      if (!window) window = { startTime: span.startTime, endTime: span.endTime }
+      else {
+        if (span.startTime < window.startTime) window.startTime = span.startTime
+        if (span.endTime > window.endTime) window.endTime = span.endTime
+      }
+    }
+    return window
+  }
+  const attemptWindows = $derived(
+    Object.fromEntries(
+      run.attempts.map(attempt => [
+        attempt.id,
+        spanWindow([
+          timingFor(attempt.telemetry),
+          ...attempt.tools.map(tool => timingFor(tool.telemetry)),
+        ]),
+      ])
+    )
   )
+  const runWindow = $derived(
+    timingFor(run.telemetry)
+      ? spanWindow(Object.values(spanTimings))
+      : undefined
+  )
+  const maximumDuration = $derived.by(() => {
+    const extent = runWindow
+      ? runWindow.endTime - runWindow.startTime
+      : Object.values(attemptWindows).reduce((maximum, window) => {
+          const extent = window ? window.endTime - window.startTime : 0n
+          return extent > maximum ? extent : maximum
+        }, 0n)
+    return [
+      run,
+      ...run.attempts.flatMap(attempt => [attempt, ...attempt.tools]),
+    ].reduce((maximum, item) => {
+      const duration = durationFor(item.telemetry, item.seconds) ?? 0n
+      return duration > maximum ? duration : maximum
+    }, extent)
+  })
   $effect(() => {
     if (view !== 'time') return
     const references = [
@@ -168,7 +220,9 @@
     {
       key: 'seconds',
       label: 'Duration',
-      hint: 'Stored span durations, compared on one scale across this run',
+      hint: runWindow
+        ? 'Recorded starts and durations on one timeline across this run'
+        : 'Recorded starts within each question, with one duration scale across questions',
       group: 'Time',
       width: 288,
       min: 224,
@@ -215,13 +269,10 @@
   const activeSort = $derived(sorts[view])
   const measuredAttempts = $derived(
     run.attempts.map(attempt => {
-      const span = timingFor(attempt.telemetry)
+      const duration = durationFor(attempt.telemetry, attempt.seconds)
       return {
         ...attempt,
-        seconds:
-          span && span.endTime >= span.startTime
-            ? Number(span.endTime - span.startTime) / 1e9
-            : undefined,
+        seconds: duration !== undefined ? Number(duration) / 1e9 : undefined,
       }
     })
   )
@@ -237,11 +288,8 @@
     ).map(group => ({
       ...group,
       summary: caseSummary(group.allAttempts, run.assessments),
-      spanDuration: group.allAttempts.reduce((total, attempt) => {
-        const span = timingFor(attempt.telemetry)
-        return span && span.endTime >= span.startTime
-          ? total + span.endTime - span.startTime
-          : total
+      duration: group.allAttempts.reduce((total, attempt) => {
+        return total + (durationFor(attempt.telemetry, attempt.seconds) ?? 0n)
       }, 0n),
     }))
   )
@@ -261,17 +309,35 @@
   ])
 </script>
 
-{#snippet spanBar(reference?: TelemetryReference)}
+{#snippet spanBar(
+  reference?: TelemetryReference,
+  origin?: bigint,
+  seconds?: number
+)}
   {@const span = timingFor(reference)}
-  {#if span}<CorrelatedSpanBar
+  {@const duration = durationFor(reference, seconds)}
+  {#if span && span.endTime >= span.startTime}<CorrelatedSpanBar
       {span}
       maximum={maximumDuration}
       href={traceHref(span)}
+      {origin}
     />
-  {:else if !reference?.spanID}<span>Not linked</span>
-  {:else if timingsLoading}<span role="status">Loading span…</span>
-  {:else if timingsFailed}<span>Span unavailable</span>
-  {:else}<span>Span not stored</span>{/if}
+  {:else if duration !== undefined}
+    <span
+      class="block"
+      title="Recorded eval duration"
+      style:--bar-color="currentColor"
+    >
+      <DurationBar {duration} maximum={maximumDuration} />
+    </span>
+  {:else}
+    <span
+      class="block min-h-[var(--signal-card-row-h)]"
+      title={missingTiming(reference)}
+      aria-label={missingTiming(reference)}
+      aria-busy={!!reference?.spanID && timingsLoading}
+    ></span>
+  {/if}
 {/snippet}
 
 {#snippet resultsIcon()}<HugeiconsIcon
@@ -446,7 +512,7 @@
       </tr>
     {/snippet}
     {#snippet children(layout)}
-      {#if view === 'time' && run.telemetry}
+      {#if view === 'time' && (run.telemetry || run.seconds !== undefined)}
         <tr class="table-row" aria-label="Run span">
           <th
             colspan="2"
@@ -457,7 +523,13 @@
               ? undefined
               : `${layout.pinned.name}px`}>{run.name}</th
           >
-          <td class="table-cell">{@render spanBar(run.telemetry)}</td>
+          <td class="table-cell"
+            >{@render spanBar(
+              run.telemetry,
+              runWindow?.startTime,
+              run.seconds
+            )}</td
+          >
           <td class="table-cell"></td><td class="table-cell"></td>
         </tr>
       {/if}
@@ -653,7 +725,12 @@
                   </td>
                 {:else if column.key === 'seconds'}
                   <td class="table-cell text-left tabular-nums">
-                    {@render spanBar(item.telemetry)}
+                    {@render spanBar(
+                      item.telemetry,
+                      runWindow?.startTime ??
+                        attemptWindows[item.id]?.startTime,
+                      item.seconds
+                    )}
                   </td>
                 {:else if column.key === 'tools'}
                   <td class="table-cell text-left tabular-nums"
@@ -710,7 +787,14 @@
                       >
                     </div>
                   </th>
-                  <td class="table-cell">{@render spanBar(tool.telemetry)}</td>
+                  <td class="table-cell"
+                    >{@render spanBar(
+                      tool.telemetry,
+                      runWindow?.startTime ??
+                        attemptWindows[item.id]?.startTime,
+                      tool.seconds
+                    )}</td
+                  >
                   <td class="table-cell"></td><td class="table-cell"></td>
                 </tr>
               {/each}
@@ -740,11 +824,11 @@
           {:else if column.key === 'seconds'}
             <td
               class="table-cell text-left tabular-nums"
-              title="Sum of stored question-span durations across all repetitions"
+              title="Sum of recorded question durations across all repetitions"
             >
               {group.summary.duration.total === null
-                ? 'No stored durations'
-                : formatDuration(group.spanDuration)}
+                ? ''
+                : formatDuration(group.duration)}
               {#if group.summary.duration.incomplete && group.summary.duration.total !== null}<span
                   class="block text-rp-subtle">Partial total</span
                 >{/if}
