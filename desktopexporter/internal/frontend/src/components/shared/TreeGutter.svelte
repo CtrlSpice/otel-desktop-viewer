@@ -3,12 +3,15 @@
     childrenCount: number
     ancestorHasNextSibling: boolean[]
     isLastChild: boolean
+    /** The displayed parent link crosses missing or inconsistent ancestry. */
+    brokenParent?: boolean
   }
 </script>
 
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import TreeConnector from '@/components/shared/TreeConnector.svelte'
+  import TreeChildCount from '@/components/shared/TreeChildCount.svelte'
   type SegmentKind = 'none' | 'passthrough' | 'tee' | 'elbow'
 
   type Props = {
@@ -54,18 +57,25 @@
 <span
   class="gutter"
   aria-hidden={node ? undefined : true}
-  style:width="calc({depth + 1} * var(--waterfall-gutter-col) + var(--waterfall-gutter-tail))"
+  style:width="calc(var(--tree-count-width) + {depth + 1} * var(--waterfall-gutter-col)
+  + var(--waterfall-gutter-tail))"
   style:--tree-accent={color}
 >
+  {#if hasChildren}
+    <span class="gutter__count"
+      ><TreeChildCount count={tree.childrenCount} /></span
+    >
+  {/if}
   {#each segments as kind, d}
     <span
       class="gutter__col"
-      style:left="calc({d} * var(--waterfall-gutter-col))"
+      style:left="calc(var(--tree-count-width) + {d} * var(--waterfall-gutter-col))"
       style:width="var(--waterfall-gutter-col)"
     >
       {#if kind !== 'none'}
         <TreeConnector
           {kind}
+          broken={d === depth - 1 && tree.brokenParent}
           targetSize={hasChildren
             ? 'var(--waterfall-gutter-hub)'
             : 'var(--waterfall-gutter-leaf)'}
@@ -76,9 +86,12 @@
 
   <span
     class="gutter__node"
-    style:left="calc({depth} * var(--waterfall-gutter-col))"
+    style:left="calc(var(--tree-count-width) + {depth} * var(--waterfall-gutter-col))"
     style:width="var(--waterfall-gutter-col)"
   >
+    {#if depth === 0 && tree.brokenParent}
+      <TreeConnector kind="incoming" broken />
+    {/if}
     {#if hasChildren && !subtreeCollapsed}
       <TreeConnector kind="stem" />
     {/if}
@@ -99,6 +112,10 @@
 
   .gutter__col {
     @apply absolute top-0 bottom-0;
+  }
+  .gutter__count {
+    @apply absolute inset-y-0 left-0 flex items-center;
+    width: var(--tree-count-width);
   }
 
   /* ───── Decorative node slot ───── */

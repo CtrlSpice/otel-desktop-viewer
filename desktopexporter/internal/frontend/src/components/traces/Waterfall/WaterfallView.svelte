@@ -125,12 +125,19 @@
 
   function computeTreeMeta(spans: SpanNode[]): TreeConnectorMeta[] {
     const counts = childrenCounts(spans)
-    return spans.map((_, i) => ({
-      childrenCount: counts[i],
-      isLastChild: spans[i].depth === 0 ? false : isLastChild(spans, i),
-      ancestorHasNextSibling:
-        spans[i].depth === 0 ? [] : ancestorContinuationFlags(spans, i),
-    }))
+    const parents: string[] = []
+    return spans.map((span, i) => {
+      const parent = span.depth > 0 ? parents[span.depth - 1] : null
+      parents[span.depth] = span.spanData.spanID
+      parents.length = span.depth + 1
+      return {
+        childrenCount: counts[i],
+        brokenParent: (span.spanData.parentSpanID ?? null) !== (parent ?? null),
+        isLastChild: spans[i].depth === 0 ? false : isLastChild(spans, i),
+        ancestorHasNextSibling:
+          spans[i].depth === 0 ? [] : ancestorContinuationFlags(spans, i),
+      }
+    })
   }
 
   function categoricalKeyFor(
@@ -338,8 +345,13 @@
   let rowIndexBySpanID = $derived(
     new Map(rows.map((row, index) => [row.spanNode.spanData.spanID, index + 1]))
   )
-  let rootChildCount = $derived(
-    rows.find(row => row.spanNode.depth === 0)?.tree.childrenCount ?? 0
+  const countDigits = $derived(
+    String(
+      rows.reduce(
+        (maximum, row) => Math.max(maximum, row.tree.childrenCount),
+        1
+      )
+    ).length
   )
 
   let headerName = $derived.by(() => {
@@ -1093,6 +1105,7 @@
 <div
   class="waterfall-view {loading ? 'opacity-70' : 'opacity-100'}"
   data-unmatched-log-count={logPartition.unmatched.length}
+  style:--tree-count-width={`max(var(--waterfall-gutter-col), calc(${countDigits + 2}ch + 0.5rem))`}
 >
   <PaneHeader pill mode="title" title={headerName} ariaLabel="Trace waterfall">
     {#snippet metaLeft()}
@@ -1199,7 +1212,6 @@
           <thead class="header-surface waterfall-view__thead">
             <WaterfallTimeAxisHeader
               {barGrid}
-              {rootChildCount}
               traceDurationNs={bounds.duration}
               {targetTickCount}
               tickLabelWidth={TICK_LABEL_SLOT_PX}

@@ -4,16 +4,19 @@
     start = '50%',
     reach = 'var(--waterfall-gutter-col)',
     targetSize = 'var(--waterfall-gutter-hub)',
+    broken = false,
   }: {
-    kind: 'stem' | 'passthrough' | 'tee' | 'elbow' | 'arm'
+    kind: 'stem' | 'passthrough' | 'tee' | 'elbow' | 'arm' | 'incoming'
     start?: string
     reach?: string
     targetSize?: string
+    broken?: boolean
   } = $props()
 </script>
 
 <span
   class="tree-connector"
+  class:tree-connector--broken={broken}
   style:--tree-start={start}
   style:--tree-reach={reach}
   style:--tree-target-size={targetSize}
@@ -24,6 +27,9 @@
   {/if}
   {#if kind === 'tee' || kind === 'elbow' || kind === 'arm'}
     <span class="seg__arm" class:seg__arm--elbow={kind === 'elbow'}></span>
+  {/if}
+  {#if kind === 'incoming'}
+    <span class="seg seg--incoming"></span>
   {/if}
 </span>
 
@@ -45,6 +51,17 @@
   }
   .gutter__stem {
     top: calc(50% + var(--tree-target-size) / 2);
+  }
+  .seg--incoming {
+    top: calc(50% - var(--waterfall-gutter-col));
+    bottom: calc(50% + var(--tree-target-size) / 2);
+  }
+  .tree-connector--broken .seg--incoming {
+    background: none;
+    border-left: 1px dashed var(--tree-line-color);
+  }
+  .tree-connector--broken .seg__arm {
+    border-bottom-style: dashed;
   }
   .seg__arm {
     position: absolute;

@@ -32,39 +32,54 @@ ranked by their first sorted visible attempt; repetitions sort within each case.
 Missing measurements stay last within each case in both directions; cases with
 no known measurements come last. Ties preserve source order and sorting preserves selection.
 Columns use the shared resize geometry, drag lifecycle and handles. Widths are
-saved by view and column ID. Handles follow the visible table bounds, including
+saved by column ID across group combinations. Handles follow the visible table bounds, including
 the footer, and stop before unused space below the last row.
 
-The main pane has three focused table views, using the original shared
-Results / Time / Cost tabs. Results contains assessments; Time contains duration
-and separate Tool calls and Failures counts, with linked span bars; Cost contains investigator and grader estimates. Case and Rep
-remain visible in each view. Views share collapse state and attempt selection,
-with independent sorting and saved widths. Each table has one regular-weight
+The main pane has independent Results / Tool calls / Cost toggle buttons. Results
+starts on; any combination can be shown, including none (Case, Rep and Duration remain).
+Native buttons expose `aria-pressed` and toggle with Enter or Space. They reuse
+the shared header control styling: active icons use Primary, inactive icons and
+all labels use Text, with no persistent selected fill. Results contains assessments;
+Tool calls contains call and failure counts; Cost contains investigator and grader estimates. Tool branches remain available independently of these toggles. Case and Rep
+remain visible in each combination. Column order is always Case · Rep, Duration,
+Tool calls, Results, Cost, regardless of activation order. Case width stays stable
+across toggles; Duration absorbs spare width. Combinations share collapse state,
+attempt selection and saved widths, with independent sorting. The assessment
+legend appears whenever Results is shown; otherwise Tool calls/Cost use the execution
+legend. Each table has one regular-weight
 heading row. Logs and the trace waterfall retain their shared Columns picker.
-Each case name shares its parent row with aggregate values and wraps when needed. It branches to its repetition rows, including cases
-with only one repetition. Branches reuse the waterfall's rounded 1px Muted
+Case names stay on one line with ellipsis; hover retains the full name. Cases
+with multiple attempts share a parent row with aggregate values and branch to
+their repetition rows. A case with one attempt renders that attempt directly,
+with its name selecting Details, duration and assessment on the same row.
+Filtering a multi-attempt case down to one visible attempt does not flatten it.
+Branches reuse the waterfall's rounded 1px Muted
 connectors at 50% opacity. Repetition numbers select attempts; all values stay
 under their column headings. Case completion uses every attempt, including
 attempts hidden by the current filter.
-Case collapse uses the same TreeGutter, TreeChildCount and TreeToggle components
-as traces. The gutter and count form one full-height button, including wrapped
-case rows; Enter and Space toggle it without changing attempt selection.
+Case collapse uses the same TreeRowIdentity, TreeGutter, TreeChildCount and TreeToggle components
+as traces. A plain parenthesised child count sits in the left gutter before the dot,
+using global 14px/21px Atkinson Next typography and Subtle text. The count rail reserves enough width for
+the largest count and keeps ancestor connectors aligned on leaves and parents.
+The whole gutter is one full-height button; Enter and Space toggle it without changing attempt selection.
 Case and Rep share one `Case · Rep` heading, with independently sortable labels.
 Their compact heading slots and branches are measured from rendered labels,
-padding and shared tree spacing. The combined identity area absorbs spare width
-for wrapping case names, keeping answer columns compact toward the right by default.
+padding and shared tree spacing. The combined identity area keeps its resized width
+when groups change; Duration takes the spare width.
 The branch gutter stays fixed; the identity area and answer columns use shared
 resize handles. Rep numbers use Subtle.
 Resizing stays within the available table width and stops at readable column
 minimums. Horizontal scrolling is needed only when those minimums cannot fit.
 Case and Rep pin to the left during horizontal scrolling, including their heading,
-connectors and the Total label. Case titles wrap in the combined identity area.
+connectors and the Total label. Case titles truncate in the combined identity area.
 As in Logs, pinning releases when the pane cannot fit
 the pinned columns plus one complete scrolling column. Saved widths and shared
 hover/selection motion remain intact.
 Assessment dots, labels and numeric fractions stay together at the left; case
 percentages align above them. Measurements and their headings also align left.
-Duration is always present in Time. Stored span timings take precedence for
+Duration is always present, directly after Case · Rep. Its header uses the shared waterfall timing ruler, with the
+same guide renderer behind the bars and one aligned plotting width per column.
+Stored span timings take precedence for
 bars, sorting and totals. Otherwise a recorded eval duration draws a plain,
 unlinked bar; absent durations leave the cell empty. Zero is a recorded duration,
 not a missing value. Hover distinguishes recorded eval durations from span data.
@@ -78,9 +93,9 @@ duration labels follow bar ends. Tool calls include failed calls; Failures count
 calls separately for each repetition and the full case. Cost keeps
 investigator and grader estimates separate. The Total footer aligns each estimate
 under its visible cost column, with unknown and partial estimates explicit. Its
-top divider is a solid 1px Muted line at 60% opacity. The footer appears only in Cost.
+top divider is a solid 1px Muted line at 60% opacity. The footer appears whenever Cost is enabled.
 Totals cover the shown attempts; drawer summaries cover the whole run.
-Time fetches only explicit run, question/attempt and tool-call span references,
+The duration table fetches only explicit run, question/attempt and tool-call span references,
 using exact trace/span pairs and batches of at most 64 lightweight timing rows.
 It does not load trace trees, attributes or logs. Run spans appear when the run
 has a reference; question rows can fan out to their tool calls using the same

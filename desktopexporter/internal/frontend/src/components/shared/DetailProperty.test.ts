@@ -7,6 +7,30 @@ import { foldAll } from '@codemirror/language'
 import { jsonEditorView } from '@/test/json-editor-helpers'
 
 describe('DetailProperty copy controls', () => {
+  it('formats a stringified object inside a log body but copies the received array', async () => {
+    const user = userEvent.setup()
+    const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+    const inner = '{"path":"/recorded/config.jsonc"}'
+    const { container } = render(DetailProperty, {
+      fieldName: 'body',
+      fieldType: 'array',
+      typedValue: {
+        kind: 'array',
+        value: [
+          { kind: 'string', value: 'loading' },
+          { kind: 'string', value: inner },
+        ],
+      },
+    })
+    expect(jsonEditorView(container).state.doc.toString()).toBe(
+      '[\n  "loading",\n  {\n    "path": "/recorded/config.jsonc"\n  }\n]'
+    )
+    await user.click(screen.getByRole('button', { name: 'Copy body' }))
+    expect(copy).toHaveBeenCalledExactlyOnceWith(
+      JSON.stringify(['loading', inner], null, 2)
+    )
+  })
+
   it('colours the value without changing its copy text or colouring the field header', async () => {
     const user = userEvent.setup()
     const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()

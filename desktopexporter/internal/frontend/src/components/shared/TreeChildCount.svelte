@@ -9,16 +9,15 @@
 <span
   class="tree-child-count shrink-0 text-sm tabular-nums {className}"
   aria-hidden="true"
-  {title}>{count}</span
+  {title}>({count})</span
 >
 
 <style lang="postcss">
   @reference "../../app.css";
   .tree-child-count {
-    @apply text-center font-normal;
+    @apply text-center font-normal tracking-normal whitespace-nowrap;
     color: var(--color-subtle);
-    width: var(--waterfall-gutter-col);
-    margin-left: calc(0px - var(--waterfall-gutter-tail) - 0.25rem);
-    margin-right: 0.25rem;
+    font-size: var(--text-sm);
+    width: var(--tree-count-width);
   }
 </style>

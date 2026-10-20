@@ -5,10 +5,8 @@
   import type { SpanData } from '@/types/api-types'
   import type { WaterfallRowData } from './WaterfallView.svelte'
   import { formatDuration } from '@/utils/time'
-  import TreeGutter from '@/components/shared/TreeGutter.svelte'
-  import TreeChildCount from '@/components/shared/TreeChildCount.svelte'
+  import TreeRowIdentity from '@/components/shared/TreeRowIdentity.svelte'
   import SpanBar from '@/components/shared/SpanBar.svelte'
-  import TreeToggle from '@/components/shared/TreeToggle.svelte'
   import type { WaterfallGridLayout } from './WaterfallTimeAxisHeader.svelte'
   import WaterfallGrid from './WaterfallGrid.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
@@ -104,24 +102,6 @@
   )
 </script>
 
-{#snippet treeContent()}
-  <TreeGutter
-    depth={row.spanNode.depth}
-    tree={row.tree}
-    color={row.color}
-    {subtreeCollapsed}
-  />
-  {#if hasChildren}
-    <TreeChildCount
-      class="waterfall-row__child-count"
-      count={row.tree.childrenCount}
-      title="{row.tree.childrenCount} child {row.tree.childrenCount === 1
-        ? 'span'
-        : 'spans'}"
-    />
-  {/if}
-{/snippet}
-
 <!-- The virtual list wraps this row in divs, so its production role must be explicit. -->
 <!-- svelte-ignore a11y_no_redundant_roles -->
 <tr
@@ -146,64 +126,55 @@
     class="waterfall-row__td-name px-2 py-0 align-middle"
     style:width="{spanColWidth}px"
   >
-    <div class="flex min-w-0 items-center gap-1">
-      {#if hasChildren}
-        <TreeToggle
-          class="waterfall-row__tree-toggle"
-          label="{subtreeCollapsed ? 'Expand' : 'Collapse'} {span.name}, {row
-            .tree.childrenCount} child {row.tree.childrenCount === 1
-            ? 'span'
-            : 'spans'}"
-          expanded={!subtreeCollapsed}
-          onclick={onToggleExpand}
-        >
-          {@render treeContent()}
-        </TreeToggle>
-      {:else}
-        {@render treeContent()}
-      {/if}
-      <div
-        class="waterfall-row__title flex-1 text-left text-sm text-base-content"
-        title={span.name}
-      >
-        <TableValueCell
-          label="span field: name"
-          text={span.name}
-          inset={false}
-          onInspect={() =>
-            onInspectColumn
-              ? onInspectColumn({ source: 'span', key: 'name', field: true })
-              : onRowClick()}
-        />
-      </div>
-      {#if matched}
-        <span
-          class="badge badge-xs badge-primary waterfall-row__match flex-none"
-          >Match</span
-        >
-      {/if}
-      {#if cycleLabel}
-        <span
-          class="waterfall-row__cycle"
-          class:waterfall-row__cycle--cycle-point={row.spanNode.cyclePoint}
-          title={cycleLabel}
-          aria-label={cycleLabel}
-          role="img"
-        >
-          {#if row.spanNode.cyclePoint}
-            <HugeiconsIcon
-              icon={BiohazardIcon}
-              size="1em"
-              strokeWidth={1.5}
-              aria-hidden="true"
-            />
-          {:else}
-            <span aria-hidden="true">{'\u26A0'}</span>
-          {/if}
-        </span>
-      {/if}
-      <span class="col-resize-marker" aria-hidden="true"></span>
-    </div>
+    <TreeRowIdentity
+      name={span.name}
+      depth={row.spanNode.depth}
+      tree={row.tree}
+      color={row.color}
+      {subtreeCollapsed}
+      onToggle={onToggleExpand}
+      toggleClass="waterfall-row__tree-toggle"
+      titleClass="waterfall-row__title text-base-content"
+    >
+      <TableValueCell
+        label="span field: name"
+        text={span.name}
+        inset={false}
+        onInspect={() =>
+          onInspectColumn
+            ? onInspectColumn({ source: 'span', key: 'name', field: true })
+            : onRowClick()}
+      />
+      {#snippet trailing()}
+        {#if matched}
+          <span
+            class="badge badge-xs badge-primary waterfall-row__match flex-none"
+            >Match</span
+          >
+        {/if}
+        {#if cycleLabel}
+          <span
+            class="waterfall-row__cycle"
+            class:waterfall-row__cycle--cycle-point={row.spanNode.cyclePoint}
+            title={cycleLabel}
+            aria-label={cycleLabel}
+            role="img"
+          >
+            {#if row.spanNode.cyclePoint}
+              <HugeiconsIcon
+                icon={BiohazardIcon}
+                size="1em"
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
+            {:else}
+              <span aria-hidden="true">{'\u26A0'}</span>
+            {/if}
+          </span>
+        {/if}
+        <span class="col-resize-marker" aria-hidden="true"></span>
+      {/snippet}
+    </TreeRowIdentity>
   </td>
   {#each optionalColumns as column (column.id)}
     {@const cell = columnCell(span, column)}
@@ -280,9 +251,6 @@
     height: var(--table-row-h);
   }
 
-  .waterfall-row__title {
-    @apply min-w-0 flex-1;
-  }
   .waterfall-row__missing {
     padding-inline: var(--table-cell-inline-padding, 0.5rem);
   }

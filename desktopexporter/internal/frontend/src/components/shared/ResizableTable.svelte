@@ -36,6 +36,7 @@
     footer,
     pinnedCount = 0,
     fillColumn,
+    stableColumns = [],
     constrainToViewport = false,
   }: {
     columns: ResizableTableColumn[]
@@ -46,6 +47,8 @@
     footer?: Snippet<[ResizableTableLayout]>
     pinnedCount?: number
     fillColumn?: string
+    /** Preserve these resizable widths when the viewport or visible columns change. */
+    stableColumns?: string[]
     constrainToViewport?: boolean
   } = $props()
   let viewportWidth = $state(0)
@@ -69,13 +72,20 @@
   const defaults = $derived(
     Object.fromEntries(columns.map(column => [column.id, column.width]))
   )
+  const fitSpecs = $derived(
+    specs.map(spec =>
+      stableColumns.includes(spec.id)
+        ? fixed(
+            spec.id,
+            Math.max(spec.min, current[spec.id] ?? defaults[spec.id])
+          )
+        : spec
+    )
+  )
   const baseWidth = $derived(
     Math.max(
       columns.length > pinnedCount ? viewportWidth : 0,
-      columns.reduce(
-        (sum, column) => sum + (column.fixed ? column.width : column.min),
-        0
-      )
+      fitSpecs.reduce((sum, spec) => sum + spec.min, 0)
     )
   )
   const targetWidth = $derived(
@@ -94,7 +104,12 @@
         )
   )
   const widths = $derived(
-    reconcileWidths(specs, { ...defaults, ...current }, targetWidth, fillColumn)
+    reconcileWidths(
+      fitSpecs,
+      { ...defaults, ...current },
+      targetWidth,
+      fillColumn
+    )
   )
   const tableWidth = $derived(
     columns.reduce((sum, column) => sum + widths[column.id], 0)

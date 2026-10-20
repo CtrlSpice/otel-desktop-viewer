@@ -7,28 +7,19 @@ import WaterfallTimeAxisHeader, {
 } from './WaterfallTimeAxisHeader.svelte'
 
 describe('waterfall name heading alignment', () => {
-  it.each([0, 4, 123])('reserves the root count slot for %s children', rootChildCount => {
+  it('keeps the span heading free of decorative child counts', () => {
     const target = document.createElement('thead')
     const { container } = render(WaterfallTimeAxisHeader, {
       target,
       props: {
         traceDurationNs: 1n,
         spanColWidth: 300,
-        rootChildCount,
         barGrid: waterfallGrid(waterfallTimeAxis(1n, 1), 400),
       },
     })
     const heading = container.querySelector('[aria-label="Span name"]')!
-    const spacer = heading.querySelector('[aria-hidden="true"]')
-    if (rootChildCount > 0) {
-      expect(heading).toHaveClass('waterfall-time-axis-header__th-span--parent')
-      expect(spacer).toHaveTextContent(String(rootChildCount))
-      expect(spacer).toHaveClass('invisible', 'tabular-nums', 'font-normal')
-      expect(spacer).toHaveClass('waterfall-time-axis-header__count-spacer')
-    } else {
-      expect(spacer).toBeNull()
-      expect(heading).not.toHaveClass('waterfall-time-axis-header__th-span--parent')
-    }
+    expect(heading).toHaveTextContent('name')
+    expect(heading.querySelector('.tree-child-count')).toBeNull()
   })
 })
 
@@ -61,7 +52,11 @@ describe('waterfall time-grid subdivisions', () => {
 
   it('continues the minor grid into the final partial interval without extending time', () => {
     const axis = waterfallTimeAxis(250_000_000n, 2)
-    expect(axis.ticks.map(tick => tick.label)).toEqual(['0ms', '100ms', '200ms'])
+    expect(axis.ticks.map(tick => tick.label)).toEqual([
+      '0ms',
+      '100ms',
+      '200ms',
+    ])
     expect(axis.guides.map(guide => guide.offsetPercent)).toEqual([
       0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100,
     ])
@@ -118,7 +113,9 @@ describe('waterfall grid bounds', () => {
       { offsetPx: 360, major: false },
       { offsetPx: 400, major: false },
     ])
-    expect(grid.guides.every(guide => guide.offsetPx <= grid.widthPx)).toBe(true)
+    expect(grid.guides.every(guide => guide.offsetPx <= grid.widthPx)).toBe(
+      true
+    )
   })
 
   it('retains whole-nanosecond subdivision spacing', () => {

@@ -15,12 +15,12 @@
     clamp = false,
   }: { value: AttributeValue; path?: string; clamp?: boolean } = $props()
   let json = $derived(
-    value.kind === 'string' ? jsonContainerTokens(value.value) : null
+    value.kind === 'string' ? jsonContainerTokens(value.value, true) : null
   )
   let readable = $derived(
     value.kind === 'string' && !json && isReadableText(value.value, path)
   )
-  let tokens = $derived(json ?? attributeValueTokens(value))
+  let tokens = $derived(json ?? attributeValueTokens(value, true))
   let structured = $derived(
     Boolean(json) || value.kind === 'array' || value.kind === 'map'
   )

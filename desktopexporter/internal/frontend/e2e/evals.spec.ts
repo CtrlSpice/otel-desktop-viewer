@@ -2,6 +2,15 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 import { exampleRuns } from '../src/components/evals/examples'
 
+async function showOnly(page: Page, label: 'Results' | 'Tool calls' | 'Cost') {
+  const toggles = page.getByRole('group', { name: 'Shown eval columns' })
+  for (const name of ['Results', 'Tool calls', 'Cost']) {
+    const toggle = toggles.getByRole('button', { name, exact: true })
+    if ((await toggle.getAttribute('aria-pressed')) !== String(name === label))
+      await toggle.click()
+  }
+}
+
 async function enableEvals(page: Page, enabled = true) {
   await page.route('**/rpc', async route => {
     const request = route.request().postDataJSON()
@@ -130,7 +139,7 @@ test('run selection, assessments, filtering and browser history stay connected',
   ).toBeVisible()
   await page
     .locator('[data-attempt-id]')
-    .getByRole('button', { name: /Find the slow request/ })
+    .getByRole('button', { name: 'Find the slow request', exact: true })
     .first()
     .click()
   const detail = page.getByRole('region', {
@@ -177,7 +186,7 @@ test('run selection, assessments, filtering and browser history stay connected',
   ).toBeVisible()
   await page
     .locator('[data-attempt-id]')
-    .getByRole('button', { name: /Compare CPU evidence/ })
+    .getByRole('button', { name: 'Compare CPU evidence', exact: true })
     .first()
     .click()
   await expect(
@@ -213,6 +222,115 @@ test('run selection, assessments, filtering and browser history stay connected',
   ).toHaveCount(2)
 })
 
+for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
+  test(`column groups toggle independently in fixed order with icon-only active styling in ${theme}`, async ({
+    page,
+  }) => {
+    await enableEvals(page)
+    await page.addInitScript(
+      theme => localStorage.setItem('theme', theme),
+      theme
+    )
+    await page.goto('/evals?run=direct&attempt=request-latency')
+    const url = page.url()
+    const toggles = page.getByRole('group', { name: 'Shown eval columns' })
+    const results = toggles.getByRole('button', {
+      name: 'Results',
+      exact: true,
+    })
+    const time = toggles.getByRole('button', {
+      name: 'Tool calls',
+      exact: true,
+    })
+    const cost = toggles.getByRole('button', { name: 'Cost', exact: true })
+    await expect(results).toHaveAttribute('aria-pressed', 'true')
+    await expect(time).toHaveAttribute('aria-pressed', 'false')
+    await expect(cost).toHaveAttribute('aria-pressed', 'false')
+    await cost.focus()
+    await page.keyboard.press('Space')
+    await time.focus()
+    await page.keyboard.press('Enter')
+    await page.mouse.move(0, 0)
+    const table = page.getByRole('table', {
+      name: 'Results + Tool calls + Cost for Direct agent',
+    })
+    await expect(table).toBeVisible()
+    const headings = await table
+      .locator('thead button')
+      .evaluateAll(buttons =>
+        buttons.map(button => button.getAttribute('aria-label'))
+      )
+    expect(headings).toEqual(
+      [
+        'Case',
+        'Repetition',
+        'Duration',
+        'Tool calls',
+        'Failures',
+        ...exampleRuns[1].assessments.map(item => item.name),
+        'Investigator',
+        'Grader',
+      ].map(label => `Sort by ${label}`)
+    )
+    for (const toggle of [results, time, cost]) {
+      await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+      await expect(toggle).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+      const colors = await toggle.evaluate(button => {
+        const probe = document.createElement('span')
+        probe.style.color = 'var(--color-primary)'
+        button.append(probe)
+        const primary = getComputedStyle(probe).color
+        probe.remove()
+        return {
+          icon: getComputedStyle(button.querySelector('.header-tab__icon')!)
+            .color,
+          primary,
+          label: getComputedStyle(button.querySelector('.header-tab__label')!)
+            .color,
+          text: getComputedStyle(button).color,
+        }
+      })
+      expect(colors.icon).toBe(colors.primary)
+      expect(colors.label).toBe(colors.text)
+    }
+    await results.click()
+    await page.mouse.move(0, 0)
+    expect(
+      await results.evaluate(
+        button =>
+          getComputedStyle(button.querySelector('.header-tab__icon')!).color ===
+          getComputedStyle(button).color
+      )
+    ).toBe(true)
+    await results.click()
+    expect(
+      await table
+        .locator('thead button')
+        .evaluateAll(buttons =>
+          buttons.map(button => button.getAttribute('aria-label'))
+        )
+    ).toEqual(headings)
+    await expect(
+      table.locator(
+        '[data-attempt-id="request-latency"] button[aria-pressed="true"]'
+      )
+    ).toHaveCount(1)
+    expect(page.url()).toBe(url)
+    await test.info().attach('combined-groups', {
+      body: await page.screenshot({
+        path: test.info().outputPath('combined-groups.png'),
+      }),
+      contentType: 'image/png',
+    })
+    await results.click()
+    await time.click()
+    await cost.click()
+    const cases = page.getByRole('table', { name: 'Cases for Direct agent' })
+    await expect(cases.locator('thead th')).toHaveCount(2)
+    await expect(cases.locator('[data-attempt-id]')).toHaveCount(16)
+  })
+}
+
 test('Results, Time and Cost preserve selection and distinguish missing measurements and totals', async ({
   page,
 }) => {
@@ -227,13 +345,13 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
   const url = page.url()
   await expect(selected).toHaveAttribute('aria-pressed', 'true')
   await expect(
-    page.getByRole('tab', { name: /^(Results|Time|Cost)$/ })
+    page.getByRole('group', { name: 'Shown eval columns' }).getByRole('button')
   ).toHaveCount(3)
   await expect(
     page.getByRole('button', { name: 'Columns', exact: true })
   ).toHaveCount(0)
-  await page.getByRole('tab', { name: 'Time', exact: true }).click()
-  const time = page.getByRole('table', { name: 'Time for Direct agent' })
+  await showOnly(page, 'Tool calls')
+  const time = page.getByRole('table', { name: 'Tool calls for Direct agent' })
   await expect(time.locator('[data-attempt-id="cpu-evidence"]')).toContainText(
     '89.000 s'
   )
@@ -303,7 +421,7 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
   await expect(
     time.locator('[data-attempt-id="checkout-latency"] td').nth(2)
   ).toHaveText('0')
-  await page.getByRole('tab', { name: 'Cost', exact: true }).click()
+  await showOnly(page, 'Cost')
   const costs = page.getByRole('table', { name: 'Cost for Direct agent' })
   expect(
     await costs
@@ -363,7 +481,7 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
   ).toBe(true)
   await expect(selected).toHaveAttribute('aria-pressed', 'true')
   expect(page.url()).toBe(url)
-  await page.getByRole('tab', { name: 'Results', exact: true }).click()
+  await showOnly(page, 'Results')
   const results = page.getByRole('table', { name: 'Results for Direct agent' })
   await expect(
     results
@@ -379,7 +497,7 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
     '.eval-results__case[data-case-id="cpu-evidence"]'
   )
   await parent.getByRole('button').click()
-  await page.getByRole('tab', { name: 'Time', exact: true }).click()
+  await showOnly(page, 'Tool calls')
   await expect(parent.getByRole('button')).toHaveAttribute(
     'aria-expanded',
     'false'
@@ -387,7 +505,7 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
   await expect(
     time.locator('[data-case-id="cpu-evidence"][data-attempt-id]')
   ).toHaveCount(0)
-  await page.getByRole('tab', { name: 'Cost', exact: true }).click()
+  await showOnly(page, 'Cost')
   await expect(parent.getByRole('button')).toHaveAttribute(
     'aria-expanded',
     'false'
@@ -437,8 +555,8 @@ test('column sorting preserves selection and keeps unknown measurements last wit
   )
   await expect(selected).toHaveAttribute('aria-pressed', 'true')
   expect(page.url()).toBe(url)
-  await page.getByRole('tab', { name: 'Time', exact: true }).click()
-  const time = page.getByRole('table', { name: 'Time for Direct agent' })
+  await showOnly(page, 'Tool calls')
+  const time = page.getByRole('table', { name: 'Tool calls for Direct agent' })
   await time.getByRole('button', { name: 'Sort by Duration' }).click()
   await time.getByRole('button', { name: 'Sort by Duration' }).click()
   await expect(time.locator('tbody tr').first()).toContainText(
@@ -447,7 +565,7 @@ test('column sorting preserves selection and keeps unknown measurements last wit
   await expect(time.locator('[data-attempt-id]').last()).toContainText(
     'Locate service errors'
   )
-  await page.getByRole('tab', { name: 'Cost', exact: true }).click()
+  await showOnly(page, 'Cost')
   const costs = page.getByRole('table', { name: 'Cost for Direct agent' })
   await costs.getByRole('button', { name: 'Sort by Investigator' }).click()
   await costs.getByRole('button', { name: 'Sort by Investigator' }).click()
@@ -457,7 +575,7 @@ test('column sorting preserves selection and keeps unknown measurements last wit
   await expect(costs.locator('[data-attempt-id]').last()).toContainText(
     'Locate service errors'
   )
-  await page.getByRole('tab', { name: 'Results', exact: true }).click()
+  await showOnly(page, 'Results')
   await expect(header).toHaveAttribute('aria-sort', 'descending')
   await expect(selected).toHaveAttribute('aria-pressed', 'true')
   expect(page.url()).toBe(url)
@@ -467,7 +585,7 @@ test('column resizing uses shared handles and retains widths, sorting and select
   page,
 }) => {
   await enableEvals(page)
-  await page.setViewportSize({ width: 1920, height: 1000 })
+  await page.setViewportSize({ width: 2560, height: 1000 })
   await page.goto('/evals?run=direct&attempt=request-latency')
   const url = page.url()
   const table = page.getByRole('table', { name: 'Results for Direct agent' })
@@ -523,9 +641,9 @@ test('column resizing uses shared handles and retains widths, sorting and select
       .first()
   ).toHaveAttribute('aria-pressed', 'true')
   expect(page.url()).toBe(url)
-  await page.getByRole('tab', { name: 'Time', exact: true }).click()
+  await showOnly(page, 'Tool calls')
   const duration = page
-    .getByRole('table', { name: 'Time for Direct agent' })
+    .getByRole('table', { name: 'Tool calls for Direct agent' })
     .getByRole('columnheader', { name: /Duration/ })
   const durationWidth = await duration.evaluate(
     element => element.getBoundingClientRect().width
@@ -539,7 +657,7 @@ test('column resizing uses shared handles and retains widths, sorting and select
       duration.evaluate(element => element.getBoundingClientRect().width)
     )
     .toBeCloseTo(durationWidth + 16, 0)
-  await page.getByRole('tab', { name: 'Results', exact: true }).click()
+  await showOnly(page, 'Results')
   await expect.poll(width).toBeCloseTo(before + 40, 0)
   await expect(heading).toHaveAttribute('aria-sort', 'ascending')
   await page.reload()
@@ -616,7 +734,7 @@ test('case branches stay connected to aligned repetitions through sorting and re
   await page.setViewportSize({ width: 1920, height: 1000 })
   await page.goto('/evals?run=direct&attempt=request-latency-rep-2')
   const table = page.getByRole('table', { name: 'Results for Direct agent' })
-  await expect(table.locator('.eval-results__case')).toHaveCount(8)
+  await expect(table.locator('.eval-results__case')).toHaveCount(5)
   await expect(table.locator('[data-attempt-id]')).toHaveCount(16)
   const parent = table.locator(
     '.eval-results__case[data-case-id="request-latency"]'
@@ -628,10 +746,11 @@ test('case branches stay connected to aligned repetitions through sorting and re
   await expect(
     parent.getByRole('img', { name: 'Complete', exact: true })
   ).toBeVisible()
-  await expect(children.nth(1).getByRole('button')).toHaveAttribute(
-    'aria-pressed',
-    'true'
-  )
+  await expect(
+    children
+      .nth(1)
+      .getByRole('button', { name: 'Find the slow request', exact: true })
+  ).toHaveAttribute('aria-pressed', 'true')
   await expect(
     table.locator('.eval-results__case[data-case-id="cpu-evidence"] .bg-papaya')
   ).toHaveCount(1)
@@ -666,11 +785,7 @@ test('case branches stay connected to aligned repetitions through sorting and re
           '[data-case-id="request-latency"][data-attempt-id]'
         ),
       ]
-      const headers = [
-        ...element.querySelectorAll(
-          '.eval-results__case-heading, .eval-results__rep-heading, thead th[scope="col"]'
-        ),
-      ]
+      const headers = [...element.querySelectorAll('thead th')]
       return {
         stemOffset: Math.abs(dot.x + dot.width / 2 - stem.x - stem.width / 2),
         stemStart: Math.abs(dot.bottom - stem.top),
@@ -678,17 +793,20 @@ test('case branches stay connected to aligned repetitions through sorting and re
           stem.bottom - rect(children[0].querySelector('.seg')!).top
         ),
         rows: children.map(row => {
-          const nameArm = rect(row.querySelector('td .seg__arm')!)
-          const repArm = rect(row.querySelector('th .seg__arm')!)
-          const button = rect(row.querySelector('button')!)
+          const arm = rect(row.querySelector('.seg__arm')!)
+          const childDot = rect(row.querySelector('.gutter__node .size-2')!)
+          const count = rect(row.querySelector('.tree-child-count')!)
+          const parentCount = rect(parent.querySelector('.tree-child-count')!)
           return {
-            gap: Math.abs(nameArm.right - repArm.left),
-            level: Math.abs(nameArm.bottom - repArm.bottom),
-            clearance: button.left - repArm.right,
-            repAlignment: Math.abs(button.right - rect(headers[1]).right + 16),
+            gap: Math.abs(arm.right - childDot.left),
+            level: Math.abs(
+              arm.bottom - (childDot.top + childDot.height / 2 + 0.5)
+            ),
+            indent: childDot.left - dot.left,
+            countAlignment: Math.abs(count.left - parentCount.left),
+            countBeforeDot: count.right < childDot.left,
             alignment: [...row.children].every(
               (cell, index) =>
-                index === 1 ||
                 Math.abs(rect(cell).right - rect(headers[index]).right) < 1
             ),
           }
@@ -704,8 +822,9 @@ test('case branches stay connected to aligned repetitions through sorting and re
     for (const row of geometry.rows) {
       expect(row.gap).toBeLessThan(1)
       expect(row.level).toBeLessThan(1)
-      expect(row.clearance).toBeCloseTo(8, 0)
-      expect(row.repAlignment).toBeLessThan(1)
+      expect(row.indent).toBeCloseTo(22, 0)
+      expect(row.countAlignment).toBeLessThan(1)
+      expect(row.countBeforeDot).toBe(true)
       expect(row.alignment).toBe(true)
     }
     expect(geometry.elbows).toEqual([0, 0, 1])
@@ -729,12 +848,13 @@ test('case branches stay connected to aligned repetitions through sorting and re
   await page.keyboard.press('Space')
   await expect(toggle).toHaveAttribute('aria-expanded', 'true')
   await expect(children).toHaveCount(3)
-  await expect(children.nth(1).getByRole('button')).toHaveAttribute(
-    'aria-pressed',
-    'true'
-  )
+  await expect(
+    children
+      .nth(1)
+      .getByRole('button', { name: 'Find the slow request', exact: true })
+  ).toHaveAttribute('aria-pressed', 'true')
   await expect(parent.locator('th')).toHaveAttribute('colspan', '2')
-  const title = parent.locator('.eval-results__case-name > span:last-child')
+  const title = parent.locator('.tree-row-identity__title > span')
   const initialHeight = await parent.evaluate(
     element => element.getBoundingClientRect().height
   )
@@ -755,11 +875,15 @@ test('case branches stay connected to aligned repetitions through sorting and re
   ).toBeLessThan(1)
   expect(
     await parent.evaluate(element => element.getBoundingClientRect().height)
-  ).toBeGreaterThan(initialHeight)
+  ).toBeCloseTo(initialHeight, 0)
   await checkGeometry()
   await table.getByRole('button', { name: 'Sort by Repetition' }).click()
   await table.getByRole('button', { name: 'Sort by Repetition' }).click()
-  await expect(children.locator('button')).toHaveText(['3', '2', '1'])
+  await expect(children.locator('.eval-results__rep-button')).toHaveText([
+    /Rep 3$/,
+    /Rep 2$/,
+    /Rep 1$/,
+  ])
   await page
     .getByRole('separator', {
       name: 'Resize Task completion column',
@@ -769,7 +893,10 @@ test('case branches stay connected to aligned repetitions through sorting and re
   await page.keyboard.press('ArrowRight')
   await table.locator('..').evaluate(element => (element.scrollLeft = 40))
   await checkGeometry()
-  await children.first().getByRole('button').click()
+  await children
+    .first()
+    .getByRole('button', { name: 'Find the slow request', exact: true })
+    .click()
   await expect(page).toHaveURL(/attempt=request-latency-rep-3/)
 })
 
@@ -807,16 +934,14 @@ for (const theme of ['rose-pine', 'rose-pine-dawn']) {
         const caseCell = rect(
           '[data-attempt-id="request-latency"] > :nth-child(1)'
         )
-        const repCell = rect(
-          '[data-attempt-id="request-latency"] > :nth-child(2)'
-        )
         return {
           caseX: caseHeader.x,
           repX: repHeader.x,
           right: repHeader.right,
           caseCellX: caseCell.x,
-          repCellX: repCell.x,
-          titleX: rect('.eval-results__case-name').x,
+          identityRight: caseCell.right,
+          headingRight: rect('thead th').right,
+          titleX: rect('.tree-row-identity__title').x,
           resultX: rect('thead th[scope="col"]').x,
         }
       })
@@ -832,7 +957,7 @@ for (const theme of ['rose-pine', 'rose-pine-dawn']) {
       const after = await measure()
       expect(after.repX).toBeCloseTo(before.repX, 0)
       expect(after.caseCellX).toBeCloseTo(before.caseX, 0)
-      expect(after.repCellX).toBeCloseTo(before.repX, 0)
+      expect(after.identityRight).toBeCloseTo(after.headingRight, 0)
       expect(after.titleX).toBeCloseTo(before.titleX, 0)
       expect(after.resultX).toBeCloseTo(before.resultX - actualScroll, 0)
     }
@@ -841,7 +966,10 @@ for (const theme of ['rose-pine', 'rose-pine-dawn']) {
     ).toHaveCount(1)
     expect(before.repX - before.caseX).toBeLessThan(80)
     expect(before.right - before.repX).toBeLessThan(72)
-    const rep = selected.getByRole('button')
+    const rep = selected.getByRole('button', {
+      name: 'Find the slow request',
+      exact: true,
+    })
     await rep.hover()
     const backgrounds = () =>
       selected.evaluate(row =>
@@ -877,7 +1005,7 @@ test('detail actions reopen the panel, including the selected attempt', async ({
   await expect(detail).toBeHidden()
   const attempt = page
     .locator('[data-attempt-id]')
-    .getByRole('button', { name: /Find the slow request/ })
+    .getByRole('button', { name: 'Find the slow request', exact: true })
     .first()
   for (let selection = 0; selection < 2; selection++) {
     await attempt.click()

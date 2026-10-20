@@ -251,7 +251,7 @@
 
 <script lang="ts">
   import TableColumnHeading from '@/components/shared/TableColumnHeading.svelte'
-  import WaterfallGrid from './WaterfallGrid.svelte'
+  import WaterfallTimeRuler from './WaterfallTimeRuler.svelte'
   import { columnLabel, type SizedWaterfallColumn } from './waterfall-columns'
   import {
     DURATION_GUTTER_REM,
@@ -264,7 +264,6 @@
     targetTickCount?: number
     tickLabelWidth?: number
     spanColWidth: number
-    rootChildCount?: number
     barGrid: WaterfallGridLayout
     optionalColumns?: SizedWaterfallColumn[]
   }
@@ -274,7 +273,6 @@
     targetTickCount = 6,
     tickLabelWidth = 80,
     spanColWidth,
-    rootChildCount = 0,
     barGrid,
     optionalColumns = [],
   }: Props = $props()
@@ -292,16 +290,10 @@
   <th
     scope="col"
     class="waterfall-time-axis-header__th-label waterfall-time-axis-header__th-span"
-    class:waterfall-time-axis-header__th-span--parent={rootChildCount > 0}
     style:width="{spanColWidth}px"
     aria-label="Span name"
   >
     <span class="flex min-w-0 items-center gap-2">
-      {#if rootChildCount > 0}
-        <span class="waterfall-time-axis-header__count-spacer invisible shrink-0 font-normal tabular-nums" aria-hidden="true"
-          >{rootChildCount}</span
-        >
-      {/if}
       <TableColumnHeading label="name" source="Span" signal="Span" />
     </span>
   </th>
@@ -323,17 +315,7 @@
   {/each}
   <th scope="col" class="waterfall-time-axis-header__th-ruler">
     <div class="waterfall-time-axis-header__ruler">
-      <WaterfallGrid layout={barGrid} />
-      {#each axis.ticks as tick}
-        <div
-          class="waterfall-time-axis-header__tick"
-          style:left="{tick.offsetPercent}%"
-        >
-          <span class="waterfall-time-axis-header__tick-label"
-            >{tick.label}</span
-          >
-        </div>
-      {/each}
+      <WaterfallTimeRuler {axis} layout={barGrid} />
     </div>
   </th>
 </tr>
@@ -352,16 +334,9 @@
 
   .waterfall-time-axis-header__th-span {
     padding-left: calc(
-      0.5rem + var(--waterfall-gutter-col) + var(--waterfall-gutter-tail) + 0.25rem
+      0.5rem + var(--tree-count-width) + var(--waterfall-gutter-col) +
+        var(--waterfall-gutter-tail) + 0.25rem
     );
-  }
-
-  .waterfall-time-axis-header__th-span--parent {
-    padding-left: calc(0.5rem + var(--waterfall-gutter-col));
-  }
-
-  .waterfall-time-axis-header__count-spacer {
-    width: var(--waterfall-gutter-col);
   }
 
   .waterfall-time-axis-header__th-attribute {
@@ -380,21 +355,4 @@
     left: var(--timeline-left-inset);
     right: calc(var(--duration-gutter) + var(--outside-record-slot));
   }
-
-  .waterfall-time-axis-header__ruler :global(.waterfall-grid) {
-    top: calc(var(--primary-label-center) + 0.5lh);
-  }
-
-  .waterfall-time-axis-header__tick {
-    @apply absolute bottom-0 h-full;
-  }
-
-  .waterfall-time-axis-header__tick-label {
-    @apply absolute text-sm font-semibold tracking-normal text-center;
-    top: var(--primary-label-center);
-    width: var(--tick-label-w);
-    margin-left: calc(var(--tick-label-w) / -2);
-    transform: translateY(-50%);
-  }
-
 </style>

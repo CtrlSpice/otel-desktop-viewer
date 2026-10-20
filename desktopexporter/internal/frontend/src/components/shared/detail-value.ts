@@ -89,7 +89,10 @@ export function valueTokenTree(
 }
 
 /** Recognize only complete JSON containers; format lexemes, never parsed numbers. */
-export function jsonContainerTokens(text: string): ValueToken[] | null {
+export function jsonContainerTokens(
+  text: string,
+  expandStrings = false
+): ValueToken[] | null {
   if (!/^\s*[[{]/.test(text)) return null
   try {
     JSON.parse(text)
@@ -119,6 +122,16 @@ export function jsonContainerTokens(text: string): ValueToken[] | null {
     } else if (part === ':') {
       punctuation(': ')
     } else {
+      // Decode only string values containing complete containers. Keep keys,
+      // scalar strings and invalid JSON as received. This is display-only;
+      // copy/export callers use the default, lossless mode.
+      if (expandStrings && part.startsWith('"') && parts[index + 1] !== ':') {
+        const nested = jsonContainerTokens(JSON.parse(part) as string, true)
+        if (nested) {
+          for (const token of indentTokens(nested, depth)) tokens.push(token)
+          return
+        }
+      }
       tokens.push({
         text: part,
         kind: part.startsWith('"')
@@ -134,6 +147,15 @@ export function jsonContainerTokens(text: string): ValueToken[] | null {
   return tokens
 }
 
+function indentTokens(tokens: ValueToken[], depth: number): ValueToken[] {
+  const indent = '  '.repeat(depth)
+  return tokens.map(token =>
+    token.kind === 'punctuation'
+      ? { ...token, text: token.text.replaceAll('\n', `\n${indent}`) }
+      : token
+  )
+}
+
 /** Names and prose use text styling; recognizable IDs and numeric strings do not. */
 export function isReadableText(text: string, path?: string): boolean {
   return (
@@ -146,7 +168,10 @@ export function isReadableText(text: string, path?: string): boolean {
 }
 
 /** Format received values directly: do not round int64s or merge duplicate keys. */
-export function attributeValueTokens(value: AttributeValue): ValueToken[] {
+export function attributeValueTokens(
+  value: AttributeValue,
+  expandStrings = false
+): ValueToken[] {
   const tokens: ValueToken[] = []
   const punctuation = (text: string) =>
     tokens.push({ text, kind: 'punctuation' })
@@ -180,6 +205,19 @@ export function attributeValueTokens(value: AttributeValue): ValueToken[] {
         break
       }
       case 'string':
+        if (expandStrings) {
+          const nested = jsonContainerTokens(value.value, true)
+          if (nested) {
+            for (const token of indentTokens(nested, depth)) tokens.push(token)
+            break
+          }
+        }
+        tokens.push({
+          text: JSON.stringify(value.value),
+          kind: 'string',
+          type: value.kind,
+        })
+        break
       case 'bytes':
         tokens.push({
           text: JSON.stringify(value.value),

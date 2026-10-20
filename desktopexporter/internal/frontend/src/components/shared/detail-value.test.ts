@@ -11,6 +11,61 @@ import {
 import type { AttributeValue } from '@/types/api-types'
 
 describe('detail value formatting', () => {
+  it('formats JSON strings inside typed arrays and maps only for display', () => {
+    const inner =
+      '{"path":"/recorded/config.jsonc","n":9007199254740993,"n":-0}'
+    const value: AttributeValue = {
+      kind: 'array',
+      value: [
+        { kind: 'string', value: 'loading' },
+        {
+          kind: 'map',
+          value: [{ key: 'payload', value: { kind: 'string', value: inner } }],
+        },
+        { kind: 'bytes', value: inner },
+      ],
+    }
+    const display = attributeValueTokens(value, true)
+      .map(token => token.text)
+      .join('')
+    expect(display).toContain(
+      '"payload": {\n      "path": "/recorded/config.jsonc",\n      "n": 9007199254740993,\n      "n": -0\n    }'
+    )
+    expect(display).toContain(JSON.stringify(inner))
+    expect(JSON.parse(attributeValueCopy(value))).toEqual([
+      'loading',
+      { payload: inner },
+      inner,
+    ])
+  })
+
+  it('formats embedded containers recursively without coercing keys, scalar strings or malformed JSON', () => {
+    const inner = '{"n":1.2300e+40,"n":-0,"literal":"42"}'
+    const nested = JSON.stringify({ payload: JSON.stringify([inner]) })
+    const source = JSON.stringify([
+      nested,
+      'true',
+      '42',
+      '[invalid]',
+      { '{"key":1}': '[]' },
+    ])
+    const display = jsonContainerTokens(source, true)!
+      .map(token => token.text)
+      .join('')
+    expect(display).toContain(
+      '"payload": [\n      {\n        "n": 1.2300e+40,\n        "n": -0,\n        "literal": "42"\n      }\n    ]'
+    )
+    expect(display).toContain('"true",\n  "42",\n  "[invalid]"')
+    expect(display).toContain('"{\\"key\\":1}": []')
+    expect(
+      JSON.parse(
+        jsonContainerTokens(source)!
+          .map(token => token.text)
+          .join('')
+      )
+    ).toEqual(JSON.parse(source))
+  })
+
   it.each([
     '{message: "checkout: ready, now", paid: true, total: 49.95, … (+1 fields)}',
     '["line\\n\\\"quoted", object (3 fields), array (2 items), … (+2 items)]',

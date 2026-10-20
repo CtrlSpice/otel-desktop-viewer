@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { SpanTiming } from '@/types/api-types'
   import { formatDuration } from '@/utils/time'
-  import { traceServiceColor } from '@/utils/trace-service-color'
+  import { spanTimingColor } from '@/utils/trace-service-color'
   import { themeSignal } from '@/state/theme.svelte'
   import DurationBar from './DurationBar.svelte'
 
@@ -23,9 +23,7 @@
     {href}
     aria-label={`Open span ${span.name}, ${label}`}
     title={`${span.name} · ${span.serviceName} · ${label} · Start offset ${formatDuration(offset)}`}
-    style:--bar-color={span.statusCodeValue === 2
-      ? 'var(--color-error)'
-      : traceServiceColor(span.serviceName, themeSignal.value)}
+    style:--bar-color={spanTimingColor(span, themeSignal.value)}
   >
     <DurationBar {duration} {maximum} {offset} />
   </a>

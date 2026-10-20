@@ -119,21 +119,28 @@ describe('WaterfallRow timeline layout', () => {
 })
 
 describe('WaterfallRow child counts', () => {
-  it('places the direct-child count between the parent dot and title', () => {
+  it('places a plain parenthesised child count before the node dot', () => {
     const row = makeRow()
     row.tree.childrenCount = 4
-    const { container, getByTitle } = renderRow(row)
-    const count = getByTitle('4 child spans')
-    expect(count.textContent).toBe('4')
+    const { container, getByRole } = renderRow(row)
+    const toggle = getByRole('button', {
+      name: 'Collapse span-1, 4 child spans',
+    })
+    const count = toggle.querySelector('.tree-child-count')!
+    expect(count.textContent).toBe('(4)')
     expect(count).toHaveClass('text-sm')
-    expect(count.previousElementSibling).toHaveClass('gutter')
-    expect(count.parentElement?.nextElementSibling).toHaveClass('waterfall-row__title')
+    expect(count).not.toHaveClass('badge')
+    expect(count).not.toHaveClass('font-mono')
+    expect(
+      count.compareDocumentPosition(toggle.querySelector('.gutter__dot')!) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
     expect(container.querySelector('.gutter__dot')).toBeEmptyDOMElement()
   })
 
   it('omits the count for leaves', () => {
     const { container } = renderRow(makeRow())
-    expect(container.querySelector('.waterfall-row__child-count')).toBeNull()
+    expect(container.querySelector('.tree-child-count')).toBeNull()
   })
 
   it('keeps the count when collapsed and uses singular text for one child', async () => {
@@ -141,14 +148,17 @@ describe('WaterfallRow child counts', () => {
     row.tree.childrenCount = 1
     const view = renderRow(row)
     await view.rerender({ subtreeCollapsed: true })
-    expect(view.getByTitle('1 child span').textContent).toBe('1')
-    expect(view.getByRole('button', { name: 'Expand span-1, 1 child span' }))
-      .toHaveAttribute('aria-expanded', 'false')
+    expect(view.container.querySelector('.tree-child-count')?.textContent).toBe(
+      '(1)'
+    )
+    expect(
+      view.getByRole('button', { name: 'Expand span-1, 1 child span' })
+    ).toHaveAttribute('aria-expanded', 'false')
   })
 })
 
 describe('WaterfallRow gutter activation', () => {
-  it.each(['.gutter__col', '.gutter__dot', '.waterfall-row__child-count'])(
+  it.each(['.gutter__col', '.gutter__dot', '.tree-child-count'])(
     'toggles only its own row when clicking %s',
     async selector => {
       const row = makeRow({ depth: 2 })
@@ -179,15 +189,18 @@ describe('WaterfallRow gutter activation', () => {
     const onToggleExpand = vi.fn()
     const onRowClick = vi.fn()
     const view = renderRow(row, false, { onToggleExpand, onRowClick })
-    const button = view.getByRole('button', { name: 'Collapse span-1, 1 child span' })
+    const button = view.getByRole('button', {
+      name: 'Collapse span-1, 1 child span',
+    })
     button.focus()
     await user.keyboard('{Enter}')
     await user.keyboard(' ')
     expect(onToggleExpand).toHaveBeenCalledTimes(2)
     expect(onRowClick).not.toHaveBeenCalled()
     await user.tab()
-    expect(view.getByRole('button', { name: 'Show span field: name in details' }))
-      .toHaveFocus()
+    expect(
+      view.getByRole('button', { name: 'Show span field: name in details' })
+    ).toHaveFocus()
   })
 
   it('keeps name selection separate from collapse', async () => {
@@ -196,16 +209,23 @@ describe('WaterfallRow gutter activation', () => {
     const onToggleExpand = vi.fn()
     const onRowClick = vi.fn()
     const view = renderRow(row, false, { onToggleExpand, onRowClick })
-    await fireEvent.click(view.getByRole('button', { name: 'Show span field: name in details' }))
+    await fireEvent.click(
+      view.getByRole('button', { name: 'Show span field: name in details' })
+    )
     expect(onRowClick).toHaveBeenCalledOnce()
     expect(onToggleExpand).not.toHaveBeenCalled()
   })
 
   it('leaves leaf gutters decorative and outside the tab order', () => {
     const view = renderRow(makeRow())
-    expect(view.queryByRole('button', { name: /^(Expand|Collapse)/ })).toBeNull()
+    expect(
+      view.queryByRole('button', { name: /^(Expand|Collapse)/ })
+    ).toBeNull()
     expect(view.container.querySelector('.gutter button')).toBeNull()
-    expect(view.container.querySelector('.gutter')).toHaveAttribute('aria-hidden', 'true')
+    expect(view.container.querySelector('.gutter')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    )
   })
 })
 

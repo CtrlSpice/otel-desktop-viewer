@@ -229,7 +229,7 @@ test('full gutter toggles its row with pointer and keyboard without selecting it
   await expect(toggle).toHaveCSS('outline-style', 'solid')
   await toggle.press('Space')
   await expect(leaf).toHaveCount(0)
-  await toggle.locator('.waterfall-row__child-count').click()
+  await toggle.locator('.tree-child-count').click()
   await expect(leaf).toBeVisible()
   const bounds = (await toggle.boundingBox())!
   await toggle.click({

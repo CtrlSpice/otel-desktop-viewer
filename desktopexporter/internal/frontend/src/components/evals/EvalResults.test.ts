@@ -6,7 +6,85 @@ import EvalResults from './EvalResults.svelte'
 import { exampleRuns } from './examples'
 import { telemetryAPI } from '@/services/telemetry-service'
 
+async function showOnlyTime() {
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: 'Results' }))
+  await user.click(screen.getByRole('button', { name: 'Tool calls' }))
+}
+
 describe('EvalResults repetitions', () => {
+  it('combines groups in fixed order, aligns run/tool rows and keeps expansion when toggled off', async () => {
+    const attempt = exampleRuns[0].attempts[0]
+    const telemetry = { traceID: 'a'.repeat(32), spanID: 'b'.repeat(16) }
+    const lookup = vi
+      .spyOn(telemetryAPI, 'getSpanTimings')
+      .mockResolvedValue([])
+    try {
+      const run = { ...exampleRuns[0], telemetry, attempts: [attempt] }
+      const { container } = render(EvalResults, {
+        run,
+        attempts: run.attempts,
+        selectedID: attempt.id,
+        onSelect: vi.fn(),
+      })
+      const user = userEvent.setup()
+      const toggles = within(
+        screen.getByRole('group', { name: 'Shown eval columns' })
+      )
+      const toggle = (name: string) => toggles.getByRole('button', { name })
+      await user.click(toggle('Cost'))
+      await user.click(toggle('Tool calls'))
+      for (const name of ['Results', 'Tool calls', 'Cost'])
+        expect(toggle(name)).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+      const headers = [...container.querySelectorAll('thead button')].map(
+        button => button.getAttribute('aria-label')
+      )
+      expect(headers).toEqual(
+        [
+          'Case',
+          'Repetition',
+          'Duration',
+          'Tool calls',
+          'Failures',
+          ...run.assessments.map(item => item.name),
+          'Investigator',
+          'Grader',
+        ].map(label => `Sort by ${label}`)
+      )
+      await user.click(screen.getByRole('button', { name: /^Expand tools/ }))
+      const expectedColumns = 2 + run.assessments.length + 3 + 2
+      for (const row of container.querySelectorAll('tr')) {
+        expect(
+          [...row.children].reduce(
+            (total, cell) => total + (cell as HTMLTableCellElement).colSpan,
+            0
+          )
+        ).toBe(expectedColumns)
+      }
+      const toolCount = attempt.tools.length
+      expect(container.querySelectorAll('[data-tool-attempt-id]')).toHaveLength(
+        toolCount
+      )
+      await user.click(toggle('Results'))
+      await user.click(toggle('Cost'))
+      await user.click(toggle('Tool calls'))
+      expect(container.querySelectorAll('col')).toHaveLength(3)
+      expect(container.querySelectorAll('[data-tool-attempt-id]')).toHaveLength(
+        toolCount
+      )
+      await user.click(toggle('Tool calls'))
+      expect(container.querySelectorAll('[data-tool-attempt-id]')).toHaveLength(
+        toolCount
+      )
+      expect(
+        screen.getByRole('button', { name: attempt.name })
+      ).toHaveAttribute('aria-pressed', 'true')
+    } finally {
+      lookup.mockRestore()
+    }
+  })
+
   it.each([false, true])(
     'positions tools by stored start time, retaining late ends (run span: %s)',
     async withRun => {
@@ -58,7 +136,7 @@ describe('EvalResults repetitions', () => {
           onSelect: vi.fn(),
         })
         const user = userEvent.setup()
-        await user.click(screen.getByRole('tab', { name: 'Time' }))
+        await showOnlyTime()
         await screen.findByRole('link', {
           name: 'Open span question, 10.000 s',
         })
@@ -111,14 +189,14 @@ describe('EvalResults repetitions', () => {
         attempts,
         onSelect: vi.fn(),
       })
-      await userEvent.setup().click(screen.getByRole('tab', { name: 'Time' }))
+      await showOnlyTime()
       expect(
         await screen.findByRole('link', { name: 'Open span eval run, 1.000 s' })
       ).toHaveAttribute(
         'href',
         `/traces/${telemetry.traceID}?span=${telemetry.spanID}`
       )
-      expect(screen.getAllByText('24.000 s')).toHaveLength(2)
+      expect(screen.getAllByText('24.000 s')).toHaveLength(1)
       expect(
         screen.getByTitle('Recorded eval duration').querySelector('a')
       ).toBeNull()
@@ -149,7 +227,7 @@ describe('EvalResults repetitions', () => {
           attempts,
           onSelect: vi.fn(),
         })
-        await userEvent.setup().click(screen.getByRole('tab', { name: 'Time' }))
+        await showOnlyTime()
         const rows = [...container.querySelectorAll('[data-attempt-id]')]
         const cells = rows.map(row => row.querySelector('td')!)
         expect(cells[0]).toHaveTextContent('24.000 s')
@@ -186,22 +264,24 @@ describe('EvalResults repetitions', () => {
       onSelect,
       selectedID: second.id,
     })
-    expect(container.querySelectorAll('tbody tr')).toHaveLength(6)
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(5)
     const singleton = container.querySelector(
       '[data-attempt-id="single"]'
     )! as HTMLElement
     expect(
       within(singleton).getByRole('button', { name: 'Single case' })
-    ).toHaveTextContent('1')
-    expect(singleton.querySelector('.seg__arm--elbow')).not.toBeNull()
-    expect(container.querySelectorAll('.eval-results__case')).toHaveLength(2)
+    ).toHaveTextContent('Single case')
+    expect(singleton.querySelector('.seg__arm--elbow')).toBeNull()
+    expect(container.querySelectorAll('.eval-results__case')).toHaveLength(1)
     expect(
       screen.queryByText(exampleRuns[0].evaluation)
     ).not.toBeInTheDocument()
     const buttons = screen.getAllByRole('button', {
       name: first.name,
     })
-    expect(buttons.map(button => button.textContent)).toEqual(['1', '2', '3'])
+    expect(buttons.map(button => button.textContent)).toEqual(
+      [1, 2, 3].map(rep => `${first.name}Rep ${rep}`)
+    )
     expect(buttons[1]).toHaveAttribute('aria-pressed', 'true')
     expect(buttons[1]).toHaveAccessibleDescription('Rep 2 · Complete')
     const parent = container.querySelector(

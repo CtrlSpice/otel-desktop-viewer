@@ -75,7 +75,18 @@ describe('Waterfall direct-child counts', () => {
       spanNode('recovered', 'wrong-parent', 1),
     ]
     const rows = buildWaterfallRows(spans, getTraceBounds(spans), 'rose-pine')
-    expect(rows.map(row => row.tree.childrenCount)).toEqual([2, 2, 0, 0, 0, 1, 0])
+    expect(rows.map(row => row.tree.childrenCount)).toEqual([
+      2, 2, 0, 0, 0, 1, 0,
+    ])
+    expect(rows.map(row => row.tree.brokenParent)).toEqual([
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+    ])
   })
 })
 

@@ -8,6 +8,7 @@
     title,
     onclick,
     children,
+    inset = true,
   }: {
     label: string
     direction?: 'asc' | 'desc'
@@ -15,6 +16,7 @@
     title?: string
     onclick: () => void
     children: Snippet
+    inset?: boolean
   } = $props()
 </script>
 
@@ -22,6 +24,7 @@
   type="button"
   class="table-sort"
   class:table-sort--right={align === 'right'}
+  class:table-sort--flush={!inset}
   aria-label={`Sort by ${label}`}
   {title}
   {onclick}
@@ -41,6 +44,9 @@
   }
   .table-sort--right {
     @apply pl-3 pr-0 text-right;
+  }
+  .table-sort--flush {
+    padding-inline: 0;
   }
   .table-sort__direction {
     @apply absolute right-0 top-1/2 -translate-y-1/2 text-sm;
