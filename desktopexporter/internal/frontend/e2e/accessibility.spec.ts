@@ -49,6 +49,9 @@ const HIGHLIGHT_THEMES = [
 ] as const
 
 async function interceptRpc(page: Page): Promise<void> {
+  await page.route('**/api/features', route =>
+    route.fulfill({ json: { evals: { enabled: false } } })
+  )
   await page.route('**/rpc', async route => {
     // SAFETY: This page's /rpc requests come from callRPC, which supplies a
     // numeric request-correlation id and a string method.
@@ -75,7 +78,7 @@ async function interceptRpc(page: Page): Promise<void> {
   })
 }
 
-async function showBadgeExamples(page: Page, theme: string) {
+async function showMetadataExamples(page: Page, theme: string) {
   await interceptRpc(page)
   await page.addInitScript(theme => localStorage.setItem('theme', theme), theme)
   await page.goto('/')
@@ -84,105 +87,108 @@ async function showBadgeExamples(page: Page, theme: string) {
   ).toBeVisible()
   await page.evaluate(() => {
     const examples = document.createElement('section')
-    examples.id = 'badge-a11y-fixture'
-    examples.setAttribute('aria-label', 'Badge examples')
+    examples.id = 'metadata-a11y-fixture'
+    examples.setAttribute('aria-label', 'Metadata examples')
     examples.style.cssText =
       'display:flex;flex-wrap:wrap;gap:8px;padding:16px;background:var(--color-base-100)'
-    for (const kind of [
-      'badge-primary',
-      'badge-secondary',
-      'badge-accent',
-      'badge-neutral',
-      'badge-info',
-      'badge-success',
-      'badge-warning',
-      'badge-error',
-      'badge-rose',
-      'badge-papaya',
+    // AGENTS.md: counts are Subtle, provenance is plain Secondary, and
+    // status labels are neutral Text with decorative palette dots, not pills.
+    // Exercise every approved base/interaction surface without changing tokens.
+    for (const surface of [
+      'base-100',
+      'base-200',
+      'base-300',
+      'highlight-low',
+      'highlight-med',
     ]) {
-      const badge = document.createElement('span')
-      badge.className = `badge badge-xs badge-soft ${kind}`
-      badge.textContent = kind
-      examples.append(badge)
-    }
-    for (const className of ['badge-count', 'badge-origin']) {
-      const badge = document.createElement('span')
-      badge.className = className
-      badge.textContent = className
-      examples.append(badge)
+      const row = document.createElement('div')
+      row.style.cssText = `display:flex;gap:16px;padding:8px;background:var(--color-${surface})`
+      for (const [className, text] of [
+        ['badge-count', '42 spans'],
+        ['metadata-origin', 'Resource'],
+      ]) {
+        const label = document.createElement('span')
+        label.className = className
+        label.textContent = text
+        row.append(label)
+      }
+      for (const [tone, text] of [
+        ['warning', 'WARN (13)'],
+        ['error', 'ERROR (17)'],
+        ['papaya', 'Internal fault'],
+      ]) {
+        const label = document.createElement('span')
+        label.className = 'text-base-content text-sm font-normal'
+        const dot = document.createElement('span')
+        dot.setAttribute('aria-hidden', 'true')
+        dot.style.cssText = `display:inline-block;width:8px;height:8px;margin-right:8px;border-radius:50%;background:var(--color-${tone})`
+        label.append(dot, text)
+        row.append(label)
+      }
+      examples.append(row)
     }
     document.querySelector('main')!.prepend(examples)
   })
 }
 
 for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
-  test(`soft badges preserve the approved styling in ${theme}`, async ({
+  test(`plain metadata preserves the approved styling in ${theme}`, async ({
     page,
   }) => {
-    await showBadgeExamples(page, theme)
-    const fixture = page.locator('#badge-a11y-fixture')
+    await showMetadataExamples(page, theme)
+    const fixture = page.locator('#metadata-a11y-fixture')
     const appearance = await fixture.evaluate(element => {
       const probe = document.createElement('span')
       element.append(probe)
       const results = [
         ...element.querySelectorAll<HTMLElement>(
-          '.badge, .badge-count, .badge-origin'
+          '.badge-count, .metadata-origin, .text-base-content'
         ),
       ].map(badge => {
         const style = getComputedStyle(badge)
-        const tone = style.getPropertyValue('--badge-color')
-        const outlined =
-          document.documentElement.dataset.theme === 'rose-pine-dawn' &&
-          !badge.classList.contains('badge-papaya')
-        probe.style.color = outlined ? 'var(--color-subtle)' : tone
-        probe.style.backgroundColor = outlined
-          ? 'var(--color-base-200)'
-          : `color-mix(in oklab, ${tone} 8%, var(--color-base-100))`
-        probe.style.borderColor = outlined
-          ? tone
-          : `color-mix(in oklab, ${tone} 10%, var(--color-base-100))`
+        probe.style.color = badge.classList.contains('badge-count')
+          ? 'var(--color-subtle)'
+          : badge.classList.contains('metadata-origin')
+            ? 'var(--color-secondary)'
+            : 'var(--color-base-content)'
         const expected = getComputedStyle(probe)
         return {
           kind: badge.className,
-          softFill: style.backgroundColor === expected.backgroundColor,
-          softBorder: style.borderColor === expected.borderColor,
+          background: style.backgroundColor,
+          border: style.borderWidth,
           semanticText: style.color === expected.color,
-          pill:
-            parseFloat(style.borderRadius) >=
-            badge.getBoundingClientRect().height / 2,
+          fontSize: style.fontSize,
+          fontWeight: style.fontWeight,
+          lineHeight: style.lineHeight,
         }
       })
       probe.remove()
       return results
     })
-    expect(appearance).toHaveLength(12)
+    expect(appearance).toHaveLength(25)
     for (const badge of appearance) {
-      expect(badge.softFill, badge.kind).toBe(true)
-      expect(badge.softBorder, badge.kind).toBe(true)
+      expect(badge.background, badge.kind).toBe('rgba(0, 0, 0, 0)')
+      expect(badge.border, badge.kind).toBe('0px')
       expect(badge.semanticText, badge.kind).toBe(true)
-      expect(badge.pill, badge.kind).toBe(true)
-    }
-    for (const className of ['badge-count', 'badge-origin']) {
-      await expect(fixture.locator(`.${className}`)).toHaveCSS(
-        'color',
-        await fixture
-          .locator('.badge-primary')
-          .evaluate(element => getComputedStyle(element).color)
-      )
+      expect(badge.fontSize, badge.kind).toBe('14px')
+      expect(badge.fontWeight, badge.kind).toBe('400')
+      expect(badge.lineHeight, badge.kind).toBe('21px')
     }
   })
 
-  test(`soft badge contrast in ${theme}`, async ({ page }) => {
-    await showBadgeExamples(page, theme)
+  test(`plain metadata contrast on base, hover and selected surfaces in ${theme}`, async ({
+    page,
+  }) => {
+    await showMetadataExamples(page, theme)
     const scan = await new AxeBuilder({ page })
-      .include('#badge-a11y-fixture')
+      .include('#metadata-a11y-fixture')
       .withRules(['color-contrast'])
       .analyze()
     expect(scan.violations).toEqual([])
   })
 }
 
-for (const { theme, selected: selectedColor } of HIGHLIGHT_THEMES) {
+for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
   test(`sort target uses full text contrast in ${theme}`, async ({ page }) => {
     await interceptRpc(page)
     await page.addInitScript(
@@ -193,14 +199,18 @@ for (const { theme, selected: selectedColor } of HIGHLIGHT_THEMES) {
     const trigger = page.getByRole('button', { name: /^Sort by:/ })
     await expect(trigger).toHaveAccessibleName('Sort by: Start Time')
     const textColor =
-      theme === 'rose-pine-dawn' ? 'rgb(70, 66, 97)' : 'rgb(224, 222, 244)'
+      theme === 'rose-pine-dawn' ? 'rgb(87, 82, 121)' : 'rgb(224, 222, 244)'
     await expect(trigger.getByText('Start Time', { exact: true })).toHaveCSS(
       'color',
       textColor
     )
     await expect(trigger.getByText('Sort by:', { exact: true })).toHaveCSS(
       'color',
-      theme === 'rose-pine-dawn' ? 'rgb(152, 147, 165)' : 'rgb(110, 106, 134)'
+      theme === 'rose-pine-dawn'
+        ? 'rgb(98, 93, 122)'
+        : theme === 'rose-pine-moon'
+          ? 'rgb(177, 173, 204)'
+          : 'rgb(171, 167, 197)'
     )
     await trigger.click()
     await page
@@ -223,7 +233,7 @@ for (const { theme, selected: selectedColor } of HIGHLIGHT_THEMES) {
     )
     await page.goto('/')
     const textColor =
-      theme === 'rose-pine-dawn' ? 'rgb(70, 66, 97)' : 'rgb(224, 222, 244)'
+      theme === 'rose-pine-dawn' ? 'rgb(87, 82, 121)' : 'rgb(224, 222, 244)'
     const navigation = page.getByRole('navigation', { name: 'Primary' })
     const inactive = navigation.locator('.tab:not(.tab-active)')
     await expect(inactive).toHaveCount(3)
@@ -253,7 +263,7 @@ for (const { theme, selected: selectedColor } of HIGHLIGHT_THEMES) {
     expect(disabledOpacity).toBe('0.4')
     await page.goto('/traces')
     await page.getByRole('button', { name: /Change time range/i }).click()
-    const presets = page.locator('.preset-time-ranges .tab')
+    const presets = page.locator('.preset-time-ranges .header-tab')
     expect(await presets.count()).toBeGreaterThan(1)
     for (const tab of await presets.all()) {
       await expect(tab).toHaveCSS('color', textColor)
@@ -261,7 +271,7 @@ for (const { theme, selected: selectedColor } of HIGHLIGHT_THEMES) {
     }
   })
 
-  test(`search completions use rounded Highlight Med for hover and selection in ${theme}`, async ({
+  test(`search completions use rounded Low hover and Medium selection in ${theme}`, async ({
     page,
   }) => {
     await interceptRpc(page)
@@ -284,8 +294,10 @@ for (const { theme, selected: selectedColor } of HIGHLIGHT_THEMES) {
       .first()
     await idle.hover()
     await expect(idle).toHaveCSS('border-radius', '12px')
-    await expect(idle).toHaveCSS('background-color', selectedColor)
+    await expect(idle).toHaveCSS('background-color', low)
     await selected.hover()
+    await expect(selected).toHaveCSS('background-color', low)
+    await editor.hover()
     await expect(selected).toHaveCSS('background-color', selectedColor)
     const selection = await editor.evaluate(
       element => getComputedStyle(element, '::selection').backgroundColor
@@ -309,6 +321,13 @@ test.describe('home page accessibility', () => {
   test('has no automatically detectable Home page WCAG violations', async ({
     page,
   }) => {
+    // Theme hydration transitions the canvas. Scan its settled surface, not
+    // an intermediate colour frozen by axe while it measures descendants.
+    await page.getByRole('main').evaluate(async element => {
+      await Promise.all(
+        element.getAnimations().map(animation => animation.finished)
+      )
+    })
     const scan = await new AxeBuilder({ page })
       .withTags([
         'wcag2a',
@@ -338,19 +357,19 @@ test.describe('home page accessibility', () => {
       '--color-highlight-low': '#f4ede8',
       '--color-highlight-med': '#dfdad9',
       '--color-highlight-high': '#cecacd',
-      '--color-base-content': '#464261',
-      '--color-on-light': '#464261',
+      '--color-base-content': '#575279',
+      '--color-on-light': '#575279',
       '--color-on-dark': '#fffaf3',
-      '--color-muted': '#9893a5',
-      '--color-subtle': '#706c8a',
+      '--color-muted': '#635e6f',
+      '--color-subtle': '#625d7a',
       '--color-rose': '#d7827e',
-      '--color-primary': '#907aa9',
-      '--color-secondary': '#286983',
-      '--color-accent': '#56949f',
-      '--color-neutral': '#9893a5',
-      '--color-neutral-content': '#464261',
-      '--color-info': '#56949f',
-      '--color-success': '#286983',
+      '--color-primary': '#6d5784',
+      '--color-secondary': '#266781',
+      '--color-accent': '#296974',
+      '--color-neutral': '#635e6f',
+      '--color-neutral-content': '#575279',
+      '--color-info': '#296974',
+      '--color-success': '#266781',
       '--color-warning': '#ea9d34',
       '--color-error': '#b4637a',
     }
@@ -373,7 +392,7 @@ test.describe('home page accessibility', () => {
       await expect(page.getByRole('main')).toHaveCSS('background-color', canvas)
       await expect(page.locator('.search-bar')).toHaveCSS(
         'background-color',
-        panel
+        canvas
       )
       await expect(page.locator('.signal-drawer__controls')).toHaveCSS(
         'background-color',
@@ -394,7 +413,8 @@ test.describe('home page accessibility', () => {
       await expect(detailHeadings).toHaveCount(3)
       for (const heading of await detailHeadings.all()) {
         await expect(heading).toHaveCSS('background-color', panel)
-        await expect(heading).toHaveCSS('height', '40px')
+        // Shared 32px controls plus 8px vertical padding on each side.
+        await expect(heading).toHaveCSS('height', '48px')
         await expect(heading).toHaveCSS('border-radius', '12px')
       }
     })
@@ -415,7 +435,7 @@ test.describe('home page accessibility', () => {
     )
     await expect(page.locator('.search-bar')).toHaveCSS(
       'background-color',
-      'rgb(250, 244, 237)'
+      'rgb(255, 250, 243)'
     )
     await expect(page.locator('.signal-drawer__controls')).toHaveCSS(
       'background-color',
@@ -446,6 +466,11 @@ test.describe('home page accessibility', () => {
       'none'
     )
     await page.locator('.signal-row--selected').hover()
+    await expect(page.locator('.signal-row--selected')).toHaveCSS(
+      'background-color',
+      'rgb(244, 237, 232)'
+    )
+    await page.mouse.move(0, 0)
     await expect(page.locator('.signal-row--selected')).toHaveCSS(
       'background-color',
       'rgb(223, 218, 217)'
@@ -484,6 +509,8 @@ test.describe('home page accessibility', () => {
       await idleCard.hover()
       await expect(idleCard).toHaveCSS('background-color', low)
       await selectedCard.hover()
+      await expect(selectedCard).toHaveCSS('background-color', low)
+      await page.mouse.move(0, 0)
       await expect(selectedCard).toHaveCSS('background-color', selectedColor)
       await expect(
         page.locator('.detail-bubble__heading').first()
@@ -491,7 +518,7 @@ test.describe('home page accessibility', () => {
 
       const row = page
         .getByRole('table', { name: /^Results for/ })
-        .locator('tbody tr')
+        .locator('tbody tr[data-outline-id]')
         .first()
       await row.hover()
       const rowCell = row.locator('th, td').first()
@@ -501,19 +528,22 @@ test.describe('home page accessibility', () => {
         'border-bottom-right-radius',
         '12px'
       )
-      await row.getByRole('button').click()
+      await row.locator('button[aria-pressed]').click()
+      await page.mouse.move(0, 0)
       await expect(rowCell).toHaveCSS('background-color', selectedColor)
       await row.hover()
-      await expect(rowCell).toHaveCSS('background-color', selectedColor)
+      await expect(rowCell).toHaveCSS('background-color', low)
       await expect(row).toHaveCSS('outline-style', 'none')
       await expect(
         page.getByRole('navigation', { name: 'Primary' }).locator('.tab-active')
-      ).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+      ).toHaveCSS('background-color', selectedColor)
       await page.goto('/')
       const paneTab = page
         .locator('.pane-header .header-tab[aria-selected="true"]')
         .first()
       await paneTab.hover()
+      await expect(paneTab).toHaveCSS('background-color', low)
+      await page.mouse.move(0, 0)
       await expect(paneTab).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
       await expect(paneTab).toHaveCSS('box-shadow', 'none')
       const highlight = await paneTab.evaluate(element => {
@@ -531,35 +561,38 @@ test.describe('home page accessibility', () => {
       const selectedOption = menu.locator('button[aria-pressed="true"]')
       await expect(selectedOption).toHaveCSS('border-radius', '12px')
       await selectedOption.hover()
+      await expect(selectedOption).toHaveCSS('background-color', low)
+      await page.mouse.move(0, 0)
       await expect(selectedOption).toHaveCSS('background-color', selectedColor)
       const idleOption = menu.locator('button[aria-pressed="false"]').first()
       await expect(idleOption).toHaveCSS('border-radius', '12px')
       await idleOption.hover()
-      await expect(idleOption).toHaveCSS('background-color', selectedColor)
+      await expect(idleOption).toHaveCSS('background-color', low)
       await idleOption.focus()
       await page.keyboard.press('Tab')
       await page.keyboard.press('Shift+Tab')
       await expect(idleOption).toBeFocused()
       await expect(idleOption).toHaveCSS(
         'outline-color',
-        theme === 'rose-pine-dawn' ? 'rgb(144, 122, 169)' : 'rgb(196, 167, 231)'
+        theme === 'rose-pine-dawn' ? 'rgb(109, 87, 132)' : 'rgb(196, 167, 231)'
       )
       await page.keyboard.press('Escape')
       await page.getByRole('button', { name: /Change time range/i }).click()
-      await expect(page.locator('.preset-time-ranges .tab-active')).toHaveCSS(
-        'background-color',
-        'rgba(0, 0, 0, 0)'
-      )
+      await expect(
+        page.locator('.preset-time-ranges [aria-pressed="true"]')
+      ).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
       await page.getByText('Timezone:', { exact: true }).click()
       const timezone = page.locator('.tz-option[aria-pressed="true"]')
       await expect(timezone).toHaveCSS('border-radius', '12px')
       await timezone.hover()
+      await expect(timezone).toHaveCSS('background-color', low)
+      await page.mouse.move(0, 0)
       await expect(timezone).toHaveCSS('background-color', selectedColor)
       const idleTimezone = page
         .locator('.tz-option[aria-pressed="false"]')
         .first()
       await idleTimezone.hover()
-      await expect(idleTimezone).toHaveCSS('background-color', selectedColor)
+      await expect(idleTimezone).toHaveCSS('background-color', low)
     })
   }
 
@@ -584,6 +617,7 @@ test.describe('home page accessibility', () => {
   test('mutes the sidebar toggle when the drawer is dragged closed', async ({
     page,
   }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.setViewportSize({ width: 1440, height: 900 })
     const toggle = page.getByRole('button', { name: 'Collapse sidebar' })
     const activeColour = await toggle.evaluate(
@@ -866,10 +900,18 @@ test.describe('home page accessibility', () => {
     }
   })
 
-  test('uses DaisyUI navigation tabs with a primary selected icon and underline', async ({
+  test('uses navigation tabs with a primary selected icon, Medium selection and plain bracketed counts', async ({
     page,
   }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
     const navigation = page.getByRole('navigation', { name: 'Primary' })
+    await navigation.evaluate(async element => {
+      await Promise.all(
+        element
+          .getAnimations({ subtree: true })
+          .map(animation => animation.finished)
+      )
+    })
     const tabs = await navigation.evaluate(element => {
       const reference = element.cloneNode(true) as HTMLElement
       document.body.append(reference)
@@ -877,6 +919,8 @@ test.describe('home page accessibility', () => {
       primary.className = 'text-primary'
       reference.append(primary)
       const primaryColour = getComputedStyle(primary).color
+      primary.style.backgroundColor = 'var(--item-selected-bg)'
+      const selectedBackground = getComputedStyle(primary).backgroundColor
       const referenceLinks = reference.querySelectorAll('a')
       const centreY = (element: Element) => {
         const bounds = element.getBoundingClientRect()
@@ -886,7 +930,8 @@ test.describe('home page accessibility', () => {
         return [...element.querySelectorAll('a')].map((link, index) => {
           const style = getComputedStyle(link)
           const plainStyle = getComputedStyle(referenceLinks[index])
-          const underline = getComputedStyle(link, '::before')
+          const counter = link.querySelector('.primary-navigation__count')!
+          const counterStyle = getComputedStyle(counter)
           const selected = link.getAttribute('aria-current') === 'page'
           return {
             fontSize: style.fontSize,
@@ -900,16 +945,17 @@ test.describe('home page accessibility', () => {
             iconColour:
               getComputedStyle(link.querySelector('svg')!).color ===
               (selected ? primaryColour : style.color),
-            underlineMatchesSelection: selected
-              ? underline.borderTopColor === primaryColour &&
-                underline.borderTopWidth === '1px' &&
-                underline.height === '1px' &&
-                underline.left === '0px' &&
-                Math.abs(
-                  Number.parseFloat(underline.width) -
-                    link.getBoundingClientRect().width
-                ) < 0.5
-              : underline.borderTopWidth === '0px',
+            backgroundMatchesSelection:
+              style.backgroundColor ===
+              (selected ? selectedBackground : 'rgba(0, 0, 0, 0)'),
+            noUnderline: getComputedStyle(link, '::before').display === 'none',
+            plainCounter:
+              counterStyle.color === style.color &&
+              counterStyle.fontSize === '14px' &&
+              counterStyle.fontWeight === '400' &&
+              counterStyle.backgroundColor === 'rgba(0, 0, 0, 0)' &&
+              counterStyle.borderWidth === '0px' &&
+              counter.textContent?.trim() === 'Results: [42]',
             centred:
               Math.abs(
                 centreY(link.querySelector('svg')!) -
@@ -931,7 +977,9 @@ test.describe('home page accessibility', () => {
         plainShadow: true,
         labelColour: true,
         iconColour: true,
-        underlineMatchesSelection: true,
+        backgroundMatchesSelection: true,
+        noUnderline: true,
+        plainCounter: true,
         centred: true,
       })
     }
@@ -1109,7 +1157,7 @@ test.describe('home page accessibility', () => {
           page.getByRole('button', { name: 'Refresh', exact: true })
         ).toBeVisible()
         const searchBar = page.getByRole('search', { name: 'Workspace search' })
-        await expect(searchBar.locator('.search-bar__query')).not.toHaveCSS(
+        await expect(searchBar).not.toHaveCSS(
           'background-color',
           'rgba(0, 0, 0, 0)'
         )
@@ -1326,13 +1374,14 @@ test.describe('home page accessibility', () => {
         bar.getByRole('button', { name: /Expand search|Collapse search/ })
       ).toHaveCount(0)
       const surface = bar.locator('.search-bar__query')
-      const background = await surface.evaluate(
+      const background = await bar.evaluate(
         element => getComputedStyle(element).backgroundColor
       )
       await expect(bar).toHaveCSS('background-color', background)
       const editor = bar.locator('.cm-content[contenteditable="true"]')
       await editor.pressSequentially('service.name = "checkout"')
-      await expect(surface).toHaveCSS('background-color', background)
+      await expect(bar).toHaveCSS('background-color', background)
+      await expect(surface).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
       await expect(surface).toHaveCSS('outline-style', 'none')
       await expect(editor).toHaveText('service.name = "checkout"')
       await bar.getByRole('button', { name: 'Clear search' }).click()
@@ -1463,7 +1512,7 @@ test.describe('home page accessibility', () => {
     expect(handleSize.height).toBeLessThan(handleSize.separatorHeight)
   })
 
-  test('uses the main navigation color rules for preset labels', async ({
+  test('uses full-strength preset labels and the shared selection highlight', async ({
     page,
   }) => {
     await page.goto('/traces')
@@ -1472,14 +1521,14 @@ test.describe('home page accessibility', () => {
     const presetColors = await page
       .locator('.preset-time-ranges')
       .evaluate(element => {
-        const active = element.querySelector('.tab-active')
-        const inactive = element.querySelector('.tab:not(.tab-active)')
+        const active = element.querySelector('[aria-pressed="true"]')
+        const inactive = element.querySelector('[aria-pressed="false"]')
         if (!active || !inactive) throw new Error('Preset state is missing')
 
         const probe = document.createElement('span')
         document.body.append(probe)
-        probe.style.color = 'var(--color-primary)'
-        const primary = getComputedStyle(probe).color
+        probe.style.backgroundColor = 'var(--item-selected-bg)'
+        const selected = getComputedStyle(probe).backgroundColor
         probe.style.color = 'var(--color-base-content)'
         const baseContent = getComputedStyle(probe).color
         probe.remove()
@@ -1491,16 +1540,16 @@ test.describe('home page accessibility', () => {
               'nav[aria-label="Primary"] .tab:not(.tab-active)'
             )!
           ).color,
-          underline: getComputedStyle(active, '::before').color,
+          highlight: getComputedStyle(element, '::before').backgroundColor,
           background: getComputedStyle(active).backgroundColor,
-          primary,
+          selected,
           baseContent,
         }
       })
     expect(presetColors.inactive).toBe(presetColors.navInactive)
     expect(presetColors.inactive).toBe(presetColors.baseContent)
     expect(presetColors.active).toBe(presetColors.baseContent)
-    expect(presetColors.underline).toBe(presetColors.primary)
+    expect(presetColors.highlight).toBe(presetColors.selected)
     expect(presetColors.background).toBe('rgba(0, 0, 0, 0)')
   })
 
@@ -1510,7 +1559,9 @@ test.describe('home page accessibility', () => {
 
     const popup = page.locator('[popover]:popover-open')
     const alignment = await popup.evaluate(element => {
-      const presets = element.querySelectorAll('.preset-time-ranges .tab')
+      const presets = element.querySelectorAll(
+        '.preset-time-ranges .header-tab'
+      )
       const tabs = [...presets].map(tab => {
         const range = document.createRange()
         range.selectNodeContents(tab)
@@ -1543,15 +1594,9 @@ test.describe('home page accessibility', () => {
     expect(alignment.rowInset).toBeCloseTo(alignment.contentInset, 0)
     for (const tab of alignment.tabs) {
       expect(tab.textCenter).toBeCloseTo(tab.center, 0)
-      expect(tab.textLeft - tab.left).toBeCloseTo(
-        alignment.tabs[0].textLeft - alignment.tabs[0].left,
-        0
-      )
+      expect(tab.width).toBeCloseTo(alignment.tabs[0].width, 0)
     }
-    expect(alignment.tabs[0].textLeft - alignment.tabs[0].left).toBeCloseTo(
-      alignment.tabs.at(-1)!.right - alignment.tabs.at(-1)!.textRight,
-      0
-    )
+    expect(alignment.tabs).toHaveLength(8)
   })
 
   test('keeps custom range controls circular and focus treatment inset', async ({
@@ -1564,6 +1609,10 @@ test.describe('home page accessibility', () => {
     const startCalendar = page.getByRole('button', {
       name: 'Choose start date',
     })
+    // The start calendar is expanded when the range editor opens.
+    await expect(startCalendar).toHaveAttribute('aria-expanded', 'true')
+    await startCalendar.click()
+    await expect(startCalendar).toHaveAttribute('aria-expanded', 'false')
 
     await startDate.focus()
     const focusTreatment = await startDate
@@ -1596,12 +1645,13 @@ test.describe('home page accessibility', () => {
     await startCalendar.click()
     await expect(startCalendar).toHaveAttribute('aria-expanded', 'true')
     const activeTreatment = await startCalendar.evaluate(element => ({
-      backgroundColor: getComputedStyle(element).backgroundColor,
-      borderColor: getComputedStyle(element).borderTopColor,
+      iconColor: getComputedStyle(element.querySelector('svg')!).color,
       rowBoxShadow: getComputedStyle(element.parentElement!).boxShadow,
     }))
-    expect(activeTreatment.backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
-    expect(activeTreatment.borderColor).not.toBe('rgba(0, 0, 0, 0)')
+    const primary = await page
+      .locator('.primary-navigation .tab-active svg')
+      .evaluate(element => getComputedStyle(element).color)
+    expect(activeTreatment.iconColor).toBe(primary)
     expect(activeTreatment.rowBoxShadow).toBe('none')
 
     for (const name of ['Previous', 'Next'] as const) {
