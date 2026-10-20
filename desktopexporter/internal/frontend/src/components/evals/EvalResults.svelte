@@ -64,6 +64,7 @@
     onSelect,
     onSelectRun,
     onResolveSelection,
+    viewKey = $bindable('results'),
   }: {
     run: EvalRun
     attempts: EvalAttempt[]
@@ -72,6 +73,7 @@
     onSelect?: (row: EvalOutlineRow) => void
     onSelectRun?: () => void
     onResolveSelection?: (row: EvalOutlineRow | undefined) => void
+    viewKey?: string
   } = $props()
   const panelID = $props.id()
   const views = [
@@ -79,7 +81,6 @@
     { id: 'time', label: 'Tool calls', icon: ToolsIcon },
     { id: 'cost', label: 'Cost', icon: Coins01Icon },
   ]
-  let viewKey = $state('results')
   const enabledViews = $derived([viewKey])
   const viewLabel = $derived(views.find(item => item.id === viewKey)!.label)
   function selectView(event: KeyboardEvent, index: number) {
@@ -402,7 +403,13 @@
     else onSelectRun?.()
   }
   $effect(() => {
-    onResolveSelection?.(outline.find(row => row.id === selectedRowID))
+    onResolveSelection?.(
+      outline.find(
+        row =>
+          row.id ===
+          (selectedRowID ?? (selectedID ? `attempt/${selectedID}` : undefined))
+      )
+    )
   })
 </script>
 

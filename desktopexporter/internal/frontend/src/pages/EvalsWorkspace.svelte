@@ -36,16 +36,27 @@
   )
   const attempt = $derived(run.attempts.find(item => item.id === query.attempt))
   let resolvedRow = $state<EvalOutlineRow>()
+  let evalView = $state('results')
+  const detailRowID = $derived(
+    query.row ??
+      (evalView === 'time' && attempt ? `attempt/${attempt.id}` : undefined)
+  )
+  const fallbackOutline = $derived(
+    buildEvalOutline(
+      groupAttempts(run.attempts, run.attempts),
+      run,
+      indexEvalTraces([])
+    )
+  )
   const selectedRow = $derived(
-    resolvedRow?.id === query.row
+    detailRowID && resolvedRow?.id === detailRowID
       ? resolvedRow
-      : query.row
-        ? buildEvalOutline(
-            groupAttempts(run.attempts, run.attempts),
-            run,
-            indexEvalTraces([])
-          ).find(row => row.id === query.row)
+      : detailRowID
+        ? fallbackOutline.find(row => row.id === detailRowID)
         : undefined
+  )
+  const parentName = $derived(
+    fallbackOutline.find(row => row.id === selectedRow?.parentID)?.name
   )
   const results = $derived.by(() => {
     const text = (query.q ?? '').toLowerCase().trim()
@@ -156,6 +167,7 @@
         >
       </div>{/if}
     <EvalResults
+      bind:viewKey={evalView}
       {run}
       attempts={results}
       selectedID={attempt?.id}
@@ -173,10 +185,12 @@
       </div>{/if}
   {/snippet}
   {#snippet detail()}
-    {#key `${run.id}/${attempt?.id ?? ''}/${selectedRow?.id ?? ''}`}
+    {#key `${run.id}/${attempt?.id ?? ''}/${selectedRow?.id ?? ''}/${evalView}`}
       {#if selectedRow}<EvalRowDetail
           {run}
           row={selectedRow}
+          traceLevel={evalView === 'time'}
+          {parentName}
         />{:else}<EvalDetail {run} {attempt} />{/if}
     {/key}
   {/snippet}

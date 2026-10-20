@@ -261,8 +261,13 @@
   Distinguish Love "Span error" from Papaya "Internal fault" (evaluation
   machinery). A failed assessment is "Fail", not an execution error. Preserve
   these meanings during parent propagation, including in dogfooding datasets.
-  Evals Details opens only its first section by default; later sections start
-  collapsed and remain manually expandable.
+  Tool calls Details shows only the selected level in a flat, scrollable pane,
+  with its parent name as a small context label. Question content belongs to
+  the case row; do not repeat question, answer or assessments on attempt,
+  execution or tool details. Show recorded tool output/errors and grader
+  scores/explanations at their own level, with supporting fields beneath.
+  Other Evals Details opens only its first section by default; later sections
+  start collapsed and remain manually expandable.
   Keep tool execution in the waterfall; do not repeat its Tool calls list in
   attempt Details.
 - Trace, log and metric summary timestamps use the selected timezone without

@@ -1,6 +1,7 @@
 <script lang="ts">
   import DetailStack from '@/components/shared/DetailStack.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
+  import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import DetailField from '@/components/shared/DetailProperty.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import EvalStatus from './EvalStatus.svelte'
@@ -10,7 +11,17 @@
   import type { EvalOutlineRow } from './eval-outline'
   import { formatDuration } from '@/utils/time'
 
-  let { run, row }: { run: EvalRun; row: EvalOutlineRow } = $props()
+  let {
+    run,
+    row,
+    traceLevel = false,
+    parentName,
+  }: {
+    run: EvalRun
+    row: EvalOutlineRow
+    traceLevel?: boolean
+    parentName?: string
+  } = $props()
   const attempt = $derived(row.attempt)
   const members = $derived(
     run.attempts.filter(item => item.caseID === row.caseID)
@@ -26,22 +37,29 @@
   const prose = $derived(
     row.kind === 'case'
       ? members[0]?.question
-      : row.kind === 'execution'
+      : row.kind === 'execution' && !traceLevel
         ? attempt?.answer
         : tool?.message
   )
   const fields = $derived([
-    { name: 'case', value: members[0]?.name ?? row.caseID },
+    ...(!traceLevel
+      ? [{ name: 'case', value: members[0]?.name ?? row.caseID }]
+      : []),
     ...(row.kind === 'case'
       ? [{ name: 'attempts', value: String(members.length) }]
       : []),
-    ...(attempt
+    ...(attempt && !traceLevel
       ? [{ name: 'attempt', value: String(attempt.repetition) }]
       : []),
     {
       name: 'total estimate (CAD)',
       value: `${cost(row.estimate.total)}${row.estimate.incomplete && row.estimate.total !== null ? ' · partial' : ''}`,
     },
+    ...(traceLevel &&
+    (row.kind === 'attempt' || row.kind === 'execution') &&
+    attempt?.error
+      ? [{ name: 'internal fault', value: attempt.error }]
+      : []),
     ...(row.kind === 'execution' && attempt
       ? [
           {
@@ -63,104 +81,155 @@
   ])
 </script>
 
-<DetailStack
-  label={`${row.name} details`}
-  storageKey={`eval-${row.kind}-detail-layout`}
->
-  <DetailBubble label={row.name}>
-    {#snippet trailing()}<EvalStatus
-        label={completionLabel(row.state, row.internalFault)}
-        tone={completionTone(row.state, row.internalFault)}
-      />{/snippet}
-    {#snippet action()}{#if prose}<ValueCopyButton
-          text={prose}
-          label={row.name}
-        />{/if}{/snippet}
-    {#if prose}<p class="eval-row-detail__prose">{prose}</p>{/if}
-    <table class="detail-fields w-full" aria-label={`${row.name} fields`}>
-      <tbody>
-        {#each fields as field}<DetailField
-            fieldName={field.name}
+{#snippet status()}<EvalStatus
+    label={completionLabel(row.state, row.internalFault)}
+    tone={completionTone(row.state, row.internalFault)}
+  />{/snippet}
+{#snippet copy()}{#if prose}<ValueCopyButton
+      text={prose}
+      label={row.name}
+    />{/if}{/snippet}
+{#snippet supportingFields()}
+  <table class="detail-fields w-full" aria-label={`${row.name} fields`}>
+    <tbody>
+      {#each fields as field}<DetailField
+          fieldName={field.name}
+          fieldType="string"
+          showType={false}
+          fieldValue={field.value}
+        />{/each}
+    </tbody>
+  </table>
+{/snippet}
+{#snippet content()}
+  {#if prose}
+    {#if traceLevel && tool}
+      <table class="detail-fields w-full" aria-label={`${row.name} output`}>
+        <tbody>
+          <DetailField
+            fieldName={tool.state === 'Error' ? 'error' : 'output'}
             fieldType="string"
             showType={false}
-            fieldValue={field.value}
-          />{/each}
+            fieldValue={prose}
+            multiline
+          />
+        </tbody>
+      </table>
+    {:else}<p class="eval-row-detail__prose">{prose}</p>{/if}
+  {/if}
+  {#if !traceLevel}{@render supportingFields()}{/if}
+  {#each assessments as assessment}
+    {@const definition = run.assessments.find(
+      item => item.id === assessment.id
+    )}
+    <div class="eval-row-detail__prose">
+      <AssessmentBadge {assessment} maximum={definition?.maximum} />
+    </div>
+    <table
+      class="detail-fields w-full"
+      aria-label={`${definition?.name ?? assessment.id} explanation`}
+    >
+      <tbody>
+        <DetailField
+          fieldName="score"
+          fieldType="string"
+          showType={false}
+          fieldValue={`${assessment.value ?? 'Unscored'} / ${definition?.maximum ?? 1}`}
+        />
+        <DetailField
+          fieldName="explanation"
+          fieldType="string"
+          showType={false}
+          fieldValue={assessment.explanation}
+          multiline
+        />
+        <DetailField
+          fieldName="evaluator"
+          fieldType="string"
+          showType={false}
+          fieldValue={assessment.evaluator}
+        />
+        <DetailField
+          fieldName="rubric"
+          fieldType="string"
+          showType={false}
+          fieldValue={assessment.rubric}
+          multiline
+        />
+        <DetailField
+          fieldName="estimate (CAD)"
+          fieldType="string"
+          showType={false}
+          fieldValue={cost(assessment.cost)}
+        />
       </tbody>
     </table>
-    {#each assessments as assessment}
-      {@const definition = run.assessments.find(
-        item => item.id === assessment.id
-      )}
-      <div class="eval-row-detail__prose">
-        <AssessmentBadge {assessment} maximum={definition?.maximum} />
-      </div>
-      <table
-        class="detail-fields w-full"
-        aria-label={`${definition?.name ?? assessment.id} explanation`}
-      >
-        <tbody>
-          <DetailField
-            fieldName="score"
-            fieldType="string"
-            showType={false}
-            fieldValue={`${assessment.value ?? 'Unscored'} / ${definition?.maximum ?? 1}`}
-          />
-          <DetailField
-            fieldName="explanation"
-            fieldType="string"
-            showType={false}
-            fieldValue={assessment.explanation}
-            multiline
-          />
-          <DetailField
-            fieldName="evaluator"
-            fieldType="string"
-            showType={false}
-            fieldValue={assessment.evaluator}
-          />
-          <DetailField
-            fieldName="rubric"
-            fieldType="string"
-            showType={false}
-            fieldValue={assessment.rubric}
-            multiline
-          />
-          <DetailField
-            fieldName="estimate (CAD)"
-            fieldType="string"
-            showType={false}
-            fieldValue={cost(assessment.cost)}
-          />
-        </tbody>
-      </table>
-    {/each}
-  </DetailBubble>
+  {/each}
+  {#if traceLevel}{@render supportingFields()}{/if}
+{/snippet}
+{#snippet telemetry()}
   {#if row.reference}
-    <DetailBubble label="Telemetry" initialOpen={false}>
-      <table class="detail-fields w-full" aria-label={`${row.name} telemetry`}>
-        <tbody>
-          <DetailField
-            fieldName="traceId"
+    <table class="detail-fields w-full" aria-label={`${row.name} telemetry`}>
+      <tbody>
+        <DetailField
+          fieldName="traceId"
+          fieldType="bytes"
+          fieldValue={row.reference.traceID}
+          identifier
+        />
+        {#if row.reference.spanID}<DetailField
+            fieldName="spanId"
             fieldType="bytes"
-            fieldValue={row.reference.traceID}
+            fieldValue={row.reference.spanID}
             identifier
-          />
-          {#if row.reference.spanID}<DetailField
-              fieldName="spanId"
-              fieldType="bytes"
-              fieldValue={row.reference.spanID}
-              identifier
-            />{/if}
-        </tbody>
-      </table>
-      <p class="eval-row-detail__prose">
-        <a class="link link-primary" href={traceHref(row.reference)}
-          >Open in Traces</a
-        >
-      </p>
-    </DetailBubble>
+          />{/if}
+      </tbody>
+    </table>
+    <p class="eval-row-detail__prose">
+      <a class="link link-primary" href={traceHref(row.reference)}
+        >Open in Traces</a
+      >
+    </p>
   {/if}
-</DetailStack>
+{/snippet}
+
+{#if traceLevel}
+  <section
+    class="flex min-h-0 flex-1 flex-col"
+    aria-label={`${row.name} details`}
+  >
+    <PaneHeader
+      mode="title"
+      title={row.kind === 'case' ? 'Question' : row.name}
+      badge={status}
+      right={copy}
+    />
+    <div class="min-h-0 flex-1 overflow-y-auto">
+      {#if parentName}<p
+          class="eval-row-detail__context truncate"
+          title={parentName}
+        >
+          {parentName}
+        </p>{/if}
+      {@render content()}
+      {@render telemetry()}
+    </div>
+  </section>
+{:else}
+  <DetailStack
+    label={`${row.name} details`}
+    storageKey={`eval-${row.kind}-detail-layout`}
+  >
+    <DetailBubble label={row.name} trailing={status} action={copy}>
+      {@render content()}
+    </DetailBubble>
+    {#if row.reference}
+      <DetailBubble label="Telemetry" initialOpen={false}
+        >{@render telemetry()}</DetailBubble
+      >
+    {/if}
+  </DetailStack>
+{/if}
 
 <style lang="postcss">
   @reference "../../app.css";
@@ -168,5 +237,10 @@
     @apply py-2 text-sm text-base-content whitespace-pre-wrap;
     padding-inline: var(--pane-inline-inset);
     overflow-wrap: anywhere;
+  }
+  .eval-row-detail__context {
+    @apply py-2 text-sm;
+    color: var(--color-subtle);
+    padding-inline: var(--pane-inline-inset);
   }
 </style>

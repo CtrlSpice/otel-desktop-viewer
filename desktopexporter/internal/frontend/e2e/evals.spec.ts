@@ -660,6 +660,10 @@ test('waterfall labels and bars open eval details while tree controls only expan
     details.getByRole('table', { name: 'bash fields', exact: true })
   ).toBeVisible()
   await showOnly(page, 'Tool calls')
+  await expect(details.locator('details')).toHaveCount(0)
+  await expect(
+    details.getByRole('table', { name: 'bash output', exact: true })
+  ).toBeVisible()
   await tool.locator('.span-bar').click()
   await expect(tool).toHaveClass(/table-row--selected/)
   await page
@@ -685,6 +689,40 @@ test('waterfall labels and bars open eval details while tree controls only expan
   await expect(
     details.locator('summary').filter({ hasText: /^(Span|Events|Links)/ })
   ).toHaveCount(0)
+  await expect(details.locator('details')).toHaveCount(0)
+  await expect(
+    details.getByRole('table', { name: 'Attempt 1 fields', exact: true })
+  ).toBeVisible()
+  await expect(
+    details.getByText('internal fault', { exact: true })
+  ).toBeVisible()
+  await expect(details.getByText('Question', { exact: true })).toHaveCount(0)
+  await expect(details.getByText('Assessments', { exact: true })).toHaveCount(0)
+  await page
+    .locator(
+      '[data-outline-id="case/request-latency"] .tree-row-identity__title button'
+    )
+    .click()
+  await expect(
+    details.getByText(
+      'Identify the slowest request and explain where it spent its time.',
+      { exact: true }
+    )
+  ).toBeVisible()
+  await row.locator('.tree-row-identity__title button').click()
+  await expect(
+    details.getByRole('table', { name: 'Attempt 1 fields', exact: true })
+  ).toBeVisible()
+  await expect(
+    details.getByText(
+      'Identify the slowest request and explain where it spent its time.',
+      { exact: true }
+    )
+  ).toHaveCount(0)
+  await showOnly(page, 'Results')
+  await expect(
+    details.getByRole('region', { name: 'Attempt details', exact: true })
+  ).toBeVisible()
   await expect(details.locator('details.collapse[open]')).toHaveCount(1)
 })
 
