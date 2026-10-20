@@ -216,6 +216,8 @@
   with its dot/label, without a duplicate case-percentage Summary column. Tool calls
   combines tool total and failed count, with plain failed labels and no status dot.
   Omit zero tool/failed counts and show the separator only when both counts appear.
+  Default the resizable identity portion to 320px, Results to 160px and Tool calls
+  to 176px; keep saved widths and let the timeline fill the remaining space.
   Cost has Investigator, Grader and Total cost columns, in that
   order. Cells and footer totals show only numeric amounts (Unknown if missing);
   CAD and estimate labels stay in headers, and partial-estimate context is on hover.
