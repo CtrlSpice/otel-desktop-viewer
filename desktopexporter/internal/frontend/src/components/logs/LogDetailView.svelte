@@ -3,6 +3,8 @@
   import type { LogData } from '@/types/api-types'
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import ExportButton from '@/components/shared/ExportButton.svelte'
+  import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
+  import { readOTLPText } from '@/services/export-service'
   import DetailViews from '@/components/shared/DetailViews.svelte'
   import RawJsonStatus, {
     type RawJsonStatusData,
@@ -44,6 +46,12 @@
   const exportURL = $derived(
     log ? `/export/logs/${encodeURIComponent(log.logRef)}` : ''
   )
+  const loadLogJSON = $derived.by(() => {
+    const id = log?.logRef
+    return id
+      ? (signal: AbortSignal) => readOTLPText('log', id, signal)
+      : undefined
+  })
   let resolvedTarget = $derived(
     fieldTarget?.source === 'log' &&
       fieldTarget.kind === 'field' &&
@@ -111,6 +119,7 @@
       {#snippet right()}
         <DetailViewTabs id={detailViewID} bind:view={detailView} />
         {#key log.logRef}
+          <ValueCopyButton label="log" tooltip="Copy log" loadText={loadLogJSON} />
           <ExportButton signal="log" id={log.logRef} />
         {/key}
       {/snippet}

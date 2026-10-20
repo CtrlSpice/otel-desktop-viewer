@@ -1,4 +1,47 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
+import type { JsonLogData } from '../src/types/wire-types'
+
+// Exercise the shared field card with retained telemetry, independently of
+// Evals' run/attempt navigation and its retired presentation-only examples.
+async function openCopyField(page: Page) {
+  const log: JsonLogData = {
+    logRef: '00000000-0000-0000-0000-000000000001',
+    timestamp: '1700000000000000000',
+    observedTimestamp: '1700000000000000000',
+    traceID: null,
+    spanID: null,
+    severityText: 'INFO',
+    severityNumber: 9,
+    body: { kind: 'string', value: 'Exact retained clipboard text' },
+    resource: { attributes: [], droppedAttributesCount: 0 },
+    scope: { name: '', version: '', attributes: [], droppedAttributesCount: 0 },
+    attributes: [],
+    droppedAttributesCount: 0,
+    flags: 0,
+    eventName: '',
+  }
+  await page.addInitScript(() => {
+    localStorage.setItem('signal-detail:open', 'true')
+    localStorage.setItem('signal-drawer:open', 'false')
+  })
+  await page.route('**/api/features', route => route.fulfill({ json: {} }))
+  await page.route('**/rpc', route => {
+    const { id, method } = route.request().postDataJSON()
+    const result =
+      method === 'getLog'
+        ? log
+        : method === 'searchLogPage'
+          ? { total: 0, logs: [] }
+          : method === 'getLogErrorNavigation'
+            ? { count: 0, index: null, previous: null, next: null }
+            : []
+    return route.fulfill({ json: { jsonrpc: '2.0', id, result } })
+  })
+  await page.goto(`/logs/${log.logRef}?time=all`)
+  return page
+    .getByRole('table', { name: 'Log fields' })
+    .locator('[data-field="body"]')
+}
 
 for (const fallback of [false, true]) {
   test(`detail values copy to the clipboard ${fallback ? 'when the async API is denied' : 'through the async API'}`, async ({
@@ -6,18 +49,11 @@ for (const fallback of [false, true]) {
     context,
   }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
-    await page.route('**/api/features', route =>
-      route.fulfill({
-        json: { evals: { enabled: true } },
-      })
-    )
     await page.setViewportSize({ width: 1440, height: 1000 })
-    await page.goto('/evals?run=guide-assisted&attempt=request-latency')
-    const field = page
-      .getByRole('table', { name: 'Attempt fields' })
-      .locator('[data-field="name"]')
-    const copy = field.getByRole('button', { name: 'Copy name', exact: true })
-    const expected = await field.locator('.detail-pair__value').innerText()
+    const field = await openCopyField(page)
+    const copy = field.getByRole('button', { name: 'Copy body', exact: true })
+    const expected = 'Exact retained clipboard text'
+    await expect(field.locator('.detail-property__body')).toHaveText(expected)
     await expect(copy).toHaveCSS('opacity', '0')
     const before = (await field.boundingBox())!
     await copy.focus()
@@ -47,7 +83,7 @@ for (const fallback of [false, true]) {
       await copy.focus()
       await page.keyboard.press('Enter')
     } else await copy.click()
-    await expect(field.getByRole('status')).toHaveText('Copied name.')
+    await expect(field.getByRole('status')).toHaveText('Copied body.')
     await expect(copy).toHaveCSS('opacity', '1')
     await expect
       .poll(() => page.evaluate(() => navigator.clipboard.readText()))
@@ -70,19 +106,11 @@ test('touch devices keep Copy visible and copy only through its button', async (
   })
   try {
     const page = await context.newPage()
-    await page.addInitScript(() =>
-      localStorage.setItem('signal-drawer:open', 'false')
-    )
-    await page.route('**/api/features', route =>
-      route.fulfill({ json: { evals: { enabled: true } } })
-    )
-    await page.goto('/evals?run=guide-assisted&attempt=request-latency')
-    const field = page
-      .getByRole('table', { name: 'Attempt fields' })
-      .locator('[data-field="name"]')
-    const copy = field.getByRole('button', { name: 'Copy name', exact: true })
+    const field = await openCopyField(page)
+    const copy = field.getByRole('button', { name: 'Copy body', exact: true })
     await expect(copy).toHaveCSS('opacity', '1')
-    const expected = await field.locator('.detail-pair__value').innerText()
+    const expected = 'Exact retained clipboard text'
+    await expect(field.locator('.detail-property__body')).toHaveText(expected)
     await page.evaluate(() =>
       navigator.clipboard.writeText('clipboard unchanged')
     )

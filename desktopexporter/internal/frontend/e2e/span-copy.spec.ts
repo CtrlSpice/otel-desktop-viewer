@@ -927,7 +927,7 @@ test('Copy span sits opposite the span icon and copies only the selected span wi
   ).toHaveCSS('color', palette['base-content']!)
   const json = fields.locator('[data-field="payload"] .cm-content')
   await expect(json).toHaveAttribute('contenteditable', 'false')
-  await expect(json.getByText('"example"', { exact: true })).toHaveCSS(
+  await expect(json.getByText('example', { exact: true })).toHaveCSS(
     'color',
     palette['base-content']!
   )

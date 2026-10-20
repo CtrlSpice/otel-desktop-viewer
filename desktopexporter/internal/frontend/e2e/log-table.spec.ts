@@ -205,6 +205,9 @@ test('table cells reveal exact fields in separate Details, with observed-time fa
 test('Details pins enriched trace context above scrolling fields', async ({
   page,
 }) => {
+  // Finish the initial record load before replacing its RPC fixture and
+  // reloading; otherwise this handler can also catch the old page's getLog.
+  await expect(page.getByRole('table', { name: 'Log fields' })).toBeVisible()
   const traceID = '00000000000000000000000000000011'
   const spanID = '0000000000000001'
   const traceData: JsonTraceData = {
@@ -421,6 +424,176 @@ test('Raw JSON stays selected across log navigation until a field is inspected',
   ).toHaveClass(/detail-property--revealed/)
 })
 
+function logCopyFixture(logRef: string) {
+  return `{"resourceLogs":[{
+  "schemaUrl":"https://opentelemetry.io/schemas/1.21.0",
+  "resource":{"attributes":[{"key":"service.name","value":{"stringValue":"api"}}]},
+  "scopeLogs":[{
+    "schemaUrl":"https://opentelemetry.io/schemas/1.22.0",
+    "scope":{"name":"clipboard-fixture","version":"1.2"},
+    "logRecords":[{
+      "timeUnixNano":"1700000000123456789",
+      "body":{"stringValue":"Résumé 🧭 ${logRef}"},
+      "attributes":[
+        {"key":"zero","value":{"doubleValue":-0.0}},
+        {"key":"large","value":{"doubleValue":18446744073709551615}},
+        {"key":"exponent","value":{"doubleValue":1.2300e+40}},
+        {"key":"sequence","value":{"intValue":"9223372036854775807"}}
+      ]
+    }]
+  }]
+}]}\n`
+}
+
+test('header Copy log preserves exact export text with pointer and Enter', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  const source = logCopyFixture(firstID)
+  const requests: string[] = []
+  await page.route('**/export/logs/**', route => {
+    requests.push(new URL(route.request().url()).pathname)
+    expect(route.request().method()).toBe('GET')
+    return route.fulfill({ contentType: 'application/json', body: source })
+  })
+  const header = page.getByRole('region', { name: 'Log record', exact: true })
+  const copy = header.getByRole('button', { name: 'Copy log', exact: true })
+  await expect(copy).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'Copy log', exact: true })
+  ).toHaveCount(1)
+  await expect(copy).toHaveClass(/header-icon-button/)
+  expect(await copy.evaluate(element => element.tagName)).toBe('BUTTON')
+  const copyBounds = (await copy.boundingBox())!
+  const downloadBounds = (await header
+    .getByRole('button', { name: 'Download log', exact: true })
+    .boundingBox())!
+  expect(copyBounds.x + copyBounds.width).toBeLessThan(downloadBounds.x)
+  expect(requests).toEqual([])
+  for (const activation of ['pointer', 'Enter']) {
+    await page.evaluate(() => navigator.clipboard.writeText('before log copy'))
+    if (activation === 'pointer') await copy.click()
+    else await copy.press('Enter')
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe(source)
+    await expect(header.getByRole('status')).toHaveText('Copied log.')
+    await expect(copy).toHaveAttribute('aria-busy', 'false')
+    await expect(copy).toBeFocused()
+    await expect(page).toHaveURL(`/logs/${firstID}?time=all`)
+  }
+  expect(requests).toEqual([
+    `/export/logs/${firstID}`,
+    `/export/logs/${firstID}`,
+  ])
+})
+
+test('a delayed old-log Copy response cannot overwrite the newly selected log clipboard', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  const requests: string[] = []
+  await page.route('**/export/logs/**', route => {
+    const path = new URL(route.request().url()).pathname
+    requests.push(path)
+    return route.fulfill({
+      contentType: 'application/json',
+      body: logCopyFixture(path.split('/').at(-1)!),
+    })
+  })
+  // Let the old HTTP response arrive, then hold text completion even after abort.
+  // This exercises stale-result protection, not just browser network cancellation.
+  const pending = await page.evaluateHandle(oldPath => {
+    const fetch = window.fetch.bind(window)
+    const writeText = navigator.clipboard.writeText.bind(navigator.clipboard)
+    const writes: string[] = []
+    navigator.clipboard.writeText = text => {
+      writes.push(text)
+      return writeText(text)
+    }
+    let release!: () => void
+    let notifyStarted!: () => void
+    let notifyFinished!: () => void
+    let signal: AbortSignal | null | undefined
+    const gate = new Promise<void>(resolve => {
+      release = resolve
+    })
+    const started = new Promise<void>(resolve => {
+      notifyStarted = resolve
+    })
+    const finished = new Promise<void>(resolve => {
+      notifyFinished = resolve
+    })
+    window.fetch = async (input, init) => {
+      const response = await fetch(input, init)
+      const url = input instanceof Request ? input.url : String(input)
+      if (new URL(url, location.href).pathname === oldPath) {
+        signal = init?.signal
+        const text = response.text.bind(response)
+        response.text = async () => {
+          const result = await text()
+          notifyStarted()
+          await gate
+          notifyFinished()
+          return result
+        }
+      }
+      return response
+    }
+    return {
+      release,
+      started,
+      finished,
+      writes,
+      aborted: () => signal?.aborted,
+    }
+  }, `/export/logs/${firstID}`)
+  const header = page.getByRole('region', { name: 'Log record', exact: true })
+  const copy = header.getByRole('button', { name: 'Copy log', exact: true })
+  try {
+    await copy.press('Enter')
+    await pending.evaluate(state => state.started)
+    await expect(copy).toHaveAttribute('aria-busy', 'true')
+    await page.locator(`[data-log-ref="${firstID}"]`).press('ArrowDown')
+    await expect(page.locator(`[data-log-ref="${secondID}"]`)).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+    await expect(
+      page
+        .getByRole('table', { name: 'Log fields' })
+        .locator('[data-field="body"]')
+    ).toContainText('Full body 1: exact retained text')
+    await expect(copy).toHaveAttribute('aria-busy', 'false')
+    expect(await pending.evaluate(state => state.aborted())).toBe(true)
+    await copy.click()
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe(logCopyFixture(secondID))
+    await pending.evaluate(async state => {
+      state.release()
+      await state.finished
+    })
+    expect(await pending.evaluate(state => state.writes)).toEqual([
+      logCopyFixture(secondID),
+    ])
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      logCopyFixture(secondID)
+    )
+    await expect(header.getByRole('status')).toHaveText('Copied log.')
+    await expect(page).toHaveURL(`/logs/${secondID}?time=all`)
+    expect(requests).toEqual([
+      `/export/logs/${firstID}`,
+      `/export/logs/${secondID}`,
+    ])
+  } finally {
+    await pending.evaluate(state => state.release())
+    await pending.dispose()
+  }
+})
+
 test('Raw JSON folding uses waterfall-style icon controls on the top line', async ({
   page,
 }) => {
@@ -449,9 +622,12 @@ test('Raw JSON folding uses waterfall-style icon controls on the top line', asyn
   const inspector = page.getByRole('region', { name: 'Raw JSON inspector' })
   const editor = inspector.locator('.raw-json-editor')
   await expect(editor).toBeVisible()
-  await expect(editor).toHaveClass(/value-syntax/)
+  await expect(editor.locator('.cm-content')).toHaveCSS(
+    'font-family',
+    /Atkinson Hyperlegible Mono/
+  )
   await expect(editor).toHaveCSS('border-width', '0px')
-  await expect(editor).toHaveCSS('font-size', '12px')
+  await expect(editor).toHaveCSS('font-size', '14px')
   await expect(editor.locator('.cm-lineNumbers')).toHaveCount(0)
   await expect(editor.locator('.json-indent-guides')).toHaveCount(0)
   await expect(editor.locator('.json-indent-bands')).toHaveCount(0)
@@ -508,7 +684,7 @@ test('Raw JSON folding uses waterfall-style icon controls on the top line', asyn
     .toBe('1')
   const stringColour = await editor.evaluate(element => {
     const probe = document.createElement('span')
-    probe.style.color = 'var(--detail-code-string)'
+    probe.style.color = 'var(--color-base-content)'
     element.append(probe)
     const colour = getComputedStyle(probe).color
     probe.remove()
@@ -532,14 +708,27 @@ test('Raw JSON folding uses waterfall-style icon controls on the top line', asyn
     await expect(button).toHaveClass(/chart-header-control/)
     await expect(button.locator('svg')).toBeVisible()
   }
-  const metadataBounds = (await inspector
+  const metadataBounds = (await page
+    .getByRole('region', { name: 'Log record', exact: true })
     .getByRole('status')
     .filter({ hasText: /^OTLP JSON/ })
     .boundingBox())!
   const groupBounds = (await folding.boundingBox())!
-  expect(groupBounds.x).toBeGreaterThan(metadataBounds.x)
-  expect(groupBounds.y).toBeLessThan(metadataBounds.y + metadataBounds.height)
-  expect(groupBounds.y + groupBounds.height).toBeGreaterThan(metadataBounds.y)
+  const toolbarBounds = (await inspector
+    .locator('.raw-inspector__controls')
+    .boundingBox())!
+  const editorBounds = (await editor.boundingBox())!
+  // Status now shares the record header. Folding stays on the first raw-toolbar
+  // line, above the editor and right-aligned within its horizontal padding.
+  expect(metadataBounds.y + metadataBounds.height).toBeLessThanOrEqual(
+    groupBounds.y
+  )
+  expect(groupBounds.y).toBeCloseTo(toolbarBounds.y, 0)
+  expect(groupBounds.x + groupBounds.width).toBeCloseTo(
+    toolbarBounds.x + toolbarBounds.width - 8,
+    0
+  )
+  expect(groupBounds.y + groupBounds.height).toBeLessThanOrEqual(editorBounds.y)
   await expect(inspector.getByRole('button', { name: /^Copy/ })).toHaveCount(0)
   await expect(
     page.getByRole('button', { name: 'Copy log', exact: true })
@@ -569,9 +758,9 @@ test('Raw JSON folding uses waterfall-style icon controls on the top line', asyn
   await expect(editor.locator('.cm-foldPlaceholder').first()).toBeVisible()
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.getByRole('button', { name: 'Copy log', exact: true }).click()
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
-    payload
-  )
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(payload)
   await expand.click()
   await expect(editor.locator('.cm-foldPlaceholder')).toHaveCount(0)
 })
@@ -591,7 +780,11 @@ test('external provenance shrinks inline without replacing its source name', asy
   await expect(provenance).toHaveText('resource')
   await expect(provenance).toHaveAttribute('title', 'resource')
   await expect(provenance).toHaveCSS('flex-shrink', '1')
-  await expect(provenance).toHaveCSS('text-overflow', 'ellipsis')
+  await expect(provenance).toHaveCSS('text-overflow', 'clip')
+  await expect(provenance.locator('span').first()).toHaveText('r')
+  await expect(
+    provenance.locator('.table-column-heading__source-rest')
+  ).toHaveCSS('overflow', 'hidden')
   const titleBounds = (await title.boundingBox())!
   const sourceBounds = (await provenance.boundingBox())!
   expect(sourceBounds.x).toBeGreaterThanOrEqual(
@@ -860,8 +1053,11 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
     })
   )
   const header = page.getByRole('region', { name: 'Log record', exact: true })
+  const jsonStatus = header.getByRole('status', {
+    name: /^OpenTelemetry Protocol JSON\./,
+  })
   await header.getByRole('tab', { name: 'JSON', exact: true }).click()
-  await expect(header.getByRole('status')).toHaveText(/^OTLP JSON · /)
+  await expect(jsonStatus).toHaveText(/^OTLP JSON · /)
   await expect(header.locator('.pane-header__title-row')).toContainText('api')
   await expect(header.locator('.pane-header__title-row')).toContainText(
     'OTLP JSON'
@@ -873,7 +1069,7 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
     page.getByRole('button', { name: 'Collapse JSON', exact: true })
   ).toBeEnabled()
   await header.getByRole('tab', { name: 'Properties', exact: true }).click()
-  await expect(header.getByRole('status')).toHaveCount(0)
+  await expect(jsonStatus).toHaveCount(0)
 })
 
 test('structured previews have static syntax colours and Details folds Body and agent attributes', async ({
@@ -974,15 +1170,19 @@ test('structured previews have static syntax colours and Details folds Body and 
   expect(keyColour).not.toBe(stringColour)
   const service = row.getByRole('gridcell').nth(2)
   await expect(service).toHaveClass(/log-table__cell--attribute/)
-  const serviceColour = await service
-    .getByRole('button')
-    .evaluate(element => getComputedStyle(element).color)
-  const timestampColour = await row
-    .getByRole('gridcell')
-    .nth(1)
-    .getByRole('button')
-    .evaluate(element => getComputedStyle(element).color)
-  expect(serviceColour).not.toBe(timestampColour)
+  const valueColour = await page.evaluate(() => {
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--color-base-content)'
+    document.body.append(probe)
+    const color = getComputedStyle(probe).color
+    probe.remove()
+    return color
+  })
+  await expect(service.getByRole('button')).toHaveCSS('color', valueColour)
+  await expect(row.getByRole('gridcell').nth(1).getByRole('button')).toHaveCSS(
+    'color',
+    valueColour
+  )
 
   const detailBody = page.locator('[data-field="body"]')
   await expect(detailBody).toContainText('9223372036854775807')
@@ -995,15 +1195,18 @@ test('structured previews have static syntax colours and Details folds Body and 
     .locator('.detail-property__key')
     .boundingBox())!
   const copyBounds = (await copyBody.boundingBox())!
-  const badgeBounds = (await bodyHeader
-    .locator('.detail-property__badges')
-    .boundingBox())!
-  expect(copyBounds.x - (keyBounds.x + keyBounds.width)).toBeCloseTo(8, 0)
-  expect(badgeBounds.x).toBeGreaterThan(copyBounds.x + copyBounds.width)
-  expect(copyBounds.y + copyBounds.height / 2).toBeCloseTo(
-    keyBounds.y + keyBounds.height / 2,
+  const headerBounds = (await bodyHeader.boundingBox())!
+  await expect(bodyHeader.locator('.detail-property__key')).toHaveText(
+    'body · map'
+  )
+  await expect(bodyHeader.locator('.detail-property__badges')).toHaveCount(0)
+  expect(copyBounds.x).toBeGreaterThan(keyBounds.x + keyBounds.width)
+  expect(copyBounds.x + copyBounds.width).toBeCloseTo(
+    headerBounds.x + headerBounds.width,
     0
   )
+  // Copy is top-aligned with the first heading line (20px control, 21px text).
+  expect(copyBounds.y).toBeCloseTo(keyBounds.y, 0)
   await expect(
     detailBody.locator('.detail-property__body button.value-copy')
   ).toHaveCount(0)
@@ -1466,7 +1669,7 @@ test('discovered columns retain typed values, provenance, drafts and saved selec
   ).toBeChecked()
 })
 
-test('toolbar filters draft service and severity chips and search once on Apply', async ({
+test('toolbar filters draft service and severity selections and search once on Apply', async ({
   page,
 }) => {
   const editor = page.locator('.cm-content')
@@ -1503,9 +1706,8 @@ test('toolbar filters draft service and severity chips and search once on Apply'
   await service.click()
   await expect(filtersToggle).toHaveAttribute('aria-expanded', 'true')
   await expect(service).toHaveAttribute('aria-pressed', 'true')
-  await expect(
-    page.getByRole('button', { name: 'Remove service api' })
-  ).toBeVisible()
+  await expect(service).toHaveClass(/item-state/)
+  await expect(service.locator('.log-filters__dot')).toBeVisible()
   await error.click()
   await expect(error).toHaveClass(/item-state/)
   await expect(error.locator('.log-filters__dot')).toBeVisible()
@@ -1524,15 +1726,17 @@ test('toolbar filters draft service and severity chips and search once on Apply'
     'severityNumber >= 17 AND severityNumber <= 20'
   )
   await filtersToggle.click()
-  await page.getByRole('button', { name: 'Remove service api' }).click()
+  await service.click()
   await expect(service).toHaveAttribute('aria-pressed', 'false')
   await expect(error).toHaveAttribute('aria-pressed', 'true')
-  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.keyboard.press('Escape')
   await expect(editor).toContainText('service.name')
   expect(searches).toBe(1)
   await filtersToggle.click()
   await expect(service).toHaveAttribute('aria-pressed', 'true')
-  await page.getByRole('button', { name: 'Clear service filter' }).click()
+  await page.getByRole('button', { name: 'Clear filters', exact: true }).click()
+  await expect(service).toHaveAttribute('aria-pressed', 'false')
+  await expect(error).toHaveAttribute('aria-pressed', 'false')
   await page.keyboard.press('Escape')
   await filtersToggle.click()
   await expect(service).toHaveAttribute('aria-pressed', 'true')
@@ -1749,7 +1953,7 @@ test('reload restores resized columns against the measured wide viewport', async
     .toEqual(expected)
 })
 
-test('resize guides align with header boundaries and follow pointer resizing', async ({
+test('short resize grips align with header boundaries and follow pointer resizing', async ({
   page,
 }) => {
   const guide = page.getByRole('separator', {
@@ -1759,28 +1963,29 @@ test('resize guides align with header boundaries and follow pointer resizing', a
   const heading = page
     .getByRole('columnheader')
     .filter({ hasText: 'timestamp' })
+  const grip = guide.locator('.col-resize-bar__line')
   async function aligned() {
     const bar = (await guide.boundingBox())!
     const cell = (await heading.boundingBox())!
-    const paintedOffset = await guide.evaluate(element =>
-      parseFloat(getComputedStyle(element, '::before').left)
-    )
+    const painted = (await grip.boundingBox())!
     expect(
-      Math.abs(bar.x + paintedOffset - (cell.x + cell.width))
+      Math.abs(painted.x + painted.width / 2 - (cell.x + cell.width))
     ).toBeLessThan(1)
     expect(Math.abs(bar.y - cell.y)).toBeLessThan(1)
-    const guideHeight = await guide.evaluate(element =>
-      parseFloat(getComputedStyle(element, '::before').height)
-    )
-    expect(guideHeight).toBe(bar.height)
+    expect(painted.height).toBe(48)
+    expect(painted.width).toBe(3)
+    expect(bar.height).toBeGreaterThan(painted.height)
+    expect(
+      await guide.evaluate(
+        element => getComputedStyle(element, '::before').content
+      )
+    ).toBe('none')
     return bar
   }
+  await expect(grip).toHaveCSS('opacity', '0')
   const before = await aligned()
   await page.mouse.move(before.x + before.width / 2, before.y + 20)
-  await expect(guide.locator('.col-resize-bar__line')).toHaveCSS(
-    'opacity',
-    '0.25'
-  )
+  await expect(guide.locator('.col-resize-bar__line')).toHaveCSS('opacity', '1')
   await page.mouse.down()
   await page.mouse.move(before.x + before.width / 2 + 32, before.y + 20, {
     steps: 6,
@@ -2276,12 +2481,16 @@ test('header error navigation crosses pages within the current result', async ({
   })
   await expect(header).toContainText('Logs')
   await expect(header).toContainText('205 records')
-  await expect(header).toContainText('3 err')
+  await expect(
+    header
+      .getByRole('group', { name: 'Error navigation' })
+      .locator('[aria-live]')
+  ).toHaveText('err')
   await expect(
     header.getByRole('button', { name: 'Previous error', exact: true })
   ).toBeDisabled()
   await header.getByRole('button', { name: 'Next error', exact: true }).click()
-  await expect(header).toContainText('1/3 errors')
+  await expect(header).toContainText('err (1/3)')
   const nextError = header.getByRole('button', {
     name: 'Next error',
     exact: true,
@@ -2291,7 +2500,7 @@ test('header error navigation crosses pages within the current result', async ({
   await expect(
     page.getByRole('button', { name: 'Page 2', exact: true })
   ).toHaveAttribute('aria-current', 'page')
-  await expect(header).toContainText('2/3 errors')
+  await expect(header).toContainText('err (2/3)')
   await expect(nextError).toBeFocused()
   const selected = page.locator(`[data-log-ref="${records[180]!.logRef}"]`)
   await expect(selected).toHaveAttribute('aria-selected', 'true')
@@ -2317,7 +2526,7 @@ test('header error navigation crosses pages within the current result', async ({
   await expect(
     page.getByRole('button', { name: 'Page 3', exact: true })
   ).toHaveAttribute('aria-current', 'page')
-  await expect(header).toContainText('3/3 errors')
+  await expect(header).toContainText('err (3/3)')
   await expect(
     header.getByRole('button', { name: 'Next error', exact: true })
   ).toBeDisabled()
@@ -2332,7 +2541,7 @@ test('header error navigation crosses pages within the current result', async ({
   const columns = header.getByRole('button', { name: 'Columns', exact: true })
   await columns.focus()
   releasePage()
-  await expect(header).toContainText('2/3 errors')
+  await expect(header).toContainText('err (2/3)')
   await expect(columns).toBeFocused()
   await expect(
     page.getByRole('button', { name: 'Page 2', exact: true })
@@ -2365,7 +2574,7 @@ test('header error navigation crosses pages within the current result', async ({
   await expect(
     page.getByRole('grid', { name: 'Logs', exact: true })
   ).toHaveAttribute('aria-busy', 'false')
-  await expect(header).toContainText('2/3 errors')
+  await expect(header).toContainText('err (2/3)')
   await expect(selected).toHaveAttribute('aria-selected', 'true')
   await expect
     .poll(() => viewport.evaluate(element => element.scrollTop))

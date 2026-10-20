@@ -584,22 +584,25 @@ test('associated logs reuse summary cards and open the full log without losing t
   await expect(card).toHaveAttribute('aria-pressed', 'true')
   await expect(card).toContainText('checkout-api')
   await expect(card).toContainText('WARN (13)')
-  await expect(card.locator('.signal-row__badge')).toHaveText('Log WARN (13)')
+  await expect(card.locator('.signal-row__badge')).toHaveText('WARN (13)')
+  await expect(card.locator('.signal-row__title')).toHaveText(
+    'checkout-api · Log'
+  )
   await expect(card).toContainText('Associated warning')
   const fields = page.getByRole('table', { name: 'Span fields' })
   const key = fields.locator('.detail-property__key').first()
-  const muted = await key.evaluate(element => {
+  const subtle = await key.evaluate(element => {
     const probe = document.createElement('span')
-    probe.style.color = 'var(--color-muted)'
+    probe.style.color = 'var(--color-subtle)'
     element.append(probe)
     const color = getComputedStyle(probe).color
     probe.remove()
     return color
   })
-  await expect(key).toHaveCSS('color', muted)
+  await expect(key).toHaveCSS('color', subtle)
   await expect(fields.locator('.detail-property__value').first()).not.toHaveCSS(
     'color',
-    muted
+    subtle
   )
   await expect(
     associated.getByText('order.delayed', { exact: true })
@@ -620,14 +623,16 @@ test('associated logs reuse summary cards and open the full log without losing t
     .filter({ has: page.getByText('Events', { exact: true }) })
   await expect(eventsHeading).toContainText('2 events')
   await expect(eventsHeading.locator('svg')).toHaveCount(1)
-  await expect(eventCard.locator('.signal-row__badge')).toHaveText('Span event')
+  await expect(eventCard.locator('.signal-row__title-cluster')).toHaveText(
+    /^\s*target event\s*·\s*Span event\s*$/
+  )
   await expect(eventCard).toHaveAttribute('aria-expanded', 'false')
   await eventCard.click()
   await expect(
     page.getByRole('table', { name: 'Event target event' })
   ).toBeVisible()
   const linkCard = page.getByRole('button', {
-    name: 'consume order (worker) Link 3 fields',
+    name: 'consume order (worker) · Link 3 fields',
   })
   await expect(linkCard).toHaveAttribute('aria-expanded', 'false')
   await linkCard.focus()
@@ -767,7 +772,7 @@ test('detail targets reopen the panel with independent native disclosures', asyn
     const table = fields.getByRole('table', { name: 'Span fields' })
     const resource = table.locator('[data-field="service.name"]')
     await expect(resource.locator('.detail-property__key')).toHaveText(
-      'service.name'
+      'service.name · string'
     )
     await expect(resource.locator('.detail-property__origin')).toHaveText(
       'resource'
@@ -775,7 +780,9 @@ test('detail targets reopen the panel with independent native disclosures', asyn
     const scopeName = table
       .getByRole('button', { name: 'Copy name (scope)', exact: true })
       .locator('xpath=ancestor::tr[1]')
-    await expect(scopeName.locator('.detail-property__key')).toHaveText('name')
+    await expect(scopeName.locator('.detail-property__key')).toHaveText(
+      'name · string'
+    )
     await expect(scopeName.locator('.detail-property__origin')).toHaveText(
       'scope'
     )

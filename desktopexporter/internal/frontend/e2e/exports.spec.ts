@@ -80,18 +80,18 @@ test.beforeEach(async ({ page }) => {
   await expect(
     page.getByRole('region', { name: 'Log record', exact: true })
   ).toHaveCSS('border-radius', '12px')
-  const tabsInset = await page
+  const downloadInset = await page
     .getByRole('region', { name: 'Log record', exact: true })
     .evaluate(header => {
       const top = header
         .querySelector('.pane-header__top')!
         .getBoundingClientRect()
-      const tabs = header
-        .querySelector('[role="tablist"]')!
+      const download = header
+        .querySelector('[aria-label="Download log"]')!
         .getBoundingClientRect()
-      return top.right - tabs.right
+      return top.right - download.right
     })
-  expect(Math.abs(tabsInset)).toBeLessThan(1)
+  expect(Math.abs(downloadInset)).toBeLessThan(1)
   await expect(
     page
       .getByRole('region', { name: 'Log record', exact: true })
@@ -173,7 +173,7 @@ test('uses the shared tooltip style on hover and keyboard focus without clipping
     .getByRole('region', { name: 'Log record', exact: true })
     .getByText('checkout-api', { exact: true })
     .boundingBox())!
-  expect(buttonBox.x + buttonBox.width).toBeLessThan(titleBox.x)
+  expect(buttonBox.x).toBeGreaterThan(titleBox.x + titleBox.width)
   await expect(trigger).toHaveAttribute('data-tip', 'Download log')
   await expect(trigger).not.toHaveAttribute('title')
   await expect(trigger.locator('svg')).toHaveAttribute('aria-hidden', 'true')
