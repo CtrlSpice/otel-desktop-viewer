@@ -7,6 +7,7 @@ export type AttemptSortKey =
   | 'seconds'
   | 'tools'
   | 'failures'
+  | 'trace'
   | 'investigatorCost'
   | 'graderCost'
   | `assessment:${string}`
@@ -30,6 +31,8 @@ function sortValue(attempt: EvalAttempt, key: AttemptSortKey) {
       return attempt.tools.length
     case 'failures':
       return attempt.tools.filter(tool => tool.state === 'Error').length
+    case 'trace':
+      return attempt.telemetry?.traceID
     case 'investigatorCost':
       return attempt.investigatorCost
     case 'graderCost':

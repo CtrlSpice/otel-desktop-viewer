@@ -200,8 +200,28 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
   await expect(
     time
       .locator('.eval-results__case[data-case-id="request-latency"] td')
-      .last()
+      .nth(2)
   ).toHaveText('3')
+  const traceID = `eeee02${'2'.padStart(26, '0')}`
+  const trace = failedAttempt.getByRole('link', {
+    name: `Open trace ${traceID} for Find the slow request, repetition 1`,
+  })
+  await expect(trace).toHaveAttribute(
+    'href',
+    `/traces/${traceID}?span=eeee000000000001`
+  )
+  await expect(trace.locator('.identifier')).toHaveAttribute('title', traceID)
+  await expect(
+    time
+      .locator('.eval-results__case[data-case-id="request-latency"] td')
+      .last()
+  ).toHaveText('3 traces')
+  await expect(
+    time.locator('[data-attempt-id="checkout-latency"] td').last()
+  ).toHaveText('Not linked')
+  await expect(
+    time.locator('[data-attempt-id="checkout-latency"]').getByRole('link')
+  ).toHaveCount(0)
   await time
     .getByRole('button', { name: 'Sort by Failures', exact: true })
     .click()
@@ -213,7 +233,7 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
     'request-latency'
   )
   await expect(
-    time.locator('[data-attempt-id="checkout-latency"] td').last()
+    time.locator('[data-attempt-id="checkout-latency"] td').nth(3)
   ).toHaveText('0')
   await page.getByRole('tab', { name: 'Cost', exact: true }).click()
   const costs = page.getByRole('table', { name: 'Cost for Direct agent' })

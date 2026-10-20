@@ -19,11 +19,13 @@
   import TreeGutter from '@/components/shared/TreeGutter.svelte'
   import TreeChildCount from '@/components/shared/TreeChildCount.svelte'
   import LegendRows from '@/components/shared/LegendRows.svelte'
+  import Identifier from '@/components/shared/Identifier.svelte'
   import { completionTone, groupAttempts } from './group-attempts'
   import {
     cost,
     estimatedCost,
     percent,
+    traceHref,
     type AssessmentDefinition,
     type EvalAttempt,
     type EvalRun,
@@ -135,6 +137,14 @@
       min: 96,
     },
     {
+      key: 'trace',
+      label: 'Trace',
+      hint: 'Execution trace; opens the correlated span when available',
+      group: 'Time',
+      width: 192,
+      min: 176,
+    },
+    {
       key: 'investigatorCost',
       label: 'Investigator',
       group: 'Cost',
@@ -163,6 +173,11 @@
     groupAttempts(attempts, run.attempts, activeSort).map(group => ({
       ...group,
       summary: caseSummary(group.allAttempts, run.assessments),
+      traceCount: new Set(
+        group.allAttempts.flatMap(attempt =>
+          attempt.telemetry ? [attempt.telemetry.traceID] : []
+        )
+      ).size,
     }))
   )
 
@@ -489,6 +504,17 @@
                     tool => tool.state === 'Error'
                   ).length}
                   <td class="table-cell text-left tabular-nums">{failed}</td>
+                {:else if column.key === 'trace'}
+                  <td class="table-cell text-left">
+                    {#if item.telemetry}
+                      <a
+                        class="link link-hover"
+                        href={traceHref(item.telemetry)}
+                        aria-label={`Open trace ${item.telemetry.traceID} for ${item.name}, repetition ${item.repetition}`}
+                        ><Identifier value={item.telemetry.traceID} /></a
+                      >
+                    {:else}Not linked{/if}
+                  </td>
                 {:else if column.key === 'investigatorCost' || column.key === 'graderCost'}
                   <td class="table-cell text-left tabular-nums"
                     >{cost(item[column.key])}</td
@@ -543,6 +569,14 @@
               title="Failed tool calls across all repetitions"
               >{group.summary.failures}</td
             >
+          {:else if column.key === 'trace'}
+            <td
+              class="table-cell text-left tabular-nums"
+              title="Distinct linked execution traces across all case repetitions"
+            >
+              {#if group.traceCount}{group.traceCount}
+                {group.traceCount === 1 ? 'trace' : 'traces'}{:else}Not linked{/if}
+            </td>
           {:else if column.key === 'investigatorCost' || column.key === 'graderCost'}
             {@const estimate = group.summary[column.key]}
             <td class="table-cell text-left tabular-nums">

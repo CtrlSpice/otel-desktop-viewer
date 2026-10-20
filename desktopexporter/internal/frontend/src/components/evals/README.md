@@ -37,7 +37,7 @@ the footer, and stop before unused space below the last row.
 
 The main pane has three focused table views, using the original shared
 Results / Time / Cost tabs. Results contains assessments; Time contains duration
-and separate Tool calls and Failures counts; Cost contains investigator and grader estimates. Case and Rep
+and separate Tool calls and Failures counts, plus execution trace links; Cost contains investigator and grader estimates. Case and Rep
 remain visible in each view. Views share collapse state and attempt selection,
 with independent sorting and saved widths. Each table has one regular-weight
 heading row. Logs and the trace waterfall retain their shared Columns picker.
@@ -70,6 +70,10 @@ investigator and grader estimates separate. The Total footer aligns each estimat
 under its visible cost column, with unknown and partial estimates explicit. Its
 top divider is a solid 1px Muted line at 60% opacity. The footer appears only in Cost.
 Totals cover the shown attempts; drawer summaries cover the whole run.
+Time shows compact trace IDs through the shared Identifier component. Each link
+uses the existing trace route and selects the correlated span when supplied.
+Missing references read `Not linked`; parent rows count distinct referenced
+traces across all case repetitions. A reference does not imply the trace is loaded.
 
 Run cards show a proportional breakdown and every outcome in a visible list,
 with neutral labels, small colour dots and exact attempt counts. Neutral outcome
