@@ -2,13 +2,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
-import type { TraceSummary } from '@/types/api-types'
+import type { SpanTiming, TraceSummary } from '@/types/api-types'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 import AssociatedTrace from './AssociatedTrace.svelte'
 
-const { getTraceSummary } = vi.hoisted(() => ({ getTraceSummary: vi.fn() }))
+const { getTraceSummary, getSpanTimings } = vi.hoisted(() => ({
+  getTraceSummary: vi.fn(),
+  getSpanTimings: vi.fn(),
+}))
 vi.mock('@/services/telemetry-service', () => ({
-  telemetryAPI: { getTraceSummary },
+  telemetryAPI: { getTraceSummary, getSpanTimings },
 }))
 
 const summary: TraceSummary = {
@@ -23,10 +26,45 @@ const summary: TraceSummary = {
 
 beforeEach(() => {
   getTraceSummary.mockReset()
+  getSpanTimings.mockReset().mockResolvedValue([])
   setTestUrl('/logs/selected?start=1&end=2&event=3')
 })
 
 describe('AssociatedTrace', () => {
+  it('summarises the linked span rather than the root or whole trace', async () => {
+    getSpanTimings.mockResolvedValue([
+      {
+        traceID: summary.traceID,
+        spanID: '0000000000000001',
+        name: 'INSERT order',
+        serviceName: 'database',
+        startTime: summary.startTime + 100000000n,
+        endTime: summary.startTime + 125000000n,
+        statusCodeValue: 2,
+      } satisfies SpanTiming,
+    ])
+    renderWithContexts(AssociatedTrace, {
+      traceID: summary.traceID,
+      spanID: '0000000000000001',
+    })
+    const card = await screen.findByRole('button', { name: /INSERT order/ })
+    expect(card).toHaveTextContent('(database)')
+    expect(card).toHaveTextContent('1 err · 1 span')
+    expect(card).toHaveTextContent('Duration: 25.000 ms')
+    expect(card).toHaveTextContent('20.100')
+    expect(card).toHaveTextContent('0000000000000001')
+    expect(getTraceSummary).not.toHaveBeenCalled()
+    expect(getSpanTimings).toHaveBeenCalledWith(
+      [{ traceID: summary.traceID, spanID: '0000000000000001' }],
+      expect.any(AbortSignal)
+    )
+    await userEvent.click(card)
+    expect(window.location.pathname).toBe(`/traces/${summary.traceID}`)
+    expect(new URLSearchParams(window.location.search).get('span')).toBe(
+      '0000000000000001'
+    )
+  })
+
   it('reuses the trace summary and opens its associated span without losing the time range', async () => {
     getTraceSummary.mockResolvedValue(summary)
     renderWithContexts(AssociatedTrace, {
@@ -112,5 +150,47 @@ describe('AssociatedTrace', () => {
         screen.queryByRole('button', { name: /POST \/checkout/ })
       ).toBeNull()
     )
+  })
+
+  it('discards stale span results when the linked span changes within the same trace', async () => {
+    let resolveOld!: (spans: SpanTiming[]) => void
+    getSpanTimings
+      .mockImplementationOnce(
+        () =>
+          new Promise<SpanTiming[]>(resolve => {
+            resolveOld = resolve
+          })
+      )
+      .mockResolvedValueOnce([])
+    getTraceSummary.mockResolvedValue(summary)
+    const view = renderWithContexts(AssociatedTrace, {
+      traceID: summary.traceID,
+      spanID: '0000000000000001',
+    })
+    await waitFor(() => expect(getSpanTimings).toHaveBeenCalledTimes(1))
+    const oldSignal = getSpanTimings.mock.calls[0]![1] as AbortSignal
+    await view.rerender({
+      componentProps: {
+        traceID: summary.traceID,
+        spanID: '0000000000000002',
+      },
+    })
+    await screen.findByRole('button', { name: /POST \/checkout/ })
+    expect(oldSignal.aborted).toBe(true)
+    resolveOld([
+      {
+        traceID: summary.traceID,
+        spanID: '0000000000000001',
+        name: 'Stale span',
+        serviceName: 'old',
+        startTime: summary.startTime,
+        endTime: summary.startTime + 1n,
+        statusCodeValue: 0,
+      },
+    ])
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Stale span/ })).toBeNull()
+    )
+    expect(getTraceSummary).toHaveBeenCalledTimes(1)
   })
 })
