@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { ComponentProps } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
     CheckListIcon,
@@ -15,6 +16,7 @@
   import ResizableTable from '@/components/shared/ResizableTable.svelte'
   import TreeConnector from '@/components/shared/TreeConnector.svelte'
   import TreeToggle from '@/components/shared/TreeToggle.svelte'
+  import LegendRows from '@/components/shared/LegendRows.svelte'
   import { completionTone, groupAttempts } from './group-attempts'
   import {
     cost,
@@ -47,6 +49,19 @@
   const viewLabel = $derived(
     views.find(item => item.id === view)?.label ?? 'Results'
   )
+  type LegendEntry = Pick<ComponentProps<typeof EvalStatus>, 'label' | 'tone'>
+  const scoreLegend: LegendEntry[] = [
+    { label: '100%', tone: 'success' },
+    { label: 'Partial', tone: 'warning' },
+    { label: '0%', tone: 'error' },
+    { label: 'Unscored', tone: 'neutral' },
+  ]
+  const completionLegend: LegendEntry[] = [
+    { label: 'Complete', tone: 'complete' },
+    { label: 'Running', tone: 'running' },
+    { label: 'Error', tone: 'papaya' },
+    { label: 'Planned', tone: 'neutral' },
+  ]
   let caseGutterWidth = $state(0)
   let repGutterWidth = $state(0)
   let collapsedCases = $state<string[]>([])
@@ -207,6 +222,20 @@
       title="Shown attempts / total attempts"
       >{attempts.length}/{run.attempts.length} attempts</span
     >
+  {/snippet}
+  {#snippet metaLeft()}
+    <LegendRows
+      items={view === 'results' ? scoreLegend : completionLegend}
+      label={view === 'results'
+        ? 'Assessment score legend'
+        : 'Execution status legend'}
+      itemKey={entry => entry.label}
+    >
+      {#snippet children(entry)}<EvalStatus
+          label={entry.label}
+          tone={entry.tone}
+        />{/snippet}
+    </LegendRows>
   {/snippet}
 </PaneHeader>
 
