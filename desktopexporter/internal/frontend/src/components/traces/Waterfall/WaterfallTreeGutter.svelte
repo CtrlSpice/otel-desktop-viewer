@@ -135,7 +135,7 @@
     --leaf-dot-size: 0.5rem;
     --number-circle-color: var(--tree-accent);
     @apply relative flex-shrink-0;
-    height: 28px;
+    height: var(--table-row-h);
   }
 
   .gutter__col {

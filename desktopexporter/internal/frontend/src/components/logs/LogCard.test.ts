@@ -71,11 +71,12 @@ describe('LogCard', () => {
   })
 
   it('shows an associated offset as muted text beside the timestamp', () => {
-    renderCard({ log: makeLog(), offset: '+500.000 ms' })
+    const log = makeLog()
+    renderCard({ log, offset: '+500.000 ms' })
     const offset = screen.getByText('(+500.000 ms)', { exact: true })
-    expect(offset).toHaveClass('text-rp-muted')
+    expect(offset).toHaveClass('text-rp-subtle')
     expect(offset.closest('.signal-row__time')).toHaveTextContent(
-      'PST (+500.000 ms)'
+      `${formatTimestampParts(log.timestamp, 'local', 'milliseconds').value} (+500.000 ms)`
     )
     expect(screen.getByRole('button')).toContainElement(offset)
   })

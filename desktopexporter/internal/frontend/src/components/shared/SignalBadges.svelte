@@ -83,13 +83,9 @@
     class="badge-count"
     title="{props.spanCount} span{props.spanCount !== 1 ? 's' : ''}"
   >
-    {props.spanCount} span{props.spanCount !== 1 ? 's' : ''}
+    {props.spanCount} span{props.spanCount !== 1 ? 's' : ''}{#if props.errorCount > 0},
+      <span class="text-error">{props.errorCount} err</span>{/if}
   </span>
-  {#if props.errorCount > 0}
-    <span class="error-count">
-      {props.errorCount} err
-    </span>
-  {/if}
 {:else if props.signal === 'log'}
   {@const label = severityLabel(props.severityText, props.severityNumber)}
   <span

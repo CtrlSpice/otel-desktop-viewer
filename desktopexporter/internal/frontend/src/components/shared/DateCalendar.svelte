@@ -88,11 +88,11 @@
   }
 
   :global(.date-calendar .calendar-heading) {
-    @apply text-sm font-medium text-base-content/85;
+    @apply text-sm font-medium text-(--color-subtle);
   }
 
   :global(.date-calendar .calendar-nav) {
-    @apply btn btn-circle btn-ghost btn-xs h-7 min-h-0 w-7 p-0 text-base-content/60 hover:bg-base-300/40 hover:text-base-content;
+    @apply btn btn-circle btn-ghost btn-xs h-7 min-h-0 w-7 p-0 text-(--color-subtle) hover:bg-base-300/40 hover:text-base-content;
   }
 
   :global(.date-calendar .calendar-grid) {
@@ -100,7 +100,7 @@
   }
 
   :global(.date-calendar .calendar-weekday) {
-    @apply h-6 text-center text-[0.625rem] font-medium uppercase tracking-wide text-base-content/45;
+    @apply h-8 text-center text-base font-medium uppercase tracking-wide text-(--color-subtle);
   }
 
   :global(.date-calendar .calendar-cell) {
@@ -108,11 +108,11 @@
   }
 
   :global(.date-calendar .calendar-day) {
-    @apply relative inline-flex h-7 w-7 items-center justify-center rounded-full border border-transparent p-0 text-xs text-base-content;
+    @apply relative inline-flex h-8 w-8 items-center justify-center rounded-full border border-transparent p-0 text-base text-base-content;
   }
 
   :global(.date-calendar .calendar-day[data-outside-month]) {
-    @apply text-base-content/25;
+    @apply text-(--color-subtle);
   }
 
   :global(.date-calendar .calendar-day[data-disabled]) {

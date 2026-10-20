@@ -1,7 +1,4 @@
 <script lang="ts">
-  import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { ChevronLeftIcon, ChevronRightIcon } from '@hugeicons/core-free-icons'
-
   let {
     count,
     index = null,
@@ -35,16 +32,14 @@
       onclick={onPrevious}
       aria-label="Previous error"
       title="Previous error"
-      ><HugeiconsIcon
-        icon={ChevronLeftIcon}
-        size="1em"
-        strokeWidth={1.5}
-        class="h-3 w-3"
+      ><svg
+        viewBox="0 0 12 12"
+        class="error-nav__caret"
         aria-hidden="true"
-      /></button
+      ><path d="m8 2-5 4 5 4Z" /></svg></button
     >
-    <span class="error-count" aria-live="polite"
-      >{index !== null ? `${index}/${count} err` : `${count} err`}</span
+    <span aria-live="polite"
+      >{index !== null ? `err (${index}/${count})` : 'err'}</span
     >
     <button
       type="button"
@@ -53,13 +48,11 @@
       onclick={onNext}
       aria-label="Next error"
       title="Next error"
-      ><HugeiconsIcon
-        icon={ChevronRightIcon}
-        size="1em"
-        strokeWidth={1.5}
-        class="h-3 w-3"
+      ><svg
+        viewBox="0 0 12 12"
+        class="error-nav__caret"
         aria-hidden="true"
-      /></button
+      ><path d="m4 2 5 4-5 4Z" /></svg></button
     >
   </span>
 {/if}
@@ -67,15 +60,16 @@
 <style lang="postcss">
   @reference "../../app.css";
   .error-nav {
-    @apply inline-flex min-h-5 shrink-0 items-center gap-1 text-xs text-base-content;
+    @apply inline-flex shrink-0 items-center gap-2 text-sm font-normal whitespace-nowrap tabular-nums text-error;
   }
   .error-nav__button {
-    @apply -my-1 inline-flex cursor-pointer items-center justify-center px-0.5 py-1 transition-colors duration-100;
-    color: color-mix(in oklab, currentColor 60%, transparent);
-  }
-  .error-nav__button:hover:not(:disabled),
-  .error-nav__button:focus-visible {
+    @apply inline-flex size-8 cursor-pointer items-center justify-center border-0 bg-transparent p-0;
     color: inherit;
+  }
+  .error-nav__caret {
+    @apply size-3;
+    fill: currentColor;
+    stroke: none;
   }
   .error-nav__button:disabled {
     @apply cursor-default;

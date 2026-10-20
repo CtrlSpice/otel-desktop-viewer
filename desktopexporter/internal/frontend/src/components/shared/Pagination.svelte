@@ -124,7 +124,7 @@
   {/snippet}
   {#snippet trailing()}
     <div class="pagination__size">
-      <label class="flex items-center gap-2 text-xs text-base-content/60"
+      <label class="flex items-center gap-2 text-xs text-rp-subtle"
         >Rows
         <select
           class="select select-ghost select-xs w-16 text-xs"
@@ -152,6 +152,6 @@
     @apply justify-center;
   }
   .pagination__summary {
-    @apply text-xs text-base-content/50;
+    @apply text-xs text-base-content;
   }
 </style>

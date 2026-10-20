@@ -245,7 +245,7 @@
   }
 
   .ts-row__caret {
-    @apply inline-flex size-4 shrink-0 items-center justify-center text-base-content/60;
+    @apply inline-flex size-4 shrink-0 items-center justify-center text-(--color-subtle);
   }
 
   .ts-row__title-row--preview {
@@ -294,7 +294,7 @@
 
   .ts-row__default-label {
     @apply italic;
-    color: var(--color-muted);
+    color: var(--color-subtle);
   }
 
   .ts-fields-empty {

@@ -453,7 +453,7 @@
       {:else if !page.loading && !hasTraceRows}
         <div class="traces-page__placeholder traces-empty">
           <p class="text-rp-subtle">No traces in this time range</p>
-          <p class="mt-2 text-sm text-rp-muted">
+          <p class="mt-2 text-sm text-rp-subtle">
             Send telemetry to the exporter or adjust the time range
           </p>
         </div>

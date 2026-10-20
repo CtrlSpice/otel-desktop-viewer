@@ -32,13 +32,12 @@
 
 <button
   type="button"
-  class="btn btn-circle btn-primary btn-soft btn-xs tooltip tooltip-right"
+  class="btn btn-xs chart-header-control"
   class:btn-disabled={pending}
   onclick={download}
   aria-label="Export {signal}"
   aria-busy={pending}
   aria-disabled={pending}
-  data-tip={`Export ${signal}`}
   disabled={!id}
 >
   <HugeiconsIcon
@@ -47,6 +46,7 @@
     strokeWidth={1.5}
     aria-hidden="true"
   />
+  <span>Export</span>
 </button>
 
 {#if error}

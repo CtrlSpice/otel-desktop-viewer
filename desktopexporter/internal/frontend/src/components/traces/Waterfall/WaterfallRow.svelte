@@ -324,7 +324,7 @@
   }
 
   .waterfall-row__bar-label {
-    @apply absolute z-[4] text-[9px] tabular-nums whitespace-nowrap leading-none;
+    @apply absolute z-[4] text-base tabular-nums whitespace-nowrap leading-none;
     top: 50%;
     transform: translateY(-50%);
     color: var(--color-base-content);

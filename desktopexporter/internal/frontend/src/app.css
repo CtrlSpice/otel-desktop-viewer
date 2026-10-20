@@ -11,6 +11,38 @@
 @theme {
   --color-papaya: #ff8000;
   --color-papaya-content: #191724;
+  /* One working text size, including compact component utilities. */
+  --text-xs: 0.875rem;
+  --text-xs--line-height: 1.5;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.5;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.5;
+  --text-lg: 1rem;
+  --text-lg--line-height: 1.5;
+  --text-xl: 1rem;
+  --text-xl--line-height: 1.5;
+}
+
+/* Component sizes control spacing, never smaller text. */
+.btn,
+.input,
+.select,
+.textarea,
+.tab,
+.table,
+.table :where(th, td),
+.menu,
+.kbd,
+.card-title {
+  font-size: var(--text-base);
+}
+
+.btn,
+.input,
+.select,
+.textarea {
+  min-height: 2rem;
 }
 
 /* Shared DaisyUI chrome — identical across all three Rosé Pine variants */
@@ -118,7 +150,7 @@
 
 /* Metric charts: axis chrome text (not tooltips) — xs + subtle */
 .metric-chart-view :where(.lc-axis-tick-label, .lc-axis-label) {
-  font-size: 0.75rem;
+  font-size: var(--text-base);
   line-height: 1rem;
   font-weight: 400;
   fill: var(--color-subtle);
@@ -155,7 +187,7 @@
   background: color-mix(in oklab, var(--color-base-100) 94%, transparent);
   color: var(--color-base-content);
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.08);
-  font-size: 0.75rem;
+  font-size: var(--text-base);
   line-height: 1.25;
   text-align: center;
   overflow-wrap: anywhere;
@@ -361,7 +393,7 @@ html[data-theme='rose-pine-dawn']
   pointer-events: none;
   @apply rounded-md border border-base-300 text-base-content;
   padding: 0.4rem 0.55rem;
-  font-size: 0.75rem;
+  font-size: var(--text-base);
   line-height: 1.25;
   min-width: 10rem;
   max-width: 18rem;
@@ -386,7 +418,7 @@ html[data-theme='rose-pine-dawn']
   margin-bottom: 0.3rem;
   font-variant-numeric: tabular-nums;
   font-weight: 500;
-  color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
+  color: var(--color-subtle);
   text-align: left;
 }
 
@@ -490,7 +522,7 @@ html[data-theme='rose-pine-dawn'] .chart-hover-card {
 .metric-chart-view :where(.chart-selection-legend__timestamp) {
   font-variant-numeric: tabular-nums;
   font-weight: 500;
-  color: color-mix(in oklab, var(--color-base-content) 65%, transparent);
+  color: var(--color-subtle);
   margin-bottom: 0.3rem;
 }
 
@@ -527,7 +559,7 @@ html[data-theme='rose-pine-dawn'] .chart-hover-card {
 }
 
 .metric-chart-view :where(.chart-selection-legend__glyph) {
-  font-size: 0.85em;
+  font-size: var(--text-base);
   font-weight: 600;
   line-height: 1;
   opacity: 0.85;
@@ -558,7 +590,7 @@ html[data-theme='rose-pine-dawn'] .chart-hover-card {
   column-gap: 0.4rem;
   row-gap: 0.18rem;
   align-items: baseline;
-  font-size: 0.75rem;
+  font-size: var(--text-base);
   line-height: 1.35;
 }
 
@@ -576,7 +608,7 @@ html[data-theme='rose-pine-dawn'] .chart-hover-card {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: color-mix(in oklab, var(--color-base-content) 80%, transparent);
+  color: var(--color-subtle);
 }
 
 .metric-chart-view :where(.chart-aggregate-summary__value) {
@@ -600,7 +632,7 @@ html[data-theme='rose-pine-dawn'] .chart-hover-card {
 
   body {
     /* Desktop app + half-screen: no hard min width; children use min-w-0 where needed */
-    @apply min-w-0 font-sans text-base-content antialiased;
+    @apply min-w-0 font-sans text-base text-base-content antialiased;
     text-rendering: optimizeLegibility;
     scrollbar-width: thin;
     scrollbar-color: color-mix(
@@ -695,7 +727,8 @@ svg {
   @apply rounded-lg border-0 text-sm font-normal;
   height: var(--header-control-height, 2rem);
   min-height: var(--header-control-height, 2rem);
-  padding-inline: var(--header-control-padding, 0.75rem);
+  padding-inline: var(--header-control-padding, 0.5rem);
+  line-height: 1.5;
   --btn-noise: none;
   background: transparent;
   color: var(--color-base-content);
@@ -703,12 +736,13 @@ svg {
 }
 
 .header-controls {
-  @apply inline-flex min-w-0 items-center gap-2;
+  @apply inline-flex min-w-0 items-center;
+  gap: var(--header-gap);
+  line-height: 1.5;
 }
 
 .header-tabs {
-  @apply relative isolate inline-grid shrink-0 p-0.5;
-  --header-control-height: 1.75rem;
+  @apply relative isolate inline-grid shrink-0;
   grid-template-columns: repeat(var(--header-tab-count), minmax(0, 1fr));
 }
 
@@ -717,8 +751,8 @@ svg {
   )::before {
   content: '';
   position: absolute;
-  inset: 0.125rem auto 0.125rem 0.125rem;
-  width: calc((100% - 0.25rem) / var(--header-tab-count));
+  inset: 0 auto 0 0;
+  width: calc(100% / var(--header-tab-count));
   border-radius: 0.5rem;
   background: var(--item-selected-bg);
   transform: translateX(calc(var(--header-active-index) * 100%));
@@ -936,7 +970,7 @@ svg {
 }
 
 .toolbar-filter-trigger__label {
-  @apply min-w-0 flex-1 truncate text-left text-sm text-base-content/85;
+  @apply min-w-0 flex-1 truncate text-left text-sm text-(--color-subtle);
 }
 
 .toolbar-filter-trigger__icon {
@@ -944,7 +978,7 @@ svg {
 }
 
 .toolbar-filter-trigger__badge {
-  @apply inline-flex min-h-[1.125rem] min-w-[1.125rem] shrink-0 items-center justify-center rounded-md bg-primary/20 px-1.5 text-[0.65rem] font-semibold tabular-nums text-primary ring-1 ring-inset ring-primary/15;
+  @apply inline-flex min-h-6 min-w-6 shrink-0 items-center justify-center rounded-md bg-primary/20 px-1.5 text-base font-semibold tabular-nums text-primary ring-1 ring-inset ring-primary/15;
 }
 
 /* One underline-only tab treatment for navigation, panes and time presets. */
@@ -966,7 +1000,7 @@ svg {
 /* Shared round controls for copy actions and chart overlays. */
 .header-icon-button {
   @apply inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent;
-  color: var(--color-muted);
+  color: var(--color-subtle);
 }
 
 .header-icon-button:hover {
@@ -1134,22 +1168,15 @@ button:focus-visible:not(.btn) {
 :root {
   /* Primary data panels (trace list, waterfall, detail): caps scroll height, aligns column resize strips */
   --panel-body-max-height: min(85vh, calc(100vh - 9rem));
-  --table-row-h: 1.75rem;
-  --table-header-h: 2.25rem;
-  --table-heading-color: color-mix(
-    in oklab,
-    var(--color-base-content) 70%,
-    transparent
-  );
+  --table-row-h: 2.5rem;
+  --table-header-h: 2.75rem;
+  --table-heading-color: var(--color-subtle);
   /* SignalToolbar top row + SearchEditor (in-toolbar): same outer min-height (py-1 + row + search card borders) */
   --toolbar-search-chrome-min-height: calc(
     var(--table-row-h) + 0.5rem + 0.5rem + 2 * var(--border, 1px)
   );
   /* Waterfall span column tree + nested detail rows (WaterfallTreeGutter) */
-  --waterfall-gutter-col: 22px;
   --waterfall-gutter-tail: 4px;
-  --number-circle-size: 16px;
-  --waterfall-gutter-hub: var(--number-circle-size);
 
   /* ── App shell spacing (tune here) ── */
   --layout-gap: 0.75rem;
@@ -1174,9 +1201,12 @@ button:focus-visible:not(.btn) {
    * Shared pane heading rhythm. Additional rows grow the header;
    * the first row stays aligned with drawer and detail headings.
    */
-  --pane-header-h: 2.5rem;
+  --header-gap: 0.5rem;
+  --header-padding: 0.5rem;
+  --header-padding-inline: 0.75rem;
+  --pane-header-h: calc(var(--pane-header-row-h) + 2 * var(--header-padding));
   --pane-inline-inset: 1rem;
-  --pane-header-row-h: 1.5rem;
+  --pane-header-row-h: 2rem;
 }
 
 /* Shared numbered hub: interactive in the waterfall, static for log severity. */
@@ -1186,7 +1216,7 @@ button:focus-visible:not(.btn) {
   min-height: var(--number-circle-size);
   width: var(--number-circle-size);
   height: var(--number-circle-size);
-  font-size: 8px;
+  font-size: var(--number-circle-font-size);
   background-color: var(--number-circle-color);
   color: var(--color-on-light);
   color: contrast-color(var(--number-circle-color));
@@ -1372,20 +1402,10 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
 /* Detail Fields use a key/type header followed by a full-width value block. */
 .detail-property,
 .value-syntax {
-  --detail-code-key: color-mix(
-    in oklab,
-    var(--color-base-content) 80%,
-    var(--color-base-100)
-  );
-  --detail-code-string: light-dark(var(--color-secondary), var(--color-accent));
-  --detail-code-number: light-dark(
-    var(--color-base-content),
-    var(--color-warning)
-  );
-  --detail-code-literal: light-dark(
-    var(--color-base-content),
-    var(--color-primary)
-  );
+  --detail-code-key: var(--color-subtle);
+  --detail-code-string: var(--color-base-content);
+  --detail-code-number: var(--color-base-content);
+  --detail-code-literal: var(--color-base-content);
 }
 
 .value-syntax .detail-code--key,
@@ -1635,33 +1655,26 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
   color: var(--color-subtle);
 }
 
-.error-count {
-  @apply text-xs font-normal tabular-nums text-error;
-}
-
 /* Item / field / tab counts. */
 .badge-count {
-  @apply badge badge-xs badge-primary tabular-nums;
-}
-
-/* Conflict containers retain count semantics but use Daisy's warning palette. */
-.badge-count.badge-warning {
-  @apply badge-warning;
+  @apply text-base font-normal tabular-nums;
+  color: var(--color-subtle);
 }
 
 /* Badges — pills, including the classes that apply DaisyUI badge styles. */
-.badge,
-.badge-count {
+.badge {
   @apply rounded-full font-medium tracking-tight;
-  font-size: calc(0.875rem + 1pt);
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
+  height: auto;
+  min-height: 1.5rem;
 }
 
 .badge.badge-sm {
-  @apply min-h-[1.25rem] gap-1 px-2 py-0.5 leading-tight;
-  font-size: calc(0.75rem + 1pt);
+  @apply min-h-[1.25rem] gap-1 px-2 py-0.5;
+  font-size: var(--text-base);
 }
 
-.badge.badge-xs,
-.badge-count {
-  @apply min-h-5 gap-0.5 px-1.5 py-px text-xs leading-none;
+.badge.badge-xs {
+  @apply min-h-6 gap-0.5 px-1.5 py-px text-base;
 }

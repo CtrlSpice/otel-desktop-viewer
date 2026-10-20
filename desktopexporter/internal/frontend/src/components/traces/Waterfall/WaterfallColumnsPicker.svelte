@@ -120,7 +120,7 @@
                 >{option.key || '(empty key)'}</span
               >
               {#if option.count !== undefined}<span
-                  class="shrink-0 text-xs text-base-content/60"
+                  class="shrink-0 text-xs {option.count ? 'text-base-content' : 'text-rp-muted'}"
                   title={option.count
                     ? `${option.count} spans`
                     : 'Not present in this trace'}>{option.count}</span

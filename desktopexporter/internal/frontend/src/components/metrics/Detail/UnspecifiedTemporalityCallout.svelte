@@ -91,7 +91,7 @@
   @reference "../../../app.css";
 
   .callout-mini {
-    @apply inline-flex items-center font-mono italic text-[0.7rem] tracking-tight text-base-content/45;
+    @apply inline-flex items-center font-mono italic text-base tracking-tight text-base-content/45;
   }
 
   .callout-full {
@@ -112,14 +112,14 @@
    * panels.
    */
   .callout-ascii {
-    @apply inline-block max-w-full overflow-x-auto rounded-lg border border-base-300/60 bg-base-200/40 px-4 py-3 text-left font-mono text-[0.7rem] leading-tight text-base-content/75;
+    @apply inline-block max-w-full overflow-x-auto rounded-lg border border-base-300/60 bg-base-200/40 px-4 py-3 text-left font-mono text-base leading-tight text-base-content;
     white-space: pre;
     tab-size: 4;
     -moz-tab-size: 4;
   }
 
   .callout-link {
-    @apply text-sm italic text-base-content/55 underline decoration-dotted underline-offset-4;
-    @apply hover:text-base-content/80;
+    @apply text-sm italic text-(--color-subtle) underline decoration-dotted underline-offset-4;
+    @apply hover:text-base-content;
   }
 </style>

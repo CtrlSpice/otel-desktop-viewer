@@ -183,7 +183,7 @@
     @apply size-5;
   }
   .detail-property__key {
-    @apply min-w-0 font-mono text-xs;
+    @apply min-w-0 font-sans text-xs;
     color: var(--detail-code-key);
     overflow-wrap: anywhere;
   }
@@ -201,14 +201,14 @@
   }
   .detail-property__value,
   :global(.detail-property .detail-property__value) {
-    @apply min-w-0 font-mono text-[0.8125rem] leading-relaxed;
+    @apply min-w-0 font-mono text-base leading-relaxed;
     color: var(--detail-property-value-color, var(--color-base-content));
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
   .detail-property__annotation {
     @apply ml-2 text-xs;
-    color: var(--detail-property-value-color, var(--detail-code-key));
+    color: var(--color-subtle);
   }
   .detail-property__annotation--enum {
     @apply ml-0;

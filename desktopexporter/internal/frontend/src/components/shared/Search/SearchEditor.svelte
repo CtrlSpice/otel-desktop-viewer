@@ -537,7 +537,7 @@
     <h2 class="help-dialog-title">Querying Your {signalLabel}</h2>
     <button
       type="button"
-      class="btn btn-ghost btn-sm btn-square shrink-0 text-base-content/70 hover:text-base-content tooltip tooltip-left"
+      class="btn btn-ghost btn-sm btn-square shrink-0 text-rp-subtle hover:text-base-content tooltip tooltip-left"
       onclick={() => helpDialogElement?.close()}
       aria-label="Close"
       data-tip="Close"
@@ -907,23 +907,23 @@
   }
 
   .help-section-heading {
-    @apply mt-4 text-sm font-semibold uppercase tracking-wide text-base-content/70;
+    @apply mt-4 text-sm font-semibold uppercase tracking-wide text-(--color-subtle);
   }
 
   .help-query-lines {
-    @apply mt-1 space-y-1 text-sm text-base-content/80;
+    @apply mt-1 space-y-1 text-sm text-base-content;
   }
 
   .help-op-table {
-    @apply mt-2 w-full border-collapse text-left text-sm text-base-content/80;
+    @apply mt-2 w-full border-collapse text-left text-sm text-base-content;
   }
 
   .help-op-table thead th {
-    @apply pb-2 pt-1 text-xs font-semibold uppercase tracking-wide text-base-content/70;
+    @apply pb-2 pt-1 text-xs font-semibold uppercase tracking-wide text-(--color-subtle);
   }
 
   .help-op-table tbody th {
-    @apply w-[5.5rem] max-w-[7rem] py-2 pr-3 align-top text-left text-xs font-medium text-base-content/80;
+    @apply w-[5.5rem] max-w-[7rem] py-2 pr-3 align-top text-left text-xs font-medium text-(--color-subtle);
   }
 
   .help-op-table tbody td {
@@ -935,7 +935,7 @@
   }
 
   .help-op-note {
-    @apply mt-1 block text-xs text-base-content/75;
+    @apply mt-1 block text-xs text-(--color-subtle);
   }
 
   .help-op-note .help-op-code {
@@ -943,7 +943,7 @@
   }
 
   .help-shortcut-list {
-    @apply mt-2 space-y-2 text-sm text-base-content/80;
+    @apply mt-2 space-y-2 text-sm text-base-content;
   }
 
   .help-shortcut-list li {
@@ -951,7 +951,7 @@
   }
 
   .help-shortcut-sep {
-    @apply mx-0.5 text-base-content/50;
+    @apply mx-0.5 text-(--color-subtle);
   }
 
   .help-example {

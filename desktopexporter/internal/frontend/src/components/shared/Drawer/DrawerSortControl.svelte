@@ -67,7 +67,7 @@
   type="button"
   popovertarget={popoverID}
   aria-expanded={open}
-  class="sort-trigger header-icon-button m-1 text-sm tooltip tooltip-bottom"
+  class="sort-trigger header-icon-button text-sm tooltip tooltip-bottom"
   aria-label={`Sort by: ${currentLabel}`}
   data-tip={`Sort by: ${currentLabel}`}
 >
@@ -83,7 +83,7 @@
 </button>
 <button
   type="button"
-  class="header-icon-button my-1 mr-1 ml-auto"
+  class="header-icon-button ml-auto"
   aria-label={direction === 'asc' ? 'Sort descending' : 'Sort ascending'}
   title={direction === 'asc'
     ? 'Ascending — switch to descending'

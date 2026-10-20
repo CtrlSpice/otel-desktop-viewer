@@ -90,7 +90,7 @@ describe('ActivityPanel', () => {
     expect(screen.getAllByText('(-1.000 s)')).toHaveLength(2)
     const summary = screen.getByRole('region', { name: 'Log summary' })
     const offset = within(summary).getByText('(-1.000 s)', { exact: true })
-    expect(offset).toHaveClass('text-rp-muted')
+    expect(offset).toHaveClass('text-rp-subtle')
     expect(offset).not.toHaveClass('badge-count')
     expect(offset.closest('.signal-row__time')).not.toBeNull()
     expect(within(summary).getByRole('button')).toContainElement(offset)

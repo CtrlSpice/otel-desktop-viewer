@@ -61,24 +61,24 @@
   @reference "../../../app.css";
 
   .time-range {
-    @apply flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-1 py-1.5 text-xs;
+    @apply flex min-w-0 flex-wrap items-center gap-2 text-xs leading-normal;
   }
 
   .time-range__bounds {
-    @apply flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1;
+    @apply flex min-w-0 flex-wrap items-center gap-2;
   }
 
   .time-range__endpoint {
-    @apply inline-flex items-baseline gap-1.5;
+    @apply inline-flex items-center gap-2;
   }
 
   .time-range__label {
     color: var(--color-subtle);
-    font-size: 0.625rem;
+    font-size: var(--text-base);
   }
 
   time {
-    @apply inline-flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 tabular-nums;
+    @apply inline-flex flex-wrap items-center gap-2 tabular-nums;
   }
 
   .time-range__clock {
@@ -91,7 +91,7 @@
   }
 
   .time-range__context {
-    @apply inline-flex items-baseline gap-1.5 whitespace-nowrap tabular-nums;
+    @apply inline-flex items-center gap-2 whitespace-nowrap tabular-nums;
     color: var(--color-subtle);
   }
 

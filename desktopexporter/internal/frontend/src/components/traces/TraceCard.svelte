@@ -53,7 +53,7 @@
 {#snippet serviceBreakdown()}
   <SummaryBreakdown parts={services} rootService={serviceLabel}>
     {#snippet right()}
-      <span class="font-mono text-xs text-base-content" title={trace.traceID}>
+      <span class="font-mono text-xs text-rp-subtle" title={trace.traceID}>
         <span class="sr-only">Trace ID: </span>
         <Identifier value={trace.traceID} />
       </span>
@@ -85,10 +85,7 @@
         class="flex min-w-0 max-w-full items-center gap-1"
         title={`Start: ${startParts.value} ${startParts.unit}`}
       >
-        <span class="shrink-0">Start:</span>
         <span class="truncate text-base-content">{startParts.value}</span>
-        {#if startParts.unit}<span class="shrink-0">{startParts.unit}</span
-          >{/if}
       </span>
       {#if durationParts}
         <span class="flex shrink-0 items-center gap-1">

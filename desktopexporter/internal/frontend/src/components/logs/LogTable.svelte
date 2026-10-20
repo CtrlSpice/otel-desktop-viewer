@@ -480,6 +480,8 @@
     {#snippet badge()}<span class="badge-count"
         >{total.toLocaleString()} {total === 1 ? 'record' : 'records'}</span
       >
+    {/snippet}
+    {#snippet right()}
       {#if errorNavigation}<ErrorNavigationBadge
           count={errorNavigation.count}
           busy={errorNavigationLoading}
@@ -499,8 +501,6 @@
           role="status"
           title={errorNavigationError}>Errors unavailable</span
         >{/if}
-    {/snippet}
-    {#snippet right()}
       {@render filters?.()}
       <button
         bind:this={trigger}
@@ -799,7 +799,7 @@
     --table-cell-inline-end: 0.5rem;
   }
   .log-table__cell--attribute {
-    @apply text-base-content/60;
+    @apply text-base-content;
   }
   .log-table__cell > :global(.table-value-cell) {
     @apply w-full;

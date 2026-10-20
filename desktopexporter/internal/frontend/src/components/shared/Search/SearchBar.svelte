@@ -144,7 +144,7 @@
 
   .search-bar__field :global(.typed-field::placeholder),
   .search-bar__field :global(.cm-placeholder) {
-    color: var(--color-muted);
+    color: var(--color-subtle);
   }
 
   .search-bar__field :global(.typed-field:focus-visible),

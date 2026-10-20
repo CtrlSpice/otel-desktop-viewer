@@ -38,12 +38,11 @@
   description={bodyPreview || undefined}
   timeLayout="labeled"
   timestamp={timestampParts.value}
-  timestampUnit={timestampParts.unit || undefined}
   timestampSuffix={offset ? `(${offset})` : undefined}
   {onclick}
 >
   {#snippet badge()}
-    {#if showLogBadge}<span class="badge-count">Log</span>{/if}
+    {#if showLogBadge}<span class="badge badge-xs badge-primary">Log</span>{/if}
     <SignalBadges
       signal="log"
       severityNumber={log.severityNumber}

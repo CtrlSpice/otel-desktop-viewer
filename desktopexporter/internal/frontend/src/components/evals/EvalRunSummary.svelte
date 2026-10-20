@@ -24,7 +24,7 @@
     label={summary.definition?.name ?? 'Results'}
   >
     {#snippet right()}
-      <span class="font-mono text-xs text-base-content" title={run.id}>
+      <span class="font-mono text-xs text-rp-subtle" title={run.id}>
         <span class="sr-only">Run ID: </span>
         <Identifier value={run.id} />
       </span>
@@ -70,7 +70,7 @@
   {/snippet}
   {#snippet meta()}
     <div
-      class="flex w-full flex-wrap items-center justify-between gap-x-2 gap-y-1 pt-1 text-xs tabular-nums"
+      class="flex w-full flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs tabular-nums"
     >
       <span>
         Tool calls: <span class="text-base-content">{summary.toolCalls}</span>

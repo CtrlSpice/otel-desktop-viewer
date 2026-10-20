@@ -41,6 +41,6 @@
 
   .all-series-aggregate-toggle__label {
     @apply whitespace-nowrap tabular-nums;
-    color: var(--color-muted);
+    color: var(--color-subtle);
   }
 </style>

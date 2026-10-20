@@ -185,7 +185,7 @@
 
   .timezone-heading :global(.timezone-icon) {
     @apply mr-1 h-7 w-7 shrink-0 p-[7px];
-    color: var(--color-muted);
+    color: var(--color-subtle);
   }
 
   .timezone-group[open] :global(.timezone-icon) {
@@ -206,7 +206,7 @@
   }
 
   .tz-badge {
-    @apply shrink-0 font-mono text-xs text-base-content/55 tabular-nums;
+    @apply shrink-0 font-mono text-xs text-(--color-subtle) tabular-nums;
   }
 
   .timezone-list {

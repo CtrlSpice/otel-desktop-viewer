@@ -70,10 +70,3 @@
   </div>
   {#if action}{@render action()}{/if}
 </div>
-
-<style>
-  .detail-view-tabs {
-    --header-control-height: 1.5rem;
-    --header-control-padding: 0.5rem;
-  }
-</style>

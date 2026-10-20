@@ -154,7 +154,7 @@
     <div bind:this={popoverEl} class="field-filter__popover">
       <div class="field-filter__popover-header header-surface">
         <span
-          class="text-xs font-semibold uppercase tracking-wide text-base-content/55"
+          class="text-xs font-semibold uppercase tracking-wide text-rp-subtle"
           >Columns</span
         >
       </div>
@@ -263,6 +263,6 @@
   }
 
   .field-filter__field-name {
-    @apply min-w-0 truncate font-mono text-xs text-base-content/80;
+    @apply min-w-0 truncate font-mono text-xs text-(--color-subtle);
   }
 </style>

@@ -100,15 +100,12 @@
 {#if log}
   <div class="log-detail-panel">
     <PaneHeader pill mode="title" title={service || '—'} ariaLabel="Log record">
-      {#snippet leading()}
+      {#snippet right()}
+        <DetailViewTabs id={detailViewID} bind:view={detailView} />
         {#key log.logRef}
           <ExportButton signal="log" id={log.logRef} />
         {/key}
       {/snippet}
-      {#snippet right()}<DetailViewTabs
-          id={detailViewID}
-          bind:view={detailView}
-        />{/snippet}
     </PaneHeader>
 
     <div class="log-detail-panel__body">

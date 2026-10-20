@@ -85,12 +85,7 @@
     aria-expanded={expanded}
     aria-controls={controls}
   >
-    <div
-      class="signal-row__identity"
-      class:signal-row__identity--service={!!subtitle ||
-        !!subtitleContent ||
-        !!interactiveSubtitle}
-    >
+    <div class="signal-row__identity">
       <div class="signal-row__header">
         <span class="signal-row__title-cluster" {title}>
           <span
@@ -179,7 +174,7 @@
                   <span class="signal-row__time-unit">{timestampUnit}</span>
                 {/if}
                 {#if timestampSuffix}
-                  <span class="text-rp-muted">{timestampSuffix}</span>
+                  <span class="text-rp-subtle">{timestampSuffix}</span>
                 {/if}
               </span>
             {/if}
@@ -231,7 +226,7 @@
   }
 
   .signal-row__body {
-    display: contents;
+    @apply flex min-w-0 flex-col;
   }
 
   .signal-row.signal-row--interactive-subtitle {
@@ -246,10 +241,7 @@
   }
 
   .signal-row--interactive-subtitle .signal-row__body {
-    display: flex;
-    flex-direction: column;
     grid-row: 3;
-    min-width: 0;
   }
 
   .signal-card-shell__subtitle {
@@ -258,6 +250,11 @@
     min-width: 0;
     margin-inline: 0.75rem;
     pointer-events: none;
+  }
+
+  .signal-row :global(.identifier),
+  .signal-card-shell__subtitle :global(.identifier) {
+    color: var(--color-subtle);
   }
 
   /* Static label space remains part of the card's click target. Only the
@@ -270,16 +267,12 @@
   }
 
   .signal-row {
-    /*
-     * Drawer card typography: text-sm default (title, subtitle, description,
-     * timestamps, values, meta). Labels → text-xs (.signal-row__label,
-     * .signal-row__time-label). Badges → badge-xs on the snippet markup.
-     */
+    /* Titles use the heading size; details use the working size. */
     --signal-card-row-h: 1.5rem;
     /* Share the card surface with the badge background and title fade. */
     --item-idle-bg: var(--color-base-100);
     --row-surface: var(--item-state-bg);
-    @apply flex w-full flex-col gap-0 rounded-xl px-3 py-2.5 text-left text-sm leading-snug;
+    @apply flex w-full flex-col gap-0 rounded-xl px-3 py-2.5 text-left text-sm;
     cursor: pointer;
   }
 
@@ -291,16 +284,16 @@
   }
 
   .signal-row__lead {
-    @apply my-1.5 flex min-h-[var(--signal-card-row-h)] min-w-0 items-center;
+    @apply flex min-h-[var(--signal-card-row-h)] min-w-0 items-center;
   }
 
   .signal-row__date {
-    @apply min-w-0 w-full pt-1 text-xs tabular-nums;
+    @apply min-w-0 w-full text-xs tabular-nums;
     color: var(--color-subtle);
   }
 
   .signal-row__description {
-    @apply min-w-0 line-clamp-2 text-sm leading-tight;
+    @apply min-w-0 line-clamp-2 text-sm;
     color: var(--color-subtle);
   }
 
@@ -312,16 +305,12 @@
     @apply min-w-0;
   }
 
-  .signal-row__identity--service .signal-row__header {
-    @apply h-5;
-  }
-
   .signal-row__title-cluster {
     @apply flex min-w-0 flex-1 items-center gap-1;
   }
 
   .signal-row__title {
-    @apply min-w-0 shrink truncate text-sm font-medium leading-none text-base-content;
+    @apply min-w-0 shrink truncate text-lg font-semibold text-base-content;
     flex: 0 1 auto;
   }
 
@@ -331,7 +320,7 @@
   }
 
   .signal-row__subtitle {
-    @apply min-w-0 truncate text-sm font-normal leading-tight;
+    @apply min-w-0 truncate text-sm font-normal;
     color: var(--color-subtle);
   }
 
@@ -384,24 +373,24 @@
   /* Shared label style for time rows and meta snippets (e.g. Last value:). */
   :global(.signal-row__label),
   .signal-row__time-label {
-    @apply shrink-0 text-xs leading-none;
+    @apply shrink-0 text-xs;
     color: var(--color-subtle);
   }
 
   .signal-row__time-value {
-    @apply truncate leading-none text-base-content;
+    @apply truncate text-base-content;
   }
 
   .signal-row__time-unit {
-    @apply shrink-0 leading-none text-base-content;
+    @apply shrink-0 text-base-content;
   }
 
   .signal-row__timestamp {
-    @apply min-w-0 truncate text-left leading-none;
+    @apply min-w-0 truncate text-left;
   }
 
   .signal-row__duration {
-    @apply shrink-0 tabular-nums leading-none;
+    @apply shrink-0 tabular-nums;
   }
 
   .signal-row__time:not(.signal-row__time--interval) .signal-row__timestamp {
@@ -415,7 +404,7 @@
 
   /* Secondary facts: trace id, scope + unit, etc. — parents own separators/content. */
   .signal-row__meta-row {
-    @apply flex min-h-[var(--signal-card-row-h)] min-w-0 flex-wrap items-center gap-x-2 gap-y-0 leading-snug;
+    @apply flex min-h-[var(--signal-card-row-h)] min-w-0 flex-wrap items-center gap-x-2 gap-y-0;
     color: var(--color-subtle);
   }
 </style>

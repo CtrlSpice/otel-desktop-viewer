@@ -123,11 +123,11 @@
   }
 
   .timeseries-legend__title {
-    @apply text-xs font-semibold uppercase tracking-wide text-base-content/60;
+    @apply text-xs font-semibold uppercase tracking-wide text-(--color-subtle);
   }
 
   .timeseries-legend__count {
-    @apply text-xs tabular-nums text-base-content/60;
+    @apply text-xs tabular-nums text-base-content;
   }
 
   .timeseries-legend__count--cap {
@@ -182,11 +182,11 @@
   }
 
   .timeseries-legend__attr-key {
-    @apply text-base-content/70 shrink-0;
+    @apply text-(--color-subtle) shrink-0;
   }
 
   .timeseries-legend__attr-eq {
-    @apply text-base-content/40 mx-0.5 shrink-0;
+    @apply text-(--color-subtle) mx-0.5 shrink-0;
   }
 
   .timeseries-legend__attr-value {
@@ -194,7 +194,7 @@
   }
 
   .timeseries-legend__badge {
-    @apply ml-auto text-[0.65rem] tabular-nums text-base-content/50 shrink-0;
+    @apply ml-auto text-base tabular-nums text-base-content shrink-0;
   }
 
   .timeseries-legend__cap-note {

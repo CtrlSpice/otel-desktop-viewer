@@ -101,7 +101,7 @@
 >
   {#if colouredParts.length > 1}
     <div
-      class="mt-2 flex h-2 w-full gap-1"
+      class="mt-1 flex h-2 w-full gap-1"
       role="group"
       aria-label={`${barLabel}: ${colouredParts.map(part => `${part.label}: ${countLabel(part)}`).join('; ')}`}
     >

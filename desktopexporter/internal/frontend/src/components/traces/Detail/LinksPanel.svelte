@@ -94,7 +94,7 @@
     {/snippet}
     {#snippet badge()}
       {#if invalid}{@render invalidLinkIcon()}{/if}
-      <span class="badge-count">Link</span>
+      <span class="badge badge-xs badge-primary">Link</span>
       <span class="badge-count">{linkFieldCount(link)} fields</span>
     {/snippet}
     <table

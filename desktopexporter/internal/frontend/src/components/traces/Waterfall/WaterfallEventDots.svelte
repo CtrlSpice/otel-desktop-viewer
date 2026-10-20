@@ -80,7 +80,7 @@
      target; CSS picks left/right placement via attribute selectors. */
   .event-marker--tooltip-target::before {
     content: attr(data-tooltip);
-    @apply absolute top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] whitespace-nowrap rounded-xl bg-base-100 text-base-content opacity-0 pointer-events-none;
+    @apply absolute top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-base whitespace-nowrap rounded-xl bg-base-100 text-base-content opacity-0 pointer-events-none;
     z-index: 1;
     border: 1px solid var(--marker-color);
     transition: opacity 0.1s;

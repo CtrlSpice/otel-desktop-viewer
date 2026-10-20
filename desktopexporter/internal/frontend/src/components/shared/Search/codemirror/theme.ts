@@ -25,13 +25,13 @@ function ensureTooltipStyles() {
     }
     html[data-theme] .cm-tooltip-autocomplete > ul {
       font-family: "Atkinson Hyperlegible Mono", ui-monospace, monospace;
-      font-size: 13px;
+      font-size: var(--text-base);
       padding: 0;
     }
     html[data-theme] .cm-tooltip-autocomplete > ul > li {
       display: flex;
       align-items: center;
-      height: var(--table-row-h);
+      height: auto;
       min-height: var(--table-row-h);
       padding: 0.25rem 1rem;
       gap: 0.5rem;
@@ -55,14 +55,14 @@ function ensureTooltipStyles() {
       align-items: center;
       justify-content: center;
       width: fit-content;
-      height: calc(var(--size-selector, 0.25rem) * 5);
+      min-height: 1.5rem;
       padding-inline: calc(calc(var(--size-selector, 0.25rem) * 5) / 2 - var(--border, 1px));
       border-radius: var(--radius-selector, 0.25rem);
       border: var(--border, 1px) solid color-mix(in oklab, var(--badge-color) 10%, var(--color-base-100));
       background-color: color-mix(in oklab, var(--badge-color) 8%, var(--color-base-100));
       color: var(--badge-color);
       font-style: normal;
-      font-size: 0.75rem;
+      font-size: var(--text-base);
       margin-left: auto;
       margin-right: 0.25rem;
       vertical-align: middle;
@@ -87,7 +87,7 @@ const queryHighlightStyle = HighlightStyle.define([
 
 export const queryEditorTheme = EditorView.theme({
   '&': {
-    fontSize: '14px',
+    fontSize: 'var(--text-base)',
     fontFamily: '"Atkinson Hyperlegible Mono", ui-monospace, monospace',
     backgroundColor: 'transparent',
     color: qc.text,
@@ -110,7 +110,7 @@ export const queryEditorTheme = EditorView.theme({
   },
   '.cm-placeholder': {
     color: qc.subtle,
-    fontSize: '14px',
+    fontSize: 'var(--text-base)',
     fontFamily: '"Atkinson Hyperlegible Mono", ui-monospace, monospace',
     fontStyle: 'normal',
     lineHeight: 'var(--table-row-h)',

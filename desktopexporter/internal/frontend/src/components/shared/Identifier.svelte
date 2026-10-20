@@ -15,8 +15,10 @@
     >{/if}
 </span>
 
-<style>
+<style lang="postcss">
+  @reference "../../app.css";
   .identifier {
+    @apply font-sans;
     white-space: nowrap;
   }
 </style>

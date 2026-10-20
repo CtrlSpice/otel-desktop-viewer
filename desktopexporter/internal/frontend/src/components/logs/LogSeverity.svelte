@@ -18,10 +18,6 @@
     @apply flex min-w-0 items-center justify-start gap-2 text-left;
   }
   .log-severity__label {
-    @apply min-w-0 truncate text-base-content/60;
-  }
-
-  :global(html[data-theme='rose-pine-dawn']) .log-severity__label {
-    color: var(--color-base-content);
+    @apply min-w-0 truncate text-base-content;
   }
 </style>

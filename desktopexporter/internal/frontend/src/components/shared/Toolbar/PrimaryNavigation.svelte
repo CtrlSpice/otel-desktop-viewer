@@ -158,3 +158,25 @@
     </a>
   {/each}
 </nav>
+
+<style>
+  .tab {
+    color: var(--color-base-content);
+    background: transparent;
+    transition: background-color var(--motion-feedback-duration);
+  }
+
+  .tab::before {
+    display: none;
+  }
+
+  .tab[aria-current='page'] {
+    background: var(--item-selected-bg);
+  }
+
+  @media (hover: hover) {
+    .tab:hover:not([aria-current='page']) {
+      background: var(--item-hover-bg);
+    }
+  }
+</style>

@@ -849,7 +849,7 @@
             metaRight={showChartOverlayControls ? overlayControl : undefined}
           >
             {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
-            {#snippet leading()}
+            {#snippet right()}
               {#key selectedSummary.metricRef}
                 <ExportButton signal="metric" id={selectedSummary.metricRef} />
               {/key}
@@ -866,7 +866,7 @@
             metaRight={showChartOverlayControls ? overlayControl : undefined}
           >
             {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
-            {#snippet leading()}
+            {#snippet right()}
               {#key selectedSummary.metricRef}
                 <ExportButton signal="metric" id={selectedSummary.metricRef} />
               {/key}
@@ -901,7 +901,7 @@
           class="metrics-page__placeholder metrics-empty"
         >
           <p class="text-rp-subtle">No metrics in this time range</p>
-          <p class="mt-2 text-sm text-rp-muted">
+          <p class="mt-2 text-sm text-rp-subtle">
             Send telemetry to the exporter or adjust the time range
           </p>
         </div>

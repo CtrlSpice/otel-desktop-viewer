@@ -26,7 +26,7 @@
 
   const readonlyCodeEditorTheme = EditorView.theme({
     '&': {
-      fontSize: '13px',
+      fontSize: 'var(--text-base)',
       fontFamily: '"Atkinson Hyperlegible Mono", ui-monospace, monospace',
       backgroundColor: c.base,
       color: c.text,

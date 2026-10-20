@@ -17,6 +17,6 @@
 
   .conflict-marker {
     @apply inline-flex size-3.5 flex-none items-center justify-center text-warning leading-none;
-    font-size: 0.875rem;
+    font-size: var(--text-base);
   }
 </style>

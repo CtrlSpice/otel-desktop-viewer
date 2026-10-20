@@ -288,7 +288,7 @@
   }
 
   .timeline-marker__count {
-    @apply pointer-events-none absolute inset-0 flex items-center justify-center text-[9px] font-bold leading-none;
+    @apply pointer-events-none absolute inset-0 flex items-center justify-center text-base font-bold leading-none;
     color: var(--color-base-200);
   }
 
@@ -306,7 +306,7 @@
   }
 
   .activity-popover__offset {
-    @apply whitespace-nowrap font-mono tabular-nums text-base-content/70;
+    @apply whitespace-nowrap font-mono tabular-nums text-base-content;
   }
 
   .activity-popover__name {

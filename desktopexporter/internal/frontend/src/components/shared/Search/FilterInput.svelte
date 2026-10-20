@@ -23,7 +23,7 @@
     icon={FilterIcon}
     size={14}
     strokeWidth={1.5}
-    class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-base-content/50"
+    class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-rp-subtle"
     aria-hidden="true"
   />
   <input
@@ -47,7 +47,7 @@
   }
 
   .filter-input::placeholder {
-    color: var(--color-muted);
+    color: var(--color-subtle);
     opacity: 1;
   }
 </style>

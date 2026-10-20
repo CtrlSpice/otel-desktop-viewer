@@ -711,8 +711,9 @@
 
   /* ── Body (list) ── */
   .signal-drawer__controls {
-    @apply mx-3 mt-3 flex min-w-0 shrink-0 items-center rounded-xl border border-base-300 bg-base-200 px-1;
+    @apply mx-3 mt-3 flex min-w-0 shrink-0 items-center rounded-xl border border-base-300 bg-base-200;
     min-height: var(--pane-header-h);
+    padding: var(--header-padding) var(--header-padding-inline);
   }
 
   .signal-drawer__body {
@@ -740,7 +741,7 @@
   }
 
   .signal-drawer__empty-hint {
-    @apply text-xs text-base-content/50;
+    @apply text-xs text-(--color-subtle);
   }
 
   .signal-drawer__body :global(.signal-drawer__vlist) {

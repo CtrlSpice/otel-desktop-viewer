@@ -47,7 +47,7 @@
 <style lang="postcss">
   @reference "../../app.css";
   .attribute-value {
-    @apply m-0 min-w-0 font-mono text-[0.8125rem] leading-relaxed;
+    @apply m-0 min-w-0 font-mono text-base leading-relaxed;
     color: var(--detail-property-value-color, var(--color-base-content));
     white-space: pre-wrap;
     overflow-wrap: anywhere;

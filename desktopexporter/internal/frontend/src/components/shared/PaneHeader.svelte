@@ -103,6 +103,8 @@
     /** Optional single timestamp (ms) on its own line below the title
      *  or tab strip (e.g. log record time). */
     timestampMs?: number
+    /** Custom content in place of the time range on the lower row. */
+    metaLeft?: Snippet
     /** Optional right-aligned controls on the second header row (below
      *  the title). Renders beside `timeRange` / `timestampMs` when
      *  those are set, or alone on that row when they are not. */
@@ -166,6 +168,7 @@
   let stackedClass = $derived(
     props.timeRange !== undefined ||
       props.timestampMs !== undefined ||
+      props.metaLeft !== undefined ||
       props.metaRight !== undefined
       ? 'pane-header--stacked'
       : ''
@@ -184,7 +187,9 @@
 {#snippet metaRow(showControls = true)}
   <div class="pane-header__meta-row">
     <div class="pane-header__time-range">
-      {#if props.timeRange}
+      {#if props.metaLeft}
+        {@render props.metaLeft()}
+      {:else if props.timeRange}
         <ChartTimeRangeHeader
           startMs={props.timeRange.startMs}
           endMs={props.timeRange.endMs}
@@ -320,15 +325,19 @@
         {/if}
         <span class="pane-header__title">{props.title}</span>
         {#if props.subtitle?.trim()}
+          <span class="pane-header__separator" aria-hidden="true">·</span>
           <span class="pane-header__subtitle">({props.subtitle.trim()})</span>
         {/if}
+        {#if props.badge || props.badges?.length}
+          <span class="pane-header__separator" aria-hidden="true">·</span>
+          {@render badgeBlock(props.badges, props.badge)}
+        {/if}
       </div>
-      {@render badgeBlock(props.badges, props.badge)}
       {#if props.right}
-        <div class="pane-header__right">{@render props.right()}</div>
+        <div class="header-controls pane-header__right">{@render props.right()}</div>
       {/if}
     </div>
-    {#if props.timeRange !== undefined || props.timestampMs !== undefined || props.metaRight}
+    {#if props.timeRange !== undefined || props.timestampMs !== undefined || props.metaLeft || props.metaRight}
       {@render metaRow()}
     {/if}
   </div>
@@ -345,10 +354,10 @@
         props.tabPanelID
       )}
       {#if props.right}
-        <div class="pane-header__right">{@render props.right()}</div>
+        <div class="header-controls pane-header__right">{@render props.right()}</div>
       {/if}
     </div>
-    {#if props.timeRange !== undefined || props.timestampMs !== undefined || props.metaRight}
+    {#if props.timeRange !== undefined || props.timestampMs !== undefined || props.metaLeft || props.metaRight}
       {@render metaRow()}
     {/if}
   </div>
@@ -375,16 +384,20 @@
         {/if}
         <span class="pane-header__title">{props.title}</span>
         {#if props.subtitle?.trim()}
+          <span class="pane-header__separator" aria-hidden="true">·</span>
           <span class="pane-header__subtitle">({props.subtitle.trim()})</span>
         {/if}
+        {#if props.badge || props.badges?.length}
+          <span class="pane-header__separator" aria-hidden="true">·</span>
+          {@render badgeBlock(props.badges, props.badge)}
+        {/if}
       </div>
-      {@render badgeBlock(props.badges, props.badge)}
       {#if props.right}
-        <div class="pane-header__right">{@render props.right()}</div>
+        <div class="header-controls pane-header__right">{@render props.right()}</div>
       {/if}
     </div>
     <div class="pane-header__tabs-row">
-      {#if props.timeRange !== undefined || props.timestampMs !== undefined || props.metaRight}
+      {#if props.timeRange !== undefined || props.timestampMs !== undefined || props.metaLeft || props.metaRight}
         {@render metaRow(false)}
       {/if}
       {@render tabStrip(
@@ -406,7 +419,10 @@
 
   /* Shared theme surface; the workspace toolbar can override the fill. */
   .pane-header {
-    @apply flex min-w-0 shrink-0 flex-nowrap items-end gap-2 overflow-hidden px-0.5 pt-0.5;
+    @apply flex min-w-0 shrink-0 flex-nowrap items-center overflow-hidden;
+    gap: var(--header-gap);
+    padding: var(--header-padding) var(--header-padding-inline);
+    line-height: 1.5;
     container: header / inline-size;
     background-color: var(--pane-header-bg, var(--color-base-200));
   }
@@ -425,14 +441,12 @@
   }
 
   .pane-header--flush {
-    @apply pt-1;
+    border-radius: 0;
   }
 
   /* Match the first row of detail and drawer headers, including the border. */
   .pane-header--title {
     @apply items-center;
-    padding: calc((var(--pane-header-h) - var(--pane-header-row-h)) / 2 - 1px)
-      calc(var(--pane-inline-inset) - 1px);
   }
 
   .pane-header--stacked {
@@ -457,7 +471,7 @@
   }
 
   .pane-header--toolbar {
-    @apply items-center px-2 py-1.5;
+    @apply items-center;
   }
 
   .pane-header__toolbar {
@@ -470,11 +484,11 @@
   }
 
   .pane-header__title-row {
-    @apply flex min-w-0 flex-1 flex-nowrap items-baseline gap-1.5 overflow-hidden;
+    @apply flex min-w-0 flex-1 flex-nowrap items-center gap-2 overflow-hidden;
   }
 
   .pane-header__title {
-    @apply truncate text-sm font-semibold tracking-tight text-base-content;
+    @apply truncate text-lg font-semibold text-base-content;
   }
 
   .pane-header__leading {
@@ -482,13 +496,13 @@
   }
 
   .pane-header__subtitle {
-    @apply truncate text-sm font-normal leading-none;
+    @apply truncate text-sm font-normal leading-normal;
     color: var(--color-subtle);
   }
 
   /* The title shrinks before the trailing badge group and any actions. */
   .pane-header__badges {
-    @apply flex shrink-0 items-center gap-1.5;
+    @apply flex shrink-0 items-center gap-2;
   }
 
   /* Tooltip controls must escape the header; title/subtitle truncate themselves
@@ -501,12 +515,10 @@
   /* Graph tabs have their own row, leaving title and badges on the first. */
   .pane-header--title-tabs {
     @apply flex-col items-stretch gap-2;
-    padding: calc((var(--pane-header-h) - var(--pane-header-row-h)) / 2 - 1px)
-      calc(var(--pane-inline-inset) - 1px);
   }
 
   .pane-header__tabs-row {
-    @apply flex min-w-0 w-full flex-wrap items-center gap-x-4 gap-y-2;
+    @apply flex min-w-0 w-full flex-wrap items-center gap-2;
   }
 
   .pane-header__tabs-row .pane-header__meta-row {
@@ -523,7 +535,7 @@
   }
 
   .pane-header__tab-group--controls {
-    @apply flex-wrap overflow-visible p-0.5;
+    @apply flex-wrap overflow-visible;
   }
 
   .pane-header__tab-group--left {
@@ -543,6 +555,11 @@
   }
 
   .pane-header__right {
-    @apply ml-auto flex shrink-0 items-center gap-2;
+    @apply ml-auto shrink-0;
+  }
+
+  .pane-header__separator {
+    @apply shrink-0 text-base;
+    color: var(--color-subtle);
   }
 </style>

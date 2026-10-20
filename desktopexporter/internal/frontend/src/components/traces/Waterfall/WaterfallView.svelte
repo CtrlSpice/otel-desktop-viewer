@@ -261,7 +261,7 @@
   } from './timeline-markers'
   import { remToPx } from '@/state/panel-width'
 
-  const WATERFALL_ROW_HEIGHT_PX = 28
+  const WATERFALL_ROW_HEIGHT_PX = 40
   const GRID_PAGE_STEP = 8
 
   /** Walk ancestors via the parent map; true if any ancestor is in the collapsed set. */
@@ -336,16 +336,6 @@
   )
   let rowIndexBySpanID = $derived(
     new Map(rows.map((row, index) => [row.spanNode.spanData.spanID, index + 1]))
-  )
-
-  let traceTimeRange = $derived.by(
-    (): { startMs: number; endMs: number } | undefined => {
-      if (spans.length === 0) return undefined
-      return {
-        startMs: Number(bounds.start / 1_000_000n),
-        endMs: Number(bounds.end / 1_000_000n),
-      }
-    }
   )
 
   let headerName = $derived.by(() => {
@@ -1100,15 +1090,23 @@
     pill
     mode="title"
     title={headerName}
-    subtitle={headerService || undefined}
-    timeRange={traceTimeRange}
     ariaLabel="Trace waterfall"
   >
-    {#snippet badge()}
-      <!-- errorCount={0} suppresses the plain err badge: in this header
-           the badge IS the navigation (below), while drawer cards keep
-           the plain one. -->
-      <SignalBadges signal="trace" spanCount={spans.length} errorCount={0} />
+    {#snippet metaLeft()}
+      <div class="flex min-w-0 items-center gap-2 text-rp-subtle">
+        {#if headerService}
+          <span class="truncate">({headerService})</span>
+          <span aria-hidden="true">·</span>
+        {/if}
+        <SignalBadges signal="trace" spanCount={spans.length} errorCount={0} />
+      </div>
+    {/snippet}
+    {#snippet right()}
+      {#key traceID}
+        <ExportButton signal="trace" id={traceID} />
+      {/key}
+    {/snippet}
+    {#snippet metaRight()}
       {#if errorSpans.length > 0}
         <ErrorNavigationBadge
           count={headerErrorCount}
@@ -1119,13 +1117,6 @@
           onNext={selectNextError}
         />
       {/if}
-    {/snippet}
-    {#snippet leading()}
-      {#key traceID}
-        <ExportButton signal="trace" id={traceID} />
-      {/key}
-    {/snippet}
-    {#snippet metaRight()}
       <button
         type="button"
         class="btn btn-xs chart-header-control tooltip tooltip-left"

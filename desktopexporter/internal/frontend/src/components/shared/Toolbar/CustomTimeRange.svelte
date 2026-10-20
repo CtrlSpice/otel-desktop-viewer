@@ -623,7 +623,7 @@
   }
 
   .endpoint-fields > span {
-    @apply pr-2 text-base-content/50;
+    @apply pr-2 text-(--color-subtle);
   }
 
   .endpoint-date {
@@ -631,7 +631,7 @@
   }
 
   .endpoint-calendar-button {
-    @apply mr-1 h-7 min-h-0 w-7 border-transparent p-0 text-base-content/50 shadow-none;
+    @apply mr-1 h-7 min-h-0 w-7 border-transparent p-0 text-(--color-subtle) shadow-none;
     @apply hover:bg-base-300/40 hover:text-base-content;
   }
 
@@ -644,6 +644,6 @@
   }
 
   .ambiguity-choice {
-    @apply min-w-0 truncate rounded-full border border-base-300 px-2 py-1 font-mono text-[0.625rem] text-base-content;
+    @apply min-w-0 truncate rounded-full border border-base-300 px-2 py-1 font-mono text-base text-base-content;
   }
 </style>

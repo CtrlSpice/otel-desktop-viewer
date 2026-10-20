@@ -141,18 +141,18 @@
   {#snippet spanIcon()}<HugeiconsIcon
       icon={BarChartHorizontalIcon}
       size={16}
-      class="shrink-0 text-rp-muted"
+      class="shrink-0 text-rp-subtle"
       strokeWidth={1.5}
     />{/snippet}
 
   {#snippet eventsIcon()}<LogIcon
-      class="size-4 shrink-0 text-rp-muted"
+      class="size-4 shrink-0 text-rp-subtle"
       aria-hidden="true"
     />{/snippet}
   {#snippet linksIcon()}<HugeiconsIcon
       icon={Link01Icon}
       size={16}
-      class="shrink-0 text-rp-muted"
+      class="shrink-0 text-rp-subtle"
       strokeWidth={1.5}
     />{/snippet}
 
@@ -437,7 +437,7 @@
   @reference "../../../app.css";
 
   .span-fields :global(.detail-property__key) {
-    color: var(--color-muted);
+    color: var(--color-subtle);
   }
 
   .detail-view {
