@@ -32,15 +32,15 @@ ranked by their first sorted visible attempt; repetitions sort within each case.
 Missing measurements stay last within each case in both directions; cases with
 no known measurements come last. Ties preserve source order and sorting preserves selection.
 Columns use the shared resize geometry, drag lifecycle and handles. Widths are
-saved by column ID. Handles follow the visible table bounds, including
+saved by view and column ID. Handles follow the visible table bounds, including
 the footer, and stop before unused space below the last row.
 
-The main pane has one table. Its Columns picker is shared with the waterfall and
-groups options under Case, Results, Time and Cost. The table has one regular-weight
-heading row. Group checkboxes toggle all optional columns in that group, including
-options hidden by picker search; required columns remain selected. The same picker
-serves Evals, Logs and the trace waterfall. All columns start visible; Case and
-Rep stay visible to identify each execution. Column choices persist across reloads.
+The main pane has three focused table views, using the original shared
+Results / Time / Cost tabs. Results contains assessments; Time contains duration
+and tool calls; Cost contains investigator and grader estimates. Case and Rep
+remain visible in each view. Views share collapse state and attempt selection,
+with independent sorting and saved widths. Each table has one regular-weight
+heading row. Logs and the trace waterfall retain their shared Columns picker.
 Each case name shares its parent row with aggregate values and wraps when needed. It branches to its repetition rows, including cases
 with only one repetition. Branches reuse the waterfall's rounded 1px Muted
 connectors at 50% opacity. Repetition numbers select attempts; all values stay
@@ -55,14 +55,13 @@ connectors and the Total label. Case titles wrap in the combined identity area.
 As in Logs, pinning releases when the pane cannot fit
 the pinned columns plus one complete scrolling column. Saved widths and shared
 hover/selection motion remain intact.
-Assessment labels/dots align left and numeric scores align right, duration is plain text, and tool
+Assessment dots, labels and numeric fractions stay together at the left; case
+percentages align above them. Duration is plain text, and tool
 counts use `17 (1 failure)`. Cost keeps
 investigator and grader estimates separate. The Total footer aligns each estimate
 under its visible cost column, with unknown and partial estimates explicit. Its
-top divider is a solid 1px Muted line at 60% opacity. Hiding both cost
-columns hides the cost footer.
-Totals cover the shown attempts; drawer summaries cover the whole run. Hiding the
-sorted column temporarily restores source order instead of sorting invisibly.
+top divider is a solid 1px Muted line at 60% opacity. The footer appears only in Cost.
+Totals cover the shown attempts; drawer summaries cover the whole run.
 
 Run cards show a proportional breakdown and every outcome in a visible list,
 with neutral labels, small colour dots and exact attempt counts. Neutral outcome

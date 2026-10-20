@@ -114,7 +114,7 @@ test('run selection, assessments, filtering and browser history stay connected',
     page
       .getByRole('table', { name: 'Results for Guide-assisted agent' })
       .getByRole('row')
-  ).toHaveCount(6)
+  ).toHaveCount(5)
   await page
     .getByRole('searchbox', { name: 'Search evals' })
     .fill('nonexistent-score')
@@ -164,7 +164,7 @@ test('run selection, assessments, filtering and browser history stay connected',
   ).toHaveCount(2)
 })
 
-test('column selection persists while totals and missing measurements stay distinct', async ({
+test('Results, Time and Cost preserve selection and distinguish missing measurements and totals', async ({
   page,
 }) => {
   await enableEvals(page)
@@ -179,8 +179,12 @@ test('column selection persists while totals and missing measurements stay disti
   await expect(selected).toHaveAttribute('aria-pressed', 'true')
   await expect(
     page.getByRole('tab', { name: /^(Results|Time|Cost)$/ })
+  ).toHaveCount(3)
+  await expect(
+    page.getByRole('button', { name: 'Columns', exact: true })
   ).toHaveCount(0)
-  const time = page.getByRole('table', { name: 'Results for Direct agent' })
+  await page.getByRole('tab', { name: 'Time', exact: true }).click()
+  const time = page.getByRole('table', { name: 'Time for Direct agent' })
   await expect(time.locator('[data-attempt-id="cpu-evidence"]')).toContainText(
     '89 s'
   )
@@ -190,7 +194,8 @@ test('column selection persists while totals and missing measurements stay disti
   await expect(
     time.locator('[data-attempt-id="request-latency"]')
   ).toContainText('3 (1 failure)')
-  const costs = time
+  await page.getByRole('tab', { name: 'Cost', exact: true }).click()
+  const costs = page.getByRole('table', { name: 'Cost for Direct agent' })
   await expect(
     costs.getByRole('columnheader', { name: /Investigator/ })
   ).toBeVisible()
@@ -235,6 +240,7 @@ test('column selection persists while totals and missing measurements stay disti
   ).toBe(true)
   await expect(selected).toHaveAttribute('aria-pressed', 'true')
   expect(page.url()).toBe(url)
+  await page.getByRole('tab', { name: 'Results', exact: true }).click()
   const results = page.getByRole('table', { name: 'Results for Direct agent' })
   await expect(
     results
@@ -246,43 +252,25 @@ test('column selection persists while totals and missing measurements stay disti
   )
   await expect(selected).toHaveAttribute('aria-pressed', 'true')
   expect(page.url()).toBe(url)
-  const toggle = page.getByRole('button', { name: 'Columns', exact: true })
-  await toggle.click()
-  const picker = page.getByRole('group', { name: 'Evals columns', exact: true })
-  for (const name of ['Case', 'Results', 'Time', 'Cost']) {
-    await expect(picker.getByRole('group', { name, exact: true })).toBeVisible()
-  }
+  const parent = page.locator(
+    '.eval-results__case[data-case-id="cpu-evidence"]'
+  )
+  await parent.getByRole('button').click()
+  await page.getByRole('tab', { name: 'Time', exact: true }).click()
+  await expect(parent.getByRole('button')).toHaveAttribute(
+    'aria-expanded',
+    'false'
+  )
   await expect(
-    picker.getByRole('checkbox', { name: 'Case', exact: true })
-  ).toBeDisabled()
-  await expect(
-    picker.getByRole('checkbox', { name: 'Repetition' })
-  ).toBeDisabled()
-  await picker.getByRole('checkbox', { name: 'Duration' }).uncheck()
-  await expect(
-    picker.getByRole('checkbox', { name: 'All Time columns' })
-  ).toBeChecked({ indeterminate: true })
-  await picker.getByRole('checkbox', { name: 'All Cost columns' }).uncheck()
-  await toggle.click()
-  await expect(
-    costs.getByRole('columnheader', { name: /Duration|Investigator|Grader/ })
+    time.locator('[data-case-id="cpu-evidence"][data-attempt-id]')
   ).toHaveCount(0)
-  await expect(totals).toHaveCount(0)
-  await page.reload()
-  await expect(
-    costs.getByRole('columnheader', { name: /Duration|Investigator|Grader/ })
-  ).toHaveCount(0)
+  await page.getByRole('tab', { name: 'Cost', exact: true }).click()
+  await expect(parent.getByRole('button')).toHaveAttribute(
+    'aria-expanded',
+    'false'
+  )
+  await parent.getByRole('button').click()
   await expect(selected).toHaveAttribute('aria-pressed', 'true')
-  await toggle.click()
-  await picker
-    .getByRole('searchbox', { name: 'Find columns' })
-    .fill('Investigator')
-  await picker.getByRole('checkbox', { name: 'All Cost columns' }).check()
-  await picker.getByRole('searchbox', { name: 'Find columns' }).fill('')
-  await expect(
-    picker.getByRole('checkbox', { name: 'Grader', exact: true })
-  ).toBeChecked()
-  await toggle.click()
   expect(page.url()).toBe(url)
   await page
     .getByRole('searchbox', { name: 'Search evals' })
@@ -326,7 +314,8 @@ test('column sorting preserves selection and keeps unknown measurements last wit
   )
   await expect(selected).toHaveAttribute('aria-pressed', 'true')
   expect(page.url()).toBe(url)
-  const time = results
+  await page.getByRole('tab', { name: 'Time', exact: true }).click()
+  const time = page.getByRole('table', { name: 'Time for Direct agent' })
   await time.getByRole('button', { name: 'Sort by Duration' }).click()
   await time.getByRole('button', { name: 'Sort by Duration' }).click()
   await expect(time.locator('tbody tr').first()).toContainText(
@@ -335,7 +324,8 @@ test('column sorting preserves selection and keeps unknown measurements last wit
   await expect(time.locator('[data-attempt-id]').last()).toContainText(
     'Locate service errors'
   )
-  const costs = results
+  await page.getByRole('tab', { name: 'Cost', exact: true }).click()
+  const costs = page.getByRole('table', { name: 'Cost for Direct agent' })
   await costs.getByRole('button', { name: 'Sort by Investigator' }).click()
   await costs.getByRole('button', { name: 'Sort by Investigator' }).click()
   await expect(costs.locator('tbody tr').first()).toContainText(
@@ -344,7 +334,8 @@ test('column sorting preserves selection and keeps unknown measurements last wit
   await expect(costs.locator('[data-attempt-id]').last()).toContainText(
     'Locate service errors'
   )
-  await expect(header).toHaveAttribute('aria-sort', 'none')
+  await page.getByRole('tab', { name: 'Results', exact: true }).click()
+  await expect(header).toHaveAttribute('aria-sort', 'descending')
   await expect(selected).toHaveAttribute('aria-pressed', 'true')
   expect(page.url()).toBe(url)
 })
@@ -409,11 +400,23 @@ test('column resizing uses shared handles and retains widths, sorting and select
       .first()
   ).toHaveAttribute('aria-pressed', 'true')
   expect(page.url()).toBe(url)
-  await page.getByRole('button', { name: 'Columns', exact: true }).click()
-  const picker = page.getByRole('group', { name: 'Evals columns', exact: true })
-  await picker.getByRole('checkbox', { name: 'Export validity' }).uncheck()
-  await picker.getByRole('checkbox', { name: 'Export validity' }).check()
-  await page.getByRole('button', { name: 'Columns', exact: true }).click()
+  await page.getByRole('tab', { name: 'Time', exact: true }).click()
+  const duration = page
+    .getByRole('table', { name: 'Time for Direct agent' })
+    .getByRole('columnheader', { name: /Duration/ })
+  const durationWidth = await duration.evaluate(
+    element => element.getBoundingClientRect().width
+  )
+  await page
+    .getByRole('separator', { name: 'Resize Duration column', exact: true })
+    .focus()
+  await page.keyboard.press('ArrowRight')
+  await expect
+    .poll(() =>
+      duration.evaluate(element => element.getBoundingClientRect().width)
+    )
+    .toBeCloseTo(durationWidth + 16, 0)
+  await page.getByRole('tab', { name: 'Results', exact: true }).click()
   await expect.poll(width).toBeCloseTo(before + 40, 0)
   await expect(heading).toHaveAttribute('aria-sort', 'ascending')
   await page.reload()
