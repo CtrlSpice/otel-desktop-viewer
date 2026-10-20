@@ -198,7 +198,7 @@ test('run selection, assessments, filtering and browser history stay connected',
     exact: true,
   })
   const bubbles = detail.locator('details.collapse')
-  await expect(bubbles).toHaveCount(4)
+  await expect(bubbles).toHaveCount(3)
   await expect(detail.getByRole('tablist')).toHaveCount(0)
   for (const [index, bubble] of (await bubbles.all()).entries()) {
     if (index === 0) await expect(bubble).toHaveAttribute('open')
@@ -211,16 +211,11 @@ test('run selection, assessments, filtering and browser history stay connected',
   await expect(
     page.getByText('The causal claim about total latency', { exact: false })
   ).toBeVisible()
-  await bubbles.nth(3).locator(':scope > summary').click()
-  await page.locator('summary').filter({ hasText: 'Span error' }).click()
-  await expect(
-    page.getByText('SQL binder error:', { exact: false })
-  ).toBeVisible()
   await page.reload()
-  await expect(bubbles.nth(3).locator(':scope > summary')).toHaveText(
-    /Tool calls/
-  )
-  await expect(bubbles.nth(3)).not.toHaveAttribute('open')
+  await expect(
+    detail.locator('summary').filter({ hasText: 'Tool calls' })
+  ).toHaveCount(0)
+  await expect(bubbles.nth(2)).not.toHaveAttribute('open')
   await page.getByRole('searchbox', { name: 'Search evals' }).fill('Mixed')
   await expect(
     page

@@ -9,7 +9,6 @@
   import { cost, estimatedCost, localTimestamp, traceHref } from './model'
   import AssessmentBadge from './AssessmentBadge.svelte'
   import RunStatusBadge from './RunStatusBadge.svelte'
-  import EvalStatus from './EvalStatus.svelte'
   import { completionLabel } from './group-attempts'
 
   let {
@@ -289,39 +288,6 @@
           </FieldGroup>
         </FieldGroup>
       {/each}
-    </DetailBubble>
-    <DetailBubble
-      label="Tool calls"
-      count={attempt.tools.length}
-      initialOpen={false}
-    >
-      {#each attempt.tools as tool, index}
-        <FieldGroup label={`${tool.name} ${index + 1}`} detail open={false}>
-          {#snippet heading()}<span class="font-normal">{tool.name}</span
-            >{#if tool.state === 'Error'}<EvalStatus
-                label="Span error"
-                tone="error"
-              />{/if}{/snippet}
-          <table
-            class="detail-fields w-full"
-            aria-label={`${tool.name} ${index + 1}`}
-          >
-            <tbody>
-              <DetailField
-                fieldName="output"
-                fieldType="string"
-                showType={false}
-                fieldValue={tool.message}
-                multiline
-              />
-              {#if tool.telemetry}{@render telemetry(tool.telemetry)}{/if}
-            </tbody>
-          </table>
-        </FieldGroup>
-      {/each}
-      {#if !attempt.tools.length}<p class="p-4 text-sm">
-          No tool calls recorded
-        </p>{/if}
     </DetailBubble>
   {/if}
 </DetailStack>

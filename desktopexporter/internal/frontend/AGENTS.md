@@ -226,6 +226,8 @@
   these meanings during parent propagation, including in dogfooding datasets.
   Evals Details opens only its first section by default; later sections start
   collapsed and remain manually expandable.
+  Keep tool execution in the waterfall; do not repeat its Tool calls list in
+  attempt Details. Linked rows open shared span Details.
 - Trace, log and metric summary timestamps use the selected timezone without
   repeating its suffix on each card. Keep timezone labels in Details.
   Trace summaries omit the visible `Start:` label; keep `Duration:` labelled.
