@@ -214,6 +214,18 @@
   Column-group toggles are independent: each active toggle uses the shared
   Highlight Medium selection background and Highlight Low on hover. Multiple
   groups can remain active together.
+  Keep the existing columns while prototyping the hierarchy. Results reveals
+  Case → Attempt; Tool calls reveals Execution and its tool descendants. Grading
+  is a sibling of Execution under the attempt. Preserve manual branch toggles.
+  Cost annotates each visible level, without adding a tree depth or summing
+  parent estimates together with their child estimates. Missing costs are Unknown.
+  An explicit attemptTelemetry reference identifies the enclosing attempt span;
+  telemetry identifies target execution. Without it, label derived timing as the
+  extent of available references rather than claiming another stored span.
+  Align recorded starts to the earliest available span in the run, including
+  when there is no enclosing run span. Keep recorded-duration-only fallbacks.
+  Missing timing uses a faint 1px Muted line with one central break. Ruler ticks
+  extend 4px into the header below their labels, aligned with the time guides.
   The results header legend always describes execution statuses: Complete,
   In progress, Span error, Internal fault and Planned, in that order. It does not switch to
   assessment outcomes or percentages when Results columns are shown.

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { SpanNode, TraceData } from '@/types/api-types'
 import { exampleRuns } from './examples'
+import { buildEvalOutline, visibleOutlineRows } from './eval-outline'
+import { groupAttempts } from './group-attempts'
 import {
   evalExecutionRows,
   evalTraceReferences,
@@ -54,6 +56,128 @@ function node(
 }
 
 describe('referenced eval hierarchy', () => {
+  it('places the traced attempt above sibling execution and grading branches, with costs counted once', () => {
+    const attempt = {
+      ...exampleRuns[0].attempts[0],
+      state: 'Complete' as const,
+      attemptTelemetry: ref(1),
+      telemetry: ref(2),
+      investigatorCost: 10,
+      graderCost: 2,
+      tools: [
+        {
+          name: 'tool',
+          state: 'OK' as const,
+          message: '',
+          telemetry: ref(3),
+          cost: 1,
+        },
+      ],
+      assessments: [
+        {
+          ...exampleRuns[0].attempts[0].assessments[0]!,
+          telemetry: ref(4),
+          cost: 0.5,
+        },
+      ],
+    }
+    const run = { ...exampleRuns[0], attempts: [attempt] }
+    const index = indexEvalTraces([
+      {
+        traceID,
+        unplacedSpanCount: 0,
+        spans: [
+          node(1, null, 0),
+          node(2, 1, 1),
+          node(3, 2, 2, true),
+          node(4, 1, 1),
+        ],
+      },
+    ])
+    const rows = buildEvalOutline(
+      groupAttempts(run.attempts, run.attempts),
+      run,
+      index
+    )
+    expect(rows.map(row => [row.kind, row.depth])).toEqual([
+      ['case', 0],
+      ['attempt', 1],
+      ['execution', 2],
+      ['tool', 3],
+      ['grading', 2],
+      ['grader', 3],
+    ])
+    expect(rows[1].reference).toEqual(ref(1))
+    expect(rows[2].reference).toEqual(ref(2))
+    expect(rows[2].parentID).toBe(rows[4].parentID)
+    expect(rows[3].tree.brokenParent).toBe(false)
+    expect(rows.map(row => row.spanError)).toEqual([
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+    ])
+    expect(rows.map(row => row.estimate.total)).toEqual([12, 12, 10, 1, 2, 0.5])
+    expect(evalTraceReferences(run)).toContainEqual(ref(1))
+    expect(visibleOutlineRows(rows, [], {}).map(row => row.kind)).toEqual([
+      'case',
+    ])
+    expect(
+      visibleOutlineRows(rows, ['results'], {}).map(row => row.kind)
+    ).toEqual(['case', 'attempt'])
+    expect(visibleOutlineRows(rows, ['time'], {}).map(row => row.kind)).toEqual(
+      ['case', 'attempt', 'execution', 'tool', 'grading']
+    )
+    expect(
+      visibleOutlineRows(rows, ['time', 'cost'], {}).map(row => row.id)
+    ).toEqual(visibleOutlineRows(rows, ['time'], {}).map(row => row.id))
+    expect(
+      visibleOutlineRows(rows, ['time'], { [rows[2].id]: false }).map(
+        row => row.kind
+      )
+    ).toEqual(['case', 'attempt', 'execution', 'grading'])
+    expect(
+      visibleOutlineRows(rows, ['time'], { [rows[4].id]: true }).map(
+        row => row.kind
+      )
+    ).toEqual(rows.map(row => row.kind))
+  })
+
+  it('retains untraced tools and grading without inventing span timing or costs', () => {
+    const attempt = {
+      ...exampleRuns[0].attempts[0],
+      telemetry: undefined,
+      seconds: undefined,
+      investigatorCost: undefined,
+      graderCost: undefined,
+      tools: [{ name: 'untraced tool', state: 'OK' as const, message: '' }],
+      assessments: [
+        { ...exampleRuns[0].attempts[0].assessments[0]!, telemetry: undefined },
+      ],
+    }
+    const run = { ...exampleRuns[0], attempts: [attempt] }
+    const rows = buildEvalOutline(
+      groupAttempts(run.attempts, run.attempts),
+      run,
+      indexEvalTraces([])
+    )
+    expect(rows.map(row => row.kind)).toEqual([
+      'case',
+      'attempt',
+      'execution',
+      'tool',
+      'grading',
+      'grader',
+    ])
+    expect(
+      rows.every(
+        row => !row.reference && !row.window && row.seconds === undefined
+      )
+    ).toBe(true)
+    expect(rows.every(row => row.estimate.total === null)).toBe(true)
+  })
   it('uses compressed ancestry, marks skipped parents, nests calls and propagates errors through collapsed branches', () => {
     const trace: TraceData = {
       traceID,

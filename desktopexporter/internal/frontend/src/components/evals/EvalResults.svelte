@@ -26,8 +26,15 @@
     evalTraceReferences,
     indexEvalTraces,
     referenceKey,
-    visibleExecutionRows,
   } from './eval-traces'
+  import {
+    buildEvalOutline,
+    combineEstimates,
+    outlineOpen,
+    visibleOutlineRows,
+    type EvalOutlineRow,
+    type TimeWindow,
+  } from './eval-outline'
   import { formatDuration } from '@/utils/time'
   import { spanTimingColor } from '@/utils/trace-service-color'
   import {
@@ -104,8 +111,17 @@
     }
     return String(maximum).length
   })
-  let collapsedCases = $state<string[]>([])
-  let expandedAttempts = $state<string[]>([])
+  let disclosure = $state<Record<string, Record<string, boolean>>>({})
+  const overrides = $derived(disclosure[run.id] ?? {})
+  function toggleOutline(row: EvalOutlineRow) {
+    disclosure = {
+      ...disclosure,
+      [run.id]: {
+        ...overrides,
+        [row.id]: !outlineOpen(row, enabledViews, overrides),
+      },
+    }
+  }
   let traceViews = $state<TraceData[]>([])
   const traceIndex = $derived(indexEvalTraces(traceViews))
   const spanColors = $derived(
@@ -138,7 +154,6 @@
       ])
     )
   )
-  let collapsedSpans = $state<string[]>([])
   let timingsLoading = $state(false)
   let timingsFailed = $state(false)
   const timingKey = referenceKey
@@ -176,6 +191,7 @@
         attempt.id,
         spanWindow([
           timingFor(attempt.telemetry),
+          timingFor(attempt.attemptTelemetry),
           ...attempt.tools.map(tool => timingFor(tool.telemetry)),
           ...attempt.assessments.map(assessment =>
             timingFor(assessment.telemetry)
@@ -184,18 +200,9 @@
       ])
     )
   )
-  const runWindow = $derived(
-    timingFor(run.telemetry)
-      ? spanWindow(Object.values(spanTimings))
-      : undefined
-  )
+  const runWindow = $derived(spanWindow(Object.values(spanTimings)))
   const maximumDuration = $derived.by(() => {
-    const extent = runWindow
-      ? runWindow.endTime - runWindow.startTime
-      : Object.values(attemptWindows).reduce((maximum, window) => {
-          const extent = window ? window.endTime - window.startTime : 0n
-          return extent > maximum ? extent : maximum
-        }, 0n)
+    const extent = runWindow ? runWindow.endTime - runWindow.startTime : 0n
     return [
       run,
       ...run.attempts.flatMap(attempt => [attempt, ...attempt.tools]),
@@ -227,11 +234,6 @@
       )
     return () => controller.abort()
   })
-  function toggleCase(id: string) {
-    collapsedCases = collapsedCases.includes(id)
-      ? collapsedCases.filter(key => key !== id)
-      : [...collapsedCases, id]
-  }
   type Column = {
     key: AttemptSortKey
     label: string
@@ -267,7 +269,7 @@
       label: 'Duration',
       hint: runWindow
         ? 'Recorded starts and durations on one timeline across this run'
-        : 'Recorded starts within each question, with one duration scale across questions',
+        : 'Recorded durations; start offsets unavailable',
       group: 'Duration',
       width: 288,
       min: 224,
@@ -326,7 +328,12 @@
   const activeSort = $derived(sorts[viewKey])
   const measuredAttempts = $derived(
     run.attempts.map(attempt => {
-      const duration = durationFor(attempt.telemetry, attempt.seconds)
+      const window = attemptWindows[attempt.id]
+      const duration =
+        durationFor(attempt.attemptTelemetry) ??
+        (window
+          ? window.endTime - window.startTime
+          : durationFor(attempt.telemetry, attempt.seconds))
       return {
         ...attempt,
         state: execution[attempt.id]?.state ?? attempt.state,
@@ -348,7 +355,9 @@
       ),
       summary: caseSummary(group.allAttempts, run.assessments),
       duration: group.allAttempts.reduce((total, attempt) => {
-        return total + (durationFor(attempt.telemetry, attempt.seconds) ?? 0n)
+        return (
+          total + (durationFor(attempt.attemptTelemetry, attempt.seconds) ?? 0n)
+        )
       }, 0n),
     }))
   )
@@ -366,7 +375,22 @@
     { key: 'investigatorCost', ...estimatedCost(attempts, 'investigatorCost') },
     { key: 'graderCost', ...estimatedCost(attempts, 'graderCost') },
   ])
+  const outline = $derived(buildEvalOutline(groups, run, traceIndex))
+  const visibleRows = $derived(
+    visibleOutlineRows(outline, enabledViews, overrides)
+  )
+  const showCost = $derived(enabledViews.includes('cost'))
 </script>
+
+{#snippet rowCost(estimate: { total: number | null; incomplete: boolean })}
+  {#if showCost}<span
+      class="eval-results__row-cost shrink-0 text-sm text-rp-subtle tabular-nums"
+      title="Recorded estimate · CAD"
+    >
+      {cost(estimate.total)}{#if estimate.incomplete && estimate.total !== null}
+        · partial{/if}
+    </span>{/if}
+{/snippet}
 
 {#snippet executionNode(
   reference: TelemetryReference | undefined,
@@ -398,12 +422,31 @@
   reference?: TelemetryReference,
   origin?: bigint,
   seconds?: number,
-  spanError = false
+  spanError = false,
+  window?: TimeWindow,
+  label = 'Referenced execution window'
 )}
   {@const span = timingFor(reference)}
   {@const duration = durationFor(reference, seconds)}
-  <TimingCell maximum={maximumDuration}>
-    {#if span && span.endTime >= span.startTime}<span
+  <TimingCell
+    maximum={maximumDuration}
+    unavailable={!window && duration === undefined}
+  >
+    {#if window && (!span || span.endTime < span.startTime)}<span
+        class="eval-results__span-bar block"
+        role="img"
+        aria-label={`${label}, ${formatDuration(window.endTime - window.startTime)}`}
+        title={`${label} · elapsed time across available references · Start offset ${formatDuration(window.startTime - (origin ?? window.startTime))}`}
+        style:--bar-color={spanError
+          ? 'var(--color-error)'
+          : 'var(--color-secondary)'}
+        ><DurationBar
+          duration={window.endTime - window.startTime}
+          maximum={maximumDuration}
+          offset={window.startTime - (origin ?? window.startTime)}
+        /></span
+      >
+    {:else if span && span.endTime >= span.startTime}<span
         class="eval-results__span-bar block"
         role="img"
         aria-label={`Span ${span.name}, ${formatDuration(span.endTime - span.startTime)}`}
@@ -611,7 +654,12 @@
             class:table-cell--pinned={layout.pinned.name !== undefined}
             style:left={layout.pinned.name === undefined
               ? undefined
-              : `${layout.pinned.name}px`}>{run.name}</th
+              : `${layout.pinned.name}px`}
+            ><span class="flex min-w-0 items-center justify-between gap-2"
+              ><span class="truncate">{run.name}</span>{@render rowCost(
+                combineEstimates(estimates)
+              )}</span
+            ></th
           >
           {#each columns.slice(2) as column (column.key)}
             <td
@@ -623,222 +671,115 @@
                   run.telemetry,
                   runWindow?.startTime,
                   run.seconds,
-                  Object.values(execution).some(item => item.spanError)
+                  outline.some(item => item.spanError)
                 )}
               {/if}
             </td>
           {/each}
         </tr>
       {/if}
-      {#each groups as group (group.id)}
-        {@const single = group.allAttempts.length === 1}
-        {#if !single}
-          <tr class="table-row eval-results__case" data-case-id={group.id}>
-            <th
-              scope="row"
-              colspan="2"
-              class="table-cell eval-results__case-cell text-left font-normal"
-              class:table-cell--pinned={layout.pinned.name !== undefined}
-              style:left={layout.pinned.name === undefined
-                ? undefined
-                : `${layout.pinned.name}px`}
+      {#each visibleRows as row (row.id)}
+        {@const group = groups.find(group => group.id === row.caseID)!}
+        {@const item = row.attempt}
+        {@const open = outlineOpen(row, enabledViews, overrides)}
+        <tr
+          class="table-row"
+          class:eval-results__case={row.kind === 'case'}
+          class:eval-results__attempt={row.kind !== 'case'}
+          class:table-row--selected={row.kind === 'attempt' &&
+            selectedID === item?.id}
+          data-outline-id={row.id}
+          data-row-kind={row.kind}
+          data-depth={row.depth}
+          data-case-id={row.caseID}
+          data-attempt-id={row.kind === 'attempt' ? item?.id : undefined}
+          data-tool-attempt-id={row.kind === 'tool' ? item?.id : undefined}
+          data-execution-id={row.kind === 'tool' || row.kind === 'grader'
+            ? row.id
+            : undefined}
+          data-span-key={row.reference
+            ? referenceKey(row.reference)
+            : undefined}
+        >
+          <th
+            colspan="2"
+            scope="row"
+            class="table-cell eval-results__case-cell text-left font-normal"
+            class:table-cell--pinned={layout.pinned.name !== undefined}
+            style:left={layout.pinned.name === undefined
+              ? undefined
+              : `${layout.pinned.name}px`}
+          >
+            <TreeRowIdentity
+              name={row.name}
+              depth={row.depth}
+              tree={row.tree}
+              subtreeCollapsed={!open}
+              toggleLabel={`${open ? 'Collapse' : 'Expand'} ${row.name}${item ? ` for ${item.name}, repetition ${item.repetition}` : ''}, ${row.tree.childrenCount} ${row.kind === 'case' ? 'attempts' : 'children'}`}
+              onToggle={() => toggleOutline(row)}
             >
-              <TreeRowIdentity
-                name={group.name}
-                depth={0}
-                tree={{
-                  childrenCount: group.attempts.length,
-                  ancestorHasNextSibling: [],
-                  isLastChild: true,
-                }}
-                subtreeCollapsed={collapsedCases.includes(group.id)}
-                toggleLabel={`${collapsedCases.includes(group.id) ? 'Expand' : 'Collapse'} ${group.name}, ${group.attempts.length} ${group.attempts.length === 1 ? 'repetition' : 'repetitions'}`}
-                onToggle={() => toggleCase(group.id)}
+              {#snippet node()}{@render executionNode(
+                  row.reference,
+                  row.state,
+                  row.internalFault
+                )}{/snippet}
+              <span
+                class="block min-w-0 truncate"
+                class:eval-results__rep-label={row.kind === 'attempt'}
+                title={`${row.name} · ${completionLabel(row.state, row.internalFault)}`}
+                >{row.name}</span
               >
-                {#snippet node()}<EvalStatus
-                    label={completionLabel(group.state, group.internalFault)}
-                    dotOnly
-                    tone={completionTone(group.state, group.internalFault)}
-                  />{/snippet}
-                <span class="block truncate">{group.name}</span>
-              </TreeRowIdentity>
-            </th>
-            {@render totals(group)}
-          </tr>
-        {/if}
-        {#if single || !collapsedCases.includes(group.id)}
-          {#each group.attempts as item, index (item.id)}
-            <tr
-              class="table-row eval-results__attempt"
-              class:eval-results__single={single}
-              data-attempt-id={item.id}
-              data-case-id={group.id}
-              class:table-row--selected={selectedID === item.id}
-            >
-              {#each columns as column (column.key)}
-                {#if column.key === 'name'}
-                  <th
-                    colspan="2"
-                    scope="row"
-                    class="table-cell eval-results__case-cell font-normal"
-                    class:table-cell--pinned={layout.pinned.name !== undefined}
-                    style:left={layout.pinned.name === undefined
-                      ? undefined
-                      : `${layout.pinned.name}px`}
-                  >
-                    <TreeRowIdentity
-                      name={item.name}
-                      depth={single ? 0 : 1}
-                      tree={{
-                        childrenCount: execution[item.id]?.childrenCount ?? 0,
-                        ancestorHasNextSibling: single ? [] : [true],
-                        isLastChild: index === group.attempts.length - 1,
-                      }}
-                      subtreeCollapsed={!expandedAttempts.includes(item.id)}
-                      toggleLabel={`${expandedAttempts.includes(item.id) ? 'Collapse' : 'Expand'} execution for ${item.name}, repetition ${item.repetition}, ${execution[item.id]?.rows.length ?? 0} references`}
-                      onToggle={() =>
-                        (expandedAttempts = expandedAttempts.includes(item.id)
-                          ? expandedAttempts.filter(id => id !== item.id)
-                          : [...expandedAttempts, item.id])}
-                    >
-                      {#snippet node()}{@render executionNode(
-                          item.telemetry,
-                          item.state,
-                          execution[item.id]?.internalFault
-                        )}{/snippet}
-                      <span
-                        class={single
-                          ? 'block w-full min-w-0 truncate text-left text-base-content'
-                          : 'eval-results__rep-label'}
-                        title={`${item.name} — Rep ${item.repetition} · ${completionLabel(item.state, execution[item.id]?.internalFault)}`}
-                        aria-describedby={`${panelID}-status-${item.id}`}
-                        >{#if single}{item.name}{:else}<span class="sr-only"
-                            >{item.name}</span
-                          >Rep {item.repetition}{/if}</span
-                      >
-                      <span id={`${panelID}-status-${item.id}`} class="sr-only"
-                        >Rep {item.repetition} · {completionLabel(
-                          item.state,
-                          execution[item.id]?.internalFault
-                        )}</span
-                      >
-                    </TreeRowIdentity>
-                  </th>
-                {:else if column.key === 'repetition'}
-                  <!-- Tool branches use one identity cell spanning Case and Rep. -->
-                {:else if column.assessment}
+              {#snippet trailing()}{@render rowCost(row.estimate)}{/snippet}
+            </TreeRowIdentity>
+          </th>
+          {#if row.kind === 'case'}
+            {@render totals(group, row)}
+          {:else}
+            {#each columns.slice(2) as column (column.key)}
+              <td
+                class="table-cell text-left tabular-nums"
+                class:eval-results__timing-cell={column.key === 'seconds'}
+              >
+                {#if column.key === 'seconds'}
+                  {@render spanBar(
+                    row.reference,
+                    runWindow?.startTime ??
+                      (item ? attemptWindows[item.id]?.startTime : undefined),
+                    row.seconds,
+                    row.spanError,
+                    row.window,
+                    row.name
+                  )}
+                {:else if column.assessment && item && (row.kind === 'attempt' || row.kind === 'grading' || row.assessmentID === column.assessment.id)}
                   {@const assessment = item.assessments.find(
                     score => score.id === column.assessment?.id
                   )}
-                  <td class="table-cell text-left">
-                    <div class="eval-results__assessment">
-                      <AssessmentBadge
-                        {assessment}
-                        maximum={column.assessment.maximum}
-                      />
-                      {#if assessment?.value != null}<span
-                          class="shrink-0 text-sm text-rp-subtle tabular-nums"
-                          >({assessment.value}/{column.assessment
-                            .maximum})</span
-                        >{/if}
-                    </div>
-                  </td>
-                {:else if column.key === 'seconds'}
-                  <td
-                    class="table-cell eval-results__timing-cell text-left tabular-nums"
-                  >
-                    {@render spanBar(
-                      item.telemetry,
-                      runWindow?.startTime ??
-                        attemptWindows[item.id]?.startTime,
-                      item.seconds,
-                      execution[item.id]?.spanError
-                    )}
-                  </td>
-                {:else if column.key === 'tools'}
-                  <td class="table-cell text-left tabular-nums"
-                    >{item.tools.length}</td
-                  >
-                {:else if column.key === 'failures'}
-                  {@const failed = item.tools.filter(
-                    tool => tool.state === 'Error'
-                  ).length}
-                  <td class="table-cell text-left tabular-nums">{failed}</td>
-                {:else if column.key === 'investigatorCost' || column.key === 'graderCost'}
-                  <td class="table-cell text-left tabular-nums"
-                    >{cost(item[column.key])}</td
-                  >
+                  <div class="eval-results__assessment">
+                    <AssessmentBadge
+                      {assessment}
+                      maximum={column.assessment.maximum}
+                    />
+                    {#if assessment?.value != null}<span
+                        class="shrink-0 text-sm text-rp-subtle tabular-nums"
+                        >({assessment.value}/{column.assessment.maximum})</span
+                      >{/if}
+                  </div>
+                {:else if column.key === 'tools' && item && (row.kind === 'attempt' || row.kind === 'execution')}
+                  {item.tools.length}
+                {:else if column.key === 'failures' && item && (row.kind === 'attempt' || row.kind === 'execution')}
+                  {item.tools.filter(tool => tool.state === 'Error').length}
+                {:else if item && (column.key === 'investigatorCost' || column.key === 'graderCost')}
+                  {#if row.kind === 'attempt'}{cost(item[column.key])}
+                  {:else if (column.key === 'investigatorCost' && (row.kind === 'execution' || row.kind === 'tool')) || (column.key === 'graderCost' && (row.kind === 'grading' || row.kind === 'grader'))}{cost(
+                      row.estimate.total
+                    )}{/if}
                 {/if}
-              {/each}
-            </tr>
-            {#if expandedAttempts.includes(item.id)}
-              {#each visibleExecutionRows(execution[item.id]?.rows ?? [], collapsedSpans) as tool (tool.id)}
-                <tr
-                  class="table-row eval-results__attempt"
-                  data-tool-attempt-id={item.id}
-                  data-execution-id={tool.id}
-                  data-span-key={tool.reference
-                    ? referenceKey(tool.reference)
-                    : undefined}
-                >
-                  <th
-                    colspan="2"
-                    scope="row"
-                    class="table-cell eval-results__case-cell font-normal"
-                    class:table-cell--pinned={layout.pinned.name !== undefined}
-                    style:left={layout.pinned.name === undefined
-                      ? undefined
-                      : `${layout.pinned.name}px`}
-                  >
-                    <TreeRowIdentity
-                      name={tool.name}
-                      depth={tool.depth + (single ? 0 : 1)}
-                      tree={{
-                        ...tool.tree,
-                        ancestorHasNextSibling: single
-                          ? tool.tree.ancestorHasNextSibling
-                          : [
-                              index < group.attempts.length - 1,
-                              ...tool.tree.ancestorHasNextSibling,
-                            ],
-                      }}
-                      subtreeCollapsed={collapsedSpans.includes(tool.id)}
-                      toggleLabel={`${collapsedSpans.includes(tool.id) ? 'Expand' : 'Collapse'} ${tool.name}, ${tool.tree.childrenCount} referenced spans`}
-                      onToggle={() =>
-                        (collapsedSpans = collapsedSpans.includes(tool.id)
-                          ? collapsedSpans.filter(id => id !== tool.id)
-                          : [...collapsedSpans, tool.id])}
-                    >
-                      {#snippet node()}{@render executionNode(
-                          tool.reference,
-                          tool.state
-                        )}{/snippet}
-                      <span class="block min-w-0 truncate">{tool.name}</span>
-                    </TreeRowIdentity>
-                  </th>
-                  {#each columns.slice(2) as column (column.key)}
-                    <td
-                      class="table-cell"
-                      class:eval-results__timing-cell={column.key === 'seconds'}
-                    >
-                      {#if column.key === 'seconds'}
-                        {@render spanBar(
-                          tool.reference,
-                          runWindow?.startTime ??
-                            attemptWindows[item.id]?.startTime,
-                          tool.seconds,
-                          tool.state === 'Error'
-                        )}
-                      {/if}
-                    </td>
-                  {/each}
-                </tr>
-              {/each}
-            {/if}
-          {/each}
-        {/if}
+              </td>
+            {/each}
+          {/if}
+        </tr>
       {/each}
-      {#snippet totals(group: (typeof groups)[number])}
+      {#snippet totals(group: (typeof groups)[number], row: EvalOutlineRow)}
         {#each columns as column (column.key)}
           {#if column.assessment}
             {@const score = group.summary.scores[column.assessment.id]}
@@ -860,16 +801,30 @@
           {:else if column.key === 'seconds'}
             <td
               class="table-cell eval-results__timing-cell text-left tabular-nums"
-              title="Sum of recorded question durations across all repetitions"
+              title={group.allAttempts.length === 1
+                ? 'Attempt elapsed time'
+                : 'Sum of attempt durations across all repetitions'}
             >
-              <TimingCell maximum={maximumDuration}>
-                {group.summary.duration.total === null
-                  ? ''
-                  : formatDuration(group.duration)}
-                {#if group.summary.duration.incomplete && group.summary.duration.total !== null}<span
-                    class="block text-rp-subtle">Partial total</span
-                  >{/if}
-              </TimingCell>
+              {#if group.allAttempts.length === 1}
+                {@render spanBar(
+                  undefined,
+                  runWindow?.startTime ?? row.window?.startTime,
+                  row.seconds,
+                  row.spanError,
+                  row.window,
+                  row.name
+                )}
+              {:else}<TimingCell
+                  maximum={maximumDuration}
+                  unavailable={group.summary.duration.total === null}
+                >
+                  {group.summary.duration.total === null
+                    ? ''
+                    : formatDuration(group.duration)}
+                  {#if group.summary.duration.incomplete && group.summary.duration.total !== null}<span
+                      class="block text-rp-subtle">Partial total</span
+                    >{/if}
+                </TimingCell>{/if}
             </td>
           {:else if column.key === 'tools'}
             <td
@@ -965,8 +920,8 @@
   .eval-results__assessment {
     @apply flex items-center gap-1 whitespace-nowrap;
   }
-  .eval-results__attempt:not(.eval-results__single) :global(.table-cell),
-  .eval-results__attempt:not(.eval-results__single) :global(.eval-status) {
+  .eval-results__attempt :global(.table-cell),
+  .eval-results__attempt :global(.eval-status) {
     color: var(--color-subtle);
   }
   .eval-results__case-cell {

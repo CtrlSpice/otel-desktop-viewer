@@ -14,6 +14,7 @@ export function evalTraceReferences(run: EvalRun) {
     run.telemetry,
     ...run.attempts.flatMap(attempt => [
       attempt.telemetry,
+      attempt.attemptTelemetry,
       ...attempt.tools.map(tool => tool.telemetry),
       ...attempt.assessments.map(assessment => assessment.telemetry),
     ]),
@@ -48,6 +49,8 @@ export type EvalExecutionRow = {
   name: string
   reference?: TelemetryReference
   seconds?: number
+  cost?: number
+  assessmentID?: string
   state: EvalAttempt['state']
   node?: SpanNode
   depth: number
@@ -65,18 +68,19 @@ export function evalExecutionRows(
       name: tool.name,
       reference: tool.telemetry,
       seconds: tool.seconds,
+      cost: tool.cost,
       state:
         tool.state === 'Error' ? ('Error' as const) : ('Complete' as const),
     })),
-    ...attempt.assessments
-      .filter(item => item.telemetry?.spanID)
-      .map(item => ({
-        id: `${attempt.id}/assessment/${item.id}`,
-        name: `${item.evaluator || 'Grader'} · ${item.id}`,
-        reference: item.telemetry,
-        seconds: undefined,
-        state: 'Complete' as const,
-      })),
+    ...attempt.assessments.map(item => ({
+      id: `${attempt.id}/assessment/${item.id}`,
+      name: `${item.evaluator || 'Grader'} · ${item.id}`,
+      reference: item.telemetry,
+      seconds: undefined,
+      cost: item.cost,
+      assessmentID: item.id,
+      state: 'Complete' as const,
+    })),
   ]
   const attemptKey = attempt.telemetry
     ? referenceKey(attempt.telemetry)

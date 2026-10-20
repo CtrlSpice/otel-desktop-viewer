@@ -2,7 +2,7 @@ import type { EvalAttempt } from './model'
 import { sortAttempts, type AttemptSort } from './sort-attempts'
 
 export function completionState(
-  attempts: readonly EvalAttempt[]
+  attempts: readonly Pick<EvalAttempt, 'state'>[]
 ): EvalAttempt['state'] {
   if (attempts.some(attempt => attempt.state === 'Error')) return 'Error'
   if (attempts.every(attempt => attempt.state === 'Planned')) return 'Planned'

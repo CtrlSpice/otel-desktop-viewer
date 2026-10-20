@@ -25,6 +25,16 @@
   .waterfall-time-ruler__tick {
     @apply absolute bottom-0 h-full;
   }
+  .waterfall-time-ruler__tick::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    width: 1px;
+    height: 4px;
+    background: var(--color-muted);
+    opacity: 0.35;
+    pointer-events: none;
+  }
   .waterfall-time-ruler__label {
     @apply absolute text-sm font-normal tracking-normal text-center;
     top: var(--primary-label-center, 50%);

@@ -102,9 +102,6 @@ describe('EvalResults repetitions', () => {
           'Grader',
         ].map(label => `Sort by ${label}`)
       )
-      await user.click(
-        screen.getByRole('button', { name: /^Expand execution/ })
-      )
       const expectedColumns = 2 + run.assessments.length + 3 + 2
       for (const row of container.querySelectorAll('tr')) {
         expect(
@@ -114,9 +111,7 @@ describe('EvalResults repetitions', () => {
           )
         ).toBe(expectedColumns)
       }
-      const toolCount =
-        attempt.tools.length +
-        attempt.assessments.filter(item => item.telemetry?.spanID).length
+      const toolCount = attempt.tools.length
       expect(container.querySelectorAll('[data-tool-attempt-id]')).toHaveLength(
         toolCount
       )
@@ -125,7 +120,7 @@ describe('EvalResults repetitions', () => {
       await user.click(toggle('Tool calls'))
       expect(container.querySelectorAll('col')).toHaveLength(3)
       expect(container.querySelectorAll('[data-tool-attempt-id]')).toHaveLength(
-        toolCount
+        0
       )
       await user.click(toggle('Tool calls'))
       expect(container.querySelectorAll('[data-tool-attempt-id]')).toHaveLength(
@@ -190,14 +185,10 @@ describe('EvalResults repetitions', () => {
           },
           attempts: [attempt],
         })
-        const user = userEvent.setup()
         await showOnlyTime()
         await screen.findByRole('img', {
           name: 'Span question, 10.000 s',
         })
-        await user.click(
-          screen.getByRole('button', { name: /^Expand execution/ })
-        )
         const early = screen.getByRole('img', {
           name: 'Span tool 2, 2.000 s',
         })
@@ -227,6 +218,58 @@ describe('EvalResults repetitions', () => {
     }
   )
 
+  it('aligns attempts from different traces to one origin without a run span', async () => {
+    const epoch = 1700000000000000001n
+    const attempts = [0, 1].map(index => ({
+      ...exampleRuns[0].attempts[0],
+      id: `attempt-${index}`,
+      caseID: `case-${index}`,
+      telemetry: undefined,
+      attemptTelemetry: {
+        traceID: String(index + 1).repeat(32),
+        spanID: 'a'.repeat(16),
+      },
+      tools: [],
+      assessments: [],
+    }))
+    const lookup = vi
+      .spyOn(telemetryAPI, 'getReferencedTraceViews')
+      .mockResolvedValue(
+        traceViews(
+          attempts.map((attempt, index) => ({
+            ...attempt.attemptTelemetry,
+            name: `attempt span ${index}`,
+            serviceName: 'runner',
+            startTime: epoch + BigInt(index * 20) * 1_000_000_000n,
+            endTime: epoch + BigInt(index * 20 + 10) * 1_000_000_000n,
+            statusCodeValue: 1,
+          }))
+        )
+      )
+    try {
+      const { container } = render(EvalResults, {
+        run: { ...exampleRuns[0], telemetry: undefined, attempts },
+        attempts,
+      })
+      const second = await screen.findByRole('img', {
+        name: 'Span attempt span 1, 10.000 s',
+      })
+      expect(second.querySelector('.span-bar')).toHaveStyle({
+        left: '66.66%',
+        width: '33.33%',
+      })
+      expect(second).toHaveAttribute(
+        'title',
+        expect.stringContaining('Start offset 20.000 s')
+      )
+      expect(
+        container.querySelector('[data-outline-id="case/case-1"] .span-bar')
+      ).toHaveStyle({ left: '66.66%', width: '33.33%' })
+    } finally {
+      lookup.mockRestore()
+    }
+  })
+
   it('shows a referenced run span and keeps an absent question span as an unlinked recorded duration', async () => {
     const telemetry = { traceID: 'a'.repeat(32), spanID: 'b'.repeat(16) }
     const lookup = vi
@@ -253,9 +296,9 @@ describe('EvalResults repetitions', () => {
       expect(
         await screen.findByRole('img', { name: 'Span eval run, 1.000 s' })
       ).not.toHaveAttribute('href')
-      expect(screen.getAllByText('24.000 s')).toHaveLength(1)
+      expect(screen.getAllByText('24.000 s')).toHaveLength(3)
       expect(
-        screen.getByTitle('Recorded eval duration').querySelector('a')
+        screen.getAllByTitle('Recorded eval duration')[0].querySelector('a')
       ).toBeNull()
       expect(lookup.mock.calls[0][0]).toContainEqual(telemetry)
     } finally {
@@ -294,6 +337,9 @@ describe('EvalResults repetitions', () => {
         expect(cells[1].querySelector('.span-bar')).toHaveStyle({ width: '0%' })
         expect(cells[2]).toHaveTextContent('')
         expect(cells[2].querySelector('.span-bar')).toBeNull()
+        expect(
+          cells[2].querySelector('.timing-cell__unavailable')
+        ).not.toBeNull()
         expect(container.querySelector('.eval-results__span-bar')).toBeNull()
         expect(screen.getByText('Partial total')).toBeInTheDocument()
       } finally {
@@ -318,29 +364,32 @@ describe('EvalResults repetitions', () => {
       attempts,
       selectedID: second.id,
     })
-    expect(container.querySelectorAll('tbody tr')).toHaveLength(5)
+    expect(container.querySelectorAll('tbody tr')).toHaveLength(6)
     const singleton = container.querySelector(
       '[data-attempt-id="single"]'
     )! as HTMLElement
-    expect(within(singleton).getByText('Single case')).toHaveTextContent(
-      'Single case'
-    )
-    expect(singleton.querySelector('.seg__arm--elbow')).toBeNull()
-    expect(container.querySelectorAll('.eval-results__case')).toHaveLength(1)
+    expect(
+      within(singleton).getByText(`Attempt ${single.repetition}`)
+    ).toBeInTheDocument()
+    expect(singleton.querySelector('.seg__arm--elbow')).not.toBeNull()
+    expect(container.querySelectorAll('.eval-results__case')).toHaveLength(2)
     expect(
       screen.queryByText(exampleRuns[0].evaluation)
     ).not.toBeInTheDocument()
     const labels = [...container.querySelectorAll('.eval-results__rep-label')]
-    expect(labels.map(label => label.textContent)).toEqual(
-      [1, 2, 3].map(rep => `${first.name}Rep ${rep}`)
-    )
-    expect(labels[1].closest('tr')).toHaveClass('table-row--selected')
-    expect(labels[1]).toHaveAccessibleDescription('Rep 2 · Span error')
+    expect(labels.map(label => label.textContent)).toEqual([
+      'Attempt 1',
+      'Attempt 1',
+      'Attempt 2',
+      'Attempt 3',
+    ])
+    expect(labels[2].closest('tr')).toHaveClass('table-row--selected')
+    expect(labels[2]).toHaveAttribute('title', 'Attempt 2 · Span error')
     const parent = container.querySelector(
       '.eval-results__case[data-case-id="request-latency"]'
     )! as HTMLElement
     const toggle = within(parent).getByRole('button', {
-      name: `Collapse ${first.name}, 3 repetitions`,
+      name: `Collapse ${first.name}, 3 attempts`,
     })
     const aggregateValues = [...parent.querySelectorAll('td')].map(
       cell => cell.textContent

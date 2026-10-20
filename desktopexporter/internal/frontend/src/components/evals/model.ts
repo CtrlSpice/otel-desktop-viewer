@@ -20,6 +20,7 @@ export type Assessment = {
   evaluator: string
   rubric: string
   telemetry?: TelemetryReference
+  cost?: number
 }
 
 export type EvalAttempt = {
@@ -42,7 +43,10 @@ export type EvalAttempt = {
     message: string
     seconds?: number
     telemetry?: TelemetryReference
+    cost?: number
   }[]
+  /** Optional enclosing attempt span; telemetry identifies target execution. */
+  attemptTelemetry?: TelemetryReference
   telemetry?: TelemetryReference
 }
 

@@ -383,12 +383,14 @@ for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
       }),
       contentType: 'image/png',
     })
-    await results.click()
-    await time.click()
-    await cost.click()
+    for (const toggle of [results, time, cost]) {
+      await toggle.click()
+      await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    }
     const cases = page.getByRole('table', { name: 'Cases for Direct agent' })
     await expect(cases.locator('thead th')).toHaveCount(2)
-    await expect(cases.locator('[data-attempt-id]')).toHaveCount(16)
+    await expect(cases.locator('[data-attempt-id]')).toHaveCount(0)
+    await expect(cases.locator('.eval-results__case')).toHaveCount(8)
   })
 }
 
@@ -426,15 +428,17 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
       .nth(2)
   ).toHaveText('3')
   const trace = failedAttempt.getByRole('img', {
-    name: 'Span Find the slow request, 37.000 s',
+    name: 'Attempt 1, 37.000 s',
   })
   await expect(trace).toBeVisible()
   await expect(trace).not.toHaveAttribute('href')
-  await failedAttempt.getByRole('button', { name: /^Expand execution/ }).click()
+  const execution = time.locator(
+    '[data-outline-id="execution/request-latency"]'
+  )
   const toolRows = time.locator('[data-tool-attempt-id="request-latency"]')
-  await expect(toolRows).toHaveCount(5)
-  const toggle = failedAttempt.getByRole('button', {
-    name: /^Collapse execution/,
+  await expect(toolRows).toHaveCount(3)
+  const toggle = execution.getByRole('button', {
+    name: /^Collapse Execution/,
   })
   expect(
     await toggle.evaluate(button =>
@@ -454,9 +458,7 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
     toolRows.nth(1).getByRole('img', { name: 'Span bash, 500.000 ms' })
   ).toBeVisible()
   expect(page.url()).toBe(url)
-  await failedAttempt
-    .getByRole('button', { name: /^Collapse execution/ })
-    .focus()
+  await execution.getByRole('button', { name: /^Collapse Execution/ }).focus()
   await page.keyboard.press('Space')
   await expect(toolRows).toHaveCount(0)
   await expect(
@@ -480,6 +482,8 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
   ).toHaveText('0')
   await showOnly(page, 'Cost')
   const costs = page.getByRole('table', { name: 'Cost for Direct agent' })
+  for (const row of await costs.locator('.eval-results__case').all())
+    await row.locator('button[aria-expanded="false"]').click()
   expect(
     await costs
       .locator('.eval-results__case')
@@ -622,7 +626,7 @@ test('waterfall rows and bars are inert while execution controls still expand', 
       .first()
   ).toHaveCSS('background-color', errorColours.internalFault)
   const bar = row.getByRole('img', {
-    name: 'Span Find the slow request, 37.000 s',
+    name: 'Attempt 1, 37.000 s',
   })
   await expect(bar).toBeVisible()
   await expect(bar.locator('.span-bar')).toHaveCSS(
@@ -644,7 +648,11 @@ test('waterfall rows and bars are inert while execution controls still expand', 
   await expect(
     details.getByRole('region', { name: 'Attempt details', exact: true })
   ).toBeVisible()
-  await row.getByRole('button', { name: /^Expand execution/ }).click()
+  await row.getByRole('button', { name: /^Expand Attempt/ }).click()
+  await page
+    .locator('[data-outline-id="execution/request-latency"]')
+    .getByRole('button', { name: /^Expand Execution/ })
+    .click()
   await expect(bar.locator('.span-bar')).toHaveCSS(
     'background-color',
     errorColours.spanError
@@ -682,8 +690,9 @@ test('column sorting preserves selection and keeps unknown measurements last wit
   await expect(results.locator('tbody tr').first()).toContainText(
     'Explain the checkout failure'
   )
-  await expect(results.locator('[data-attempt-id]').last()).toContainText(
-    'Locate service errors'
+  await expect(results.locator('[data-attempt-id]').last()).toHaveAttribute(
+    'data-case-id',
+    'service-errors'
   )
   await expect(selected).toHaveClass(/table-row--selected/)
   expect(page.url()).toBe(url)
@@ -694,8 +703,9 @@ test('column sorting preserves selection and keeps unknown measurements last wit
   await expect(time.locator('tbody tr').first()).toContainText(
     'Compare CPU evidence'
   )
-  await expect(time.locator('[data-attempt-id]').last()).toContainText(
-    'Locate service errors'
+  await expect(time.locator('[data-attempt-id]').last()).toHaveAttribute(
+    'data-case-id',
+    'service-errors'
   )
   await showOnly(page, 'Cost')
   const costs = page.getByRole('table', { name: 'Cost for Direct agent' })
@@ -704,7 +714,7 @@ test('column sorting preserves selection and keeps unknown measurements last wit
   await expect(costs.locator('tbody tr').first()).toContainText(
     'Inspect sequence types'
   )
-  await expect(costs.locator('[data-attempt-id]').last()).toContainText(
+  await expect(costs.locator('.eval-results__case').last()).toContainText(
     'Locate service errors'
   )
   await showOnly(page, 'Results')
@@ -864,7 +874,7 @@ test('case branches stay connected to aligned repetitions through sorting and re
   await page.setViewportSize({ width: 1920, height: 1000 })
   await page.goto('/evals?run=direct&attempt=request-latency-rep-2')
   const table = page.getByRole('table', { name: 'Results for Direct agent' })
-  await expect(table.locator('.eval-results__case')).toHaveCount(5)
+  await expect(table.locator('.eval-results__case')).toHaveCount(8)
   await expect(table.locator('[data-attempt-id]')).toHaveCount(16)
   const parent = table.locator(
     '.eval-results__case[data-case-id="request-latency"]'
@@ -1002,9 +1012,9 @@ test('case branches stay connected to aligned repetitions through sorting and re
   await table.getByRole('button', { name: 'Sort by Repetition' }).click()
   await table.getByRole('button', { name: 'Sort by Repetition' }).click()
   await expect(children.locator('.eval-results__rep-label')).toHaveText([
-    /Rep 3$/,
-    /Rep 2$/,
-    /Rep 1$/,
+    /Attempt 3$/,
+    /Attempt 2$/,
+    /Attempt 1$/,
   ])
   await page
     .getByRole('separator', {
