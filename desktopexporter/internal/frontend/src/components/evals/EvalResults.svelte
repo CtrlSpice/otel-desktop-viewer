@@ -19,13 +19,17 @@
   import TreeGutter from '@/components/shared/TreeGutter.svelte'
   import TreeChildCount from '@/components/shared/TreeChildCount.svelte'
   import LegendRows from '@/components/shared/LegendRows.svelte'
-  import Identifier from '@/components/shared/Identifier.svelte'
+  import CorrelatedSpanBar from '@/components/shared/CorrelatedSpanBar.svelte'
+  import { telemetryAPI } from '@/services/telemetry-service'
+  import type { SpanTiming } from '@/types/api-types'
+  import { formatDuration } from '@/utils/time'
   import { completionTone, groupAttempts } from './group-attempts'
   import {
     cost,
     estimatedCost,
     percent,
     traceHref,
+    type TelemetryReference,
     type AssessmentDefinition,
     type EvalAttempt,
     type EvalRun,
@@ -70,6 +74,53 @@
   let caseGutterWidth = $state(0)
   let repGutterWidth = $state(0)
   let collapsedCases = $state<string[]>([])
+  let expandedAttempts = $state<string[]>([])
+  let spanTimings = $state<Record<string, SpanTiming>>({})
+  let timingsLoading = $state(false)
+  let timingsFailed = $state(false)
+  const timingKey = (reference: TelemetryReference) =>
+    `${reference.traceID.toLowerCase()}/${reference.spanID?.toLowerCase() ?? ''}`
+  const timingFor = (reference?: TelemetryReference) =>
+    reference?.spanID ? spanTimings[timingKey(reference)] : undefined
+  const maximumDuration = $derived(
+    Object.values(spanTimings).reduce((maximum, span) => {
+      const duration = span.endTime - span.startTime
+      return duration > maximum ? duration : maximum
+    }, 0n)
+  )
+  $effect(() => {
+    if (view !== 'time') return
+    const references = [
+      run.telemetry,
+      ...run.attempts.flatMap(attempt => [
+        attempt.telemetry,
+        ...attempt.tools.map(tool => tool.telemetry),
+      ]),
+    ].flatMap(reference =>
+      reference?.spanID
+        ? [{ traceID: reference.traceID, spanID: reference.spanID }]
+        : []
+    )
+    const controller = new AbortController()
+    spanTimings = {}
+    timingsLoading = true
+    timingsFailed = false
+    void telemetryAPI.getSpanTimings(references, controller.signal).then(
+      timings => {
+        if (controller.signal.aborted) return
+        spanTimings = Object.fromEntries(
+          timings.map(span => [timingKey(span), span])
+        )
+        timingsLoading = false
+      },
+      () => {
+        if (controller.signal.aborted) return
+        timingsLoading = false
+        timingsFailed = true
+      }
+    )
+    return () => controller.abort()
+  })
   function toggleCase(id: string) {
     collapsedCases = collapsedCases.includes(id)
       ? collapsedCases.filter(key => key !== id)
@@ -117,9 +168,10 @@
     {
       key: 'seconds',
       label: 'Duration',
+      hint: 'Stored span durations, compared on one scale across this run',
       group: 'Time',
-      width: 112,
-      min: 96,
+      width: 288,
+      min: 224,
     },
     {
       key: 'tools',
@@ -135,14 +187,6 @@
       group: 'Time',
       width: 104,
       min: 96,
-    },
-    {
-      key: 'trace',
-      label: 'Trace',
-      hint: 'Execution trace; opens the correlated span when available',
-      group: 'Time',
-      width: 192,
-      min: 176,
     },
     {
       key: 'investigatorCost',
@@ -169,15 +213,36 @@
   )
   let sorts = $state<Record<string, AttemptSort | undefined>>({})
   const activeSort = $derived(sorts[view])
+  const measuredAttempts = $derived(
+    run.attempts.map(attempt => {
+      const span = timingFor(attempt.telemetry)
+      return {
+        ...attempt,
+        seconds:
+          span && span.endTime >= span.startTime
+            ? Number(span.endTime - span.startTime) / 1e9
+            : undefined,
+      }
+    })
+  )
   const groups = $derived(
-    groupAttempts(attempts, run.attempts, activeSort).map(group => ({
+    groupAttempts(
+      view === 'time'
+        ? measuredAttempts.filter(item =>
+            attempts.some(attempt => attempt.id === item.id)
+          )
+        : attempts,
+      view === 'time' ? measuredAttempts : run.attempts,
+      activeSort
+    ).map(group => ({
       ...group,
       summary: caseSummary(group.allAttempts, run.assessments),
-      traceCount: new Set(
-        group.allAttempts.flatMap(attempt =>
-          attempt.telemetry ? [attempt.telemetry.traceID] : []
-        )
-      ).size,
+      spanDuration: group.allAttempts.reduce((total, attempt) => {
+        const span = timingFor(attempt.telemetry)
+        return span && span.endTime >= span.startTime
+          ? total + span.endTime - span.startTime
+          : total
+      }, 0n),
     }))
   )
 
@@ -195,6 +260,19 @@
     { key: 'graderCost', ...estimatedCost(attempts, 'graderCost') },
   ])
 </script>
+
+{#snippet spanBar(reference?: TelemetryReference)}
+  {@const span = timingFor(reference)}
+  {#if span}<CorrelatedSpanBar
+      {span}
+      maximum={maximumDuration}
+      href={traceHref(span)}
+    />
+  {:else if !reference?.spanID}<span>Not linked</span>
+  {:else if timingsLoading}<span role="status">Loading span…</span>
+  {:else if timingsFailed}<span>Span unavailable</span>
+  {:else}<span>Span not stored</span>{/if}
+{/snippet}
 
 {#snippet resultsIcon()}<HugeiconsIcon
     icon={CheckListIcon}
@@ -368,6 +446,21 @@
       </tr>
     {/snippet}
     {#snippet children(layout)}
+      {#if view === 'time' && run.telemetry}
+        <tr class="table-row" aria-label="Run span">
+          <th
+            colspan="2"
+            scope="row"
+            class="table-cell text-left font-normal"
+            class:table-cell--pinned={layout.pinned.name !== undefined}
+            style:left={layout.pinned.name === undefined
+              ? undefined
+              : `${layout.pinned.name}px`}>{run.name}</th
+          >
+          <td class="table-cell">{@render spanBar(run.telemetry)}</td>
+          <td class="table-cell"></td><td class="table-cell"></td>
+        </tr>
+      {/if}
       {#each groups as group (group.id)}
         <tr class="table-row eval-results__case" data-case-id={group.id}>
           <th
@@ -418,7 +511,76 @@
               class:table-row--selected={selectedID === item.id}
             >
               {#each columns as column (column.key)}
-                {#if column.key === 'name'}
+                {#if column.key === 'name' && view === 'time'}
+                  <th
+                    colspan="2"
+                    scope="row"
+                    class="table-cell eval-results__case-cell font-normal"
+                    class:table-cell--pinned={layout.pinned.name !== undefined}
+                    style:left={layout.pinned.name === undefined
+                      ? undefined
+                      : `${layout.pinned.name}px`}
+                  >
+                    <div class="eval-results__case-name">
+                      {#if item.tools.length}
+                        <TreeToggle
+                          label={`${expandedAttempts.includes(item.id) ? 'Collapse' : 'Expand'} tools for ${item.name}, repetition ${item.repetition}, ${item.tools.length} tool calls`}
+                          expanded={expandedAttempts.includes(item.id)}
+                          onclick={() =>
+                            (expandedAttempts = expandedAttempts.includes(
+                              item.id
+                            )
+                              ? expandedAttempts.filter(id => id !== item.id)
+                              : [...expandedAttempts, item.id])}
+                        >
+                          <TreeGutter
+                            depth={1}
+                            tree={{
+                              childrenCount: item.tools.length,
+                              ancestorHasNextSibling: [true],
+                              isLastChild: index === group.attempts.length - 1,
+                            }}
+                            subtreeCollapsed={!expandedAttempts.includes(
+                              item.id
+                            )}
+                          >
+                            {#snippet node()}<EvalStatus
+                                label={item.state}
+                                dotOnly
+                                tone={completionTone(item.state)}
+                              />{/snippet}
+                          </TreeGutter>
+                          <TreeChildCount count={item.tools.length} />
+                        </TreeToggle>
+                      {:else}
+                        <TreeGutter
+                          depth={1}
+                          tree={{
+                            childrenCount: 0,
+                            ancestorHasNextSibling: [true],
+                            isLastChild: index === group.attempts.length - 1,
+                          }}
+                          subtreeCollapsed={false}
+                        >
+                          {#snippet node()}<EvalStatus
+                              label={item.state}
+                              dotOnly
+                              tone={completionTone(item.state)}
+                            />{/snippet}
+                        </TreeGutter>
+                      {/if}
+                      <button
+                        class="eval-results__rep-button"
+                        aria-label={item.name}
+                        aria-pressed={selectedID === item.id}
+                        onclick={() => onSelect(item.id)}
+                        ><span class="sr-only">{item.name}</span>Rep {item.repetition}</button
+                      >
+                    </div>
+                  </th>
+                {:else if column.key === 'repetition' && view === 'time'}
+                  <!-- Time's tree identity spans both Case and Rep columns. -->
+                {:else if column.key === 'name'}
                   <td
                     class="table-cell eval-results__branch-cell"
                     class:table-cell--pinned={layout.pinned.name !== undefined}
@@ -491,9 +653,7 @@
                   </td>
                 {:else if column.key === 'seconds'}
                   <td class="table-cell text-left tabular-nums">
-                    {#if item.seconds !== undefined}
-                      <span>{item.seconds} s</span>
-                    {:else}Unknown{/if}
+                    {@render spanBar(item.telemetry)}
                   </td>
                 {:else if column.key === 'tools'}
                   <td class="table-cell text-left tabular-nums"
@@ -504,17 +664,6 @@
                     tool => tool.state === 'Error'
                   ).length}
                   <td class="table-cell text-left tabular-nums">{failed}</td>
-                {:else if column.key === 'trace'}
-                  <td class="table-cell text-left">
-                    {#if item.telemetry}
-                      <a
-                        class="link link-hover"
-                        href={traceHref(item.telemetry)}
-                        aria-label={`Open trace ${item.telemetry.traceID} for ${item.name}, repetition ${item.repetition}`}
-                        ><Identifier value={item.telemetry.traceID} /></a
-                      >
-                    {:else}Not linked{/if}
-                  </td>
                 {:else if column.key === 'investigatorCost' || column.key === 'graderCost'}
                   <td class="table-cell text-left tabular-nums"
                     >{cost(item[column.key])}</td
@@ -522,6 +671,50 @@
                 {/if}
               {/each}
             </tr>
+            {#if view === 'time' && expandedAttempts.includes(item.id)}
+              {#each item.tools as tool, toolIndex}
+                <tr
+                  class="table-row eval-results__attempt"
+                  data-tool-attempt-id={item.id}
+                >
+                  <th
+                    colspan="2"
+                    scope="row"
+                    class="table-cell eval-results__case-cell font-normal"
+                    class:table-cell--pinned={layout.pinned.name !== undefined}
+                    style:left={layout.pinned.name === undefined
+                      ? undefined
+                      : `${layout.pinned.name}px`}
+                  >
+                    <div class="eval-results__case-name" title={tool.message}>
+                      <TreeGutter
+                        depth={2}
+                        tree={{
+                          childrenCount: 0,
+                          ancestorHasNextSibling: [
+                            index < group.attempts.length - 1,
+                            true,
+                          ],
+                          isLastChild: toolIndex === item.tools.length - 1,
+                        }}
+                        subtreeCollapsed={false}
+                      >
+                        {#snippet node()}<EvalStatus
+                            label={tool.state}
+                            dotOnly
+                            tone={tool.state === 'Error' ? 'error' : 'complete'}
+                          />{/snippet}
+                      </TreeGutter>
+                      <span class="min-w-0 [overflow-wrap:anywhere]"
+                        >{tool.name}</span
+                      >
+                    </div>
+                  </th>
+                  <td class="table-cell">{@render spanBar(tool.telemetry)}</td>
+                  <td class="table-cell"></td><td class="table-cell"></td>
+                </tr>
+              {/each}
+            {/if}
           {/each}
         {/if}
       {/each}
@@ -547,11 +740,11 @@
           {:else if column.key === 'seconds'}
             <td
               class="table-cell text-left tabular-nums"
-              title="Sum of recorded repetition durations"
+              title="Sum of stored question-span durations across all repetitions"
             >
               {group.summary.duration.total === null
-                ? 'Unknown'
-                : `${Number(group.summary.duration.total.toFixed(3))} s`}
+                ? 'No stored durations'
+                : formatDuration(group.spanDuration)}
               {#if group.summary.duration.incomplete && group.summary.duration.total !== null}<span
                   class="block text-rp-subtle">Partial total</span
                 >{/if}
@@ -569,14 +762,6 @@
               title="Failed tool calls across all repetitions"
               >{group.summary.failures}</td
             >
-          {:else if column.key === 'trace'}
-            <td
-              class="table-cell text-left tabular-nums"
-              title="Distinct linked execution traces across all case repetitions"
-            >
-              {#if group.traceCount}{group.traceCount}
-                {group.traceCount === 1 ? 'trace' : 'traces'}{:else}Not linked{/if}
-            </td>
           {:else if column.key === 'investigatorCost' || column.key === 'graderCost'}
             {@const estimate = group.summary[column.key]}
             <td class="table-cell text-left tabular-nums">

@@ -1,7 +1,56 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
+import { exampleRuns } from '../src/components/evals/examples'
 
 async function enableEvals(page: Page, enabled = true) {
+  await page.route('**/rpc', async route => {
+    const request = route.request().postDataJSON()
+    if (request.method !== 'query') return route.fallback()
+    const sql = request.params.sql.replaceAll('-', '')
+    const rows = exampleRuns.flatMap(run =>
+      run.attempts.flatMap(attempt => {
+        if (!attempt.telemetry?.spanID) return []
+        const references = [
+          {
+            reference: attempt.telemetry,
+            name: attempt.name,
+            duration: BigInt(Math.round((attempt.seconds ?? 1) * 1e9)),
+            error: attempt.state === 'Error',
+          },
+          ...attempt.tools.map(tool => ({
+            reference: tool.telemetry,
+            name: tool.name,
+            duration: 500000000n,
+            error: tool.state === 'Error',
+          })),
+        ]
+        return references.flatMap(({ reference, name, duration, error }) =>
+          reference?.spanID &&
+          sql.includes(reference.traceID) &&
+          sql.includes(reference.spanID)
+            ? [
+                [
+                  reference.traceID,
+                  reference.spanID,
+                  name,
+                  'eval-agent',
+                  '1700000000000000001',
+                  String(1700000000000000001n + duration),
+                  error ? 2 : 1,
+                ],
+              ]
+            : []
+        )
+      })
+    )
+    await route.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id: request.id,
+        result: { rows, truncated: false },
+      },
+    })
+  })
   await page.route('**/api/features', route =>
     route.fulfill({
       json: { evals: { enabled, label: 'Experimental and unsupported' } },
@@ -186,17 +235,17 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
   await page.getByRole('tab', { name: 'Time', exact: true }).click()
   const time = page.getByRole('table', { name: 'Time for Direct agent' })
   await expect(time.locator('[data-attempt-id="cpu-evidence"]')).toContainText(
-    '89 s'
+    '89.000 s'
   )
   await expect(
     time.locator('[data-attempt-id="checkout-latency"]')
-  ).toContainText('Unknown')
+  ).toContainText('Not linked')
   await expect(
     time.getByRole('columnheader', { name: 'Failures' })
   ).toBeVisible()
   const failedAttempt = time.locator('[data-attempt-id="request-latency"]')
-  await expect(failedAttempt.locator('td').nth(2)).toHaveText('3')
-  await expect(failedAttempt.locator('td').nth(3)).toHaveText('1')
+  await expect(failedAttempt.locator('td').nth(1)).toHaveText('3')
+  await expect(failedAttempt.locator('td').nth(2)).toHaveText('1')
   await expect(
     time
       .locator('.eval-results__case[data-case-id="request-latency"] td')
@@ -204,20 +253,39 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
   ).toHaveText('3')
   const traceID = `eeee02${'2'.padStart(26, '0')}`
   const trace = failedAttempt.getByRole('link', {
-    name: `Open trace ${traceID} for Find the slow request, repetition 1`,
+    name: 'Open span Find the slow request, 37.000 s',
   })
   await expect(trace).toHaveAttribute(
     'href',
     `/traces/${traceID}?span=eeee000000000001`
   )
-  await expect(trace.locator('.identifier')).toHaveAttribute('title', traceID)
+  await failedAttempt.getByRole('button', { name: /^Expand tools/ }).click()
+  const toolRows = time.locator('[data-tool-attempt-id="request-latency"]')
+  await expect(toolRows).toHaveCount(3)
+  const toggle = failedAttempt.getByRole('button', { name: /^Collapse tools/ })
+  expect(
+    await toggle.evaluate(button =>
+      Math.abs(
+        button.getBoundingClientRect().height -
+          button.closest('tr')!.getBoundingClientRect().height
+      )
+    )
+  ).toBeLessThan(1)
+  await test.info().attach('time-span-bars', {
+    body: await page.screenshot({
+      path: test.info().outputPath('time-span-bars.png'),
+    }),
+    contentType: 'image/png',
+  })
   await expect(
-    time
-      .locator('.eval-results__case[data-case-id="request-latency"] td')
-      .last()
-  ).toHaveText('3 traces')
+    toolRows.nth(1).getByRole('link', { name: 'Open span bash, 500.000 ms' })
+  ).toHaveAttribute('href', `/traces/${traceID}?span=eeee000000000003`)
+  expect(page.url()).toBe(url)
+  await failedAttempt.getByRole('button', { name: /^Collapse tools/ }).focus()
+  await page.keyboard.press('Space')
+  await expect(toolRows).toHaveCount(0)
   await expect(
-    time.locator('[data-attempt-id="checkout-latency"] td').last()
+    time.locator('[data-attempt-id="checkout-latency"] td').first()
   ).toHaveText('Not linked')
   await expect(
     time.locator('[data-attempt-id="checkout-latency"]').getByRole('link')
@@ -233,7 +301,7 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
     'request-latency'
   )
   await expect(
-    time.locator('[data-attempt-id="checkout-latency"] td').nth(3)
+    time.locator('[data-attempt-id="checkout-latency"] td').nth(2)
   ).toHaveText('0')
   await page.getByRole('tab', { name: 'Cost', exact: true }).click()
   const costs = page.getByRole('table', { name: 'Cost for Direct agent' })

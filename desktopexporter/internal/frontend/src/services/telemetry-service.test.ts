@@ -1225,6 +1225,77 @@ describe('telemetryAPI.searchTraceSummaries', () => {
   })
 })
 
+describe('telemetryAPI.getSpanTimings', () => {
+  const reference = {
+    traceID: '00000000000000000000000000000011',
+    spanID: 'ffffffffffffffff',
+  }
+
+  it('reads exact span pairs without whole traces, preserves nanoseconds and deduplicates requests', async () => {
+    stubRpcResult({
+      rows: [
+        [
+          reference.traceID,
+          reference.spanID,
+          'question',
+          'agent',
+          '1700000000000000001',
+          '1700000000000000023',
+          2,
+        ],
+      ],
+      truncated: false,
+    })
+    const controller = new AbortController()
+    const result = await telemetryAPI.getSpanTimings(
+      [reference, reference],
+      controller.signal
+    )
+    expect(result[0]).toMatchObject({
+      ...reference,
+      startTime: 1700000000000000001n,
+      endTime: 1700000000000000023n,
+      statusCodeValue: 2,
+    })
+    const call = vi.mocked(fetch).mock.calls[0]!
+    const request = JSON.parse(String(call[1]!.body))
+    expect(request.method).toBe('query')
+    expect(request.params.limit).toBe(1)
+    expect(request.params.sql).toContain("'0xffffffffffffffff'::UBIGINT")
+    expect(request.params.sql).toContain(
+      's.trace_id = r.trace_id AND s.span_id = r.span_id'
+    )
+    expect(call[1]!.signal).toBe(controller.signal)
+  })
+
+  it('bounds each projection to 64 references, keeps identical span IDs in different traces and reports absent spans as absent', async () => {
+    stubRpcResult({ rows: [], truncated: false })
+    const references = Array.from({ length: 65 }, (_, index) => ({
+      ...reference,
+      traceID: (index + 1).toString(16).padStart(32, '0'),
+    }))
+    expect(await telemetryAPI.getSpanTimings(references)).toEqual([])
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.map(
+          ([, init]) => JSON.parse(String(init!.body)).params.limit
+        )
+    ).toEqual([64, 1])
+  })
+
+  it('rejects non-hex references before querying and skips empty lookups', async () => {
+    stubRpcResult({ rows: [], truncated: false })
+    await expect(
+      telemetryAPI.getSpanTimings([
+        { ...reference, spanID: "'); DROP TABLE spans;--" },
+      ])
+    ).rejects.toThrow('32-hex trace ID and a 16-hex span ID')
+    expect(await telemetryAPI.getSpanTimings([])).toEqual([])
+    expect(fetch).not.toHaveBeenCalled()
+  })
+})
+
 describe('telemetryAPI.getTraceSummary', () => {
   it('looks up one exact trace independently of the Logs time range and preserves exact times', async () => {
     stubRpcResult([

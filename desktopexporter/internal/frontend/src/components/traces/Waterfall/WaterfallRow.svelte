@@ -7,6 +7,7 @@
   import { formatDuration } from '@/utils/time'
   import TreeGutter from '@/components/shared/TreeGutter.svelte'
   import TreeChildCount from '@/components/shared/TreeChildCount.svelte'
+  import SpanBar from '@/components/shared/SpanBar.svelte'
   import TreeToggle from '@/components/shared/TreeToggle.svelte'
   import type { WaterfallGridLayout } from './WaterfallTimeAxisHeader.svelte'
   import WaterfallGrid from './WaterfallGrid.svelte'
@@ -244,11 +245,11 @@
       style:--waterfall-bar-height="{WATERFALL_BAR_HEIGHT_REM}rem"
     >
       <div class="waterfall-row__timeline-frame">
-        <div
+        <SpanBar
           class="waterfall-row__bar"
-          style:left="{row.offsetPercent}%"
-          style:width="{row.widthPercent}%"
-        ></div>
+          offsetPercent={row.offsetPercent}
+          widthPercent={row.widthPercent}
+        />
         <WaterfallGrid layout={barGrid} />
         <span
           class="waterfall-row__bar-label"
@@ -308,15 +309,6 @@
     @apply absolute top-0 bottom-0;
     left: var(--timeline-left-inset);
     right: calc(var(--duration-gutter) + var(--outside-record-slot));
-  }
-
-  /* `--bar-color` on the bar area tints the span pill. */
-  .waterfall-row__bar {
-    @apply absolute z-[1] rounded-full top-1/2 -translate-y-1/2 border-0 overflow-hidden;
-    height: var(--waterfall-bar-height);
-    min-width: 2px;
-    background-color: var(--bar-color);
-    transition: background-color 0.12s ease;
   }
 
   .waterfall-row__markers {

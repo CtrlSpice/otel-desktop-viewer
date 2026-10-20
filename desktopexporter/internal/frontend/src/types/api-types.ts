@@ -9,6 +9,17 @@ export type RootSpan = {
   name: string
 }
 
+/** Lightweight timing projection for an exact stored trace/span pair. */
+export type SpanTiming = {
+  traceID: string
+  spanID: string
+  name: string
+  serviceName: string
+  startTime: bigint
+  endTime: bigint
+  statusCodeValue: number
+}
+
 export type MatchedSpan = {
   traceID: string
   spanID: string

@@ -57,6 +57,7 @@ export type EvalRun = {
   assessments: AssessmentDefinition[]
   headlineAssessment: string
   attempts: EvalAttempt[]
+  telemetry?: TelemetryReference
 }
 
 export function assessmentSummary(

@@ -4,8 +4,43 @@ import { render, screen, within } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import EvalResults from './EvalResults.svelte'
 import { exampleRuns } from './examples'
+import { telemetryAPI } from '@/services/telemetry-service'
 
 describe('EvalResults repetitions', () => {
+  it('shows a referenced run span and distinguishes an absent question span from fixture duration', async () => {
+    const telemetry = { traceID: 'a'.repeat(32), spanID: 'b'.repeat(16) }
+    const lookup = vi.spyOn(telemetryAPI, 'getSpanTimings').mockResolvedValue([
+      {
+        ...telemetry,
+        name: 'eval run',
+        serviceName: 'runner',
+        startTime: 1700000000000000001n,
+        endTime: 1700000001000000001n,
+        statusCodeValue: 1,
+      },
+    ])
+    try {
+      const attempts = [exampleRuns[0].attempts[0]]
+      render(EvalResults, {
+        run: { ...exampleRuns[0], telemetry, attempts },
+        attempts,
+        onSelect: vi.fn(),
+      })
+      await userEvent.setup().click(screen.getByRole('tab', { name: 'Time' }))
+      expect(
+        await screen.findByRole('link', { name: 'Open span eval run, 1.000 s' })
+      ).toHaveAttribute(
+        'href',
+        `/traces/${telemetry.traceID}?span=${telemetry.spanID}`
+      )
+      expect(await screen.findByText('Span not stored')).toBeInTheDocument()
+      expect(screen.queryByText('24.000 s')).not.toBeInTheDocument()
+      expect(lookup.mock.calls[0][0]).toContainEqual(telemetry)
+    } finally {
+      lookup.mockRestore()
+    }
+  })
+
   it('fans out single and repeated attempts, with each number selecting its exact attempt', async () => {
     const [first, second, third] = exampleRuns[0].attempts.filter(
       item => item.caseID === 'request-latency'

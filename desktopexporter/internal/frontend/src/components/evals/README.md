@@ -37,7 +37,7 @@ the footer, and stop before unused space below the last row.
 
 The main pane has three focused table views, using the original shared
 Results / Time / Cost tabs. Results contains assessments; Time contains duration
-and separate Tool calls and Failures counts, plus execution trace links; Cost contains investigator and grader estimates. Case and Rep
+and separate Tool calls and Failures counts, with linked span bars; Cost contains investigator and grader estimates. Case and Rep
 remain visible in each view. Views share collapse state and attempt selection,
 with independent sorting and saved widths. Each table has one regular-weight
 heading row. Logs and the trace waterfall retain their shared Columns picker.
@@ -64,16 +64,25 @@ the pinned columns plus one complete scrolling column. Saved widths and shared
 hover/selection motion remain intact.
 Assessment dots, labels and numeric fractions stay together at the left; case
 percentages align above them. Measurements and their headings also align left.
-Duration is plain text. Tool calls include failed calls; Failures counts those
+Time uses stored span timings for duration bars and sorting. Each bar carries its
+duration and opens that exact trace/span. Bars share the waterfall's SpanBar
+component and a common zero-based duration scale across the run's linked spans;
+they compare duration, not absolute start times. Tool calls include failed calls; Failures counts those
 calls separately for each repetition and the full case. Cost keeps
 investigator and grader estimates separate. The Total footer aligns each estimate
 under its visible cost column, with unknown and partial estimates explicit. Its
 top divider is a solid 1px Muted line at 60% opacity. The footer appears only in Cost.
 Totals cover the shown attempts; drawer summaries cover the whole run.
-Time shows compact trace IDs through the shared Identifier component. Each link
-uses the existing trace route and selects the correlated span when supplied.
-Missing references read `Not linked`; parent rows count distinct referenced
-traces across all case repetitions. A reference does not imply the trace is loaded.
+Time fetches only explicit run, question/attempt and tool-call span references,
+using exact trace/span pairs and batches of at most 64 lightweight timing rows.
+It does not load trace trees, attributes or logs. Run spans appear when the run
+has a reference; question rows can fan out to their tool calls using the same
+tree gutter, counts and collapse control as traces. Tool expansion preserves
+attempt selection. Missing references read `Not linked`; references absent from
+the database read `Span not stored`. Request errors read `Span unavailable`.
+Case duration totals sum stored question spans (not their nested tool spans),
+retain exact nanoseconds and mark partial totals explicitly. Recorded eval
+seconds are not substituted for missing span data.
 
 Run cards show a proportional breakdown and every outcome in a visible list,
 with neutral labels, small colour dots and exact attempt counts. Neutral outcome

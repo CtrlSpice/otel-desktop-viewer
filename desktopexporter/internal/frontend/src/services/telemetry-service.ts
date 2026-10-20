@@ -1,6 +1,7 @@
 import type {
   TraceData,
   TraceSummary,
+  SpanTiming,
   LogData,
   LogSummary,
   LogColumn,
@@ -923,6 +924,79 @@ export let telemetryAPI = {
       })
     )
     return traceSummariesFromJSON(rawData)
+  },
+
+  /** Fetch only timing fields for exact span references, in bounded batches. */
+  getSpanTimings: async (
+    references: readonly Pick<SpanTiming, 'traceID' | 'spanID'>[],
+    signal?: AbortSignal
+  ): Promise<SpanTiming[]> => {
+    const unique = new Map<string, { traceID: string; spanID: string }>()
+    for (const reference of references) {
+      if (
+        !/^[a-f0-9]{32}$/i.test(reference.traceID) ||
+        !/^[a-f0-9]{16}$/i.test(reference.spanID)
+      ) {
+        throw new Error(
+          'Span timing references require a 32-hex trace ID and a 16-hex span ID.'
+        )
+      }
+      const traceID = reference.traceID.toLowerCase()
+      const spanID = reference.spanID.toLowerCase()
+      unique.set(`${traceID}/${spanID}`, { traceID, spanID })
+    }
+    const pairs = [...unique.values()]
+    const timings: SpanTiming[] = []
+    for (let offset = 0; offset < pairs.length; offset += 64) {
+      const batch = pairs.slice(offset, offset + 64)
+      // Only validated hex identifiers enter SQL; project exact timestamps as
+      // strings so JSON number parsing cannot lose nanoseconds.
+      const values = batch
+        .map(({ traceID, spanID }) => {
+          const uuid = `${traceID.slice(0, 8)}-${traceID.slice(8, 12)}-${traceID.slice(12, 16)}-${traceID.slice(16, 20)}-${traceID.slice(20)}`
+          return `('${uuid}'::UUID, '0x${spanID}'::UBIGINT)`
+        })
+        .join(', ')
+      const result = await callRPC<{
+        rows: [string, string, string, string | null, string, string, number][]
+        truncated: boolean
+      }>(
+        'query',
+        named({
+          sql: `WITH requested(trace_id, span_id) AS (VALUES ${values})
+SELECT trace_id_wire(s.trace_id), span_id_wire(s.span_id), s.name,
+s.service_name, s.start_time::VARCHAR, s.end_time::VARCHAR, s.status_code
+FROM spans s JOIN requested r ON s.trace_id = r.trace_id AND s.span_id = r.span_id
+LIMIT ${batch.length}`,
+          limit: batch.length,
+        }),
+        signal
+      )
+      if (result.truncated)
+        throw new Error('Span timing lookup returned more rows than requested.')
+      timings.push(
+        ...result.rows.map(
+          ([
+            traceID,
+            spanID,
+            name,
+            serviceName,
+            startTime,
+            endTime,
+            statusCodeValue,
+          ]) => ({
+            traceID,
+            spanID,
+            name,
+            serviceName: serviceName ?? '',
+            startTime: BigInt(startTime),
+            endTime: BigInt(endTime),
+            statusCodeValue,
+          })
+        )
+      )
+    }
+    return timings
   },
 
   /** Look up the associated trace without the Logs time/query filters or a waterfall fetch. */
