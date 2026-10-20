@@ -823,7 +823,7 @@
                           tool.reference,
                           tool.state
                         )}{/snippet}
-                      <span class="min-w-0 [overflow-wrap:anywhere]"
+                      <span class="block min-w-0 truncate"
                         >{tool.name}</span
                       >
                     </TreeRowIdentity>
