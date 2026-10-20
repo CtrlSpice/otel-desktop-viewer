@@ -114,7 +114,18 @@ describe('EvalResults repetitions', () => {
         screen.getByRole('button', { name: /^Collapse Execution/ })
       )
       await user.click(toggle('Cost'))
-      expect(container.querySelectorAll('col')).toHaveLength(4)
+      expect(container.querySelectorAll('col')).toHaveLength(6)
+      expect(
+        [...container.querySelectorAll('tfoot td')].map(cell =>
+          cell.textContent?.trim()
+        )
+      ).toEqual([
+        '',
+        '',
+        attempt.investigatorCost!.toFixed(3),
+        attempt.graderCost!.toFixed(3),
+        (attempt.investigatorCost! + attempt.graderCost!).toFixed(3),
+      ])
       expect(
         screen.getByRole('button', { name: 'Sort by Total cost' })
       ).toBeInTheDocument()

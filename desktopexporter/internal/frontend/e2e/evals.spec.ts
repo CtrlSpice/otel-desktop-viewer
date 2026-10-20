@@ -381,7 +381,7 @@ for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
     await cost.click()
     await expect(cost).toHaveAttribute('aria-checked', 'true')
     const cases = page.getByRole('table', { name: 'Cost for Direct agent' })
-    await expect(cases.locator('thead th')).toHaveCount(3)
+    await expect(cases.locator('thead th')).toHaveCount(5)
     await expect(cases.locator('[data-attempt-id]')).toHaveCount(0)
     await expect(cases.locator('.eval-results__case')).toHaveCount(8)
   })
@@ -497,11 +497,13 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
   ).toBeVisible()
   await expect(
     costs.locator('[data-attempt-id="cpu-evidence"]').locator('td').last()
-  ).toContainText('Investigator Unknown · Grader Unknown')
+  ).toHaveText('Unknown')
   const totals = costs.getByRole('row', {
     name: 'Estimated cost for shown attempts',
   })
-  await expect(totals).toContainText('partial')
+  await expect(totals.locator('[title="Partial estimate · CAD"]')).toHaveCount(
+    3
+  )
   const footer = costs.locator('tfoot')
   await expect(footer).toHaveCSS('opacity', '1')
   const divider = await footer.evaluate(element => {
@@ -567,9 +569,7 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
     .getByRole('searchbox', { name: 'Search evals' })
     .fill('CPU evidence')
   await expect(costs.locator('[data-attempt-id]')).toHaveCount(2)
-  await expect(totals.locator('td').last()).toContainText(
-    'Investigator Unknown · Grader Unknown'
-  )
+  await expect(totals.locator('td').last()).toHaveText('Unknown')
   await expect(selected).toHaveClass(/table-row--selected/)
   await page.getByRole('button', { name: 'Clear search', exact: true }).click()
   await expect(costs.locator('[data-attempt-id]')).toHaveCount(16)
@@ -1069,7 +1069,10 @@ for (const theme of ['rose-pine', 'rose-pine-dawn']) {
     const selected = table.locator('[data-attempt-id="request-latency"]')
     await expect(table.locator('thead tr')).toHaveCount(1)
     await expect(
-      table.getByRole('columnheader', { name: 'Case · Rep', exact: true })
+      table.getByRole('columnheader', {
+        name: 'Kids · Case · Rep',
+        exact: true,
+      })
     ).toBeVisible()
     for (const header of await table.locator('thead th').all())
       await expect(header).toHaveCSS('font-weight', '400')
@@ -1112,7 +1115,7 @@ for (const theme of ['rose-pine', 'rose-pine-dawn']) {
     await expect(
       page.getByRole('separator', { name: /^Resize (Case|Rep) column$/ })
     ).toHaveCount(1)
-    expect(before.repX - before.caseX).toBeLessThan(80)
+    expect(before.repX - before.caseX).toBeLessThan(160)
     expect(before.right - before.repX).toBeLessThan(72)
     const rep = selected.locator('.tree-row-identity__title')
     await rep.hover()

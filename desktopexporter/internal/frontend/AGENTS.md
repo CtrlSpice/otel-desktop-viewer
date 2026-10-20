@@ -212,14 +212,19 @@
   labels. Keep Results, Time, Cost, summaries and Details consistent with shared
   table and field-card typography and spacing.
   Results, Tool calls and Cost are a single-select radio group. The active view
-  uses Highlight Medium and Highlight Low on hover. Each view has one rightmost
-  summary column: recorded score with its dot/label, tool total plus failed count,
-  or total estimated cost with investigator/grader breakdown. Results reveals
+  uses Highlight Medium and Highlight Low on hover. Results and Tool calls have
+  one rightmost summary column: recorded score with its dot/label, or tool total
+  plus failed count. Cost has Investigator, Grader and Total cost columns, in that
+  order. Cells and footer totals show only numeric amounts (Unknown if missing);
+  CAD and estimate labels stay in headers, and partial-estimate context is on hover.
+  Results reveals
   Case → Attempt; Tool calls reveals Execution and its tool descendants. Grading
   is a sibling of Execution under the attempt. Preserve manual branch toggles.
   Cost shows each visible level in the summary column, without adding a tree depth or summing
   parent estimates together with their child estimates. Missing costs are Unknown.
   Attempt labels are left-aligned beside their tree dots.
+  The identity heading reads Kids · Case · Rep on one line with uniform separator
+  spacing and no extra gap between the labels.
   An explicit attemptTelemetry reference identifies the enclosing attempt span;
   telemetry identifies target execution. Without it, label derived timing as the
   extent of available references rather than claiming another stored span.

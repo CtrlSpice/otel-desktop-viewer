@@ -48,7 +48,6 @@
     groupAttempts,
   } from './group-attempts'
   import {
-    cost,
     estimatedCost,
     percent,
     type TelemetryReference,
@@ -315,11 +314,27 @@
           ]
         : [
             {
+              key: 'investigatorCost',
+              label: 'Investigator',
+              group: 'Cost',
+              width: 160,
+              min: 144,
+              description: 'Estimate · CAD',
+            } as Column,
+            {
+              key: 'graderCost',
+              label: 'Grader',
+              group: 'Cost',
+              width: 160,
+              min: 144,
+              description: 'Estimate · CAD',
+            } as Column,
+            {
               key: 'cost',
               label: 'Total cost',
               group: 'Cost',
-              width: 320,
-              min: 256,
+              width: 160,
+              min: 144,
               description: 'Estimate · CAD',
             } as Column,
           ]),
@@ -392,28 +407,15 @@
   })
 </script>
 
-{#snippet rowCost(
-  estimate: { total: number | null; incomplete: boolean },
-  breakdown?: { investigatorCost?: number | null; graderCost?: number | null }
-)}
-  <div>
-    <span
-      class="text-sm tabular-nums whitespace-nowrap"
-      title="Recorded estimate · CAD"
-    >
-      {cost(estimate.total)}{#if estimate.incomplete && estimate.total !== null}
-        <span class="text-rp-subtle"> · partial</span>{/if}
-    </span>
-    {#if breakdown}<div class="text-sm text-rp-subtle">
-        <span class="whitespace-nowrap"
-          >Investigator {cost(breakdown.investigatorCost)}</span
-        >
-        ·
-        <span class="whitespace-nowrap"
-          >Grader {cost(breakdown.graderCost)}</span
-        >
-      </div>{/if}
-  </div>
+{#snippet rowCost(estimate: { total: number | null; incomplete: boolean })}
+  <span
+    class="text-sm tabular-nums whitespace-nowrap"
+    title={estimate.incomplete && estimate.total !== null
+      ? 'Partial estimate · CAD'
+      : 'Recorded estimate · CAD'}
+  >
+    {estimate.total === null ? 'Unknown' : estimate.total.toFixed(3)}
+  </span>
 {/snippet}
 
 {#snippet toolCount(total: number, failed: number)}
@@ -599,7 +601,7 @@
               class="table-cell eval-results__identity-cell"
               scope="colgroup"
               colspan="2"
-              aria-label="Case · Rep"
+              aria-label="Kids · Case · Rep"
               class:table-cell--pinned={layout.pinned.name !== undefined}
               style:left={layout.pinned.name === undefined
                 ? undefined
@@ -616,8 +618,11 @@
                   class="eval-results__case-heading"
                   bind:offsetWidth={caseGutterWidth}
                 >
+                  <span title="Direct children">Kids</span>
+                  <span aria-hidden="true">·</span>
                   <TableSortButton
                     label="Case"
+                    inset={false}
                     direction={activeSort?.key === 'name'
                       ? activeSort.direction
                       : undefined}
@@ -633,7 +638,7 @@
                   <TableSortButton
                     label="Repetition"
                     title="Repetition"
-                    align="right"
+                    inset={false}
                     direction={activeSort?.key === 'repetition'
                       ? activeSort.direction
                       : undefined}
@@ -709,10 +714,11 @@
                   outline.some(item => item.spanError)
                 )}
               {:else if column.key === 'cost'}
-                {@render rowCost(combineEstimates(estimates), {
-                  investigatorCost: estimates[0].total,
-                  graderCost: estimates[1].total,
-                })}
+                {@render rowCost(combineEstimates(estimates))}
+              {:else if column.key === 'investigatorCost' || column.key === 'graderCost'}
+                {@render rowCost(
+                  estimates.find(item => item.key === column.key)!
+                )}
               {:else if column.key === 'tools'}
                 {@render toolCount(
                   attempts.reduce((sum, item) => sum + item.tools.length, 0),
@@ -824,10 +830,16 @@
                 {:else if column.key === 'tools' && row.kind === 'tool'}
                   {@render toolCount(1, row.spanError ? 1 : 0)}
                 {:else if column.key === 'cost'}
-                  {@render rowCost(
-                    row.estimate,
-                    row.kind === 'attempt' ? item : undefined
-                  )}
+                  {@render rowCost(row.estimate)}
+                {:else if item && (column.key === 'investigatorCost' || column.key === 'graderCost')}
+                  {#if row.kind === 'attempt'}
+                    {@render rowCost({
+                      total: item[column.key] ?? null,
+                      incomplete: item[column.key] === undefined,
+                    })}
+                  {:else if (column.key === 'investigatorCost' && (row.kind === 'execution' || row.kind === 'tool')) || (column.key === 'graderCost' && (row.kind === 'grading' || row.kind === 'grader'))}
+                    {@render rowCost(row.estimate)}
+                  {/if}
                 {/if}
               </td>
             {/each}
@@ -888,12 +900,11 @@
             >
               {@render toolCount(group.summary.calls, group.summary.failures)}
             </td>
-          {:else if column.key === 'cost'}
+          {:else if column.key === 'cost' || column.key === 'investigatorCost' || column.key === 'graderCost'}
             <td class="table-cell text-left tabular-nums">
-              {@render rowCost(row.estimate, {
-                investigatorCost: group.summary.investigatorCost.total,
-                graderCost: group.summary.graderCost.total,
-              })}
+              {@render rowCost(
+                column.key === 'cost' ? row.estimate : group.summary[column.key]
+              )}
             </td>
           {/if}
         {/each}
@@ -924,10 +935,11 @@
                   : `${layout.pinned[column.key]}px`}
               >
                 {#if column.key === 'cost'}
-                  {@render rowCost(combineEstimates(estimates), {
-                    investigatorCost: estimates[0].total,
-                    graderCost: estimates[1].total,
-                  })}
+                  {@render rowCost(combineEstimates(estimates))}
+                {:else if column.key === 'investigatorCost' || column.key === 'graderCost'}
+                  {@render rowCost(
+                    estimates.find(item => item.key === column.key)!
+                  )}
                 {/if}
               </td>
             {/if}
@@ -954,16 +966,23 @@
     color: var(--color-subtle);
   }
   .eval-results__identity-heading {
-    @apply inline-flex w-max items-center;
+    @apply inline-flex w-max items-center gap-1 whitespace-nowrap;
+  }
+  .eval-results__identity-heading :global(.table-sort) {
+    @apply inline-flex items-center gap-1;
+  }
+  .eval-results__identity-heading :global(.table-sort__direction) {
+    position: static;
+    transform: none;
   }
   .eval-results__case-heading {
-    @apply inline-flex items-center gap-1 pl-4 pr-1;
+    @apply inline-flex items-center gap-1 pl-4;
     min-width: calc(
       0.5rem + var(--tree-count-width) + var(--waterfall-gutter-col)
     );
   }
   .eval-results__rep-heading {
-    @apply block pr-4;
+    @apply inline-flex items-center;
     min-width: var(--waterfall-gutter-col);
   }
   .eval-results__assessment {
