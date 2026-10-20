@@ -102,7 +102,7 @@ on the plot bounds. Shared insets are 24px top, 72px right, 96px bottom and
 136px left, leaving room between tick values and unit labels. It is
 decorative and does not intercept pointer or keyboard input.
 Line charts, histograms and heatmaps share a full grid of 1.5px Muted dots at
-75% opacity including edges and corners, behind data. In line charts and
+60% opacity including edges and corners, behind data. In line charts and
 histograms, each labelled X/Y interval has two equal subdivisions,
 with a dot at every intersection. Cells need not be square. The nearest interval's
 spacing continues within the plot edges without adding dots beyond the plot.
@@ -185,7 +185,7 @@ Moon 7.24:1, Dawn 6.01:1) and on Low hover and Medium selection in every theme.
 JSON strings soft-wrap at word boundaries with a hanging indent after the opening
 quote. The document text is unchanged. JSON's notebook-guide trial replaces the
 fold-arrow gutter with a sparse grid only in leading indentation: 1.5px dots
-in Muted at 75% opacity in all themes, 2ch apart horizontally
+in Muted at 60% opacity in all themes, 2ch apart horizontally
 and one text line apart vertically,
 positioned on row boundaries rather than the middle of the text.
 The Mono font keeps dots aligned with character columns. These decorative dots
@@ -193,7 +193,7 @@ do not carry text or replace the existing folding commands and inspector control
 
 The shared `--guide-dot-radius` and `--guide-dot-opacity` tokens apply to
 waterfall time guides, metric grids and all raw/nested JSON grids. Every dot,
-including edges and corners, uses Muted at 75% through these shared tokens.
+including edges and corners, uses Muted at 60% through these shared tokens.
 Three unlabelled guides divide each labelled interval into quarters.
 Use fewer divisions when needed to retain whole nanoseconds.
 Labels keep their existing spacing; ruler and span rows use the
@@ -207,6 +207,8 @@ Guides are clipped at the timeline's right edge and stop at the final span row, 
 extending into the right gutter or below the table. The first column keeps whole dots with the original half-dot
 allowance to the left of their centres. The decoration changes no time labels, time bounds, span
 geometry or scrolling.
+Single-span traces omit the dotted grid; collapsing a multi-span trace to one
+visible row does not hide its grid.
 Column and panel resize controls use a shared short grip, hidden at rest and
 visible on hover, keyboard focus or drag. Hover uses Text; focus and drag use Iris
 at full opacity. The full drag areas and keyboard behaviour remain available.

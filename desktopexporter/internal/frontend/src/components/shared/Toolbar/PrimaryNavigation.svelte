@@ -153,12 +153,12 @@
       <span>{item.label}</span>
       <span
         id={`${countID}-${item.id}`}
-        class="badge-count header-tab__count"
+        class="badge badge-sm badge-ghost primary-navigation__count"
         class:invisible={count === undefined}
         aria-hidden={count === undefined}
         ><span class="sr-only"
           >{item.id === 'evals' ? 'Runs: ' : 'Results: '}</span
-        >{count === undefined ? '' : `(${count})`}</span
+        >{count === undefined ? '' : count}</span
       >
     </a>
   {/each}
@@ -167,6 +167,19 @@
 <style>
   .primary-navigation {
     gap: var(--header-gap);
+  }
+
+  .primary-navigation__count {
+    min-width: 1.25rem;
+    width: auto;
+    height: auto;
+    aspect-ratio: 1;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 0.625rem;
+    line-height: 1;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
   }
 
   .tab {

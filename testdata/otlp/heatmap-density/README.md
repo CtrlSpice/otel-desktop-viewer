@@ -23,7 +23,7 @@ Resize the chart or Details pane to compare both sides of the 12px threshold.
 When either cell dimension falls below 12px, adjacent colours touch and only
 the occupied area's perimeter is rounded. Dots switch from every boundary to
 every second boundary on both axes. Empty buckets remain empty; edge dots and
-interior dots all use 75% opacity.
+interior dots all use 60% opacity.
 
 The names describe relative density, not a forced rendering mode. Chart size
 determines the mode. Each metric has one series; one load adds 768 datapoints

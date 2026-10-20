@@ -92,6 +92,13 @@
   and Primary when selected, matching the tab icons.
   Tab counters display `(count)`, including `(0)`; this overrides the plain-count
   rule for tab counters only. An unavailable count is not a received zero.
+  Primary navigation counters use neutral DaisyUI ghost badges and regular Text
+  in active and inactive tabs, rather than Iris. Local pane-tab counters retain
+  their existing active-colour styling.
+  Primary navigation count badges are circles and omit parentheses; grow them
+  to fit the full count. This overrides the parenthesised-count rule above.
+  User-approved typography exception: these small circular navigation badges
+  use 10px regular numerals in a minimum 20px circle. Other working text stays 14px.
   Pane titles share the cards' 16px regular-weight heading style and normal letter
   spacing. The title row uses the same 2rem height as its controls.
 - Typography is an accessibility requirement across the entire UI: use 0.875rem
@@ -123,14 +130,14 @@
   Keep header surfaces separate; retain shared hover and selection highlights.
   Structured attribute wrappers add no extra left padding. JSON has no fold-arrow
   gutter; retain existing folding commands and raw-inspector controls. The current
-  notebook-guide trial uses 1.5px Muted dots at 75% opacity in all themes,
+  notebook-guide trial uses 1.5px Muted dots at 60% opacity in all themes,
   in leading indentation
   only, spaced 2ch horizontally and one text line vertically. Place dots on text
   row boundaries (top/bottom), not at the middle of each row. JSON stays Mono.
   JSON strings soft-wrap with continuation text aligned after the opening quote.
   Wrapping and guides are display-only; preserve document text, Copy and Download.
-  JSON, waterfall and metric guides share dot radius and 75% opacity through the
-  --guide-dot-* CSS tokens. Every guide dot uses Muted at 75%, including edges
+  JSON, waterfall and metric guides share dot radius and 60% opacity through the
+  --guide-dot-* CSS tokens. Every guide dot uses Muted at 60%, including edges
   and labelled and unlabelled waterfall guides.
   Add three unlabelled guides between labelled guides, dividing each interval
   into quarters. Use fewer divisions when needed to retain whole nanoseconds.
@@ -142,6 +149,8 @@
   without an extra border or gap. Graph spacing follows axes, not JSON character spacing.
   Clip waterfall dots at the timeline's right edge and stop at the final span row;
   do not extend them into the right gutter or below the table.
+  Omit waterfall grid dots when the trace contains exactly one span. Use the
+  trace's span count, not the number of rows visible after collapsing/filtering.
   Keep the first column's dots whole, with the original half-dot allowance to
   the left of their centres. Keep ruler/row positions aligned without
   changing time labels, data bounds, span geometry or scrolling.
@@ -149,8 +158,10 @@
   horizontal dividers. Hide it at rest; show Text on hover and Iris on keyboard
   focus or drag at full opacity. Preserve full hit strips and keyboard controls.
   Table headings use `name · source` for external provenance: name and separator
-  use Subtle, and source names use Secondary with normal flex shrinking/ellipsis,
-  not fixed-width initials. Column/service picker searches reuse FilterInput's
+  use Subtle, and source names use Secondary. Shrink resource/scope labels down
+  to their first letter before clipping the field name; show the full source when
+  space permits and retain its full accessible label and tooltip.
+  Column/service picker searches reuse FilterInput's
   shared 32px height rather than the taller query-entry field.
   Do not restore persistent column guide lines or duplicate header grab handles.
   Keep row hover continuous across the full column resize hit strips. Pinned log
@@ -254,7 +265,7 @@
    interval's spacing within the plot edges; do not add dots beyond the plot.
    Add dot rows/columns exactly on all four plot boundaries, retaining existing
    label-aligned dots and midpoints; the edge gaps can be shorter.
-   Every dot uses 75% opacity, including edges and corners.
+   Every dot uses 60% opacity, including edges and corners.
    Clip decoration to the plot bounds without
    changing data bounds, plot size or scrolling. Reuse visible-axis options for tick
    calculation, including heatmap tick filtering, and add no duplicate labels.

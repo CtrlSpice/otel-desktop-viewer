@@ -193,7 +193,7 @@ async function expectRoundedAxes(page: Page, colour: string) {
     alignment[0]!.guides.length * alignment[1]!.guides.length
   )
   expect(await grid.locator('circle').evaluateAll(dots =>
-    dots.every(dot => getComputedStyle(dot).opacity === '0.75')
+    dots.every(dot => getComputedStyle(dot).opacity === '0.6')
   )).toBe(true)
   expect(await grid.evaluate(element => {
     const bounds = element.querySelector<SVGRectElement>('clipPath rect')!
@@ -367,6 +367,31 @@ test.describe('independent histogram aggregate loading', () => {
     })
   }
 
+  test('pinned heatmap descriptions dismiss by pointer and keyboard and can reopen', async ({ page }) => {
+    const pending = await holdAggregates(page)
+    for (const { route } of pending) await respond(route)
+    const graph = page.getByRole('application', { name: 'Histogram heatmap', exact: true })
+    const card = page.locator('.metric-heatmap-chart .chart-sticky__card')
+    const close = page.getByRole('button', { name: 'Dismiss pinned bucket description' })
+    const url = page.url()
+    await graph.focus()
+    await graph.press('Enter')
+    await expect(card).toBeVisible()
+    await expect(card.locator('.heatmap-selected-cell')).toBeVisible()
+    await close.click()
+    await expect(card).toHaveCount(0)
+    await expect(page.locator('.heatmap-selection')).toHaveCount(0)
+    await expect(graph).toBeFocused()
+    expect(page.url()).toBe(url)
+    await graph.press('Enter')
+    await expect(card).toBeVisible()
+    await close.focus()
+    await close.press('Enter')
+    await expect(card).toHaveCount(0)
+    await expect(graph).toBeFocused()
+    expect(page.url()).toBe(url)
+  })
+
   test('dense heatmaps join colours and halve guide density without changing cells', async ({ page }) => {
     await page.setViewportSize({ width: 2400, height: 1000 })
     const pending = await holdAggregates(page)
@@ -433,7 +458,7 @@ test.describe('independent histogram aggregate loading', () => {
           rows: new Set(dots.map(dot => dot.cy.baseVal.value)).size,
           opacity: [...new Set(dots.map(dot => getComputedStyle(dot).opacity))] }
       })
-      expect(guides).toEqual({ columns: joined ? 42 : 82, rows: joined ? 4 : 6, opacity: ['0.75'] })
+      expect(guides).toEqual({ columns: joined ? 42 : 82, rows: joined ? 4 : 6, opacity: ['0.6'] })
     }
   })
 

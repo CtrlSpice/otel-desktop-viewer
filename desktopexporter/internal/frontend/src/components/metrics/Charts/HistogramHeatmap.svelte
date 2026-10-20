@@ -257,6 +257,12 @@
     keyboardNavigation.setFocused(focused)
   }
 
+  function dismissSelection() {
+    selectedCellKey = null
+    onClearSelection?.()
+    document.getElementById('metric-heatmap-keyboard-surface')?.focus({ preventScroll: true })
+  }
+
   let keyboardReadout = $derived.by((): string => {
     const cursor = activeKeyboardCursor
     if (!cursor) return ''
@@ -862,6 +868,7 @@
               variant="columns"
               timestamp={columnSelectionTimestamp}
               rowColumns={columnSelectionRowColumns}
+              onDismiss={onClearSelection ? dismissSelection : undefined}
             >
               {#snippet leading()}
                 {#if selectedCell}

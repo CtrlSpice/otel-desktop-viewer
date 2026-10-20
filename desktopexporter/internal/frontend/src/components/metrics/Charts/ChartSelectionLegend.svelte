@@ -25,6 +25,8 @@
 
 <script lang="ts">
   import type { Snippet } from 'svelte'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import { Cancel01Icon } from '@hugeicons/core-free-icons'
   import ChartOverlayLabel from './ChartOverlayLabel.svelte'
   import type { AggregateSummaryRow } from '@/components/metrics/utils/aggregation'
   import ChartAggregateSummaryRows from '@/components/metrics/Charts/ChartAggregateSummaryRows.svelte'
@@ -50,6 +52,8 @@
     aggregateRows?: readonly AggregateSummaryRow[]
     /** Selection-specific details before the aggregate rows. */
     leading?: Snippet
+    /** Dismiss the pinned chart selection. */
+    onDismiss?: () => void
   }
 
   let {
@@ -60,6 +64,7 @@
     variant = 'default',
     aggregateRows = [],
     leading,
+    onDismiss,
   }: Props = $props()
 
   let hasRowColumns = $derived(rowColumns.some(column => column.length > 0))
@@ -72,7 +77,23 @@
     aria-live="polite"
     aria-atomic="true"
   >
-    {#if timestamp}
+    {#if onDismiss}
+      <div class="chart-selection-legend__heading">
+        <div class="chart-selection-legend__timestamp">{timestamp}</div>
+        <button
+          type="button"
+          class="header-icon-button chart-selection-legend__dismiss"
+          aria-label="Dismiss pinned bucket description"
+          title="Dismiss pinned bucket description"
+          onclick={event => {
+            event.stopPropagation()
+            onDismiss?.()
+          }}
+        >
+          <HugeiconsIcon icon={Cancel01Icon} size={16} strokeWidth={1.5} />
+        </button>
+      </div>
+    {:else if timestamp}
       <div class="chart-selection-legend__timestamp">{timestamp}</div>
     {/if}
     {@render leading?.()}
@@ -156,3 +177,15 @@
 {/if}
 
 <!-- Styles live in app.css under .metric-chart-view :where(.chart-selection-legend) -->
+
+<style lang="postcss">
+  @reference "../../../app.css";
+
+  .chart-selection-legend__heading {
+    @apply flex items-center justify-between gap-2;
+  }
+
+  .chart-selection-legend__dismiss {
+    @apply pointer-events-auto shrink-0;
+  }
+</style>

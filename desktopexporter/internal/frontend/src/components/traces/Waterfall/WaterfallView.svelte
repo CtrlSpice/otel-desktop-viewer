@@ -649,10 +649,12 @@
   })
 
   let barGrid = $derived(
-    waterfallGrid(
-      waterfallTimeAxis(bounds.duration, targetTickCount),
-      timelinePlotPx
-    )
+    spans.length === 1
+      ? { widthPx: timelinePlotPx, guides: [] }
+      : waterfallGrid(
+          waterfallTimeAxis(bounds.duration, targetTickCount),
+          timelinePlotPx
+        )
   )
 
   let matchedIDs = $derived(
