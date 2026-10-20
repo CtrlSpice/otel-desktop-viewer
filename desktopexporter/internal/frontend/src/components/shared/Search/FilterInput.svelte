@@ -43,7 +43,7 @@
   @reference "../../../app.css";
 
   .filter-input {
-    @apply h-8 min-w-0 w-full rounded-full border border-base-300 bg-base-200 pl-9 pr-3.5 py-0 font-mono text-sm tracking-tight text-base-content outline-none;
+    @apply h-8 min-w-0 w-full rounded-full border border-base-300 bg-base-100 pl-9 pr-3.5 py-0 font-mono text-sm tracking-tight text-base-content outline-none;
   }
 
   .filter-input::placeholder {

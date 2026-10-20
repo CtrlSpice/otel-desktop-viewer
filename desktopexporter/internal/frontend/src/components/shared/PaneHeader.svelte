@@ -105,6 +105,8 @@
     timestampMs?: number
     /** Custom content in place of the time range on the lower row. */
     metaLeft?: Snippet
+    /** Controls centred horizontally in the second header row. */
+    metaCenter?: Snippet
     /** Optional right-aligned controls on the second header row (below
      *  the title). Renders beside `timeRange` / `timestampMs` when
      *  those are set, or alone on that row when they are not. */
@@ -169,6 +171,7 @@
     props.timeRange !== undefined ||
       props.timestampMs !== undefined ||
       props.metaLeft !== undefined ||
+      props.metaCenter !== undefined ||
       props.metaRight !== undefined
       ? 'pane-header--stacked'
       : ''
@@ -185,7 +188,10 @@
 </script>
 
 {#snippet metaRow(showControls = true)}
-  <div class="pane-header__meta-row">
+  <div
+    class="pane-header__meta-row"
+    class:pane-header__meta-row--centered={!!props.metaCenter}
+  >
     <div class="pane-header__time-range">
       {#if props.metaLeft}
         {@render props.metaLeft()}
@@ -198,6 +204,9 @@
         <PaneTimestampHeader timestampMs={props.timestampMs} />
       {/if}
     </div>
+    {#if props.metaCenter}
+      <div class="pane-header__meta-center">{@render props.metaCenter()}</div>
+    {/if}
     {#if showControls && props.metaRight}
       <div class="header-controls pane-header__meta-controls">
         {@render props.metaRight()}
@@ -276,7 +285,9 @@
               <span
                 class="badge-count header-tab__count"
                 aria-hidden={tab.count === undefined}
-                >{#if tab.count !== undefined}({tab.count})<span class="sr-only">
+                >{#if tab.count !== undefined}({tab.count})<span
+                    class="sr-only"
+                  >
                     {tab.countLabel ?? tab.label.toLowerCase()}</span
                   >{/if}</span
               >
@@ -307,7 +318,9 @@
               <span
                 class="badge-count header-tab__count"
                 aria-hidden={tab.count === undefined}
-                >{#if tab.count !== undefined}({tab.count})<span class="sr-only">
+                >{#if tab.count !== undefined}({tab.count})<span
+                    class="sr-only"
+                  >
                     {tab.countLabel ?? tab.label.toLowerCase()}</span
                   >{/if}</span
               >
@@ -342,7 +355,9 @@
         {/if}
       </div>
       {#if props.right}
-        <div class="header-controls pane-header__right">{@render props.right()}</div>
+        <div class="header-controls pane-header__right">
+          {@render props.right()}
+        </div>
       {/if}
     </div>
     {#if props.timeRange !== undefined || props.timestampMs !== undefined || props.metaLeft || props.metaRight}
@@ -362,7 +377,9 @@
         props.tabPanelID
       )}
       {#if props.right}
-        <div class="header-controls pane-header__right">{@render props.right()}</div>
+        <div class="header-controls pane-header__right">
+          {@render props.right()}
+        </div>
       {/if}
     </div>
     {#if props.timeRange !== undefined || props.timestampMs !== undefined || props.metaLeft || props.metaRight}
@@ -401,7 +418,9 @@
         {/if}
       </div>
       {#if props.right}
-        <div class="header-controls pane-header__right">{@render props.right()}</div>
+        <div class="header-controls pane-header__right">
+          {@render props.right()}
+        </div>
       {/if}
     </div>
     <div class="pane-header__tabs-row">
@@ -472,6 +491,15 @@
 
   .pane-header__meta-row {
     @apply flex w-full min-w-0 flex-wrap items-center justify-between gap-2;
+  }
+
+  .pane-header__meta-row--centered {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+
+  .pane-header__meta-center {
+    @apply flex items-center justify-center;
   }
 
   .pane-header__time-range {

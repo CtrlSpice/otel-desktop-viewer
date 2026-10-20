@@ -158,6 +158,26 @@ describe('ResizablePanels stored splits', () => {
 })
 
 describe('ResizablePanels shared width', () => {
+  it('allows wide Details and restores its requested width after the main-pane minimum limits it', async () => {
+    const { rerender } = render(ResizablePanels, {
+      leftPanel,
+      rightPanel,
+      rightWidthRem: 60,
+      minLeftPx: 448,
+      minRightPx: 352,
+    })
+    await measure(2000)
+    expect(rightWidthPx()).toBeCloseTo(960, 5)
+    await measure(1200)
+    expect(rightWidthPx()).toBeCloseTo(1200 - 16 - 448, 5)
+    await measure(1000)
+    expect(rightWidthPx()).toBeCloseTo(FLEX_SPACE - 448, 5)
+    await measure(2000)
+    expect(rightWidthPx()).toBeCloseTo(960, 5)
+    await rerender({ rightWidthRem: 100 })
+    expect(rightWidthPx()).toBeCloseTo((2000 - 16) * 0.7, 5)
+  })
+
   it('keeps the same detail width when the available main space changes', async () => {
     render(ResizablePanels, { leftPanel, rightPanel, rightWidthRem: 30 })
     await measure(1200)

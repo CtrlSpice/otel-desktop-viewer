@@ -1,14 +1,13 @@
 /**
- * The width rules every side panel shares: one default, one floor, one
- * ceiling, all in rem.
+ * Shared side-panel default and floor, plus the signal drawer's ceiling, in rem.
  *
  * @remarks
  * Two panels flank the main view -- the signal list drawer and the detail
- * panel -- and they follow the same rules so "the same width" means what it
- * says.
+ * panel -- share their default and minimum width. Details can expand until the
+ * main pane reaches its layout minimum; only the drawer uses the fixed ceiling.
  *
  * - The default matches the signal drawer's standard width.
- * - The ceiling is the layout's, not the content's -- content has no upper
+ * - The drawer ceiling is the layout's, not the content's -- content has no upper
  *   bound (Kubernetes names run arbitrarily long). It is what a 1440px
  *   viewport leaves after the main pane's floor (28rem) and the other
  *   panel's floor (22rem): 40rem.

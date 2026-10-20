@@ -1,6 +1,6 @@
 import { EditorView } from '@codemirror/view'
-import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
-import { tags as t } from '@lezer/highlight'
+import { syntaxHighlighting } from '@codemirror/language'
+import { editorHighlightStyle } from '@/components/shared/utils/editor-highlighting'
 
 // Tooltip styles injected as a global <style> because:
 //   1. tooltips render in document.body (to escape backdrop-blur containment)
@@ -24,8 +24,10 @@ function ensureTooltipStyles() {
       overflow: hidden;
     }
     html[data-theme] .cm-tooltip-autocomplete > ul {
-      font-family: "Atkinson Hyperlegible Mono", ui-monospace, monospace;
+      font-family: var(--font-sans);
       font-size: var(--text-base);
+      line-height: var(--text-base--line-height);
+      font-weight: 400;
       padding: 0;
     }
     html[data-theme] .cm-tooltip-autocomplete > ul > li {
@@ -38,52 +40,32 @@ function ensureTooltipStyles() {
       box-sizing: border-box;
       border-radius: 0.75rem;
     }
-    html[data-theme] .cm-tooltip-autocomplete > ul > li:hover {
-      background-color: var(--color-highlight-med);
-    }
     html[data-theme] .cm-tooltip-autocomplete > ul > li[aria-selected] {
-      background-color: var(--color-highlight-med);
+      background-color: var(--item-selected-bg);
       color: var(--color-base-content);
+    }
+    html[data-theme] .cm-tooltip-autocomplete > ul > li:hover {
+      background-color: var(--item-hover-bg);
     }
     html[data-theme] .cm-completionLabel {
       color: var(--color-base-content);
       padding-left: 0.25rem;
     }
     html[data-theme] .cm-completionDetail {
-      --badge-color: var(--color-secondary);
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: fit-content;
-      min-height: 1.5rem;
-      padding-inline: calc(calc(var(--size-selector, 0.25rem) * 5) / 2 - var(--border, 1px));
-      border-radius: var(--radius-selector, 0.25rem);
-      border: var(--border, 1px) solid color-mix(in oklab, var(--badge-color) 10%, var(--color-base-100));
-      background-color: color-mix(in oklab, var(--badge-color) 8%, var(--color-base-100));
-      color: var(--badge-color);
+      color: var(--color-secondary);
       font-style: normal;
       font-size: var(--text-base);
-      margin-left: auto;
-      margin-right: 0.25rem;
-      vertical-align: middle;
+      margin: 0;
+    }
+    html[data-theme] .cm-completionDetail::before {
+      content: '· ';
+      color: var(--color-subtle);
     }
   `
   document.head.appendChild(style)
 }
 
 import { editorColors as qc } from '@/components/shared/utils/editor-colors'
-
-const queryHighlightStyle = HighlightStyle.define([
-  { tag: t.propertyName, color: qc.foam },
-  { tag: t.compareOperator, color: qc.subtle },
-  { tag: t.operatorKeyword, color: qc.subtle },
-  { tag: t.logicOperator, color: qc.iris, fontWeight: '600' },
-  { tag: t.string, color: qc.gold },
-  { tag: t.literal, color: qc.rose },
-  { tag: t.null, color: qc.muted, fontStyle: 'italic' },
-  { tag: t.paren, color: qc.subtle },
-  { tag: t.squareBracket, color: qc.subtle },
-])
 
 export const queryEditorTheme = EditorView.theme({
   '&': {
@@ -113,7 +95,7 @@ export const queryEditorTheme = EditorView.theme({
     fontSize: 'var(--text-base)',
     fontFamily: '"Atkinson Hyperlegible Mono", ui-monospace, monospace',
     fontStyle: 'normal',
-    lineHeight: 'var(--table-row-h)',
+    lineHeight: 'var(--text-base--line-height)',
   },
   // Lint diagnostics (render inline in .cm-editor, so EditorView.theme works)
   '.cm-diagnostic-error': {
@@ -133,5 +115,5 @@ export { ensureTooltipStyles }
 
 export const queryTheme = [
   queryEditorTheme,
-  syntaxHighlighting(queryHighlightStyle),
+  syntaxHighlighting(editorHighlightStyle),
 ]

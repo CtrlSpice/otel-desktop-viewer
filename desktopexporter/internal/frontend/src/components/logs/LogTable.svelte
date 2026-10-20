@@ -28,6 +28,7 @@
     type ColumnWidths,
   } from '@/components/shared/utils/column-resize'
   import type { DragHandle } from '@/components/shared/utils/drag'
+  import { resizeRowHover } from '@/components/shared/utils/resize-row-hover'
   import {
     createPopoverID,
     setupAnchorPopover,
@@ -584,7 +585,8 @@
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <div
-        class="col-resize-bar col-resize-bar--guide"
+        class="col-resize-bar col-resize-bar--column"
+        use:resizeRowHover
         class:col-resize-bar--active={activeResize === bar.id}
         style:left="{bar.left}px"
         role="separator"
@@ -790,6 +792,7 @@
   }
   .log-table__row {
     --table-row-h: 2.5rem;
+    --item-idle-bg: var(--color-base-100);
     @apply h-10 cursor-pointer items-center rounded-xl text-sm;
   }
   .log-table__cell {
@@ -807,11 +810,8 @@
   .log-table--pinned .log-table__pin-left,
   .log-table--pinned .log-table__pin-body,
   .log-table--pinned .log-table__pin-severity {
-    @apply sticky z-10 bg-base-100;
-    background-image: linear-gradient(
-      var(--item-state-bg, transparent),
-      var(--item-state-bg, transparent)
-    );
+    @apply sticky z-10;
+    background-color: inherit;
   }
   .log-table--pinned .log-table__pin-left {
     left: var(--log-severity-width);

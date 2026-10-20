@@ -42,7 +42,7 @@
     aria-label="Log summary"
   >
     {#if log.eventName}
-      <div class="px-3 py-2 text-left font-medium">{log.eventName}</div>
+      <div class="px-3 py-2 text-left text-sm font-normal">{log.eventName}</div>
     {/if}
     <LogCard
       {log}

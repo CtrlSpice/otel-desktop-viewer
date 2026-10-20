@@ -1,29 +1,10 @@
 <script module lang="ts">
   import { EditorView } from '@codemirror/view'
-  import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
-  import { tags as t } from '@lezer/highlight'
+  import { syntaxHighlighting } from '@codemirror/language'
   import { editorColors as c } from '@/components/shared/utils/editor-colors'
+  import { editorHighlightStyle } from '@/components/shared/utils/editor-highlighting'
 
   // Share the CodeMirror theme across component instances.
-  const shellColors = {
-    subtle: 'var(--readonly-code-subtle)',
-    gold: 'var(--readonly-code-gold)',
-    rose: 'var(--readonly-code-rose)',
-    foam: 'var(--readonly-code-foam)',
-    iris: 'var(--readonly-code-iris)',
-  }
-
-  const shellHighlightStyle = HighlightStyle.define([
-    { tag: t.comment, color: shellColors.subtle, fontStyle: 'italic' },
-    { tag: t.string, color: shellColors.gold },
-    { tag: t.number, color: shellColors.rose },
-    { tag: t.variableName, color: shellColors.foam },
-    { tag: t.keyword, color: shellColors.iris },
-    { tag: t.operator, color: shellColors.subtle },
-    { tag: t.meta, color: shellColors.subtle },
-    { tag: t.name, color: c.text },
-  ])
-
   const readonlyCodeEditorTheme = EditorView.theme({
     '&': {
       fontSize: 'var(--text-base)',
@@ -37,6 +18,7 @@
     '.cm-scroller': {
       overflow: 'auto',
       fontFamily: 'inherit',
+      lineHeight: 'var(--text-base--line-height)',
     },
     '.cm-content': {
       padding: '0.75rem 1rem 1rem',
@@ -58,7 +40,7 @@
 
   const readonlyCodeTheme = [
     readonlyCodeEditorTheme,
-    syntaxHighlighting(shellHighlightStyle),
+    syntaxHighlighting(editorHighlightStyle),
   ]
 </script>
 
@@ -147,33 +129,31 @@
   class:readonly-code-panel--embedded={embedded}
 >
   {#if !embedded}
-    <div class="readonly-code-panel__toolbar">
-      <button
-        type="button"
-        class="readonly-code-panel__copy drawer-header-btn tooltip tooltip-left"
-        onclick={copyToClipboard}
-        data-tip={copied ? 'Copied!' : copyLabel}
-        aria-label={copied ? 'Copied' : copyLabel}
-      >
-        {#if copied}
-          <HugeiconsIcon
-            icon={CheckmarkCircle02Icon}
-            size="1em"
-            strokeWidth={1.5}
-            class="h-4 w-4 shrink-0"
-            aria-hidden="true"
-          />
-        {:else}
-          <HugeiconsIcon
-            icon={Copy01Icon}
-            size="1em"
-            strokeWidth={1.5}
-            class="h-4 w-4 shrink-0"
-            aria-hidden="true"
-          />
-        {/if}
-      </button>
-    </div>
+    <button
+      type="button"
+      class="readonly-code-panel__copy drawer-header-btn tooltip tooltip-left"
+      onclick={copyToClipboard}
+      data-tip={copied ? 'Copied!' : copyLabel}
+      aria-label={copied ? 'Copied' : copyLabel}
+    >
+      {#if copied}
+        <HugeiconsIcon
+          icon={CheckmarkCircle02Icon}
+          size="1em"
+          strokeWidth={1.5}
+          class="h-4 w-4 shrink-0"
+          aria-hidden="true"
+        />
+      {:else}
+        <HugeiconsIcon
+          icon={Copy01Icon}
+          size="1em"
+          strokeWidth={1.5}
+          class="h-4 w-4 shrink-0"
+          aria-hidden="true"
+        />
+      {/if}
+    </button>
   {/if}
   <div class="readonly-code-panel__editor" bind:this={mountEl}></div>
 </div>
@@ -189,25 +169,7 @@
     @apply rounded-none rounded-b-xl border-0;
   }
 
-  .readonly-code-panel__toolbar {
-    @apply pointer-events-none absolute right-0 top-0 z-10 flex justify-end p-1.5;
-  }
-
   .readonly-code-panel__copy {
-    @apply pointer-events-auto;
-  }
-
-  .readonly-code-panel__editor {
-    @apply block min-h-0 w-full border-none bg-base-100 px-0 py-0 shadow-none;
-    height: auto;
-    min-height: 0;
-  }
-
-  .readonly-code-panel__editor :global(.cm-editor) {
-    @apply bg-base-100;
-  }
-
-  .readonly-code-panel__editor :global(.cm-editor.cm-focused) {
-    outline: none;
+    @apply absolute right-1.5 top-1.5 z-10;
   }
 </style>

@@ -91,10 +91,10 @@
       {:else if link.spanID && link.traceID}
         <Identifier value={link.traceID} /> / <Identifier value={link.spanID} />
       {:else}Invalid link target{/if}
+      <span class="text-sm text-rp-subtle">{' · Link'}</span>
     {/snippet}
     {#snippet badge()}
       {#if invalid}{@render invalidLinkIcon()}{/if}
-      <span class="badge badge-xs badge-primary">Link</span>
       <span class="badge-count">{linkFieldCount(link)} fields</span>
     {/snippet}
     <table

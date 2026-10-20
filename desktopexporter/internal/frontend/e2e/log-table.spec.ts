@@ -317,7 +317,7 @@ test('Properties appends the shared associated Trace card without a collapsible 
   await panel.getByRole('tab', { name: 'Properties', exact: true }).click()
   await expect(panel.getByRole('table', { name: 'Log fields' })).toBeVisible()
   await expect(card).toBeVisible()
-  const exportButton = panel.getByRole('button', { name: 'Export log' })
+  const exportButton = panel.getByRole('button', { name: 'Download log' })
   const header = panel.getByRole('region', { name: 'Log record' })
   const tabs = header.getByRole('tablist', { name: 'Detail view' })
   await expect(tabs).toBeVisible()
@@ -518,13 +518,8 @@ test('Raw JSON folding uses waterfall-style icon controls on the top line', asyn
   expect(groupBounds.x).toBeGreaterThan(metadataBounds.x)
   expect(groupBounds.y).toBeLessThan(metadataBounds.y + metadataBounds.height)
   expect(groupBounds.y + groupBounds.height).toBeGreaterThan(metadataBounds.y)
-  const copy = inspector.getByRole('button', {
-    name: 'Copy OTLP JSON',
-    exact: true,
-  })
-  expect((await copy.boundingBox())!.x).toBeGreaterThanOrEqual(
-    groupBounds.x + groupBounds.width
-  )
+  await expect(inspector.getByRole('button', { name: /^Copy/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Copy log', exact: true })).toHaveCount(1)
   await expect(
     inspector.getByRole('button', { name: 'Search JSON' })
   ).toHaveCount(0)
@@ -1115,7 +1110,8 @@ test('toolbar filters draft service and severity chips and search once on Apply'
   await expect(service).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByRole('button', { name: 'Remove service api' })).toBeVisible()
   await error.click()
-  await expect(error).toHaveClass(/badge-error/)
+  await expect(error).toHaveClass(/item-state/)
+  await expect(error.locator('.log-filters__dot')).toBeVisible()
   await expect(error).toHaveAttribute('aria-pressed', 'true')
   await expect(editor.locator('.cm-placeholder')).toBeVisible()
   expect(searches).toBe(0)

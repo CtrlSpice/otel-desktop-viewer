@@ -97,45 +97,43 @@
       >
         {@render header()}
         <div class="detail-property__body">
-          <div class="detail-property__content">
-            {#if timestampLabel !== undefined}
-              <div class="detail-property__value">
-                {#if value}{@render value()}{:else}{timestampLabel}{/if}
-              </div>
-              <div class="detail-property__raw-timestamp">{fieldValue}</div>
-            {:else if identifier && !value}
-              <div class="detail-property__value">
-                <Identifier value={fieldValue} />
-              </div>
-            {:else if !value && !valueLabel && !typedValue && fieldType === 'string'}
-              <AttributeValueView
-                value={{ kind: 'string', value: fieldValue }}
-                path={fieldName}
-                clamp={!multiline}
-              />
-            {:else if value || typedValue || multiline || valueLabel}
-              <div class="detail-property__value">
-                {#if value}{@render value()}
-                {:else if typedValue}<AttributeValueView
-                    value={typedValue}
-                    path={fieldName}
-                  />
-                {:else}{fieldValue}{#if valueLabel}<span
-                      class="detail-property__annotation"
-                      class:detail-property__annotation--enum={fieldType ===
-                        'enum'}
-                      >{fieldType === 'enum'
-                        ? ` (${valueLabel})`
-                        : valueLabel}</span
-                    >{/if}{/if}
-              </div>
-            {:else}
-              <ExpandableValue
-                value={fieldValue}
-                valueClass="detail-property__value"
-              />
-            {/if}
-          </div>
+          {#if timestampLabel !== undefined}
+            <div class="detail-property__value">
+              {#if value}{@render value()}{:else}{timestampLabel}{/if}
+            </div>
+            <div class="detail-property__raw-timestamp">{fieldValue}</div>
+          {:else if identifier && !value}
+            <div class="detail-property__value">
+              <Identifier value={fieldValue} />
+            </div>
+          {:else if !value && !valueLabel && !typedValue && fieldType === 'string'}
+            <AttributeValueView
+              value={{ kind: 'string', value: fieldValue }}
+              path={fieldName}
+              clamp={!multiline}
+            />
+          {:else if value || typedValue || multiline || valueLabel}
+            <div class="detail-property__value">
+              {#if value}{@render value()}
+              {:else if typedValue}<AttributeValueView
+                  value={typedValue}
+                  path={fieldName}
+                />
+              {:else}{fieldValue}{#if valueLabel}<span
+                    class="detail-property__annotation"
+                    class:detail-property__annotation--enum={fieldType ===
+                      'enum'}
+                    >{fieldType === 'enum'
+                      ? ` (${valueLabel})`
+                      : valueLabel}</span
+                  >{/if}{/if}
+            </div>
+          {:else}
+            <ExpandableValue
+              value={fieldValue}
+              valueClass="detail-property__value"
+            />
+          {/if}
         </div>
       </div>
     </td>
@@ -169,7 +167,7 @@
   }
   .detail-property__key {
     @apply min-w-0 font-sans text-xs;
-    color: var(--detail-code-key);
+    color: var(--color-subtle);
     overflow-wrap: anywhere;
   }
   .detail-property__origin,
@@ -178,9 +176,6 @@
   }
   .detail-property__body {
     @apply min-w-0 pt-0.5;
-  }
-  .detail-property__content {
-    @apply min-w-0;
   }
   .detail-property--error-value {
     --detail-property-value-color: var(--color-error);

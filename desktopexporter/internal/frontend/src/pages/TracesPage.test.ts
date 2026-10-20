@@ -195,14 +195,16 @@ describe('TracesPage unplaced spans banner', () => {
     const header = await screen.findByRole('region', {
       name: 'Trace waterfall',
     })
-    const button = within(header).getByRole('button', { name: 'Export trace' })
+    const button = within(header).getByRole('button', {
+      name: 'Download trace',
+    })
     expect(button).toBeEnabled()
     const title = header.querySelector('.pane-header__title')!
     expect(
       button.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING
     ).not.toBe(0)
     expect(
-      screen.getAllByRole('button', { name: 'Export trace' })
+      screen.getAllByRole('button', { name: 'Download trace' })
     ).toHaveLength(1)
     expect(await screen.findByRole('alert')).toHaveTextContent(
       '2 spans are missing'

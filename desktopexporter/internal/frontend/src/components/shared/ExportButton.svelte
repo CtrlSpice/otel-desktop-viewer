@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
-  import { FileExportIcon } from '@hugeicons/core-free-icons'
+  import { Download01Icon } from '@hugeicons/core-free-icons'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { downloadOTLP, type ExportSignal } from '@/services/export-service'
 
@@ -21,7 +21,7 @@
       await downloadOTLP(signal, id, controller.signal)
     } catch (err) {
       if (!controller.signal.aborted) {
-        error = err instanceof Error ? err.message : 'Export failed'
+        error = err instanceof Error ? err.message : 'Download failed'
       }
     } finally {
       pending = false
@@ -32,21 +32,20 @@
 
 <button
   type="button"
-  class="btn btn-xs chart-header-control"
-  class:btn-disabled={pending}
+  class="header-icon-button tooltip tooltip-left"
   onclick={download}
-  aria-label="Export {signal}"
+  aria-label="Download {signal}"
+  data-tip="Download {signal}"
   aria-busy={pending}
   aria-disabled={pending}
   disabled={!id}
 >
   <HugeiconsIcon
-    icon={FileExportIcon}
-    size="1em"
+    icon={Download01Icon}
+    size={16}
     strokeWidth={1.5}
     aria-hidden="true"
   />
-  <span>Export</span>
 </button>
 
 {#if error}

@@ -25,21 +25,21 @@
 
 <div
   class="search-bar flex w-full min-w-0 items-center gap-1 rounded-full text-sm text-base-content {search
-    ? 'border border-base-300 bg-base-200'
+    ? 'border border-base-300 bg-base-100'
     : ''}"
   role={search ? 'search' : undefined}
   aria-label={search ? 'Workspace search' : undefined}
 >
   {#if onRefresh || search}
     <div
-      class="shrink-0 rounded-full {search ? 'bg-base-200' : ''} {refreshPulse
+      class="shrink-0 rounded-full {refreshPulse
         ? 'aura aura-xs search-bar__freshness text-primary'
         : ''}"
     >
       <button
         type="button"
         class="search-bar__refresh btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-bottom"
-        class:bg-base-200={refreshPulse}
+        class:bg-base-100={refreshPulse}
         aria-label={refreshLabel}
         data-tip={refreshLabel}
         disabled={!onRefresh}
@@ -58,9 +58,7 @@
     {/if}
   {/if}
   <div
-    class="search-bar__query flex min-w-0 flex-1 items-center rounded-full {search
-      ? 'bg-base-200'
-      : ''}"
+    class="search-bar__query flex min-w-0 flex-1 items-center rounded-full"
   >
     <div
       class="search-bar__field min-w-0 flex-1"
@@ -70,9 +68,7 @@
     </div>
   </div>
   <div
-    class="flex shrink-0 items-center rounded-full {search
-      ? 'bg-base-200'
-      : ''}"
+    class="flex shrink-0 items-center rounded-full"
   >
     {#if controls}{@render controls()}{:else}<DateTimeFilter />{/if}
   </div>

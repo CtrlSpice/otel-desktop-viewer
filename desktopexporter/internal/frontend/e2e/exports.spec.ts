@@ -76,7 +76,7 @@ test.beforeEach(async ({ page }) => {
     })
   })
   await page.goto(`/logs/${logRef}`)
-  await expect(page.getByRole('button', { name: 'Export log' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Download log' })).toBeVisible()
   await expect(
     page.getByRole('region', { name: 'Log record', exact: true })
   ).toHaveCSS('border-radius', '12px')
@@ -134,7 +134,7 @@ test('downloads exact JSON bytes with one activation from the signal header', as
       body,
     })
   })
-  const trigger = page.getByRole('button', { name: 'Export log' })
+  const trigger = page.getByRole('button', { name: 'Download log' })
   const style = await trigger.evaluate(element => ({
     radius: parseFloat(getComputedStyle(element).borderTopLeftRadius),
     width: element.getBoundingClientRect().width,
@@ -164,14 +164,17 @@ test('downloads exact JSON bytes with one activation from the signal header', as
 test('uses the shared tooltip style on hover and keyboard focus without clipping', async ({
   page,
 }) => {
-  const trigger = page.getByRole('button', { name: 'Export log', exact: true })
+  const trigger = page.getByRole('button', {
+    name: 'Download log',
+    exact: true,
+  })
   const buttonBox = (await trigger.boundingBox())!
   const titleBox = (await page
     .getByRole('region', { name: 'Log record', exact: true })
     .getByText('checkout-api', { exact: true })
     .boundingBox())!
   expect(buttonBox.x + buttonBox.width).toBeLessThan(titleBox.x)
-  await expect(trigger).toHaveAttribute('data-tip', 'Export log')
+  await expect(trigger).toHaveAttribute('data-tip', 'Download log')
   await expect(trigger).not.toHaveAttribute('title')
   await expect(trigger.locator('svg')).toHaveAttribute('aria-hidden', 'true')
   await trigger.hover()
@@ -216,7 +219,7 @@ test('shows an export failure instead of downloading an error document', async (
   )
   const downloads: string[] = []
   page.on('download', download => downloads.push(download.suggestedFilename()))
-  const trigger = page.getByRole('button', { name: 'Export log' })
+  const trigger = page.getByRole('button', { name: 'Download log' })
   await trigger.focus()
   await page.keyboard.press('Enter')
   await expect(page.getByRole('alert')).toContainText('export record not found')
@@ -237,7 +240,7 @@ test('export completion does not take focus back after the user moves it', async
     await responseReady
     await route.fulfill({ contentType: 'application/json', body: '{}' })
   })
-  const trigger = page.getByRole('button', { name: 'Export log' })
+  const trigger = page.getByRole('button', { name: 'Download log' })
   await trigger.focus()
   const downloaded = page.waitForEvent('download')
   await page.keyboard.press('Enter')

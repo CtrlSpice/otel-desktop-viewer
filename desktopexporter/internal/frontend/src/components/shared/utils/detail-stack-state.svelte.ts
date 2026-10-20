@@ -233,11 +233,11 @@ export function createDetailStackState(storageKey: string) {
     flex(id: string) {
       if (previewSizes?.[id] !== undefined) return `0 0 ${previewSizes[id]}px`
       const section = sections.find(candidate => candidate.id === id)
-      if (!section?.expanded()) return '0 0 2.5rem'
+      if (!section?.expanded()) return '0 0 var(--pane-header-h)'
       const total = sections
         .filter(candidate => candidate.expanded())
         .reduce((sum, candidate) => sum + weight(candidate), 0)
-      return `${(100 * weight(section)) / total} 1 2.5rem`
+      return `${(100 * weight(section)) / total} 1 var(--pane-header-h)`
     },
     percent(id: string) {
       const groups = sides(id)

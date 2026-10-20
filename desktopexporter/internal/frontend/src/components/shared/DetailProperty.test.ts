@@ -91,7 +91,7 @@ describe('DetailProperty copy controls', () => {
     expect(cell.children).toHaveLength(2)
     expect(cell.children[0]).toHaveClass('detail-property__header')
     expect(cell.children[1]).toHaveClass('detail-property__body')
-    const content = cell.querySelector('.detail-property__content')!
+    const content = cell.querySelector('.detail-property__body')!
     expect(content.children[0]).toHaveTextContent(
       '2023-11-14, 14:13:20.000 PST'
     )

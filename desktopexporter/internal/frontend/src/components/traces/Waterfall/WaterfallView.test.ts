@@ -346,7 +346,7 @@ describe('WaterfallView error navigation', () => {
     const view = renderTree({ spans, onSelectSpan })
     await tick()
     const badge = view.getByRole('group', { name: 'Error navigation' })
-    expect(badge).toHaveTextContent(/^2 err$/)
+    expect(badge).toHaveTextContent(/^err$/)
 
     buttonByLabel('Next error').click()
     expect(onSelectSpan).toHaveBeenLastCalledWith('error-1')
@@ -354,26 +354,26 @@ describe('WaterfallView error navigation', () => {
     await view.rerender({
       componentProps: { spans, selectedSpanID: 'error-1', onSelectSpan },
     })
-    expect(badge).toHaveTextContent(/^1\/2 errors$/)
+    expect(badge).toHaveTextContent(/^err \(1\/2\)$/)
     buttonByLabel('Next error').click()
     expect(onSelectSpan).toHaveBeenLastCalledWith('error-2')
 
     await view.rerender({
       componentProps: { spans, selectedSpanID: 'error-2', onSelectSpan },
     })
-    expect(badge).toHaveTextContent(/^2\/2 errors$/)
+    expect(badge).toHaveTextContent(/^err \(2\/2\)$/)
     buttonByLabel('Previous error').click()
     expect(onSelectSpan).toHaveBeenLastCalledWith('error-1')
 
     await view.rerender({
       componentProps: { spans, selectedSpanID: 'error-1', onSelectSpan },
     })
-    expect(badge).toHaveTextContent(/^1\/2 errors$/)
+    expect(badge).toHaveTextContent(/^err \(1\/2\)$/)
     for (const selectedSpanID of ['healthy-middle', 'exception-only', null]) {
       await view.rerender({
         componentProps: { spans, selectedSpanID, onSelectSpan },
       })
-      expect(badge).toHaveTextContent(/^2 err$/)
+      expect(badge).toHaveTextContent(/^err$/)
     }
   })
 
@@ -454,7 +454,9 @@ describe('WaterfallView error navigation', () => {
     })
     await tick()
 
-    expect(document.body).toHaveTextContent('2 err')
+    expect(
+      document.querySelector('[role="group"][aria-label="Error navigation"]')
+    ).toHaveTextContent(/^err \(1\/2\)$/)
     buttonByLabel('Next error').click()
     expect(onSelectSpan).toHaveBeenCalledWith('error-2')
     expect(onSelectSpan).not.toHaveBeenCalledWith('exception-only')
@@ -1045,12 +1047,7 @@ describe('WaterfallView column separators', () => {
       )
     }
 
-    expect(
-      document.querySelectorAll('.resize-handle[role="separator"]')
-    ).toHaveLength(0)
-    expect(
-      document.querySelectorAll('.resize-handle[aria-hidden="true"]')
-    ).toHaveLength(2)
+    expect(document.querySelectorAll('.resize-handle')).toHaveLength(0)
     expect(
       document.querySelector('[role="treegrid"][aria-label="Span waterfall"]')
     ).toBeInTheDocument()

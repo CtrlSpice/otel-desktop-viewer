@@ -42,11 +42,7 @@
   })
 </script>
 
-<div
-  class="json-editor value-syntax"
-  class:raw-json-editor={raw}
-  bind:this={host}
-></div>
+<div class="json-editor" class:raw-json-editor={raw} bind:this={host}></div>
 
 <style lang="postcss">
   @reference "../../app.css";

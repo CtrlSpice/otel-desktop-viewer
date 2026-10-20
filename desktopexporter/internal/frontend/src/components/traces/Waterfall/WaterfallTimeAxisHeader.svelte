@@ -219,11 +219,6 @@
     tickLabelWidth?: number
     spanColWidth: number
     optionalColumns?: SizedWaterfallColumn[]
-    /** The header's separators are alternative grab handles for the
-     *  view's column bars -- the drag itself (mechanics, cascade,
-     *  persistence) lives in one place, with the view. This component
-     *  only says which bar was grabbed. */
-    onStartResize: (barId: string, e: PointerEvent) => void
   }
 
   let {
@@ -232,7 +227,6 @@
     tickLabelWidth = 80,
     spanColWidth,
     optionalColumns = [],
-    onStartResize,
   }: Props = $props()
 
   let axis = $derived(waterfallTimeAxis(traceDurationNs, targetTickCount))
@@ -252,11 +246,6 @@
     aria-label="Span name"
   >
     <TableColumnHeading label="name" source="Span" signal="Span" />
-    <div
-      class="resize-handle"
-      aria-hidden="true"
-      onpointerdown={e => onStartResize('span', e)}
-    ></div>
   </th>
   {#each optionalColumns as column (column.id)}
     <th
@@ -272,11 +261,6 @@
         source={column.source}
         signal="Span"
       />
-      <div
-        class="resize-handle"
-        aria-hidden="true"
-        onpointerdown={e => onStartResize(column.id, e)}
-      ></div>
     </th>
   {/each}
   <th scope="col" class="waterfall-time-axis-header__th-ruler">
@@ -289,7 +273,9 @@
           <span class="waterfall-time-axis-header__tick-label"
             >{tick.label}</span
           >
-          <span class="waterfall-time-axis-header__tick-line" aria-hidden="true"
+          <span
+            class="waterfall-time-axis-header__tick-line dot-guide-vertical"
+            aria-hidden="true"
           ></span>
         </div>
       {/each}
@@ -301,7 +287,7 @@
   @reference "../../../app.css";
   .waterfall-time-axis-header {
     --primary-label-center: 50%;
-    height: 2.5rem;
+    height: var(--table-header-h);
   }
 
   .waterfall-time-axis-header__th-label {
@@ -344,20 +330,9 @@
   }
 
   .waterfall-time-axis-header__tick-line {
-    @apply absolute bottom-0 w-px bg-base-content/20;
+    @apply absolute bottom-0;
     left: 0;
-    top: calc(var(--primary-label-center) + 0.625rem);
+    top: calc(var(--primary-label-center) + 0.5lh);
     transform: translateX(-50%);
-  }
-
-  .resize-handle {
-    @apply absolute top-0 bottom-0 flex items-center justify-center cursor-col-resize;
-    /* Without this the browser can claim the gesture for scrolling on
-       touch or a precision trackpad, cancelling the drag mid-gesture.
-       Same rule as .col-resize-bar. */
-    touch-action: none;
-    right: -3px;
-    width: 7px;
-    z-index: 2;
   }
 </style>

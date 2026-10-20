@@ -722,7 +722,7 @@
   .search-editor-wrapper {
     @apply relative w-full;
     min-height: var(--table-row-h);
-    line-height: var(--table-row-h);
+    line-height: var(--text-base--line-height);
   }
 
   .search-editor-wrapper--drawer {
@@ -741,15 +741,6 @@
     height: auto;
   }
 
-  .search-editor-wrapper--drawer
-    .search-editor-container:hover:not(:focus-within) {
-    background-color: var(--typed-field-bg, var(--color-base-200));
-  }
-
-  .search-editor-wrapper--drawer .search-editor-container:focus-within {
-    background-color: var(--typed-field-bg, var(--color-base-200));
-  }
-
   .search-editor__header-actions {
     @apply absolute top-1 left-2 right-2 z-10;
   }
@@ -765,27 +756,21 @@
   }
 
   .search-editor-wrapper--drawer .editor-mount :global(.cm-scroller) {
-    line-height: var(--table-row-h);
+    line-height: var(--text-base--line-height);
     overflow-x: auto;
     overflow-y: hidden;
   }
 
   .search-editor-wrapper--drawer .editor-mount :global(.cm-content) {
-    padding-top: 0;
-    padding-bottom: 0;
+    padding-block: calc(
+      (var(--table-row-h) - var(--text-base) * var(--text-base--line-height)) /
+        2
+    );
     padding-left: 0;
     padding-right: 0.5rem;
     min-height: var(--table-row-h);
-    line-height: var(--table-row-h);
+    line-height: var(--text-base--line-height);
     white-space: nowrap;
-  }
-
-  .search-editor-wrapper--drawer .editor-mount :global(.cm-line) {
-    line-height: var(--table-row-h);
-  }
-
-  .search-editor-wrapper--drawer .editor-mount :global(.cm-placeholder) {
-    line-height: var(--table-row-h);
   }
 
   .search-editor-wrapper--drawer .search-editor__footer-actions {
@@ -815,7 +800,6 @@
 
   .search-editor-container {
     @apply input relative flex w-full items-center;
-    background-color: var(--typed-field-bg, var(--color-base-200));
     height: fit-content;
   }
 
@@ -931,7 +915,7 @@
   }
 
   .help-op-code {
-    @apply rounded bg-base-200/80 px-1 py-0.5 font-mono text-xs text-base-content;
+    @apply rounded bg-base-100 px-1 py-0.5 font-mono text-xs text-base-content;
   }
 
   .help-op-note {
@@ -955,7 +939,7 @@
   }
 
   .help-example {
-    @apply mt-2 overflow-x-auto rounded-md bg-base-200 p-3 font-mono text-xs leading-relaxed text-base-content;
+    @apply mt-2 overflow-x-auto rounded-md bg-base-100 p-3 font-mono text-xs leading-relaxed text-base-content;
   }
 
   .help-example :global(code) {

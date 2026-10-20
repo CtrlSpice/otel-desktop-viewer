@@ -369,7 +369,7 @@
           </span>
         {/if}
         {#if dp.flags > 0}
-          <span class="badge badge-xs badge-warning">flags</span>
+          <span class="text-warning">flags</span>
         {/if}
       </td>
     {/if}

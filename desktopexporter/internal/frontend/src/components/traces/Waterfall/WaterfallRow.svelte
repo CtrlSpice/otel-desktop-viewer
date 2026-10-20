@@ -222,7 +222,10 @@
         ></div>
         <div class="waterfall-row__bar-grid" aria-hidden="true">
           {#each barGridPercents as p}
-            <div class="waterfall-row__grid-line" style:left="{p}%"></div>
+            <div
+              class="waterfall-row__grid-line dot-guide-vertical"
+              style:left="{p}%"
+            ></div>
           {/each}
         </div>
         <span
@@ -316,7 +319,7 @@
   }
 
   .waterfall-row__grid-line {
-    @apply absolute top-0 bottom-0 w-px -translate-x-1/2 bg-base-content/10;
+    @apply absolute top-0 bottom-0 -translate-x-1/2;
   }
 
   .waterfall-row__markers {

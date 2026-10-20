@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { PANEL_DEFAULT_REM, PANEL_MIN_REM, PANEL_MAX_REM } from './panel-width'
+import { PANEL_DEFAULT_REM, PANEL_MIN_REM } from './panel-width'
 
 const KEY = 'signal-detail-width'
 
@@ -17,18 +17,19 @@ describe('app-wide detail width', () => {
     expect(detailWidth.rem).toBe(PANEL_DEFAULT_REM)
   })
 
-  it('persists one width for all consumers and restores it after reload', async () => {
+  it('persists widths above the old cap for all consumers and restores them after reload', async () => {
     const { detailWidth } = await freshStore()
-    detailWidth.set(32)
+    detailWidth.set(60)
     const otherConsumer = await import('./detail-width.svelte')
-    expect(otherConsumer.detailWidth.rem).toBe(32)
-    expect(localStorage.getItem(KEY)).toBe('32')
-    expect((await freshStore()).detailWidth.rem).toBe(32)
+    expect(otherConsumer.detailWidth.rem).toBe(60)
+    expect(localStorage.getItem(KEY)).toBe('60')
+    expect((await freshStore()).detailWidth.rem).toBe(60)
   })
 
   it.each([
     ['wide', PANEL_DEFAULT_REM],
-    ['900', PANEL_MAX_REM],
+    ['900', 900],
+    ['Infinity', PANEL_DEFAULT_REM],
     ['-1', PANEL_MIN_REM],
   ])('handles stored width %s', async (stored, expected) => {
     localStorage.setItem(KEY, stored)

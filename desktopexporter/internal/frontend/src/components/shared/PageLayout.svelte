@@ -24,7 +24,6 @@
   import {
     PANEL_DEFAULT_REM,
     PANEL_MIN_REM,
-    PANEL_MAX_REM,
     remToPx,
   } from '@/state/panel-width'
 
@@ -154,7 +153,6 @@
             defaultRightRem={PANEL_DEFAULT_REM}
             minLeftPx={remToPx(PANEL_DEFAULT_REM)}
             minRightPx={remToPx(PANEL_MIN_REM)}
-            maxRightPx={remToPx(PANEL_MAX_REM)}
             storageKey="workspace-panel-split"
           >
             {#snippet leftPanel()}

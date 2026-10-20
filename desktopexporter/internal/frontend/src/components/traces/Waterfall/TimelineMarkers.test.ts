@@ -118,8 +118,9 @@ describe('TimelineMarkers', () => {
     const rows = screen.getAllByRole('button', { name: /Span event|Log/ })
     expect(rows[0]).toHaveTextContent(/Span event\s+\+10 ns\s+exception/)
     expect(rows[1]).toHaveTextContent(/Log\s+\+11 ns\s+payment\.failed/)
-    expect(screen.getByText('Span event')).toHaveStyle('--badge-color: #abc')
-    expect(screen.getByText('Log')).toHaveClass('badge-error')
+    expect(screen.getByText('Span event')).toHaveClass('text-error')
+    expect(screen.getByText('Log')).toHaveClass('text-rp-subtle')
+    expect(rows.every(row => !row.querySelector('.badge'))).toBe(true)
 
     await fireEvent.click(rows[1]!)
     expect(onSelectRecord).toHaveBeenCalledWith(mixedMarker().members[1])

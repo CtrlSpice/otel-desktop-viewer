@@ -5,7 +5,7 @@
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { FilterIcon } from '@hugeicons/core-free-icons'
-  import { severityBadgeClass } from './log-severity'
+  import { severityColor } from './log-severity'
   import { traceServiceColor } from '@/utils/trace-service-color'
   import { themeSignal } from '@/state/theme.svelte'
   import {
@@ -132,7 +132,10 @@
           >
             <span
               class="log-filters__dot"
-              style:background-color={traceServiceColor(service, themeSignal.value)}
+              style:background-color={traceServiceColor(
+                service,
+                themeSignal.value
+              )}
               aria-hidden="true"
             ></span>
             <span class="min-w-0 truncate" title={service}>{service}</span>
@@ -171,7 +174,10 @@
         >
           <span
             class="log-filters__dot"
-            style:background-color={traceServiceColor(service, themeSignal.value)}
+            style:background-color={traceServiceColor(
+              service,
+              themeSignal.value
+            )}
             aria-hidden="true"
           ></span>
           <span class="min-w-0 truncate" title={service}>{service}</span>
@@ -210,7 +216,7 @@
       {#each LOG_SEVERITIES as level (level.label)}
         <button
           type="button"
-          class="{severityBadgeClass(level.min)} log-filters__severity"
+          class="log-filters__severity item-state"
           aria-label={`Severity ${level.label}`}
           aria-pressed={filters.severity.values.includes(level.label)}
           disabled={filters.severity.custom || !editor?.setQuery}
@@ -221,6 +227,11 @@
               !filters.severity.values.includes(level.label)
             )}
         >
+          <span
+            class="log-filters__dot"
+            style:background-color={severityColor(level.min)}
+            aria-hidden="true"
+          ></span>
           <span>{level.label}</span>
           <span
             class="log-filters__check"
@@ -240,17 +251,12 @@
   .log-filters__chips {
     @apply flex min-w-0 flex-wrap gap-2 px-2 py-1;
   }
-  .log-filters__service {
-    @apply inline-flex min-h-8 max-w-full cursor-pointer items-center gap-2 rounded-full border border-base-300 px-3 py-1 text-sm text-base-content;
-  }
-  .log-filters__service[aria-pressed='true'] {
-    background: var(--item-selected-bg);
+  .log-filters__service,
+  .log-filters__severity {
+    @apply inline-flex min-h-8 max-w-full cursor-pointer items-center gap-2 border-0 px-3 py-1 text-sm font-normal text-base-content;
   }
   .log-filters__dot {
     @apply size-2 shrink-0 rounded-full;
-  }
-  .log-filters__severity {
-    @apply h-auto min-h-8 cursor-pointer gap-2 rounded-full px-3 py-1 text-sm;
   }
   .log-filters__check {
     opacity: 0;

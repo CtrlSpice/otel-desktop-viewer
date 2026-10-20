@@ -135,9 +135,9 @@ describe('LogDetailView trace correlation', () => {
   it('places the whole-record export in the main log header', () => {
     renderLog(makeLog())
     const header = screen.getByRole('region', { name: 'Log record' })
-    const button = within(header).getByRole('button', { name: 'Export log' })
+    const button = within(header).getByRole('button', { name: 'Download log' })
     expect(button).toBeEnabled()
-    expect(button).toHaveClass('btn-circle', 'btn-primary')
+    expect(button).toHaveClass('header-icon-button')
     expect(button).toHaveTextContent('')
     const tabs = within(header).getByRole('tablist', { name: 'Detail view' })
     expect(within(header).queryByLabelText('Log timestamp')).toBeNull()
@@ -152,9 +152,9 @@ describe('LogDetailView trace correlation', () => {
     expect(
       button.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING
     ).not.toBe(0)
-    expect(screen.getAllByRole('button', { name: 'Export log' })).toHaveLength(
-      1
-    )
+    expect(
+      screen.getAllByRole('button', { name: 'Download log' })
+    ).toHaveLength(1)
   })
 
   it('appends the associated trace to Properties without a collapsible section', () => {

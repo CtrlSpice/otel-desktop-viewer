@@ -266,7 +266,7 @@ describe('Metric main-header export', () => {
 
       const header = screen.getByRole('region', { name: 'Metric chart' })
       const button = within(header).getByRole('button', {
-        name: 'Export metric',
+        name: 'Download metric',
       })
       const title = within(header).getByText('demo.metric', { exact: true })
       expect(
@@ -280,7 +280,7 @@ describe('Metric main-header export', () => {
         ).not.toBe(0)
       }
       expect(
-        screen.getAllByRole('button', { name: 'Export metric' })
+        screen.getAllByRole('button', { name: 'Download metric' })
       ).toHaveLength(1)
       await userEvent.click(button)
       expect(downloadOTLP).toHaveBeenCalledWith(

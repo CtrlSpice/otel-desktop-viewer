@@ -25,10 +25,7 @@ describe('JsonEditor', () => {
     )
     expect(container.querySelector('.cm-lineNumbers')).toBeNull()
     expect(container.querySelector('.json-indent-bands')).toBeNull()
-    expect(container.querySelector('.json-indent-guides')).toBeNull()
-    expect(container.querySelector('.json-fold-target svg')).toHaveClass(
-      'json-fold-icon'
-    )
+    expect(container.querySelector('.cm-foldGutter')).toBeNull()
   })
 
   it('uses CodeMirror’s ellipsis placeholders and leaves the full document intact', () => {

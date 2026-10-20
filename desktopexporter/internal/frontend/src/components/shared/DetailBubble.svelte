@@ -159,7 +159,7 @@
   .detail-bubble--resizable {
     display: flex;
     flex-direction: column;
-    min-height: 2.5rem;
+    min-height: var(--pane-header-h);
     min-width: 0;
     overflow: hidden;
   }

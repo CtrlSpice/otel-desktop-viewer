@@ -400,6 +400,7 @@
     type ColumnWidths,
   } from '@/components/shared/utils/column-resize'
   import type { DragHandle } from '@/components/shared/utils/drag'
+  import { resizeRowHover } from '@/components/shared/utils/resize-row-hover'
 
   let selectedColumns = $state(loadColumns())
   let availableColumns = $derived(columnOptions(spans, selectedColumns))
@@ -1086,12 +1087,7 @@
   class="waterfall-view {loading ? 'opacity-70' : 'opacity-100'}"
   data-unmatched-log-count={logPartition.unmatched.length}
 >
-  <PaneHeader
-    pill
-    mode="title"
-    title={headerName}
-    ariaLabel="Trace waterfall"
-  >
+  <PaneHeader pill mode="title" title={headerName} ariaLabel="Trace waterfall">
     {#snippet metaLeft()}
       <div class="flex min-w-0 items-center gap-2 text-rp-subtle">
         {#if headerService}
@@ -1106,7 +1102,7 @@
         <ExportButton signal="trace" id={traceID} />
       {/key}
     {/snippet}
-    {#snippet metaRight()}
+    {#snippet metaCenter()}
       {#if errorSpans.length > 0}
         <ErrorNavigationBadge
           count={headerErrorCount}
@@ -1117,6 +1113,8 @@
           onNext={selectNextError}
         />
       {/if}
+    {/snippet}
+    {#snippet metaRight()}
       <button
         type="button"
         class="btn btn-xs chart-header-control tooltip tooltip-left"
@@ -1170,7 +1168,8 @@
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
           <div
-            class="col-resize-bar col-resize-bar--guide"
+            class="col-resize-bar col-resize-bar--column"
+            use:resizeRowHover
             class:col-resize-bar--active={activeResizeCol === bar.id}
             style:left="{bar.left}px"
             role="separator"
@@ -1197,7 +1196,6 @@
               tickLabelWidth={TICK_LABEL_SLOT_PX}
               {spanColWidth}
               {optionalColumns}
-              onStartResize={handleStartResize}
             />
           </thead>
         </table>
@@ -1288,7 +1286,7 @@
     height: auto;
     background-color: transparent;
     box-shadow: none;
-    border-bottom-color: transparent;
+    border-bottom: 0;
     border-radius: 0;
   }
 

@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import { ChevronLeftIcon, ChevronRightIcon } from '@hugeicons/core-free-icons'
+
   let {
     count,
     index = null,
@@ -20,11 +23,7 @@
 </script>
 
 {#if count > 0}
-  <span
-    class="error-nav"
-    role="group"
-    aria-label="Error navigation"
-  >
+  <span class="error-nav" role="group" aria-label="Error navigation">
     <button
       type="button"
       class="error-nav__button"
@@ -32,11 +31,12 @@
       onclick={onPrevious}
       aria-label="Previous error"
       title="Previous error"
-      ><svg
-        viewBox="0 0 12 12"
-        class="error-nav__caret"
+      ><HugeiconsIcon
+        icon={ChevronLeftIcon}
+        size={16}
+        strokeWidth={1.5}
         aria-hidden="true"
-      ><path d="m8 2-5 4 5 4Z" /></svg></button
+      /></button
     >
     <span aria-live="polite"
       >{index !== null ? `err (${index}/${count})` : 'err'}</span
@@ -48,11 +48,12 @@
       onclick={onNext}
       aria-label="Next error"
       title="Next error"
-      ><svg
-        viewBox="0 0 12 12"
-        class="error-nav__caret"
+      ><HugeiconsIcon
+        icon={ChevronRightIcon}
+        size={16}
+        strokeWidth={1.5}
         aria-hidden="true"
-      ><path d="m4 2 5 4-5 4Z" /></svg></button
+      /></button
     >
   </span>
 {/if}
@@ -65,11 +66,6 @@
   .error-nav__button {
     @apply inline-flex size-8 cursor-pointer items-center justify-center border-0 bg-transparent p-0;
     color: inherit;
-  }
-  .error-nav__caret {
-    @apply size-3;
-    fill: currentColor;
-    stroke: none;
   }
   .error-nav__button:disabled {
     @apply cursor-default;

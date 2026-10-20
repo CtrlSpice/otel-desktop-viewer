@@ -5,7 +5,7 @@
     createPopoverID,
     setupAnchorPopover,
   } from '@/components/shared/utils/anchor-popover'
-  import { severityBadgeClass } from '@/components/logs/log-severity'
+  import { severityColor } from '@/components/logs/log-severity'
   import { formatSignedDuration } from '@/utils/time'
   import {
     MARKER_GLYPH_REM,
@@ -244,13 +244,20 @@
         >
           {#if record.kind === 'event'}
             <span
-              class="badge badge-xs"
-              style:--badge-color={spanColor}>Span event</span
+              class={record.event.name === 'exception'
+                ? 'text-error'
+                : 'text-rp-subtle'}>Span event</span
             >
           {:else}
-            <span class={severityBadgeClass(record.log.severityNumber)}
-              >Log</span
-            >
+            <span class="inline-flex items-center gap-2 text-rp-subtle">
+              <span
+                class="size-2 shrink-0 rounded-full"
+                style:background-color={severityColor(
+                  record.log.severityNumber
+                )}
+                aria-hidden="true"
+              ></span>Log
+            </span>
           {/if}
           <span class="activity-popover__offset">{offsetLabel(record)}</span>
           {#if name}
@@ -302,7 +309,7 @@
   }
 
   .activity-popover__row {
-    @apply grid w-full cursor-pointer grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-2 px-2 py-1.5 text-left text-xs;
+    @apply grid w-full cursor-pointer grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-2 px-3 py-2 text-left text-sm font-normal;
   }
 
   .activity-popover__offset {

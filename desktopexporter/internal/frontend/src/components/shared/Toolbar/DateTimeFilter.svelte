@@ -114,16 +114,6 @@
 </div>
 
 <style>
-  .time-filter-trigger {
-    border: 1px solid var(--color-base-300);
-    background-color: var(--color-base-200);
-    box-shadow: none;
-  }
-
-  .time-filter-trigger:hover {
-    background-color: var(--color-base-300);
-  }
-
   .time-filter-trigger::before {
     left: auto;
     right: 0;

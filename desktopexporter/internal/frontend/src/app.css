@@ -58,8 +58,12 @@
   --focus-ring-width: 1px;
   --focus-ring-offset: 1px;
   --focus-ring-color: var(--color-primary);
-  --item-hover-bg: var(--color-highlight-high);
+  --item-hover-bg: var(--color-highlight-low);
   --item-selected-bg: var(--color-highlight-med);
+  --guide-dot-radius: 0.75px;
+  --guide-dot-color: var(--color-subtle);
+  --resize-grip-length: 3rem;
+  --resize-grip-thickness: 0.1875rem;
   /* Quick feedback, quiet fades, and a shared settle for moving surfaces. */
   --motion-feedback-duration: 120ms;
   --motion-fade-duration: 160ms;
@@ -1067,7 +1071,7 @@ svg {
 /* Monospace query-entry controls. Use typed-field--pill for rounded ends. */
 .typed-field {
   @apply min-h-0 border border-base-300 px-4 py-0 text-left text-sm font-mono tracking-tight shadow-none;
-  background-color: var(--typed-field-bg, var(--color-base-200));
+  background-color: var(--typed-field-bg, var(--color-base-100));
   height: calc(var(--table-row-h) + 0.5rem);
   min-height: calc(var(--table-row-h) + 0.5rem);
 }
@@ -1109,12 +1113,8 @@ textarea.typed-field::placeholder,
   @apply text-left font-mono text-sm tracking-tight;
 }
 
-.typed-field :where(.cm-content, .cm-line, .cm-scroller) {
-  line-height: var(--table-row-h);
-}
-
-.typed-field :where(.cm-placeholder) {
-  line-height: var(--table-row-h);
+.typed-field :where(.cm-content, .cm-line, .cm-scroller, .cm-placeholder) {
+  line-height: var(--text-base--line-height);
 }
 
 /* Unified keyboard focus rings (--focus-ring-* on theme roots). Outline follows border-radius on the same box in modern browsers. */
@@ -1259,7 +1259,7 @@ button:focus-visible:not(.btn) {
   color: var(--color-base-content);
 }
 
-/* Shared item states. Hover temporarily strengthens selection; focus is a separate outline. */
+/* Shared item states. Hover temporarily overrides selection; focus is a separate outline. */
 :is(.item-state, .table-row) {
   border-radius: 0.75rem;
   --item-state-bg: var(--item-idle-bg, transparent);
@@ -1310,7 +1310,7 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
 }
 
 :is(.item-state, .table-row):where(
-  :hover:not(:disabled):not([aria-disabled='true']):not([data-disabled])
+  :is(:hover, .table-row--resize-hover):not(:disabled):not([aria-disabled='true']):not([data-disabled])
 ) {
   --item-state-bg: var(--item-hover-bg);
 }
@@ -1418,47 +1418,19 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
   @apply text-base-content;
 }
 
-/* Detail Fields use a key/type header followed by a full-width value block. */
-.detail-property,
-.value-syntax {
-  --detail-code-key: var(--color-subtle);
-  --detail-code-string: var(--color-base-content);
-  --detail-code-number: var(--color-base-content);
-  --detail-code-literal: var(--color-base-content);
+/* Compact JSON previews follow the same Rosé Pine syntax roles as editors. */
+.value-syntax .detail-code--key {
+  color: var(--color-secondary);
 }
-
-.value-syntax .detail-code--key,
 .value-syntax .detail-code--punctuation {
-  color: var(--detail-code-key);
+  color: var(--color-subtle);
 }
 .value-syntax .detail-code--string {
-  color: var(--detail-code-string);
+  color: var(--color-base-content);
 }
-.value-syntax .detail-code--number {
-  color: var(--detail-code-number);
-}
+.value-syntax .detail-code--number,
 .value-syntax .detail-code--literal {
-  color: var(--detail-code-literal);
-}
-
-/* Shared JSON fold affordances for typed values and raw JSON. */
-.json-fold-control {
-  position: relative;
-}
-
-.json-fold-icon {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 1rem;
-  height: 1rem;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-}
-
-.json-fold-control[aria-expanded='true'] .json-fold-icon,
-.json-fold-control[data-expanded='true'] .json-fold-icon {
-  transform: translate(-50%, -50%) rotate(90deg);
+  color: var(--color-code-literal);
 }
 
 .detail-cell__stacked-value {
@@ -1480,31 +1452,17 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
   padding-left: calc(1rem + var(--waterfall-gutter-col, 0px));
 }
 
-/* ── In-header column resize handle ──
-   Place inside a position:relative <th>. Hit strip straddles the right cell border.
-   The ::after pseudo-element is the visible line; appears on hover / during drag. */
-
-.resize-handle {
-  @apply absolute top-0 bottom-0 flex items-center justify-center cursor-col-resize;
-  right: -3px;
-  width: 7px;
-  z-index: 2;
-}
-
-.resize-handle::after {
-  content: '';
-  width: 0.125rem;
-  min-height: 100%;
-  border-radius: 9999px;
-  background-color: var(--color-neutral);
-  opacity: 0;
-  transition:
-    opacity var(--motion-fade-duration) linear,
-    background-color var(--motion-feedback-duration) var(--motion-settle-easing);
-}
-
-.resize-handle:hover::after {
-  opacity: 0.6;
+/* Dots meet at row boundaries even when the header has a different height. */
+.dot-guide-vertical {
+  width: calc(2 * var(--guide-dot-radius));
+  background-image: radial-gradient(
+    circle,
+    var(--guide-dot-color) var(--guide-dot-radius),
+    transparent var(--guide-dot-radius)
+  );
+  background-size: 100% var(--table-row-h);
+  background-position: center calc(100% + var(--table-row-h) / 2);
+  opacity: var(--guide-dot-opacity);
 }
 
 /* ── Shared column-resize system ──
@@ -1512,11 +1470,12 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
    • Wrap the table in .col-resize-context (position: relative).
    • Place .col-resize-bar siblings after the table; set style:left to the column
      boundary in px from script. Use .col-resize-bar--below-header when the table
-     has a thead so the strip (and visible line) start under the header row.
+      has a thead so the hit strip starts under the header row.
    • Put .col-resize-marker inside each cell that borders a bar (th/td) so
      :has(.col-resize-marker) zeros right padding; the next cell gets 1rem inset-start.
    • Use .col-resize-bar--in-flow on a flex-row separator (ResizablePanels side-by-side)
-     or .col-resize-bar--row-in-flow for stacked column layout — same __line child. */
+      or .col-resize-bar--row-in-flow for stacked column layout — same __line child.
+   The visible grip is short and appears only on hover, focus, or drag. */
 
 .col-resize-context {
   @apply relative isolate w-full min-h-full;
@@ -1538,7 +1497,7 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
 
 /* z above .waterfall-row:hover (z-20) so the hit strip stays draggable */
 .col-resize-bar {
-  @apply absolute top-0 bottom-0 z-[25] flex cursor-col-resize items-stretch justify-center;
+  @apply absolute top-0 bottom-0 z-[25] flex cursor-col-resize items-center justify-center;
   right: auto;
   margin-left: -0.25rem;
   width: var(--resize-bar-hit-width);
@@ -1548,62 +1507,39 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
   touch-action: none;
 }
 
-/* Strip + line start at first body row — keeps thead/tabs clear (matches --table-header-h) */
+/* Hit strip starts at the first body row, keeping thead/tabs clear. */
 .col-resize-bar.col-resize-bar--below-header {
   top: var(--table-header-h);
 }
 
 .col-resize-bar__line {
-  @apply self-stretch rounded-full;
-  width: 0.125rem;
-  min-height: 100%;
-  background-color: var(--color-neutral);
+  @apply shrink-0 rounded-full;
+  width: var(--resize-grip-thickness);
+  height: var(--resize-grip-length);
+  max-height: 100%;
+  background-color: var(--color-base-content);
   opacity: 0;
   transition:
-    width var(--motion-feedback-duration) var(--motion-settle-easing),
     background-color var(--motion-feedback-duration) var(--motion-settle-easing),
     opacity var(--motion-fade-duration) linear;
 }
 
-.col-resize-bar--guide::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0.25rem;
-  transform: translateX(-50%);
-  width: 1px;
-  background-color: color-mix(in oklab, var(--color-base-300) 70%, transparent);
-  pointer-events: none;
-}
-
 /* Paint on the column boundary while retaining the existing drag hit strip. */
-.col-resize-bar--guide > .col-resize-bar__line {
+.col-resize-bar--column > .col-resize-bar__line {
   transform: translateX(calc(0.25rem - var(--resize-bar-hit-width) / 2));
 }
 
-.col-resize-bar--guide:hover::before,
-.col-resize-bar--guide.col-resize-bar--active::before {
-  visibility: hidden;
-}
-
 .col-resize-bar:hover .col-resize-bar__line {
-  opacity: 0.25;
-}
-
-.col-resize-bar--active .col-resize-bar__line {
-  width: 0.125rem;
-  background-color: var(--color-primary);
-  opacity: 0.4;
+  opacity: 1;
 }
 
 .col-resize-bar:focus-visible {
   outline: none;
 }
 
-.col-resize-bar:focus-visible .col-resize-bar__line {
+.col-resize-bar:is(:focus-visible, .col-resize-bar--active) .col-resize-bar__line {
   background-color: var(--color-primary);
-  opacity: 0.9;
+  opacity: 1;
 }
 
 /* In-flow flex sibling (not absolute over a table) */
@@ -1612,13 +1548,6 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
   inset: auto;
   margin-left: 0;
   z-index: 10;
-}
-
-.col-resize-bar--in-flow .col-resize-bar__line {
-  align-self: auto;
-  width: 0.1875rem;
-  height: 3rem;
-  min-height: 0;
 }
 
 /* Stacked panels: full-width hit strip, drag adjusts height split (row-resize) */
@@ -1637,26 +1566,9 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
 }
 
 .col-resize-bar--row-in-flow .col-resize-bar__line {
-  align-self: auto;
-  width: 3rem;
-  min-width: 0;
-  height: 0.1875rem;
-  min-height: 0.1875rem;
-}
-
-.col-resize-bar:is(.col-resize-bar--in-flow, .col-resize-bar--row-in-flow):hover
-  .col-resize-bar__line {
-  background-color: var(--color-neutral);
-  opacity: 0.65;
-}
-
-.col-resize-bar:is(.col-resize-bar--in-flow, .col-resize-bar--row-in-flow):is(
-    :focus-visible,
-    .col-resize-bar--active
-  )
-  .col-resize-bar__line {
-  background-color: var(--color-primary);
-  opacity: 0.95;
+  width: var(--resize-grip-length);
+  max-width: 100%;
+  height: var(--resize-grip-thickness);
 }
 
 /* Rosé Pine rose token — used for Gauge metric type (not a built-in Daisy semantic). */

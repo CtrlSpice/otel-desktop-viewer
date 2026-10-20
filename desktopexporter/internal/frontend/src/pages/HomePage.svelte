@@ -556,7 +556,7 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
   }
 
   .home-inline-code {
-    @apply rounded bg-base-300/60 px-1 py-0.5 font-mono text-base;
+    @apply rounded bg-base-100 px-1 py-0.5 font-mono text-base;
     color: var(--home-secondary-text);
   }
 

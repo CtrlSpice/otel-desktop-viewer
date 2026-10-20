@@ -9,10 +9,13 @@
 
 <script lang="ts">
   import { untrack } from 'svelte'
-  import ValueCopyButton from './ValueCopyButton.svelte'
   import JsonEditor from './JsonEditor.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { UnfoldLessIcon, UnfoldMoreIcon } from '@hugeicons/core-free-icons'
+  import {
+    Download01Icon,
+    UnfoldLessIcon,
+    UnfoldMoreIcon,
+  } from '@hugeicons/core-free-icons'
 
   let {
     scopes,
@@ -22,13 +25,12 @@
   const PREVIEW_BYTES = 2 * 1024 * 1024
   const formatHintID = $props.id()
   const formatHint =
-    'OpenTelemetry Protocol JSON. Size is the complete selected export in UTF-8 bytes before display formatting, not database storage. Reconstructed from retained telemetry, not the original request bytes. Includes resource and scope context; not restricted to the chart window.'
+    'OpenTelemetry Protocol JSON. Size is the complete selected OTLP JSON in UTF-8 bytes before display formatting, not database storage. Reconstructed from retained telemetry, not the original request bytes. Includes resource and scope context; not restricted to the chart window.'
   let scopeID = $state(untrack(() => scopes[0]?.id ?? ''))
   let scope = $derived(scopes.find(item => item.id === scopeID) ?? scopes[0])
   let bytes = $state<number | null>(null)
   let error = $state('')
   let loading = $state(false)
-  let raw = $state('')
   let formatted = $state('')
   let partial = $state(false)
   let requestedURL = $state('')
@@ -48,7 +50,6 @@
     if (url && (!active || url === untrack(() => currentURL))) return
     currentURL = url ?? ''
     requestedURL = ''
-    raw = ''
     formatted = ''
     error = ''
     bytes = null
@@ -63,7 +64,7 @@
         if (!response.ok)
           throw new Error(
             (await response.text()).trim() ||
-              `Export unavailable (${response.status})`
+              `Download unavailable (${response.status})`
           )
         const length = response.headers.get('Content-Length')
         bytes = length === null ? null : Number(length)
@@ -105,13 +106,13 @@
         if (!response.ok)
           throw new Error(
             (await response.text()).trim() ||
-              `Export unavailable (${response.status})`
+              `Download unavailable (${response.status})`
           )
         // A server must honour the bound before the inspector accepts its body.
         const length = Number(response.headers.get('Content-Length'))
         if (!length || length > PREVIEW_BYTES)
           throw new Error(
-            'This export cannot be previewed safely. Download the full OTLP JSON instead.'
+            'This OTLP JSON cannot be previewed safely. Download the full OTLP JSON instead.'
           )
         const blob = await response.blob()
         if (controller.signal.aborted) return
@@ -121,7 +122,7 @@
           response.status === 206 &&
           !!response.headers.get('Content-Range') &&
           !response.headers.get('Content-Range')!.endsWith(`/${blob.size}`)
-        raw = new TextDecoder().decode(buffer, {
+        const raw = new TextDecoder().decode(buffer, {
           stream: partial,
         })
         worker = new Worker(
@@ -137,7 +138,8 @@
         }
         worker.onerror = () => {
           if (!controller.signal.aborted) {
-            error = 'Could not format JSON. Download the exact export instead.'
+            error =
+              'Could not format JSON. Download the exact OTLP JSON instead.'
             loading = false
           }
           worker?.terminate()
@@ -180,9 +182,17 @@
     >
     <span id={formatHintID} class="sr-only">{formatHint}</span>
     {#if scope?.url && scope.url !== wholeURL}<a
-        class="btn btn-ghost btn-sm text-sm"
+        class="header-icon-button tooltip tooltip-left"
         href={scope.url}
-        download>Download {scope.label.toLowerCase()}</a
+        aria-label="Download {scope.label.toLowerCase()}"
+        data-tip="Download {scope.label.toLowerCase()}"
+        download
+        ><HugeiconsIcon
+          icon={Download01Icon}
+          size={16}
+          strokeWidth={1.5}
+          aria-hidden="true"
+        /></a
       >{/if}
     <div
       class="header-controls ml-auto shrink-0"
@@ -222,11 +232,6 @@
         />
       </button>
     </div>
-    {#if raw && !loading}<ValueCopyButton
-        text={raw}
-        label={partial ? 'JSON preview' : 'OTLP JSON'}
-        tooltip={partial ? 'Copy JSON preview' : 'Copy OTLP JSON'}
-      />{/if}
   </div>
   {#if !scope?.url}<p class="p-3 text-sm">
       {scope?.unavailable ?? 'Select a record to inspect its raw JSON.'}
@@ -254,7 +259,7 @@
     </div>{/if}
   {#if formatted && !loading && !error}
     {#if partial}<p class="raw-inspector__notice" role="status">
-        Partial preview: first 2 MiB only. Search and Copy apply only to this
+        Partial preview: first 2 MiB only. Search applies only to this
         preview. The JSON may end mid-value. Download contains the complete
         selected scope.
       </p>{/if}

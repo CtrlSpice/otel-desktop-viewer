@@ -14,7 +14,9 @@ export function themeTokens(theme: Theme) {
     '--color-base-content': c.text,
     '--color-subtle': c.subtle,
     '--color-muted': c.muted,
+    '--guide-dot-opacity': light ? '0.6' : '0.4',
     '--color-rose': c.rose,
+    '--color-code-literal': 'var(--color-primary)',
     '--color-highlight-low': c.highlightLow,
     '--color-highlight-med': c.highlightMedium,
     '--color-highlight-high': c.highlightHigh,
@@ -56,15 +58,5 @@ export function themeTokens(theme: Theme) {
     '--metric-series-line-opacity': light ? '0.6' : '1',
     '--waterfall-tick-mix-target': 'white',
     '--waterfall-tick-mix-strength': light ? '60%' : '45%',
-    // Dawn's existing small-code colours preserve contrast at 13px.
-    '--readonly-code-subtle': light
-      ? 'var(--color-base-content)'
-      : 'var(--color-subtle)',
-    '--readonly-code-gold': light ? '#6d4f00' : 'var(--color-warning)',
-    '--readonly-code-rose': light ? '#8f435b' : 'var(--color-rose)',
-    '--readonly-code-foam': light
-      ? 'var(--color-secondary)'
-      : 'var(--color-accent)',
-    '--readonly-code-iris': light ? '#6e577f' : 'var(--color-primary)',
   }
 }

@@ -29,7 +29,6 @@
 <div
   class="attribute-value"
   class:attribute-value--text={readable}
-  class:attribute-value--structured={structured}
   aria-label={path ? `Value of ${path}` : undefined}
 >
   {#if readable && value.kind === 'string'}
@@ -66,8 +65,5 @@
   }
   .attribute-value :global(.detail-pair__value) {
     color: inherit;
-  }
-  .attribute-value--structured {
-    @apply mt-1 py-1 pl-3 text-xs;
   }
 </style>

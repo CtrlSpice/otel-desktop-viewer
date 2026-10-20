@@ -88,7 +88,7 @@ describe('RawJsonInspector selection changes', () => {
     })
     await screen.findByLabelText('Raw OTLP JSON')
     expect(screen.getByText(/^OTLP JSON/)).toHaveTextContent('OTLP JSON · 12 B')
-    expect(screen.getByRole('button', { name: 'Copy OTLP JSON' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: /^Copy/ })).toBeNull()
 
     await view.rerender({ scopes })
     expectEmptyPreview()
