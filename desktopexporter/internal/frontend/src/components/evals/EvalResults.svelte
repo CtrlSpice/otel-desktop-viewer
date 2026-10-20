@@ -1,4 +1,10 @@
 <script lang="ts">
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import {
+    CheckListIcon,
+    Timer02Icon,
+    Coins01Icon,
+  } from '@hugeicons/core-free-icons'
   import PaneHeader, { paneTabID } from '@/components/shared/PaneHeader.svelte'
   import AssessmentBadge from './AssessmentBadge.svelte'
   import RunStatusBadge from './RunStatusBadge.svelte'
@@ -154,11 +160,38 @@
   ])
 </script>
 
+{#snippet resultsIcon()}<HugeiconsIcon
+    icon={CheckListIcon}
+    size={16}
+    strokeWidth={1.5}
+    aria-hidden="true"
+  />{/snippet}
+{#snippet timeIcon()}<HugeiconsIcon
+    icon={Timer02Icon}
+    size={16}
+    strokeWidth={1.5}
+    aria-hidden="true"
+  />{/snippet}
+{#snippet costIcon()}<HugeiconsIcon
+    icon={Coins01Icon}
+    size={16}
+    strokeWidth={1.5}
+    aria-hidden="true"
+  />{/snippet}
+
 <PaneHeader
   pill
   mode="title-tabs"
   title={run.name}
-  tabs={views}
+  tabs={views.map(item => ({
+    ...item,
+    icon:
+      item.id === 'results'
+        ? resultsIcon
+        : item.id === 'time'
+          ? timeIcon
+          : costIcon,
+  }))}
   activeID={view}
   onSelect={id => (view = id)}
   tabLayout="right"
