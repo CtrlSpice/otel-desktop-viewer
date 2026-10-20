@@ -777,7 +777,33 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
       )
       .toBe(true)
   }
-  await bodyField.locator('.cm-foldGutter [title="Fold line"]').nth(1).click()
+  const braces = bodyField.locator('.json-fold-bracket')
+  await braces.nth(1).hover()
+  await expect(bodyField.locator('.json-fold-bracket--active')).toHaveText([
+    '{',
+    '}',
+  ])
+  await expect(
+    bodyField.locator(
+      '.cm-foldGutter .json-fold-group-active .json-fold-marker'
+    )
+  ).toHaveCount(1)
+  await bodyField.locator('.cm-foldGutter [title="Fold line"]').nth(1).hover()
+  await expect(bodyField.locator('.json-fold-bracket--active')).toHaveText([
+    '{',
+    '}',
+  ])
+  await braces.nth(2).click()
+  await expect(bodyField.locator('.cm-foldPlaceholder')).toHaveText('…')
+  await expect(bodyField.locator('.cm-content')).not.toContainText('"path"')
+  await braces.nth(1).click()
+  await expect(bodyField.locator('.cm-content')).toContainText('"path"')
+  await braces.first().hover()
+  await expect(bodyField.locator('.json-fold-bracket--active')).toHaveText([
+    '[',
+    ']',
+  ])
+  await braces.first().click()
   await expect(bodyField.locator('.cm-foldPlaceholder')).toHaveText('…')
   await expect(bodyField.locator('.cm-content')).not.toContainText('"path"')
   await bodyField
@@ -1548,8 +1574,16 @@ test('fetches numbered pages, retains Details, and resets paging for sort, query
     })
   })
   await page.reload()
-  const range = page.getByRole('status', { name: 'Log page range' })
-  await expect(range).toContainText('1–100 of 235 logs')
+  const range = page
+    .getByRole('region', { name: 'Log table summary' })
+    .locator('.badge-count')
+  await expect(range).toContainText('1–100 of 235 records')
+  await expect(page.getByRole('status', { name: 'Log count' })).toHaveText(
+    '235 logs'
+  )
+  await expect(
+    page.getByRole('button', { name: 'First page', exact: true })
+  ).toBeDisabled()
   const detail = page.getByRole('table', { name: 'Log fields' })
   await expect(detail).toContainText('Full body 0: exact retained text')
   await page.getByRole('button', { name: 'Next page', exact: true }).click()
@@ -1562,15 +1596,21 @@ test('fetches numbered pages, retains Details, and resets paging for sort, query
   )
   await expect(detail).toContainText('Full body 0: exact retained text')
   await expect(page).toHaveURL(new RegExp(`/logs/${firstID}`))
-  await page.getByRole('button', { name: 'Page 3', exact: true }).click()
-  await expect(range).toContainText('201–235 of 235 logs')
+  await page.getByRole('button', { name: 'Last page', exact: true }).click()
+  await expect(range).toContainText('201–235 of 235 records')
+  await expect(
+    page.getByRole('button', { name: 'Last page', exact: true })
+  ).toBeDisabled()
+  await page.getByRole('button', { name: 'First page', exact: true }).click()
+  await expect(range).toContainText('1–100 of 235 records')
+  await page.getByRole('button', { name: 'Last page', exact: true }).click()
   await expect(
     page.getByRole('button', { name: 'Next page', exact: true })
   ).toBeDisabled()
   await page
     .getByRole('button', { name: 'Sort by timestamp', exact: true })
     .click()
-  await expect(range).toContainText('1–100 of 235 logs')
+  await expect(range).toContainText('1–100 of 235 records')
   expect(requests.at(-1)).toMatchObject({
     offset: 0,
     sort: { field: 'timestamp', direction: 'desc' },
@@ -1578,22 +1618,22 @@ test('fetches numbered pages, retains Details, and resets paging for sort, query
   await page.getByRole('button', { name: 'Page 2', exact: true }).click()
   await expect(range).toContainText('101–200')
   await page.getByRole('combobox', { name: 'Logs per page' }).selectOption('50')
-  await expect(range).toContainText('1–50 of 235 logs')
+  await expect(range).toContainText('1–50 of 235 records')
   expect(requests.at(-1)).toMatchObject({ offset: 0, pageSize: 50 })
   await page.getByRole('button', { name: 'Page 2', exact: true }).click()
   await expect(range).toContainText('51–100')
   await page.getByRole('combobox', { name: 'Logs per page' }).selectOption('25')
-  await expect(range).toContainText('1–25 of 235 logs')
+  await expect(range).toContainText('1–25 of 235 records')
   expect(requests.at(-1)).toMatchObject({ offset: 0, pageSize: 25 })
   await page.getByRole('button', { name: 'Page 2', exact: true }).click()
-  await expect(range).toContainText('26–50 of 235 logs')
+  await expect(range).toContainText('26–50 of 235 records')
   expect(requests.at(-1)).toMatchObject({ offset: 25, pageSize: 25 })
   await expect(detail).toContainText('Full body 0: exact retained text')
   await page.getByRole('button', { name: 'Filters', exact: true }).click()
   await page.getByRole('button', { name: 'Service api', exact: true }).click()
-  await expect(range).toContainText('26–50 of 235 logs')
+  await expect(range).toContainText('26–50 of 235 records')
   await page.getByRole('button', { name: 'Apply', exact: true }).click()
-  await expect(range).toContainText('1–7 of 7 logs')
+  await expect(range).toContainText('1–7 of 7 records')
   expect(requests.at(-1)).toMatchObject({ offset: 0, pageSize: 25 })
   expect(requests.at(-1)?.query).toBeTruthy()
   await expect(detail).toContainText('Full body 0: exact retained text')
@@ -1945,6 +1985,110 @@ test('pagination and row count stay within the main pane with Details open or cl
   await contained()
   await page.getByRole('button', { name: 'Open details', exact: true }).click()
   await contained()
+  await page.getByRole('button', { name: 'Select logs', exact: true }).click()
+  await contained()
+  await page.setViewportSize({ width: 1000, height: 800 })
+  await contained()
+})
+
+test('explicit selection mode supports all, some and none and deletes only checked logs', async ({
+  page,
+}) => {
+  const calls: string[][] = []
+  let fail = true
+  let deleted = false
+  await page.route('**/rpc', async route => {
+    const { id, method, params } = route.request().postDataJSON()
+    if (method === 'deleteLogsByRefs') {
+      calls.push(params)
+      if (fail) {
+        fail = false
+        return route.fulfill({
+          json: {
+            jsonrpc: '2.0',
+            id,
+            error: { code: -32000, message: 'Delete failed for this test' },
+          },
+        })
+      }
+      deleted = true
+      return route.fulfill({
+        json: { jsonrpc: '2.0', id, result: { count: params.length } },
+      })
+    }
+    if (method === 'searchLogPage' && deleted)
+      return route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            total: 1,
+            logs: [
+              {
+                logRef: firstID,
+                timestamp: logs[0].observedTimestamp,
+                severityText: 'ERROR',
+                severityNumber: 17,
+                serviceName: 'api',
+                bodyPreview: 'Retained first log',
+                bodyType: 'string',
+              },
+            ],
+          },
+        },
+      })
+    return route.fallback()
+  })
+  const grid = page.getByRole('grid', { name: 'Logs', exact: true })
+  const mode = page.getByRole('button', { name: 'Select logs', exact: true })
+  const all = grid.getByRole('checkbox', {
+    name: 'Select all logs on this page',
+  })
+  const first = grid.getByRole('checkbox', {
+    name: `Select log ${firstID}`,
+    exact: true,
+  })
+  const second = grid.getByRole('checkbox', {
+    name: `Select log ${secondID}`,
+    exact: true,
+  })
+  await expect(grid.getByRole('checkbox')).toHaveCount(0)
+  await mode.click()
+  await expect(all).not.toBeChecked()
+  await all.check()
+  await expect(first).toBeChecked()
+  await expect(second).toBeChecked()
+  await all.uncheck()
+  await expect(first).not.toBeChecked()
+  await expect(second).not.toBeChecked()
+  await all.check()
+  await first.uncheck()
+  await expect(all).toBeChecked({ indeterminate: true })
+  expect(page.url()).toContain(`/logs/${firstID}`)
+  await mode.click()
+  await expect(grid.getByRole('checkbox')).toHaveCount(0)
+  await expect(
+    page.getByRole('button', { name: /Delete \d+ selected/ })
+  ).toHaveCount(0)
+  await mode.click()
+  await expect(first).not.toBeChecked()
+  await expect(second).not.toBeChecked()
+  await second.check()
+  const remove = page.getByRole('button', {
+    name: 'Delete 1 selected log',
+    exact: true,
+  })
+  await remove.click()
+  await expect(page.getByText(/Delete failed for this test/)).toBeVisible()
+  await expect(second).toBeChecked()
+  await remove.click()
+  await expect(grid.locator(`[data-log-ref="${secondID}"]`)).toHaveCount(0)
+  await expect(grid.locator(`[data-log-ref="${firstID}"]`)).toBeVisible()
+  expect(calls).toEqual([[secondID], [secondID]])
+  expect(page.url()).toContain(`/logs/${firstID}`)
+  await expect(
+    page.getByRole('button', { name: 'Delete 0 selected logs', exact: true })
+  ).toBeDisabled()
 })
 
 test('footer delete controls dispatch only their intended mocked operations', async ({
@@ -2040,9 +2184,9 @@ test('footer delete controls dispatch only their intended mocked operations', as
     .click()
   await expect.poll(() => cleared).toBe(true)
   await expect(page.locator('[data-log-ref]')).toHaveCount(0)
-  await expect(
-    page.getByRole('status', { name: 'Log page range' })
-  ).toContainText('0 logs')
+  await expect(page.getByRole('status', { name: 'Log count' })).toContainText(
+    '0 logs'
+  )
 })
 
 test('header error navigation crosses pages within the current result', async ({

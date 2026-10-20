@@ -1143,8 +1143,8 @@ LIMIT ${batch.length}`,
     return logDataFromJSON(rawData)
   },
 
-  deleteLogsByRefs: (logRef: string) =>
-    callRPC<JsonDeleteResult>('deleteLogsByRefs', [logRef]),
+  deleteLogsByRefs: (...logRefs: string[]) =>
+    callRPC<JsonDeleteResult>('deleteLogsByRefs', logRefs),
   clearLogs: () => callRPC<string>('clearLogs', undefined),
 
   searchMetricSummaries: async (

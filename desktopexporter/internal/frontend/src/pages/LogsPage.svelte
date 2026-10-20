@@ -93,6 +93,9 @@
   let query = $state('')
   let fields = $state<FieldDefinition[]>([])
   let selectedColumns = $state(loadLogColumns())
+  let selectionMode = $state(false)
+  let checkedIDs = $state<string[]>([])
+  let deletingSelected = $state(false)
   let submittedQuery: ParsedSearchRequest | null = null
   let submittedText = ''
   let pageNumber = $state(1)
@@ -334,6 +337,25 @@
       actionError = err instanceof Error ? err.message : 'Failed to delete logs'
     }
   }
+
+  async function handleDeleteSelectedLogs() {
+    if (!checkedIDs.length || deletingSelected || page.loading) return
+    const ids = [...checkedIDs]
+    deletingSelected = true
+    actionError = null
+    try {
+      await telemetryAPI.deleteLogsByRefs(...ids)
+      checkedIDs = []
+      if (page.selectedID && ids.includes(page.selectedID))
+        navigateToItem('logs', null, 'replace')
+      await page.runListFetch()
+    } catch (err) {
+      actionError =
+        err instanceof Error ? err.message : 'Failed to delete selected logs'
+    } finally {
+      deletingSelected = false
+    }
+  }
 </script>
 
 <div class="logs-page">
@@ -397,6 +419,7 @@
         <LogTable
           {total}
           {pageNumber}
+          {pageSize}
           {errorNavigation}
           {errorNavigationError}
           {errorNavigationLoading}
@@ -411,6 +434,9 @@
           onSort={changeSort}
           {fields}
           bind:selectedColumns
+          bind:selectionMode
+          bind:checkedIDs
+          selectionBusy={deletingSelected}
           onColumnsChange={() => void page.runListFetch()}
         >
           {#snippet filters()}<LogFilters
@@ -429,6 +455,10 @@
         onPage={changePage}
         onPageSize={changePageSize}
         onDeleteAll={handleDeleteAllLogs}
+        {selectionMode}
+        selectedCount={checkedIDs.length}
+        deleting={deletingSelected}
+        onDeleteSelected={handleDeleteSelectedLogs}
       />
     {/snippet}
 

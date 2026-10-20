@@ -4,7 +4,6 @@ import { json } from '@codemirror/lang-json'
 import {
   codeFolding,
   foldKeymap,
-  foldGutter,
   bracketMatching,
   syntaxHighlighting,
 } from '@codemirror/language'
@@ -12,7 +11,7 @@ import { search, searchKeymap } from '@codemirror/search'
 import { editorHighlightStyle } from './editor-highlighting'
 import { jsonWrapping } from './json-wrapping'
 import { jsonGuides } from './json-guides'
-import { createJsonFoldCaret } from './json-fold-caret'
+import { jsonFoldGroups } from './json-fold-groups'
 
 /** One read-only configuration shared by all JSON detail editors. */
 export const jsonEditorExtensions = [
@@ -24,16 +23,7 @@ export const jsonEditorExtensions = [
   syntaxHighlighting(editorHighlightStyle),
   codeFolding(),
   bracketMatching(),
-  foldGutter({
-    markerDOM(open) {
-      const marker = document.createElement('span')
-      marker.className = 'json-fold-marker'
-      marker.title = open ? 'Fold line' : 'Unfold line'
-      marker.dataset.open = String(open)
-      marker.append(createJsonFoldCaret())
-      return marker
-    },
-  }),
+  jsonFoldGroups,
   search({ top: true }),
   keymap.of([...searchKeymap, ...foldKeymap]),
   EditorView.theme({

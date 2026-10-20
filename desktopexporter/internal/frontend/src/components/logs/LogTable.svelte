@@ -58,6 +58,7 @@
     logs,
     total,
     pageNumber = 1,
+    pageSize = 100,
     selectedID,
     sortColumn,
     sortDirection,
@@ -73,10 +74,14 @@
     fields = [],
     selectedColumns = $bindable(loadLogColumns()),
     onColumnsChange,
+    selectionMode = $bindable(false),
+    checkedIDs = $bindable<string[]>([]),
+    selectionBusy = false,
   }: {
     logs: LogTableRow[]
     total: number
     pageNumber?: number
+    pageSize?: number
     selectedID: string | null
     sortColumn: LogSortColumn
     sortDirection: LogSortDirection
@@ -92,8 +97,32 @@
     fields?: FieldDefinition[]
     selectedColumns?: string[]
     onColumnsChange?: () => void
+    selectionMode?: boolean
+    checkedIDs?: string[]
+    selectionBusy?: boolean
   } = $props()
   const time = getTimeContext()
+  const selectionWidth = $derived(selectionMode ? 40 : 0)
+  const allChecked = $derived(
+    logs.length > 0 && logs.every(log => checkedIDs.includes(log.logRef))
+  )
+  $effect(() => {
+    const visible = new Set(logs.map(log => log.logRef))
+    const enabled = selectionMode
+    checkedIDs = untrack(() =>
+      enabled ? checkedIDs.filter(id => visible.has(id)) : []
+    )
+  })
+  function toggleChecked(id: string) {
+    checkedIDs = checkedIDs.includes(id)
+      ? checkedIDs.filter(value => value !== id)
+      : [...checkedIDs, id]
+  }
+  function toggleSelection() {
+    drag?.cancel()
+    selectionMode = !selectionMode
+    widths = reconcileWidths(specs, widths, width, 'body')
+  }
   let table = $state<HTMLDivElement>()
   $effect.pre(() => {
     if (!errorNavigationLoading) return
@@ -140,13 +169,14 @@
     options.filter(column => selectedColumns.includes(column.id))
   )
   let severityWidth = $state(LOG_SEVERITY_MIN_WIDTH)
-  let specs = $derived(
-    columns.map(column =>
+  let specs = $derived([
+    ...(selectionMode ? [fixed('__selection', selectionWidth)] : []),
+    ...columns.map(column =>
       column.id === 'severity'
         ? fixed(column.id, severityWidth)
         : flex(column.id, column.min, column.id === 'body' ? 4 : 1)
-    )
-  )
+    ),
+  ])
   let viewport = $state<HTMLDivElement>()
   let width = $state(800)
   let scrollLeft = $state(0)
@@ -194,17 +224,18 @@
   }
   let widths = $state<ColumnWidths>(untrack(() => defaultWidths(width)))
   let template = $derived(
-    columns.map(column => `${widths[column.id]}px`).join(' ')
+    specs.map(column => `${widths[column.id]}px`).join(' ')
   )
   let gridWidth = $derived(
-    columns.reduce((sum, column) => sum + widths[column.id], 0)
+    specs.reduce((sum, column) => sum + widths[column.id], 0)
   )
   let bars = $derived(barPositions(specs, widths))
   let pinnedSeverityWidth = $derived(
     columns.some(column => column.id === 'severity') ? widths.severity : 0
   )
   let pinnedLeftWidth = $derived(
-    pinnedSeverityWidth +
+    selectionWidth +
+      pinnedSeverityWidth +
       (columns.some(column => column.id === 'timestamp') ? widths.timestamp : 0)
   )
   let pinnedBodyWidth = $derived(
@@ -244,6 +275,7 @@
 
   $effect(() => {
     if (!viewport) return
+    void specs
     const observer = new ResizeObserver(entries => {
       width = entries[0]!.contentRect.width
       if (!measured) {
@@ -363,11 +395,14 @@
     drag?.cancel()
     const next = options.filter(column => ids.includes(column.id))
     selectedColumns = next.map(column => column.id)
-    const nextSpecs = next.map(column =>
-      column.id === 'severity'
-        ? fixed(column.id, severityWidth)
-        : flex(column.id, column.min, column.id === 'body' ? 4 : 1)
-    )
+    const nextSpecs = [
+      ...(selectionMode ? [fixed('__selection', selectionWidth)] : []),
+      ...next.map(column =>
+        column.id === 'severity'
+          ? fixed(column.id, severityWidth)
+          : flex(column.id, column.min, column.id === 'body' ? 4 : 1)
+      ),
+    ]
     widths = reconcileWidths(
       nextSpecs,
       {
@@ -472,10 +507,26 @@
 <div class="log-table" class:log-table--pinned={pinColumns} bind:this={table}>
   <PaneHeader pill mode="title" title="Logs" ariaLabel="Log table summary">
     {#snippet badge()}<span class="badge-count"
-        >{total.toLocaleString()} {total === 1 ? 'record' : 'records'}</span
+        >{#if logs.length}{(
+            (pageNumber - 1) * pageSize +
+            1
+          ).toLocaleString()}–{(
+            (pageNumber - 1) * pageSize +
+            logs.length
+          ).toLocaleString()} of{' '}
+        {/if}{total.toLocaleString()}
+        {total === 1 ? 'record' : 'records'}</span
       >
     {/snippet}
     {#snippet right()}
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-sm"
+        aria-label="Select logs"
+        aria-pressed={selectionMode}
+        disabled={selectionBusy}
+        onclick={toggleSelection}>Select</button
+      >
       {#if errorNavigation}<ErrorNavigationBadge
           count={errorNavigation.count}
           busy={errorNavigationLoading}
@@ -546,6 +597,7 @@
         style:width="{gridWidth}px"
         style:--log-columns={template}
         style:--log-severity-width="{pinnedSeverityWidth}px"
+        style:--log-selection-width="{selectionWidth}px"
       >
         <div
           class="log-table__grid-body"
@@ -553,11 +605,28 @@
           tabindex="-1"
           aria-label="Logs"
           aria-rowcount={logs.length + 1}
-          aria-colcount={columns.length}
+          aria-colcount={columns.length + (selectionMode ? 1 : 0)}
           aria-busy={loading}
+          aria-multiselectable={selectionMode || undefined}
           onkeydown={navigate}
         >
           <div class="log-table__header" role="row" aria-rowindex={1}>
+            {#if selectionMode}
+              <div role="columnheader" class="log-table__selection">
+                <input
+                  type="checkbox"
+                  class="checkbox checkbox-sm"
+                  aria-label="Select all logs on this page"
+                  checked={allChecked}
+                  indeterminate={checkedIDs.length > 0 && !allChecked}
+                  disabled={loading || selectionBusy || !logs.length}
+                  onchange={() =>
+                    (checkedIDs = allChecked
+                      ? []
+                      : logs.map(log => log.logRef))}
+                />
+              </div>
+            {/if}
             {#each columns as column (column.id)}
               {@const sort = column.sort}
               <div
@@ -598,7 +667,9 @@
                 class="log-table__row table-row"
                 role="row"
                 aria-rowindex={index + 2}
-                aria-selected={selectedID === log.logRef}
+                aria-selected={selectionMode
+                  ? checkedIDs.includes(log.logRef)
+                  : selectedID === log.logRef}
                 data-log-ref={log.logRef}
                 tabindex={selectedID === log.logRef ? 0 : -1}
                 onclick={event => {
@@ -616,6 +687,20 @@
                   }
                 }}
               >
+                {#if selectionMode}
+                  <div role="gridcell" class="log-table__selection">
+                    <input
+                      type="checkbox"
+                      class="checkbox checkbox-sm"
+                      aria-label={`Select log ${log.logRef}`}
+                      checked={checkedIDs.includes(log.logRef)}
+                      disabled={loading || selectionBusy}
+                      onclick={event => event.stopPropagation()}
+                      onkeydown={event => event.stopPropagation()}
+                      onchange={() => toggleChecked(log.logRef)}
+                    />
+                  </div>
+                {/if}
                 {#each columns as column (column.id)}
                   {@const cell = column.projection
                     ? logColumnCell(log, column)
@@ -719,6 +804,10 @@
   .log-table__cell--body {
     --table-cell-inline-end: 0.5rem;
   }
+  .log-table__selection {
+    @apply sticky left-0 z-[13] flex items-center justify-center self-stretch;
+    background-color: inherit;
+  }
   .log-table__cell--attribute {
     @apply text-base-content;
   }
@@ -732,14 +821,14 @@
     background-color: inherit;
   }
   .log-table--pinned .log-table__pin-left {
-    left: var(--log-severity-width);
+    left: calc(var(--log-selection-width) + var(--log-severity-width));
     z-index: 11;
   }
   .log-table--pinned .log-table__pin-body {
     right: 0;
   }
   .log-table--pinned .log-table__pin-severity {
-    left: 0;
+    left: var(--log-selection-width);
     z-index: 12;
   }
   .log-table__row > :first-child {

@@ -1923,6 +1923,11 @@ describe('request parameters', () => {
       () => telemetryAPI.deleteLogsByRefs('log-1'),
       ['log-1'],
     ],
+    [
+      'deleteLogsByRefs',
+      () => telemetryAPI.deleteLogsByRefs('log-1', 'log-2'),
+      ['log-1', 'log-2'],
+    ],
   ])(
     '%s stays positional, because its params are the ids',
     async (method, invoke, expected) => {

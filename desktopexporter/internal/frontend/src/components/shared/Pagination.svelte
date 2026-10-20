@@ -5,6 +5,8 @@
     ChevronLeftIcon,
     ChevronRightIcon,
     Delete02Icon,
+    ArrowLeftDoubleIcon,
+    ArrowRightDoubleIcon,
   } from '@hugeicons/core-free-icons'
 
   let {
@@ -15,6 +17,10 @@
     onPage,
     onPageSize,
     onDeleteAll,
+    selectionMode = false,
+    selectedCount = 0,
+    deleting = false,
+    onDeleteSelected,
   }: {
     page: number
     pageSize: number
@@ -23,6 +29,10 @@
     onPage: (page: number) => void
     onPageSize: (size: number) => void
     onDeleteAll?: () => void
+    selectionMode?: boolean
+    selectedCount?: number
+    deleting?: boolean
+    onDeleteSelected?: () => void
   } = $props()
 
   let pages = $derived(Math.max(1, Math.ceil(total / pageSize)))
@@ -39,114 +49,182 @@
   )
 </script>
 
-<SignalFooter
-  index={page - 1}
-  total={pages}
-  label="log"
-  onFirst={() => onPage(1)}
-  onPrev={() => onPage(page - 1)}
-  onNext={() => onPage(page + 1)}
-  onLast={() => onPage(pages)}
->
-  {#snippet leading()}
-    <div class="pagination__summary">
-      {#if onDeleteAll}<button
+<div class="pagination">
+  <SignalFooter
+    index={page - 1}
+    total={pages}
+    label="log"
+    onFirst={() => onPage(1)}
+    onPrev={() => onPage(page - 1)}
+    onNext={() => onPage(page + 1)}
+    onLast={() => onPage(pages)}
+  >
+    {#snippet leading()}
+      <div class="pagination__summary">
+        {#if onDeleteAll && !selectionMode}<button
+            type="button"
+            class="btn btn-ghost btn-sm btn-square text-error tooltip tooltip-right"
+            aria-label="Delete all logs"
+            data-tip="Delete all logs"
+            onclick={onDeleteAll}
+            ><HugeiconsIcon
+              icon={Delete02Icon}
+              size="1em"
+              strokeWidth={1.5}
+              class="h-3.5 w-3.5"
+              aria-hidden="true"
+            /></button
+          >{/if}
+        <span role="status" aria-label="Log count" class="tabular-nums"
+          >{total.toLocaleString()} {total === 1 ? 'log' : 'logs'}</span
+        >
+      </div>
+    {/snippet}
+    {#snippet navigation()}
+      <nav aria-label="Log pages" class="pagination__pages">
+        <button
           type="button"
-          class="btn btn-ghost btn-sm btn-square text-error tooltip tooltip-right"
-          aria-label="Delete all logs"
-          data-tip="Delete all logs"
-          onclick={onDeleteAll}
+          class="btn btn-ghost btn-sm btn-circle tooltip tooltip-top"
+          data-tip="First page"
+          aria-label="First page"
+          disabled={loading || page <= 1}
+          onclick={() => onPage(1)}
+        >
+          <HugeiconsIcon
+            icon={ArrowLeftDoubleIcon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-3.5 w-3.5"
+            aria-hidden="true"
+          />
+        </button>
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm btn-circle tooltip tooltip-top"
+          data-tip="Previous page"
+          aria-label="Previous page"
+          disabled={loading || page <= 1}
+          onclick={() => onPage(page - 1)}
           ><HugeiconsIcon
-            icon={Delete02Icon}
+            icon={ChevronLeftIcon}
             size="1em"
             strokeWidth={1.5}
             class="h-3.5 w-3.5"
             aria-hidden="true"
           /></button
-        >{/if}
-      <span role="status" aria-label="Log page range" class="tabular-nums"
-        >{total === 0
-          ? '0 logs'
-          : `${((page - 1) * pageSize + 1).toLocaleString()}–${Math.min(page * pageSize, total).toLocaleString()} of ${total.toLocaleString()} logs`}</span
-      >
-    </div>
-  {/snippet}
-  {#snippet navigation()}
-    <nav aria-label="Log pages" class="pagination__pages">
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm btn-square tooltip tooltip-top"
-        data-tip="Previous page"
-        aria-label="Previous page"
-        disabled={loading || page <= 1}
-        onclick={() => onPage(page - 1)}
-        ><HugeiconsIcon
-          icon={ChevronLeftIcon}
-          size="1em"
-          strokeWidth={1.5}
-          class="h-3.5 w-3.5"
-          aria-hidden="true"
-        /></button
-      >
-      {#each visible as number, index (number)}
-        {#if index > 0 && number > visible[index - 1]! + 1}<span
-            aria-hidden="true">…</span
-          >{/if}
+        >
+        {#each visible as number, index (number)}
+          {#if index > 0 && number > visible[index - 1]! + 1}<span
+              aria-hidden="true">…</span
+            >{/if}
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm btn-circle pagination__page-number text-sm tabular-nums"
+            class:btn-active={number === page}
+            aria-label={`Page ${number}`}
+            aria-current={number === page ? 'page' : undefined}
+            disabled={loading}
+            onclick={() => onPage(number)}>{number}</button
+          >
+        {/each}
         <button
           type="button"
-          class="btn btn-ghost btn-sm btn-square text-xs tabular-nums"
-          class:btn-active={number === page}
-          aria-label={`Page ${number}`}
-          aria-current={number === page ? 'page' : undefined}
-          disabled={loading}
-          onclick={() => onPage(number)}>{number}</button
+          class="btn btn-ghost btn-sm btn-circle tooltip tooltip-top"
+          data-tip="Next page"
+          aria-label="Next page"
+          disabled={loading || page >= pages}
+          onclick={() => onPage(page + 1)}
+          ><HugeiconsIcon
+            icon={ChevronRightIcon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-3.5 w-3.5"
+            aria-hidden="true"
+          /></button
         >
-      {/each}
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm btn-square tooltip tooltip-top"
-        data-tip="Next page"
-        aria-label="Next page"
-        disabled={loading || page >= pages}
-        onclick={() => onPage(page + 1)}
-        ><HugeiconsIcon
-          icon={ChevronRightIcon}
-          size="1em"
-          strokeWidth={1.5}
-          class="h-3.5 w-3.5"
-          aria-hidden="true"
-        /></button
-      >
-    </nav>
-  {/snippet}
-  {#snippet trailing()}
-    <div class="pagination__size">
-      <label class="flex items-center gap-2 text-xs text-rp-subtle"
-        >Rows
-        <select
-          class="select select-ghost select-xs w-16 text-xs"
-          aria-label="Logs per page"
-          value={pageSize}
-          disabled={loading}
-          onchange={event => onPageSize(Number(event.currentTarget.value))}
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm btn-circle tooltip tooltip-top"
+          data-tip="Last page"
+          aria-label="Last page"
+          disabled={loading || page >= pages}
+          onclick={() => onPage(pages)}
         >
-          {#each [25, 50, 100, 250] as size}<option value={size}>{size}</option
-            >{/each}
-        </select>
-      </label>
-    </div>
-  {/snippet}
-</SignalFooter>
+          <HugeiconsIcon
+            icon={ArrowRightDoubleIcon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-3.5 w-3.5"
+            aria-hidden="true"
+          />
+        </button>
+      </nav>
+    {/snippet}
+    {#snippet trailing()}
+      {#if selectionMode}
+        <button
+          type="button"
+          class="btn btn-ghost btn-sm text-sm"
+          disabled={!selectedCount || deleting || loading}
+          onclick={onDeleteSelected}
+        >
+          Delete {selectedCount} selected {selectedCount === 1 ? 'log' : 'logs'}
+        </button>
+      {/if}
+      <div class="pagination__size">
+        <label class="flex items-center gap-2 text-xs text-rp-subtle"
+          >Rows
+          <select
+            class="select select-ghost select-xs w-16 text-xs"
+            aria-label="Logs per page"
+            value={pageSize}
+            disabled={loading}
+            onchange={event => onPageSize(Number(event.currentTarget.value))}
+          >
+            {#each [25, 50, 100, 250] as size}<option value={size}
+                >{size}</option
+              >{/each}
+          </select>
+        </label>
+      </div>
+    {/snippet}
+  </SignalFooter>
+</div>
 
 <style lang="postcss">
   @reference "../../app.css";
+  .pagination {
+    flex-shrink: 0;
+    container-type: inline-size;
+  }
+  @container (width < 60rem) {
+    .pagination :global(.signal-footer) {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+    .pagination :global(.signal-footer > :nth-child(2)) {
+      grid-column: 1 / -1;
+      grid-row: 2;
+    }
+    .pagination :global(.signal-footer > :last-child) {
+      grid-column: 2;
+      grid-row: 1;
+    }
+  }
   .pagination__summary,
   .pagination__pages,
   .pagination__size {
     @apply flex min-w-0 items-center gap-1;
   }
   .pagination__pages {
-    @apply justify-center;
+    @apply flex-wrap justify-center;
+  }
+  .pagination__page-number {
+    width: auto;
+    height: auto;
+    min-width: var(--size);
+    min-height: var(--size);
+    aspect-ratio: 1;
+    padding-inline: 0.5rem;
   }
   .pagination__summary {
     @apply text-xs text-base-content;
