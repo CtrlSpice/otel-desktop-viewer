@@ -127,6 +127,8 @@
   Code comments use Subtle, not Muted. Code surfaces and all search inputs use
   bg-base-100: darkest in Pine/Moon, brightest in Dawn. Apply this to JSON,
   shell examples, code snippets, compact JSON, query inputs and filter searches.
+  JSON inside a Details field card uses a transparent editor background so the
+  card's shared hover, reveal and selection highlights remain continuous.
   Keep header surfaces separate; retain shared hover and selection highlights.
   Structured attribute wrappers add no extra left padding. JSON uses the shared
   Hugeicons fold-caret gutter; retain existing folding commands and raw-inspector

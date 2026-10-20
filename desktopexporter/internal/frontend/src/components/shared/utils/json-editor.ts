@@ -30,7 +30,7 @@ export const jsonEditorExtensions = [
     '&': {
       height: 'auto',
       color: 'var(--color-base-content)',
-      backgroundColor: 'var(--color-base-100)',
+      backgroundColor: 'var(--json-editor-background, var(--color-base-100))',
       fontSize: 'inherit',
     },
     '.cm-scroller': {

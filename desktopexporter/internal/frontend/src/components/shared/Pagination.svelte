@@ -84,7 +84,7 @@
       <nav aria-label="Log pages" class="pagination__pages">
         <button
           type="button"
-          class="btn btn-ghost btn-sm btn-circle tooltip tooltip-top"
+          class="btn btn-ghost btn-sm btn-square tooltip tooltip-top"
           data-tip="First page"
           aria-label="First page"
           disabled={loading || page <= 1}
@@ -100,7 +100,7 @@
         </button>
         <button
           type="button"
-          class="btn btn-ghost btn-sm btn-circle tooltip tooltip-top"
+          class="btn btn-ghost btn-sm btn-square tooltip tooltip-top"
           data-tip="Previous page"
           aria-label="Previous page"
           disabled={loading || page <= 1}
@@ -119,7 +119,7 @@
             >{/if}
           <button
             type="button"
-            class="btn btn-ghost btn-sm btn-circle pagination__page-number text-sm tabular-nums"
+            class="btn btn-ghost btn-sm btn-square text-sm font-normal tabular-nums"
             class:btn-active={number === page}
             aria-label={`Page ${number}`}
             aria-current={number === page ? 'page' : undefined}
@@ -129,7 +129,7 @@
         {/each}
         <button
           type="button"
-          class="btn btn-ghost btn-sm btn-circle tooltip tooltip-top"
+          class="btn btn-ghost btn-sm btn-square tooltip tooltip-top"
           data-tip="Next page"
           aria-label="Next page"
           disabled={loading || page >= pages}
@@ -144,7 +144,7 @@
         >
         <button
           type="button"
-          class="btn btn-ghost btn-sm btn-circle tooltip tooltip-top"
+          class="btn btn-ghost btn-sm btn-square tooltip tooltip-top"
           data-tip="Last page"
           aria-label="Last page"
           disabled={loading || page >= pages}
@@ -164,7 +164,7 @@
       {#if selectionMode}
         <button
           type="button"
-          class="btn btn-ghost btn-sm text-sm"
+          class="btn btn-ghost btn-sm text-sm font-normal"
           disabled={!selectedCount || deleting || loading}
           onclick={onDeleteSelected}
         >
@@ -217,13 +217,6 @@
   }
   .pagination__pages {
     @apply flex-wrap justify-center;
-  }
-  .pagination__page-number {
-    width: auto;
-    height: var(--size);
-    min-width: var(--size);
-    min-height: var(--size);
-    padding-inline: 0.375rem;
   }
   .pagination__summary {
     @apply text-xs text-base-content;
