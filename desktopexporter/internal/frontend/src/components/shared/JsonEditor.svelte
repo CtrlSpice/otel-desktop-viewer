@@ -3,6 +3,7 @@
   import { EditorView } from '@codemirror/view'
   import { foldAll, unfoldAll } from '@codemirror/language'
   import { jsonEditorExtensions } from './utils/json-editor'
+  import { jsonReadableStrings } from './utils/json-readable-strings'
 
   let {
     text,
@@ -27,6 +28,7 @@
         doc: text,
         extensions: [
           jsonEditorExtensions,
+          ...(raw ? [] : [jsonReadableStrings]),
           EditorView.contentAttributes.of({
             'aria-label': label,
             tabindex: '0',

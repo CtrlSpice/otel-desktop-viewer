@@ -387,15 +387,19 @@ describe('DetailProperty copy controls', () => {
     ['traceId', 'custom-id'],
     ['value', 'c7dc4131-2ce3-4d1c-a50b-cc10592aad7c'],
     ['sequence', '9223372036854775807'],
-  ])('keeps technical string %s in code styling', (fieldName, fieldValue) => {
-    const { container } = render(DetailProperty, {
-      fieldName,
-      fieldType: 'string',
-      fieldValue,
-    })
-    expect(container.querySelector('.attribute-value--text')).toBeNull()
-    expect(container.querySelector('code')).toHaveTextContent(fieldValue)
-  })
+  ])(
+    'displays technical string %s without JSON wrapper quotes',
+    (fieldName, fieldValue) => {
+      const { container } = render(DetailProperty, {
+        fieldName,
+        fieldType: 'string',
+        fieldValue,
+      })
+      expect(
+        container.querySelector('.attribute-value--text')?.textContent?.trim()
+      ).toBe(fieldValue)
+    }
+  )
 
   it('announces clipboard failure without falsely marking the value copied', async () => {
     const user = userEvent.setup()

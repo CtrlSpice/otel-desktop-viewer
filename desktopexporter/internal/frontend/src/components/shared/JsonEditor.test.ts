@@ -10,6 +10,43 @@ const text =
   '{\n  "same": 9223372036854775807,\n  "same": -0,\n  "items": [\n    "line\\n  content",\n    false\n  ]\n}'
 
 describe('JsonEditor', () => {
+  it('decodes only value-string presentation and preserves the JSON document', () => {
+    const command = `curl -d '{"method":"getTraceView"}'`
+    const source = JSON.stringify(
+      {
+        pattern: command,
+        path: String.raw`C:\new\trace.json`,
+        lines: 'first\r\nsecond\tvalue',
+        unicode: '🚀',
+        empty: '',
+        quoted: '"quoted"',
+      },
+      null,
+      2
+    ).replace('🚀', String.raw`\uD83D\uDE80`)
+    const { container } = render(JsonEditor, { text: source })
+    const content = container
+      .querySelector('.cm-content')!
+      .cloneNode(true) as HTMLElement
+    content.querySelectorAll('.cm-widgetBuffer').forEach(node => node.remove())
+    expect(content.textContent).toContain(`"pattern": ${command},`)
+    expect(content.textContent).toContain(
+      String.raw`"path": C:\new\trace.json,`
+    )
+    expect(content.textContent).toContain('first\r\nsecond\tvalue')
+    expect(content.textContent).toContain('"unicode": 🚀')
+    expect(content.textContent).toContain('"empty": ""')
+    expect(content.textContent).toContain('"quoted": "quoted"')
+    expect(jsonEditorView(container).state.doc.toString()).toBe(source)
+  })
+
+  it('keeps raw JSON string escapes and quotes visible', () => {
+    const source = '{"pattern":"curl -d \\\"payload\\\""}'
+    const { container } = render(JsonEditor, { text: source, raw: true })
+    expect(container.querySelector('.cm-content')!.textContent).toBe(source)
+    expect(container.querySelector('.json-decoded-escape')).toBeNull()
+  })
+
   it('highlights matching brackets at the cursor without changing the document', async () => {
     const { container } = render(JsonEditor, { text: '{"items": [1, 2]}' })
     const view = jsonEditorView(container)

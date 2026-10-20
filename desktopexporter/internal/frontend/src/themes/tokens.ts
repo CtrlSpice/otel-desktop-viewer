@@ -44,7 +44,7 @@ export function themeTokens(theme: Theme) {
       ? 'var(--color-base-100)'
       : 'var(--color-base-content)',
     // Waterfall tree geometry.
-    '--waterfall-gutter-col': '22px',
+    '--waterfall-gutter-col': '18px',
     '--tree-count-width': '22px',
     '--waterfall-gutter-hub': '8px',
     '--waterfall-gutter-leaf': '8px',

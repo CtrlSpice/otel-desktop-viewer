@@ -822,7 +822,7 @@ test('case branches stay connected to aligned repetitions through sorting and re
     for (const row of geometry.rows) {
       expect(row.gap).toBeLessThan(1)
       expect(row.level).toBeLessThan(1)
-      expect(row.indent).toBeCloseTo(22, 0)
+      expect(row.indent).toBeCloseTo(18, 0)
       expect(row.countAlignment).toBeLessThan(1)
       expect(row.countBeforeDot).toBe(true)
       expect(row.alignment).toBe(true)

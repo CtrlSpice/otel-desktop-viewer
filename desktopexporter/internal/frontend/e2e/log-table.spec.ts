@@ -670,12 +670,14 @@ test('column groups toggle together and retain the final required column', async
 test('embedded JSON previews are coloured and Details wraps at keys with working fold carets', async ({
   page,
 }) => {
+  const command = `curl -d '{"method":"getTraceView"}'`
   const inner = JSON.stringify({
     path: '/recorded/configuration/'.repeat(12) + 'config.jsonc',
     message:
       'ordinary words should wrap between words without splitting them '.repeat(
         5
       ),
+    pattern: command,
   })
   const body: JsonAttributeValue = {
     kind: 'array',
@@ -725,6 +727,20 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
   await expect(cell.locator('.cm-editor')).toHaveCount(0)
   const bodyField = page.locator('[data-field="body"]')
   const editor = bodyField.locator('.cm-editor')
+  await expect
+    .poll(() =>
+      editor
+        .locator('.cm-line')
+        .filter({ hasText: '"pattern"' })
+        .evaluate(line => {
+          const content = line.cloneNode(true) as HTMLElement
+          content
+            .querySelectorAll('.cm-widgetBuffer')
+            .forEach(node => node.remove())
+          return content.textContent
+        })
+    )
+    .toBe(`    "pattern": ${command}`)
   for (const width of [320, 480]) {
     await editor.evaluate(
       (element, width) => (element.style.maxWidth = `${width}px`),
@@ -740,7 +756,7 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
             span => span.textContent === '"path"'
           )!
           const value = [...line.children].find(span =>
-            span.textContent?.startsWith('"/recorded')
+            span.textContent?.startsWith('/recorded')
           )!
           const range = document.createRange()
           range.setStart(key.firstChild!, 1)
@@ -764,7 +780,7 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
       .poll(() =>
         words.evaluate(line => {
           const value = [...line.children].find(span =>
-            span.textContent?.startsWith('"ordinary')
+            span.textContent?.startsWith('ordinary')
           )!
           const node = value.firstChild!
           return [...node.textContent!.matchAll(/[a-z]+/g)].every(word => {
@@ -777,6 +793,13 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
       )
       .toBe(true)
   }
+  await editor.locator('.cm-content').focus()
+  await page.keyboard.press('ControlOrMeta+f')
+  const search = editor.locator('.cm-search input[name="search"]')
+  await search.fill('getTraceView')
+  await search.press('Enter')
+  await expect(editor.locator('.cm-searchMatch')).toHaveText('getTraceView')
+  await page.keyboard.press('Escape')
   const braces = bodyField.locator('.json-fold-bracket')
   await braces.nth(1).hover()
   await expect(bodyField.locator('.json-fold-bracket--active')).toHaveText([

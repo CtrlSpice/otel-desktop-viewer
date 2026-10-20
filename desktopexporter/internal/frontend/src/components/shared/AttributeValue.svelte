@@ -1,10 +1,6 @@
 <script lang="ts">
   import type { AttributeValue } from '@/types/api-types'
-  import {
-    attributeValueTokens,
-    isReadableText,
-    jsonContainerTokens,
-  } from './detail-value'
+  import { attributeValueTokens, jsonContainerTokens } from './detail-value'
   import ExpandableValue from './ExpandableValue.svelte'
   import ValueSyntax from './ValueSyntax.svelte'
   import JsonEditor from './JsonEditor.svelte'
@@ -18,7 +14,7 @@
     value.kind === 'string' ? jsonContainerTokens(value.value, true) : null
   )
   let readable = $derived(
-    value.kind === 'string' && !json && isReadableText(value.value, path)
+    value.kind === 'string' && value.value.length > 0 && !json
   )
   let tokens = $derived(json ?? attributeValueTokens(value, true))
   let structured = $derived(

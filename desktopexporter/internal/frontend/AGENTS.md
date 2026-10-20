@@ -129,6 +129,10 @@
   shell examples, code snippets, compact JSON, query inputs and filter searches.
   JSON inside a Details field card uses a transparent editor background so the
   card's shared hover, reveal and selection highlights remain continuous.
+  Properties presents ordinary string values as decoded text without their outer
+  JSON quotes. Retain meaningful quotes/backslashes, and show empty strings as
+  `""`. Raw JSON and explicit Copy/Download retain the original value. Keep the
+  editor document and syntax tree intact for folding, search and exact numbers.
   Keep header surfaces separate; retain shared hover and selection highlights.
   Structured attribute wrappers add no extra left padding. JSON uses the shared
   Hugeicons fold-caret gutter; retain existing folding commands and raw-inspector
@@ -247,7 +251,7 @@
   Timeline activity markers use the same 14px circle icon for single and grouped
   records. Grouped markers show a small 8px plus icon instead of a visible count;
   keep exact event/log counts in the accessible label and tooltip.
-  Tree columns use 22px spacing. Guides must span
+   Tree columns use 18px spacing. Guides must span
   the shared table row height so they remain connected.
   Tree connector trunks, arms and stems use solid 1px Muted lines at 50% opacity.
   Centre the line strokes on node centres; elbow connectors use the cards'

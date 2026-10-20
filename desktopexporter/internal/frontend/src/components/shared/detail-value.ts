@@ -171,17 +171,6 @@ function indentTokens(tokens: ValueToken[], depth: number): ValueToken[] {
   )
 }
 
-/** Names and prose use text styling; recognizable IDs and numeric strings do not. */
-export function isReadableText(text: string, path?: string): boolean {
-  return (
-    text.trim().length > 0 &&
-    !/(?:^|[._])(?:id|.*Id|.*ID)$/.test(path ?? '') &&
-    !/^(?:[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|[\da-f]{16,}|[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12})$/i.test(
-      text.trim()
-    )
-  )
-}
-
 /** Format received values directly: do not round int64s or merge duplicate keys. */
 export function attributeValueTokens(
   value: AttributeValue,
