@@ -33,7 +33,7 @@ describe('run summaries', () => {
       { label: 'Pass', tone: 'success', count: 5 },
       { label: 'Partial', tone: 'warning', count: 3 },
       { label: 'Fail', tone: 'error', count: 2 },
-      { label: 'Error', tone: 'papaya', count: 2 },
+      { label: 'Internal fault', tone: 'papaya', count: 2 },
       { label: 'Planned', tone: 'neutral', count: 4 },
     ])
     expect(summary.investigatorCost.total).toBeCloseTo(0.592)

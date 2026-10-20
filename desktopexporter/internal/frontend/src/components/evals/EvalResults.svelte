@@ -20,11 +20,27 @@
   import DurationBar from '@/components/shared/DurationBar.svelte'
   import TimingCell from '@/components/shared/TimingCell.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
-  import type { SpanTiming } from '@/types/api-types'
+  import type { SpanNode, SpanTiming, TraceData } from '@/types/api-types'
+  import { getServiceName } from '@/utils/resource'
+  import {
+    evalExecutionRows,
+    evalTraceReferences,
+    indexEvalTraces,
+    referenceKey,
+    visibleExecutionRows,
+  } from './eval-traces'
   import { formatDuration } from '@/utils/time'
   import { spanTimingColor } from '@/utils/trace-service-color'
+  import {
+    buildWaterfallRows,
+    getTraceBounds,
+  } from '@/components/traces/Waterfall/WaterfallView.svelte'
   import { themeSignal } from '@/state/theme.svelte'
-  import { completionTone, groupAttempts } from './group-attempts'
+  import {
+    completionLabel,
+    completionTone,
+    groupAttempts,
+  } from './group-attempts'
   import {
     cost,
     estimatedCost,
@@ -42,11 +58,15 @@
     attempts,
     selectedID,
     onSelect,
+    onSelectSpan,
+    selectedSpanKey,
   }: {
     run: EvalRun
     attempts: EvalAttempt[]
     selectedID?: string
     onSelect: (id: string) => void
+    onSelectSpan?: (node: SpanNode) => void
+    selectedSpanKey?: string
   } = $props()
   const panelID = $props.id()
   const views = [
@@ -73,14 +93,15 @@
     { label: '100%', tone: 'success' },
     { label: 'Partial', tone: 'warning' },
     { label: '0%', tone: 'error' },
-    { label: 'Error', tone: 'papaya' },
+    { label: 'Internal fault', tone: 'papaya' },
     { label: 'Unscored', tone: 'neutral' },
   ]
   const completionLegend: LegendEntry[] = [
     { label: 'Complete', tone: 'complete' },
     { label: 'Running', tone: 'running' },
     { label: 'Planned', tone: 'neutral' },
-    { label: 'Error', tone: 'papaya' },
+    { label: 'Span error', tone: 'error' },
+    { label: 'Internal fault', tone: 'papaya' },
   ]
   let caseGutterWidth = $state(0)
   let repGutterWidth = $state(0)
@@ -90,17 +111,53 @@
     for (const attempt of run.attempts) {
       const count = (repetitions.get(attempt.caseID) ?? 0) + 1
       repetitions.set(attempt.caseID, count)
-      maximum = Math.max(maximum, count, attempt.tools.length)
+      maximum = Math.max(
+        maximum,
+        count,
+        attempt.tools.length +
+          attempt.assessments.filter(item => item.telemetry?.spanID).length
+      )
     }
     return String(maximum).length
   })
   let collapsedCases = $state<string[]>([])
   let expandedAttempts = $state<string[]>([])
-  let spanTimings = $state<Record<string, SpanTiming>>({})
+  let traceViews = $state<TraceData[]>([])
+  const traceIndex = $derived(indexEvalTraces(traceViews))
+  const spanColors = $derived(
+    Object.fromEntries(
+      traceViews.flatMap(trace =>
+        buildWaterfallRows(
+          trace.spans,
+          getTraceBounds(trace.spans),
+          themeSignal.value
+        ).map(row => [referenceKey(row.spanNode.spanData), row.color])
+      )
+    )
+  )
+  const spanTimings = $derived<Record<string, SpanTiming>>(
+    Object.fromEntries(
+      [...traceIndex.nodes].map(([key, node]) => [
+        key,
+        {
+          ...node.spanData,
+          serviceName: getServiceName(node.spanData.resource) ?? '',
+        },
+      ])
+    )
+  )
+  const execution = $derived(
+    Object.fromEntries(
+      run.attempts.map(attempt => [
+        attempt.id,
+        evalExecutionRows(attempt, traceIndex),
+      ])
+    )
+  )
+  let collapsedSpans = $state<string[]>([])
   let timingsLoading = $state(false)
   let timingsFailed = $state(false)
-  const timingKey = (reference: TelemetryReference) =>
-    `${reference.traceID.toLowerCase()}/${reference.spanID?.toLowerCase() ?? ''}`
+  const timingKey = referenceKey
   const timingFor = (reference?: TelemetryReference) =>
     reference?.spanID ? spanTimings[timingKey(reference)] : undefined
   function durationFor(reference?: TelemetryReference, seconds?: number) {
@@ -136,6 +193,9 @@
         spanWindow([
           timingFor(attempt.telemetry),
           ...attempt.tools.map(tool => timingFor(tool.telemetry)),
+          ...attempt.assessments.map(assessment =>
+            timingFor(assessment.telemetry)
+          ),
         ]),
       ])
     )
@@ -161,37 +221,32 @@
     }, extent)
   })
   $effect(() => {
-    const references = [
-      run.telemetry,
-      ...run.attempts.flatMap(attempt => [
-        attempt.telemetry,
-        ...attempt.tools.map(tool => tool.telemetry),
-      ]),
-    ].flatMap(reference =>
-      reference?.spanID
-        ? [{ traceID: reference.traceID, spanID: reference.spanID }]
-        : []
-    )
+    const references = evalTraceReferences(run)
     const controller = new AbortController()
-    spanTimings = {}
+    traceViews = []
     timingsLoading = true
     timingsFailed = false
-    void telemetryAPI.getSpanTimings(references, controller.signal).then(
-      timings => {
-        if (controller.signal.aborted) return
-        spanTimings = Object.fromEntries(
-          timings.map(span => [timingKey(span), span])
-        )
-        timingsLoading = false
-      },
-      () => {
-        if (controller.signal.aborted) return
-        timingsLoading = false
-        timingsFailed = true
-      }
-    )
+    void telemetryAPI
+      .getReferencedTraceViews(references, controller.signal)
+      .then(
+        result => {
+          if (controller.signal.aborted) return
+          traceViews = result.traces
+          timingsFailed = result.unavailableTraceIDs.length > 0
+          timingsLoading = false
+        },
+        () => {
+          if (controller.signal.aborted) return
+          timingsLoading = false
+          timingsFailed = true
+        }
+      )
     return () => controller.abort()
   })
+  function selectSpan(reference: TelemetryReference) {
+    const node = traceIndex.nodes.get(referenceKey(reference))
+    if (node) onSelectSpan?.(node)
+  }
   function toggleCase(id: string) {
     collapsedCases = collapsedCases.includes(id)
       ? collapsedCases.filter(key => key !== id)
@@ -294,6 +349,7 @@
       const duration = durationFor(attempt.telemetry, attempt.seconds)
       return {
         ...attempt,
+        state: execution[attempt.id]?.state ?? attempt.state,
         seconds: duration !== undefined ? Number(duration) / 1e9 : undefined,
       }
     })
@@ -307,6 +363,9 @@
       activeSort
     ).map(group => ({
       ...group,
+      internalFault: group.allAttempts.some(
+        item => execution[item.id]?.internalFault
+      ),
       summary: caseSummary(group.allAttempts, run.assessments),
       duration: group.allAttempts.reduce((total, attempt) => {
         return total + (durationFor(attempt.telemetry, attempt.seconds) ?? 0n)
@@ -331,13 +390,21 @@
 
 {#snippet executionNode(
   reference: TelemetryReference | undefined,
-  state: EvalAttempt['state']
+  state: EvalAttempt['state'],
+  internalFault = false
 )}
   {@const span = timingFor(reference)}
-  {#if span}
+  {#if state === 'Error'}
+    <EvalStatus
+      label={completionLabel(state, internalFault)}
+      dotOnly
+      tone={completionTone(state, internalFault)}
+    />
+  {:else if span}
     <span
       class="size-2 shrink-0 rounded-full"
-      style:background-color={spanTimingColor(span, themeSignal.value)}
+      style:background-color={spanColors[referenceKey(span)] ??
+        spanTimingColor(span, themeSignal.value)}
       role="img"
       aria-label={state}
       title={`${span.serviceName} · ${state}`}
@@ -357,9 +424,11 @@
   <TimingCell maximum={maximumDuration}>
     {#if span && span.endTime >= span.startTime}<CorrelatedSpanBar
         {span}
+        color={spanColors[referenceKey(span)]}
         maximum={maximumDuration}
         href={traceHref(span)}
         {origin}
+        onSelect={onSelectSpan ? () => selectSpan(span) : undefined}
       />
     {:else if duration !== undefined}
       <span
@@ -397,7 +466,7 @@
       {#each views as item (item.id)}
         <button
           type="button"
-          class="btn btn-xs header-tab tooltip tooltip-left"
+          class="btn btn-xs header-tab header-toggle tooltip tooltip-left"
           aria-pressed={enabledViews.includes(item.id)}
           aria-controls={panelID}
           data-tip={item.label}
@@ -548,7 +617,12 @@
     {/snippet}
     {#snippet children(layout)}
       {#if run.telemetry || run.seconds !== undefined}
-        <tr class="table-row" aria-label="Run span">
+        <tr
+          class="table-row"
+          aria-label="Run span"
+          class:table-row--selected={!!run.telemetry &&
+            selectedSpanKey === referenceKey(run.telemetry)}
+        >
           <th
             colspan="2"
             scope="row"
@@ -600,9 +674,9 @@
                 onToggle={() => toggleCase(group.id)}
               >
                 {#snippet node()}<EvalStatus
-                    label={group.state}
+                    label={completionLabel(group.state, group.internalFault)}
                     dotOnly
-                    tone={completionTone(group.state)}
+                    tone={completionTone(group.state, group.internalFault)}
                   />{/snippet}
                 <span class="block truncate">{group.name}</span>
               </TreeRowIdentity>
@@ -617,7 +691,10 @@
               class:eval-results__single={single}
               data-attempt-id={item.id}
               data-case-id={group.id}
-              class:table-row--selected={selectedID === item.id}
+              class:table-row--selected={selectedSpanKey
+                ? !!item.telemetry &&
+                  selectedSpanKey === referenceKey(item.telemetry)
+                : selectedID === item.id}
             >
               {#each columns as column (column.key)}
                 {#if column.key === 'name'}
@@ -634,12 +711,12 @@
                       name={item.name}
                       depth={single ? 0 : 1}
                       tree={{
-                        childrenCount: item.tools.length,
+                        childrenCount: execution[item.id]?.childrenCount ?? 0,
                         ancestorHasNextSibling: single ? [] : [true],
                         isLastChild: index === group.attempts.length - 1,
                       }}
                       subtreeCollapsed={!expandedAttempts.includes(item.id)}
-                      toggleLabel={`${expandedAttempts.includes(item.id) ? 'Collapse' : 'Expand'} tools for ${item.name}, repetition ${item.repetition}, ${item.tools.length} tool calls`}
+                      toggleLabel={`${expandedAttempts.includes(item.id) ? 'Collapse' : 'Expand'} execution for ${item.name}, repetition ${item.repetition}, ${execution[item.id]?.rows.length ?? 0} references`}
                       onToggle={() =>
                         (expandedAttempts = expandedAttempts.includes(item.id)
                           ? expandedAttempts.filter(id => id !== item.id)
@@ -647,15 +724,17 @@
                     >
                       {#snippet node()}{@render executionNode(
                           item.telemetry,
-                          item.state
+                          item.state,
+                          execution[item.id]?.internalFault
                         )}{/snippet}
                       <button
                         class={single
                           ? 'block w-full min-w-0 truncate rounded-sm text-left text-base-content focus-visible:outline-2 focus-visible:outline-primary'
                           : 'eval-results__rep-button'}
-                        title={`${item.name} — Rep ${item.repetition} · ${item.state}`}
+                        title={`${item.name} — Rep ${item.repetition} · ${completionLabel(item.state, execution[item.id]?.internalFault)}`}
                         aria-label={item.name}
-                        aria-pressed={selectedID === item.id}
+                        aria-pressed={!selectedSpanKey &&
+                          selectedID === item.id}
                         aria-describedby={`${panelID}-status-${item.id}`}
                         onclick={() => onSelect(item.id)}
                         >{#if single}{item.name}{:else}<span class="sr-only"
@@ -663,7 +742,10 @@
                           >Rep {item.repetition}{/if}</button
                       >
                       <span id={`${panelID}-status-${item.id}`} class="sr-only"
-                        >Rep {item.repetition} · {item.state}</span
+                        >Rep {item.repetition} · {completionLabel(
+                          item.state,
+                          execution[item.id]?.internalFault
+                        )}</span
                       >
                     </TreeRowIdentity>
                   </th>
@@ -714,10 +796,16 @@
               {/each}
             </tr>
             {#if expandedAttempts.includes(item.id)}
-              {#each item.tools as tool, toolIndex}
+              {#each visibleExecutionRows(execution[item.id]?.rows ?? [], collapsedSpans) as tool (tool.id)}
                 <tr
                   class="table-row eval-results__attempt"
                   data-tool-attempt-id={item.id}
+                  data-execution-id={tool.id}
+                  data-span-key={tool.reference
+                    ? referenceKey(tool.reference)
+                    : undefined}
+                  class:table-row--selected={!!tool.reference &&
+                    selectedSpanKey === referenceKey(tool.reference)}
                 >
                   <th
                     colspan="2"
@@ -730,23 +818,39 @@
                   >
                     <TreeRowIdentity
                       name={tool.name}
-                      depth={single ? 1 : 2}
+                      depth={tool.depth + (single ? 0 : 1)}
                       tree={{
-                        childrenCount: 0,
+                        ...tool.tree,
                         ancestorHasNextSibling: single
-                          ? [true]
-                          : [index < group.attempts.length - 1, true],
-                        isLastChild: toolIndex === item.tools.length - 1,
+                          ? tool.tree.ancestorHasNextSibling
+                          : [
+                              index < group.attempts.length - 1,
+                              ...tool.tree.ancestorHasNextSibling,
+                            ],
                       }}
-                      subtreeCollapsed={false}
+                      subtreeCollapsed={collapsedSpans.includes(tool.id)}
+                      toggleLabel={`${collapsedSpans.includes(tool.id) ? 'Expand' : 'Collapse'} ${tool.name}, ${tool.tree.childrenCount} referenced spans`}
+                      onToggle={() =>
+                        (collapsedSpans = collapsedSpans.includes(tool.id)
+                          ? collapsedSpans.filter(id => id !== tool.id)
+                          : [...collapsedSpans, tool.id])}
                     >
                       {#snippet node()}{@render executionNode(
-                          tool.telemetry,
-                          tool.state === 'Error' ? 'Error' : 'Complete'
+                          tool.reference,
+                          tool.state
                         )}{/snippet}
-                      <span class="min-w-0 [overflow-wrap:anywhere]"
-                        >{tool.name}</span
-                      >
+                      {#if tool.node && onSelectSpan}
+                        <button
+                          class="min-w-0 rounded-sm text-left text-base-content [overflow-wrap:anywhere] focus-visible:outline-2 focus-visible:outline-primary"
+                          aria-label={`Inspect span ${tool.node.spanData.name}`}
+                          aria-pressed={selectedSpanKey ===
+                            referenceKey(tool.node.spanData)}
+                          onclick={() => onSelectSpan?.(tool.node!)}
+                          >{tool.name}</button
+                        >
+                      {:else}<span class="min-w-0 [overflow-wrap:anywhere]"
+                          >{tool.name}</span
+                        >{/if}
                     </TreeRowIdentity>
                   </th>
                   {#each columns.slice(2) as column (column.key)}
@@ -756,7 +860,7 @@
                     >
                       {#if column.key === 'seconds'}
                         {@render spanBar(
-                          tool.telemetry,
+                          tool.reference,
                           runWindow?.startTime ??
                             attemptWindows[item.id]?.startTime,
                           tool.seconds

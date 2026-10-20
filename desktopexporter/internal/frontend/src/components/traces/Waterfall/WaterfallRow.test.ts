@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event'
 import type { WaterfallRowData } from './WaterfallView.svelte'
 import type { SpanData, SpanNode } from '@/types/api-types'
 import WaterfallRowHarness from '@/test/WaterfallRowHarness.svelte'
+import { waterfallTimeAxis } from './WaterfallTimeAxisHeader.svelte'
 
 // The cycle badge is the only UI that reads `salvaged` / `cyclePoint`
 // directly: it must stay silent on every healthy span, appear once a span
@@ -80,6 +81,7 @@ function renderRow(
       rowIndex: 1,
       spanColWidth: 200,
       timelineWidth: 400,
+      timeAxis: waterfallTimeAxis(1_000_000n, 4),
       traceStart: 0n,
       traceEnd: 1_000_000n,
       matched,

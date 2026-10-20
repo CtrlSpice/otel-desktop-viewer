@@ -448,13 +448,14 @@ func traceSummaryOrderBy(sortOption *search.Sort) (string, error) {
 	return fmt.Sprintf("%s %s %s, trace_id asc", expression, direction, nulls), nil
 }
 
-// GetTraceView returns a whole trace with matching spans annotated when criteria
-// is provided.
+// GetTraceView returns a trace with matching spans annotated when criteria is
+// provided. Optional spanIDs restrict payloads to those exact stored IDs and
+// compress display depth through available ancestry; received parent IDs remain intact.
 //
 // The ordinary tree walk reports unreachable spans. A non-zero count triggers
 // the cycle-aware query, which chooses entry points and tracks ancestry.
-func GetTraceView(ctx context.Context, db *sql.DB, traceID string, criteria any) (json.RawMessage, error) {
-	query, args, err := getTraceViewSQL(traceID, criteria)
+func GetTraceView(ctx context.Context, db *sql.DB, traceID string, criteria any, spanIDs ...uint64) (json.RawMessage, error) {
+	query, args, err := renderSpansQuery(queries.GetTraceView, traceID, criteria, spanIDs...)
 	if err != nil {
 		return nil, err
 	}
@@ -471,8 +472,8 @@ func GetTraceView(ctx context.Context, db *sql.DB, traceID string, criteria any)
 		return json.RawMessage(raw), nil
 	}
 
-	// Re-run the whole trace with the cycle-aware walk.
-	salvaged, err := salvageSpans(ctx, db, traceID, criteria)
+	// Re-run ancestry with the cycle-aware walk, retaining the same payload selection.
+	salvaged, err := salvageSpans(ctx, db, traceID, criteria, spanIDs...)
 	if err != nil {
 		// The ordinary result is still correct as far as it goes, and short a
 		// few spans is better than an error page.
@@ -563,8 +564,8 @@ func GetTraceSelectionOTLP(ctx context.Context, db *sql.DB, traceID, spanID stri
 }
 
 // salvageSpans runs the cycle-aware variant of the trace fetch.
-func salvageSpans(ctx context.Context, db *sql.DB, traceID string, criteria any) (json.RawMessage, error) {
-	query, args, err := renderSpansQuery(queries.SalvageSpans, traceID, criteria)
+func salvageSpans(ctx context.Context, db *sql.DB, traceID string, criteria any, spanIDs ...uint64) (json.RawMessage, error) {
+	query, args, err := renderSpansQuery(queries.SalvageSpans, traceID, criteria, spanIDs...)
 	if err != nil {
 		return nil, err
 	}
@@ -588,7 +589,7 @@ func getTraceViewSQL(traceID string, criteria any) (string, []any, error) {
 // renderSpansQuery renders either trace-fetch query. Both take identical
 // parameters and differ only in whether they carry the salvage walk, so the
 // search-predicate plumbing is shared rather than duplicated.
-func renderSpansQuery(name queries.Name, traceID string, criteria any) (string, []any, error) {
+func renderSpansQuery(name queries.Name, traceID string, criteria any, spanIDs ...uint64) (string, []any, error) {
 	var searchTree *search.QueryNode
 	if criteria != nil {
 		var err error
@@ -623,11 +624,16 @@ func renderSpansQuery(name queries.Name, traceID string, criteria any) (string, 
 
 	// The recursion carries only traversal columns. The tree CTE joins the
 	// payload once and defines one span set for every downstream projection.
+	if len(spanIDs) > 0 {
+		cteSQL += ", selected_ids as (select unnest(?::ubigint[]) as span_id)"
+		args = append(args, spanIDs)
+	}
 	query, err := queries.Render(name, getTraceViewParams{
 		CTEs:        cteSQL,
 		MatchedCTE:  matchedCTE,
 		MatchedExpr: matchedExpr,
 		MatchedJoin: matchedJoin,
+		Selected:    len(spanIDs) > 0,
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("GetTraceView: %w: %w", ErrSpansStoreInternal, err)

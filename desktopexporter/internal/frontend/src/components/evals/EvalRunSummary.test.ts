@@ -53,8 +53,8 @@ describe('EvalRunSummary', () => {
     })
     const outcomes = within(group).getAllByRole('listitem')
     expect(
-      outcomes.find(item => item.textContent?.includes('Error'))
-    ).toHaveTextContent('Error (2)')
+      outcomes.find(item => item.textContent?.includes('Internal fault'))
+    ).toHaveTextContent('Internal fault (2)')
     expect(
       outcomes.find(item => item.textContent?.includes('Planned'))
     ).toHaveTextContent('Planned (4)')

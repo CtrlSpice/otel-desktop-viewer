@@ -98,15 +98,22 @@
 			from salvaged sv
 		),
 
-		-- Join traversed IDs to payloads once.
+		{{if .Selected}}selected_tree as materialized (
+			select st.* from walked st
+			where st.span_id in (select span_id from selected_ids)
+		),
+
+		{{end}}-- Join traversed IDs to payloads once.
 		tree as materialized (
-			select st.depth, st.sort_path, st.salvaged, st.cycle_point,
+			select {{if .Selected}}(select count(*) from selected_tree ancestor
+				where len(ancestor.sort_path) < len(st.sort_path)
+				and ancestor.sort_path = st.sort_path[1:len(ancestor.sort_path)]) as depth{{else}}st.depth{{end}}, st.sort_path, st.salvaged, st.cycle_point,
 				s.span_id, s.parent_span_id, s.trace_id, s.trace_state, s.name, s.kind,
 				s.flags,
 				s.start_time, s.end_time, s.resource_id, s.scope_id, s.attribute_ids,
 				s.dropped_attributes_count, s.dropped_events_count, s.dropped_links_count,
 				s.status_code, s.status_message
-			from walked st
+			from {{if .Selected}}selected_tree{{else}}walked{{end}} st
 			join spans s on s.trace_id = st.trace_id and s.span_id = st.span_id
 		),
 
@@ -188,12 +195,12 @@
 
 		-- Count spans still unreachable after salvage.
 		unplaced_count as (
-			select (select count(*) from trace_spans) - (select count(*) from tree) as n
+			select (select count(*) from trace_spans) - (select count(*) from {{if .Selected}}walked{{else}}tree{{end}}) as n
 		),
 
 		trace_start as (
 			-- Cross-host clock skew can place a child before its parent.
-			select min(start_time) as t from tree
+			select {{if .Selected}}coalesce(min(start_time), 0){{else}}min(start_time){{end}} as t from tree
 		),
 
 		ordered_spans as (

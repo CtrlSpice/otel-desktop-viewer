@@ -4,14 +4,23 @@
   import { spanTimingColor } from '@/utils/trace-service-color'
   import { themeSignal } from '@/state/theme.svelte'
   import DurationBar from './DurationBar.svelte'
+  import { isPlainLeftClick } from '@/route'
 
   let {
     span,
     maximum,
     href,
     origin,
-  }: { span: SpanTiming; maximum: bigint; href: string; origin?: bigint } =
-    $props()
+    onSelect,
+    color,
+  }: {
+    span: SpanTiming
+    maximum: bigint
+    href: string
+    origin?: bigint
+    onSelect?: () => void
+    color?: string
+  } = $props()
   const duration = $derived(span.endTime - span.startTime)
   const offset = $derived(span.startTime - (origin ?? span.startTime))
   const label = $derived(formatDuration(duration))
@@ -21,9 +30,14 @@
   <a
     class="correlated-span-bar link link-hover"
     {href}
+    onclick={event => {
+      if (!onSelect || !isPlainLeftClick(event)) return
+      event.preventDefault()
+      onSelect()
+    }}
     aria-label={`Open span ${span.name}, ${label}`}
     title={`${span.name} · ${span.serviceName} · ${label} · Start offset ${formatDuration(offset)}`}
-    style:--bar-color={spanTimingColor(span, themeSignal.value)}
+    style:--bar-color={color ?? spanTimingColor(span, themeSignal.value)}
   >
     <DurationBar {duration} {maximum} {offset} />
   </a>

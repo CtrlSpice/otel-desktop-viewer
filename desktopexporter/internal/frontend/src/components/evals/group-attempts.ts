@@ -10,14 +10,28 @@ export function completionState(
   return 'Running'
 }
 
-export function completionTone(state: EvalAttempt['state']) {
+export function completionLabel(
+  state: EvalAttempt['state'],
+  internalFault = false
+) {
+  return state === 'Error'
+    ? internalFault
+      ? 'Internal fault'
+      : 'Span error'
+    : state
+}
+
+export function completionTone(
+  state: EvalAttempt['state'],
+  internalFault = false
+) {
   switch (state) {
     case 'Complete':
       return 'complete'
     case 'Running':
       return 'running'
     case 'Error':
-      return 'papaya'
+      return internalFault ? 'papaya' : 'error'
     case 'Planned':
       return 'neutral'
   }

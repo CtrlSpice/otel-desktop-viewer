@@ -244,8 +244,7 @@
 }
 
 /* Metric detail chart overlays use --stroke-color when unset. */
-.metric-chart-view
-  :where(.lc-rule-x-line, .lc-rule-y-line) {
+.metric-chart-view :where(.lc-rule-x-line, .lc-rule-y-line) {
   --stroke-color: var(--color-base-300);
 }
 
@@ -730,6 +729,10 @@ svg {
   @apply relative z-[1] gap-2 whitespace-nowrap;
 }
 
+.btn.header-tab.header-toggle[aria-pressed='true'] {
+  background: var(--item-selected-bg);
+}
+
 .header-tab__icon {
   display: flex;
 }
@@ -774,7 +777,11 @@ svg {
   }
 }
 
-.header-tab:is([aria-selected='true'], [aria-current='page'], [aria-pressed='true'])
+.header-tab:is(
+    [aria-selected='true'],
+    [aria-current='page'],
+    [aria-pressed='true']
+  )
   .header-tab__icon {
   color: var(--color-primary);
 }
@@ -1252,7 +1259,9 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
 }
 
 :is(.item-state, .table-row):where(
-  :is(:hover, .table-row--resize-hover):not(:disabled):not([aria-disabled='true']):not([data-disabled])
+  :is(:hover, .table-row--resize-hover):not(:disabled):not(
+      [aria-disabled='true']
+    ):not([data-disabled])
 ) {
   --item-state-bg: var(--item-hover-bg);
 }
@@ -1466,7 +1475,8 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
   outline: none;
 }
 
-.col-resize-bar:is(:focus-visible, .col-resize-bar--active) .col-resize-bar__line {
+.col-resize-bar:is(:focus-visible, .col-resize-bar--active)
+  .col-resize-bar__line {
   background-color: var(--color-primary);
   opacity: 1;
 }

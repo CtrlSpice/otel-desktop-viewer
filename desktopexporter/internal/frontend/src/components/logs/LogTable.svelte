@@ -507,13 +507,13 @@
 <div class="log-table" class:log-table--pinned={pinColumns} bind:this={table}>
   <PaneHeader pill mode="title" title="Logs" ariaLabel="Log table summary">
     {#snippet badge()}<span class="badge-count"
-        >{#if logs.length}{(
-            (pageNumber - 1) * pageSize +
-            1
-          ).toLocaleString()}–{(
-            (pageNumber - 1) * pageSize +
-            logs.length
-          ).toLocaleString()} of{' '}
+        >{#if logs.length}<span class="text-base-content"
+            >{((pageNumber - 1) * pageSize + 1).toLocaleString()}–{(
+              (pageNumber - 1) * pageSize +
+              logs.length
+            ).toLocaleString()}</span
+          >
+          of{' '}
         {/if}{total.toLocaleString()}
         {total === 1 ? 'record' : 'records'}</span
       >

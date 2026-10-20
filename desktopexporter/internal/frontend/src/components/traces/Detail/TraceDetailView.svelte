@@ -93,6 +93,7 @@
     logs?: TraceLogSummary[]
     /** Empty: show all Fields rows. Non-empty: only selected search fields / attributes. */
     columnFilter?: FieldDefinition[]
+    onSelectParent?: (spanID: string) => void
   }
 
   let {
@@ -104,6 +105,7 @@
     selectedLogRef = null,
     logs = [],
     columnFilter = [],
+    onSelectParent,
   }: Props = $props()
 
   let timeContext = getTimeContext()
@@ -304,7 +306,10 @@
                   <button
                     type="button"
                     class="detail-cell__value link link-primary"
-                    onclick={() => setSpanInQuery(span.parentSpanID!, 'push')}
+                    onclick={() =>
+                      onSelectParent
+                        ? onSelectParent(span.parentSpanID!)
+                        : setSpanInQuery(span.parentSpanID!, 'push')}
                     ><Identifier value={span.parentSpanID ?? ''} /></button
                   >
                 {/snippet}

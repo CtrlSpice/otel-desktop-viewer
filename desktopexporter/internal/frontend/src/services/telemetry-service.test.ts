@@ -1296,6 +1296,87 @@ describe('telemetryAPI.getSpanTimings', () => {
   })
 })
 
+describe('telemetryAPI.getReferencedTraceViews', () => {
+  it('deduplicates exact selections, keeps traces separate and retains successful groups when another fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async (_url, init: RequestInit) => {
+        const request = JSON.parse(String(init.body))
+        return {
+          ok: true,
+          json: async () => ({
+            jsonrpc: '2.0',
+            id: request.id,
+            ...(request.params.traceID === 'b'.repeat(32)
+              ? { error: { code: -1, message: 'missing' } }
+              : {
+                  result: {
+                    traceID: request.params.traceID,
+                    traceStart: '0',
+                    resources: {},
+                    scopes: {},
+                    spans: [],
+                    unplacedSpanCount: 0,
+                  },
+                }),
+          }),
+        }
+      })
+    )
+    const reference = { traceID: 'a'.repeat(32), spanID: 'f'.repeat(16) }
+    const controller = new AbortController()
+    const result = await telemetryAPI.getReferencedTraceViews(
+      [reference, reference, { ...reference, traceID: 'b'.repeat(32) }],
+      controller.signal
+    )
+    expect(result.traces.map(trace => trace.traceID)).toEqual([
+      reference.traceID,
+    ])
+    expect(result.unavailableTraceIDs).toEqual(['b'.repeat(32)])
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.map(([, init]) => JSON.parse(String(init!.body)))
+    ).toEqual([
+      expect.objectContaining({
+        method: 'getTraceView',
+        params: { traceID: reference.traceID, spanIDs: [reference.spanID] },
+      }),
+      expect.objectContaining({
+        method: 'getTraceView',
+        params: { traceID: 'b'.repeat(32), spanIDs: [reference.spanID] },
+      }),
+    ])
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.every(([, init]) => init!.signal === controller.signal)
+    ).toBe(true)
+  })
+
+  it('does not silently split or fetch an unbounded trace when a selection exceeds the limit', async () => {
+    stubRpcResult({})
+    const result = await telemetryAPI.getReferencedTraceViews(
+      Array.from({ length: 257 }, (_, id) => ({
+        traceID: 'a'.repeat(32),
+        spanID: id.toString(16).padStart(16, '0'),
+      }))
+    )
+    expect(result).toEqual({
+      traces: [],
+      unavailableTraceIDs: ['a'.repeat(32)],
+    })
+    expect(await telemetryAPI.getReferencedTraceViews([])).toEqual({
+      traces: [],
+      unavailableTraceIDs: [],
+    })
+    await expect(
+      telemetryAPI.getReferencedTraceViews([{ traceID: 'bad', spanID: '1' }])
+    ).rejects.toThrow('32-hex trace ID')
+    expect(fetch).not.toHaveBeenCalled()
+  })
+})
+
 describe('telemetryAPI.getTraceSummary', () => {
   it('looks up one exact trace independently of the Logs time range and preserves exact times', async () => {
     stubRpcResult([
@@ -1457,6 +1538,33 @@ describe('telemetryAPI.getTraceView rehydration', () => {
     stubRpcResult<JsonTraceData>(wire)
     return telemetryAPI.getTraceView('abc123')
   }
+
+  it('rehydrates referenced spans with exact timing, ancestry and full shared Details payloads', async () => {
+    const traceID = 'a'.repeat(32)
+    const spanID = 'b'.repeat(16)
+    stubRpcResult({
+      ...wire,
+      traceID,
+      spans: [
+        { ...wire.spans[0], spanData: { ...wire.spans[0].spanData, spanID } },
+      ],
+    })
+    const result = await telemetryAPI.getReferencedTraceViews([
+      { traceID, spanID },
+    ])
+    expect(result.traces[0]!.spans[0]!.spanData).toMatchObject({
+      traceID,
+      spanID,
+      startTime: 1700000000000000000n,
+      endTime: 1700000000005000000n,
+      resource: {
+        attributes: [
+          { key: 'service.name', value: { kind: 'string', value: 'checkout' } },
+        ],
+      },
+      events: [{ timestamp: 1700000000000000123n }],
+    })
+  })
 
   it('retains derived link names separately from received link attributes', async () => {
     const trace = await fetchTrace()

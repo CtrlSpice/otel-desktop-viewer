@@ -10,6 +10,7 @@
   import AssessmentBadge from './AssessmentBadge.svelte'
   import RunStatusBadge from './RunStatusBadge.svelte'
   import EvalStatus from './EvalStatus.svelte'
+  import { completionLabel } from './group-attempts'
 
   let {
     run,
@@ -48,7 +49,10 @@
     </DetailField>{/if}
 {/snippet}
 
-<DetailStack label={attempt ? 'Attempt details' : 'Run details'}>
+<DetailStack
+  label={attempt ? 'Attempt details' : 'Run details'}
+  storageKey={attempt ? 'eval-attempt-detail-layout' : 'eval-run-detail-layout'}
+>
   {#if !attempt}
     <DetailBubble label="Run">
       <table class="detail-fields w-full" aria-label="Run fields">
@@ -93,6 +97,7 @@
     </DetailBubble>
     <DetailBubble
       label="Configuration"
+      initialOpen={false}
       count={run.configuration.length}
       countLabel="fields"
     >
@@ -106,7 +111,7 @@
         >
       </table>
     </DetailBubble>
-    <DetailBubble label="Grading">
+    <DetailBubble label="Grading" initialOpen={false}>
       <table class="detail-fields w-full" aria-label="Grading for this run">
         <tbody>
           <DetailField
@@ -140,7 +145,10 @@
         />{/snippet}
       <p class="eval-detail__prose">{attempt.question}</p>
     </DetailBubble>
-    <DetailBubble label={`Attempt ${attempt.repetition} · ${attempt.state}`}>
+    <DetailBubble
+      label={`Attempt ${attempt.repetition} · ${completionLabel(attempt.state, true)}`}
+      initialOpen={false}
+    >
       {#snippet action()}
         {#if attempt.answer !== undefined}<ValueCopyButton
             text={attempt.answer}
@@ -149,10 +157,10 @@
       {/snippet}
       <p class="eval-detail__prose">{attempt.answer ?? 'No answer recorded'}</p>
       {#if attempt.error}
-        <table class="detail-fields w-full" aria-label="Attempt error">
+        <table class="detail-fields w-full" aria-label="Attempt fault">
           <tbody
             ><DetailField
-              fieldName="execution error"
+              fieldName="internal fault"
               fieldType="string"
               showType={false}
               fieldValue={attempt.error}
@@ -214,7 +222,11 @@
           >{/if}
       </FieldGroup>
     </DetailBubble>
-    <DetailBubble label="Assessments" count={attempt.assessments.length}>
+    <DetailBubble
+      label="Assessments"
+      count={attempt.assessments.length}
+      initialOpen={false}
+    >
       {#each run.assessments as definition}
         {@const assessment = attempt.assessments.find(
           item => item.id === definition.id
@@ -278,12 +290,16 @@
         </FieldGroup>
       {/each}
     </DetailBubble>
-    <DetailBubble label="Tool calls" count={attempt.tools.length}>
+    <DetailBubble
+      label="Tool calls"
+      count={attempt.tools.length}
+      initialOpen={false}
+    >
       {#each attempt.tools as tool, index}
         <FieldGroup label={`${tool.name} ${index + 1}`} detail open={false}>
           {#snippet heading()}<span class="font-normal">{tool.name}</span
             >{#if tool.state === 'Error'}<EvalStatus
-                label="Error"
+                label="Span error"
                 tone="error"
               />{/if}{/snippet}
           <table

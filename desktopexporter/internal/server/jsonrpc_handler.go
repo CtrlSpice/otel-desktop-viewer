@@ -217,7 +217,7 @@ func (h *JSONRPCHandler) searchTraceSummaries(ctx context.Context, req *jsonrpc2
 }
 
 func (h *JSONRPCHandler) getTraceView(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	params, err := decodePositionalParams(req.Params, 1, 2)
+	params, err := decodePositionalParams(req.Params, 1, 3)
 	if err != nil {
 		return nil, err
 	}
@@ -227,12 +227,26 @@ func (h *JSONRPCHandler) getTraceView(ctx context.Context, req *jsonrpc2.Request
 	}
 
 	var query any
-	if len(params) == 2 {
+	if len(params) >= 2 {
 		query = params[1]
+	}
+	var spanIDs []uint64
+	if len(params) >= 3 && params[2] != nil {
+		values, ok := params[2].([]any)
+		if !ok || len(values) == 0 || len(values) > 256 {
+			return nil, fmt.Errorf("spanIDs requires 1 to 256 span IDs: %w", jsonrpc2.ErrInvalidParams)
+		}
+		for _, value := range values {
+			_, id, err := parseSpanIDParam(value)
+			if err != nil {
+				return nil, err
+			}
+			spanIDs = append(spanIDs, id)
+		}
 	}
 
 	return handlerRead(ctx, h, func(db *sql.DB) (json.RawMessage, error) {
-		return spans.GetTraceView(ctx, db, traceID, query)
+		return spans.GetTraceView(ctx, db, traceID, query, spanIDs...)
 	})
 }
 

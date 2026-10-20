@@ -78,7 +78,7 @@
     return Math.max(0.3, Number((spanDuration * 10000n) / traceDuration) / 100)
   }
 
-  function isErrorSpan(span: SpanData): boolean {
+  export function isErrorSpan(span: SpanData): boolean {
     return (
       span.statusCodeValue === 2 ||
       span.events.some(e => e.name === 'exception')
@@ -123,7 +123,12 @@
     })
   }
 
-  function computeTreeMeta(spans: SpanNode[]): TreeConnectorMeta[] {
+  export function computeTreeMeta(
+    spans: readonly {
+      depth: number
+      spanData: Pick<SpanData, 'spanID' | 'parentSpanID'>
+    }[]
+  ): TreeConnectorMeta[] {
     const counts = childrenCounts(spans)
     const parents: string[] = []
     return spans.map((span, i) => {
@@ -658,6 +663,8 @@
       }) ?? TICK_COUNT_STEPS[0]
     )
   })
+
+  const timeAxis = $derived(waterfallTimeAxis(bounds.duration, targetTickCount))
 
   let matchedIDs = $derived(
     new Set(spans.filter(n => n.matched).map(n => n.spanData.spanID))
@@ -1240,6 +1247,7 @@
                 {spanColWidth}
                 {optionalColumns}
                 timelineWidth={timelinePlotPx}
+                {timeAxis}
                 traceStart={bounds.start}
                 traceEnd={bounds.end}
                 onRowClick={() => {

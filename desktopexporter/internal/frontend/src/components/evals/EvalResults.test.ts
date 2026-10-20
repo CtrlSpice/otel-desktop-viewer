@@ -5,6 +5,57 @@ import userEvent from '@testing-library/user-event'
 import EvalResults from './EvalResults.svelte'
 import { exampleRuns } from './examples'
 import { telemetryAPI } from '@/services/telemetry-service'
+import type { SpanTiming, TraceData } from '@/types/api-types'
+
+function traceViews(timings: SpanTiming[]) {
+  const traces: TraceData[] = []
+  for (const timing of timings) {
+    let trace = traces.find(trace => trace.traceID === timing.traceID)
+    if (!trace) {
+      trace = { traceID: timing.traceID, unplacedSpanCount: 0, spans: [] }
+      traces.push(trace)
+    }
+    const parent = timing.name.startsWith('tool')
+      ? (trace.spans[0]?.spanData.spanID ?? null)
+      : null
+    trace.spans.push({
+      depth: parent ? 1 : 0,
+      matched: true,
+      spanData: {
+        ...timing,
+        parentSpanID: parent,
+        traceState: '',
+        flags: 0,
+        kind: 'Internal',
+        kindCode: 1,
+        attributes: [],
+        events: [],
+        links: [],
+        droppedAttributesCount: 0,
+        droppedEventsCount: 0,
+        droppedLinksCount: 0,
+        statusCode: 'Unset',
+        statusMessage: '',
+        resource: {
+          attributes: [
+            {
+              key: 'service.name',
+              value: { kind: 'string', value: timing.serviceName },
+            },
+          ],
+          droppedAttributesCount: 0,
+        },
+        scope: {
+          name: '',
+          version: '',
+          attributes: [],
+          droppedAttributesCount: 0,
+        },
+      },
+    })
+  }
+  return { traces, unavailableTraceIDs: [] }
+}
 
 async function showOnlyTime() {
   const user = userEvent.setup()
@@ -17,8 +68,8 @@ describe('EvalResults repetitions', () => {
     const attempt = exampleRuns[0].attempts[0]
     const telemetry = { traceID: 'a'.repeat(32), spanID: 'b'.repeat(16) }
     const lookup = vi
-      .spyOn(telemetryAPI, 'getSpanTimings')
-      .mockResolvedValue([])
+      .spyOn(telemetryAPI, 'getReferencedTraceViews')
+      .mockResolvedValue(traceViews([]))
     try {
       const run = { ...exampleRuns[0], telemetry, attempts: [attempt] }
       const { container } = render(EvalResults, {
@@ -52,7 +103,9 @@ describe('EvalResults repetitions', () => {
           'Grader',
         ].map(label => `Sort by ${label}`)
       )
-      await user.click(screen.getByRole('button', { name: /^Expand tools/ }))
+      await user.click(
+        screen.getByRole('button', { name: /^Expand execution/ })
+      )
       const expectedColumns = 2 + run.assessments.length + 3 + 2
       for (const row of container.querySelectorAll('tr')) {
         expect(
@@ -62,7 +115,9 @@ describe('EvalResults repetitions', () => {
           )
         ).toBe(expectedColumns)
       }
-      const toolCount = attempt.tools.length
+      const toolCount =
+        attempt.tools.length +
+        attempt.assessments.filter(item => item.telemetry?.spanID).length
       expect(container.querySelectorAll('[data-tool-attempt-id]')).toHaveLength(
         toolCount
       )
@@ -118,13 +173,15 @@ describe('EvalResults repetitions', () => {
         })),
       }
       const lookup = vi
-        .spyOn(telemetryAPI, 'getSpanTimings')
-        .mockResolvedValue([
-          timing(1, 'question', 10n, 20n),
-          timing(2, 'tool 2', 12n, 14n),
-          timing(3, 'tool 3', 18n, 26n),
-          ...(withRun ? [timing(4, 'run', 0n, 40n)] : []),
-        ])
+        .spyOn(telemetryAPI, 'getReferencedTraceViews')
+        .mockResolvedValue(
+          traceViews([
+            timing(1, 'question', 10n, 20n),
+            timing(2, 'tool 2', 12n, 14n),
+            timing(3, 'tool 3', 18n, 26n),
+            ...(withRun ? [timing(4, 'run', 0n, 40n)] : []),
+          ])
+        )
       try {
         render(EvalResults, {
           run: {
@@ -140,7 +197,9 @@ describe('EvalResults repetitions', () => {
         await screen.findByRole('link', {
           name: 'Open span question, 10.000 s',
         })
-        await user.click(screen.getByRole('button', { name: /^Expand tools/ }))
+        await user.click(
+          screen.getByRole('button', { name: /^Expand execution/ })
+        )
         const early = screen.getByRole('link', {
           name: 'Open span tool 2, 2.000 s',
         })
@@ -172,16 +231,20 @@ describe('EvalResults repetitions', () => {
 
   it('shows a referenced run span and keeps an absent question span as an unlinked recorded duration', async () => {
     const telemetry = { traceID: 'a'.repeat(32), spanID: 'b'.repeat(16) }
-    const lookup = vi.spyOn(telemetryAPI, 'getSpanTimings').mockResolvedValue([
-      {
-        ...telemetry,
-        name: 'eval run',
-        serviceName: 'runner',
-        startTime: 1700000000000000001n,
-        endTime: 1700000001000000001n,
-        statusCodeValue: 1,
-      },
-    ])
+    const lookup = vi
+      .spyOn(telemetryAPI, 'getReferencedTraceViews')
+      .mockResolvedValue(
+        traceViews([
+          {
+            ...telemetry,
+            name: 'eval run',
+            serviceName: 'runner',
+            startTime: 1700000000000000001n,
+            endTime: 1700000001000000001n,
+            statusCodeValue: 1,
+          },
+        ])
+      )
     try {
       const attempts = [exampleRuns[0].attempts[0]]
       render(EvalResults, {
@@ -209,9 +272,9 @@ describe('EvalResults repetitions', () => {
   it.each([false, true])(
     'renders unlinked durations, preserves zero and leaves absent values empty (lookup failed: %s)',
     async failed => {
-      const lookup = vi.spyOn(telemetryAPI, 'getSpanTimings')
+      const lookup = vi.spyOn(telemetryAPI, 'getReferencedTraceViews')
       if (failed) lookup.mockRejectedValue(new Error('unavailable'))
-      else lookup.mockResolvedValue([])
+      else lookup.mockResolvedValue(traceViews([]))
       try {
         const attempts = [24, 0, undefined].map((seconds, index) => ({
           ...exampleRuns[0].attempts[0],
@@ -283,7 +346,7 @@ describe('EvalResults repetitions', () => {
       [1, 2, 3].map(rep => `${first.name}Rep ${rep}`)
     )
     expect(buttons[1]).toHaveAttribute('aria-pressed', 'true')
-    expect(buttons[1]).toHaveAccessibleDescription('Rep 2 · Complete')
+    expect(buttons[1]).toHaveAccessibleDescription('Rep 2 · Span error')
     const parent = container.querySelector(
       '.eval-results__case[data-case-id="request-latency"]'
     )! as HTMLElement

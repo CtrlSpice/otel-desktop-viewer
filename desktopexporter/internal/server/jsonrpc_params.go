@@ -35,7 +35,7 @@ import (
 // answer.
 var methodParamNames = map[string][]string{
 	"searchTraceSummaries":  {"startTime", "endTime", "query", "limit", "sort"},
-	"getTraceView":          {"traceID", "query"},
+	"getTraceView":          {"traceID", "query", "spanIDs"},
 	"getTraceOverview":      {"traceID"},
 	"getSpan":               {"spanID", "traceID", "limit"},
 	"searchLogSummaries":    {"startTime", "endTime", "query", "limit", "sort"},

@@ -14,8 +14,7 @@ async function showOnly(page: Page, label: 'Results' | 'Tool calls' | 'Cost') {
 async function enableEvals(page: Page, enabled = true) {
   await page.route('**/rpc', async route => {
     const request = route.request().postDataJSON()
-    if (request.method !== 'query') return route.fallback()
-    const sql = request.params.sql.replaceAll('-', '')
+    if (request.method !== 'getTraceView') return route.fallback()
     const rows = exampleRuns.flatMap(run =>
       run.attempts.flatMap(attempt => {
         if (!attempt.telemetry?.spanID) return []
@@ -35,8 +34,8 @@ async function enableEvals(page: Page, enabled = true) {
         ]
         return references.flatMap(({ reference, name, duration, error }) =>
           reference?.spanID &&
-          sql.includes(reference.traceID) &&
-          sql.includes(reference.spanID)
+          request.params.traceID === reference.traceID &&
+          request.params.spanIDs.includes(reference.spanID)
             ? [
                 [
                   reference.traceID,
@@ -46,6 +45,9 @@ async function enableEvals(page: Page, enabled = true) {
                   '1700000000000000001',
                   String(1700000000000000001n + duration),
                   error ? 2 : 1,
+                  reference.spanID === attempt.telemetry.spanID
+                    ? null
+                    : attempt.telemetry.spanID,
                 ],
               ]
             : []
@@ -56,7 +58,56 @@ async function enableEvals(page: Page, enabled = true) {
       json: {
         jsonrpc: '2.0',
         id: request.id,
-        result: { rows, truncated: false },
+        result: {
+          traceID: request.params.traceID,
+          traceStart: '1700000000000000001',
+          unplacedSpanCount: 0,
+          resources: {
+            1: {
+              attributes: [
+                {
+                  key: 'service.name',
+                  value: { kind: 'string', value: 'eval-agent' },
+                },
+              ],
+              droppedAttributesCount: 0,
+            },
+          },
+          scopes: {
+            1: {
+              name: 'eval',
+              version: '',
+              attributes: [],
+              droppedAttributesCount: 0,
+            },
+          },
+          spans: rows.map(row => ({
+            depth: row[7] ? 1 : 0,
+            matched: true,
+            spanData: {
+              spanID: row[1],
+              parentSpanID: row[7],
+              name: row[2],
+              traceState: '',
+              flags: 0,
+              start: '0',
+              dur: String(BigInt(row[5]!) - BigInt(row[4]!)),
+              r: 1,
+              s: 1,
+              kind: 'Internal',
+              kindCode: 1,
+              statusCodeValue: row[6],
+              statusCode: row[6] === 2 ? 'Error' : 'Ok',
+              statusMessage: '',
+              attributes: [],
+              events: [],
+              links: [],
+              droppedAttributesCount: 0,
+              droppedEventsCount: 0,
+              droppedLinksCount: 0,
+            },
+          })),
+        },
       },
     })
   })
@@ -149,16 +200,19 @@ test('run selection, assessments, filtering and browser history stay connected',
   const bubbles = detail.locator('details.collapse')
   await expect(bubbles).toHaveCount(4)
   await expect(detail.getByRole('tablist')).toHaveCount(0)
-  for (const bubble of await bubbles.all()) {
-    await expect(bubble).toHaveAttribute('open')
+  for (const [index, bubble] of (await bubbles.all()).entries()) {
+    if (index === 0) await expect(bubble).toHaveAttribute('open')
+    else await expect(bubble).not.toHaveAttribute('open')
     await expect(bubble.locator(':scope > summary')).toBeInViewport({
       ratio: 1,
     })
   }
+  await bubbles.nth(2).locator(':scope > summary').click()
   await expect(
     page.getByText('The causal claim about total latency', { exact: false })
   ).toBeVisible()
-  await page.locator('summary').filter({ hasText: 'Error' }).click()
+  await bubbles.nth(3).locator(':scope > summary').click()
+  await page.locator('summary').filter({ hasText: 'Span error' }).click()
   await expect(
     page.getByText('SQL binder error:', { exact: false })
   ).toBeVisible()
@@ -166,7 +220,7 @@ test('run selection, assessments, filtering and browser history stay connected',
   await expect(bubbles.nth(3).locator(':scope > summary')).toHaveText(
     /Tool calls/
   )
-  await expect(bubbles.nth(3)).toHaveAttribute('open')
+  await expect(bubbles.nth(3)).not.toHaveAttribute('open')
   await page.getByRole('searchbox', { name: 'Search evals' }).fill('Mixed')
   await expect(
     page
@@ -189,6 +243,7 @@ test('run selection, assessments, filtering and browser history stay connected',
     .getByRole('button', { name: 'Compare CPU evidence', exact: true })
     .first()
     .click()
+  await bubbles.nth(1).locator(':scope > summary').click()
   await expect(
     page.getByText('The investigator process exited', { exact: false })
   ).toBeVisible()
@@ -203,10 +258,20 @@ test('run selection, assessments, filtering and browser history stay connected',
     ).toHaveText('Unknown')
   }
   await page.goBack()
+  await page
+    .getByRole('region', { name: 'Run details', exact: true })
+    .locator('summary')
+    .filter({ hasText: /Grading/ })
+    .click()
   await expect(
     page.getByRole('table', { name: 'Grading for this run' })
   ).toBeVisible()
   await page.getByRole('button', { name: /Revised instructions/ }).click()
+  await page
+    .getByRole('region', { name: 'Run details', exact: true })
+    .locator('summary')
+    .filter({ hasText: /Grading/ })
+    .click()
   const plannedResults = page.getByRole('table', {
     name: 'Results for Revised instructions',
   })
@@ -223,7 +288,7 @@ test('run selection, assessments, filtering and browser history stay connected',
 })
 
 for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
-  test(`column groups toggle independently in fixed order with icon-only active styling in ${theme}`, async ({
+  test(`column groups toggle independently in fixed order with selection highlights in ${theme}`, async ({
     page,
   }) => {
     await enableEvals(page)
@@ -274,17 +339,22 @@ for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
     )
     for (const toggle of [results, time, cost]) {
       await expect(toggle).toHaveAttribute('aria-pressed', 'true')
-      await expect(toggle).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
       const colors = await toggle.evaluate(button => {
         const probe = document.createElement('span')
         probe.style.color = 'var(--color-primary)'
         button.append(probe)
         const primary = getComputedStyle(probe).color
+        probe.style.color = 'var(--item-selected-bg)'
+        const selected = getComputedStyle(probe).color
+        probe.style.color = 'var(--item-hover-bg)'
+        const hover = getComputedStyle(probe).color
         probe.remove()
         return {
           icon: getComputedStyle(button.querySelector('.header-tab__icon')!)
             .color,
           primary,
+          selected,
+          hover,
           label: getComputedStyle(button.querySelector('.header-tab__label')!)
             .color,
           text: getComputedStyle(button).color,
@@ -292,9 +362,15 @@ for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
       })
       expect(colors.icon).toBe(colors.primary)
       expect(colors.label).toBe(colors.text)
+      await expect(toggle).toHaveCSS('background-color', colors.selected)
+      await toggle.hover()
+      await expect(toggle).toHaveCSS('background-color', colors.hover)
+      await page.mouse.move(0, 0)
+      await expect(toggle).toHaveCSS('background-color', colors.selected)
     }
     await results.click()
     await page.mouse.move(0, 0)
+    await expect(results).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
     expect(
       await results.evaluate(
         button =>
@@ -377,10 +453,12 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
     'href',
     `/traces/${traceID}?span=eeee000000000001`
   )
-  await failedAttempt.getByRole('button', { name: /^Expand tools/ }).click()
+  await failedAttempt.getByRole('button', { name: /^Expand execution/ }).click()
   const toolRows = time.locator('[data-tool-attempt-id="request-latency"]')
-  await expect(toolRows).toHaveCount(3)
-  const toggle = failedAttempt.getByRole('button', { name: /^Collapse tools/ })
+  await expect(toolRows).toHaveCount(5)
+  const toggle = failedAttempt.getByRole('button', {
+    name: /^Collapse execution/,
+  })
   expect(
     await toggle.evaluate(button =>
       Math.abs(
@@ -399,7 +477,9 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
     toolRows.nth(1).getByRole('link', { name: 'Open span bash, 500.000 ms' })
   ).toHaveAttribute('href', `/traces/${traceID}?span=eeee000000000003`)
   expect(page.url()).toBe(url)
-  await failedAttempt.getByRole('button', { name: /^Collapse tools/ }).focus()
+  await failedAttempt
+    .getByRole('button', { name: /^Collapse execution/ })
+    .focus()
   await page.keyboard.press('Space')
   await expect(toolRows).toHaveCount(0)
   await expect(
@@ -524,6 +604,78 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
   await page.getByRole('button', { name: 'Clear search', exact: true }).click()
   await expect(costs.locator('[data-attempt-id]')).toHaveCount(16)
   expect(page.url()).toBe(url)
+})
+
+test('referenced duration bars open shared span Details within Evals and return to the selected attempt', async ({
+  page,
+}) => {
+  await enableEvals(page)
+  await page.goto('/evals?run=direct&attempt=request-latency')
+  const url = page.url()
+  const row = page.locator('[data-attempt-id="request-latency"]')
+  await expect(
+    row.getByRole('img', { name: 'Span error', exact: true })
+  ).toBeVisible()
+  await expect(
+    page
+      .locator('.eval-results__case[data-case-id="request-latency"]')
+      .getByRole('img', { name: 'Span error', exact: true })
+  ).toBeVisible()
+  const errorColours = await row.evaluate(element => {
+    const probe = document.createElement('span')
+    element.append(probe)
+    probe.style.backgroundColor = 'var(--color-error)'
+    const spanError = getComputedStyle(probe).backgroundColor
+    probe.style.backgroundColor = 'var(--color-papaya)'
+    const internalFault = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    return { spanError, internalFault }
+  })
+  await expect(
+    row
+      .getByRole('img', { name: 'Span error', exact: true })
+      .locator('span')
+      .first()
+  ).toHaveCSS('background-color', errorColours.spanError)
+  await expect(
+    page
+      .locator('[data-attempt-id="cpu-evidence"]')
+      .getByRole('img', { name: 'Internal fault', exact: true })
+      .locator('span')
+      .first()
+  ).toHaveCSS('background-color', errorColours.internalFault)
+  const bar = row.getByRole('link', {
+    name: 'Open span Find the slow request, 37.000 s',
+  })
+  await expect(bar).toBeVisible()
+  expect(
+    await bar
+      .locator('.span-bar')
+      .evaluate(element => getComputedStyle(element).backgroundColor)
+  ).not.toBe('rgb(224, 222, 244)')
+  await bar.click()
+  expect(page.url()).toBe(url)
+  const details = page.locator('#signal-drawer-detail')
+  await expect(
+    details.getByRole('table', { name: 'Span fields', exact: true })
+  ).toBeVisible()
+  await expect(
+    details.locator('[data-field="name"]:not([data-field-source])')
+  ).toContainText('Find the slow request')
+  await expect(
+    details.getByRole('button', { name: 'Download trace' })
+  ).toBeVisible()
+  await expect(row).toHaveClass(/table-row--selected/)
+  await details
+    .getByRole('button', { name: 'Back to eval', exact: true })
+    .click()
+  await expect(
+    details.getByRole('region', { name: 'Attempt details', exact: true })
+  ).toBeVisible()
+  await expect(
+    row.getByRole('button', { name: 'Find the slow request', exact: true })
+  ).toHaveAttribute('aria-pressed', 'true')
+  await expect(details.locator('details.collapse[open]')).toHaveCount(1)
 })
 
 test('column sorting preserves selection and keeps unknown measurements last within cases', async ({
@@ -744,7 +896,7 @@ test('case branches stay connected to aligned repetitions through sorting and re
   )
   await expect(parent).toContainText('Find the slow request')
   await expect(
-    parent.getByRole('img', { name: 'Complete', exact: true })
+    parent.getByRole('img', { name: 'Span error', exact: true })
   ).toBeVisible()
   await expect(
     children
@@ -1018,9 +1170,7 @@ test('detail actions reopen the panel, including the selected attempt', async ({
     await expect(fields).toHaveAttribute('open')
     await fields.locator(':scope > summary').click()
     await expect(fields).not.toHaveAttribute('open')
-    await expect(detail.locator('details.collapse').nth(1)).toHaveAttribute(
-      'open'
-    )
+    await expect(detail.locator('details.collapse[open]')).toHaveCount(1)
     await fields.locator(':scope > summary').click()
     await page.getByRole('button', { name: 'Collapse details' }).click()
     await expect(detail).toBeHidden()

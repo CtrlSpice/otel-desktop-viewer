@@ -20,5 +20,5 @@
     : state === 'Paused'
       ? 'papaya'
       : 'neutral'}
-  title={internalError ? 'Paused after an internal execution error' : undefined}
+  title={internalError ? 'Paused after an internal execution fault' : undefined}
 />

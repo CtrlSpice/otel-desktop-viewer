@@ -999,6 +999,55 @@ LIMIT ${batch.length}`,
     return timings
   },
 
+  /** Fetch only referenced spans, retaining the trace query's compressed ancestry and details. */
+  getReferencedTraceViews: async (
+    references: readonly Pick<SpanTiming, 'traceID' | 'spanID'>[],
+    signal?: AbortSignal
+  ): Promise<{ traces: TraceData[]; unavailableTraceIDs: string[] }> => {
+    const groups = new Map<string, Set<string>>()
+    for (const reference of references) {
+      if (
+        !/^[a-f0-9]{32}$/i.test(reference.traceID) ||
+        !/^[a-f0-9]{16}$/i.test(reference.spanID)
+      ) {
+        throw new Error(
+          'Trace references require a 32-hex trace ID and a 16-hex span ID.'
+        )
+      }
+      const traceID = reference.traceID.toLowerCase()
+      const ids = groups.get(traceID) ?? new Set<string>()
+      ids.add(reference.spanID.toLowerCase())
+      groups.set(traceID, ids)
+    }
+    const traces: TraceData[] = []
+    const unavailableTraceIDs: string[] = []
+    const entries = [...groups]
+    // Never split a trace's selection: that would lose ancestry across batches.
+    // Four concurrent trace queries, each with at most 256 exact span identities.
+    for (let offset = 0; offset < entries.length; offset += 4) {
+      if (signal?.aborted) throw new RequestAbortedError()
+      const batch = entries.slice(offset, offset + 4)
+      const results = await Promise.allSettled(
+        batch.map(async ([traceID, ids]) => {
+          if (ids.size > 256)
+            throw new Error('Referenced trace exceeds the 256-span view limit.')
+          const raw = await callRPC<JsonTraceData>(
+            'getTraceView',
+            named({ traceID, spanIDs: [...ids] }),
+            signal
+          )
+          return traceDataFromJSON(raw)
+        })
+      )
+      if (signal?.aborted) throw new RequestAbortedError()
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') traces.push(result.value)
+        else unavailableTraceIDs.push(batch[index]![0])
+      })
+    }
+    return { traces, unavailableTraceIDs }
+  },
+
   /** Look up the associated trace without the Logs time/query filters or a waterfall fetch. */
   getTraceSummary: async (
     traceID: string,

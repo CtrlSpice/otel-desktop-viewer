@@ -239,6 +239,9 @@ func openRPCDocument() map[string]any {
 				description = "Database-local series references. Omitted/null uses store defaults."
 			case "quantiles":
 				schema = rpcArray(map[string]any{"type": "number", "minimum": 0, "maximum": 1})
+			case "spanIDs":
+				schema = map[string]any{"type": "array", "minItems": 1, "maxItems": 256, "items": map[string]any{"type": "string", "pattern": "^[0-9a-fA-F]{16}$"}}
+				description = "Optional exact span selection within this trace. Returns only these stored spans, with depth compressed through available ancestry. Received parentSpanID is unchanged. Attributes, events, links, resources and scopes are enriched only for the selected spans. Omitted or null returns the whole trace; an empty list is invalid."
 			case "signal":
 				schema = map[string]any{"enum": []string{"traces", "logs", "metrics"}}
 			case "field":

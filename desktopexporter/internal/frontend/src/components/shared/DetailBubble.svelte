@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
-  import { getContext, setContext } from 'svelte'
+  import { getContext, setContext, untrack } from 'svelte'
   import {
     DETAIL_STACK,
     type DetailStackState,
@@ -10,7 +10,6 @@
   // Only this stack's top-level sections participate in its split.
   setContext(DETAIL_STACK, undefined)
   const sectionID = $props.id()
-  let expanded = $state(true)
   let disclosure = $state<HTMLDetailsElement>()
   let nextSection = $derived(stack?.next(sectionID))
   let resizable = $derived(stack?.enabled(sectionID) ?? false)
@@ -37,6 +36,7 @@
     countLabel = label.toLowerCase(),
     action,
     children,
+    initialOpen = true,
   }: {
     label: string
     icon?: Snippet
@@ -44,7 +44,9 @@
     countLabel?: string
     action?: Snippet
     children: Snippet
+    initialOpen?: boolean
   } = $props()
+  let expanded = $state(untrack(() => initialOpen))
 
   $effect(() => stack?.ensureOpen())
 

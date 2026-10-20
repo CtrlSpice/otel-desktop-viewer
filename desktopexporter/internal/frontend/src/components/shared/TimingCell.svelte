@@ -1,9 +1,8 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import WaterfallTimeRuler from '@/components/traces/Waterfall/WaterfallTimeRuler.svelte'
-  import {
-    waterfallTimeAxis,
-  } from '@/components/traces/Waterfall/WaterfallTimeAxisHeader.svelte'
+  import WaterfallTimeGuides from '@/components/traces/Waterfall/WaterfallTimeGuides.svelte'
+  import { waterfallTimeAxis } from '@/components/traces/Waterfall/WaterfallTimeAxisHeader.svelte'
   let {
     maximum,
     header = false,
@@ -17,7 +16,9 @@
 
 <div class="timing-cell">
   <div class="timing-cell__plot" bind:clientWidth={width}>
-    {#if header}<WaterfallTimeRuler {axis} />{/if}
+    {#if header}<WaterfallTimeRuler {axis} />{:else}<WaterfallTimeGuides
+        {axis}
+      />{/if}
   </div>
   <div class="timing-cell__value">{@render children?.()}</div>
 </div>

@@ -146,6 +146,9 @@
   No decorative dot grids anywhere, including waterfall timing and all metric
   charts. Retain ruler labels, axis ticks, tree connectors and meaningful data
   markers. Keep data bounds, span geometry, chart cells and scrolling intact.
+  Trace and Evals waterfalls share solid 1px Muted time guides at 35% opacity,
+  aligned only to labelled ruler ticks behind the bars. Keep ruler text Subtle.
+  Guides are decorative and cannot intercept pointer input.
   Column and panel resizing share a short 3rem by 0.1875rem grip, rotated for
   horizontal dividers. Hide it at rest; show Text on hover and Iris on keyboard
   focus or drag at full opacity. Preserve full hit strips and keyboard controls.
@@ -208,6 +211,21 @@
   colour dots only for meaningful statuses or outcomes, alongside neutral Text
   labels. Keep Results, Time, Cost, summaries and Details consistent with shared
   table and field-card typography and spacing.
+  Column-group toggles are independent: each active toggle uses the shared
+  Highlight Medium selection background and Highlight Low on hover. Multiple
+  groups can remain active together.
+  Its Duration column uses bounded referenced trace views and shared waterfall
+  bars/colours/connectors. Keep received parent IDs intact when compressing
+  ancestry; mark skipped or unavailable parent connections. Include referenced
+  graders, and retain recorded durations when a span is unavailable. Span
+  inspection opens shared Details within Evals; the trace href remains available.
+  Child execution errors propagate to parent indicators, including collapsed
+  branches, without changing recorded assessment scores.
+  Distinguish Love "Span error" from Papaya "Internal fault" (evaluation
+  machinery). A failed assessment is "Fail", not an execution error. Preserve
+  these meanings during parent propagation, including in dogfooding datasets.
+  Evals Details opens only its first section by default; later sections start
+  collapsed and remain manually expandable.
 - Trace, log and metric summary timestamps use the selected timezone without
   repeating its suffix on each card. Keep timezone labels in Details.
   Trace summaries omit the visible `Start:` label; keep `Duration:` labelled.

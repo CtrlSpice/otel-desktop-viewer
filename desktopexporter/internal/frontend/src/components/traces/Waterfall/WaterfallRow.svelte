@@ -10,6 +10,8 @@
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { BiohazardIcon } from '@hugeicons/core-free-icons'
   import TimelineMarkers from './TimelineMarkers.svelte'
+  import WaterfallTimeGuides from './WaterfallTimeGuides.svelte'
+  import type { WaterfallAxis } from './WaterfallTimeAxisHeader.svelte'
   import {
     BAR_LABEL_GAP_REM,
     DURATION_GUTTER_REM,
@@ -32,6 +34,7 @@
     spanColWidth: number
     optionalColumns?: SizedWaterfallColumn[]
     timelineWidth: number
+    timeAxis: WaterfallAxis
     traceStart: bigint
     traceEnd: bigint
     matched?: boolean
@@ -53,6 +56,7 @@
     spanColWidth,
     optionalColumns = [],
     timelineWidth,
+    timeAxis,
     traceStart,
     traceEnd,
     matched = false,
@@ -212,6 +216,7 @@
       style:--waterfall-bar-height="{WATERFALL_BAR_HEIGHT_REM}rem"
     >
       <div class="waterfall-row__timeline-frame">
+        <WaterfallTimeGuides axis={timeAxis} />
         <SpanBar
           class="waterfall-row__bar"
           offsetPercent={row.offsetPercent}
