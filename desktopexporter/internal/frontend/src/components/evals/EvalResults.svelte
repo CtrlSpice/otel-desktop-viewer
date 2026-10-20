@@ -955,21 +955,17 @@
     @apply inline-flex w-max items-center gap-1 whitespace-nowrap;
   }
   .eval-results__identity-heading :global(.table-sort) {
-    @apply inline-flex items-center gap-1;
+    @apply inline-flex w-auto flex-none items-center gap-1;
   }
   .eval-results__identity-heading :global(.table-sort__direction) {
     position: static;
     transform: none;
   }
   .eval-results__case-heading {
-    @apply inline-flex items-center gap-1 pl-4;
-    min-width: calc(
-      0.5rem + var(--tree-count-width) + var(--waterfall-gutter-col)
-    );
+    @apply inline-flex flex-none items-center gap-1 pl-4;
   }
   .eval-results__rep-heading {
-    @apply inline-flex items-center;
-    min-width: var(--waterfall-gutter-col);
+    @apply inline-flex flex-none items-center;
   }
   .eval-results__assessment {
     @apply flex items-center gap-1 whitespace-nowrap;
