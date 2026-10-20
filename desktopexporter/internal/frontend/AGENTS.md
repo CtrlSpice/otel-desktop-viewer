@@ -265,6 +265,8 @@
    Subtle 14px regular Mono, before the dot. Centre counts vertically with their
    dots. A faint 1px Muted guide connects toward the dot and stops 4px before the
    brackets. Counts have no badge background or semantic accent colour.
+   Only the digits use Subtle; the decorative brackets match the Muted guide
+   at 35% opacity.
   Align the waterfall table's name heading with the root title, reserving the
   same count slot when present.
   Keep counts visible when collapsed; omit counts for leaves.

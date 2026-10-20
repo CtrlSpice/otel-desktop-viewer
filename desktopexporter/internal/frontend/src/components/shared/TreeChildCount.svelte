@@ -9,7 +9,10 @@
 <span
   class="tree-child-count shrink-0 font-mono text-sm tabular-nums {className}"
   aria-hidden="true"
-  {title}>[{count}]</span
+  {title}
+  ><span class="tree-child-count__bracket">[</span>{count}<span
+    class="tree-child-count__bracket">]</span
+  ></span
 >
 
 <style lang="postcss">
@@ -18,5 +21,9 @@
     @apply text-center font-normal tracking-normal whitespace-nowrap;
     color: var(--color-subtle);
     font-size: var(--text-sm);
+  }
+  .tree-child-count__bracket {
+    color: var(--color-muted);
+    opacity: 0.35;
   }
 </style>
