@@ -3,12 +3,10 @@ import { expect, test, type Page } from '@playwright/test'
 import { exampleRuns } from '../src/components/evals/examples'
 
 async function showOnly(page: Page, label: 'Results' | 'Tool calls' | 'Cost') {
-  const toggles = page.getByRole('group', { name: 'Shown eval columns' })
-  for (const name of ['Results', 'Tool calls', 'Cost']) {
-    const toggle = toggles.getByRole('button', { name, exact: true })
-    if ((await toggle.getAttribute('aria-pressed')) !== String(name === label))
-      await toggle.click()
-  }
+  await page
+    .getByRole('radiogroup', { name: 'Eval view' })
+    .getByRole('radio', { name: label, exact: true })
+    .click()
 }
 
 async function enableEvals(page: Page, enabled = true) {
@@ -266,7 +264,7 @@ test('run selection, assessments, filtering and browser history stay connected',
     plannedResults
       .locator('[data-attempt-id]')
       .getByText('Unscored', { exact: true })
-  ).toHaveCount(48)
+  ).toHaveCount(16)
   await expect(
     page
       .getByRole('table', { name: 'Grading for this run' })
@@ -275,7 +273,7 @@ test('run selection, assessments, filtering and browser history stay connected',
 })
 
 for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
-  test(`column groups toggle independently in fixed order with selection highlights in ${theme}`, async ({
+  test(`summary views are exclusive radios with selection highlights in ${theme}`, async ({
     page,
   }) => {
     await enableEvals(page)
@@ -285,26 +283,26 @@ for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
     )
     await page.goto('/evals?run=direct&attempt=request-latency')
     const url = page.url()
-    const toggles = page.getByRole('group', { name: 'Shown eval columns' })
-    const results = toggles.getByRole('button', {
+    const toggles = page.getByRole('radiogroup', { name: 'Eval view' })
+    const results = toggles.getByRole('radio', {
       name: 'Results',
       exact: true,
     })
-    const time = toggles.getByRole('button', {
+    const time = toggles.getByRole('radio', {
       name: 'Tool calls',
       exact: true,
     })
-    const cost = toggles.getByRole('button', { name: 'Cost', exact: true })
-    await expect(results).toHaveAttribute('aria-pressed', 'true')
-    await expect(time).toHaveAttribute('aria-pressed', 'false')
-    await expect(cost).toHaveAttribute('aria-pressed', 'false')
-    await cost.focus()
-    await page.keyboard.press('Space')
-    await time.focus()
-    await page.keyboard.press('Enter')
+    const cost = toggles.getByRole('radio', { name: 'Cost', exact: true })
+    await expect(results).toHaveAttribute('aria-checked', 'true')
+    await expect(time).toHaveAttribute('aria-checked', 'false')
+    await expect(cost).toHaveAttribute('aria-checked', 'false')
+    await results.focus()
+    await page.keyboard.press('ArrowRight')
+    await expect(time).toBeFocused()
+    await expect(time).toHaveAttribute('aria-checked', 'true')
     await page.mouse.move(0, 0)
     const table = page.getByRole('table', {
-      name: 'Results + Tool calls + Cost for Direct agent',
+      name: 'Tool calls for Direct agent',
     })
     await expect(table).toBeVisible()
     const headings = await table
@@ -313,19 +311,15 @@ for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
         buttons.map(button => button.getAttribute('aria-label'))
       )
     expect(headings).toEqual(
-      [
-        'Case',
-        'Repetition',
-        'Duration',
-        'Tool calls',
-        'Failures',
-        ...exampleRuns[1].assessments.map(item => item.name),
-        'Investigator',
-        'Grader',
-      ].map(label => `Sort by ${label}`)
+      ['Case', 'Repetition', 'Duration', 'Tool calls'].map(
+        label => `Sort by ${label}`
+      )
     )
     for (const toggle of [results, time, cost]) {
-      await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+      await toggle.click()
+      await page.mouse.move(0, 0)
+      await expect(toggle).toHaveAttribute('aria-checked', 'true')
+      await expect(toggles.locator('[aria-checked="true"]')).toHaveCount(1)
       const colors = await toggle.evaluate(button => {
         const probe = document.createElement('span')
         probe.style.color = 'var(--color-primary)'
@@ -355,7 +349,7 @@ for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
       await page.mouse.move(0, 0)
       await expect(toggle).toHaveCSS('background-color', colors.selected)
     }
-    await results.click()
+    await cost.click()
     await page.mouse.move(0, 0)
     await expect(results).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
     expect(
@@ -365,7 +359,7 @@ for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
           getComputedStyle(button).color
       )
     ).toBe(true)
-    await results.click()
+    await time.click()
     expect(
       await table
         .locator('thead button')
@@ -379,16 +373,15 @@ for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
     expect(page.url()).toBe(url)
     await test.info().attach('combined-groups', {
       body: await page.screenshot({
-        path: test.info().outputPath('combined-groups.png'),
+        path: test.info().outputPath('radio-summary.png'),
       }),
       contentType: 'image/png',
     })
-    for (const toggle of [results, time, cost]) {
-      await toggle.click()
-      await expect(toggle).toHaveAttribute('aria-pressed', 'false')
-    }
-    const cases = page.getByRole('table', { name: 'Cases for Direct agent' })
-    await expect(cases.locator('thead th')).toHaveCount(2)
+    await cost.click()
+    await cost.click()
+    await expect(cost).toHaveAttribute('aria-checked', 'true')
+    const cases = page.getByRole('table', { name: 'Cost for Direct agent' })
+    await expect(cases.locator('thead th')).toHaveCount(3)
     await expect(cases.locator('[data-attempt-id]')).toHaveCount(0)
     await expect(cases.locator('.eval-results__case')).toHaveCount(8)
   })
@@ -403,7 +396,7 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
   const url = page.url()
   await expect(selected).toHaveClass(/table-row--selected/)
   await expect(
-    page.getByRole('group', { name: 'Shown eval columns' }).getByRole('button')
+    page.getByRole('radiogroup', { name: 'Eval view' }).getByRole('radio')
   ).toHaveCount(3)
   await expect(
     page.getByRole('button', { name: 'Columns', exact: true })
@@ -417,17 +410,18 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
     time.locator('[data-attempt-id="checkout-latency"] td').first()
   ).toHaveText('')
   await expect(
-    time.getByRole('columnheader', { name: 'Failures' })
+    time.getByRole('columnheader', { name: 'Tool calls' })
   ).toBeVisible()
   const failedAttempt = time.locator('[data-attempt-id="request-latency"]')
-  await expect(failedAttempt.locator('td').nth(1)).toHaveText('3')
-  await expect(failedAttempt.locator('td').nth(2)).toHaveText('1')
+  await expect(failedAttempt.locator('td').nth(1)).toHaveText(
+    '3 tools · 1 failed'
+  )
   await expect(
     time
       .locator('.eval-results__case[data-case-id="request-latency"] td')
-      .nth(2)
-  ).toHaveText('3')
-  const trace = failedAttempt.getByRole('img', {
+      .nth(1)
+  ).toHaveText('9 tools · 3 failed')
+  const trace = failedAttempt.getByRole('button', {
     name: 'Attempt 1, 37.000 s',
   })
   await expect(trace).toBeVisible()
@@ -455,7 +449,7 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
     contentType: 'image/png',
   })
   await expect(
-    toolRows.nth(1).getByRole('img', { name: 'Span bash, 500.000 ms' })
+    toolRows.nth(1).getByRole('button', { name: 'Span bash, 500.000 ms' })
   ).toBeVisible()
   expect(page.url()).toBe(url)
   await execution.getByRole('button', { name: /^Collapse Execution/ }).focus()
@@ -468,18 +462,18 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
     time.locator('[data-attempt-id="checkout-latency"]').getByRole('link')
   ).toHaveCount(0)
   await time
-    .getByRole('button', { name: 'Sort by Failures', exact: true })
+    .getByRole('button', { name: 'Sort by Tool calls', exact: true })
     .click()
   await time
-    .getByRole('button', { name: 'Sort by Failures', exact: true })
+    .getByRole('button', { name: 'Sort by Tool calls', exact: true })
     .click()
   await expect(time.locator('[data-attempt-id]').first()).toHaveAttribute(
     'data-case-id',
     'request-latency'
   )
   await expect(
-    time.locator('[data-attempt-id="checkout-latency"] td').nth(2)
-  ).toHaveText('0')
+    time.locator('[data-attempt-id="checkout-latency"] td').nth(1)
+  ).toHaveText('0 tools · 0 failed')
   await showOnly(page, 'Cost')
   const costs = page.getByRole('table', { name: 'Cost for Direct agent' })
   for (const row of await costs.locator('.eval-results__case').all())
@@ -499,20 +493,15 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
       )
   ).toBe(true)
   await expect(
-    costs.getByRole('columnheader', { name: /Investigator/ })
+    costs.getByRole('columnheader', { name: /Total cost/ })
   ).toBeVisible()
   await expect(
-    costs.getByRole('columnheader', { name: /Grader/ })
-  ).toBeVisible()
-  await expect(
-    costs
-      .locator('[data-attempt-id="cpu-evidence"]')
-      .getByRole('cell', { name: 'Unknown', exact: true })
-  ).toHaveCount(2)
+    costs.locator('[data-attempt-id="cpu-evidence"]').locator('td').last()
+  ).toContainText('Investigator Unknown · Grader Unknown')
   const totals = costs.getByRole('row', {
     name: 'Estimated cost for shown attempts',
   })
-  await expect(totals).toContainText('Partial estimate')
+  await expect(totals).toContainText('partial')
   const footer = costs.locator('tfoot')
   await expect(footer).toHaveCSS('opacity', '1')
   const divider = await footer.evaluate(element => {
@@ -548,7 +537,7 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
     results
       .locator('[data-attempt-id="cpu-evidence"]')
       .getByText('Unscored', { exact: true })
-  ).toHaveCount(3)
+  ).toHaveCount(1)
   await expect(results.locator('[data-attempt-id="trace-logs"]')).toContainText(
     '(0/1)'
   )
@@ -557,9 +546,9 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
   const parent = page.locator(
     '.eval-results__case[data-case-id="cpu-evidence"]'
   )
-  await parent.getByRole('button').click()
+  await parent.locator('button[aria-expanded]').click()
   await showOnly(page, 'Tool calls')
-  await expect(parent.getByRole('button')).toHaveAttribute(
+  await expect(parent.locator('button[aria-expanded]')).toHaveAttribute(
     'aria-expanded',
     'false'
   )
@@ -567,27 +556,27 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
     time.locator('[data-case-id="cpu-evidence"][data-attempt-id]')
   ).toHaveCount(0)
   await showOnly(page, 'Cost')
-  await expect(parent.getByRole('button')).toHaveAttribute(
+  await expect(parent.locator('button[aria-expanded]')).toHaveAttribute(
     'aria-expanded',
     'false'
   )
-  await parent.getByRole('button').click()
+  await parent.locator('button[aria-expanded]').click()
   await expect(selected).toHaveClass(/table-row--selected/)
   expect(page.url()).toBe(url)
   await page
     .getByRole('searchbox', { name: 'Search evals' })
     .fill('CPU evidence')
   await expect(costs.locator('[data-attempt-id]')).toHaveCount(2)
-  await expect(
-    totals.getByRole('cell', { name: 'Unknown', exact: true })
-  ).toHaveCount(2)
+  await expect(totals.locator('td').last()).toContainText(
+    'Investigator Unknown · Grader Unknown'
+  )
   await expect(selected).toHaveClass(/table-row--selected/)
   await page.getByRole('button', { name: 'Clear search', exact: true }).click()
   await expect(costs.locator('[data-attempt-id]')).toHaveCount(16)
   expect(page.url()).toBe(url)
 })
 
-test('waterfall rows and bars are inert while execution controls still expand', async ({
+test('waterfall labels and bars open eval details while tree controls only expand', async ({
   page,
 }) => {
   await enableEvals(page)
@@ -625,7 +614,7 @@ test('waterfall rows and bars are inert while execution controls still expand', 
       .locator('span')
       .first()
   ).toHaveCSS('background-color', errorColours.internalFault)
-  const bar = row.getByRole('img', {
+  const bar = row.getByRole('button', {
     name: 'Attempt 1, 37.000 s',
   })
   await expect(bar).toBeVisible()
@@ -658,13 +647,41 @@ test('waterfall rows and bars are inert while execution controls still expand', 
     errorColours.spanError
   )
   const tool = page.locator('[data-tool-attempt-id="request-latency"]').first()
-  await tool.locator('.tree-row-identity__title').click()
-  await tool.locator('.span-bar').click({ modifiers: ['ControlOrMeta'] })
+  await tool.locator('.tree-row-identity__title button').click()
+  await expect(tool).toHaveClass(/table-row--selected/)
+  await expect(
+    details.getByRole('table', { name: 'bash fields', exact: true })
+  ).toBeVisible()
+  expect(new URL(page.url()).searchParams.get('row')).toBe(
+    'request-latency/tool/0'
+  )
+  await page.reload()
+  await expect(
+    details.getByRole('table', { name: 'bash fields', exact: true })
+  ).toBeVisible()
+  await showOnly(page, 'Tool calls')
+  await tool.locator('.span-bar').click()
+  await expect(tool).toHaveClass(/table-row--selected/)
   await page
-    .locator('[data-attempt-id="cpu-evidence"] .tree-row-identity__title')
+    .locator(
+      '[data-outline-id="grading/request-latency"] .tree-row-identity__title button'
+    )
     .click()
-  expect(page.url()).toBe(url)
-  await expect(row).toHaveClass(/table-row--selected/)
+  await expect(
+    details.getByRole('table', { name: 'Grading fields', exact: true })
+  ).toBeVisible()
+  await expect(
+    details.getByText('evaluator', { exact: true }).first()
+  ).toBeVisible()
+  await page
+    .locator(
+      '[data-attempt-id="cpu-evidence"] .tree-row-identity__title button'
+    )
+    .click()
+  expect(new URL(page.url()).searchParams.get('attempt')).toBe('cpu-evidence')
+  await expect(page.locator('[data-attempt-id="cpu-evidence"]')).toHaveClass(
+    /table-row--selected/
+  )
   await expect(
     details.locator('summary').filter({ hasText: /^(Span|Events|Links)/ })
   ).toHaveCount(0)
@@ -709,8 +726,8 @@ test('column sorting preserves selection and keeps unknown measurements last wit
   )
   await showOnly(page, 'Cost')
   const costs = page.getByRole('table', { name: 'Cost for Direct agent' })
-  await costs.getByRole('button', { name: 'Sort by Investigator' }).click()
-  await costs.getByRole('button', { name: 'Sort by Investigator' }).click()
+  await costs.getByRole('button', { name: 'Sort by Total cost' }).click()
+  await costs.getByRole('button', { name: 'Sort by Total cost' }).click()
   await expect(costs.locator('tbody tr').first()).toContainText(
     'Inspect sequence types'
   )
@@ -732,10 +749,10 @@ test('column resizing uses shared handles and retains widths, sorting and select
   const url = page.url()
   const table = page.getByRole('table', { name: 'Results for Direct agent' })
   const heading = table.getByRole('columnheader', {
-    name: /Task completion/,
+    name: /Duration/,
   })
   const handle = page.getByRole('separator', {
-    name: 'Resize Task completion column',
+    name: 'Resize Duration column',
     exact: true,
   })
   const width = () =>
@@ -744,7 +761,7 @@ test('column resizing uses shared handles and retains widths, sorting and select
   const before = await width()
   const hitAreas = await page.evaluate(() => {
     const handle = document.querySelector<HTMLElement>(
-      '[aria-label="Resize Task completion column"]'
+      '[aria-label="Resize Duration column"]'
     )!
     const line = handle
       .querySelector('.col-resize-bar__line')!
@@ -767,14 +784,14 @@ test('column resizing uses shared handles and retains widths, sorting and select
   })
   expect(hitAreas).toEqual({ parent: true, child: true })
   await handle.focus()
-  await page.keyboard.press('ArrowRight')
-  await expect.poll(width).toBeCloseTo(before + 16, 0)
+  await page.keyboard.press('ArrowLeft')
+  await expect.poll(width).toBeCloseTo(before - 16, 0)
   const box = (await handle.boundingBox())!
   await page.mouse.move(box.x + box.width / 2, box.y + 20)
   await page.mouse.down()
-  await page.mouse.move(box.x + box.width / 2 + 24, box.y + 20, { steps: 4 })
+  await page.mouse.move(box.x + box.width / 2 - 24, box.y + 20, { steps: 4 })
   await page.mouse.up()
-  await expect.poll(width).toBeCloseTo(before + 40, 0)
+  await expect.poll(width).toBeCloseTo(before - 40, 0)
   await heading.getByRole('button').click()
   await expect(heading).toHaveAttribute('aria-sort', 'ascending')
   await expect(page.locator('[data-attempt-id="request-latency"]')).toHaveClass(
@@ -798,10 +815,10 @@ test('column resizing uses shared handles and retains widths, sorting and select
     )
     .toBeCloseTo(durationWidth + 16, 0)
   await showOnly(page, 'Results')
-  await expect.poll(width).toBeCloseTo(before + 40, 0)
+  await expect.poll(width).toBeCloseTo(before - 40, 0)
   await expect(heading).toHaveAttribute('aria-sort', 'ascending')
   await page.reload()
-  await expect.poll(width).toBeCloseTo(before + 40, 0)
+  await expect.poll(width).toBeCloseTo(before - 40, 0)
   const viewport = page.getByRole('region', {
     name: 'Results for Direct agent table viewport',
   })
@@ -830,7 +847,7 @@ test('column resizing uses shared handles and retains widths, sorting and select
       return Math.abs(bottom - (bounds.y + bounds.height))
     })
     .toBeLessThan(1)
-  await table.locator('.eval-results__case').getByRole('button').click()
+  await table.locator('.eval-results__case button[aria-expanded]').click()
   await expect(table.locator('[data-attempt-id]')).toHaveCount(0)
   await expect(handle).toHaveCSS('clip-path', 'none')
   const parent = (await table.locator('.eval-results__case').boundingBox())!
@@ -966,7 +983,7 @@ test('case branches stay connected to aligned repetitions through sorting and re
     expect(geometry.elbows).toEqual([0, 0, 1])
   }
   await checkGeometry()
-  const toggle = parent.getByRole('button')
+  const toggle = parent.locator('button[aria-expanded]')
   const gutterBounds = await toggle.evaluate(button => ({
     width: button.getBoundingClientRect().width,
     height: button.getBoundingClientRect().height,
@@ -986,7 +1003,7 @@ test('case branches stay connected to aligned repetitions through sorting and re
   await expect(children).toHaveCount(3)
   await expect(children.nth(1)).toHaveClass(/table-row--selected/)
   await expect(parent.locator('th')).toHaveAttribute('colspan', '2')
-  const title = parent.locator('.tree-row-identity__title > span')
+  const title = parent.locator('.tree-row-identity__title > button')
   const initialHeight = await parent.evaluate(
     element => element.getBoundingClientRect().height
   )
@@ -1018,15 +1035,17 @@ test('case branches stay connected to aligned repetitions through sorting and re
   ])
   await page
     .getByRole('separator', {
-      name: 'Resize Task completion column',
+      name: 'Resize Duration column',
       exact: true,
     })
     .focus()
   await page.keyboard.press('ArrowRight')
   await table.locator('..').evaluate(element => (element.scrollLeft = 40))
   await checkGeometry()
-  await children.first().locator('.tree-row-identity__title').click()
-  expect(page.url()).toBe(selectedURL)
+  await children.first().locator('.tree-row-identity__title button').click()
+  expect(new URL(page.url()).searchParams.get('attempt')).toBe(
+    await children.first().getAttribute('data-attempt-id')
+  )
 })
 
 for (const theme of ['rose-pine', 'rose-pine-dawn']) {
@@ -1117,7 +1136,7 @@ for (const theme of ['rose-pine', 'rose-pine-dawn']) {
   })
 }
 
-test('waterfall clicks keep Details closed; explicit run selection can reveal it', async ({
+test('waterfall selection reveals closed Details and run selection restores run context', async ({
   page,
 }) => {
   await enableEvals(page)
@@ -1130,11 +1149,11 @@ test('waterfall clicks keep Details closed; explicit run selection can reveal it
   const detail = page.locator('#signal-drawer-detail')
   await expect(detail).toBeHidden()
   const attempt = page.locator('[data-attempt-id]').first()
-  const url = page.url()
-  await attempt.locator('.tree-row-identity__title').click()
+  await attempt.locator('.tree-row-identity__title button').click()
   await attempt.locator('.span-bar').click()
-  await expect(detail).toBeHidden()
-  expect(page.url()).toBe(url)
+  await expect(
+    detail.getByRole('region', { name: 'Attempt details', exact: true })
+  ).toBeVisible()
   await page.getByRole('button', { name: /Guide-assisted agent/ }).click()
   await expect(
     detail.getByRole('region', { name: 'Run details', exact: true })

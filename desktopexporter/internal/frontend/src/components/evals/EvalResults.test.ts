@@ -59,12 +59,11 @@ function traceViews(timings: SpanTiming[]) {
 
 async function showOnlyTime() {
   const user = userEvent.setup()
-  await user.click(screen.getByRole('button', { name: 'Results' }))
-  await user.click(screen.getByRole('button', { name: 'Tool calls' }))
+  await user.click(screen.getByRole('radio', { name: 'Tool calls' }))
 }
 
 describe('EvalResults repetitions', () => {
-  it('combines groups in fixed order, aligns run/tool rows and keeps expansion when toggled off', async () => {
+  it('selects one summary view, combines totals and preserves manual disclosure', async () => {
     const attempt = exampleRuns[0].attempts[0]
     const telemetry = { traceID: 'a'.repeat(32), spanID: 'b'.repeat(16) }
     const lookup = vi
@@ -79,30 +78,26 @@ describe('EvalResults repetitions', () => {
       })
       const user = userEvent.setup()
       const toggles = within(
-        screen.getByRole('group', { name: 'Shown eval columns' })
+        screen.getByRole('radiogroup', { name: 'Eval view' })
       )
-      const toggle = (name: string) => toggles.getByRole('button', { name })
+      const toggle = (name: string) => toggles.getByRole('radio', { name })
       await user.click(toggle('Cost'))
       await user.click(toggle('Tool calls'))
       for (const name of ['Results', 'Tool calls', 'Cost'])
-        expect(toggle(name)).toHaveAttribute('aria-pressed', 'true')
+        expect(toggle(name)).toHaveAttribute(
+          'aria-checked',
+          String(name === 'Tool calls')
+        )
       expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
       const headers = [...container.querySelectorAll('thead button')].map(
         button => button.getAttribute('aria-label')
       )
       expect(headers).toEqual(
-        [
-          'Case',
-          'Repetition',
-          'Duration',
-          'Tool calls',
-          'Failures',
-          ...run.assessments.map(item => item.name),
-          'Investigator',
-          'Grader',
-        ].map(label => `Sort by ${label}`)
+        ['Case', 'Repetition', 'Duration', 'Tool calls'].map(
+          label => `Sort by ${label}`
+        )
       )
-      const expectedColumns = 2 + run.assessments.length + 3 + 2
+      const expectedColumns = 4
       for (const row of container.querySelectorAll('tr')) {
         expect(
           [...row.children].reduce(
@@ -115,14 +110,24 @@ describe('EvalResults repetitions', () => {
       expect(container.querySelectorAll('[data-tool-attempt-id]')).toHaveLength(
         toolCount
       )
-      await user.click(toggle('Results'))
+      await user.click(
+        screen.getByRole('button', { name: /^Collapse Execution/ })
+      )
       await user.click(toggle('Cost'))
-      await user.click(toggle('Tool calls'))
-      expect(container.querySelectorAll('col')).toHaveLength(3)
+      expect(container.querySelectorAll('col')).toHaveLength(4)
+      expect(
+        screen.getByRole('button', { name: 'Sort by Total cost' })
+      ).toBeInTheDocument()
       expect(container.querySelectorAll('[data-tool-attempt-id]')).toHaveLength(
         0
       )
       await user.click(toggle('Tool calls'))
+      expect(container.querySelectorAll('[data-tool-attempt-id]')).toHaveLength(
+        0
+      )
+      await user.click(
+        screen.getByRole('button', { name: /^Expand Execution/ })
+      )
       expect(container.querySelectorAll('[data-tool-attempt-id]')).toHaveLength(
         toolCount
       )
@@ -186,13 +191,13 @@ describe('EvalResults repetitions', () => {
           attempts: [attempt],
         })
         await showOnlyTime()
-        await screen.findByRole('img', {
+        await screen.findByRole('button', {
           name: 'Span question, 10.000 s',
         })
-        const early = screen.getByRole('img', {
+        const early = screen.getByRole('button', {
           name: 'Span tool 2, 2.000 s',
         })
-        const late = screen.getByRole('img', {
+        const late = screen.getByRole('button', {
           name: 'Span tool 3, 8.000 s',
         })
         expect(early.querySelector('.span-bar')).toHaveStyle({
@@ -251,7 +256,7 @@ describe('EvalResults repetitions', () => {
         run: { ...exampleRuns[0], telemetry: undefined, attempts },
         attempts,
       })
-      const second = await screen.findByRole('img', {
+      const second = await screen.findByRole('button', {
         name: 'Span attempt span 1, 10.000 s',
       })
       expect(second.querySelector('.span-bar')).toHaveStyle({
@@ -294,7 +299,7 @@ describe('EvalResults repetitions', () => {
       })
       await showOnlyTime()
       expect(
-        await screen.findByRole('img', { name: 'Span eval run, 1.000 s' })
+        await screen.findByRole('button', { name: 'Span eval run, 1.000 s' })
       ).not.toHaveAttribute('href')
       expect(screen.getAllByText('24.000 s')).toHaveLength(3)
       expect(
@@ -348,7 +353,7 @@ describe('EvalResults repetitions', () => {
     }
   )
 
-  it('fans out single and repeated attempts with inert labels and functional collapse controls', async () => {
+  it('selects eval details from labels without selecting through collapse controls', async () => {
     const [first, second, third] = exampleRuns[0].attempts.filter(
       item => item.caseID === 'request-latency'
     )
@@ -359,10 +364,12 @@ describe('EvalResults repetitions', () => {
       name: 'Single case',
     }
     const attempts = [single, first, second, third]
+    const onSelect = vi.fn()
     const { container } = render(EvalResults, {
       run: { ...exampleRuns[0], attempts },
       attempts,
       selectedID: second.id,
+      onSelect,
     })
     expect(container.querySelectorAll('tbody tr')).toHaveLength(6)
     const singleton = container.querySelector(
@@ -405,8 +412,16 @@ describe('EvalResults repetitions', () => {
     expect(
       container.querySelector(`[data-attempt-id="${second.id}"]`)
     ).toHaveClass('table-row--selected')
-    expect(
-      screen.queryByRole('button', { name: first.name })
-    ).not.toBeInTheDocument()
+    expect(onSelect).not.toHaveBeenCalled()
+    await userEvent
+      .setup()
+      .click(
+        container.querySelector(
+          `[data-attempt-id="${second.id}"] .eval-results__rep-label`
+        )!
+      )
+    expect(onSelect).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'attempt', attempt: second })
+    )
   })
 })

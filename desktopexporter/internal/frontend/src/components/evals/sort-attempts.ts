@@ -9,6 +9,7 @@ export type AttemptSortKey =
   | 'failures'
   | 'investigatorCost'
   | 'graderCost'
+  | 'cost'
   | `assessment:${string}`
 
 export type AttemptSort = {
@@ -34,6 +35,11 @@ function sortValue(attempt: EvalAttempt, key: AttemptSortKey) {
       return attempt.investigatorCost
     case 'graderCost':
       return attempt.graderCost
+    case 'cost':
+      return attempt.investigatorCost === undefined &&
+        attempt.graderCost === undefined
+        ? undefined
+        : (attempt.investigatorCost ?? 0) + (attempt.graderCost ?? 0)
     default:
       return attempt.assessments.find(
         score => score.id === key.slice('assessment:'.length)

@@ -729,7 +729,7 @@ svg {
   @apply relative z-[1] gap-2 whitespace-nowrap;
 }
 
-.btn.header-tab.header-toggle[aria-pressed='true'] {
+.btn.header-tab.header-toggle:is([aria-pressed='true'], [aria-checked='true']) {
   background: var(--item-selected-bg);
 }
 
@@ -751,6 +751,7 @@ svg {
 :is(.header-tab, .primary-navigation .tab):is(
     [aria-selected='true'],
     [aria-current='page'],
+    [aria-checked='true'],
     [aria-pressed='true']
   )
   .header-tab__count {
@@ -780,6 +781,7 @@ svg {
 .header-tab:is(
     [aria-selected='true'],
     [aria-current='page'],
+    [aria-checked='true'],
     [aria-pressed='true']
   )
   .header-tab__icon {

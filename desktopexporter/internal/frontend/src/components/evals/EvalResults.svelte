@@ -62,10 +62,18 @@
     run,
     attempts,
     selectedID,
+    selectedRowID,
+    onSelect,
+    onSelectRun,
+    onResolveSelection,
   }: {
     run: EvalRun
     attempts: EvalAttempt[]
     selectedID?: string
+    selectedRowID?: string
+    onSelect?: (row: EvalOutlineRow) => void
+    onSelectRun?: () => void
+    onResolveSelection?: (row: EvalOutlineRow | undefined) => void
   } = $props()
   const panelID = $props.id()
   const views = [
@@ -73,18 +81,23 @@
     { id: 'time', label: 'Tool calls', icon: ToolsIcon },
     { id: 'cost', label: 'Cost', icon: Coins01Icon },
   ]
-  let enabledViews = $state(['results'])
-  const shownViews = $derived(
-    views.filter(item => enabledViews.includes(item.id))
-  )
-  const viewKey = $derived(shownViews.map(item => item.id).join('-') || 'case')
-  const viewLabel = $derived(
-    shownViews.map(item => item.label).join(' + ') || 'Cases'
-  )
-  function toggleView(id: string) {
-    enabledViews = enabledViews.includes(id)
-      ? enabledViews.filter(value => value !== id)
-      : [...enabledViews, id]
+  let viewKey = $state('results')
+  const enabledViews = $derived([viewKey])
+  const viewLabel = $derived(views.find(item => item.id === viewKey)!.label)
+  function selectView(event: KeyboardEvent, index: number) {
+    const direction = ['ArrowRight', 'ArrowDown'].includes(event.key)
+      ? 1
+      : ['ArrowLeft', 'ArrowUp'].includes(event.key)
+        ? -1
+        : 0
+    if (!direction) return
+    event.preventDefault()
+    const next = (index + direction + views.length) % views.length
+    viewKey = views[next].id
+    const button = event.currentTarget as HTMLButtonElement
+    button.parentElement
+      ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+      [next]?.focus()
   }
   type LegendEntry = Pick<ComponentProps<typeof EvalStatus>, 'label' | 'tone'>
   const completionLegend: LegendEntry[] = [
@@ -246,7 +259,11 @@
     hint?: string
     assessment?: AssessmentDefinition
   }
-  const options = $derived<Column[]>([
+  const headline = $derived(
+    run.assessments.find(item => item.id === run.headlineAssessment) ??
+      run.assessments[0]
+  )
+  const columns = $derived<Column[]>([
     {
       key: 'name',
       label: 'Case',
@@ -274,56 +291,39 @@
       width: 288,
       min: 224,
     },
-    {
-      key: 'tools',
-      label: 'Tool calls',
-      group: 'Tool calls',
-      width: 112,
-      min: 104,
-    },
-    {
-      key: 'failures',
-      label: 'Failures',
-      hint: 'Failed tool calls',
-      group: 'Tool calls',
-      width: 104,
-      min: 96,
-    },
-    ...run.assessments.map(assessment => ({
-      key: `assessment:${assessment.id}` as AttemptSortKey,
-      label: assessment.name,
-      group: 'Results',
-      width: 192,
-      min: 160,
-      hint: assessment.scale,
-      assessment,
-    })),
-    {
-      key: 'investigatorCost',
-      label: 'Investigator',
-      group: 'Cost',
-      width: 160,
-      min: 144,
-      description: 'Estimate · CAD',
-    },
-    {
-      key: 'graderCost',
-      label: 'Grader',
-      group: 'Cost',
-      width: 160,
-      min: 144,
-      description: 'Estimate · CAD',
-    },
+    ...(viewKey === 'time'
+      ? [
+          {
+            key: 'tools',
+            label: 'Tool calls',
+            group: 'Tool calls',
+            width: 208,
+            min: 192,
+          } as Column,
+        ]
+      : viewKey === 'results'
+        ? [
+            {
+              key: headline ? `assessment:${headline.id}` : 'state',
+              label: headline?.name ?? 'Result',
+              group: 'Results',
+              width: 208,
+              min: 192,
+              hint: headline?.scale,
+              assessment: headline,
+            } as Column,
+          ]
+        : [
+            {
+              key: 'cost',
+              label: 'Total cost',
+              group: 'Cost',
+              width: 320,
+              min: 256,
+              description: 'Estimate · CAD',
+            } as Column,
+          ]),
   ])
-
-  const columns = $derived(
-    options.filter(
-      column =>
-        column.group === 'Case' ||
-        column.key === 'seconds' ||
-        shownViews.some(view => view.label === column.group)
-    )
-  )
   let sorts = $state<Record<string, AttemptSort | undefined>>({})
   const activeSort = $derived(sorts[viewKey])
   const measuredAttempts = $derived(
@@ -379,17 +379,51 @@
   const visibleRows = $derived(
     visibleOutlineRows(outline, enabledViews, overrides)
   )
-  const showCost = $derived(enabledViews.includes('cost'))
+  function selectBar(event: MouseEvent) {
+    const id = (event.currentTarget as HTMLElement).closest<HTMLElement>(
+      '[data-outline-id]'
+    )?.dataset.outlineId
+    const row = outline.find(item => item.id === id)
+    if (row) onSelect?.(row)
+    else onSelectRun?.()
+  }
+  $effect(() => {
+    onResolveSelection?.(outline.find(row => row.id === selectedRowID))
+  })
 </script>
 
-{#snippet rowCost(estimate: { total: number | null; incomplete: boolean })}
-  {#if showCost}<span
-      class="eval-results__row-cost shrink-0 text-sm text-rp-subtle tabular-nums"
+{#snippet rowCost(
+  estimate: { total: number | null; incomplete: boolean },
+  breakdown?: { investigatorCost?: number | null; graderCost?: number | null }
+)}
+  <div>
+    <span
+      class="text-sm tabular-nums whitespace-nowrap"
       title="Recorded estimate · CAD"
     >
       {cost(estimate.total)}{#if estimate.incomplete && estimate.total !== null}
-        · partial{/if}
-    </span>{/if}
+        <span class="text-rp-subtle"> · partial</span>{/if}
+    </span>
+    {#if breakdown}<div class="text-sm text-rp-subtle">
+        <span class="whitespace-nowrap"
+          >Investigator {cost(breakdown.investigatorCost)}</span
+        >
+        ·
+        <span class="whitespace-nowrap"
+          >Grader {cost(breakdown.graderCost)}</span
+        >
+      </div>{/if}
+  </div>
+{/snippet}
+
+{#snippet toolCount(total: number, failed: number)}
+  <span class="inline-flex items-center gap-1 whitespace-nowrap">
+    <span>{total} {total === 1 ? 'tool' : 'tools'} ·</span>
+    {#if failed}<EvalStatus
+        label={`${failed} failed`}
+        tone="error"
+      />{:else}<span>0 failed</span>{/if}
+  </span>
 {/snippet}
 
 {#snippet executionNode(
@@ -432,9 +466,10 @@
     maximum={maximumDuration}
     unavailable={!window && duration === undefined}
   >
-    {#if window && (!span || span.endTime < span.startTime)}<span
+    {#if window && (!span || span.endTime < span.startTime)}<button
+        type="button"
+        onclick={selectBar}
         class="eval-results__span-bar block"
-        role="img"
         aria-label={`${label}, ${formatDuration(window.endTime - window.startTime)}`}
         title={`${label} · elapsed time across available references · Start offset ${formatDuration(window.startTime - (origin ?? window.startTime))}`}
         style:--bar-color={spanError
@@ -444,11 +479,12 @@
           duration={window.endTime - window.startTime}
           maximum={maximumDuration}
           offset={window.startTime - (origin ?? window.startTime)}
-        /></span
+        /></button
       >
-    {:else if span && span.endTime >= span.startTime}<span
+    {:else if span && span.endTime >= span.startTime}<button
+        type="button"
+        onclick={selectBar}
         class="eval-results__span-bar block"
-        role="img"
         aria-label={`Span ${span.name}, ${formatDuration(span.endTime - span.startTime)}`}
         title={`${span.name} · ${span.serviceName} · ${formatDuration(span.endTime - span.startTime)} · Start offset ${formatDuration(span.startTime - (origin ?? span.startTime))}`}
         style:--bar-color={spanError
@@ -459,16 +495,18 @@
           duration={span.endTime - span.startTime}
           maximum={maximumDuration}
           offset={span.startTime - (origin ?? span.startTime)}
-        /></span
+        /></button
       >
     {:else if duration !== undefined}
-      <span
-        class="block"
+      <button
+        type="button"
+        onclick={selectBar}
+        class="block w-full text-left"
         title="Recorded eval duration"
         style:--bar-color={spanError ? 'var(--color-error)' : 'currentColor'}
       >
         <DurationBar {duration} maximum={maximumDuration} />
-      </span>
+      </button>
     {:else}
       <span
         class="block min-h-[var(--signal-card-row-h)]"
@@ -493,15 +531,18 @@
     >
   {/snippet}
   {#snippet metaRight()}
-    <div class="header-controls" role="group" aria-label="Shown eval columns">
-      {#each views as item (item.id)}
+    <div class="header-controls" role="radiogroup" aria-label="Eval view">
+      {#each views as item, index (item.id)}
         <button
           type="button"
+          role="radio"
           class="btn btn-xs header-tab header-toggle tooltip tooltip-left"
-          aria-pressed={enabledViews.includes(item.id)}
+          aria-checked={viewKey === item.id}
+          tabindex={viewKey === item.id ? 0 : -1}
           aria-controls={panelID}
           data-tip={item.label}
-          onclick={() => toggleView(item.id)}
+          onclick={() => (viewKey = item.id)}
+          onkeydown={event => selectView(event, index)}
         >
           <span class="header-tab__icon shrink-0">
             <HugeiconsIcon
@@ -517,18 +558,16 @@
     </div>
   {/snippet}
   {#snippet metaLeft()}
-    {#if shownViews.length}
-      <LegendRows
-        items={completionLegend}
-        label="Execution status legend"
-        itemKey={entry => entry.label}
-      >
-        {#snippet children(entry)}<EvalStatus
-            label={entry.label}
-            tone={entry.tone}
-          />{/snippet}
-      </LegendRows>
-    {/if}
+    <LegendRows
+      items={completionLegend}
+      label="Execution status legend"
+      itemKey={entry => entry.label}
+    >
+      {#snippet children(entry)}<EvalStatus
+          label={entry.label}
+          tone={entry.tone}
+        />{/snippet}
+    </LegendRows>
   {/snippet}
 </PaneHeader>
 
@@ -655,11 +694,7 @@
             style:left={layout.pinned.name === undefined
               ? undefined
               : `${layout.pinned.name}px`}
-            ><span class="flex min-w-0 items-center justify-between gap-2"
-              ><span class="truncate">{run.name}</span>{@render rowCost(
-                combineEstimates(estimates)
-              )}</span
-            ></th
+            ><span class="truncate">{run.name}</span></th
           >
           {#each columns.slice(2) as column (column.key)}
             <td
@@ -672,6 +707,21 @@
                   runWindow?.startTime,
                   run.seconds,
                   outline.some(item => item.spanError)
+                )}
+              {:else if column.key === 'cost'}
+                {@render rowCost(combineEstimates(estimates), {
+                  investigatorCost: estimates[0].total,
+                  graderCost: estimates[1].total,
+                })}
+              {:else if column.key === 'tools'}
+                {@render toolCount(
+                  attempts.reduce((sum, item) => sum + item.tools.length, 0),
+                  attempts.reduce(
+                    (sum, item) =>
+                      sum +
+                      item.tools.filter(tool => tool.state === 'Error').length,
+                    0
+                  )
                 )}
               {/if}
             </td>
@@ -686,8 +736,9 @@
           class="table-row"
           class:eval-results__case={row.kind === 'case'}
           class:eval-results__attempt={row.kind !== 'case'}
-          class:table-row--selected={row.kind === 'attempt' &&
-            selectedID === item?.id}
+          class:table-row--selected={selectedRowID
+            ? selectedRowID === row.id
+            : row.kind === 'attempt' && selectedID === item?.id}
           data-outline-id={row.id}
           data-row-kind={row.kind}
           data-depth={row.depth}
@@ -723,13 +774,14 @@
                   row.state,
                   row.internalFault
                 )}{/snippet}
-              <span
-                class="block min-w-0 truncate"
+              <button
+                type="button"
+                onclick={() => onSelect?.(row)}
+                class="block w-full min-w-0 truncate text-left"
                 class:eval-results__rep-label={row.kind === 'attempt'}
                 title={`${row.name} · ${completionLabel(row.state, row.internalFault)}`}
-                >{row.name}</span
+                >{row.name}</button
               >
-              {#snippet trailing()}{@render rowCost(row.estimate)}{/snippet}
             </TreeRowIdentity>
           </th>
           {#if row.kind === 'case'}
@@ -765,14 +817,17 @@
                       >{/if}
                   </div>
                 {:else if column.key === 'tools' && item && (row.kind === 'attempt' || row.kind === 'execution')}
-                  {item.tools.length}
-                {:else if column.key === 'failures' && item && (row.kind === 'attempt' || row.kind === 'execution')}
-                  {item.tools.filter(tool => tool.state === 'Error').length}
-                {:else if item && (column.key === 'investigatorCost' || column.key === 'graderCost')}
-                  {#if row.kind === 'attempt'}{cost(item[column.key])}
-                  {:else if (column.key === 'investigatorCost' && (row.kind === 'execution' || row.kind === 'tool')) || (column.key === 'graderCost' && (row.kind === 'grading' || row.kind === 'grader'))}{cost(
-                      row.estimate.total
-                    )}{/if}
+                  {@render toolCount(
+                    item.tools.length,
+                    item.tools.filter(tool => tool.state === 'Error').length
+                  )}
+                {:else if column.key === 'tools' && row.kind === 'tool'}
+                  {@render toolCount(1, row.spanError ? 1 : 0)}
+                {:else if column.key === 'cost'}
+                  {@render rowCost(
+                    row.estimate,
+                    row.kind === 'attempt' ? item : undefined
+                  )}
                 {/if}
               </td>
             {/each}
@@ -831,33 +886,23 @@
               class="table-cell text-left tabular-nums"
               title="Recorded tool calls across all repetitions"
             >
-              {group.summary.calls}
+              {@render toolCount(group.summary.calls, group.summary.failures)}
             </td>
-          {:else if column.key === 'failures'}
-            <td
-              class="table-cell text-left tabular-nums"
-              title="Failed tool calls across all repetitions"
-              >{group.summary.failures}</td
-            >
-          {:else if column.key === 'investigatorCost' || column.key === 'graderCost'}
-            {@const estimate = group.summary[column.key]}
+          {:else if column.key === 'cost'}
             <td class="table-cell text-left tabular-nums">
-              {cost(estimate.total)}
-              {#if estimate.incomplete && estimate.total !== null}<span
-                  class="block text-rp-subtle">Partial estimate</span
-                >{/if}
+              {@render rowCost(row.estimate, {
+                investigatorCost: group.summary.investigatorCost.total,
+                graderCost: group.summary.graderCost.total,
+              })}
             </td>
           {/if}
         {/each}
       {/snippet}
     {/snippet}
     {#snippet footer(layout)}
-      {#if attempts.length && columns.some( column => estimates.some(estimate => estimate.key === column.key) )}
+      {#if attempts.length && viewKey === 'cost'}
         <tr aria-label="Estimated cost for shown attempts">
           {#each columns as column (column.key)}
-            {@const estimate = estimates.find(
-              estimate => estimate.key === column.key
-            )}
             {#if column.key === 'name'}
               <th
                 scope="row"
@@ -878,11 +923,11 @@
                   ? undefined
                   : `${layout.pinned[column.key]}px`}
               >
-                {#if estimate}
-                  {cost(estimate.total)}
-                  {#if estimate.incomplete && estimate.total !== null}<span
-                      class="block text-rp-subtle">Partial estimate</span
-                    >{/if}
+                {#if column.key === 'cost'}
+                  {@render rowCost(combineEstimates(estimates), {
+                    investigatorCost: estimates[0].total,
+                    graderCost: estimates[1].total,
+                  })}
                 {/if}
               </td>
             {/if}
@@ -898,6 +943,10 @@
   .eval-results__timing-cell {
     padding-block: 0;
     height: 1px;
+  }
+  .eval-results__span-bar {
+    width: 100%;
+    text-align: left;
   }
   .eval-results__identity-cell {
     padding-inline: 0;
@@ -926,9 +975,13 @@
   }
   .eval-results__case-cell {
     padding: 0 0.5rem;
+    height: 1px;
+  }
+  .eval-results__case-cell :global(.tree-row-identity) {
+    height: 100%;
   }
   .eval-results__rep-label {
-    @apply min-h-[var(--signal-card-row-h)] shrink-0 text-right text-sm font-normal;
+    @apply min-h-[var(--signal-card-row-h)] text-left text-sm font-normal;
     color: var(--color-subtle);
   }
 </style>

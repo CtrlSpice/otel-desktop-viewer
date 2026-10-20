@@ -211,14 +211,15 @@
   colour dots only for meaningful statuses or outcomes, alongside neutral Text
   labels. Keep Results, Time, Cost, summaries and Details consistent with shared
   table and field-card typography and spacing.
-  Column-group toggles are independent: each active toggle uses the shared
-  Highlight Medium selection background and Highlight Low on hover. Multiple
-  groups can remain active together.
-  Keep the existing columns while prototyping the hierarchy. Results reveals
+  Results, Tool calls and Cost are a single-select radio group. The active view
+  uses Highlight Medium and Highlight Low on hover. Each view has one rightmost
+  summary column: recorded score with its dot/label, tool total plus failed count,
+  or total estimated cost with investigator/grader breakdown. Results reveals
   Case → Attempt; Tool calls reveals Execution and its tool descendants. Grading
   is a sibling of Execution under the attempt. Preserve manual branch toggles.
-  Cost annotates each visible level, without adding a tree depth or summing
+  Cost shows each visible level in the summary column, without adding a tree depth or summing
   parent estimates together with their child estimates. Missing costs are Unknown.
+  Attempt labels are left-aligned beside their tree dots.
   An explicit attemptTelemetry reference identifies the enclosing attempt span;
   telemetry identifies target execution. Without it, label derived timing as the
   extent of available references rather than claiming another stored span.
@@ -233,8 +234,9 @@
   bars/colours/connectors. Keep received parent IDs intact when compressing
   ancestry; mark skipped or unavailable parent connections. Include referenced
   graders, and retain recorded durations when a span is unavailable. Span
-  inspection belongs in the trace workspace. Evals uses a stripped-down waterfall:
-  row names and bars are inert for now; only explicit expand/collapse controls act.
+  inspection belongs in the trace workspace. Row names and bars select eval
+  Details; case, execution, grading, tool and grader rows show their own context.
+  Tree controls only expand/collapse and do not change selection.
   Do not embed trace Span, Events or Links Details in Evals.
   Child execution errors propagate to parent indicators, including collapsed
   branches, without changing recorded assessment scores.

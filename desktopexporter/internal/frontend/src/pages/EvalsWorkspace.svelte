@@ -8,6 +8,13 @@
   import EvalResults from '@/components/evals/EvalResults.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import EvalDetail from '@/components/evals/EvalDetail.svelte'
+  import EvalRowDetail from '@/components/evals/EvalRowDetail.svelte'
+  import {
+    buildEvalOutline,
+    type EvalOutlineRow,
+  } from '@/components/evals/eval-outline'
+  import { groupAttempts } from '@/components/evals/group-attempts'
+  import { indexEvalTraces } from '@/components/evals/eval-traces'
   import { exampleRuns } from '@/components/evals/examples'
   import { getRouteContext } from '@/contexts/route-context.svelte'
   import { navigate, buildSearch, withQueryPatch } from '@/route'
@@ -28,6 +35,18 @@
     exampleRuns.find(item => item.id === query.run) ?? exampleRuns[0]
   )
   const attempt = $derived(run.attempts.find(item => item.id === query.attempt))
+  let resolvedRow = $state<EvalOutlineRow>()
+  const selectedRow = $derived(
+    resolvedRow?.id === query.row
+      ? resolvedRow
+      : query.row
+        ? buildEvalOutline(
+            groupAttempts(run.attempts, run.attempts),
+            run,
+            indexEvalTraces([])
+          ).find(row => row.id === query.row)
+        : undefined
+  )
   const results = $derived.by(() => {
     const text = (query.q ?? '').toLowerCase().trim()
     return run.attempts.filter(item => {
@@ -61,11 +80,19 @@
   }
   function selectRun(id: string) {
     detailPanel.reveal()
-    update({ run: id, attempt: null })
+    update({ run: id, attempt: null, row: null })
   }
   function showDetail(attempt: string | null) {
     detailPanel.reveal()
-    update({ run: run.id, attempt })
+    update({ run: run.id, attempt, row: null })
+  }
+  function selectRow(row: EvalOutlineRow) {
+    detailPanel.reveal()
+    update({
+      run: run.id,
+      attempt: row.attempt?.id ?? null,
+      row: row.kind === 'attempt' ? null : row.id,
+    })
   }
   function selectIndex(index: number) {
     const item = results[index]
@@ -128,7 +155,15 @@
           >View issue</a
         >
       </div>{/if}
-    <EvalResults {run} attempts={results} selectedID={attempt?.id} />
+    <EvalResults
+      {run}
+      attempts={results}
+      selectedID={attempt?.id}
+      selectedRowID={query.row}
+      onSelect={selectRow}
+      onSelectRun={() => showDetail(null)}
+      onResolveSelection={row => (resolvedRow = row)}
+    />
     {#if !results.length}<div class="p-6 text-sm">
         <p>No matching attempts</p>
         <button
@@ -138,7 +173,12 @@
       </div>{/if}
   {/snippet}
   {#snippet detail()}
-    {#key `${run.id}/${attempt?.id ?? ''}`}<EvalDetail {run} {attempt} />{/key}
+    {#key `${run.id}/${attempt?.id ?? ''}/${selectedRow?.id ?? ''}`}
+      {#if selectedRow}<EvalRowDetail
+          {run}
+          row={selectedRow}
+        />{:else}<EvalDetail {run} {attempt} />{/if}
+    {/key}
   {/snippet}
   {#snippet pageFooter()}
     <div class="flex min-w-0 flex-wrap items-center">

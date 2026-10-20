@@ -197,7 +197,7 @@ export function buildEvalOutline(
           window:
             phase.kind === 'grading'
               ? spanWindow(phase.result.rows.map(row => row.node))
-              : undefined,
+              : spanWindow([nodeFor(phase.reference)]),
           seconds: phase.kind === 'execution' ? attempt.seconds : undefined,
           state: phase.result.state,
           internalFault:
@@ -224,6 +224,7 @@ export function buildEvalOutline(
             internalFault: false,
             spanError: child.state === 'Error',
             reference: child.reference,
+            window: spanWindow([child.node]),
             seconds: child.seconds,
             assessmentID: child.assessmentID,
             estimate: estimate(child.cost),
