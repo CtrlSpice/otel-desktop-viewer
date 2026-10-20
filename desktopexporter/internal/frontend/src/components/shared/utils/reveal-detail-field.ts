@@ -8,7 +8,7 @@ export type DetailFieldTarget = {
 
 /** Reveal exact field identities without changing filters or other disclosures. */
 export function revealDetailField(
-  table: HTMLTableElement,
+  table: HTMLElement,
   initial: DetailFieldTarget | undefined
 ) {
   let cancel = () => {}

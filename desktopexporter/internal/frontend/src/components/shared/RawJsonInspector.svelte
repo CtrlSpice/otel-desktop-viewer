@@ -11,6 +11,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import JsonEditor from './JsonEditor.svelte'
+  import RawJsonStatus, { type RawJsonStatusData } from './RawJsonStatus.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
     Download01Icon,
@@ -22,17 +23,26 @@
     scopes,
     active,
     wholeURL,
-  }: { scopes: RawJsonScope[]; active: boolean; wholeURL: string } = $props()
+    status = $bindable<RawJsonStatusData>(),
+    showStatus = true,
+  }: {
+    scopes: RawJsonScope[]
+    active: boolean
+    wholeURL: string
+    status?: RawJsonStatusData
+    showStatus?: boolean
+  } = $props()
   const PREVIEW_BYTES = 2 * 1024 * 1024
-  const formatHintID = $props.id()
   const formatDescription =
     'OpenTelemetry Protocol JSON. Size is the complete selected OTLP JSON in UTF-8 bytes before display formatting, not database storage. Reconstructed from retained telemetry, not the original request bytes. Includes resource and scope context; not restricted to the chart window.'
   let scopeID = $state(untrack(() => scopes[0]?.id ?? ''))
   let scope = $derived(scopes.find(item => item.id === scopeID) ?? scopes[0])
   let previewURL = $derived(scope?.previewURL ?? scope?.url)
-  let formatHint = $derived(scope?.id === 'metric'
-    ? `${formatDescription} Displayed metric JSON omits datapoints; Copy and Download include all retained datapoints.`
-    : formatDescription)
+  let formatHint = $derived(
+    scope?.id === 'metric'
+      ? `${formatDescription} Displayed metric JSON omits datapoints; Copy and Download include all retained datapoints.`
+      : formatDescription
+  )
   let bytes = $state<number | null>(null)
   let error = $state('')
   let inspectingSize = $state(false)
@@ -50,6 +60,14 @@
       : size < 1024 * 1024
         ? `${(size / 1024).toFixed(1)} KiB`
         : `${(size / 1024 / 1024).toFixed(1)} MiB`
+
+  $effect(() => {
+    status = {
+      label: `OTLP JSON${scope?.id === 'metric' ? ' · without datapoints' : ''}${bytes === null ? '' : ` · ${sizeLabel(bytes)}`}`,
+      description: formatHint,
+      url: previewURL,
+    }
+  })
 
   $effect(() => {
     void retry
@@ -184,14 +202,7 @@
             >{/each}
         </select>
       </label>{/if}
-    <span
-      class="cursor-help text-sm"
-      role="status"
-      title={formatHint}
-      aria-describedby={formatHintID}
-      >OTLP JSON{#if scope?.id === 'metric'} · without datapoints{/if}{#if bytes !== null}{' · '}{sizeLabel(bytes)}{/if}</span
-    >
-    <span id={formatHintID} class="sr-only">{formatHint}</span>
+    {#if showStatus && status}<RawJsonStatus {status} />{/if}
     <div
       class="header-controls ml-auto shrink-0"
       role="group"
@@ -270,9 +281,9 @@
     </div>{/if}
   {#if formatted && !loading && !error}
     {#if partial}<p class="raw-inspector__notice" role="status">
-        Partial preview: first 2 MiB only. Search applies only to this
-        preview. The JSON may end mid-value. Download contains the complete
-        selected scope.
+        Partial preview: first 2 MiB only. Search applies only to this preview.
+        The JSON may end mid-value. Download contains the complete selected
+        scope.
       </p>{/if}
     <JsonEditor raw label="Raw OTLP JSON" text={formatted} bind:this={editor} />
   {/if}

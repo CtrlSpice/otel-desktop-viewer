@@ -5,6 +5,7 @@ import {
   codeFolding,
   foldKeymap,
   foldGutter,
+  bracketMatching,
   syntaxHighlighting,
 } from '@codemirror/language'
 import { search, searchKeymap } from '@codemirror/search'
@@ -22,6 +23,7 @@ export const jsonEditorExtensions = [
   jsonGuides,
   syntaxHighlighting(editorHighlightStyle),
   codeFolding(),
+  bracketMatching(),
   foldGutter({
     markerDOM(open) {
       const marker = document.createElement('span')
@@ -83,6 +85,11 @@ export const jsonEditorExtensions = [
       color: 'var(--color-base-content)',
     },
     '.cm-searchMatch': { backgroundColor: 'var(--color-highlight-low)' },
+    '&.cm-focused .cm-matchingBracket': {
+      backgroundColor: 'var(--color-highlight-med)',
+      color: 'inherit',
+      outline: '1px solid var(--color-primary)',
+    },
     '.cm-searchMatch-selected': { outline: '1px solid var(--color-primary)' },
     '.cm-selectionBackground': {
       backgroundColor: 'var(--color-highlight-med) !important',

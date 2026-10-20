@@ -14,7 +14,6 @@
     loading = false,
     onPage,
     onPageSize,
-    onDelete,
     onDeleteAll,
   }: {
     page: number
@@ -23,7 +22,6 @@
     loading?: boolean
     onPage: (page: number) => void
     onPageSize: (size: number) => void
-    onDelete?: () => void
     onDeleteAll?: () => void
   } = $props()
 
@@ -49,7 +47,6 @@
   onPrev={() => onPage(page - 1)}
   onNext={() => onPage(page + 1)}
   onLast={() => onPage(pages)}
-  {onDelete}
 >
   {#snippet leading()}
     <div class="pagination__summary">

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/svelte'
+import { render, screen, waitFor } from '@testing-library/svelte'
 import { EditorView } from '@codemirror/view'
 import { foldedRanges } from '@codemirror/language'
 import { jsonEditorView } from '@/test/json-editor-helpers'
@@ -10,6 +10,29 @@ const text =
   '{\n  "same": 9223372036854775807,\n  "same": -0,\n  "items": [\n    "line\\n  content",\n    false\n  ]\n}'
 
 describe('JsonEditor', () => {
+  it('highlights matching brackets at the cursor without changing the document', async () => {
+    const { container } = render(JsonEditor, { text: '{"items": [1, 2]}' })
+    const view = jsonEditorView(container)
+    view.focus()
+    view.dispatch({ selection: { anchor: 1 } })
+    await waitFor(() =>
+      expect(
+        [...container.querySelectorAll('.cm-matchingBracket')].map(
+          node => node.textContent
+        )
+      ).toEqual(['{', '}'])
+    )
+    view.dispatch({ selection: { anchor: 11 } })
+    await waitFor(() =>
+      expect(
+        [...container.querySelectorAll('.cm-matchingBracket')].map(
+          node => node.textContent
+        )
+      ).toEqual(['[', ']'])
+    )
+    expect(view.state.doc.toString()).toBe('{"items": [1, 2]}')
+  })
+
   it('uses a labelled, read-only CodeMirror document without changing any lexemes', () => {
     const { container } = render(JsonEditor, {
       text,

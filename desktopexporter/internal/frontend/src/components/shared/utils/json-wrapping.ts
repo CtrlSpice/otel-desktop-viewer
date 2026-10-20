@@ -57,7 +57,6 @@ export const jsonWrapping = [
     '.cm-line.json-string-line': {
       paddingLeft: 'var(--json-string-indent)',
       textIndent: 'calc(-1 * var(--json-string-indent))',
-      wordBreak: 'break-all',
     },
   }),
 ]

@@ -5,6 +5,9 @@
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import ExportButton from '@/components/shared/ExportButton.svelte'
   import DetailViews from '@/components/shared/DetailViews.svelte'
+  import RawJsonStatus, {
+    type RawJsonStatusData,
+  } from '@/components/shared/RawJsonStatus.svelte'
   import DetailViewTabs, {
     type DetailViewMode,
   } from '@/components/shared/DetailViewTabs.svelte'
@@ -41,8 +44,15 @@
     detailView = $bindable<DetailViewMode>('fields'),
   }: Props = $props()
   const detailViewID = $props.id()
+  let rawStatus = $state<RawJsonStatusData>()
+  const exportURL = $derived(
+    log ? `/export/logs/${encodeURIComponent(log.logRef)}` : ''
+  )
   let resolvedTarget = $derived(
-    fieldTarget?.source === 'log' && fieldTarget.kind === 'field' && fieldTarget.key === 'timestamp' && log
+    fieldTarget?.source === 'log' &&
+      fieldTarget.kind === 'field' &&
+      fieldTarget.key === 'timestamp' &&
+      log
       ? {
           ...fieldTarget,
           key: log.timestamp === 0n ? 'observedTimeUnixNano' : 'timeUnixNano',
@@ -98,8 +108,23 @@
 </script>
 
 {#if log}
-  <div class="log-detail-panel">
-    <PaneHeader pill mode="title" title={service || '—'} ariaLabel="Log record">
+  <div
+    class="log-detail-panel"
+    data-field-source="log"
+    use:revealDetailField={resolvedTarget}
+  >
+    {#snippet jsonStatus()}{#if rawStatus}<RawJsonStatus
+          status={rawStatus}
+        />{/if}{/snippet}
+    <PaneHeader
+      pill
+      mode="title"
+      title={service || '—'}
+      ariaLabel="Log record"
+      badge={detailView === 'raw' && rawStatus?.url === exportURL
+        ? jsonStatus
+        : undefined}
+    >
       {#snippet right()}
         <DetailViewTabs id={detailViewID} bind:view={detailView} />
         {#key log.logRef}
@@ -108,18 +133,30 @@
       {/snippet}
     </PaneHeader>
 
+    {#if log.traceID}
+      <div
+        class="log-detail-panel__trace"
+        data-field="traceId"
+        data-field-kind="field"
+      >
+        <AssociatedTrace traceID={log.traceID} spanID={log.spanID} />
+      </div>
+    {/if}
+
     <div class="log-detail-panel__body">
       <div class="log-detail-panel__scroll" bind:this={scrollEl}>
         <DetailViews
           id={detailViewID}
           showTabs={false}
           bind:view={detailView}
-          wholeURL={`/export/logs/${encodeURIComponent(log.logRef)}`}
+          bind:rawStatus
+          showRawStatus={false}
+          wholeURL={exportURL}
           scopes={[
             {
               id: 'log',
               label: 'Log',
-              url: `/export/logs/${encodeURIComponent(log.logRef)}`,
+              url: exportURL,
             },
           ]}
           reveal={resolvedTarget}
@@ -128,7 +165,6 @@
             class="detail-fields w-full"
             aria-label="Log fields"
             data-field-source="log"
-            use:revealDetailField={resolvedTarget}
           >
             <tbody>
               <LogField
@@ -164,22 +200,6 @@
                 valueColor={severityColor(log.severityNumber)}
                 valueLabel={severityLabel}
               />
-              {#if log.traceID}
-                {@const traceID = log.traceID}
-                <LogField
-                  fieldName="traceId"
-                  fieldType="bytes"
-                  fieldValue={traceID}
-                >
-                  {#snippet value()}
-                    <a
-                      class="detail-cell__value link link-primary"
-                      href={itemHref('traces', traceID, traceSpanPatch)}
-                      onclick={goToTrace}><Identifier value={traceID} /></a
-                    >
-                  {/snippet}
-                </LogField>
-              {/if}
               {#if log.spanID && log.traceID}
                 {@const traceID = log.traceID}
                 {@const spanID = log.spanID}
@@ -279,11 +299,6 @@
               />
             </tbody>
           </table>
-          {#if log.traceID}
-            <div class="log-detail-panel__trace">
-              <AssociatedTrace traceID={log.traceID} spanID={log.spanID} />
-            </div>
-          {/if}
         </DetailViews>
       </div>
       <ScrollToTopButton
@@ -320,7 +335,11 @@
   }
 
   .log-detail-panel__trace {
-    @apply mt-2;
+    @apply shrink-0;
+  }
+  .log-detail-panel__trace:global(.detail-property--revealed)
+    :global(.signal-row) {
+    --item-idle-bg: var(--color-highlight-low);
   }
 
   .log-detail-panel__body {

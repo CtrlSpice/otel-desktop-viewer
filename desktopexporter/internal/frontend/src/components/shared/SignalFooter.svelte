@@ -5,13 +5,13 @@
   import { Delete02Icon } from '@hugeicons/core-free-icons'
 
   type Props = {
-    index: number
-    total: number
+    index?: number
+    total?: number
     label: string
-    onFirst: () => void
-    onPrev: () => void
-    onNext: () => void
-    onLast: () => void
+    onFirst?: () => void
+    onPrev?: () => void
+    onNext?: () => void
+    onLast?: () => void
     onDelete?: () => void
     leading?: Snippet
     navigation?: Snippet
@@ -19,8 +19,8 @@
   }
 
   let {
-    index,
-    total,
+    index = -1,
+    total = 0,
     label,
     onFirst,
     onPrev,
@@ -36,7 +36,7 @@
 <div class="signal-footer">
   {#if leading}<div>{@render leading()}</div>{:else}<span aria-hidden="true"
     ></span>{/if}
-  {#if navigation}{@render navigation()}{:else}<DetailNav
+  {#if navigation}{@render navigation()}{:else if onFirst && onPrev && onNext && onLast}<DetailNav
       {index}
       {total}
       {label}
@@ -44,7 +44,7 @@
       {onPrev}
       {onNext}
       {onLast}
-    />{/if}
+    />{:else}<span aria-hidden="true"></span>{/if}
   <div class="signal-footer__actions">
     {@render trailing?.()}
     {#if onDelete}

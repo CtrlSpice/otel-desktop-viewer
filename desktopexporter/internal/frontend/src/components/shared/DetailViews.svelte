@@ -4,6 +4,7 @@
     type RawJsonScope,
   } from './RawJsonInspector.svelte'
   import DetailViewTabs, { type DetailViewMode } from './DetailViewTabs.svelte'
+  import type { RawJsonStatusData } from './RawJsonStatus.svelte'
 
   const localID = $props.id()
   let {
@@ -14,6 +15,8 @@
     id = localID,
     showTabs = true,
     view = $bindable<DetailViewMode>('fields'),
+    rawStatus = $bindable<RawJsonStatusData>(),
+    showRawStatus = true,
   }: {
     scopes: RawJsonScope[]
     wholeURL: string
@@ -22,6 +25,8 @@
     id?: string
     showTabs?: boolean
     view?: DetailViewMode
+    rawStatus?: RawJsonStatusData
+    showRawStatus?: boolean
   } = $props()
   let mountedRaw = $state(false)
   $effect(() => {
@@ -50,6 +55,8 @@
   {#if mountedRaw}<RawJsonInspector
       {scopes}
       {wholeURL}
+      bind:status={rawStatus}
+      showStatus={showRawStatus}
       active={view === 'raw'}
     />{/if}
 </div>

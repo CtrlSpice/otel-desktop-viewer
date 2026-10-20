@@ -72,6 +72,7 @@
   import LogDetailPanel from '@/components/logs/LogDetailView.svelte'
   import type { DetailViewMode } from '@/components/shared/DetailViewTabs.svelte'
   import Pagination from '@/components/shared/Pagination.svelte'
+  import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
   import type { ImportFailure } from '@/types/import-types'
 
@@ -428,9 +429,6 @@
         onPage={changePage}
         onPageSize={changePageSize}
         onDeleteAll={handleDeleteAllLogs}
-        onDelete={page.selectedID
-          ? () => handleDeleteLog(page.selectedID!)
-          : undefined}
       />
     {/snippet}
 
@@ -450,7 +448,17 @@
           fieldTarget={inspection?.id === selectedLog?.logRef
             ? inspection?.target
             : undefined}
-        />
+        >
+          {#snippet footer()}
+            {#if selectedLog}
+              {@const logRef = selectedLog.logRef}
+              <SignalFooter
+                label="log"
+                onDelete={() => handleDeleteLog(logRef)}
+              />
+            {/if}
+          {/snippet}
+        </LogDetailPanel>
       {/if}
     {/snippet}
   </PageLayout>

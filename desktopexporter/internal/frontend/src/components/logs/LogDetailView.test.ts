@@ -162,7 +162,7 @@ describe('LogDetailView trace correlation', () => {
     ).toHaveLength(1)
   })
 
-  it('appends the associated trace to Properties without a collapsible section', () => {
+  it('pins the shared associated trace above the scrolling details instead of a trace ID field', () => {
     const { container } = renderLog(makeLog())
     const headings = container.querySelectorAll(
       'summary.detail-bubble__heading'
@@ -170,9 +170,10 @@ describe('LogDetailView trace correlation', () => {
     expect(headings).toHaveLength(0)
     const fields = screen.getByRole('table', { name: 'Log fields' })
     const trace = screen.getByRole('region', { name: 'Associated trace' })
-    expect(fields.closest('[role="tabpanel"]')).toContainElement(trace)
+    expect(trace.closest('.log-detail-panel__scroll')).toBeNull()
+    expect(fields.querySelector('[data-field="traceId"]')).toBeNull()
     expect(
-      fields.compareDocumentPosition(trace) & Node.DOCUMENT_POSITION_FOLLOWING
+      trace.compareDocumentPosition(fields) & Node.DOCUMENT_POSITION_FOLLOWING
     ).not.toBe(0)
     expect(trace.closest('details')).toBeNull()
     expect(
@@ -189,14 +190,9 @@ describe('LogDetailView trace correlation', () => {
     ).toBeNull()
   })
 
-  it('links trace and span ids with span in the href', () => {
+  it('keeps the span field linked to the exact correlated span', () => {
     renderLog(makeLog())
-    const traceLink = screen.getByRole('link', { name: 'trace-abc' })
     const spanLink = screen.getByRole('link', { name: 'span-xyz' })
-    expect(traceLink).toHaveAttribute(
-      'href',
-      '/traces/trace-abc?start=0&end=1&span=span-xyz'
-    )
     expect(spanLink).toHaveAttribute(
       'href',
       '/traces/trace-abc?start=0&end=1&span=span-xyz'

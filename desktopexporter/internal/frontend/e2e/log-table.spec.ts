@@ -202,7 +202,7 @@ test('table cells reveal exact fields in separate Details, with observed-time fa
   )
 })
 
-test('Properties appends the shared associated Trace card without a collapsible section', async ({
+test('Details pins the shared associated Trace card above scrolling fields', async ({
   page,
 }) => {
   const traceID = '00000000000000000000000000000011'
@@ -313,16 +313,22 @@ test('Properties appends the shared associated Trace card without a collapsible 
   expect(
     await trace.evaluate(element => {
       const fields = element
-        .closest('[role="tabpanel"]')!
+        .closest('.log-detail-panel')!
         .querySelector('table[aria-label="Log fields"]')!
       return !!(
-        fields.compareDocumentPosition(element) &
+        element.compareDocumentPosition(fields) &
         Node.DOCUMENT_POSITION_FOLLOWING
       )
     })
   ).toBe(true)
+  const pinnedY = (await card.boundingBox())!.y
+  const scroll = panel.locator('.log-detail-panel__scroll')
+  await scroll.evaluate(element => (element.scrollTop = element.scrollHeight))
+  expect(await scroll.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+  expect((await card.boundingBox())!.y).toBeCloseTo(pinnedY, 0)
+  await expect(panel.locator('table [data-field="traceId"]')).toHaveCount(0)
   await panel.getByRole('tab', { name: 'JSON', exact: true }).click()
-  await expect(card).toBeHidden()
+  await expect(card).toBeVisible()
   await panel.getByRole('tab', { name: 'Properties', exact: true }).click()
   await expect(panel.getByRole('table', { name: 'Log fields' })).toBeVisible()
   await expect(card).toBeVisible()
@@ -335,20 +341,19 @@ test('Properties appends the shared associated Trace card without a collapsible 
   await expect(header.locator('.pane-header__meta-row')).toHaveCount(0)
   const tabsBounds = (await tabs.boundingBox())!
   const headerBounds = (await header.boundingBox())!
-  expect(tabsBounds.x + tabsBounds.width).toBeGreaterThan(
+  const exportBounds = (await exportButton.boundingBox())!
+  expect(exportBounds.x + exportBounds.width).toBeGreaterThan(
     headerBounds.x + headerBounds.width - 24
   )
   await expect(
     panel.locator('.log-detail-panel__scroll').getByRole('tablist')
   ).toHaveCount(0)
-  await expect(exportButton).toHaveClass(/btn-circle/)
-  await expect(exportButton).toHaveClass(/btn-primary/)
+  await expect(exportButton).toHaveClass(/header-icon-button/)
   await expect(exportButton).toHaveText('')
-  const exportBounds = (await exportButton.boundingBox())!
   const titleBounds = (await panel
     .locator('.pane-header__title')
     .boundingBox())!
-  expect(exportBounds.x).toBeLessThan(titleBounds.x)
+  expect(exportBounds.x).toBeGreaterThanOrEqual(tabsBounds.x + tabsBounds.width)
   expect(tabsBounds.y).toBeLessThan(titleBounds.y + titleBounds.height)
   expect(tabsBounds.y + tabsBounds.height).toBeGreaterThan(titleBounds.y)
   const errorColour = await panel.evaluate(element => {
@@ -667,6 +672,10 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
 }) => {
   const inner = JSON.stringify({
     path: '/recorded/configuration/'.repeat(12) + 'config.jsonc',
+    message:
+      'ordinary words should wrap between words without splitting them '.repeat(
+        5
+      ),
   })
   const body: JsonAttributeValue = {
     kind: 'array',
@@ -740,9 +749,30 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
           const rects = [...value.getClientRects()]
           return (
             rects.length > 1 &&
-            Math.abs(rects[0].y - anchor.y) < 1 &&
-            rects.slice(1).every(rect => Math.abs(rect.x - anchor.x) < 1)
+            rects
+              .filter(rect => rect.y > anchor.y + 1)
+              .every(rect => Math.abs(rect.x - anchor.x) < 1) &&
+            rects.every(
+              rect => rect.right <= line.getBoundingClientRect().right + 1
+            )
           )
+        })
+      )
+      .toBe(true)
+    const words = editor.locator('.cm-line').filter({ hasText: '"message"' })
+    await expect
+      .poll(() =>
+        words.evaluate(line => {
+          const value = [...line.children].find(span =>
+            span.textContent?.startsWith('"ordinary')
+          )!
+          const node = value.firstChild!
+          return [...node.textContent!.matchAll(/[a-z]+/g)].every(word => {
+            const range = document.createRange()
+            range.setStart(node, word.index!)
+            range.setEnd(node, word.index! + word[0].length)
+            return range.getClientRects().length === 1
+          })
         })
       )
       .toBe(true)
@@ -761,6 +791,32 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
     JSON.stringify(['loading', inner], null, 2)
   )
+  const raw = JSON.stringify({ resourceLogs: [{ body }] })
+  await page.route('**/export/logs/**', route =>
+    route.fulfill({
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': String(Buffer.byteLength(raw)),
+      },
+      body: route.request().method() === 'HEAD' ? '' : raw,
+    })
+  )
+  const header = page.getByRole('region', { name: 'Log record', exact: true })
+  await header.getByRole('tab', { name: 'JSON', exact: true }).click()
+  await expect(header.getByRole('status')).toHaveText(/^OTLP JSON · /)
+  await expect(header.locator('.pane-header__title-row')).toContainText('api')
+  await expect(header.locator('.pane-header__title-row')).toContainText(
+    'OTLP JSON'
+  )
+  await expect(page.locator('.raw-inspector__controls')).not.toContainText(
+    'OTLP JSON'
+  )
+  await expect(
+    page.getByRole('button', { name: 'Collapse JSON', exact: true })
+  ).toBeEnabled()
+  await header.getByRole('tab', { name: 'Properties', exact: true }).click()
+  await expect(header.getByRole('status')).toHaveCount(0)
 })
 
 test('structured previews have static syntax colours and Details folds Body and agent attributes', async ({
@@ -1937,12 +1993,32 @@ test('footer delete controls dispatch only their intended mocked operations', as
     }
     return route.fallback()
   })
+  const detail = page.locator('.log-detail-panel')
+  const recordFooter = detail.locator('.signal-footer')
+  const remove = recordFooter.getByRole('button', {
+    name: 'Delete this log',
+    exact: true,
+  })
+  await expect(remove).toBeEnabled()
+  await expect(recordFooter.getByRole('navigation')).toHaveCount(0)
+  const listFooter = page
+    .getByRole('navigation', { name: 'Log pages' })
+    .locator('..')
   await expect(
-    page.getByRole('button', { name: 'Delete this log', exact: true })
-  ).toBeEnabled()
-  await page
-    .getByRole('button', { name: 'Delete this log', exact: true })
-    .click()
+    listFooter.getByRole('button', { name: 'Delete this log', exact: true })
+  ).toHaveCount(0)
+  const panelBounds = (await detail.boundingBox())!
+  const footerBounds = (await recordFooter.boundingBox())!
+  const deleteBounds = (await remove.boundingBox())!
+  expect(footerBounds.y + footerBounds.height).toBeCloseTo(
+    panelBounds.y + panelBounds.height,
+    0
+  )
+  expect(footerBounds.width).toBeCloseTo(panelBounds.width, 0)
+  expect(
+    panelBounds.x + panelBounds.width - deleteBounds.x - deleteBounds.width
+  ).toBeCloseTo(16, 0)
+  await remove.click()
   await expect.poll(() => deleted).toBe(true)
   await expect(page.locator(`[data-log-ref="${firstID}"]`)).toHaveCount(0)
   await expect(page.locator(`[data-log-ref="${secondID}"]`)).toBeVisible()
