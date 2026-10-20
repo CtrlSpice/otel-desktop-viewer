@@ -120,7 +120,7 @@ describe('WaterfallRow timeline layout', () => {
 })
 
 describe('WaterfallRow child counts', () => {
-  it('places a bracketed mono child count before the node dot', () => {
+  it('groups the node dot with its following bracketed child count', () => {
     const row = makeRow()
     row.tree.childrenCount = 4
     const { container, getByRole } = renderRow(row)
@@ -131,10 +131,10 @@ describe('WaterfallRow child counts', () => {
     expect(count.textContent).toBe('[4]')
     expect(count).toHaveClass('text-sm')
     expect(count).not.toHaveClass('badge')
-    expect(count).toHaveClass('font-mono')
+    expect(count).not.toHaveClass('font-mono')
     expect(
       count.compareDocumentPosition(toggle.querySelector('.gutter__dot')!) &
-        Node.DOCUMENT_POSITION_FOLLOWING
+        Node.DOCUMENT_POSITION_PRECEDING
     ).toBeTruthy()
     expect(container.querySelector('.gutter__dot')).toBeEmptyDOMElement()
   })

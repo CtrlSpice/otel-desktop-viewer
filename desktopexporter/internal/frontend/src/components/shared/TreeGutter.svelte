@@ -60,18 +60,11 @@
   style:width="calc(var(--tree-count-width) + {depth + 1} * var(--waterfall-gutter-col)
   + var(--waterfall-gutter-tail))"
   style:--tree-accent={color}
-  style:--tree-count-guide-reach="calc({depth + 0.5} * var(--waterfall-gutter-col)
-  - var(--waterfall-gutter-hub) / 2)"
 >
-  {#if hasChildren}
-    <span class="gutter__count"
-      ><TreeChildCount count={tree.childrenCount} /></span
-    >
-  {/if}
   {#each segments as kind, d}
     <span
       class="gutter__col"
-      style:left="calc(var(--tree-count-width) + {d} * var(--waterfall-gutter-col))"
+      style:left="calc({d} * var(--waterfall-gutter-col))"
       style:width="var(--waterfall-gutter-col)"
     >
       {#if kind !== 'none'}
@@ -87,20 +80,26 @@
   {/each}
 
   <span
-    class="gutter__node"
-    style:left="calc(var(--tree-count-width) + {depth} * var(--waterfall-gutter-col))"
-    style:width="var(--waterfall-gutter-col)"
+    class="gutter__identity"
+    style:left="calc({depth} * var(--waterfall-gutter-col))"
   >
-    {#if depth === 0 && tree.brokenParent}
-      <TreeConnector kind="incoming" broken />
+    <span class="gutter__node">
+      {#if depth === 0 && tree.brokenParent}
+        <TreeConnector kind="incoming" broken />
+      {/if}
+      {#if hasChildren && !subtreeCollapsed}
+        <TreeConnector kind="stem" />
+      {/if}
+      {#if node}{@render node()}{:else}<span
+          class="gutter__dot"
+          class:gutter__dot--leaf={!hasChildren}
+        ></span>{/if}
+    </span>
+    {#if hasChildren}
+      <span class="gutter__count"
+        ><TreeChildCount count={tree.childrenCount} /></span
+      >
     {/if}
-    {#if hasChildren && !subtreeCollapsed}
-      <TreeConnector kind="stem" />
-    {/if}
-    {#if node}{@render node()}{:else}<span
-        class="gutter__dot"
-        class:gutter__dot--leaf={!hasChildren}
-      ></span>{/if}
   </span>
 </span>
 
@@ -108,43 +107,29 @@
   @reference "../../app.css";
   .gutter {
     --leaf-dot-size: var(--waterfall-gutter-leaf);
-    @apply relative block flex-shrink-0 self-stretch font-mono;
+    @apply relative block flex-shrink-0 self-stretch;
     min-height: var(--table-row-h);
   }
 
   .gutter__col {
     @apply absolute top-0 bottom-0;
   }
+  .gutter__identity {
+    @apply absolute inset-y-0;
+    width: calc(var(--waterfall-gutter-col) + var(--tree-count-width));
+  }
   .gutter__count {
-    @apply absolute inset-y-0 left-0 flex items-center justify-center;
+    @apply absolute inset-y-0 flex items-center justify-center;
+    left: var(--waterfall-gutter-col);
     width: var(--tree-count-width);
-  }
-  .gutter__count :global(.tree-child-count) {
-    position: relative;
-  }
-  .gutter__count :global(.tree-child-count)::after {
-    content: '';
-    position: absolute;
-    top: calc(50% - 0.5px);
-    left: calc(100% + var(--tree-count-guide-gap));
-    width: max(
-      0px,
-      calc(
-        (var(--tree-count-width) - 100%) / 2 + var(--tree-count-guide-reach) -
-          var(--tree-count-guide-gap)
-      )
-    );
-    height: 1px;
-    background: var(--color-muted);
-    opacity: 0.35;
-    pointer-events: none;
   }
 
   /* ───── Decorative node slot ───── */
 
   .gutter__node {
     --hub-px: var(--waterfall-gutter-hub);
-    @apply absolute top-0 bottom-0 z-[1] flex items-center justify-center;
+    @apply absolute top-0 bottom-0 left-0 z-[1] flex items-center justify-center;
+    width: var(--waterfall-gutter-col);
   }
 
   .gutter__dot {

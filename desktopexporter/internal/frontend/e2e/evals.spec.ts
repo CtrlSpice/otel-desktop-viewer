@@ -956,8 +956,8 @@ test('case branches stay connected to aligned repetitions through sorting and re
               arm.bottom - (childDot.top + childDot.height / 2 + 0.5)
             ),
             indent: childDot.left - dot.left,
-            countAlignment: Math.abs(count.left - parentCount.left),
-            countBeforeDot: count.right < childDot.left,
+            countIndent: count.left - parentCount.left,
+            countAfterDot: count.left > childDot.right,
             alignment: [...row.children].every(
               (cell, index) =>
                 Math.abs(rect(cell).right - rect(headers[index]).right) < 1
@@ -976,8 +976,8 @@ test('case branches stay connected to aligned repetitions through sorting and re
       expect(row.gap).toBeLessThan(1)
       expect(row.level).toBeLessThan(1)
       expect(row.indent).toBeCloseTo(18, 0)
-      expect(row.countAlignment).toBeLessThan(1)
-      expect(row.countBeforeDot).toBe(true)
+      expect(row.countIndent).toBeCloseTo(row.indent, 0)
+      expect(row.countAfterDot).toBe(true)
       expect(row.alignment).toBe(true)
     }
     expect(geometry.elbows).toEqual([0, 0, 1])

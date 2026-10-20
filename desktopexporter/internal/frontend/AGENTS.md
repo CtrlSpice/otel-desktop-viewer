@@ -262,11 +262,11 @@
   Waterfall tree nodes
   use filled 8px dots matching the span bar colour for both parents and leaves,
    without a visible number inside the dot. Direct-child counts read `[4]` in
-   Subtle 14px regular Mono, before the dot. Centre counts vertically with their
-   dots. A faint 1px Muted guide joins the right bracket to the dot, accounting
-   for the Mono glyph's side-bearing. Counts have no badge background or semantic accent colour.
-   Only the digits use Subtle; the decorative brackets match the Muted guide
-   at 35% opacity.
+   Subtle 14px regular interface text, after the dot: `● [4] Name`. The dot and count
+   form one group that moves with the row's nesting indentation, without a fixed
+   count column. Centre counts vertically with their dots, without a horizontal
+   line between the dot and count. Counts have no badge background or semantic accent colour.
+   The whole bracketed label uses Subtle, including the brackets; no Mono or Muted.
   Align the waterfall table's name heading with the root title, reserving the
   same count slot when present.
   Keep counts visible when collapsed; omit counts for leaves.
