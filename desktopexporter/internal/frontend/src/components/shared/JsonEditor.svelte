@@ -51,6 +51,6 @@
 <style lang="postcss">
   @reference "../../app.css";
   .json-editor {
-    @apply min-w-0 font-mono text-xs leading-relaxed;
+    @apply min-w-0 font-mono text-xs;
   }
 </style>

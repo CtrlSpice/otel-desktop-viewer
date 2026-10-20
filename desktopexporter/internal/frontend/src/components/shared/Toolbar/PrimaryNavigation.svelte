@@ -123,7 +123,10 @@
   }
 </script>
 
-<nav aria-label="Primary" class="tabs tabs-border flex-nowrap overflow-x-auto">
+<nav
+  aria-label="Primary"
+  class="primary-navigation tabs tabs-border flex-nowrap overflow-x-auto"
+>
   {#each items as item (item.id)}
     {@const active = isNavItemActive(item.id, routeContext.route.path)}
     <a
@@ -134,7 +137,7 @@
       class:tab-active={active}
       aria-current={active ? 'page' : undefined}
       aria-label={item.label}
-      aria-describedby={active && count !== undefined ? countID : undefined}
+      aria-describedby={count !== undefined ? `${countID}-${item.id}` : undefined}
       onclick={event => goto(item.id, event)}
     >
       {#if item.iconType === 'hugeicon'}
@@ -148,18 +151,24 @@
         <item.icon class="size-4 shrink-0 {active ? 'text-primary' : ''}" />
       {/if}
       <span>{item.label}</span>
-      {#if active && count !== undefined}
-        <span id={countID} class="badge-count shrink-0 tabular-nums"
-          ><span class="sr-only"
-            >{item.id === 'evals' ? 'Runs: ' : 'Results: '}</span
-          >{count}</span
-        >
-      {/if}
+      <span
+        id={`${countID}-${item.id}`}
+        class="badge-count header-tab__count"
+        class:invisible={count === undefined}
+        aria-hidden={count === undefined}
+        ><span class="sr-only"
+          >{item.id === 'evals' ? 'Runs: ' : 'Results: '}</span
+        >{count === undefined ? '' : `(${count})`}</span
+      >
     </a>
   {/each}
 </nav>
 
 <style>
+  .primary-navigation {
+    gap: var(--header-gap);
+  }
+
   .tab {
     color: var(--color-base-content);
     background: transparent;
@@ -175,7 +184,7 @@
   }
 
   @media (hover: hover) {
-    .tab:hover:not([aria-current='page']) {
+    .tab:hover {
       background: var(--item-hover-bg);
     }
   }

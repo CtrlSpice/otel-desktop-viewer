@@ -128,7 +128,7 @@
 
   .field-group--card > .field-group__heading {
     --item-idle-bg: var(--color-base-100);
-    @apply rounded-xl px-3 py-2.5 font-normal leading-snug text-base-content;
+    @apply rounded-xl px-3 py-2.5 font-normal text-base-content;
   }
 
   .field-group__heading::marker,

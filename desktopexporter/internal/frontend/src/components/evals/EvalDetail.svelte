@@ -31,7 +31,7 @@
     fieldValue={reference.traceID}
   >
     {#snippet value()}<a
-        class="detail-cell__value link link-primary font-mono"
+        class="detail-cell__value link link-primary"
         href={traceHref(reference)}><Identifier value={reference.traceID} /></a
       >{/snippet}
   </DetailField>
@@ -41,7 +41,7 @@
       fieldValue={reference.spanID}
     >
       {#snippet value()}<a
-          class="detail-cell__value link link-primary font-mono"
+          class="detail-cell__value link link-primary"
           href={traceHref(reference)}><Identifier value={spanID} /></a
         >{/snippet}
     </DetailField>{/if}

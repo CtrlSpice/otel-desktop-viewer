@@ -177,7 +177,7 @@ $ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
                 Local-first telemetry
               </p>
               <h1
-                class="mb-3 text-xl font-semibold leading-tight tracking-tight text-base-content"
+                class="mb-3 text-xl font-normal leading-tight tracking-tight text-base-content"
               >
                 OpenTelemetry Desktop Viewer
               </h1>
@@ -539,7 +539,7 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
   }
 
   .section-title {
-    @apply mb-3 text-base font-semibold tracking-tight text-base-content;
+    @apply mb-3 text-base font-normal tracking-tight text-base-content;
   }
 
   .home-hero__eyebrow {

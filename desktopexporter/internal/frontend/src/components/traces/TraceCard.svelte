@@ -53,7 +53,7 @@
 {#snippet serviceBreakdown()}
   <SummaryBreakdown parts={services} rootService={serviceLabel}>
     {#snippet right()}
-      <span class="font-mono text-xs text-rp-subtle" title={trace.traceID}>
+      <span class="text-xs text-rp-subtle" title={trace.traceID}>
         <span class="sr-only">Trace ID: </span>
         <Identifier value={trace.traceID} />
       </span>

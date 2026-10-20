@@ -47,7 +47,7 @@
 <style lang="postcss">
   @reference "../../app.css";
   .attribute-value {
-    @apply m-0 min-w-0 font-mono text-base leading-relaxed;
+    @apply m-0 min-w-0 font-sans text-base;
     color: var(--detail-property-value-color, var(--color-base-content));
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -57,6 +57,9 @@
     margin: 0;
     font: inherit;
     white-space: inherit;
+  }
+  .attribute-value code {
+    font: inherit;
   }
   .attribute-value--text {
     @apply font-sans text-sm;

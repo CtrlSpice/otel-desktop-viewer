@@ -101,7 +101,7 @@
         >
           <th scope="row" class="table-cell text-left font-normal">
             <button
-              class="block w-full rounded-sm py-2 text-left text-sm leading-relaxed focus-visible:outline-2 focus-visible:outline-primary"
+              class="block w-full rounded-sm py-2 text-left text-sm focus-visible:outline-2 focus-visible:outline-primary"
               aria-pressed={selectedID === item.id}
               onclick={() => onSelect(item.id)}>{item.name}</button
             >

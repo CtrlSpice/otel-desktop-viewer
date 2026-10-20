@@ -170,7 +170,7 @@
      `service.namespace=production-us-east-1` becomes
      `service.namespace=produ…` and there's no way to recover it. */
   .timeseries-legend__attrs {
-    @apply flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs font-mono min-w-0 overflow-hidden;
+    @apply flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs font-sans min-w-0 overflow-hidden;
   }
 
   .timeseries-legend__attrs-empty {

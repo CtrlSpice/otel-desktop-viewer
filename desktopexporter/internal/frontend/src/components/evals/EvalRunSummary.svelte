@@ -24,7 +24,7 @@
     label={summary.definition?.name ?? 'Results'}
   >
     {#snippet right()}
-      <span class="font-mono text-xs text-rp-subtle" title={run.id}>
+      <span class="text-xs text-rp-subtle" title={run.id}>
         <span class="sr-only">Run ID: </span>
         <Identifier value={run.id} />
       </span>

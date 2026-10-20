@@ -268,10 +268,7 @@
 
   .signal-row {
     /* Titles use the heading size; details use the working size. */
-    --signal-card-row-h: 1.5rem;
-    /* Share the card surface with the badge background and title fade. */
     --item-idle-bg: var(--color-base-100);
-    --row-surface: var(--item-state-bg);
     @apply flex w-full flex-col gap-0 rounded-xl px-3 py-2.5 text-left text-sm;
     cursor: pointer;
   }
@@ -279,7 +276,7 @@
   /* Single-line rows: fixed height + flex centering matches detail-cell
      align-middle. Meta keeps min-height so wrapped log bodies can grow. */
   .signal-row__id-line {
-    @apply flex h-[var(--signal-card-row-h)] min-w-0 items-center truncate font-mono text-sm;
+    @apply flex h-[var(--signal-card-row-h)] min-w-0 items-center truncate font-sans text-sm;
     color: var(--color-subtle);
   }
 
@@ -288,7 +285,8 @@
   }
 
   .signal-row__date {
-    @apply min-w-0 w-full text-xs tabular-nums;
+    @apply min-h-[var(--signal-card-row-h)] min-w-0 w-full text-xs tabular-nums;
+    align-content: center;
     color: var(--color-subtle);
   }
 
@@ -298,7 +296,7 @@
   }
 
   .signal-row__header {
-    @apply relative flex h-[var(--signal-card-row-h)] min-w-0 items-center gap-1;
+    @apply flex h-[var(--signal-card-row-h)] min-w-0 items-center gap-1;
   }
 
   .signal-row__identity {
@@ -310,7 +308,7 @@
   }
 
   .signal-row__title {
-    @apply min-w-0 shrink truncate text-lg font-semibold text-base-content;
+    @apply min-w-0 shrink truncate text-lg font-normal text-base-content;
     flex: 0 1 auto;
   }
 
@@ -321,28 +319,13 @@
 
   .signal-row__subtitle {
     @apply min-w-0 truncate text-sm font-normal;
+    min-height: var(--signal-card-row-h);
+    align-content: center;
     color: var(--color-subtle);
   }
 
-  /* The badges are pinned; a long title slides BENEATH them and is
-     occluded -- the same collapse language as the drawer header's tab
-     strip under its chrome. Out of flow so the title owns the full row
-     width; opaque against the row's composited surface; a short fade on
-     the leading edge says the title continues underneath. */
   .signal-row__badge {
-    @apply absolute inset-y-0 right-0 flex max-w-[55%] items-center justify-end gap-1;
-    background: var(--row-surface);
-  }
-
-  .signal-row__badge::before {
-    content: '';
-    position: absolute;
-    right: 100%;
-    top: 0;
-    bottom: 0;
-    width: 1.25rem;
-    pointer-events: none;
-    background: linear-gradient(to right, transparent, var(--row-surface));
+    @apply flex max-w-[55%] shrink-0 items-center justify-end gap-1;
   }
 
   .signal-row__time {

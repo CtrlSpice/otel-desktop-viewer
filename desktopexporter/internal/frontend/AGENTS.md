@@ -4,10 +4,16 @@
   keys, column/section headers, helper text and app-added bracketed annotations,
   and `text` for data values and main page/pane titles. Reserve muted or dimmed
   text for unavailable or disabled states.
+- Shared item states use Highlight High for hover and Highlight Medium for
+  persistent selection. Hover temporarily uses High even on selected items;
+  leaving the item restores Medium. Text selection also uses Medium.
+  Text selection is transient; it does not use the persistent-selection token.
 - Put item Export actions at the far right of the selected item's header,
   after other header controls, across traces, logs and metrics. Counts are plain
   `subtle` text without badge backgrounds or parentheses; service names retain
   their parentheses.
+  Card counts sit in the title row's normal layout. Do not paint a separate
+  wrapper background or gradient over the title; truncate the title beside them.
 - Trace counts read `x spans, y err` (singular `span` for one), with error text
   in Rosé Pine love (`text-error`). Omit the error suffix when there are no errors.
   Error navigation uses small filled carets and plain theme-error text, without
@@ -26,7 +32,15 @@
   height or line-height overrides.
   Header tab groups add no outer padding; detail actions are vertically centred
   in their heading rather than positioned by a fixed top inset.
-  Pane titles share the cards' 16px semibold heading style and normal letter
+  Header tabs share the 8px header gap. Reserve at least 16px for counters via
+  the shared counter token; full counts may grow the slot. Known tab counts stay
+  visible whether selected or inactive. Reserve the slot when a count is
+  unavailable; keep unavailable counts out of accessible descriptions.
+  Centre tab counts in the icon-height slot. Counts use text colour when inactive
+  and Primary when selected, matching the tab icons.
+  Tab counters display `(count)`, including `(0)`; this overrides the plain-count
+  rule for tab counters only. An unavailable count is not a received zero.
+  Pane titles share the cards' 16px regular-weight heading style and normal letter
   spacing. The title row uses the same 2rem height as its controls.
 - Typography is an accessibility requirement across the entire UI: use 0.875rem
   (14px at the default root size) for all working text and 1rem (16px) for
@@ -34,13 +48,20 @@
   charts, tooltips, editors and dialogs. Use the shared text-size tokens;
   never shrink text to fit. Adjust layout instead. Keep Atkinson Hyperlegible
   Next for interface text and Details field names. Field names retain their
-  exact spelling, 14px size and subtle colour. Values and code retain their
-  existing font until a separate value-font decision is approved.
+  exact spelling, 14px size and subtle colour. Formatted Details values,
+  timestamps, datapoint values and summary metadata use Next at 14px with
+  1.5 line-height. JSON editors retain Mono at the shared working size and
+  line-height; code views retain Mono. Do not select a display font from the
+  data's scalar type.
 - Signal card text uses the theme's 1.5 line-height; do not override it with
   `leading-none`, `leading-tight` or `leading-snug` on card text.
-  Card titles use the shared 16px heading size and semibold weight; details
+  Card titles use the shared 16px heading size and regular weight; details
   remain 14px. Use continuous rows without an extra gap separating details
   into a visual group.
+  Card text rows share the 1.5rem `--signal-card-row-h` minimum. Only a present
+  breakdown bar adds separation before its service/outcome row; do not leave
+  that gap on cards without a bar.
+  Do not use bold or semibold for titles; the user prefers regular weight.
   Card identifiers use `subtle`: they are for checking identity, not primary scanning.
   Apply these rules to every summary card: traces, logs, metrics, eval runs and
   disclosure summaries. Reuse `SignalCard`; avoid per-summary typography or

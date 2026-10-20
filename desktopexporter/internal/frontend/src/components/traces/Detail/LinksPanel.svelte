@@ -110,13 +110,13 @@
           {#snippet value()}
             {#if href}
               <a
-                class="detail-cell__value link link-primary font-mono"
+                class="detail-cell__value link link-primary"
                 {href}
                 onclick={e => goToLink(e, link)}
                 ><Identifier value={link.traceID!} /></a
               >
             {:else}
-              <span class="detail-cell__value font-mono">null</span>
+              <span class="detail-cell__value">null</span>
             {/if}
           {/snippet}
         </SpanField>
@@ -128,13 +128,13 @@
           {#snippet value()}
             {#if href && link.spanID}
               <a
-                class="detail-cell__value link link-primary font-mono"
+                class="detail-cell__value link link-primary"
                 {href}
                 onclick={e => goToLink(e, link)}
                 ><Identifier value={link.spanID} /></a
               >
             {:else}
-              <span class="detail-cell__value font-mono"
+              <span class="detail-cell__value"
                 >{#if link.spanID}<Identifier
                     value={link.spanID}
                   />{:else}null{/if}</span

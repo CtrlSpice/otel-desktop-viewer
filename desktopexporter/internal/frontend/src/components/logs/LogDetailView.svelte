@@ -173,7 +173,7 @@
                 >
                   {#snippet value()}
                     <a
-                      class="detail-cell__value link link-primary font-mono"
+                      class="detail-cell__value link link-primary"
                       href={itemHref('traces', traceID, traceSpanPatch)}
                       onclick={goToTrace}><Identifier value={traceID} /></a
                     >
@@ -190,7 +190,7 @@
                 >
                   {#snippet value()}
                     <a
-                      class="detail-cell__value link link-primary font-mono"
+                      class="detail-cell__value link link-primary"
                       href={itemHref('traces', traceID, traceSpanPatch)}
                       onclick={goToTrace}><Identifier value={spanID} /></a
                     >

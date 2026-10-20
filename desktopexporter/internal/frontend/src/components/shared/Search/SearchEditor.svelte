@@ -897,7 +897,7 @@
   }
 
   .help-dialog-title {
-    @apply min-w-0 flex-1 text-lg font-semibold leading-snug tracking-tight;
+    @apply min-w-0 flex-1 text-lg font-normal leading-snug tracking-tight;
   }
 
   .help-dialog-body {

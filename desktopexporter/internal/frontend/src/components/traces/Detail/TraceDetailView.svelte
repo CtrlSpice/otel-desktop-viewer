@@ -303,7 +303,7 @@
                 {#snippet value()}
                   <button
                     type="button"
-                    class="detail-cell__value link link-primary font-mono"
+                    class="detail-cell__value link link-primary"
                     onclick={() => setSpanInQuery(span.parentSpanID!, 'push')}
                     ><Identifier value={span.parentSpanID ?? ''} /></button
                   >

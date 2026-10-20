@@ -58,7 +58,7 @@
   --focus-ring-width: 1px;
   --focus-ring-offset: 1px;
   --focus-ring-color: var(--color-primary);
-  --item-hover-bg: var(--color-highlight-low);
+  --item-hover-bg: var(--color-highlight-high);
   --item-selected-bg: var(--color-highlight-med);
   /* Quick feedback, quiet fades, and a shared settle for moving surfaces. */
   --motion-feedback-duration: 120ms;
@@ -561,7 +561,7 @@ html[data-theme='rose-pine-dawn'] .chart-hover-card {
 .metric-chart-view :where(.chart-selection-legend__glyph) {
   font-size: var(--text-base);
   font-weight: 600;
-  line-height: 1;
+  line-height: var(--text-base--line-height);
   opacity: 0.85;
   margin-right: 0.25rem;
 }
@@ -591,7 +591,7 @@ html[data-theme='rose-pine-dawn'] .chart-hover-card {
   row-gap: 0.18rem;
   align-items: baseline;
   font-size: var(--text-base);
-  line-height: 1.35;
+  line-height: var(--text-base--line-height);
 }
 
 .metric-chart-view :where(.chart-aggregate-summary__row) {
@@ -744,6 +744,7 @@ svg {
 .header-tabs {
   @apply relative isolate inline-grid shrink-0;
   grid-template-columns: repeat(var(--header-tab-count), minmax(0, 1fr));
+  column-gap: var(--header-gap);
 }
 
 .header-tabs:has(
@@ -752,10 +753,15 @@ svg {
   content: '';
   position: absolute;
   inset: 0 auto 0 0;
-  width: calc(100% / var(--header-tab-count));
+  width: calc(
+    (100% - (var(--header-tab-count) - 1) * var(--header-gap)) /
+      var(--header-tab-count)
+  );
   border-radius: 0.5rem;
   background: var(--item-selected-bg);
-  transform: translateX(calc(var(--header-active-index) * 100%));
+  transform: translateX(
+    calc(var(--header-active-index) * (100% + var(--header-gap)))
+  );
   transition: transform var(--motion-compact-duration)
     var(--motion-settle-easing);
   pointer-events: none;
@@ -767,6 +773,26 @@ svg {
 
 .header-tab__icon {
   display: flex;
+}
+
+.badge-count.header-tab__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: var(--header-counter-min-width);
+  height: var(--header-counter-min-width);
+  color: var(--color-base-content);
+  font-variant-numeric: tabular-nums;
+}
+
+:is(.header-tab, .primary-navigation .tab):is(
+    [aria-selected='true'],
+    [aria-current='page'],
+    [aria-pressed='true']
+  )
+  .header-tab__count {
+  color: var(--color-primary);
 }
 
 .header-tab.tooltip::before,
@@ -796,12 +822,7 @@ svg {
 
 @media (hover: hover) {
   .btn.chart-header-control:hover:not(:disabled, [aria-disabled='true']),
-  .btn.header-tab:hover:not(
-      :disabled,
-       [aria-selected='true'],
-       [aria-current='page'],
-       [aria-pressed='true']
-    ) {
+  .btn.header-tab:hover:not(:disabled, [aria-disabled='true']) {
     background: var(--item-hover-bg);
   }
 }
@@ -1202,6 +1223,8 @@ button:focus-visible:not(.btn) {
    * the first row stays aligned with drawer and detail headings.
    */
   --header-gap: 0.5rem;
+  --header-counter-min-width: 1rem;
+  --signal-card-row-h: 1.5rem;
   --header-padding: 0.5rem;
   --header-padding-inline: 0.75rem;
   --pane-header-h: calc(var(--pane-header-row-h) + 2 * var(--header-padding));
@@ -1236,11 +1259,7 @@ button:focus-visible:not(.btn) {
   color: var(--color-base-content);
 }
 
-/* Shared item states. Selection wins over hover; focus is a separate outline. */
-.item-state--menu {
-  --item-hover-bg: var(--color-highlight-med);
-}
-
+/* Shared item states. Hover temporarily strengthens selection; focus is a separate outline. */
 :is(.item-state, .table-row) {
   border-radius: 0.75rem;
   --item-state-bg: var(--item-idle-bg, transparent);
@@ -1280,12 +1299,6 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
 }
 
 :is(.item-state, .table-row):where(
-  :hover:not(:disabled):not([aria-disabled='true']):not([data-disabled])
-) {
-  --item-state-bg: var(--item-hover-bg);
-}
-
-:is(.item-state, .table-row):where(
   [aria-selected='true'],
   [aria-pressed='true'],
   [aria-checked='true'],
@@ -1294,6 +1307,12 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
   .table-row--selected
 ) {
   --item-state-bg: var(--item-selected-bg);
+}
+
+:is(.item-state, .table-row):where(
+  :hover:not(:disabled):not([aria-disabled='true']):not([data-disabled])
+) {
+  --item-state-bg: var(--item-hover-bg);
 }
 
 :is(.item-state, .table-row):focus-visible {
@@ -1651,7 +1670,7 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
 
 /* Detail / toolbar metadata origins. */
 .metadata-origin {
-  @apply text-xs font-normal leading-tight;
+  @apply font-sans text-xs font-normal;
   color: var(--color-subtle);
 }
 

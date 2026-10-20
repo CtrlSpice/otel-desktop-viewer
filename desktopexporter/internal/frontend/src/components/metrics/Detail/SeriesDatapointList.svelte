@@ -407,7 +407,7 @@
                 {#if ex.traceID}
                   {@const patch = exemplarSpanPatch(ex)}
                   <a
-                    class="dp-list__detail-value link link-primary font-mono"
+                    class="dp-list__detail-value link link-primary"
                     href={itemHref('traces', ex.traceID, patch)}
                     onclick={e => goToExemplarTrace(e, ex)}
                     >trace: <Identifier value={ex.traceID} /></a
@@ -415,7 +415,7 @@
                 {/if}
                 {#if ex.spanID && ex.traceID}
                   <a
-                    class="dp-list__detail-value link link-primary font-mono"
+                    class="dp-list__detail-value link link-primary"
                     href={itemHref('traces', ex.traceID, exemplarSpanPatch(ex))}
                     onclick={e => goToExemplarTrace(e, ex)}
                     >span: <Identifier value={ex.spanID} /></a
@@ -615,7 +615,7 @@
   }
 
   .dp-list__td--value {
-    @apply whitespace-nowrap text-right font-mono tabular-nums;
+    @apply whitespace-nowrap text-right font-sans tabular-nums;
     color: var(--color-base-content);
   }
 
@@ -734,7 +734,7 @@
   }
 
   .dp-list__detail-value {
-    @apply font-mono text-xs;
+    @apply font-sans text-xs;
     color: var(--color-base-content);
   }
 

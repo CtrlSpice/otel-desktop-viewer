@@ -147,7 +147,7 @@
   {/snippet}
 
   {#if activePart || right || emptyLabel}
-    <div class="ball-pit">
+    <div class="ball-pit" class:ball-pit--after-bar={colouredParts.length > 1}>
       <div class="min-w-0 flex-1">
         {#if activePart}
           {#key activeKey}
@@ -188,7 +188,12 @@
   }
 
   .ball-pit {
-    @apply mt-1 flex h-7 min-w-0 items-center gap-3;
+    @apply flex min-w-0 items-center gap-3;
+    min-height: var(--signal-card-row-h);
+  }
+
+  .ball-pit--after-bar {
+    @apply mt-1;
   }
 
   .breakdown-label {

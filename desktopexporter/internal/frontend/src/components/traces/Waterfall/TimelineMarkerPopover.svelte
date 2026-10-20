@@ -306,7 +306,7 @@
   }
 
   .activity-popover__offset {
-    @apply whitespace-nowrap font-mono tabular-nums text-base-content;
+    @apply whitespace-nowrap font-sans tabular-nums text-base-content;
   }
 
   .activity-popover__name {

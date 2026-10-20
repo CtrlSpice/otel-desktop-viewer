@@ -201,7 +201,7 @@
   }
   .detail-property__value,
   :global(.detail-property .detail-property__value) {
-    @apply min-w-0 font-mono text-base leading-relaxed;
+    @apply min-w-0 font-sans text-base;
     color: var(--detail-property-value-color, var(--color-base-content));
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -214,7 +214,7 @@
     @apply ml-0;
   }
   .detail-property__raw-timestamp {
-    @apply min-w-0 font-mono text-xs leading-5;
+    @apply min-w-0 font-sans text-xs;
     color: var(--color-base-content);
     overflow-wrap: anywhere;
   }

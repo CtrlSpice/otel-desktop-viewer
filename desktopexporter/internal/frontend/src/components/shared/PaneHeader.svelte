@@ -272,9 +272,13 @@
               </span>
             {/if}
             <span class="header-tab__label">{tab.label}</span>
-            {#if tab.count !== undefined}
-              <span class="badge-count"
-                >{tab.count} {tab.countLabel ?? tab.label.toLowerCase()}</span
+            {#if tabs.some(tab => tab.count !== undefined)}
+              <span
+                class="badge-count header-tab__count"
+                aria-hidden={tab.count === undefined}
+                >{#if tab.count !== undefined}({tab.count})<span class="sr-only">
+                    {tab.countLabel ?? tab.label.toLowerCase()}</span
+                  >{/if}</span
               >
             {/if}
           </a>
@@ -299,9 +303,13 @@
               </span>
             {/if}
             <span class="header-tab__label">{tab.label}</span>
-            {#if tab.count !== undefined}
-              <span class="badge-count"
-                >{tab.count} {tab.countLabel ?? tab.label.toLowerCase()}</span
+            {#if tabs.some(tab => tab.count !== undefined)}
+              <span
+                class="badge-count header-tab__count"
+                aria-hidden={tab.count === undefined}
+                >{#if tab.count !== undefined}({tab.count})<span class="sr-only">
+                    {tab.countLabel ?? tab.label.toLowerCase()}</span
+                  >{/if}</span
               >
             {/if}
           </button>
@@ -488,7 +496,7 @@
   }
 
   .pane-header__title {
-    @apply truncate text-lg font-semibold text-base-content;
+    @apply truncate text-lg font-normal text-base-content;
   }
 
   .pane-header__leading {

@@ -289,7 +289,7 @@
 
   .ts-row__attrs-text,
   .ts-row__default-label {
-    @apply block truncate text-sm font-medium;
+    @apply block truncate text-lg font-normal;
   }
 
   .ts-row__default-label {
