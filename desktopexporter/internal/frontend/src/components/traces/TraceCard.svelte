@@ -29,7 +29,6 @@
   // span and is not waiting for one.
   let titleLabel = $derived(trace.rootSpan?.name ?? 'No root span')
   let serviceLabel = $derived(trace.rootSpan?.serviceName)
-  let titleMuted = $derived(!trace.hasRootSpan)
   const services = $derived(
     trace.serviceBreakdown?.some(part => part.count > 0)
       ? trace.serviceBreakdown
@@ -67,7 +66,7 @@
   title={titleLabel}
   subtitle={serviceLabel}
   interactiveSubtitle={serviceBreakdown}
-  {titleMuted}
+  titleContent={!trace.hasRootSpan ? missingRootTitle : undefined}
   {onclick}
 >
   {#snippet badge()}
@@ -97,3 +96,13 @@
     </div>
   {/snippet}
 </SignalCard>
+
+{#snippet missingRootTitle()}
+  <span
+    class="inline-flex items-center gap-2 text-sm font-normal text-rp-subtle"
+  >
+    [<span class="size-2 shrink-0 rounded-full bg-info" aria-hidden="true"
+    ></span>
+    <span>No root span</span>]
+  </span>
+{/snippet}

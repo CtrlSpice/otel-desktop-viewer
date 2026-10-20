@@ -12,8 +12,6 @@
     idLine?: string
     title: string
     titleContent?: Snippet
-    /** Italic muted title (e.g. placeholder while data is still arriving). */
-    titleMuted?: boolean
     subtitle?: string
     subtitleContent?: Snippet
     /** Independent controls below the title, outside the card selection button. */
@@ -53,7 +51,6 @@
     idLine,
     title,
     titleContent,
-    titleMuted = false,
     subtitle,
     subtitleContent,
     interactiveSubtitle,
@@ -88,9 +85,7 @@
     <div class="signal-row__identity">
       <div class="signal-row__header">
         <span class="signal-row__title-cluster" {title}>
-          <span
-            class="signal-row__title"
-            class:signal-row__title--muted={titleMuted}
+          <span class="signal-row__title"
             >{#if titleContent}{@render titleContent()}{:else}{title}{/if}</span
           >
           {#if badge && badgePlacement === 'inline'}
@@ -312,11 +307,6 @@
   .signal-row__title {
     @apply min-w-0 shrink truncate text-lg font-normal text-base-content;
     flex: 0 1 auto;
-  }
-
-  .signal-row__title--muted {
-    @apply font-normal italic;
-    color: var(--color-muted);
   }
 
   .signal-row__subtitle {
