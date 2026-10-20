@@ -82,9 +82,9 @@
   }
   type LegendEntry = Pick<ComponentProps<typeof EvalStatus>, 'label' | 'tone'>
   const scoreLegend: LegendEntry[] = [
-    { label: '100%', tone: 'success' },
+    { label: 'Pass', tone: 'success' },
     { label: 'Partial', tone: 'warning' },
-    { label: '0%', tone: 'error' },
+    { label: 'Fail', tone: 'error' },
     { label: 'Internal fault', tone: 'papaya' },
     { label: 'Unscored', tone: 'neutral' },
   ]
@@ -823,9 +823,7 @@
                           tool.reference,
                           tool.state
                         )}{/snippet}
-                      <span class="block min-w-0 truncate"
-                        >{tool.name}</span
-                      >
+                      <span class="block min-w-0 truncate">{tool.name}</span>
                     </TreeRowIdentity>
                   </th>
                   {#each columns.slice(2) as column (column.key)}

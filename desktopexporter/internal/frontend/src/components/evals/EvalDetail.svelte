@@ -9,7 +9,8 @@
   import { cost, estimatedCost, localTimestamp, traceHref } from './model'
   import AssessmentBadge from './AssessmentBadge.svelte'
   import RunStatusBadge from './RunStatusBadge.svelte'
-  import { completionLabel } from './group-attempts'
+  import EvalStatus from './EvalStatus.svelte'
+  import { completionLabel, completionTone } from './group-attempts'
 
   let {
     run,
@@ -144,10 +145,11 @@
         />{/snippet}
       <p class="eval-detail__prose">{attempt.question}</p>
     </DetailBubble>
-    <DetailBubble
-      label={`Attempt ${attempt.repetition} · ${completionLabel(attempt.state, true)}`}
-      initialOpen={false}
-    >
+    <DetailBubble label={`Attempt ${attempt.repetition}`} initialOpen={false}>
+      {#snippet trailing()}<EvalStatus
+          label={completionLabel(attempt.state, true)}
+          tone={completionTone(attempt.state, true)}
+        />{/snippet}
       {#snippet action()}
         {#if attempt.answer !== undefined}<ValueCopyButton
             text={attempt.answer}

@@ -34,6 +34,7 @@
     icon,
     count,
     countLabel = label.toLowerCase(),
+    trailing,
     action,
     children,
     initialOpen = true,
@@ -42,6 +43,7 @@
     icon?: Snippet
     count?: number
     countLabel?: string
+    trailing?: Snippet
     action?: Snippet
     children: Snippet
     initialOpen?: boolean
@@ -63,6 +65,7 @@
   {#if count !== undefined}
     <span class="badge-count ml-auto shrink-0">{count} {countLabel}</span>
   {/if}
+  {#if trailing}<span class="ml-auto shrink-0">{@render trailing()}</span>{/if}
 {/snippet}
 
 {#snippet bubble()}
