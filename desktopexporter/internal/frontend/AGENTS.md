@@ -223,7 +223,7 @@
   Cost shows each visible level in the summary column, without adding a tree depth or summing
   parent estimates together with their child estimates. Missing costs are Unknown.
   Attempt labels are left-aligned beside their tree dots.
-  The identity heading reads Kids · Case · Rep on one line with uniform separator
+  The identity heading reads Case · Rep on one line with uniform separator
   spacing and no extra gap between the labels.
   An explicit attemptTelemetry reference identifies the enclosing attempt span;
   telemetry identifies target execution. Without it, label derived timing as the

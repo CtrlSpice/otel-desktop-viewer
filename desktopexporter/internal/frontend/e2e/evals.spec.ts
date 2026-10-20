@@ -1070,7 +1070,7 @@ for (const theme of ['rose-pine', 'rose-pine-dawn']) {
     await expect(table.locator('thead tr')).toHaveCount(1)
     await expect(
       table.getByRole('columnheader', {
-        name: 'Kids · Case · Rep',
+        name: 'Case · Rep',
         exact: true,
       })
     ).toBeVisible()

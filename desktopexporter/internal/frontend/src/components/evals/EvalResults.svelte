@@ -601,7 +601,7 @@
               class="table-cell eval-results__identity-cell"
               scope="colgroup"
               colspan="2"
-              aria-label="Kids · Case · Rep"
+              aria-label="Case · Rep"
               class:table-cell--pinned={layout.pinned.name !== undefined}
               style:left={layout.pinned.name === undefined
                 ? undefined
@@ -618,8 +618,6 @@
                   class="eval-results__case-heading"
                   bind:offsetWidth={caseGutterWidth}
                 >
-                  <span title="Direct children">Kids</span>
-                  <span aria-hidden="true">·</span>
                   <TableSortButton
                     label="Case"
                     inset={false}
