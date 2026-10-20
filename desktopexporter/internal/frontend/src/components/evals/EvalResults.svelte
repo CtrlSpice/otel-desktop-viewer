@@ -49,7 +49,6 @@
   } from './group-attempts'
   import {
     estimatedCost,
-    percent,
     type TelemetryReference,
     type AssessmentDefinition,
     type EvalAttempt,
@@ -247,7 +246,7 @@
     return () => controller.abort()
   })
   type Column = {
-    key: AttemptSortKey | 'summary'
+    key: AttemptSortKey
     label: string
     group: string
     width: number
@@ -310,13 +309,6 @@
               min: 192,
               hint: headline?.scale,
               assessment: headline,
-            } as Column,
-            {
-              key: 'summary',
-              label: 'Summary',
-              group: 'Results',
-              width: 160,
-              min: 144,
             } as Column,
           ]
         : [
@@ -665,36 +657,31 @@
                 ? undefined
                 : `${layout.pinned[column.key]}px`}
               scope="col"
-              aria-sort={column.key === 'summary'
-                ? undefined
-                : activeSort?.key === column.key
-                  ? activeSort.direction === 'asc'
-                    ? 'ascending'
-                    : 'descending'
-                  : 'none'}
+              aria-sort={activeSort?.key === column.key
+                ? activeSort.direction === 'asc'
+                  ? 'ascending'
+                  : 'descending'
+                : 'none'}
             >
-              {#if column.key === 'summary'}
-                <TableColumnHeading label={column.label} />
-              {:else}<TableSortButton
-                  label={column.label}
-                  inset={column.key !== 'seconds'}
-                  direction={activeSort?.key === column.key
-                    ? activeSort.direction
-                    : undefined}
-                  align={column.numeric ? 'right' : 'left'}
-                  title={column.hint}
-                  onclick={() =>
-                    column.key !== 'summary' && toggleSort(column.key)}
-                >
-                  {#if column.key === 'seconds'}
-                    <TimingCell maximum={maximumDuration} header />
-                  {:else}<TableColumnHeading
-                      label={column.label}
-                      description={column.description}
-                      align={column.numeric ? 'right' : 'left'}
-                    />
-                  {/if}
-                </TableSortButton>{/if}
+              <TableSortButton
+                label={column.label}
+                inset={column.key !== 'seconds'}
+                direction={activeSort?.key === column.key
+                  ? activeSort.direction
+                  : undefined}
+                align={column.numeric ? 'right' : 'left'}
+                title={column.hint}
+                onclick={() => toggleSort(column.key)}
+              >
+                {#if column.key === 'seconds'}
+                  <TimingCell maximum={maximumDuration} header />
+                {:else}<TableColumnHeading
+                    label={column.label}
+                    description={column.description}
+                    align={column.numeric ? 'right' : 'left'}
+                  />
+                {/if}
+              </TableSortButton>
             </th>
           {/if}
         {/each}
@@ -862,23 +849,6 @@
         {#each columns as column (column.key)}
           {#if column.assessment}
             <td class="table-cell"></td>
-          {:else if column.key === 'summary' && headline}
-            {@const score = group.summary.scores[headline.id]}
-            <td
-              class="table-cell text-left tabular-nums"
-              title={`${score.scored} scored / ${score.denominator} denominator · all case repetitions`}
-            >
-              <EvalStatus
-                label={percent(score.percent)}
-                tone={score.percent === null
-                  ? 'neutral'
-                  : score.percent === 100
-                    ? 'success'
-                    : score.percent === 0
-                      ? 'error'
-                      : 'warning'}
-              />
-            </td>
           {:else if column.key === 'seconds'}
             <td
               class="table-cell eval-results__timing-cell text-left tabular-nums"
