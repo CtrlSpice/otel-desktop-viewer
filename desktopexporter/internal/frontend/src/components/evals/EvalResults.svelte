@@ -473,7 +473,7 @@
         onclick={selectBar}
         class="eval-results__span-bar block"
         aria-label={`${label}, ${formatDuration(window.endTime - window.startTime)}`}
-        title={`${label} · elapsed time across available references · Start offset ${formatDuration(window.startTime - (origin ?? window.startTime))}`}
+        title={`${label} · Timing fallback: elapsed time across available references · Start offset ${formatDuration(window.startTime - (origin ?? window.startTime))}`}
         style:--bar-color={spanError
           ? 'var(--color-error)'
           : 'var(--color-secondary)'}
@@ -505,6 +505,7 @@
         onclick={selectBar}
         class="block w-full text-left"
         title="Recorded eval duration"
+        aria-label={`${label}, ${formatDuration(duration)} · Recorded duration; start offset unavailable`}
         style:--bar-color={spanError ? 'var(--color-error)' : 'currentColor'}
       >
         <DurationBar {duration} maximum={maximumDuration} />
@@ -709,7 +710,10 @@
                   run.telemetry,
                   runWindow?.startTime,
                   run.seconds,
-                  outline.some(item => item.spanError)
+                  outline.some(item => item.spanError),
+                  runWindow,
+                  run.name,
+                  run.state === 'Planned'
                 )}
               {:else if column.key === 'cost'}
                 {@render rowCost(combineEstimates(estimates))}

@@ -109,6 +109,15 @@ describe('referenced eval hierarchy', () => {
     ])
     expect(rows[1].reference).toEqual(ref(1))
     expect(rows[2].reference).toEqual(ref(2))
+    // Parent timing remains authoritative even if children extend past it.
+    expect(rows[1].window).toEqual({
+      startTime: node(1, null, 0).spanData.startTime,
+      endTime: node(1, null, 0).spanData.endTime,
+    })
+    expect(rows[2].window).toEqual({
+      startTime: node(2, 1, 1).spanData.startTime,
+      endTime: node(2, 1, 1).spanData.endTime,
+    })
     expect(rows[2].parentID).toBe(rows[4].parentID)
     expect(rows[3].tree.brokenParent).toBe(false)
     expect(rows.map(row => row.spanError)).toEqual([
@@ -144,6 +153,66 @@ describe('referenced eval hierarchy', () => {
       )
     ).toEqual(rows.map(row => row.kind))
   })
+
+  it.each(['missing', 'invalid'])(
+    'uses phase-specific child extents when parent timing is %s',
+    mode => {
+      const attempt = {
+        ...exampleRuns[0].attempts[0],
+        attemptTelemetry: ref(1),
+        telemetry: ref(2),
+        tools: [3, 4].map(id => ({
+          name: `tool ${id}`,
+          state: 'OK' as const,
+          message: '',
+          telemetry: ref(id),
+        })),
+        assessments: [
+          { ...exampleRuns[0].attempts[0].assessments[0]!, telemetry: ref(5) },
+        ],
+      }
+      const first = node(3, 2, 0)
+      const last = node(4, 2, 0)
+      last.spanData.startTime += 100n
+      last.spanData.endTime += 100n
+      const grader = node(5, 1, 0)
+      grader.spanData.startTime += 200n
+      grader.spanData.endTime += 200n
+      const invalidParents = [node(1, null, 0), node(2, 1, 0)]
+      for (const parent of invalidParents)
+        parent.spanData.endTime = parent.spanData.startTime - 1n
+      const run = { ...exampleRuns[0], attempts: [attempt] }
+      const rows = buildEvalOutline(
+        groupAttempts(run.attempts, run.attempts),
+        run,
+        indexEvalTraces([
+          {
+            traceID,
+            unplacedSpanCount: 0,
+            spans: [
+              ...(mode === 'invalid' ? invalidParents : []),
+              first,
+              last,
+              grader,
+            ],
+          },
+        ])
+      )
+      expect(rows.find(row => row.kind === 'execution')?.window).toEqual({
+        startTime: first.spanData.startTime,
+        endTime: last.spanData.endTime,
+      })
+      expect(rows.find(row => row.kind === 'grading')?.window).toEqual({
+        startTime: grader.spanData.startTime,
+        endTime: grader.spanData.endTime,
+      })
+      for (const kind of ['case', 'attempt'])
+        expect(rows.find(row => row.kind === kind)?.window).toEqual({
+          startTime: first.spanData.startTime,
+          endTime: grader.spanData.endTime,
+        })
+    }
+  )
 
   it('retains untraced tools and grading without inventing span timing or costs', () => {
     const attempt = {

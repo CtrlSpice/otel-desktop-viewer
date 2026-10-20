@@ -58,9 +58,14 @@ const estimate = (value?: number): Estimate => ({
 export function spanWindow(
   nodes: (SpanNode | undefined)[]
 ): TimeWindow | undefined {
+  return mergeWindows(nodes.map(node => node?.spanData))
+}
+
+function mergeWindows(
+  windows: (TimeWindow | undefined)[]
+): TimeWindow | undefined {
   let window: TimeWindow | undefined
-  for (const node of nodes) {
-    const span = node?.spanData
+  for (const span of windows) {
     if (!span || span.endTime < span.startTime) continue
     if (!window) window = { startTime: span.startTime, endTime: span.endTime }
     else {
@@ -117,17 +122,18 @@ export function buildEvalOutline(
         state: spanError ? ('Error' as const) : execution.state,
         spanError,
         internalFault: execution.internalFault,
-        timingNodes: [
-          attemptNode,
-          nodeFor(attempt.telemetry),
-          ...execution.rows.map(row => row.node),
-        ],
+        window:
+          spanWindow([attemptNode]) ??
+          spanWindow([
+            nodeFor(attempt.telemetry),
+            ...execution.rows.map(row => row.node),
+          ]),
       }
     })
     caseRow.state = completionState(statuses)
     caseRow.spanError = statuses.some(item => item.spanError)
     caseRow.internalFault = statuses.some(item => item.internalFault)
-    caseRow.window = spanWindow(statuses.flatMap(item => item.timingNodes))
+    caseRow.window = mergeWindows(statuses.map(item => item.window))
     for (const item of group.attempts) {
       const attempt = source.get(item.id)!
       const execution = evalExecutionRows(
@@ -249,6 +255,18 @@ export function buildEvalOutline(
         caseRow.window = attemptRow.window
         caseRow.seconds = attemptRow.seconds
       }
+    }
+  }
+  // Resolve missing containers bottom-up. A valid recorded span wins even when
+  // a child's clock extends beyond it. Durations without starts cannot locate
+  // a child on the timeline and must not be summed into an elapsed window.
+  const childWindows = new Map<string, TimeWindow[]>()
+  for (const row of [...rows].reverse()) {
+    row.window ??= mergeWindows(childWindows.get(row.id) ?? [])
+    if (row.parentID && row.window) {
+      const siblings = childWindows.get(row.parentID) ?? []
+      siblings.push(row.window)
+      childWindows.set(row.parentID, siblings)
     }
   }
   const metadata = computeTreeMeta(

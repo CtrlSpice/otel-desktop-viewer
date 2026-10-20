@@ -236,6 +236,10 @@
   when there is no enclosing run span. Keep recorded-duration-only fallbacks.
   Case root bars span available attempt references across all repetitions,
   including hidden repetitions. Distinguish elapsed windows from summed durations.
+  Timing fallback order at each level: valid referenced span, available child
+  timing extent, recorded duration, then unavailable. Mark inferred extents as
+  timing fallbacks. Keep zero durations and never sum overlapping child durations
+  into an elapsed window or invent a start offset for duration-only values.
   Missing timing on started/completed rows uses a faint 1px Muted line with one
   central break. Planned/unstarted rows stay blank. Ruler ticks
   extend 4px into the header below their labels, aligned with the time guides.

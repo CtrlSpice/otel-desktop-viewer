@@ -286,7 +286,7 @@ describe('EvalResults repetitions', () => {
     }
   })
 
-  it('keeps a case root bar across spaced repetitions, including filtered attempts', async () => {
+  it('keeps case and missing-run fallback bars across spaced repetitions, including filtered attempts', async () => {
     const epoch = 1700000000000000001n
     const attempts = [0, 1].map(index => ({
       ...exampleRuns[0].attempts[0],
@@ -317,7 +317,11 @@ describe('EvalResults repetitions', () => {
       )
     try {
       const { container } = render(EvalResults, {
-        run: { ...exampleRuns[0], telemetry: undefined, attempts },
+        run: {
+          ...exampleRuns[0],
+          telemetry: { traceID: 'f'.repeat(32), spanID: 'f'.repeat(16) },
+          attempts,
+        },
         attempts: [attempts[0]],
       })
       const root = await screen.findByRole('button', {
@@ -331,6 +335,17 @@ describe('EvalResults repetitions', () => {
       expect(root).toHaveAttribute(
         'title',
         expect.stringContaining('elapsed time across available references')
+      )
+      const runBar = screen.getByRole('button', {
+        name: `${exampleRuns[0].name}, 30.000 s`,
+      })
+      expect(runBar.querySelector('.span-bar')).toHaveStyle({
+        left: '0%',
+        width: '100%',
+      })
+      expect(runBar).toHaveAttribute(
+        'title',
+        expect.stringContaining('Timing fallback')
       )
     } finally {
       lookup.mockRestore()
