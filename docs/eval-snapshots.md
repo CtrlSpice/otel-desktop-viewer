@@ -176,6 +176,12 @@ the preview page. Routes carry the snapshot digest and snapshot-qualified run/ro
 identities. They resolve only against this database; a copied URL does not include
 the file or associated telemetry.
 
+Field Copy resolves complete recorded values from source pointers only when
+requested, even when a display preview reaches its per-field or aggregate limit.
+String values copy as decoded text; structured values retain their original JSON
+subtree, including numeric lexemes. Derived labels retain their documented display
+formatting. Missing tool output is not represented as a recorded empty string.
+
 Projection limitations are deliberate: arbitrary Promptfoo scores have no assumed
 maximum, source costs are not relabelled CAD, and absent execution/repetition
 metadata cannot be recovered. Source-native values remain available in the original

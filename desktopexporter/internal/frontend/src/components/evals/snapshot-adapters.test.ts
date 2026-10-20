@@ -434,7 +434,6 @@ describe('persisted source snapshot projections', () => {
       {
         name: 'bash',
         state: 'Error',
-        message: '',
         telemetry: { traceID, spanID: 'e'.repeat(16) },
       },
     ])

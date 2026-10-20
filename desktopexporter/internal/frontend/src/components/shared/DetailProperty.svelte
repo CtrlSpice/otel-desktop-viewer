@@ -15,6 +15,7 @@
     typedValue,
     value,
     copyValue,
+    loadText,
     valueLabel,
     valueTone,
     valueColor,
@@ -35,6 +36,7 @@
     typedValue?: AttributeValue
     value?: Snippet
     copyValue?: string
+    loadText?: (signal: AbortSignal) => Promise<string>
     valueLabel?: string
     valueTone?: 'error'
     valueColor?: string
@@ -71,6 +73,7 @@
     >
     <ValueCopyButton
       text={copyText}
+      {loadText}
       label={origin ? `${fieldName} (${origin})` : fieldName}
       contextual
     />

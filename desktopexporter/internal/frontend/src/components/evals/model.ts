@@ -40,7 +40,7 @@ export type EvalAttempt = {
   tools: {
     name: string
     state: 'OK' | 'Error'
-    message: string
+    message?: string
     seconds?: number
     telemetry?: TelemetryReference
     cost?: number

@@ -13,6 +13,7 @@
   import { completionLabel, completionTone } from './group-attempts'
   import type { EvalOutlineRow } from './eval-outline'
   import { formatDuration } from '@/utils/time'
+  import type { SnapshotFieldCopy } from './snapshot-copy'
 
   let {
     run,
@@ -21,6 +22,7 @@
     parentName,
     telemetryNodes,
     telemetryLoading = false,
+    sourceCopy,
   }: {
     run: EvalRun
     row: EvalOutlineRow
@@ -28,6 +30,7 @@
     parentName?: string
     telemetryNodes?: Map<string, SpanNode>
     telemetryLoading?: boolean
+    sourceCopy?: SnapshotFieldCopy
   } = $props()
   const attempt = $derived(row.attempt)
   const references = $derived(evalTelemetrySummaries(run, row))
@@ -51,7 +54,15 @@
   )
   const fields = $derived([
     ...(!traceLevel && row.kind !== 'case'
-      ? [{ name: 'case', value: members[0]?.name ?? row.caseID }]
+      ? [
+          {
+            name: 'case',
+            value: members[0]?.name ?? row.caseID,
+            loadText: members[0]
+              ? sourceCopy?.(members[0].id, 'name')
+              : undefined,
+          },
+        ]
       : []),
     ...(row.kind === 'case'
       ? [{ name: 'attempts', value: String(members.length) }]
@@ -65,8 +76,14 @@
     },
     ...(traceLevel &&
     (row.kind === 'attempt' || row.kind === 'execution') &&
-    attempt?.error
-      ? [{ name: 'internal fault', value: attempt.error }]
+    attempt?.error !== undefined
+      ? [
+          {
+            name: 'internal fault',
+            value: attempt.error,
+            loadText: sourceCopy?.(attempt.id, 'error'),
+          },
+        ]
       : []),
     ...(row.kind === 'execution' && attempt
       ? [
@@ -95,6 +112,11 @@
   />{/snippet}
 {#snippet copy()}{#if prose !== undefined}<ValueCopyButton
       text={prose}
+      loadText={row.kind === 'case' && members[0]
+        ? sourceCopy?.(members[0].id, 'question')
+        : row.kind === 'execution' && attempt
+          ? sourceCopy?.(attempt.id, 'answer')
+          : undefined}
       label={row.name}
     />{/if}{/snippet}
 {#snippet supportingFields()}
@@ -104,6 +126,7 @@
           fieldName={field.name}
           fieldType="string"
           fieldValue={field.value}
+          loadText={field.loadText}
         />{/each}
     </tbody>
   </table>
@@ -145,6 +168,9 @@
           fieldName="explanation"
           fieldType="string"
           fieldValue={assessment.explanation}
+          loadText={attempt
+            ? sourceCopy?.(attempt.id, 'explanation')
+            : undefined}
           multiline
         />
         <DetailField

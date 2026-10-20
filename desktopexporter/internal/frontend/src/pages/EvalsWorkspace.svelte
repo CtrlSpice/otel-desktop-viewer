@@ -12,6 +12,10 @@
   import EvalSnapshotLibrary from '@/components/evals/EvalSnapshotLibrary.svelte'
   import { projectEvalSnapshot } from '@/components/evals/snapshot-adapters'
   import {
+    snapshotFieldCopy,
+    snapshotRunCopy,
+  } from '@/components/evals/snapshot-copy'
+  import {
     telemetryAPI,
     isAbortError,
     type EvalSnapshot,
@@ -63,6 +67,19 @@
         ? projection.runs
         : []
       : exampleRuns
+  )
+  const sourceCopy = $derived(
+    currentSnapshot && projection?.status === 'supported'
+      ? snapshotFieldCopy(currentSnapshot.originalJSON, projection.rows)
+      : undefined
+  )
+  const runCopy = $derived(
+    currentSnapshot && projection?.status === 'supported'
+      ? snapshotRunCopy(
+          { ...currentSnapshot, payload: currentSnapshot.originalJSON },
+          projection.runSources
+        )
+      : undefined
   )
   const run = $derived(runs.find(item => item.id === query.run) ?? runs[0])
   const attempt = $derived(
@@ -268,22 +285,20 @@
         >
       </div>{/if}
     {#if run}
-      {#key `${query.snapshot ?? 'synthetic'}/${run.id}`}
-        <EvalResults
-          bind:viewKey={evalView}
-          {run}
-          attempts={results}
-          selectedID={attempt?.id}
-          selectedRowID={query.row}
-          onSelect={selectRow}
-          onSelectRun={() => showDetail(null)}
-          onResolveSelection={row => (resolvedRow = row)}
-          onTraceViews={(traces, loading) => {
-            traceViews = traces
-            telemetryLoading = loading
-          }}
-        />
-      {/key}
+      <EvalResults
+        bind:viewKey={evalView}
+        {run}
+        attempts={results}
+        selectedID={attempt?.id}
+        selectedRowID={query.row}
+        onSelect={selectRow}
+        onSelectRun={() => showDetail(null)}
+        onResolveSelection={row => (resolvedRow = row)}
+        onTraceViews={(traces, loading) => {
+          traceViews = traces
+          telemetryLoading = loading
+        }}
+      />
       {#if !results.length}<div class="p-6 text-sm">
           <p>No matching attempts</p>
           <button
@@ -303,6 +318,7 @@
         {#if selectedRow}<EvalRowDetail
             {run}
             row={selectedRow}
+            {sourceCopy}
             traceLevel={evalView === 'time'}
             {parentName}
             {telemetryNodes}
@@ -310,6 +326,8 @@
           />{:else}<EvalDetail
             {run}
             {attempt}
+            {sourceCopy}
+            {runCopy}
             {telemetryNodes}
             {telemetryLoading}
           />{/if}

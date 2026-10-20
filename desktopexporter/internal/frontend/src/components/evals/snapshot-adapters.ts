@@ -19,6 +19,8 @@ export type SnapshotRowReference = {
   attemptID: string
   /** JSON Pointer into the caller's original payload. */
   pointer: string
+  /** Source-native prose only; absent entries are presentation fallbacks. */
+  fields: Partial<Record<SnapshotTextField, string>>
   resultID?: string
   evaluationID?: string
   providerID?: string
@@ -31,6 +33,15 @@ export type SnapshotRowReference = {
   outcome: 'execution-error' | 'assessment-failed' | 'passed' | 'unspecified'
 }
 
+export type SnapshotTextField =
+  'name' | 'question' | 'answer' | 'explanation' | 'error'
+
+export type SnapshotRunTextSource = {
+  evaluation?: string
+  providerName?: string
+  promptLabel?: string
+}
+
 export type SnapshotProjection =
   | {
       status: 'supported'
@@ -38,6 +49,7 @@ export type SnapshotProjection =
       adapter: 'promptfoo-v3' | 'viewer-kit'
       runs: EvalRun[]
       rows: SnapshotRowReference[]
+      runSources: Record<string, SnapshotRunTextSource>
       notes: string[]
     }
   | {
@@ -281,6 +293,7 @@ export function projectEvalSnapshot(
       JSON.stringify([snapshot.id, ...parts])
     const runs = new Map<string, EvalRun>()
     const rows: SnapshotRowReference[] = []
+    const runSources: Record<string, SnapshotRunTextSource> = {}
     const seenSlots = new Set<string>()
     const evaluationID = identity(root.evalId)
     const evaluation = display(text(config?.description) || snapshot.name)
@@ -289,6 +302,7 @@ export function projectEvalSnapshot(
       const row = object(raw)
       if (!row)
         throw new ProjectionError(`Result row ${position} must be an object.`)
+      const pointer = `${kit ? '/pilot' : ''}/results/results/${position}`
       if (
         row.failureReason !== undefined &&
         row.failureReason !== 0 &&
@@ -342,6 +356,24 @@ export function projectEvalSnapshot(
       let run = runs.get(runID)
       const assessmentID = localID('assessment', kit ? 'completion' : 'outcome')
       if (!run) {
+        runSources[runID] = {
+          evaluation: text(config?.description)
+            ? '/config/description'
+            : undefined,
+          providerName: identity(provider?.label)
+            ? pointer + '/provider/label'
+            : model
+              ? pointer +
+                (identity(metadata?.model)
+                  ? '/response/metadata/model'
+                  : '/vars/eval_model')
+              : providerID
+                ? pointer + '/provider/id'
+                : undefined,
+          promptLabel: text(prompt?.label)
+            ? pointer + '/prompt/label'
+            : undefined,
+        }
         const configuration = [{ name: 'Snapshot ID', value: snapshot.id }]
         if (evaluationID)
           configuration.push({
@@ -475,7 +507,6 @@ export function projectEvalSnapshot(
           tools.push({
             name: display(text(tool.name) ?? 'Recorded tool'),
             state: tool.error ? 'Error' : 'OK',
-            message: '',
             telemetry: ref,
           })
         }
@@ -502,6 +533,34 @@ export function projectEvalSnapshot(
       let answer: string | undefined
       if (rawOutput !== undefined)
         answer = display(text(rawOutput) ?? JSON.stringify(rawOutput))
+      const fields: SnapshotRowReference['fields'] = {}
+      const sourceField = (
+        field: SnapshotTextField,
+        candidates: [Json | undefined, string][]
+      ) => {
+        const selected = candidates.find(([value]) => text(value) !== undefined)
+        if (selected) fields[field] = pointer + selected[1]
+      }
+      sourceField('name', [
+        [test?.description, '/testCase/description'],
+        [row.description, '/description'],
+        [taskID, '/vars/task_id'],
+        [resultID, '/id'],
+      ])
+      sourceField('question', [
+        [kit ? vars?.goal : undefined, '/vars/goal'],
+        [prompt?.raw, '/prompt/raw'],
+      ])
+      sourceField('explanation', [
+        [grading?.reason, '/gradingResult/reason'],
+        [row.failureReason === 1 ? row.error : undefined, '/error'],
+      ])
+      if (row.failureReason === 2)
+        sourceField('error', [
+          [row.error, '/error'],
+          [response?.error, '/response/error'],
+        ])
+      if (rawOutput !== undefined) fields.answer = pointer + '/response/output'
       const latency = number(row.latencyMs)
       run.attempts.push({
         id: attemptID,
@@ -536,7 +595,8 @@ export function projectEvalSnapshot(
       })
       rows.push({
         attemptID,
-        pointer: `${kit ? '/pilot' : ''}/results/results/${position}`,
+        pointer,
+        fields,
         resultID,
         evaluationID: identity(row.evaluationId) ?? evaluationID,
         providerID,
@@ -555,6 +615,7 @@ export function projectEvalSnapshot(
       adapter: kit ? 'viewer-kit' : 'promptfoo-v3',
       runs: [...runs.values()],
       rows,
+      runSources,
       notes: [...notes],
     }
   } catch (error) {

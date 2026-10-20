@@ -119,7 +119,11 @@
       {#snippet right()}
         <DetailViewTabs id={detailViewID} bind:view={detailView} />
         {#key log.logRef}
-          <ValueCopyButton label="log" tooltip="Copy log" loadText={loadLogJSON} />
+          <ValueCopyButton
+            label="log"
+            tooltip="Copy log"
+            loadText={loadLogJSON}
+          />
           <ExportButton signal="log" id={log.logRef} />
         {/key}
       {/snippet}

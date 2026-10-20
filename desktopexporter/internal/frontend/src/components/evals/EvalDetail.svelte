@@ -13,17 +13,22 @@
   import EvalTelemetrySummaries from './EvalTelemetrySummaries.svelte'
   import { evalTelemetrySummaries } from './eval-telemetry-summaries'
   import type { SpanNode } from '@/types/api-types'
+  import type { SnapshotFieldCopy, SnapshotRunCopy } from './snapshot-copy'
 
   let {
     run,
     attempt,
     telemetryNodes,
     telemetryLoading = false,
+    sourceCopy,
+    runCopy,
   }: {
     run: EvalRun
     attempt?: EvalAttempt
     telemetryNodes?: Map<string, SpanNode>
     telemetryLoading?: boolean
+    sourceCopy?: SnapshotFieldCopy
+    runCopy?: SnapshotRunCopy
   } = $props()
   const investigator = $derived(estimatedCost(run.attempts, 'investigatorCost'))
   const references = $derived(evalTelemetrySummaries(run, undefined, attempt))
@@ -45,11 +50,13 @@
             fieldName="name"
             fieldType="string"
             fieldValue={run.name}
+            loadText={runCopy?.(run.id, 'name')}
           />
           <DetailField
             fieldName="evaluation"
             fieldType="string"
             fieldValue={run.evaluation}
+            loadText={runCopy?.(run.id, 'evaluation')}
           />
           <DetailField
             fieldName="state"
@@ -64,6 +71,7 @@
             fieldName="source"
             fieldType="string"
             fieldValue={run.source}
+            loadText={runCopy?.(run.id, 'source')}
           />
           {#if startedAt}<DetailField
               fieldName="started"
@@ -130,17 +138,19 @@
       {#snippet action()}
         {#if attempt.answer !== undefined}<ValueCopyButton
             text={attempt.answer}
+            loadText={sourceCopy?.(attempt.id, 'answer')}
             label="answer"
           />{/if}
       {/snippet}
       <p class="eval-detail__prose">{attempt.answer ?? 'No answer recorded'}</p>
-      {#if attempt.error}
+      {#if attempt.error !== undefined}
         <table class="detail-fields w-full" aria-label="Attempt fault">
           <tbody
             ><DetailField
               fieldName="internal fault"
               fieldType="string"
               fieldValue={attempt.error}
+              loadText={sourceCopy?.(attempt.id, 'error')}
               multiline
             >
               {#snippet value()}<span
@@ -215,6 +225,7 @@
                   fieldName="explanation"
                   fieldType="string"
                   fieldValue={assessment.explanation}
+                  loadText={sourceCopy?.(attempt.id, 'explanation')}
                   multiline
                 /></tbody
               >
