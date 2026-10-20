@@ -261,10 +261,10 @@
   text in summaries and tables through LogSeverity; no numbered circles.
   Waterfall tree nodes
   use filled 8px dots matching the span bar colour for both parents and leaves,
-  without a visible number inside the dot. Parent rows read `●4   Parent Title`:
-  plain Subtle 14px regular direct-child counts sit between the dot and title,
-  without parentheses or a badge. Centre each count in a 22px slot aligned with
-  the children's dots one level below; leave 8px between that slot and the title.
+   without a visible number inside the dot. Direct-child counts read `[4]` in
+   Subtle 14px regular Mono, before the dot. Centre counts vertically with their
+   dots. A faint 1px Muted guide connects toward the dot and stops 4px before the
+   brackets. Counts have no badge background or semantic accent colour.
   Align the waterfall table's name heading with the root title, reserving the
   same count slot when present.
   Keep counts visible when collapsed; omit counts for leaves.

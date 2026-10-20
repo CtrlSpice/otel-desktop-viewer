@@ -46,6 +46,7 @@ export function themeTokens(theme: Theme) {
     // Waterfall tree geometry.
     '--waterfall-gutter-col': '18px',
     '--tree-count-width': '22px',
+    '--tree-count-guide-gap': '4px',
     '--waterfall-gutter-hub': '8px',
     '--waterfall-gutter-leaf': '8px',
     '--waterfall-bar-label-color': light

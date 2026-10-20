@@ -60,6 +60,8 @@
   style:width="calc(var(--tree-count-width) + {depth + 1} * var(--waterfall-gutter-col)
   + var(--waterfall-gutter-tail))"
   style:--tree-accent={color}
+  style:--tree-count-guide-reach="calc({depth + 0.5} * var(--waterfall-gutter-col)
+  - var(--waterfall-gutter-hub) / 2)"
 >
   {#if hasChildren}
     <span class="gutter__count"
@@ -106,7 +108,7 @@
   @reference "../../app.css";
   .gutter {
     --leaf-dot-size: var(--waterfall-gutter-leaf);
-    @apply relative block flex-shrink-0 self-stretch;
+    @apply relative block flex-shrink-0 self-stretch font-mono;
     min-height: var(--table-row-h);
   }
 
@@ -114,8 +116,28 @@
     @apply absolute top-0 bottom-0;
   }
   .gutter__count {
-    @apply absolute inset-y-0 left-0 flex items-center;
+    @apply absolute inset-y-0 left-0 flex items-center justify-center;
     width: var(--tree-count-width);
+  }
+  .gutter__count :global(.tree-child-count) {
+    position: relative;
+  }
+  .gutter__count :global(.tree-child-count)::after {
+    content: '';
+    position: absolute;
+    top: calc(50% - 0.5px);
+    left: calc(100% + var(--tree-count-guide-gap));
+    width: max(
+      0px,
+      calc(
+        (var(--tree-count-width) - 100%) / 2 + var(--tree-count-guide-reach) -
+          var(--tree-count-guide-gap)
+      )
+    );
+    height: 1px;
+    background: var(--color-muted);
+    opacity: 0.35;
+    pointer-events: none;
   }
 
   /* ───── Decorative node slot ───── */

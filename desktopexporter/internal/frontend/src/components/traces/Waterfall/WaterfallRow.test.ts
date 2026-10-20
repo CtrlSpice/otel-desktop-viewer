@@ -120,7 +120,7 @@ describe('WaterfallRow timeline layout', () => {
 })
 
 describe('WaterfallRow child counts', () => {
-  it('places a plain parenthesised child count before the node dot', () => {
+  it('places a bracketed mono child count before the node dot', () => {
     const row = makeRow()
     row.tree.childrenCount = 4
     const { container, getByRole } = renderRow(row)
@@ -128,10 +128,10 @@ describe('WaterfallRow child counts', () => {
       name: 'Collapse span-1, 4 child spans',
     })
     const count = toggle.querySelector('.tree-child-count')!
-    expect(count.textContent).toBe('(4)')
+    expect(count.textContent).toBe('[4]')
     expect(count).toHaveClass('text-sm')
     expect(count).not.toHaveClass('badge')
-    expect(count).not.toHaveClass('font-mono')
+    expect(count).toHaveClass('font-mono')
     expect(
       count.compareDocumentPosition(toggle.querySelector('.gutter__dot')!) &
         Node.DOCUMENT_POSITION_FOLLOWING
@@ -150,7 +150,7 @@ describe('WaterfallRow child counts', () => {
     const view = renderRow(row)
     await view.rerender({ subtreeCollapsed: true })
     expect(view.container.querySelector('.tree-child-count')?.textContent).toBe(
-      '(1)'
+      '[1]'
     )
     expect(
       view.getByRole('button', { name: 'Expand span-1, 1 child span' })
