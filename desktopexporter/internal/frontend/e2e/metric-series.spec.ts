@@ -795,7 +795,7 @@ for (const [theme, hoverColour, selectedColour, focusColour] of [
     'rose-pine-dawn',
     'rgb(244, 237, 232)',
     'rgb(223, 218, 217)',
-    'rgb(144, 122, 169)',
+    'rgb(109, 87, 132)',
   ],
 ]) {
   for (const metricType of ['Histogram', 'ExponentialHistogram'] as const) {
@@ -976,7 +976,7 @@ for (const [theme, hoverColour, selectedColour, focusColour] of [
           await expect(legend).toHaveCSS('color', titleColour)
           await expect(
             legend.locator('.heatmap-legend__swatch').first()
-          ).toHaveCSS('width', '16px')
+          ).toHaveCSS('width', '8px')
           expect(await legend.innerText()).not.toMatch(/[()[\]]/)
         }
         const dataFill = await mark.evaluate(
@@ -1062,10 +1062,18 @@ for (const [theme, hoverColour, selectedColour, focusColour] of [
                 return (
                   Math.min(Math.abs(rightGap - 12), Math.abs(leftGap - 12)) < 1
                 )
-              // Narrow panes keep the card over its column, inside the plot.
+              // At 14px working text the readout can exceed the data plot.
+              // Keep it inside the chart viewport in that case, as specified by
+              // the heatmap-card-position narrow-pane regression.
+              const viewport = (await page
+                .locator('.metric-heatmap-chart .chart-sticky')
+                .boundingBox())!
+              const fitsPlot = cardBox.width <= plot.right - plot.left
               return (
-                cardBox.x >= plot.left - 1 &&
-                cardBox.x + cardBox.width <= plot.right + 1 &&
+                cardBox.x >= (fitsPlot ? plot.left : viewport.x + 8) - 1 &&
+                cardBox.x + cardBox.width <=
+                  (fitsPlot ? plot.right : viewport.x + viewport.width - 8) +
+                    1 &&
                 rightGap <= 0 &&
                 leftGap <= 0
               )
@@ -1135,11 +1143,11 @@ for (const [theme, hoverColour, selectedColour, focusColour] of [
         )
         const quantileColours =
           theme === 'rose-pine-dawn'
-            ? ['rgb(40, 105, 131)', 'rgb(234, 157, 52)', 'rgb(180, 99, 122)']
+            ? ['rgb(38, 103, 129)', 'rgb(234, 157, 52)', 'rgb(180, 99, 122)']
             : [
                 theme === 'rose-pine'
-                  ? 'rgb(49, 116, 143)'
-                  : 'rgb(62, 143, 176)',
+                  ? 'rgb(112, 179, 207)'
+                  : 'rgb(107, 186, 220)',
                 'rgb(246, 193, 119)',
                 'rgb(235, 111, 146)',
               ]
@@ -1411,7 +1419,7 @@ test('extrema use the series colour and the average crosses above the series wit
     averageAboveSeries: true,
     averageHasOwnColour: true,
     averageLabelMatches: true,
-    averageColour: 'rgb(144, 122, 169)',
+    averageColour: 'rgb(109, 87, 132)',
     averageLabelAtRight: true,
   })
   const emphasis = averageLabel.getByRole('button', {
@@ -1634,7 +1642,7 @@ test('Rate clicks pin the exact bucket and keep slope in the same card', async (
   expect(slopeDrawing.extendsBeyondBucket).toBe(true)
   expect(slopeDrawing.distanceFromPoint).toBeLessThan(0.01)
   expect(slopeDrawing.colour).toBe(slopeDrawing.cardColour)
-  expect(slopeDrawing.colour).toBe('rgb(144, 122, 169)')
+  expect(slopeDrawing.colour).toBe('rgb(109, 87, 132)')
   const slopeEmphasis = sticky.getByRole('button', {
     name: 'Emphasize slope overlay',
   })
@@ -1872,14 +1880,24 @@ test('series open by their headers, one at a time, with one combined table', asy
     const range = header
       .querySelector('[aria-label="Chart time range"]')!
       .getBoundingClientRect()
+    const title = header
+      .querySelector('.pane-header__title')!
+      .getBoundingClientRect()
+    const download = header
+      .querySelector('[aria-label="Download metric"]')!
+      .getBoundingClientRect()
     return {
-      badgeInset: top.right - badges.right,
+      badgesAfterTitle: badges.left >= title.right,
+      badgesBeforeDownload: badges.right <= download.left,
+      downloadInset: top.right - download.right,
       topBottom: top.bottom,
       tabsTop: tabs.top,
       rangeTop: range.top,
     }
   })
-  expect(Math.abs(headerLayout.badgeInset)).toBeLessThan(1)
+  expect(headerLayout.badgesAfterTitle).toBe(true)
+  expect(headerLayout.badgesBeforeDownload).toBe(true)
+  expect(Math.abs(headerLayout.downloadInset)).toBeLessThan(1)
   expect(headerLayout.tabsTop).toBeGreaterThanOrEqual(headerLayout.topBottom)
   expect(headerLayout.rangeTop).toBeGreaterThanOrEqual(headerLayout.topBottom)
   await expect(mainHeader).toHaveCSS(
@@ -1923,7 +1941,7 @@ test('series open by their headers, one at a time, with one combined table', asy
     const icon = bubble.locator(':scope > summary svg')
     await expect(icon).toHaveCSS('width', '16px')
     await expect(icon).toHaveCSS('height', '16px')
-    await expect(icon).toHaveClass(/text-rp-muted/)
+    await expect(icon).toHaveClass(/text-rp-subtle/)
   }
   await expect(
     details.locator('.collapse-arrow, .field-group__caret')
@@ -1933,7 +1951,9 @@ test('series open by their headers, one at a time, with one combined table', asy
   await expect(series.nth(0).locator('table')).toHaveCount(1)
   const table = series.nth(0).getByRole('table', { name: 'Datapoints' })
   const attribute = table.locator('[data-field="route"]')
-  await expect(attribute.locator('.detail-property__key')).toHaveText('route')
+  await expect(attribute.locator('.detail-property__key')).toHaveText(
+    'route · string'
+  )
   await expect(attribute.locator('.detail-property__type')).toHaveText('string')
   const fieldLayout = await attribute
     .locator('.detail-property__card')
@@ -1942,31 +1962,25 @@ test('series open by their headers, one at a time, with one combined table', asy
       const key = header
         .querySelector('.detail-property__key')!
         .getBoundingClientRect()
-      const badges = header
-        .querySelector('.detail-property__badges')!
+      const type = header
+        .querySelector('.detail-property__type')!
         .getBoundingClientRect()
       const copy = card
         .querySelector('.detail-property__header button')!
         .getBoundingClientRect()
       return {
         keyRight: key.right,
-        badgeLeft: badges.left,
+        typeInsideHeading: type.left >= key.left && type.right <= key.right,
         keyTop: key.top,
-        keyHeight: key.height,
         copyTop: copy.top,
-        copyHeight: copy.height,
-        copyRight: copy.right,
         copyLeft: copy.left,
         copyInset: header.getBoundingClientRect().right - copy.right,
       }
     })
-  expect(fieldLayout.badgeLeft).toBeGreaterThan(fieldLayout.keyRight)
-  expect(fieldLayout.copyLeft - fieldLayout.keyRight).toBeCloseTo(8, 0)
-  expect(fieldLayout.badgeLeft).toBeGreaterThanOrEqual(fieldLayout.copyRight)
-  expect(fieldLayout.copyTop + fieldLayout.copyHeight / 2).toBeCloseTo(
-    fieldLayout.keyTop + fieldLayout.keyHeight / 2,
-    0
-  )
+  expect(fieldLayout.typeInsideHeading).toBe(true)
+  expect(fieldLayout.copyLeft - fieldLayout.keyRight).toBeGreaterThanOrEqual(8)
+  expect(fieldLayout.copyInset).toBeCloseTo(0, 0)
+  expect(fieldLayout.copyTop).toBeCloseTo(fieldLayout.keyTop, 0)
   await expect(table).toContainText('/first')
   await expect(table.locator('tr[data-dp-id]')).toHaveCount(25)
   const datapoint = table.locator('tr[data-dp-id]').first()
@@ -1985,7 +1999,7 @@ test('series open by their headers, one at a time, with one combined table', asy
   await expect(datapoint).toHaveAttribute('aria-selected', 'true')
   const sticky = page.locator('.chart-sticky__card')
   await expect(sticky).toBeVisible()
-  await expect(sticky).toHaveCSS('pointer-events', 'none')
+  await expect(sticky).toHaveCSS('pointer-events', 'auto')
   expect(
     await sticky.evaluate(element => {
       const box = element.getBoundingClientRect()
@@ -1993,7 +2007,7 @@ test('series open by their headers, one at a time, with one combined table', asy
         box.x + box.width / 2,
         box.y + box.height / 2
       )
-      return !!hit && !element.contains(hit)
+      return !!hit && element.contains(hit)
     })
   ).toBe(true)
   const selectedMark = page.locator('.selection-dot--selected')
@@ -2063,7 +2077,7 @@ test('series open by their headers, one at a time, with one combined table', asy
   await expect(series.nth(0)).not.toContainText('service.name')
   const resource = fieldsBubble.locator('[data-field="service.name"]')
   await expect(resource.locator('.detail-property__key')).toHaveText(
-    'service.name'
+    'service.name · string'
   )
   await expect(resource.locator('.detail-property__origin')).toHaveText(
     'resource'
@@ -2254,7 +2268,7 @@ test('Copy metric stays in its heading and copies exact OTLP only for the select
   ).toBeLessThan(1)
   expect(
     headingBox.x + headingBox.width - copyBox.x - copyBox.width
-  ).toBeCloseTo(16, 0)
+  ).toBeCloseTo(12, 0)
   await heading.getByText('Metric', { exact: true }).click()
   await expect(bubble.locator('details')).not.toHaveAttribute('open')
   await expect(copy).toBeVisible()
