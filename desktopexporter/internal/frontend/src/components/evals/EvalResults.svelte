@@ -83,9 +83,9 @@
   const completionLegend: LegendEntry[] = [
     { label: 'Complete', tone: 'complete' },
     { label: 'In progress', tone: 'running' },
-    { label: 'Planned', tone: 'neutral' },
     { label: 'Span error', tone: 'error' },
     { label: 'Internal fault', tone: 'papaya' },
+    { label: 'Planned', tone: 'neutral' },
   ]
   let caseGutterWidth = $state(0)
   let repGutterWidth = $state(0)

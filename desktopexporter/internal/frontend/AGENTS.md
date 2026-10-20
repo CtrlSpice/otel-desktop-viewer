@@ -215,7 +215,7 @@
   Highlight Medium selection background and Highlight Low on hover. Multiple
   groups can remain active together.
   The results header legend always describes execution statuses: Complete,
-  In progress, Planned, Span error and Internal fault. It does not switch to
+  In progress, Span error, Internal fault and Planned, in that order. It does not switch to
   assessment outcomes or percentages when Results columns are shown.
   Its Duration column uses bounded referenced trace views and shared waterfall
   bars/colours/connectors. Keep received parent IDs intact when compressing
