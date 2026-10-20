@@ -1,10 +1,5 @@
 <script module lang="ts">
   export type TimeAxisTick = { offsetPercent: number; label: string }
-  export type TimeAxisGuide = { offsetPercent: number; major: boolean }
-  export type WaterfallGridLayout = {
-    widthPx: number
-    guides: { offsetPx: number; major: boolean }[]
-  }
 
   export type TimeAxisResult = {
     unit: string
@@ -55,7 +50,6 @@
     unit: string
     intervalNs: bigint
     ticks: TimeAxisTick[]
-    guides: TimeAxisGuide[]
   }
 
   // Round a raw interval to a "nice" human-friendly step size.
@@ -127,23 +121,6 @@
     }
   }
 
-  function gridDivisions(intervalNs: bigint): bigint {
-    return intervalNs % 4n === 0n ? 4n : intervalNs % 2n === 0n ? 2n : 1n
-  }
-
-  function gridGuides(durationNs: bigint, intervalNs: bigint): TimeAxisGuide[] {
-    // Quarter-interval guides, using fewer divisions at whole-nanosecond limits.
-    const divisions = gridDivisions(intervalNs)
-    return collectTickPositions(
-      durationNs,
-      intervalNs / divisions,
-      MAX_AXIS_TICKS * Number(divisions)
-    ).map(pos => ({
-      offsetPercent: offsetPercent(pos, durationNs),
-      major: pos % intervalNs === 0n,
-    }))
-  }
-
   // Two-pass unit selection for human-friendly tick labels.
   //
   // The naive approach picks the display unit from the trace duration:
@@ -173,7 +150,6 @@
         unit: 'ns',
         intervalNs: 1n,
         ticks: [{ offsetPercent: 0, label: '0ns' }],
-        guides: [{ offsetPercent: 0, major: true }],
       }
     }
 
@@ -200,23 +176,6 @@
       unit: displayUnit.name,
       intervalNs,
       ticks,
-      guides: gridGuides(traceDurationNs, intervalNs),
-    }
-  }
-
-  /** Keep guides inside the timeline without extending the time axis. */
-  export function waterfallGrid(
-    axis: WaterfallAxis,
-    plotWidthPx: number
-  ): WaterfallGridLayout {
-    const widthPx = Math.max(0, plotWidthPx)
-    if (plotWidthPx <= 0) return { widthPx, guides: [] }
-    return {
-      widthPx,
-      guides: axis.guides.map(guide => ({
-        offsetPx: (guide.offsetPercent * widthPx) / 100,
-        major: guide.major,
-      })),
     }
   }
 
@@ -264,7 +223,6 @@
     targetTickCount?: number
     tickLabelWidth?: number
     spanColWidth: number
-    barGrid: WaterfallGridLayout
     optionalColumns?: SizedWaterfallColumn[]
   }
 
@@ -273,7 +231,6 @@
     targetTickCount = 6,
     tickLabelWidth = 80,
     spanColWidth,
-    barGrid,
     optionalColumns = [],
   }: Props = $props()
 
@@ -315,7 +272,7 @@
   {/each}
   <th scope="col" class="waterfall-time-axis-header__th-ruler">
     <div class="waterfall-time-axis-header__ruler">
-      <WaterfallTimeRuler {axis} layout={barGrid} />
+      <WaterfallTimeRuler {axis} />
     </div>
   </th>
 </tr>

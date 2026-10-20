@@ -60,10 +60,6 @@
   --focus-ring-color: var(--color-primary);
   --item-hover-bg: var(--color-highlight-low);
   --item-selected-bg: var(--color-highlight-med);
-  --guide-dot-radius: 0.75px;
-  --guide-dot-color: var(--color-muted);
-  --guide-dot-opacity: 0.6;
-  --guide-dot-step: calc(var(--table-row-h) / 3);
   --resize-grip-length: 3rem;
   --resize-grip-thickness: 0.1875rem;
   /* Quick feedback, quiet fades, and a shared settle for moving surfaces. */
@@ -1396,20 +1392,6 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
 /* Indent nested rows (events/links children) */
 .detail-fields tr.table-row--nested .detail-cell {
   padding-left: calc(1rem + var(--waterfall-gutter-col, 0px));
-}
-
-/* Three equal intervals per span row, anchored at the bottom so ruler dots meet
-   the first row even when the header has a different height. */
-.dot-guide-vertical {
-  width: calc(2 * var(--guide-dot-radius));
-  background-image: radial-gradient(
-    circle,
-    var(--guide-dot-color) var(--guide-dot-radius),
-    transparent var(--guide-dot-radius)
-  );
-  background-size: 100% var(--guide-dot-step);
-  background-position: center calc(100% + var(--guide-dot-step) / 2);
-  opacity: var(--guide-dot-opacity);
 }
 
 /* ── Shared column-resize system ──

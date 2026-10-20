@@ -138,96 +138,8 @@ async function expectRoundedAxes(page: Page, colour: string) {
   await expect(axes).toHaveCSS('pointer-events', 'none')
   await expect(axes).toHaveAttribute('aria-hidden', 'true')
   await expect(page.locator('.metric-chart-view .lc-axis-rule')).toHaveCount(0)
-  const grid = page.locator('.metric-dot-grid')
-  await expect(grid).toHaveCount(1)
-  await expect(grid).toHaveAttribute('aria-hidden', 'true')
-  const dot = grid.locator('circle').first()
-  await expect(dot).toHaveCSS('fill', colour)
-  await expect(dot).toHaveCSS('stroke', 'none')
-  await expect(dot).toHaveCSS('r', '0.75px')
-  await expect(dot).toHaveCSS('pointer-events', 'none')
-  await expect(grid.locator('line')).toHaveCount(0)
-  await expect(grid.locator('.lc-axis-tick-label')).toHaveCount(0)
+  await expect(page.locator('.metric-dot-grid')).toHaveCount(0)
   await expect(page.locator('.metric-chart-view .lc-grid')).toHaveCount(0)
-  const snapshot = await grid.evaluate(element => {
-    const plot = element.closest('.metric-chart-view')!
-    const alignment = ['bottom', 'left'].map(placement => {
-      const coordinate = (graphic: SVGGraphicsElement, x: string, y: string) => {
-        const point = new DOMPoint(
-          Number(graphic.getAttribute(x)),
-          Number(graphic.getAttribute(y))
-        ).matrixTransform(graphic.getScreenCTM()!)
-        return placement === 'bottom' ? point.x : point.y
-      }
-      const guides = [...new Set([...element.querySelectorAll<SVGCircleElement>('circle')]
-        .map(dot => coordinate(dot, 'cx', 'cy')))].sort((a, b) => a - b)
-      const axis = plot.querySelector(`.lc-axis[data-placement="${placement}"]`)!
-      const ticks = [...axis.querySelectorAll<SVGGraphicsElement>('.lc-axis-tick')]
-        .map(tick => coordinate(tick, 'x1', 'y1')).sort((a, b) => a - b)
-      const cell = plot.querySelector<SVGRectElement>('.heatmap-cell')
-      const cellSize = cell && (placement === 'bottom'
-        ? cell.getBoundingClientRect().width : cell.getBoundingClientRect().height)
-      return { guides, ticks, cellSize }
-    })
-    return { alignment, count: element.querySelectorAll('circle').length }
-  })
-  const { alignment } = snapshot
-  for (const { guides, ticks, cellSize } of alignment) {
-    if (cellSize) {
-      for (const position of guides) {
-        const cellIndex = (position - guides[0]!) / cellSize
-        expect(cellIndex).toBeCloseTo(Math.round(cellIndex), 5)
-      }
-      continue
-    }
-    for (let index = 0; index < ticks.length - 1; index++) {
-      const start = guides.findIndex(value => Math.abs(value - ticks[index]!) < 0.001)
-      expect(start).toBeGreaterThanOrEqual(0)
-      for (let half = 0; half <= 2; half++) {
-        const expected = ticks[index]! + (ticks[index + 1]! - ticks[index]!) * half / 2
-        expect(guides[start + half]).toBeCloseTo(expected, 4)
-      }
-    }
-  }
-  expect(snapshot.count).toBe(
-    alignment[0]!.guides.length * alignment[1]!.guides.length
-  )
-  expect(await grid.locator('circle').evaluateAll(dots =>
-    dots.every(dot => getComputedStyle(dot).opacity === '0.6')
-  )).toBe(true)
-  expect(await grid.evaluate(element => {
-    const bounds = element.querySelector<SVGRectElement>('clipPath rect')!
-    const dots = [...element.querySelectorAll<SVGCircleElement>('circle')]
-    const xs = dots.map(dot => dot.cx.baseVal.value)
-    const ys = dots.map(dot => dot.cy.baseVal.value)
-    return Math.min(...xs) === 0 && Math.min(...ys) === 0 &&
-      Math.max(...xs) === bounds.width.baseVal.value &&
-      Math.max(...ys) === bounds.height.baseVal.value && dots.every(dot =>
-      dot.cx.baseVal.value >= 0 && dot.cx.baseVal.value <= bounds.width.baseVal.value &&
-      dot.cy.baseVal.value >= 0 && dot.cy.baseVal.value <= bounds.height.baseVal.value
-    )
-  })).toBe(true)
-  const layout = await grid.evaluate(element => {
-    const ancestors: Element[] = []
-    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
-      ancestors.push(parent)
-    }
-    const measure = () => ancestors.map(parent => ({
-      width: parent.scrollWidth, height: parent.scrollHeight,
-    }))
-    const before = measure()
-    const graphic = element as SVGGraphicsElement
-    graphic.style.display = 'none'
-    const withoutGrid = measure()
-    graphic.style.removeProperty('display')
-    return { before, withoutGrid }
-  })
-  expect(layout.before).toEqual(layout.withoutGrid)
-  expect(await grid.evaluate(element => {
-    const mark = element.closest('.metric-chart-view')!
-      .querySelector('.metric-series-line,.histogram-bar,.heatmap-blobs')!
-    return !!(element.compareDocumentPosition(mark) & Node.DOCUMENT_POSITION_FOLLOWING)
-  })).toBe(true)
 }
 
 test('time-series axes use the shared rounded Muted border', async ({ page }) => {
@@ -445,7 +357,7 @@ test.describe('independent histogram aggregate loading', () => {
     expect(page.url()).toBe(url)
   })
 
-  test('dense heatmaps join colours and halve guide density without changing cells', async ({ page }) => {
+  test('dense heatmaps join colours without changing cells or adding dot grids', async ({ page }) => {
     await page.setViewportSize({ width: 2400, height: 1000 })
     const pending = await holdAggregates(page)
     const aggregate = Array.from({ length: 81 }, (_, column) => ({
@@ -505,13 +417,7 @@ test.describe('independent histogram aggregate loading', () => {
       } else {
         await expect(page.locator('.heatmap-joined-outline')).toHaveCount(0)
       }
-      const guides = await page.locator('.metric-dot-grid').evaluate(element => {
-        const dots = [...element.querySelectorAll<SVGCircleElement>('circle')]
-        return { columns: new Set(dots.map(dot => dot.cx.baseVal.value)).size,
-          rows: new Set(dots.map(dot => dot.cy.baseVal.value)).size,
-          opacity: [...new Set(dots.map(dot => getComputedStyle(dot).opacity))] }
-      })
-      expect(guides).toEqual({ columns: joined ? 42 : 82, rows: joined ? 4 : 6, opacity: ['0.6'] })
+      await expect(page.locator('.metric-dot-grid')).toHaveCount(0)
     }
   })
 

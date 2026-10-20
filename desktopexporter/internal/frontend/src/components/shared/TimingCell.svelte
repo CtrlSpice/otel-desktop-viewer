@@ -1,10 +1,8 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
-  import WaterfallGrid from '@/components/traces/Waterfall/WaterfallGrid.svelte'
   import WaterfallTimeRuler from '@/components/traces/Waterfall/WaterfallTimeRuler.svelte'
   import {
     waterfallTimeAxis,
-    waterfallGrid,
   } from '@/components/traces/Waterfall/WaterfallTimeAxisHeader.svelte'
   let {
     maximum,
@@ -15,14 +13,11 @@
   const axis = $derived(
     waterfallTimeAxis(maximum, Math.max(1, Math.floor(width / 80)))
   )
-  const layout = $derived(waterfallGrid(axis, width))
 </script>
 
 <div class="timing-cell">
   <div class="timing-cell__plot" bind:clientWidth={width}>
-    {#if header}<WaterfallTimeRuler {axis} {layout} />{:else}<WaterfallGrid
-        {layout}
-      />{/if}
+    {#if header}<WaterfallTimeRuler {axis} />{/if}
   </div>
   <div class="timing-cell__value">{@render children?.()}</div>
 </div>

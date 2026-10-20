@@ -7,8 +7,6 @@
   import { formatDuration } from '@/utils/time'
   import TreeRowIdentity from '@/components/shared/TreeRowIdentity.svelte'
   import SpanBar from '@/components/shared/SpanBar.svelte'
-  import type { WaterfallGridLayout } from './WaterfallTimeAxisHeader.svelte'
-  import WaterfallGrid from './WaterfallGrid.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { BiohazardIcon } from '@hugeicons/core-free-icons'
   import TimelineMarkers from './TimelineMarkers.svelte'
@@ -26,7 +24,6 @@
 
   type Props = {
     row: WaterfallRowData
-    barGrid: WaterfallGridLayout
     selected: boolean
     tabbable: boolean
     visible: boolean
@@ -48,7 +45,6 @@
 
   let {
     row,
-    barGrid,
     selected,
     tabbable,
     visible,
@@ -221,7 +217,6 @@
           offsetPercent={row.offsetPercent}
           widthPercent={row.widthPercent}
         />
-        <WaterfallGrid layout={barGrid} />
         <span
           class="waterfall-row__bar-label"
           style:left="calc({row.offsetPercent + row.widthPercent}% +

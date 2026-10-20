@@ -143,24 +143,9 @@
   when needed. Continuations align under the key's first character (after its
   opening quote). Array strings wrap under their own first character.
   Wrapping is display-only; preserve document text, Copy and Download.
-  Waterfall and metric guides share dot radius and 60% opacity through the
-  --guide-dot-* CSS tokens. Every guide dot uses Muted at 60%, including edges
-  and labelled and unlabelled waterfall guides.
-  Add three unlabelled guides between labelled guides, dividing each interval
-  into quarters. Use fewer divisions when needed to retain whole nanoseconds.
-  Keep label spacing independent of these guides; ruler and rows align.
-  Paint the waterfall grid behind span bars, labels and activity markers.
-  Waterfall dots align to time ticks and span-row
-  boundaries, with two equally spaced dot rows inside each span row to divide
-  it into thirds. Its ruler uses --table-header-h and meets the first span row
-  without an extra border or gap. Graph spacing follows axes, not JSON character spacing.
-  Clip waterfall dots at the timeline's right edge and stop at the final span row;
-  do not extend them into the right gutter or below the table.
-  Omit waterfall grid dots when the trace contains exactly one span. Use the
-  trace's span count, not the number of rows visible after collapsing/filtering.
-  Keep the first column's dots whole, with the original half-dot allowance to
-  the left of their centres. Keep ruler/row positions aligned without
-  changing time labels, data bounds, span geometry or scrolling.
+  No decorative dot grids anywhere, including waterfall timing and all metric
+  charts. Retain ruler labels, axis ticks, tree connectors and meaningful data
+  markers. Keep data bounds, span geometry, chart cells and scrolling intact.
   Column and panel resizing share a short 3rem by 0.1875rem grip, rotated for
   horizontal dividers. Hide it at rest; show Text on hover and Iris on keyboard
   focus or drag at full opacity. Preserve full hit strips and keyboard controls.
@@ -268,31 +253,15 @@
   needed to distinguish adjacent bounds. Counts use whole grouped integers.
   Keep the received unit separate; do not append standalone SI-prefix suffixes
   or convert received values/units. These are display rules only.
-   All metric line/histogram/heatmap charts use a full dot grid behind data.
-   Line charts and histograms anchor dots to visible X/Y ticks with two equal
-   subdivisions of each labelled
-   interval on both axes. Put a dot at every X/Y intersection; do not draw
-   independently dotted lines or force square cells. Continue the nearest
-   interval's spacing within the plot edges; do not add dots beyond the plot.
-   Add dot rows/columns exactly on all four plot boundaries, retaining existing
-   label-aligned dots and midpoints; the edge gaps can be shorter.
-   Every dot uses 60% opacity, including edges and corners.
-   Clip decoration to the plot bounds without
-   changing data bounds, plot size or scrolling. Reuse visible-axis options for tick
-   calculation, including heatmap tick filtering, and add no duplicate labels.
    Heatmap labels use the line charts' 80px X / 50px Y spacing targets instead
    of a fixed seven-label limit. Select labels from existing time columns and
    bucket rows; preserve exponential-bucket identities, bounds, counts and layout.
-   Heatmap dots follow cell boundaries instead of centred label ticks. Use every
-   boundary, switching both axes to every second boundary when either rendered
-   cell dimension is below 12px. Include both plot edges when the cell count is
-   odd. Labels remain centred. At this same threshold, join neighbouring occupied
+   Heatmap labels remain centred. When either cell dimension is below 12px, join neighbouring occupied
    cells across colour bands and round only their shared outer boundaries.
    Keep each cell's count colour and preserve empty buckets and holes.
    Joined shapes retain the existing density-scaled border around their shared
    perimeter and holes, following each cell's colour without internal borders.
-   Match the shared guide tokens: 1.5px Muted dots, with the opacity rules above.
-   Do not retain separate solid-grid or theme-specific grid styling.
+   Do not add decorative grid styling.
   Histogram/heatmap count legends sit on the left of the chart header's lower
   row, replacing the displayed chart time range. Keep chart tabs/controls on the
   right and retain the global time-range selector. At the regular 14px size,

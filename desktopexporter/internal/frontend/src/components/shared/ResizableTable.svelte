@@ -334,8 +334,8 @@
     inset-inline: 0;
     top: 0;
     height: 1px;
-    background-color: var(--guide-dot-color);
-    opacity: var(--guide-dot-opacity);
+    background-color: var(--color-muted);
+    opacity: 0.6;
     pointer-events: none;
     z-index: 3;
   }

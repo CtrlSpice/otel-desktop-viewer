@@ -1,5 +1,4 @@
 <script lang="ts">
-  import MetricDotGrid from './MetricDotGrid.svelte'
   import ChartOverlayLabel from './ChartOverlayLabel.svelte'
   import { createOverlayEmphasis } from '@/components/metrics/utils/overlay-emphasis.svelte'
 
@@ -666,9 +665,7 @@
               highlight={{ area: { class: 'histogram-hover-column' } }}
               props={chartAxes}
             >
-              {#snippet grid()}
-                <MetricDotGrid xAxis={chartAxes.xAxis} yAxis={chartAxes.yAxis} />
-              {/snippet}
+              {#snippet grid()}{''}{/snippet}
               {#snippet marks()}
                 {#each barGeometry as bar (bar.bucket.key)}
                   <g

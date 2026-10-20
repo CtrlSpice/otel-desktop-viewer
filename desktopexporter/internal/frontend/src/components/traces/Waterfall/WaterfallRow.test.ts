@@ -73,7 +73,6 @@ function renderRow(
   return render(WaterfallRowHarness, {
     props: {
       row,
-      barGrid: { widthPx: 512, guides: [] },
       selected: false,
       tabbable: false,
       visible: true,

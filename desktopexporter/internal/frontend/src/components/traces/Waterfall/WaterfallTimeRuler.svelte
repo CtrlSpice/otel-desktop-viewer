@@ -1,15 +1,12 @@
 <script lang="ts">
   import type {
     WaterfallAxis,
-    WaterfallGridLayout,
   } from './WaterfallTimeAxisHeader.svelte'
-  import WaterfallGrid from './WaterfallGrid.svelte'
-  let { axis, layout }: { axis: WaterfallAxis; layout: WaterfallGridLayout } =
+  let { axis }: { axis: WaterfallAxis } =
     $props()
 </script>
 
 <div class="waterfall-time-ruler">
-  <WaterfallGrid {layout} />
   {#each axis.ticks as tick}
     <div
       class="waterfall-time-ruler__tick"
@@ -24,9 +21,6 @@
   @reference "../../../app.css";
   .waterfall-time-ruler {
     @apply absolute inset-0 min-w-0;
-  }
-  .waterfall-time-ruler :global(.waterfall-grid) {
-    top: calc(var(--primary-label-center, 50%) + 0.5lh);
   }
   .waterfall-time-ruler__tick {
     @apply absolute bottom-0 h-full;

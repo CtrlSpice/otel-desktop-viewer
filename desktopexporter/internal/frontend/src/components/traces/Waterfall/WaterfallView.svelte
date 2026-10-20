@@ -234,7 +234,6 @@
   import { UnfoldMoreIcon, UnfoldLessIcon } from '@hugeicons/core-free-icons'
   import WaterfallTimeAxisHeader, {
     waterfallTimeAxis,
-    waterfallGrid,
   } from './WaterfallTimeAxisHeader.svelte'
   import WaterfallRow from './WaterfallRow.svelte'
   import WaterfallColumnsPicker from './WaterfallColumnsPicker.svelte'
@@ -659,15 +658,6 @@
       }) ?? TICK_COUNT_STEPS[0]
     )
   })
-
-  let barGrid = $derived(
-    spans.length === 1
-      ? { widthPx: timelinePlotPx, guides: [] }
-      : waterfallGrid(
-          waterfallTimeAxis(bounds.duration, targetTickCount),
-          timelinePlotPx
-        )
-  )
 
   let matchedIDs = $derived(
     new Set(spans.filter(n => n.matched).map(n => n.spanData.spanID))
@@ -1211,7 +1201,6 @@
         >
           <thead class="header-surface waterfall-view__thead">
             <WaterfallTimeAxisHeader
-              {barGrid}
               traceDurationNs={bounds.duration}
               {targetTickCount}
               tickLabelWidth={TICK_LABEL_SLOT_PX}
@@ -1242,7 +1231,6 @@
               {@const sid = row.spanNode.spanData.spanID}
               <WaterfallRow
                 {row}
-                {barGrid}
                 selected={sid === selectedSpanID}
                 tabbable={sid === keyboardAnchorID}
                 visible={true}

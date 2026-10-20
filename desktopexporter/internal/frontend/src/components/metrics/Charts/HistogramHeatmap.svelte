@@ -1,7 +1,6 @@
 <script lang="ts">
   import ChartOverlayLabel from './ChartOverlayLabel.svelte'
   import MetricAxes from './MetricAxes.svelte'
-  import MetricDotGrid from './MetricDotGrid.svelte'
   import { createOverlayEmphasis } from '@/components/metrics/utils/overlay-emphasis.svelte'
 
   import ChartSticky from '@/components/metrics/Charts/ChartSticky.svelte'
@@ -623,7 +622,6 @@
             tooltipContext={{ mode: 'band' }}
           >
             <Layer>
-              <MetricDotGrid xAxis={chartAxes.xAxis} yAxis={chartAxes.yAxis} cellEdges cellStride={blobDetail.joinColours ? 2 : 1} />
               <Axis
                 placement="bottom"
                 {...chartAxes.xAxis}
