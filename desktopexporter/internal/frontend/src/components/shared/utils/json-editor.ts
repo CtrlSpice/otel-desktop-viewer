@@ -4,12 +4,14 @@ import { json } from '@codemirror/lang-json'
 import {
   codeFolding,
   foldKeymap,
+  foldGutter,
   syntaxHighlighting,
 } from '@codemirror/language'
 import { search, searchKeymap } from '@codemirror/search'
 import { editorHighlightStyle } from './editor-highlighting'
 import { jsonWrapping } from './json-wrapping'
 import { jsonGuides } from './json-guides'
+import { createJsonFoldCaret } from './json-fold-caret'
 
 /** One read-only configuration shared by all JSON detail editors. */
 export const jsonEditorExtensions = [
@@ -20,6 +22,16 @@ export const jsonEditorExtensions = [
   jsonGuides,
   syntaxHighlighting(editorHighlightStyle),
   codeFolding(),
+  foldGutter({
+    markerDOM(open) {
+      const marker = document.createElement('span')
+      marker.className = 'json-fold-marker'
+      marker.title = open ? 'Fold line' : 'Unfold line'
+      marker.dataset.open = String(open)
+      marker.append(createJsonFoldCaret())
+      return marker
+    },
+  }),
   search({ top: true }),
   keymap.of([...searchKeymap, ...foldKeymap]),
   EditorView.theme({
@@ -36,6 +48,27 @@ export const jsonEditorExtensions = [
     },
     '.cm-content': { padding: '0' },
     '.cm-line': { paddingLeft: '0' },
+    '.cm-gutters': {
+      backgroundColor: 'transparent',
+      border: 'none',
+      color: 'var(--color-subtle)',
+    },
+    '.cm-foldGutter .cm-gutterElement': { padding: '0' },
+    '.json-fold-marker': {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: 'var(--waterfall-gutter-col)',
+      height: '1lh',
+      cursor: 'pointer',
+    },
+    '.json-fold-marker:hover': {
+      backgroundColor: 'var(--color-highlight-low)',
+    },
+    '.json-fold-icon': { width: '1em', height: '1em' },
+    '.json-fold-marker[data-open="true"] .json-fold-icon': {
+      transform: 'rotate(90deg)',
+    },
     '.cm-foldPlaceholder': {
       backgroundColor: 'transparent',
       border: 'none',

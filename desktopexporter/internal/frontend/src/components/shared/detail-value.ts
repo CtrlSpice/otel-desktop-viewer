@@ -6,26 +6,41 @@ export type ValueToken = {
   type?: AttributeValue['kind']
 }
 
-/** Colour bounded display summaries without parsing or changing their text. */
-export function compactValueTokens(text: string): ValueToken[] {
+/** Colour bounded previews; optionally decode embedded container strings for display. */
+export function compactValueTokens(
+  text: string,
+  expandStrings = false
+): ValueToken[] {
   const parts = text.matchAll(
-    /"(?:[^"\\]|\\.)*"|[^{}[\],:"\s][^{}[\],:"]*(?=: )|[{}[\],:]|\s+|[^{}[\],:"\s]+|"/g
+    /"(?:[^"\\]|\\.)*(?:"|$)|[^{}[\],:"\s][^{}[\],:"]*(?=: )|[{}[\],:]|\s+|[^{}[\],:"\s]+|"/g
   )
-  return Array.from(parts, part => {
+  return Array.from(parts).flatMap((part): ValueToken[] => {
     const lexeme = part[0]
     const key = /^\s*:/.test(text.slice(part.index + lexeme.length))
-    return {
-      text: lexeme,
-      kind: key
-        ? 'key'
-        : lexeme.startsWith('"')
-          ? 'string'
-          : /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(lexeme)
-            ? 'number'
-            : /^(true|false|null)$/.test(lexeme)
-              ? 'literal'
-              : 'punctuation',
+    if (expandStrings && !key && lexeme.startsWith('"')) {
+      try {
+        const decoded = JSON.parse(lexeme) as string
+        // Server previews can end inside a container. Tokenize that prefix as
+        // a preview, without inventing missing closing quotes or brackets.
+        if (/^\s*[[{]/.test(decoded)) return compactValueTokens(decoded, true)
+      } catch {
+        // An incomplete quoted token stays as received.
+      }
     }
+    return [
+      {
+        text: lexeme,
+        kind: key
+          ? 'key'
+          : lexeme.startsWith('"')
+            ? 'string'
+            : /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(lexeme)
+              ? 'number'
+              : /^(true|false|null)$/.test(lexeme)
+                ? 'literal'
+                : 'punctuation',
+      },
+    ]
   })
 }
 

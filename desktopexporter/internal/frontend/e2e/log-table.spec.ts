@@ -662,6 +662,107 @@ test('column groups toggle together and retain the final required column', async
   expect(childX - groupX).toBe(24)
 })
 
+test('embedded JSON previews are coloured and Details wraps at keys with working fold carets', async ({
+  page,
+}) => {
+  const inner = JSON.stringify({
+    path: '/recorded/configuration/'.repeat(12) + 'config.jsonc',
+  })
+  const body: JsonAttributeValue = {
+    kind: 'array',
+    value: [
+      { kind: 'string', value: 'loading' },
+      { kind: 'string', value: inner },
+    ],
+  }
+  const preview = `["loading", ${JSON.stringify(inner.slice(0, 48) + '…')}]`
+  await page.route('**/rpc', async route => {
+    const { id, method } = route.request().postDataJSON()
+    if (method === 'getLog')
+      return route.fulfill({
+        json: { jsonrpc: '2.0', id, result: { ...logs[0], body } },
+      })
+    if (method === 'searchLogPage')
+      return route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            total: 1,
+            logs: [
+              {
+                logRef: firstID,
+                timestamp: logs[0].observedTimestamp,
+                severityText: 'ERROR',
+                severityNumber: 17,
+                serviceName: 'api',
+                bodyPreview: preview,
+                bodyType: 'array',
+                eventName: '',
+              },
+            ],
+          },
+        },
+      })
+    return route.fallback()
+  })
+  await page.reload()
+  const cell = page.locator(
+    `[data-log-ref="${firstID}"] .log-table__cell--body`
+  )
+  await expect(cell).not.toContainText('\\"')
+  await expect(cell.locator('.detail-code--key')).toHaveText('"path"')
+  await expect(cell).toContainText('…')
+  await expect(cell.locator('.cm-editor')).toHaveCount(0)
+  const bodyField = page.locator('[data-field="body"]')
+  const editor = bodyField.locator('.cm-editor')
+  for (const width of [320, 480]) {
+    await editor.evaluate(
+      (element, width) => (element.style.maxWidth = `${width}px`),
+      width
+    )
+    await expect
+      .poll(() =>
+        editor.evaluate(element => {
+          const line = [...element.querySelectorAll('.cm-line')].find(line =>
+            line.textContent?.includes('"path"')
+          )!
+          const key = [...line.children].find(
+            span => span.textContent === '"path"'
+          )!
+          const value = [...line.children].find(span =>
+            span.textContent?.startsWith('"/recorded')
+          )!
+          const range = document.createRange()
+          range.setStart(key.firstChild!, 1)
+          range.setEnd(key.firstChild!, 2)
+          const anchor = range.getBoundingClientRect()
+          const rects = [...value.getClientRects()]
+          return (
+            rects.length > 1 &&
+            Math.abs(rects[0].y - anchor.y) < 1 &&
+            rects.slice(1).every(rect => Math.abs(rect.x - anchor.x) < 1)
+          )
+        })
+      )
+      .toBe(true)
+  }
+  await bodyField.locator('.cm-foldGutter [title="Fold line"]').nth(1).click()
+  await expect(bodyField.locator('.cm-foldPlaceholder')).toHaveText('…')
+  await expect(bodyField.locator('.cm-content')).not.toContainText('"path"')
+  await bodyField
+    .locator('.cm-foldGutter [title="Unfold line"]:visible')
+    .click()
+  await expect(bodyField.locator('.cm-content')).toContainText('"path"')
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  await bodyField
+    .getByRole('button', { name: 'Copy body', exact: true })
+    .click()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    JSON.stringify(['loading', inner], null, 2)
+  )
+})
+
 test('structured previews have static syntax colours and Details folds Body and agent attributes', async ({
   page,
 }) => {

@@ -644,8 +644,8 @@
                             time.tz,
                             'milliseconds'
                           )
-                            .value}{:else if column.id === 'body' && (log.bodyType === 'map' || log.bodyType === 'array')}<ValueSyntax
-                            tokens={compactValueTokens(log.bodyPreview)}
+                            .value}{:else if column.id === 'body' && (log.bodyType === 'map' || log.bodyType === 'array' || /^\s*[[{]/.test(log.bodyPreview))}<ValueSyntax
+                            tokens={compactValueTokens(log.bodyPreview, true)}
                           />{:else if column.identifier && cell?.present}<Identifier
                             value={cell.text}
                           />{:else}{text(log, column)}{/if}{/snippet}

@@ -11,8 +11,9 @@ function stringIndents(view: EditorView) {
       from,
       to,
       enter(node) {
-        // PropertyName is a separate node: only indent under string values.
-        if (node.name !== 'String') return
+        // Object values wrap under the key's first character. Standalone array
+        // strings wrap under their own first character, after the opening quote.
+        if (node.name !== 'PropertyName' && node.name !== 'String') return
         const line = state.doc.lineAt(node.from)
         if (!columns.has(line.from)) {
           const prefix = state.doc.sliceString(line.from, node.from + 1)
@@ -56,6 +57,7 @@ export const jsonWrapping = [
     '.cm-line.json-string-line': {
       paddingLeft: 'var(--json-string-indent)',
       textIndent: 'calc(-1 * var(--json-string-indent))',
+      wordBreak: 'break-all',
     },
   }),
 ]

@@ -11,6 +11,34 @@ import {
 import type { AttributeValue } from '@/types/api-types'
 
 describe('detail value formatting', () => {
+  it('decodes bounded embedded-JSON previews without inventing their missing suffix', () => {
+    const inner = '{"path":"/recorded/long/path…'
+    const preview = `["loading", ${JSON.stringify(inner)}]`
+    const tokens = compactValueTokens(preview, true)
+    expect(tokens.map(token => token.text).join('')).toBe(
+      `["loading", ${inner}]`
+    )
+    expect(tokens.find(token => token.kind === 'key')?.text).toBe('"path"')
+    expect(
+      tokens.filter(token => token.kind === 'string').map(token => token.text)
+    ).toEqual(['"loading"', '"/recorded/long/path…'])
+    expect(
+      compactValueTokens(preview)
+        .map(token => token.text)
+        .join('')
+    ).toBe(preview)
+  })
+
+  it('retains plain-string escapes, quoted keys and exact numbers in coloured previews', () => {
+    const preview =
+      '{"{\\"key\\":1}": "C:\\\\temp", "n": 9223372036854775807, "z": -0}'
+    expect(
+      compactValueTokens(preview, true)
+        .map(token => token.text)
+        .join('')
+    ).toBe(preview)
+  })
+
   it('formats JSON strings inside typed arrays and maps only for display', () => {
     const inner =
       '{"path":"/recorded/config.jsonc","n":9007199254740993,"n":-0}'

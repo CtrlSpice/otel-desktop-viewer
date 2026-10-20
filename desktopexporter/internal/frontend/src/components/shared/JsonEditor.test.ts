@@ -25,7 +25,7 @@ describe('JsonEditor', () => {
     )
     expect(container.querySelector('.cm-lineNumbers')).toBeNull()
     expect(container.querySelector('.json-indent-bands')).toBeNull()
-    expect(container.querySelector('.cm-foldGutter')).toBeNull()
+    expect(container.querySelector('.cm-foldGutter')).not.toBeNull()
   })
 
   it('uses CodeMirror’s ellipsis placeholders and leaves the full document intact', () => {

@@ -128,13 +128,16 @@
   bg-base-100: darkest in Pine/Moon, brightest in Dawn. Apply this to JSON,
   shell examples, code snippets, compact JSON, query inputs and filter searches.
   Keep header surfaces separate; retain shared hover and selection highlights.
-  Structured attribute wrappers add no extra left padding. JSON has no fold-arrow
-  gutter; retain existing folding commands and raw-inspector controls. The current
+  Structured attribute wrappers add no extra left padding. JSON uses the shared
+  Hugeicons fold-caret gutter; retain existing folding commands and raw-inspector
+  controls. The current
   notebook-guide trial uses 1.5px Muted dots at 60% opacity in all themes,
   in leading indentation
   only, spaced 2ch horizontally and one text line vertically. Place dots on text
   row boundaries (top/bottom), not at the middle of each row. JSON stays Mono.
-  JSON strings soft-wrap with continuation text aligned after the opening quote.
+  JSON strings start beside their field key and soft-wrap under the key's first
+  character (after its opening quote). Array strings wrap under their own first
+  character.
   Wrapping and guides are display-only; preserve document text, Copy and Download.
   JSON, waterfall and metric guides share dot radius and 60% opacity through the
   --guide-dot-* CSS tokens. Every guide dot uses Muted at 60%, including edges
