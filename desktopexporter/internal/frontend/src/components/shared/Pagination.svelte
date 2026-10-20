@@ -220,11 +220,10 @@
   }
   .pagination__page-number {
     width: auto;
-    height: auto;
+    height: var(--size);
     min-width: var(--size);
     min-height: var(--size);
-    aspect-ratio: 1;
-    padding-inline: 0.5rem;
+    padding-inline: 0.375rem;
   }
   .pagination__summary {
     @apply text-xs text-base-content;
