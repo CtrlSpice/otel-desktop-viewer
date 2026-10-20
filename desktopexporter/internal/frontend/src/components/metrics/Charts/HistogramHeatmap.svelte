@@ -179,20 +179,6 @@
     )
   )
 
-  let visibleBucketTicks = $derived.by(() => {
-    const n = bucketDomain.length
-    if (n <= 8) return bucketDomain
-    const step = Math.ceil(n / 7)
-    return bucketDomain.filter((_, i) => i % step === 0)
-  })
-
-  let visibleTimeTicks = $derived.by(() => {
-    const n = timeDomain.length
-    if (n <= 8) return timeDomain
-    const step = Math.ceil(n / 7)
-    return timeDomain.filter((_, i) => i % step === 0)
-  })
-
   let heatmapCountByCell = $derived(heatmapModel.countByColumn)
 
   let selectedColumnKey = $derived.by(() => {
@@ -560,8 +546,8 @@
     return bucketLabelByKey.get(key) ?? key
   }
   let chartAxes = $derived({
-    xAxis: { ...axisTime(timeContext.tz), ticks: visibleTimeTicks, format: formatTimeTick },
-    yAxis: { ...axisBucketBounds(unit), ticks: visibleBucketTicks, format: formatBucketTick },
+    xAxis: { ...axisTime(timeContext.tz), tickSpacing: 80, format: formatTimeTick },
+    yAxis: { ...axisBucketBounds(unit), tickSpacing: 50, format: formatBucketTick },
   })
 </script>
 

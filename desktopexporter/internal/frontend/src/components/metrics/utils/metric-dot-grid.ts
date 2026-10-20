@@ -51,22 +51,15 @@ export function metricDotPositions(ticks: readonly number[], size: number): numb
   return positions.filter(value => value >= 0 && value <= size)
 }
 
-/** Continue one step past the chosen edge, fading its three outer positions. */
+/** Add plot-boundary anchors without moving label-aligned dots; dim one edge. */
 export function metricDotGuides(
   ticks: readonly number[], size: number, edge: 'start' | 'end'
 ) {
-  const positions = metricDotPositions(ticks, size)
-  if (positions.length < 2) return positions.map(position => ({ position, opacity: 1 }))
-
-  if (edge === 'start') {
-    const first = positions[0]!
-    positions.unshift(first - (positions[1]! - first))
-  } else {
-    const last = positions.at(-1)!
-    positions.push(last + (last - positions.at(-2)!))
-  }
+  const interior = metricDotPositions(ticks, size)
+  if (interior.length === 0) return []
+  const positions = [...new Set([0, ...interior, size])].sort((a, b) => a - b)
   return positions.map((position, index) => ({
     position,
-    opacity: Math.min(1, (edge === 'start' ? index : positions.length - index - 1) / 3),
+    opacity: index === (edge === 'start' ? 0 : positions.length - 1) ? 0.5 : 1,
   }))
 }

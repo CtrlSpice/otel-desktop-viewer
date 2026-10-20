@@ -26,10 +26,8 @@
   <defs>
     <clipPath id={clipID}>
       <rect
-        x={-chart.padding.left}
-        y={-chart.padding.top}
-        width={chart.width + chart.padding.left + chart.padding.right}
-        height={chart.height + chart.padding.top + chart.padding.bottom}
+        width={chart.width}
+        height={chart.height}
       />
     </clipPath>
   </defs>
@@ -38,7 +36,7 @@
       <circle
         cx={column.position}
         cy={row.position}
-        style:opacity="calc(var(--guide-dot-opacity) * {row.opacity * column.opacity})"
+        style:opacity="calc(var(--guide-dot-opacity) * {Math.min(row.opacity, column.opacity)})"
       />
     {/each}
   {/each}

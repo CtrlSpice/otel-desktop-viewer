@@ -95,15 +95,22 @@ decorative and does not intercept pointer or keyboard input.
 Line charts, histograms and heatmaps share a full grid of 1.5px Muted dots at
 full opacity, behind data. Each labelled X/Y interval has two equal subdivisions,
 with a dot at every intersection. Cells need not be square. The nearest interval's
-spacing continues to the plot edges, plus one row above and one column to the
-right. The top three rows and rightmost three columns fade to transparent; the
-top-right combines both fades. The bottom does not fade. Decoration stays inside
-existing chart margins without changing plot
+spacing continues within the plot edges without adding dots beyond the plot.
+Dot rows/columns on all four plot boundaries fill the edge gaps without moving
+existing label-aligned dots or their midpoints. The edge gaps can be shorter.
+Only the outermost top row and rightmost column use 50% opacity, including
+their shared corner; all other dots stay at full opacity. Decoration stays inside
+the plot bounds without changing plot
 size, data bounds or scrolling. Tick positions include filtered heatmap
 ticks; the grid adds no labels. Dot size, colour and opacity use the shared
 `--guide-dot-*` tokens.
+Heatmap label density responds to plot size with the line charts' 80px horizontal
+and 50px vertical spacing targets. Labels are selected from existing time columns
+and bucket rows; bucket identities, bounds, counts and geometry stay unchanged.
 Histogram and heatmap count legends replace the displayed time range on the
-left of the header's lower row. Entries wrap at the regular working text size;
+left of the header's lower row. Entries wrap by halves at the regular working
+text size: 12 entries become 6+6, then 3+3+3+3 as available width decreases.
+Odd counts are balanced across rows; labels stay whole and in count order.
 chart controls remain on the right and the global time selector remains available.
 Count-range markers are plain 8px round dots without borders or outlines;
 numeric ranges retain the meaning independently of colour.

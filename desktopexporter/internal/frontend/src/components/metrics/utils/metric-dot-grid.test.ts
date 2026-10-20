@@ -66,28 +66,36 @@ describe('metricAxisTickPositions', () => {
 })
 
 describe('metricDotGuides', () => {
-  it('adds exactly one position past the plot and fades only the final three', () => {
+  it('keeps positions inside the plot, with only the rightmost at 50%', () => {
     const guides = metricDotGuides([0, 40, 80], 80, 'end')
-    expect(guides.map(guide => guide.position)).toEqual([0, 20, 40, 60, 80, 100])
-    expect(guides.map(guide => guide.opacity)).toEqual([1, 1, 1, 2 / 3, 1 / 3, 0])
+    expect(guides.map(guide => guide.position)).toEqual([0, 20, 40, 60, 80])
+    expect(guides.map(guide => guide.opacity)).toEqual([1, 1, 1, 1, 0.5])
   })
 
-  it('uses the final interval spacing without moving an unaligned plot edge', () => {
+  it('adds boundary anchors to uneven edge gaps without moving the existing dots', () => {
     const guides = metricDotGuides([18, 58, 138], 160, 'end')
-    expect(guides.map(guide => guide.position)).toEqual([18, 38, 58, 98, 138, 178])
-    expect(guides.at(-1)!.opacity).toBe(0)
+    expect(guides.map(guide => guide.position)).toEqual([0, 18, 38, 58, 98, 138, 160])
+    expect(guides.at(-1)!.opacity).toBe(0.5)
   })
 
-  it('does not invent spacing or hide a lone labelled position', () => {
+  it('retains a lone label between boundary anchors and leaves an empty axis empty', () => {
     expect(metricDotGuides([], 80, 'start')).toEqual([])
-    expect(metricDotGuides([40], 80, 'start')).toEqual([{ position: 40, opacity: 1 }])
+    expect(metricDotGuides([40], 80, 'start')).toEqual([
+      { position: 0, opacity: 0.5 },
+      { position: 40, opacity: 1 },
+      { position: 80, opacity: 1 },
+    ])
     expect(metricDotGuides([], 80, 'end')).toEqual([])
-    expect(metricDotGuides([40], 80, 'end')).toEqual([{ position: 40, opacity: 1 }])
+    expect(metricDotGuides([40], 80, 'end')).toEqual([
+      { position: 0, opacity: 1 },
+      { position: 40, opacity: 1 },
+      { position: 80, opacity: 0.5 },
+    ])
   })
 
-  it('extends and fades the top instead of the bottom for row guides', () => {
+  it('sets only the top row inside the plot to 50%, not the bottom or other rows', () => {
     const guides = metricDotGuides([80, 40, 0], 80, 'start')
-    expect(guides.map(guide => guide.position)).toEqual([-20, 0, 20, 40, 60, 80])
-    expect(guides.map(guide => guide.opacity)).toEqual([0, 1 / 3, 2 / 3, 1, 1, 1])
+    expect(guides.map(guide => guide.position)).toEqual([0, 20, 40, 60, 80])
+    expect(guides.map(guide => guide.opacity)).toEqual([0.5, 1, 1, 1, 1])
   })
 })

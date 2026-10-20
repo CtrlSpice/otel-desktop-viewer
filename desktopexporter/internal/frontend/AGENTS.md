@@ -232,18 +232,26 @@
    anchored to visible X/Y ticks with two equal subdivisions of each labelled
    interval on both axes. Put a dot at every X/Y intersection; do not draw
    independently dotted lines or force square cells. Continue the nearest
-   interval's spacing to plot edges, then add one dot row above and one column
-   to the right. Fade the top three rows and rightmost three columns to
-   transparent; combine both fades at the top-right. Do not fade the bottom.
-   Clip decoration to existing chart margins without
+   interval's spacing within the plot edges; do not add dots beyond the plot.
+   Add dot rows/columns exactly on all four plot boundaries, retaining existing
+   label-aligned dots and midpoints; the edge gaps can be shorter.
+   Only the outermost top row and rightmost column use 50% opacity,
+   including their shared corner. All other dots stay at full opacity.
+   Clip decoration to the plot bounds without
    changing data bounds, plot size or scrolling. Reuse visible-axis options for tick
    calculation, including heatmap tick filtering, and add no duplicate labels.
+   Heatmap labels use the line charts' 80px X / 50px Y spacing targets instead
+   of a fixed seven-label limit. Select labels from existing time columns and
+   bucket rows; preserve exponential-bucket identities, bounds, counts and layout.
    Match the shared guide tokens: 1.5px Muted dots at full opacity.
    Do not retain separate solid-grid or theme-specific grid styling.
   Histogram/heatmap count legends sit on the left of the chart header's lower
   row, replacing the displayed chart time range. Keep chart tabs/controls on the
-  right and retain the global time-range selector. Legend entries flow inline
-  and wrap at the regular 14px size; do not keep a separate legend above the plot.
+  right and retain the global time-range selector. At the regular 14px size,
+  legend rows wrap by halving their capacity until they fit the measured width:
+  12 entries become 6+6, then 3+3+3+3. Balance odd counts across rows rather than
+  leaving a lone last item when balanced rows fit. Keep count order and whole
+  labels; do not keep a separate legend above the plot.
   Use plain 8px colour dots beside numeric count ranges, without borders or outlines.
 
 - Display opaque identifiers with the shared `Identifier.svelte` component, which

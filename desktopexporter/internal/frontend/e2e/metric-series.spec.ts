@@ -185,16 +185,30 @@ async function expectRoundedAxes(page: Page, colour: string) {
     const columns = [...new Set(dots.map(dot => dot.cx.baseVal.value))].sort((a, b) => a - b)
     const rows = [...new Set(dots.map(dot => dot.cy.baseVal.value))].sort((a, b) => a - b)
     const opacity = (positions: number[], position: number, edge: 'start' | 'end') => {
-      if (positions.length === 1) return 1
       const index = positions.indexOf(position)
-      return Math.min(1, (edge === 'start' ? index : positions.length - index - 1) / 3)
+      return index === (edge === 'start' ? 0 : positions.length - 1) ? 0.5 : 1
     }
     return dots.map(dot => ({
       actual: Number(getComputedStyle(dot).opacity),
-      expected: opacity(columns, dot.cx.baseVal.value, 'end') * opacity(rows, dot.cy.baseVal.value, 'start'),
+      expected: Math.min(
+        opacity(columns, dot.cx.baseVal.value, 'end'),
+        opacity(rows, dot.cy.baseVal.value, 'start')
+      ),
     }))
   })
   for (const { actual, expected } of fade) expect(actual).toBeCloseTo(expected, 5)
+  expect(await grid.evaluate(element => {
+    const bounds = element.querySelector<SVGRectElement>('clipPath rect')!
+    const dots = [...element.querySelectorAll<SVGCircleElement>('circle')]
+    const xs = dots.map(dot => dot.cx.baseVal.value)
+    const ys = dots.map(dot => dot.cy.baseVal.value)
+    return Math.min(...xs) === 0 && Math.min(...ys) === 0 &&
+      Math.max(...xs) === bounds.width.baseVal.value &&
+      Math.max(...ys) === bounds.height.baseVal.value && dots.every(dot =>
+      dot.cx.baseVal.value >= 0 && dot.cx.baseVal.value <= bounds.width.baseVal.value &&
+      dot.cy.baseVal.value >= 0 && dot.cy.baseVal.value <= bounds.height.baseVal.value
+    )
+  })).toBe(true)
   const layout = await grid.evaluate(element => {
     const ancestors: Element[] = []
     for (let parent = element.parentElement; parent; parent = parent.parentElement) {
@@ -343,7 +357,7 @@ test.describe('independent histogram aggregate loading', () => {
       await page.setViewportSize({ width: 900, height: 1000 })
       const header = page.getByRole('region', { name: 'Metric chart', exact: true })
       const entries = header.locator('.heatmap-legend__entries')
-      await expect(entries).toHaveCSS('flex-wrap', 'wrap')
+      await expect(entries).toHaveCSS('flex-direction', 'column')
       await expect.poll(() => header.evaluate(e => {
         const header = e.getBoundingClientRect()
         return [...e.querySelectorAll('.heatmap-legend__entry')].every(entry => {
@@ -354,6 +368,50 @@ test.describe('independent histogram aggregate loading', () => {
       await expectRoundedAxes(page, colour)
     })
   }
+
+  test('count legends wrap by halves as available width changes', async ({ page }) => {
+    await page.setViewportSize({ width: 2400, height: 1000 })
+    const pending = await holdAggregates(page)
+    for (const { route } of pending) await respond(route, {
+      ...bucket,
+      count: 78,
+      explicitBounds: Array.from({ length: 11 }, (_, index) => index + 1),
+      bucketCounts: Array.from({ length: 12 }, (_, index) => index + 1),
+    })
+    for (const tab of ['Heatmap', 'Histogram']) {
+      await page.getByRole('tab', { name: tab, exact: true }).click()
+      const legend = page.getByRole('list', { name: `${tab} count scale`, exact: true })
+      await expect(legend.getByRole('listitem')).toHaveCount(12)
+      const labels = await legend.getByRole('listitem').allTextContents()
+      const dimensions = await legend.evaluate(element => ({
+        widths: [...element.querySelectorAll('.heatmap-legend__entry')]
+          .map(entry => entry.getBoundingClientRect().width),
+        gap: Number.parseFloat(getComputedStyle(element).columnGap),
+      }))
+      for (const count of [12, 6, 3, 6, 12]) {
+        const rowWidths = []
+        for (let start = 0; start < 12; start += count) {
+          rowWidths.push(dimensions.widths.slice(start, start + count)
+            .reduce((sum, width) => sum + width, 0) + (count - 1) * dimensions.gap)
+        }
+        const available = Math.ceil(Math.max(...rowWidths))
+        await legend.evaluate((element, width) => {
+          element.style.maxWidth = `${width}px`
+        }, available)
+        await expect.poll(() => legend.locator('.heatmap-legend__row').evaluateAll(rows =>
+          rows.map(row => row.querySelectorAll('.heatmap-legend__entry').length)
+        )).toEqual(Array<number>(12 / count).fill(count))
+        await expect.poll(() => legend.evaluate(element => {
+          const bounds = element.getBoundingClientRect()
+          return [...element.querySelectorAll('.heatmap-legend__entry')].every(entry =>
+            entry.getBoundingClientRect().right <= bounds.right + 0.5
+          )
+        })).toBe(true)
+        expect(await legend.getByRole('listitem').allTextContents()).toEqual(labels)
+      }
+      await legend.evaluate(element => element.style.removeProperty('max-width'))
+    }
+  })
 
   for (const navigation of ['list', 'footer']) {
     test(`initial load and ${navigation} navigation fetch aggregates without advancing the debounce clock`, async ({

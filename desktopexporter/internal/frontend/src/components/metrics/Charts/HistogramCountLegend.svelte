@@ -3,6 +3,7 @@
   import { computeHeatmapLegendEntries } from '@/components/metrics/utils/heatmap-legend'
   import { computeHistogramBarColorScale } from '@/components/metrics/utils/heatmap-color-scale'
   import { themeSignal } from '@/state/theme.svelte'
+  import { legendRowEnds } from '@/components/metrics/utils/legend-rows'
 
   const ctx = getMetricViewContext()
 
@@ -18,25 +19,49 @@
     if (!points || points.length === 0) return []
     return computeHeatmapLegendEntries(points, themeSignal.value)
   })
+  let availableWidth = $state(0)
+  let entryBounds = $state<DOMRectReadOnly[]>([])
+  let gapWidth = $state(0)
+  let legendElement = $state<HTMLDivElement>()
+  $effect(() => {
+    void availableWidth
+    if (legendElement) gapWidth = Number.parseFloat(getComputedStyle(legendElement).columnGap)
+  })
+  let rowEnds = $derived(legendRowEnds(
+    legendEntries.map((_, index) => entryBounds[index]?.width ?? 0),
+    availableWidth,
+    gapWidth
+  ))
 </script>
 
 {#if legendEntries.length > 0}
   <div class="heatmap-legend">
     <div
       class="heatmap-legend__entries"
+      bind:this={legendElement}
+      bind:clientWidth={availableWidth}
       role="list"
       aria-label={ctx.activeHistogramTab === 'histogram'
         ? 'Histogram count scale'
         : 'Heatmap count scale'}
     >
-      {#each legendEntries as entry (entry.label)}
-        <div class="heatmap-legend__entry" role="listitem">
-          <span
-            class="heatmap-legend__swatch"
-            style:background-color={entry.color}
-            aria-hidden="true"
-          ></span>
-          <span>{entry.label}</span>
+      {#each rowEnds as end, row}
+        {@const start = row === 0 ? 0 : rowEnds[row - 1]!}
+        <div class="heatmap-legend__row" role="presentation">
+          {#each legendEntries.slice(start, end) as entry, index (entry.label)}
+            <div
+              class="heatmap-legend__entry"
+              role="listitem"
+              bind:contentRect={entryBounds[start + index]}
+            >
+              <span
+                class="heatmap-legend__swatch"
+                style:background-color={entry.color}
+                aria-hidden="true"
+              ></span>
+              <span>{entry.label}</span>
+            </div>
+          {/each}
         </div>
       {/each}
     </div>
@@ -51,11 +76,16 @@
   }
 
   .heatmap-legend__entries {
-    @apply flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2;
+    @apply flex min-w-0 flex-col items-start gap-x-4 gap-y-2;
+  }
+
+  .heatmap-legend__row {
+    @apply flex items-center;
+    column-gap: inherit;
   }
 
   .heatmap-legend__entry {
-    @apply inline-flex items-center gap-2 whitespace-nowrap tabular-nums;
+    @apply inline-flex shrink-0 items-center gap-2 whitespace-nowrap tabular-nums;
   }
 
   .heatmap-legend__swatch {
