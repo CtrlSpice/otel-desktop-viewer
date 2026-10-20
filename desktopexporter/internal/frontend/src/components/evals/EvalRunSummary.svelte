@@ -81,7 +81,6 @@
           ></span
         >
         {#if summary.failedTools > 0}
-          <span aria-hidden="true">·</span>
           <EvalStatus label={`${summary.failedTools} failed`} tone="error" />
         {/if}
       </span>

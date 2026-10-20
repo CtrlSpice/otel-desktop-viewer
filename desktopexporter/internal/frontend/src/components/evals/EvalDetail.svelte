@@ -48,12 +48,14 @@
     </DetailField>{/if}
 {/snippet}
 
-<PaneHeader
-  mode="title"
-  title={attempt?.name ?? 'Run details'}
-  subtitle={attempt ? `Rep ${attempt.repetition}` : undefined}
-  ariaLabel={attempt ? 'Attempt detail heading' : 'Run detail heading'}
-/>
+{#if attempt}
+  <PaneHeader
+    mode="title"
+    title={attempt.name}
+    subtitle={`Rep ${attempt.repetition}`}
+    ariaLabel="Attempt detail heading"
+  />
+{/if}
 
 <DetailStack label={attempt ? 'Attempt details' : 'Run details'}>
   {#if !attempt}

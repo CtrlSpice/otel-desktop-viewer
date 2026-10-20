@@ -66,6 +66,8 @@
       <tr>
         <th class="table-cell min-w-56 text-left" scope="col">Case / attempt</th
         >
+        <th class="table-cell min-w-32 text-left" scope="col">Status</th>
+        <th class="table-cell min-w-24 text-right" scope="col">Repetition</th>
         {#if view === 'results'}
           {#each run.assessments as definition}
             <th
@@ -102,28 +104,25 @@
               aria-pressed={selectedID === item.id}
               onclick={() => onSelect(item.id)}>{item.name}</button
             >
-            <div
-              class="flex min-h-[var(--signal-card-row-h)] flex-wrap items-center gap-x-2 text-sm text-rp-subtle"
-            >
-              <EvalStatus
-                label={item.state === 'Error' ? 'Execution error' : item.state}
-                tone={item.state === 'Error' ? 'papaya' : undefined}
-              />
-              <span aria-hidden="true">·</span>
-              <span>Rep {item.repetition}</span>
-            </div>
           </th>
+          <td class="table-cell text-left">
+            <EvalStatus
+              label={item.state === 'Error' ? 'Execution error' : item.state}
+              tone={item.state === 'Error' ? 'papaya' : undefined}
+            />
+          </td>
+          <td class="table-cell text-right tabular-nums">{item.repetition}</td>
           {#if view === 'results'}
             {#each run.assessments as definition}
               {@const assessment = item.assessments.find(
                 score => score.id === definition.id
               )}
               <td class="table-cell text-right">
-                <div class="flex flex-col items-end gap-0">
+                <div class="inline-flex items-center gap-2 whitespace-nowrap">
                   <AssessmentBadge {assessment} maximum={definition.maximum} />
                   {#if assessment?.value != null}<span
-                      class="min-h-[var(--signal-card-row-h)] content-center text-sm tabular-nums"
-                      >{assessment.value} / {definition.maximum}</span
+                      class="text-sm text-rp-subtle tabular-nums"
+                      >({assessment.value}/{definition.maximum})</span
                     >{/if}
                 </div>
               </td>
@@ -172,8 +171,10 @@
     {#if view === 'cost' && attempts.length}
       <tfoot>
         <tr>
-          <th scope="row" class="table-cell text-left text-sm font-normal"
-            >Shown attempts</th
+          <th
+            scope="row"
+            colspan="3"
+            class="table-cell text-left text-sm font-normal">Shown attempts</th
           >
           {#each [investigator, grader] as estimate}
             <td class="table-cell text-right text-sm tabular-nums"

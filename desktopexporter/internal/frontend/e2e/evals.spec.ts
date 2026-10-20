@@ -201,7 +201,7 @@ test('result views retain selection and keep costs and missing measurements dist
   ).toHaveCount(3)
   await expect(
     results.getByRole('row', { name: /Correlate the trace and logs/ })
-  ).toContainText('0 / 1')
+  ).toContainText('(0/1)')
   await expect(selected).toHaveAttribute('aria-pressed', 'true')
   expect(page.url()).toBe(url)
   const resultTab = page.getByRole('tab', { name: 'Results', exact: true })

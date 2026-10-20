@@ -32,7 +32,7 @@ describe('EvalRunSummary', () => {
     }
     expect(card).toHaveTextContent('Assessed: 8/8')
     expect(card).toHaveTextContent('Graded: 8/8')
-    expect(card).toHaveTextContent('Tool calls: 17 · 1 failed')
+    expect(card).toHaveTextContent('Tool calls: 17 1 failed')
   })
 
   it('uses outcome bubbles and a stable label without selecting the run during exploration', async () => {
