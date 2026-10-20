@@ -188,6 +188,139 @@ for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
   })
 }
 
+test('oversized service tooltips remain scrollable and selectable on a narrow viewport', async ({
+  page,
+}) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await interceptRpc(page)
+  const label = `service-${'recorded-service-segment-'.repeat(240)}end`
+  await page.route('**/rpc', async route => {
+    const { id, method } = route.request().postDataJSON()
+    if (method === 'getTraceLogSummaries')
+      return route.fulfill({ json: { jsonrpc: '2.0', id, result: [] } })
+    if (method === 'getTraceView')
+      return route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            traceID: 'a'.repeat(32),
+            traceStart: '1700000000000000000',
+            unplacedSpanCount: 0,
+            resources: {},
+            scopes: {},
+            spans: [],
+          },
+        },
+      })
+    if (method !== 'searchTraceSummaries') return route.fallback()
+    return route.fulfill({
+      json: {
+        jsonrpc: '2.0',
+        id,
+        result: [
+          {
+            traceID: 'a'.repeat(32),
+            hasRootSpan: true,
+            rootSpan: { name: 'Long service trace', serviceName: label },
+            startTime: '1700000000000000000',
+            durationNs: '1000000000',
+            spanCount: 7,
+            errorCount: 0,
+            serviceBreakdown: [{ key: `service:${label}`, label, count: 7 }],
+          },
+        ],
+      },
+    })
+  })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/traces')
+  const segment = page.locator('.breakdown-segment').first()
+  await segment.focus()
+  const tooltip = page.locator('.breakdown-tooltip:popover-open')
+  await expect(tooltip).toBeVisible()
+  await expect(tooltip).toHaveCSS('overflow-y', 'auto')
+  const bounds = (await tooltip.boundingBox())!
+  expect(bounds.x).toBeGreaterThanOrEqual(8)
+  expect(bounds.y).toBeGreaterThanOrEqual(8)
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(382)
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(836)
+  expect(
+    await tooltip.evaluate(
+      element => element.scrollHeight > element.clientHeight
+    )
+  ).toBe(true)
+
+  await page.keyboard.press('Tab')
+  await expect(tooltip).toBeFocused()
+  await page.keyboard.press('End')
+  await expect
+    .poll(() =>
+      tooltip.evaluate(
+        element =>
+          element.scrollTop + element.clientHeight >= element.scrollHeight - 1
+      )
+    )
+    .toBe(true)
+  await page.keyboard.press('Home')
+  await expect
+    .poll(() => tooltip.evaluate(element => element.scrollTop))
+    .toBe(0)
+
+  await tooltip.hover()
+  await page.mouse.wheel(0, 100000)
+  await expect
+    .poll(() =>
+      tooltip.evaluate(
+        element =>
+          element.scrollTop + element.clientHeight >= element.scrollHeight - 1
+      )
+    )
+    .toBe(true)
+  const labelNode = tooltip.locator('.breakdown-tooltip__label')
+  const tailVisible = await labelNode.evaluate(element => {
+    const range = document.createRange()
+    const text = element.firstChild!
+    range.setStart(text, text.textContent!.length - 3)
+    range.setEnd(text, text.textContent!.length)
+    const rect = range.getBoundingClientRect()
+    return element.contains(
+      document.elementFromPoint(
+        rect.x + rect.width / 2,
+        rect.y + rect.height / 2
+      )
+    )
+  })
+  expect(tailVisible).toBe(true)
+  const count = tooltip.getByText('[7]', { exact: true })
+  await count.scrollIntoViewIfNeeded()
+  expect(
+    await count.evaluate(element => {
+      const rect = element.getBoundingClientRect()
+      return element.contains(
+        document.elementFromPoint(
+          rect.x + rect.width / 2,
+          rect.y + rect.height / 2
+        )
+      )
+    })
+  ).toBe(true)
+  expect(
+    await labelNode.evaluate(element => {
+      const range = document.createRange()
+      range.selectNodeContents(element)
+      const selection = window.getSelection()!
+      selection.removeAllRanges()
+      selection.addRange(range)
+      return selection.toString()
+    })
+  ).toBe(label)
+  await page.keyboard.press('Escape')
+  await expect(tooltip).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
 for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
   test(`run summary segment tooltips stay isolated and above neighbouring cards in ${theme}`, async ({
     page,

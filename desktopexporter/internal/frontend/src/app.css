@@ -654,9 +654,18 @@ svg {
 
 /* Global button styles */
 .btn {
-  @apply transition-[color,background-color,border-color,transform,box-shadow];
+  @apply transition-[color,background-color,border-color,box-shadow];
   transition-duration: var(--motion-feedback-duration);
   transition-timing-function: var(--motion-settle-easing);
+}
+
+/* Daisy's active press offset also appears in components that apply btn. */
+.btn,
+.toolbar-filter-trigger,
+.drawer-header-btn,
+.calendar-nav,
+.home-summary__icon-link {
+  translate: none !important;
 }
 
 /* Keep the control mounted so a scroll reversal reverses the fade in place. */
@@ -669,8 +678,7 @@ svg {
     background-color var(--motion-feedback-duration) var(--motion-settle-easing),
     border-color var(--motion-feedback-duration) var(--motion-settle-easing),
     color var(--motion-feedback-duration) var(--motion-settle-easing),
-    box-shadow var(--motion-feedback-duration) var(--motion-settle-easing),
-    transform var(--motion-feedback-duration) var(--motion-settle-easing);
+    box-shadow var(--motion-feedback-duration) var(--motion-settle-easing);
 }
 
 .btn.pointy-uppy--visible {
@@ -1004,22 +1012,12 @@ svg {
 .drawer-header-btn {
   @apply btn btn-circle btn-ghost btn-neutral btn-sm shrink-0 gap-0 border-transparent px-0 py-0 text-xs font-medium tracking-tight shadow-none;
   color: var(--color-subtle);
-  transition-property: color, background-color, box-shadow, transform;
+  transition-property: color, background-color, box-shadow;
   transition-duration: var(--motion-feedback-duration);
 }
 
 .drawer-header-btn:hover {
   @apply text-base-content;
-}
-
-.drawer-header-btn:active {
-  @apply translate-y-px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .drawer-header-btn:active {
-    transform: none;
-  }
 }
 
 .drawer-header-btn:focus-visible {

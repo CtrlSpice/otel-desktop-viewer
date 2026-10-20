@@ -163,6 +163,8 @@ and timing; Cost shows that level's estimates. Each run retains its own sorting
 and expanded branches. The Details and Telemetry sections stay in the same
 positions when switching modes, retaining manual disclosure and saved sizes.
 They open together initially when telemetry references are available.
+Recorded attempt start timestamps remain inspectable and exactly copyable in
+Results and Tool calls even when referenced spans are unavailable.
 
 Run-card outcome segments show only their own colour dot, label and count on
 hover or keyboard focus. The tooltip stays above neighbouring cards. Outcomes
@@ -216,13 +218,16 @@ typed-score, content and identity work still needed.
    stale-request protection; synthetic examples remain the default source.
 4. `frontend/src/components/evals/snapshot-adapters.ts`: pure bounded source
    interpretation, provenance pointers and declared projection limitations.
-5. `frontend/src/components/evals/EvalTelemetrySummaries.svelte`: compact received
+5. `frontend/src/components/evals/EvalResults.svelte` and `EvalRowDetail.svelte`:
+   row selection, mode-specific evidence and accounting, and stable Details/Telemetry
+   sections with independent tree controls and saved sizing.
+6. `frontend/src/components/evals/EvalTelemetrySummaries.svelte`: compact received
    span name/service/status/duration summaries using the existing referenced-trace
    fetch; native links open the exact span in Traces. Missing references stay
    navigable without inventing timing or parentage.
-6. `server/eval_snapshots.go`: import Unicode validation and bounded RPC/download
+7. `server/eval_snapshots.go`: import Unicode validation and bounded RPC/download
    handlers; existing feature gating and error taxonomy stay at the server boundary.
-7. `store/evals/snapshots.go` and `store/queries/ddl/tables/eval_snapshots.sql`:
+8. `store/evals/snapshots.go` and `store/queries/ddl/tables/eval_snapshots.sql`:
    content identity, immutable metadata, native JSON storage and exact text reads.
 
 Paths in this walkthrough are relative to `desktopexporter/internal/`. No evaluator

@@ -15,17 +15,21 @@
   let trigger = $state<HTMLButtonElement>()
   let tooltip = $state<HTMLDivElement>()
   let open = $state(false)
+  let toggling = false
   let closeTimer: ReturnType<typeof setTimeout> | undefined
 
   function show() {
     clearTimeout(closeTimer)
-    tooltip?.showPopover()
+    if (!toggling && !tooltip?.matches(':popover-open')) tooltip?.showPopover()
   }
 
   function scheduleClose() {
     clearTimeout(closeTimer)
     closeTimer = setTimeout(() => {
-      if (trigger?.matches(':hover, :focus') || tooltip?.matches(':hover'))
+      if (
+        trigger?.matches(':hover, :focus') ||
+        tooltip?.matches(':hover, :focus-within')
+      )
         return
       tooltip?.hidePopover()
     }, 80)
@@ -39,6 +43,7 @@
       anchor: 'below-end',
       onOpenChange: value => {
         open = value
+        toggling = false
       },
     })
   })
@@ -70,8 +75,14 @@
   popover="auto"
   role="tooltip"
   class="anchor-popover anchor-popover--anchored breakdown-tooltip"
+  onbeforetoggle={() => {
+    // Native toggling can restore focus to the trigger. Wait for its toggle
+    // event before allowing that focus handler to start another operation.
+    toggling = true
+  }}
   onpointerenter={show}
   onpointerleave={scheduleClose}
+  onfocusout={scheduleClose}
 >
   <span class="flex min-w-0 items-center gap-2">
     <span
@@ -107,9 +118,10 @@
     outline-offset: -2px;
   }
   .breakdown-tooltip {
-    @apply px-3 py-2 font-normal;
+    @apply overflow-y-auto px-3 py-2 font-normal;
     max-width: calc(100vw - 1rem);
     pointer-events: auto;
+    overscroll-behavior: contain;
   }
   .breakdown-tooltip__label {
     min-width: 0;

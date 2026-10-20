@@ -6,7 +6,7 @@
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import EvalStatus from './EvalStatus.svelte'
   import AssessmentBadge from './AssessmentBadge.svelte'
-  import { cost, type EvalRun, type EvalView } from './model'
+  import { cost, localTimestamp, type EvalRun, type EvalView } from './model'
   import { caseSummary } from './case-summary'
   import { runSummary } from './run-summary'
   import EvalTelemetrySummaries from './EvalTelemetrySummaries.svelte'
@@ -287,6 +287,14 @@
           />
         {/if}
         {#if mode !== 'cost'}
+          {#if row.kind === 'attempt' && attempt?.startedAt !== undefined}
+            <DetailField
+              fieldName="started"
+              fieldType="timestamp"
+              fieldValue={attempt.startedAt}
+              timestampLabel={localTimestamp(attempt.startedAt)}
+            />
+          {/if}
           <DetailField
             fieldName="duration"
             fieldType="string"

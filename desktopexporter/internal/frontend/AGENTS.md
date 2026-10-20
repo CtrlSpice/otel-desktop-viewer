@@ -48,6 +48,9 @@
   persistent selection. Hover temporarily uses Low even on selected items;
   leaving the item restores Medium. Text selection also uses Medium.
   Text selection is transient; it does not use the persistent-selection token.
+- Buttons stay still on press and release. Use colour and focus feedback;
+  remove DaisyUI's active press translation from buttons and controls that apply
+  its button styles. Do not add bounce, scale or press/release movement.
 - Put item Download actions at the far right of the selected item's header,
   after other header controls, across traces, logs and metrics. Summary counts use
   plain bracketed counts; metric counts share one group, such as

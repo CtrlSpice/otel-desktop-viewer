@@ -109,3 +109,35 @@ it('keeps Details and Telemetry stable while the selected mode surfaces its own 
   ).toHaveTextContent('C$0.000 · partial')
   expect(sections[1].open).toBe(false)
 })
+
+it('retains the recorded attempt start and exact Copy when its spans are unavailable', async () => {
+  const startedAt = '2026-10-20T12:34:56.123456789-07:00'
+  const attempt = { ...exampleRuns[0].attempts[0], startedAt }
+  const run = { ...exampleRuns[0], attempts: [attempt] }
+  const row = buildEvalOutline(
+    groupAttempts(run.attempts, run.attempts),
+    run,
+    indexEvalTraces([])
+  ).find(row => row.kind === 'attempt')!
+  const view = render(EvalRowDetail, { run, row, mode: 'results' })
+  expect(screen.getAllByText('Span unavailable').length).toBeGreaterThan(0)
+
+  for (const mode of ['results', 'time'] as const) {
+    await view.rerender({ componentProps: { run, row, mode } })
+    const started = screen.getByRole('group', { name: 'started' })
+    expect(within(started).getByText(startedAt)).toBeVisible()
+    await fireEvent.click(
+      within(started).getByRole('button', { name: 'Copy started' })
+    )
+    expect(copyText).toHaveBeenLastCalledWith(startedAt)
+  }
+
+  await view.rerender({
+    componentProps: {
+      run,
+      row: { ...row, attempt: { ...attempt, startedAt: undefined } },
+      mode: 'time',
+    },
+  })
+  expect(screen.queryByRole('group', { name: 'started' })).toBeNull()
+})
