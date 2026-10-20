@@ -127,7 +127,8 @@ test('run selection, assessments, filtering and browser history stay connected',
     page.getByRole('region', { name: 'Direct agent', exact: true })
   ).toBeVisible()
   await page
-    .locator('[data-attempt-id]').getByRole('button', { name: /Compare CPU evidence/ })
+    .locator('[data-attempt-id]')
+    .getByRole('button', { name: /Compare CPU evidence/ })
     .first()
     .click()
   await expect(
@@ -367,7 +368,7 @@ test('column resizing uses shared handles and retains widths, sorting and select
     heading.evaluate(element => element.getBoundingClientRect().width)
   await expect(handle).toBeVisible()
   const before = await width()
-  const exclusion = await page.evaluate(() => {
+  const hitAreas = await page.evaluate(() => {
     const handle = document.querySelector<HTMLElement>(
       '[aria-label="Resize Task completion column"]'
     )!
@@ -390,7 +391,7 @@ test('column resizing uses shared handles and retains widths, sorting and select
       ),
     }
   })
-  expect(exclusion).toEqual({ parent: false, child: true })
+  expect(hitAreas).toEqual({ parent: true, child: true })
   await handle.focus()
   await page.keyboard.press('ArrowRight')
   await expect.poll(width).toBeCloseTo(before + 16, 0)
@@ -445,6 +446,23 @@ test('column resizing uses shared handles and retains widths, sorting and select
       return Math.abs(bottom - (bounds.y + bounds.height))
     })
     .toBeLessThan(1)
+  await table.locator('.eval-results__case').getByRole('button').click()
+  await expect(table.locator('[data-attempt-id]')).toHaveCount(0)
+  await expect(handle).toHaveCSS('clip-path', 'none')
+  const parent = (await table.locator('.eval-results__case').boundingBox())!
+  const grip = (await handle.locator('.col-resize-bar__line').boundingBox())!
+  const x = grip.x + grip.width / 2
+  const y = parent.y + parent.height / 2
+  await page.mouse.move(x, y)
+  await expect(handle.locator('.col-resize-bar__line')).toHaveCSS(
+    'opacity',
+    '1'
+  )
+  const collapsedWidth = await width()
+  await page.mouse.down()
+  await page.mouse.move(x + 24, y, { steps: 4 })
+  await page.mouse.up()
+  await expect.poll(width).toBeCloseTo(collapsedWidth + 24, 0)
 })
 
 test('case branches stay connected to aligned repetitions through sorting and resizing', async ({
@@ -476,7 +494,7 @@ test('case branches stay connected to aligned repetitions through sorting and re
   ).toHaveCount(1)
   await expect(
     table.locator(
-      '.eval-results__case[data-case-id="checkout-latency"] .bg-base-300'
+      '.eval-results__case[data-case-id="checkout-latency"] .tree-toggle .bg-base-300'
     )
   ).toHaveCount(1)
   const palette = await table.evaluate(element => {

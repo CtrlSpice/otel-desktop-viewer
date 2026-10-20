@@ -304,11 +304,7 @@
   {/snippet}
   {#snippet children(layout)}
     {#each groups as group (group.id)}
-      <tr
-        class="table-row eval-results__case"
-        data-case-id={group.id}
-        data-table-resize-exclude
-      >
+      <tr class="table-row eval-results__case" data-case-id={group.id}>
         <th
           scope="row"
           colspan="2"
@@ -453,11 +449,20 @@
         {#if column.assessment}
           {@const score = group.summary.scores[column.assessment.id]}
           <td
-            class="table-cell tabular-nums"
-            class:text-right={score.percent !== null}
+            class="table-cell text-left tabular-nums"
             title={`${score.scored} scored / ${score.denominator} denominator · all case repetitions`}
-            >{percent(score.percent)}</td
           >
+            <EvalStatus
+              label={percent(score.percent)}
+              tone={score.percent === null
+                ? 'neutral'
+                : score.percent === 100
+                  ? 'success'
+                  : score.percent === 0
+                    ? 'error'
+                    : 'warning'}
+            />
+          </td>
         {:else if column.key === 'seconds'}
           <td
             class="table-cell text-right tabular-nums"

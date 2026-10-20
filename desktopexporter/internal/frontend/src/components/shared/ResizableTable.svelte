@@ -26,7 +26,6 @@
   } from './utils/column-resize'
   import type { DragHandle } from './utils/drag'
   import { resizeRowHover } from './utils/resize-row-hover'
-  import { resizeSegments, type RowBounds } from './utils/resize-segments'
 
   let {
     columns,
@@ -55,23 +54,6 @@
   let scrollLeft = $state(0)
   let current = $state<ColumnWidths>({})
   let active = $state<string | null>(null)
-  let excludedRows = $state<RowBounds[]>([])
-  let headerHeight = $state(0)
-  const segments = $derived(
-    resizeSegments(handleHeight, headerHeight, scrollTop, excludedRows)
-  )
-  const resizeClip = $derived(
-    segments.length
-      ? `polygon(${segments
-          .flatMap(segment => [
-            `0 ${segment.top}px`,
-            `100% ${segment.top}px`,
-            `100% ${segment.bottom}px`,
-            `0 ${segment.bottom}px`,
-          ])
-          .join(', ')})`
-      : 'inset(100%)'
-  )
   let drag: DragHandle | null = null
   const specs = $derived(
     columns.map(column =>
@@ -227,40 +209,6 @@
   }
 
   onDestroy(() => untrack(() => drag?.cancel()))
-
-  function measureResizeRows(table: HTMLTableElement) {
-    let frame: number | undefined
-    function measure() {
-      frame = undefined
-      const top = table.getBoundingClientRect().top
-      headerHeight = table.tHead?.getBoundingClientRect().height ?? 0
-      excludedRows = [
-        ...table.querySelectorAll('[data-table-resize-exclude]'),
-      ].map(row => {
-        const bounds = row.getBoundingClientRect()
-        return { top: bounds.top - top, bottom: bounds.bottom - top }
-      })
-    }
-    function schedule() {
-      if (frame === undefined) frame = requestAnimationFrame(measure)
-    }
-    const resize = new ResizeObserver(schedule)
-    const mutations = new MutationObserver(schedule)
-    resize.observe(table)
-    mutations.observe(table, {
-      childList: true,
-      characterData: true,
-      subtree: true,
-    })
-    measure()
-    return {
-      destroy() {
-        resize.disconnect()
-        mutations.disconnect()
-        if (frame !== undefined) cancelAnimationFrame(frame)
-      },
-    }
-  }
 </script>
 
 <div class="resizable-table">
@@ -273,7 +221,6 @@
       class:col-resize-bar--active={active === bar.id}
       style:left="{bar.position}px"
       style:height="{handleHeight}px"
-      style:clip-path={resizeClip}
       role="separator"
       aria-orientation="vertical"
       aria-label={`Resize ${columns.find(column => column.id === bar.id)?.label} column`}
@@ -306,7 +253,6 @@
       class="table resizable-table__table"
       style:width="{tableWidth}px"
       bind:offsetHeight={tableHeight}
-      use:measureResizeRows
     >
       <caption class="sr-only">{caption}</caption>
       <colgroup
@@ -347,9 +293,6 @@
     position: sticky;
     z-index: 2;
     background-color: var(--item-state-bg, var(--color-base-100));
-  }
-  .resizable-table__table :global(.table-cell--spanning) {
-    overflow: visible;
   }
 
   .resizable-table__table tfoot {
