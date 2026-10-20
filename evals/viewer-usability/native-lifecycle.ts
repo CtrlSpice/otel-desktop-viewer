@@ -11,8 +11,20 @@ import { permissionDenial, viewerClientCall } from './permission-stop.ts'
 import { readJson, record, runtimeRoot } from './runtime.ts'
 import { AttemptTelemetry, withOpenCodeContext } from './eval-telemetry.ts'
 import { modelExecutionErrors, recordExecutionError } from './execution-errors.ts'
+import { stopOwnedGroup } from './run-cancellation.ts'
 
 const attempts = new Map<string, NativeAttempt>()
+let cancelled = false
+
+export async function cancelNativeAttempts() {
+  cancelled = true
+  const results = await Promise.allSettled([...attempts.values()].map(attempt => attempt.cancel()))
+  for (const result of results) if (result.status === 'rejected') throw result.reason
+}
+
+function reportOwned(type: 'start' | 'stop', sessionPID: number) {
+  if (process.connected) process.send?.({ type: 'otel-eval-native-' + type, root: runtimeRoot(), runnerPID: process.pid, sessionPID }, () => {})
+}
 // Import the public package at runtime; its declarations require optional database drivers.
 const promptfooPackage = 'promptfoo'
 const { loadApiProvider } = await import(promptfooPackage)
@@ -40,6 +52,7 @@ export class NativeAttempt {
   telemetry?: AttemptTelemetry
   telemetryOutcome?: { error?: string; output?: unknown }
   private closing?: Promise<void>
+  private cancelCall = () => {}
   private constructor(
     model: string,
     role: 'investigator' | 'grader',
@@ -69,6 +82,7 @@ export class NativeAttempt {
     fs.writeFileSync(path.join(this.evidence, name), this.redact(typeof value === 'string' ? value : JSON.stringify(value, null, 2)), { mode: 0o600, flag: 'wx' })
   }
   static async create(model: string, role: 'investigator' | 'grader', task: unknown, isolation: unknown, copy = true, timeoutMs = 600000) {
+    if (cancelled) throw new Error('Evaluation cancelled')
     const root = runtimeRoot()
     if (fs.existsSync(path.join(root, 'harness-blocker.json'))) throw new Error('Evaluation stopped by viewer permission denial')
     if (fs.existsSync(path.join(root, 'execution-error.json'))) throw new Error('Evaluation stopped by an execution error')
@@ -123,6 +137,7 @@ export class NativeAttempt {
       if (!catalogue.trim().split(/\r?\n/).includes(model)) catalogue = (await check(['models', model.split('/')[0], '--refresh'])).stdout
       if (!catalogue.trim().split(/\r?\n/).includes(model)) throw new Error('Requested model absent from clean catalogue')
       phase = 'authentication'
+      if (cancelled) throw new Error('Evaluation cancelled')
       const auth = path.join(isolated.env.XDG_DATA_HOME, 'opencode/auth.json')
       const environmentAuth = model.startsWith('openai/') ? !!authEnvironment.OPENAI_API_KEY : Object.keys(authEnvironment).length > 0
       if (!environmentAuth && (!fs.existsSync(auth) || !record(readJson(auth))[model.split('/')[0]])) throw new Error('Selected model authentication missing')
@@ -140,6 +155,7 @@ export class NativeAttempt {
   private async start(workspace: string) {
     let phase = 'workspace binding'
     try {
+      if (cancelled || this.closing) throw new Error('Evaluation cancelled')
       if (!path.isAbsolute(workspace) || !fs.statSync(workspace).isDirectory()) throw new Error('Assigned absolute workspace required')
       if (this.config.copy_working_dir && workspace === this.isolated.workspace) throw new Error('Framework workspace copy required')
       this.isolated.env.TMPDIR = path.join(workspace, 'tmp')
@@ -147,7 +163,10 @@ export class NativeAttempt {
       this.save('runtime.json', { workspace, tmpdir: this.isolated.env.TMPDIR })
       phase = 'server startup'
       const child = this.child = spawn(this.binary, ['serve', '--hostname', '127.0.0.1', '--port', '0'], { env: this.isolated.env, cwd: workspace, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'] })
-      if (child.pid) this.save('process.pid', String(child.pid))
+      if (child.pid) {
+        reportOwned('start', child.pid)
+        this.save('process.pid', String(child.pid))
+      }
       let stdout = '', stderr = ''
       child.stdout!.on('data', chunk => { stdout += chunk })
       child.stderr!.on('data', chunk => { stderr += chunk })
@@ -180,6 +199,7 @@ export class NativeAttempt {
     let sessionID: string | undefined
     const latestParts = new Map<string, Record<string, unknown>>()
     const streamController = new AbortController()
+    this.cancelCall = () => { controller.abort(); streamController.abort() }
     const api = async (route: string, method = 'GET') => {
       const response = await fetch(this.baseUrl + route + (route.includes('?') ? '&' : '?') + 'directory=' + encodeURIComponent(workspace), { method, signal: AbortSignal.timeout(30000) })
       if (!response.ok) throw new Error('Owned server evidence request failed')
@@ -199,6 +219,7 @@ export class NativeAttempt {
       return stop()
     }
     try {
+      if (cancelled || this.closing) throw new Error('Evaluation cancelled')
       if (performance.now() - this.started >= this.timeoutMs) { timedOut = true; throw new Error('Attempt deadline exceeded before startup') }
       const observer = observerEnvironment()
       if (observer.OTEL_EVAL_OBSERVER_HTTP) {
@@ -270,7 +291,7 @@ export class NativeAttempt {
       if (this.redact(prompt) !== prompt) throw new Error('Prompt contains selected credential material')
       this.save('prompt.txt', prompt)
       this.telemetry?.span.setAttribute('gen_ai.input', prompt)
-      const invoke = () => { invoked = true; return this.native!.callApi(prompt, context, { abortSignal: controller.signal }) }
+      const invoke = () => { controller.signal.throwIfAborted(); invoked = true; return this.native!.callApi(prompt, context, { abortSignal: controller.signal }) }
       const response = this.telemetry
         ? await otelContext.with(this.telemetry.context, () => withOpenCodeContext(this.baseUrl, this.telemetry!.context, invoke))
         : await invoke()
@@ -350,34 +371,30 @@ export class NativeAttempt {
         if (this.telemetry) this.telemetry.failure = this.redact(cause instanceof Error ? cause.message : 'Native telemetry cleanup failed')
         throw cause
       } finally {
-        try { if (this.child) await stopOwned(this.child) }
+        try {
+          if (this.child) {
+            await stopOwned(this.child)
+            if (this.child.pid) reportOwned('stop', this.child.pid)
+          }
+        }
         finally { await this.telemetry?.finish(this.telemetryOutcome) }
       }
       if (this.telemetry && (!this.telemetry.ready || this.telemetry.failure))
         throw new Error('Native telemetry hook failed; see ' + this.evidence)
     })()
   }
+  async cancel() {
+    this.cancelCall()
+    // Stop inference before telemetry disposal or any other asynchronous cleanup.
+    if (this.child) await stopOwned(this.child)
+    await this.close()
+  }
 }
 
-async function stopOwned(child: ReturnType<typeof spawn>) {
-  if (!child.pid) return
-  const signal = (value: NodeJS.Signals) => {
-    try { if (process.platform === 'win32') child.kill(value); else process.kill(-child.pid!, value) }
-    catch (error) { if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error }
-  }
-  const closed = child.exitCode !== null || child.signalCode !== null ? Promise.resolve() : once(child, 'close')
-  signal('SIGTERM')
-  let timer: ReturnType<typeof setTimeout>
-  const grace = new Promise<void>(resolve => { timer = setTimeout(() => { signal('SIGKILL'); resolve() }, 30000) })
-  await closed
-  // Only a vanished process group proves that owned descendants have also exited.
-  try {
-    process.kill(process.platform === 'win32' ? child.pid : -child.pid, 0)
-    await grace
-  } catch (error) {
-    if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error
-    clearTimeout(timer!)
-  }
+const stopped = new WeakMap<ReturnType<typeof spawn>, Promise<void>>()
+function stopOwned(child: ReturnType<typeof spawn>) {
+  if (!stopped.has(child)) stopped.set(child, child.pid ? stopOwnedGroup(child.pid, child) : Promise.resolve())
+  return stopped.get(child)!
 }
 
 export async function beforeEach(context: { test: TestCase }) {

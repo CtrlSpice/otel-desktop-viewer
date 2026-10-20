@@ -9,6 +9,7 @@ import { runtimeRoot, saveJson } from './runtime.ts'
 import cases from './tasks.json' with { type: 'json' }
 import { GRADER_MODEL } from './grade.ts'
 import { ownedViewerStop } from './owned-viewer-stop.ts'
+import { runCancellation } from './run-cancellation.ts'
 
 const root = runtimeRoot()
 const binary = process.env.OTEL_EVAL_VIEWER_BINARY
@@ -52,11 +53,18 @@ fs.copyFileSync(
   fs.constants.COPYFILE_EXCL
 )
 stageDataset(source, path.join(root, 'fixture'))
-const ready = await prepare(root, process.env.OTEL_EVAL_OBSERVER_GRPC)
-const stopViewer = ownedViewerStop(root, ready)
-let phase = 'verification'
+const cancellation = runCancellation()
+let stopViewer: (() => Promise<void>) | undefined
+const cancel = () => { void stopViewer?.().catch(() => {}) }
+cancellation.signal.addEventListener('abort', cancel, { once: true })
+let phase = 'preparation'
 try {
+  const ready = await prepare(root, process.env.OTEL_EVAL_OBSERVER_GRPC, cancellation.signal)
+  stopViewer = ownedViewerStop(root, ready)
+  cancellation.signal.throwIfAborted()
+  phase = 'verification'
   await verify('preflight', root)
+  cancellation.signal.throwIfAborted()
   phase = 'evaluation'
   console.log(
     JSON.stringify({
@@ -66,12 +74,12 @@ try {
       endpoint: ready.endpoint,
     })
   )
-  const exit = await runPilot(root, undefined, undefined, stopViewer)
+  const exit = await runPilot(root, undefined, undefined, stopViewer, cancellation.signal)
   saveJson(path.join(root, 'overnight-completion.json'), {
     finishedAt: new Date().toISOString(),
     exit,
   })
-  process.exitCode = exit ?? 1
+  process.exitCode = cancellation.signal.aborted ? 1 : exit ?? 1
 } catch (error) {
   saveJson(path.join(root, 'overnight-failure.json'), {
     phase,
@@ -79,5 +87,10 @@ try {
   })
   process.exitCode = 1
 } finally {
-  await stopViewer()
+  try { await stopViewer?.() }
+  finally {
+    if (cancellation.signal.aborted) process.exitCode = 1
+    cancellation.signal.removeEventListener('abort', cancel)
+    cancellation.dispose()
+  }
 }

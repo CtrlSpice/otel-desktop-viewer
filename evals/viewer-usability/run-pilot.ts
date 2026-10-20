@@ -6,6 +6,7 @@ import { freezePricing } from './pricing.ts'
 import type { PricingSnapshot } from './pricing.ts'
 import { modelSummaries, modelSummaryTable } from './model-summary.ts'
 import { cleanEnvironment, observerEnvironment } from './clean-environment.ts'
+import { runCancellation, stopOwnedGroup } from './run-cancellation.ts'
 
 export function pilotSummary(
   value: unknown,
@@ -67,13 +68,31 @@ export async function runPilot(
   root = runtimeRoot(),
   suite = SUITE,
   suppliedPricing?: PricingSnapshot,
-  onHarnessBlocker?: () => Promise<void>
+  onHarnessBlocker?: () => Promise<void>,
+  signal?: AbortSignal
 ) {
+  const cancellation = runCancellation(signal)
+  try {
+    return await pilot(root, suite, suppliedPricing, onHarnessBlocker, cancellation.signal)
+  } finally {
+    cancellation.dispose()
+  }
+}
+
+async function pilot(
+  root: string,
+  suite: string,
+  suppliedPricing: PricingSnapshot | undefined,
+  onHarnessBlocker: (() => Promise<void>) | undefined,
+  signal: AbortSignal
+) {
+  signal.throwIfAborted()
   if (fs.existsSync(path.join(root, 'harness-blocker.json')))
     throw new Error('Evaluation already stopped by a harness blocker')
   if (fs.existsSync(path.join(root, 'pilot.json')))
     throw new Error('pilot.json exists; refusing to overwrite')
   const pricing = await freezePricing(root, suite, suppliedPricing)
+  signal.throwIfAborted()
   const clean = cleanEnvironment({ root, authEnvironment: {} })
   for (const key of ['HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME', 'TMPDIR', 'OPENCODE_CONFIG_DIR', 'OPENCODE_TEST_MANAGED_CONFIG_DIR']) fs.mkdirSync(clean[key], { recursive: true, mode: 0o700 })
   const env = {
@@ -107,13 +126,39 @@ export async function runPilot(
   fs.closeSync(err)
   let failure: Error | undefined
   let blocked = false
-  let cleanup: Promise<void> | undefined
   let viewerShutdown: Promise<void> | undefined
+  const native = new Set<number>()
+  const stopping = new Map<number, Promise<void>>()
+  const stop = (pid: number) => {
+    if (!stopping.has(pid)) stopping.set(pid, stopOwnedGroup(pid, pid === child.pid ? child : undefined).catch(error => {
+      failure ??= error instanceof Error ? error : new Error('Owned process shutdown failed')
+    }))
+    return stopping.get(pid)!
+  }
+  const shutdown = () => {
+    if (child.pid) void stop(child.pid)
+    for (const pid of native) void stop(pid)
+    viewerShutdown ??= onHarnessBlocker?.().catch(error => {
+      failure ??= error instanceof Error ? error : new Error('Owned viewer shutdown failed')
+    })
+  }
+  signal.addEventListener('abort', shutdown, { once: true })
+  if (signal.aborted) shutdown()
   child.on('message', message => {
     let event
     try {
       event = record(message)
     } catch {
+      return
+    }
+    if (event.runnerPID !== child.pid || event.root !== fs.realpathSync(root)) return
+    if (event.type === 'otel-eval-native-start' && Number.isSafeInteger(event.sessionPID) && Number(event.sessionPID) > 0) {
+      native.add(Number(event.sessionPID))
+      if (signal.aborted || blocked) void stop(Number(event.sessionPID))
+      return
+    }
+    if (event.type === 'otel-eval-native-stop') {
+      native.delete(Number(event.sessionPID))
       return
     }
     if (
@@ -134,35 +179,8 @@ export async function runPilot(
     )
       return
     blocked = true
-    // Only the spawned runner and the session it reports owning are signalled.
-    const signalOwned = (signal: NodeJS.Signals) => {
-      for (const pid of [child.pid!, Number(event.sessionPID)]) {
-        try {
-          if (process.platform === 'win32') process.kill(pid, signal)
-          else process.kill(-pid, signal)
-        } catch (error) {
-          if (!(
-            error instanceof Error &&
-            'code' in error &&
-            error.code === 'ESRCH'
-          ))
-            failure ??= error instanceof Error ? error : new Error('Owned process signalling failed')
-        }
-      }
-    }
-    viewerShutdown = onHarnessBlocker?.().catch(error => {
-      failure =
-        error instanceof Error
-          ? error
-          : new Error('Owned viewer shutdown failed')
-    })
-    signalOwned('SIGTERM')
-    cleanup = new Promise(resolve => {
-      setTimeout(() => {
-        signalOwned('SIGKILL')
-        resolve()
-      }, 30000)
-    })
+    native.add(Number(event.sessionPID))
+    shutdown()
   })
   child.once('error', error => {
     failure = error
@@ -170,14 +188,18 @@ export async function runPilot(
   const exit = await new Promise<number | null>(resolve =>
     child.once('close', resolve)
   )
-  await cleanup
+  // An unexpectedly exited worker can also leave a detached attempt behind.
+  for (const pid of native) void stop(pid)
+  await Promise.all(stopping.values())
   await viewerShutdown
+  signal.removeEventListener('abort', shutdown)
   blocked ||= fs.existsSync(path.join(root, 'harness-blocker.json'))
   saveJson(path.join(root, 'pilot-completion.json'), {
     command,
     exit,
     elapsedSeconds: (performance.now() - started) / 1000,
     error: failure?.message,
+    ...(signal.aborted ? { status: 'cancelled', cancellation: String(signal.reason) } : {}),
     ...(blocked
       ? {
           status: 'harness-blocker',
@@ -240,7 +262,7 @@ export async function runPilot(
     )
   }
   if (failure) throw failure
-  return blocked ? 1 : exit
+  return blocked || signal.aborted ? 1 : exit
 }
 
 if (

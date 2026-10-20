@@ -2,7 +2,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import config from './config.ts'
 import { readJson, record, runtimeRoot, saveJson } from './runtime.ts'
-import { afterAll } from './native-lifecycle.ts'
+import { afterAll, cancelNativeAttempts } from './native-lifecycle.ts'
+import { runCancellation } from './run-cancellation.ts'
 import { observerEnvironment } from './clean-environment.ts'
 import { modelExecutionErrors } from './execution-errors.ts'
 import { context, propagation, trace } from '@opentelemetry/api'
@@ -13,6 +14,18 @@ const { evaluate } = await import(promptfooPackage)
 export async function runNativeEvaluation(suite = config, repeat = 3, resultName = 'pilot.json') {
   if (path.basename(resultName) !== resultName)
     throw new Error('Result filename must stay inside the run directory')
+  const cancellation = runCancellation()
+  let exit = 1
+  let stop: AbortController | undefined
+  let cleanup: Promise<void> | undefined
+  let cleanupError: unknown
+  const cancel = () => {
+    stop?.abort()
+    cleanup ??= cancelNativeAttempts().catch(error => { cleanupError = error })
+  }
+  const disconnected = () => cancellation.cancel(new Error('Evaluation worker lost its parent'))
+  cancellation.signal.addEventListener('abort', cancel, { once: true })
+  process.once('disconnect', disconnected)
   try {
     const root = runtimeRoot()
     const observer = observerEnvironment()
@@ -21,7 +34,7 @@ export async function runNativeEvaluation(suite = config, repeat = 3, resultName
       process.env.PROMPTFOO_CONFIG_DIR = path.join(root, 'promptfoo-state')
     if (!Number.isSafeInteger(repeat) || repeat < 1) throw new Error('Invalid repetition count')
     if (suite.providers.length !== 1 || suite.prompts.length !== 1) throw new Error('Native slot scheduling requires one provider and one prompt')
-    const fatal = () => ['harness-blocker.json', 'execution-error.json'].some(file => fs.existsSync(path.join(root, file)))
+    const fatal = () => cancellation.signal.aborted || ['harness-blocker.json', 'execution-error.json'].some(file => fs.existsSync(path.join(root, file)))
     if (fatal() || modelExecutionErrors(root).length || fs.existsSync(path.join(root, resultName))) throw new Error('Use a fresh run directory; saved attempts must not be rerun')
     // Expand slots before evaluating so an aborted batch can resume only slots
     // that were not called. Each batch keeps its original Promptfoo summary.
@@ -44,7 +57,7 @@ export async function runNativeEvaluation(suite = config, repeat = 3, resultName
         context.disable()
         propagation.disable()
       }
-      const stop = new AbortController()
+      stop = new AbortController()
       const batchSuite = { ...suite, tests: pending.map(slot => slot.test) }
       const result = await evaluate(observer.OTEL_EVAL_OBSERVER_HTTP
         ? { ...batchSuite, writeLatestResults: true, tracing: { enabled: true } } : batchSuite, {
@@ -56,7 +69,7 @@ export async function runNativeEvaluation(suite = config, repeat = 3, resultName
         abortSignal: stop.signal,
         // Promptfoo invokes this after the row and its grading evidence are saved.
         progressCallback: () => {
-          if (fatal() || modelExecutionErrors(root).length > paused.size) stop.abort()
+          if (fatal() || modelExecutionErrors(root).length > paused.size) stop!.abort()
         },
       })
       const summary = await result.toEvaluateSummary()
@@ -97,10 +110,18 @@ export async function runNativeEvaluation(suite = config, repeat = 3, resultName
     } })
     const paused = modelExecutionErrors(root)
     saveJson(path.join(root, 'deferred-slots.json'), { models: paused.map(error => error.model), slots: [...deferred, ...pending].map(slot => ({ model: slot.test.vars.eval_model, task: slot.test.vars.task_id, repetition: slot.repetition })) })
-    return fatal() || paused.length ? 1 : 0
+    exit = fatal() || paused.length ? 1 : 0
   } finally {
-    await afterAll()
+    try {
+      await afterAll()
+      await cleanup
+      if (cleanupError) throw cleanupError
+    } finally {
+      process.off('disconnect', disconnected)
+      cancellation.dispose()
+    }
   }
+  return cancellation.signal.aborted ? 1 : exit
 }
 
 if (process.argv[1] && fs.existsSync(process.argv[1]) && fs.realpathSync(process.argv[1]) === import.meta.filename) process.exitCode = await runNativeEvaluation()

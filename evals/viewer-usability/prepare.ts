@@ -7,6 +7,7 @@ import { once } from 'node:events'
 import { setTimeout as delay } from 'node:timers/promises'
 import { datasetManifest, readManifest } from './stage-dataset.ts'
 import { integer, record, runtimeRoot, saveJson } from './runtime.ts'
+import { stopOwnedGroup } from './run-cancellation.ts'
 
 const floorDivide = (value: bigint, divisor: bigint) =>
   value / divisor - (value % divisor < 0n ? 1n : 0n)
@@ -176,7 +177,8 @@ export async function query(endpoint: string, sql: string) {
   }
 }
 
-export async function prepare(root = runtimeRoot(), selfTelemetryEndpoint?: string) {
+export async function prepare(root = runtimeRoot(), selfTelemetryEndpoint?: string, signal?: AbortSignal) {
+  signal?.throwIfAborted()
   const manifest = datasetManifest(
     readManifest(path.join(root, 'fixture/manifest.json'))
   )
@@ -187,6 +189,7 @@ export async function prepare(root = runtimeRoot(), selfTelemetryEndpoint?: stri
   const runtime = path.join(root, 'runtime')
   fs.mkdirSync(runtime)
   const [ui, grpc, http] = await freePorts()
+  signal?.throwIfAborted()
   const binary = path.join(root, 'otel-desktop-viewer')
   const endpoint = `http://127.0.0.1:${ui}`
   const command = [
@@ -228,7 +231,12 @@ export async function prepare(root = runtimeRoot(), selfTelemetryEndpoint?: stri
   const closed = new Promise<{ code: number | null; signal: string | null }>(
     resolve => child.once('close', (code, signal) => resolve({ code, signal }))
   )
+  let stopping: Promise<void> | undefined
+  const stop = () => stopping ??= (child.pid ? stopOwnedGroup(child.pid, child) : closed.then(() => {}))
+  const cancel = () => { void stop().catch(() => {}) }
+  signal?.addEventListener('abort', cancel, { once: true })
   try {
+    signal?.throwIfAborted()
     saveJson(path.join(runtime, 'process.json'), {
       pid: child.pid,
       command,
@@ -238,6 +246,7 @@ export async function prepare(root = runtimeRoot(), selfTelemetryEndpoint?: stri
     })
     let ready = false
     for (let attempt = 0; attempt < 100; attempt++) {
+      signal?.throwIfAborted()
       if (spawnError) throw spawnError
       if (child.exitCode !== null || child.signalCode !== null)
         throw new Error('Owned viewer exited; inspect viewer.stderr')
@@ -253,6 +262,7 @@ export async function prepare(root = runtimeRoot(), selfTelemetryEndpoint?: stri
     const receipts: Record<string, unknown> = {}
     const inputs: { signal: string; document: unknown }[] = []
     for (const request of manifest.requests) {
+      signal?.throwIfAborted()
       const bytes = fs.readFileSync(path.join(root, 'fixture', request.file))
       const receipt = await postBytes(
         `http://127.0.0.1:${http}/v1/${request.signal}`,
@@ -274,6 +284,7 @@ export async function prepare(root = runtimeRoot(), selfTelemetryEndpoint?: stri
     saveJson(path.join(runtime, 'expected-counts.json'), expectedCounts)
     let counts
     for (let attempt = 0; attempt < 100; attempt++) {
+      signal?.throwIfAborted()
       counts = await query(
         endpoint,
         'SELECT (SELECT count(*) FROM spans), (SELECT count(*) FROM logs), (SELECT count(*) FROM metric_datapoints)'
@@ -318,6 +329,7 @@ export async function prepare(root = runtimeRoot(), selfTelemetryEndpoint?: stri
       await delay(100)
     }
     const connection = { binary, endpoint, ...window }
+    signal?.throwIfAborted()
     saveJson(path.join(root, 'connection.json'), connection)
     child.unref()
     return {
@@ -328,22 +340,17 @@ export async function prepare(root = runtimeRoot(), selfTelemetryEndpoint?: stri
       closed,
     }
   } catch (error) {
+    const failure = signal?.aborted ? signal.reason : error
     try {
       saveJson(path.join(runtime, 'failure.json'), {
-        error: error instanceof Error ? error.message : String(error),
+        error: failure instanceof Error ? failure.message : String(failure),
       })
     } finally {
-      if (child.pid && child.exitCode === null && child.signalCode === null) {
-        child.kill('SIGTERM')
-        const timeout = setTimeout(() => child.kill('SIGKILL'), 30000)
-        try {
-          await closed
-        } finally {
-          clearTimeout(timeout)
-        }
-      }
+      await stop()
     }
-    throw error
+    throw failure
+  } finally {
+    signal?.removeEventListener('abort', cancel)
   }
 }
 

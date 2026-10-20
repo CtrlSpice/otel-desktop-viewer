@@ -115,7 +115,7 @@ process.send(event, () => { process.disconnect(); process.exitCode = 1; });
     viewerStopped = true
   }), /kill EPERM/)
   assert.equal(viewerStopped, true)
-  assert.deepEqual(signals, ['SIGTERM', 'SIGTERM', 'SIGKILL', 'SIGKILL'])
+  assert.deepEqual(signals, ['SIGTERM'])
   const completion = record(readJson(path.join(root, 'pilot-completion.json')))
   assert.equal(completion.status, 'harness-blocker')
   assert.equal(completion.error, 'kill EPERM')
@@ -161,6 +161,7 @@ test('actual standalone pilot entrypoint propagates nonzero child exit', () => {
   fs.mkdirSync(path.join(suite, 'node_modules/.bin'), { recursive: true })
   for (const file of [
     'run-pilot.ts',
+    'run-cancellation.ts',
     'runtime.ts',
     'pricing.ts',
     'model-summary.ts',

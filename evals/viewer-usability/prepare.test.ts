@@ -147,6 +147,24 @@ test('missing viewer spawn retains runtime failure evidence', async () => {
   assert.ok(!fs.existsSync(path.join(root, 'connection.json')))
 })
 
+test('cancellation during viewer preparation stops and awaits the owned process before returning', async () => {
+  const root = setup({ counts: [1, 0, 0] })
+  const controller = new AbortController()
+  const preparing = prepare(root, undefined, controller.signal)
+  const timer = setInterval(() => {
+    if (fs.existsSync(path.join(root, 'runtime/polls.json'))) controller.abort(new Error('Synthetic cancellation'))
+  }, 10)
+  try {
+    await assert.rejects(preparing, /Synthetic cancellation/)
+    const pid = Number(record(readJson(path.join(root, 'runtime/process.json'))).pid)
+    assert.throws(() => process.kill(pid, 0), /ESRCH/)
+    assert.ok(fs.existsSync(path.join(root, 'runtime/failure.json')))
+    assert.ok(!fs.existsSync(path.join(root, 'connection.json')))
+  } finally {
+    clearInterval(timer)
+  }
+})
+
 test('count mismatch and existing connection both retain evidence and clean up owned viewers', async () => {
   for (const scenario of ['counts', 'connection']) {
     const root = setup(scenario === 'counts' ? {
