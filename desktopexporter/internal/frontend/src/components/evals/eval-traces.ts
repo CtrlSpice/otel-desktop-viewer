@@ -172,12 +172,14 @@ export function evalExecutionRows(
     })),
   ])
   const attemptNode = attemptKey ? index.nodes.get(attemptKey) : undefined
+  const spanError =
+    rows.some(row => row.state === 'Error') ||
+    !!(attemptNode && isErrorSpan(attemptNode.spanData))
   return {
     internalFault: attempt.state === 'Error',
+    spanError,
     state:
-      attempt.state === 'Error' ||
-      rows.some(row => row.state === 'Error') ||
-      (attemptNode && isErrorSpan(attemptNode.spanData))
+      attempt.state === 'Error' || spanError
         ? ('Error' as const)
         : attempt.state,
     childrenCount: metadata[0]!.childrenCount,

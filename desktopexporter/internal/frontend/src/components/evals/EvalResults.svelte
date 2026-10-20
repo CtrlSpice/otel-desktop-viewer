@@ -16,11 +16,10 @@
   import ResizableTable from '@/components/shared/ResizableTable.svelte'
   import TreeRowIdentity from '@/components/shared/TreeRowIdentity.svelte'
   import LegendRows from '@/components/shared/LegendRows.svelte'
-  import CorrelatedSpanBar from '@/components/shared/CorrelatedSpanBar.svelte'
   import DurationBar from '@/components/shared/DurationBar.svelte'
   import TimingCell from '@/components/shared/TimingCell.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
-  import type { SpanNode, SpanTiming, TraceData } from '@/types/api-types'
+  import type { SpanTiming, TraceData } from '@/types/api-types'
   import { getServiceName } from '@/utils/resource'
   import {
     evalExecutionRows,
@@ -45,7 +44,6 @@
     cost,
     estimatedCost,
     percent,
-    traceHref,
     type TelemetryReference,
     type AssessmentDefinition,
     type EvalAttempt,
@@ -57,16 +55,10 @@
     run,
     attempts,
     selectedID,
-    onSelect,
-    onSelectSpan,
-    selectedSpanKey,
   }: {
     run: EvalRun
     attempts: EvalAttempt[]
     selectedID?: string
-    onSelect: (id: string) => void
-    onSelectSpan?: (node: SpanNode) => void
-    selectedSpanKey?: string
   } = $props()
   const panelID = $props.id()
   const views = [
@@ -243,10 +235,6 @@
       )
     return () => controller.abort()
   })
-  function selectSpan(reference: TelemetryReference) {
-    const node = traceIndex.nodes.get(referenceKey(reference))
-    if (node) onSelectSpan?.(node)
-  }
   function toggleCase(id: string) {
     collapsedCases = collapsedCases.includes(id)
       ? collapsedCases.filter(key => key !== id)
@@ -417,24 +405,32 @@
 {#snippet spanBar(
   reference?: TelemetryReference,
   origin?: bigint,
-  seconds?: number
+  seconds?: number,
+  spanError = false
 )}
   {@const span = timingFor(reference)}
   {@const duration = durationFor(reference, seconds)}
   <TimingCell maximum={maximumDuration}>
-    {#if span && span.endTime >= span.startTime}<CorrelatedSpanBar
-        {span}
-        color={spanColors[referenceKey(span)]}
-        maximum={maximumDuration}
-        href={traceHref(span)}
-        {origin}
-        onSelect={onSelectSpan ? () => selectSpan(span) : undefined}
-      />
+    {#if span && span.endTime >= span.startTime}<span
+        class="eval-results__span-bar block"
+        role="img"
+        aria-label={`Span ${span.name}, ${formatDuration(span.endTime - span.startTime)}`}
+        title={`${span.name} · ${span.serviceName} · ${formatDuration(span.endTime - span.startTime)} · Start offset ${formatDuration(span.startTime - (origin ?? span.startTime))}`}
+        style:--bar-color={spanError
+          ? 'var(--color-error)'
+          : (spanColors[referenceKey(span)] ??
+            spanTimingColor(span, themeSignal.value))}
+        ><DurationBar
+          duration={span.endTime - span.startTime}
+          maximum={maximumDuration}
+          offset={span.startTime - (origin ?? span.startTime)}
+        /></span
+      >
     {:else if duration !== undefined}
       <span
         class="block"
         title="Recorded eval duration"
-        style:--bar-color="currentColor"
+        style:--bar-color={spanError ? 'var(--color-error)' : 'currentColor'}
       >
         <DurationBar {duration} maximum={maximumDuration} />
       </span>
@@ -617,12 +613,7 @@
     {/snippet}
     {#snippet children(layout)}
       {#if run.telemetry || run.seconds !== undefined}
-        <tr
-          class="table-row"
-          aria-label="Run span"
-          class:table-row--selected={!!run.telemetry &&
-            selectedSpanKey === referenceKey(run.telemetry)}
-        >
+        <tr class="table-row" aria-label="Run span">
           <th
             colspan="2"
             scope="row"
@@ -641,7 +632,8 @@
                 {@render spanBar(
                   run.telemetry,
                   runWindow?.startTime,
-                  run.seconds
+                  run.seconds,
+                  Object.values(execution).some(item => item.spanError)
                 )}
               {/if}
             </td>
@@ -691,10 +683,7 @@
               class:eval-results__single={single}
               data-attempt-id={item.id}
               data-case-id={group.id}
-              class:table-row--selected={selectedSpanKey
-                ? !!item.telemetry &&
-                  selectedSpanKey === referenceKey(item.telemetry)
-                : selectedID === item.id}
+              class:table-row--selected={selectedID === item.id}
             >
               {#each columns as column (column.key)}
                 {#if column.key === 'name'}
@@ -727,19 +716,15 @@
                           item.state,
                           execution[item.id]?.internalFault
                         )}{/snippet}
-                      <button
+                      <span
                         class={single
-                          ? 'block w-full min-w-0 truncate rounded-sm text-left text-base-content focus-visible:outline-2 focus-visible:outline-primary'
-                          : 'eval-results__rep-button'}
+                          ? 'block w-full min-w-0 truncate text-left text-base-content'
+                          : 'eval-results__rep-label'}
                         title={`${item.name} — Rep ${item.repetition} · ${completionLabel(item.state, execution[item.id]?.internalFault)}`}
-                        aria-label={item.name}
-                        aria-pressed={!selectedSpanKey &&
-                          selectedID === item.id}
                         aria-describedby={`${panelID}-status-${item.id}`}
-                        onclick={() => onSelect(item.id)}
                         >{#if single}{item.name}{:else}<span class="sr-only"
                             >{item.name}</span
-                          >Rep {item.repetition}{/if}</button
+                          >Rep {item.repetition}{/if}</span
                       >
                       <span id={`${panelID}-status-${item.id}`} class="sr-only"
                         >Rep {item.repetition} · {completionLabel(
@@ -776,7 +761,8 @@
                       item.telemetry,
                       runWindow?.startTime ??
                         attemptWindows[item.id]?.startTime,
-                      item.seconds
+                      item.seconds,
+                      execution[item.id]?.spanError
                     )}
                   </td>
                 {:else if column.key === 'tools'}
@@ -804,8 +790,6 @@
                   data-span-key={tool.reference
                     ? referenceKey(tool.reference)
                     : undefined}
-                  class:table-row--selected={!!tool.reference &&
-                    selectedSpanKey === referenceKey(tool.reference)}
                 >
                   <th
                     colspan="2"
@@ -839,18 +823,9 @@
                           tool.reference,
                           tool.state
                         )}{/snippet}
-                      {#if tool.node && onSelectSpan}
-                        <button
-                          class="min-w-0 rounded-sm text-left text-base-content [overflow-wrap:anywhere] focus-visible:outline-2 focus-visible:outline-primary"
-                          aria-label={`Inspect span ${tool.node.spanData.name}`}
-                          aria-pressed={selectedSpanKey ===
-                            referenceKey(tool.node.spanData)}
-                          onclick={() => onSelectSpan?.(tool.node!)}
-                          >{tool.name}</button
-                        >
-                      {:else}<span class="min-w-0 [overflow-wrap:anywhere]"
-                          >{tool.name}</span
-                        >{/if}
+                      <span class="min-w-0 [overflow-wrap:anywhere]"
+                        >{tool.name}</span
+                      >
                     </TreeRowIdentity>
                   </th>
                   {#each columns.slice(2) as column (column.key)}
@@ -863,7 +838,8 @@
                           tool.reference,
                           runWindow?.startTime ??
                             attemptWindows[item.id]?.startTime,
-                          tool.seconds
+                          tool.seconds,
+                          tool.state === 'Error'
                         )}
                       {/if}
                     </td>
@@ -1008,8 +984,8 @@
   .eval-results__case-cell {
     padding: 0 0.5rem;
   }
-  .eval-results__rep-button {
-    @apply min-h-[var(--signal-card-row-h)] shrink-0 rounded-sm text-right text-sm font-normal focus-visible:outline-2 focus-visible:outline-primary;
+  .eval-results__rep-label {
+    @apply min-h-[var(--signal-card-row-h)] shrink-0 text-right text-sm font-normal;
     color: var(--color-subtle);
   }
 </style>

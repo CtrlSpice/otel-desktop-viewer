@@ -218,16 +218,20 @@
   bars/colours/connectors. Keep received parent IDs intact when compressing
   ancestry; mark skipped or unavailable parent connections. Include referenced
   graders, and retain recorded durations when a span is unavailable. Span
-  inspection opens shared Details within Evals; the trace href remains available.
+  inspection belongs in the trace workspace. Evals uses a stripped-down waterfall:
+  row names and bars are inert for now; only explicit expand/collapse controls act.
+  Do not embed trace Span, Events or Links Details in Evals.
   Child execution errors propagate to parent indicators, including collapsed
   branches, without changing recorded assessment scores.
+  Propagated span errors also colour ancestor duration bars Love, using the same
+  execution-error state as the indicators, whether the branch is open or closed.
   Distinguish Love "Span error" from Papaya "Internal fault" (evaluation
   machinery). A failed assessment is "Fail", not an execution error. Preserve
   these meanings during parent propagation, including in dogfooding datasets.
   Evals Details opens only its first section by default; later sections start
   collapsed and remain manually expandable.
   Keep tool execution in the waterfall; do not repeat its Tool calls list in
-  attempt Details. Linked rows open shared span Details.
+  attempt Details.
 - Trace, log and metric summary timestamps use the selected timezone without
   repeating its suffix on each card. Keep timezone labels in Details.
   Trace summaries omit the visible `Start:` label; keep `Duration:` labelled.

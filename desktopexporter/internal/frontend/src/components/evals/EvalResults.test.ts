@@ -76,7 +76,6 @@ describe('EvalResults repetitions', () => {
         run,
         attempts: run.attempts,
         selectedID: attempt.id,
-        onSelect: vi.fn(),
       })
       const user = userEvent.setup()
       const toggles = within(
@@ -133,8 +132,8 @@ describe('EvalResults repetitions', () => {
         toolCount
       )
       expect(
-        screen.getByRole('button', { name: attempt.name })
-      ).toHaveAttribute('aria-pressed', 'true')
+        container.querySelector(`[data-attempt-id="${attempt.id}"]`)
+      ).toHaveClass('table-row--selected')
     } finally {
       lookup.mockRestore()
     }
@@ -190,21 +189,20 @@ describe('EvalResults repetitions', () => {
             telemetry: withRun ? reference(4) : undefined,
           },
           attempts: [attempt],
-          onSelect: vi.fn(),
         })
         const user = userEvent.setup()
         await showOnlyTime()
-        await screen.findByRole('link', {
-          name: 'Open span question, 10.000 s',
+        await screen.findByRole('img', {
+          name: 'Span question, 10.000 s',
         })
         await user.click(
           screen.getByRole('button', { name: /^Expand execution/ })
         )
-        const early = screen.getByRole('link', {
-          name: 'Open span tool 2, 2.000 s',
+        const early = screen.getByRole('img', {
+          name: 'Span tool 2, 2.000 s',
         })
-        const late = screen.getByRole('link', {
-          name: 'Open span tool 3, 8.000 s',
+        const late = screen.getByRole('img', {
+          name: 'Span tool 3, 8.000 s',
         })
         expect(early.querySelector('.span-bar')).toHaveStyle({
           left: withRun ? '30%' : '12.5%',
@@ -250,15 +248,11 @@ describe('EvalResults repetitions', () => {
       render(EvalResults, {
         run: { ...exampleRuns[0], telemetry, attempts },
         attempts,
-        onSelect: vi.fn(),
       })
       await showOnlyTime()
       expect(
-        await screen.findByRole('link', { name: 'Open span eval run, 1.000 s' })
-      ).toHaveAttribute(
-        'href',
-        `/traces/${telemetry.traceID}?span=${telemetry.spanID}`
-      )
+        await screen.findByRole('img', { name: 'Span eval run, 1.000 s' })
+      ).not.toHaveAttribute('href')
       expect(screen.getAllByText('24.000 s')).toHaveLength(1)
       expect(
         screen.getByTitle('Recorded eval duration').querySelector('a')
@@ -288,7 +282,6 @@ describe('EvalResults repetitions', () => {
         const { container } = render(EvalResults, {
           run: { ...exampleRuns[0], attempts },
           attempts,
-          onSelect: vi.fn(),
         })
         await showOnlyTime()
         const rows = [...container.querySelectorAll('[data-attempt-id]')]
@@ -301,7 +294,7 @@ describe('EvalResults repetitions', () => {
         expect(cells[1].querySelector('.span-bar')).toHaveStyle({ width: '0%' })
         expect(cells[2]).toHaveTextContent('')
         expect(cells[2].querySelector('.span-bar')).toBeNull()
-        expect(container.querySelector('.correlated-span-bar')).toBeNull()
+        expect(container.querySelector('.eval-results__span-bar')).toBeNull()
         expect(screen.getByText('Partial total')).toBeInTheDocument()
       } finally {
         lookup.mockRestore()
@@ -309,7 +302,7 @@ describe('EvalResults repetitions', () => {
     }
   )
 
-  it('fans out single and repeated attempts, with each number selecting its exact attempt', async () => {
+  it('fans out single and repeated attempts with inert labels and functional collapse controls', async () => {
     const [first, second, third] = exampleRuns[0].attempts.filter(
       item => item.caseID === 'request-latency'
     )
@@ -320,33 +313,29 @@ describe('EvalResults repetitions', () => {
       name: 'Single case',
     }
     const attempts = [single, first, second, third]
-    const onSelect = vi.fn()
     const { container } = render(EvalResults, {
       run: { ...exampleRuns[0], attempts },
       attempts,
-      onSelect,
       selectedID: second.id,
     })
     expect(container.querySelectorAll('tbody tr')).toHaveLength(5)
     const singleton = container.querySelector(
       '[data-attempt-id="single"]'
     )! as HTMLElement
-    expect(
-      within(singleton).getByRole('button', { name: 'Single case' })
-    ).toHaveTextContent('Single case')
+    expect(within(singleton).getByText('Single case')).toHaveTextContent(
+      'Single case'
+    )
     expect(singleton.querySelector('.seg__arm--elbow')).toBeNull()
     expect(container.querySelectorAll('.eval-results__case')).toHaveLength(1)
     expect(
       screen.queryByText(exampleRuns[0].evaluation)
     ).not.toBeInTheDocument()
-    const buttons = screen.getAllByRole('button', {
-      name: first.name,
-    })
-    expect(buttons.map(button => button.textContent)).toEqual(
+    const labels = [...container.querySelectorAll('.eval-results__rep-label')]
+    expect(labels.map(label => label.textContent)).toEqual(
       [1, 2, 3].map(rep => `${first.name}Rep ${rep}`)
     )
-    expect(buttons[1]).toHaveAttribute('aria-pressed', 'true')
-    expect(buttons[1]).toHaveAccessibleDescription('Rep 2 · Span error')
+    expect(labels[1].closest('tr')).toHaveClass('table-row--selected')
+    expect(labels[1]).toHaveAccessibleDescription('Rep 2 · Span error')
     const parent = container.querySelector(
       '.eval-results__case[data-case-id="request-latency"]'
     )! as HTMLElement
@@ -362,15 +351,13 @@ describe('EvalResults repetitions', () => {
     expect(
       [...parent.querySelectorAll('td')].map(cell => cell.textContent)
     ).toEqual(aggregateValues)
-    expect(onSelect).not.toHaveBeenCalled()
     await userEvent.setup().keyboard('[Enter]')
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
     expect(
-      screen.getAllByRole('button', { name: first.name })[1]
-    ).toHaveAttribute('aria-pressed', 'true')
-    await userEvent
-      .setup()
-      .click(screen.getAllByRole('button', { name: first.name })[2])
-    expect(onSelect).toHaveBeenCalledWith(third.id)
+      container.querySelector(`[data-attempt-id="${second.id}"]`)
+    ).toHaveClass('table-row--selected')
+    expect(
+      screen.queryByRole('button', { name: first.name })
+    ).not.toBeInTheDocument()
   })
 })

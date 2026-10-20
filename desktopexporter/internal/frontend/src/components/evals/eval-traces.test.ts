@@ -95,6 +95,7 @@ describe('referenced eval hierarchy', () => {
       'Complete',
     ])
     expect(result.state).toBe('Error')
+    expect(result.spanError).toBe(true)
     expect(result.internalFault).toBe(false)
     expect(
       evalExecutionRows(
