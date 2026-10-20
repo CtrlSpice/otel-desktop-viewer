@@ -54,8 +54,8 @@
     { label: '100%', tone: 'success' },
     { label: 'Partial', tone: 'warning' },
     { label: '0%', tone: 'error' },
-    { label: 'Unscored', tone: 'neutral' },
     { label: 'Error', tone: 'papaya' },
+    { label: 'Unscored', tone: 'neutral' },
   ]
   const completionLegend: LegendEntry[] = [
     { label: 'Complete', tone: 'complete' },
