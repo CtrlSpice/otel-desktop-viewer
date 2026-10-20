@@ -32,7 +32,7 @@ describe('EvalRunSummary', () => {
     }
     expect(card).toHaveTextContent('Assessed: 8/8')
     expect(card).toHaveTextContent('Graded: 8/8')
-    expect(card).toHaveTextContent('Tool calls: 17 (1 failed)')
+    expect(card).toHaveTextContent('Tool calls: 17 · 1 failed')
   })
 
   it('uses outcome bubbles and a stable label without selecting the run during exploration', async () => {
@@ -99,6 +99,8 @@ describe('EvalRunSummary', () => {
     )
     expect(within(group).queryByRole('button')).not.toBeInTheDocument()
     expect(screen.getByText('Unscored')).toBeInTheDocument()
-    expect(screen.getByText('Est. cost: Unknown')).toBeInTheDocument()
+    expect(screen.getByText(/Est\. cost:/)).toHaveTextContent(
+      'Est. cost: Unknown'
+    )
   })
 })

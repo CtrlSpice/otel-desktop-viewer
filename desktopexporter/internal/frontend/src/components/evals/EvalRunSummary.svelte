@@ -3,6 +3,7 @@
   import OutcomeBar from '@/components/shared/OutcomeBar.svelte'
   import Identifier from '@/components/shared/Identifier.svelte'
   import RunStatusBadge from './RunStatusBadge.svelte'
+  import EvalStatus from './EvalStatus.svelte'
   import { cost, percent, type EvalRun } from './model'
   import { runSummary } from './run-summary'
 
@@ -74,16 +75,20 @@
     <div
       class="flex min-h-[var(--signal-card-row-h)] w-full flex-wrap items-center justify-between gap-x-2 gap-y-0 text-sm tabular-nums"
     >
-      <span>
-        Tool calls: <span class="text-base-content">{summary.toolCalls}</span>
+      <span class="inline-flex flex-wrap items-center gap-2">
+        <span
+          >Tool calls: <span class="text-base-content">{summary.toolCalls}</span
+          ></span
+        >
         {#if summary.failedTools > 0}
-          <span class="text-error">({summary.failedTools} failed)</span>
+          <span aria-hidden="true">·</span>
+          <EvalStatus label={`${summary.failedTools} failed`} tone="error" />
         {/if}
       </span>
       <span title="Investigator cost estimate in CAD"
-        >Est. cost: {cost(
-          summary.investigatorCost.total
-        )}{#if summary.investigatorCost.incomplete && summary.investigatorCost.total !== null}
+        >Est. cost: <span class="text-base-content"
+          >{cost(summary.investigatorCost.total)}</span
+        >{#if summary.investigatorCost.incomplete && summary.investigatorCost.total !== null}
           {' · incomplete'}{/if}</span
       >
     </div>

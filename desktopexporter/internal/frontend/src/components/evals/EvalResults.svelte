@@ -2,6 +2,7 @@
   import PaneHeader, { paneTabID } from '@/components/shared/PaneHeader.svelte'
   import AssessmentBadge from './AssessmentBadge.svelte'
   import RunStatusBadge from './RunStatusBadge.svelte'
+  import EvalStatus from './EvalStatus.svelte'
   import { cost, estimatedCost, type EvalAttempt, type EvalRun } from './model'
 
   let {
@@ -41,11 +42,11 @@
 >
   {#snippet badge()}
     <span
-      class="badge badge-md badge-primary tabular-nums"
+      class="badge-count tabular-nums"
       title="Shown attempts / total attempts"
       >{attempts.length}/{run.attempts.length} attempts</span
     >
-    <RunStatusBadge state={run.state} pauseReason={run.pauseReason} size="md" />
+    <RunStatusBadge state={run.state} pauseReason={run.pauseReason} />
   {/snippet}
 </PaneHeader>
 
@@ -56,37 +57,32 @@
   class="min-h-0 flex-1 overflow-auto"
   tabindex="0"
 >
-  <table class="table w-full min-w-[38rem]">
+  <table class="eval-results table w-full min-w-[38rem]">
     <caption class="sr-only"
       >{views.find(item => item.id === view)?.label} for {run.name}</caption
     >
     <thead class="header-surface sticky top-0 z-10">
       <tr>
-        <th class="table-header-cell min-w-56 text-left" scope="col"
-          >Case / attempt</th
+        <th class="table-cell min-w-56 text-left" scope="col">Case / attempt</th
         >
         {#if view === 'results'}
           {#each run.assessments as definition}
             <th
-              class="table-header-cell min-w-32 text-right"
+              class="table-cell min-w-32 text-right"
               scope="col"
               title={definition.scale}>{definition.name}</th
             >
           {/each}
         {:else if view === 'time'}
-          <th class="table-header-cell min-w-40 text-right" scope="col"
-            >Duration</th
-          >
-          <th class="table-header-cell min-w-32 text-right" scope="col"
-            >Tool calls</th
-          >
+          <th class="table-cell min-w-40 text-right" scope="col">Duration</th>
+          <th class="table-cell min-w-32 text-right" scope="col">Tool calls</th>
         {:else}
-          <th class="table-header-cell min-w-40 text-right" scope="col"
+          <th class="table-cell min-w-40 text-right" scope="col"
             >Investigator <span class="block text-sm font-normal"
               >Estimate · CAD</span
             ></th
           >
-          <th class="table-header-cell min-w-40 text-right" scope="col"
+          <th class="table-cell min-w-40 text-right" scope="col"
             >Grader <span class="block text-sm font-normal">Estimate · CAD</span
             ></th
           >
@@ -101,16 +97,18 @@
         >
           <th scope="row" class="table-cell text-left font-normal">
             <button
-              class="block w-full rounded-sm py-2 text-left text-sm focus-visible:outline-2 focus-visible:outline-primary"
+              class="block min-h-[var(--signal-card-row-h)] w-full rounded-sm text-left text-sm font-normal focus-visible:outline-2 focus-visible:outline-primary"
               aria-pressed={selectedID === item.id}
               onclick={() => onSelect(item.id)}>{item.name}</button
             >
-            <div class="flex items-center gap-2 pb-2 text-sm">
-              <span
-                class="badge badge-xs"
-                class:badge-papaya={item.state === 'Error'}
-                >{item.state === 'Error' ? 'Execution error' : item.state}</span
-              >
+            <div
+              class="flex min-h-[var(--signal-card-row-h)] flex-wrap items-center gap-x-2 text-sm text-rp-subtle"
+            >
+              <EvalStatus
+                label={item.state === 'Error' ? 'Execution error' : item.state}
+                tone={item.state === 'Error' ? 'papaya' : undefined}
+              />
+              <span aria-hidden="true">·</span>
               <span>Rep {item.repetition}</span>
             </div>
           </th>
@@ -150,9 +148,14 @@
               {:else}<span class="text-sm">Unknown</span>{/if}
             </td>
             <td class="table-cell text-right text-sm tabular-nums">
-              {item.tools.length}{#if failed}<span
-                  class="block text-sm text-error">{failed} failed</span
-                >{/if}
+              <div class="min-h-[var(--signal-card-row-h)] content-center">
+                {item.tools.length}
+              </div>
+              {#if failed}<div
+                  class="min-h-[var(--signal-card-row-h)] content-center"
+                >
+                  <EvalStatus label={`${failed} failed`} tone="error" />
+                </div>{/if}
             </td>
           {:else}
             <td class="table-cell text-right text-sm tabular-nums"
@@ -176,7 +179,7 @@
               >{cost(
                 estimate.total
               )}{#if estimate.incomplete && estimate.total !== null}<span
-                  class="block text-sm">Incomplete</span
+                  class="block text-sm text-rp-subtle">Incomplete</span
                 >{/if}</td
             >
           {/each}
@@ -185,3 +188,16 @@
     {/if}
   </table>
 </div>
+
+<style lang="postcss">
+  @reference "../../app.css";
+
+  .eval-results th[scope='col'] {
+    @apply font-normal;
+    color: var(--color-subtle);
+  }
+
+  .eval-results tfoot {
+    display: table-footer-group;
+  }
+</style>

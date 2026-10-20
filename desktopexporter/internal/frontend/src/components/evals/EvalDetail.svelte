@@ -9,6 +9,7 @@
   import { cost, estimatedCost, localTimestamp, traceHref } from './model'
   import AssessmentBadge from './AssessmentBadge.svelte'
   import RunStatusBadge from './RunStatusBadge.svelte'
+  import EvalStatus from './EvalStatus.svelte'
 
   let {
     run,
@@ -89,7 +90,7 @@
               fieldValue={startedAt}
               timestampLabel={localTimestamp(startedAt)}
               >{#snippet value()}<time
-                  class="text-sm text-rp-subtle tabular-nums"
+                  class="text-sm text-base-content tabular-nums"
                   datetime={startedAt}
                   title={startedAt}>{localTimestamp(startedAt)}</time
                 >{/snippet}</DetailField
@@ -151,10 +152,10 @@
             fieldName="state"
             fieldType="string"
             fieldValue={attempt.state}
-            >{#snippet value()}<span
-                class:text-papaya={attempt.state === 'Error'}
-                >{attempt.state}</span
-              >{/snippet}</DetailField
+            >{#snippet value()}<EvalStatus
+                label={attempt.state}
+                tone={attempt.state === 'Error' ? 'papaya' : undefined}
+              />{/snippet}</DetailField
           >
           <DetailField
             fieldName="repetition"
@@ -167,7 +168,7 @@
               fieldValue={startedAt}
               timestampLabel={localTimestamp(startedAt)}
               >{#snippet value()}<time
-                  class="text-sm text-rp-subtle tabular-nums"
+                  class="text-sm text-base-content tabular-nums"
                   datetime={startedAt}
                   title={startedAt}>{localTimestamp(startedAt)}</time
                 >{/snippet}</DetailField
@@ -177,7 +178,8 @@
               fieldType="string"
               fieldValue={attempt.error}
               multiline
-              >{#snippet value()}<span class="text-papaya whitespace-pre-wrap"
+              >{#snippet value()}<span
+                  class="text-base-content whitespace-pre-wrap"
                   >{attempt.error}</span
                 >{/snippet}</DetailField
             >{/if}
@@ -230,7 +232,8 @@
           item => item.id === definition.id
         )}
         <FieldGroup label={definition.name} detail>
-          {#snippet heading()}<span>{definition.name}</span><AssessmentBadge
+          {#snippet heading()}<span class="font-normal">{definition.name}</span
+            ><AssessmentBadge
               {assessment}
               maximum={definition.maximum}
             />{/snippet}
@@ -274,10 +277,11 @@
     <DetailBubble label="Tool calls" count={attempt.tools.length}>
       {#each attempt.tools as tool, index}
         <FieldGroup label={`${tool.name} ${index + 1}`} detail open={false}>
-          {#snippet heading()}<span>{tool.name}</span
-            >{#if tool.state === 'Error'}<span
-                class="badge badge-xs badge-error">Error</span
-              >{/if}{/snippet}
+          {#snippet heading()}<span class="font-normal">{tool.name}</span
+            >{#if tool.state === 'Error'}<EvalStatus
+                label="Error"
+                tone="error"
+              />{/if}{/snippet}
           <table
             class="detail-fields w-full"
             aria-label={`${tool.name} ${index + 1}`}

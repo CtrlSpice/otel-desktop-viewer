@@ -101,7 +101,7 @@
 >
   {#if colouredParts.length > 1}
     <div
-      class="mt-1 flex h-2 w-full gap-1"
+      class="flex h-6 w-full gap-1"
       role="group"
       aria-label={`${barLabel}: ${colouredParts.map(part => `${part.label}: ${countLabel(part)}`).join('; ')}`}
     >
@@ -150,11 +150,9 @@
     <div class="ball-pit" class:ball-pit--after-bar={colouredParts.length > 1}>
       <div class="min-w-0 flex-1">
         {#if activePart}
-          {#key activeKey}
-            <div class="breakdown-label">
-              {@render partLabel(activePart)}
-            </div>
-          {/key}
+          <div class="breakdown-label">
+            {@render partLabel(activePart)}
+          </div>
         {:else if emptyLabel}
           <span class="text-sm text-rp-subtle">{emptyLabel}</span>
         {/if}
@@ -170,8 +168,9 @@
   @reference "../../app.css";
 
   .breakdown-segment {
-    @apply cursor-pointer border-0 p-0;
+    @apply cursor-pointer border-0 px-0 py-2;
     background-color: var(--part-color);
+    background-clip: content-box;
   }
 
   .breakdown-segment:focus-visible {
@@ -190,7 +189,6 @@
 
   .breakdown-label {
     @apply flex min-w-0 items-center gap-1.5 text-sm font-normal text-base-content;
-    animation: breakdown-label-in var(--motion-fade-duration) linear;
   }
 
   .breakdown-dot {
@@ -199,20 +197,5 @@
 
   .breakdown-label__text {
     @apply flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap;
-  }
-
-  @keyframes breakdown-label-in {
-    from {
-      opacity: 0.5;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .breakdown-label {
-      animation: none;
-    }
   }
 </style>

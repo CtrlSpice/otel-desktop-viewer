@@ -1,24 +1,26 @@
 <script lang="ts">
   import type { EvalRun } from './model'
+  import EvalStatus from './EvalStatus.svelte'
   let {
     state,
     pauseReason,
-    size = 'xs',
   }: {
     state: EvalRun['state']
     pauseReason?: EvalRun['pauseReason']
-    size?: 'xs' | 'md'
   } = $props()
   const internalError = $derived(
     state === 'Paused' && pauseReason === 'internal-error'
   )
 </script>
 
-<span
-  class="badge badge-{size}"
-  class:badge-success={state === 'Complete'}
-  class:badge-warning={state === 'Paused' && !internalError}
-  class:badge-papaya={internalError}
+<EvalStatus
+  label={state === 'Complete' ? 'Completed' : state}
+  tone={state === 'Complete'
+    ? 'success'
+    : internalError
+      ? 'papaya'
+      : state === 'Paused'
+        ? 'warning'
+        : undefined}
   title={internalError ? 'Paused after an internal execution error' : undefined}
-  >{state === 'Complete' ? 'Completed' : state}</span
->
+/>

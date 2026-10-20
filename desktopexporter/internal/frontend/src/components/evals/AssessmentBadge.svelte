@@ -1,19 +1,24 @@
 <script lang="ts">
   import type { Assessment } from './model'
+  import EvalStatus from './EvalStatus.svelte'
   let {
     assessment,
     maximum = 1,
   }: { assessment?: Assessment; maximum?: number } = $props()
 </script>
 
-<span
-  class="badge badge-xs tabular-nums"
-  class:badge-success={assessment?.value === maximum}
-  class:badge-warning={assessment?.value != null &&
-    assessment.value > 0 &&
-    assessment.value < maximum}
-  class:badge-error={assessment?.value === 0}
+<EvalStatus
+  label={assessment?.label ?? 'Unscored'}
+  tone={assessment?.value === maximum
+    ? 'success'
+    : assessment?.value === 0
+      ? 'error'
+      : assessment?.value != null &&
+          assessment.value > 0 &&
+          assessment.value < maximum
+        ? 'warning'
+        : undefined}
   title={assessment?.value != null
     ? `${assessment.value} / ${maximum}`
-    : undefined}>{assessment?.label ?? 'Unscored'}</span
->
+    : undefined}
+/>

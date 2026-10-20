@@ -146,7 +146,9 @@
   {/snippet}
   {#snippet pageFooter()}
     <div class="flex min-w-0 flex-wrap items-center">
-      <span class="px-3 text-xs">Experimental and unsupported</span>
+      <span class="px-3 text-sm text-rp-subtle"
+        >Experimental and unsupported</span
+      >
       <div class="min-w-0 flex-1">
         <SignalFooter
           index={selectedIndex}

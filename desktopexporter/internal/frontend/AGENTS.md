@@ -212,6 +212,10 @@
   Apply these rules to every summary card: traces, logs, metrics, eval runs and
   disclosure summaries. Reuse `SignalCard`; avoid per-summary typography or
   extra vertical padding between detail rows.
+- Evals uses plain text and counts without badges. Use small 8px decorative
+  colour dots only for meaningful statuses or outcomes, alongside neutral Text
+  labels. Keep Results, Time, Cost, summaries and Details consistent with shared
+  table and field-card typography and spacing.
 - Trace, log and metric summary timestamps use the selected timezone without
   repeating its suffix on each card. Keep timezone labels in Details.
   Trace summaries omit the visible `Start:` label; keep `Duration:` labelled.
