@@ -5,7 +5,8 @@
   import type { SpanData } from '@/types/api-types'
   import type { WaterfallRowData } from './WaterfallView.svelte'
   import { formatDuration } from '@/utils/time'
-  import WaterfallTreeGutter from './WaterfallTreeGutter.svelte'
+  import TreeGutter from '@/components/shared/TreeGutter.svelte'
+  import TreeChildCount from '@/components/shared/TreeChildCount.svelte'
   import TreeToggle from '@/components/shared/TreeToggle.svelte'
   import type { WaterfallGridLayout } from './WaterfallTimeAxisHeader.svelte'
   import WaterfallGrid from './WaterfallGrid.svelte'
@@ -103,20 +104,20 @@
 </script>
 
 {#snippet treeContent()}
-  <WaterfallTreeGutter
+  <TreeGutter
     depth={row.spanNode.depth}
     tree={row.tree}
     color={row.color}
     {subtreeCollapsed}
   />
   {#if hasChildren}
-    <span
-      class="waterfall-row__child-count shrink-0 text-sm tabular-nums"
-      aria-hidden="true"
+    <TreeChildCount
+      class="waterfall-row__child-count"
+      count={row.tree.childrenCount}
       title="{row.tree.childrenCount} child {row.tree.childrenCount === 1
         ? 'span'
-        : 'spans'}">{row.tree.childrenCount}</span
-    >
+        : 'spans'}"
+    />
   {/if}
 {/snippet}
 
@@ -273,16 +274,6 @@
 
 <style lang="postcss">
   @reference "../../../app.css";
-  .waterfall-row__child-count {
-    color: var(--color-subtle);
-    /* Centre the count over the next level's dots, removing the gutter tail
-       and the row gap before the count slot. */
-    width: var(--waterfall-gutter-col);
-    text-align: center;
-    margin-left: calc(0px - var(--waterfall-gutter-tail) - 0.25rem);
-    margin-right: 0.25rem;
-  }
-
   .waterfall-row {
     @apply cursor-pointer border-none;
     height: var(--table-row-h);

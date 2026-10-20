@@ -192,10 +192,45 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
     time.locator('[data-attempt-id="checkout-latency"]')
   ).toContainText('Unknown')
   await expect(
-    time.locator('[data-attempt-id="request-latency"]')
-  ).toContainText('3 (1 failure)')
+    time.getByRole('columnheader', { name: 'Failures' })
+  ).toBeVisible()
+  const failedAttempt = time.locator('[data-attempt-id="request-latency"]')
+  await expect(failedAttempt.locator('td').nth(2)).toHaveText('3')
+  await expect(failedAttempt.locator('td').nth(3)).toHaveText('1')
+  await expect(
+    time
+      .locator('.eval-results__case[data-case-id="request-latency"] td')
+      .last()
+  ).toHaveText('3')
+  await time
+    .getByRole('button', { name: 'Sort by Failures', exact: true })
+    .click()
+  await time
+    .getByRole('button', { name: 'Sort by Failures', exact: true })
+    .click()
+  await expect(time.locator('[data-attempt-id]').first()).toHaveAttribute(
+    'data-case-id',
+    'request-latency'
+  )
+  await expect(
+    time.locator('[data-attempt-id="checkout-latency"] td').last()
+  ).toHaveText('0')
   await page.getByRole('tab', { name: 'Cost', exact: true }).click()
   const costs = page.getByRole('table', { name: 'Cost for Direct agent' })
+  expect(
+    await costs
+      .locator('.eval-results__case')
+      .evaluateAll(rows =>
+        rows.every(
+          row =>
+            Math.abs(
+              row.getBoundingClientRect().height -
+                row.querySelector('.tree-toggle')!.getBoundingClientRect()
+                  .height
+            ) < 1
+        )
+      )
+  ).toBe(true)
   await expect(
     costs.getByRole('columnheader', { name: /Investigator/ })
   ).toBeVisible()
@@ -466,6 +501,23 @@ test('column resizing uses shared handles and retains widths, sorting and select
   await page.mouse.move(x + 24, y, { steps: 4 })
   await page.mouse.up()
   await expect.poll(width).toBeCloseTo(collapsedWidth + 24, 0)
+  for (const key of ['End', 'Home']) {
+    await handle.focus()
+    await page.keyboard.press(key)
+    const bounds = await table.evaluate(element => ({
+      width: element.getBoundingClientRect().width,
+      viewport: element.closest('[role="region"]')!.clientWidth,
+      answers: [...element.querySelectorAll('thead th[scope="col"]')].map(
+        cell => cell.getBoundingClientRect().width
+      ),
+    }))
+    expect(bounds.width).toBeLessThanOrEqual(bounds.viewport + 1)
+    expect(bounds.answers.every(width => width >= 160)).toBe(true)
+    const limit = await handle.getAttribute(
+      key === 'End' ? 'aria-valuemax' : 'aria-valuemin'
+    )
+    await expect(handle).toHaveAttribute('aria-valuenow', limit!)
+  }
 })
 
 test('case branches stay connected to aligned repetitions through sorting and resizing', async ({
@@ -572,6 +624,13 @@ test('case branches stay connected to aligned repetitions through sorting and re
   }
   await checkGeometry()
   const toggle = parent.getByRole('button')
+  const gutterBounds = await toggle.evaluate(button => ({
+    width: button.getBoundingClientRect().width,
+    height: button.getBoundingClientRect().height,
+    rowHeight: button.closest('tr')!.getBoundingClientRect().height,
+  }))
+  expect(gutterBounds.width).toBeGreaterThanOrEqual(44)
+  expect(gutterBounds.height).toBeCloseTo(gutterBounds.rowHeight, 0)
   const totals = await parent.locator('td').allTextContents()
   const selectedURL = page.url()
   await toggle.click({ position: { x: 1, y: 1 } })
@@ -598,6 +657,14 @@ test('case branches stay connected to aligned repetitions through sorting and re
           12
         ))
   )
+  expect(
+    await toggle.evaluate(button =>
+      Math.abs(
+        button.getBoundingClientRect().height -
+          button.closest('tr')!.getBoundingClientRect().height
+      )
+    )
+  ).toBeLessThan(1)
   expect(
     await parent.evaluate(element => element.getBoundingClientRect().height)
   ).toBeGreaterThan(initialHeight)
@@ -683,7 +750,7 @@ for (const theme of ['rose-pine', 'rose-pine-dawn']) {
     }
     await expect(
       page.getByRole('separator', { name: /^Resize (Case|Rep) column$/ })
-    ).toHaveCount(0)
+    ).toHaveCount(1)
     expect(before.repX - before.caseX).toBeLessThan(80)
     expect(before.right - before.repX).toBeLessThan(72)
     const rep = selected.getByRole('button')

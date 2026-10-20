@@ -90,26 +90,36 @@ test('waterfall column groups toggle together without changing span selection', 
           method === 'getTraceView'
             ? trace
             : method === 'searchTraceSummaries'
-              ? [{ traceID, hasRootSpan: true, rootSpan: { serviceName: 'checkout', name: 'other span' }, startTime: trace.traceStart, durationNs: '1000000000', spanCount: 2, errorCount: 0 }]
-            : method === 'getStats'
-              ? {
-                  storage: { sizeBytes: 0, maxSizeBytes: 0 },
-                  traces: {
-                    traceCount: 1,
+              ? [
+                  {
+                    traceID,
+                    hasRootSpan: true,
+                    rootSpan: { serviceName: 'checkout', name: 'other span' },
+                    startTime: trace.traceStart,
+                    durationNs: '1000000000',
                     spanCount: 2,
-                    serviceCount: 1,
                     errorCount: 0,
-                    lastReceived: null,
                   },
-                  logs: { logCount: 0, errorCount: 0, lastReceived: null },
-                  metrics: {
-                    metricCount: 0,
-                    dataPointCount: 0,
-                    lastReceived: null,
-                  },
-                  rejections: [],
-                }
-              : [],
+                ]
+              : method === 'getStats'
+                ? {
+                    storage: { sizeBytes: 0, maxSizeBytes: 0 },
+                    traces: {
+                      traceCount: 1,
+                      spanCount: 2,
+                      serviceCount: 1,
+                      errorCount: 0,
+                      lastReceived: null,
+                    },
+                    logs: { logCount: 0, errorCount: 0, lastReceived: null },
+                    metrics: {
+                      metricCount: 0,
+                      dataPointCount: 0,
+                      lastReceived: null,
+                    },
+                    rejections: [],
+                  }
+                : [],
       },
     })
   })
@@ -486,7 +496,9 @@ test('Waterfall columns persist across traces and align through resizing and ove
     details.locator('[data-field="service.name"][data-field-source="resource"]')
   ).toHaveClass(/detail-property--revealed/)
   await expect(root).toHaveAttribute('aria-selected', 'true')
-  await details.locator('details').first().locator(':scope > summary').click()
+  await details.locator('details').first().locator(':scope > summary').focus()
+  await page.keyboard.press('Enter')
+  await expect(details.locator('details').first()).not.toHaveAttribute('open')
   await cell
     .getByRole('button', { name: 'Show span: request.count in details' })
     .click()
@@ -701,7 +713,7 @@ test('Copy span sits opposite the span icon and copies only the selected span wi
     Math.abs(iconBox.y + iconBox.height / 2 - copyBox.y - copyBox.height / 2)
   ).toBeLessThan(1)
   expect(headerBox.x + headerBox.width - copyBox.x - copyBox.width).toBeCloseTo(
-    16,
+    12,
     0
   )
   const valueBox = (await detail
@@ -709,12 +721,17 @@ test('Copy span sits opposite the span icon and copies only the selected span wi
     .locator('.detail-property__body')
     .first()
     .boundingBox())!
-  expect(valueBox.x).toBeCloseTo(iconBox.x, 0)
+  const fieldHeadingBox = (await detail
+    .getByRole('table', { name: 'Span fields' })
+    .locator('.detail-property__header')
+    .first()
+    .boundingBox())!
+  expect(valueBox.x).toBeCloseTo(fieldHeadingBox.x, 0)
   const palette = await page.evaluate(() => {
     const probe = document.createElement('span')
     document.body.append(probe)
     const colors = Object.fromEntries(
-      ['base-content', 'accent', 'warning', 'primary'].map(token => {
+      ['base-content', 'secondary', 'primary', 'highlight-low'].map(token => {
         probe.style.color = `var(--color-${token})`
         return [token, getComputedStyle(probe).color]
       })
@@ -756,7 +773,7 @@ test('Copy span sits opposite the span icon and copies only the selected span wi
       .locator('[data-field="name"]')
       .first()
       .locator('.detail-property__type')
-  ).toHaveCSS('color', palette.accent!)
+  ).toHaveCSS('color', palette.secondary!)
   await expect(
     fields.locator('[data-field="kind"] .detail-property__value')
   ).toHaveCSS('color', palette['base-content']!)
@@ -772,11 +789,11 @@ test('Copy span sits opposite the span icon and copies only the selected span wi
   await expect(json).toHaveAttribute('contenteditable', 'false')
   await expect(json.getByText('"example"', { exact: true })).toHaveCSS(
     'color',
-    palette.accent!
+    palette['base-content']!
   )
   await expect(json.getByText('42', { exact: true })).toHaveCSS(
     'color',
-    palette.warning!
+    palette.primary!
   )
   await expect(json.getByText('false', { exact: true })).toHaveCSS(
     'color',
@@ -849,6 +866,6 @@ test('Copy span sits opposite the span icon and copies only the selected span wi
   await selected.hover()
   await expect(selected.locator('td').first()).toHaveCSS(
     'background-color',
-    'rgb(68, 65, 90)'
+    palette['highlight-low']!
   )
 })

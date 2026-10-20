@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import { render } from '@testing-library/svelte'
-import WaterfallTreeGutter from './WaterfallTreeGutter.svelte'
+import WaterfallTreeGutter from '@/components/shared/TreeGutter.svelte'
 
 describe('WaterfallTreeGutter dots', () => {
   it('renders a leaf without a caret or number', () => {

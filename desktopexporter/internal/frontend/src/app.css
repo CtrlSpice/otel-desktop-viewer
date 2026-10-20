@@ -1155,7 +1155,7 @@ button:focus-visible:not(.btn) {
   --toolbar-search-chrome-min-height: calc(
     var(--table-row-h) + 0.5rem + 0.5rem + 2 * var(--border, 1px)
   );
-  /* Waterfall span column tree + nested detail rows (WaterfallTreeGutter) */
+  /* Shared tree gutter + nested detail rows (TreeGutter) */
   --waterfall-gutter-tail: 4px;
 
   /* ── App shell spacing (tune here) ── */

@@ -35,6 +35,8 @@
     children,
     footer,
     pinnedCount = 0,
+    fillColumn,
+    constrainToViewport = false,
   }: {
     columns: ResizableTableColumn[]
     storageKey: string
@@ -43,6 +45,8 @@
     children: Snippet<[ResizableTableLayout]>
     footer?: Snippet<[ResizableTableLayout]>
     pinnedCount?: number
+    fillColumn?: string
+    constrainToViewport?: boolean
   } = $props()
   let viewportWidth = $state(0)
   let viewportHeight = $state(0)
@@ -75,18 +79,22 @@
     )
   )
   const targetWidth = $derived(
-    Math.max(
-      baseWidth,
-      columns.reduce(
-        (sum, column) =>
-          sum +
-          (column.fixed ? column.width : (current[column.id] ?? column.min)),
-        0
-      )
-    )
+    constrainToViewport
+      ? baseWidth
+      : Math.max(
+          baseWidth,
+          columns.reduce(
+            (sum, column) =>
+              sum +
+              (column.fixed
+                ? column.width
+                : (current[column.id] ?? column.min)),
+            0
+          )
+        )
   )
   const widths = $derived(
-    reconcileWidths(specs, { ...defaults, ...current }, targetWidth)
+    reconcileWidths(specs, { ...defaults, ...current }, targetWidth, fillColumn)
   )
   const tableWidth = $derived(
     columns.reduce((sum, column) => sum + widths[column.id], 0)
@@ -115,7 +123,7 @@
     return { pinned, viewportWidth }
   })
   const bars = $derived(
-    barPositions(specs, widths, viewportWidth)
+    barPositions(specs, widths, constrainToViewport ? 0 : viewportWidth)
       .map(bar => ({
         ...bar,
         position:
@@ -180,7 +188,7 @@
         drag = null
         save()
       },
-      viewportWidth
+      constrainToViewport ? 0 : viewportWidth
     )
   }
 
@@ -195,7 +203,13 @@
           : (event.key === 'ArrowLeft' ? -1 : 1) * (event.shiftKey ? 64 : 16)
     current = {
       ...current,
-      ...resizeBar(specs, widths, id, delta, viewportWidth),
+      ...resizeBar(
+        specs,
+        widths,
+        id,
+        delta,
+        constrainToViewport ? 0 : viewportWidth
+      ),
     }
     save()
   }
@@ -203,7 +217,7 @@
   function reset() {
     current = {
       ...current,
-      ...fitWidths(specs, defaults, baseWidth),
+      ...fitWidths(specs, defaults, baseWidth, fillColumn),
     }
     save()
   }

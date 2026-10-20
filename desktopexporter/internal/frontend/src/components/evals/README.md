@@ -37,7 +37,7 @@ the footer, and stop before unused space below the last row.
 
 The main pane has three focused table views, using the original shared
 Results / Time / Cost tabs. Results contains assessments; Time contains duration
-and tool calls; Cost contains investigator and grader estimates. Case and Rep
+and separate Tool calls and Failures counts; Cost contains investigator and grader estimates. Case and Rep
 remain visible in each view. Views share collapse state and attempt selection,
 with independent sorting and saved widths. Each table has one regular-weight
 heading row. Logs and the trace waterfall retain their shared Columns picker.
@@ -46,18 +46,26 @@ with only one repetition. Branches reuse the waterfall's rounded 1px Muted
 connectors at 50% opacity. Repetition numbers select attempts; all values stay
 under their column headings. Case completion uses every attempt, including
 attempts hidden by the current filter.
+Case collapse uses the same TreeGutter, TreeChildCount and TreeToggle components
+as traces. The gutter and count form one full-height button, including wrapped
+case rows; Enter and Space toggle it without changing attempt selection.
 Case and Rep share one `Case · Rep` heading, with independently sortable labels.
 Their compact heading slots and branches are measured from rendered labels,
-padding and shared tree spacing. The fixed combined identity area leaves room
-for case names; saved data-column widths do not stretch it. Rep numbers use Subtle.
+padding and shared tree spacing. The combined identity area absorbs spare width
+for wrapping case names, keeping answer columns compact toward the right by default.
+The branch gutter stays fixed; the identity area and answer columns use shared
+resize handles. Rep numbers use Subtle.
+Resizing stays within the available table width and stops at readable column
+minimums. Horizontal scrolling is needed only when those minimums cannot fit.
 Case and Rep pin to the left during horizontal scrolling, including their heading,
 connectors and the Total label. Case titles wrap in the combined identity area.
 As in Logs, pinning releases when the pane cannot fit
 the pinned columns plus one complete scrolling column. Saved widths and shared
 hover/selection motion remain intact.
 Assessment dots, labels and numeric fractions stay together at the left; case
-percentages align above them. Duration is plain text, and tool
-counts use `17 (1 failure)`. Cost keeps
+percentages align above them. Measurements and their headings also align left.
+Duration is plain text. Tool calls include failed calls; Failures counts those
+calls separately for each repetition and the full case. Cost keeps
 investigator and grader estimates separate. The Total footer aligns each estimate
 under its visible cost column, with unknown and partial estimates explicit. Its
 top divider is a solid 1px Muted line at 60% opacity. The footer appears only in Cost.

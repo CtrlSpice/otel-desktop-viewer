@@ -1,6 +1,6 @@
 <script module lang="ts">
   import type { SpanNode, SpanData, TraceLogSummary } from '@/types/api-types'
-  import type { TreeConnectorMeta } from './WaterfallTreeGutter.svelte'
+  import type { TreeConnectorMeta } from '@/components/shared/TreeGutter.svelte'
   import { getServiceName } from '@/utils/resource'
   import ExportButton from '@/components/shared/ExportButton.svelte'
   import { traceSpanPalette } from '@/utils/chart-palette'

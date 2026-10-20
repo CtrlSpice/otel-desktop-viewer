@@ -16,6 +16,8 @@
   import ResizableTable from '@/components/shared/ResizableTable.svelte'
   import TreeConnector from '@/components/shared/TreeConnector.svelte'
   import TreeToggle from '@/components/shared/TreeToggle.svelte'
+  import TreeGutter from '@/components/shared/TreeGutter.svelte'
+  import TreeChildCount from '@/components/shared/TreeChildCount.svelte'
   import LegendRows from '@/components/shared/LegendRows.svelte'
   import { completionTone, groupAttempts } from './group-attempts'
   import {
@@ -98,8 +100,7 @@
       hint: 'Repetition',
       group: 'Case',
       width: Math.max(256, repGutterWidth),
-      min: Math.max(256, repGutterWidth),
-      fixed: true,
+      min: Math.max(144, repGutterWidth),
       numeric: true,
     },
     ...run.assessments.map(assessment => ({
@@ -107,7 +108,7 @@
       label: assessment.name,
       group: 'Results',
       width: 192,
-      min: 176,
+      min: 160,
       hint: assessment.scale,
       assessment,
     })),
@@ -115,34 +116,38 @@
       key: 'seconds',
       label: 'Duration',
       group: 'Time',
-      width: 128,
-      min: 112,
-      numeric: true,
+      width: 112,
+      min: 96,
     },
     {
       key: 'tools',
       label: 'Tool calls',
       group: 'Time',
-      width: 160,
-      min: 144,
-      numeric: true,
+      width: 112,
+      min: 104,
+    },
+    {
+      key: 'failures',
+      label: 'Failures',
+      hint: 'Failed tool calls',
+      group: 'Time',
+      width: 104,
+      min: 96,
     },
     {
       key: 'investigatorCost',
       label: 'Investigator',
       group: 'Cost',
-      width: 176,
-      min: 160,
-      numeric: true,
+      width: 160,
+      min: 144,
       description: 'Estimate · CAD',
     },
     {
       key: 'graderCost',
       label: 'Grader',
       group: 'Cost',
-      width: 176,
-      min: 160,
-      numeric: true,
+      width: 160,
+      min: 144,
       description: 'Estimate · CAD',
     },
   ])
@@ -258,6 +263,8 @@
     storageKey={`evals-${view}-column-widths`}
     caption={`${viewLabel} for ${run.name}`}
     pinnedCount={2}
+    fillColumn="repetition"
+    constrainToViewport
   >
     {#snippet header(layout)}
       <tr>
@@ -361,23 +368,26 @@
               class="eval-results__case-name"
               title={`${group.name} — ${group.state}`}
             >
-              {#if !collapsedCases.includes(group.id)}<TreeConnector
-                  kind="stem"
-                  start="calc(1rem + 4px)"
-                  targetSize="8px"
-                />{/if}
               <TreeToggle
                 label={`${collapsedCases.includes(group.id) ? 'Expand' : 'Collapse'} ${group.name}, ${group.attempts.length} ${group.attempts.length === 1 ? 'repetition' : 'repetitions'}`}
                 expanded={!collapsedCases.includes(group.id)}
                 onclick={() => toggleCase(group.id)}
-                ><EvalStatus
-                  label={group.state}
-                  dotOnly
-                  tone={completionTone(group.state)}
-                />
-                <span class="eval-results__case-count"
-                  >{group.attempts.length}</span
+                ><TreeGutter
+                  depth={0}
+                  tree={{
+                    childrenCount: group.attempts.length,
+                    ancestorHasNextSibling: [],
+                    isLastChild: true,
+                  }}
+                  subtreeCollapsed={collapsedCases.includes(group.id)}
                 >
+                  {#snippet node()}<EvalStatus
+                      label={group.state}
+                      dotOnly
+                      tone={completionTone(group.state)}
+                    />{/snippet}
+                </TreeGutter>
+                <TreeChildCount count={group.attempts.length} />
               </TreeToggle>
               <span class="min-w-0 [overflow-wrap:anywhere]">{group.name}</span>
             </div>
@@ -405,8 +415,8 @@
                       kind={index === group.attempts.length - 1
                         ? 'elbow'
                         : 'tee'}
-                      start="calc(1rem + 4px)"
-                      reach="calc(100% - 1rem - 4px)"
+                      start="calc(0.5rem + var(--waterfall-gutter-col) / 2)"
+                      reach="calc(100% - 0.5rem - var(--waterfall-gutter-col) / 2)"
                       targetSize="0px"
                     />
                     <span class="sr-only">{item.name}</span>
@@ -465,23 +475,22 @@
                     </div>
                   </td>
                 {:else if column.key === 'seconds'}
-                  <td class="table-cell text-right tabular-nums">
+                  <td class="table-cell text-left tabular-nums">
                     {#if item.seconds !== undefined}
                       <span>{item.seconds} s</span>
                     {:else}Unknown{/if}
                   </td>
                 {:else if column.key === 'tools'}
+                  <td class="table-cell text-left tabular-nums"
+                    >{item.tools.length}</td
+                  >
+                {:else if column.key === 'failures'}
                   {@const failed = item.tools.filter(
                     tool => tool.state === 'Error'
                   ).length}
-                  <td class="table-cell text-right tabular-nums">
-                    <span class="whitespace-nowrap"
-                      >{item.tools.length}{#if failed}{' '}({failed}
-                        {failed === 1 ? 'failure' : 'failures'}){/if}</span
-                    >
-                  </td>
+                  <td class="table-cell text-left tabular-nums">{failed}</td>
                 {:else if column.key === 'investigatorCost' || column.key === 'graderCost'}
-                  <td class="table-cell text-right tabular-nums"
+                  <td class="table-cell text-left tabular-nums"
                     >{cost(item[column.key])}</td
                   >
                 {/if}
@@ -511,7 +520,7 @@
             </td>
           {:else if column.key === 'seconds'}
             <td
-              class="table-cell text-right tabular-nums"
+              class="table-cell text-left tabular-nums"
               title="Sum of recorded repetition durations"
             >
               {group.summary.duration.total === null
@@ -523,20 +532,20 @@
             </td>
           {:else if column.key === 'tools'}
             <td
-              class="table-cell text-right tabular-nums"
+              class="table-cell text-left tabular-nums"
               title="Recorded tool calls across all repetitions"
             >
-              <span class="whitespace-nowrap"
-                >{group.summary.calls}{#if group.summary.failures}{' '}
-                  ({group.summary.failures}
-                  {group.summary.failures === 1
-                    ? 'failure'
-                    : 'failures'}){/if}</span
-              >
+              {group.summary.calls}
             </td>
+          {:else if column.key === 'failures'}
+            <td
+              class="table-cell text-left tabular-nums"
+              title="Failed tool calls across all repetitions"
+              >{group.summary.failures}</td
+            >
           {:else if column.key === 'investigatorCost' || column.key === 'graderCost'}
             {@const estimate = group.summary[column.key]}
-            <td class="table-cell text-right tabular-nums">
+            <td class="table-cell text-left tabular-nums">
               {cost(estimate.total)}
               {#if estimate.incomplete && estimate.total !== null}<span
                   class="block text-rp-subtle">Partial estimate</span
@@ -566,7 +575,7 @@
               >
             {:else}
               <td
-                class="table-cell text-right text-sm font-normal tabular-nums"
+                class="table-cell text-left text-sm font-normal tabular-nums"
                 class:table-cell--pinned={layout.pinned[column.key] !==
                   undefined}
                 style:left={layout.pinned[column.key] === undefined
@@ -617,15 +626,10 @@
     position: relative;
   }
   .eval-results__case-name {
-    @apply relative flex min-h-[var(--table-row-h)] w-full items-center gap-2 px-4 text-left font-normal;
+    @apply relative flex min-h-[var(--table-row-h)] w-full items-center gap-1 px-2 text-left font-normal;
   }
   .eval-results__case-cell {
     padding: 0;
-  }
-  .eval-results__case-count {
-    width: var(--waterfall-gutter-col);
-    @apply shrink-0 text-center tabular-nums;
-    color: var(--color-subtle);
   }
   .eval-results__rep {
     @apply -ml-4 flex items-center gap-2;

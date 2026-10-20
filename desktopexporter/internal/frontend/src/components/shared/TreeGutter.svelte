@@ -7,6 +7,7 @@
 </script>
 
 <script lang="ts">
+  import type { Snippet } from 'svelte'
   import TreeConnector from '@/components/shared/TreeConnector.svelte'
   type SegmentKind = 'none' | 'passthrough' | 'tee' | 'elbow'
 
@@ -16,11 +17,12 @@
     /** Concrete colour (palette HCL or `--color-*` var) for the node dot.
      *  Error spans already pass
      *  `--color-error` here, so no separate `isError` branch is needed. */
-    color: string
+    color?: string
+    node?: Snippet
     subtreeCollapsed: boolean
   }
 
-  let { depth, tree, color, subtreeCollapsed }: Props = $props()
+  let { depth, tree, color, node, subtreeCollapsed }: Props = $props()
 
   let hasChildren = $derived(tree.childrenCount > 0)
 
@@ -51,7 +53,7 @@
 
 <span
   class="gutter"
-  aria-hidden="true"
+  aria-hidden={node ? undefined : true}
   style:width="calc({depth + 1} * var(--waterfall-gutter-col) + var(--waterfall-gutter-tail))"
   style:--tree-accent={color}
 >
@@ -80,16 +82,19 @@
     {#if hasChildren && !subtreeCollapsed}
       <TreeConnector kind="stem" />
     {/if}
-    <span class="gutter__dot" class:gutter__dot--leaf={!hasChildren}></span>
+    {#if node}{@render node()}{:else}<span
+        class="gutter__dot"
+        class:gutter__dot--leaf={!hasChildren}
+      ></span>{/if}
   </span>
 </span>
 
 <style lang="postcss">
-  @reference "../../../app.css";
+  @reference "../../app.css";
   .gutter {
     --leaf-dot-size: var(--waterfall-gutter-leaf);
-    @apply relative block flex-shrink-0;
-    height: var(--table-row-h);
+    @apply relative block flex-shrink-0 self-stretch;
+    min-height: var(--table-row-h);
   }
 
   .gutter__col {
