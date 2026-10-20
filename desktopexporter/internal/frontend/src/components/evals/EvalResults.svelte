@@ -55,12 +55,13 @@
     { label: 'Partial', tone: 'warning' },
     { label: '0%', tone: 'error' },
     { label: 'Unscored', tone: 'neutral' },
+    { label: 'Error', tone: 'papaya' },
   ]
   const completionLegend: LegendEntry[] = [
     { label: 'Complete', tone: 'complete' },
     { label: 'Running', tone: 'running' },
-    { label: 'Error', tone: 'papaya' },
     { label: 'Planned', tone: 'neutral' },
+    { label: 'Error', tone: 'papaya' },
   ]
   let caseGutterWidth = $state(0)
   let repGutterWidth = $state(0)
