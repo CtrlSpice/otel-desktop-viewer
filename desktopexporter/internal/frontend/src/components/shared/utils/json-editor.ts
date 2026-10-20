@@ -10,7 +10,6 @@ import {
 import { search, searchKeymap } from '@codemirror/search'
 import { editorHighlightStyle } from './editor-highlighting'
 import { jsonWrapping } from './json-wrapping'
-import { jsonGuides } from './json-guides'
 import { jsonFoldGroups } from './json-fold-groups'
 
 /** One read-only configuration shared by all JSON detail editors. */
@@ -19,7 +18,6 @@ export const jsonEditorExtensions = [
   EditorView.editable.of(false),
   json(),
   jsonWrapping,
-  jsonGuides,
   syntaxHighlighting(editorHighlightStyle),
   codeFolding(),
   bracketMatching(),

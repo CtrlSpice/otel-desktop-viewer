@@ -136,16 +136,14 @@
   Keep header surfaces separate; retain shared hover and selection highlights.
   Structured attribute wrappers add no extra left padding. JSON uses the shared
   Hugeicons fold-caret gutter; retain existing folding commands and raw-inspector
-  controls. The current
-  notebook-guide trial uses 1.5px Muted dots at 60% opacity in all themes,
-  in leading indentation
-  only, spaced 2ch horizontally and one text line vertically. Place dots on text
-  row boundaries (top/bottom), not at the middle of each row. JSON stays Mono.
+  controls. JSON, read-only code panels and text-heavy signal tables have plain
+  backgrounds without decorative dot grids or indentation dots. Use spacing,
+  wrapping and shared field highlights to convey structure. JSON stays Mono.
   JSON uses CodeMirror's normal word wrapping, breaking oversized words only
   when needed. Continuations align under the key's first character (after its
   opening quote). Array strings wrap under their own first character.
-  Wrapping and guides are display-only; preserve document text, Copy and Download.
-  JSON, waterfall and metric guides share dot radius and 60% opacity through the
+  Wrapping is display-only; preserve document text, Copy and Download.
+  Waterfall and metric guides share dot radius and 60% opacity through the
   --guide-dot-* CSS tokens. Every guide dot uses Muted at 60%, including edges
   and labelled and unlabelled waterfall guides.
   Add three unlabelled guides between labelled guides, dividing each interval
