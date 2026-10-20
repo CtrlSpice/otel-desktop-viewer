@@ -753,29 +753,6 @@
                   class="heatmap-selection"
                 />
               {/if}
-              <g class="heatmap-quantile-overlays" aria-hidden="true">
-                {#each quantilePaths as quantile (quantile.key)}
-                  <g
-                    class:chart-overlay--emphasized={emphasis.has(quantile.key)}
-                  >
-                    <path d={quantile.path} class="quantile-line-backing" />
-                    <path
-                      d={quantile.path}
-                      class="heatmap-quantile-line"
-                      style:--quantile-color={histogramQuantileColor(
-                        quantile.key
-                      )}
-                      stroke-dasharray={quantile.dash}
-                      data-quantile={quantile.key}
-                    >
-                      <title
-                        >{quantile.label}: bucket-derived estimate of the
-                        combined checked series</title
-                      >
-                    </path>
-                  </g>
-                {/each}
-              </g>
               <g class="heatmap-contributions" aria-hidden="true">
                 {#each contributionRegions as region (region.key)}
                   <HistogramContributionPattern
@@ -799,6 +776,29 @@
                       style:--contribution-color={region.color}
                       style:--contribution-outline-width={blobDetail.liner * 2}
                     />
+                  </g>
+                {/each}
+              </g>
+              <g class="heatmap-quantile-overlays" aria-hidden="true">
+                {#each quantilePaths as quantile (quantile.key)}
+                  <g
+                    class:chart-overlay--emphasized={emphasis.has(quantile.key)}
+                  >
+                    <path d={quantile.path} class="quantile-line-backing" />
+                    <path
+                      d={quantile.path}
+                      class="heatmap-quantile-line"
+                      style:--quantile-color={histogramQuantileColor(
+                        quantile.key
+                      )}
+                      stroke-dasharray={quantile.dash}
+                      data-quantile={quantile.key}
+                    >
+                      <title
+                        >{quantile.label}: bucket-derived estimate of the
+                        combined checked series</title
+                      >
+                    </path>
                   </g>
                 {/each}
               </g>

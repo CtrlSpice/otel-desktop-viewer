@@ -30,7 +30,7 @@ export function runSummary(run: EvalRun) {
     } else if (attempt.state === 'Planned') {
       label = 'Planned'
     } else if (attempt.state === 'Error') {
-      label = 'Execution error'
+      label = 'Error'
       tone = 'papaya'
     }
     const key = `${tone}:${label}`

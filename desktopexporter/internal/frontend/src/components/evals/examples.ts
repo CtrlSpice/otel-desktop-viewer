@@ -28,6 +28,7 @@ const assessments: AssessmentDefinition[] = [
 const cases = [
   {
     id: 'checkout-failure',
+    repetitions: 1,
     name: 'Explain the checkout failure',
     question:
       'Which operation caused the checkout request to fail, and what evidence connects it to the request?',
@@ -36,6 +37,7 @@ const cases = [
   },
   {
     id: 'request-latency',
+    repetitions: 3,
     name: 'Find the slow request',
     question:
       'Identify the slowest request and explain where it spent its time.',
@@ -44,6 +46,7 @@ const cases = [
   },
   {
     id: 'trace-logs',
+    repetitions: 2,
     name: 'Correlate the trace and logs',
     question: 'Find the error logs belonging to the failed checkout trace.',
     answer:
@@ -51,6 +54,7 @@ const cases = [
   },
   {
     id: 'trace-export',
+    repetitions: 1,
     name: 'Export the complete trace',
     question:
       'Export the failed trace as OTLP JSON and verify that the file contains the complete trace.',
@@ -59,6 +63,7 @@ const cases = [
   },
   {
     id: 'sequence-types',
+    repetitions: 3,
     name: 'Inspect sequence types',
     question: 'Which recorded sequence types are present in the dataset?',
     answer:
@@ -66,6 +71,7 @@ const cases = [
   },
   {
     id: 'cpu-evidence',
+    repetitions: 2,
     name: 'Compare CPU evidence',
     question:
       'Compare CPU usage during the incident with the preceding window. Explain what the data does and does not establish.',
@@ -74,6 +80,7 @@ const cases = [
   },
   {
     id: 'checkout-latency',
+    repetitions: 3,
     name: 'Compare checkout latency',
     question:
       'How did checkout latency change between the baseline and incident windows?',
@@ -82,6 +89,7 @@ const cases = [
   },
   {
     id: 'service-errors',
+    repetitions: 1,
     name: 'Locate service errors',
     question: 'Which services recorded errors during the incident?',
     answer:
@@ -90,114 +98,123 @@ const cases = [
 ]
 
 function attempts(variant: 'guided' | 'direct' | 'planned'): EvalAttempt[] {
-  return cases.map((item, index) => {
-    const planned = variant === 'planned' || (variant === 'direct' && index > 5)
-    const error = variant === 'direct' && index === 5
-    const completion = index === 1 ? 0.5 : index === 2 ? 0 : 1
-    const support = index === 1 ? 0.5 : 1
-    const attempt: EvalAttempt = {
-      ...item,
-      repetition: 1,
-      answer: planned || error ? undefined : item.answer,
-      state: planned ? 'Planned' : error ? 'Error' : 'Complete',
-      startedAt: planned
-        ? undefined
-        : `2026-10-16T21:${String(30 + index * 2).padStart(2, '0')}:05.123Z`,
-      seconds: planned ? undefined : 24 + index * 13,
-      investigatorCost: planned || error ? undefined : 0.035 + index * 0.011,
-      graderCost: planned || error ? undefined : 0.072 + index * 0.005,
-      error: error
-        ? 'The investigator process exited before producing an answer. This configuration is paused; the remaining attempts have not started.'
-        : undefined,
-      assessments:
-        planned || error
+  return cases.flatMap((item, index) =>
+    Array.from({ length: item.repetitions }, (_, offset) => {
+      const repetition = offset + 1
+      const slot = index + (repetition - 1) * cases.length
+      const planned =
+        variant === 'planned' || (variant === 'direct' && index > 5)
+      const error = variant === 'direct' && index === 5
+      const completion = index === 1 ? 0.5 : index === 2 ? 0 : 1
+      const support = index === 1 ? 0.5 : 1
+      const attempt: EvalAttempt = {
+        ...item,
+        id: repetition === 1 ? item.id : `${item.id}-rep-${repetition}`,
+        caseID: item.id,
+        repetition,
+        answer: planned || error ? undefined : item.answer,
+        state: planned ? 'Planned' : error ? 'Error' : 'Complete',
+        startedAt: planned
+          ? undefined
+          : new Date(
+              Date.UTC(2026, 9, 16, 21, 30 + slot * 2, 5, 123)
+            ).toISOString(),
+        seconds: planned ? undefined : 24 + index * 13,
+        investigatorCost: planned || error ? undefined : 0.035 + index * 0.011,
+        graderCost: planned || error ? undefined : 0.072 + index * 0.005,
+        error: error
+          ? 'The investigator process exited before producing an answer. This configuration is paused; the remaining attempts have not started.'
+          : undefined,
+        assessments:
+          planned || error
+            ? []
+            : [
+                {
+                  id: 'completion',
+                  value: completion,
+                  label:
+                    completion === 1
+                      ? 'Pass'
+                      : completion === 0.5
+                        ? 'Partial'
+                        : 'Fail',
+                  evaluator: 'Completion grader',
+                  rubric: 'completion-v1',
+                  explanation:
+                    index === 1
+                      ? 'Identifies the slowest request and the longest span, but does not account for overlapping work. The attribution of most latency to the database is not established.'
+                      : index === 2
+                        ? 'The answer explicitly leaves trace correlation unverified. Matching error text alone does not fulfil the request.'
+                        : 'The answer fulfils the stated criterion and cites the relevant evidence.',
+                },
+                {
+                  id: 'support',
+                  value: support,
+                  label: support === 1 ? 'Supported' : 'Mixed',
+                  evaluator: 'Evidence reviewer',
+                  rubric: 'support-example-v1',
+                  explanation:
+                    index === 1
+                      ? 'The slow request and span duration are supported. The causal claim about total latency exceeds the available evidence.'
+                      : index === 2
+                        ? 'The answer accurately describes its uncertainty. Incomplete task execution is separate from making unsupported claims.'
+                        : 'The factual claims are supported by the supplied evidence. No additional causal claims were made.',
+                },
+                ...(item.id === 'trace-export'
+                  ? [
+                      {
+                        id: 'export',
+                        value: 1,
+                        label: 'Valid',
+                        evaluator: 'OTLP file verifier',
+                        rubric: 'export-v1',
+                        explanation:
+                          'Valid JSON, expected OTLP structure, and all eight expected spans present.',
+                      },
+                    ]
+                  : []),
+              ],
+        tools: planned
           ? []
           : [
-              {
-                id: 'completion',
-                value: completion,
-                label:
-                  completion === 1
-                    ? 'Pass'
-                    : completion === 0.5
-                      ? 'Partial'
-                      : 'Fail',
-                evaluator: 'Completion grader',
-                rubric: 'completion-v1',
-                explanation:
-                  index === 1
-                    ? 'Identifies the slowest request and the longest span, but does not account for overlapping work. The attribution of most latency to the database is not established.'
-                    : index === 2
-                      ? 'The answer explicitly leaves trace correlation unverified. Matching error text alone does not fulfil the request.'
-                      : 'The answer fulfils the stated criterion and cites the relevant evidence.',
-              },
-              {
-                id: 'support',
-                value: support,
-                label: support === 1 ? 'Supported' : 'Mixed',
-                evaluator: 'Evidence reviewer',
-                rubric: 'support-example-v1',
-                explanation:
-                  index === 1
-                    ? 'The slow request and span duration are supported. The causal claim about total latency exceeds the available evidence.'
-                    : index === 2
-                      ? 'The answer accurately describes its uncertainty. Incomplete task execution is separate from making unsupported claims.'
-                      : 'The factual claims are supported by the supplied evidence. No additional causal claims were made.',
-              },
-              ...(item.id === 'trace-export'
+              { name: 'bash', state: 'OK', message: 'Read the viewer guide.' },
+              ...(index === 1
                 ? [
                     {
-                      id: 'export',
-                      value: 1,
-                      label: 'Valid',
-                      evaluator: 'OTLP file verifier',
-                      rubric: 'export-v1',
-                      explanation:
-                        'Valid JSON, expected OTLP structure, and all eight expected spans present.',
+                      name: 'bash',
+                      state: 'Error' as const,
+                      message:
+                        'SQL binder error: column "value" must appear in the GROUP BY clause or be used in an aggregate function.',
                     },
                   ]
                 : []),
+              {
+                name: 'bash',
+                state: 'OK',
+                message: 'Queried the relevant telemetry.',
+              },
             ],
-      tools: planned
-        ? []
-        : [
-            { name: 'bash', state: 'OK', message: 'Read the viewer guide.' },
-            ...(index === 1
-              ? [
-                  {
-                    name: 'bash',
-                    state: 'Error' as const,
-                    message:
-                      'SQL binder error: column "value" must appear in the GROUP BY clause or be used in an aggregate function.',
-                  },
-                ]
-              : []),
-            {
-              name: 'bash',
-              state: 'OK',
-              message: 'Queried the relevant telemetry.',
-            },
-          ],
-    }
-    // Stable, synthetic IDs let the optional seed script supply matching OTLP.
-    if (!planned) {
-      const traceID = `eeee${variant === 'guided' ? '01' : '02'}${String(index + 1).padStart(26, '0')}`
-      attempt.telemetry = { traceID, spanID: 'eeee000000000001' }
-      attempt.tools.forEach((tool, toolIndex) => {
-        tool.telemetry = {
-          traceID,
-          spanID: `eeee${String(toolIndex + 2).padStart(12, '0')}`,
-        }
-      })
-      attempt.assessments.forEach((assessment, scoreIndex) => {
-        assessment.telemetry = {
-          traceID,
-          spanID: `eeee${String(scoreIndex + 101).padStart(12, '0')}`,
-        }
-      })
-    }
-    return attempt
-  })
+      }
+      // Stable, synthetic IDs let the optional seed script supply matching OTLP.
+      if (!planned) {
+        const traceID = `eeee${variant === 'guided' ? '01' : '02'}${String(slot + 1).padStart(26, '0')}`
+        attempt.telemetry = { traceID, spanID: 'eeee000000000001' }
+        attempt.tools.forEach((tool, toolIndex) => {
+          tool.telemetry = {
+            traceID,
+            spanID: `eeee${String(toolIndex + 2).padStart(12, '0')}`,
+          }
+        })
+        attempt.assessments.forEach((assessment, scoreIndex) => {
+          assessment.telemetry = {
+            traceID,
+            spanID: `eeee${String(scoreIndex + 101).padStart(12, '0')}`,
+          }
+        })
+      }
+      return attempt
+    })
+  )
 }
 
 export const exampleRuns: EvalRun[] = [
@@ -211,7 +228,7 @@ export const exampleRuns: EvalRun[] = [
     configuration: [
       { name: 'Agent', value: 'Guide-assisted' },
       { name: 'Prompt', value: 'investigation-v2' },
-      { name: 'Repetitions', value: '1 per case' },
+      { name: 'Repetitions', value: '1–3 per case' },
     ],
     assessments,
     headlineAssessment: 'completion',
@@ -228,7 +245,7 @@ export const exampleRuns: EvalRun[] = [
     configuration: [
       { name: 'Agent', value: 'Direct' },
       { name: 'Prompt', value: 'investigation-v1' },
-      { name: 'Repetitions', value: '1 per case' },
+      { name: 'Repetitions', value: '1–3 per case' },
     ],
     assessments,
     headlineAssessment: 'completion',
@@ -243,7 +260,7 @@ export const exampleRuns: EvalRun[] = [
     configuration: [
       { name: 'Agent', value: 'Guide-assisted' },
       { name: 'Prompt', value: 'investigation-v3' },
-      { name: 'Repetitions', value: '1 per case' },
+      { name: 'Repetitions', value: '1–3 per case' },
     ],
     assessments,
     headlineAssessment: 'completion',

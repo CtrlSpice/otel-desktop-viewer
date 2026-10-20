@@ -6,6 +6,7 @@
   import type { WaterfallRowData } from './WaterfallView.svelte'
   import { formatDuration } from '@/utils/time'
   import WaterfallTreeGutter from './WaterfallTreeGutter.svelte'
+  import TreeToggle from '@/components/shared/TreeToggle.svelte'
   import type { WaterfallGridLayout } from './WaterfallTimeAxisHeader.svelte'
   import WaterfallGrid from './WaterfallGrid.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
@@ -112,8 +113,10 @@
     <span
       class="waterfall-row__child-count shrink-0 text-sm tabular-nums"
       aria-hidden="true"
-      title="{row.tree.childrenCount} child {row.tree.childrenCount === 1 ? 'span' : 'spans'}"
-    >{row.tree.childrenCount}</span>
+      title="{row.tree.childrenCount} child {row.tree.childrenCount === 1
+        ? 'span'
+        : 'spans'}">{row.tree.childrenCount}</span
+    >
   {/if}
 {/snippet}
 
@@ -143,18 +146,17 @@
   >
     <div class="flex min-w-0 items-center gap-1">
       {#if hasChildren}
-        <button
-          type="button"
+        <TreeToggle
           class="waterfall-row__tree-toggle"
-          aria-label="{subtreeCollapsed ? 'Expand' : 'Collapse'} {span.name}, {row.tree.childrenCount} child {row.tree.childrenCount === 1 ? 'span' : 'spans'}"
-          aria-expanded={!subtreeCollapsed}
-          onclick={event => {
-            event.stopPropagation()
-            onToggleExpand()
-          }}
+          label="{subtreeCollapsed ? 'Expand' : 'Collapse'} {span.name}, {row
+            .tree.childrenCount} child {row.tree.childrenCount === 1
+            ? 'span'
+            : 'spans'}"
+          expanded={!subtreeCollapsed}
+          onclick={onToggleExpand}
         >
           {@render treeContent()}
-        </button>
+        </TreeToggle>
       {:else}
         {@render treeContent()}
       {/if}
@@ -271,16 +273,6 @@
 
 <style lang="postcss">
   @reference "../../../app.css";
-  .waterfall-row__tree-toggle {
-    /* Keep the hit area rectangular so its empty corners also toggle. */
-    @apply flex shrink-0 cursor-pointer items-center gap-1 rounded-none border-0 bg-transparent p-0 text-sm font-normal;
-    height: var(--table-row-h);
-  }
-
-  .waterfall-row__tree-toggle:hover {
-    background-color: var(--color-highlight-low);
-  }
-
   .waterfall-row__child-count {
     color: var(--color-subtle);
     /* Centre the count over the next level's dots, removing the gutter tail

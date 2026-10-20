@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor, within } from '@testing-library/svelte'
+import { render, screen, within } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import EvalRunSummary from './EvalRunSummary.svelte'
 import { exampleRuns } from './examples'
@@ -15,55 +15,35 @@ describe('EvalRunSummary', () => {
     const card = screen.getByRole('button', { name: /Guide-assisted agent/ })
     expect(card).toHaveAttribute('aria-pressed', 'true')
     expect(card).toHaveClass('signal-row', 'item-state')
-    const score = screen.getByText('81.3%')
+    const score = screen.getByText('78.1%')
     expect(score.tagName).toBe('SPAN')
     expect(container.querySelector('strong, b')).toBeNull()
-    for (const row of [
-      container.querySelector('.signal-row__date > div'),
-      container.querySelector('.signal-row__meta-row > div'),
-    ]) {
-      expect(row).toHaveClass(
-        'text-sm',
-        'flex-wrap',
-        'gap-x-2',
-        'gap-y-0',
-        'min-h-[var(--signal-card-row-h)]'
-      )
-    }
-    expect(card).toHaveTextContent('Assessed: 8/8')
-    expect(card).toHaveTextContent('Graded: 8/8')
-    expect(card).toHaveTextContent('Tool calls: 17 1 failed')
+    expect(screen.getAllByRole('term')).toHaveLength(3)
+    expect(card).not.toHaveTextContent('16/16 complete')
+    expect(screen.queryByText('Graded:')).not.toBeInTheDocument()
+    expect(card).toHaveTextContent('35 tool calls (3 failures)')
   })
 
-  it('uses outcome bubbles and a stable label without selecting the run during exploration', async () => {
+  it('shows every outcome together and selects the run through its card', async () => {
     const user = userEvent.setup()
     const onclick = vi.fn()
     render(EvalRunSummary, { run: exampleRuns[0], onclick })
     const group = screen.getByRole('group', {
       name: 'Task completion outcomes',
     })
-    const label = () => group.querySelector('.breakdown-label')
-    expect(label()).toHaveTextContent('Pass (6 attempts, 75%)')
-    expect(group.querySelector('.ball-pit .identifier')).toHaveAttribute(
-      'title',
-      'guide-assisted'
-    )
-    const fail = within(group).getByRole('button', {
-      name: 'Fail: 1 attempt, 12.5% of total',
-    })
-    await user.hover(fail)
-    await waitFor(() =>
-      expect(label()).toHaveTextContent('Fail (1 attempt, 12.5%)')
-    )
-    await user.click(fail)
-    expect(fail).toHaveAttribute('aria-pressed', 'true')
+    const outcomes = within(group).getAllByRole('listitem')
+    expect(outcomes).toHaveLength(3)
+    expect(outcomes[0]).toHaveTextContent('Pass (11)')
+    expect(outcomes[1]).toHaveTextContent('Partial (3)')
+    expect(outcomes[2]).toHaveTextContent('Fail (2)')
+    expect(within(group).queryByRole('button')).not.toBeInTheDocument()
     expect(onclick).not.toHaveBeenCalled()
     expect(document.querySelector('button button')).toBeNull()
     await user.click(
       screen.getByRole('button', { name: /Guide-assisted agent/ })
     )
     expect(onclick).toHaveBeenCalledWith('guide-assisted')
-    expect(screen.getByText('81.3%')).toBeInTheDocument()
+    expect(screen.getByText('78.1%')).toBeInTheDocument()
   })
 
   it('keeps planned work and execution errors separate from failed grades', () => {
@@ -71,36 +51,32 @@ describe('EvalRunSummary', () => {
     const group = screen.getByRole('group', {
       name: 'Task completion outcomes',
     })
+    const outcomes = within(group).getAllByRole('listitem')
     expect(
-      within(group).getByRole('button', {
-        name: 'Execution error: 1 attempt, 12.5% of total',
-      })
-    ).toHaveStyle('--part-color: var(--color-papaya)')
+      outcomes.find(item => item.textContent?.includes('Error'))
+    ).toHaveTextContent('Error (2)')
     expect(
-      within(group).getByRole('button', {
-        name: 'Planned: 2 attempts, 25% of total',
-      })
-    ).toBeInTheDocument()
+      outcomes.find(item => item.textContent?.includes('Planned'))
+    ).toHaveTextContent('Planned (4)')
     expect(
-      within(group).getByRole('button', {
-        name: 'Fail: 1 attempt, 12.5% of total',
-      })
-    ).toBeInTheDocument()
-    expect(screen.getByText(/Est\. cost:/)).toHaveTextContent('incomplete')
+      outcomes.find(item => item.textContent?.includes('Fail'))
+    ).toHaveTextContent('Fail (2)')
+    expect(
+      screen.getByText('Partial est. cost:').parentElement
+    ).toHaveTextContent('Partial est. cost: C$0.592')
+    expect(screen.getByText('10/16 complete')).toBeInTheDocument()
   })
 
   it('uses a plain label for a single outcome without inventing grades or cost', () => {
     render(EvalRunSummary, { run: exampleRuns[2], onclick: vi.fn() })
-    const group = screen.getByRole('group', {
-      name: 'Task completion outcomes',
-    })
-    expect(group.querySelector('.breakdown-label')).toHaveTextContent(
-      'Planned (8 attempts)'
-    )
-    expect(within(group).queryByRole('button')).not.toBeInTheDocument()
-    expect(screen.getByText('Unscored')).toBeInTheDocument()
-    expect(screen.getByText(/Est\. cost:/)).toHaveTextContent(
-      'Est. cost: Unknown'
-    )
+    const card = screen.getByRole('button', { name: /Revised instructions/ })
+    expect(card).toHaveTextContent('Planned (16)')
+    expect(
+      screen.queryByRole('group', { name: 'Task completion outcomes' })
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText('Unscored')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Est\. cost:/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Tool activity:')).not.toBeInTheDocument()
+    expect(screen.queryByText('Progress:')).not.toBeInTheDocument()
   })
 })

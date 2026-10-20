@@ -17,7 +17,7 @@
           assessment.value > 0 &&
           assessment.value < maximum
         ? 'warning'
-        : undefined}
+        : 'neutral'}
   title={assessment?.value != null
     ? `${assessment.value} / ${maximum}`
     : undefined}

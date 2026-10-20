@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor } from '@testing-library/svelte'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/svelte'
 import RawJsonInspector from './RawJsonInspector.svelte'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -76,6 +76,109 @@ function expectEmptyPreview() {
 }
 
 describe('RawJsonInspector selection changes', () => {
+  it.each(['decode', 'format'] as const)(
+    'keeps loading during preview %s',
+    async stage => {
+      const request = await mockExport(stage)
+      render(RawJsonInspector, {
+        active: true,
+        wholeURL: datapoint.url,
+        scopes: [datapoint],
+      })
+      await waitFor(() => expect(request.reached).toHaveBeenCalledOnce())
+      expect(screen.getByText('Loading JSON…')).toBeVisible()
+      await act(async () => request.resume())
+      await screen.findByLabelText('Raw OTLP JSON')
+    }
+  )
+
+  it('keeps large scopes behind the manual gate and bounds the requested preview', async () => {
+    const request = await mockExport('GET')
+    request.fetch.mockResolvedValueOnce(new Response(null, {
+      headers: { 'Content-Length': String(3 * 1024 * 1024) },
+    }))
+    render(RawJsonInspector, {
+      active: true,
+      wholeURL: datapoint.url,
+      scopes: [datapoint],
+    })
+    await fireEvent.click(await screen.findByRole('button', { name: 'Load 2 MiB preview' }))
+    await waitFor(() => expect(request.reached).toHaveBeenCalledOnce())
+    expect(screen.getByText('Loading JSON…')).toBeVisible()
+    expect(request.fetch.mock.calls[1]![1].headers).toEqual({ Range: 'bytes=0-2097151' })
+    await act(async () => request.resume())
+    await screen.findByLabelText('Raw OTLP JSON')
+  })
+
+  it.each(['HEAD', 'GET'] as const)('retries after a %s error', async stage => {
+    const request = await mockExport()
+    if (stage === 'GET') request.fetch.mockResolvedValueOnce(new Response(null, {
+      headers: { 'Content-Length': String(payload.length) },
+    }))
+    request.fetch.mockResolvedValueOnce(new Response('Export failed', { status: 500 }))
+    render(RawJsonInspector, {
+      active: true,
+      wholeURL: datapoint.url,
+      scopes: [datapoint],
+    })
+    expect(await screen.findByRole('alert')).toHaveTextContent('Export failed')
+    expect(screen.queryByText('Loading JSON…')).toBeNull()
+    await fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    await screen.findByLabelText('Raw OTLP JSON')
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByText('Loading JSON…')).toBeNull()
+    expect(request.fetch).toHaveBeenCalledTimes(stage === 'HEAD' ? 3 : 4)
+  })
+
+  it.each(['metric', 'datapoint', 'span', 'log'])(
+    'keeps %s loading after immediate HEAD while GET is pending',
+    async id => {
+      const request = await mockExport('GET')
+      render(RawJsonInspector, {
+        active: true,
+        wholeURL: datapoint.url,
+        scopes: [{ ...datapoint, id, label: id }],
+      })
+      await waitFor(() => expect(request.reached).toHaveBeenCalledOnce())
+      // Flush HEAD's finally as well as the effect that starts GET.
+      await act(async () => {})
+      expect(screen.getByText('Loading JSON…')).toBeVisible()
+      expect(screen.queryByRole('button', { name: /^Load / })).toBeNull()
+      expect(screen.queryByLabelText('Raw OTLP JSON')).toBeNull()
+      await act(async () => request.resume())
+      await screen.findByLabelText('Raw OTLP JSON')
+      expect(screen.queryByText('Loading JSON…')).toBeNull()
+    }
+  )
+
+  it('keeps the new scope loading when an aborted GET completes', async () => {
+    const request = await mockExport('GET')
+    const view = render(RawJsonInspector, {
+      active: true,
+      wholeURL: datapoint.url,
+      scopes: [datapoint],
+    })
+    await waitFor(() => expect(request.reached).toHaveBeenCalledOnce())
+    let finishHead!: (response: Response) => void
+    request.fetch.mockImplementationOnce((_url, init) => {
+      request.signals.push(init.signal as AbortSignal)
+      return new Promise(resolve => (finishHead = resolve))
+    })
+    await view.rerender({ scopes: [{ ...datapoint, url: '/export/next' }] })
+    expect(request.signals.slice(0, 2).every(signal => signal.aborted)).toBe(true)
+    await act(async () => request.resume())
+    expect(screen.getByText('Loading JSON…')).toBeVisible()
+    expect(screen.queryByLabelText('Raw OTLP JSON')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+    await act(async () => finishHead(new Response(null, {
+      headers: { 'Content-Length': String(payload.length) },
+    })))
+    await screen.findByLabelText('Raw OTLP JSON')
+    expect(request.fetch.mock.calls.map(([url]) => url)).toEqual([
+      datapoint.url, datapoint.url, '/export/next', '/export/next',
+    ])
+  })
+
   it.each([
     { name: 'aggregate bucket', scopes: [aggregate] },
     { name: 'empty selection', scopes: [] },

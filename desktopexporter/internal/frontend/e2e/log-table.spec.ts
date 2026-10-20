@@ -1,5 +1,9 @@
 import { expect, test } from '@playwright/test'
-import type { JsonLogData, JsonTraceData, JsonAttributeValue } from '../src/types/wire-types'
+import type {
+  JsonLogData,
+  JsonTraceData,
+  JsonAttributeValue,
+} from '../src/types/wire-types'
 import type { LogErrorNavigation, LogColumn } from '../src/types/api-types'
 
 const firstID = '00000000-0000-0000-0000-000000000001'
@@ -524,7 +528,9 @@ test('Raw JSON folding uses waterfall-style icon controls on the top line', asyn
   expect(groupBounds.y).toBeLessThan(metadataBounds.y + metadataBounds.height)
   expect(groupBounds.y + groupBounds.height).toBeGreaterThan(metadataBounds.y)
   await expect(inspector.getByRole('button', { name: /^Copy/ })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Copy log', exact: true })).toHaveCount(1)
+  await expect(
+    page.getByRole('button', { name: 'Copy log', exact: true })
+  ).toHaveCount(1)
   await expect(
     inspector.getByRole('button', { name: 'Search JSON' })
   ).toHaveCount(0)
@@ -565,7 +571,10 @@ test('external provenance shrinks inline without replacing its source name', asy
     .filter({ hasText: 'service.name' })
   const provenance = heading.getByRole('img', { name: 'Source: resource' })
   const title = heading.locator('.table-column-heading__title')
-  await expect(heading.getByText('·', { exact: true })).toHaveAttribute('aria-hidden', 'true')
+  await expect(heading.getByText('·', { exact: true })).toHaveAttribute(
+    'aria-hidden',
+    'true'
+  )
   await expect(provenance).toHaveText('resource')
   await expect(provenance).toHaveAttribute('title', 'resource')
   await expect(provenance).toHaveCSS('flex-shrink', '1')
@@ -598,19 +607,59 @@ test('external provenance shrinks inline without replacing its source name', asy
   )
 })
 
-test('column search uses the compact shared filter input and retains filtering', async ({ page }) => {
+test('column search uses the compact shared filter input and retains filtering', async ({
+  page,
+}) => {
   await page.getByRole('button', { name: 'Columns', exact: true }).click()
   const picker = page.getByRole('group', { name: 'Log columns' })
   const search = picker.getByRole('searchbox', { name: 'Find columns' })
   await expect(search).toHaveCSS('height', '32px')
   await expect(search).toHaveCSS('line-height', '21px')
   await search.fill('service.name')
-  await expect(picker.getByRole('checkbox')).toHaveCount(1)
+  await expect(picker.getByRole('checkbox')).toHaveCount(2)
   await expect(
-    picker.getByRole('checkbox', { name: 'Resource: service.name', exact: true })
+    picker.getByRole('checkbox', {
+      name: 'Resource: service.name',
+      exact: true,
+    })
   ).toBeVisible()
   await search.fill('not-a-column')
   await expect(picker.getByRole('checkbox')).toHaveCount(0)
+})
+
+test('column groups toggle together and retain the final required column', async ({
+  page,
+}) => {
+  const url = page.url()
+  await page.getByRole('button', { name: 'Columns', exact: true }).click()
+  const picker = page.getByRole('group', { name: 'Log columns' })
+  const logFields = picker.getByRole('checkbox', {
+    name: 'All log fields columns',
+    exact: true,
+  })
+  await logFields.check()
+  await logFields.uncheck()
+  const fields = picker.getByRole('group', { name: 'log fields', exact: true })
+  for (const checkbox of await fields.getByRole('checkbox').all())
+    await expect(checkbox).not.toBeChecked()
+  await expect(
+    picker.getByRole('checkbox', {
+      name: 'All resource attributes columns',
+      exact: true,
+    })
+  ).toBeDisabled()
+  await expect(
+    page
+      .getByRole('grid', { name: 'Logs', exact: true })
+      .getByRole('columnheader')
+  ).toHaveCount(1)
+  expect(page.url()).toBe(url)
+  await logFields.check()
+  const groupX = (await logFields.boundingBox())!.x
+  const childX = (await fields
+    .getByRole('checkbox', { name: 'Log: timestamp', exact: true })
+    .boundingBox())!.x
+  expect(childX - groupX).toBe(24)
 })
 
 test('structured previews have static syntax colours and Details folds Body and agent attributes', async ({
@@ -1033,23 +1082,67 @@ test('extreme severity labels have bounded width and retain their exact inspecta
   )
 })
 
-test('discovered columns retain typed values, provenance, drafts and saved selections', async ({ page }) => {
+test('discovered columns retain typed values, provenance, drafts and saved selections', async ({
+  page,
+}) => {
   const values: { column: LogColumn; values: JsonAttributeValue[] }[] = [
-    { column: { source: 'log', kind: 'field', key: 'flags' }, values: [{ kind: 'int64', value: '0' }] },
-    { column: { source: 'log', kind: 'attribute', key: 'flags' }, values: [{ kind: 'int64', value: '9223372036854775807' }] },
-    { column: { source: 'log', kind: 'attribute', key: 'timestamp' }, values: [{ kind: 'string', value: 'received attribute' }] },
-    { column: { source: 'resource', kind: 'attribute', key: 'flags' }, values: [{ kind: 'bool', value: false }] },
-    { column: { source: 'scope', kind: 'attribute', key: 'flags' }, values: [{ kind: 'double', value: '0x8000000000000000' }] },
-    { column: { source: 'scope', kind: 'field', key: 'name' }, values: [{ kind: 'string', value: '' }] },
-    { column: { source: 'resource', kind: 'field', key: 'schemaUrl' }, values: [{ kind: 'string', value: 'https://example.test/schema' }] },
-    { column: { source: 'log', kind: 'attribute', key: 'missing' }, values: [] },
+    {
+      column: { source: 'log', kind: 'field', key: 'flags' },
+      values: [{ kind: 'int64', value: '0' }],
+    },
+    {
+      column: { source: 'log', kind: 'attribute', key: 'flags' },
+      values: [{ kind: 'int64', value: '9223372036854775807' }],
+    },
+    {
+      column: { source: 'log', kind: 'attribute', key: 'timestamp' },
+      values: [{ kind: 'string', value: 'received attribute' }],
+    },
+    {
+      column: { source: 'resource', kind: 'attribute', key: 'flags' },
+      values: [{ kind: 'bool', value: false }],
+    },
+    {
+      column: { source: 'scope', kind: 'attribute', key: 'flags' },
+      values: [{ kind: 'double', value: '0x8000000000000000' }],
+    },
+    {
+      column: { source: 'scope', kind: 'field', key: 'name' },
+      values: [{ kind: 'string', value: '' }],
+    },
+    {
+      column: { source: 'resource', kind: 'field', key: 'schemaUrl' },
+      values: [{ kind: 'string', value: 'https://example.test/schema' }],
+    },
+    {
+      column: { source: 'log', kind: 'attribute', key: 'missing' },
+      values: [],
+    },
   ]
   const detail: JsonLogData = {
     ...logs[0]!,
     resourceSchemaURL: 'https://example.test/schema',
-    attributes: values.filter(entry => entry.column.source === 'log' && entry.column.kind === 'attribute').flatMap(entry => entry.values.map(value => ({ key: entry.column.key, value }))),
-    resource: { ...logs[0]!.resource, attributes: [{ key: 'flags', value: { kind: 'bool', value: false } }] },
-    scope: { ...logs[0]!.scope, attributes: [{ key: 'flags', value: { kind: 'double', value: '0x8000000000000000' } }] },
+    attributes: values
+      .filter(
+        entry =>
+          entry.column.source === 'log' && entry.column.kind === 'attribute'
+      )
+      .flatMap(entry =>
+        entry.values.map(value => ({ key: entry.column.key, value }))
+      ),
+    resource: {
+      ...logs[0]!.resource,
+      attributes: [{ key: 'flags', value: { kind: 'bool', value: false } }],
+    },
+    scope: {
+      ...logs[0]!.scope,
+      attributes: [
+        {
+          key: 'flags',
+          value: { kind: 'double', value: '0x8000000000000000' },
+        },
+      ],
+    },
   }
   const requests: { columns?: LogColumn[]; query?: unknown }[] = []
   let discovery = true
@@ -1057,10 +1150,42 @@ test('discovered columns retain typed values, provenance, drafts and saved selec
     const { id, method, params } = route.request().postDataJSON()
     let result
     if (method === 'getLog') result = detail
-    else if (method === 'getLogAttributeDefinitions') result = discovery ? values.flatMap(entry => entry.column.kind === 'attribute' ? [{ name: entry.column.key, attributeScope: entry.column.source, type: 'string' }] : []) : []
+    else if (method === 'getLogAttributeDefinitions')
+      result = discovery
+        ? values.flatMap(entry =>
+            entry.column.kind === 'attribute'
+              ? [
+                  {
+                    name: entry.column.key,
+                    attributeScope: entry.column.source,
+                    type: 'string',
+                  },
+                ]
+              : []
+          )
+        : []
     else if (method === 'searchLogPage') {
       requests.push(params)
-      result = { total: 1, logs: [{ ...detail, timestamp: detail.observedTimestamp, serviceName: 'api', bodyPreview: 'body preview', columnValues: (params.columns ?? []).map((column: LogColumn) => ({ ...column, values: values.find(entry => entry.column.source === column.source && entry.column.kind === column.kind && entry.column.key === column.key)!.values })) }] }
+      result = {
+        total: 1,
+        logs: [
+          {
+            ...detail,
+            timestamp: detail.observedTimestamp,
+            serviceName: 'api',
+            bodyPreview: 'body preview',
+            columnValues: (params.columns ?? []).map((column: LogColumn) => ({
+              ...column,
+              values: values.find(
+                entry =>
+                  entry.column.source === column.source &&
+                  entry.column.kind === column.kind &&
+                  entry.column.key === column.key
+              )!.values,
+            })),
+          },
+        ],
+      }
     } else return route.fallback()
     await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
   })
@@ -1083,24 +1208,48 @@ test('discovered columns retain typed values, provenance, drafts and saved selec
     ['scope attribute: flags', '-0'],
     ['scope field: name', '""'],
     ['log attribute: missing', '—'],
-  ]) await expect(row.getByRole('button', { name: `Show ${name} in details`, exact: true })).toHaveText(text!)
+  ])
+    await expect(
+      row.getByRole('button', { name: `Show ${name} in details`, exact: true })
+    ).toHaveText(text!)
   await expect.poll(() => requests.at(-1)?.columns?.length).toBe(values.length)
   expect(requests.at(-1)?.query).toBeUndefined()
   await expect(editor).toHaveText('body CONTAINS "unsent draft"')
-  await expect(page.getByRole('button', { name: 'Sort by flags', exact: true })).toHaveCount(0)
+  await expect(
+    page.getByRole('button', { name: 'Sort by flags', exact: true })
+  ).toHaveCount(0)
   for (const { column } of values.filter(entry => entry.values.length)) {
     const { source, kind, key } = column
-    await row.getByRole('button', { name: `Show ${source} ${kind}: ${key} in details`, exact: true }).click()
-    const target = page.getByRole('table', { name: 'Log fields' }).locator(`[data-field="${key}"][data-field-kind="${kind}"]${source === 'log' ? ':not([data-field-source="resource"]):not([data-field-source="scope"])' : `[data-field-source="${source}"]`}`)
+    await row
+      .getByRole('button', {
+        name: `Show ${source} ${kind}: ${key} in details`,
+        exact: true,
+      })
+      .click()
+    const target = page
+      .getByRole('table', { name: 'Log fields' })
+      .locator(
+        `[data-field="${key}"][data-field-kind="${kind}"]${source === 'log' ? ':not([data-field-source="resource"]):not([data-field-source="scope"])' : `[data-field-source="${source}"]`}`
+      )
     await expect(target).toHaveClass(/detail-property--revealed/)
     await expect(page).toHaveURL(new RegExp(`/logs/${firstID}`))
   }
   // Stored descriptors survive even if discovery no longer returns their keys.
   discovery = false
   await page.reload()
-  await expect(row.getByRole('button', { name: 'Show log attribute: flags in details', exact: true })).toHaveText('9223372036854775807')
+  await expect(
+    row.getByRole('button', {
+      name: 'Show log attribute: flags in details',
+      exact: true,
+    })
+  ).toHaveText('9223372036854775807')
   await page.getByRole('button', { name: 'Columns', exact: true }).click()
-  await expect(picker.getByRole('checkbox', { name: 'Scope attribute: flags', exact: true })).toBeChecked()
+  await expect(
+    picker.getByRole('checkbox', {
+      name: 'Scope attribute: flags',
+      exact: true,
+    })
+  ).toBeChecked()
 })
 
 test('toolbar filters draft service and severity chips and search once on Apply', async ({
@@ -1121,7 +1270,11 @@ test('toolbar filters draft service and severity chips and search once on Apply'
   })
   let searches = 0
   page.on('request', request => {
-    if (request.url().endsWith('/rpc') && request.postDataJSON().method === 'searchLogPage') searches++
+    if (
+      request.url().endsWith('/rpc') &&
+      request.postDataJSON().method === 'searchLogPage'
+    )
+      searches++
   })
   await expect(page.locator('.drawer-side')).toHaveCount(0)
   await expect(page.locator('.log-table__row').first()).toHaveCSS(
@@ -1136,7 +1289,9 @@ test('toolbar filters draft service and severity chips and search once on Apply'
   await service.click()
   await expect(filtersToggle).toHaveAttribute('aria-expanded', 'true')
   await expect(service).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByRole('button', { name: 'Remove service api' })).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'Remove service api' })
+  ).toBeVisible()
   await error.click()
   await expect(error).toHaveClass(/item-state/)
   await expect(error.locator('.log-filters__dot')).toBeVisible()

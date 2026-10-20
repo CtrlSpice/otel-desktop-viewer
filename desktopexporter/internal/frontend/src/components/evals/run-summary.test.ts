@@ -6,37 +6,37 @@ describe('run summaries', () => {
   it('keeps the mean separate from outcome counts and recorded tool failures', () => {
     const summary = runSummary(exampleRuns[0])
     expect(summary.assessment).toEqual({
-      scored: 8,
-      denominator: 8,
-      percent: 81.25,
+      scored: 16,
+      denominator: 16,
+      percent: 78.125,
     })
     expect(summary.parts).toEqual([
-      { label: 'Pass', tone: 'success', count: 6 },
-      { label: 'Partial', tone: 'warning', count: 1 },
-      { label: 'Fail', tone: 'error', count: 1 },
+      { label: 'Pass', tone: 'success', count: 11 },
+      { label: 'Partial', tone: 'warning', count: 3 },
+      { label: 'Fail', tone: 'error', count: 2 },
     ])
-    expect(summary.toolCalls).toBe(17)
-    expect(summary.failedTools).toBe(1)
-    expect(summary.investigatorCost.total).toBeCloseTo(0.588)
+    expect(summary.toolCalls).toBe(35)
+    expect(summary.failedTools).toBe(3)
+    expect(summary.investigatorCost.total).toBeCloseTo(1.187)
     expect(summary.investigatorCost.incomplete).toBe(false)
   })
 
   it('includes planned and execution-error slots without turning them into failed grades', () => {
     const summary = runSummary(exampleRuns[1])
     expect(summary.assessment).toEqual({
-      scored: 5,
-      denominator: 8,
-      percent: 43.75,
+      scored: 10,
+      denominator: 16,
+      percent: 40.625,
     })
-    expect(summary.started).toBe(6)
+    expect(summary.started).toBe(12)
     expect(summary.parts).toEqual([
-      { label: 'Pass', tone: 'success', count: 3 },
-      { label: 'Partial', tone: 'warning', count: 1 },
-      { label: 'Fail', tone: 'error', count: 1 },
-      { label: 'Execution error', tone: 'papaya', count: 1 },
-      { label: 'Planned', tone: 'neutral', count: 2 },
+      { label: 'Pass', tone: 'success', count: 5 },
+      { label: 'Partial', tone: 'warning', count: 3 },
+      { label: 'Fail', tone: 'error', count: 2 },
+      { label: 'Error', tone: 'papaya', count: 2 },
+      { label: 'Planned', tone: 'neutral', count: 4 },
     ])
-    expect(summary.investigatorCost.total).toBeCloseTo(0.285)
+    expect(summary.investigatorCost.total).toBeCloseTo(0.592)
     expect(summary.investigatorCost.incomplete).toBe(true)
   })
 
@@ -44,11 +44,11 @@ describe('run summaries', () => {
     const summary = runSummary(exampleRuns[2])
     expect(summary.assessment).toEqual({
       scored: 0,
-      denominator: 8,
+      denominator: 16,
       percent: null,
     })
     expect(summary.parts).toEqual([
-      { label: 'Planned', tone: 'neutral', count: 8 },
+      { label: 'Planned', tone: 'neutral', count: 16 },
     ])
     expect(summary.started).toBe(0)
     expect(summary.investigatorCost.total).toBeNull()
@@ -58,8 +58,8 @@ describe('run summaries', () => {
     const run = structuredClone(exampleRuns[0])
     run.attempts[0].assessments = []
     const summary = runSummary(run)
-    expect(summary.assessed).toBe(8)
-    expect(summary.assessment?.scored).toBe(7)
-    expect(summary.planned).toBe(8)
+    expect(summary.assessed).toBe(16)
+    expect(summary.assessment?.scored).toBe(15)
+    expect(summary.planned).toBe(16)
   })
 })

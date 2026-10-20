@@ -104,47 +104,7 @@
     >
   {/snippet}
   <FieldGroup label="Service">
-    {#snippet heading()}
-      <span class="flex-1">Service</span>
-      {#if filters.service.values.length}<button
-          type="button"
-          class="btn btn-ghost btn-xs"
-          aria-label="Clear service filter"
-          onclick={event => {
-            event.preventDefault()
-            event.stopPropagation()
-            apply('service', [])
-          }}>Clear</button
-        >{/if}
-    {/snippet}
     {@render queryHint()}
-    {#if filters.service.values.length}
-      <div
-        class="log-filters__chips mb-2"
-        role="group"
-        aria-label="Selected services"
-      >
-        {#each filters.service.values as service (service)}
-          <button
-            type="button"
-            class="log-filters__service item-state"
-            aria-label={`Remove service ${service}`}
-            onclick={() => change('service', service, false)}
-          >
-            <span
-              class="log-filters__dot"
-              style:background-color={traceServiceColor(
-                service,
-                themeSignal.value
-              )}
-              aria-hidden="true"
-            ></span>
-            <span class="min-w-0 truncate" title={service}>{service}</span>
-            <span aria-hidden="true">×</span>
-          </button>
-        {/each}
-      </div>
-    {/if}
     <div class="mb-2">
       <FilterInput
         label="Find services"
@@ -194,19 +154,6 @@
     </div>
   </FieldGroup>
   <FieldGroup label="Severity">
-    {#snippet heading()}
-      <span class="flex-1">Severity</span>
-      {#if filters.severity.values.length}<button
-          type="button"
-          class="btn btn-ghost btn-xs"
-          aria-label="Clear severity filter"
-          onclick={event => {
-            event.preventDefault()
-            event.stopPropagation()
-            apply('severity', [])
-          }}>Clear</button
-        >{/if}
-    {/snippet}
     {@render queryHint()}
     {#if filters.severity.custom && filters.editable}<p
         class="log-filters__hint"

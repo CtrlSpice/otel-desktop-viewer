@@ -158,7 +158,8 @@ export function resizeBar(
   specs: ColumnSpec[],
   start: ColumnWidths,
   barId: string,
-  deltaPx: number
+  deltaPx: number,
+  overflowAllowance = 0
 ): ColumnWidths {
   const i = specs.findIndex(d => d.id === barId)
   if (i < 0 || specs[i].flex === 0 || deltaPx === 0) return start
@@ -177,12 +178,15 @@ export function resizeBar(
     (s, d) => s + Math.max(0, (start[d.id] ?? d.min) - d.min),
     0
   )
-  const take = Math.min(Math.abs(deltaPx), available)
+  const take = Math.min(
+    Math.abs(deltaPx),
+    available + (deltaPx > 0 ? overflowAllowance : 0)
+  )
   if (take <= 0) return start
 
   const next: ColumnWidths = { ...start }
   next[growId] += take
-  let remaining = take
+  let remaining = Math.min(take, available)
   for (const d of shrinkSide) {
     const give = Math.min(remaining, next[d.id] - d.min)
     next[d.id] -= give
@@ -210,7 +214,8 @@ export type ColumnBarPosition = {
  */
 export function barPositions(
   specs: ColumnSpec[],
-  widths: ColumnWidths
+  widths: ColumnWidths,
+  overflowAllowance = 0
 ): ColumnBarPosition[] {
   const out: ColumnBarPosition[] = []
   let cumulative = 0
@@ -237,7 +242,7 @@ export function barPositions(
         id: specs[i].id,
         left: cumulative,
         min: cumulative - beforeSlack,
-        max: cumulative + beyondSlack,
+        max: cumulative + beyondSlack + overflowAllowance,
       })
     }
   }
@@ -257,11 +262,13 @@ export function startColumnResize(
   barId: string,
   e: PointerEvent,
   onResize: (widths: ColumnWidths) => void,
-  onEnd: () => void
+  onEnd: () => void,
+  overflowAllowance = 0
 ): DragHandle {
   return startDrag(e, {
     axis: 'x',
-    onMove: delta => onResize(resizeBar(specs, startWidths, barId, delta)),
+    onMove: delta =>
+      onResize(resizeBar(specs, startWidths, barId, delta, overflowAllowance)),
     onEnd,
   })
 }

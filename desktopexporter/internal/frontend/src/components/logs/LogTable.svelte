@@ -1,7 +1,7 @@
 <script lang="ts">
+  import TableSortButton from '@/components/shared/TableSortButton.svelte'
   import { onDestroy, tick, untrack, type Snippet } from 'svelte'
-  import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { LayoutThreeColumnIcon } from '@hugeicons/core-free-icons'
+  import TableColumnsPicker from '@/components/shared/TableColumnsPicker.svelte'
   import type {
     LogTableRow,
     LogErrorNavigation,
@@ -10,7 +10,6 @@
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import ErrorNavigationBadge from '@/components/shared/ErrorNavigationBadge.svelte'
   import TableColumnHeading from '@/components/shared/TableColumnHeading.svelte'
-  import FilterInput from '@/components/shared/Search/FilterInput.svelte'
   import TableValueCell from '@/components/shared/TableValueCell.svelte'
   import Identifier from '@/components/shared/Identifier.svelte'
   import type { FieldDefinition } from '@/search/model'
@@ -30,10 +29,6 @@
   } from '@/components/shared/utils/column-resize'
   import type { DragHandle } from '@/components/shared/utils/drag'
   import { resizeRowHover } from '@/components/shared/utils/resize-row-hover'
-  import {
-    createPopoverID,
-    setupAnchorPopover,
-  } from '@/components/shared/utils/anchor-popover'
   import {
     keyDeltaFor,
     resolveNextPos,
@@ -347,25 +342,26 @@
   }
   onDestroy(() => drag?.cancel())
 
-  const popoverID = createPopoverID('log-columns')
-  let trigger = $state<HTMLButtonElement>()
-  let popover = $state<HTMLDivElement>()
-  let columnSearch = $state('')
-  let pickerOpen = $state(false)
-  $effect(() => {
-    if (!trigger || !popover) return
-    return setupAnchorPopover({
-      trigger,
-      popover,
-      anchor: 'below-end',
-      onOpenChange: open => (pickerOpen = open),
-    })
-  })
-  function toggleColumn(id: string, checked: boolean) {
-    drag?.cancel()
-    const next = options.filter(column =>
-      column.id === id ? checked : selectedColumns.includes(column.id)
+  const columnChoices = $derived(
+    LOG_COLUMN_SOURCES.flatMap(source =>
+      ['field', 'attribute'].flatMap(kind =>
+        options
+          .filter(
+            column =>
+              column.target.source === source && column.target.kind === kind
+          )
+          .map(column => ({
+            id: column.id,
+            label: column.key || '(empty key)',
+            accessibleLabel: logColumnLabel(column),
+            group: `${source} ${kind === 'field' ? 'fields' : 'attributes'}`,
+          }))
+      )
     )
+  )
+  function changeColumns(ids: string[]) {
+    drag?.cancel()
+    const next = options.filter(column => ids.includes(column.id))
     selectedColumns = next.map(column => column.id)
     const nextSpecs = next.map(column =>
       column.id === 'severity'
@@ -471,10 +467,6 @@
     source={column.source}
     signal="Log"
   />
-  {#if sortColumn === column.sort}<span
-      class="log-table__sort-direction"
-      aria-hidden="true">{sortDirection === 'asc' ? '↑' : '↓'}</span
-    >{/if}
 {/snippet}
 
 <div class="log-table" class:log-table--pinned={pinColumns} bind:this={table}>
@@ -504,83 +496,15 @@
           title={errorNavigationError}>Errors unavailable</span
         >{/if}
       {@render filters?.()}
-      <button
-        bind:this={trigger}
-        type="button"
-        class="btn btn-xs chart-header-control tooltip tooltip-left"
-        aria-label="Columns"
-        data-tip="Select columns"
-        aria-expanded={pickerOpen}
-        popovertarget={popoverID}
-      >
-        <HugeiconsIcon
-          icon={LayoutThreeColumnIcon}
-          size={16}
-          strokeWidth={1.5}
-          aria-hidden="true"
-        />
-      </button>
+      <TableColumnsPicker
+        label="Log columns"
+        options={columnChoices}
+        selected={selectedColumns}
+        minimumSelected={1}
+        onchange={changeColumns}
+      />
     {/snippet}
   </PaneHeader>
-  <div
-    id={popoverID}
-    bind:this={popover}
-    popover="auto"
-    role="group"
-    aria-label="Log columns"
-    class="anchor-popover anchor-popover--anchored log-table__columns"
-  >
-    <div class="mb-2">
-      <FilterInput
-        label="Find columns"
-        placeholder="Find columns…"
-        bind:value={columnSearch}
-      />
-    </div>
-    {#each LOG_COLUMN_SOURCES as source}
-      {#each ['field', 'attribute'] as kind}
-        {@const group = options.filter(
-          column =>
-            column.target.source === source &&
-            column.target.kind === kind &&
-            logColumnLabel(column)
-              .toLowerCase()
-              .includes(columnSearch.trim().toLowerCase())
-        )}
-        {#if group.length}
-          <fieldset class="min-w-0">
-            <legend class="px-2 py-1 text-xs font-medium capitalize"
-              >{source} {kind === 'field' ? 'fields' : 'attributes'}</legend
-            >
-            {#each group as column (column.id)}
-              <label
-                class="item-state flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm"
-              >
-                <input
-                  type="checkbox"
-                  class="checkbox checkbox-xs"
-                  aria-label={logColumnLabel(column)}
-                  checked={selectedColumns.includes(column.id)}
-                  disabled={selectedColumns.length === 1 &&
-                    selectedColumns.includes(column.id)}
-                  onchange={event =>
-                    toggleColumn(column.id, event.currentTarget.checked)}
-                />
-                <span class="min-w-0 flex-1 break-words"
-                  >{column.key || '(empty key)'}</span
-                >
-              </label>
-            {/each}
-          </fieldset>
-        {/if}
-      {/each}
-    {/each}
-    {#if !options.some(column => logColumnLabel(column)
-        .toLowerCase()
-        .includes(columnSearch.trim().toLowerCase()))}
-      <p class="p-2 text-sm text-base-content/70">No matching columns.</p>
-    {/if}
-  </div>
   <div class="log-table__frame">
     {#each paintedBars as bar (bar.id)}
       <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -650,10 +574,9 @@
                 class:log-table__pin-severity={column.id === 'severity'}
                 class:log-table__pin-body={column.id === 'body'}
               >
-                {#if sort}<button
-                    type="button"
-                    class="log-table__sort"
-                    aria-label={`Sort by ${column.key}`}
+                {#if sort}<TableSortButton
+                    label={column.key}
+                    direction={sortColumn === sort ? sortDirection : undefined}
                     onclick={() =>
                       onSort(
                         sort,
@@ -663,7 +586,7 @@
                       )}
                   >
                     {@render columnHeading(column)}
-                  </button>{:else}{@render columnHeading(column)}{/if}
+                  </TableSortButton>{:else}{@render columnHeading(column)}{/if}
               </div>
             {/each}
           </div>
@@ -785,12 +708,6 @@
     padding-inline: var(--table-cell-inline-padding);
     color: var(--table-heading-color);
   }
-  .log-table__sort {
-    @apply relative block min-w-0 flex-1 cursor-pointer rounded-sm pr-3 text-left;
-  }
-  .log-table__sort-direction {
-    @apply absolute right-0 top-1/2 -translate-y-1/2 text-xs;
-  }
   .log-table__row {
     --table-row-h: 2.5rem;
     --item-idle-bg: var(--color-base-100);
@@ -832,11 +749,6 @@
   .log-table__row > :last-child {
     border-top-right-radius: 0.75rem;
     border-bottom-right-radius: 0.75rem;
-  }
-  .log-table__columns {
-    @apply w-80 max-w-[calc(100vw-1.5rem)] p-2;
-    max-height: min(70vh, 32rem);
-    overflow-y: auto;
   }
   .log-table__empty {
     @apply p-8 text-center text-sm;

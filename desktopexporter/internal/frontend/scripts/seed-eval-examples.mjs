@@ -24,7 +24,12 @@ for (const run of exampleRuns) {
       attributes: [
         { key: 'eval.example', value: { boolValue: true } },
         { key: 'eval.run', value: { stringValue: run.id } },
-        { key: 'eval.case', value: { stringValue: attempt.id } },
+        { key: 'eval.case', value: { stringValue: attempt.caseID } },
+        { key: 'eval.attempt', value: { stringValue: attempt.id } },
+        {
+          key: 'eval.repetition',
+          value: { intValue: String(attempt.repetition) },
+        },
       ],
     }
     spans.push(root)

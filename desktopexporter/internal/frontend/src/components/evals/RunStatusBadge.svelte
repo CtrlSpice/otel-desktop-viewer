@@ -14,13 +14,11 @@
 </script>
 
 <EvalStatus
-  label={state === 'Complete' ? 'Completed' : state}
+  label={state}
   tone={state === 'Complete'
-    ? 'success'
-    : internalError
+    ? 'complete'
+    : state === 'Paused'
       ? 'papaya'
-      : state === 'Paused'
-        ? 'warning'
-        : undefined}
+      : 'neutral'}
   title={internalError ? 'Paused after an internal execution error' : undefined}
 />

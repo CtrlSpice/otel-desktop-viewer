@@ -9,6 +9,7 @@
 
 <script lang="ts">
   import { onDestroy, type Snippet } from 'svelte'
+  import LegendRows from './LegendRows.svelte'
 
   let {
     parts,
@@ -17,6 +18,8 @@
     barLabel,
     unit,
     showSingleCount = true,
+    countFormat = 'detailed',
+    showAll = false,
     emptyLabel,
     right,
   }: {
@@ -26,6 +29,9 @@
     barLabel: string
     unit: string
     showSingleCount?: boolean
+    countFormat?: 'detailed' | 'compact'
+    /** Show every label with a decorative bar instead of interactive previews. */
+    showAll?: boolean
     emptyLabel?: string
     right?: Snippet
   } = $props()
@@ -81,7 +87,7 @@
   role="group"
   aria-label={label}
   onpointermove={event => {
-    if (event.pointerType === 'touch') return
+    if (showAll || event.pointerType === 'touch') return
     const target = event.target
     if (!(target instanceof Element)) return
     const choice = target.closest<HTMLElement>('[data-breakdown-key]')
@@ -101,30 +107,42 @@
 >
   {#if colouredParts.length > 1}
     <div
-      class="flex h-6 w-full gap-1"
+      class="breakdown-bar"
       role="group"
       aria-label={`${barLabel}: ${colouredParts.map(part => `${part.label}: ${countLabel(part)}`).join('; ')}`}
     >
       {#each colouredParts as part (part.key)}
-        <button
-          type="button"
-          class="breakdown-segment min-w-2 rounded-full"
-          data-breakdown-key={part.key}
-          style:flex={part.count}
-          style:--part-color={part.color}
-          aria-label={`${part.label}: ${countLabel(part)}, ${percent.format(part.count / total)} of total`}
-          aria-pressed={keptKey === part.key}
-          onfocus={() => {
-            cancelHoverPreview()
-            hoveredKey = null
-            focusedKey = part.key
-          }}
-          onclick={() => {
-            cancelHoverPreview()
-            hoveredKey = null
-            pinnedKey = part.key
-          }}
-        ></button>
+        {#if showAll}
+          <span
+            class="breakdown-segment"
+            style:flex={part.count}
+            style:--part-color={part.color}
+            aria-hidden="true"
+            ><span class="breakdown-segment__fill"></span></span
+          >
+        {:else}
+          <button
+            type="button"
+            class="breakdown-segment breakdown-segment--interactive"
+            data-breakdown-key={part.key}
+            style:flex={part.count}
+            style:--part-color={part.color}
+            aria-label={`${part.label}: ${countLabel(part)}, ${percent.format(part.count / total)} of total`}
+            aria-pressed={keptKey === part.key}
+            onfocus={() => {
+              cancelHoverPreview()
+              hoveredKey = null
+              focusedKey = part.key
+            }}
+            onclick={() => {
+              cancelHoverPreview()
+              hoveredKey = null
+              pinnedKey = part.key
+            }}
+            ><span class="breakdown-segment__fill" aria-hidden="true"
+            ></span></button
+          >
+        {/if}
       {/each}
     </div>
   {/if}
@@ -136,20 +154,36 @@
       aria-hidden="true"
     ></span>
     <span class="breakdown-label__text">
-      <span class="min-w-0 truncate">{part.label}</span>
+      <span class="breakdown-label__name">{part.label}</span>
       {#if showSingleCount || colouredParts.length > 1}
-        <span class="shrink-0 text-rp-subtle tabular-nums"
-          >({countLabel(part)}{#if colouredParts.length > 1},
-            {percent.format(part.count / total)}{/if})</span
+        <span class="breakdown-label__count"
+          >{#if countFormat === 'compact'}({part.count.toLocaleString()}){:else}({countLabel(
+              part
+            )}{#if colouredParts.length > 1},
+              {percent.format(part.count / total)}{/if}){/if}</span
         >
       {/if}
     </span>
   {/snippet}
 
   {#if activePart || right || emptyLabel}
-    <div class="ball-pit" class:ball-pit--after-bar={colouredParts.length > 1}>
+    <div
+      class="ball-pit"
+      class:ball-pit--list={showAll}
+      class:ball-pit--after-bar={colouredParts.length > 1}
+    >
       <div class="min-w-0 flex-1">
-        {#if activePart}
+        {#if showAll && colouredParts.length}
+          <LegendRows
+            items={colouredParts}
+            label={`${label} legend`}
+            itemKey={part => part.key}
+          >
+            {#snippet children(part)}
+              <span class="breakdown-label">{@render partLabel(part)}</span>
+            {/snippet}
+          </LegendRows>
+        {:else if activePart}
           <div class="breakdown-label">
             {@render partLabel(activePart)}
           </div>
@@ -167,10 +201,22 @@
 <style lang="postcss">
   @reference "../../app.css";
 
+  .breakdown-bar {
+    @apply flex w-full gap-1;
+    height: var(--signal-card-row-h);
+  }
+
   .breakdown-segment {
-    @apply cursor-pointer border-0 px-0 py-2;
+    @apply flex min-w-2 items-center rounded-full border-0 bg-transparent p-0;
+  }
+
+  .breakdown-segment--interactive {
+    @apply cursor-pointer;
+  }
+
+  .breakdown-segment__fill {
+    @apply pointer-events-none block h-2 w-full rounded-full;
     background-color: var(--part-color);
-    background-clip: content-box;
   }
 
   .breakdown-segment:focus-visible {
@@ -185,6 +231,19 @@
 
   .ball-pit--after-bar {
     @apply mt-1;
+  }
+
+  .ball-pit--list {
+    @apply mt-0 items-start;
+  }
+
+  .breakdown-label__name {
+    @apply min-w-0 truncate;
+  }
+
+  .breakdown-label__count {
+    @apply shrink-0 tabular-nums;
+    color: var(--color-subtle);
   }
 
   .breakdown-label {

@@ -87,8 +87,8 @@
   class="anchor-popover anchor-popover--anchored anchor-popover--form filter-popover"
 >
   <div class="filter-popover__header">
-    <span class="font-semibold">{label}</span>
-    {#if clearable}<button
+    <span class="font-normal">{label}</span>
+    {#if clearable && !footer}<button
         type="button"
         class="btn btn-ghost btn-sm text-sm"
         aria-label={`Clear ${label.toLowerCase()} filter`}
@@ -97,6 +97,13 @@
   </div>
   {@render children()}
   {#if footer}<div class="filter-popover__footer">
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm text-sm font-normal"
+        aria-label={`Clear ${label.toLowerCase()}`}
+        disabled={!clearable}
+        onclick={onClear}>Clear</button
+      >
       {@render footer(close)}
     </div>{/if}
 </div>

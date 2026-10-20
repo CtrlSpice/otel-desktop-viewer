@@ -1,11 +1,5 @@
 <script lang="ts">
-  import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { LayoutThreeColumnIcon } from '@hugeicons/core-free-icons'
-  import FilterInput from '@/components/shared/Search/FilterInput.svelte'
-  import {
-    createPopoverID,
-    setupAnchorPopover,
-  } from '@/components/shared/utils/anchor-popover'
+  import TableColumnsPicker from '@/components/shared/TableColumnsPicker.svelte'
   import {
     COLUMN_SOURCES,
     columnID,
@@ -23,126 +17,47 @@
     selected: WaterfallColumn[]
     onchange: (columns: WaterfallColumn[]) => void
   } = $props()
-
-  const popoverID = createPopoverID('waterfall-columns')
-  let triggerEl = $state<HTMLButtonElement | null>(null)
-  let popoverEl = $state<HTMLDivElement | null>(null)
-  let open = $state(false)
-  let query = $state('')
-  let selectedIDs = $derived(new Set(selected.map(columnID)))
-  let filtered = $derived(
-    options.filter(option =>
-      columnLabel(option).toLowerCase().includes(query.trim().toLowerCase())
+  const choices = $derived(
+    COLUMN_SOURCES.flatMap(source =>
+      [true, false].flatMap(field =>
+        options
+          .filter(
+            option =>
+              option.source === source && Boolean(option.field) === field
+          )
+          .map(option => ({
+            id: option.id,
+            label: option.key || '(empty key)',
+            accessibleLabel: columnLabel(option),
+            group: `${source} ${field ? 'fields' : 'attributes'}`,
+            count: option.count,
+            countTitle: option.count
+              ? `${option.count} spans`
+              : 'Not present in this trace',
+          }))
+      )
     )
   )
 
-  $effect(() => {
-    const trigger = triggerEl
-    const popover = popoverEl
-    if (!trigger || !popover) return
-    return setupAnchorPopover({
-      trigger,
-      popover,
-      anchor: 'below-end',
-      onOpenChange: next => {
-        open = next
-        if (next)
-          popover.querySelector<HTMLInputElement>('input[type="search"]')?.focus()
-      },
-    })
-  })
-
-  function toggle(option: WaterfallColumnOption, checked: boolean) {
-    const column: WaterfallColumn = { source: option.source, key: option.key }
-    if (option.field) column.field = true
+  function change(ids: string[]) {
     onchange(
-      checked
-        ? [...selected, column]
-        : selected.filter(column => columnID(column) !== option.id)
+      ids.flatMap(id => {
+        const option = options.find(option => option.id === id)
+        if (!option) return []
+        const column: WaterfallColumn = {
+          source: option.source,
+          key: option.key,
+        }
+        if (option.field) column.field = true
+        return [column]
+      })
     )
   }
 </script>
 
-<button
-  bind:this={triggerEl}
-  type="button"
-  popovertarget={popoverID}
-  aria-expanded={open}
-  aria-label="Columns"
-  data-tip="Select columns"
-  class="btn btn-xs chart-header-control tooltip tooltip-left"
->
-  <HugeiconsIcon
-    icon={LayoutThreeColumnIcon}
-    size={16}
-    strokeWidth={1.5}
-    aria-hidden="true"
-  />
-</button>
-<div
-  bind:this={popoverEl}
-  id={popoverID}
-  popover="auto"
-  role="group"
-  aria-label="Waterfall columns"
-  class="anchor-popover anchor-popover--anchored waterfall-columns-picker"
->
-  <div class="mb-2">
-    <FilterInput
-      bind:value={query}
-      label="Find columns"
-      placeholder="Find columns…"
-    />
-  </div>
-  {#each COLUMN_SOURCES as source}
-    {#each [true, false] as field}
-      {@const group = filtered.filter(
-        option => option.source === source && Boolean(option.field) === field
-      )}
-      {#if group.length}
-        <fieldset class="min-w-0">
-          <legend
-            class="px-2 py-1 text-xs font-medium capitalize text-base-content"
-            >{source} {field ? 'fields' : 'attributes'}</legend
-          >
-          {#each group as option (option.id)}
-            <label
-              class="item-state flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm"
-            >
-              <input
-                type="checkbox"
-                class="checkbox checkbox-xs"
-                aria-label={columnLabel(option)}
-                checked={selectedIDs.has(option.id)}
-                onchange={event => toggle(option, event.currentTarget.checked)}
-              />
-              <span class="min-w-0 flex-1 break-words"
-                >{option.key || '(empty key)'}</span
-              >
-              {#if option.count !== undefined}<span
-                  class="shrink-0 text-xs {option.count ? 'text-base-content' : 'text-rp-muted'}"
-                  title={option.count
-                    ? `${option.count} spans`
-                    : 'Not present in this trace'}>{option.count}</span
-                >{/if}
-            </label>
-          {/each}
-        </fieldset>
-      {/if}
-    {/each}
-  {/each}
-  {#if !filtered.length}<p class="p-2 text-sm text-base-content/70">
-      {query ? 'No matching columns.' : 'No columns available.'}
-    </p>{/if}
-</div>
-
-<style lang="postcss">
-  @reference "../../../app.css";
-  .waterfall-columns-picker {
-    @apply p-2;
-    width: 22rem;
-    max-width: calc(100vw - 1.5rem);
-    max-height: min(70vh, 32rem);
-    overflow-y: auto;
-  }
-</style>
+<TableColumnsPicker
+  options={choices}
+  selected={selected.map(columnID)}
+  onchange={change}
+  label="Waterfall columns"
+/>

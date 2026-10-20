@@ -35,7 +35,9 @@
     : formatDescription)
   let bytes = $state<number | null>(null)
   let error = $state('')
-  let loading = $state(false)
+  let inspectingSize = $state(false)
+  let loadingPreview = $state(false)
+  let loading = $derived(inspectingSize || loadingPreview)
   let formatted = $state('')
   let partial = $state(false)
   let requestedURL = $state('')
@@ -59,10 +61,10 @@
     error = ''
     bytes = null
     partial = false
-    loading = false
+    inspectingSize = false
     if (!url) return
     const controller = new AbortController()
-    loading = true
+    inspectingSize = true
     void fetch(url, { method: 'HEAD', signal: controller.signal })
       .then(async response => {
         if (controller.signal.aborted) return
@@ -90,10 +92,11 @@
             err instanceof Error ? err.message : 'Could not inspect export size'
       })
       .finally(() => {
-        if (!controller.signal.aborted) loading = false
+        if (!controller.signal.aborted) inspectingSize = false
       })
     return () => {
       controller.abort()
+      inspectingSize = false
       currentURL = ''
     }
   })
@@ -103,7 +106,7 @@
     if (!active || !url || url !== previewURL) return
     const controller = new AbortController()
     let worker: Worker | undefined
-    loading = true
+    loadingPreview = true
     error = ''
     void fetch(url, {
       signal: controller.signal,
@@ -139,7 +142,7 @@
         worker.onmessage = (event: MessageEvent<string>) => {
           if (!controller.signal.aborted) {
             formatted = event.data
-            loading = false
+            loadingPreview = false
           }
           worker?.terminate()
         }
@@ -147,7 +150,7 @@
           if (!controller.signal.aborted) {
             error =
               'Could not format JSON. Download the exact OTLP JSON instead.'
-            loading = false
+            loadingPreview = false
           }
           worker?.terminate()
         }
@@ -156,12 +159,13 @@
       .catch(err => {
         if (!controller.signal.aborted) {
           error = err instanceof Error ? err.message : 'Could not load JSON'
-          loading = false
+          loadingPreview = false
         }
       })
     return () => {
       controller.abort()
       worker?.terminate()
+      loadingPreview = false
     }
   })
 </script>

@@ -328,6 +328,59 @@ test.describe('independent histogram aggregate loading', () => {
     })
   }
 
+  test('selected contributions paint behind intersecting heatmap quantiles', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    const pending = await holdAggregates(page)
+    await Promise.all(pending.map(({ route }) => respond(route)))
+    const cells = page.locator('.heatmap-cell')
+    const quantiles = page.locator('.heatmap-quantile-line')
+    await expect(cells).toHaveCount(3)
+    await expect(quantiles).toHaveCount(3)
+    const cellGeometry = () => cells.evaluateAll(elements => elements.map(element =>
+      ['x', 'y', 'width', 'height', 'fill'].map(attr => element.getAttribute(attr))))
+    const paths = () => quantiles.evaluateAll(elements => elements.map(element => element.getAttribute('d')))
+    const originalCells = await cellGeometry()
+    const originalPaths = await paths()
+    await page.route('**/rpc', async route => {
+      const request = route.request().postDataJSON()
+      if (request.method !== 'getMetricAggregateView') return route.fallback()
+      await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result: {
+        aggregate: [bucket], scalarAggregate: null, contribution: [bucket],
+      } } })
+    })
+    // Route-selected Details datapoints use the same contribution request as a
+    // selection in the Details table, without chart pinning changing the source.
+    await page.goto(`/metrics/${metric.metricRef}?time=all&htab=heatmap&hscope=window&series=first&dp=first-0`)
+    const textures = page.locator('.heatmap-contribution-texture')
+    await expect(textures).toHaveCount(3)
+    await expect(page.locator('.heatmap-cell[data-contribution-count]')).toHaveCount(3)
+    expect(await cellGeometry()).toEqual(originalCells)
+    expect(await paths()).toEqual(originalPaths)
+    expect(await quantiles.first().evaluate(element => {
+      const line = element as SVGPathElement
+      const point = line.getPointAtLength(line.getTotalLength() / 2)
+      const screenPoint = new DOMPoint(point.x, point.y).matrixTransform(line.getScreenCTM()!)
+      const contributions = document.querySelector('.heatmap-contributions')!
+      const overlays = line.closest('.heatmap-quantile-overlays')!
+      const intersects = [...contributions.querySelectorAll<SVGPathElement>('g[clip-path] > path:first-child')].some(fill =>
+        fill.isPointInFill(screenPoint.matrixTransform(fill.getScreenCTM()!.inverse())))
+      return {
+        intersects,
+        sameLayer: contributions.parentElement === overlays.parentElement,
+        contributionsFirst: Boolean(contributions.compareDocumentPosition(overlays) & Node.DOCUMENT_POSITION_FOLLOWING),
+      }
+    })).toEqual({ intersects: true, sameLayer: true, contributionsFirst: true })
+    const graph = page.getByRole('application', { name: 'Histogram heatmap', exact: true })
+    await graph.focus()
+    await graph.press('ArrowRight')
+    await expect(page.locator('.chart-keyboard-cursor-cell')).toBeVisible()
+    await graph.press('Enter')
+    await expect(page.locator('.heatmap-selection')).toBeVisible()
+    expect(await cellGeometry()).toEqual(originalCells)
+    expect(await paths()).toEqual(originalPaths)
+  })
+
   for (const [theme, colour] of [
     ['rose-pine', 'rgb(110, 106, 134)'],
     ['rose-pine-moon', 'rgb(110, 106, 134)'],
@@ -354,11 +407,11 @@ test.describe('independent histogram aggregate loading', () => {
       }
       await page.setViewportSize({ width: 900, height: 1000 })
       const header = page.getByRole('region', { name: 'Metric chart', exact: true })
-      const entries = header.locator('.heatmap-legend__entries')
+      const entries = header.locator('.legend-rows')
       await expect(entries).toHaveCSS('flex-direction', 'column')
       await expect.poll(() => header.evaluate(e => {
         const header = e.getBoundingClientRect()
-        return [...e.querySelectorAll('.heatmap-legend__entry')].every(entry => {
+        return [...e.querySelectorAll('.legend-rows__entry')].every(entry => {
           const box = entry.getBoundingClientRect()
           return box.left >= header.left && box.right <= header.right && box.bottom <= header.bottom
         })
@@ -477,7 +530,7 @@ test.describe('independent histogram aggregate loading', () => {
       await expect(legend.getByRole('listitem')).toHaveCount(12)
       const labels = await legend.getByRole('listitem').allTextContents()
       const dimensions = await legend.evaluate(element => ({
-        widths: [...element.querySelectorAll('.heatmap-legend__entry')]
+        widths: [...element.querySelectorAll('.legend-rows__entry')]
           .map(entry => entry.getBoundingClientRect().width),
         gap: Number.parseFloat(getComputedStyle(element).columnGap),
       }))
@@ -491,12 +544,12 @@ test.describe('independent histogram aggregate loading', () => {
         await legend.evaluate((element, width) => {
           element.style.maxWidth = `${width}px`
         }, available)
-        await expect.poll(() => legend.locator('.heatmap-legend__row').evaluateAll(rows =>
-          rows.map(row => row.querySelectorAll('.heatmap-legend__entry').length)
+        await expect.poll(() => legend.locator('.legend-rows__row').evaluateAll(rows =>
+          rows.map(row => row.querySelectorAll('.legend-rows__entry').length)
         )).toEqual(expected)
         await expect.poll(() => legend.evaluate(element => {
           const bounds = element.getBoundingClientRect()
-          return [...element.querySelectorAll('.heatmap-legend__entry')].every(entry =>
+          return [...element.querySelectorAll('.legend-rows__entry')].every(entry =>
             entry.getBoundingClientRect().right <= bounds.right + 0.5
           )
         })).toBe(true)

@@ -1,9 +1,25 @@
 <script lang="ts">
-  import PaneHeader, { paneTabID } from '@/components/shared/PaneHeader.svelte'
+  import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import AssessmentBadge from './AssessmentBadge.svelte'
   import RunStatusBadge from './RunStatusBadge.svelte'
   import EvalStatus from './EvalStatus.svelte'
-  import { cost, estimatedCost, type EvalAttempt, type EvalRun } from './model'
+  import { caseSummary } from './case-summary'
+  import TableSortButton from '@/components/shared/TableSortButton.svelte'
+  import TableColumnHeading from '@/components/shared/TableColumnHeading.svelte'
+  import TableColumnsPicker from '@/components/shared/TableColumnsPicker.svelte'
+  import ResizableTable from '@/components/shared/ResizableTable.svelte'
+  import TreeConnector from '@/components/shared/TreeConnector.svelte'
+  import TreeToggle from '@/components/shared/TreeToggle.svelte'
+  import { completionTone, groupAttempts } from './group-attempts'
+  import {
+    cost,
+    estimatedCost,
+    percent,
+    type AssessmentDefinition,
+    type EvalAttempt,
+    type EvalRun,
+  } from './model'
+  import { type AttemptSort, type AttemptSortKey } from './sort-attempts'
 
   let {
     run,
@@ -17,185 +33,554 @@
     onSelect: (id: string) => void
   } = $props()
   const panelID = $props.id()
-  const views = [
-    { id: 'results', label: 'Results' },
-    { id: 'time', label: 'Time' },
-    { id: 'cost', label: 'Cost' },
-  ]
-  let view = $state('results')
-  const longest = $derived(
-    Math.max(0, ...run.attempts.map(item => item.seconds ?? 0))
+  let caseGutterWidth = $state(0)
+  let repGutterWidth = $state(0)
+  let collapsedCases = $state<string[]>([])
+  function toggleCase(id: string) {
+    collapsedCases = collapsedCases.includes(id)
+      ? collapsedCases.filter(key => key !== id)
+      : [...collapsedCases, id]
+  }
+  type Column = {
+    key: AttemptSortKey
+    label: string
+    group: string
+    width: number
+    min: number
+    fixed?: boolean
+    numeric?: boolean
+    description?: string
+    hint?: string
+    assessment?: AssessmentDefinition
+  }
+  const options = $derived<Column[]>([
+    {
+      key: 'name',
+      label: 'Case',
+      group: 'Case',
+      width: Math.max(1, caseGutterWidth),
+      min: Math.max(1, caseGutterWidth),
+      fixed: true,
+    },
+    {
+      key: 'repetition',
+      label: 'Rep',
+      hint: 'Repetition',
+      group: 'Case',
+      width: Math.max(256, repGutterWidth),
+      min: Math.max(256, repGutterWidth),
+      fixed: true,
+      numeric: true,
+    },
+    ...run.assessments.map(assessment => ({
+      key: `assessment:${assessment.id}` as AttemptSortKey,
+      label: assessment.name,
+      group: 'Results',
+      width: 192,
+      min: 176,
+      hint: assessment.scale,
+      assessment,
+    })),
+    {
+      key: 'seconds',
+      label: 'Duration',
+      group: 'Time',
+      width: 128,
+      min: 112,
+      numeric: true,
+    },
+    {
+      key: 'tools',
+      label: 'Tool calls',
+      group: 'Time',
+      width: 160,
+      min: 144,
+      numeric: true,
+    },
+    {
+      key: 'investigatorCost',
+      label: 'Investigator',
+      group: 'Cost',
+      width: 176,
+      min: 160,
+      numeric: true,
+      description: 'Estimate · CAD',
+    },
+    {
+      key: 'graderCost',
+      label: 'Grader',
+      group: 'Cost',
+      width: 176,
+      min: 160,
+      numeric: true,
+      description: 'Estimate · CAD',
+    },
+  ])
+
+  function loadColumns(): string[] | null {
+    try {
+      const stored: unknown = JSON.parse(
+        localStorage.getItem('evals-table-columns') ?? 'null'
+      )
+      if (Array.isArray(stored) && stored.every(id => typeof id === 'string'))
+        return stored
+    } catch {
+      /* Use all columns when browser storage is unavailable. */
+    }
+    return null
+  }
+  let selectedKeys = $state<string[] | null>(loadColumns())
+  const requiredKeys = ['name', 'repetition']
+  const selectedColumns = $derived(
+    selectedKeys === null
+      ? options.map(column => column.key)
+      : [...new Set([...requiredKeys, ...selectedKeys])]
   )
-  const investigator = $derived(estimatedCost(attempts, 'investigatorCost'))
-  const grader = $derived(estimatedCost(attempts, 'graderCost'))
+  const columns = $derived(
+    options.filter(column => selectedColumns.includes(column.key))
+  )
+  let sort = $state<AttemptSort>()
+  const activeSort = $derived(
+    columns.some(column => column.key === sort?.key) ? sort : undefined
+  )
+  const groups = $derived(
+    groupAttempts(attempts, run.attempts, activeSort).map(group => ({
+      ...group,
+      summary: caseSummary(group.allAttempts, run.assessments),
+    }))
+  )
+
+  function changeColumns(ids: string[]) {
+    selectedKeys = [...new Set([...requiredKeys, ...ids])]
+    try {
+      localStorage.setItem('evals-table-columns', JSON.stringify(selectedKeys))
+    } catch {
+      /* Keep the session's selection. */
+    }
+  }
+  function toggleSort(key: AttemptSortKey) {
+    sort = {
+      key,
+      direction:
+        activeSort?.key === key && activeSort.direction === 'asc'
+          ? 'desc'
+          : 'asc',
+    }
+  }
+  const estimates = $derived([
+    { key: 'investigatorCost', ...estimatedCost(attempts, 'investigatorCost') },
+    { key: 'graderCost', ...estimatedCost(attempts, 'graderCost') },
+  ])
 </script>
 
-<PaneHeader
-  pill
-  mode="title-tabs"
-  title={run.name}
-  subtitle={run.evaluation}
-  tabs={views}
-  activeID={view}
-  onSelect={id => (view = id)}
-  tabLayout="left"
-  tabPanelID={panelID}
->
-  {#snippet badge()}
-    <span
-      class="badge-count tabular-nums"
-      title="Shown attempts / total attempts"
-      >{attempts.length}/{run.attempts.length} attempts</span
+<PaneHeader pill mode="title" title={run.name}>
+  {#snippet right()}<RunStatusBadge
+      state={run.state}
+      pauseReason={run.pauseReason}
+    />{/snippet}
+  {#snippet metaLeft()}
+    <div
+      class="flex min-w-0 flex-wrap items-center gap-x-2 text-sm text-rp-subtle"
     >
-    <RunStatusBadge state={run.state} pauseReason={run.pauseReason} />
+      <span class="tabular-nums" title="Shown attempts / total attempts"
+        >{attempts.length}/{run.attempts.length} attempts</span
+      >
+    </div>
+  {/snippet}
+  {#snippet metaRight()}
+    <TableColumnsPicker
+      label="Evals columns"
+      options={options.map(column => ({
+        id: column.key,
+        label: column.label,
+        group: column.group,
+        accessibleLabel:
+          column.key === 'repetition' ? 'Repetition' : column.label,
+        disabled: requiredKeys.includes(column.key),
+      }))}
+      selected={selectedColumns}
+      onchange={changeColumns}
+    />
   {/snippet}
 </PaneHeader>
 
-<div
-  id={panelID}
-  role="tabpanel"
-  aria-labelledby={paneTabID(panelID, view)}
-  class="min-h-0 flex-1 overflow-auto"
-  tabindex="0"
+<ResizableTable
+  columns={columns.map(column => ({
+    id: column.key,
+    label: column.label,
+    min: column.min,
+    width: column.width,
+    fixed: column.fixed,
+  }))}
+  storageKey="evals-results-column-widths"
+  caption={`Results for ${run.name}`}
+  pinnedCount={2}
 >
-  <table class="eval-results table w-full min-w-[38rem]">
-    <caption class="sr-only"
-      >{views.find(item => item.id === view)?.label} for {run.name}</caption
-    >
-    <thead class="sticky top-0 z-10 h-10 bg-base-100">
-      <tr>
-        <th class="table-cell min-w-56 text-left" scope="col">Case / attempt</th
-        >
-        <th class="table-cell min-w-32 text-left" scope="col">Status</th>
-        <th class="table-cell min-w-24 text-right" scope="col">Repetition</th>
-        {#if view === 'results'}
-          {#each run.assessments as definition}
-            <th
-              class="table-cell min-w-32 text-right"
-              scope="col"
-              title={definition.scale}>{definition.name}</th
-            >
-          {/each}
-        {:else if view === 'time'}
-          <th class="table-cell min-w-40 text-right" scope="col">Duration</th>
-          <th class="table-cell min-w-32 text-right" scope="col">Tool calls</th>
-        {:else}
-          <th class="table-cell min-w-40 text-right" scope="col"
-            >Investigator <span class="block text-sm font-normal"
-              >Estimate · CAD</span
-            ></th
-          >
-          <th class="table-cell min-w-40 text-right" scope="col"
-            >Grader <span class="block text-sm font-normal">Estimate · CAD</span
-            ></th
-          >
-        {/if}
-      </tr>
-    </thead>
-    <tbody>
-      {#each attempts as item (item.id)}
-        <tr
-          class="table-row"
-          class:table-row--selected={selectedID === item.id}
-        >
-          <th scope="row" class="table-cell text-left font-normal">
-            <button
-              class="block min-h-[var(--signal-card-row-h)] w-full rounded-sm text-left text-sm font-normal focus-visible:outline-2 focus-visible:outline-primary"
-              aria-pressed={selectedID === item.id}
-              onclick={() => onSelect(item.id)}>{item.name}</button
-            >
-          </th>
-          <td class="table-cell text-left">
-            <EvalStatus
-              label={item.state === 'Error' ? 'Execution error' : item.state}
-              tone={item.state === 'Error' ? 'papaya' : undefined}
-            />
-          </td>
-          <td class="table-cell text-right tabular-nums">{item.repetition}</td>
-          {#if view === 'results'}
-            {#each run.assessments as definition}
-              {@const assessment = item.assessments.find(
-                score => score.id === definition.id
-              )}
-              <td class="table-cell text-right">
-                <div class="inline-flex items-center gap-2 whitespace-nowrap">
-                  <AssessmentBadge {assessment} maximum={definition.maximum} />
-                  {#if assessment?.value != null}<span
-                      class="text-sm text-rp-subtle tabular-nums"
-                      >({assessment.value}/{definition.maximum})</span
-                    >{/if}
-                </div>
-              </td>
-            {/each}
-          {:else if view === 'time'}
-            {@const failed = item.tools.filter(
-              tool => tool.state === 'Error'
-            ).length}
-            <td class="table-cell text-right tabular-nums">
-              {#if item.seconds !== undefined}
-                <span class="text-sm">{item.seconds} s</span>
-                <div
-                  class="mt-2 h-1 overflow-hidden rounded-full bg-base-300"
-                  aria-hidden="true"
-                >
-                  <div
-                    class="h-full rounded-full bg-primary"
-                    style:width="{longest > 0
-                      ? (item.seconds / longest) * 100
-                      : 0}%"
-                  ></div>
-                </div>
-              {:else}<span class="text-sm">Unknown</span>{/if}
-            </td>
-            <td class="table-cell text-right text-sm tabular-nums">
-              <div class="min-h-[var(--signal-card-row-h)] content-center">
-                {item.tools.length}
-              </div>
-              {#if failed}<div
-                  class="min-h-[var(--signal-card-row-h)] content-center"
-                >
-                  <EvalStatus label={`${failed} failed`} tone="error" />
-                </div>{/if}
-            </td>
-          {:else}
-            <td class="table-cell text-right text-sm tabular-nums"
-              >{cost(item.investigatorCost)}</td
-            >
-            <td class="table-cell text-right text-sm tabular-nums"
-              >{cost(item.graderCost)}</td
-            >
-          {/if}
-        </tr>
-      {/each}
-    </tbody>
-    {#if view === 'cost' && attempts.length}
-      <tfoot>
-        <tr>
+  {#snippet header(layout)}
+    <tr>
+      {#each columns as column (column.key)}
+        {#if column.key === 'name'}
           <th
-            scope="row"
-            colspan="3"
-            class="table-cell text-left text-sm font-normal">Shown attempts</th
+            class="table-cell eval-results__identity-cell"
+            scope="colgroup"
+            colspan="2"
+            aria-label="Case · Rep"
+            class:table-cell--pinned={layout.pinned.name !== undefined}
+            style:left={layout.pinned.name === undefined
+              ? undefined
+              : `${layout.pinned.name}px`}
+            aria-sort={activeSort?.key === 'name' ||
+            activeSort?.key === 'repetition'
+              ? activeSort.direction === 'asc'
+                ? 'ascending'
+                : 'descending'
+              : 'none'}
           >
-          {#each [investigator, grader] as estimate}
-            <td class="table-cell text-right text-sm tabular-nums"
-              >{cost(
-                estimate.total
-              )}{#if estimate.incomplete && estimate.total !== null}<span
-                  class="block text-sm text-rp-subtle">Incomplete</span
-                >{/if}</td
+            <span class="eval-results__identity-heading">
+              <span
+                class="eval-results__case-heading"
+                bind:offsetWidth={caseGutterWidth}
+              >
+                <TableSortButton
+                  label="Case"
+                  direction={activeSort?.key === 'name'
+                    ? activeSort.direction
+                    : undefined}
+                  onclick={() => toggleSort('name')}
+                  ><TableColumnHeading label="Case" /></TableSortButton
+                >
+                <span aria-hidden="true">·</span>
+              </span>
+              <span
+                class="eval-results__rep-heading"
+                bind:offsetWidth={repGutterWidth}
+              >
+                <TableSortButton
+                  label="Repetition"
+                  title="Repetition"
+                  align="right"
+                  direction={activeSort?.key === 'repetition'
+                    ? activeSort.direction
+                    : undefined}
+                  onclick={() => toggleSort('repetition')}
+                  ><TableColumnHeading label="Rep" /></TableSortButton
+                >
+              </span>
+            </span>
+          </th>
+        {:else if column.key !== 'repetition'}
+          <th
+            class="table-cell"
+            class:table-cell--pinned={layout.pinned[column.key] !== undefined}
+            style:left={layout.pinned[column.key] === undefined
+              ? undefined
+              : `${layout.pinned[column.key]}px`}
+            scope="col"
+            aria-sort={activeSort?.key === column.key
+              ? activeSort.direction === 'asc'
+                ? 'ascending'
+                : 'descending'
+              : 'none'}
+          >
+            <TableSortButton
+              label={column.label}
+              direction={activeSort?.key === column.key
+                ? activeSort.direction
+                : undefined}
+              align={column.numeric ? 'right' : 'left'}
+              title={column.hint}
+              onclick={() => toggleSort(column.key)}
             >
-          {/each}
-        </tr>
-      </tfoot>
+              <TableColumnHeading
+                label={column.label}
+                description={column.description}
+                align={column.numeric ? 'right' : 'left'}
+              />
+            </TableSortButton>
+          </th>
+        {/if}
+      {/each}
+    </tr>
+  {/snippet}
+  {#snippet children(layout)}
+    {#each groups as group (group.id)}
+      <tr
+        class="table-row eval-results__case"
+        data-case-id={group.id}
+        data-table-resize-exclude
+      >
+        <th
+          scope="row"
+          colspan="2"
+          class="table-cell eval-results__case-cell text-left font-normal"
+          class:table-cell--pinned={layout.pinned.name !== undefined}
+          style:left={layout.pinned.name === undefined
+            ? undefined
+            : `${layout.pinned.name}px`}
+        >
+          <div
+            class="eval-results__case-name"
+            title={`${group.name} — ${group.state}`}
+          >
+            {#if !collapsedCases.includes(group.id)}<TreeConnector
+                kind="stem"
+                start="calc(1rem + 4px)"
+                targetSize="8px"
+              />{/if}
+            <TreeToggle
+              label={`${collapsedCases.includes(group.id) ? 'Expand' : 'Collapse'} ${group.name}, ${group.attempts.length} ${group.attempts.length === 1 ? 'repetition' : 'repetitions'}`}
+              expanded={!collapsedCases.includes(group.id)}
+              onclick={() => toggleCase(group.id)}
+              ><EvalStatus
+                label={group.state}
+                dotOnly
+                tone={completionTone(group.state)}
+              />
+              <span class="eval-results__case-count"
+                >{group.attempts.length}</span
+              >
+            </TreeToggle>
+            <span class="min-w-0 [overflow-wrap:anywhere]">{group.name}</span>
+          </div>
+        </th>
+        {@render totals(group)}
+      </tr>
+      {#if !collapsedCases.includes(group.id)}
+        {#each group.attempts as item, index (item.id)}
+          <tr
+            class="table-row eval-results__attempt"
+            data-attempt-id={item.id}
+            data-case-id={group.id}
+            class:table-row--selected={selectedID === item.id}
+          >
+            {#each columns as column (column.key)}
+              {#if column.key === 'name'}
+                <td
+                  class="table-cell eval-results__branch-cell"
+                  class:table-cell--pinned={layout.pinned.name !== undefined}
+                  style:left={layout.pinned.name === undefined
+                    ? undefined
+                    : `${layout.pinned.name}px`}
+                >
+                  <TreeConnector
+                    kind={index === group.attempts.length - 1 ? 'elbow' : 'tee'}
+                    start="calc(1rem + 4px)"
+                    reach="calc(100% - 1rem - 4px)"
+                    targetSize="0px"
+                  />
+                  <span class="sr-only">{item.name}</span>
+                </td>
+              {:else if column.key === 'repetition'}
+                <th
+                  scope="row"
+                  class="table-cell text-right font-normal tabular-nums"
+                  class:table-cell--pinned={layout.pinned.repetition !==
+                    undefined}
+                  style:left={layout.pinned.repetition === undefined
+                    ? undefined
+                    : `${layout.pinned.repetition}px`}
+                >
+                  <span
+                    class="eval-results__rep"
+                    style:width={`calc(${repGutterWidth}px - 1rem)`}
+                  >
+                    <span class="eval-results__rep-arm"
+                      ><TreeConnector
+                        kind="arm"
+                        start="0px"
+                        reach="100%"
+                        targetSize="0px"
+                      /></span
+                    >
+                    <button
+                      class="eval-results__rep-button"
+                      title={`${item.name} — Rep ${item.repetition} · ${item.state}`}
+                      aria-label={item.name}
+                      aria-describedby={`${panelID}-status-${item.id}`}
+                      aria-pressed={selectedID === item.id}
+                      onclick={() => onSelect(item.id)}
+                      >{item.repetition}</button
+                    >
+                    <span id={`${panelID}-status-${item.id}`} class="sr-only"
+                      >Rep {item.repetition} · {item.state}</span
+                    >
+                  </span>
+                </th>
+              {:else if column.assessment}
+                {@const assessment = item.assessments.find(
+                  score => score.id === column.assessment?.id
+                )}
+                <td class="table-cell text-right">
+                  <div class="eval-results__assessment">
+                    <AssessmentBadge
+                      {assessment}
+                      maximum={column.assessment.maximum}
+                    />
+                    {#if assessment?.value != null}<span
+                        class="shrink-0 text-sm text-rp-subtle tabular-nums"
+                        >({assessment.value}/{column.assessment.maximum})</span
+                      >{/if}
+                  </div>
+                </td>
+              {:else if column.key === 'seconds'}
+                <td class="table-cell text-right tabular-nums">
+                  {#if item.seconds !== undefined}
+                    <span>{item.seconds} s</span>
+                  {:else}Unknown{/if}
+                </td>
+              {:else if column.key === 'tools'}
+                {@const failed = item.tools.filter(
+                  tool => tool.state === 'Error'
+                ).length}
+                <td class="table-cell text-right tabular-nums">
+                  <span class="whitespace-nowrap"
+                    >{item.tools.length}{#if failed}{' '}({failed}
+                      {failed === 1 ? 'failure' : 'failures'}){/if}</span
+                  >
+                </td>
+              {:else if column.key === 'investigatorCost' || column.key === 'graderCost'}
+                <td class="table-cell text-right tabular-nums"
+                  >{cost(item[column.key])}</td
+                >
+              {/if}
+            {/each}
+          </tr>
+        {/each}
+      {/if}
+    {/each}
+    {#snippet totals(group: (typeof groups)[number])}
+      {#each columns as column (column.key)}
+        {#if column.assessment}
+          {@const score = group.summary.scores[column.assessment.id]}
+          <td
+            class="table-cell tabular-nums"
+            class:text-right={score.percent !== null}
+            title={`${score.scored} scored / ${score.denominator} denominator · all case repetitions`}
+            >{percent(score.percent)}</td
+          >
+        {:else if column.key === 'seconds'}
+          <td
+            class="table-cell text-right tabular-nums"
+            title="Sum of recorded repetition durations"
+          >
+            {group.summary.duration.total === null
+              ? 'Unknown'
+              : `${Number(group.summary.duration.total.toFixed(3))} s`}
+            {#if group.summary.duration.incomplete && group.summary.duration.total !== null}<span
+                class="block text-rp-subtle">Partial total</span
+              >{/if}
+          </td>
+        {:else if column.key === 'tools'}
+          <td
+            class="table-cell text-right tabular-nums"
+            title="Recorded tool calls across all repetitions"
+          >
+            <span class="whitespace-nowrap"
+              >{group.summary.calls}{#if group.summary.failures}{' '}
+                ({group.summary.failures}
+                {group.summary.failures === 1
+                  ? 'failure'
+                  : 'failures'}){/if}</span
+            >
+          </td>
+        {:else if column.key === 'investigatorCost' || column.key === 'graderCost'}
+          {@const estimate = group.summary[column.key]}
+          <td class="table-cell text-right tabular-nums">
+            {cost(estimate.total)}
+            {#if estimate.incomplete && estimate.total !== null}<span
+                class="block text-rp-subtle">Partial estimate</span
+              >{/if}
+          </td>
+        {/if}
+      {/each}
+    {/snippet}
+  {/snippet}
+  {#snippet footer(layout)}
+    {#if attempts.length && columns.some( column => estimates.some(estimate => estimate.key === column.key) )}
+      <tr aria-label="Estimated cost for shown attempts">
+        {#each columns as column (column.key)}
+          {@const estimate = estimates.find(
+            estimate => estimate.key === column.key
+          )}
+          {#if column.key === 'name'}
+            <th
+              scope="row"
+              class="table-cell text-left text-sm font-normal"
+              class:table-cell--pinned={layout.pinned[column.key] !== undefined}
+              style:left={layout.pinned[column.key] === undefined
+                ? undefined
+                : `${layout.pinned[column.key]}px`}
+              title={`${attempts.length} shown attempts`}>Total</th
+            >
+          {:else}
+            <td
+              class="table-cell text-right text-sm font-normal tabular-nums"
+              class:table-cell--pinned={layout.pinned[column.key] !== undefined}
+              style:left={layout.pinned[column.key] === undefined
+                ? undefined
+                : `${layout.pinned[column.key]}px`}
+            >
+              {#if estimate}
+                {cost(estimate.total)}
+                {#if estimate.incomplete && estimate.total !== null}<span
+                    class="block text-rp-subtle">Partial estimate</span
+                  >{/if}
+              {/if}
+            </td>
+          {/if}
+        {/each}
+      </tr>
     {/if}
-  </table>
-</div>
+  {/snippet}
+</ResizableTable>
 
 <style lang="postcss">
   @reference "../../app.css";
-
-  .eval-results th[scope='col'] {
-    @apply font-normal;
+  .eval-results__identity-cell {
+    padding-inline: 0;
+    font-weight: 400;
+    color: var(--color-subtle);
+  }
+  .eval-results__identity-heading {
+    @apply inline-flex w-max items-center;
+  }
+  .eval-results__case-heading {
+    @apply inline-flex items-center gap-1 pl-4 pr-1;
+    min-width: var(--waterfall-gutter-col);
+  }
+  .eval-results__rep-heading {
+    @apply block pr-4;
+    min-width: var(--waterfall-gutter-col);
+  }
+  .eval-results__assessment {
+    @apply flex items-center justify-between gap-2 whitespace-nowrap;
+  }
+  .eval-results__attempt :global(.table-cell),
+  .eval-results__attempt :global(.eval-status) {
+    color: var(--color-subtle);
+  }
+  .eval-results__branch-cell {
+    position: relative;
+  }
+  .eval-results__case-name {
+    @apply relative flex min-h-[var(--table-row-h)] w-full items-center gap-2 px-4 text-left font-normal;
+  }
+  .eval-results__case-cell {
+    padding: 0;
+  }
+  .eval-results__case-count {
+    width: var(--waterfall-gutter-col);
+    @apply shrink-0 text-center tabular-nums;
+    color: var(--color-subtle);
+  }
+  .eval-results__rep {
+    @apply -ml-4 flex items-center gap-2;
+  }
+  .eval-results__rep-arm {
+    @apply relative h-[var(--signal-card-row-h)] flex-1;
+  }
+  .eval-results__rep-button {
+    @apply min-h-[var(--signal-card-row-h)] shrink-0 rounded-sm text-right text-sm font-normal focus-visible:outline-2 focus-visible:outline-primary;
     color: var(--color-subtle);
   }
 </style>

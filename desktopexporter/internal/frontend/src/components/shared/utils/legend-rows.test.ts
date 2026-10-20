@@ -23,7 +23,9 @@ describe('legendRowEnds', () => {
   })
 
   it('uses single-entry rows when pairs cannot fit and retains empty/single legends', () => {
-    expect(legendRowEnds(widths, 60, 16)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+    expect(legendRowEnds(widths, 60, 16)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+    ])
     expect(legendRowEnds([], 100, 16)).toEqual([])
     expect(legendRowEnds([100], 80, 16)).toEqual([1])
   })

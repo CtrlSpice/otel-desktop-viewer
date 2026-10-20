@@ -19,7 +19,7 @@
     parts.map(part => ({
       ...part,
       key: `${part.tone}:${part.label}`,
-      color: `var(--color-${part.tone})`,
+      color: `var(--color-${part.tone === 'neutral' ? 'base-300' : part.tone === 'success' ? 'accent' : part.tone})`,
     }))
   )
 </script>
@@ -30,5 +30,7 @@
   barLabel={`${label} by attempt count`}
   unit="attempt"
   emptyLabel="No results"
+  showAll
+  countFormat="compact"
   {right}
 />

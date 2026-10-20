@@ -24,6 +24,7 @@ export type Assessment = {
 
 export type EvalAttempt = {
   id: string
+  caseID: string
   repetition: number
   name: string
   question: string
@@ -59,7 +60,7 @@ export type EvalRun = {
 }
 
 export function assessmentSummary(
-  run: EvalRun,
+  run: Pick<EvalRun, 'attempts'>,
   definition: AssessmentDefinition
 ) {
   let total = 0
