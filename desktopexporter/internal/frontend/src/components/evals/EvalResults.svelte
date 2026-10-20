@@ -420,10 +420,7 @@
 {#snippet toolCount(total: number, failed: number)}
   <span class="inline-flex items-center gap-1 whitespace-nowrap">
     <span>{total} {total === 1 ? 'tool' : 'tools'} ·</span>
-    {#if failed}<EvalStatus
-        label={`${failed} failed`}
-        tone="error"
-      />{:else}<span>0 failed</span>{/if}
+    <span>{failed} failed</span>
   </span>
 {/snippet}
 

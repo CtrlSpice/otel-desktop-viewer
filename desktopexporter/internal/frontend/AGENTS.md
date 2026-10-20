@@ -214,7 +214,8 @@
   Results, Tool calls and Cost are a single-select radio group. The active view
   uses Highlight Medium and Highlight Low on hover. Results has recorded score
   with its dot/label, without a duplicate case-percentage Summary column. Tool calls
-  combines tool total and failed count. Cost has Investigator, Grader and Total cost columns, in that
+  combines tool total and failed count, with plain failed labels and no status dot.
+  Cost has Investigator, Grader and Total cost columns, in that
   order. Cells and footer totals show only numeric amounts (Unknown if missing);
   CAD and estimate labels stay in headers, and partial-estimate context is on hover.
   Results reveals
