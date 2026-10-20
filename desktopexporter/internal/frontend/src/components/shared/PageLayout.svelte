@@ -67,7 +67,7 @@
      * isn't the drawer). Use for page-scoped controls that act on
      * the page selection (delete, prev/next, etc.). */
     pageFooter?: Snippet
-    /** Signal main panes use the base surface; Home and Evals keep their panel surface. */
+    /** Signal and Evals main panes use the base surface; Home uses the panel surface. */
     mainSurface?: 'base' | 'panel'
   }
 

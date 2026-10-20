@@ -74,6 +74,7 @@
 </script>
 
 <PageLayout
+  mainSurface="base"
   items={exampleRuns}
   navigationCount={exampleRuns.length}
   selectedID={run.id}

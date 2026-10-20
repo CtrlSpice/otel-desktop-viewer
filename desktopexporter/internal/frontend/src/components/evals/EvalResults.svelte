@@ -31,6 +31,7 @@
 </script>
 
 <PaneHeader
+  pill
   mode="title-tabs"
   title={run.name}
   subtitle={run.evaluation}
@@ -61,7 +62,7 @@
     <caption class="sr-only"
       >{views.find(item => item.id === view)?.label} for {run.name}</caption
     >
-    <thead class="header-surface sticky top-0 z-10">
+    <thead class="sticky top-0 z-10 h-10 bg-base-100">
       <tr>
         <th class="table-cell min-w-56 text-left" scope="col">Case / attempt</th
         >
@@ -89,7 +90,7 @@
         {/if}
       </tr>
     </thead>
-    <tbody class="table-body-surface">
+    <tbody>
       {#each attempts as item (item.id)}
         <tr
           class="table-row"
@@ -169,7 +170,7 @@
       {/each}
     </tbody>
     {#if view === 'cost' && attempts.length}
-      <tfoot class="header-surface">
+      <tfoot>
         <tr>
           <th scope="row" class="table-cell text-left text-sm font-normal"
             >Shown attempts</th
@@ -195,9 +196,5 @@
   .eval-results th[scope='col'] {
     @apply font-normal;
     color: var(--color-subtle);
-  }
-
-  .eval-results tfoot {
-    display: table-footer-group;
   }
 </style>
