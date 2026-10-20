@@ -418,10 +418,13 @@
 {/snippet}
 
 {#snippet toolCount(total: number, failed: number)}
-  <span class="inline-flex items-center gap-1 whitespace-nowrap">
-    <span>{total} {total === 1 ? 'tool' : 'tools'} ·</span>
-    <span>{failed} failed</span>
-  </span>
+  {#if total || failed}
+    <span class="inline-flex items-center gap-1 whitespace-nowrap">
+      {#if total}<span>{total} {total === 1 ? 'tool' : 'tools'}</span>{/if}
+      {#if total && failed}<span aria-hidden="true">·</span>{/if}
+      {#if failed}<span>{failed} failed</span>{/if}
+    </span>
+  {/if}
 {/snippet}
 
 {#snippet executionNode(
