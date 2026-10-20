@@ -100,6 +100,11 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 	if isEvalSnapshotMethod(req.Method) && !h.features.EvalsEnabled(ctx) {
 		return nil, jsonrpc2.ErrMethodNotFound
 	}
+	if req.Method == "importEvalSnapshot" {
+		if err := validateEvalImportRawParams(req.Params); err != nil {
+			return nil, err
+		}
+	}
 	// Object params are rewritten into the positional array every handler
 	// below already reads, so named and positional calls share one code path
 	// and cannot drift apart. Array params pass through untouched.

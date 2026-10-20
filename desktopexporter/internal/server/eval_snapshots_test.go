@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -237,4 +238,86 @@ func TestEvalSnapshotRPCBodyBoundsAndUTF8(t *testing.T) {
 		require.NotNil(t, got.Error)
 		require.Equal(t, tc.code, got.Error.Code)
 	}
+}
+
+func TestEvalSnapshotRawImportSurrogates(t *testing.T) {
+	h := setupHandler(t)
+	s, err := NewServer("localhost:0", 0, h.store, zap.NewNop(), nil, WithFeatures(enabledEvalFlags(t)))
+	require.NoError(t, err)
+	for _, form := range []string{"positional", "named"} {
+		t.Run(form, func(t *testing.T) {
+			for _, tc := range []struct {
+				name, token, want string
+			}{
+				{"lone high", `"\"\ud800\""`, ""},
+				{"lone low", `"\"\udc00\""`, ""},
+				{"reversed pair", `"\"\udc00\ud800\""`, ""},
+				{"two high", `"\"\ud800\ud800\""`, ""},
+				{"high then ordinary escape", `"\"\ud800\u0061\""`, ""},
+				{"separated pair", `"\"\ud800x\udc00\""`, ""},
+				{"literal replacement", `"\"�\""`, `"�"`},
+				{"escaped replacement", `"\"\uFFFD\""`, `"�"`},
+				{"paired surrogate", `"\"\uD83d\udE00\""`, `"😀"`},
+				{"first pair", `"\"\ud800\udc00\""`, "\"\U00010000\""},
+				{"last pair", `"\"\uDBFF\uDFFF\""`, "\"\U0010ffff\""},
+				{"archived pair escapes", `"\"\\ud83d\\ude00\""`, `"\ud83d\ude00"`},
+				{"literal backslash", `"\"\\\\ud800\""`, `"\\ud800"`},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					before := evalRPCCall(t, s, "searchEvalSnapshots", []any{})
+					require.Nil(t, before.Error)
+					params := `["file","unknown-json","bad.json",` + tc.token + `]`
+					if form == "named" {
+						params = `{"source":"file","format":"unknown-json","name":"bad.json","originalJSON":` + tc.token + `}`
+					}
+					// Literal wire bytes: marshaling a Go string would escape the
+					// backslashes and hide the lossy envelope-decoding regression.
+					body := `{"jsonrpc":"2.0","id":1,"method":"importEvalSnapshot","params":` + params + `}`
+					r := httptest.NewRecorder()
+					s.server.Handler.ServeHTTP(r, httptest.NewRequest(http.MethodPost, "/rpc", strings.NewReader(body)))
+					var got evalRPCResponse
+					require.NoError(t, json.Unmarshal(r.Body.Bytes(), &got))
+					if tc.want == "" {
+						require.NotNil(t, got.Error, "wire response: %s", r.Body.String())
+						require.Equal(t, -32602, got.Error.Code)
+						after := evalRPCCall(t, s, "searchEvalSnapshots", []any{})
+						require.Nil(t, after.Error)
+						require.JSONEq(t, string(before.Result), string(after.Result))
+						return
+					}
+					require.Nil(t, got.Error)
+					var imported evals.ImportResult
+					require.NoError(t, json.Unmarshal(got.Result, &imported))
+					require.Equal(t, fmt.Sprintf("%x", sha256.Sum256([]byte(tc.want))), imported.Snapshot.ID)
+					response := evalRPCCall(t, s, "getEvalSnapshot", []any{imported.Snapshot.ID})
+					require.Nil(t, response.Error)
+					var snapshot evals.Snapshot
+					require.NoError(t, json.Unmarshal(response.Result, &snapshot))
+					require.Equal(t, tc.want, snapshot.OriginalJSON)
+				})
+			}
+		})
+	}
+}
+
+func TestEvalSnapshotRawImportValidationBeforeNormalization(t *testing.T) {
+	// No store: malformed import strings must fail before any database work.
+	h := NewJSONRPCHandler(nil, zap.NewNop())
+	h.features = enabledEvalFlags(t)
+	for _, raw := range []string{
+		`["\ud800","unknown-json","bad.json","{}"]`,
+		`["file","unknown-json","\udfff","{}"]`,
+		// Normalizing named params would discard the first duplicate value.
+		`{"source":"file","format":"unknown-json","name":"bad.json","originalJSON":"\"\ud800\"","originalJSON":"{}"}`,
+		`{"source":"\ud800","source":"file","format":"unknown-json","name":"bad.json","originalJSON":"{}"}`,
+		`["file","unknown-json","bad.json","\ud800"]`,
+		`["file","unknown-json","bad.json","\u123"]`,
+		`["file","unknown-json","bad.json","\`,
+	} {
+		_, err := h.Handle(t.Context(), &jsonrpc2.Request{Method: "importEvalSnapshot", Params: json.RawMessage(raw)})
+		require.ErrorIs(t, err, jsonrpc2.ErrInvalidParams, "raw params: %s", raw)
+	}
+	h.features = nil
+	_, err := h.Handle(t.Context(), &jsonrpc2.Request{Method: "importEvalSnapshot", Params: json.RawMessage(`["\ud800"]`)})
+	require.ErrorIs(t, err, jsonrpc2.ErrMethodNotFound)
 }

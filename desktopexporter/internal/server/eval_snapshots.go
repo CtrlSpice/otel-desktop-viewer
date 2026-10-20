@@ -3,11 +3,14 @@ package server
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/evals"
 	"golang.org/x/exp/jsonrpc2"
@@ -20,6 +23,48 @@ func isEvalSnapshotMethod(method string) bool {
 	default:
 		return false
 	}
+}
+
+// validateEvalImportRawParams must run before normalizeParams or any string
+// decoding. encoding/json silently replaces unpaired surrogate escapes with
+// U+FFFD; after decoding we cannot distinguish that repair from legitimate
+// replacement characters. Check every raw import string, including named keys
+// and metadata, without decoding or rewriting the originalJSON string.
+func validateEvalImportRawParams(raw json.RawMessage) error {
+	if !utf8.Valid(raw) || !json.Valid(raw) {
+		return jsonrpc2.ErrInvalidParams
+	}
+	invalidSurrogate := func() error {
+		return fmt.Errorf("import params contain an unpaired Unicode surrogate escape: %w", jsonrpc2.ErrInvalidParams)
+	}
+	for i := 0; i < len(raw); i++ {
+		// Valid JSON permits backslashes only inside strings. Skip both bytes
+		// of other escapes, so an escaped backslash cannot start a Unicode escape.
+		if raw[i] != '\\' {
+			continue
+		}
+		if raw[i+1] != 'u' {
+			i++
+			continue
+		}
+		// json.Valid guarantees four hex digits after each Unicode escape.
+		unit, _ := strconv.ParseUint(string(raw[i+2:i+6]), 16, 16)
+		i += 5
+		switch {
+		case unit >= 0xd800 && unit <= 0xdbff:
+			if len(raw)-(i+1) < 6 || raw[i+1] != '\\' || raw[i+2] != 'u' {
+				return invalidSurrogate()
+			}
+			low, _ := strconv.ParseUint(string(raw[i+3:i+7]), 16, 16)
+			if low < 0xdc00 || low > 0xdfff {
+				return invalidSurrogate()
+			}
+			i += 6
+		case unit >= 0xdc00 && unit <= 0xdfff:
+			return invalidSurrogate()
+		}
+	}
+	return nil
 }
 
 func (h *JSONRPCHandler) importEvalSnapshot(ctx context.Context, req *jsonrpc2.Request) (any, error) {

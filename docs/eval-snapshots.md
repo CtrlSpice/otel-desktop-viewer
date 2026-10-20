@@ -47,6 +47,13 @@ top-level documents, and lone Unicode surrogate escapes are rejected. Objects,
 arrays and JSON scalars are accepted. Unknown fields and duplicate object keys
 are retained.
 
+Import parameters are checked for paired Unicode surrogate escapes in their
+raw RPC strings, before named-parameter normalization or string decoding.
+Unpaired escapes in those parameter strings return `-32602`; they are never repaired
+to U+FFFD and archived. Literal/escaped U+FFFD and valid surrogate pairs remain
+accepted. Escaped backslashes retain their normal meaning, so literal text
+such as `\\ud800` inside an archived JSON string is preserved.
+
 Each payload is at most **16 MiB (16,777,216 bytes)**. With Evals enabled, the
 complete RPC request body is at most **20 MiB**, including metadata and JSON
 string escaping. Both bounds apply: unusually escape-heavy files can reach
