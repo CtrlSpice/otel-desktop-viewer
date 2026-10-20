@@ -74,23 +74,15 @@
   const viewLabel = $derived(
     shownViews.map(item => item.label).join(' + ') || 'Cases'
   )
-  const showResults = $derived(enabledViews.includes('results'))
   function toggleView(id: string) {
     enabledViews = enabledViews.includes(id)
       ? enabledViews.filter(value => value !== id)
       : [...enabledViews, id]
   }
   type LegendEntry = Pick<ComponentProps<typeof EvalStatus>, 'label' | 'tone'>
-  const scoreLegend: LegendEntry[] = [
-    { label: 'Pass', tone: 'success' },
-    { label: 'Partial', tone: 'warning' },
-    { label: 'Fail', tone: 'error' },
-    { label: 'Internal fault', tone: 'papaya' },
-    { label: 'Unscored', tone: 'neutral' },
-  ]
   const completionLegend: LegendEntry[] = [
     { label: 'Complete', tone: 'complete' },
-    { label: 'Running', tone: 'running' },
+    { label: 'In progress', tone: 'running' },
     { label: 'Planned', tone: 'neutral' },
     { label: 'Span error', tone: 'error' },
     { label: 'Internal fault', tone: 'papaya' },
@@ -484,10 +476,8 @@
   {#snippet metaLeft()}
     {#if shownViews.length}
       <LegendRows
-        items={showResults ? scoreLegend : completionLegend}
-        label={showResults
-          ? 'Assessment score legend'
-          : 'Execution status legend'}
+        items={completionLegend}
+        label="Execution status legend"
         itemKey={entry => entry.label}
       >
         {#snippet children(entry)}<EvalStatus
