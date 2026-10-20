@@ -230,7 +230,8 @@
   extent of available references rather than claiming another stored span.
   Align recorded starts to the earliest available span in the run, including
   when there is no enclosing run span. Keep recorded-duration-only fallbacks.
-  Missing timing uses a faint 1px Muted line with one central break. Ruler ticks
+  Missing timing on started/completed rows uses a faint 1px Muted line with one
+  central break. Planned/unstarted rows stay blank. Ruler ticks
   extend 4px into the header below their labels, aligned with the time guides.
   The results header legend always describes execution statuses: Complete,
   In progress, Span error, Internal fault and Planned, in that order. It does not switch to

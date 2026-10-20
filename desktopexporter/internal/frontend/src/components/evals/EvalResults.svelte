@@ -459,13 +459,14 @@
   seconds?: number,
   spanError = false,
   window?: TimeWindow,
-  label = 'Referenced execution window'
+  label = 'Referenced execution window',
+  planned = false
 )}
   {@const span = timingFor(reference)}
   {@const duration = durationFor(reference, seconds)}
   <TimingCell
     maximum={maximumDuration}
-    unavailable={!window && duration === undefined}
+    unavailable={!planned && !window && duration === undefined}
   >
     {#if window && (!span || span.endTime < span.startTime)}<button
         type="button"
@@ -511,8 +512,8 @@
     {:else}
       <span
         class="block min-h-[var(--signal-card-row-h)]"
-        title={missingTiming(reference)}
-        aria-label={missingTiming(reference)}
+        title={planned ? 'Not started' : missingTiming(reference)}
+        aria-label={planned ? 'Not started' : missingTiming(reference)}
         aria-busy={!!reference?.spanID && timingsLoading}
       ></span>
     {/if}
@@ -805,7 +806,8 @@
                     row.seconds,
                     row.spanError,
                     row.window,
-                    row.name
+                    row.name,
+                    row.state === 'Planned'
                   )}
                 {:else if column.assessment && item && (row.kind === 'attempt' || row.kind === 'grading' || row.assessmentID === column.assessment.id)}
                   {@const assessment = item.assessments.find(
@@ -863,11 +865,13 @@
                   row.seconds,
                   row.spanError,
                   row.window,
-                  row.name
+                  row.name,
+                  row.state === 'Planned'
                 )}
               {:else}<TimingCell
                   maximum={maximumDuration}
-                  unavailable={group.summary.duration.total === null}
+                  unavailable={row.state !== 'Planned' &&
+                    group.summary.duration.total === null}
                 >
                   {group.summary.duration.total === null
                     ? ''
