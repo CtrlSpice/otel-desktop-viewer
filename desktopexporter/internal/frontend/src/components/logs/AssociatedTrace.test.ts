@@ -47,43 +47,55 @@ describe('AssociatedTrace', () => {
       traceID: summary.traceID,
       spanID: '0000000000000001',
     })
-    const card = await screen.findByRole('button', { name: /INSERT order/ })
-    expect(card).toHaveTextContent('(database)')
-    expect(card).toHaveTextContent('1 err · 1 span')
-    expect(card).toHaveTextContent('Duration: 25.000 ms')
-    expect(card).toHaveTextContent('20.100')
-    expect(card).toHaveTextContent('0000000000000001')
+    await screen.findByText('INSERT order')
+    const context = screen.getByRole('region', { name: 'Trace context' })
+    expect(context).toHaveTextContent('(database)')
+    expect(context).not.toHaveTextContent('1 span')
+    expect(context.querySelector('button')).toBeNull()
+    expect(context).toHaveTextContent('Duration: 25.000 ms')
+    expect(context).toHaveTextContent('20.100')
+    expect(context).toHaveTextContent('0000000000000001')
+    expect(context).toHaveTextContent(summary.traceID)
     expect(getTraceSummary).not.toHaveBeenCalled()
     expect(getSpanTimings).toHaveBeenCalledWith(
       [{ traceID: summary.traceID, spanID: '0000000000000001' }],
       expect.any(AbortSignal)
     )
-    await userEvent.click(card)
+    await userEvent.click(screen.getByRole('link', { name: /^Open span/ }))
     expect(window.location.pathname).toBe(`/traces/${summary.traceID}`)
     expect(new URLSearchParams(window.location.search).get('span')).toBe(
       '0000000000000001'
     )
   })
 
-  it('reuses the trace summary and opens its associated span without losing the time range', async () => {
+  it('labels the trace fallback and opens the trace independently without losing the time range', async () => {
     getTraceSummary.mockResolvedValue(summary)
     renderWithContexts(AssociatedTrace, {
       traceID: summary.traceID,
       spanID: '0000000000000001',
     })
-    const card = await screen.findByRole('button', { name: /POST \/checkout/ })
-    expect(card).toHaveClass('signal-row')
-    expect(screen.getByText('api', { exact: true })).toBeVisible()
-    expect(card).toHaveTextContent('5 spans')
-    expect(card).toHaveTextContent('2 err')
+    await screen.findByText('POST /checkout')
+    expect(
+      screen.getByText('Span details unavailable. Showing trace summary.')
+    ).toBeVisible()
+    const traceLink = screen.getByRole('link', { name: /^Open trace/ })
+    const spanLink = screen.getByRole('link', { name: /^Open span/ })
+    expect(traceLink).toHaveAttribute(
+      'href',
+      `/traces/${summary.traceID}?start=1&end=2`
+    )
+    expect(spanLink).toHaveAttribute(
+      'href',
+      `/traces/${summary.traceID}?start=1&end=2&span=0000000000000001`
+    )
     expect(getTraceSummary).toHaveBeenCalledWith(
       summary.traceID,
       expect.any(AbortSignal)
     )
-    await userEvent.click(card)
+    await userEvent.click(traceLink)
     expect(window.location.pathname).toBe(`/traces/${summary.traceID}`)
     const query = new URLSearchParams(window.location.search)
-    expect(query.get('span')).toBe('0000000000000001')
+    expect(query.has('span')).toBe(false)
     expect(query.get('start')).toBe('1')
     expect(query.get('end')).toBe('2')
     expect(query.has('event')).toBe(false)
@@ -140,16 +152,10 @@ describe('AssociatedTrace', () => {
         spanID: null,
       },
     })
-    expect(
-      await screen.findByRole('button', { name: /New trace/ })
-    ).toBeInTheDocument()
+    expect(await screen.findByText('New trace')).toBeInTheDocument()
     expect(oldSignal.aborted).toBe(true)
     resolveOld(summary)
-    await waitFor(() =>
-      expect(
-        screen.queryByRole('button', { name: /POST \/checkout/ })
-      ).toBeNull()
-    )
+    await waitFor(() => expect(screen.queryByText('POST /checkout')).toBeNull())
   })
 
   it('discards stale span results when the linked span changes within the same trace', async () => {
@@ -175,7 +181,7 @@ describe('AssociatedTrace', () => {
         spanID: '0000000000000002',
       },
     })
-    await screen.findByRole('button', { name: /POST \/checkout/ })
+    await screen.findByText('POST /checkout')
     expect(oldSignal.aborted).toBe(true)
     resolveOld([
       {
@@ -188,9 +194,7 @@ describe('AssociatedTrace', () => {
         statusCodeValue: 0,
       },
     ])
-    await waitFor(() =>
-      expect(screen.queryByRole('button', { name: /Stale span/ })).toBeNull()
-    )
+    await waitFor(() => expect(screen.queryByText('Stale span')).toBeNull())
     expect(getTraceSummary).toHaveBeenCalledTimes(1)
   })
 })

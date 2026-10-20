@@ -202,7 +202,7 @@ test('table cells reveal exact fields in separate Details, with observed-time fa
   )
 })
 
-test('Details pins the shared associated Trace card above scrolling fields', async ({
+test('Details pins enriched trace context above scrolling fields', async ({
   page,
 }) => {
   const traceID = '00000000000000000000000000000011'
@@ -303,10 +303,11 @@ test('Details pins the shared associated Trace card above scrolling fields', asy
   const panel = page.locator('.log-detail-panel')
   const headings = panel.locator('summary.detail-bubble__heading')
   await expect(headings).toHaveCount(0)
-  const trace = panel.getByRole('region', { name: 'Associated trace' })
-  const card = trace.getByRole('button', { name: /POST \/checkout/ })
+  const trace = panel.getByRole('region', { name: 'Trace context' })
+  const card = trace.getByText('POST /checkout', { exact: true })
   await expect(card).toBeVisible()
-  await expect(card).toHaveClass(/signal-row/)
+  await expect(trace.locator('.signal-row')).toHaveCount(0)
+  await expect(trace.getByRole('link', { name: `Open trace ${traceID}`, exact: true })).toHaveAttribute('href', `/traces/${traceID}?time=all`)
   expect(waterfallFetches).toBe(0)
   expect(associatedFetches).toBe(1)
   expect(await trace.evaluate(element => element.closest('details'))).toBeNull()
@@ -370,7 +371,7 @@ test('Details pins the shared associated Trace card above scrolling fields', asy
   await expect(
     panel.locator('[data-field="severityNumber"] .detail-property__value')
   ).toHaveCSS('color', errorColour)
-  await card.click()
+  await trace.getByRole('link', { name: `Open span ${spanID} in trace ${traceID}`, exact: true }).click()
   await expect(page).toHaveURL(new RegExp(`/traces/${traceID}\\?`))
   expect(new URL(page.url()).searchParams.get('span')).toBe(spanID)
   expect(new URL(page.url()).searchParams.get('time')).toBe('all')

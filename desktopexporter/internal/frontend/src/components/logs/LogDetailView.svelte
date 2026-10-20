@@ -1,5 +1,4 @@
 <script lang="ts">
-  import Identifier from '@/components/shared/Identifier.svelte'
   import type { Snippet } from 'svelte'
   import type { LogData } from '@/types/api-types'
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
@@ -22,9 +21,6 @@
   import { getServiceName } from '@/utils/resource'
   import { formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
-  import { itemHref, navigateToItem } from '@/route'
-  import { SPAN_PARAM } from '@/route/query-params'
-  import { detailPanel } from '@/state/detail-panel.svelte'
   import {
     revealDetailField,
     type DetailFieldTarget,
@@ -92,19 +88,6 @@
   let severityLabel = $derived(
     log ? buildSeverityLabel(log.severityText, log.severityNumber) : ''
   )
-
-  let traceSpanPatch = $derived(
-    log?.traceID && log?.spanID
-      ? ({ [SPAN_PARAM]: log.spanID } as const)
-      : undefined
-  )
-
-  function goToTrace(e: MouseEvent) {
-    if (!log?.traceID) return
-    detailPanel.reveal()
-    e.preventDefault()
-    navigateToItem('traces', log.traceID, 'push', traceSpanPatch)
-  }
 </script>
 
 {#if log}
@@ -134,11 +117,7 @@
     </PaneHeader>
 
     {#if log.traceID}
-      <div
-        class="log-detail-panel__trace"
-        data-field="traceId"
-        data-field-kind="field"
-      >
+      <div class="log-detail-panel__trace">
         <AssociatedTrace traceID={log.traceID} spanID={log.spanID} />
       </div>
     {/if}
@@ -200,23 +179,7 @@
                 valueColor={severityColor(log.severityNumber)}
                 valueLabel={severityLabel}
               />
-              {#if log.spanID && log.traceID}
-                {@const traceID = log.traceID}
-                {@const spanID = log.spanID}
-                <LogField
-                  fieldName="spanId"
-                  fieldType="bytes"
-                  fieldValue={log.spanID}
-                >
-                  {#snippet value()}
-                    <a
-                      class="detail-cell__value link link-primary"
-                      href={itemHref('traces', traceID, traceSpanPatch)}
-                      onclick={goToTrace}><Identifier value={spanID} /></a
-                    >
-                  {/snippet}
-                </LogField>
-              {:else if log.spanID}
+              {#if log.spanID && !log.traceID}
                 <LogField
                   identifier
                   fieldName="spanId"
@@ -336,10 +299,6 @@
 
   .log-detail-panel__trace {
     @apply shrink-0;
-  }
-  .log-detail-panel__trace:global(.detail-property--revealed)
-    :global(.signal-row) {
-    --item-idle-bg: var(--color-highlight-low);
   }
 
   .log-detail-panel__body {

@@ -169,7 +169,7 @@ describe('LogDetailView trace correlation', () => {
     )
     expect(headings).toHaveLength(0)
     const fields = screen.getByRole('table', { name: 'Log fields' })
-    const trace = screen.getByRole('region', { name: 'Associated trace' })
+    const trace = screen.getByRole('region', { name: 'Trace context' })
     expect(trace.closest('.log-detail-panel__scroll')).toBeNull()
     expect(fields.querySelector('[data-field="traceId"]')).toBeNull()
     expect(
@@ -185,14 +185,14 @@ describe('LogDetailView trace correlation', () => {
   it('omits the associated trace when the log has no trace ID', () => {
     renderLog(makeLog({ traceID: null, spanID: null }))
     expect(screen.queryByRole('region', { name: 'Trace' })).toBeNull()
-    expect(
-      screen.queryByRole('region', { name: 'Associated trace' })
-    ).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Trace context' })).toBeNull()
   })
 
   it('keeps the span field linked to the exact correlated span', () => {
     renderLog(makeLog())
-    const spanLink = screen.getByRole('link', { name: 'span-xyz' })
+    const spanLink = screen.getByRole('link', {
+      name: 'Open span span-xyz in trace trace-abc',
+    })
     expect(spanLink).toHaveAttribute(
       'href',
       '/traces/trace-abc?start=0&end=1&span=span-xyz'
@@ -203,7 +203,11 @@ describe('LogDetailView trace correlation', () => {
     renderLog(makeLog())
     const historyLength = window.history.length
 
-    await userEvent.click(screen.getByRole('link', { name: 'span-xyz' }))
+    await userEvent.click(
+      screen.getByRole('link', {
+        name: 'Open span span-xyz in trace trace-abc',
+      })
+    )
 
     expect(window.location.pathname).toBe('/traces/trace-abc')
     expect(window.location.search).toBe('?start=0&end=1&span=span-xyz')
