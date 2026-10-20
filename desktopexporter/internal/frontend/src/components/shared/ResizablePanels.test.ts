@@ -79,6 +79,7 @@ async function measure(width: number, height = 600) {
   for (const o of observers) {
     o.cb([entry], o)
   }
+  await new Promise(requestAnimationFrame)
   await tick()
 }
 
