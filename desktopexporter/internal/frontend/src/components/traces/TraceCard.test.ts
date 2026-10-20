@@ -79,7 +79,7 @@ describe('TraceCard', () => {
       screen.getByText(
         (_, el) =>
           el?.classList.contains('badge-count') === true &&
-          el.textContent?.replace(/\s+/g, ' ').trim() === '4 spans'
+          el.textContent?.replace(/\s+/g, ' ').trim() === '2 err · 4 spans'
       )
     ).toBeInTheDocument()
     expect(screen.getByText('2 err')).toBeInTheDocument()

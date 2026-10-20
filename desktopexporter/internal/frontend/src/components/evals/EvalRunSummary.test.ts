@@ -6,6 +6,35 @@ import EvalRunSummary from './EvalRunSummary.svelte'
 import { exampleRuns } from './examples'
 
 describe('EvalRunSummary', () => {
+  it('uses continuous working-size metadata rows and a regular-weight score', () => {
+    const { container } = render(EvalRunSummary, {
+      run: exampleRuns[0],
+      selected: true,
+      onclick: vi.fn(),
+    })
+    const card = screen.getByRole('button', { name: /Guide-assisted agent/ })
+    expect(card).toHaveAttribute('aria-pressed', 'true')
+    expect(card).toHaveClass('signal-row', 'item-state')
+    const score = screen.getByText('81.3%')
+    expect(score.tagName).toBe('SPAN')
+    expect(container.querySelector('strong, b')).toBeNull()
+    for (const row of [
+      container.querySelector('.signal-row__date > div'),
+      container.querySelector('.signal-row__meta-row > div'),
+    ]) {
+      expect(row).toHaveClass(
+        'text-sm',
+        'flex-wrap',
+        'gap-x-2',
+        'gap-y-0',
+        'min-h-[var(--signal-card-row-h)]'
+      )
+    }
+    expect(card).toHaveTextContent('Assessed: 8/8')
+    expect(card).toHaveTextContent('Graded: 8/8')
+    expect(card).toHaveTextContent('Tool calls: 17 (1 failed)')
+  })
+
   it('uses outcome bubbles and a stable label without selecting the run during exploration', async () => {
     const user = userEvent.setup()
     const onclick = vi.fn()
@@ -57,6 +86,7 @@ describe('EvalRunSummary', () => {
         name: 'Fail: 1 attempt, 12.5% of total',
       })
     ).toBeInTheDocument()
+    expect(screen.getByText(/Est\. cost:/)).toHaveTextContent('incomplete')
   })
 
   it('uses a plain label for a single outcome without inventing grades or cost', () => {

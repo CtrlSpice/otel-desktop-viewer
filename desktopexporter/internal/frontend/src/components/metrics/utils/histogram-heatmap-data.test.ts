@@ -95,22 +95,22 @@ describe('buildHistogramHeatmapData', () => {
     })
   })
 
-  it('keeps duplicate display labels as distinct raw rows and omits zero intersections', () => {
+  it('distinguishes close bounds while preserving raw rows and empty intersections', () => {
     const result = buildHistogramHeatmapData([
       explicitPoint(BASE_NS, [1.001, 1.002, 1.003], [1, 0, 0, 4]),
     ])
-    const duplicateRows = result.rows.filter(
-      row => row.label === '(1.00, 1.00]'
+    const boundedRows = result.rows.filter(
+      row => Number.isFinite(row.lo) && Number.isFinite(row.hi)
     )
 
-    expect(duplicateRows).toHaveLength(2)
-    expect(new Set(duplicateRows.map(row => row.key)).size).toBe(2)
+    expect(boundedRows.map(row => row.label)).toEqual(['(1.002, 1.003]', '(1.001, 1.002]'])
+    expect(boundedRows.map(row => row.key)).toEqual(['explicit:1.002:1.003', 'explicit:1.001:1.002'])
     expect(result.cells).toHaveLength(2)
     expect(result.countByColumn.get(result.columns[0]!.key)?.size).toBe(2)
     expect(
       result.countByColumn
         .get(result.columns[0]!.key)
-        ?.get(duplicateRows[0]!.key)
+        ?.get(boundedRows[0]!.key)
     ).toBeUndefined()
   })
 
@@ -169,7 +169,7 @@ describe('buildHistogramHeatmapData', () => {
     ).toBe(3)
     expect(
       result.rows.find(row => row.key === 'exponential:zero:0.001')?.label
-    ).toBe('[-1.0e-3, +1.0e-3]')
+    ).toBe('[-0.001, +0.001]')
   })
 
   it('describes a zero-threshold exponential bucket as exact zero', () => {

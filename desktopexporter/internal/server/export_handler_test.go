@@ -85,8 +85,12 @@ func TestExportPreviewBoundsAndMetricSelection(t *testing.T) {
 		count          int
 	}{
 		{"whole metric", "", 3},
+		{"explicit datapoints", "?includeDatapoints=true", 3},
+		{"metric without datapoints", "?includeDatapoints=false", 0},
 		{"series", "?seriesRef=" + seriesID, 2},
+		{"series without datapoints", "?seriesRef=" + seriesID + "&includeDatapoints=false", 0},
 		{"received datapoint", "?datapointRef=" + pointID, 1},
+		{"datapoint metadata", "?datapointRef=" + pointID + "&includeDatapoints=false", 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			response, err := http.Get(url + tc.selector)
@@ -98,6 +102,13 @@ func TestExportPreviewBoundsAndMetricSelection(t *testing.T) {
 			decoded, err := (&pmetric.JSONUnmarshaler{}).UnmarshalMetrics(raw)
 			require.NoError(t, err)
 			assert.Equal(t, tc.count, decoded.DataPointCount())
+			if tc.count == 0 {
+				assert.NotContains(t, string(raw), `"dataPoints"`)
+				head, err := http.Head(url + tc.selector)
+				require.NoError(t, err)
+				require.NoError(t, head.Body.Close())
+				assert.Equal(t, strconv.Itoa(len(raw)), head.Header.Get("Content-Length"))
+			}
 			rm := decoded.ResourceMetrics().At(0)
 			owner, ok := rm.Resource().Attributes().Get("resource.owner")
 			require.True(t, ok)
@@ -107,6 +118,7 @@ func TestExportPreviewBoundsAndMetricSelection(t *testing.T) {
 	}
 	for _, query := range []string{
 		"?unknown=1", "?seriesRef=invalid", "?datapointRef=invalid",
+		"?includeDatapoints=", "?includeDatapoints=no", "?includeDatapoints=false&includeDatapoints=true",
 		"?seriesRef=" + seriesID + "&seriesRef=" + seriesID,
 		"?datapointRef=%ZZ", "?seriesRef=%", "?format=%ZZ",
 		"?datapointRef=" + pointID + ";ignored=1",
@@ -123,14 +135,18 @@ func TestExportPreviewBoundsAndMetricSelection(t *testing.T) {
 			assert.NotContains(t, string(body), "resourceMetrics")
 		})
 	}
-	for _, query := range []string{"?spanId=%ZZ", "?spanId=0000000000000001;ignored=1"} {
+	for _, query := range []string{"?spanId=%ZZ", "?spanId=0000000000000001;ignored=1", "?includeDatapoints=false"} {
 		response, err := http.Get(server.URL + "/export/traces/00000000000000000000000000000001" + query)
 		require.NoError(t, err)
 		require.NoError(t, response.Body.Close())
 		assert.Equal(t, http.StatusBadRequest, response.StatusCode)
 		assert.Empty(t, response.Header.Get("Content-Disposition"))
 	}
-	for _, query := range []string{"?seriesRef=" + seriesID, "?datapointRef=" + pointID} {
+	for _, query := range []string{
+		"?seriesRef=" + seriesID, "?datapointRef=" + pointID,
+		"?seriesRef=" + seriesID + "&includeDatapoints=false",
+		"?datapointRef=" + pointID + "&includeDatapoints=false",
+	} {
 		response, err := http.Get(server.URL + "/export/metrics/" + otherMetricID + query)
 		require.NoError(t, err)
 		require.NoError(t, response.Body.Close())

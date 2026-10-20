@@ -303,6 +303,6 @@
   }
 
   .ts-panel__cap-note {
-    @apply m-0 px-3 pb-0 text-sm text-warning/80;
+    @apply m-0 px-3 pb-0 text-sm text-base-content;
   }
 </style>

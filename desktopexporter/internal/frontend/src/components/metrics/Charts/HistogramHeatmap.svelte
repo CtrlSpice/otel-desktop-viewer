@@ -18,12 +18,14 @@
     type ChartState,
   } from 'layerchart'
   import { scaleBand, scaleThreshold, type ScaleBand } from 'd3-scale'
+  import { bisectRight } from 'd3-array'
   import ChartKeyboardSurface from '@/components/metrics/Charts/ChartKeyboardSurface.svelte'
   import {
     QUANTILE_LABELS_DESCENDING,
     type HistogramSlicePoint,
   } from '@/components/metrics/utils/histogram-aggregation'
-  import { formatMetricValue } from '@/components/metrics/utils/format-metric-value'
+  import { formatMetricValue, formatMetricCount, metricNumberPrecision } from '@/components/metrics/utils/format-metric-value'
+  import { formatHistogramBound, formatHistogramRange, exponentialZeroBucketIdentity, exponentialZeroBucketLabel } from '@/components/metrics/utils/histogram-bucket'
   import { computeHeatmapColorScale } from '@/components/metrics/utils/heatmap-color-scale'
   import { themeSignal } from '@/state/theme.svelte'
   import {
@@ -149,6 +151,25 @@
     new Map(heatmapModel.rows.map(row => [row.key, row.label]))
   )
 
+  function formatBucketHover(cell: HeatmapDatum): string {
+    const index = heatmapModel.rows.findIndex(row => row.key === cell.bucketKey)
+    const row = heatmapModel.rows[index]
+    const point = pointByColumnKey.get(cell.columnKey)
+    if (!row || !point) return cell.bucketLabel
+    const digits = metricNumberPrecision([
+      row.lo, row.hi, ...heatmapModel.rows.slice(Math.max(0, index - 1), index + 2).map(row => row.order),
+    ], 6)
+    if (point.kind === 'expHistogram') {
+      return row.key === exponentialZeroBucketIdentity(point.zeroThreshold)
+        ? exponentialZeroBucketLabel(point.zeroThreshold, digits)
+        : formatHistogramBound(row.order, digits)
+    }
+    if (!Number.isFinite(row.lo) && !Number.isFinite(row.hi)) return 'all values'
+    if (!Number.isFinite(row.lo)) return `≤${formatHistogramBound(row.hi, digits)}`
+    if (!Number.isFinite(row.hi)) return `>${formatHistogramBound(row.lo, digits)}`
+    return formatHistogramRange(row.lo, row.hi, digits)
+  }
+
   // Anchor cDomain at 0 (not min) so blank-ish cells visually correspond to
   // "nothing happened" rather than "the lowest observed count" -- otherwise
   // an all-medium map and an all-low map look the same.
@@ -170,7 +191,6 @@
   )
 
   let cellColorThresholds = $derived(colorScale.thresholds)
-  let blobs = $derived(buildHeatmapBlobs(heatmapModel, cellColorThresholds))
   // Resting cells retain the original palette; interactions lift their own colour.
   let cellColorRange = $derived(
     colorScale.range.map(
@@ -457,6 +477,7 @@
   )
 
   let blobDetail = $derived(heatmapBlobDetail(columnPitch, keyboardRowHeight))
+  let blobs = $derived(buildHeatmapBlobs(heatmapModel, cellColorThresholds, blobDetail.joinColours))
   let contributionRegions = $derived(
     buildHeatmapBlobs(
       {
@@ -596,7 +617,7 @@
             tooltipContext={{ mode: 'band' }}
           >
             <Layer>
-              <MetricDotGrid xAxis={chartAxes.xAxis} yAxis={chartAxes.yAxis} />
+              <MetricDotGrid xAxis={chartAxes.xAxis} yAxis={chartAxes.yAxis} cellEdges cellStride={blobDetail.joinColours ? 2 : 1} />
               <Axis
                 placement="bottom"
                 {...chartAxes.xAxis}
@@ -637,27 +658,46 @@
                   {/each}
                 </mask>
               </defs>
-              <g class="heatmap-blobs" mask={`url(#${quantileChannelID})`}>
+              <g class="heatmap-blobs" class:heatmap-blobs--joined={blobDetail.joinColours} mask={`url(#${quantileChannelID})`}>
                 {#each renderedBlobs as blob (blob.key)}
                   <defs>
                     <clipPath id={blob.clipID} clipPathUnits="userSpaceOnUse">
                       <path d={blob.path} clip-rule="evenodd" />
                     </clipPath>
+                    {#if blobDetail.joinColours}
+                      <mask
+                        id={`${blob.clipID}-outline`}
+                        maskUnits="userSpaceOnUse"
+                        x="0"
+                        y="0"
+                        width={timeDomain.length * columnPitch}
+                        height={bucketDomain.length * keyboardRowHeight}
+                        style="mask-type: alpha"
+                      >
+                        <path
+                          d={blob.path}
+                          fill="none"
+                          stroke="white"
+                          stroke-width={blobDetail.liner * 2}
+                          stroke-linejoin="round"
+                        />
+                      </mask>
+                    {/if}
                   </defs>
                   <g class="heatmap-blob" clip-path={`url(#${blob.clipID})`}>
-                    <path
+                    {#if !blobDetail.joinColours}<path
                       class="heatmap-blob-fill"
                       d={blob.path}
                       fill={cellColorRange[blob.band]}
                       fill-rule="evenodd"
-                    />
+                    />{/if}
                     {#each blob.cells as cell (cell.datum)}
                       <rect
                         x={cell.x}
                         y={cell.y}
                         width={columnPitch}
                         height={keyboardRowHeight}
-                        fill={cellColorRange[blob.band]}
+                        fill={cellColorRange[bisectRight(cellColorThresholds, cell.datum.count)]}
                         class="heatmap-cell"
                         class:heatmap-cell--hovered={cell.datum.columnKey ===
                           hoveredColumnKey &&
@@ -671,13 +711,29 @@
                         ) || undefined}
                       />
                     {/each}
-                    <path
+                    {#if blobDetail.joinColours}
+                      <g
+                        class="heatmap-joined-outline"
+                        mask={`url(#${blob.clipID}-outline)`}
+                        aria-hidden="true"
+                      >
+                        {#each blob.cells as cell (cell.datum)}
+                          <rect
+                            x={cell.x}
+                            y={cell.y}
+                            width={columnPitch}
+                            height={keyboardRowHeight}
+                            fill={cellColorRange[bisectRight(cellColorThresholds, cell.datum.count)]}
+                          />
+                        {/each}
+                      </g>
+                    {:else}<path
                       class="heatmap-blob-outline"
                       d={blob.path}
                       style:--blob-color={cellColorRange[blob.band]}
                       style:--blob-outline-width={blobDetail.liner * 2}
                       aria-hidden="true"
-                    />
+                    />{/if}
                   </g>
                 {/each}
               </g>
@@ -758,18 +814,18 @@
                 <dl class="heatmap-hover-cell">
                   <dt>bucket</dt>
                   <dd>
-                    {data.bucketLabel}{data.bucketLabel !== 'all values' &&
+                     {formatBucketHover(data)}{data.bucketLabel !== 'all values' &&
                     unit.trim() &&
                     unit.trim() !== '1'
                       ? ` ${unit.trim()}`
                       : ''}
                   </dd>
                   <dt>count</dt>
-                  <dd>{data.count.toLocaleString()}</dd>
+                  <dd>{formatMetricCount(data.count)}</dd>
                   {#if ctx.histogramContribution}
                     <dt>selected contribution</dt>
                     <dd>
-                      {contributionCount(data).toLocaleString()} of {data.count.toLocaleString()}
+                      {formatMetricCount(contributionCount(data))} of {formatMetricCount(data.count)}
                     </dd>
                   {/if}
                 </dl>
@@ -824,7 +880,7 @@
                       </div>
                       <div>
                         <dt>count</dt>
-                        <dd>{selectedCell.count}</dd>
+                        <dd>{formatMetricCount(selectedCell.count)}</dd>
                       </div>
                     </dl>
                   </div>
@@ -993,6 +1049,10 @@
     shape-rendering: crispEdges;
   }
 
+  .heatmap-wrapper :global(.heatmap-blobs--joined .heatmap-cell) {
+    fill-opacity: 1;
+  }
+
   .heatmap-wrapper :global(.heatmap-blob-fill) {
     stroke: none;
     pointer-events: none;
@@ -1009,6 +1069,13 @@
     stroke-width: var(--blob-outline-width);
     stroke-linejoin: round;
     pointer-events: none;
+  }
+
+  .heatmap-wrapper :global(.heatmap-joined-outline) {
+    --heatmap-cell-colour-weight: 85%;
+    stroke: none;
+    pointer-events: none;
+    shape-rendering: crispEdges;
   }
 
   .heatmap-wrapper :global(.heatmap-cell--hovered) {

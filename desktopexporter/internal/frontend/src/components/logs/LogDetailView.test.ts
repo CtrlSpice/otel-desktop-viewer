@@ -136,6 +136,11 @@ describe('LogDetailView trace correlation', () => {
     renderLog(makeLog())
     const header = screen.getByRole('region', { name: 'Log record' })
     const button = within(header).getByRole('button', { name: 'Download log' })
+    expect(
+      within(button.closest<HTMLElement>('.pane-header__right')!)
+        .getAllByRole('button')
+        .at(-1)
+    ).toBe(button)
     expect(button).toBeEnabled()
     expect(button).toHaveClass('header-icon-button')
     expect(button).toHaveTextContent('')
@@ -150,7 +155,7 @@ describe('LogDetailView trace correlation', () => {
     expect(within(tabs).getByRole('tab', { name: 'JSON' })).toBeInTheDocument()
     const title = within(header).getByText('checkout', { exact: true })
     expect(
-      button.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING
+      title.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING
     ).not.toBe(0)
     expect(
       screen.getAllByRole('button', { name: 'Download log' })

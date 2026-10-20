@@ -1,5 +1,6 @@
 import { heatmapSwatches } from '@/utils/chart-palette'
 import type { HistogramChartDataPoint } from './histogram-aggregation'
+import { formatMetricCount } from './format-metric-value'
 
 const MIN_STEPS = 1
 const MAX_STEPS = 12
@@ -57,7 +58,7 @@ function heatmapLegendLabel(
     bandIndex === swatchSteps - 1
       ? maxCount
       : Math.floor(thresholds[bandIndex + 1]! - 1e-9)
-  return lo === hi ? String(lo) : `${lo}\u2009–\u2009${hi}`
+  return lo === hi ? formatMetricCount(lo) : `${formatMetricCount(lo)}\u2009–\u2009${formatMetricCount(hi)}`
 }
 
 /** Shared count ramp for heatmap cells and legend swatches. */

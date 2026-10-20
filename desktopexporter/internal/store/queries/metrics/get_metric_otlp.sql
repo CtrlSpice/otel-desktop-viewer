@@ -1,17 +1,22 @@
 -- Reconstruct one retained Metric and its ResourceMetrics/ScopeMetrics wrappers.
 with export_selection as (
-	select try_cast(? as uuid) as series_id, try_cast(? as uuid) as datapoint_id
+	select try_cast(? as uuid) as series_id, try_cast(? as uuid) as datapoint_id,
+		?::boolean as include_datapoints
 ),
 selected_metric as materialized (
 	select * from metrics where id = try_cast(? as uuid)
 ),
-selected_datapoints as materialized (
+matching_datapoints as not materialized (
 	select d.*
 	from metric_datapoints d
 	join selected_metric s on s.id = d.metric_id
 	cross join export_selection e
 	where (e.series_id is null or d.series_id = e.series_id)
 	  and (e.datapoint_id is null or d.id = e.datapoint_id)
+),
+selected_datapoints as materialized (
+	select * from matching_datapoints
+	where (select include_datapoints from export_selection)
 ),
 used_attribute_ids as materialized (
 	select unnest(r.attribute_ids) as id
@@ -145,7 +150,10 @@ grouped_metrics as materialized (
 		s.scope_id, sc.schema_url as scope_schema_url,
 		s.description, s.metadata_ids, s.name, s.unit, s.metric_type,
 		s.aggregation_temporality, s.is_monotonic,
-		coalesce(list(d.document order by d.timestamp, d.id) filter (where d.id is not null), []::json[]) as datapoints
+		case when (select include_datapoints from export_selection)
+			then json_object('dataPoints', coalesce(list(d.document order by d.timestamp, d.id)
+				filter (where d.id is not null), []::json[]))
+			else json('{}') end as datapoints_document
 	from selected_metric s
 	join resources r on r.id = s.resource_id
 	join scopes sc on sc.id = s.scope_id
@@ -160,13 +168,13 @@ metric_documents as materialized (
 			json_object('name', g.name, 'description', g.description, 'unit', g.unit,
 				'metadata', otlp_attributes(g.metadata_ids, (select values from converted_attributes))),
 			case g.metric_type
-				when 'Gauge' then json_object('gauge', json_object('dataPoints', g.datapoints))
-				when 'Sum' then json_object('sum', json_object('dataPoints', g.datapoints,
-					'aggregationTemporality', g.aggregation_temporality, 'isMonotonic', g.is_monotonic))
-				when 'Histogram' then json_object('histogram', json_object('dataPoints', g.datapoints,
-					'aggregationTemporality', g.aggregation_temporality))
-				when 'ExponentialHistogram' then json_object('exponentialHistogram', json_object('dataPoints', g.datapoints,
-					'aggregationTemporality', g.aggregation_temporality))
+				when 'Gauge' then json_object('gauge', g.datapoints_document)
+				when 'Sum' then json_object('sum', json_merge_patch(g.datapoints_document,
+					json_object('aggregationTemporality', g.aggregation_temporality, 'isMonotonic', g.is_monotonic)))
+				when 'Histogram' then json_object('histogram', json_merge_patch(g.datapoints_document,
+					json_object('aggregationTemporality', g.aggregation_temporality)))
+				when 'ExponentialHistogram' then json_object('exponentialHistogram', json_merge_patch(g.datapoints_document,
+					json_object('aggregationTemporality', g.aggregation_temporality)))
 				else null::json
 			end) as document
 	from grouped_metrics g
@@ -199,5 +207,5 @@ select s.metric_type,
 from selected_metric s
 left join resource_documents r on true
 where ((select series_id from export_selection) is null and (select datapoint_id from export_selection) is null)
-   or exists (select 1 from selected_datapoints)
+   or exists (select 1 from matching_datapoints)
 group by s.metric_type

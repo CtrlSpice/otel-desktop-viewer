@@ -51,15 +51,22 @@ export function metricDotPositions(ticks: readonly number[], size: number): numb
   return positions.filter(value => value >= 0 && value <= size)
 }
 
-/** Add plot-boundary anchors without moving label-aligned dots; dim one edge. */
-export function metricDotGuides(
-  ticks: readonly number[], size: number, edge: 'start' | 'end'
-) {
+/** Add plot-boundary anchors without moving label-aligned dots. */
+export function metricDotGuides(ticks: readonly number[], size: number) {
   const interior = metricDotPositions(ticks, size)
   if (interior.length === 0) return []
-  const positions = [...new Set([0, ...interior, size])].sort((a, b) => a - b)
-  return positions.map((position, index) => ({
-    position,
-    opacity: index === (edge === 'start' ? 0 : positions.length - 1) ? 0.5 : 1,
-  }))
+  return [...new Set([0, ...interior, size])].sort((a, b) => a - b)
+}
+
+/** Use every cell boundary, or every second boundary in the joined-colour mode. */
+export function metricCellEdgeGuides(
+  size: number, count: number, stride: 1 | 2
+) {
+  if (count === 0 || size <= 0) return []
+  const cellSize = size / count
+  const indices = [
+    ...Array.from({ length: Math.ceil(count / stride) }, (_, index) => index * stride),
+    count,
+  ]
+  return indices.map(index => index === count ? size : index * cellSize)
 }

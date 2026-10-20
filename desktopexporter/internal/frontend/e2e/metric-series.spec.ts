@@ -149,9 +149,9 @@ async function expectRoundedAxes(page: Page, colour: string) {
   await expect(grid.locator('line')).toHaveCount(0)
   await expect(grid.locator('.lc-axis-tick-label')).toHaveCount(0)
   await expect(page.locator('.metric-chart-view .lc-grid')).toHaveCount(0)
-  const alignment = await grid.evaluate(element => {
+  const snapshot = await grid.evaluate(element => {
     const plot = element.closest('.metric-chart-view')!
-    return ['bottom', 'left'].map(placement => {
+    const alignment = ['bottom', 'left'].map(placement => {
       const coordinate = (graphic: SVGGraphicsElement, x: string, y: string) => {
         const point = new DOMPoint(
           Number(graphic.getAttribute(x)),
@@ -164,10 +164,22 @@ async function expectRoundedAxes(page: Page, colour: string) {
       const axis = plot.querySelector(`.lc-axis[data-placement="${placement}"]`)!
       const ticks = [...axis.querySelectorAll<SVGGraphicsElement>('.lc-axis-tick')]
         .map(tick => coordinate(tick, 'x1', 'y1')).sort((a, b) => a - b)
-      return { guides, ticks }
+      const cell = plot.querySelector<SVGRectElement>('.heatmap-cell')
+      const cellSize = cell && (placement === 'bottom'
+        ? cell.getBoundingClientRect().width : cell.getBoundingClientRect().height)
+      return { guides, ticks, cellSize }
     })
+    return { alignment, count: element.querySelectorAll('circle').length }
   })
-  for (const { guides, ticks } of alignment) {
+  const { alignment } = snapshot
+  for (const { guides, ticks, cellSize } of alignment) {
+    if (cellSize) {
+      for (const position of guides) {
+        const cellIndex = (position - guides[0]!) / cellSize
+        expect(cellIndex).toBeCloseTo(Math.round(cellIndex), 5)
+      }
+      continue
+    }
     for (let index = 0; index < ticks.length - 1; index++) {
       const start = guides.findIndex(value => Math.abs(value - ticks[index]!) < 0.001)
       expect(start).toBeGreaterThanOrEqual(0)
@@ -177,26 +189,12 @@ async function expectRoundedAxes(page: Page, colour: string) {
       }
     }
   }
-  await expect(grid.locator('circle')).toHaveCount(
+  expect(snapshot.count).toBe(
     alignment[0]!.guides.length * alignment[1]!.guides.length
   )
-  const fade = await grid.evaluate(element => {
-    const dots = [...element.querySelectorAll<SVGCircleElement>('circle')]
-    const columns = [...new Set(dots.map(dot => dot.cx.baseVal.value))].sort((a, b) => a - b)
-    const rows = [...new Set(dots.map(dot => dot.cy.baseVal.value))].sort((a, b) => a - b)
-    const opacity = (positions: number[], position: number, edge: 'start' | 'end') => {
-      const index = positions.indexOf(position)
-      return index === (edge === 'start' ? 0 : positions.length - 1) ? 0.5 : 1
-    }
-    return dots.map(dot => ({
-      actual: Number(getComputedStyle(dot).opacity),
-      expected: Math.min(
-        opacity(columns, dot.cx.baseVal.value, 'end'),
-        opacity(rows, dot.cy.baseVal.value, 'start')
-      ),
-    }))
-  })
-  for (const { actual, expected } of fade) expect(actual).toBeCloseTo(expected, 5)
+  expect(await grid.locator('circle').evaluateAll(dots =>
+    dots.every(dot => getComputedStyle(dot).opacity === '0.75')
+  )).toBe(true)
   expect(await grid.evaluate(element => {
     const bounds = element.querySelector<SVGRectElement>('clipPath rect')!
     const dots = [...element.querySelectorAll<SVGCircleElement>('circle')]
@@ -369,7 +367,77 @@ test.describe('independent histogram aggregate loading', () => {
     })
   }
 
-  test('count legends wrap by halves as available width changes', async ({ page }) => {
+  test('dense heatmaps join colours and halve guide density without changing cells', async ({ page }) => {
+    await page.setViewportSize({ width: 2400, height: 1000 })
+    const pending = await holdAggregates(page)
+    const aggregate = Array.from({ length: 81 }, (_, column) => ({
+      ...bucket,
+      timestamp: String(BigInt(startMs + column * 1000) * 1_000_000n),
+      explicitBounds: [1, 2, 3, 4],
+      bucketCounts: Array.from({ length: 5 }, (_, row) =>
+        column === 70 || (column === 40 && row === 2) ? 0 : 1 + (column + row) % 12),
+    }))
+    for (const { route } of pending) await route.fulfill({
+      json: { jsonrpc: '2.0', id: route.request().postDataJSON().id,
+        result: { aggregate, scalarAggregate: null } },
+    })
+    const group = page.locator('.heatmap-blobs')
+    await expect(page.locator('.heatmap-cell')).toHaveCount(399)
+    const cells = () => page.locator('.heatmap-cell').evaluateAll(elements =>
+      elements.map(element => {
+        const rect = element as SVGRectElement
+        return {
+          column: Math.round(rect.x.baseVal.value / rect.width.baseVal.value),
+          row: Math.round(rect.y.baseVal.value / rect.height.baseVal.value),
+          fill: rect.getAttribute('fill'),
+        }
+      }).sort((a, b) => a.column - b.column || a.row - b.row))
+    await expect(group).not.toHaveClass(/heatmap-blobs--joined/)
+    const originalCells = await cells()
+    for (const [width, joined] of [[1200, true], [2400, false]] as const) {
+      await page.setViewportSize({ width, height: 1000 })
+      await expect.poll(() => group.evaluate(element => element.classList.contains('heatmap-blobs--joined'))).toBe(joined)
+      expect(await cells()).toEqual(originalCells)
+      if (joined) {
+        await expect(page.locator('.heatmap-blob')).toHaveCount(2)
+        await expect(page.locator('.heatmap-blob-fill,.heatmap-blob-outline')).toHaveCount(0)
+        await expect(page.locator('.heatmap-joined-outline')).toHaveCount(2)
+        const outlines = await page.locator('.heatmap-blob').evaluateAll(elements =>
+          elements.map(element => {
+            const outline = element.querySelector<SVGGElement>('.heatmap-joined-outline')!
+            const maskID = outline.getAttribute('mask')!.slice(5, -1)
+            const mask = document.getElementById(maskID)!
+            const clipID = element.getAttribute('clip-path')!.slice(5, -1)
+            const clip = document.getElementById(clipID)!
+            return {
+              samePerimeter: mask.querySelector('path')!.getAttribute('d') === clip.querySelector('path')!.getAttribute('d'),
+              rings: (mask.querySelector('path')!.getAttribute('d')!.match(/M/g) ?? []).length,
+              pointerEvents: getComputedStyle(outline).pointerEvents,
+              colourWeight: getComputedStyle(outline).getPropertyValue('--heatmap-cell-colour-weight').trim(),
+              noCellStrokes: [...outline.querySelectorAll('rect')].every(rect => getComputedStyle(rect).stroke === 'none'),
+              sameColours: [...outline.querySelectorAll('rect')].every((rect, index) =>
+                rect.getAttribute('fill') === element.querySelectorAll('.heatmap-cell')[index]!.getAttribute('fill')),
+            }
+          }))
+        expect(outlines.map(outline => outline.rings).sort()).toEqual([1, 2])
+        for (const outline of outlines) {
+          expect(outline).toMatchObject({ samePerimeter: true, pointerEvents: 'none', colourWeight: '85%', sameColours: true, noCellStrokes: true })
+        }
+        await expect(page.locator('.heatmap-cell').first()).toHaveCSS('fill-opacity', '1')
+      } else {
+        await expect(page.locator('.heatmap-joined-outline')).toHaveCount(0)
+      }
+      const guides = await page.locator('.metric-dot-grid').evaluate(element => {
+        const dots = [...element.querySelectorAll<SVGCircleElement>('circle')]
+        return { columns: new Set(dots.map(dot => dot.cx.baseVal.value)).size,
+          rows: new Set(dots.map(dot => dot.cy.baseVal.value)).size,
+          opacity: [...new Set(dots.map(dot => getComputedStyle(dot).opacity))] }
+      })
+      expect(guides).toEqual({ columns: joined ? 42 : 82, rows: joined ? 4 : 6, opacity: ['0.75'] })
+    }
+  })
+
+  test('count legends fill available width as it changes', async ({ page }) => {
     await page.setViewportSize({ width: 2400, height: 1000 })
     const pending = await holdAggregates(page)
     for (const { route } of pending) await respond(route, {
@@ -388,7 +456,7 @@ test.describe('independent histogram aggregate loading', () => {
           .map(entry => entry.getBoundingClientRect().width),
         gap: Number.parseFloat(getComputedStyle(element).columnGap),
       }))
-      for (const count of [12, 6, 3, 6, 12]) {
+      for (const [count, expected] of [[12, [12]], [9, [9, 3]], [6, [6, 6]], [5, [5, 5, 2]], [3, [3, 3, 3, 3]], [12, [12]]] as const) {
         const rowWidths = []
         for (let start = 0; start < 12; start += count) {
           rowWidths.push(dimensions.widths.slice(start, start + count)
@@ -400,7 +468,7 @@ test.describe('independent histogram aggregate loading', () => {
         }, available)
         await expect.poll(() => legend.locator('.heatmap-legend__row').evaluateAll(rows =>
           rows.map(row => row.querySelectorAll('.heatmap-legend__entry').length)
-        )).toEqual(Array<number>(12 / count).fill(count))
+        )).toEqual(expected)
         await expect.poll(() => legend.evaluate(element => {
           const bounds = element.getBoundingClientRect()
           return [...element.querySelectorAll('.heatmap-legend__entry')].every(entry =>
@@ -1825,6 +1893,40 @@ test('header tabs use icons and tooltips only when their panel is narrow', async
   await expect.poll(labelWidth).toBeGreaterThan(20)
   expect(await tooltipDisplay()).toBe('none')
   await expect(json).toHaveAttribute('aria-selected', 'true')
+})
+
+test('metric JSON loads without datapoints or a Load button while Copy and Download keep the complete metric', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.setViewportSize({ width: 1920, height: 1000 })
+  const metadata = '{"resourceMetrics":[{"scopeMetrics":[{"metrics":[{"name":"request.duration","gauge":{}}]}]}]}'
+  const complete = '{"resourceMetrics":[{"scopeMetrics":[{"metrics":[{"name":"request.duration","gauge":{"dataPoints":[{"asInt":"9223372036854775807"}]}}]}]}]}'
+  const requests: string[] = []
+  await page.route('**/export/metrics/**', async route => {
+    const url = new URL(route.request().url())
+    const text = url.searchParams.get('includeDatapoints') === 'false' ? metadata : complete
+    requests.push(`${route.request().method()} ${url.search}`)
+    await route.fulfill({
+      contentType: 'application/json',
+      headers: { 'Content-Length': String(text.length) },
+      body: route.request().method() === 'HEAD' ? '' : text,
+    })
+  })
+  await page.goto(`/metrics/${metric.metricRef}?agg=raw`)
+  const detail = page.getByRole('region', { name: 'Metric details', exact: true })
+  const bubble = detail.locator('.detail-bubble__with-action')
+  await bubble.getByRole('tab', { name: 'JSON', exact: true }).click()
+  const json = bubble.getByRole('region', { name: 'Raw JSON inspector', exact: true })
+  await expect(json.locator('.cm-content')).toContainText('request.duration')
+  await expect(json.locator('.cm-content')).not.toContainText('dataPoints')
+  await expect(json.getByRole('button', { name: /^Load/ })).toHaveCount(0)
+  expect(requests).toEqual(['HEAD ?includeDatapoints=false', 'GET ?includeDatapoints=false'])
+  await bubble.getByRole('button', { name: 'Copy metric', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(complete)
+  expect(requests.at(-1)).toBe('GET ')
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download metric', exact: true }).click()
+  expect(await (await download).failure()).toBeNull()
+  expect(requests.at(-1)).toBe('GET ')
 })
 
 test('Copy metric stays in its heading and copies exact OTLP only for the selected metric', async ({

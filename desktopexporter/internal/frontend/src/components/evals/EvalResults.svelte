@@ -82,12 +82,12 @@
           >
         {:else}
           <th class="table-header-cell min-w-40 text-right" scope="col"
-            >Investigator <span class="block text-xs font-normal"
+            >Investigator <span class="block text-sm font-normal"
               >Estimate · CAD</span
             ></th
           >
           <th class="table-header-cell min-w-40 text-right" scope="col"
-            >Grader <span class="block text-xs font-normal">Estimate · CAD</span
+            >Grader <span class="block text-sm font-normal">Estimate · CAD</span
             ></th
           >
         {/if}
@@ -105,7 +105,7 @@
               aria-pressed={selectedID === item.id}
               onclick={() => onSelect(item.id)}>{item.name}</button
             >
-            <div class="flex items-center gap-2 pb-2 text-xs">
+            <div class="flex items-center gap-2 pb-2 text-sm">
               <span
                 class="badge badge-xs"
                 class:badge-papaya={item.state === 'Error'}
@@ -120,10 +120,10 @@
                 score => score.id === definition.id
               )}
               <td class="table-cell text-right">
-                <div class="flex flex-col items-end gap-1">
+                <div class="flex flex-col items-end gap-0">
                   <AssessmentBadge {assessment} maximum={definition.maximum} />
                   {#if assessment?.value != null}<span
-                      class="text-xs tabular-nums"
+                      class="min-h-[var(--signal-card-row-h)] content-center text-sm tabular-nums"
                       >{assessment.value} / {definition.maximum}</span
                     >{/if}
                 </div>
@@ -151,7 +151,7 @@
             </td>
             <td class="table-cell text-right text-sm tabular-nums">
               {item.tools.length}{#if failed}<span
-                  class="block text-xs text-error">{failed} failed</span
+                  class="block text-sm text-error">{failed} failed</span
                 >{/if}
             </td>
           {:else}
@@ -168,7 +168,7 @@
     {#if view === 'cost' && attempts.length}
       <tfoot class="header-surface">
         <tr>
-          <th scope="row" class="table-cell text-left text-sm font-medium"
+          <th scope="row" class="table-cell text-left text-sm font-normal"
             >Shown attempts</th
           >
           {#each [investigator, grader] as estimate}
@@ -176,7 +176,7 @@
               >{cost(
                 estimate.total
               )}{#if estimate.incomplete && estimate.total !== null}<span
-                  class="block text-xs">Incomplete</span
+                  class="block text-sm">Incomplete</span
                 >{/if}</td
             >
           {/each}

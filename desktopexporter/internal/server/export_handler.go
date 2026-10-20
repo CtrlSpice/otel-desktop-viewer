@@ -44,8 +44,17 @@ func (s *Server) exportHandler(w http.ResponseWriter, r *http.Request) {
 		id = strings.ReplaceAll(id, "-", "")
 	}
 	selection := make(map[string]string)
+	includeDatapoints := true
 	for key, values := range query {
 		if key == "format" {
+			continue
+		}
+		if signal == "metrics" && key == "includeDatapoints" {
+			if len(values) != 1 || (values[0] != "true" && values[0] != "false") {
+				http.Error(w, "includeDatapoints must be true or false", http.StatusBadRequest)
+				return
+			}
+			includeDatapoints = values[0] == "true"
 			continue
 		}
 		if len(values) != 1 || values[0] == "" ||
@@ -75,7 +84,7 @@ func (s *Server) exportHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	data, err := storeRead(s.store, func(db *sql.DB) ([]byte, error) {
 		if signal == "metrics" {
-			return metrics.GetMetricSelectionOTLP(r.Context(), db, id, selection["seriesRef"], selection["datapointRef"])
+			return metrics.GetMetricSelectionOTLP(r.Context(), db, id, selection["seriesRef"], selection["datapointRef"], includeDatapoints)
 		}
 		if signal == "traces" {
 			return spans.GetTraceSelectionOTLP(r.Context(), db, id, selection["spanId"])

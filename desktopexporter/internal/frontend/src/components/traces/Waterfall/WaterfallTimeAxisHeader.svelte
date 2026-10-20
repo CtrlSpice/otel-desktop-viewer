@@ -3,7 +3,7 @@
   export type TimeAxisGuide = { offsetPercent: number; major: boolean }
   export type WaterfallGridLayout = {
     widthPx: number
-    guides: { offsetPx: number; major: boolean; opacity: number }[]
+    guides: { offsetPx: number; major: boolean }[]
   }
 
   export type TimeAxisResult = {
@@ -25,7 +25,6 @@
   const NICE_MULTIPLIERS = [1n, 2n, 5n]
 
   const MAX_AXIS_TICKS = 100
-  const GRID_FADE_COLUMNS = 5
 
   function collectTickPositions(
     durationNs: bigint,
@@ -205,47 +204,18 @@
     }
   }
 
-  /** Decorative continuation into the existing right gutter; does not extend the time axis. */
+  /** Keep guides inside the timeline without extending the time axis. */
   export function waterfallGrid(
     axis: WaterfallAxis,
-    plotWidthPx: number,
-    trailingWidthPx: number
+    plotWidthPx: number
   ): WaterfallGridLayout {
-    const widthPx = Math.max(0, plotWidthPx) + Math.max(0, trailingWidthPx)
+    const widthPx = Math.max(0, plotWidthPx)
     if (plotWidthPx <= 0) return { widthPx, guides: [] }
-    const guides = axis.guides.map(guide => ({
-      offsetPx: (guide.offsetPercent * Math.max(0, plotWidthPx)) / 100,
-      major: guide.major,
-      opacity: 1,
-    }))
-    if (trailingWidthPx <= 0 || axis.layoutDurationNs <= 0n) {
-      return { widthPx, guides }
-    }
-    const divisions = gridDivisions(axis.intervalNs)
-    const stepNs = axis.intervalNs / divisions
-    const stepPx = (Number(stepNs) * plotWidthPx) / Number(axis.layoutDurationNs)
-    const count = Math.min(
-      MAX_AXIS_TICKS * Number(divisions),
-      Math.floor(widthPx / stepPx) + 1
-    )
-    const continuation = Array.from(
-      { length: Math.max(0, count - guides.length) },
-      (_, index) => {
-        const positionNs = BigInt(guides.length + index) * stepNs
-        return {
-          offsetPx: (offsetPercent(positionNs, axis.layoutDurationNs) * plotWidthPx) / 100,
-          major: positionNs % axis.intervalNs === 0n,
-          opacity: 1,
-        }
-      }
-    )
-    if (continuation.length === 0) return { widthPx, guides }
-    const extended = [...guides, ...continuation]
     return {
       widthPx,
-      guides: extended.map((guide, index) => ({
-        ...guide,
-        opacity: Math.min(1, (extended.length - index - 1) / GRID_FADE_COLUMNS),
+      guides: axis.guides.map(guide => ({
+        offsetPx: (guide.offsetPercent * widthPx) / 100,
+        major: guide.major,
       })),
     }
   }

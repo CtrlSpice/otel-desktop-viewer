@@ -39,8 +39,8 @@ target. The Subtle/High pairs still fall below 4.5:1 (Pine 3.391:1, Moon 3.437:1
 
 Dawn's foreground adjustments below use the same minimum contrast on those
 five backgrounds. Text already passes at its original value. These colours
-are darkened while preserving OKLCH hue; Gold also needs reduced chroma to stay
-within sRGB. These are shared theme colours, including for syntax and metadata.
+are darkened while preserving OKLCH hue. These are shared theme colours,
+including for syntax and metadata.
 
 | Dawn colour | Original | Adjusted | Minimum contrast |
 | --- | --- | --- | --- |
@@ -48,7 +48,15 @@ within sRGB. These are shared theme colours, including for syntax and metadata.
 | Muted | `#9893a5` | `#635e6f` | 4.513:1 |
 | Iris/Primary | `#907aa9` | `#6d5784` | 4.532:1 |
 | Foam/Accent | `#56949f` | `#296974` | 4.505:1 |
-| Gold/Warning | `#ea9d34` | `#895500` | 4.510:1 |
+
+Dawn Gold/Warning retains its original `#ea9d34`. The user rejected the darkened
+`#895500`. Do not change Gold or add a local override to satisfy contrast checks;
+colour/theme changes require explicit user approval, including during cleanup.
+Gold is used for markers and fills, never text. Warning text uses neutral Text;
+Gold-to-background text contrast is not a reason to alter the palette.
+Further contrast adjustments are limited to colours actually used for text,
+only in failing themes and by the smallest necessary amount. Marker/fill colours
+retain their palette values; proposed text-colour adjustments require approval.
 
 The user rejected the darkened Dawn Rose. Its palette value is restored to
 `#d7827e`; it does not meet 4.5:1 on these surfaces. Dawn literals instead use
@@ -90,28 +98,37 @@ corner radius and use a continuous rounded border.
 Metric line, histogram and heatmap charts use solid 1px Muted axes/tick marks.
 The left and bottom axes share a continuous rounded bottom-left join using
 `--radius-xl`, matching cards and waterfall connectors. The border is centred
-on the original plot bounds; plot insets and scales stay unchanged. It is
+on the plot bounds. Shared insets are 24px top, 72px right, 96px bottom and
+136px left, leaving room between tick values and unit labels. It is
 decorative and does not intercept pointer or keyboard input.
 Line charts, histograms and heatmaps share a full grid of 1.5px Muted dots at
-full opacity, behind data. Each labelled X/Y interval has two equal subdivisions,
+75% opacity including edges and corners, behind data. In line charts and
+histograms, each labelled X/Y interval has two equal subdivisions,
 with a dot at every intersection. Cells need not be square. The nearest interval's
 spacing continues within the plot edges without adding dots beyond the plot.
 Dot rows/columns on all four plot boundaries fill the edge gaps without moving
 existing label-aligned dots or their midpoints. The edge gaps can be shorter.
-Only the outermost top row and rightmost column use 50% opacity, including
-their shared corner; all other dots stay at full opacity. Decoration stays inside
-the plot bounds without changing plot
+Decoration stays inside the plot bounds without changing plot
 size, data bounds or scrolling. Tick positions include filtered heatmap
 ticks; the grid adds no labels. Dot size, colour and opacity use the shared
 `--guide-dot-*` tokens.
 Heatmap label density responds to plot size with the line charts' 80px horizontal
 and 50px vertical spacing targets. Labels are selected from existing time columns
 and bucket rows; bucket identities, bounds, counts and geometry stay unchanged.
+Heatmap dots follow actual cell boundaries, while labels stay centred. Use every
+boundary, switching to every second boundary on both axes when either rendered
+cell dimension falls below 12px. Keep both plot edges, including the final edge
+after an odd cell count. At the same threshold, join neighbouring occupied cells
+across colour bands and round the shared perimeter. Each cell retains its count
+colour, and empty buckets and holes remain empty.
+Joined shapes use the existing density-scaled border along the shared perimeter
+and holes. The border follows each cell's colour; colour boundaries inside the
+shape have no border.
 Histogram and heatmap count legends replace the displayed time range on the
-left of the header's lower row. Entries wrap by halves at the regular working
-text size: 12 entries become 6+6, then 3+3+3+3 as available width decreases.
-Odd counts are balanced across rows; labels stay whole and in count order.
-chart controls remain on the right and the global time selector remains available.
+left of the header's lower row. Each row fits as many whole entries as available
+width permits. Move one entry down to avoid a lone final item only when the pair
+fits and at least two entries remain in the previous row. Labels stay in count
+order; chart controls remain on the right and the global time selector remains available.
 Count-range markers are plain 8px round dots without borders or outlines;
 numeric ranges retain the meaning independently of colour.
 Timeline activity markers use a 14px circle icon for both single and grouped
@@ -168,34 +185,28 @@ Moon 7.24:1, Dawn 6.01:1) and on Low hover and Medium selection in every theme.
 JSON strings soft-wrap at word boundaries with a hanging indent after the opening
 quote. The document text is unchanged. JSON's notebook-guide trial replaces the
 fold-arrow gutter with a sparse grid only in leading indentation: 1.5px dots
-in Muted at full opacity in all themes, 2ch apart horizontally
+in Muted at 75% opacity in all themes, 2ch apart horizontally
 and one text line apart vertically,
 positioned on row boundaries rather than the middle of the text.
 The Mono font keeps dots aligned with character columns. These decorative dots
 do not carry text or replace the existing folding commands and inspector controls.
 
 The shared `--guide-dot-radius` and `--guide-dot-opacity` tokens apply to
-waterfall time guides and all raw/nested JSON grids. Every grid uses Muted at
-full opacity through the shared `--guide-dot-color` token.
+waterfall time guides, metric grids and all raw/nested JSON grids. Every dot,
+including edges and corners, uses Muted at 75% through these shared tokens.
 Three unlabelled guides divide each labelled interval into quarters.
 Use fewer divisions when needed to retain whole nanoseconds.
-Labels keep their existing spacing; ruler, span rows and faded tail use the
+Labels keep their existing spacing; ruler and span rows use the
 same guide positions. These positions are display-only, calculated from exact
 nanosecond offsets as `floor(offsetNs * 10000 / durationNs) / 100` percent.
 It is painted behind span bars, labels and activity markers.
 Their positions follow time ticks and
 span-row boundaries, with two additional dot rows at one-third and two-thirds
 of each span row's height. The ruler and first span row meet without a gap.
-If the spans leave empty space below the table, the guides continue for up to
-one row and fade to transparent. The continuation adds no scrollable height.
-The grid also continues through the existing right gutter at the same horizontal
-spacing. Its final five guide columns fade to transparent; earlier columns
-retain Muted at full opacity. Ruler, rows and below-table continuation share positions and
-the right fade. This decoration adds no labels, changes no time bounds and adds
-no horizontal scroll width. Added guide positions use the same whole-nanosecond
-steps and 0.01%-resolution calculation; their opacity decreases linearly across
-the last five columns, ending at zero. When fewer than five extra columns fit,
-the fade also includes the final existing guide columns; time labels do not fade.
+Guides are clipped at the timeline's right edge and stop at the final span row, without
+extending into the right gutter or below the table. The first column keeps whole dots with the original half-dot
+allowance to the left of their centres. The decoration changes no time labels, time bounds, span
+geometry or scrolling.
 Column and panel resize controls use a shared short grip, hidden at rest and
 visible on hover, keyboard focus or drag. Hover uses Text; focus and drag use Iris
 at full opacity. The full drag areas and keyboard behaviour remain available.

@@ -35,7 +35,7 @@
   import { computeHistogramBarColorScale } from '@/components/metrics/utils/heatmap-color-scale'
   import { themeSignal } from '@/state/theme.svelte'
   import { expBuckets } from '@/components/metrics/utils/histogram-quantile'
-  import { formatMetricValue } from '@/components/metrics/utils/format-metric-value'
+  import { formatMetricValue, formatMetricHoverValue, formatMetricCount, metricNumberPrecision } from '@/components/metrics/utils/format-metric-value'
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import {
     HISTOGRAM_QUANTILE_DASH,
@@ -46,6 +46,7 @@
     exponentialZeroBucketIdentity,
     exponentialZeroBucketLabel,
     formatHistogramBound,
+    formatHistogramRange,
     indexedHistogramRangeIdentity,
   } from '@/components/metrics/utils/histogram-bucket'
   import {
@@ -196,6 +197,7 @@
   ): Bucket[] {
     const bounds = dp.explicitBounds
     const counts = dp.bucketCounts
+    const digits = metricNumberPrecision(bounds)
     const result: Bucket[] = []
     for (let i = 0; i < counts.length; i++) {
       let label: string
@@ -206,15 +208,15 @@
         lo = -Infinity
         hi = Infinity
       } else if (i === 0) {
-        label = `(-∞, ${bounds[0]}]`
+        label = formatHistogramRange(-Infinity, bounds[0], digits)
         lo = -Infinity
         hi = bounds[0]
       } else if (i < bounds.length) {
-        label = `(${bounds[i - 1]}, ${bounds[i]}]`
+        label = formatHistogramRange(bounds[i - 1], bounds[i], digits)
         lo = bounds[i - 1]
         hi = bounds[i]
       } else {
-        label = `(${bounds[bounds.length - 1]}, +∞)`
+        label = `(${formatHistogramBound(bounds[bounds.length - 1], digits)}, +∞)`
         lo = bounds[bounds.length - 1]
         hi = Infinity
       }
@@ -233,14 +235,16 @@
     dp: Extract<HistogramChartDataPoint, { metricType: 'ExponentialHistogram' }>
   ): Bucket[] {
     const negativeCount = dp.negativeBucketCounts.length
-    return expBuckets(
+    const sourceBuckets = expBuckets(
       dp.scale,
       dp.negativeBucketOffset,
       dp.negativeBucketCounts,
       dp.zeroCount,
       dp.positiveBucketOffset,
       dp.positiveBucketCounts
-    ).map((bucket, index) => {
+    )
+    const digits = metricNumberPrecision(sourceBuckets.flatMap(bucket => [bucket.lo, bucket.hi]))
+    return sourceBuckets.map((bucket, index) => {
       let key: string
       const zeroThreshold =
         index === negativeCount ? dp.zeroThreshold : undefined
@@ -258,7 +262,7 @@
         label:
           zeroThreshold !== undefined
             ? exponentialZeroBucketLabel(zeroThreshold)
-            : `(${formatHistogramBound(bucket.lo)}, ${formatHistogramBound(bucket.hi)}]`,
+             : formatHistogramRange(bucket.lo, bucket.hi, digits),
         count: bucket.cnt,
         lo:
           zeroThreshold !== undefined && zeroThreshold > 0
@@ -532,9 +536,11 @@
   function formatBucketRange(b: Bucket): string {
     const { lo, hi } = b
     const u = unit ? ` ${unit}` : ''
+    const digits = metricNumberPrecision([lo, hi], 6)
+    const formatNumber = (value: number) => formatHistogramBound(value, digits)
     if (b.zeroThreshold !== undefined) {
       return b.zeroThreshold > 0
-        ? `${exponentialZeroBucketLabel(b.zeroThreshold)}${u}`
+        ? `${exponentialZeroBucketLabel(b.zeroThreshold, digits)}${u}`
         : `= 0${u}`
     }
     if (!Number.isFinite(lo) && !Number.isFinite(hi)) return 'all values'
@@ -542,14 +548,6 @@
     if (!Number.isFinite(hi)) return `> ${formatNumber(lo)}${u}`
     if (lo === hi) return `= ${formatNumber(lo)}${u}`
     return `${formatNumber(lo)} – ${formatNumber(hi)}${u}`
-  }
-
-  function formatNumber(v: number): string {
-    if (!Number.isFinite(v)) return v > 0 ? '∞' : '-∞'
-    if (Number.isInteger(v)) return v.toString()
-    const abs = Math.abs(v)
-    if (abs >= 10000 || (abs > 0 && abs < 0.01)) return v.toExponential(2)
-    return v.toPrecision(4).replace(/\.?0+$/, '')
   }
 
   // Percentages use rendered buckets because negative exponential buckets are hidden.
@@ -573,7 +571,7 @@
         key: 'count',
         color: 'var(--color-base-content)',
         label: 'count',
-        valueText: String(pinnedBucket.count),
+        valueText: formatMetricCount(pinnedBucket.count),
       },
       {
         key: 'share',
@@ -716,12 +714,12 @@
                       <Tooltip.Item
                         label="count"
                         value={data.count}
-                        format="integer"
+                        format={formatMetricCount}
                       />
                       {#if ctx.histogramContribution}
                         <Tooltip.Item
                           label="selected contribution"
-                          value={`${contributionByKey.get(data.key) ?? 0} of ${data.count}`}
+                          value={`${formatMetricCount(contributionByKey.get(data.key) ?? 0)} of ${formatMetricCount(data.count)}`}
                         />
                       {/if}
                       <Tooltip.Item
@@ -771,7 +769,7 @@
                     style:--marker-color={m.color}
                     style:--quantile-color={m.color}
                   >
-                    <title>{m.label} {formatQuantileValue(m.value)}</title>
+                    <title>{m.label} {formatMetricHoverValue(m.value)} {unit}</title>
                     <Line
                       x1={px}
                       x2={px}

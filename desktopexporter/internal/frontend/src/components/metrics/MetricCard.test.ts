@@ -121,7 +121,7 @@ describe('MetricCard series counts', () => {
         (_, el) =>
           el?.classList.contains('badge-count') === true &&
           el.textContent?.replace(/\s+/g, ' ').trim() ===
-            '3 of 21 series | 120 pts'
+            '3 of 21 series · 120 pts'
       )
     ).toBeInTheDocument()
   })
@@ -136,7 +136,7 @@ describe('MetricCard series counts', () => {
       screen.getByText(
         (_, el) =>
           el?.classList.contains('badge-count') === true &&
-          el.textContent?.replace(/\s+/g, ' ').trim() === '21 series | 120 pts'
+          el.textContent?.replace(/\s+/g, ' ').trim() === '21 series · 120 pts'
       )
     ).toBeInTheDocument()
     expect(screen.queryByText(/of 21 series/)).not.toBeInTheDocument()

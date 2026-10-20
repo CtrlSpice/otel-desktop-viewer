@@ -6,18 +6,19 @@ export function numberIdentity(value: number): string {
   return String(value)
 }
 
-export function formatHistogramBound(value: number): string {
+export function formatHistogramBound(value: number, significantDigits = 3): string {
   if (!Number.isFinite(value)) return value > 0 ? '+∞' : '-∞'
-  if (value === 0) return '0'
-  if (Math.abs(value) >= 1000 || Math.abs(value) < 0.01) {
-    return value.toExponential(1)
-  }
-  return value.toPrecision(3)
+  return formatMetricValue(value, { maxSignificantDigits: significantDigits })
 }
 
-export function exponentialZeroBucketLabel(zeroThreshold: number): string {
+export function formatHistogramRange(lo: number, hi: number, minimumDigits = 3): string {
+  const digits = metricNumberPrecision([lo, hi], minimumDigits)
+  return `(${formatHistogramBound(lo, digits)}, ${formatHistogramBound(hi, digits)}]`
+}
+
+export function exponentialZeroBucketLabel(zeroThreshold: number, significantDigits = 3): string {
   if (!(zeroThreshold > 0)) return '0'
-  const threshold = formatHistogramBound(zeroThreshold)
+  const threshold = formatHistogramBound(zeroThreshold, significantDigits)
   return `[-${threshold}, +${threshold}]`
 }
 
@@ -44,3 +45,4 @@ export function exponentialBucketIdentity(
 export function exponentialZeroBucketIdentity(zeroThreshold: number): string {
   return `exponential:zero:${numberIdentity(zeroThreshold)}`
 }
+import { formatMetricValue, metricNumberPrecision } from './format-metric-value'

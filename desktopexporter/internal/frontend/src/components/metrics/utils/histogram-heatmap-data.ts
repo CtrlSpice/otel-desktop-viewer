@@ -4,8 +4,10 @@ import {
   exponentialZeroBucketIdentity,
   exponentialZeroBucketLabel,
   formatHistogramBound,
+  formatHistogramRange,
   histogramRangeIdentity,
 } from '@/components/metrics/utils/histogram-bucket'
+import { metricNumberPrecision } from './format-metric-value'
 
 export type HeatmapDatum = {
   columnKey: string
@@ -145,6 +147,7 @@ function projectHistogramHeatmapData(
     countLength: number
   ): HeatmapBucketRow[] {
     const descriptors: HeatmapBucketRow[] = []
+    const digits = metricNumberPrecision(bounds)
     for (let bucketIndex = 0; bucketIndex < countLength; bucketIndex++) {
       let label: string
       let order: number
@@ -156,7 +159,7 @@ function projectHistogramHeatmapData(
         lo = -Infinity
         hi = Infinity
       } else if (bucketIndex === 0) {
-        label = `≤${formatHistogramBound(bounds[0]!)}`
+        label = `≤${formatHistogramBound(bounds[0]!, digits)}`
         order = -Infinity
         lo = -Infinity
         hi = bounds[0]!
@@ -164,12 +167,12 @@ function projectHistogramHeatmapData(
         lo = bounds[bucketIndex - 1]!
         hi = bounds[bucketIndex]!
         order = (lo + hi) / 2
-        label = `(${formatHistogramBound(lo)}, ${formatHistogramBound(hi)}]`
+        label = formatHistogramRange(lo, hi, digits)
       } else {
         lo = bounds[bounds.length - 1]!
         hi = Infinity
         order = Infinity
-        label = `>${formatHistogramBound(lo)}`
+        label = `>${formatHistogramBound(lo, digits)}`
       }
       descriptors.push({
         key: histogramRangeIdentity(lo, hi),
@@ -282,7 +285,13 @@ function projectHistogramHeatmapData(
         hi,
       })
     }
-    return descriptors
+    const digits = metricNumberPrecision(descriptors.map(row => row.order))
+    return descriptors.map(row => ({
+      ...row,
+      label: row.key === exponentialZeroBucketIdentity(point.zeroThreshold)
+        ? exponentialZeroBucketLabel(point.zeroThreshold, digits)
+        : formatHistogramBound(row.order, digits),
+    }))
   }
 
   function exponentialDescriptors(point: ExponentialPoint): HeatmapBucketRow[] {

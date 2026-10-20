@@ -201,7 +201,12 @@ describe('TracesPage unplaced spans banner', () => {
     expect(button).toBeEnabled()
     const title = header.querySelector('.pane-header__title')!
     expect(
-      button.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING
+      within(button.closest<HTMLElement>('.pane-header__right')!)
+        .getAllByRole('button')
+        .at(-1)
+    ).toBe(button)
+    expect(
+      title.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING
     ).not.toBe(0)
     expect(
       screen.getAllByRole('button', { name: 'Download trace' })
@@ -404,7 +409,7 @@ describe('TracesPage trace detail lifecycle', () => {
       expect(document.querySelector('tr[data-span-id="root"]')).not.toBeNull()
     )
 
-    await fireEvent.click(screen.getByText('trace-2').closest('button')!)
+    await fireEvent.click(screen.getByRole('button', { name: /^Trace two\b/ }))
 
     await waitFor(() =>
       expect(screen.getByText('Loading trace detail…')).toBeVisible()
@@ -427,7 +432,10 @@ describe('TracesPage trace detail lifecycle', () => {
     const nextDetail = deferred<TraceData>()
     searchTraceSummaries.mockResolvedValue([
       makeTraceSummary(),
-      makeTraceSummary({ traceID: 'trace-2' }),
+      makeTraceSummary({
+        traceID: 'trace-2',
+        rootSpan: { name: 'Trace two', serviceName: 'orders-service' },
+      }),
     ])
     getStats.mockResolvedValue(makeStats())
     getTraceView.mockImplementation((traceID: string) =>
@@ -437,7 +445,7 @@ describe('TracesPage trace detail lifecycle', () => {
     renderWithContexts(TracesPage)
     await waitFor(() => expect(getTraceView).toHaveBeenCalledTimes(1))
 
-    await fireEvent.click(screen.getByText('trace-2').closest('button')!)
+    await fireEvent.click(screen.getByRole('button', { name: /^Trace two\b/ }))
     await waitFor(() => expect(getTraceView).toHaveBeenCalledTimes(2))
     firstDetail.resolve(makeTraceData(0, 'trace-1', 'old-span'))
 
@@ -603,7 +611,9 @@ describe('TracesPage trace detail lifecycle', () => {
       expect(window.location.search).toBe('')
       expect(screen.getByText('Select a trace to view details')).toBeVisible()
 
-      await fireEvent.click(screen.getByText('trace-2').closest('button')!)
+      await fireEvent.click(
+        screen.getByRole('button', { name: /^Trace two\b/ })
+      )
       await waitFor(() =>
         expect(screen.getByText('Loading trace detail…')).toBeVisible()
       )

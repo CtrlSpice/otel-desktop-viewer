@@ -53,7 +53,7 @@ describe('AttributeRows', () => {
     expect(container.querySelector('details')).toBeNull()
   })
 
-  it('separates origin and type badges from the unchanged key and value', () => {
+  it('keeps type beside the unchanged key and provenance below the heading', () => {
     const attributes: Attributes = [
       { key: 'service.name', value: { kind: 'string', value: 'checkout' } },
     ]
@@ -62,11 +62,13 @@ describe('AttributeRows', () => {
     expect(
       within(header as HTMLElement).getByText('service.name')
     ).toBeInTheDocument()
-    expect(within(header as HTMLElement).getByText('resource')).toHaveClass(
-      'badge-primary'
-    )
+    const origin = container.querySelector('.detail-property__origin')!
+    expect(origin).toHaveTextContent(/^resource$/)
+    expect(header.nextElementSibling).toBe(origin)
+    expect(origin).not.toHaveClass('badge-soft')
     const type = within(header as HTMLElement).getByText('string')
-    expect(type).toHaveClass('badge-soft', 'badge-accent')
+    expect(header.querySelector('.detail-property__key')).toContainElement(type)
+    expect(type).not.toHaveClass('badge-soft')
     expect(type.style.color).toBe('')
     expect(
       screen

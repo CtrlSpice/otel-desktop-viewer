@@ -229,7 +229,6 @@
     waterfallTimeAxis,
     waterfallGrid,
   } from './WaterfallTimeAxisHeader.svelte'
-  import WaterfallGrid from './WaterfallGrid.svelte'
   import WaterfallRow from './WaterfallRow.svelte'
   import WaterfallColumnsPicker from './WaterfallColumnsPicker.svelte'
   import {
@@ -652,8 +651,7 @@
   let barGrid = $derived(
     waterfallGrid(
       waterfallTimeAxis(bounds.duration, targetTickCount),
-      timelinePlotPx,
-      remToPx(DURATION_GUTTER_REM + OUTSIDE_RECORD_SLOT_REM)
+      timelinePlotPx
     )
   )
 
@@ -1256,17 +1254,6 @@
               />
             {/snippet}
           </VirtualList>
-          {#if visibleRows.length > 0}
-            <div
-              class="waterfall-view__grid-tail"
-              aria-hidden="true"
-              style:--span-rows-height="calc({visibleRows.length} * var(--table-row-h))"
-              style:left="calc({gridWidth - timelineColPx}px + {TIMELINE_LEFT_INSET_REM}rem)"
-              style:width="{barGrid.widthPx}px"
-            >
-              <WaterfallGrid layout={barGrid} continuation />
-            </div>
-          {/if}
         </div>
       </div>
     </div>
@@ -1329,16 +1316,6 @@
 
   .waterfall-view__vlist-host {
     @apply relative min-h-0 flex-1 overflow-hidden outline-none;
-  }
-
-  .waterfall-view__grid-tail {
-    @apply pointer-events-none absolute overflow-hidden;
-    top: var(--span-rows-height);
-    height: min(
-      var(--table-row-h),
-      max(0px, calc(100% - var(--span-rows-height)))
-    );
-    mask-image: linear-gradient(to bottom, black, transparent);
   }
 
   .waterfall-view__vlist-host :global(.waterfall-vlist) {

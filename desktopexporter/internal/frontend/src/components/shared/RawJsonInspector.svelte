@@ -3,6 +3,7 @@
     id: string
     label: string
     url?: string
+    previewURL?: string
     unavailable?: string
   }
 </script>
@@ -24,10 +25,14 @@
   }: { scopes: RawJsonScope[]; active: boolean; wholeURL: string } = $props()
   const PREVIEW_BYTES = 2 * 1024 * 1024
   const formatHintID = $props.id()
-  const formatHint =
+  const formatDescription =
     'OpenTelemetry Protocol JSON. Size is the complete selected OTLP JSON in UTF-8 bytes before display formatting, not database storage. Reconstructed from retained telemetry, not the original request bytes. Includes resource and scope context; not restricted to the chart window.'
   let scopeID = $state(untrack(() => scopes[0]?.id ?? ''))
   let scope = $derived(scopes.find(item => item.id === scopeID) ?? scopes[0])
+  let previewURL = $derived(scope?.previewURL ?? scope?.url)
+  let formatHint = $derived(scope?.id === 'metric'
+    ? `${formatDescription} Displayed metric JSON omits datapoints; Copy and Download include all retained datapoints.`
+    : formatDescription)
   let bytes = $state<number | null>(null)
   let error = $state('')
   let loading = $state(false)
@@ -46,7 +51,7 @@
 
   $effect(() => {
     void retry
-    const url = scope?.url
+    const url = previewURL
     if (url && (!active || url === untrack(() => currentURL))) return
     currentURL = url ?? ''
     requestedURL = ''
@@ -68,8 +73,10 @@
           )
         const length = response.headers.get('Content-Length')
         bytes = length === null ? null : Number(length)
-        // Only the selected record is loaded automatically. Larger scopes require consent.
-        if (
+        // Metric metadata always loads a bounded preview without a manual gate.
+        if (scope?.id === 'metric') {
+          requestedURL = url
+        } else if (
           scope?.id === 'datapoint' ||
           scope?.id === 'span' ||
           scope?.id === 'log'
@@ -93,7 +100,7 @@
 
   $effect(() => {
     const url = requestedURL
-    if (!active || !url || url !== scope?.url) return
+    if (!active || !url || url !== previewURL) return
     const controller = new AbortController()
     let worker: Worker | undefined
     loading = true
@@ -178,7 +185,7 @@
       role="status"
       title={formatHint}
       aria-describedby={formatHintID}
-      >OTLP JSON{#if bytes !== null}{' · '}{sizeLabel(bytes)}{/if}</span
+      >OTLP JSON{#if scope?.id === 'metric'} · without datapoints{/if}{#if bytes !== null}{' · '}{sizeLabel(bytes)}{/if}</span
     >
     <span id={formatHintID} class="sr-only">{formatHint}</span>
     <div
@@ -247,11 +254,11 @@
       }}>Retry</button
     >
   {:else if loading}<p class="p-3 text-sm" role="status">Loading JSON…</p>
-  {:else if !formatted}<div class="p-3">
+  {:else if !formatted && scope?.id !== 'metric'}<div class="p-3">
       <button
         type="button"
         class="btn btn-soft btn-sm text-sm"
-        onclick={() => (requestedURL = scope!.url!)}
+        onclick={() => (requestedURL = previewURL!)}
         >{bytes !== null && bytes > PREVIEW_BYTES
           ? 'Load 2 MiB preview'
           : `Load ${scope.label.toLowerCase()} JSON`}</button
@@ -281,6 +288,6 @@
     padding-inline: 0;
   }
   .raw-inspector__notice {
-    @apply m-2 rounded-lg bg-warning/10 p-3 text-sm text-warning;
+    @apply m-2 rounded-lg bg-warning/10 p-3 text-sm text-base-content;
   }
 </style>

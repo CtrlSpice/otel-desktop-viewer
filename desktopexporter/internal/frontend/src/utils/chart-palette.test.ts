@@ -20,7 +20,7 @@ describe('heatmapSwatches', () => {
 
   it('ends on Dawn Iris purple', () => {
     expect(heatmapSwatches(3, 'rose-pine-dawn').at(-1)).toBe(
-      'rgb(144, 122, 169)'
+      'rgb(109, 87, 132)'
     )
   })
 

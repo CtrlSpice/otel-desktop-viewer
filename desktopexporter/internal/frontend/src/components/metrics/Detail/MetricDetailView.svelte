@@ -43,7 +43,12 @@
     ctx.metric ? `/export/metrics/${ctx.metric.metricRef}` : ''
   )
   let rawScopes = $derived([
-    { id: 'metric', label: 'Whole metric', url: metricURL },
+    {
+      id: 'metric',
+      label: 'Metric',
+      url: metricURL,
+      previewURL: metricURL ? `${metricURL}?includeDatapoints=false` : '',
+    },
   ])
 </script>
 

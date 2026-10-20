@@ -70,7 +70,7 @@ describe('PaneHeader local tabs', () => {
 })
 
 describe('PaneHeader main pill', () => {
-  it('keeps the badge group outside the shrinking title row', () => {
+  it('keeps counts in the title row beside the title and service', () => {
     const { container } = render(PaneHeader, {
       mode: 'title',
       title: 'Main header',
@@ -79,9 +79,8 @@ describe('PaneHeader main pill', () => {
     })
     const title = container.querySelector('.pane-header__title-row')!
     const badges = container.querySelector('.pane-header__badges')!
-    expect(title.nextElementSibling).toBe(badges)
-    expect(badges.parentElement).toHaveClass('pane-header__top')
-    expect(title).not.toContainElement(badges as HTMLElement)
+    expect(title).toContainElement(badges as HTMLElement)
+    expect(badges.parentElement).toBe(title)
   })
 
   it('puts graph tabs below the title and trailing badges without changing tab semantics', async () => {
@@ -96,7 +95,9 @@ describe('PaneHeader main pill', () => {
       tabPanelID: 'graph',
     })
     const top = container.querySelector('.pane-header__top')!
-    expect(top.lastElementChild).toHaveClass('pane-header__badges')
+    expect(
+      top.querySelector('.pane-header__title-row .pane-header__badges')
+    ).toHaveTextContent('Sum')
     const secondRow = top.nextElementSibling!
     expect(secondRow).toHaveClass('pane-header__tabs-row')
     expect(secondRow).toContainElement(screen.getByRole('tablist'))

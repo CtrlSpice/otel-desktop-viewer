@@ -43,7 +43,11 @@ describe('ActivityPanel', () => {
     })
 
     expect(screen.getByText('Span event', { exact: true })).toBeVisible()
-    expect(screen.getByText('Log', { exact: true })).toBeVisible()
+    expect(
+      screen
+        .getByRole('region', { name: 'Log summary' })
+        .querySelector('.signal-row__title')
+    ).toHaveTextContent(/^checkout · Log$/)
     expect(container.querySelectorAll('details, summary')).toHaveLength(0)
     expect(
       screen.getByRole('region', { name: 'Event cache.hit' }).parentElement
@@ -55,7 +59,7 @@ describe('ActivityPanel', () => {
     expect(card).toHaveTextContent('checkout')
     expect(card).toHaveTextContent('WARN (13)')
     expect(card.querySelector('.signal-row__badge')).toHaveTextContent(
-      'Log WARN (13)'
+      'WARN (13)'
     )
     expect(within(card).getByText('preview only')).toBeVisible()
     expect(within(summary).getByText('order.delayed')).toBeVisible()

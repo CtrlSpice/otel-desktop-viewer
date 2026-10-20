@@ -29,7 +29,7 @@ describe('DetailProperty copy controls', () => {
     expect(copy).toHaveBeenCalledWith('CUSTOM ERROR')
   })
 
-  it('keeps the key first, followed by contextual Copy and then the badges', () => {
+  it('keeps key and type together, followed by contextual Copy opening left', () => {
     const { container } = render(DetailProperty, {
       fieldName: 'name',
       fieldType: 'string',
@@ -39,8 +39,8 @@ describe('DetailProperty copy controls', () => {
     expect(header.firstElementChild).toHaveClass('detail-property__key')
     const copy = screen.getByRole('button', { name: 'Copy name' })
     expect(copy).toHaveClass('value-copy--contextual')
-    expect(copy).toHaveClass('tooltip-right')
-    expect(copy).not.toHaveClass('tooltip-left')
+    expect(copy).toHaveClass('tooltip-left')
+    expect(copy).not.toHaveClass('tooltip-right')
     expect(header.firstElementChild!.nextElementSibling).toBe(copy)
     expect(header).toContainElement(copy)
     expect(
@@ -147,15 +147,9 @@ describe('DetailProperty copy controls', () => {
     }
   )
 
-  it.each([
-    ['string', 'badge-accent'],
-    ['int64', 'badge-warning'],
-    ['bool', 'badge-primary'],
-    ['map', 'badge-primary'],
-    ['empty', 'badge-neutral'],
-  ])(
-    'groups the %s type and origin badges after the key and Copy',
-    (fieldType, tone) => {
+  it.each(['string', 'int64', 'bool', 'map', 'empty'])(
+    'keeps the %s type beside the key and provenance below the heading',
+    fieldType => {
       const { container } = render(DetailProperty, {
         fieldName: 'example',
         fieldType,
@@ -166,17 +160,21 @@ describe('DetailProperty copy controls', () => {
       const badge = container.querySelector<HTMLElement>(
         '.detail-property__type'
       )!
-      const badges = container.querySelector('.detail-property__badges')!
       expect(key.nextElementSibling).toBe(
         screen.getByRole('button', { name: 'Copy example (scope)' })
       )
-      expect(badges.firstElementChild).toBe(badge)
+      expect(key).toHaveTextContent(`example · ${fieldType}`)
+      expect(key).toContainElement(badge)
+      expect(badge).toHaveTextContent(fieldType)
       expect(badge.style.color).toBe('')
-      expect(badge).toHaveClass('badge-soft', tone)
+      expect(badge).not.toHaveClass('badge-soft')
       expect(badge).not.toHaveClass('badge-outline')
       const origin = container.querySelector('.detail-property__origin')!
-      expect(badge.nextElementSibling).toBe(origin)
-      expect(origin).toHaveClass('badge-primary', 'badge-soft')
+      expect(
+        container.querySelector('.detail-property__header')!.nextElementSibling
+      ).toBe(origin)
+      expect(origin).toHaveTextContent(/^scope$/)
+      expect(origin).not.toHaveClass('badge-soft')
       expect(origin).not.toHaveClass('badge-outline')
       expect(
         container.querySelector('.detail-property__header')
@@ -229,12 +227,13 @@ describe('DetailProperty copy controls', () => {
       expect(container.querySelector('.detail-property__type')).toBeNull()
       if (origin) {
         expect(
-          container.querySelector(
-            '.detail-property__header .detail-property__badges'
-          )
+          container.querySelector('.detail-property__origin')
         ).toHaveTextContent(origin)
+        expect(header.nextElementSibling).toBe(
+          container.querySelector('.detail-property__origin')
+        )
       } else {
-        expect(container.querySelector('.detail-property__badges')).toBeNull()
+        expect(container.querySelector('.detail-property__origin')).toBeNull()
       }
     }
   )
@@ -343,7 +342,7 @@ describe('DetailProperty copy controls', () => {
           : { fieldValue: text }),
       })
       expect(
-        container.querySelector('.attribute-value--structured .cm-content')
+        container.querySelector('.attribute-value .cm-content')
       ).toHaveTextContent('9223372036854775807')
       expect(jsonEditorView(container).state.doc.toString()).toContain(
         '\n  "items": [\n    "hello",'

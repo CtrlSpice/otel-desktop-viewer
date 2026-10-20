@@ -24,10 +24,10 @@ const directions = [
 const pointKey = (point: Point) => `${point.x}:${point.y}`
 
 const BLOB_DETAIL_STEPS = [
-  { minCellSize: 40, radius: 18, gap: 4, liner: 1 },
-  { minCellSize: 24, radius: 12, gap: 3, liner: 1 },
-  { minCellSize: 12, radius: 6, gap: 2, liner: 0.75 },
-  { minCellSize: 0, radius: 2, gap: 1, liner: 0.5 },
+  { minCellSize: 40, radius: 18, gap: 4, liner: 1, joinColours: false },
+  { minCellSize: 24, radius: 12, gap: 3, liner: 1, joinColours: false },
+  { minCellSize: 12, radius: 6, gap: 2, liner: 0.75, joinColours: false },
+  { minCellSize: 0, radius: 2, gap: 1, liner: 0.5, joinColours: true },
 ] as const
 
 /** Use one detail level across the plot, based on rendered cell dimensions. */
@@ -37,10 +37,11 @@ export function heatmapBlobDetail(columnWidth: number, rowHeight: number) {
   return { ...detail, liner: Math.min(detail.liner, size / 8) }
 }
 
-/** Four-connected colour regions. Original cells remain available for hit testing. */
+/** Four-connected regions, optionally joined across colours. Retain original cells. */
 export function buildHeatmapBlobs(
   model: HistogramHeatmapData,
-  thresholds: readonly number[]
+  thresholds: readonly number[],
+  joinColours = false
 ): HeatmapBlob[] {
   const columns = new Map(
     model.columns.map((column, index) => [column.key, index])
@@ -70,7 +71,7 @@ export function buildHeatmapBlobs(
       for (const [dx, dy] of directions) {
         const neighbourKey = pointKey({ x: cell.x + dx, y: cell.y + dy })
         const neighbour = grid.get(neighbourKey)
-        if (neighbour?.band === seed.band && !visited.has(neighbourKey)) {
+        if (neighbour && (joinColours || neighbour.band === seed.band) && !visited.has(neighbourKey)) {
           visited.add(neighbourKey)
           queue.push(neighbour)
         }
@@ -92,7 +93,8 @@ export function buildHeatmapBlobs(
       ] as const
       for (let side = 0; side < 4; side++) {
         const [dx, dy] = neighbours[side]!
-        if (grid.get(pointKey({ x: x + dx, y: y + dy }))?.band === seed.band)
+        const neighbour = grid.get(pointKey({ x: x + dx, y: y + dy }))
+        if (neighbour && (joinColours || neighbour.band === seed.band))
           continue
         edges.push({
           start: corners[side]!,

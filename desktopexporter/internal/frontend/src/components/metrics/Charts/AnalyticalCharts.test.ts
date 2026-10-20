@@ -3,6 +3,7 @@ import { fireEvent, render, screen } from '@testing-library/svelte'
 import { tick, type Component } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import HistogramChart from './HistogramChart.svelte'
+import { chartPadding } from './MetricChartPlot.svelte'
 import HistogramHeatmap from './HistogramHeatmap.svelte'
 import MetricTimeSeriesChart from './MetricTimeSeriesChart.svelte'
 import MetricChartHarness from '@/test/MetricChartHarness.svelte'
@@ -679,6 +680,7 @@ describe('HistogramChart keyboard model', () => {
   })
 
   it('syncs a pointer-pinned bucket and does not auto-scroll it before focus', async () => {
+    clientWidthSpy!.mockReturnValue(630)
     const bounds = Array.from({ length: 20 }, (_, index) => index)
     const datapoint = histogramDatapoint(
       'scrolling-histogram',
@@ -706,13 +708,23 @@ describe('HistogramChart keyboard model', () => {
     })
     scroller.scrollLeft = 17
 
-    await fireEvent.click(wrapper, { clientX: 160, clientY: 100 })
+    const selectedBar = wrapper.querySelectorAll('.histogram-bar__fill')[19]!
+    const clientX =
+      chartPadding.left +
+      Number(selectedBar.getAttribute('x')) +
+      Number(selectedBar.getAttribute('width')) / 2
+    const clientY =
+      chartPadding.top +
+      Number(selectedBar.getAttribute('y')) +
+      Number(selectedBar.getAttribute('height')) / 2
+    await fireEvent.click(wrapper, { clientX, clientY })
     await tick()
     expect(scroller.scrollLeft).toBe(17)
-    expect(readout()).toMatch(/Bucket (19|20|21) of 21/)
+    expect(readout()).toContain('Bucket 20 of 21, 18 – 19. Count 20.')
 
     await fireEvent.focus(surface)
     await tick()
+    expect(readout()).toContain('Bucket 20 of 21, 18 – 19. Count 20.')
     expect(scroller.scrollLeft).toBeGreaterThan(17)
   })
 
@@ -731,7 +743,7 @@ describe('HistogramChart keyboard model', () => {
     })
 
     await fireEvent.focus(rangedSurface)
-    expect(readout()).toContain('[-1.0e-3, +1.0e-3]')
+    expect(readout()).toContain('[-0.001, +0.001]')
     unmount()
 
     const exact = exponentialHistogramDatapoint('exact-zero', 0)
@@ -918,7 +930,7 @@ describe('HistogramHeatmap keyboard model', () => {
       label => label.textContent
     )
     expect(labels).toEqual(
-      expect.arrayContaining(['22:13:20', '>2.00', '(1.00, 2.00]', '≤1.00'])
+      expect.arrayContaining(['22:13:20', '>2', '(1, 2]', '≤1'])
     )
   })
 
@@ -1022,16 +1034,23 @@ describe('HistogramHeatmap keyboard model', () => {
     })
 
     await fireEvent.focus(surface)
-    expect(readout()).toContain('Row 1 of 4, bucket >1.00. Count 0.')
+    expect(readout()).toContain('Row 1 of 4, bucket >1.003. Count 0.')
     await fireEvent.keyDown(surface, { key: 'ArrowDown' })
-    expect(readout()).toContain('Row 2 of 4, bucket (1.00, 1.00]. Count 0.')
+    expect(readout()).toContain('Row 2 of 4, bucket (1.002, 1.003]. Count 0.')
     await fireEvent.keyDown(surface, { key: 'ArrowDown' })
-    expect(readout()).toContain('Row 3 of 4, bucket (1.00, 1.00]. Count 0.')
+    expect(readout()).toContain('Row 3 of 4, bucket (1.001, 1.002]. Count 0.')
+    await fireEvent.keyDown(surface, { key: 'ArrowDown' })
+    expect(readout()).toContain('Row 4 of 4, bucket ≤1.001. Count 5.')
+    await fireEvent.keyDown(surface, { key: 'ArrowUp' })
     await fireEvent.keyDown(surface, { key: 'ArrowRight' })
+    expect(readout()).toContain('Row 3 of 4, bucket (1.001, 1.002]. Count 0.')
     await fireEvent.keyDown(surface, { key: 'Home' })
     expect(readout()).toContain('Column 1 of 2')
     await fireEvent.keyDown(surface, { key: 'End' })
     expect(readout()).toContain('Column 2 of 2')
+    await fireEvent.keyDown(surface, { key: 'ArrowUp' })
+    await fireEvent.keyDown(surface, { key: 'ArrowUp' })
+    expect(readout()).toContain('Row 1 of 4, bucket >1.003. Count 7.')
     await fireEvent.keyDown(surface, { key: 'Enter' })
     expect(onSelect).toHaveBeenLastCalledWith(points[1]!.timestamp)
   })

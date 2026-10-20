@@ -62,7 +62,7 @@
   --item-selected-bg: var(--color-highlight-med);
   --guide-dot-radius: 0.75px;
   --guide-dot-color: var(--color-muted);
-  --guide-dot-opacity: 1;
+  --guide-dot-opacity: 0.75;
   --guide-dot-step: calc(var(--table-row-h) / 3);
   --resize-grip-length: 3rem;
   --resize-grip-thickness: 0.1875rem;

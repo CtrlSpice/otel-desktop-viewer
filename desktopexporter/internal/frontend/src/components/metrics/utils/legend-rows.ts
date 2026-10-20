@@ -1,22 +1,25 @@
-/** Halve row capacity until balanced rows fit the measured available width. */
+/** Fill each row in order, avoiding a lone final entry when the last pair fits. */
 export function legendRowEnds(widths: readonly number[], available: number, gap: number): number[] {
   if (widths.length === 0) return []
-  for (let capacity = widths.length; ; capacity = Math.ceil(capacity / 2)) {
-    const rowCount = Math.ceil(widths.length / capacity)
-    const smallRow = Math.floor(widths.length / rowCount)
-    const largerRows = widths.length % rowCount
-    const ends: number[] = []
-    let start = 0
-    let fits = true
-    for (let row = 0; row < rowCount; row++) {
-      const count = smallRow + (row < largerRows ? 1 : 0)
-      const end = start + count
-      const width = widths.slice(start, end).reduce((sum, value) => sum + value, 0)
-        + (count - 1) * gap
-      if (width > available) fits = false
-      ends.push(end)
-      start = end
+  const ends: number[] = []
+  let start = 0
+  let used = 0
+  for (let index = 0; index < widths.length; index++) {
+    const next = used + (index > start ? gap : 0) + widths[index]!
+    if (index > start && next > available) {
+      ends.push(index)
+      start = index
+      used = widths[index]!
+    } else {
+      used = next
     }
-    if (fits || capacity === 1) return ends
   }
+  ends.push(widths.length)
+  const previousEnd = ends.at(-2)
+  const previousStart = ends.at(-3) ?? 0
+  if (previousEnd === widths.length - 1 && previousEnd - previousStart > 2 &&
+    widths.at(-2)! + gap + widths.at(-1)! <= available) {
+    ends[ends.length - 2] = previousEnd - 1
+  }
+  return ends
 }

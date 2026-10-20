@@ -130,6 +130,24 @@ describe('RawJsonInspector selection changes', () => {
 })
 
 describe('RawJsonInspector metadata', () => {
+  it('automatically fetches metric metadata while keeping the whole metric download URL', async () => {
+    const request = await mockExport()
+    const url = '/export/metrics/example'
+    render(RawJsonInspector, {
+      active: true,
+      wholeURL: url,
+      scopes: [{ id: 'metric', label: 'Metric', url, previewURL: `${url}?includeDatapoints=false` }],
+    })
+    await screen.findByLabelText('Raw OTLP JSON')
+    expect(request.fetch.mock.calls.map(([url, init]) => [url, init.method ?? 'GET'])).toEqual([
+      [`${url}?includeDatapoints=false`, 'HEAD'],
+      [`${url}?includeDatapoints=false`, 'GET'],
+    ])
+    expect(screen.queryByRole('button', { name: /^Load/ })).toBeNull()
+    expect(screen.queryByRole('link', { name: /^Download/ })).toBeNull()
+    expect(screen.getByText(/^OTLP JSON/)).toHaveTextContent('without datapoints')
+  })
+
   it('keeps the format indicator and explains its size and provenance on hover instead of in paragraphs', () => {
     const { container } = render(RawJsonInspector, {
       active: false,

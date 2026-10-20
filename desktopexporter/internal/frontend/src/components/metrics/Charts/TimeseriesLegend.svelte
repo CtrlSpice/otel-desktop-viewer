@@ -131,7 +131,7 @@
   }
 
   .timeseries-legend__count--cap {
-    @apply text-warning font-semibold;
+    @apply text-base-content font-normal;
   }
 
   .timeseries-legend__list {
@@ -198,6 +198,6 @@
   }
 
   .timeseries-legend__cap-note {
-    @apply text-xs text-warning/80 m-0;
+    @apply text-xs text-base-content m-0;
   }
 </style>

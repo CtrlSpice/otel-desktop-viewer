@@ -47,10 +47,13 @@ describe('LogCard', () => {
     expect(screen.queryByText('Log', { exact: true })).toBeNull()
   })
 
-  it('can show its log provenance beside the severity for associated logs', () => {
+  it('shows log provenance beside the service and keeps severity separate', () => {
     const { container } = renderCard({ log: makeLog(), showLogBadge: true })
     expect(container.querySelector('.signal-row__badge')).toHaveTextContent(
-      'Log ERROR (17)'
+      'ERROR (17)'
+    )
+    expect(container.querySelector('.signal-row__title')).toHaveTextContent(
+      /^checkout-service · Log$/
     )
   })
 

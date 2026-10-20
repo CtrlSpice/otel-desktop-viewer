@@ -100,7 +100,7 @@
 
   .callout-mini--unknown,
   .callout-unknown {
-    @apply text-warning;
+    @apply text-base-content;
   }
 
   /*

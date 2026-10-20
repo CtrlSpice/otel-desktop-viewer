@@ -4,20 +4,21 @@ import { legendRowEnds } from './legend-rows'
 describe('legendRowEnds', () => {
   const widths = Array<number>(12).fill(60)
 
-  it('keeps one row when it fits, then halves to six and three entries per row', () => {
+  it('fills available width without leaving a lone final entry', () => {
     expect(legendRowEnds(widths, 896, 16)).toEqual([12])
-    expect(legendRowEnds(widths, 895, 16)).toEqual([6, 12])
+    expect(legendRowEnds(widths, 895, 16)).toEqual([10, 12])
+    expect(legendRowEnds(widths, 668, 16)).toEqual([9, 12])
     expect(legendRowEnds(widths, 440, 16)).toEqual([6, 12])
-    expect(legendRowEnds(widths, 439, 16)).toEqual([3, 6, 9, 12])
+    expect(legendRowEnds(widths, 439, 16)).toEqual([5, 10, 12])
   })
 
-  it('balances odd counts instead of leaving a last row with one entry', () => {
+  it('moves one item to the final row only when needed to avoid a lone item', () => {
     expect(legendRowEnds(widths.slice(0, 9), 364, 16)).toEqual([5, 9])
     expect(legendRowEnds(widths.slice(0, 10), 212, 16)).toEqual([3, 6, 8, 10])
   })
 
   it('measures each whole row, including wider count labels and gaps', () => {
-    expect(legendRowEnds([40, 40, 100, 100], 215, 16)).toEqual([1, 2, 3, 4])
+    expect(legendRowEnds([40, 40, 100, 100], 215, 16)).toEqual([3, 4])
     expect(legendRowEnds([40, 40, 100, 100], 216, 16)).toEqual([2, 4])
   })
 

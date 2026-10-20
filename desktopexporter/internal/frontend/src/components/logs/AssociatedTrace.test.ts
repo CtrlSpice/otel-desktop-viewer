@@ -35,7 +35,7 @@ describe('AssociatedTrace', () => {
     })
     const card = await screen.findByRole('button', { name: /POST \/checkout/ })
     expect(card).toHaveClass('signal-row')
-    expect(card).toHaveTextContent('api')
+    expect(screen.getByText('api', { exact: true })).toBeVisible()
     expect(card).toHaveTextContent('5 spans')
     expect(card).toHaveTextContent('2 err')
     expect(getTraceSummary).toHaveBeenCalledWith(

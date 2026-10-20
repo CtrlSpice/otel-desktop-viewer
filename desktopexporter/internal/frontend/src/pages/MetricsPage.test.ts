@@ -254,7 +254,9 @@ describe('Metric main-header range', () => {
       await renderSelected(metricType)
       const header = screen.getByRole('region', { name: 'Metric chart' })
       expect(header.querySelector('[aria-label="Chart time range"]')).toBeNull()
-      expect(document.querySelector('.metric-chart-view .heatmap-legend')).toBeNull()
+      expect(
+        document.querySelector('.metric-chart-view .heatmap-legend')
+      ).toBeNull()
     }
   )
 })
@@ -280,8 +282,13 @@ describe('Metric main-header export', () => {
       })
       const title = within(header).getByText('demo.metric', { exact: true })
       expect(
-        button.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING
+        title.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING
       ).not.toBe(0)
+      expect(
+        within(button.closest<HTMLElement>('.pane-header__right')!)
+          .getAllByRole('button')
+          .at(-1)
+      ).toBe(button)
       const chartTabs = within(header).queryByRole('tablist')
       if (chartTabs) {
         expect(

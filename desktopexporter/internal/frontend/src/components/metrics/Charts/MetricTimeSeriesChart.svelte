@@ -10,6 +10,7 @@
   import { curveStepAfter } from 'd3-shape'
   import {
     formatMetricValue,
+    formatMetricHoverValue,
     formatRateSlopeValue,
   } from '@/components/metrics/utils/format-metric-value'
   import { getTimeContext } from '@/contexts/time-context.svelte'
@@ -64,7 +65,7 @@
       aggregateKeysInOrder(keys),
       aggregationView,
       key => valueAt(key),
-      formatMetricValue
+      formatMetricHoverValue
     )
   }
 
@@ -808,7 +809,7 @@
         kind: 'min',
         statLabel: SERIES_STAT_LABEL.min,
         valueText,
-        title: `min ${valueText}`,
+        title: `min ${formatMetricHoverValue(stats.min)}`,
         color: series.color,
         dotDate: minPoint.date,
         y: stats.min,
@@ -826,7 +827,7 @@
         kind: 'max',
         statLabel: SERIES_STAT_LABEL.max,
         valueText,
-        title: `max ${valueText}`,
+        title: `max ${formatMetricHoverValue(stats.max)}`,
         color: series.color,
         dotDate: maxPoint.date,
         y: stats.max,
@@ -844,7 +845,7 @@
           kind: 'slope',
           statLabel: SERIES_STAT_LABEL.slope,
           valueText,
-          title: `rate slope ${valueText}`,
+          title: `rate slope ${formatRateSlopeValue(segment.slope, unit, { maxSignificantDigits: 6 })}`,
           color,
           dotDate: segment.to.date,
           y: segment.to.value,
@@ -859,7 +860,7 @@
         kind: 'avg',
         statLabel: SERIES_STAT_LABEL.avg,
         valueText,
-        title: `avg ${valueText}`,
+        title: `avg ${formatMetricHoverValue(stats.avg)}`,
         color,
         dotDate: highlightDate,
         y: stats.avg,
@@ -1052,7 +1053,7 @@
                         label={s.label}
                         {value}
                         color={s.color}
-                        format={formatMetricValue}
+                        format={formatMetricHoverValue}
                         valueAlign="right"
                       />
                     {/if}

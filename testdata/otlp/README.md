@@ -9,6 +9,7 @@ defined in the data rather than regenerated at runtime.
 | `small/` | Shared shop workload with failure/success/latency comparisons, deployment groups, log correlations and all supported Metric types | 48 spans, 40 logs, 96 datapoints |
 | `demo/` | Captured synthetic dev data: multi-service traces, errors, deep/orphan traces, scalar and histogram Metric series, logs | 101 spans, 23 logs, 9,901 datapoints |
 | `heatmap-playground/` | Six paired histogram/exponential-histogram distributions, with three series per metric | 3,858 datapoints |
+| `heatmap-density/` | Paired histogram/exponential-histogram colour patterns at four densities | 768 datapoints |
 | `checkout/` | Small checkout failure with correlated logs and a Metric exemplar | 6 spans, 3 logs, 7 datapoints |
 | `usability-pilot/` | Original six-task evaluation fixture, with typed values, a 31-value inventory and child-time boundaries | 33 spans, 7 logs, 2 datapoints |
 

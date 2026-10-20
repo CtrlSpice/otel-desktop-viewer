@@ -57,7 +57,7 @@ describe('LinksPanel trace correlation', () => {
       ],
     })
     expect(screen.getByRole('button')).toHaveAccessibleName(
-      'linked-trace / linked-span Link 3 fields'
+      'linked-trace / linked-span · Link 3 fields'
     )
   })
 

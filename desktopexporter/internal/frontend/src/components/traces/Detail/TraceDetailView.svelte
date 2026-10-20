@@ -452,7 +452,7 @@
      looking. Same split as the rows: warning gold for every stranded span,
      error red for the retained cycle point. */
   .detail-view__paradox {
-    @apply m-2 rounded px-3 py-2 text-xs text-warning;
+    @apply m-2 rounded px-3 py-2 text-xs text-base-content;
     background: color-mix(in srgb, var(--color-warning) 12%, transparent);
   }
 

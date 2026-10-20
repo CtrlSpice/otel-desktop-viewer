@@ -1,15 +1,11 @@
 <script lang="ts">
   import type { WaterfallGridLayout } from './WaterfallTimeAxisHeader.svelte'
 
-  let {
-    layout,
-    continuation = false,
-  }: { layout: WaterfallGridLayout; continuation?: boolean } = $props()
+  let { layout }: { layout: WaterfallGridLayout } = $props()
 </script>
 
 <div
   class="waterfall-grid"
-  class:waterfall-grid--continuation={continuation}
   style:width="calc({layout.widthPx}px + var(--guide-dot-radius))"
   aria-hidden="true"
 >
@@ -18,7 +14,6 @@
       class="waterfall-grid__guide dot-guide-vertical"
       class:dot-guide-vertical--minor={!guide.major}
       style:left="calc({guide.offsetPx}px + var(--guide-dot-radius))"
-      style:opacity="calc(var(--guide-dot-opacity) * {guide.opacity})"
     ></span>
   {/each}
 </div>
@@ -29,11 +24,6 @@
   .waterfall-grid {
     @apply pointer-events-none absolute top-0 bottom-0 z-0 overflow-hidden;
     left: calc(0px - var(--guide-dot-radius));
-  }
-
-  .waterfall-grid--continuation {
-    bottom: auto;
-    height: var(--table-row-h);
   }
 
   .waterfall-grid__guide {

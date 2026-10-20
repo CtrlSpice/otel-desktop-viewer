@@ -24,7 +24,7 @@
     label={summary.definition?.name ?? 'Results'}
   >
     {#snippet right()}
-      <span class="text-xs text-rp-subtle" title={run.id}>
+      <span class="text-sm text-rp-subtle" title={run.id}>
         <span class="sr-only">Run ID: </span>
         <Identifier value={run.id} />
       </span>
@@ -44,7 +44,9 @@
       pauseReason={run.pauseReason}
     />{/snippet}
   {#snippet date()}
-    <div class="grid grid-cols-3 items-center gap-2 text-xs tabular-nums">
+    <div
+      class="flex min-h-[var(--signal-card-row-h)] flex-wrap items-center justify-between gap-x-2 gap-y-0 text-sm tabular-nums"
+    >
       <span title="Completed investigations / planned attempts"
         >Assessed: <span class="text-base-content"
           >{summary.assessed}/{summary.planned}</span
@@ -62,15 +64,15 @@
         title={summary.assessment
           ? `${summary.definition?.name}: provisional mean across ${summary.assessment.denominator} ${summary.definition?.aggregation === 'planned' ? 'planned' : 'scored'} attempts`
           : 'No headline assessment defined'}
-        >Score: <strong class="text-base-content"
-          >{percent(summary.assessment?.percent ?? null)}</strong
+        >Score: <span class="text-base-content"
+          >{percent(summary.assessment?.percent ?? null)}</span
         ></span
       >
     </div>
   {/snippet}
   {#snippet meta()}
     <div
-      class="flex w-full flex-wrap items-center justify-between gap-x-2 gap-y-1 text-xs tabular-nums"
+      class="flex min-h-[var(--signal-card-row-h)] w-full flex-wrap items-center justify-between gap-x-2 gap-y-0 text-sm tabular-nums"
     >
       <span>
         Tool calls: <span class="text-base-content">{summary.toolCalls}</span>

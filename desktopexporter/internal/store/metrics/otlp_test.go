@@ -137,6 +137,55 @@ func TestGetMetricOTLP(t *testing.T) {
 	assert.True(t, math.Signbit(edp.ZeroThreshold()))
 }
 
+func TestGetMetricOTLPWithoutDatapoints(t *testing.T) {
+	s, ctx := storetest.New(t)
+	require.NoError(t, s.WithConn(func(conn driver.Conn) error {
+		return metrics.Ingest(ctx, conn, otlpMetricFixture(), s.FlushedIDs())
+	}))
+	ids := metricMetricIDs(t, s, ctx)
+	for _, name := range []string{"otlp.gauge", "otlp.sum", "otlp.histogram", "otlp.exponential"} {
+		t.Run(name, func(t *testing.T) {
+			expected, err := (&pmetric.JSONUnmarshaler{}).UnmarshalMetrics(getMetricOTLP(t, s, ctx, ids[name]))
+			require.NoError(t, err)
+			metric := expected.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0)
+			switch metric.Type() {
+			case pmetric.MetricTypeGauge:
+				metric.Gauge().DataPoints().RemoveIf(func(pmetric.NumberDataPoint) bool { return true })
+			case pmetric.MetricTypeSum:
+				metric.Sum().DataPoints().RemoveIf(func(pmetric.NumberDataPoint) bool { return true })
+			case pmetric.MetricTypeHistogram:
+				metric.Histogram().DataPoints().RemoveIf(func(pmetric.HistogramDataPoint) bool { return true })
+			case pmetric.MetricTypeExponentialHistogram:
+				metric.ExponentialHistogram().DataPoints().RemoveIf(func(pmetric.ExponentialHistogramDataPoint) bool { return true })
+			}
+			raw, err := readStore(s, func(db *sql.DB) (json.RawMessage, error) {
+				return metrics.GetMetricSelectionOTLP(ctx, db, ids[name], "", "", false)
+			})
+			require.NoError(t, err)
+			assert.NotContains(t, string(raw), `"dataPoints"`)
+			assert.NotContains(t, string(raw), `"exemplars"`)
+			assert.Contains(t, string(raw), `"intValue":"-9223372036854775808"`)
+			got, err := (&pmetric.JSONUnmarshaler{}).UnmarshalMetrics(raw)
+			require.NoError(t, err)
+			assert.Equal(t, 0, got.DataPointCount())
+			wantJSON, err := (&pmetric.JSONMarshaler{}).MarshalMetrics(expected)
+			require.NoError(t, err)
+			gotJSON, err := (&pmetric.JSONMarshaler{}).MarshalMetrics(got)
+			require.NoError(t, err)
+			assert.JSONEq(t, string(wantJSON), string(gotJSON))
+		})
+	}
+	// Metadata must not reconstruct datapoints, including invalid stored oneofs.
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		_, err := db.Exec("update metric_datapoints set value_type = 'Double', double_value = null, int_value = null")
+		return err
+	}))
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		_, err := metrics.GetMetricSelectionOTLP(ctx, db, ids["otlp.gauge"], "", "", false)
+		return err
+	}))
+}
+
 func TestValidateMetricOTLPRejectsInvalidWireShapes(t *testing.T) {
 	s, ctx := storetest.New(t)
 	require.NoError(t, s.WithConn(func(conn driver.Conn) error {

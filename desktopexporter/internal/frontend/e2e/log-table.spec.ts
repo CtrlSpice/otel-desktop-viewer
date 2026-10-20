@@ -1057,7 +1057,7 @@ test('discovered columns retain typed values, provenance, drafts and saved selec
     const { id, method, params } = route.request().postDataJSON()
     let result
     if (method === 'getLog') result = detail
-    else if (method === 'getLogAttributeDefinitions') result = discovery ? values.filter(entry => entry.column.kind === 'attribute').map(entry => ({ name: entry.column.key, attributeScope: entry.column.source, type: 'string' })) : []
+    else if (method === 'getLogAttributeDefinitions') result = discovery ? values.flatMap(entry => entry.column.kind === 'attribute' ? [{ name: entry.column.key, attributeScope: entry.column.source, type: 'string' }] : []) : []
     else if (method === 'searchLogPage') {
       requests.push(params)
       result = { total: 1, logs: [{ ...detail, timestamp: detail.observedTimestamp, serviceName: 'api', bodyPreview: 'body preview', columnValues: (params.columns ?? []).map((column: LogColumn) => ({ ...column, values: values.find(entry => entry.column.source === column.source && entry.column.kind === column.kind && entry.column.key === column.key)!.values })) }] }

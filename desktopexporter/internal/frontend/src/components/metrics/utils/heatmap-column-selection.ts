@@ -5,7 +5,7 @@ import {
 import type { HistogramSlicePoint } from '@/components/metrics/utils/histogram-aggregation'
 import type { HistogramTotals } from '@/components/metrics/utils/histogram-aggregation'
 import type { SelectionLegendRow } from '@/components/metrics/Charts/ChartSelectionLegend.svelte'
-import { formatMetricValue } from '@/components/metrics/utils/format-metric-value'
+import { formatMetricValue, formatMetricCount } from '@/components/metrics/utils/format-metric-value'
 
 export type HeatmapColumnSelection = {
   timestampMs: number
@@ -31,7 +31,7 @@ export function histogramDistributionLegendColumns(opts: {
       key: 'count',
       color: neutral,
       label: 'count',
-      valueText: String(opts.totals.count),
+      valueText: formatMetricCount(opts.totals.count),
     },
     {
       key: 'sum',
@@ -70,7 +70,7 @@ export function histogramDistributionLegendColumns(opts: {
         key: 'zeros',
         color: neutral,
         label: 'zeros',
-        valueText: String(opts.expHistogram.zeroCount),
+        valueText: formatMetricCount(opts.expHistogram.zeroCount),
       },
     ])
   }
@@ -125,7 +125,7 @@ export function quantileMergedSelectionLegendRows(
       key: 'totals-inline',
       color: 'var(--color-base-content)',
       label: '',
-      valueText: `count: ${sel.totals.count} | min: ${formatValue(sel.totals.min)} | max: ${formatValue(sel.totals.max)}`,
+      valueText: `count: ${formatMetricCount(sel.totals.count)} | min: ${formatValue(sel.totals.min)} | max: ${formatValue(sel.totals.max)}`,
     },
   ]
 }

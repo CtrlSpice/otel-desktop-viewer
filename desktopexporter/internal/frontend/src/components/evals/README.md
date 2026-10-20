@@ -36,6 +36,8 @@ Hover or keyboard focus previews an outcome; clicking keeps that label without
 changing the selected run. Clicking the card selects the run and opens Details.
 Tiny groups have an 8px visual minimum; the label shows exact attempt counts and
 shares. Outcome grouping and the headline assessment mean remain separate.
+Run metadata uses the shared working text size and continuous card rows, with
+regular-weight scores. Metadata wraps when needed instead of shrinking text.
 
 The standalone saved-results report remains a separate presentation. Its
 Trace / Span links target this viewer's existing trace routes; the report's

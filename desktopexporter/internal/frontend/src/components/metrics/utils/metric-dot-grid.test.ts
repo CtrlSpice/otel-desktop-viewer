@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import { scaleBand, scaleLinear, scaleTime } from 'd3-scale'
-import { metricAxisTickPositions, metricDotPositions, metricDotGuides } from './metric-dot-grid'
+import { metricAxisTickPositions, metricDotPositions, metricDotGuides, metricCellEdgeGuides } from './metric-dot-grid'
 
 describe('metricDotPositions', () => {
   it('puts one intermediate position between every pair of labels', () => {
@@ -66,36 +66,36 @@ describe('metricAxisTickPositions', () => {
 })
 
 describe('metricDotGuides', () => {
-  it('keeps positions inside the plot, with only the rightmost at 50%', () => {
-    const guides = metricDotGuides([0, 40, 80], 80, 'end')
-    expect(guides.map(guide => guide.position)).toEqual([0, 20, 40, 60, 80])
-    expect(guides.map(guide => guide.opacity)).toEqual([1, 1, 1, 1, 0.5])
+  it('keeps positions inside the plot', () => {
+    expect(metricDotGuides([0, 40, 80], 80)).toEqual([0, 20, 40, 60, 80])
   })
 
   it('adds boundary anchors to uneven edge gaps without moving the existing dots', () => {
-    const guides = metricDotGuides([18, 58, 138], 160, 'end')
-    expect(guides.map(guide => guide.position)).toEqual([0, 18, 38, 58, 98, 138, 160])
-    expect(guides.at(-1)!.opacity).toBe(0.5)
+    expect(metricDotGuides([18, 58, 138], 160)).toEqual([0, 18, 38, 58, 98, 138, 160])
   })
 
   it('retains a lone label between boundary anchors and leaves an empty axis empty', () => {
-    expect(metricDotGuides([], 80, 'start')).toEqual([])
-    expect(metricDotGuides([40], 80, 'start')).toEqual([
-      { position: 0, opacity: 0.5 },
-      { position: 40, opacity: 1 },
-      { position: 80, opacity: 1 },
-    ])
-    expect(metricDotGuides([], 80, 'end')).toEqual([])
-    expect(metricDotGuides([40], 80, 'end')).toEqual([
-      { position: 0, opacity: 1 },
-      { position: 40, opacity: 1 },
-      { position: 80, opacity: 0.5 },
-    ])
+    expect(metricDotGuides([], 80)).toEqual([])
+    expect(metricDotGuides([40], 80)).toEqual([0, 40, 80])
   })
 
-  it('sets only the top row inside the plot to 50%, not the bottom or other rows', () => {
-    const guides = metricDotGuides([80, 40, 0], 80, 'start')
-    expect(guides.map(guide => guide.position)).toEqual([0, 20, 40, 60, 80])
-    expect(guides.map(guide => guide.opacity)).toEqual([0.5, 1, 1, 1, 1])
+  it('orders reversed value-axis guides within the plot', () => {
+    expect(metricDotGuides([80, 40, 0], 80)).toEqual([0, 20, 40, 60, 80])
+  })
+})
+
+describe('metricCellEdgeGuides', () => {
+  it('uses every cell boundary in normal mode', () => {
+    expect(metricCellEdgeGuides(100, 4, 1)).toEqual([0, 25, 50, 75, 100])
+  })
+
+  it('uses every second boundary when crowded, including the final odd cell edge', () => {
+    expect(metricCellEdgeGuides(140, 7, 2)).toEqual([0, 40, 80, 120, 140])
+  })
+
+  it('keeps one-cell heatmaps bounded and leaves an empty layout empty', () => {
+    expect(metricCellEdgeGuides(80, 1, 1)).toEqual([0, 80])
+    expect(metricCellEdgeGuides(80, 0, 1)).toEqual([])
+    expect(metricCellEdgeGuides(0, 1, 2)).toEqual([])
   })
 })

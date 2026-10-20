@@ -961,7 +961,7 @@
   }
 
   .q-value {
-    color: var(--color-warning);
+    color: var(--color-base-content);
   }
 
   .q-paren {

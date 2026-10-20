@@ -4,6 +4,7 @@ import {
   exponentialZeroBucketIdentity,
   exponentialZeroBucketLabel,
   formatHistogramBound,
+  formatHistogramRange,
   histogramRangeIdentity,
   indexedHistogramRangeIdentity,
   numberIdentity,
@@ -26,8 +27,9 @@ describe('histogram bucket presentation', () => {
       formatHistogramBound(0.001),
       formatHistogramBound(1.234),
       formatHistogramBound(Infinity),
-    ]).toEqual(['-∞', '0', '1.0e-3', '1.23', '+∞'])
-    expect(exponentialZeroBucketLabel(0.001)).toBe('[-1.0e-3, +1.0e-3]')
+    ]).toEqual(['-∞', '0', '0.001', '1.23', '+∞'])
+    expect(exponentialZeroBucketLabel(0.001)).toBe('[-0.001, +0.001]')
+    expect(formatHistogramRange(1.00001, 1.00002)).toBe('(1.00001, 1.00002]')
     expect(exponentialZeroBucketLabel(0)).toBe('0')
   })
 

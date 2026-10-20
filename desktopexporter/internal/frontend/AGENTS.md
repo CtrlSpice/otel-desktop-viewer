@@ -25,6 +25,16 @@
   retain their original values.
   Love/Error uses the original palette colour in every theme, including Dawn
   #b4637a. Do not use a separate darkened error-text colour.
+  Dawn Gold/Warning is the original #ea9d34. The user rejected #895500.
+  Gold is for markers and fills, never text. Warning text uses neutral Text.
+  Never darken, replace or locally override Gold to satisfy contrast checks.
+  Report contrast failures; obtain explicit user approval for any colour/theme
+  change, including changes proposed during cleanup or independent review.
+  Contrast adjustments apply only to colours actually used for text, only in
+  themes where those text/background pairs fail, and only by the smallest amount
+  needed to pass. Preserve marker/fill palette colours; do not darken them to
+  satisfy a text-contrast target. Show measured pairs and proposed values before
+  any further colour change.
   Span and summary breakdown bars use solid palette fills without Dawn-specific
   fading or borders. Error status code/message values use neutral Text with an
   8px Love dot before the value, only when the received status code is 2.
@@ -60,6 +70,9 @@
   Properties.
   Raw JSON places Download at the far right after its circular Collapse/Expand
   controls.
+  Metric Details JSON loads automatically without datapoints using the export
+  option `includeDatapoints=false`; do not show a manual Load button. Preserve
+  complete-metric Copy/Download and the existing bounded preview behaviour.
   Details field cards place Copy at the top-right, aligned with the first heading
   line even when the heading wraps. Its tooltip opens left into the card.
 - Trace waterfall headers use two rows: title / Download, then service · span
@@ -110,30 +123,28 @@
   Keep header surfaces separate; retain shared hover and selection highlights.
   Structured attribute wrappers add no extra left padding. JSON has no fold-arrow
   gutter; retain existing folding commands and raw-inspector controls. The current
-  notebook-guide trial uses 1.5px Muted dots at full opacity in all themes,
+  notebook-guide trial uses 1.5px Muted dots at 75% opacity in all themes,
   in leading indentation
   only, spaced 2ch horizontally and one text line vertically. Place dots on text
   row boundaries (top/bottom), not at the middle of each row. JSON stays Mono.
   JSON strings soft-wrap with continuation text aligned after the opening quote.
   Wrapping and guides are display-only; preserve document text, Copy and Download.
-  JSON and waterfall guides share dot radius and full opacity through the
-  --guide-dot-* CSS tokens. All raw/nested JSON and waterfall dots use Muted at
-  full opacity, including both labelled and unlabelled waterfall guides.
+  JSON, waterfall and metric guides share dot radius and 75% opacity through the
+  --guide-dot-* CSS tokens. Every guide dot uses Muted at 75%, including edges
+  and labelled and unlabelled waterfall guides.
   Add three unlabelled guides between labelled guides, dividing each interval
   into quarters. Use fewer divisions when needed to retain whole nanoseconds.
-  Keep label spacing independent of these guides; ruler, rows and tail align.
+  Keep label spacing independent of these guides; ruler and rows align.
   Paint the waterfall grid behind span bars, labels and activity markers.
   Waterfall dots align to time ticks and span-row
   boundaries, with two equally spaced dot rows inside each span row to divide
   it into thirds. Its ruler uses --table-header-h and meets the first span row
   without an extra border or gap. Graph spacing follows axes, not JSON character spacing.
-  When span rows leave empty space below them, continue the bar-area dots for up
-  to one row and fade them to transparent across that space. This decoration must
-  not add scrollable height or appear below a table that fills its viewport.
-  Continue the same dot columns horizontally through the existing right gutter;
-  fade the final five columns to transparent. Keep ruler/rows/tail aligned,
-  retain Muted at full opacity before the fade, and do not extend time labels, data bounds
-  or horizontal scrolling. The right fade and below-table fade are decorative.
+  Clip waterfall dots at the timeline's right edge and stop at the final span row;
+  do not extend them into the right gutter or below the table.
+  Keep the first column's dots whole, with the original half-dot allowance to
+  the left of their centres. Keep ruler/row positions aligned without
+  changing time labels, data bounds, span geometry or scrolling.
   Column and panel resizing share a short 3rem by 0.1875rem grip, rotated for
   horizontal dividers. Hide it at rest; show Text on hover and Iris on keyboard
   focus or drag at full opacity. Preserve full hit strips and keyboard controls.
@@ -159,7 +170,7 @@
   dropdown metadata. Search suggestions use Next at 14px/21px, with plain
   Secondary metadata and Subtle dot separators. Service/severity filter options
   use plain text with meaningful colour dots and the shared item selection/hover
-  highlights, not coloured pills. Datapoint flags use plain warning text.
+  highlights, not coloured pills. Datapoint flags use plain neutral Text.
   Timeline activity popover entries use two lines: event name or shared log
   severity in Text, with the Subtle offset at the right; Subtle record type below.
   Logs put a received event name after `Log ·` on the second line when present.
@@ -225,32 +236,47 @@
   tokens; components consume them without hardcoded size overrides.
   Metric line, histogram and heatmap charts use a continuous solid 1px Muted
   left/bottom axis border with the cards' --radius-xl bottom-left join. Keep
-  existing plot insets, labels and scales; disable the old
+  shared plot insets (24px top, 72px right, 96px bottom, 136px left), labels and scales; disable the old
   separate axis rules. Axis tick marks also use 1px Muted. The shared border is
   decorative, hidden from assistive technology and cannot intercept pointers.
-   All metric line/histogram/heatmap charts use a full dot grid behind data,
-   anchored to visible X/Y ticks with two equal subdivisions of each labelled
+  Keep axis range labels on one line with both bounds and brackets visible.
+  Graph measurements share grouped decimal formatting from 0.000001 inclusive
+  to 1,000,000 exclusive, and explicit ×10ⁿ outside that range. Use three
+  significant digits on graphs and six on hover, increasing precision when
+  needed to distinguish adjacent bounds. Counts use whole grouped integers.
+  Keep the received unit separate; do not append standalone SI-prefix suffixes
+  or convert received values/units. These are display rules only.
+   All metric line/histogram/heatmap charts use a full dot grid behind data.
+   Line charts and histograms anchor dots to visible X/Y ticks with two equal
+   subdivisions of each labelled
    interval on both axes. Put a dot at every X/Y intersection; do not draw
    independently dotted lines or force square cells. Continue the nearest
    interval's spacing within the plot edges; do not add dots beyond the plot.
    Add dot rows/columns exactly on all four plot boundaries, retaining existing
    label-aligned dots and midpoints; the edge gaps can be shorter.
-   Only the outermost top row and rightmost column use 50% opacity,
-   including their shared corner. All other dots stay at full opacity.
+   Every dot uses 75% opacity, including edges and corners.
    Clip decoration to the plot bounds without
    changing data bounds, plot size or scrolling. Reuse visible-axis options for tick
    calculation, including heatmap tick filtering, and add no duplicate labels.
    Heatmap labels use the line charts' 80px X / 50px Y spacing targets instead
    of a fixed seven-label limit. Select labels from existing time columns and
    bucket rows; preserve exponential-bucket identities, bounds, counts and layout.
-   Match the shared guide tokens: 1.5px Muted dots at full opacity.
+   Heatmap dots follow cell boundaries instead of centred label ticks. Use every
+   boundary, switching both axes to every second boundary when either rendered
+   cell dimension is below 12px. Include both plot edges when the cell count is
+   odd. Labels remain centred. At this same threshold, join neighbouring occupied
+   cells across colour bands and round only their shared outer boundaries.
+   Keep each cell's count colour and preserve empty buckets and holes.
+   Joined shapes retain the existing density-scaled border around their shared
+   perimeter and holes, following each cell's colour without internal borders.
+   Match the shared guide tokens: 1.5px Muted dots, with the opacity rules above.
    Do not retain separate solid-grid or theme-specific grid styling.
   Histogram/heatmap count legends sit on the left of the chart header's lower
   row, replacing the displayed chart time range. Keep chart tabs/controls on the
   right and retain the global time-range selector. At the regular 14px size,
-  legend rows wrap by halving their capacity until they fit the measured width:
-  12 entries become 6+6, then 3+3+3+3. Balance odd counts across rows rather than
-  leaving a lone last item when balanced rows fit. Keep count order and whole
+  legend rows fit as many whole entries as the measured width permits. Move one
+  entry down only to avoid a lone final item when the pair fits and at least two
+  entries remain in the previous row. Keep count order and whole
   labels; do not keep a separate legend above the plot.
   Use plain 8px colour dots beside numeric count ranges, without borders or outlines.
 

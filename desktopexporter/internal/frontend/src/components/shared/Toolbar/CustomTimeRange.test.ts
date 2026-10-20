@@ -28,14 +28,14 @@ describe('CustomTimeRange', () => {
     vi.useRealTimers()
   })
 
-  it('renders exact fields with the calendar collapsed by default', () => {
+  it('renders exact fields with the start calendar open by default', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-01-15T12:00:00.123Z'))
     renderComponent()
-    expect(screen.queryByRole('application')).not.toBeInTheDocument()
+    expect(screen.getByRole('application', { name: /Start date January 2026/ })).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: 'Choose start date' })
-    ).toHaveAttribute('aria-expanded', 'false')
+    ).toHaveAttribute('aria-expanded', 'true')
     expect(
       screen.getByRole('button', { name: 'Choose start date' })
     ).toHaveClass('btn-circle')
@@ -201,9 +201,6 @@ describe('CustomTimeRange', () => {
     vi.setSystemTime(new Date('2026-01-20T12:00:00.000Z'))
     renderComponent()
 
-    await fireEvent.click(
-      screen.getByRole('button', { name: 'Choose start date' })
-    )
     expect(
       screen.getByRole('application', {
         name: /Start date January 2026/,
@@ -216,7 +213,7 @@ describe('CustomTimeRange', () => {
     expect(screen.getByLabelText('Start')).toHaveValue('2026-01-14')
     expect(
       screen.getByRole('button', { name: 'Choose start date' })
-    ).toHaveAttribute('aria-expanded', 'false')
+    ).toHaveAttribute('aria-expanded', 'true')
 
     await vi.advanceTimersByTimeAsync(150)
     await fireEvent.click(
@@ -235,7 +232,13 @@ describe('CustomTimeRange', () => {
     expect(screen.getByLabelText('End time')).toHaveValue('12:00:00.000')
     expect(
       screen.getByRole('button', { name: 'Choose end date' })
-    ).toHaveAttribute('aria-expanded', 'false')
+    ).toHaveAttribute('aria-expanded', 'true')
+    await fireEvent.click(screen.getByRole('button', { name: 'Thursday, January 15, 2026' }))
+    expect(screen.getByLabelText('End')).toHaveValue('2026-01-15')
+    expect(screen.getByLabelText('Start')).toHaveValue('2026-01-14')
+    await fireEvent.click(screen.getByRole('button', { name: 'Choose end date' }))
+    await vi.advanceTimersByTimeAsync(150)
+    expect(screen.queryByRole('application')).not.toBeInTheDocument()
   })
 
   it('does not couple start and end calendar selections', async () => {
@@ -243,9 +246,6 @@ describe('CustomTimeRange', () => {
     vi.setSystemTime(new Date('2026-01-20T12:00:00.000Z'))
     renderComponent()
 
-    await fireEvent.click(
-      screen.getByRole('button', { name: 'Choose start date' })
-    )
     await fireEvent.click(
       screen.getByRole('button', { name: 'Friday, January 16, 2026' })
     )

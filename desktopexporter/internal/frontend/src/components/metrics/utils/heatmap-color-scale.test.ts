@@ -97,7 +97,7 @@ describe('computeHeatmapColorScale', () => {
       distinctNonZeroCount: 1000,
     })
     expect(scale.swatches).toHaveLength(12)
-    expect(scale.legendEntries.at(-1)?.label).toBe('1000')
+    expect(scale.legendEntries.at(-1)?.label).toBe('1,000')
     expect(scale.thresholds.at(-1)).toBe(1000)
   })
 

@@ -262,7 +262,7 @@ describe('TraceDetailView parent span link', () => {
     const nameKey = document.querySelector(
       '[data-field="name"] .detail-property__key'
     )
-    expect(nameKey).toHaveTextContent(/^name$/)
+    expect(nameKey).toHaveTextContent(/^name · string$/)
     expect(nameKey).not.toHaveTextContent('(root)')
   })
 })
@@ -427,7 +427,11 @@ describe('TraceDetailView detail bubbles', () => {
       screen.getByText('Events', { exact: true }).closest('details')
     ).toHaveAttribute('open')
     expect(screen.getByText('Span event', { exact: true })).toBeVisible()
-    expect(screen.getByText('Log', { exact: true })).toBeVisible()
+    expect(
+      screen
+        .getByRole('region', { name: 'Log summary' })
+        .querySelector('.signal-row__title')
+    ).toHaveTextContent(/^checkout · Log$/)
     expect(
       screen
         .getByText('Events', { exact: true })
