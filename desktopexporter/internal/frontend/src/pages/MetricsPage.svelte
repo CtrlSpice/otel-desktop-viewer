@@ -179,6 +179,9 @@
 
   let selectedMetric = $state<MetricViewData | undefined>(undefined)
   let detailLoading = $state(false)
+  // Requested series can legitimately return no reduced datapoints (for
+  // example, a cumulative baseline). Keep that distinct from omitted payloads.
+  let loadedDatapointSeries = $state<ReadonlySet<string>>(new Set())
 
   // Cross-series histogram merge for the current legend selection.
   let selectedAggregate = $state<AggregateBucket[] | null>(null)
@@ -623,10 +626,20 @@
     const metric = selectedMetric
     const checked = metricCtx.visibleSeries
     const visible = [...checked].sort()
-    if (!summary || !metric || visible.length === 0) return
+    if (
+      !summary ||
+      !metric ||
+      detailLoading ||
+      metric.metricRef !== summary.metricRef ||
+      visible.length === 0
+    )
+      return
 
     const missing = metric.timeseries.some(
-      ts => checked.has(ts.seriesRef) && ts.datapoints.length === 0
+      ts =>
+        checked.has(ts.seriesRef) &&
+        ts.datapoints.length === 0 &&
+        !loadedDatapointSeries.has(ts.seriesRef)
     )
     if (!missing) return
 
@@ -646,6 +659,8 @@
     reseed = true
   ) {
     const token = ++detailToken
+    const requestedDatapointSeries =
+      datapointSeries ?? persistedVisibleKeys(summary.metricRef) ?? undefined
     try {
       detailLoading = true
       const { startTime, endTime } = selectionToQueryRangeNs(
@@ -677,13 +692,20 @@
           undefined,
           tzName(),
           // Include datapoints only for drawn series; keep all series metadata.
-          datapointSeries ??
-            persistedVisibleKeys(summary.metricRef) ??
-            undefined,
+          requestedDatapointSeries,
           DEFAULT_VISIBLE_TIMESERIES
         )) ?? undefined
       // A slower earlier request must not overwrite a newer answer.
       if (token !== detailToken) return
+      // The store's default limit uses the response's own series order. Replace
+      // this set with each response so a refresh or scope change loads afresh.
+      loadedDatapointSeries = new Set(
+        requestedDatapointSeries ??
+          result?.timeseries
+            .slice(0, DEFAULT_VISIBLE_TIMESERIES)
+            .map(ts => ts.seriesRef) ??
+          []
+      )
       selectedMetric = result
       // Seed state before the result renders.
       if (reseed) metricCtx.seedForMetric(selectedMetric)

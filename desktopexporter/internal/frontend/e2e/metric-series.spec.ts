@@ -297,6 +297,10 @@ test.describe('independent histogram aggregate loading', () => {
       page,
     }) => {
       const pending = await holdAggregates(page, false, readings)
+      // A received empty result must not restart detail/aggregate fetches each
+      // time the 120ms newly-visible-series debounce expires.
+      await page.waitForTimeout(400)
+      expect(pending).toHaveLength(2)
       for (const { route } of pending) {
         await route.fulfill({
           json: {
@@ -351,6 +355,46 @@ test.describe('independent histogram aggregate loading', () => {
       }
     })
   }
+
+  test('empty reduced series load once when newly checked and refresh explicitly', async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('metrics:view:storage-version', '1')
+      localStorage.setItem(
+        'metrics:view:series-layout',
+        JSON.stringify({ visibleKeys: ['first'] })
+      )
+    })
+    const requests: { datapointSeriesRefs?: string[] }[] = []
+    page.on('request', request => {
+      if (!request.url().endsWith('/rpc')) return
+      const body = request.postDataJSON()
+      if (body.method === 'getMetricView') requests.push(body.params)
+    })
+    await holdAggregates(page, false, 1)
+    const checkbox = page.getByRole('checkbox', {
+      name: 'Show route: /second in chart',
+      exact: true,
+    })
+    await expect(checkbox).not.toBeChecked()
+    await page.waitForTimeout(400)
+    expect(requests).toHaveLength(1)
+    expect(requests[0]!.datapointSeriesRefs).toEqual(['first'])
+    await checkbox.check()
+    await expect.poll(() => requests.length).toBe(2)
+    expect(requests[1]!.datapointSeriesRefs).toEqual(['first', 'second'])
+    await page.waitForTimeout(400)
+    expect(requests).toHaveLength(2)
+    await checkbox.uncheck()
+    await checkbox.check()
+    await page.waitForTimeout(400)
+    expect(requests).toHaveLength(2)
+    await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+    await expect.poll(() => requests.length).toBe(3)
+    await page.waitForTimeout(400)
+    expect(requests).toHaveLength(3)
+  })
 
   test('selected contributions paint behind intersecting heatmap quantiles', async ({
     page,
