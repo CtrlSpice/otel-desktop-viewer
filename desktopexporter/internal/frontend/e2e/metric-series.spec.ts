@@ -782,6 +782,10 @@ test.describe('independent histogram aggregate loading', () => {
       name: 'Show route: /second in chart',
       exact: true,
     })
+    await expect(checkbox).toBeAttached()
+    // Allow deferred panel measurements to place the checkbox before clicking.
+    await page.clock.runFor(32)
+    await expect(checkbox).toBeVisible()
     await checkbox.uncheck({ force: true })
     await page.clock.runFor(60)
     expect(pending).toHaveLength(2)
@@ -817,7 +821,7 @@ test.describe('independent histogram aggregate loading', () => {
       await page.getByRole('tab', { name: 'Histogram', exact: true }).click()
       if (fail)
         await expect(
-          page.getByText('No aggregate in range', { exact: true })
+          page.getByText('No bucket data in range', { exact: true })
         ).toBeVisible()
       else await expect(page.locator('.lc-bars-bar')).toHaveCount(3)
       await page.getByRole('tab', { name: 'Heatmap', exact: true }).click()

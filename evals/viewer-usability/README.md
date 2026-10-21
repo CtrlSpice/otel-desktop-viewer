@@ -158,8 +158,9 @@ Requirements: Node >=22.22.0, Go/CGO to build the viewer, and OpenCode
 helpers and tests use TypeScript through Node's native type stripping. Dependencies
 are pinned in the local lockfile. Migration checks ran on Node v26.7.0; the documented
 22.22.0 minimum has not been exercised. The suite pins its own TypeScript compiler
-and Node types, so its tests and type check do not require a frontend install.
-The optional `typecheck:presentation` command requires the frontend dependencies.
+and Node types, so `typecheck` and `verify:loader` do not require a frontend install.
+The full `npm test` suite includes presentation-builder tests that require the
+frontend dependencies, as does the optional `typecheck:presentation` command.
 Run preparation is explicit (`npm run prepare:run`); installing dependencies
 does not create a run or start a viewer.
 The `go.mod` here is a module boundary: application `go test ./...` must not
@@ -169,8 +170,11 @@ From the repository root:
 
 ```sh
 npm ci --prefix evals/viewer-usability --no-audit --no-fund
-npm test --prefix evals/viewer-usability
 npm run typecheck --prefix evals/viewer-usability
+npm run verify:loader --prefix evals/viewer-usability
+# Install presentation-test prerequisites before running the full suite.
+npm ci --prefix desktopexporter/internal/frontend --no-audit --no-fund
+npm test --prefix evals/viewer-usability
 export OTEL_EVAL_RUN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/otel-eval.XXXXXX")"
 go build -o "$OTEL_EVAL_RUN_DIR/otel-desktop-viewer" .
 node evals/viewer-usability/stage-dataset.ts

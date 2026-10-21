@@ -193,7 +193,7 @@ test('projected locator survives reload and synthetic navigation clears snapshot
   await page.getByRole('button', { name: 'Outcomes filter' }).click()
   await page
     .getByRole('group', { name: 'Outcomes options' })
-    .getByRole('button', { name: 'Pass [1]', exact: true })
+    .getByRole('button', { name: 'Unscored [1]', exact: true })
     .click()
   await page.keyboard.press('Escape')
   const locator = page.url()
@@ -216,7 +216,7 @@ test('projected locator survives reload and synthetic navigation clears snapshot
   )
   await expect(
     page.getByRole('button', { name: 'Outcomes filter' })
-  ).toHaveText('Outcomes (1)')
+  ).toHaveText(/Outcomes\s*\(1\)/)
 })
 
 test('leaving a pending snapshot ignores its late response', async ({
