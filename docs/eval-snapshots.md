@@ -174,8 +174,8 @@ Results and Tool calls even when referenced spans are unavailable.
 
 Run-card outcome segments show only their own colour dot, label and count on
 hover or keyboard focus. The tooltip stays above neighbouring cards. Outcomes
-are also visible in the selected run's section header beside its view controls,
-separately labelled from the execution-status legend. The card's
+are also visible directly below each run card's bar, using the shared summary
+row size. The execution-status legend stays in the results header. The card's
 Started date is at the bottom; an unavailable date stays `—`, with its reason
 on hover. Referenced telemetry cards show the received span status and duration
 when available, and open the exact native Traces location.

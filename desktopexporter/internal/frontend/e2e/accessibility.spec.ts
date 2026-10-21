@@ -343,8 +343,8 @@ for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
       name: 'Pass: 11 attempts',
     })
     await expect(card).toHaveAttribute('aria-pressed', 'true')
-    const runLegend = page.getByRole('list', {
-      name: 'Run outcome legend',
+    const runLegend = shell.getByRole('list', {
+      name: 'Run outcomes for Guide-assisted agent',
       exact: true,
     })
     await expect(runLegend.getByRole('listitem')).toHaveText([
@@ -353,6 +353,32 @@ for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
       'Fail [2]',
     ])
     await expect(runLegend).toBeVisible()
+    const outcomeGeometry = await shell.evaluate(element => {
+      const bar = element
+        .querySelector('.breakdown-bar')!
+        .getBoundingClientRect()
+      const legend = element
+        .querySelector('.legend-rows')!
+        .getBoundingClientRect()
+      const date = element
+        .querySelector('.signal-date')!
+        .getBoundingClientRect()
+      return {
+        belowBar: legend.top >= bar.bottom,
+        aboveDate: legend.bottom <= date.top,
+        rows: [...element.querySelectorAll('.legend-rows__entry')].map(
+          entry => ({
+            height: entry.getBoundingClientRect().height,
+            font: getComputedStyle(entry).fontSize,
+            lineHeight: getComputedStyle(entry).lineHeight,
+          })
+        ),
+      }
+    })
+    expect(outcomeGeometry.belowBar).toBe(true)
+    expect(outcomeGeometry.aboveDate).toBe(true)
+    for (const row of outcomeGeometry.rows)
+      expect(row).toEqual({ height: 24, font: '14px', lineHeight: '21px' })
     await expect(card.locator('.signal-row__header')).toHaveText(
       'Guide-assisted agent Complete'
     )
@@ -396,7 +422,7 @@ for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
     expect(datePlacement.followsBar).toBe(true)
     await expect(bar).toHaveAccessibleName('Pass: 11 attempts')
     await expect(
-      shell.locator('button button, .legend-rows, .signal-row__meta-row')
+      shell.locator('button button, .signal-row__meta-row')
     ).toHaveCount(0)
     const tooltip = page.locator('.breakdown-tooltip:popover-open')
     await page.mouse.move(0, 0)

@@ -11,7 +11,6 @@
   import RunStatusBadge from './RunStatusBadge.svelte'
   import EvalStatus from './EvalStatus.svelte'
   import { caseSummary } from './case-summary'
-  import { runSummary } from './run-summary'
   import TableSortButton from '@/components/shared/TableSortButton.svelte'
   import TableColumnHeading from '@/components/shared/TableColumnHeading.svelte'
   import ResizableTable from '@/components/shared/ResizableTable.svelte'
@@ -87,9 +86,6 @@
   ]
   const enabledViews = $derived([viewKey])
   const viewLabel = $derived(views.find(item => item.id === viewKey)!.label)
-  const outcomeParts = $derived(
-    runSummary(run).parts.filter(part => part.count > 0)
-  )
   function selectView(event: KeyboardEvent, index: number) {
     const direction = ['ArrowRight', 'ArrowDown'].includes(event.key)
       ? 1
@@ -597,26 +593,7 @@
       </div>
     {/snippet}
     {#snippet metaLeft()}
-      <div class="flex min-w-0 flex-col gap-1">
-        <div class="flex min-w-0 items-start gap-2">
-          <span class="shrink-0 text-sm text-rp-subtle">Outcomes</span>
-          <div class="min-w-0 flex-1">
-            <LegendRows
-              items={outcomeParts}
-              label="Run outcome legend"
-              itemKey={entry => entry.label}
-            >
-              {#snippet children(entry)}
-                <span class="inline-flex items-center gap-2 text-sm">
-                  <EvalStatus label={entry.label} tone={entry.tone} />
-                  <span class="text-rp-subtle tabular-nums"
-                    >[{entry.count.toLocaleString()}]</span
-                  >
-                </span>
-              {/snippet}
-            </LegendRows>
-          </div>
-        </div>
+      <div class="flex min-w-0 flex-col">
         <div class="flex min-w-0 items-start gap-2">
           <span class="shrink-0 text-sm text-rp-subtle">Execution</span>
           <div class="min-w-0 flex-1">

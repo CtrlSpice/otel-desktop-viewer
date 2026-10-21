@@ -206,7 +206,7 @@ test('changing run outcome categories settles without observer feedback', async 
     await runs.getByText(name, { exact: true }).click()
     await expect(
       page
-        .getByRole('list', { name: 'Run outcome legend', exact: true })
+        .getByRole('list', { name: `Run outcomes for ${name}`, exact: true })
         .getByRole('listitem')
     ).toHaveCount(count)
     await expectStableLayout(legend)

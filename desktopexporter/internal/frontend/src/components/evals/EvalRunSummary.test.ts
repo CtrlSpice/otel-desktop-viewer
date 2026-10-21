@@ -30,8 +30,11 @@ describe('EvalRunSummary', () => {
     })
     expect(bar).not.toHaveTextContent(/complete|Score:|tool calls|cost:/)
     expect(
-      container.querySelector('.legend-rows, .signal-row__meta-row')
-    ).toBeNull()
+      screen.getByRole('list', {
+        name: 'Run outcomes for Guide-assisted agent',
+      })
+    ).toHaveTextContent('Pass [11] Partial [3] Fail [2]')
+    expect(container.querySelector('.signal-row__meta-row')).toBeNull()
   })
 
   it('exposes each outcome in its own tooltip and selects only through the card', async () => {

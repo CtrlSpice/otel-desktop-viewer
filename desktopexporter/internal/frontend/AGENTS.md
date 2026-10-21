@@ -230,9 +230,10 @@
   describes only its segment; do not include other outcomes, progress, score,
   tool activity or cost. Use the native top layer so neighbouring cards and
   scroll containers cannot cover or clip these tooltips.
-  The selected run's section header also shows a visible small-dot outcome
-  legend with `[count]` beside the existing view controls. Label Outcomes and
-  Execution separately so assessment results cannot be confused with span status.
+  Run summary cards show a visible small-dot outcome legend with `[count]`
+  directly below their outcome bar, using the shared summary row size and text.
+  Keep the execution-status legend in the results header so assessment results
+  cannot be confused with span status.
   A single breakdown category uses its colour dot and name instead of a full-width
   bar. Multiple categories retain the proportionate bar with hover/focus details.
   Results, Tool calls and Cost are a single-select radio group. The active view

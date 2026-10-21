@@ -2,6 +2,8 @@
   import SignalCard from '@/components/shared/SignalCard.svelte'
   import SignalDate from '@/components/shared/SignalDate.svelte'
   import OutcomeBar from '@/components/shared/OutcomeBar.svelte'
+  import LegendRows from '@/components/shared/LegendRows.svelte'
+  import EvalStatus from './EvalStatus.svelte'
   import RunStatusBadge from './RunStatusBadge.svelte'
   import type { EvalRun } from './model'
   import { runSummary } from './run-summary'
@@ -24,6 +26,18 @@
     parts={summary.parts}
     label={summary.definition?.name ?? 'Results'}
   />
+  <LegendRows
+    items={summary.parts}
+    label={`Run outcomes for ${run.name}`}
+    itemKey={entry => `${entry.tone}:${entry.label}`}
+  >
+    {#snippet children(entry)}
+      <EvalStatus label={entry.label} tone={entry.tone} />
+      <span class="text-rp-subtle tabular-nums"
+        >[{entry.count.toLocaleString()}]</span
+      >
+    {/snippet}
+  </LegendRows>
 {/snippet}
 
 <SignalCard

@@ -174,10 +174,12 @@ test('sidebar outcomes filter run cards and preserve full results, selection and
     name: 'Results for Guide-assisted agent',
   })
   const legend = page.getByRole('list', {
-    name: 'Run outcome legend',
+    name: 'Run outcomes for Guide-assisted agent',
     exact: true,
   })
   await expect(cards).toHaveCount(3)
+  await expect(legend).toContainText('Pass [11]')
+  await expect(legend).toContainText('Fail [2]')
   const originalRows = await table.getByRole('row').count()
 
   await trigger.click()
@@ -200,8 +202,7 @@ test('sidebar outcomes filter run cards and preserve full results, selection and
   await expect(cards).toHaveCount(1)
   await expect(cards.first()).toContainText('Direct agent')
   await expect(table.getByRole('row')).toHaveCount(originalRows)
-  await expect(legend).toContainText('Pass [11]')
-  await expect(legend).toContainText('Fail [2]')
+  await expect(legend).toHaveCount(0)
   expect(new URL(page.url()).searchParams.get('attempt')).toBe(
     'request-latency'
   )
