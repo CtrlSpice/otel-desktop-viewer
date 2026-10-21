@@ -190,6 +190,12 @@ test('projected locator survives reload and synthetic navigation clears snapshot
   expect(calls.filter(call => call.method === 'getEvalSnapshot')).toHaveLength(
     1
   )
+  await page.getByRole('button', { name: 'Outcomes filter' }).click()
+  await page
+    .getByRole('group', { name: 'Outcomes options' })
+    .getByRole('button', { name: 'Pass [1]', exact: true })
+    .click()
+  await page.keyboard.press('Escape')
   const locator = page.url()
   await page.reload()
   await expect(page.getByRole('table', { name: /^Results for/ })).toContainText(
@@ -208,6 +214,9 @@ test('projected locator survives reload and synthetic navigation clears snapshot
   await expect(page.getByRole('table', { name: /^Results for/ })).toContainText(
     'Saved case'
   )
+  await expect(
+    page.getByRole('button', { name: 'Outcomes filter' })
+  ).toHaveText('Outcomes (1)')
 })
 
 test('leaving a pending snapshot ignores its late response', async ({

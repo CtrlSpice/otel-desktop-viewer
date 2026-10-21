@@ -5,6 +5,13 @@
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import DateTimeFilter from '@/components/shared/Toolbar/DateTimeFilter.svelte'
   import EvalRunSummary from '@/components/evals/EvalRunSummary.svelte'
+  import EvalOutcomeFilter from '@/components/evals/EvalOutcomeFilter.svelte'
+  import { runSummary } from '@/components/evals/run-summary'
+  import {
+    outcomeKey,
+    readRunOutcomeFilter,
+    runOutcomeOptions,
+  } from '@/components/evals/run-outcome-filter'
   import EvalResults from '@/components/evals/EvalResults.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import EvalDetail from '@/components/evals/EvalDetail.svelte'
@@ -68,6 +75,19 @@
         ? projection.runs
         : []
       : exampleRuns
+  )
+  const outcomeOptions = $derived(runOutcomeOptions(runs))
+  const selectedOutcomes = $derived(
+    readRunOutcomeFilter(query.outcomes, outcomeOptions)
+  )
+  const visibleRuns = $derived(
+    selectedOutcomes.length
+      ? runs.filter(item =>
+          runSummary(item).parts.some(part =>
+            selectedOutcomes.includes(outcomeKey(part))
+          )
+        )
+      : runs
   )
   const sourceCopy = $derived(
     currentSnapshot && projection?.status === 'supported'
@@ -211,14 +231,21 @@
     if (item) showDetail(item.id)
   }
   function showSynthetic() {
-    update({ snapshot: null, run: 'direct', attempt: null, row: null, q: null })
+    update({
+      snapshot: null,
+      run: 'direct',
+      attempt: null,
+      row: null,
+      q: null,
+      outcomes: null,
+    })
   }
 </script>
 
 <PageLayout
   mainSurface="base"
-  items={runs}
-  navigationCount={runs.length}
+  items={visibleRuns}
+  navigationCount={visibleRuns.length}
   selectedID={run?.id ?? null}
   drawerID="signal-drawer"
   drawerLabel="Evals"
@@ -260,6 +287,14 @@
     </div>
   {/snippet}
   {#snippet drawerChromeToolbar()}<DateTimeFilter />{/snippet}
+  {#snippet drawerControls()}
+    <EvalOutcomeFilter
+      options={outcomeOptions}
+      selected={selectedOutcomes}
+      onchange={keys =>
+        update({ outcomes: keys.length ? JSON.stringify(keys) : null })}
+    />
+  {/snippet}
   {#snippet itemSnippet(item, selected)}
     <EvalRunSummary run={item} {selected} onclick={selectRun} />
   {/snippet}
@@ -272,7 +307,14 @@
       error={snapshotError}
       {sourcePointer}
       onOpen={id =>
-        update({ snapshot: id, run: null, attempt: null, row: null, q: null })}
+        update({
+          snapshot: id,
+          run: null,
+          attempt: null,
+          row: null,
+          q: null,
+          outcomes: null,
+        })}
       onDelete={id => {
         if (query.snapshot === id) showSynthetic()
       }}

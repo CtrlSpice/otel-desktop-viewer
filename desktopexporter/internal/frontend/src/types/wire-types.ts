@@ -299,10 +299,10 @@ export type JsonHistogramDataPoint = JsonBaseDataPoint & {
   bucketCounts: string[]
   explicitBounds: JsonDouble[]
   /** Quantile values keyed by the quantile, e.g. {"0.5": 12.4}. Computed in
-   *  the store from this datapoint's buckets; null when none were requested.
+   *  the store from this datapoint's buckets; omitted or null when not computed.
    *  Keys are the quantile as the server formatted it, so look up by the same
    *  string the request sent. */
-  quantiles: Record<string, JsonDouble | null> | null
+  quantiles?: Record<string, JsonDouble | null> | null
   aggregationTemporalityCode: number
   aggregationTemporality: string
 }
@@ -321,10 +321,10 @@ export type JsonExponentialHistogramDataPoint = JsonBaseDataPoint & {
   negativeBucketOffset: number
   negativeBucketCounts: string[]
   /** Quantile values keyed by the quantile, e.g. {"0.5": 12.4}. Computed in
-   *  the store from this datapoint's buckets; null when none were requested.
+   *  the store from this datapoint's buckets; omitted or null when not computed.
    *  Keys are the quantile as the server formatted it, so look up by the same
    *  string the request sent. */
-  quantiles: Record<string, JsonDouble | null> | null
+  quantiles?: Record<string, JsonDouble | null> | null
   aggregationTemporalityCode: number
   aggregationTemporality: string
 }

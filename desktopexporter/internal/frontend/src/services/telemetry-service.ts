@@ -212,9 +212,9 @@ function scalarDeltaFromWire(
 }
 
 function doubleRecordFromJSON(
-  values: Record<string, JsonDouble | null> | null
+  values: Record<string, JsonDouble | null> | null | undefined
 ): Record<string, number | null> | null {
-  if (values === null) return null
+  if (values === null || values === undefined) return null
   return Object.fromEntries(
     Object.entries(values).map(([key, value]) => [
       key,

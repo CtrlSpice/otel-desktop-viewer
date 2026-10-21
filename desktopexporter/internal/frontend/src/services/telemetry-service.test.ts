@@ -679,6 +679,78 @@ describe('telemetryAPI.getMetricView', () => {
     expect(zero).toMatchObject({ sum: 0, min: 0, max: 0 })
   })
 
+  it.each(['Histogram', 'ExponentialHistogram'] as const)(
+    'loads received %s counts when optional quantiles were not computed',
+    async metricType => {
+      stubRpcResult(
+        metricResult({
+          metricType,
+          timeseries: [
+            {
+              seriesRef: 'series-1',
+              attributes: [],
+              resource: { attributes: [], droppedAttributesCount: 0 },
+              datapointCount: 1,
+              lastSeenNs: '2',
+              stats: null,
+              views: null,
+              rateStats: null,
+              sparkline: null,
+              datapoints: [
+                {
+                  id: 'received',
+                  timestamp: '2',
+                  timestampMs: 0,
+                  startTime: '1',
+                  flags: 0,
+                  exemplars: [],
+                  count: '9007199254740993',
+                  sum: null,
+                  min: 0,
+                  max: null,
+                  aggregationTemporalityCode: 2,
+                  aggregationTemporality: 'Cumulative',
+                  ...(metricType === 'Histogram'
+                    ? {
+                        metricType,
+                        explicitBounds: [],
+                        bucketCounts: ['9007199254740993'],
+                      }
+                    : {
+                        metricType,
+                        scale: 0,
+                        zeroCount: '9007199254740993',
+                        zeroThreshold: 0,
+                        positiveBucketOffset: 0,
+                        positiveBucketCounts: [],
+                        negativeBucketOffset: 0,
+                        negativeBucketCounts: [],
+                      }),
+                },
+              ],
+            },
+          ],
+        })
+      )
+      const metric = await telemetryAPI.getMetricView(
+        'some-metric',
+        null,
+        null,
+        0
+      )
+      expect(metric!.timeseries[0]!.datapoints[0]).toMatchObject({
+        id: 'received',
+        metricType,
+        timestamp: 2n,
+        count: 9007199254740993n,
+        sum: null,
+        min: 0,
+        max: null,
+        quantiles: null,
+      })
+    }
+  )
+
   it('decodes recursive attribute int64 values and exceptional double bits once', async () => {
     stubRpcResult(
       metricResult({

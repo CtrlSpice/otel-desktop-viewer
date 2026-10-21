@@ -1,5 +1,5 @@
 <script lang="ts" generics="T">
-  import type { Snippet } from 'svelte'
+  import { onDestroy, type Snippet } from 'svelte'
   import { legendRowEnds } from './utils/legend-rows'
 
   let {
@@ -14,7 +14,32 @@
     children: Snippet<[T]>
   } = $props()
   let availableWidth = $state(0)
-  let entryBounds = $state<DOMRectReadOnly[]>([])
+  let entryWidths = $state<Record<string, number>>({})
+  const pendingWidths = new Map<string, number>()
+  let entryFrame: number | undefined
+  function measureEntry(
+    key: string,
+    bounds: DOMRectReadOnly | null | undefined
+  ) {
+    if (!bounds) return
+    pendingWidths.set(key, bounds.width)
+    if (entryFrame !== undefined) return
+    // Changing categories can move entries between rows. Commit every measured
+    // width together outside observer delivery, keyed by the entry's identity.
+    entryFrame = requestAnimationFrame(() => {
+      entryFrame = undefined
+      entryWidths = Object.fromEntries(
+        items.map(item => {
+          const key = itemKey(item)
+          return [key, pendingWidths.get(key) ?? entryWidths[key] ?? 0]
+        })
+      )
+      pendingWidths.clear()
+    })
+  }
+  onDestroy(() => {
+    if (entryFrame !== undefined) cancelAnimationFrame(entryFrame)
+  })
   let gapWidth = $state(0)
   let element = $state<HTMLDivElement>()
   $effect(() => {
@@ -40,7 +65,7 @@
   })
   const rowEnds = $derived(
     legendRowEnds(
-      items.map((_, index) => entryBounds[index]?.width ?? 0),
+      items.map(item => entryWidths[itemKey(item)] ?? 0),
       availableWidth,
       gapWidth
     )
@@ -51,11 +76,11 @@
   {#each rowEnds as end, row}
     {@const start = row === 0 ? 0 : rowEnds[row - 1]!}
     <div class="legend-rows__row" role="presentation">
-      {#each items.slice(start, end) as item, index (itemKey(item))}
+      {#each items.slice(start, end) as item (itemKey(item))}
         <div
           class="legend-rows__entry"
           role="listitem"
-          bind:contentRect={entryBounds[start + index]}
+          bind:contentRect={null, bounds => measureEntry(itemKey(item), bounds)}
         >
           {@render children(item)}
         </div>

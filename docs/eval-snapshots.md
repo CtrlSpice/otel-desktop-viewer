@@ -157,6 +157,12 @@ source format, and import it. Importing leaves the current synthetic preview in
 place. Open an archived file to inspect its projected runs. **Synthetic preview**
 returns to the examples without deleting the archive.
 
+The sidebar's **Outcomes** filter shows runs containing any selected category.
+Its bracketed counts count runs, once per category, across the current source.
+Filtering keeps the selected run and its complete results open. Clear restores
+all run cards; reload and browser history retain the filter. Opening another
+snapshot or the synthetic preview clears these source-specific selections.
+
 Select a run by its name, then click a table row to inspect it. Results brings
 forward its question, answer or assessment; Tool calls shows execution/output
 and timing; Cost shows that level's estimates. Each run retains its own sorting

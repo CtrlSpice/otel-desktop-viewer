@@ -161,6 +161,73 @@ test('Evals stays closed when its capability is disabled', async ({ page }) => {
   await expect(page.getByRole('table')).toHaveCount(0)
 })
 
+test('sidebar outcomes filter run cards and preserve full results, selection and history', async ({
+  page,
+}) => {
+  await enableEvals(page)
+  await page.goto('/evals?run=guide-assisted&attempt=request-latency')
+  const controls = page.getByRole('group', { name: 'Evals list controls' })
+  const trigger = controls.getByRole('button', { name: 'Outcomes filter' })
+  const options = page.getByRole('group', { name: 'Outcomes options' })
+  const cards = page.locator('[data-drawer-item-key]')
+  const table = page.getByRole('table', {
+    name: 'Results for Guide-assisted agent',
+  })
+  const legend = page.getByRole('list', {
+    name: 'Run outcome legend',
+    exact: true,
+  })
+  await expect(cards).toHaveCount(3)
+  const originalRows = await table.getByRole('row').count()
+
+  await trigger.click()
+  await expect(
+    options.getByRole('button', { name: 'Pass [2]', exact: true })
+  ).toBeVisible()
+  await expect(
+    options.getByRole('button', { name: 'Partial [2]', exact: true })
+  ).toBeVisible()
+  await expect(
+    options.getByRole('button', { name: 'Fail [2]', exact: true })
+  ).toBeVisible()
+  const internalFault = options.getByRole('button', {
+    name: 'Internal fault [1]',
+    exact: true,
+  })
+  await internalFault.focus()
+  await page.keyboard.press('Space')
+  await expect(internalFault).toHaveAttribute('aria-pressed', 'true')
+  await expect(cards).toHaveCount(1)
+  await expect(cards.first()).toContainText('Direct agent')
+  await expect(table.getByRole('row')).toHaveCount(originalRows)
+  await expect(legend).toContainText('Pass [11]')
+  await expect(legend).toContainText('Fail [2]')
+  expect(new URL(page.url()).searchParams.get('attempt')).toBe(
+    'request-latency'
+  )
+
+  await options
+    .getByRole('button', { name: 'Planned [2]', exact: true })
+    .click()
+  await expect(cards).toHaveCount(2)
+  await expect(cards.nth(1)).toContainText('Revised instructions')
+  await page.keyboard.press('Escape')
+  await expect(trigger).toBeFocused()
+  const filteredURL = page.url()
+  await page.reload()
+  await expect(cards).toHaveCount(2)
+  await expect(page).toHaveURL(filteredURL)
+  await trigger.click()
+  await options.getByRole('button', { name: 'Clear outcomes filter' }).click()
+  await expect(cards).toHaveCount(3)
+  expect(new URL(page.url()).searchParams.has('outcomes')).toBe(false)
+  await page.goBack()
+  await expect(cards).toHaveCount(2)
+  await expect(page).toHaveURL(filteredURL)
+  await page.goForward()
+  await expect(cards).toHaveCount(3)
+})
+
 test('run selection, assessments, filtering and browser history stay connected', async ({
   page,
 }) => {

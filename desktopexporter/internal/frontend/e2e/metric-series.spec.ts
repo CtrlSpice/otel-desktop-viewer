@@ -215,7 +215,36 @@ test.describe('independent histogram aggregate loading', () => {
       }
       const result =
         request.method === 'getMetricView'
-          ? { ...histogramMetric, metricRef: request.params.metricRef }
+          ? {
+              ...histogramMetric,
+              metricRef: request.params.metricRef,
+              timeseries: histogramMetric.timeseries
+                .filter(
+                  series =>
+                    !request.params.seriesRefs ||
+                    request.params.seriesRefs.includes(series.seriesRef)
+                )
+                .map(series =>
+                  cumulativeReadings === undefined
+                    ? series
+                    : {
+                        ...series,
+                        datapoints:
+                          request.params.targetBuckets === 0
+                            ? series.datapoints.map(point => ({
+                                ...point,
+                                quantiles: undefined,
+                              }))
+                            : series.datapoints.slice(1).map(point => ({
+                                ...point,
+                                count: '0',
+                                sum: 0,
+                                bucketCounts: ['0', '0', '0'],
+                                quantiles: null,
+                              })),
+                      }
+                ),
+            }
           : request.method === 'searchMetricSummaries'
             ? [
                 histogramSummary,
@@ -303,6 +332,22 @@ test.describe('independent histogram aggregate loading', () => {
         await expect(
           page.locator('.heatmap-cell, .histogram-hover-column')
         ).toHaveCount(0)
+      }
+      if (readings === 2) {
+        const series = page.getByRole('region', {
+          name: 'Timeseries',
+          exact: true,
+        })
+        await series.locator('summary').first().click()
+        await expect(series.locator('.dp-list__range').first()).toContainText(
+          '2 datapoints'
+        )
+        const rows = series.locator('details').first().locator('tr[data-dp-id]')
+        await expect(rows).toHaveCount(2)
+        for (const row of await rows.all()) {
+          await expect(row.locator('td').nth(1)).toHaveText('12')
+          await expect(row.locator('td').nth(2)).toHaveText('18')
+        }
       }
     })
   }

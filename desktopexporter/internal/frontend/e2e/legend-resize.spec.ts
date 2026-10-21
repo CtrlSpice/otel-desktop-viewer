@@ -190,3 +190,26 @@ test('measured legend entries stay whole and rebalance the last pair at resize b
   }
   expect(await page.evaluate(() => window.legendResizeErrors)).toEqual([])
 })
+
+test('changing run outcome categories settles without observer feedback', async ({
+  page,
+}) => {
+  const legend = await openLegend(page)
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto('/evals?run=guide-assisted&attempt=request-latency')
+  await expectStableLayout(legend)
+  const runs = page.getByRole('region', { name: 'Evals list', exact: true })
+  for (const [name, count] of [
+    ['Direct agent', 5],
+    ['Guide-assisted agent', 3],
+  ] as const) {
+    await runs.getByText(name, { exact: true }).click()
+    await expect(
+      page
+        .getByRole('list', { name: 'Run outcome legend', exact: true })
+        .getByRole('listitem')
+    ).toHaveCount(count)
+    await expectStableLayout(legend)
+  }
+  expect(await page.evaluate(() => window.legendResizeErrors)).toEqual([])
+})
