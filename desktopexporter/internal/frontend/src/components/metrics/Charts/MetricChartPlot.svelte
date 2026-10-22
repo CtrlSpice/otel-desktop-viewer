@@ -7,6 +7,10 @@
   import type { Timezone } from '@/utils/time'
 
   const rotatedX = { rotate: 315, textAnchor: 'end' } as const
+  const aboveYAxis = {
+    labelPlacement: 'start' as const,
+    labelProps: { x: 0, dy: 8, textAnchor: 'start' as const },
+  }
 
   const rotatedXBand = {
     ...rotatedX,
@@ -38,6 +42,7 @@
   function valueYAxis(label: string) {
     return {
       label: label.trim() || 'value',
+      ...aboveYAxis,
       rule: false as const,
       format: (value: number) => formatMetricValue(value),
     }
@@ -54,8 +59,10 @@
 
   /** Bucket bounds on the bottom x-axis (histogram bar chart). */
   export function axisBuckets(unit: string) {
+    const { label, rule } = axisBucketBounds(unit)
     return {
-      ...axisBucketBounds(unit),
+      label,
+      rule,
       tickLabelProps: rotatedXBand,
     }
   }
@@ -65,17 +72,14 @@
     const trimmed = unit.trim()
     return {
       label: trimmed ? `value (${trimmed})` : 'value',
+      ...aboveYAxis,
       rule: false as const,
     }
   }
 
   /** Unit or fixed label on the y-axis. */
   export function axisValue(label: string) {
-    return {
-      ...valueYAxis(label),
-      labelPlacement: 'start' as const,
-      labelProps: { x: 0, dy: 8, textAnchor: 'start' as const },
-    }
+    return valueYAxis(label)
   }
 
   export function axisCount() {

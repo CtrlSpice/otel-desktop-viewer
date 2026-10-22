@@ -322,6 +322,8 @@
   Mode changes preserve the selected row, manual disclosure and section sizing.
   Evals Details opens its Details section and available Telemetry section by
   default, sharing the available height equally unless saved sizing exists.
+  Experiment Configuration and Grading use sibling section headers in the
+  Details stack, initially collapsed.
   Other later sections start collapsed. Preserve manual disclosure and resizing.
   Evals telemetry links reuse SignalCard: service-colour dot and span name,
   neutral status text with its status dot, Pine/Secondary provenance, duration,
@@ -386,8 +388,10 @@
   Metric line, histogram and heatmap charts use a continuous solid 1px Muted
   left/bottom axis border with the cards' --radius-xl bottom-left join. Keep
   shared plot insets (24px top, 72px right, 96px bottom, 136px left), labels and scales; disable the old
-  separate axis rules. Time-series charts place the unit horizontally above the
-  Y-axis and use a 96px left inset to reclaim the side-label gutter, with 80px
+  separate axis rules. All charts place their Y-axis label horizontally above
+  the axis, including histogram count and heatmap value/unit labels. Histogram
+  value/unit labels sit above the right end of the X-axis.
+  Time-series charts use a 96px left inset to reclaim the side-label gutter, with 80px
   on the right for average/slope labels.
   When zero coincides with the bottom axis, use its rounded join without a
   duplicate straight zero rule, zero tick or zero label. Retain zero rules and labels inside the plot.

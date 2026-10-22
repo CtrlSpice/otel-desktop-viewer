@@ -626,7 +626,17 @@
     })
   }
   let chartAxes = $derived({
-    xAxis: { ...axisBuckets(unit), format: bucketLabelForKey },
+    xAxis: {
+      ...axisBuckets(unit),
+      format: bucketLabelForKey,
+      labelProps: {
+        x: chartContext?.xRange[1],
+        y: chartContext?.yRange[0],
+        dy: -8,
+        textAnchor: 'end' as const,
+        verticalAnchor: 'end' as const,
+      },
+    },
     yAxis: axisCount(),
   })
 </script>

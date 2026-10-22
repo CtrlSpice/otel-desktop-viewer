@@ -1,7 +1,6 @@
 <script lang="ts">
   import DetailStack from '@/components/shared/DetailStack.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
-  import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import DetailField from '@/components/shared/DetailProperty.svelte'
   import type { EvalRun } from './model'
   import { cost, estimatedCost, localTimestamp } from './model'
@@ -166,47 +165,46 @@
         {/if}
       </tbody>
     </table>
-    <FieldGroup
-      label="Configuration"
-      detail
-      open={false}
-      count={run.configuration.length}
-      countLabel="fields"
-    >
-      <table class="detail-fields w-full" aria-label="Experiment configuration">
-        <tbody
-          >{#each run.configuration as field}<DetailField
-              fieldName={field.name}
-              fieldType="string"
-              fieldValue={field.value}
-            />{/each}</tbody
-        >
-      </table>
-    </FieldGroup>
-    <FieldGroup label="Grading" detail open={false}>
-      <table
-        class="detail-fields w-full"
-        aria-label="Grading for this experiment"
+  </DetailBubble>
+  <DetailBubble
+    label="Configuration"
+    initialOpen={false}
+    count={run.configuration.length}
+    countLabel="fields"
+  >
+    <table class="detail-fields w-full" aria-label="Experiment configuration">
+      <tbody
+        >{#each run.configuration as field}<DetailField
+            fieldName={field.name}
+            fieldType="string"
+            fieldValue={field.value}
+          />{/each}</tbody
       >
-        <tbody>
-          <DetailField
-            fieldName="assessed results"
-            fieldType="string"
-            fieldValue={`${run.reps.filter(item => item.assessments.length > 0).length} / ${run.reps.length}`}
-          />
-          <DetailField
-            fieldName="grader estimate (CAD)"
-            fieldType="string"
-            fieldValue={`${cost(grader.total)}${grader.incomplete && grader.total !== null ? ' · incomplete' : ''}`}
-          />
-          <DetailField
-            fieldName="investigator estimate (CAD)"
-            fieldType="string"
-            fieldValue={`${cost(investigator.total)}${investigator.incomplete && investigator.total !== null ? ' · incomplete' : ''}`}
-          />
-        </tbody>
-      </table>
-    </FieldGroup>
+    </table>
+  </DetailBubble>
+  <DetailBubble label="Grading" initialOpen={false}>
+    <table
+      class="detail-fields w-full"
+      aria-label="Grading for this experiment"
+    >
+      <tbody>
+        <DetailField
+          fieldName="assessed results"
+          fieldType="string"
+          fieldValue={`${run.reps.filter(item => item.assessments.length > 0).length} / ${run.reps.length}`}
+        />
+        <DetailField
+          fieldName="grader estimate (CAD)"
+          fieldType="string"
+          fieldValue={`${cost(grader.total)}${grader.incomplete && grader.total !== null ? ' · incomplete' : ''}`}
+        />
+        <DetailField
+          fieldName="investigator estimate (CAD)"
+          fieldType="string"
+          fieldValue={`${cost(investigator.total)}${investigator.incomplete && investigator.total !== null ? ' · incomplete' : ''}`}
+        />
+      </tbody>
+    </table>
   </DetailBubble>
   <DetailBubble
     label="Telemetry"
