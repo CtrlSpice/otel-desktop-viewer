@@ -80,9 +80,59 @@ func TestDiscoveryRejectsInvalidOptions(t *testing.T) {
 		map[string]any{"kind": "keys", "signal": "logs", "ownerType": "span"},
 		map[string]any{"kind": "values", "signal": "traces", "ownerType": "resource"},
 		map[string]any{"kind": "services", "unexpected": true},
+		map[string]any{"kind": "services", "sortBy": "name"},
+		map[string]any{"kind": "values", "signal": "traces", "ownerType": "span", "key": "name", "sortBy": "count"},
+		map[string]any{"kind": "values", "signal": "traces", "ownerType": "span", "key": "name", "sortDirection": "asc; SELECT 1"},
 	} {
 		_, err := h.Handle(context.Background(), createRequest("discoverTelemetry", []any{options}))
 		require.Error(t, err, "%v", options)
+	}
+}
+
+func TestDiscoveryValueSortAcrossPages(t *testing.T) {
+	h := setupHandler(t)
+	ctx := context.Background()
+	for index, name := range []string{"zebra", "zebra", "zebra", "apple", "apple", "mango", "mango"} {
+		traces := buildTestTraces()
+		span := traces.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0)
+		span.SetSpanID([8]byte{byte(index + 1)})
+		span.Attributes().PutStr("sortable", name)
+		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error {
+			return spans.Ingest(ctx, conn, traces, h.store.FlushedIDs())
+		}))
+	}
+	for _, tc := range []struct {
+		by, direction string
+		want          []string
+	}{
+		{"name", "asc", []string{"apple", "mango", "zebra"}},
+		{"name", "desc", []string{"zebra", "mango", "apple"}},
+		{"frequency", "asc", []string{"apple", "mango", "zebra"}},
+		{"frequency", "desc", []string{"zebra", "apple", "mango"}},
+	} {
+		t.Run(tc.by+"-"+tc.direction, func(t *testing.T) {
+			for offset, want := range tc.want {
+				result, err := h.Handle(ctx, createRequest("discoverTelemetry", map[string]any{"options": map[string]any{
+					"kind": "values", "signal": "traces", "ownerType": "span", "key": "sortable",
+					"sortBy": tc.by, "sortDirection": tc.direction, "limit": 1, "offset": offset,
+				}}))
+				require.NoError(t, err)
+				var page struct {
+					Rows [][]struct {
+						Value struct {
+							Value string `json:"value"`
+						} `json:"value"`
+						Denominator int `json:"denominator"`
+					} `json:"rows"`
+					Truncated bool `json:"truncated"`
+				}
+				require.NoError(t, json.Unmarshal(result.(json.RawMessage), &page))
+				require.Len(t, page.Rows, 1)
+				require.Equal(t, want, page.Rows[0][0].Value.Value)
+				require.Equal(t, 7, page.Rows[0][0].Denominator)
+				require.Equal(t, offset < 2, page.Truncated)
+			}
+		})
 	}
 }
 

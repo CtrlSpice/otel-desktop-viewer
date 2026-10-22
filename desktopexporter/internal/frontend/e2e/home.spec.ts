@@ -142,7 +142,7 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
     name: 'exact.number · resource',
     exact: true,
   })
-  const values = attribute.getByRole('group', {
+  const values = attribute.getByRole('table', {
     name: 'Values of exact.number',
     exact: true,
   })
@@ -156,6 +156,31 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   await expect(values).toContainText('9007199254740993')
   await expect(values).toContainText('66.7%')
   await expect(values.getByTitle('2 / 3 records')).toBeVisible()
+  const sortRequest = page.waitForRequest(request => {
+    if (!request.url().endsWith('/rpc') || request.method() !== 'POST')
+      return false
+    const body = request.postDataJSON()
+    return (
+      body.method === 'discoverTelemetry' &&
+      body.params.options.sortBy === 'name' &&
+      body.params.options.sortDirection === 'asc'
+    )
+  })
+  await values
+    .getByRole('button', { name: 'Sort by name', exact: true })
+    .click()
+  expect((await sortRequest).postDataJSON().params.options.offset).toBe(0)
+  await expect(
+    values.getByRole('columnheader', { name: 'Sort by name' })
+  ).toHaveAttribute('aria-sort', 'ascending')
+  await values.getByRole('button', { name: 'Sort by percentage' }).click()
+  await expect(
+    values.getByRole('columnheader', { name: 'Sort by percentage' })
+  ).toHaveAttribute('aria-sort', 'descending')
+  await values.getByRole('button', { name: 'Sort by percentage' }).click()
+  await expect(
+    values.getByRole('columnheader', { name: 'Sort by percentage' })
+  ).toHaveAttribute('aria-sort', 'ascending')
   const imported = page.waitForResponse('http://127.0.0.1:54318/v1/logs')
   await page
     .getByLabel('Choose telemetry or evaluation JSON / JSONL files')

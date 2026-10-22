@@ -12,17 +12,19 @@ import (
 )
 
 type discoveryOptions struct {
-	Kind        string  `json:"kind"`
-	Signal      string  `json:"signal"`
-	OwnerType   string  `json:"ownerType"`
-	ServiceName *string `json:"serviceName"`
-	Namespace   *string `json:"namespace"`
-	Key         *string `json:"key"`
-	StartTime   *string `json:"startTime"`
-	EndTime     *string `json:"endTime"`
-	Limit       *uint64 `json:"limit"`
-	Offset      uint64  `json:"offset"`
-	Term        string  `json:"term"`
+	Kind          string  `json:"kind"`
+	Signal        string  `json:"signal"`
+	OwnerType     string  `json:"ownerType"`
+	ServiceName   *string `json:"serviceName"`
+	Namespace     *string `json:"namespace"`
+	Key           *string `json:"key"`
+	StartTime     *string `json:"startTime"`
+	EndTime       *string `json:"endTime"`
+	Limit         *uint64 `json:"limit"`
+	Offset        uint64  `json:"offset"`
+	Term          string  `json:"term"`
+	SortBy        string  `json:"sortBy"`
+	SortDirection string  `json:"sortDirection"`
 }
 
 func (h *JSONRPCHandler) discoverTelemetry(ctx context.Context, req *jsonrpc2.Request) (any, error) {
@@ -34,6 +36,11 @@ func (h *JSONRPCHandler) discoverTelemetry(ctx context.Context, req *jsonrpc2.Re
 	decoder := json.NewDecoder(bytes.NewReader(params[0]))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&options); err != nil {
+		return nil, jsonrpc2.ErrInvalidParams
+	}
+	if (options.SortBy != "" && options.SortBy != "name" && options.SortBy != "frequency") ||
+		(options.SortDirection != "" && options.SortDirection != "asc" && options.SortDirection != "desc") ||
+		(options.Kind != "values" && (options.SortBy != "" || options.SortDirection != "")) {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
 	for _, bound := range []*string{options.StartTime, options.EndTime} {
@@ -74,6 +81,17 @@ func (h *JSONRPCHandler) discoverTelemetry(ctx context.Context, req *jsonrpc2.Re
 			statement = discovery.Values(query, location, records, *options.Key)
 			search = "json_extract(entry, '$.value')::VARCHAR"
 			order = "json_extract(entry, '$.count')::UBIGINT DESC, json_extract(entry, '$.value')::VARCHAR"
+			if options.SortBy != "" || options.SortDirection != "" {
+				direction := "DESC"
+				if options.SortDirection == "asc" || (options.SortDirection == "" && options.SortBy == "name") {
+					direction = "ASC"
+				}
+				field := "json_extract(entry, '$.count')::UBIGINT"
+				if options.SortBy == "name" {
+					field = "coalesce(json_extract_string(entry, '$.value.value'), json_extract(entry, '$.value')::VARCHAR)"
+				}
+				order = field + " " + direction + ", json_extract(entry, '$.value')::VARCHAR"
+			}
 		}
 	default:
 		return nil, jsonrpc2.ErrInvalidParams

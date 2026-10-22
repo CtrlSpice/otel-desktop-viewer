@@ -23,6 +23,8 @@ export type DiscoveryOptions = {
   endTime?: string | null
   offset?: number
   limit?: number
+  sortBy?: 'name' | 'frequency'
+  sortDirection?: 'asc' | 'desc'
 }
 export type ServiceSummary = {
   serviceName: string
