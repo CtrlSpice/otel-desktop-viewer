@@ -12,7 +12,6 @@
   import ExperimentStatusBadge from './ExperimentStatusBadge.svelte'
   import EvalStatus from './EvalStatus.svelte'
   import { caseSummary } from './case-summary'
-  import { experimentSummary } from './experiment-summary'
   import TableSortButton from '@/components/shared/TableSortButton.svelte'
   import TableColumnHeading from '@/components/shared/TableColumnHeading.svelte'
   import ResizableTable from '@/components/shared/ResizableTable.svelte'
@@ -53,7 +52,6 @@
   } from './group-results'
   import {
     estimatedCost,
-    evalToolCounts,
     type TelemetryReference,
     type AssessmentDefinition,
     type EvalResult,
@@ -411,7 +409,6 @@
     { key: 'investigatorCost', ...estimatedCost(results, 'investigatorCost') },
     { key: 'graderCost', ...estimatedCost(results, 'graderCost') },
   ])
-  const experimentTotals = $derived(experimentSummary(experiment))
   const experimentCosts = $derived({
     investigatorCost: estimatedCost(experiment.results, 'investigatorCost'),
     graderCost: estimatedCost(experiment.results, 'graderCost'),
@@ -490,6 +487,20 @@
       {#if failed}<span>{failed} failed</span>{/if}
     </span>
   {/if}
+{/snippet}
+
+{#snippet ownedToolCount(row: EvalOutlineRow)}
+  {@const events =
+    row.result?.eventTools?.filter(
+      tool =>
+        row.reference &&
+        referenceKey(tool.parent) === referenceKey(row.reference)
+    ) ?? []}
+  {@render toolCount(
+    events.length + (row.kind === 'tool' ? 1 : 0),
+    events.filter(tool => tool.failed === true).length +
+      (row.kind === 'tool' && row.spanError ? 1 : 0)
+  )}
 {/snippet}
 
 {#snippet executionNode(
@@ -855,10 +866,7 @@
                 {:else if column.key === 'investigatorCost' || column.key === 'graderCost'}
                   {@render rowCost(experimentCosts[column.key])}
                 {:else if column.key === 'tools'}
-                  {@render toolCount(
-                    experimentTotals.toolCalls,
-                    experimentTotals.failedTools
-                  )}
+                  {@render ownedToolCount(row)}
                 {/if}
               </td>
             {/each}
@@ -901,13 +909,8 @@
                           : `/${column.assessment.maximum}`})</span
                       >{/if}
                   </div>
-                {:else if column.key === 'tools' && item && (row.kind === 'case' || row.kind === 'result' || row.kind === 'execution')}
-                  {@render toolCount(
-                    row.toolCounts?.total ?? evalToolCounts(item).total,
-                    row.toolCounts?.failed ?? evalToolCounts(item).failed
-                  )}
-                {:else if column.key === 'tools' && row.kind === 'tool'}
-                  {@render toolCount(1, row.spanError ? 1 : 0)}
+                {:else if column.key === 'tools'}
+                  {@render ownedToolCount(row)}
                 {:else if column.key === 'cost'}
                   {@render rowCost(row.estimate)}
                 {:else if item && (column.key === 'investigatorCost' || column.key === 'graderCost')}
@@ -951,11 +954,8 @@
               {:else}<TimingCell maximum={maximumDuration} />{/if}
             </td>
           {:else if column.key === 'tools'}
-            <td
-              class="table-cell text-left tabular-nums"
-              title="Recorded tool calls across all results"
-            >
-              {@render toolCount(group.summary.calls, group.summary.failures)}
+            <td class="table-cell text-left tabular-nums">
+              {@render ownedToolCount(row)}
             </td>
           {:else if column.key === 'cost' || column.key === 'investigatorCost' || column.key === 'graderCost'}
             <td class="table-cell text-left tabular-nums">

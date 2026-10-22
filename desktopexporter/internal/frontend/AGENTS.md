@@ -232,6 +232,8 @@
   uses Highlight Medium and Highlight Low on hover. Results has recorded score
   with its dot/label, without a duplicate case-percentage Summary column. Tool calls
   combines tool total and failed count, with plain failed labels and no status dot.
+  Show these counts only on the row that owns the calls: a native tool span or
+  the parent span carrying tool events. Do not repeat subtree totals on ancestors.
   Omit zero tool/failed counts and show the separator only when both counts appear.
   Default the resizable identity portion to 320px, Results to 160px and Tool calls
   to 176px; keep saved widths and let the timeline fill the remaining space.
