@@ -72,8 +72,8 @@
   const attributePanelID = $props.id()
   const attributeTabs: PaneTab[] = [
     { id: 'traces', label: 'Traces', icon: tracesIcon },
-    { id: 'logs', label: 'Logs', icon: logsIcon },
     { id: 'metrics', label: 'Metrics', icon: metricsIcon },
+    { id: 'logs', label: 'Logs', icon: logsIcon },
   ]
   function selectAttributeSignal(id: string) {
     if (id === 'traces' || id === 'logs' || id === 'metrics')
