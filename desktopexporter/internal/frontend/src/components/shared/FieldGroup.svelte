@@ -20,6 +20,8 @@
     countLabel?: string
     /** Detail headings use the same inset as the field cards. */
     detail?: boolean
+    /** Keep disclosure headings on the surrounding surface. */
+    bare?: boolean
     /** Use the same rounded, interactive surface as signal summary cards. */
     card?: boolean
     open?: boolean
@@ -38,6 +40,7 @@
     count,
     countLabel,
     detail = false,
+    bare = false,
     card = false,
     open = $bindable(true),
     onOpenChange,
@@ -72,6 +75,7 @@
   class="field-group"
   {name}
   class:field-group--detail={detail}
+  class:field-group--bare={bare}
   class:field-group--card={card}
   {open}
   ontoggle={e => setOpen(e.currentTarget.open)}
@@ -110,8 +114,10 @@
     --field-group-inline: var(--pane-inline-inset);
   }
   .field-group--detail > .field-group__heading {
-    --item-idle-bg: var(--color-base-200);
     @apply my-1 rounded-xl font-normal;
+  }
+  .field-group--detail:not(.field-group--bare) > .field-group__heading {
+    --item-idle-bg: var(--color-base-200);
   }
 
   /* Content aligns with heading inset (icon or label). */

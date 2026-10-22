@@ -91,6 +91,7 @@
     label,
     layoutKey,
     labelSuffix,
+    leading,
     icon,
     count,
     countLabel = label.toLowerCase(),
@@ -104,6 +105,8 @@
     /** Preserve stored section sizing when its visible heading changes. */
     layoutKey?: string
     labelSuffix?: Snippet
+    /** Header controls before the section title. */
+    leading?: Snippet
     icon?: Snippet
     count?: number
     countLabel?: string
@@ -135,6 +138,7 @@
 </script>
 
 {#snippet heading()}
+  {@render leading?.()}
   {@render icon?.()}
   <span>{label}</span>
   {@render labelSuffix?.()}

@@ -69,7 +69,7 @@
   })
 </script>
 
-<FieldGroup label={name} detail bind:open>
+<FieldGroup label={name} detail bare bind:open>
   {#snippet heading()}
     <span class="min-w-0 flex-1">{@render attributeHeading()}</span>
     {#if showBar}

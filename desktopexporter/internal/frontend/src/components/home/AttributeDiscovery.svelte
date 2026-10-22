@@ -1,7 +1,4 @@
 <script lang="ts">
-  import PaneHeader, {
-    type PaneTab,
-  } from '@/components/shared/PaneHeader.svelte'
   import FilterInput from '@/components/shared/Search/FilterInput.svelte'
   import AttributeKey from './AttributeKey.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
@@ -17,12 +14,13 @@
     service,
     range,
     revision,
+    signal,
   }: {
     service: ServiceSummary | null
     range: Pick<DiscoveryOptions, 'startTime' | 'endTime'>
     revision: number
+    signal: DiscoverySignal
   } = $props()
-  let signal = $state<DiscoverySignal>('traces')
   let filter = $state('')
   let term = $state('')
   let offset = $state(0)
@@ -30,11 +28,6 @@
   let more = $state(false)
   let loading = $state(false)
   let error = $state('')
-  const signals: PaneTab[] = [
-    { id: 'traces', label: 'Traces' },
-    { id: 'logs', label: 'Logs' },
-    { id: 'metrics', label: 'Metrics' },
-  ]
   const owners: Record<DiscoverySignal, DiscoveryOwner[]> = {
     traces: ['resource', 'scope', 'span', 'event', 'link'],
     logs: ['resource', 'scope', 'log'],
@@ -101,24 +94,9 @@
         })
     return () => controller.abort()
   })
-  function selectSignal(id: string) {
-    const selected = signals.find(item => item.id === id)
-    if (!selected) return
-    signal = selected.id as DiscoverySignal
-  }
 </script>
 
 {#if service}
-  <div class="flex flex-wrap items-center gap-2 px-3 py-2">
-    <PaneHeader
-      mode="tabs"
-      bare
-      tabs={signals}
-      activeID={signal}
-      onSelect={selectSignal}
-      ariaLabel="Attribute signal"
-    />
-  </div>
   <div class="p-3">
     <FilterInput
       label="Filter attribute keys"

@@ -14,9 +14,17 @@
 <script lang="ts">
   import { onDestroy, untrack, type Snippet } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { Cancel01Icon } from '@hugeicons/core-free-icons'
+  import {
+    Cancel01Icon,
+    BarChartHorizontalIcon,
+    ChartHistogramIcon,
+  } from '@hugeicons/core-free-icons'
+  import { LogIcon } from '@/icons'
   import PageLayout from '@/components/shared/PageLayout.svelte'
-  import PaneHeader from '@/components/shared/PaneHeader.svelte'
+  import PaneHeader, {
+    paneTabID,
+    type PaneTab,
+  } from '@/components/shared/PaneHeader.svelte'
   import DetailStack from '@/components/shared/DetailStack.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import DetailProperty from '@/components/shared/DetailProperty.svelte'
@@ -33,6 +41,7 @@
     serviceIdentity,
     type ServiceSummary,
     type DiscoveryOptions,
+    type DiscoverySignal,
   } from '@/services/discovery-types'
   import {
     getTimeContext,
@@ -59,6 +68,17 @@
   let more = $state(false)
   let loaded = $state(false)
   let revision = $state(0)
+  let attributeSignal = $state<DiscoverySignal>('traces')
+  const attributePanelID = $props.id()
+  const attributeTabs: PaneTab[] = [
+    { id: 'traces', label: 'Traces', icon: tracesIcon },
+    { id: 'logs', label: 'Logs', icon: logsIcon },
+    { id: 'metrics', label: 'Metrics', icon: metricsIcon },
+  ]
+  function selectAttributeSignal(id: string) {
+    if (id === 'traces' || id === 'logs' || id === 'metrics')
+      attributeSignal = id
+  }
   let refreshedAt = $state<bigint>()
   let range = $state<Pick<DiscoveryOptions, 'startTime' | 'endTime'>>({
     startTime: null,
@@ -146,8 +166,39 @@
   }
 </script>
 
+{#snippet tracesIcon()}<HugeiconsIcon
+    icon={BarChartHorizontalIcon}
+    size={16}
+    strokeWidth={1.5}
+    aria-hidden="true"
+  />{/snippet}
+{#snippet logsIcon()}<LogIcon
+    width={16}
+    height={16}
+    aria-hidden="true"
+  />{/snippet}
+{#snippet metricsIcon()}<HugeiconsIcon
+    icon={ChartHistogramIcon}
+    size={16}
+    strokeWidth={1.5}
+    aria-hidden="true"
+  />{/snippet}
+
 {#snippet attributes()}
   <DetailBubble label="Attributes" layoutKey="home-attributes">
+    {#snippet leading()}
+      <div class="shrink-0">
+        <PaneHeader
+          mode="tabs"
+          bare
+          tabs={attributeTabs}
+          activeID={attributeSignal}
+          onSelect={selectAttributeSignal}
+          ariaLabel="Attribute signal"
+          tabPanelID={attributePanelID}
+        />
+      </div>
+    {/snippet}
     {#snippet labelSuffix()}
       {#if selected}<span class="min-w-0 truncate text-base-content"
           >· {selected.serviceName ||
@@ -155,7 +206,18 @@
             · {selected.serviceNamespace}{/if}</span
         >{/if}
     {/snippet}
-    <AttributeDiscovery service={selected} {range} {revision} />
+    <div
+      id={attributePanelID}
+      role="tabpanel"
+      aria-labelledby={paneTabID(attributePanelID, attributeSignal)}
+    >
+      <AttributeDiscovery
+        service={selected}
+        {range}
+        {revision}
+        signal={attributeSignal}
+      />
+    </div>
   </DetailBubble>
 {/snippet}
 {#snippet statistics()}
