@@ -45,20 +45,41 @@ Evidence lives outside Git under `~/.local/share/otel-desktop-viewer/evals/`:
 - `opencode-v2-native-lTw5Rv/`: original V2 authentication failure, preserved.
 - `opencode-v2-native-qeYG2j/`: successful original V2 export, 12 tool calls,
   four Promptfoo spans and separate Pi grader. No retries rewrote the failure.
+- `opencode-v2-native-eQUlOk/`: completed full native-telemetry run, Pass 1/1,
+  eight model requests and ten successful tools; separate Pi Sol grader.
+  Captured 1,268 native spans and 27 logs, plus four wrapper spans and ten tool
+  events. All original uploads were accepted; the original export was imported
+  once. Owned server, fixture and relays were stopped.
 - `native-otel-six-gLWzRd/observer/telemetry.duckdb`: current preview database.
 
-Native OpenCode telemetry is now visible in the collector. The inspected
+Native OpenCode telemetry is now verified in the collector. The inspected canary
 `cli.web-ui.handler` span has resource evidence ID
 `investigator-opencode-v2-D6MM9N`, native scope `opencode` 2.0.29 and SDK
-`@effect/opentelemetry`. A newer 1,252-span OpenCode trace also appeared in the
-list. The native telemetry worker is completing its run-level accounting and
-handoff; these observations alone do not establish the new assessment outcome.
+`@effect/opentelemetry`. The completed real run has 1,252 spans on native trace
+`580bc0cc7f23c6a5bda4bee569df489f`; 13 native HTTP spans join the four wrapper
+spans on Promptfoo trace `26a114661a4dd402002167a46b958cf4`; three native spans
+have independent traces. Its experiment is
+`76c7a9ec8e0cf2aaf06af0b574e466436b3de800fbc6ecab02acc6ce45816100`.
+
+Native `Tool.execute` spans lack call IDs; they cannot be matched to wrapper
+events by order/time or counted as extra calls. Native HTTP spans propagate
+traceparent, but session work stays on its separate recorded trace. Received
+session headers permit cross-trace correlation without inventing ancestry.
+No native metrics exporter or usage attributes were present in this V2 build.
+Two native ENOENT discovery errors remain alongside successful tools and Pass.
+Full bytes, IDs, usage and source-preservation hashes are documented in the
+run's `handoff.md` and `opencode-native-prep.md`.
+
+The V2 implementation was reviewed; 29 offline evidence/usage/SSE/relay tests
+and all 15 module syntax checks passed. Missing tool fields stay missing,
+recorded zero usage survives, unavailable usage does not become zero, and SSE
+headers/body share cancellation and deadlines. No paid runs were repeated.
 
 ## Remaining work and boundaries
 
-- Review and save the native V2 exporter/provider worker's final changes and
-  exact run report separately. Capture full telemetry first; filtering and tail
-  sampling are deferred. Do not launch the 132-investigation comparison.
+- Native V2 exporter/provider code and run report are saved separately from the
+  viewer checkpoint (`69e78b67`). Filtering and tail sampling are deferred.
+  Do not launch the 132-investigation comparison.
 - Details worker observed that double-clicking bottom Telemetry after Home/End
   under reduced motion can miss the second click when disclosure moves the
   header. Assessments double-click reset passes; bottom-header reset needs follow-up.
