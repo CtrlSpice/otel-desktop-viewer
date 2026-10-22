@@ -1,4 +1,4 @@
-package evals
+package evaldecode
 
 import (
 	"context"
@@ -21,10 +21,8 @@ func TestParseIngestPreservesProducerContextAndExactValues(t *testing.T) {
 	require.Equal(t, "promptfoo-v3", parts[1].Format)
 	require.Equal(t, "promptfoo-v3", parts[3].Format)
 	require.Contains(t, string(parts[1].Payload), `"x":18446744073709551615`)
-	before, after, err := EnvelopeParts(parts[1].Payload, parts[1].Format)
-	require.NoError(t, err)
-	require.True(t, json.Valid([]byte(before+row+after)))
-	require.Contains(t, before+row+after, `"value":9007199254740993`)
+	require.True(t, json.Valid(parts[1].Payload))
+	require.Contains(t, string(parts[1].Payload), `"results":[]`)
 	require.Equal(t, int64(len(promptfoo)), parts[1].Bytes)
 }
 

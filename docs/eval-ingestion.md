@@ -43,12 +43,27 @@ feature returns 403 with an explicit message. Successful replies contain
 `{ids: string[], created: boolean, complete: true}`. The filename is provenance,
 not a schema discriminator; it is at most 256 UTF-8 bytes.
 
-The backend stages bounded, compact JSON records in a viewer-owned temporary file.
-It validates the entire input before writing to DuckDB. Staging is removed when
+The backend stages bounded, compact JSON records in a viewer-owned plaintext
+temporary file. It validates the entire input before submitting telemetry. Staging is removed when
 the request returns. A process crash may leave an OS temporary file; it is not a
 retained artifact or part of persistence. Only the DuckDB file is needed on reopen.
 
-Additive tables:
+The ingestion path is:
+
+```
+file upload → evaldecode → OTLP HTTP receiver → redaction → batch
+→ desktop exporter → retained logs → Evals caches/indexes
+```
+
+`desktopexporter/internal/evaldecode` owns producer parsing and historical pdata
+conversion. The server owns staging, forwarding, cancellation, and persistence
+confirmation. Native OTLP bypasses the producer decoder. No receiver or port is
+added, and upload data is never written directly to persistent Evals storage.
+The internal HTTP hop uses a server-owned reusable client with proxying disabled,
+including for non-loopback bind addresses. Environment proxy settings cannot
+redirect pre-redaction observations; HTTP redirects are refused.
+
+The following tables are derived from retained, processed log evidence:
 
 - `eval_imports`: import identity and completion marker.
 - `eval_datasets`: one envelope's metadata/context, result count, source filename,
@@ -59,23 +74,73 @@ Additive tables:
 - `eval_experiments` / `eval_experiment_rows`: rebuildable Experiment summaries and source-row mapping.
 - `eval_experiment_search`: rebuildable text extracted from every JSON string value in
   each result row. Object keys and non-string scalars are not copied into search.
+- `eval_evidence`: physical retained-log references and their transfer identity.
+- `eval_parts`: logical source coordinates and processed-content fingerprints.
+- `eval_transfers`: rebuild state and an incomplete-transfer reason.
 
-Raw JSON is validated/compacted without float64 decoding and cast directly to
-DuckDB JSON. Exact numeric lexemes, Unicode meaning, unknown fields, source IDs,
-missing/null/zero/false distinctions, array order and producer context survive.
+Each imported envelope produces a context log and ordered result logs. A final
+manifest log declares the envelope count and import name. These are historical
+observations under service `otel-desktop-viewer` and instrumentation scope
+`otel-desktop-viewer.evaldecode`, version `1`. Event name is
+`viewer.eval.import.v1`. Their observed timestamp records conversion time;
+their event timestamp, trace ID and span ID are unset. Source timing and explicit
+correlation remain in the source body. Conversion creates no execution/grader
+spans, causal parents, aggregate metrics, or error status from failed judgments.
+
+The versioned body contains `version`, `producer`, `importID`, `envelope`,
+`ordinal`, `count`, `source`, `numberPaths`, and `numberPathsHash`. Coordinates
+and counts are canonical decimal strings. Context uses ordinal `-1`; results
+use nonnegative ordinals; the manifest uses envelope `-1` and ordinal `-2`.
+`producer` currently identifies `promptfoo-v3`.
+
+Source numbers travel as exact string lexemes at their original structured
+locations. `numberPaths` contains only type/path metadata: a sparse tree with
+`true` at numeric leaves, positional arrays, and object edges encoded as `k`
+plus unpadded base64url UTF-8 keys. This avoids duplicating secret values and
+repeating long shared paths. Its SHA-256 detects processor changes to that
+metadata; it is an integrity check, not producer authentication.
+
+Reconstruction validates the encoding, numeric paths, bounds and numeric text.
+It restores numbers only from retained leaves. A masked `****` value or subtree
+stays masked; metadata never restores its contents. Unknown versions, damaged
+metadata and incompatible processed structures prevent completion. Embedded JSON
+strings remain strings, including when redaction makes their contents invalid JSON.
+
+Exact numeric lexemes, Unicode meaning, unknown fields, source IDs,
+missing/null/zero/false distinctions, array order and producer context survive,
+except for deliberate Collector processing such as redaction.
 Whitespace, object formatting and escape spelling are not a download guarantee.
 Local dataset IDs identify storage, never replace received experiment/sample IDs.
 The local import identity hashes the compact staging representation; it is not
 a claim of semantic equivalence across reordered fields or different escapes.
 
-The server writes at most 64 staging parts per transaction, stopping after the
-batch reaches 4 MiB (one final part can take it below 8 MiB). It releases
-`Store.WithDBWrite` between transactions. Upload, validation, staging reads and
-network output never run under the write lock. Publication is one final marker
-update; search/read APIs exclude all pending rows. Cancellation before publication
-leaves no visible partial dataset. Cleanup removes rows in groups of 64 with a
-30-second cleanup context. If cleanup is interrupted, pending data stays hidden;
-retrying the same input removes the interrupted copy before restarting.
+The server forwards one bounded observation per OTLP protobuf request. Receiver
+HTTP 200 is not persistence confirmation. Completion requires retained context
+and every distinct expected result ordinal, a valid manifest, and a ready or empty
+experiment index. Missing, invalid, conflicting or unsupported evidence stays
+hidden from completed Evals. Identical physical duplicates count once; conflicting
+content at one logical identity is not silently resolved. Ordinary logs retain
+their existing append-only behavior, so retries can leave duplicate physical logs.
+Before publication, the write-locked check also examines relevant retained logs
+that discovery has not registered yet. Late arrivals trigger rediscovery before
+completion, including benign duplicates and conflicts.
+
+Reconciliation reads one retained log at a time, outside cache-write windows.
+Cache cleanup and experiment projection use bounded batches. Upload, validation,
+staging reads and forwarding never hold the database write lock. Explicit Evals
+reads also reconcile late evidence and rebuild indexes; arrival does not navigate
+or automatically refresh the UI. Large rebuilds can take a long request and remain
+request-cancellable; there is no background indexing scheduler.
+
+Cancellation stops further submission and waiting. It cannot retract telemetry
+already accepted by the Collector. A fully submitted transfer can complete on a
+later explicit read. Waiting for missing evidence has a one-minute timer; a large
+reconciliation itself can take longer. An unconfirmed request can be retried with
+the same file. Retention and log deletion invalidate affected completion and
+remove source/search caches in the same transaction as evidence deletion.
+Cancellation or cleanup failure rolls back both changes. Reconciliation can rebuild only from evidence still
+retained. Existing dataset deletion markers survive cache rebuilds; explicit
+reimport of a marked dataset uses a fresh deterministic generation.
 
 Identical completed staging content is idempotent and retains first-import names.
 Simultaneous identical imports receive 409 while one is active. If the response
@@ -90,6 +155,15 @@ staging uses disk proportional to input, bounded value/batch buffers, and DuckDB
 own buffers. The upload uses one streamed Blob HTTP request, not resumable chunks.
 Its body deadline is cancellation-bound rather than the ordinary 30-second server
 deadline. No telemetry responsiveness benchmark has been performed.
+
+Re-escaping processed JSON strings can expand their serialized representation;
+reconstruction permits up to 24 MiB per part without increasing the 4 MiB input
+limit. Page readers normally stop at 4 MiB of row bytes but permit one larger
+reconstructed row. Context is likewise subject to the reconstruction bound.
+
+The retained encoding supports local rebuilding and is tested through existing
+single-log OTLP serialization. There is no Evals archive export API/UI or
+end-to-end Evals export/reimport feature.
 
 ## Producer adapters and UI integration
 
@@ -139,15 +213,15 @@ Typed methods and DTOs live in `telemetry-service.ts` and the new
 `eval_experiments` holds precomputed whole-experiment counts. `eval_experiment_rows` maps global source
 ordinals to an experiment without copying newly ingested result bodies. `eval_experiment_search`
 stores materialized string values per source row. `eval_experiment_indexes` records
-completion/unsupported/empty status and source context. The source remains
+completion/unsupported/empty status and processed source context. Retained logs remain
 authoritative; all four are rebuildable indexes. New imports build the index before
 their publication marker, with projection outside the write lock and at most 64
 projected rows per write transaction. A malformed display-semantic row marks that
-dataset's index unsupported; source ingestion itself can still succeed and the
-received data remains retained in source tables. Unsupported indexes never
+dataset's index unsupported; the import remains incomplete and its processed
+evidence remains in retained logs. The upload reports this as HTTP 422. Unsupported indexes never
 expose partial experiment counts.
 
-The terminology rename uses schema version 23. Older databases are rejected;
+Collector-backed Evals uses schema version 24. Older databases are rejected;
 there is no migration or parallel legacy table set. Use a new database and
 reimport retained source exports. Experiment IDs remain stable for the same
 imported data. The UI accepts old `run`/`rep` selection links and replaces their
@@ -201,15 +275,17 @@ and is not a locale-specific browser collation promise.
 
 ### Native dataset indexing
 
-Each list request indexes at most one unindexed native dataset. The reply includes
+Explicit list/detail requests first reconcile newly retained transfer evidence.
+This can rebuild every envelope in an affected transfer. List requests then repair
+at most one additional unindexed dataset cache. The reply includes
 `indexing.remaining`, `unsupported`, `empty`, and up to 25
 dataset issue records (`hasMoreIssues` distinguishes a truncated issue list).
 While `remaining > 0`, totals/facets cover indexed sources and are not a claim that
 backfill is complete. Parent should continue requesting lists while showing that
 state; unsupported and empty sources remain explicit, not phantom zero-result
 experiments. Cancellation leaves a hidden pending index; the next attempt clears partial
-derived rows in bounded batches before rebuilding. A per-dataset server guard
-prevents concurrent duplicate backfills. No startup scan or service restart is
+derived rows in bounded batches before rebuilding. A cancellable server gate
+serializes evidence rebuilds and index repairs. No startup scan or service restart is
 required. Very large previously unindexed *new-style* datasets can take a long
 request despite bounded buffers; no time-bounded background job scheduler exists.
 
@@ -230,7 +306,9 @@ of current sidebar filters, plus:
 
 Use `nextAfter` for the next request. It is a global source ordinal, not a
 experiment-relative offset. Pages return only the selected experiment's members, at most 100
-rows and 4 MiB of source row bytes plus 4 MiB context. The typed JSON strings avoid
+rows, normally stopping at 4 MiB of source row bytes, plus context. One larger
+reconstructed row and context can each reach the 24 MiB reconstruction bound.
+The typed JSON strings avoid
 precision loss in ordinary `response.json()` calls. This is bounded response
 serialization, not the old whole-file escaped upload path. Context can contain
 dataset-wide producer stats; use `summary` for selected-experiment counts.
@@ -248,8 +326,7 @@ and pass those global ordinals with `id: summary.datasetID` and
 experiment/result/case identities use global positions. Aggregate selected-experiment pages
 before using the current adapter's duplicate-slot logic; independent projections
 of pages cannot establish duplicate-slot relationships across pages. The existing
-8 MiB / 5,000-row / safe-display-number adapter limits still apply. Numeric-safe,
-arbitrarily large result-table projection remains parent/future work; the API does
+8 MiB / 5,000-row / safe-display-number adapter limits still apply. The API does
 not require downloading other experiments to select one.
 
 The workspace consumes DB-wide summaries, pages the sidebar, maps unknown lifecycle

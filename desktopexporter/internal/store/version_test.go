@@ -110,7 +110,7 @@ func TestVersionMismatchIsRefused(t *testing.T) {
 }
 
 func TestOlderDatabasesAreRefusedWithoutModification(t *testing.T) {
-	for _, version := range []int{21, 22} {
+	for _, version := range []int{21, 22, 23} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), fmt.Sprintf("v%d.db", version))
 			s := newFileStore(t, path)
@@ -127,7 +127,7 @@ func TestOlderDatabasesAreRefusedWithoutModification(t *testing.T) {
 			after, err := os.ReadFile(path)
 			require.NoError(t, err)
 			assert.Equal(t, before, after)
-			assert.Equal(t, 23, schema.Version)
+			assert.Equal(t, 24, schema.Version)
 		})
 	}
 }

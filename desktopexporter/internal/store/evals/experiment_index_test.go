@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/evaldecode"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/evals"
 	"github.com/stretchr/testify/require"
@@ -41,7 +42,7 @@ func TestExperimentIndexCancellationAndRetryCountsWholeExperiment(t *testing.T) 
 	row := `{"provider":{"id":"p"},"promptId":"prompt","success":true,"vars":{"question":"Why did checkout fail?"},"response":{"output":"Retry budget exhausted"},"gradingResult":{"reason":"Missing idempotency key"}}`
 	input := `{"evalId":"experiment","config":{},"results":{"version":3,"results":[` + strings.TrimSuffix(strings.Repeat(row+",", 130), ",") + `]}}`
 	var parts []evals.IngestPart
-	require.NoError(t, evals.ParseIngest(t.Context(), strings.NewReader(input), func(part evals.IngestPart) error {
+	require.NoError(t, evaldecode.ParseIngest(t.Context(), strings.NewReader(input), func(part evals.IngestPart) error {
 		parts = append(parts, part)
 		return nil
 	}))
@@ -128,6 +129,49 @@ func TestExperimentIndexCancellationAndRetryCountsWholeExperiment(t *testing.T) 
 		require.Zero(t, count)
 		require.NoError(t, db.QueryRow(`select count(*) from eval_experiment_search`).Scan(&count))
 		require.Zero(t, count)
+		return nil
+	}))
+}
+
+func TestExperimentIndexDoesNotRecreateExpiredContext(t *testing.T) {
+	s, err := store.NewStore(t.Context(), "", nil)
+	require.NoError(t, err)
+	defer s.Close()
+	id := strings.Repeat("f", 64)
+	input := `{"evalId":"expiry","config":{},"results":{"version":3,"results":[` + strings.TrimSuffix(strings.Repeat(`{"provider":{"id":"p"},"promptId":"p"},`, 130), ",") + `]}}`
+	var parts []evals.IngestPart
+	require.NoError(t, evaldecode.ParseIngest(t.Context(), strings.NewReader(input), func(p evals.IngestPart) error { parts = append(parts, p); return nil }))
+	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+		if _, err := db.Exec(`insert into eval_imports(id) values (?)`, id); err != nil {
+			return err
+		}
+		return evals.AppendParts(t.Context(), db, id, "expiry", parts)
+	}))
+	expired := false
+	err = evals.EnsureExperimentIndex(t.Context(), afterIndexedBatch{s, func() {
+		if expired {
+			return
+		}
+		expired = true
+		// Model retention's invalidation between bounded projection batches.
+		require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
+			for _, table := range []string{"eval_records", "eval_experiments", "eval_experiment_search", "eval_experiment_rows", "eval_experiment_indexes"} {
+				if _, err := db.Exec(`delete from ` + table); err != nil {
+					return err
+				}
+			}
+			_, err := db.Exec(`update eval_datasets set context='{}',row_count=0,byte_size=0`)
+			return err
+		}))
+	}}, evals.DatasetID(id, 0), "dataset")
+	require.ErrorIs(t, err, evals.ErrEvalNotFound)
+	require.True(t, expired)
+	require.NoError(t, s.WithDBRead(func(db *sql.DB) error {
+		for _, table := range []string{"eval_experiments", "eval_experiment_search", "eval_experiment_rows", "eval_experiment_indexes"} {
+			var n int
+			require.NoError(t, db.QueryRow(`select count(*) from `+table).Scan(&n))
+			require.Zero(t, n)
+		}
 		return nil
 	}))
 }

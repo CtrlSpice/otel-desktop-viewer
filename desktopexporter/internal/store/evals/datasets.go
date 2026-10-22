@@ -54,42 +54,8 @@ func DatasetID(importID string, envelope int) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprintf("%s:%d", importID, envelope))))
 }
 
-// EnvelopeParts serializes context around the result array without decoding any
-// source number. The retained split supports bounded row storage and assembly.
-func EnvelopeParts(raw json.RawMessage, _ string) (string, string, error) {
-	var root map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &root); err != nil {
-		return "", "", err
-	}
-	path := []string{"results", "results"}
-	var split func(map[string]json.RawMessage, []string) (string, string, error)
-	split = func(object map[string]json.RawMessage, path []string) (string, string, error) {
-		value := object[path[0]]
-		delete(object, path[0])
-		other, err := json.Marshal(object)
-		if err != nil {
-			return "", "", err
-		}
-		prefix := string(other[:len(other)-1])
-		if len(object) > 0 {
-			prefix += ","
-		}
-		key, _ := json.Marshal(path[0])
-		prefix += string(key) + ":"
-		if len(path) == 1 {
-			return prefix + "[", "]}", nil
-		}
-		var child map[string]json.RawMessage
-		if err := json.Unmarshal(value, &child); err != nil {
-			return "", "", err
-		}
-		before, after, err := split(child, path[1:])
-		return prefix + before, after + "}", err
-	}
-	return split(root, path)
-}
-
-// AppendParts runs only after upload and validation, in a bounded write window.
+// AppendParts writes a bounded cache batch. Production callers supply only
+// reconstructed retained evidence, never upload/staging contents.
 func AppendParts(ctx context.Context, db *sql.DB, importID, name string, parts []IngestPart) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -100,7 +66,7 @@ func AppendParts(ctx context.Context, db *sql.DB, importID, name string, parts [
 		if part.Row >= 0 {
 			_, err = tx.ExecContext(ctx, `insert into eval_records values (?, ?, ?, ?, cast(? as json))`, importID, part.Envelope, part.Row, len(part.Payload), string(part.Payload))
 		} else {
-			_, err = tx.ExecContext(ctx, `insert into eval_datasets (id, import_id, envelope, source, format, name, byte_size, row_count, context) values (?, ?, ?, 'json-import', ?, ?, ?, ?, cast(? as json))`, DatasetID(importID, part.Envelope), importID, part.Envelope, part.Format, name, part.Bytes, part.Count, string(part.Payload))
+			_, err = tx.ExecContext(ctx, `insert into eval_datasets (id, import_id, envelope, source, format, name, byte_size, row_count, context) values (?, ?, ?, 'json-import', ?, ?, ?, ?, cast(? as json)) on conflict(id) do update set format=excluded.format, byte_size=excluded.byte_size, row_count=excluded.row_count, context=excluded.context`, DatasetID(importID, part.Envelope), importID, part.Envelope, part.Format, name, part.Bytes, part.Count, string(part.Payload))
 		}
 		if err != nil {
 			return err

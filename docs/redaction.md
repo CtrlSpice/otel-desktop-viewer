@@ -71,9 +71,13 @@ reliably scanned by this upstream path. A structured secret assignment inside a
 string masks the containing string because regexes cannot delimit arbitrary
 nested JSON safely. Masked JSON-encoded strings need not remain valid JSON.
 
-Native Evals JSON import writes through its own storage path and is **not
-covered** by this Collector processor. Existing database contents and original
-source files are not rewritten. The viewer's own optional service telemetry
+Promptfoo Evals JSON imports are decoded to structured historical log observations
+and submitted through the same receiver and processor before persistent storage.
+Their source/index caches are reconstructed only from retained processed logs;
+see [Evaluation data ingestion](eval-ingestion.md). Request-owned plaintext
+temporary validation files are removed on return; a process crash can leave a
+temporary file. Existing database contents and original source files are not
+rewritten. The viewer's own optional service telemetry
 uses a separate export path and is not processed by these ingestion pipelines.
 
 The tests resolve the production Collector configuration and instantiate the

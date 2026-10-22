@@ -1,4 +1,4 @@
--- Additive, self-contained received-data storage. Incomplete imports are hidden.
+-- Rebuildable caches of retained, Collector-processed evaluation evidence.
 create table if not exists eval_imports (
     id varchar primary key,
     complete boolean not null default false
@@ -23,4 +23,22 @@ create table if not exists eval_records (
     byte_size bigint not null,
     payload json not null,
     primary key (import_id, envelope, ordinal)
+);
+-- Tracks physical records separately from logical source identities. Ordinary
+-- OTLP logs remain append-only; repeated evidence is deduplicated in projection.
+create table if not exists eval_evidence (
+    log_id uuid primary key,
+    import_id varchar not null
+);
+create table if not exists eval_transfers (
+    id varchar primary key,
+    dirty boolean not null default true,
+    reason varchar not null default ''
+);
+create table if not exists eval_parts (
+    import_id varchar not null,
+    envelope integer not null,
+    ordinal bigint not null,
+    digest varchar not null,
+    primary key(import_id, envelope, ordinal)
 );
