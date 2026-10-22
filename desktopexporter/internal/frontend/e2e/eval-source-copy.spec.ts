@@ -391,8 +391,14 @@ test('switching imported experiments preserves each experiment disclosure and so
     exact: true,
   })
   await table.getByRole('button', { name: /^Collapse Case 0/ }).click()
-  const header = table.getByRole('columnheader', { name: /^Duration/ })
-  await header.getByRole('button', { name: 'Sort by Duration' }).click()
+  await expect(
+    table.getByRole('button', { name: 'Sort by Duration' })
+  ).toHaveCount(0)
+  const header = table.getByRole('columnheader', {
+    name: 'Experiment · Test case · Result',
+    exact: true,
+  })
+  await header.getByRole('button', { name: 'Sort by Test case' }).click()
   await expect(header).toHaveAttribute('aria-sort', 'ascending')
   await page
     .getByRole('button', { name: /^other/ })
@@ -404,11 +410,12 @@ test('switching imported experiments preserves each experiment disclosure and so
   })
   await expect(otherTable).toBeVisible()
   const otherHeader = otherTable.getByRole('columnheader', {
-    name: /^Duration/,
+    name: 'Experiment · Test case · Result',
+    exact: true,
   })
   await expect(otherHeader).not.toHaveAttribute('aria-sort', 'ascending')
-  await otherHeader.getByRole('button', { name: 'Sort by Duration' }).click()
-  await otherHeader.getByRole('button', { name: 'Sort by Duration' }).click()
+  await otherHeader.getByRole('button', { name: 'Sort by Test case' }).click()
+  await otherHeader.getByRole('button', { name: 'Sort by Test case' }).click()
   await expect(otherHeader).toHaveAttribute('aria-sort', 'descending')
   await page
     .getByRole('button', { name: /^provider/ })
