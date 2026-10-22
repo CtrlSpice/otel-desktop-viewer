@@ -4,7 +4,7 @@
     AttributeFrequency,
     DiscoveryOptions,
   } from '@/services/discovery-types'
-  import { BarChart } from 'layerchart'
+  import BreakdownSegment from '@/components/shared/BreakdownSegment.svelte'
   import { traceSpanPalette } from '@/utils/chart-palette'
   import AttributeValue from '@/components/shared/AttributeValue.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
@@ -31,20 +31,6 @@
       total > 0 &&
       total === values[0].denominator
   )
-  const series = $derived(
-    values.map((_, index) => ({
-      key: String(index),
-      color: colors[offset + index],
-    }))
-  )
-  const distribution = $derived([
-    {
-      key: 'frequency',
-      ...Object.fromEntries(
-        values.map((item, index) => [String(index), item.relativeFrequency])
-      ),
-    },
-  ])
   $effect(() => {
     const controller = new AbortController()
     const request = { ...options, key: name, offset, limit: 25 }
@@ -75,26 +61,18 @@
     </p>{/if}
   <div role="group" aria-label="Values of {name}" class="flex flex-col gap-2">
     {#if showBar}
-      <div class="w-full" aria-hidden="true">
-        <BarChart
-          data={distribution}
-          {series}
-          seriesLayout="stack"
-          orientation="horizontal"
-          y="key"
-          xDomain={[0, 1]}
-          height={8}
-          bandPadding={0}
-          padding={{ top: 0, right: 0, bottom: 0, left: 0 }}
-          axis={false}
-          grid={false}
-          rule={false}
-          highlight={false}
-          legend={false}
-          tooltipContext={false}
-          motion="none"
-          props={{ bars: { strokeWidth: 0 } }}
-        />
+      <div class="flex min-h-(--signal-card-row-h) w-full gap-1">
+        {#each values as item, index (index)}
+          <BreakdownSegment
+            part={{
+              key: String(index),
+              label: attributeValueCopy(item.value),
+              count: item.count,
+              color: colors[offset + index],
+            }}
+            unit="record"
+          />
+        {/each}
       </div>
     {/if}
     <div class="min-w-0 flex-1">
