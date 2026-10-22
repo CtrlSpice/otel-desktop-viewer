@@ -66,6 +66,6 @@
   }
   .table-sort--inline-direction .table-sort__direction {
     position: static;
-    transform: none;
+    translate: none;
   }
 </style>
