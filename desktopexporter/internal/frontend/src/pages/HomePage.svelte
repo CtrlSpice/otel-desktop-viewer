@@ -162,7 +162,13 @@
     return minutes === 0 ? 'just now' : `${minutes}m ago`
   }
   function bytes(value: number) {
-    return `${value.toLocaleString()} bytes`
+    const units = ['bytes', 'KB', 'MB', 'GB', 'TB']
+    let unit = 0
+    while (value >= 1000 && unit < units.length - 1) {
+      value /= 1000
+      unit++
+    }
+    return `${value.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${units[unit]}`
   }
 </script>
 
@@ -223,25 +229,33 @@
     {#if statsError}<p class="px-3" role="alert">
         {statsError}{stats ? ' · Showing the last successful reading.' : ''}
       </p>{/if}
-    {#if stats?.storage}<table
-        class="detail-fields w-full"
-        aria-label="Viewer storage"
-      >
+    {#if stats?.storage}{@const stored = stats.storage}
+      <table class="detail-fields w-full" aria-label="Viewer storage">
         <tbody>
           <DetailProperty
             fieldName="Database size"
             fieldType="uint64"
             showType={false}
-            fieldValue={bytes(stats.storage.sizeBytes)}
-          />
+            fieldValue={String(stored.sizeBytes)}
+          >
+            {#snippet value()}<span
+                title={`${stored.sizeBytes.toLocaleString()} bytes`}
+                >{bytes(stored.sizeBytes)}</span
+              >{/snippet}
+          </DetailProperty>
           <DetailProperty
             fieldName="Retention limit"
             fieldType="uint64"
             showType={false}
-            fieldValue={stats.storage.maxSizeBytes === 0
-              ? 'No size limit'
-              : bytes(stats.storage.maxSizeBytes)}
-          />
+            fieldValue={String(stored.maxSizeBytes)}
+          >
+            {#snippet value()}<span
+                title={`${stored.maxSizeBytes.toLocaleString()} bytes`}
+                >{stored.maxSizeBytes === 0
+                  ? 'No size limit'
+                  : bytes(stored.maxSizeBytes)}</span
+              >{/snippet}
+          </DetailProperty>
         </tbody>
       </table>{:else}<p class="p-3 text-rp-subtle">
         Storage information unavailable.
