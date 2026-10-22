@@ -17,13 +17,29 @@
     entries,
     nodes = new Map<string, SpanNode>(),
     loading = false,
+    ontracecount,
   }: {
     entries: EvalTelemetrySummary[]
     nodes?: Map<string, SpanNode>
     loading?: boolean
+    ontracecount?: (count: number | undefined) => void
   } = $props()
 
   let traces = $state<Map<string, TraceSummary | null>>(new Map())
+  $effect(() => {
+    const ids = [
+      ...new Set(entries.map(entry => entry.reference.traceID.toLowerCase())),
+    ]
+    const stored = new Set(
+      [...nodes.values()].map(node => node.spanData.traceID.toLowerCase())
+    )
+    const pending = ids.some(id => !stored.has(id) && !traces.has(id))
+    ontracecount?.(
+      pending
+        ? undefined
+        : ids.filter(id => stored.has(id) || traces.get(id)).length
+    )
+  })
   const lookupIDs = $derived(
     [
       ...new Set(

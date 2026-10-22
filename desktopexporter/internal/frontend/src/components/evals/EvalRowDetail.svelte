@@ -6,6 +6,7 @@
   import AssessmentBadge from './AssessmentBadge.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import EvalAssessmentDetail from './EvalAssessmentDetail.svelte'
+  import EvalSpanEvidence from './EvalSpanEvidence.svelte'
   import MarkdownText from '@/components/shared/MarkdownText.svelte'
   import {
     cost,
@@ -15,10 +16,10 @@
   } from './model'
   import { caseSummary } from './case-summary'
   import { experimentSummary } from './experiment-summary'
-  import EvalTelemetrySummaries from './EvalTelemetrySummaries.svelte'
+  import EvalTelemetrySection from './EvalTelemetrySection.svelte'
   import { evalTelemetrySummaries } from './eval-telemetry-summaries'
   import { referenceKey } from './eval-traces'
-  import type { SpanNode } from '@/types/api-types'
+  import type { LogData, SpanNode } from '@/types/api-types'
   import { completionLabel, completionTone } from './group-results'
   import type { EvalOutlineRow } from './eval-outline'
   import { formatDuration } from '@/utils/time'
@@ -40,6 +41,7 @@
     sourceCopy?: EvalSourceFieldCopy
   } = $props()
   const result = $derived(row.result)
+  let evidenceLogs = $state<LogData[]>()
   const references = $derived(evalTelemetrySummaries(experiment, row))
   const members = $derived(
     experiment.results.filter(item => item.caseID === row.caseID)
@@ -207,6 +209,15 @@
         />
       {/if}
     {/snippet}
+    {#if span && telemetryNodes && (row.kind === 'tool' || row.kind === 'span' || row.kind === 'grader' || row.kind === 'execution')}
+      <div hidden={mode === 'cost'}>
+        <EvalSpanEvidence
+          {span}
+          nodes={telemetryNodes}
+          onlogs={logs => (evidenceLogs = logs)}
+        />
+      </div>
+    {/if}
     {#if mode === 'cost'}
       <table class="detail-fields w-full" aria-label={`${row.name} accounting`}>
         <tbody>
@@ -389,19 +400,19 @@
       {/each}
     </DetailBubble>
   {/if}
-  <DetailBubble
-    label="Telemetry"
-    disabled={references.length === 0}
-    initialOpen={references.length > 0}
-  >
-    {#if references.length}
-      <EvalTelemetrySummaries
-        entries={references}
-        nodes={telemetryNodes}
-        loading={telemetryLoading}
-      />
-    {/if}
-  </DetailBubble>
+  <EvalTelemetrySection
+    entries={references}
+    nodes={telemetryNodes}
+    loading={telemetryLoading}
+    wholeTraces={row.kind === 'result' || row.kind === 'case'}
+    evidenceLogs={span &&
+    (row.kind === 'tool' ||
+      row.kind === 'span' ||
+      row.kind === 'grader' ||
+      row.kind === 'execution')
+      ? evidenceLogs
+      : []}
+  />
 </DetailStack>
 
 <style lang="postcss">

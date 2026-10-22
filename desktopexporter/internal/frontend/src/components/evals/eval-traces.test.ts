@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import type { SpanNode, TraceData } from '@/types/api-types'
+import type { LogData, SpanNode, TraceData } from '@/types/api-types'
+import {
+  evalSpanEvidence,
+  toolEvidenceSpans,
+  toolLogOwners,
+  uniqueToolCallID,
+} from './eval-span-evidence'
 import { exampleExperiments } from './examples'
 import { buildEvalOutline, visibleOutlineRows } from './eval-outline'
 import { groupResults } from './group-results'
@@ -58,6 +64,211 @@ function node(
 }
 
 describe('referenced eval hierarchy', () => {
+  it('links unique recorded grader identities without rewriting judgments or guessing duplicate names', () => {
+    const grader = node(2, 1, 1)
+    grader.spanData.attributes = [
+      {
+        key: 'promptfoo.span.role',
+        value: { kind: 'string', value: 'grader' },
+      },
+      {
+        key: 'promptfoo.grader.id',
+        value: { kind: 'string', value: 'llm-rubric' },
+      },
+      {
+        key: 'gen_ai.evaluation.name',
+        value: { kind: 'string', value: 'llm-rubric' },
+      },
+    ]
+    const child = node(3, 2, 2)
+    child.spanData.attributes = [
+      {
+        key: 'promptfoo.span.role',
+        value: { kind: 'string', value: 'grader' },
+      },
+    ]
+    const index = indexEvalTraces([
+      {
+        traceID,
+        unplacedSpanCount: 0,
+        spans: [node(1, null, 0), grader, child],
+      },
+    ])
+    const assessment = {
+      ...exampleExperiments[0].results[0].assessments[0]!,
+      id: 'native-assessment',
+      sourceName: 'llm-rubric',
+      telemetry: undefined,
+      value: 0.5,
+      label: 'Partial',
+    }
+    const result = {
+      ...exampleExperiments[0].results[0],
+      repetition: 1,
+      telemetry: { traceID },
+      resultTelemetry: undefined,
+      assessments: [assessment],
+    }
+    const source = { ...exampleExperiments[0], results: [result] }
+    const experiment = projectEvalTraceEvidence(source, index)
+    expect(experiment.results[0].assessments[0]).toEqual({
+      ...assessment,
+      telemetry: ref(2),
+    })
+    expect(source.results[0].assessments[0].telemetry).toBeUndefined()
+    const rows = buildEvalOutline(
+      groupResults(experiment.results, experiment.results),
+      experiment,
+      index
+    )
+    expect(
+      rows.filter(row => row.kind === 'grader').map(row => row.assessmentID)
+    ).toEqual(['native-assessment', 'native-assessment'])
+    const ambiguous = {
+      ...source,
+      results: [
+        {
+          ...result,
+          assessments: [assessment, { ...assessment, id: 'other' }],
+        },
+      ],
+    }
+    expect(
+      projectEvalTraceEvidence(ambiguous, index).results[0].assessments.every(
+        item => !item.telemetry
+      )
+    ).toBe(true)
+    const duplicate = node(4, 1, 1)
+    duplicate.spanData.attributes = grader.spanData.attributes
+    const duplicatedIndex = indexEvalTraces([
+      {
+        traceID,
+        unplacedSpanCount: 0,
+        spans: [node(1, null, 0), grader, duplicate],
+      },
+    ])
+    expect(
+      projectEvalTraceEvidence(source, duplicatedIndex).results[0]
+        .assessments[0].telemetry
+    ).toBeUndefined()
+  })
+
+  it('keeps typed tool outputs and correlates ancestor logs only by a unique call ID', () => {
+    const root = node(1, null, 0)
+    const tool = node(2, 1, 1)
+    tool.spanData.attributes = [
+      {
+        key: 'gen_ai.operation.name',
+        value: { kind: 'string', value: 'execute_tool' },
+      },
+      {
+        key: 'gen_ai.tool.call.id',
+        value: { kind: 'string', value: 'call-a' },
+      },
+      {
+        key: 'gen_ai.tool.call.result',
+        value: { kind: 'int64', value: 9007199254740993n },
+      },
+    ]
+    tool.spanData.events = [
+      {
+        name: 'tool.output',
+        timestamp: tool.spanData.endTime,
+        droppedAttributesCount: 0,
+        attributes: [
+          { key: 'output', value: { kind: 'string', value: '' } },
+          {
+            key: 'stderr',
+            value: { kind: 'string', value: 'first\nsecond\nthird\nfourth' },
+          },
+        ],
+      },
+    ]
+    const execution = node(3, 2, 2)
+    const nestedTool = node(4, 2, 2)
+    nestedTool.spanData.attributes = [
+      {
+        key: 'gen_ai.operation.name',
+        value: { kind: 'string', value: 'execute_tool' },
+      },
+    ]
+    const nodes = indexEvalTraces([
+      {
+        traceID,
+        unplacedSpanCount: 0,
+        spans: [root, tool, execution, nestedTool, node(5, 4, 3)],
+      },
+    ]).nodes
+    const spans = toolEvidenceSpans(tool.spanData, nodes)
+    expect(spans.map(span => span.spanID)).toEqual([
+      ref(2).spanID,
+      ref(3).spanID,
+    ])
+    expect(
+      toolLogOwners(spans, nodes, uniqueToolCallID(tool.spanData, nodes)).map(
+        span => span.spanID
+      )
+    ).toEqual([ref(2).spanID, ref(3).spanID, ref(1).spanID])
+    const log: LogData = {
+      logRef: 'log-a',
+      traceID,
+      spanID: ref(1).spanID,
+      timestamp: 1n,
+      observedTimestamp: 1n,
+      severityText: '',
+      severityNumber: 0,
+      eventName: '',
+      flags: 0,
+      droppedAttributesCount: 0,
+      resource: root.spanData.resource,
+      scope: root.spanData.scope,
+      body: { kind: 'string', value: 'claude_code.tool_result' },
+      attributes: [
+        { key: 'tool_use_id', value: { kind: 'string', value: 'call-a' } },
+        {
+          key: 'tool_input',
+          value: { kind: 'string', value: '{"n":9007199254740993}' },
+        },
+      ],
+    }
+    const records = evalSpanEvidence(
+      spans,
+      [
+        log,
+        { ...log, logRef: 'other-trace', traceID: 'b'.repeat(32) },
+        {
+          ...log,
+          logRef: 'other-call',
+          attributes: [
+            { key: 'tool_use_id', value: { kind: 'string', value: 'call-b' } },
+          ],
+        },
+      ],
+      'call-a'
+    )
+    expect(records.map(record => record.id)).toEqual([
+      `${referenceKey(tool.spanData)}/attributes`,
+      `${referenceKey(tool.spanData)}/event/0`,
+      'log/log-a',
+    ])
+    expect(records[0].fields[1].value).toEqual({
+      kind: 'int64',
+      value: 9007199254740993n,
+    })
+    expect(records[1].fields[0].value).toEqual({ kind: 'string', value: '' })
+    expect(records[2].fields.at(-1)?.value).toEqual({
+      kind: 'string',
+      value: '{"n":9007199254740993}',
+    })
+    expect(
+      evalSpanEvidence(spans, [log]).some(record =>
+        record.id.startsWith('log/')
+      )
+    ).toBe(false)
+    nestedTool.spanData.attributes = tool.spanData.attributes
+    expect(uniqueToolCallID(tool.spanData, nodes)).toBeUndefined()
+  })
+
   it('resolves trace-only results and builds start-ordered native execution, tool and grader rows', () => {
     const root = node(1, null, 0)
     const target = node(2, 1, 1)

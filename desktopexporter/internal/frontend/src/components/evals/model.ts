@@ -16,6 +16,8 @@ export type TelemetryReference = {
 
 export type Assessment = {
   id: string
+  /** Native assertion type, retained for unique producer telemetry correlation. */
+  sourceName?: string
   value: number | null
   label: string
   explanation: string

@@ -121,7 +121,7 @@ describe('TimelineMarkers', () => {
     const rows = screen.getAllByRole('button', { name: /Span event|Log/ })
     expect(rows[0]).toHaveTextContent(/exception\s+\+10 ns\s+Span event/)
     expect(rows[1]).toHaveTextContent(
-      /ERROR \(17\)\s+\+11 ns\s+Log\s+·\s+payment\.failed/
+      /payment\.failed\s*· ERROR \(17\)\s+\+11 ns\s+Log/
     )
     expect(screen.getByText('exception')).toHaveAttribute('title', 'exception')
     expect(
@@ -141,7 +141,7 @@ describe('TimelineMarkers', () => {
     expect(onSelectRecord).toHaveBeenCalledWith(mixedMarker().members[1])
   })
 
-  it('does not invent a name for a nameless log', async () => {
+  it('uses the received body preview when the log has no event name', async () => {
     const marker = mixedMarker()
     const logRecord = marker.members[1]!
     if (logRecord.kind !== 'log') throw new Error('expected log fixture')
@@ -163,8 +163,13 @@ describe('TimelineMarkers', () => {
     ).toBeNull()
     const row = screen.getByRole('button', { name: /Log/ })
     expect(row).toHaveTextContent(/ERROR \(17\)\s+\+11 ns\s+Log/)
-    expect(row).not.toHaveTextContent('·')
-    expect(row).not.toHaveTextContent('failed')
+    expect(row.querySelector('.log-severity__label')).toHaveTextContent(
+      'failed'
+    )
+    expect(row.querySelector('.activity-popover__metadata')).toHaveTextContent(
+      /^Log$/
+    )
+    expect(row.querySelector('.log-severity')).toHaveAttribute('title', 'ERROR')
     expect(row).not.toHaveTextContent('checkout')
     expect(row).not.toHaveTextContent('log-1')
   })

@@ -6,6 +6,7 @@
     setupAnchorPopover,
   } from '@/components/shared/utils/anchor-popover'
   import LogSeverity from '@/components/logs/LogSeverity.svelte'
+  import { severityLabel } from '@/components/logs/log-severity'
   import { formatSignedDuration } from '@/utils/time'
   import {
     MARKER_GLYPH_REM,
@@ -46,7 +47,9 @@
   }
 
   function recordName(record: TimelineRecord): string {
-    return record.kind === 'event' ? record.event.name : record.log.eventName
+    return record.kind === 'event'
+      ? record.event.name
+      : record.log.eventName || record.log.bodyPreview
   }
 
   function buttonTitle(): string {
@@ -259,6 +262,18 @@
                 {/if}
                 <span class="min-w-0 truncate" title={name}>{name}</span>
               </span>
+            {:else if name}
+              <LogSeverity
+                number={record.log.severityNumber}
+                text={record.log.severityText}
+              >
+                {name}<span class="sr-only">
+                  · {severityLabel(
+                    record.log.severityText,
+                    record.log.severityNumber
+                  )} ({record.log.severityNumber})</span
+                >
+              </LogSeverity>
             {:else}
               <LogSeverity
                 number={record.log.severityNumber}
@@ -276,10 +291,6 @@
               <span>Span event</span>
             {:else}
               <span>Log</span>
-              {#if name}
-                <span aria-hidden="true">·</span>
-                <span class="min-w-0 truncate" title={name}>{name}</span>
-              {/if}
             {/if}
           </span>
         </button>

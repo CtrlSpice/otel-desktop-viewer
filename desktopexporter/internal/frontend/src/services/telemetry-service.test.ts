@@ -237,6 +237,20 @@ describe('telemetryAPI.getLog', () => {
       kind: 'int64',
       value: 9_223_372_036_854_775_807n,
     })
+    stubRpcResult({ status: 'found', logs: [result] })
+    const traceID = 'a'.repeat(32)
+    const spanID = 'b'.repeat(16)
+    const controller = new AbortController()
+    expect(
+      (await telemetryAPI.getSpanLogs(traceID, spanID, controller.signal))[0]
+        .body
+    ).toEqual(log.body)
+    const request = JSON.parse(String(vi.mocked(fetch).mock.calls[0][1]!.body))
+    expect(request).toMatchObject({
+      method: 'getSpan',
+      params: { traceID, spanID },
+    })
+    expect(vi.mocked(fetch).mock.calls[0][1]!.signal).toBe(controller.signal)
   })
 })
 

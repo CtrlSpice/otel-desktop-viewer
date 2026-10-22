@@ -1198,6 +1198,22 @@ LIMIT ${batch.length}`,
     return traceLogSummariesFromJSON(rawData)
   },
 
+  /** Full logs for one exact received trace/span pair. No trace-wide association. */
+  getSpanLogs: async (
+    traceID: string,
+    spanID: string,
+    signal?: AbortSignal
+  ): Promise<LogData[]> => {
+    const result = await callRPC<
+      | { status: 'found'; logs: JsonLogData[] }
+      | { status: 'notFound' | 'ambiguous' }
+    >('getSpan', named({ traceID, spanID }), signal)
+    if (result.status === 'notFound') return []
+    if (result.status !== 'found')
+      throw new Error('Span identity is ambiguous.')
+    return result.logs.map(logDataFromJSON)
+  },
+
   clearTraces: () => callRPC<string>('clearTraces', undefined),
   deleteTraces: (traceIDs: string[]) =>
     callRPC<JsonDeleteResult>('deleteSpansByTraceID', traceIDs),

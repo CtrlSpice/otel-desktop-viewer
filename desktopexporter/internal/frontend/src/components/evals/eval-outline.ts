@@ -282,6 +282,12 @@ export function buildEvalOutline(
             caseID: group.id,
             result,
             name: span.name,
+            assessmentID:
+              result.assessments.find(
+                assessment =>
+                  assessment.telemetry &&
+                  referenceKey(assessment.telemetry) === referenceKey(span)
+              )?.id ?? (kind === 'grader' ? parent.assessmentID : undefined),
             depth: parent.depth + 1,
             state: isErrorSpan(span) ? 'Error' : 'Complete',
             internalFault: false,

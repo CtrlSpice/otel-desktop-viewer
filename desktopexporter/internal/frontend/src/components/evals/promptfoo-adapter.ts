@@ -514,6 +514,7 @@ export function projectPromptfooDataset(
           })
         assessments.push({
           id,
+          sourceName: text(assertion?.type),
           value: typeof component.score === 'number' ? component.score : null,
           pass:
             typeof component.pass === 'boolean' ? component.pass : undefined,

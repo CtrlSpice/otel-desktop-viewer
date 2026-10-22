@@ -182,7 +182,15 @@
       Math.max(orderedKeys.length, MIN_TRACE_PALETTE),
       theme
     )
-    return new Map(orderedKeys.map((k, i) => [k, palette[i]!]))
+    const service = spans.length
+      ? getServiceName(spans[0]!.spanData.resource)
+      : undefined
+    return new Map(
+      orderedKeys.map((k, i) => [
+        k,
+        i === 0 && service ? traceServiceColor(service, theme) : palette[i]!,
+      ])
+    )
   }
 
   /** Services share stable summary colours; single-service operations use
@@ -1244,6 +1252,16 @@
                 subtreeCollapsed={effectiveCollapsed.has(sid)}
                 rowIndex={rowIndexBySpanID.get(sid) ?? index + 1}
                 matched={searchActive && matchedIDs.has(sid)}
+                matchBefore={searchActive &&
+                  !!visibleRows[index - 1] &&
+                  matchedIDs.has(
+                    visibleRows[index - 1]!.spanNode.spanData.spanID
+                  )}
+                matchAfter={searchActive &&
+                  !!visibleRows[index + 1] &&
+                  matchedIDs.has(
+                    visibleRows[index + 1]!.spanNode.spanData.spanID
+                  )}
                 {spanColWidth}
                 {optionalColumns}
                 timelineWidth={timelinePlotPx}

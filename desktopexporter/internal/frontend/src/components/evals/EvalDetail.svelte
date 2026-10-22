@@ -5,7 +5,7 @@
   import type { EvalExperiment } from './model'
   import { cost, estimatedCost, localTimestamp } from './model'
   import ExperimentStatusBadge from './ExperimentStatusBadge.svelte'
-  import EvalTelemetrySummaries from './EvalTelemetrySummaries.svelte'
+  import EvalTelemetrySection from './EvalTelemetrySection.svelte'
   import { evalTelemetrySummaries } from './eval-telemetry-summaries'
   import type { SpanNode } from '@/types/api-types'
   import type { EvalSourceExperimentCopy } from './eval-source-copy'
@@ -225,17 +225,11 @@
       </tbody>
     </table>
   </DetailBubble>
-  <DetailBubble
-    label="Telemetry"
-    disabled={references.length === 0}
-    initialOpen={references.length > 0}
-  >
-    {#if references.length}
-      <EvalTelemetrySummaries
-        entries={references}
-        nodes={telemetryNodes}
-        loading={telemetryLoading}
-      />
-    {/if}
-  </DetailBubble>
+  <EvalTelemetrySection
+    entries={references}
+    nodes={telemetryNodes}
+    loading={telemetryLoading}
+    wholeTraces
+    evidenceLogs={[]}
+  />
 </DetailStack>

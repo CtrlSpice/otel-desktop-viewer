@@ -96,13 +96,14 @@ function cycleBadge(container: HTMLElement): HTMLElement | null {
   return container.querySelector('.waterfall-row__cycle')
 }
 
-describe('WaterfallRow direct match badge', () => {
-  it('shows a visible badge only for a direct search match', () => {
+describe('WaterfallRow direct match highlight', () => {
+  it('highlights a direct search match without a redundant badge', () => {
     const { queryByText: queryWithoutMatch } = renderRow(makeRow())
     expect(queryWithoutMatch('Match')).toBeNull()
 
-    const { getByText } = renderRow(makeRow(), true)
-    expect(getByText('Match')).toBeVisible()
+    const { container, queryByText } = renderRow(makeRow(), true)
+    expect(queryByText('Match')).toBeNull()
+    expect(container.querySelector('tr')).toHaveClass('waterfall-row--matched')
   })
 })
 

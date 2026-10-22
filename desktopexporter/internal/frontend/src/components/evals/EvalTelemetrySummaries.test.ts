@@ -5,6 +5,7 @@ import { telemetryAPI } from '@/services/telemetry-service'
 import { renderWithContexts as render } from '@/test/render-helpers'
 import type { SpanNode } from '@/types/api-types'
 import EvalTelemetrySummaries from './EvalTelemetrySummaries.svelte'
+import EvalTelemetrySection from './EvalTelemetrySection.svelte'
 import { evalTelemetrySummaries } from './eval-telemetry-summaries'
 import { exampleExperiments } from './examples'
 import { buildEvalOutline } from './eval-outline'
@@ -51,6 +52,60 @@ const node: SpanNode = {
     scope: { name: '', version: '', attributes: [], droppedAttributesCount: 0 },
   },
 }
+
+it('counts distinct connected traces and scoped logs, keeping failed counts unavailable', async () => {
+  const logs = vi
+    .spyOn(telemetryAPI, 'getTraceLogSummaries')
+    .mockResolvedValue([
+      {
+        logRef: 'one',
+        timestamp: 1n,
+        spanID: reference.spanID,
+        eventName: 'tool.output',
+        severityNumber: 0,
+        severityText: '',
+        serviceName: '',
+        bodyPreview: '',
+      },
+      {
+        logRef: 'two',
+        timestamp: 2n,
+        spanID: 'c'.repeat(16),
+        eventName: '',
+        severityNumber: 0,
+        severityText: '',
+        serviceName: '',
+        bodyPreview: '',
+      },
+    ])
+  const props = {
+    entries: [
+      { reference, label: 'Tool' },
+      { reference: { ...reference, spanID: 'c'.repeat(16) }, label: 'Grader' },
+    ],
+    nodes: new Map([[referenceKey(reference), node]]),
+    evidenceLogs: [],
+    wholeTraces: true,
+  }
+  const { rerender } = render(EvalTelemetrySection, props)
+  await waitFor(() =>
+    expect(screen.getByText('[1 trace | 2 logs]')).toBeVisible()
+  )
+  await rerender({
+    componentProps: {
+      ...props,
+      entries: props.entries.slice(0, 1),
+      wholeTraces: false,
+    },
+  })
+  await waitFor(() =>
+    expect(screen.getByText('[1 trace | 1 log]')).toBeVisible()
+  )
+  logs.mockRejectedValueOnce(new Error('offline'))
+  await rerender({ componentProps: { ...props, wholeTraces: true } })
+  await waitFor(() => expect(screen.getByText('[1 trace]')).toBeVisible())
+  expect(screen.queryByText(/0 logs/)).toBeNull()
+})
 
 it('summarizes stored evidence and provides a native exact-span link, preserving zero duration', () => {
   render(EvalTelemetrySummaries, {

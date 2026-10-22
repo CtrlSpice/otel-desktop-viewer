@@ -62,7 +62,8 @@ export function resolveEvalReference(
 }
 
 export function spanAttribute(node: SpanNode, key: string): string | undefined {
-  const attribute = node.spanData.attributes.find(item => item.key === key)
+  const attributes = node.spanData.attributes.filter(item => item.key === key)
+  const attribute = attributes.length === 1 ? attributes[0] : undefined
   return attribute?.value.kind === 'string' && !attribute.hasConflict
     ? attribute.value.value
     : undefined
@@ -141,8 +142,33 @@ export function projectEvalTraceEvidence(
         known.add(referenceKey(node.spanData))
       }
       const root = resolveEvalReference(result.telemetry, index)?.spanData
+      const assessments = result.assessments.map(assessment => {
+        if (
+          assessment.telemetry ||
+          !assessment.sourceName ||
+          result.assessments.filter(
+            item => item.sourceName === assessment.sourceName
+          ).length !== 1
+        )
+          return assessment
+        const graders = nodes.filter(
+          node =>
+            spanAttribute(node, 'promptfoo.span.role') === 'grader' &&
+            spanAttribute(node, 'promptfoo.grader.id') ===
+              assessment.sourceName &&
+            spanAttribute(node, 'gen_ai.evaluation.name') ===
+              assessment.sourceName
+        )
+        if (graders.length !== 1) return assessment
+        const span = graders[0]!.spanData
+        return {
+          ...assessment,
+          telemetry: { traceID: span.traceID, spanID: span.spanID },
+        }
+      })
       return {
         ...result,
+        assessments,
         resultTelemetry:
           result.resultTelemetry ??
           (root ? { traceID: root.traceID, spanID: root.spanID } : undefined),

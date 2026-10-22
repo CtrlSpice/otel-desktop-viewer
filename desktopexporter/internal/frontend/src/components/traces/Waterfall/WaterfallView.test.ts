@@ -7,6 +7,7 @@ import WaterfallView, {
   getTraceBounds,
 } from './WaterfallView.svelte'
 import type { SpanNode } from '@/types/api-types'
+import { traceServiceColor } from '@/utils/trace-service-color'
 import { renderWithContexts } from '@/test/render-helpers'
 import { resetCollapseStoreForTests } from './waterfall-collapse-store'
 import { scrollMock } from '@/test/mock-virtual-list'
@@ -246,6 +247,22 @@ describe('WaterfallView bigint domain geometry', () => {
       '#7bd6b6',
       'var(--color-error)',
     ])
+    for (const span of spans)
+      span.spanData.resource.attributes = [
+        {
+          key: 'service.name',
+          value: { kind: 'string', value: 'one-service' },
+        },
+      ]
+    const serviceRows = buildWaterfallRows(
+      spans,
+      getTraceBounds(spans),
+      'rose-pine-dawn'
+    )
+    expect(serviceRows[0].color).toBe(
+      traceServiceColor('one-service', 'rose-pine-dawn')
+    )
+    expect(serviceRows[2].color).toBe('var(--color-error)')
   })
 })
 
@@ -713,7 +730,8 @@ describe('WaterfallView collapse ownership', () => {
     const during = rowIDs()
     expect(during).toContain('c')
     expect(during).not.toContain('f')
-    expect(spanRow('c')).toHaveTextContent('Match')
+    expect(spanRow('c')).toHaveClass('waterfall-row--matched')
+    expect(spanRow('c')).not.toHaveTextContent('Match')
     expect(spanRow('b')).not.toHaveTextContent('Match')
 
     // Clearing the search puts back exactly what the reader had: 'e' still
@@ -734,9 +752,15 @@ describe('WaterfallView collapse ownership', () => {
     renderTree({ searchActive: true })
     await tick()
 
-    expect(document.querySelectorAll('.waterfall-row__match')).toHaveLength(
+    expect(document.querySelectorAll('.waterfall-row--matched')).toHaveLength(
       ALL_IDS.length
     )
+    expect(spanRow('a')).not.toHaveClass('waterfall-row--joined-before')
+    expect(spanRow('b')).toHaveClass(
+      'waterfall-row--joined-before',
+      'waterfall-row--joined-after'
+    )
+    expect(spanRow('f')).not.toHaveClass('waterfall-row--joined-after')
   })
 
   it('reveals a newly selected span without centering a visible row', async () => {

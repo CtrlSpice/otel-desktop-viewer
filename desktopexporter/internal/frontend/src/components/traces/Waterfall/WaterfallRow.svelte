@@ -38,6 +38,8 @@
     traceStart: bigint
     traceEnd: bigint
     matched?: boolean
+    matchBefore?: boolean
+    matchAfter?: boolean
     onRowClick: () => void
     onInspectColumn?: (column: WaterfallColumn) => void
     onToggleExpand: () => void
@@ -60,6 +62,8 @@
     traceStart,
     traceEnd,
     matched = false,
+    matchBefore = false,
+    matchAfter = false,
     onRowClick,
     onInspectColumn,
     onToggleExpand,
@@ -109,6 +113,8 @@
   class="waterfall-row item-state"
   class:table-row--selected={selected}
   class:waterfall-row--matched={matched}
+  class:waterfall-row--joined-before={matched && matchBefore}
+  class:waterfall-row--joined-after={matched && matchAfter}
   data-span-id={span.spanID}
   style:visibility={visible ? 'visible' : 'collapse'}
   tabindex={tabbable && visible ? 0 : -1}
@@ -146,12 +152,6 @@
             : onRowClick()}
       />
       {#snippet trailing()}
-        {#if matched}
-          <span
-            class="badge badge-xs badge-primary waterfall-row__match flex-none"
-            >Match</span
-          >
-        {/if}
         {#if cycleLabel}
           <span
             class="waterfall-row__cycle"
@@ -292,5 +292,19 @@
 
   .waterfall-row--matched {
     --item-idle-bg: var(--color-highlight-high);
+  }
+
+  .waterfall-row--joined-before,
+  .waterfall-row--joined-before > td:first-child,
+  .waterfall-row--joined-before > td:last-child {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+  }
+
+  .waterfall-row--joined-after,
+  .waterfall-row--joined-after > td:first-child,
+  .waterfall-row--joined-after > td:last-child {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
   }
 </style>
