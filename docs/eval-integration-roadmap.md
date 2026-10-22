@@ -4,15 +4,23 @@ Research date: 2026-10-20. Vendor capabilities below are documented, not end-to-
 
 ## Current foundation
 
-The [snapshot archive](eval-snapshots.md) stores source JSON in DuckDB with exact-text downloads and byte-identical deduplication. Source adapters interpret that immutable evidence for the existing Evals presentation. Unknown fields remain in the original; projection notes disclose unsupported interpretations. The first adapters target Promptfoo v3 full-result exports and the viewer kit's explicit `{manifest,pilot}` wrapper.
+The [ingestion path](eval-ingestion.md) stores producer context and ordered source
+rows as DuckDB JSON, then builds disposable Run, row-membership and text-search
+indexes. Unknown fields remain in retained source data. The supported production
+adapter currently targets producer-native Promptfoo v3 full-result exports.
 
-The current presentation is intentionally narrower than the archive. It assumes string questions/answers, numeric normalized assessments and CAD estimates. An adapter must omit incompatible projections with an explanation rather than invent a score maximum, relabel USD as CAD, infer execution errors from prose or manufacture telemetry IDs.
+The shared projection keeps Run, Case and Rep distinct. Attempt is a separate,
+optional retry concept and must be emitted only when a producer records retry
+identity. Promptfoo v3 rows currently map to Reps; they do not define the model
+for later adapters.
+
+The current presentation is intentionally narrower than the retained source. It assumes string questions/answers, numeric normalized assessments and CAD estimates. An adapter must omit incompatible projections with an explanation rather than invent a score maximum, relabel USD as CAD, infer execution errors from prose or manufacture telemetry IDs.
 
 ## Prioritized UI work
 
 | Priority | Capability | Required behavior |
 | --- | --- | --- |
-| P0 | Evidence and provenance | Original file access, snapshot digest, source record location, producer/schema/adapter version and completeness. A projected upstream export is not the producer's complete original evidence. |
+| P0 | Evidence and provenance | Retained source access, content identity, source record location, producer/schema/adapter version and completeness. A projected upstream export is not the producer's complete original evidence. |
 | P0 | Typed input/output/expected | Text, JSON, ordered message parts and non-chat likelihood/classification/retrieval evidence. Distinguish missing, null, empty string, zero and false. |
 | P0 | Arbitrary scores and aggregates | Preserve numeric, categorical, boolean and structured scores; optional scale/direction/threshold; supplied aggregates and uncertainty. Do not turn every score into a percentage. |
 | P0 | Dataset and variant identity | Dataset/example revision, model/prompt variant, repetition, retry lineage and scorer version when supplied. Never group by display text alone. |
@@ -45,7 +53,7 @@ A platform accepting OTLP does not establish that historical experiments, feedba
 
 ## Small extensible core
 
-Following the [extensible-core direction](https://jeremymorrell.dev/blog/extensible-software-in-the-age-of-llms/), keep archive storage, source interpretation and shared renderers separate. A source adapter receives bounded source JSON and returns a versioned projection, original-record locations and limitations. No plugin runtime is required.
+Following the [extensible-core direction](https://jeremymorrell.dev/blog/extensible-software-in-the-age-of-llms/), keep retained source, producer interpretation and shared renderers separate. A source adapter receives bounded source JSON and returns a versioned projection, original-record locations and limitations. No plugin runtime is required.
 
 Next adapters should follow real fixtures: DeepEval JSON, Inspect dumped JSON, harness result/sample bundles and OSS Evals JSONL. Hosted read connectors need separately defined pagination, credentials, completeness and reference-resolution contracts. Original evidence stays independent so a later adapter can reinterpret it without replacing received data.
 

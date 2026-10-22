@@ -218,7 +218,13 @@ describe('TracesPage unplaced spans banner', () => {
 
   it('queries the list with null bounds for the default All selection', async () => {
     await renderSelectedTrace(0)
-    expect(searchTraceSummaries).toHaveBeenCalledWith(null, null)
+    expect(searchTraceSummaries).toHaveBeenCalledWith(
+      null,
+      null,
+      undefined,
+      undefined,
+      { field: 'startTime', direction: 'desc' }
+    )
     expect(getTraceLogSummaries).toHaveBeenCalledWith(
       'trace-1',
       expect.any(AbortSignal)

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ComponentProps } from 'svelte'
+  import type { Snippet } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
     CheckListIcon,
@@ -7,15 +7,16 @@
     Coins01Icon,
   } from '@hugeicons/core-free-icons'
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
+  import Identifier from '@/components/shared/Identifier.svelte'
   import AssessmentBadge from './AssessmentBadge.svelte'
   import RunStatusBadge from './RunStatusBadge.svelte'
   import EvalStatus from './EvalStatus.svelte'
   import { caseSummary } from './case-summary'
+  import { runSummary } from './run-summary'
   import TableSortButton from '@/components/shared/TableSortButton.svelte'
   import TableColumnHeading from '@/components/shared/TableColumnHeading.svelte'
   import ResizableTable from '@/components/shared/ResizableTable.svelte'
   import TreeRowIdentity from '@/components/shared/TreeRowIdentity.svelte'
-  import LegendRows from '@/components/shared/LegendRows.svelte'
   import DurationBar from '@/components/shared/DurationBar.svelte'
   import TimingCell from '@/components/shared/TimingCell.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
@@ -42,41 +43,43 @@
     getTraceBounds,
   } from '@/components/traces/Waterfall/WaterfallView.svelte'
   import { themeSignal } from '@/state/theme.svelte'
-  import {
-    completionLabel,
-    completionTone,
-    groupAttempts,
-  } from './group-attempts'
+  import { completionLabel, completionTone, groupReps } from './group-reps'
   import {
     estimatedCost,
     type TelemetryReference,
     type AssessmentDefinition,
-    type EvalAttempt,
+    type EvalRep,
     type EvalRun,
     type EvalView,
   } from './model'
-  import { type AttemptSort, type AttemptSortKey } from './sort-attempts'
+  import { type RepSort, type RepSortKey } from './sort-reps'
 
   let {
     run,
-    attempts,
+    reps,
     selectedID,
     selectedRowID,
     onSelect,
-    onSelectRun,
     onResolveSelection,
     onTraceViews,
     viewKey = $bindable('results'),
+    headerActions,
+    beforeTable,
+    disclosure = $bindable({}),
+    sorts = $bindable({}),
   }: {
     run: EvalRun
-    attempts: EvalAttempt[]
+    reps: EvalRep[]
     selectedID?: string
     selectedRowID?: string
     onSelect?: (row: EvalOutlineRow) => void
-    onSelectRun?: () => void
     onResolveSelection?: (row: EvalOutlineRow | undefined) => void
     onTraceViews?: (traces: TraceData[], loading: boolean) => void
     viewKey?: EvalView
+    headerActions?: Snippet
+    beforeTable?: Snippet
+    disclosure?: Record<string, Record<string, boolean>>
+    sorts?: Record<string, RepSort | undefined>
   } = $props()
   const panelID = $props.id()
   const views: { id: EvalView; label: string; icon: typeof CheckListIcon }[] = [
@@ -101,32 +104,23 @@
       ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
       [next]?.focus()
   }
-  type LegendEntry = Pick<ComponentProps<typeof EvalStatus>, 'label' | 'tone'>
-  const completionLegend: LegendEntry[] = [
-    { label: 'Complete', tone: 'complete' },
-    { label: 'In progress', tone: 'running' },
-    { label: 'Span error', tone: 'error' },
-    { label: 'Internal fault', tone: 'papaya' },
-    { label: 'Planned', tone: 'neutral' },
-  ]
   let caseGutterWidth = $state(0)
   let repGutterWidth = $state(0)
   const countDigits = $derived.by(() => {
     const repetitions = new Map<string, number>()
-    let maximum = 1
-    for (const attempt of run.attempts) {
-      const count = (repetitions.get(attempt.caseID) ?? 0) + 1
-      repetitions.set(attempt.caseID, count)
+    let maximum = Math.max(1, new Set(run.reps.map(item => item.caseID)).size)
+    for (const rep of run.reps) {
+      const count = (repetitions.get(rep.caseID) ?? 0) + 1
+      repetitions.set(rep.caseID, count)
       maximum = Math.max(
         maximum,
         count,
-        attempt.tools.length +
-          attempt.assessments.filter(item => item.telemetry?.spanID).length
+        rep.tools.length +
+          rep.assessments.filter(item => item.telemetry?.spanID).length
       )
     }
     return String(maximum).length
   })
-  let disclosure = $state<Record<string, Record<string, boolean>>>({})
   const overrides = $derived(disclosure[run.id] ?? {})
   function toggleOutline(row: EvalOutlineRow) {
     disclosure = {
@@ -163,10 +157,7 @@
   )
   const execution = $derived(
     Object.fromEntries(
-      run.attempts.map(attempt => [
-        attempt.id,
-        evalExecutionRows(attempt, traceIndex),
-      ])
+      run.reps.map(rep => [rep.id, evalExecutionRows(rep, traceIndex)])
     )
   )
   let timingsLoading = $state(false)
@@ -201,17 +192,15 @@
     }
     return window
   }
-  const attemptWindows = $derived(
+  const repWindows = $derived(
     Object.fromEntries(
-      run.attempts.map(attempt => [
-        attempt.id,
+      run.reps.map(rep => [
+        rep.id,
         spanWindow([
-          timingFor(attempt.telemetry),
-          timingFor(attempt.attemptTelemetry),
-          ...attempt.tools.map(tool => timingFor(tool.telemetry)),
-          ...attempt.assessments.map(assessment =>
-            timingFor(assessment.telemetry)
-          ),
+          timingFor(rep.telemetry),
+          timingFor(rep.repTelemetry),
+          ...rep.tools.map(tool => timingFor(tool.telemetry)),
+          ...rep.assessments.map(assessment => timingFor(assessment.telemetry)),
         ]),
       ])
     )
@@ -219,13 +208,13 @@
   const runWindow = $derived(spanWindow(Object.values(spanTimings)))
   const maximumDuration = $derived.by(() => {
     const extent = runWindow ? runWindow.endTime - runWindow.startTime : 0n
-    return [
-      run,
-      ...run.attempts.flatMap(attempt => [attempt, ...attempt.tools]),
-    ].reduce((maximum, item) => {
-      const duration = durationFor(item.telemetry, item.seconds) ?? 0n
-      return duration > maximum ? duration : maximum
-    }, extent)
+    return [run, ...run.reps.flatMap(rep => [rep, ...rep.tools])].reduce(
+      (maximum, item) => {
+        const duration = durationFor(item.telemetry, item.seconds) ?? 0n
+        return duration > maximum ? duration : maximum
+      },
+      extent
+    )
   })
   $effect(() => {
     const references = evalTraceReferences(run)
@@ -251,7 +240,7 @@
     return () => controller.abort()
   })
   type Column = {
-    key: AttemptSortKey
+    key: RepSortKey
     label: string
     group: string
     width: number
@@ -269,17 +258,17 @@
   const columns = $derived<Column[]>([
     {
       key: 'name',
-      label: 'Case',
-      group: 'Case',
+      label: 'Test case',
+      group: 'Test case',
       width: Math.max(1, caseGutterWidth),
       min: Math.max(1, caseGutterWidth),
       fixed: true,
     },
     {
       key: 'repetition',
-      label: 'Rep',
-      hint: 'Repetition',
-      group: 'Case',
+      label: 'Result',
+      hint: 'Recorded result',
+      group: 'Test case',
       width: Math.max(320, repGutterWidth),
       min: Math.max(144, repGutterWidth),
       numeric: true,
@@ -308,7 +297,7 @@
         ? [
             {
               key: headline ? `assessment:${headline.id}` : 'state',
-              label: headline?.name ?? 'Result',
+              label: 'Assessment',
               group: 'Results',
               width: 160,
               min: 144,
@@ -343,46 +332,44 @@
             } as Column,
           ]),
   ])
-  let sorts = $state<Record<string, AttemptSort | undefined>>({})
   const sortScope = $derived(JSON.stringify([run.id, viewKey]))
   const activeSort = $derived(sorts[sortScope])
-  const measuredAttempts = $derived(
-    run.attempts.map(attempt => {
-      const window = attemptWindows[attempt.id]
+  const measuredReps = $derived(
+    run.reps.map(rep => {
+      const window = repWindows[rep.id]
       const duration =
-        durationFor(attempt.attemptTelemetry) ??
+        durationFor(rep.repTelemetry) ??
         (window
           ? window.endTime - window.startTime
-          : durationFor(attempt.telemetry, attempt.seconds))
+          : durationFor(rep.telemetry, rep.seconds))
       return {
-        ...attempt,
-        state: execution[attempt.id]?.state ?? attempt.state,
+        ...rep,
+        state: execution[rep.id]?.state ?? rep.state,
         seconds: duration !== undefined ? Number(duration) / 1e9 : undefined,
+        startedAt: window
+          ? new Date(Number(window.startTime / 1000000n)).toISOString()
+          : rep.startedAt,
       }
     })
   )
   const groups = $derived(
-    groupAttempts(
-      measuredAttempts.filter(item =>
-        attempts.some(attempt => attempt.id === item.id)
-      ),
-      measuredAttempts,
+    groupReps(
+      measuredReps.filter(item => reps.some(rep => rep.id === item.id)),
+      measuredReps,
       activeSort
     ).map(group => ({
       ...group,
-      internalFault: group.allAttempts.some(
+      internalFault: group.allReps.some(
         item => execution[item.id]?.internalFault
       ),
-      summary: caseSummary(group.allAttempts, run.assessments),
-      duration: group.allAttempts.reduce((total, attempt) => {
-        return (
-          total + (durationFor(attempt.attemptTelemetry, attempt.seconds) ?? 0n)
-        )
+      summary: caseSummary(group.allReps, run.assessments),
+      duration: group.allReps.reduce((total, rep) => {
+        return total + (durationFor(rep.repTelemetry, rep.seconds) ?? 0n)
       }, 0n),
     }))
   )
 
-  function toggleSort(key: AttemptSortKey) {
+  function toggleSort(key: RepSortKey) {
     sorts[sortScope] = {
       key,
       direction:
@@ -392,23 +379,24 @@
     }
   }
   const estimates = $derived([
-    { key: 'investigatorCost', ...estimatedCost(attempts, 'investigatorCost') },
-    { key: 'graderCost', ...estimatedCost(attempts, 'graderCost') },
+    { key: 'investigatorCost', ...estimatedCost(reps, 'investigatorCost') },
+    { key: 'graderCost', ...estimatedCost(reps, 'graderCost') },
   ])
+  const runTotals = $derived(runSummary(run))
+  const runCosts = $derived({
+    investigatorCost: estimatedCost(run.reps, 'investigatorCost'),
+    graderCost: estimatedCost(run.reps, 'graderCost'),
+  })
   const outline = $derived(buildEvalOutline(groups, run, traceIndex))
   const selectionOutline = $derived(
-    attempts.length === run.attempts.length
+    reps.length === run.reps.length
       ? outline
-      : buildEvalOutline(
-          groupAttempts(measuredAttempts, measuredAttempts),
-          run,
-          traceIndex
-        )
+      : buildEvalOutline(groupReps(measuredReps, measuredReps), run, traceIndex)
   )
   const visibleRows = $derived(
     visibleOutlineRows(outline, enabledViews, overrides)
   )
-  function selectRow(event: MouseEvent, row?: EvalOutlineRow) {
+  function selectRow(event: MouseEvent, row: EvalOutlineRow) {
     if (event.detail !== 0 && window.getSelection()?.isCollapsed === false)
       return
     const control =
@@ -416,22 +404,22 @@
         ? event.target.closest('button, a, input, select, textarea')
         : null
     if (control && control !== event.currentTarget) return
-    if (row) onSelect?.(row)
-    else onSelectRun?.()
+    onSelect?.(row)
   }
   function selectBar(event: MouseEvent) {
     const id = (event.currentTarget as HTMLElement).closest<HTMLElement>(
       '[data-outline-id]'
     )?.dataset.outlineId
     const row = outline.find(item => item.id === id)
-    selectRow(event, row)
+    if (row) selectRow(event, row)
   }
   $effect(() => {
     onResolveSelection?.(
       selectionOutline.find(
         row =>
           row.id ===
-          (selectedRowID ?? (selectedID ? `attempt/${selectedID}` : undefined))
+          (selectedRowID ??
+            (selectedID ? `rep/${selectedID}` : `run/${run.id}`))
       )
     )
   })
@@ -460,7 +448,7 @@
 
 {#snippet executionNode(
   reference: TelemetryReference | undefined,
-  state: EvalAttempt['state'],
+  state: EvalOutlineRow['state'],
   internalFault = false
 )}
   {@const span = timingFor(reference)}
@@ -480,7 +468,16 @@
       title={`${span.serviceName} · ${state}`}
     ></span>
   {:else}
-    <EvalStatus label={state} dotOnly tone={completionTone(state)} />
+    <span
+      class="relative z-[1] size-2 shrink-0 rounded-full bg-primary"
+      role="img"
+      aria-label={reference
+        ? 'Referenced span unavailable'
+        : 'No correlated span'}
+      title={reference
+        ? 'Referenced span unavailable'
+        : 'No telemetry reference recorded'}
+    ></span>
   {/if}
 {/snippet}
 
@@ -495,10 +492,7 @@
 )}
   {@const span = timingFor(reference)}
   {@const duration = durationFor(reference, seconds)}
-  <TimingCell
-    maximum={maximumDuration}
-    unavailable={!planned && !window && duration === undefined}
-  >
+  <TimingCell maximum={maximumDuration}>
     {#if window && (!span || span.endTime < span.startTime)}<button
         type="button"
         onclick={selectBar}
@@ -507,7 +501,7 @@
         title={`${label} · Timing fallback: elapsed time across available references · Start offset ${formatDuration(window.startTime - (origin ?? window.startTime))}`}
         style:--bar-color={spanError
           ? 'var(--color-error)'
-          : 'var(--color-secondary)'}
+          : 'var(--color-primary)'}
         ><DurationBar
           duration={window.endTime - window.startTime}
           maximum={maximumDuration}
@@ -537,7 +531,9 @@
         class="block w-full text-left"
         title="Recorded eval duration"
         aria-label={`${label}, ${formatDuration(duration)} · Recorded duration; start offset unavailable`}
-        style:--bar-color={spanError ? 'var(--color-error)' : 'currentColor'}
+        style:--bar-color={spanError
+          ? 'var(--color-error)'
+          : 'var(--color-primary)'}
       >
         <DurationBar {duration} maximum={maximumDuration} />
       </button>
@@ -561,11 +557,12 @@
     {#snippet badge()}
       <span
         class="text-sm text-rp-subtle tabular-nums"
-        title="Shown attempts / total attempts"
-        >{attempts.length}/{run.attempts.length} attempts</span
+        title="Shown results / total results"
+        >{reps.length}/{run.reps.length} results</span
       >
     {/snippet}
     {#snippet metaRight()}
+      {@render headerActions?.()}
       <div class="header-controls" role="radiogroup" aria-label="Eval view">
         {#each views as item, index (item.id)}
           <button
@@ -592,27 +589,10 @@
         {/each}
       </div>
     {/snippet}
-    {#snippet metaLeft()}
-      <div class="flex min-w-0 flex-col">
-        <div class="flex min-w-0 items-start gap-2">
-          <span class="shrink-0 text-sm text-rp-subtle">Execution</span>
-          <div class="min-w-0 flex-1">
-            <LegendRows
-              items={completionLegend}
-              label="Execution status legend"
-              itemKey={entry => entry.label}
-            >
-              {#snippet children(entry)}<EvalStatus
-                  label={entry.label}
-                  tone={entry.tone}
-                />{/snippet}
-            </LegendRows>
-          </div>
-        </div>
-      </div>
-    {/snippet}
   </PaneHeader>
 </div>
+
+{@render beforeTable?.()}
 
 <div
   id={panelID}
@@ -635,20 +615,20 @@
     constrainToViewport
   >
     {#snippet header(layout)}
-      <tr>
+      <tr class="eval-results__head">
         {#each columns as column (column.key)}
           {#if column.key === 'name'}
             <th
               class="table-cell eval-results__identity-cell"
               scope="colgroup"
               colspan="2"
-              aria-label="Case · Rep"
+              aria-label="Experiment · Test case · Result"
               class:table-cell--pinned={layout.pinned.name !== undefined}
               style:left={layout.pinned.name === undefined
                 ? undefined
                 : `${layout.pinned.name}px`}
               aria-sort={activeSort?.key === 'name' ||
-              activeSort?.key === 'repetition'
+              activeSort?.key === 'started'
                 ? activeSort.direction === 'asc'
                   ? 'ascending'
                   : 'descending'
@@ -659,14 +639,16 @@
                   class="eval-results__case-heading"
                   bind:offsetWidth={caseGutterWidth}
                 >
+                  <TableColumnHeading label="Experiment" />
+                  <span aria-hidden="true">·</span>
                   <TableSortButton
-                    label="Case"
+                    label="Test case"
                     inset={false}
                     direction={activeSort?.key === 'name'
                       ? activeSort.direction
                       : undefined}
                     onclick={() => toggleSort('name')}
-                    ><TableColumnHeading label="Case" /></TableSortButton
+                    ><TableColumnHeading label="Test case" /></TableSortButton
                   >
                   <span aria-hidden="true">·</span>
                 </span>
@@ -675,14 +657,14 @@
                   bind:offsetWidth={repGutterWidth}
                 >
                   <TableSortButton
-                    label="Repetition"
-                    title="Repetition"
+                    label="Started"
+                    title="Sort results by available start time"
                     inset={false}
-                    direction={activeSort?.key === 'repetition'
+                    direction={activeSort?.key === 'started'
                       ? activeSort.direction
                       : undefined}
-                    onclick={() => toggleSort('repetition')}
-                    ><TableColumnHeading label="Rep" /></TableSortButton
+                    onclick={() => toggleSort('started')}
+                    ><TableColumnHeading label="Result" /></TableSortButton
                   >
                 </span>
               </span>
@@ -728,87 +710,28 @@
       </tr>
     {/snippet}
     {#snippet children(layout)}
-      {#if run.telemetry || run.seconds !== undefined}
-        <!-- The native title button supplies keyboard access to this expanded pointer target. -->
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-        <tr
-          class="table-row"
-          aria-label="Run span"
-          onclick={event => selectRow(event)}
-        >
-          <th
-            colspan="2"
-            scope="row"
-            class="table-cell text-left font-normal"
-            class:table-cell--pinned={layout.pinned.name !== undefined}
-            style:left={layout.pinned.name === undefined
-              ? undefined
-              : `${layout.pinned.name}px`}
-            ><button
-              type="button"
-              class="block w-full truncate text-left"
-              onclick={event => selectRow(event)}>{run.name}</button
-            ></th
-          >
-          {#each columns.slice(2) as column (column.key)}
-            <td
-              class="table-cell"
-              class:eval-results__timing-cell={column.key === 'seconds'}
-            >
-              {#if column.key === 'seconds'}
-                {@render spanBar(
-                  run.telemetry,
-                  runWindow?.startTime,
-                  run.seconds,
-                  outline.some(item => item.spanError),
-                  runWindow,
-                  run.name,
-                  run.state === 'Planned'
-                )}
-              {:else if column.key === 'cost'}
-                {@render rowCost(combineEstimates(estimates))}
-              {:else if column.key === 'investigatorCost' || column.key === 'graderCost'}
-                {@render rowCost(
-                  estimates.find(item => item.key === column.key)!
-                )}
-              {:else if column.key === 'tools'}
-                {@render toolCount(
-                  attempts.reduce((sum, item) => sum + item.tools.length, 0),
-                  attempts.reduce(
-                    (sum, item) =>
-                      sum +
-                      item.tools.filter(tool => tool.state === 'Error').length,
-                    0
-                  )
-                )}
-              {/if}
-            </td>
-          {/each}
-        </tr>
-      {/if}
       {#each visibleRows as row (row.id)}
-        {@const group = groups.find(group => group.id === row.caseID)!}
-        {@const item = row.attempt}
+        {@const item = row.rep}
         {@const open = outlineOpen(row, enabledViews, overrides)}
         {@const selected = selectedRowID
           ? selectedRowID === row.id
-          : row.kind === 'attempt' && selectedID === item?.id}
+          : selectedID
+            ? row.kind === 'rep' && selectedID === item?.id
+            : row.kind === 'run'}
         <!-- Native row-name and duration buttons retain keyboard access. Tree controls stay independent. -->
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
         <tr
           class="table-row"
           onclick={event => selectRow(event, row)}
-          class:eval-results__case={row.kind === 'case'}
-          class:eval-results__attempt={row.kind !== 'case'}
+          class:eval-results__case={row.kind === 'case' || row.kind === 'run'}
           class:table-row--selected={selected}
           data-outline-id={row.id}
           data-row-kind={row.kind}
           data-depth={row.depth}
           data-case-id={row.caseID}
-          data-attempt-id={row.kind === 'attempt' ? item?.id : undefined}
-          data-tool-attempt-id={row.kind === 'tool' ? item?.id : undefined}
+          data-rep-id={row.kind === 'rep' ? item?.id : undefined}
+          data-tool-rep-id={row.kind === 'tool' ? item?.id : undefined}
           data-execution-id={row.kind === 'tool' || row.kind === 'grader'
             ? row.id
             : undefined}
@@ -830,7 +753,7 @@
               depth={row.depth}
               tree={row.tree}
               subtreeCollapsed={!open}
-              toggleLabel={`${open ? 'Collapse' : 'Expand'} ${row.name}${item ? ` for ${item.name}, repetition ${item.repetition}` : ''}, ${row.tree.childrenCount} ${row.kind === 'case' ? 'attempts' : 'children'}`}
+              toggleLabel={`${open ? 'Collapse' : 'Expand'} ${row.name}${item && row.kind !== 'case' ? ` for ${item.name}` : ''}, ${row.tree.childrenCount} ${row.kind === 'run' ? 'test cases' : 'children'}`}
               onToggle={() => toggleOutline(row)}
             >
               {#snippet node()}{@render executionNode(
@@ -841,16 +764,54 @@
               <button
                 type="button"
                 onclick={event => selectRow(event, row)}
+                aria-label={row.kind === 'rep' && item?.sourceID
+                  ? `${row.name} ${item.sourceID}`
+                  : row.name}
                 aria-pressed={selected}
                 class="block w-full min-w-0 truncate text-left"
-                class:eval-results__rep-label={row.kind === 'attempt'}
-                title={`${row.name} · ${completionLabel(row.state, row.internalFault)}`}
-                >{row.name}</button
+                title={row.state === 'Unknown'
+                  ? row.name
+                  : `${row.name} · ${completionLabel(row.state, row.internalFault)}`}
+                >{row.name}{#if row.kind === 'rep' && item?.sourceID}<span
+                    class="ml-2 text-rp-subtle"
+                    ><Identifier value={item.sourceID} /></span
+                  >{/if}</button
               >
             </TreeRowIdentity>
           </th>
-          {#if row.kind === 'case'}
-            {@render totals(group, row)}
+          {#if row.kind === 'run'}
+            {#each columns.slice(2) as column (column.key)}
+              <td
+                class="table-cell text-left tabular-nums"
+                class:eval-results__timing-cell={column.key === 'seconds'}
+              >
+                {#if column.key === 'seconds'}
+                  {@render spanBar(
+                    row.reference,
+                    runWindow?.startTime,
+                    row.seconds,
+                    row.spanError,
+                    row.window,
+                    row.name,
+                    run.state === 'Planned'
+                  )}
+                {:else if column.key === 'cost'}
+                  {@render rowCost(row.estimate)}
+                {:else if column.key === 'investigatorCost' || column.key === 'graderCost'}
+                  {@render rowCost(runCosts[column.key])}
+                {:else if column.key === 'tools'}
+                  {@render toolCount(
+                    runTotals.toolCalls,
+                    runTotals.failedTools
+                  )}
+                {/if}
+              </td>
+            {/each}
+          {:else if row.kind === 'case' && !item}
+            {@render totals(
+              groups.find(group => group.id === row.caseID)!,
+              row
+            )}
           {:else}
             {#each columns.slice(2) as column (column.key)}
               <td
@@ -861,14 +822,14 @@
                   {@render spanBar(
                     row.reference,
                     runWindow?.startTime ??
-                      (item ? attemptWindows[item.id]?.startTime : undefined),
+                      (item ? repWindows[item.id]?.startTime : undefined),
                     row.seconds,
                     row.spanError,
                     row.window,
                     row.name,
                     row.state === 'Planned'
                   )}
-                {:else if column.assessment && item && (row.kind === 'attempt' || row.kind === 'grading' || row.assessmentID === column.assessment.id)}
+                {:else if column.assessment && item && (row.kind === 'case' || row.kind === 'rep' || row.kind === 'grading' || row.assessmentID === column.assessment.id)}
                   {@const assessment = item.assessments.find(
                     score => score.id === column.assessment?.id
                   )}
@@ -879,10 +840,13 @@
                     />
                     {#if assessment?.value != null}<span
                         class="shrink-0 text-sm text-rp-subtle tabular-nums"
-                        >({assessment.value}/{column.assessment.maximum})</span
+                        >({assessment.value}{column.assessment.maximum ===
+                        undefined
+                          ? ''
+                          : `/${column.assessment.maximum}`})</span
                       >{/if}
                   </div>
-                {:else if column.key === 'tools' && item && (row.kind === 'attempt' || row.kind === 'execution')}
+                {:else if column.key === 'tools' && item && (row.kind === 'case' || row.kind === 'rep' || row.kind === 'execution')}
                   {@render toolCount(
                     item.tools.length,
                     item.tools.filter(tool => tool.state === 'Error').length
@@ -892,7 +856,7 @@
                 {:else if column.key === 'cost'}
                   {@render rowCost(row.estimate)}
                 {:else if item && (column.key === 'investigatorCost' || column.key === 'graderCost')}
-                  {#if row.kind === 'attempt'}
+                  {#if row.kind === 'rep' || row.kind === 'case'}
                     {@render rowCost({
                       total: item[column.key] ?? null,
                       incomplete: item[column.key] === undefined,
@@ -914,12 +878,12 @@
             <td
               class="table-cell eval-results__timing-cell text-left tabular-nums"
               title={row.window
-                ? 'Elapsed time across available attempt references'
-                : group.allAttempts.length === 1
-                  ? 'Attempt elapsed time'
-                  : 'Sum of attempt durations across all repetitions'}
+                ? 'Elapsed time across available rep references'
+                : group.allReps.length === 1
+                  ? 'Rep elapsed time'
+                  : 'Sum of recorded result durations'}
             >
-              {#if row.window || group.allAttempts.length === 1}
+              {#if row.window || group.allReps.length === 1}
                 {@render spanBar(
                   undefined,
                   runWindow?.startTime ?? row.window?.startTime,
@@ -929,11 +893,7 @@
                   row.name,
                   row.state === 'Planned'
                 )}
-              {:else}<TimingCell
-                  maximum={maximumDuration}
-                  unavailable={row.state !== 'Planned' &&
-                    group.summary.duration.total === null}
-                >
+              {:else}<TimingCell maximum={maximumDuration}>
                   {group.summary.duration.total === null
                     ? ''
                     : formatDuration(group.duration)}
@@ -945,7 +905,7 @@
           {:else if column.key === 'tools'}
             <td
               class="table-cell text-left tabular-nums"
-              title="Recorded tool calls across all repetitions"
+              title="Recorded tool calls across all results"
             >
               {@render toolCount(group.summary.calls, group.summary.failures)}
             </td>
@@ -960,8 +920,8 @@
       {/snippet}
     {/snippet}
     {#snippet footer(layout)}
-      {#if attempts.length && viewKey === 'cost'}
-        <tr aria-label="Estimated cost for shown attempts">
+      {#if reps.length && viewKey === 'cost'}
+        <tr aria-label="Estimated cost for shown results">
           {#each columns as column (column.key)}
             {#if column.key === 'name'}
               <th
@@ -972,7 +932,7 @@
                 style:left={layout.pinned[column.key] === undefined
                   ? undefined
                   : `${layout.pinned[column.key]}px`}
-                title={`${attempts.length} shown attempts`}>Total</th
+                title={`${reps.length} shown results`}>Total</th
               >
             {:else}
               <td
@@ -1004,8 +964,15 @@
   .table-row {
     cursor: pointer;
   }
+  .eval-results__head > th.table-cell {
+    box-shadow: inset 0 -1px
+      color-mix(in srgb, var(--color-muted) 35%, transparent);
+  }
   .eval-results__header :global(.pane-header__time-range) {
     flex-basis: 20rem;
+  }
+  .eval-results__header :global(.pane-header__meta-controls) {
+    @apply min-w-0 max-w-full flex-wrap;
   }
   .eval-results__timing-cell {
     padding-block: 0;
@@ -1039,19 +1006,11 @@
   .eval-results__assessment {
     @apply flex items-center gap-1 whitespace-nowrap;
   }
-  .eval-results__attempt :global(.table-cell),
-  .eval-results__attempt :global(.eval-status) {
-    color: var(--color-subtle);
-  }
   .eval-results__case-cell {
     padding: 0 0.5rem;
     height: 1px;
   }
   .eval-results__case-cell :global(.tree-row-identity) {
     height: 100%;
-  }
-  .eval-results__rep-label {
-    @apply min-h-[var(--signal-card-row-h)] text-left text-sm font-normal;
-    color: var(--color-subtle);
   }
 </style>

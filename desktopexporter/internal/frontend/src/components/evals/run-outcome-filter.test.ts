@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { exampleRuns } from './examples'
 import { readRunOutcomeFilter, runOutcomeOptions } from './run-outcome-filter'
+import { toRunCard } from './run-summary'
 
 describe('run outcome filters', () => {
   it('counts runs, keeping failed assessments separate from internal faults and planned work', () => {
-    expect(runOutcomeOptions(exampleRuns)).toEqual([
+    expect(runOutcomeOptions(exampleRuns.map(toRunCard))).toEqual([
       { key: 'success:Pass', label: 'Pass', tone: 'success', count: 2 },
       { key: 'warning:Partial', label: 'Partial', tone: 'warning', count: 2 },
       { key: 'error:Fail', label: 'Fail', tone: 'error', count: 2 },
@@ -22,16 +23,16 @@ describe('run outcome filters', () => {
     const run = exampleRuns[0]!
     const label = 'Result: A, "B" / ✓'
     const options = runOutcomeOptions([
-      {
+      toRunCard({
         ...run,
-        attempts: run.attempts.map(attempt => ({
-          ...attempt,
-          assessments: attempt.assessments.map(assessment => ({
+        reps: run.reps.map(rep => ({
+          ...rep,
+          assessments: rep.assessments.map(assessment => ({
             ...assessment,
             label,
           })),
         })),
-      },
+      }),
     ])
     expect(options.map(option => [option.key, option.count])).toEqual([
       [`success:${label}`, 1],
@@ -44,7 +45,7 @@ describe('run outcome filters', () => {
   })
 
   it('ignores malformed, duplicate and stale URL selections', () => {
-    const options = runOutcomeOptions(exampleRuns)
+    const options = runOutcomeOptions(exampleRuns.map(toRunCard))
     for (const value of [
       undefined,
       '{',

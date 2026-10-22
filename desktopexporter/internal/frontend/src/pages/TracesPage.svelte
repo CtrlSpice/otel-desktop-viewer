@@ -46,7 +46,7 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import { telemetryAPI, isAbortError } from '@/services/telemetry-service'
   import { confirmDeleteAll } from '@/utils/confirm-delete'
   import {
@@ -73,13 +73,20 @@
     TraceStats,
     TraceLogSummary,
   } from '@/types/api-types'
-  import type { QueryNode } from '@/search/model'
+  import type {
+    FieldDefinition,
+    ParsedSearchRequest,
+    QueryNode,
+  } from '@/search/model'
+  import { parseSearchRequest } from '@/components/shared/Search/queryParser'
   import type { TimelineRecord } from '@/components/traces/Waterfall/timeline-markers'
   import { createSignalListPage } from '@/contexts/signal-list-page.svelte'
 
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
   import DrawerSortControl from '@/components/shared/Drawer/DrawerSortControl.svelte'
+  import ListHeaderControls from '@/components/shared/ListHeaderControls.svelte'
+  import TelemetryListFilters from '@/components/shared/TelemetryListFilters.svelte'
   import SignalDrawerFooter from '@/components/shared/Drawer/SignalDrawerFooter.svelte'
   import TraceCard from '@/components/traces/TraceCard.svelte'
   import DetailView from '@/components/traces/Detail/TraceDetailView.svelte'
@@ -105,9 +112,13 @@
   let baselineStats = $state<TraceStats | null>(null)
   let polledStats = $state<TraceStats | null>(null)
   let actionError = $state<string | null>(null)
-
+  let query = $state('')
+  let submittedText = $state('')
+  let fields = $state<FieldDefinition[]>([])
+  let submittedRequest: ParsedSearchRequest | null = null
   const page = createSignalListPage<TraceSummary, TraceSummarySortColumn>({
     signal: 'traces',
+    preserveMissingSelection: true,
     getItemID: trace => trace.traceID,
     initialSort: { column: 'startTime', direction: 'desc' },
     compare: compareTraceSummaries,
@@ -118,7 +129,13 @@
       )
       const results = await telemetryAPI.searchTraceSummaries(
         startTime,
-        endTime
+        endTime,
+        submittedRequest?.predicate ?? undefined,
+        submittedRequest?.limit ?? undefined,
+        untrack(() => ({
+          field: page.sortColumn,
+          direction: page.sortDirection,
+        }))
       )
       const s = await telemetryAPI.getStats()
       baselineStats = s.traces
@@ -149,6 +166,13 @@
       return { pulse: parts.length > 0, tip: parts.join(', ') }
     },
   })
+  let services = $derived([
+    ...new Set(
+      page.items.flatMap(trace =>
+        trace.rootSpan?.serviceName ? [trace.rootSpan.serviceName] : []
+      )
+    ),
+  ])
 
   // `/traces/<traceID>?span=<spanID>&event=<index>` — span/event in query string.
   let selectedSpanID = $derived(routeContext.route.query[SPAN_PARAM] ?? null)
@@ -220,6 +244,13 @@
       // Don't tear down the detail view while the list is still loading -- a
       // shared link's trace id may simply not be in the list yet.
       if (!page.mounted || page.loading) return
+      if (
+        page.selectedID &&
+        untrack(() => traceData?.traceID) === page.selectedID
+      ) {
+        fetchTraceDetail(page.selectedID, activeQueryTree)
+        return
+      }
       clearTraceDetail()
       setSpanInQuery(null)
       return
@@ -297,6 +328,9 @@
   }
 
   async function fetchTraceDetail(traceID: string, queryTree?: QueryNode) {
+    const retainedSpanID = untrack(() =>
+      traceData?.traceID === traceID ? getSpanFromQuery() : null
+    )
     detailFetch?.abort()
     const fetchCtl = new AbortController()
     detailFetch = fetchCtl
@@ -313,7 +347,13 @@
       const spanIDs = result.spans.map(n => n.spanData.spanID)
       const urlSpan = getSpanFromQuery()
       let desired: string | null
-      if (queryTree) {
+      if (
+        retainedSpanID &&
+        retainedSpanID === urlSpan &&
+        spanIDs.includes(retainedSpanID)
+      ) {
+        desired = retainedSpanID
+      } else if (queryTree) {
         const firstMatch = result.spans.find(n => n.matched)
         desired = firstMatch?.spanData.spanID ?? spanIDs[0] ?? null
       } else if (urlSpan && spanIDs.includes(urlSpan)) {
@@ -409,23 +449,43 @@
         sortDirection={page.sortDirection}
         onSearchResults={handleSearchResults}
         onSearchReady={api => (page.searchEditorApi = api)}
+        onQueryChange={(text, availableFields) => {
+          query = text
+          fields = availableFields
+        }}
+        onQuerySubmit={text => {
+          submittedText = text
+          submittedRequest = parseSearchRequest(text, fields, 'traces')
+        }}
       />
     {/snippet}
 
     {#snippet drawerControls()}
-      <DrawerSortControl
-        options={[
-          { value: 'startTime', label: 'Start Time' },
-          { value: 'duration', label: 'Duration' },
-          { value: 'rootSpanName', label: 'Root Span Name' },
-          { value: 'serviceName', label: 'Service Name' },
-          { value: 'spanCount', label: 'Span Count' },
-          { value: 'errorCount', label: 'Error Count' },
-        ]}
-        value={page.sortColumn}
-        direction={page.sortDirection}
-        onchange={page.handleSortChange}
-      />
+      <ListHeaderControls label="Trace list controls">
+        {#snippet sort()}
+          <DrawerSortControl
+            options={[
+              { value: 'startTime', label: 'Start Time' },
+              { value: 'duration', label: 'Duration' },
+              { value: 'rootSpanName', label: 'Root Span Name' },
+              { value: 'serviceName', label: 'Service Name' },
+              { value: 'spanCount', label: 'Span Count' },
+              { value: 'errorCount', label: 'Error Count' },
+            ]}
+            value={page.sortColumn}
+            direction={page.sortDirection}
+            onchange={page.handleSortChange}
+          />
+        {/snippet}
+        {#snippet filters()}<TelemetryListFilters
+            signal="traces"
+            {query}
+            appliedQuery={submittedText}
+            {fields}
+            {services}
+            editor={page.searchEditorApi}
+          />{/snippet}
+      </ListHeaderControls>
     {/snippet}
 
     {#snippet itemSnippet(trace, selected)}
@@ -450,7 +510,7 @@
         </div>
       {:else if page.loading && !hasTraceRows}
         <div class="traces-page__placeholder traces-empty">Loading traces…</div>
-      {:else if !page.loading && !hasTraceRows}
+      {:else if !page.loading && !hasTraceRows && !currentTraceData}
         <div class="traces-page__placeholder traces-empty">
           <p class="text-rp-subtle">No traces in this time range</p>
           <p class="mt-2 text-sm text-rp-subtle">

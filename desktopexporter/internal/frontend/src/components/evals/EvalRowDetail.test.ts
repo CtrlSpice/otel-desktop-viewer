@@ -6,20 +6,20 @@ import { copyText } from '@/utils/clipboard'
 import EvalRowDetail from './EvalRowDetail.svelte'
 import { exampleRuns } from './examples'
 import { buildEvalOutline } from './eval-outline'
-import { groupAttempts } from './group-attempts'
+import { groupReps } from './group-reps'
 import { indexEvalTraces } from './eval-traces'
 
 vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn() }))
 
 it('keeps an explicitly empty tool output inspectable and copyable', async () => {
-  const original = exampleRuns[0].attempts[0]
-  const attempt = {
+  const original = exampleRuns[0].reps[0]
+  const rep = {
     ...original,
     tools: [{ ...original.tools[0], message: '' }],
   }
-  const run = { ...exampleRuns[0], attempts: [attempt] }
+  const run = { ...exampleRuns[0], reps: [rep] }
   const row = buildEvalOutline(
-    groupAttempts(run.attempts, run.attempts),
+    groupReps(run.reps, run.reps),
     run,
     indexEvalTraces([])
   ).find(row => row.kind === 'tool')!
@@ -34,14 +34,14 @@ it('keeps an explicitly empty tool output inspectable and copyable', async () =>
 })
 
 it('omits output and its copy actions when a tool has no recorded message', () => {
-  const original = exampleRuns[0].attempts[0]
-  const attempt = {
+  const original = exampleRuns[0].reps[0]
+  const rep = {
     ...original,
     tools: [{ ...original.tools[0], message: undefined }],
   }
-  const run = { ...exampleRuns[0], attempts: [attempt] }
+  const run = { ...exampleRuns[0], reps: [rep] }
   const row = buildEvalOutline(
-    groupAttempts(run.attempts, run.attempts),
+    groupReps(run.reps, run.reps),
     run,
     indexEvalTraces([])
   ).find(row => row.kind === 'tool')!
@@ -55,19 +55,19 @@ it('omits output and its copy actions when a tool has no recorded message', () =
 })
 
 it('keeps Details and Telemetry stable while the selected mode surfaces its own evidence', async () => {
-  const attempt = {
-    ...exampleRuns[0].attempts[0],
+  const rep = {
+    ...exampleRuns[0].reps[0],
     answer: 'Recorded answer',
     seconds: 0,
     investigatorCost: 0,
     graderCost: undefined,
   }
-  const run = { ...exampleRuns[0], attempts: [attempt] }
+  const run = { ...exampleRuns[0], reps: [rep] }
   const row = buildEvalOutline(
-    groupAttempts(run.attempts, run.attempts),
+    groupReps(run.reps, run.reps),
     run,
     indexEvalTraces([])
-  ).find(row => row.kind === 'attempt')!
+  ).find(row => row.kind === 'rep')!
   const view = render(EvalRowDetail, { run, row, mode: 'results' })
   const sections = [
     ...view.container.querySelectorAll<HTMLDetailsElement>('details.collapse'),
@@ -76,9 +76,9 @@ it('keeps Details and Telemetry stable while the selected mode surfaces its own 
     sections.map(
       section => section.querySelector('summary > span')?.textContent
     )
-  ).toEqual(['Details', 'Telemetry'])
+  ).toEqual(['Result', 'Telemetry'])
   expect(screen.getByText('Recorded answer')).toBeVisible()
-  expect(screen.getByText(attempt.assessments[0].explanation)).toBeVisible()
+  expect(screen.getByText(rep.assessments[0].explanation)).toBeVisible()
   await fireEvent.click(sections[1].querySelector('summary')!)
   expect(sections[1].open).toBe(false)
 
@@ -90,7 +90,7 @@ it('keeps Details and Telemetry stable while the selected mode surfaces its own 
 
   await view.rerender({ componentProps: { run, row, mode: 'cost' } })
   const accounting = screen.getByRole('table', {
-    name: 'Attempt 1 accounting',
+    name: 'Result accounting',
   })
   expect(
     within(accounting).getByRole('group', {
@@ -110,22 +110,23 @@ it('keeps Details and Telemetry stable while the selected mode surfaces its own 
   expect(sections[1].open).toBe(false)
 })
 
-it('retains the recorded attempt start and exact Copy when its spans are unavailable', async () => {
+it('retains the recorded rep start and exact Copy when its spans are unavailable', async () => {
   const startedAt = '2026-10-20T12:34:56.123456789-07:00'
-  const attempt = { ...exampleRuns[0].attempts[0], startedAt }
-  const run = { ...exampleRuns[0], attempts: [attempt] }
+  const rep = { ...exampleRuns[0].reps[0], startedAt }
+  const run = { ...exampleRuns[0], reps: [rep] }
   const row = buildEvalOutline(
-    groupAttempts(run.attempts, run.attempts),
+    groupReps(run.reps, run.reps),
     run,
     indexEvalTraces([])
-  ).find(row => row.kind === 'attempt')!
+  ).find(row => row.kind === 'rep')!
   const view = render(EvalRowDetail, { run, row, mode: 'results' })
   expect(screen.getAllByText('Span unavailable').length).toBeGreaterThan(0)
 
   for (const mode of ['results', 'time'] as const) {
     await view.rerender({ componentProps: { run, row, mode } })
     const started = screen.getByRole('group', { name: 'started' })
-    expect(within(started).getByText(startedAt)).toBeVisible()
+    expect(within(started).getByTitle(startedAt)).toBeVisible()
+    expect(started.querySelector('.detail-property__raw-timestamp')).toBeNull()
     await fireEvent.click(
       within(started).getByRole('button', { name: 'Copy started' })
     )
@@ -135,7 +136,7 @@ it('retains the recorded attempt start and exact Copy when its spans are unavail
   await view.rerender({
     componentProps: {
       run,
-      row: { ...row, attempt: { ...attempt, startedAt: undefined } },
+      row: { ...row, rep: { ...rep, startedAt: undefined } },
       mode: 'time',
     },
   })

@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import config from './config.ts'
+import config from './legacy-config.ts'
 import { readJson, record, runtimeRoot, saveJson } from './runtime.ts'
 import { afterAll, cancelNativeAttempts } from './native-lifecycle.ts'
 import { runCancellation } from './run-cancellation.ts'

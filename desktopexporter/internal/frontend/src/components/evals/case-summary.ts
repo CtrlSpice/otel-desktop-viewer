@@ -2,39 +2,39 @@ import {
   assessmentSummary,
   estimatedCost,
   type AssessmentDefinition,
-  type EvalAttempt,
+  type EvalRep,
 } from './model'
 
 export function caseSummary(
-  attempts: EvalAttempt[],
+  reps: EvalRep[],
   definitions: AssessmentDefinition[] = []
 ) {
   let seconds = 0
   let timed = 0
   let calls = 0
   let failures = 0
-  for (const attempt of attempts) {
-    if (attempt.seconds !== undefined) {
-      seconds += attempt.seconds
+  for (const rep of reps) {
+    if (rep.seconds !== undefined) {
+      seconds += rep.seconds
       timed++
     }
-    calls += attempt.tools.length
-    failures += attempt.tools.filter(tool => tool.state === 'Error').length
+    calls += rep.tools.length
+    failures += rep.tools.filter(tool => tool.state === 'Error').length
   }
   return {
     scores: Object.fromEntries(
       definitions.map(definition => [
         definition.id,
-        assessmentSummary({ attempts }, definition),
+        assessmentSummary({ reps }, definition),
       ])
     ),
     duration: {
       total: timed ? seconds : null,
-      incomplete: timed < attempts.length,
+      incomplete: timed < reps.length,
     },
     calls,
     failures,
-    investigatorCost: estimatedCost(attempts, 'investigatorCost'),
-    graderCost: estimatedCost(attempts, 'graderCost'),
+    investigatorCost: estimatedCost(reps, 'investigatorCost'),
+    graderCost: estimatedCost(reps, 'graderCost'),
   }
 }

@@ -1,5 +1,7 @@
 <script lang="ts">
   import TableSortButton from '@/components/shared/TableSortButton.svelte'
+  import ListHeaderControls from '@/components/shared/ListHeaderControls.svelte'
+  import DrawerSortControl from '@/components/shared/Drawer/DrawerSortControl.svelte'
   import { onDestroy, tick, untrack, type Snippet } from 'svelte'
   import TableColumnsPicker from '@/components/shared/TableColumnsPicker.svelte'
   import type {
@@ -546,7 +548,21 @@
           role="status"
           title={errorNavigationError}>Errors unavailable</span
         >{/if}
-      {@render filters?.()}
+      <ListHeaderControls label="Log list controls">
+        {#snippet sort()}<DrawerSortControl
+            options={[
+              { value: 'timestamp', label: 'Recorded' },
+              { value: 'service', label: 'Service Name' },
+              { value: 'severity', label: 'Severity' },
+              { value: 'name', label: 'Event Name' },
+              { value: 'body', label: 'Body' },
+            ]}
+            value={sortColumn}
+            direction={sortDirection}
+            onchange={onSort}
+          />{/snippet}
+        {#snippet filters()}{@render filters?.()}{/snippet}
+      </ListHeaderControls>
       <TableColumnsPicker
         label="Log columns"
         options={columnChoices}

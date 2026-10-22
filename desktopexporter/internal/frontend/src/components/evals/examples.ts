@@ -1,4 +1,4 @@
-import type { AssessmentDefinition, EvalAttempt, EvalRun } from './model'
+import type { AssessmentDefinition, EvalRep, EvalRun } from './model'
 
 // Deliberately illustrative data, not a regrading of the completed cohort.
 const assessments: AssessmentDefinition[] = [
@@ -97,7 +97,7 @@ const cases = [
   },
 ]
 
-function attempts(variant: 'guided' | 'direct' | 'planned'): EvalAttempt[] {
+function reps(variant: 'guided' | 'direct' | 'planned'): EvalRep[] {
   return cases.flatMap((item, index) =>
     Array.from({ length: item.repetitions }, (_, offset) => {
       const repetition = offset + 1
@@ -107,7 +107,7 @@ function attempts(variant: 'guided' | 'direct' | 'planned'): EvalAttempt[] {
       const error = variant === 'direct' && index === 5
       const completion = index === 1 ? 0.5 : index === 2 ? 0 : 1
       const support = index === 1 ? 0.5 : 1
-      const attempt: EvalAttempt = {
+      const rep: EvalRep = {
         ...item,
         id: repetition === 1 ? item.id : `${item.id}-rep-${repetition}`,
         caseID: item.id,
@@ -123,7 +123,7 @@ function attempts(variant: 'guided' | 'direct' | 'planned'): EvalAttempt[] {
         investigatorCost: planned || error ? undefined : 0.035 + index * 0.011,
         graderCost: planned || error ? undefined : 0.072 + index * 0.005,
         error: error
-          ? 'The investigator process exited before producing an answer. This configuration is paused; the remaining attempts have not started.'
+          ? 'The investigator process exited before producing an answer. This configuration is paused; the remaining reps have not started.'
           : undefined,
         assessments:
           planned || error
@@ -198,21 +198,21 @@ function attempts(variant: 'guided' | 'direct' | 'planned'): EvalAttempt[] {
       // Stable, synthetic IDs let the optional seed script supply matching OTLP.
       if (!planned) {
         const traceID = `eeee${variant === 'guided' ? '01' : '02'}${String(slot + 1).padStart(26, '0')}`
-        attempt.telemetry = { traceID, spanID: 'eeee000000000001' }
-        attempt.tools.forEach((tool, toolIndex) => {
+        rep.telemetry = { traceID, spanID: 'eeee000000000001' }
+        rep.tools.forEach((tool, toolIndex) => {
           tool.telemetry = {
             traceID,
             spanID: `eeee${String(toolIndex + 2).padStart(12, '0')}`,
           }
         })
-        attempt.assessments.forEach((assessment, scoreIndex) => {
+        rep.assessments.forEach((assessment, scoreIndex) => {
           assessment.telemetry = {
             traceID,
             spanID: `eeee${String(scoreIndex + 101).padStart(12, '0')}`,
           }
         })
       }
-      return attempt
+      return rep
     })
   )
 }
@@ -232,7 +232,7 @@ export const exampleRuns: EvalRun[] = [
     ],
     assessments,
     headlineAssessment: 'completion',
-    attempts: attempts('guided'),
+    reps: reps('guided'),
   },
   {
     id: 'direct',
@@ -249,7 +249,7 @@ export const exampleRuns: EvalRun[] = [
     ],
     assessments,
     headlineAssessment: 'completion',
-    attempts: attempts('direct'),
+    reps: reps('direct'),
   },
   {
     id: 'next',
@@ -264,6 +264,6 @@ export const exampleRuns: EvalRun[] = [
     ],
     assessments,
     headlineAssessment: 'completion',
-    attempts: attempts('planned'),
+    reps: reps('planned'),
   },
 ]

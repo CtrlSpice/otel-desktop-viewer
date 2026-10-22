@@ -322,7 +322,7 @@ test('oversized service tooltips remain scrollable and selectable on a narrow vi
 })
 
 for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
-  test(`run summary segment tooltips stay isolated and above neighbouring cards in ${theme}`, async ({
+  test(`run summary outcome index stays static and readable in ${theme}`, async ({
     page,
   }) => {
     await interceptRpc(page)
@@ -339,12 +339,12 @@ for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
       name: /^Guide-assisted agent Complete Started:/,
     })
     const shell = page.locator('.signal-card-shell').filter({ has: card })
-    const bar = shell.getByRole('button', {
-      name: 'Pass: 11 attempts',
+    const bar = shell.getByRole('group', {
+      name: /Task completion by rep count/,
     })
     await expect(card).toHaveAttribute('aria-pressed', 'true')
     const runLegend = shell.getByRole('list', {
-      name: 'Run outcomes for Guide-assisted agent',
+      name: 'Task completion outcomes legend',
       exact: true,
     })
     await expect(runLegend.getByRole('listitem')).toHaveText([
@@ -420,52 +420,19 @@ for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
     expect(Math.abs(datePlacement.leftOffset)).toBeLessThan(1)
     expect(Math.abs(datePlacement.bottomOffset)).toBeLessThan(1)
     expect(datePlacement.followsBar).toBe(true)
-    await expect(bar).toHaveAccessibleName('Pass: 11 attempts')
+    await expect(bar).toHaveAccessibleName(
+      'Task completion by rep count: Pass: 11 reps; Partial: 3 reps; Fail: 2 reps'
+    )
     await expect(
       shell.locator('button button, .signal-row__meta-row')
     ).toHaveCount(0)
-    const tooltip = page.locator('.breakdown-tooltip:popover-open')
-    await page.mouse.move(0, 0)
-    await expect(tooltip).toHaveCount(0)
-    await bar.hover()
-    await expect(tooltip).toBeVisible()
-    await expect(tooltip).toHaveText('Pass [11]')
-    await expect
-      .poll(() =>
-        tooltip.evaluate(element => {
-          const rect = element.getBoundingClientRect()
-          return element.contains(
-            document.elementFromPoint(
-              rect.x + rect.width / 2,
-              rect.y + rect.height / 2
-            )
-          )
-        })
-      )
-      .toBe(true)
-    await shell.getByRole('button', { name: 'Fail: 2 attempts' }).hover()
-    await expect(tooltip).toHaveCount(1)
-    await expect(tooltip).toHaveText('Fail [2]')
+    await expect(shell.locator('[role="tooltip"]')).toHaveCount(0)
+    await expect(shell.locator('.breakdown-segment')).toHaveCount(3)
     const scan = await new AxeBuilder({ page })
       .include('.signal-card-shell:has(.signal-row--selected)')
       .withRules(['color-contrast'])
       .analyze()
     expect(scan.violations).toEqual([])
-    await page.mouse.move(0, 0)
-    await expect(tooltip).toHaveCount(0)
-    await card.focus()
-    await page.keyboard.press('Tab')
-    await expect(bar).toBeFocused()
-    await expect(tooltip).toHaveText('Pass [11]')
-    await expect(bar).toHaveCSS('outline-style', 'solid')
-    const url = page.url()
-    await page.keyboard.press('Enter')
-    expect(page.url()).toBe(url)
-    await expect(card).toHaveAttribute('aria-pressed', 'true')
-    await page.keyboard.press('Tab')
-    await expect(tooltip).toHaveText('Partial [3]')
-    await page.keyboard.press('Escape')
-    await expect(tooltip).toHaveCount(0)
   })
 
   test(`sort target uses full text contrast in ${theme}`, async ({ page }) => {
@@ -684,7 +651,7 @@ test.describe('home page accessibility', () => {
       await page.route('**/api/features', route =>
         route.fulfill({ json: { evals: { enabled: true } } })
       )
-      await page.goto('/evals?run=guide-assisted&attempt=request-latency')
+      await page.goto('/evals?run=guide-assisted&rep=request-latency')
       await expect(
         page.locator('.page-layout__main-chrome .pane-header').first()
       ).toHaveCSS('background-color', panel)

@@ -1,28 +1,28 @@
 import { describe, expect, it } from 'vitest'
 import { caseSummary } from './case-summary'
 import { exampleRuns } from './examples'
-import type { EvalAttempt } from './model'
+import type { EvalRep } from './model'
 
 describe('case totals', () => {
   const run = exampleRuns[0]
   const definition = run.assessments.find(
     item => item.id === run.headlineAssessment
   )!
-  const complete: EvalAttempt = {
-    ...run.attempts[0],
+  const complete: EvalRep = {
+    ...run.reps[0],
     seconds: 12,
     investigatorCost: 0,
     graderCost: 0.2,
     assessments: [
       {
-        ...run.attempts[0].assessments[0],
+        ...run.reps[0].assessments[0],
         id: definition.id,
-        value: definition.maximum,
+        value: definition.maximum!,
       },
     ],
     tools: [{ name: 'query', state: 'Error', message: 'Failed' }],
   }
-  const planned: EvalAttempt = {
+  const planned: EvalRep = {
     ...complete,
     state: 'Planned',
     seconds: undefined,

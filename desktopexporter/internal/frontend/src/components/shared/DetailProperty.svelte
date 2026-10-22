@@ -20,6 +20,7 @@
     valueTone,
     valueColor,
     timestampLabel,
+    qualifier,
     origin,
     multiline = false,
     hidden = false,
@@ -41,6 +42,8 @@
     valueTone?: 'error'
     valueColor?: string
     timestampLabel?: string
+    /** Subtle source context shown as `field · qualifier · type`. */
+    qualifier?: string
     origin?: string
     multiline?: boolean
     hidden?: boolean
@@ -68,8 +71,11 @@
     {#if conflict}<ConflictMarker label={conflict} />{/if}
     <div class="detail-property__heading">
       <span class="detail-property__key"
-        >{fieldName}{#if showType}<span class="text-rp-subtle">{' · '}</span
-          ><span class="detail-property__type">{fieldType}</span>{/if}</span
+        >{fieldName}{#if qualifier}<span class="text-rp-subtle">{' · '}</span
+          ><span class="detail-property__qualifier">{qualifier}</span
+          >{/if}{#if showType}<span class="text-rp-subtle">{' · '}</span><span
+            class="detail-property__type">{fieldType}</span
+          >{/if}</span
       >
       {#if origin}<span class="text-rp-subtle">{' · '}</span><span
           class="detail-property__origin">{origin}</span
@@ -106,10 +112,12 @@
             <span class="detail-property__error-dot" aria-hidden="true"></span>
           {/if}
           {#if timestampLabel !== undefined}
-            <div class="detail-property__value">
+            <div class="detail-property__value" title={fieldValue}>
               {#if value}{@render value()}{:else}{timestampLabel}{/if}
             </div>
-            <div class="detail-property__raw-timestamp">{fieldValue}</div>
+            {#if /^[+-]?\d+(?:\.\d+)?$/.test(fieldValue.trim()) && fieldValue !== timestampLabel}
+              <div class="detail-property__raw-timestamp">{fieldValue}</div>
+            {/if}
           {:else if identifier && !value}
             <div class="detail-property__value">
               <Identifier value={fieldValue} />
@@ -186,6 +194,9 @@
   .detail-property__origin,
   .detail-property__type {
     color: var(--color-secondary);
+  }
+  .detail-property__qualifier {
+    color: var(--color-subtle);
   }
   .detail-property__body {
     @apply min-w-0 pt-0.5;

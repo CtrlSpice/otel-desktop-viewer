@@ -214,7 +214,7 @@ test('pinned Promptfoo delivers matching tool evidence only to the fresh grader'
     [
       '--input-type=module',
       '-e',
-      `import config from ${JSON.stringify(path.join(SUITE, 'config.ts'))}; import {runNativeEvaluation} from ${JSON.stringify(path.join(SUITE, 'native-evaluate.ts'))}; process.exitCode=await runNativeEvaluation({...config, tests:config.tests.slice(0,4)},1);`,
+      `import config from ${JSON.stringify(path.join(SUITE, 'legacy-config.ts'))}; import {runNativeEvaluation} from ${JSON.stringify(path.join(SUITE, 'native-evaluate.ts'))}; process.exitCode=await runNativeEvaluation({...config, tests:config.tests.slice(0,4)},1);`,
     ],
     {
       cwd: root,

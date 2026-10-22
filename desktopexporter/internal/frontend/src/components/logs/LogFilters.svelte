@@ -18,11 +18,13 @@
 
   let {
     query,
+    appliedQuery = query,
     fields,
     services,
     editor,
   }: {
     query: string
+    appliedQuery?: string
     fields: FieldDefinition[]
     services: string[]
     editor: SearchEditorAPI | null
@@ -30,7 +32,7 @@
   let serviceSearch = $state('')
   let draftQuery = $state('')
   let filters = $derived(readLogFilters(draftQuery, fields))
-  let appliedFilters = $derived(readLogFilters(query, fields))
+  let appliedFilters = $derived(readLogFilters(appliedQuery, fields))
   let choices = $derived(
     [...new Set([...services, ...filters.service.values])].sort((a, b) =>
       a.localeCompare(b)
@@ -73,6 +75,7 @@
 <FilterPopover
   label="Filters"
   compact
+  showCount
   count={appliedFilters.service.values.length +
     appliedFilters.severity.values.length}
   custom={appliedFilters.editable &&
@@ -95,7 +98,7 @@
   {#snippet footer(close)}
     <button
       type="button"
-      class="btn btn-primary btn-sm"
+      class="btn btn-ghost btn-sm text-sm font-normal text-primary"
       disabled={!editor?.setQuery || draftQuery === query || !filters.editable}
       onclick={() => {
         editor?.setQuery?.(draftQuery)

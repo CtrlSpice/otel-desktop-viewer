@@ -37,10 +37,6 @@ var assets embed.FS
 // exhausting memory with an unbounded body.
 const maxRPCRequestBodyBytes = 1 << 20 // 1 MB
 
-// Snapshot imports carry original JSON as a string. The envelope has its own
-// bound because escaping can make it larger than the 16 MiB decoded payload.
-const maxEvalsRPCRequestBodyBytes = 20 << 20
-
 type Server struct {
 	server         http.Server
 	store          *store.Store
@@ -49,8 +45,10 @@ type Server struct {
 	tel            *telemetry.Telemetry
 	features       *features.Flags
 
-	serveDone chan struct{}
-	startMu   sync.Mutex
+	serveDone      chan struct{}
+	startMu        sync.Mutex
+	evalImports    sync.Map
+	evalRunIndexes sync.Map
 }
 
 func NewServer(endpoint string, otlpHTTPPort int, store *store.Store, logger *zap.Logger, tel *telemetry.Telemetry, options ...Option) (*Server, error) {
@@ -162,10 +160,12 @@ func (s *Server) initHandler() error {
 	mux.Handle("/", spa)
 	mux.Handle("/evals", s.requireEvals(spa))
 	mux.Handle("/evals/", s.requireEvals(spa))
-	// Unknown Evals actions remain 404, under the same gate as downloads.
+	// Unknown Evals actions remain 404 under the same feature gate.
 	mux.Handle("/api/evals", s.requireEvals(http.NotFoundHandler()))
 	mux.Handle("/api/evals/", s.requireEvals(http.NotFoundHandler()))
-	mux.Handle("GET /api/evals/snapshots/{id}/download", s.requireEvals(http.HandlerFunc(s.evalSnapshotDownload)))
+	mux.HandleFunc("POST /api/evals/ingest", s.ingestEvals)
+	mux.Handle("GET /api/evals/runs", s.requireEvals(http.HandlerFunc(s.searchEvalRuns)))
+	mux.Handle("GET /api/evals/runs/{id}/rows", s.requireEvals(http.HandlerFunc(s.getEvalRunPage)))
 
 	// CORS for the Vite frontend
 	c := cors.New(cors.Options{
@@ -272,9 +272,6 @@ func (s *Server) rpcHandler(writer http.ResponseWriter, request *http.Request) {
 	defer func() { endRPC(method, responseBytes, rpcError) }()
 
 	bodyLimit := int64(maxRPCRequestBodyBytes)
-	if s.features.EvalsEnabled(ctx) {
-		bodyLimit = maxEvalsRPCRequestBodyBytes
-	}
 	limited := http.MaxBytesReader(writer, request.Body, bodyLimit)
 	body, err := io.ReadAll(limited)
 	if err != nil {
@@ -289,8 +286,8 @@ func (s *Server) rpcHandler(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	// encoding/json replaces invalid UTF-8 silently. Reject it before decoding
-	// so a snapshot import cannot archive altered source text.
+	// encoding/json replaces invalid UTF-8 silently. Reject malformed requests
+	// before decoding.
 	if !utf8.Valid(body) {
 		rpcError = jsonrpc2.ErrParse
 		responseBytes = s.sendJSONRPCResponse(ctx, writer, jsonrpc2.ID{}, nil, rpcError)

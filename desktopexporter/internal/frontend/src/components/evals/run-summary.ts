@@ -1,6 +1,40 @@
 import type { OutcomePart } from '@/components/shared/OutcomeBar.svelte'
 import { assessmentSummary, estimatedCost, type EvalRun } from './model'
 
+/** Card data is independent of the full rep/configuration payload. */
+export type EvalRunCardData = Pick<
+  EvalRun,
+  | 'id'
+  | 'name'
+  | 'evaluation'
+  | 'source'
+  | 'state'
+  | 'stateReason'
+  | 'pauseReason'
+  | 'startedAt'
+> & {
+  outcomes: OutcomePart[]
+  outcomeLabel: string
+  repCount: number
+}
+
+export function toRunCard(run: EvalRun): EvalRunCardData {
+  const summary = runSummary(run)
+  return {
+    id: run.id,
+    name: run.name,
+    evaluation: run.evaluation,
+    source: run.source,
+    state: run.state,
+    stateReason: run.stateReason,
+    pauseReason: run.pauseReason,
+    startedAt: run.startedAt,
+    outcomes: summary.parts,
+    outcomeLabel: summary.definition?.name ?? 'Results',
+    repCount: summary.planned,
+  }
+}
+
 export function runSummary(run: EvalRun) {
   const definition = run.assessments.find(
     item => item.id === run.headlineAssessment
@@ -10,16 +44,17 @@ export function runSummary(run: EvalRun) {
   let failedTools = 0
   let started = 0
 
-  for (const attempt of run.attempts) {
-    if (attempt.state !== 'Planned') started++
-    toolCalls += attempt.tools.length
-    failedTools += attempt.tools.filter(tool => tool.state === 'Error').length
-    const assessment = attempt.assessments.find(
-      item => item.id === definition?.id
-    )
+  for (const rep of run.reps) {
+    if (rep.state !== 'Planned') started++
+    toolCalls += rep.tools.length
+    failedTools += rep.tools.filter(tool => tool.state === 'Error').length
+    const assessment = rep.assessments.find(item => item.id === definition?.id)
     let label = 'Unscored'
     let tone: OutcomePart['tone'] = 'neutral'
-    if (definition && assessment?.value != null) {
+    if (assessment?.pass !== undefined) {
+      label = assessment.label
+      tone = assessment.pass ? 'success' : 'error'
+    } else if (definition?.maximum !== undefined && assessment?.value != null) {
       label = assessment.label
       tone =
         assessment.value === definition.maximum
@@ -27,9 +62,9 @@ export function runSummary(run: EvalRun) {
           : assessment.value === 0
             ? 'error'
             : 'warning'
-    } else if (attempt.state === 'Planned') {
+    } else if (rep.state === 'Planned') {
       label = 'Planned'
-    } else if (attempt.state === 'Error') {
+    } else if (rep.state === 'Error') {
       label = 'Internal fault'
       tone = 'papaya'
     }
@@ -44,12 +79,11 @@ export function runSummary(run: EvalRun) {
     definition,
     assessment: definition ? assessmentSummary(run, definition) : null,
     parts: [...groups.values()].sort((a, b) => order[a.tone] - order[b.tone]),
-    planned: run.attempts.length,
-    assessed: run.attempts.filter(attempt => attempt.state === 'Complete')
-      .length,
+    planned: run.reps.length,
+    assessed: run.reps.filter(rep => rep.state === 'Complete').length,
     started,
     toolCalls,
     failedTools,
-    investigatorCost: estimatedCost(run.attempts, 'investigatorCost'),
+    investigatorCost: estimatedCost(run.reps, 'investigatorCost'),
   }
 }

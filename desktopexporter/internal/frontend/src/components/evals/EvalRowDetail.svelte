@@ -13,16 +13,15 @@
   import { evalTelemetrySummaries } from './eval-telemetry-summaries'
   import { referenceKey } from './eval-traces'
   import type { SpanNode } from '@/types/api-types'
-  import { completionLabel, completionTone } from './group-attempts'
+  import { completionLabel, completionTone } from './group-reps'
   import type { EvalOutlineRow } from './eval-outline'
   import { formatDuration } from '@/utils/time'
-  import type { SnapshotFieldCopy } from './snapshot-copy'
+  import type { EvalSourceFieldCopy } from './eval-source-copy'
 
   let {
     run,
     row,
     mode = 'results',
-    parentName,
     telemetryNodes,
     telemetryLoading = false,
     sourceCopy,
@@ -30,24 +29,21 @@
     run: EvalRun
     row: EvalOutlineRow
     mode?: EvalView
-    parentName?: string
     telemetryNodes?: Map<string, SpanNode>
     telemetryLoading?: boolean
-    sourceCopy?: SnapshotFieldCopy
+    sourceCopy?: EvalSourceFieldCopy
   } = $props()
-  const attempt = $derived(row.attempt)
+  const rep = $derived(row.rep)
   const references = $derived(evalTelemetrySummaries(run, row))
-  const members = $derived(
-    run.attempts.filter(item => item.caseID === row.caseID)
-  )
+  const members = $derived(run.reps.filter(item => item.caseID === row.caseID))
   const summary = $derived(caseSummary(members, run.assessments))
-  const outcomes = $derived(runSummary({ ...run, attempts: members }).parts)
+  const outcomes = $derived(runSummary({ ...run, reps: members }).parts)
   const tool = $derived(
-    attempt?.tools.find((_, index) => row.id === `${attempt.id}/tool/${index}`)
+    rep?.tools.find((_, index) => row.id === `${rep.id}/tool/${index}`)
   )
   const assessments = $derived(
-    attempt?.assessments.filter(item =>
-      row.kind === 'attempt'
+    rep?.assessments.filter(item =>
+      row.kind === 'rep' || row.kind === 'case'
         ? mode === 'results'
         : row.kind === 'grading' || item.id === row.assessmentID
     ) ?? []
@@ -55,23 +51,26 @@
   const prose = $derived(
     mode === 'cost'
       ? undefined
-      : row.kind === 'case'
+      : row.kind === 'case' && !rep
         ? mode === 'results'
           ? members[0]?.question
           : undefined
-        : row.kind === 'attempt'
+        : row.kind === 'rep' || row.kind === 'case'
           ? mode === 'results'
-            ? attempt?.answer
+            ? rep?.answer
             : undefined
           : row.kind === 'execution'
-            ? attempt?.answer
+            ? rep?.answer
             : tool?.message
   )
   const proseCopy = $derived(
-    row.kind === 'case' && members[0]
+    row.kind === 'case' && !rep && members[0]
       ? sourceCopy?.(members[0].id, 'question')
-      : (row.kind === 'attempt' || row.kind === 'execution') && attempt
-        ? sourceCopy?.(attempt.id, 'answer')
+      : (row.kind === 'case' ||
+            row.kind === 'rep' ||
+            row.kind === 'execution') &&
+          rep
+        ? sourceCopy?.(rep.id, 'answer')
         : undefined
   )
   const span = $derived(
@@ -91,16 +90,16 @@
   const durationSource = $derived(
     row.window
       ? span && span.endTime >= span.startTime
-        ? 'recorded span'
-        : 'available reference extent'
+        ? 'Recorded span'
+        : 'Derived from spans'
       : row.seconds !== undefined
-        ? 'recorded duration'
+        ? 'Recorded duration'
         : row.kind === 'case' && summary.duration.total !== null
-          ? 'sum of recorded durations'
+          ? 'Sum of recorded durations'
           : undefined
   )
   const costFields = $derived(
-    row.kind === 'case' || row.kind === 'attempt'
+    row.kind === 'case' || row.kind === 'rep'
       ? [
           {
             name: 'investigator estimate (CAD)',
@@ -108,7 +107,7 @@
               row.kind === 'case'
                 ? summary.investigatorCost
                 : {
-                    total: attempt?.investigatorCost ?? null,
+                    total: rep?.investigatorCost ?? null,
                     incomplete: false,
                   },
           },
@@ -117,28 +116,28 @@
             estimate:
               row.kind === 'case'
                 ? summary.graderCost
-                : { total: attempt?.graderCost ?? null, incomplete: false },
+                : { total: rep?.graderCost ?? null, incomplete: false },
           },
           { name: 'total estimate (CAD)', estimate: row.estimate },
         ]
       : [{ name: 'estimate (CAD)', estimate: row.estimate }]
   )
   const calls = $derived(
-    row.kind === 'case' ? summary.calls : (attempt?.tools.length ?? 0)
+    row.kind === 'case' ? summary.calls : (rep?.tools.length ?? 0)
   )
   const failures = $derived(
     row.kind === 'case'
       ? summary.failures
-      : (attempt?.tools.filter(item => item.state === 'Error').length ?? 0)
+      : (rep?.tools.filter(item => item.state === 'Error').length ?? 0)
   )
 </script>
 
 <DetailStack
-  label={row.kind === 'attempt' ? 'Attempt details' : `${row.name} details`}
+  label={row.kind === 'rep' ? 'Result details' : `${row.name} details`}
   storageKey={`eval-${row.kind}-detail-layout`}
 >
   <DetailBubble
-    label="Details"
+    label={row.name}
     layoutKey={row.kind === 'case' ? 'Question' : row.name}
   >
     {#snippet trailing()}<EvalStatus
@@ -149,14 +148,9 @@
       {#if prose !== undefined}<ValueCopyButton
           text={prose}
           loadText={proseCopy}
-          label={row.kind === 'attempt' ? 'answer' : row.name}
+          label={row.kind === 'rep' ? 'answer' : row.name}
         />{/if}
     {/snippet}
-    <p class="eval-row-detail__context">
-      <span class="text-base-content">{row.name}</span>
-      {#if parentName}<span>{' · '}{parentName}</span>{/if}
-    </p>
-
     {#if mode === 'cost'}
       <table class="detail-fields w-full" aria-label={`${row.name} accounting`}>
         <tbody>
@@ -170,6 +164,19 @@
         </tbody>
       </table>
     {:else}
+      {#if row.kind === 'case' && rep && mode === 'results'}
+        <table class="detail-fields w-full" aria-label="Test case input">
+          <tbody>
+            <DetailField
+              fieldName="input"
+              fieldType="string"
+              fieldValue={rep.question}
+              loadText={sourceCopy?.(rep.id, 'question')}
+              multiline
+            />
+          </tbody>
+        </table>
+      {/if}
       {#if prose !== undefined}
         {#if tool}
           <table class="detail-fields w-full" aria-label={`${row.name} output`}>
@@ -185,7 +192,7 @@
         {:else}<p class="eval-row-detail__prose">
             {prose === '' ? '""' : prose}
           </p>{/if}
-      {:else if row.kind === 'attempt' && mode === 'results'}
+      {:else if row.kind === 'rep' && mode === 'results'}
         <p class="eval-row-detail__prose">No answer recorded</p>
       {/if}
 
@@ -193,7 +200,7 @@
         <div
           class="eval-row-detail__outcomes"
           role="list"
-          aria-label="Case outcomes"
+          aria-label="Test case outcomes"
         >
           {#each outcomes as outcome}
             <span class="inline-flex items-center gap-2" role="listitem">
@@ -204,107 +211,121 @@
         </div>
       {/if}
 
-      {#if (row.kind === 'attempt' || row.kind === 'execution') && attempt?.error !== undefined}
-        <table class="detail-fields w-full" aria-label="Attempt fault">
+      {#if (row.kind === 'case' || row.kind === 'rep' || row.kind === 'execution') && rep?.error !== undefined}
+        <table class="detail-fields w-full" aria-label="Result fault">
           <tbody
             ><DetailField
               fieldName="internal fault"
               fieldType="string"
-              fieldValue={attempt.error}
-              loadText={sourceCopy?.(attempt.id, 'error')}
+              fieldValue={rep.error}
+              loadText={sourceCopy?.(rep.id, 'error')}
               multiline
             /></tbody
           >
         </table>
       {/if}
 
-      {#each assessments as assessment}
-        {@const definition = run.assessments.find(
-          item => item.id === assessment.id
-        )}
-        <FieldGroup label={definition?.name ?? assessment.id} detail>
-          {#snippet heading()}
-            <span>{definition?.name ?? assessment.id}</span>
-            {#if mode === 'results'}<AssessmentBadge
-                {assessment}
-                maximum={definition?.maximum}
-              />{/if}
-          {/snippet}
-          <table
-            class="detail-fields w-full"
-            aria-label={`${definition?.name ?? assessment.id} explanation`}
-          >
-            <tbody>
-              {#if mode === 'results'}
-                <DetailField
-                  fieldName="score"
-                  fieldType="string"
-                  fieldValue={assessment.value === null
-                    ? 'Unscored'
-                    : `${assessment.value}${definition ? ` / ${definition.maximum}` : ''}`}
-                />
-                <DetailField
-                  fieldName="explanation"
-                  fieldType="string"
-                  fieldValue={assessment.explanation}
-                  loadText={attempt
-                    ? sourceCopy?.(attempt.id, 'explanation')
-                    : undefined}
-                  multiline
-                />
-              {/if}
-              <DetailField
-                fieldName="evaluator"
-                fieldType="string"
-                fieldValue={assessment.evaluator}
-              />
-              <DetailField
-                fieldName="rubric"
-                fieldType="string"
-                fieldValue={assessment.rubric}
-                multiline
-              />
-            </tbody>
-          </table>
+      {#if assessments.length}
+        <FieldGroup label="Assessments" detail>
+          {#each assessments as assessment}
+            {@const definition = run.assessments.find(
+              item => item.id === assessment.id
+            )}
+            <FieldGroup label={definition?.name ?? assessment.id} detail>
+              {#snippet heading()}
+                <span>{definition?.name ?? assessment.id}</span>
+                {#if mode === 'results'}<AssessmentBadge
+                    {assessment}
+                    maximum={definition?.maximum}
+                  />{/if}
+              {/snippet}
+              <table
+                class="detail-fields w-full"
+                aria-label={`${definition?.name ?? assessment.id} explanation`}
+              >
+                <tbody>
+                  {#if mode === 'results'}
+                    <DetailField
+                      fieldName="score"
+                      fieldType="string"
+                      fieldValue={assessment.value === null
+                        ? 'Unscored'
+                        : `${assessment.value}${definition?.maximum !== undefined ? ` / ${definition.maximum}` : ''}`}
+                    />
+                    <DetailField
+                      fieldName="explanation"
+                      fieldType="string"
+                      fieldValue={assessment.explanation}
+                      loadText={rep && assessment.id === run.headlineAssessment
+                        ? sourceCopy?.(rep.id, 'explanation')
+                        : undefined}
+                      multiline
+                    />
+                  {/if}
+                  <DetailField
+                    fieldName="evaluator"
+                    fieldType="string"
+                    fieldValue={assessment.evaluator}
+                  />
+                  <DetailField
+                    fieldName="rubric"
+                    fieldType="string"
+                    fieldValue={assessment.rubric}
+                    multiline
+                  />
+                </tbody>
+              </table>
+            </FieldGroup>
+          {/each}
         </FieldGroup>
-      {/each}
+      {/if}
     {/if}
 
     <table class="detail-fields w-full" aria-label={`${row.name} fields`}>
       <tbody>
-        {#if row.kind === 'case'}
+        {#if (row.kind === 'rep' || row.kind === 'case') && rep?.sourceID}
           <DetailField
-            fieldName="attempts"
+            fieldName="result ID"
+            fieldType="string"
+            fieldValue={rep.sourceID}
+            identifier
+          />
+        {/if}
+        {#if row.kind === 'case' && !rep}
+          <DetailField
+            fieldName="results"
             fieldType="string"
             fieldValue={String(members.length)}
           />
         {/if}
-        {#if mode === 'time' && ['case', 'attempt', 'execution'].includes(row.kind)}
+        {#if mode === 'time' && ['case', 'rep', 'execution'].includes(row.kind)}
           <DetailField
             fieldName="tool calls"
             fieldType="string"
-            fieldValue={`${calls} total · ${failures} failed`}
+            fieldValue={members.some(item => item.toolsKnown === false)
+              ? 'Unknown'
+              : `${calls} total · ${failures} failed`}
           />
         {/if}
         {#if mode !== 'cost'}
-          {#if row.kind === 'attempt' && attempt?.startedAt !== undefined}
+          {#if (row.kind === 'case' || row.kind === 'rep') && rep?.startedAt !== undefined}
             <DetailField
               fieldName="started"
               fieldType="timestamp"
-              fieldValue={attempt.startedAt}
-              timestampLabel={localTimestamp(attempt.startedAt)}
+              fieldValue={rep.startedAt}
+              timestampLabel={localTimestamp(rep.startedAt)}
             />
           {/if}
           <DetailField
             fieldName="duration"
             fieldType="string"
             fieldValue={duration}
-            origin={durationSource}
+            qualifier={durationSource}
           />
         {/if}
         {#if row.kind !== 'case' && mode !== 'time'}
           <DetailField
-            fieldName="case"
+            fieldName="test case"
             fieldType="string"
             fieldValue={members[0]?.name ?? row.caseID}
             loadText={members[0]

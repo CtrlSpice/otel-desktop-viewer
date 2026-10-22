@@ -1,6 +1,5 @@
 import type { OutcomePart } from '@/components/shared/OutcomeBar.svelte'
-import type { EvalRun } from './model'
-import { runSummary } from './run-summary'
+import type { EvalRunCardData } from './run-summary'
 
 export type RunOutcomeOption = OutcomePart & { key: string }
 
@@ -8,11 +7,13 @@ export function outcomeKey(part: Pick<OutcomePart, 'tone' | 'label'>) {
   return `${part.tone}:${part.label}`
 }
 
-/** Count each run once per category, regardless of its number of attempts. */
-export function runOutcomeOptions(runs: EvalRun[]): RunOutcomeOption[] {
+/** Count each run once per category, regardless of its number of reps. */
+export function runOutcomeOptions(
+  runs: readonly Pick<EvalRunCardData, 'outcomes'>[]
+): RunOutcomeOption[] {
   const options = new Map<string, RunOutcomeOption>()
   for (const run of runs) {
-    for (const part of runSummary(run).parts) {
+    for (const part of run.outcomes) {
       const key = outcomeKey(part)
       const option = options.get(key)
       if (option) option.count++

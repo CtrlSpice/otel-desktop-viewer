@@ -10,6 +10,7 @@
     controls,
     navigationLeading,
     navigationTrailing,
+    navigationCount,
     onRefresh,
     refreshPulse = false,
     refreshAsideTip = '',
@@ -41,8 +42,7 @@
         </div>
         <div class="workspace-toolbar__centre">
           <div class="workspace-toolbar__navigation">
-            <!-- Temporary count for UI iteration until shared totals are wired. -->
-            <PrimaryNavigation count={42} />
+            <PrimaryNavigation count={42} evalsCount={navigationCount} />
           </div>
           <div class="workspace-toolbar__search">
             <SearchBar

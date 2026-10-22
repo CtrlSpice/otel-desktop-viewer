@@ -5,6 +5,7 @@ import { Parser } from 'tar'
 import { prepare, IngestionRejectedError, expectedStoredCounts } from './prepare.ts'
 import { datasetManifest, readManifest } from './stage-dataset.ts'
 import { readJson, record, runtimeRoot, saveJson } from './runtime.ts'
+import { ownedPath } from './evidence.ts'
 
 export const CHECKOUT_TRACE = '00000000000000000000000000000011'
 
@@ -149,10 +150,20 @@ export async function exportedTrace(
   return response.json() as Promise<unknown>
 }
 
-export async function verifyExport(
+export function exportWorkspace(
   metadata: Record<string, unknown>,
   root = runtimeRoot()
 ) {
+  if (metadata.runtime === 'pi' || metadata.runtime === 'claude-code') {
+    const evidence = ownedPath(root, metadata.evidence)
+    const workspace = ownedPath(evidence, metadata.workspace)
+    if (metadata.role !== 'investigator' ||
+        path.dirname(evidence) !== path.join(fs.realpathSync(root), 'runs') ||
+        !path.basename(evidence).startsWith('investigator-') ||
+        workspace !== path.join(evidence, 'workspace'))
+      throw new Error('Export verifier requires owned investigator workspace')
+    return workspace
+  }
   const workspace = metadata.workspace
   const isolationRoot = metadata.isolationRoot
   if (
@@ -167,6 +178,14 @@ export async function verifyExport(
     throw new Error(
       'Export verifier requires owned investigator scratch metadata'
     )
+  return workspace
+}
+
+export async function verifyExport(
+  metadata: Record<string, unknown>,
+  root = runtimeRoot()
+) {
+  const workspace = exportWorkspace(metadata, root)
   const manifest = datasetManifest(
     readManifest(path.join(root, 'fixture/manifest.json'))
   )

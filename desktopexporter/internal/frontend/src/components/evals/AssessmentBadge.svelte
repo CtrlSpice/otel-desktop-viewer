@@ -1,24 +1,24 @@
 <script lang="ts">
   import type { Assessment } from './model'
   import EvalStatus from './EvalStatus.svelte'
-  let {
-    assessment,
-    maximum = 1,
-  }: { assessment?: Assessment; maximum?: number } = $props()
+  let { assessment, maximum }: { assessment?: Assessment; maximum?: number } =
+    $props()
 </script>
 
 <EvalStatus
   label={assessment?.label ?? 'Unscored'}
-  tone={assessment?.value === maximum
+  tone={assessment?.pass === true
     ? 'success'
-    : assessment?.value === 0
+    : assessment?.pass === false
       ? 'error'
-      : assessment?.value != null &&
-          assessment.value > 0 &&
-          assessment.value < maximum
-        ? 'warning'
+      : maximum !== undefined && assessment?.value != null
+        ? assessment.value === maximum
+          ? 'success'
+          : assessment.value === 0
+            ? 'error'
+            : 'warning'
         : 'neutral'}
   title={assessment?.value != null
-    ? `${assessment.value} / ${maximum}`
+    ? `${assessment.value}${maximum === undefined ? '' : ` / ${maximum}`}`
     : undefined}
 />

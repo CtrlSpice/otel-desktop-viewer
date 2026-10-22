@@ -23,8 +23,8 @@
         Import telemetry from files
       </h2>
       <p class="import-copy mt-1 text-sm leading-relaxed">
-        Select OTLP JSON files, or drop them literally anywhere on the screen.
-        I'm not a cop.
+        Select telemetry or evaluation JSON / JSONL files, or drop them
+        literally anywhere on the screen. I'm not a cop.
       </p>
     </div>
     <div class="card-actions">
@@ -48,7 +48,7 @@
         accept=".json,.jsonl,application/json,application/x-ndjson"
         multiple
         hidden
-        aria-label="Choose OTLP JSON files"
+        aria-label="Choose telemetry or evaluation JSON / JSONL files"
         onchange={chooseFiles}
       />
     </div>

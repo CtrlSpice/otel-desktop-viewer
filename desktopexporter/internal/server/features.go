@@ -31,8 +31,7 @@ func (s *Server) featureConfig(w http.ResponseWriter, r *http.Request) {
 	}})
 }
 
-// requireEvals gates both page requests and HTTP actions. Snapshot RPC methods
-// check the same live flag before parameter normalization or store access.
+// requireEvals gates both page requests and HTTP actions.
 func (s *Server) requireEvals(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")

@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
-import { projectEvalSnapshot } from '../src/components/evals/snapshot-adapters'
+import { projectPromptfooDataset } from '../src/components/evals/promptfoo-adapter'
 
-const snapshotID = 'c'.repeat(64)
+const datasetID = 'c'.repeat(64)
 
 async function openSource(
   page: Page,
@@ -13,51 +13,109 @@ async function openSource(
     config: { description: 'Copy eval' },
     results: { version: 3, results: rows },
   })
-  const projection = projectEvalSnapshot({
-    id: snapshotID,
+  const projection = projectPromptfooDataset({
+    id: datasetID,
     source: 'local',
     name: 'copy.json',
     format: 'promptfoo-v3',
     payload,
   })
   if (projection.status !== 'supported') throw new Error(projection.reason)
+  const context = JSON.stringify({
+    evalId: 'copy-eval',
+    config: { description: 'Copy eval' },
+    results: { version: 3, results: [] },
+  })
+  const summaries = projection.runs.map((run, index) => ({
+    id: String(index + 1).padStart(64, '0'),
+    adapterRunID: run.id,
+    datasetID,
+    name: run.name,
+    evaluation: run.evaluation,
+    source: run.source,
+    format: 'promptfoo-v3' as const,
+    state: 'Unknown' as const,
+    stateReason: 'Received rows do not establish lifecycle.',
+    pauseReason: null,
+    startedAt: null,
+    plannedCount: null,
+    repCount: run.reps.length,
+    assessmentName: 'Recorded outcome' as const,
+    outcomes: [
+      {
+        key: 'neutral:Unscored',
+        label: 'Unscored' as const,
+        tone: 'neutral' as const,
+        count: run.reps.length,
+      },
+    ],
+  }))
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.route('**/api/features', route =>
     route.fulfill({ json: { evals: { enabled: true } } })
   )
+  await page.route('**/api/evals/runs**', route => {
+    const url = new URL(route.request().url())
+    const detail = url.pathname.match(/^\/api\/evals\/runs\/([^/]+)\/rows$/)
+    if (!detail)
+      return route.fulfill({
+        json: {
+          runs: summaries,
+          total: summaries.length,
+          hasMore: false,
+          facets: summaries[0]?.outcomes ?? [],
+          indexing: {
+            remaining: 0,
+            unsupported: 0,
+            empty: 0,
+            issues: [],
+            hasMoreIssues: false,
+          },
+        },
+      })
+    const summary = summaries.find(item => item.id === detail[1])
+    const run = projection.runs.find(item => item.id === summary?.adapterRunID)
+    if (!summary || !run) return route.fulfill({ status: 404 })
+    const repIDs = new Set(run.reps.map(rep => rep.id))
+    const sourceRows = projection.rows
+      .map((entry, index) => ({ entry, index }))
+      .filter(({ entry }) => repIDs.has(entry.repID))
+      .map(({ index }) => ({
+        ordinal: index,
+        json: JSON.stringify(rows[index]),
+      }))
+    return route.fulfill({
+      json: {
+        summary,
+        contextJSON: context,
+        rows: sourceRows,
+        nextAfter: sourceRows.at(-1)?.ordinal ?? -1,
+        hasMore: false,
+      },
+    })
+  })
   await page.route('**/rpc', async route => {
     const request = route.request().postDataJSON()
     const result =
-      request.method === 'getEvalSnapshot'
+      request.method === 'getStats'
         ? {
-            id: snapshotID,
-            digest: snapshotID,
-            source: 'local',
-            name: 'copy.json',
-            format: 'promptfoo-v3',
-            originalJSON: payload,
-            byteSize: Buffer.byteLength(payload),
-            importedAt: '2026-10-20T00:00:00Z',
+            traces: { count: 0 },
+            logs: { count: 0 },
+            metrics: { count: 0 },
+            rejections: [],
           }
-        : request.method === 'getStats'
-          ? {
-              traces: { count: 0 },
-              logs: { count: 0 },
-              metrics: { count: 0 },
-              rejections: [],
-            }
-          : []
+        : []
     await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result } })
   })
   const run = projection.runs[0]
-  const attempt = run.attempts[selected]
+  const summary = summaries[0]
+  const rep = run.reps[selected]
   const query = new URLSearchParams({
-    snapshot: snapshotID,
-    run: run.id,
-    attempt: attempt.id,
+    run: summary.id,
+    rep: rep.id,
   })
   await page.goto(`/evals?${query}`)
-  return { run, attempt, query }
+  return { run, rep, query }
 }
 
 function row(index: number, output: unknown) {
@@ -74,6 +132,85 @@ function row(index: number, output: unknown) {
   }
 }
 
+test('native results need no ordinal or execution wrapper and show their own grades', async ({
+  page,
+}) => {
+  await openSource(
+    page,
+    [0, 1, 2].map(index => ({
+      ...row(index, `Output ${index}`),
+      repeatIndex: undefined,
+      testCase: { description: 'Shared test case' },
+      score: 7,
+      gradingResult: {
+        pass: true,
+        score: 7,
+        reason: 'Native outcome',
+        componentResults: [
+          {
+            pass: true,
+            score: 7,
+            reason: `Reason ${index}`,
+            assertion: { type: 'llm-rubric', value: 'Approved criterion' },
+          },
+        ],
+      },
+    }))
+  )
+  const table = page.getByRole('table', {
+    name: 'Results for provider',
+    exact: true,
+  })
+  await expect(
+    table.getByRole('columnheader', { name: 'Experiment · Test case · Result' })
+  ).toBeVisible()
+  await expect(table.locator('[data-row-kind="case"]')).toHaveCount(1)
+  await expect(table.locator('[data-row-kind="rep"]')).toHaveCount(3)
+  await expect(
+    table.getByRole('columnheader', { name: 'Sort by Assessment', exact: true })
+  ).toBeVisible()
+  await table
+    .getByRole('button', { name: 'Result result-1', exact: true })
+    .click()
+  const details = page.locator('#signal-drawer-detail')
+  await expect(
+    details.getByRole('group', { name: 'result ID', exact: true })
+  ).toContainText('result-1')
+  await expect(details).toContainText('Output 1')
+  await expect(
+    details.locator('summary').filter({ hasText: /^\s*Assessments\s*$/ })
+  ).toBeVisible()
+  await expect(
+    details.locator('summary').filter({ hasText: /^Overall/ })
+  ).toBeVisible()
+  await expect(details).toContainText('Reason 1')
+  await expect(details).toContainText('Approved criterion')
+  await expect(
+    details.getByRole('group', { name: 'score', exact: true }).last()
+  ).toContainText('7')
+  await page.getByRole('radio', { name: 'Tool calls', exact: true }).click()
+  await expect(
+    table.locator('[data-row-kind="execution"], [data-row-kind="grading"]')
+  ).toHaveCount(0)
+  await expect(
+    details.getByRole('group', { name: 'tool calls', exact: true })
+  ).toContainText('Unknown')
+})
+
+test('a singleton without repetition metadata shows output and identity on its test case', async ({
+  page,
+}) => {
+  await openSource(page, [
+    { ...row(0, 'Singleton output'), repeatIndex: undefined },
+  ])
+  const details = page.locator('#signal-drawer-detail')
+  await expect(page.locator('[data-row-kind="rep"]')).toHaveCount(0)
+  await expect(details).toContainText('Singleton output')
+  await expect(
+    details.getByRole('group', { name: 'result ID', exact: true })
+  ).toContainText('result-0')
+})
+
 for (const mode of ['field limit', 'aggregate budget']) {
   test(`field Copy uses exact source after ${mode}`, async ({ page }) => {
     const exact = '🙂\\\n"é'.repeat(7000)
@@ -89,7 +226,7 @@ for (const mode of ['field limit', 'aggregate budget']) {
       prompt: { raw: exact },
       gradingResult: { reason: exact, pass: true },
     }
-    const { attempt, query } = await openSource(page, rows, selected)
+    const { rep, query } = await openSource(page, rows, selected)
     const detail = page.locator('#signal-drawer-detail')
     await expect(detail).toContainText('… [see original JSON]')
     await detail
@@ -106,13 +243,13 @@ for (const mode of ['field limit', 'aggregate budget']) {
     await expect
       .poll(() => page.evaluate(() => navigator.clipboard.readText()))
       .toBe(exact)
-    query.delete('attempt')
-    query.set('row', `case/${attempt.caseID}`)
+    query.delete('rep')
+    query.set('row', `case/${rep.caseID}`)
     await page.goto(`/evals?${query}`)
     await expect(detail).toContainText('… [see original JSON]')
     await page.evaluate(() => navigator.clipboard.writeText('sentinel'))
     await detail
-      .getByRole('button', { name: `Copy ${attempt.name}`, exact: true })
+      .getByRole('button', { name: `Copy ${rep.name}`, exact: true })
       .click()
     await expect
       .poll(() => page.evaluate(() => navigator.clipboard.readText()))
@@ -128,7 +265,7 @@ test('answer Copy preserves empty, zero, null and missing semantics', async ({
     ['', 0, null, undefined].map((output, index) => row(index, output))
   )
   for (const [index, expected] of ['', '0', 'null', undefined].entries()) {
-    query.set('attempt', run.attempts[index].id)
+    query.set('rep', run.reps[index].id)
     await page.goto(`/evals?${query}`)
     const copy = page
       .locator('#signal-drawer-detail')
@@ -157,7 +294,7 @@ test('switching imported runs preserves each run disclosure and sort', async ({
     { ...row(2, 'C'), provider: { id: 'other' } },
   ])
   const table = page.getByRole('table', {
-    name: 'Results for Copy eval · provider',
+    name: 'Results for provider',
     exact: true,
   })
   await table.getByRole('button', { name: /^Collapse Case 0/ }).click()
@@ -165,11 +302,11 @@ test('switching imported runs preserves each run disclosure and sort', async ({
   await header.getByRole('button', { name: 'Sort by Duration' }).click()
   await expect(header).toHaveAttribute('aria-sort', 'ascending')
   await page
-    .getByRole('button', { name: /Copy eval · other/ })
+    .getByRole('button', { name: /^other/ })
     .locator('.signal-row__title')
     .click()
   const otherTable = page.getByRole('table', {
-    name: 'Results for Copy eval · other',
+    name: 'Results for other',
     exact: true,
   })
   await expect(otherTable).toBeVisible()
@@ -181,7 +318,7 @@ test('switching imported runs preserves each run disclosure and sort', async ({
   await otherHeader.getByRole('button', { name: 'Sort by Duration' }).click()
   await expect(otherHeader).toHaveAttribute('aria-sort', 'descending')
   await page
-    .getByRole('button', { name: /Copy eval · provider/ })
+    .getByRole('button', { name: /^provider/ })
     .locator('.signal-row__title')
     .click()
   await expect(
@@ -189,7 +326,7 @@ test('switching imported runs preserves each run disclosure and sort', async ({
   ).toHaveAttribute('aria-expanded', 'false')
   await expect(header).toHaveAttribute('aria-sort', 'ascending')
   await page
-    .getByRole('button', { name: /Copy eval · other/ })
+    .getByRole('button', { name: /^other/ })
     .locator('.signal-row__title')
     .click()
   await expect(otherHeader).toHaveAttribute('aria-sort', 'descending')

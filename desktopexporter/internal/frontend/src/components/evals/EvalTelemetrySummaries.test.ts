@@ -1,18 +1,15 @@
 // @vitest-environment jsdom
-import { expect, it, vi } from 'vitest'
-import { fireEvent, screen, within } from '@testing-library/svelte'
-import { copyText } from '@/utils/clipboard'
+import { expect, it } from 'vitest'
+import { screen, within } from '@testing-library/svelte'
 import { renderWithContexts as render } from '@/test/render-helpers'
 import type { SpanNode } from '@/types/api-types'
 import EvalTelemetrySummaries from './EvalTelemetrySummaries.svelte'
 import { evalTelemetrySummaries } from './eval-telemetry-summaries'
 import { exampleRuns } from './examples'
 import { buildEvalOutline } from './eval-outline'
-import { groupAttempts } from './group-attempts'
+import { groupReps } from './group-reps'
 import { indexEvalTraces, referenceKey } from './eval-traces'
 import { traceHref } from './model'
-
-vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn() }))
 
 const reference = { traceID: 'a'.repeat(32), spanID: 'b'.repeat(16) }
 const node: SpanNode = {
@@ -74,8 +71,8 @@ it('keeps unavailable references navigable and does not borrow a same-ID span fr
 
 it('keeps all case repetitions without inventing a case span or repeating tool lists', () => {
   const first = {
-    ...exampleRuns[0].attempts[0],
-    attemptTelemetry: undefined,
+    ...exampleRuns[0].reps[0],
+    repTelemetry: undefined,
     telemetry: reference,
   }
   const second = {
@@ -84,9 +81,9 @@ it('keeps all case repetitions without inventing a case span or repeating tool l
     repetition: 2,
     telemetry: { ...reference, traceID: 'c'.repeat(32) },
   }
-  const run = { ...exampleRuns[0], attempts: [first, second] }
+  const run = { ...exampleRuns[0], reps: [first, second] }
   const rows = buildEvalOutline(
-    groupAttempts(run.attempts, run.attempts),
+    groupReps(run.reps, run.reps),
     run,
     indexEvalTraces([])
   )
@@ -95,8 +92,8 @@ it('keeps all case repetitions without inventing a case span or repeating tool l
     rows.find(row => row.kind === 'case')
   )
   expect(entries).toEqual([
-    { reference, label: 'Rep 1 · Execution' },
-    { reference: second.telemetry, label: 'Rep 2 · Execution' },
+    { reference, label: 'Result · Execution' },
+    { reference: second.telemetry, label: 'Result · Execution' },
   ])
   const tool = rows.find(row => row.kind === 'tool')!
   expect(evalTelemetrySummaries(run, tool)).toEqual([
@@ -104,19 +101,19 @@ it('keeps all case repetitions without inventing a case span or repeating tool l
   ])
 })
 
-it('deduplicates an attempt and execution that reference the same stored span', () => {
-  const attempt = {
-    ...exampleRuns[0].attempts[0],
-    attemptTelemetry: reference,
+it('deduplicates an rep and execution that reference the same stored span', () => {
+  const rep = {
+    ...exampleRuns[0].reps[0],
+    repTelemetry: reference,
     telemetry: { ...reference, traceID: reference.traceID.toUpperCase() },
     assessments: [],
   }
-  expect(evalTelemetrySummaries(exampleRuns[0], undefined, attempt)).toEqual([
-    { reference, label: 'Rep 1 · Attempt' },
+  expect(evalTelemetrySummaries(exampleRuns[0], undefined, rep)).toEqual([
+    { reference, label: 'Result' },
   ])
 })
 
-it('copies the reference IDs exactly even when the span is unavailable', async () => {
+it('keeps exact reference IDs in the native navigation link even when the span is unavailable', () => {
   const received = { traceID: 'A'.repeat(32), spanID: 'B'.repeat(16) }
   render(EvalTelemetrySummaries, {
     entries: [{ reference: received, label: 'Execution' }],
@@ -124,14 +121,9 @@ it('copies the reference IDs exactly even when the span is unavailable', async (
   const identity = screen.getByRole('group', { name: 'Execution identifiers' })
   expect(within(identity).getByTitle(received.traceID)).toBeVisible()
   expect(within(identity).getByTitle(received.spanID)).toBeVisible()
-  await fireEvent.click(
-    within(identity).getByRole('button', { name: 'Copy trace ID' })
-  )
-  expect(copyText).toHaveBeenLastCalledWith(received.traceID)
-  await fireEvent.click(
-    within(identity).getByRole('button', { name: 'Copy span ID' })
-  )
-  expect(copyText).toHaveBeenLastCalledWith(received.spanID)
+  expect(within(identity).getByText('Traces:')).toBeVisible()
+  expect(within(identity).queryByRole('button')).toBeNull()
+  expect(identity.closest('a')).toBe(screen.getByRole('link'))
   expect(screen.getByRole('link')).toHaveAttribute('href', traceHref(received))
 })
 
@@ -140,9 +132,11 @@ it('shows a trace-only identity without inventing an unavailable span', () => {
   render(EvalTelemetrySummaries, {
     entries: [{ reference: received, label: 'Execution' }],
   })
-  expect(
-    screen.getByText('Trace reference · no span ID recorded')
-  ).toBeVisible()
+  expect(screen.getByText('Trace', { exact: true })).toBeVisible()
   expect(screen.queryByRole('button', { name: 'Copy span ID' })).toBeNull()
   expect(screen.getByRole('link')).toHaveAttribute('href', traceHref(received))
+  expect(screen.getByRole('link')).toHaveAttribute(
+    'href',
+    `/traces/${received.traceID}`
+  )
 })

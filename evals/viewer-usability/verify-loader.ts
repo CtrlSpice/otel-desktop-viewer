@@ -44,7 +44,7 @@ const command = [
   process.execPath,
   '--input-type=module',
   '-e',
-  `import config from ${JSON.stringify(path.join(SUITE, 'config.ts'))}; import {runNativeEvaluation} from ${JSON.stringify(path.join(SUITE, 'native-evaluate.ts'))}; process.exitCode=await runNativeEvaluation({...config,tests:config.tests.slice(0,4)},1,process.argv[1]);`,
+  `import config from ${JSON.stringify(path.join(SUITE, 'legacy-config.ts'))}; import {runNativeEvaluation} from ${JSON.stringify(path.join(SUITE, 'native-evaluate.ts'))}; process.exitCode=await runNativeEvaluation({...config,tests:config.tests.slice(0,4)},1,process.argv[1]);`,
   'loader-results.json',
 ]
 function runLoader(root: string, command: string[], prefix: string) {
@@ -240,7 +240,7 @@ for (const run of investigatorRuns)
   )
 saveJson(path.join(root, 'loader-proof.json'), {
   scenarios: { pass: root, executionError: errorRoot, factualFailure: factRoot, partial: partialRoot },
-  loadedConfig: path.join(SUITE, 'config.ts'),
+  loadedConfig: path.join(SUITE, 'legacy-config.ts'),
   loadedProvider: path.join(SUITE, 'native-lifecycle.ts'),
   loadedGrader: path.join(SUITE, 'grade.ts'),
   syntheticResults: rows.length,

@@ -2,10 +2,10 @@
   import SignalCard from '@/components/shared/SignalCard.svelte'
   import SignalDate from '@/components/shared/SignalDate.svelte'
   import Identifier from '@/components/shared/Identifier.svelte'
-  import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import type { SpanNode } from '@/types/api-types'
   import { getServiceName } from '@/utils/resource'
-  import { formatDuration } from '@/utils/time'
+  import { formatDurationParts } from '@/utils/time'
+  import { formatMetricValuePlain } from '@/components/metrics/utils/format-metric-value'
   import { traceHref } from './model'
   import { referenceKey } from './eval-traces'
   import type { EvalTelemetrySummary } from './eval-telemetry-summaries'
@@ -21,17 +21,41 @@
     nodes?: Map<string, SpanNode>
     loading?: boolean
   } = $props()
+
+  function formatTelemetryDuration(nanoseconds: bigint): string {
+    const { value, unit } = formatDurationParts(nanoseconds)
+    return formatMetricValuePlain(Number(value), {
+      unit,
+      maxFractionDigits: 3,
+    })
+  }
 </script>
 
-<div aria-label="Referenced telemetry" class="min-w-0">
+<div aria-label="Referenced telemetry" class="eval-telemetry min-w-0">
   {#each entries as entry (referenceKey(entry.reference))}
     {@const span = nodes.get(referenceKey(entry.reference))?.spanData}
     {@const service = span ? getServiceName(span.resource) : undefined}
+    {@const title =
+      span?.name ?? (entry.reference.spanID ? entry.label : 'Trace')}
     <SignalCard
       id={referenceKey(entry.reference)}
       href={traceHref(entry.reference)}
-      title={span?.name ?? entry.label}
+      {title}
     >
+      {#snippet beforeTitle()}
+        {#if entry.reference.spanID}
+          <div
+            class="min-h-[var(--signal-card-row-h)] truncate text-sm text-secondary"
+            title={entry.label}
+          >
+            {span
+              ? entry.label
+              : loading
+                ? 'Loading span…'
+                : 'Span unavailable'}
+          </div>
+        {/if}
+      {/snippet}
       {#snippet titleContent()}
         <span class="inline-flex min-w-0 items-center gap-2" title={service}>
           <span
@@ -41,34 +65,25 @@
               : 'var(--color-muted)'}
             aria-hidden="true"
           ></span>
-          <span class="truncate">{span?.name ?? entry.label}</span>
+          <span class="truncate">{title}</span>
         </span>
       {/snippet}
-      {#snippet interactiveSubtitle()}
-        <div
-          class="min-h-[var(--signal-card-row-h)] truncate text-sm text-secondary"
-          title={entry.label}
-        >
-          {span
-            ? entry.label
-            : !entry.reference.spanID
-              ? 'Trace reference · no span ID recorded'
-              : loading
-                ? 'Loading span…'
-                : 'Span unavailable'}
-        </div>
+      {#snippet subtitleContent()}
         <div
           class="eval-telemetry__identity"
           role="group"
           aria-label={`${entry.label} identifiers`}
         >
-          <span class="text-rp-subtle" title="Trace ID">TID</span>
-          <Identifier value={entry.reference.traceID} />
-          <ValueCopyButton text={entry.reference.traceID} label="trace ID" />
+          <span class="text-rp-subtle">Traces:</span>
+          <span>
+            <span class="sr-only">Trace ID </span>
+            <Identifier value={entry.reference.traceID} />
+          </span>
           {#if entry.reference.spanID !== undefined}
-            <span class="text-rp-subtle" title="Span ID">SID</span>
-            <Identifier value={entry.reference.spanID} />
-            <ValueCopyButton text={entry.reference.spanID} label="span ID" />
+            <span>
+              <span class="sr-only">Span ID </span>
+              <Identifier value={entry.reference.spanID} />
+            </span>
           {/if}
         </div>
       {/snippet}
@@ -91,7 +106,7 @@
       {#snippet meta()}
         {#if span && span.endTime >= span.startTime}<span
             >Duration: <span class="text-base-content tabular-nums"
-              >{formatDuration(span.endTime - span.startTime)}</span
+              >{formatTelemetryDuration(span.endTime - span.startTime)}</span
             ></span
           >{/if}
       {/snippet}
@@ -106,14 +121,19 @@
 <style lang="postcss">
   @reference "../../app.css";
   .eval-telemetry__identity {
-    @apply grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 text-sm;
-    grid-auto-rows: var(--signal-card-row-h);
+    @apply flex min-h-[var(--signal-card-row-h)] min-w-0 flex-wrap items-center gap-x-2 text-sm;
   }
-  .eval-telemetry__identity :global(.identifier) {
-    @apply min-w-0 truncate;
+  .eval-telemetry .eval-telemetry__identity :global(.identifier) {
+    text-decoration-line: var(--eval-id-decoration, none);
+    text-underline-offset: 0.2em;
+    color: var(--color-base-content);
   }
-  .eval-telemetry__identity :global(.value-copy) {
-    width: var(--signal-card-row-h);
-    height: var(--signal-card-row-h);
+  .eval-telemetry :global(.signal-row:focus-visible) {
+    --eval-id-decoration: underline;
+  }
+  @media (hover: hover) {
+    .eval-telemetry :global(.signal-row:hover) {
+      --eval-id-decoration: underline;
+    }
   }
 </style>

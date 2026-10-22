@@ -250,7 +250,9 @@ describe('App real-page composition', () => {
     const dataTransfer = { types: ['Files'], files: [file] }
     await fireEvent.dragEnter(window, { dataTransfer })
     expect(
-      screen.getByText('Drop OTLP JSON files to import')
+      screen.getByText(
+        'Drop telemetry or evaluation JSON / JSONL files to import'
+      )
     ).toBeInTheDocument()
     await fireEvent.drop(window, { dataTransfer })
     expect(importFiles).toHaveBeenCalledWith([file])

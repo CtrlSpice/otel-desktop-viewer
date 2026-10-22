@@ -23,6 +23,50 @@ function receiver(
 }
 
 describe('OTLP file sender', () => {
+  it('requires an explicit eval completion reply and retains the original Blob', async () => {
+    const file = new File(
+      ['{"evalId":"run","config":{},"results":{"version":3,"results":[]}}'],
+      'eval.json'
+    )
+    const send = receiver(
+      async () =>
+        new Response(
+          JSON.stringify({
+            ids: ['a'.repeat(64)],
+            complete: true,
+            created: true,
+          })
+        )
+    )
+    expect(await telemetryAPI.ingestEvalFile(file)).toEqual([])
+    expect(send.mock.calls[0][1]?.body).toBe(file)
+    send.mockResolvedValueOnce(new Response('{}'))
+    await expect(telemetryAPI.ingestEvalFile(file)).rejects.toThrow(
+      'did not confirm'
+    )
+  })
+  it('uses the shared queue for evals and reports the feature gate without receiver discovery', async () => {
+    const send = receiver(
+      async () => new Response('Evaluation import is disabled', { status: 403 })
+    )
+    const failure = vi.fn()
+    const importer = createFileImporter('https://viewer.example/evals', failure)
+    const file = new File(
+      ['{"evalId":"run","config":{},"results":{"version":3,"results":[]}}'],
+      'data.bin'
+    )
+    await importer.enqueue([file])
+    expect(telemetryAPI.getImportConfig).not.toHaveBeenCalled()
+    expect(send).toHaveBeenCalledWith(
+      '/api/evals/ingest?name=data.bin',
+      expect.objectContaining({ body: file, method: 'POST' })
+    )
+    expect(failure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: expect.stringContaining('evals.enabled'),
+      })
+    )
+  })
   it('uses the configured port, viewer hostname and standard signal paths with unchanged values', async () => {
     const send = receiver()
     const file = new File(

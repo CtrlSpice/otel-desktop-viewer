@@ -6,47 +6,36 @@
   assets for final verification and commits. Concurrent test/preview servers must
   use separate Vite caches so dependency optimization cannot break the preview.
 
-- For every colour change, proactively report text-contrast pass/fail against
-  4.5:1 on the affected base, hover and selected backgrounds. Include the lowest
-  measured ratio and any remaining failures; the user should not need to ask.
-  Distinguish a passing colour pair from full accessibility conformance.
-
 - Use the original Rosé Pine, Moon and Dawn palette values with the approved
-  adjustments below. Keep Dawn's approved flipped surfaces:
+  adjustments below. The palette is settled; routine frontend work does not
+  require colour reviews or contrast reports. Keep Dawn's approved flipped surfaces:
   bg-100/canvas is #fffaf3, bg-200/panel is #faf4ed and
   bg-300/chrome remains #f2e9e1 (brightest to darkest). Use `subtle` for
   keys, column/section headers, helper text and app-added bracketed annotations,
   and `text` for data values and main page/pane titles. Reserve muted or dimmed
   text for unavailable or disabled states.
   User-approved Pine/Secondary contrast adjustment: Pine #70b3cf, Moon #6bbadc,
-  Dawn #266781. These theme-wide colours meet 4.5:1 on all three base surfaces,
-  Highlight Low and Highlight Medium. Keep regular weight; do not use bold or
+  Dawn #266781. Keep regular weight; do not use bold or
   semibold to strengthen text or compensate for low contrast.
-  Dawn's other foreground colours also use the contrast-adjusted values in
+  Dawn's other foreground colours use the approved values in
   `src/themes/rose-pine.json`, documented in `src/themes/README.md`. Keep these
-  theme-wide; do not restore original low-contrast colours in individual views.
-  Subtle is #aba7c5 in Pine and #b1adcc in Moon app-wide. Both meet 4.5:1 on
-  canvas, panel, chrome, Highlight Low and Highlight Medium. Highlight High
-  remains below 4.5:1 for Subtle. Pine and Moon's remaining foreground colours
-  retain their original values.
+  theme-wide. Subtle is #aba7c5 in Pine and #b1adcc in Moon app-wide.
+  Pine and Moon's remaining foreground colours retain their original values.
   Love/Error uses the original palette colour in every theme, including Dawn
   #b4637a. Do not use a separate darkened error-text colour.
   Dawn Gold/Warning is the original #ea9d34. The user rejected #895500.
   Gold is for markers and fills, never text. Warning text uses neutral Text.
-  Never darken, replace or locally override Gold to satisfy contrast checks.
-  Report contrast failures; obtain explicit user approval for any colour/theme
-  change, including changes proposed during cleanup or independent review.
-  Contrast adjustments apply only to colours actually used for text, only in
-  themes where those text/background pairs fail, and only by the smallest amount
-  needed to pass. Preserve marker/fill palette colours; do not darken them to
-  satisfy a text-contrast target. Show measured pairs and proposed values before
-  any further colour change.
+  Preserve marker/fill palette colours, including Gold. Obtain explicit user
+  approval before changing the palette or adding local colour overrides.
   Span and summary breakdown bars use solid palette fills without Dawn-specific
   fading or borders. Error status code/message values use neutral Text with an
   8px Love dot before the value, only when the received status code is 2.
 - Shared item states use Highlight Low for hover and Highlight Medium for
   persistent selection. Hover temporarily uses Low even on selected items;
   leaving the item restores Medium. Text selection also uses Medium.
+  Signal cards keep Medium while selected, including under the pointer, so a
+  click shows selection immediately. Unselected cards share Low across the whole
+  parent card, including independent breakdown controls.
   Text selection is transient; it does not use the persistent-selection token.
 - Buttons stay still on press and release. Use colour and focus feedback;
   remove DaisyUI's active press translation from buttons and controls that apply
@@ -67,7 +56,7 @@
   Error navigation uses open Hugeicons left/right carets in Text, with an 8px
   Love dot between the left caret and its Subtle label: `[x/y err]` for a selected
   error, otherwise `[y err]`. No badge background. The Span section heading adds
-  `* root` in Pine/Secondary only when the selected span has no recorded parent.
+  `· root` in Pine/Secondary only when the selected span has no recorded parent.
 - Main header order: title · (service) · counts on the left, optional error
   navigation and Download on the right; time and view controls below. The separate
   service/count row was rejected because it wastes space.
@@ -225,15 +214,18 @@
   colour dots only for meaningful statuses or outcomes, alongside neutral Text
   labels. Keep Results, Time, Cost, summaries and Details consistent with shared
   table and field-card typography and spacing.
-  Evals run cards show name/state, the outcome bar and the shared date row. Put outcome names,
-  counts in each segment's hover/focus tooltip as `● label [count]`. Each tooltip
-  describes only its segment; do not include other outcomes, progress, score,
-  tool activity or cost. Use the native top layer so neighbouring cards and
-  scroll containers cannot cover or clip these tooltips.
-  Run summary cards show a visible small-dot outcome legend with `[count]`
-  directly below their outcome bar, using the shared summary row size and text.
-  Keep the execution-status legend in the results header so assessment results
-  cannot be confused with span status.
+  Evals has no legacy snapshot/archive workflow. The global drop/file-picker
+  queue ingests producer-native Promptfoo v3 envelopes into DuckDB; the Run list
+  reads the database-wide materialized index.
+  Evals run cards show name/state, an outcome bar and the shared date row when
+  a valid start time is available.
+  Outcome-bar segments use the same compact hover/focus tooltips as trace-service
+  segments: coloured dot, status label and `[count]`. Keep segment controls outside
+  the card selection button. Hover/focus previews a status; activating a segment
+  also selects its parent run, with immediate selected highlighting.
+  Run summary cards keep status labels and `[count]` in the compact segment
+  tooltips; do not repeat an outcome legend below the bar.
+  Do not show an execution-status legend in the results header for now.
   A single breakdown category uses its colour dot and name instead of a full-width
   bar. Multiple categories retain the proportionate bar with hover/focus details.
   Results, Tool calls and Cost are a single-select radio group. The active view
@@ -246,31 +238,58 @@
   Cost has Investigator, Grader and Total cost columns, in that
   order. Cells and footer totals show only numeric amounts (Unknown if missing);
   CAD and estimate labels stay in headers, and partial-estimate context is on hover.
-  Results reveals
-  Case → Attempt; Tool calls reveals Execution and its tool descendants. Grading
-  is a sibling of Execution under the attempt. Preserve manual branch toggles.
+  Evals lists database-wide run summaries and loads full run data only for the
+  selected run, as the other signals do. Summary cards consume summary data rather
+  than loading Reps to calculate their counts. Reuse existing signal cards,
+  headers, tree rows, Details panels and loading states; do not invent new styles.
+  The normalized hierarchy is Experiment → Test case → Result. Show only levels
+  supported by the source. Native result IDs identify individual results; Result
+  labels have no ordinal. Default to available start-time order, retaining source
+  order for ties and unknown times. A singleton without repetition metadata puts
+  its evidence directly on the test case. Execution/grading are roles, not required
+  wrappers. Only an explicit distinct execution span creates an execution row;
+  assessment results alone do not create grading spans. Preserve manual toggles.
+  Evals tree nodes use standard 8px Primary dots (bg-primary, no outline) when
+  no correlated span is available, including experiment roots.
+  Available spans supply their service/span colours.
+  Duration-only and derived timing bars use Primary too when no span supplies
+  a colour. Keep error overrides. Trace-only telemetry cards link to the trace's
+  default root view and omit missing-span commentary.
+  Keep recorded and propagated error indicators; lifecycle status is not a
+  substitute for a span colour.
+  Omit unavailable experiment lifecycle status from summary cards, headers and
+  Details. Do not show Unknown or explanatory lifecycle boilerplate there.
   Cost shows each visible level in the summary column, without adding a tree depth or summing
   parent estimates together with their child estimates. Missing costs are Unknown.
-  Attempt labels are left-aligned beside their tree dots.
-  The identity heading reads Case · Rep on one line with uniform separator
+  Rep labels are left-aligned beside their tree dots. Attempt is a distinct retry
+  node only when a producer explicitly records retries within a Rep; adapters do
+  not invent it.
+  The Run root is selectable and collapsible, opens Run details, and is initially
+  expanded in every view. Run timing/cost/outcome summaries include the full run,
+  even when a case or repetition is filtered out. Never add child costs to an
+  already aggregated parent estimate.
+  The identity heading reads Experiment · Test case · Result on one line with uniform separator
   spacing and no extra gap between the labels.
-  An explicit attemptTelemetry reference identifies the enclosing attempt span;
-  telemetry identifies target execution. Without it, label derived timing as the
+  An explicit repTelemetry reference identifies the enclosing Rep span;
+  attemptTelemetry does the same for a producer-recorded retry. Telemetry identifies
+  target execution. Without an enclosing reference, label derived timing as the
   extent of available references rather than claiming another stored span.
   Align recorded starts to the earliest available span in the run, including
   when there is no enclosing run span. Keep recorded-duration-only fallbacks.
-  Case root bars span available attempt references across all repetitions,
+  Case root bars span available Rep references across all repetitions,
   including hidden repetitions. Distinguish elapsed windows from summed durations.
   Timing fallback order at each level: valid referenced span, available child
-  timing extent, recorded duration, then unavailable. Mark inferred extents as
-  timing fallbacks. Keep zero durations and never sum overlapping child durations
+  timing extent, recorded duration, then unavailable. Put duration-source context
+  in the field heading as `duration · source · type`, using the shared small
+  middle-dot separators and Subtle source text.
+  Keep zero durations and never sum overlapping child durations
   into an elapsed window or invent a start offset for duration-only values.
-  Missing timing on started/completed rows uses a faint 1px Muted line with one
-  central break. Planned/unstarted rows stay blank. Ruler ticks
-  extend 4px into the header below their labels, aligned with the time guides.
-  The results header legend always describes execution statuses: Complete,
-  In progress, Span error, Internal fault and Planned, in that order. It does not switch to
-  assessment outcomes or percentages when Results columns are shown.
+  Missing timing rows stay blank, including started/completed rows; do not draw
+  broken-line placeholders. Keep a continuous separator under the table header
+  and ruler ticks. Ruler ticks extend 4px into the header below their labels,
+  aligned with the time guides.
+  Do not show an execution-status legend in the results header for now; reserve
+  that space while a less crowded placement is being selected.
   Its Duration column uses bounded referenced trace views and shared waterfall
   bars/colours/connectors. Keep received parent IDs intact when compressing
   ancestry; mark skipped or unavailable parent connections. Include referenced
@@ -288,10 +307,10 @@
   these meanings during parent propagation, including in dogfooding datasets.
   Evals uses two stable sections, Details and Telemetry, across row modes.
   Keep the selected row name and parent context in Details. Results shows case
-  questions/outcomes, attempt answers/scores, tool output/errors and grader
+  questions/outcomes, Rep answers/scores, tool output/errors and grader
   scores/explanations at their own level. Tool calls shows the selected level's
   execution/output, timing, faults and tool totals. Cost shows the selected
-  level's estimates; case/attempt totals separate investigator and grader costs.
+  level's estimates; Case/Rep totals separate investigator and grader costs.
   The whole table row selects Details; tree controls only expand/collapse.
   Native row-name buttons preserve keyboard access. Keep text selection intact.
   Mode changes preserve the selected row, manual disclosure and section sizing.
@@ -302,8 +321,12 @@
   neutral status text with its status dot, Pine/Secondary provenance, duration,
   and the shared bottom-left Started date. Service identity is on hover. Omit
   navigation hints; the summary card itself is the exact native trace link.
-  Inside each Telemetry card, show compact TID/SID rows with exact Copy controls
-  and shared Identifier rendering. Keep Telemetry as a sibling section in every
+  Inside each Telemetry card, prefix the inline trace and span IDs with `Traces ·`
+  to name the navigation destination. Use shared Identifier rendering, without
+  visible TID/SID labels, brackets or Copy buttons. Use Subtle
+  for the trace ID and Text for the span ID. The IDs remain part of the native
+  card link; brighten the trace ID and underline both IDs on card hover and
+  keyboard focus to indicate navigation. Keep Telemetry as a sibling section in every
   row mode, including Tool calls. Do not substitute a parent's IDs or invent a
   span ID when only a trace reference is recorded.
   Span-event summaries follow the log-card layout: event identity and plain
@@ -311,15 +334,17 @@
   and the shared bottom-left Recorded date/offset. Preserve the exception dot
   and disclosure controls; do not invent severity or span status for events.
   Keep tool execution in the waterfall; do not repeat its Tool calls list in
-  attempt Details.
+  Rep Details.
 - All signal cards place the shared date row at the bottom-left, after summary
   content. Label its meaning: `Started` for traces/Evals,
   `Last seen` for metrics and `Recorded` for logs. Align values through the shared
   SignalDate component. Use the selected timezone without repeating its suffix;
   retain the full timezone on hover and in Details. Missing dates stay unavailable,
   not invented. Keep trace `Duration:` separately labelled.
-  Missing dates display `—` with the reason on hover. Let date labels use their
-  natural width with the shared gap; do not reserve a wide empty label column.
+  Missing dates display `—` with the reason on hover.
+  Evals run cards omit the entire Started row when no valid start is available.
+  Let date labels use their natural width with the shared gap; do not reserve a
+  wide empty label column.
 - Log severity uses an 8px coloured dot followed by neutral `LABEL (number)`
   text in summaries and tables through LogSeverity; no numbered circles.
   Waterfall tree nodes

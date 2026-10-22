@@ -97,7 +97,7 @@
   let checkedIDs = $state<string[]>([])
   let deletingSelected = $state(false)
   let submittedQuery: ParsedSearchRequest | null = null
-  let submittedText = ''
+  let submittedText = $state('')
   let pageNumber = $state(1)
   let pageSize = $state(100)
   let total = $state(0)
@@ -441,6 +441,7 @@
         >
           {#snippet filters()}<LogFilters
               {query}
+              appliedQuery={submittedText}
               {fields}
               {services}
               editor={page.searchEditorApi}

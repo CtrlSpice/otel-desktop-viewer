@@ -101,7 +101,7 @@
   import { evalsEnabled } from '@/state/features'
   import { getRouteContext } from '@/contexts/route-context.svelte'
 
-  let { count }: { count?: number } = $props()
+  let { count, evalsCount }: { count?: number; evalsCount?: number } = $props()
   const countID = $props.id()
   const routeContext = getRouteContext()
   const items = $derived(
@@ -129,6 +129,7 @@
 >
   {#each items as item (item.id)}
     {@const active = isNavItemActive(item.id, routeContext.route.path)}
+    {@const itemCount = item.id === 'evals' && active ? evalsCount : count}
     <a
       href={item.id === 'home' || item.id === 'evals'
         ? item.path
@@ -136,8 +137,8 @@
       class="tab shrink-0 flex-nowrap items-center gap-2 px-4 text-sm"
       class:tab-active={active}
       aria-current={active ? 'page' : undefined}
-      aria-label={item.label}
-      aria-describedby={count !== undefined
+      aria-label={item.id === 'evals' ? 'Experimental Evals' : item.label}
+      aria-describedby={itemCount !== undefined
         ? `${countID}-${item.id}`
         : undefined}
       onclick={event => goto(item.id, event)}
@@ -153,14 +154,15 @@
         <item.icon class="size-4 shrink-0 {active ? 'text-primary' : ''}" />
       {/if}
       <span>{item.label}</span>
+      {#if item.id === 'evals'}<span>[experimental]</span>{/if}
       <span
         id={`${countID}-${item.id}`}
         class="primary-navigation__count shrink-0 text-sm"
-        class:invisible={count === undefined}
-        aria-hidden={count === undefined}
+        class:invisible={itemCount === undefined}
+        aria-hidden={itemCount === undefined}
         ><span class="sr-only"
-          >{item.id === 'evals' ? 'Runs: ' : 'Results: '}</span
-        >{count === undefined ? '' : `[${count}]`}</span
+          >{item.id === 'evals' ? 'Experiments: ' : 'Results: '}</span
+        >{itemCount === undefined ? '' : `[${itemCount}]`}</span
       >
     </a>
   {/each}

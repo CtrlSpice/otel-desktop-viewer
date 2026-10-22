@@ -1,6 +1,7 @@
 <script module lang="ts">
   import type { MetricSummary, ScalarAggregate } from '@/types/api-types'
   import { metricSummaryKey } from '@/types/api-types'
+  import { compareMetricType } from '@/components/metrics/utils/metric-type-compare'
   import {
     compareByStringField,
     compareByTimestampField,
@@ -28,7 +29,7 @@
         cmp = compareByStringField(a, b, m => m.name)
         break
       case 'metricType':
-        cmp = compareByStringField(a, b, m => m.metricType)
+        cmp = compareMetricType(a, b) || compareByStringField(a, b, m => m.name)
         break
       case 'serviceName':
         cmp = compareByStringField(a, b, m => m.serviceName)
@@ -96,6 +97,10 @@
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
   import DrawerSortControl from '@/components/shared/Drawer/DrawerSortControl.svelte'
+  import ListHeaderControls from '@/components/shared/ListHeaderControls.svelte'
+  import TelemetryListFilters from '@/components/shared/TelemetryListFilters.svelte'
+  import type { FieldDefinition, ParsedSearchRequest } from '@/search/model'
+  import { parseSearchRequest } from '@/components/shared/Search/queryParser'
   import SignalDrawerFooter from '@/components/shared/Drawer/SignalDrawerFooter.svelte'
   import MetricCard from '@/components/metrics/MetricCard.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
@@ -136,9 +141,13 @@
   let baselineStats = $state<MetricStats | null>(null)
   let polledStats = $state<MetricStats | null>(null)
   let actionError = $state<string | null>(null)
-
+  let query = $state('')
+  let submittedText = $state('')
+  let fields = $state<FieldDefinition[]>([])
+  let submittedRequest: ParsedSearchRequest | null = null
   const page = createSignalListPage<MetricSummary, MetricSortColumn>({
     signal: 'metrics',
+    preserveMissingSelection: true,
     getItemID: metricSummaryKey,
     initialSort: { column: 'lastSeen', direction: 'desc' },
     compare: compareMetrics,
@@ -149,7 +158,13 @@
       )
       const results = await telemetryAPI.searchMetricSummaries(
         startTime,
-        endTime
+        endTime,
+        submittedRequest?.predicate ?? undefined,
+        submittedRequest?.limit ?? undefined,
+        untrack(() => ({
+          field: page.sortColumn,
+          direction: page.sortDirection,
+        }))
       )
       const s = await telemetryAPI.getStats()
       baselineStats = s.metrics
@@ -176,6 +191,25 @@
       return { pulse: parts.length > 0, tip: parts.join(', ') }
     },
   })
+  let services = $derived([
+    ...new Set(
+      page.items.flatMap(metric =>
+        metric.serviceName ? [metric.serviceName] : []
+      )
+    ),
+  ])
+
+  // A submitted filter changes the list, not the record already open in Details.
+  let retainedSummary = $state<MetricSummary>()
+  let selectedSummary = $derived(
+    page.selectedSummary ??
+      (retainedSummary?.metricRef === page.selectedID
+        ? retainedSummary
+        : undefined)
+  )
+  $effect(() => {
+    if (page.selectedSummary) retainedSummary = page.selectedSummary
+  })
 
   let selectedMetric = $state<MetricViewData | undefined>(undefined)
   let detailLoading = $state(false)
@@ -196,7 +230,7 @@
   let seriesDatapointsScopeKey = ''
   let expandedSeriesSnapshot = new Set<string>()
   let seriesDatapointsMetricID = $derived.by(() => {
-    const summaryID = page.selectedSummary?.metricRef
+    const summaryID = selectedSummary?.metricRef
     return summaryID && selectedMetric?.metricRef === summaryID
       ? summaryID
       : null
@@ -232,14 +266,14 @@
   )
 
   let showChartAggregationTabs = $derived(
-    (page.selectedSummary?.metricType === 'Sum' ||
-      page.selectedSummary?.metricType === 'Gauge') &&
+    (selectedSummary?.metricType === 'Sum' ||
+      selectedSummary?.metricType === 'Gauge') &&
       chartAggregationTabs.length > 1
   )
 
   let showChartHistogramTabs = $derived(
-    page.selectedSummary?.metricType === 'Histogram' ||
-      page.selectedSummary?.metricType === 'ExponentialHistogram'
+    selectedSummary?.metricType === 'Histogram' ||
+      selectedSummary?.metricType === 'ExponentialHistogram'
   )
   let showChartOverlayControls = $derived(
     metricCtx.showChartStatOverlaysToggleVisible
@@ -267,14 +301,12 @@
   // Polling may replace a summary object without changing its metric identity.
   $effect(() => {
     void timeContext.selection
-    const id = page.selectedSummary
-      ? metricSummaryKey(page.selectedSummary)
-      : null
+    const id = selectedSummary ? metricSummaryKey(selectedSummary) : null
     if (!id) {
       selectedMetric = undefined
       return
     }
-    const summary = untrack(() => page.selectedSummary)
+    const summary = untrack(() => selectedSummary)
     if (summary) fetchMetricDetail(summary)
   })
 
@@ -285,7 +317,7 @@
 
   $effect(() => {
     const token = ++aggregateToken
-    const summary = page.selectedSummary
+    const summary = selectedSummary
     // Sorting keeps equivalent selection sets stable while preserving reactivity.
     const visibleKeys = [...metricCtx.visibleSeries].sort()
 
@@ -534,7 +566,7 @@
     if (
       !metric ||
       detailLoading ||
-      metric.metricRef !== page.selectedSummary?.metricRef ||
+      metric.metricRef !== selectedSummary?.metricRef ||
       !metricCtx.isHistogramKind ||
       source !== 'detail' ||
       !datapointID ||
@@ -581,7 +613,7 @@
     // Primitive bounds avoid refetching when only the heatmap array identity changes.
     const startNs = metricCtx.heatmapColumnStartNs
     const endNs = metricCtx.heatmapColumnEndNs
-    const summary = page.selectedSummary
+    const summary = selectedSummary
     if (startNs === null || endNs === null || !summary) {
       columnDistribution = undefined
       return
@@ -622,7 +654,7 @@
   let datapointTimer: ReturnType<typeof setTimeout> | undefined
 
   $effect(() => {
-    const summary = page.selectedSummary
+    const summary = selectedSummary
     const metric = selectedMetric
     const checked = metricCtx.visibleSeries
     const visible = [...checked].sort()
@@ -782,24 +814,49 @@
         sortDirection={page.sortDirection}
         onSearchResults={page.handleSearchResults}
         onSearchReady={api => (page.searchEditorApi = api)}
+        onQueryChange={(text, availableFields) => {
+          query = text
+          fields = availableFields
+        }}
+        onQuerySubmit={text => {
+          submittedText = text
+          submittedRequest = parseSearchRequest(text, fields, 'metrics')
+        }}
       />
     {/snippet}
 
     {#snippet drawerControls()}
-      <DrawerSortControl
-        options={[
-          { value: 'lastSeen', label: 'Last Seen' },
-          { value: 'name', label: 'Name' },
-          { value: 'metricType', label: 'Type' },
-          { value: 'serviceName', label: 'Service Name' },
-          { value: 'description', label: 'Description' },
-          { value: 'dataPointCount', label: 'Datapoint Count' },
-          { value: 'seriesCount', label: 'Timeseries Count' },
-        ]}
-        value={page.sortColumn}
-        direction={page.sortDirection}
-        onchange={page.handleSortChange}
-      />
+      <ListHeaderControls label="Metric list controls">
+        {#snippet sort()}
+          <DrawerSortControl
+            options={[
+              { value: 'lastSeen', label: 'Last Seen' },
+              { value: 'name', label: 'Name' },
+              {
+                value: 'metricType',
+                label: 'Type',
+                description:
+                  'Type, then applicable temporality (Delta, Cumulative, Unspecified), then Sum monotonicity. Missing values sort last ascending.',
+              },
+              { value: 'serviceName', label: 'Service Name' },
+              { value: 'description', label: 'Description' },
+              { value: 'dataPointCount', label: 'Datapoint Count' },
+              { value: 'seriesCount', label: 'Timeseries Count' },
+            ]}
+            value={page.sortColumn}
+            direction={page.sortDirection}
+            onchange={page.handleSortChange}
+          />
+        {/snippet}
+        {#snippet filters()}<TelemetryListFilters
+            signal="metrics"
+            {query}
+            appliedQuery={submittedText}
+            {fields}
+            {services}
+            editor={page.searchEditorApi}
+          />{/snippet}
+      </ListHeaderControls>
     {/snippet}
 
     {#snippet itemSnippet(metric, selected)}
@@ -811,8 +868,7 @@
     {/snippet}
 
     {#snippet main()}
-      {#if page.selectedSummary}
-        {@const selectedSummary = page.selectedSummary}
+      {#if selectedSummary}
         {#snippet metricChartHeaderBadge()}
           <SignalBadges
             signal="metric"
@@ -955,8 +1011,8 @@
         onPrev={() => page.selectByOffset(-1)}
         onNext={() => page.selectByOffset(1)}
         onLast={page.selectLast}
-        onDelete={page.selectedSummary
-          ? () => handleDeleteMetric(page.selectedSummary!.metricRef)
+        onDelete={selectedSummary
+          ? () => handleDeleteMetric(selectedSummary!.metricRef)
           : undefined}
       />
     {/snippet}

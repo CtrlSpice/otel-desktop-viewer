@@ -1,8 +1,19 @@
 import { batchOTLPFile, scanOTLPFile, type ImportSignal } from './otlp-file'
 import { telemetryAPI } from './telemetry-service'
 import type { ImportFailure } from '@/types/import-types'
+import { detectImportFile } from './import-file'
 
 const signals: readonly ImportSignal[] = ['traces', 'logs', 'metrics']
+const evalRunListeners = new Set<() => void>()
+
+export function onEvalRunsChanged(listener: () => void): () => void {
+  evalRunListeners.add(listener)
+  return () => evalRunListeners.delete(listener)
+}
+
+function notifyEvalRunsChanged() {
+  for (const listener of evalRunListeners) listener()
+}
 
 function isReply(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -124,7 +135,16 @@ export function createFileImporter(
           if (controller.signal.aborted) return
           let issues: string[]
           try {
-            issues = await importOTLPFile(file, pageURL, controller.signal)
+            const kind = await detectImportFile(file, controller.signal)
+            if (kind === 'otlp')
+              issues = await importOTLPFile(file, pageURL, controller.signal)
+            else {
+              issues = await telemetryAPI.ingestEvalFile(
+                file,
+                controller.signal
+              )
+              notifyEvalRunsChanged()
+            }
           } catch (error) {
             if (controller.signal.aborted) return
             issues = [

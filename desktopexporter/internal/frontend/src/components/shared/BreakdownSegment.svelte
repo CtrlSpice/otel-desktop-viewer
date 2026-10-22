@@ -6,10 +6,12 @@
     part,
     unit,
     single = false,
+    onclick,
   }: {
     part: BubbleBreakdownPart
     unit: string
     single?: boolean
+    onclick?: () => void
   } = $props()
   const tooltipID = $props.id()
   let trigger = $state<HTMLButtonElement>()
@@ -63,7 +65,10 @@
   onpointerleave={scheduleClose}
   onfocus={show}
   onblur={scheduleClose}
-  onclick={show}
+  onclick={() => {
+    show()
+    onclick?.()
+  }}
 >
   <span class="breakdown-segment__fill" aria-hidden="true"></span>
   {#if single}<span class="min-w-0 truncate text-rp-subtle">{part.label}</span

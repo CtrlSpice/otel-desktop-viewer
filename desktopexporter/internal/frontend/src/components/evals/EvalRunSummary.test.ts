@@ -6,11 +6,12 @@ import EvalRunSummary from './EvalRunSummary.svelte'
 import { exampleRuns } from './examples'
 import { renderWithContexts as render } from '@/test/render-helpers'
 import { formatTimestampParts, normalizeTimezone } from '@/utils/time'
+import { toRunCard } from './run-summary'
 
 describe('EvalRunSummary', () => {
-  it('keeps run summaries concise without putting run statistics in segment tooltips', () => {
+  it('keeps run summaries concise with outcome labels in compact tooltips', () => {
     const { container } = render(EvalRunSummary, {
-      run: exampleRuns[0],
+      run: toRunCard(exampleRuns[0]),
       selected: true,
       onclick: vi.fn(),
     })
@@ -26,60 +27,70 @@ describe('EvalRunSummary', () => {
     expect(card).not.toHaveTextContent('35 tool calls (3 failures)')
     expect(screen.queryByText('78.1%')).not.toBeInTheDocument()
     const bar = screen.getByRole('group', {
-      name: /^Task completion by attempt count/,
+      name: /^Task completion by rep count/,
     })
     expect(bar).not.toHaveTextContent(/complete|Score:|tool calls|cost:/)
     expect(
-      screen.getByRole('list', {
-        name: 'Run outcomes for Guide-assisted agent',
+      screen.queryByRole('list', {
+        name: 'Task completion outcomes legend',
       })
-    ).toHaveTextContent('Pass [11] Partial [3] Fail [2]')
+    ).not.toBeInTheDocument()
     expect(container.querySelector('.signal-row__meta-row')).toBeNull()
   })
 
-  it('exposes each outcome in its own tooltip and selects only through the card', async () => {
+  it('shows compact outcome tooltips and selects the run through its segments', async () => {
     const user = userEvent.setup()
     const onclick = vi.fn()
-    render(EvalRunSummary, { run: exampleRuns[0], onclick })
+    render(EvalRunSummary, { run: toRunCard(exampleRuns[0]), onclick })
     const group = screen.getByRole('group', {
       name: 'Task completion outcomes',
     })
-    const bar = within(group).getByRole('button', { name: 'Pass: 11 attempts' })
+    within(group).getByRole('group', {
+      name: /Task completion by rep count/,
+    })
+    expect(group.querySelectorAll('.breakdown-segment')).toHaveLength(3)
+    expect(within(group).queryByRole('listitem')).not.toBeInTheDocument()
     expect(
       [...group.querySelectorAll('[role="tooltip"]')].map(node =>
         node.textContent?.trim()
       )
     ).toEqual(['Pass [11]', 'Partial [3]', 'Fail [2]'])
-    expect(group.querySelectorAll('.breakdown-segment')).toHaveLength(3)
-    expect(within(group).queryByRole('listitem')).not.toBeInTheDocument()
-    await user.click(bar)
+    const segment = within(group).getByRole('button', { name: 'Pass: 11 reps' })
+    await user.tab()
+    await user.tab()
+    expect(segment).toHaveFocus()
     expect(onclick).not.toHaveBeenCalled()
+    await user.keyboard('{Enter}')
+    expect(onclick).toHaveBeenCalledWith('guide-assisted')
+    expect(onclick).toHaveBeenCalledTimes(1)
+    await user.click(segment)
+    expect(onclick).toHaveBeenCalledTimes(2)
     expect(document.querySelector('button button')).toBeNull()
     await user.click(
       screen.getByRole('button', { name: /Guide-assisted agent/ })
     )
     expect(onclick).toHaveBeenCalledWith('guide-assisted')
-    expect(onclick).toHaveBeenCalledTimes(1)
+    expect(onclick).toHaveBeenCalledTimes(3)
   })
 
   it('keeps planned work and execution errors separate from failed grades', () => {
-    render(EvalRunSummary, { run: exampleRuns[1], onclick: vi.fn() })
+    render(EvalRunSummary, {
+      run: toRunCard(exampleRuns[1]),
+      onclick: vi.fn(),
+    })
     const group = screen.getByRole('group', {
       name: 'Task completion outcomes',
     })
-    expect(
-      within(group).getByRole('button', { name: 'Internal fault: 2 attempts' })
-    ).toBeInTheDocument()
-    expect(
-      within(group).getByRole('button', { name: 'Planned: 4 attempts' })
-    ).toBeInTheDocument()
-    expect(
-      within(group).getByRole('button', { name: 'Fail: 2 attempts' })
-    ).toBeInTheDocument()
+    expect(group).toHaveTextContent('Internal fault [2]')
+    expect(group).toHaveTextContent('Planned [4]')
+    expect(group).toHaveTextContent('Fail [2]')
   })
 
   it('uses a plain label for a single outcome without inventing grades or cost', () => {
-    render(EvalRunSummary, { run: exampleRuns[2], onclick: vi.fn() })
+    render(EvalRunSummary, {
+      run: toRunCard(exampleRuns[2]),
+      onclick: vi.fn(),
+    })
     const card = screen.getByRole('button', { name: /Revised instructions/ })
     expect(card).toHaveTextContent('Planned [16]')
     expect(
@@ -91,56 +102,30 @@ describe('EvalRunSummary', () => {
     expect(screen.queryByText('Progress:')).not.toBeInTheDocument()
   })
 
-  it('keeps tooltip context keyboard reachable without selecting the run', async () => {
-    const user = userEvent.setup()
-    const onclick = vi.fn()
-    render(EvalRunSummary, { run: exampleRuns[0], onclick })
-    const card = screen.getByRole('button', { name: /Guide-assisted agent/ })
-    const bar = screen.getByRole('button', {
-      name: 'Pass: 11 attempts',
-    })
-    await user.tab()
-    expect(card).toHaveFocus()
-    await user.tab()
-    expect(bar).toHaveFocus()
-    expect(bar).toHaveAccessibleName('Pass: 11 attempts')
-    await user.keyboard('{Enter}')
-    expect(onclick).not.toHaveBeenCalled()
-    expect(document.querySelector('button button')).toBeNull()
-    await user.tab({ shift: true })
-    await user.keyboard('{Enter}')
-    expect(onclick).toHaveBeenCalledExactlyOnceWith('guide-assisted')
-  })
-
   it('does not turn missing grades and cost into received zeros', () => {
     const run = {
       ...exampleRuns[0],
-      attempts: exampleRuns[0].attempts.map(attempt => ({
-        ...attempt,
+      reps: exampleRuns[0].reps.map(rep => ({
+        ...rep,
         assessments: [],
         tools: [],
         investigatorCost: undefined,
       })),
     }
-    render(EvalRunSummary, { run, onclick: vi.fn() })
-    const bar = screen.getByRole('button', {
-      name: 'Unscored: 16 attempts',
+    render(EvalRunSummary, { run: toRunCard(run), onclick: vi.fn() })
+    const group = screen.getByRole('group', {
+      name: 'Task completion outcomes',
     })
-    const tooltip = document.querySelector('[role="tooltip"]')
-    expect(bar).toHaveTextContent(/^Unscored$/)
-    expect(bar.querySelector('.breakdown-segment__fill')).toHaveAttribute(
-      'aria-hidden',
-      'true'
-    )
-    expect(tooltip).toHaveTextContent(/^Unscored \[16\]$/)
+    expect(group).toHaveTextContent('Unscored [16]')
+    expect(group.querySelector('[role="tooltip"]')).toBeNull()
   })
 
   it('retains received zero scores and costs without calling failed grades execution faults', () => {
     const run = {
       ...exampleRuns[0],
-      attempts: exampleRuns[0].attempts.map(attempt => ({
-        ...attempt,
-        assessments: attempt.assessments.map(assessment => ({
+      reps: exampleRuns[0].reps.map(rep => ({
+        ...rep,
+        assessments: rep.assessments.map(assessment => ({
           ...assessment,
           value: 0,
           label: 'Fail',
@@ -148,13 +133,12 @@ describe('EvalRunSummary', () => {
         investigatorCost: 0,
       })),
     }
-    render(EvalRunSummary, { run, onclick: vi.fn() })
-    expect(
-      screen.getByRole('button', { name: 'Fail: 16 attempts' })
-    ).toBeInTheDocument()
-    expect(document.querySelector('[role="tooltip"]')).toHaveTextContent(
-      /^Fail \[16\]$/
-    )
+    render(EvalRunSummary, { run: toRunCard(run), onclick: vi.fn() })
+    const group = screen.getByRole('group', {
+      name: 'Task completion outcomes',
+    })
+    expect(group).toHaveTextContent('Fail [16]')
+    expect(group.querySelector('[role="tooltip"]')).toBeNull()
   })
 
   it.each(['UTC', 'America/Toronto'] as const)(
@@ -162,7 +146,7 @@ describe('EvalRunSummary', () => {
     tz => {
       localStorage.setItem('time-tz', tz)
       const { container } = render(EvalRunSummary, {
-        run: exampleRuns[0],
+        run: toRunCard(exampleRuns[0]),
         onclick: vi.fn(),
       })
       const timestamp =
@@ -193,13 +177,12 @@ describe('EvalRunSummary', () => {
       label: 'Unavailable',
     },
     { run: { ...exampleRuns[2], startedAt: undefined }, label: 'Not started' },
-  ])(
-    'shows an em dash and preserves $label in the title when no valid start was received',
-    ({ run, label }) => {
-      const { container } = render(EvalRunSummary, { run, onclick: vi.fn() })
-      const date = container.querySelector('.signal-date')
-      expect(date).toHaveTextContent('Started: —')
-      expect(date).toHaveAttribute('title', `Started: ${label}`)
-    }
-  )
+  ])('omits the date row when the start is $label', ({ run }) => {
+    const { container } = render(EvalRunSummary, {
+      run: toRunCard(run),
+      onclick: vi.fn(),
+    })
+    expect(container.querySelector('.signal-row__date')).toBeNull()
+    expect(screen.queryByText('Started:')).not.toBeInTheDocument()
+  })
 })

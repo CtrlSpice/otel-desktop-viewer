@@ -5,7 +5,7 @@ export type AssessmentDefinition = {
   id: string
   name: string
   scale: string
-  maximum: number
+  maximum?: number
   aggregation: 'planned' | 'scored'
 }
 
@@ -21,16 +21,22 @@ export type Assessment = {
   explanation: string
   evaluator: string
   rubric: string
+  /** Recorded outcome, independent of the producer's numeric score scale. */
+  pass?: boolean
   telemetry?: TelemetryReference
   cost?: number
 }
 
-export type EvalAttempt = {
-  id: string
-  caseID: string
-  repetition: number
+export type EvalTool = {
   name: string
-  question: string
+  state: 'OK' | 'Error'
+  message?: string
+  seconds?: number
+  telemetry?: TelemetryReference
+  cost?: number
+}
+
+type EvalExecutionEvidence = {
   answer?: string
   state: 'Complete' | 'Running' | 'Error' | 'Planned'
   startedAt?: string
@@ -39,57 +45,81 @@ export type EvalAttempt = {
   graderCost?: number
   error?: string
   assessments: Assessment[]
-  tools: {
-    name: string
-    state: 'OK' | 'Error'
-    message?: string
-    seconds?: number
-    telemetry?: TelemetryReference
-    cost?: number
-  }[]
-  /** Optional enclosing attempt span; telemetry identifies target execution. */
-  attemptTelemetry?: TelemetryReference
+  tools: EvalTool[]
+  /** False when the source supplies no tool-call evidence. */
+  toolsKnown?: boolean
+  /** Target execution, distinct from an enclosing Rep or retry Attempt span. */
   telemetry?: TelemetryReference
+}
+
+/** An explicit producer-recorded retry within one Rep. Adapters must not invent
+ * Attempts for producers, such as Promptfoo v3, that expose only Rep rows. */
+export type EvalAttempt = EvalExecutionEvidence & {
+  id: string
+  repID: string
+  attempt: number
+  name: string
+  /** Optional enclosing retry span; telemetry identifies target execution. */
+  attemptTelemetry?: TelemetryReference
+}
+
+export type EvalRep = EvalExecutionEvidence & {
+  id: string
+  /** Unmodified producer result identity; id above is the local display key. */
+  sourceID?: string
+  caseID: string
+  /** Absent when the producer did not retain a repetition identity. */
+  repetition?: number
+  name: string
+  question: string
+  /** Present only when the producer explicitly records retries within this Rep. */
+  attempts?: EvalAttempt[]
+  /** Optional enclosing rep span; telemetry identifies target execution. */
+  repTelemetry?: TelemetryReference
 }
 
 export type EvalRun = {
   id: string
   name: string
   evaluation: string
+  promptLabel?: string
   source: string
-  state: 'Complete' | 'Paused' | 'Planned'
+  state: 'Complete' | 'Paused' | 'Planned' | 'Unknown'
+  /** Why lifecycle state could not be established from persisted source data. */
+  stateReason?: string
   pauseReason?: 'internal-error' | 'manual'
   startedAt?: string
   configuration: { name: string; value: string }[]
   assessments: AssessmentDefinition[]
   headlineAssessment: string
-  attempts: EvalAttempt[]
+  reps: EvalRep[]
   seconds?: number
   telemetry?: TelemetryReference
 }
 
 export function assessmentSummary(
-  run: Pick<EvalRun, 'attempts'>,
+  run: Pick<EvalRun, 'reps'>,
   definition: AssessmentDefinition
 ) {
   let total = 0
   let scored = 0
-  for (const attempt of run.attempts) {
-    const assessment = attempt.assessments.find(
-      item => item.id === definition.id
-    )
+  for (const rep of run.reps) {
+    const assessment = rep.assessments.find(item => item.id === definition.id)
     if (assessment?.value != null) {
       total += assessment.value
       scored++
     }
   }
   const denominator =
-    definition.aggregation === 'planned' ? run.attempts.length : scored
+    definition.aggregation === 'planned' ? run.reps.length : scored
   return {
     scored,
     denominator,
     percent:
-      scored && denominator
+      scored &&
+      denominator &&
+      definition.maximum !== undefined &&
+      definition.maximum > 0
         ? (total / (denominator * definition.maximum)) * 100
         : null,
   }
@@ -100,18 +130,18 @@ export function percent(value: number | null): string {
 }
 
 export function estimatedCost(
-  attempts: EvalAttempt[],
+  reps: EvalRep[],
   field: 'investigatorCost' | 'graderCost'
 ) {
   let total = 0
   let known = 0
-  for (const attempt of attempts) {
-    if (attempt[field] !== undefined) {
-      total += attempt[field]
+  for (const rep of reps) {
+    if (rep[field] !== undefined) {
+      total += rep[field]
       known++
     }
   }
-  return { total: known ? total : null, incomplete: known < attempts.length }
+  return { total: known ? total : null, incomplete: known < reps.length }
 }
 
 export function cost(value: number | null | undefined): string {

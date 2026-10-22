@@ -56,7 +56,7 @@ describe('run summaries', () => {
 
   it('counts completed investigations separately from recorded grades', () => {
     const run = structuredClone(exampleRuns[0])
-    run.attempts[0].assessments = []
+    run.reps[0].assessments = []
     const summary = runSummary(run)
     expect(summary.assessed).toBe(16)
     expect(summary.assessment?.scored).toBe(15)

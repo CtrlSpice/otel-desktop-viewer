@@ -11,6 +11,8 @@
     /** Optional monospace id line at the bottom of the card (e.g. trace id). */
     idLine?: string
     title: string
+    /** Provenance or type information immediately above the title. */
+    beforeTitle?: Snippet
     titleContent?: Snippet
     subtitle?: string
     subtitleContent?: Snippet
@@ -52,6 +54,7 @@
     controls,
     idLine,
     title,
+    beforeTitle,
     titleContent,
     subtitle,
     subtitleContent,
@@ -77,6 +80,7 @@
 
 {#snippet cardContent()}
   <div class="signal-row__identity">
+    {@render beforeTitle?.()}
     <div class="signal-row__header">
       <span class="signal-row__title-cluster" {title}>
         <span class="signal-row__title"
@@ -230,6 +234,15 @@
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto auto auto;
     min-width: 0;
+  }
+
+  /* Independent subtitle controls share the parent card's hover surface. */
+  .signal-card-shell:hover > .signal-row:not(.signal-row--selected) {
+    --item-state-bg: var(--item-hover-bg);
+  }
+
+  .signal-row.signal-row--selected {
+    --item-state-bg: var(--item-selected-bg);
   }
 
   .signal-row__body {

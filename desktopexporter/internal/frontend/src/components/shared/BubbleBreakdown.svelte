@@ -22,8 +22,11 @@
     countFormat = 'detailed',
     showAll = false,
     tooltipOnly = false,
+    staticSingle = false,
+    subtleLabels = false,
     emptyLabel,
     right,
+    onsegmentclick,
   }: {
     parts: BubbleBreakdownPart[]
     defaultKey?: string
@@ -31,13 +34,18 @@
     barLabel: string
     unit: string
     showSingleCount?: boolean
-    countFormat?: 'detailed' | 'compact'
+    countFormat?: 'detailed' | 'compact' | 'bracketed'
     /** Show every label with a decorative bar instead of interactive previews. */
     showAll?: boolean
     /** Keep the breakdown visible while moving labels into hover/focus context. */
     tooltipOnly?: boolean
+    /** Keep a sole category's label and count visible without a tooltip. */
+    staticSingle?: boolean
+    /** Render visible category names and counts as secondary scan information. */
+    subtleLabels?: boolean
     emptyLabel?: string
     right?: Snippet
+    onsegmentclick?: () => void
   } = $props()
   const colouredParts = $derived(parts.filter(part => part.count > 0))
   let pinnedKey = $state<string | null>(null)
@@ -88,6 +96,7 @@
 
 <div
   class="flow-root min-w-0"
+  class:breakdown--subtle-labels={subtleLabels}
   role="group"
   aria-label={label}
   onpointermove={event => {
@@ -109,7 +118,11 @@
       focusedKey = null
   }}
 >
-  {#if tooltipOnly && colouredParts.length}
+  {#if staticSingle && colouredParts.length === 1}
+    <div class="breakdown-bar breakdown-bar--single">
+      <span class="breakdown-label">{@render partLabel(colouredParts[0])}</span>
+    </div>
+  {:else if tooltipOnly && colouredParts.length}
     <div
       class="breakdown-bar"
       class:breakdown-bar--single={colouredParts.length === 1}
@@ -117,7 +130,12 @@
       aria-label={barLabel}
     >
       {#each colouredParts as part (part.key)}
-        <BreakdownSegment {part} {unit} single={colouredParts.length === 1} />
+        <BreakdownSegment
+          {part}
+          {unit}
+          single={colouredParts.length === 1}
+          onclick={onsegmentclick}
+        />
       {/each}
     </div>
   {:else if colouredParts.length > 1}
@@ -172,7 +190,7 @@
       <span class="breakdown-label__name">{part.label}</span>
       {#if showSingleCount || colouredParts.length > 1}
         <span class="breakdown-label__count"
-          >{#if countFormat === 'compact'}({part.count.toLocaleString()}){:else}({countLabel(
+          >{#if staticSingle && colouredParts.length === 1}[{part.count.toLocaleString()}]{:else if countFormat === 'compact'}({part.count.toLocaleString()}){:else if countFormat === 'bracketed'}[{part.count.toLocaleString()}]{:else}({countLabel(
               part
             )}{#if colouredParts.length > 1},
               {percent.format(part.count / total)}{/if}){/if}</span
@@ -181,7 +199,7 @@
     </span>
   {/snippet}
 
-  {#if !tooltipOnly && (activePart || right || emptyLabel)}
+  {#if !tooltipOnly && !(staticSingle && colouredParts.length === 1) && (activePart || right || emptyLabel)}
     <div
       class="ball-pit"
       class:ball-pit--list={showAll}
@@ -268,6 +286,10 @@
 
   .breakdown-label {
     @apply flex min-w-0 items-center gap-1.5 text-sm font-normal text-base-content;
+  }
+
+  .breakdown--subtle-labels .breakdown-label {
+    color: var(--color-subtle);
   }
 
   .breakdown-dot {

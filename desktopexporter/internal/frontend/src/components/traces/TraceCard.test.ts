@@ -35,16 +35,11 @@ describe('TraceCard', () => {
     renderCard({ trace: makeTrace() })
     const button = cardButton()
     expect(within(button).getByText('GET /api/orders')).toBeInTheDocument()
-    const bar = screen.getByRole('button', { name: 'orders-service: 4 spans' })
-    expect(within(bar).getByText('orders-service')).toBeInTheDocument()
-    expect(bar).toHaveTextContent(/^orders-service$/)
-    expect(bar.querySelector('.breakdown-segment__fill')).toHaveAttribute(
-      'aria-hidden',
-      'true'
-    )
-    expect(document.querySelector('[role="tooltip"]')).toHaveTextContent(
-      'orders-service [4]'
-    )
+    const breakdown = screen.getByRole('group', { name: 'Spans by service' })
+    expect(within(breakdown).getByText('orders-service')).toBeInTheDocument()
+    expect(breakdown).toHaveTextContent('orders-service [4]')
+    expect(within(breakdown).queryByRole('button')).not.toBeInTheDocument()
+    expect(document.querySelector('[role="tooltip"]')).toBeNull()
     expect(within(button).getByText('[4 spans]')).toBeInTheDocument()
     expect(screen.queryByText('(4 spans)')).not.toBeInTheDocument()
   })
@@ -60,9 +55,7 @@ describe('TraceCard', () => {
     const traceID = '1234567890abcdef1234567890abcdef'
     const onclick = vi.fn()
     renderCard({ trace: makeTrace({ traceID }), onclick })
-    expect(document.querySelector('[role="tooltip"]')).not.toHaveTextContent(
-      traceID
-    )
+    expect(document.querySelector('[role="tooltip"]')).toBeNull()
     await userEvent.click(cardButton())
     expect(onclick).toHaveBeenCalledWith(traceID)
     expect(screen.queryByText(traceID)).not.toBeInTheDocument()
@@ -202,48 +195,35 @@ describe('TraceCard', () => {
     expect(document.querySelector('button button')).toBeNull()
   })
 
-  it.each([true, false])(
-    'makes the service tooltip keyboard reachable without selecting the trace (single category: %s)',
-    async single => {
-      const user = userEvent.setup()
-      const onclick = vi.fn()
-      renderCard({
-        trace: makeTrace({
-          serviceBreakdown: single
-            ? [
-                {
-                  key: 'service:orders-service',
-                  label: 'orders-service',
-                  count: 4,
-                },
-              ]
-            : [
-                {
-                  key: 'service:orders-service',
-                  label: 'orders-service',
-                  count: 3,
-                },
-                { key: 'service:cache', label: 'cache', count: 1 },
-              ],
-        }),
-        onclick,
-      })
-      const group = screen.getByRole('group', { name: 'Spans by service' })
-      const bar = within(group).getByRole('button', {
-        name: /^orders-service:/,
-      })
-      await user.tab()
-      expect(cardButton()).toHaveFocus()
-      await user.tab()
-      expect(bar).toHaveFocus()
-      expect(bar).toHaveAccessibleName(
-        expect.stringContaining(
-          single ? 'orders-service: 4 spans' : 'orders-service: 3 spans'
-        )
-      )
-      await user.keyboard('{Enter}')
-      expect(onclick).not.toHaveBeenCalled()
-      expect(cardButton()).toHaveAttribute('aria-pressed', 'false')
-    }
-  )
+  it('makes a multi-service segment keyboard reachable without selecting the trace', async () => {
+    const user = userEvent.setup()
+    const onclick = vi.fn()
+    renderCard({
+      trace: makeTrace({
+        serviceBreakdown: [
+          {
+            key: 'service:orders-service',
+            label: 'orders-service',
+            count: 3,
+          },
+          { key: 'service:cache', label: 'cache', count: 1 },
+        ],
+      }),
+      onclick,
+    })
+    const group = screen.getByRole('group', { name: 'Spans by service' })
+    const bar = within(group).getByRole('button', {
+      name: /^orders-service:/,
+    })
+    await user.tab()
+    expect(cardButton()).toHaveFocus()
+    await user.tab()
+    expect(bar).toHaveFocus()
+    expect(bar).toHaveAccessibleName(
+      expect.stringContaining('orders-service: 3 spans')
+    )
+    await user.keyboard('{Enter}')
+    expect(onclick).not.toHaveBeenCalled()
+    expect(cardButton()).toHaveAttribute('aria-pressed', 'false')
+  })
 })

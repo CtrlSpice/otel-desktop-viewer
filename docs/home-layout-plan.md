@@ -16,7 +16,7 @@ Where do I investigate it?**
 | Home: lower section | **Help and examples**: SDK/Collector setup, CLI guidance and a small example. Keep longer code examples collapsed until requested. |
 | Home: identity/footer | Keep Lulu and the artwork credit; use a compact identity area so data and actions appear first. |
 | Signal workspaces | Queries, time ranges, sorting, charts/tables, record Details and scoped Copy/Download stay with the signal they operate on. |
-| Evals workspace | Snapshot import/library, run Results/Tool calls/Cost, row Details and Telemetry links. Runtime execution remains in the explicit eval CLI workflow. |
+| Evals workspace | Database-wide Run list, producer-native file import, Run Results/Tool calls/Cost, row Details and Telemetry links. Runtime execution remains in the explicit eval CLI workflow. |
 
 Home uses a two-column content layout that stacks on narrow windows. It does
 not need the empty signal-list drawer or a record inspector. Remove the disabled
@@ -55,8 +55,7 @@ store, Add data precedes Explore data in both layouts.
 - **Dates:** distinguish last received by this viewer from the telemetry's
   recorded timestamp. Recent receipt alone is not proof of a live connection.
 - **Evals disabled:** omit its Home entry and requests, using `evals.enabled`.
-  A paginated archive page does not provide a total snapshot count; do not turn
-  that page's length into a claimed total.
+  Use the database-wide Run summary total when Evals is enabled.
 
 Use the existing regular 14px working text, 16px headings, plain bracketed
 counts, small meaningful dots and shared hover/selection surfaces. Buttons
@@ -72,12 +71,13 @@ remain still on press/release. No palette changes are part of this plan.
   exporter snippets hardcode default ports. Accurate custom HTTP/gRPC instructions
   need an explicit runtime configuration contract for advertised endpoints.
   Decide that contract before adding connection-status controls.
-- Keep telemetry-file import and eval-result import explicit. They have different
-  formats and storage contracts; the Evals archive retains the original JSON.
-- Eval-result snapshots are implemented. Saved workspace/view revisions remain
-  separate work: dataset binding, retention and portable-bundle contents still
-  need decisions in `eval-integration-roadmap.md`. Add a saved-view Home section
-  when that contract and navigation are implemented.
+- Keep telemetry-file import and producer-native eval import explicit. They have
+  different formats and storage contracts; Evals retains authoritative source
+  JSON and builds disposable indexes over it.
+- Saved workspace/view revisions remain separate work: dataset binding, retention
+  and portable-bundle contents still need decisions in
+  `eval-integration-roadmap.md`. Add a saved-view Home section when that contract
+  and navigation are implemented.
 
 ## Implementation order
 

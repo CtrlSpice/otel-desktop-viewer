@@ -20,4 +20,5 @@ histogram_bounds.sql
 metric_datapoints.sql
 exemplars.sql
 ingest_rejections.sql
-eval_snapshots.sql
+eval_ingestion.sql
+eval_runs.sql

@@ -4,6 +4,7 @@
   export type SortOption<T extends string> = {
     value: T
     label: string
+    description?: string
   }
 </script>
 
@@ -34,6 +35,9 @@
   // Keep the visible target label in sync; the direction control is separate.
   const currentLabel = $derived(
     options.find(option => option.value === value)?.label ?? 'Sort'
+  )
+  const currentDescription = $derived(
+    options.find(option => option.value === value)?.description
   )
 
   $effect(() => {
@@ -69,7 +73,7 @@
   aria-expanded={open}
   class="sort-trigger header-icon-button text-sm tooltip tooltip-bottom"
   aria-label={`Sort by: ${currentLabel}`}
-  data-tip={`Sort by: ${currentLabel}`}
+  data-tip={currentDescription ?? `Sort by: ${currentLabel}`}
 >
   <HugeiconsIcon
     icon={Sorting05Icon}
@@ -78,12 +82,11 @@
     class="shrink-0"
     aria-hidden="true"
   />
-  <span class="shrink-0">Sort by:</span>
   <span class="min-w-0 truncate text-base-content">{currentLabel}</span>
 </button>
 <button
   type="button"
-  class="header-icon-button ml-auto"
+  class="header-icon-button"
   aria-label={direction === 'asc' ? 'Sort descending' : 'Sort ascending'}
   title={direction === 'asc'
     ? 'Ascending — switch to descending'
@@ -110,6 +113,7 @@
     <button
       type="button"
       aria-pressed={option.value === value}
+      title={option.description}
       onclick={() => selectSort(option)}
       class="item-state item-state--menu flex w-full cursor-pointer items-center gap-3 px-3 py-2 text-left font-sans text-sm font-normal"
     >

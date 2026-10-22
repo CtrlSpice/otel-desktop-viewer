@@ -97,14 +97,6 @@ func handlerSnapshotRead[T any](ctx context.Context, h *JSONRPCHandler, fn func(
 }
 
 func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any, error) {
-	if isEvalSnapshotMethod(req.Method) && !h.features.EvalsEnabled(ctx) {
-		return nil, jsonrpc2.ErrMethodNotFound
-	}
-	if req.Method == "importEvalSnapshot" {
-		if err := validateEvalImportRawParams(req.Params); err != nil {
-			return nil, err
-		}
-	}
 	// Object params are rewritten into the positional array every handler
 	// below already reads, so named and positional calls share one code path
 	// and cannot drift apart. Array params pass through untouched.
@@ -115,14 +107,6 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 	req.Params = normalized
 
 	switch req.Method {
-	case "importEvalSnapshot":
-		return h.importEvalSnapshot(ctx, req)
-	case "searchEvalSnapshots":
-		return h.searchEvalSnapshots(ctx, req)
-	case "getEvalSnapshot":
-		return h.getEvalSnapshot(ctx, req)
-	case "deleteEvalSnapshot":
-		return h.deleteEvalSnapshot(ctx, req)
 	case "rpc.discover":
 		if err := validateNoParams(req.Params); err != nil {
 			return nil, err

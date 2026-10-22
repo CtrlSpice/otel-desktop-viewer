@@ -1,5 +1,29 @@
 # Evals workspace
 
+## Normalized results
+
+The current hierarchy is **Experiment → Test case → Result**. Output is the model's
+returned content; a Result also holds assessments, timing and recorded tool evidence.
+Native result IDs are shown with the shared Identifier component and retained in
+Details. Results have no displayed repetition number. Default ordering uses
+available start times, with stable source order for ties and unavailable times.
+
+The Promptfoo adapter groups complete native test definitions and resolved variables
+within each provider/prompt group. Each native result remains separate. A singleton
+without repetition metadata displays its evidence directly on the test case.
+Execution/grading are roles, not unconditional wrapper rows. Explicit distinct
+execution spans and recorded tool/grader evidence can add children. Assertion-only
+results remain assessments in Details. Native scores and assertion reasons are
+displayed without inventing a maximum; missing tool detail remains unknown.
+
+The database ingestion/API contract is documented in `docs/eval-ingestion.md`.
+Internal `run`/`rep` identifiers and routes retain their existing spellings.
+
+The Result row's **Assessment** cell shows the producer's recorded overall judgment.
+Result Details groups judgments under **Assessments**, with the producer's combined
+judgment labelled **Overall** and individual assessments retaining their names.
+These judgments do not add tree levels or imply grading spans.
+
 The `/evals` frontend is a fixture-backed workspace for developing the Evals
 experience before implementing ingestion and storage. It uses the existing
 drawer, resizable panels, headers, field groups and trace viewer.
@@ -11,8 +35,8 @@ default and is labelled experimental and unsupported.
 
 `examples.ts` supplies clearly labelled, synthetic runs, including a completed
 run, a paused investigator, missing assessments and unstarted work. Each of the
-eight cases has one, two or three repetitions (16 attempts per run). Attempts retain a shared
-case ID and distinct attempt/telemetry IDs; repetition 1 keeps the original URLs.
+eight cases has one, two or three repetitions (16 reps per run). Reps retain a shared
+case ID and distinct rep/telemetry IDs; repetition 1 keeps the original URLs.
 These are
 not the completed viewer-usability cohort and do not establish a new rubric.
 No model calls, launch controls or persistence writes occur when opening Evals.
@@ -20,15 +44,15 @@ No model calls, launch controls or persistence writes occur when opening Evals.
 `model.ts` is a presentation model, not an import contract. Run configuration,
 assessment names, score scales, headline assessment and aggregation rules belong
 to the supplied data. Storage integration should replace the fixture source;
-the **Search evals** control currently filters only loaded fixture attempts and
+the **Search evals** control currently filters only loaded fixture reps and
 their assessment text. It does not execute the viewer's DuckDB search language.
 
-Run/attempt selection and the result filter are URL-backed. Browser history
-returns to the selected run/attempt; detail disclosures are local UI state and
-existing panel widths remain resizable. Column headings sort the loaded attempts
+Run/rep selection and the result filter are URL-backed. Browser history
+returns to the selected run/rep; detail disclosures are local UI state and
+existing panel widths remain resizable. Column headings sort the loaded reps
 locally in ascending or descending order.
 Scores sort by their numeric value, not outcome labels. Cases stay together,
-ranked by their first sorted visible attempt; repetitions sort within each case.
+ranked by their first sorted visible rep; repetitions sort within each case.
 Missing measurements stay last within each case in both directions; cases with
 no known measurements come last. Ties preserve source order and sorting preserves selection.
 Columns use the shared resize geometry, drag lifecycle and handles. Widths are
@@ -44,30 +68,30 @@ Tool calls contains call and failure counts; Cost contains investigator and grad
 remain visible in each combination. Column order is always Case · Rep, Duration,
 Tool calls, Results, Cost, regardless of activation order. Case width stays stable
 across toggles; Duration absorbs spare width. Combinations share collapse state,
-attempt selection and saved widths, with independent sorting. The assessment
+rep selection and saved widths, with independent sorting. The assessment
 legend appears whenever Results is shown; otherwise Tool calls/Cost use the execution
 legend. Each table has one regular-weight
 heading row. Logs and the trace waterfall retain their shared Columns picker.
 Case names stay on one line with ellipsis; hover retains the full name. Cases
-with multiple attempts share a parent row with aggregate values and branch to
-their repetition rows. A case with one attempt renders that attempt directly,
+with multiple reps share a parent row with aggregate values and branch to
+their repetition rows. A case with one rep renders that rep directly,
 with its name selecting Details, duration and assessment on the same row.
-Filtering a multi-attempt case down to one visible attempt does not flatten it.
+Filtering a multi-rep case down to one visible rep does not flatten it.
 Branches reuse the waterfall's rounded 1px Muted
-connectors at 50% opacity. Repetition numbers select attempts; all values stay
-under their column headings. Case completion uses every attempt, including
-attempts hidden by the current filter.
+connectors at 50% opacity. Result rows select their Details; all values stay
+under their column headings. Case completion uses every rep, including
+reps hidden by the current filter.
 Case collapse uses the same TreeRowIdentity, TreeGutter, TreeChildCount and TreeToggle components
 as traces. A plain parenthesised child count sits in the left gutter before the dot,
 using global 14px/21px Atkinson Next typography and Subtle text. The count rail reserves enough width for
 the largest count and keeps ancestor connectors aligned on leaves and parents.
-The whole gutter is one full-height button; Enter and Space toggle it without changing attempt selection.
-Case and Rep share one `Case · Rep` heading, with independently sortable labels.
+The whole gutter is one full-height button; Enter and Space toggle it without changing rep selection.
+The identity heading is `Experiment · Test case · Result`, with test-name and start-time sorting.
 Their compact heading slots and branches are measured from rendered labels,
 padding and shared tree spacing. The combined identity area keeps its resized width
 when groups change; Duration takes the spare width.
 The branch gutter stays fixed; the identity area and answer columns use shared
-resize handles. Rep numbers use Subtle.
+resize handles. Native result IDs use Subtle.
 Resizing stays within the available table width and stops at readable column
 minimums. Horizontal scrolling is needed only when those minimums cannot fit.
 Case and Rep pin to the left during horizontal scrolling, including their heading,
@@ -94,26 +118,26 @@ calls separately for each repetition and the full case. Cost keeps
 investigator and grader estimates separate. The Total footer aligns each estimate
 under its visible cost column, with unknown and partial estimates explicit. Its
 top divider is a solid 1px Muted line at 60% opacity. The footer appears whenever Cost is enabled.
-Totals cover the shown attempts; drawer summaries cover the whole run.
-The duration table fetches only explicit run, question/attempt and tool-call span references,
+Totals cover the shown reps; drawer summaries cover the whole run.
+The duration table fetches only explicit run, question/rep and tool-call span references,
 using exact trace/span pairs and batches of at most 64 lightweight timing rows.
 It does not load trace trees, attributes or logs. Run spans appear when the run
 has a reference; question rows can fan out to their tool calls using the same
 tree gutter, counts and collapse control as traces. Tool expansion preserves
-attempt selection. When neither a stored span nor a recorded duration is available,
+rep selection. When neither a stored span nor a recorded duration is available,
 the empty cell's tooltip explains missing references, missing spans or request
 errors. Case duration totals sum question durations (not nested tool durations),
 retain exact span nanoseconds and mark partial totals explicitly. Plain eval
 durations never acquire a trace link or an inferred start offset.
 
 Run cards show a proportional breakdown and every outcome in a visible list,
-with neutral labels, small colour dots and exact attempt counts. Neutral outcome
+with neutral labels, small colour dots and exact rep counts. Neutral outcome
 fills use base-300. Completion dots use base-300 for Planned, Iris for in-progress,
 Pine for Complete and Papaya for execution errors or interrupted runs. Assessment
 success dots and bars use Foam, independently of completion. Run statuses use
 neutral text and small status dots. Planned
 cards show only their title and `Planned (count)` status. Completed counts are omitted only
-when the run is complete and every attempt completed; graded counts appear only
+when the run is complete and every rep completed; graded counts appear only
 when they differ from completed counts. The labelled score is not a pass rate.
 Clicking the card selects the run and opens Details. Tiny bar groups have an 8px
 visual minimum. Outcome grouping and the headline assessment mean remain separate.
@@ -123,21 +147,17 @@ Assessments use neutral text with small decorative outcome dots;
 counts are plain text. Tables, Details and summaries use the shared 14px working
 size, regular weight and row spacing. Colour is never the only status label.
 
-Details separate the question from the selected execution. Question and answer
-are prose with Copy actions; repetition and execution state appear once in the
-attempt heading. Timing, accounting and telemetry are under Execution details.
+Details separate the question from the selected result. Question and output
+are prose with Copy actions; state appears in the result heading.
+Timing and accounting belong to the result, alongside its Telemetry section.
 Assessment explanations precede optional grading metadata; execution errors stay
 visible beside the answer.
 
-This grouping follows the kit's emitters: `tasks.json` and `rubrics.json` define
-task context, `config.ts` expands task/model combinations, and `native-evaluate.ts`
-preserves original `testIdx` and zero-based `repeatIndex` per scheduled execution.
-`provider.ts` emits each execution's answer, commands, timing, usage and session
-metadata; `grade.ts` records separate grader evidence and criteria. A repeated
-question does not make answers, explanations, usage or telemetry shared. Rubric
-and evaluator provenance remain attached to each assessment; do not deduplicate
-different versions by their display name. The illustrative model still flattens
-question context onto each attempt and is not a source identity or import schema.
+Promptfoo owns native test/repetition scheduling and grading results. The active
+usability suite uses `llm-rubric`; its evidence supplier does not orchestrate or
+parse grading. Questions and rubrics remain in `tasks.json` and `rubrics.json`.
+A repeated question does not make outputs, explanations, usage or telemetry shared.
+Rubric and evaluator provenance remain attached to each assessment.
 
 The standalone saved-results report remains a separate presentation. Its
 Trace / Span links target this viewer's existing trace routes; the report's
@@ -174,7 +194,7 @@ Each case has a collapsible parent row with its name, plain repetition count,
 and normal-Text aggregates aligned with the visible data columns. The circle/count
 gutter toggle (shared with the waterfall) opens its repetitions with pointer,
 Enter or Space without changing
-attempt selection. Expanded repetition values use Subtle. Case and Rep headings
+rep selection. Expanded repetition values use Subtle. Case and Rep headings
 stay together, with compact branches and repetition numbers beneath them;
 the wider combined identity area accommodates the parent name. Each assessment uses its own percentage and declared
 planned/scored denominator. Duration sums recorded repetition durations; calls

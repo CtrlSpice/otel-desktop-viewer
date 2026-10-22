@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import { Cancel01Icon } from '@hugeicons/core-free-icons'
   import {
     createPopoverID,
     setupAnchorPopover,
@@ -10,6 +12,7 @@
     count = 0,
     custom = false,
     compact = false,
+    showCount = false,
     icon,
     onClear,
     clearable = count > 0,
@@ -21,6 +24,7 @@
     count?: number
     custom?: boolean
     compact?: boolean
+    showCount?: boolean
     icon?: Snippet
     onClear: () => void
     clearable?: boolean
@@ -66,7 +70,11 @@
   popovertarget={id}
 >
   {#if compact}{@render icon?.()}{:else}{label}{/if}{#if count > 0}<span
-      class={compact ? 'sr-only' : 'tabular-nums'}>({count})</span
+      class={compact && !showCount
+        ? 'sr-only'
+        : showCount
+          ? 'tabular-nums text-rp-subtle'
+          : 'tabular-nums'}>{showCount ? `[${count}]` : `(${count})`}</span
     >{:else if custom}<span class="sr-only">: custom query</span>{/if}
   {#if !compact}<svg
       class="popover-indicator size-3"
@@ -88,22 +96,22 @@
 >
   <div class="filter-popover__header">
     <span class="font-normal">{label}</span>
-    {#if clearable && !footer}<button
+    {#if clearable}<button
         type="button"
-        class="btn btn-ghost btn-sm text-sm"
+        class="btn btn-ghost btn-circle btn-sm tooltip tooltip-bottom"
         aria-label={`Clear ${label.toLowerCase()} filter`}
-        onclick={onClear}>Clear</button
+        data-tip={`Clear ${label.toLowerCase()}`}
+        onclick={onClear}
+        ><HugeiconsIcon
+          icon={Cancel01Icon}
+          size={16}
+          strokeWidth={1.5}
+          aria-hidden="true"
+        /></button
       >{/if}
   </div>
   {@render children()}
   {#if footer}<div class="filter-popover__footer">
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm text-sm font-normal"
-        aria-label={`Clear ${label.toLowerCase()}`}
-        disabled={!clearable}
-        onclick={onClear}>Clear</button
-      >
       {@render footer(close)}
     </div>{/if}
 </div>
@@ -114,9 +122,15 @@
     @apply overflow-y-auto;
   }
   .filter-popover__header {
-    @apply mb-2 flex min-h-8 items-center justify-between gap-2;
+    @apply mb-2 flex min-h-8 items-center gap-2;
   }
   .filter-popover__footer {
-    @apply sticky -bottom-3 -mx-3 -mb-3 mt-3 flex justify-end gap-2 border-t border-base-300 bg-base-100 p-3;
+    @apply sticky bottom-0 mt-2 flex shrink-0 gap-2 bg-base-100;
+  }
+  .filter-popover__footer :global(.btn) {
+    @apply flex-1 rounded-full;
+  }
+  .filter-popover__footer :global(.btn:disabled) {
+    @apply bg-transparent;
   }
 </style>

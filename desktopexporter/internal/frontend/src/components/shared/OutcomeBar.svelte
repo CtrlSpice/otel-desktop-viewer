@@ -14,10 +14,12 @@
     parts,
     label,
     right,
+    onsegmentclick,
   }: {
     parts: OutcomePart[]
     label: string
     right?: Snippet
+    onsegmentclick?: () => void
   } = $props()
   const colouredParts = $derived(
     parts.map(part => ({
@@ -31,11 +33,13 @@
 <BubbleBreakdown
   parts={colouredParts}
   label={`${label} outcomes`}
-  barLabel={`${label} by attempt count`}
-  unit="attempt"
+  barLabel={`${label} by rep count`}
+  unit="rep"
   emptyLabel="No results"
-  showAll
   tooltipOnly
-  countFormat="compact"
+  staticSingle
+  subtleLabels
+  countFormat="bracketed"
   {right}
+  {onsegmentclick}
 />

@@ -1,4 +1,4 @@
-import type { EvalAttempt, EvalRun, TelemetryReference } from './model'
+import type { EvalRep, EvalRun, TelemetryReference } from './model'
 import type { EvalOutlineRow } from './eval-outline'
 import { referenceKey } from './eval-traces'
 
@@ -11,7 +11,7 @@ export type EvalTelemetrySummary = {
 export function evalTelemetrySummaries(
   run: EvalRun,
   row?: EvalOutlineRow,
-  selectedAttempt?: EvalAttempt
+  selectedRep?: EvalRep
 ): EvalTelemetrySummary[] {
   const entries = new Map<string, EvalTelemetrySummary>()
   function add(reference: TelemetryReference | undefined, label: string) {
@@ -19,28 +19,27 @@ export function evalTelemetrySummaries(
     const key = referenceKey(reference)
     if (!entries.has(key)) entries.set(key, { reference, label })
   }
-  function attemptRoots(attempt: EvalAttempt, includeExecution = false) {
-    const prefix = `Rep ${attempt.repetition}`
-    add(attempt.attemptTelemetry, `${prefix} · Attempt`)
-    if (includeExecution || !attempt.attemptTelemetry)
-      add(attempt.telemetry, `${prefix} · Execution`)
+  function repRoots(rep: EvalRep, includeExecution = false) {
+    const prefix = 'Result'
+    add(rep.repTelemetry, prefix)
+    if (includeExecution || !rep.repTelemetry)
+      add(rep.telemetry, `${prefix} · Execution`)
   }
   if (row?.kind === 'case') {
-    for (const attempt of run.attempts)
-      if (attempt.caseID === row.caseID) attemptRoots(attempt)
+    for (const rep of run.reps) if (rep.caseID === row.caseID) repRoots(rep)
   } else if (row?.kind === 'grading') {
-    for (const assessment of row.attempt?.assessments ?? [])
+    for (const assessment of row.rep?.assessments ?? [])
       add(assessment.telemetry, assessment.evaluator || assessment.id)
-  } else if (row && row.kind !== 'attempt') {
+  } else if (row && row.kind !== 'rep' && row.kind !== 'run') {
     add(row.reference, row.name)
-  } else if (row?.attempt || selectedAttempt) {
-    const attempt = (row?.attempt ?? selectedAttempt)!
-    attemptRoots(attempt, true)
-    for (const assessment of attempt.assessments)
+  } else if (row?.rep || selectedRep) {
+    const rep = (row?.rep ?? selectedRep)!
+    repRoots(rep, true)
+    for (const assessment of rep.assessments)
       add(assessment.telemetry, assessment.evaluator || assessment.id)
   } else {
     add(run.telemetry, 'Run')
-    for (const attempt of run.attempts) attemptRoots(attempt)
+    for (const rep of run.reps) repRoots(rep)
   }
   return [...entries.values()]
 }

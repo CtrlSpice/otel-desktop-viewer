@@ -3,10 +3,10 @@ import {
   computeTreeMeta,
   isErrorSpan,
 } from '@/components/traces/Waterfall/WaterfallView.svelte'
-import { completionState, type groupAttempts } from './group-attempts'
+import { completionState, type groupReps } from './group-reps'
 import {
   estimatedCost,
-  type EvalAttempt,
+  type EvalRep,
   type EvalRun,
   type TelemetryReference,
 } from './model'
@@ -22,12 +22,12 @@ export type TimeWindow = { startTime: bigint; endTime: bigint }
 export type EvalOutlineRow = {
   id: string
   parentID: string | null
-  kind: 'case' | 'attempt' | 'execution' | 'grading' | 'tool' | 'grader'
+  kind: 'run' | 'case' | 'rep' | 'execution' | 'grading' | 'tool' | 'grader'
   caseID: string
-  attempt?: EvalAttempt
+  rep?: EvalRep
   name: string
   depth: number
-  state: EvalAttempt['state']
+  state: EvalRep['state'] | 'Unknown'
   internalFault: boolean
   spanError: boolean
   reference?: TelemetryReference
@@ -79,11 +79,11 @@ function mergeWindows(
 /** Logical eval ownership supplies grouping; stored ancestry supplies tool connections.
  * Grouping IDs are display-only and never replace received trace/span identities. */
 export function buildEvalOutline(
-  groups: ReturnType<typeof groupAttempts>,
+  groups: ReturnType<typeof groupReps>,
   run: EvalRun,
   index: ReturnType<typeof indexEvalTraces>
 ): EvalOutlineRow[] {
-  const source = new Map(run.attempts.map(attempt => [attempt.id, attempt]))
+  const source = new Map(run.reps.map(rep => [rep.id, rep]))
   const nodeFor = (reference?: TelemetryReference) =>
     reference ? index.nodes.get(referenceKey(reference)) : undefined
   const rows: EvalOutlineRow[] = []
@@ -92,134 +92,178 @@ export function buildEvalOutline(
     ancestorHasNextSibling: [],
     isLastChild: true,
   }
+  // The run's totals, timing and execution state include every rep, even
+  // when search hides a case or repetition from the visible outline.
+  const repStatuses = new Map(
+    run.reps.map(rep => {
+      const execution = evalExecutionRows(rep, index)
+      const repNode = nodeFor(rep.repTelemetry)
+      const spanError =
+        execution.spanError || !!(repNode && isErrorSpan(repNode.spanData))
+      return [
+        rep.id,
+        {
+          state: spanError ? ('Error' as const) : execution.state,
+          spanError,
+          internalFault: execution.internalFault,
+          window:
+            spanWindow([repNode]) ??
+            spanWindow([
+              nodeFor(rep.telemetry),
+              ...execution.rows.map(row => row.node),
+            ]),
+        },
+      ]
+    })
+  )
+  const allStatuses = [...repStatuses.values()]
+  const runNode = nodeFor(run.telemetry)
+  const runSpanError =
+    !!(runNode && isErrorSpan(runNode.spanData)) ||
+    allStatuses.some(item => item.spanError)
+  const runInternalFault =
+    run.pauseReason === 'internal-error' ||
+    allStatuses.some(item => item.internalFault)
+  const runRow: EvalOutlineRow = {
+    id: `run/${run.id}`,
+    parentID: null,
+    kind: 'run',
+    caseID: '',
+    name: run.name,
+    depth: 0,
+    state:
+      runSpanError || runInternalFault
+        ? 'Error'
+        : run.state === 'Paused'
+          ? 'Running'
+          : run.state,
+    internalFault: runInternalFault,
+    spanError: runSpanError,
+    reference: run.telemetry,
+    window:
+      spanWindow([runNode]) ??
+      mergeWindows(allStatuses.map(item => item.window)),
+    seconds: run.seconds,
+    estimate: combineEstimates([
+      estimatedCost(run.reps, 'investigatorCost'),
+      estimatedCost(run.reps, 'graderCost'),
+    ]),
+    tree: emptyTree,
+  }
+  rows.push(runRow)
   for (const group of groups) {
     const caseRow: EvalOutlineRow = {
       id: `case/${group.id}`,
-      parentID: null,
+      parentID: runRow.id,
       kind: 'case',
       caseID: group.id,
       name: group.name,
-      depth: 0,
+      depth: 1,
       state: group.state,
       internalFault: false,
       spanError: false,
       estimate: combineEstimates([
-        estimatedCost(group.allAttempts, 'investigatorCost'),
-        estimatedCost(group.allAttempts, 'graderCost'),
+        estimatedCost(group.allReps, 'investigatorCost'),
+        estimatedCost(group.allReps, 'graderCost'),
       ]),
       tree: emptyTree,
     }
     rows.push(caseRow)
     // Hidden repetitions still contribute to the case's status and cost.
-    const statuses = group.allAttempts.map(item => {
-      const attempt = source.get(item.id)!
-      const execution = evalExecutionRows(attempt, index)
-      const attemptNode = nodeFor(attempt.attemptTelemetry)
-      const spanError =
-        execution.spanError ||
-        !!(attemptNode && isErrorSpan(attemptNode.spanData))
-      return {
-        state: spanError ? ('Error' as const) : execution.state,
-        spanError,
-        internalFault: execution.internalFault,
-        window:
-          spanWindow([attemptNode]) ??
-          spanWindow([
-            nodeFor(attempt.telemetry),
-            ...execution.rows.map(row => row.node),
-          ]),
-      }
-    })
+    const statuses = group.allReps.map(item => repStatuses.get(item.id)!)
     caseRow.state = completionState(statuses)
     caseRow.spanError = statuses.some(item => item.spanError)
     caseRow.internalFault = statuses.some(item => item.internalFault)
     caseRow.window = mergeWindows(statuses.map(item => item.window))
-    for (const item of group.attempts) {
-      const attempt = source.get(item.id)!
-      const execution = evalExecutionRows(
-        { ...attempt, assessments: [] },
-        index
-      )
+    for (const item of group.reps) {
+      const rep = source.get(item.id)!
+      const execution = evalExecutionRows({ ...rep, assessments: [] }, index)
       const grading = evalExecutionRows(
-        { ...attempt, telemetry: undefined, tools: [], state: 'Complete' },
+        { ...rep, telemetry: undefined, tools: [], state: 'Complete' },
         index
       )
-      const attemptNode = nodeFor(attempt.attemptTelemetry)
+      const repNode = nodeFor(rep.repTelemetry)
       const spanError =
         execution.spanError ||
         grading.spanError ||
-        !!(attemptNode && isErrorSpan(attemptNode.spanData))
-      const attemptRow: EvalOutlineRow = {
-        id: `attempt/${attempt.id}`,
+        !!(repNode && isErrorSpan(repNode.spanData))
+      const repRow: EvalOutlineRow = {
+        id: `rep/${rep.id}`,
         parentID: caseRow.id,
-        kind: 'attempt',
+        kind: 'rep',
         caseID: group.id,
-        attempt,
-        name: `Attempt ${attempt.repetition}`,
-        depth: 1,
-        state: spanError ? 'Error' : attempt.state,
-        internalFault: attempt.state === 'Error',
+        rep,
+        name: 'Result',
+        depth: 2,
+        state: spanError ? 'Error' : rep.state,
+        internalFault: rep.state === 'Error',
         spanError,
-        reference: attempt.attemptTelemetry,
+        reference: rep.repTelemetry,
         window:
-          spanWindow([attemptNode]) ??
+          spanWindow([repNode]) ??
           spanWindow([
-            nodeFor(attempt.telemetry),
+            nodeFor(rep.telemetry),
             ...execution.rows.map(row => row.node),
             ...grading.rows.map(row => row.node),
           ]),
-        seconds: attempt.seconds,
+        seconds: rep.seconds,
         estimate: combineEstimates([
-          estimate(attempt.investigatorCost),
-          estimate(attempt.graderCost),
+          estimate(rep.investigatorCost),
+          estimate(rep.graderCost),
         ]),
         tree: emptyTree,
       }
-      rows.push(attemptRow)
+      // A result without recorded repetition identity belongs directly on its
+      // test case. This is a display projection, not an invented Rep 1.
+      const owner =
+        rep.repetition === undefined && group.allReps.length === 1
+          ? caseRow
+          : repRow
+      if (owner === caseRow) {
+        Object.assign(caseRow, {
+          rep,
+          reference: rep.repTelemetry ?? rep.telemetry,
+          window: repRow.window,
+          seconds: rep.seconds,
+        })
+      } else {
+        repRow.reference ??= rep.telemetry
+        rows.push(repRow)
+      }
+      // Roles are attributes. A separate execution row requires a distinct,
+      // explicitly referenced span; scores alone do not create grading spans.
       const phases = [
-        {
-          kind: 'execution' as const,
-          name: 'Execution',
-          reference: attempt.telemetry,
-          result: execution,
-          cost: attempt.investigatorCost,
-        },
-        ...(attempt.assessments.length || attempt.graderCost !== undefined
-          ? [
-              {
-                kind: 'grading' as const,
-                name: 'Grading',
-                reference: undefined,
-                result: grading,
-                cost: attempt.graderCost,
-              },
-            ]
-          : []),
+        { kind: 'execution' as const, result: execution },
+        { kind: 'grading' as const, result: grading },
       ]
       for (const phase of phases) {
-        const phaseRow: EvalOutlineRow = {
-          id: `${phase.kind}/${attempt.id}`,
-          parentID: attemptRow.id,
-          kind: phase.kind,
-          caseID: group.id,
-          attempt,
-          name: phase.name,
-          depth: 2,
-          reference: phase.reference,
-          window:
-            phase.kind === 'grading'
-              ? spanWindow(phase.result.rows.map(row => row.node))
-              : spanWindow([nodeFor(phase.reference)]),
-          seconds: phase.kind === 'execution' ? attempt.seconds : undefined,
-          state: phase.result.state,
-          internalFault:
-            phase.kind === 'execution' && attempt.state === 'Error',
-          spanError: phase.result.spanError,
-          estimate: estimate(phase.cost),
-          tree: emptyTree,
+        let parent = owner
+        if (
+          phase.kind === 'execution' &&
+          rep.repTelemetry &&
+          rep.telemetry?.spanID &&
+          referenceKey(rep.repTelemetry) !== referenceKey(rep.telemetry)
+        ) {
+          parent = {
+            id: `execution/${rep.id}`,
+            parentID: owner.id,
+            kind: 'execution',
+            caseID: group.id,
+            rep,
+            name: nodeFor(rep.telemetry)?.spanData.name ?? 'Execution',
+            depth: owner.depth + 1,
+            reference: rep.telemetry,
+            window: spanWindow([nodeFor(rep.telemetry)]),
+            seconds: rep.seconds,
+            state: execution.state,
+            internalFault: execution.internalFault,
+            spanError: execution.spanError,
+            estimate: estimate(rep.investigatorCost),
+            tree: emptyTree,
+          }
+          rows.push(parent)
         }
-        rows.push(phaseRow)
-        const parents = [phaseRow.id]
+        const parents = [parent.id]
         for (const child of phase.result.rows) {
           const parentID = parents[child.depth - 1]!
           parents[child.depth] = child.id
@@ -229,9 +273,9 @@ export function buildEvalOutline(
             parentID,
             kind: phase.kind === 'execution' ? 'tool' : 'grader',
             caseID: group.id,
-            attempt,
+            rep,
             name: child.name,
-            depth: child.depth + 2,
+            depth: child.depth + parent.depth,
             state: child.state,
             internalFault: false,
             spanError: child.state === 'Error',
@@ -251,9 +295,9 @@ export function buildEvalOutline(
           })
         }
       }
-      if (group.allAttempts.length === 1) {
-        caseRow.window = attemptRow.window
-        caseRow.seconds = attemptRow.seconds
+      if (group.allReps.length === 1) {
+        caseRow.window = repRow.window
+        caseRow.seconds = repRow.seconds
       }
     }
   }
@@ -288,11 +332,13 @@ export function outlineOpen(
 ) {
   return (
     overrides[row.id] ??
-    (row.kind === 'case'
-      ? views.includes('results') || views.includes('time')
-      : row.kind === 'attempt' || row.kind === 'execution'
-        ? views.includes('time')
-        : false)
+    (row.kind === 'run'
+      ? true
+      : row.kind === 'case'
+        ? views.includes('results') || views.includes('time')
+        : row.kind === 'rep' || row.kind === 'execution'
+          ? views.includes('time')
+          : false)
   )
 }
 
