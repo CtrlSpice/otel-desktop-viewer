@@ -3,10 +3,12 @@
     label,
     active,
     onclick,
+    description,
   }: {
     label: string
     active: boolean
     onclick: () => void
+    description?: string
   } = $props()
 </script>
 
@@ -15,7 +17,7 @@
   class="chart-overlay-label"
   aria-label={`Emphasize ${label} overlay`}
   aria-pressed={active}
-  title={active ? 'Restore normal visibility' : 'Make overlay more visible'}
+  title={`${description ? `${description}\n` : ''}${active ? 'Restore normal visibility' : 'Make overlay more visible'}`}
   onpointerdown={event => event.stopPropagation()}
   onclick={event => {
     event.stopPropagation()

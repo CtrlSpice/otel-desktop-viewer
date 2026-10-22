@@ -29,7 +29,11 @@
   } as const
 
   /** A horizontal unit above the value axis needs no side-label gutter. */
-  export const timeSeriesChartPadding = { ...chartPadding, left: 96 } as const
+  export const timeSeriesChartPadding = {
+    ...chartPadding,
+    left: 96,
+    right: 80,
+  } as const
 
   function valueYAxis(label: string) {
     return {

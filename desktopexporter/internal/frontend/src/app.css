@@ -331,7 +331,8 @@
   stroke-width: var(--overlay-line-width, 2);
 }
 
-.metric-chart-view :where(.quantile-line-backing) {
+.metric-chart-view
+  :where(.quantile-line-backing, .series-average-line-backing) {
   fill: none;
   stroke: var(--color-base-100);
   stroke-width: var(--overlay-backing-width, 4);

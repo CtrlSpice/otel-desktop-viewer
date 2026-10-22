@@ -715,20 +715,20 @@
     return u || 'value'
   })
 
-  /* Axis props as a $derived rather than an inline object literal, so the
-   * object changes identity only when the timezone or the y-axis label does.
-   * Inline, it minted a new outer object plus two nested ones plus two new
-   * `format` closures on every render, for values that almost never change. */
+  /* Keep responsive ticks, omitting the zero tick and label only where the
+   * rounded bottom axis already establishes the baseline. */
   let chartProps = $derived({
     xAxis: axisTime(timeContext.tz),
     yAxis: {
       ...axisValue(yAxisLabel),
-      format: (value: number) =>
-        value === 0 &&
-        lineChartContext &&
-        lineChartContext.yScale(0) === Math.max(...lineChartContext.yRange)
-          ? ''
-          : formatMetricValue(value),
+      ticks: lineChartContext?.yScale
+        .ticks?.(Math.round(lineChartContext.height / 50))
+        .filter(
+          (value: number) =>
+            value !== 0 ||
+            lineChartContext!.yScale(0) !==
+              Math.max(...lineChartContext!.yRange)
+        ),
     },
   })
 
@@ -800,6 +800,24 @@
     /** Bucket endpoints for slope segment (rate view only). */
     slopeFrom?: ChartPoint
     slopeTo?: ChartPoint
+  }
+
+  let statLabelHeights = $state<
+    Partial<Record<SeriesStatMark['kind'], number>>
+  >({})
+  function measureStatLabel(
+    element: HTMLElement,
+    kind: SeriesStatMark['kind']
+  ) {
+    const measure = () => {
+      const height = element.getBoundingClientRect().height
+      if (height > 0 && statLabelHeights[kind] !== height)
+        statLabelHeights[kind] = height
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return { destroy: () => observer.disconnect() }
   }
 
   /** Use an explicit series selection, or the only visible source series. */
@@ -892,30 +910,27 @@
     return marks
   })
 
-  /** Min/max labels stay on their points; average uses the right edge and slope the point card. */
+  /** Min/max labels stay on their points; average and slope use the right edge. */
   let seriesStatTooltipPlacements = $derived.by(() => {
     const ctx = lineChartContext
     if (!ctx || seriesStatMarks.length === 0) return []
 
     const plotLeft = ctx.padding.left
     const plotTop = ctx.padding.top
-    return seriesStatMarks
-      .filter(mark => mark.kind !== 'slope')
-      .map(mark => {
-        const left =
-          (mark.kind === 'avg' ? ctx.xRange[1] : ctx.xScale(mark.dotDate)) +
-          plotLeft
-        const top = ctx.yScale(mark.y) + plotTop
+    return seriesStatMarks.map(mark => {
+      const atRight = mark.kind === 'avg' || mark.kind === 'slope'
+      const left =
+        (atRight ? ctx.xRange[1] : ctx.xScale(mark.dotDate)) + plotLeft
+      const top = ctx.yScale(mark.y) + plotTop
 
-        const placement =
-          mark.kind === 'avg'
-            ? 'right'
-            : mark.kind === 'min'
-              ? 'below'
-              : 'above'
+      const placement = atRight
+        ? 'right'
+        : mark.kind === 'min' || top < (statLabelHeights[mark.kind] ?? 0) + 8
+          ? 'below'
+          : 'above'
 
-        return { ...mark, placement, left, top }
-      })
+      return { ...mark, placement, left, top }
+    })
   })
 
   let selectionDots = $derived.by((): SelectionDot[] => {
@@ -950,7 +965,7 @@
     if (selectionDots.length === 0) return []
     const seriesDots = selectionDots.filter(d => !isAggregateLineKey(d.key))
     const labelByKey = new Map(chartSeries.map(s => [s.key, s.label] as const))
-    const rows = seriesDots.map((d): SelectionLegendRow => ({
+    return seriesDots.map((d): SelectionLegendRow => ({
       key: d.key,
       color: d.color,
       label: labelByKey.get(d.key) ?? d.key,
@@ -959,20 +974,6 @@
       valueText: formatMetricValue(d.value),
       isPrimary: d.isSelected,
     }))
-    const slope = seriesStatMarks.find(mark => mark.kind === 'slope')
-    if (slope) {
-      rows.push({
-        key: '__selection:rate-slope',
-        color: slope.color,
-        label: slope.statLabel,
-        valueText: slope.valueText,
-        emphasis: {
-          active: emphasis.has('slope'),
-          toggle: () => emphasis.toggle('slope'),
-        },
-      })
-    }
-    return rows
   })
 
   let selectionAggregateRows = $derived.by((): AggregateSummaryRow[] => {
@@ -1110,9 +1111,7 @@
             </Tooltip.Root>
           {/snippet}
 
-          {#snippet aboveMarks({ context }: { context: any })}
-            {@const yTop = context.yRange[1]}
-            {@const yBot = context.yRange[0]}
+          {#snippet belowMarks({ context }: { context: any })}
             {@const average = seriesStatMarks.find(mark => mark.kind === 'avg')}
             {#if average}
               {@const averageY = context.yScale(average.y)}
@@ -1122,6 +1121,13 @@
                 aria-hidden="true"
               >
                 <title>{average.title}</title>
+                <Line
+                  x1={context.xRange[0]}
+                  x2={context.xRange[1]}
+                  y1={averageY}
+                  y2={averageY}
+                  class="series-average-line-backing"
+                />
                 <Line
                   x1={context.xRange[0]}
                   x2={context.xRange[1]}
@@ -1160,6 +1166,10 @@
                 </g>
               {/if}
             {/if}
+          {/snippet}
+          {#snippet aboveMarks({ context }: { context: any })}
+            {@const yTop = context.yRange[1]}
+            {@const yBot = context.yRange[0]}
             {#if hoveredPoint}
               <circle
                 class="series-hover-point"
@@ -1271,6 +1281,7 @@
         {/if}
         {#each seriesStatTooltipPlacements as mark (mark.kind)}
           <div
+            use:measureStatLabel={mark.kind}
             class="series-stat-tooltip"
             class:series-stat-tooltip--above={mark.placement === 'above'}
             class:series-stat-tooltip--below={mark.placement === 'below'}
@@ -1278,7 +1289,7 @@
             style:left="{mark.left}px"
             style:top="{mark.top}px"
             title={mark.title}
-            aria-hidden={mark.kind === 'avg' ? undefined : true}
+            aria-hidden={mark.placement === 'right' ? undefined : true}
           >
             <div class="chart-selection-legend chart-selection-legend--stat">
               <ul class="chart-selection-legend__rows">
@@ -1289,15 +1300,17 @@
                     aria-hidden="true"
                   ></span>
                   <span class="chart-selection-legend__label"
-                    >{#if mark.kind === 'avg'}<ChartOverlayLabel
+                    >{#if mark.placement === 'right'}<ChartOverlayLabel
                         label={mark.statLabel}
+                        description={mark.title}
                         active={emphasis.has(mark.kind)}
                         onclick={() => emphasis.toggle(mark.kind)}
                       />{:else}{mark.statLabel}{/if}</span
                   >
-                  <span class="chart-selection-legend__value"
-                    >{mark.valueText}</span
-                  >
+                  {#if mark.placement !== 'right'}<span
+                      class="chart-selection-legend__value"
+                      >{mark.valueText}</span
+                    >{/if}
                 </li>
               </ul>
             </div>
@@ -1352,7 +1365,7 @@
     fill: var(--point-color);
   }
 
-  /* Stat cards: min/max at their points and average at the right edge. */
+  /* Stat cards: min/max at their points, average/slope outside the right edge. */
   .series-stat-tooltip {
     position: absolute;
     pointer-events: none;
@@ -1370,7 +1383,7 @@
   }
 
   .series-stat-tooltip--right {
-    transform: translate(-100%, calc(-100% - 8px));
+    transform: translate(8px, -50%);
   }
 
   /* Aggregate summary rows span the tooltip grid when embedded. */

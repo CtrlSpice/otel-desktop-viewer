@@ -1,7 +1,8 @@
 type Point = { x: number; y: number }
 type Bounds = { left: number; right: number; top: number; bottom: number }
 
-/** Extend a screen-space guide to the plot edges without changing its direction. */
+/** Extend a screen-space guide backward to the plot edge, ending at `to`.
+ * The guide describes the incoming slope, not a projection beyond that point. */
 export function extendChartLine(from: Point, to: Point, bounds: Bounds) {
   if (
     ![from.x, from.y, to.x, to.y, ...Object.values(bounds)].every(
@@ -15,7 +16,7 @@ export function extendChartLine(from: Point, to: Point, bounds: Bounds) {
   if (dx === 0 && dy === 0) return null
 
   let start = -Infinity
-  let end = Infinity
+  let end = 1
   for (const [origin, delta, min, max] of [
     [from.x, dx, bounds.left, bounds.right],
     [from.y, dy, bounds.top, bounds.bottom],

@@ -1482,7 +1482,7 @@ for (const [theme, hoverColour, selectedColour, focusColour] of [
   }
 }
 
-test('extrema use the series colour and the average crosses above the series without a data dot', async ({
+test('extrema use the series colour and the backed average stays behind the series without a data dot', async ({
   page,
 }) => {
   await page.route('**/rpc', async route => {
@@ -1508,13 +1508,15 @@ test('extrema use the series colour and the average crosses above the series wit
   const average = page.locator('.series-average-marker')
   await expect(average).toBeAttached()
   await expect(average.locator('circle')).toHaveCount(0)
+  await expect(average.locator('.series-average-line-backing')).toHaveCSS(
+    'stroke-width',
+    '4px'
+  )
   const averageLabel = page.locator('.series-stat-tooltip--right')
   await expect(
     averageLabel.locator('.chart-selection-legend__label')
   ).toHaveText('avg')
-  await expect(
-    averageLabel.locator('.chart-selection-legend__value')
-  ).toHaveText('20.5')
+  await expect(averageLabel).toHaveAttribute('title', 'avg 20.5')
   await expect(
     averageLabel.locator('.chart-selection-legend--stat')
   ).toBeVisible()
@@ -1552,7 +1554,16 @@ test('extrema use the series colour and the average crosses above the series wit
         .querySelector('.series-stat-tooltip--right')!
         .getBoundingClientRect()
       const lineBox = reference.getBoundingClientRect()
+      const maxLabelBox = chart
+        .querySelector('.series-stat-tooltip[title^="max "]')!
+        .getBoundingClientRect()
+      const plotBox = chart
+        .querySelector('.metric-chart-plot')!
+        .getBoundingClientRect()
       return {
+        maxLabelFits:
+          maxLabelBox.top >= plotBox.top &&
+          maxLabelBox.bottom <= plotBox.bottom,
         extremaMatch: minColour === maxColour,
         seriesFound: !!series,
         averageAboveSeries:
@@ -1566,13 +1577,14 @@ test('extrema use the series colour and the average crosses above the series wit
           getComputedStyle(reference).stroke ===
           getComputedStyle(label).backgroundColor,
         averageColour: getComputedStyle(reference).stroke,
-        averageLabelAtRight: Math.abs(labelBox.right - lineBox.right) < 1,
+        averageLabelAtRight: Math.abs(labelBox.left - lineBox.right - 8) < 1,
       }
     })
   expect(drawing).toEqual({
+    maxLabelFits: true,
     extremaMatch: true,
     seriesFound: true,
-    averageAboveSeries: true,
+    averageAboveSeries: false,
     averageHasOwnColour: true,
     averageLabelMatches: true,
     averageColour: 'rgb(109, 87, 132)',
@@ -1583,6 +1595,10 @@ test('extrema use the series colour and the average crosses above the series wit
   })
   const before = page.url()
   await emphasis.click()
+  await expect(average.locator('.series-average-line-backing')).toHaveCSS(
+    'stroke-width',
+    '8px'
+  )
   await expect(average.locator('.series-average-line')).toHaveCSS(
     'stroke-width',
     '4px'
@@ -1670,7 +1686,7 @@ test('a new single-point cumulative counter opens in Raw without preferences', a
   ).toBeVisible()
 })
 
-test('Rate clicks pin the exact bucket and keep slope in the same card', async ({
+test('Rate clicks pin the exact bucket and put slope at the right edge', async ({
   page,
 }) => {
   const counter = {
@@ -1754,7 +1770,8 @@ test('Rate clicks pin the exact bucket and keep slope in the same card', async (
     }))
   await graph.press('ArrowRight')
   await graph.press('Enter')
-  await expect(sticky.getByText('slope', { exact: true })).toBeVisible()
+  const slopeLabel = page.locator('.series-stat-tooltip--right')
+  await expect(slopeLabel.getByText('slope', { exact: true })).toBeVisible()
   const slopeGuide = page.locator('.series-slope-line')
   await expect(slopeGuide).toHaveCSS('stroke-dasharray', '6px, 4px')
   await expect(slopeGuide).toHaveCSS('stroke-width', '2px')
@@ -1775,31 +1792,41 @@ test('Rate clicks pin the exact bucket and keep slope in the same card', async (
       const y2 = Number(guide.getAttribute('y2'))
       const px = Number(point.getAttribute('cx'))
       const py = Number(point.getAttribute('cy'))
+      const labelBox = chart
+        .querySelector('.series-stat-tooltip--right')!
+        .getBoundingClientRect()
+      const plotBox = chart
+        .querySelector('.metric-chart-plot')!
+        .getBoundingClientRect()
       return {
+        labelFits: labelBox.right <= plotBox.right,
         aboveSeries: !!(
           guide.compareDocumentPosition(series) &
           Node.DOCUMENT_POSITION_PRECEDING
         ),
-        extendsBeyondBucket:
-          Math.hypot(x2 - x1, y2 - y1) >
-          Math.hypot(px - firstBucket.x, py - firstBucket.y) + 1,
+        coversIncomingBucket:
+          Math.hypot(x2 - x1, y2 - y1) >=
+          Math.hypot(px - firstBucket.x, py - firstBucket.y) - 0.01,
         distanceFromPoint:
           Math.abs((px - x1) * (y2 - y1) - (py - y1) * (x2 - x1)) /
           Math.hypot(x2 - x1, y2 - y1),
+        distanceFromEnd: Math.hypot(x2 - px, y2 - py),
         colour: getComputedStyle(guide).stroke,
         cardColour: getComputedStyle(
           chart.querySelector(
-            '.metric-time-series-chart__selection-legend .chart-selection-legend__row:last-child .chart-selection-legend__dot'
+            '.series-stat-tooltip--right .chart-selection-legend__dot'
           )!
         ).backgroundColor,
       }
     }, firstBucket)
-  expect(slopeDrawing.aboveSeries).toBe(true)
-  expect(slopeDrawing.extendsBeyondBucket).toBe(true)
+  expect(slopeDrawing.aboveSeries).toBe(false)
+  expect(slopeDrawing.labelFits).toBe(true)
+  expect(slopeDrawing.coversIncomingBucket).toBe(true)
   expect(slopeDrawing.distanceFromPoint).toBeLessThan(0.01)
+  expect(slopeDrawing.distanceFromEnd).toBeLessThan(0.01)
   expect(slopeDrawing.colour).toBe(slopeDrawing.cardColour)
   expect(slopeDrawing.colour).toBe('rgb(109, 87, 132)')
-  const slopeEmphasis = sticky.getByRole('button', {
+  const slopeEmphasis = slopeLabel.getByRole('button', {
     name: 'Emphasize slope overlay',
   })
   const urlBeforeEmphasis = page.url()
@@ -1812,7 +1839,7 @@ test('Rate clicks pin the exact bucket and keep slope in the same card', async (
   await expect(slopeGuide).toHaveCSS('opacity', '0.35')
   await expect(
     page.locator('.series-stat-tooltip').filter({ hasText: 'slope' })
-  ).toHaveCount(0)
+  ).toHaveCount(1)
   const selected = page.locator('.selection-dot--selected')
   const box = (await selected.boundingBox())!
   const x = box.x + box.width / 2
@@ -1822,7 +1849,7 @@ test('Rate clicks pin the exact bucket and keep slope in the same card', async (
   await page.mouse.move(x, y)
   await expect(page.locator('.lc-tooltip-header').first()).toBeVisible()
   await page.mouse.click(x, y)
-  await expect(sticky.getByText('slope', { exact: true })).toBeVisible()
+  await expect(slopeLabel.getByText('slope', { exact: true })).toBeVisible()
   expect(new URL(page.url()).searchParams.has('dp')).toBe(false)
   await expect(page.locator('.selection-overlay .highlight-rule')).toHaveCount(
     0

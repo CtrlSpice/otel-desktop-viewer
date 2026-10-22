@@ -373,9 +373,7 @@ describe('MetricTimeSeriesChart keyboard model', () => {
           expect(
             averageLabel?.querySelector('.chart-selection-legend__label')
           ).toHaveTextContent('avg')
-          expect(
-            averageLabel?.querySelector('.chart-selection-legend__value')
-          ).toHaveTextContent('3')
+          expect(averageLabel).toHaveAttribute('title', 'avg 3')
           const line = derived?.querySelector('.series-average-line')
           expect(line).not.toBeNull()
           expect(line?.getAttribute('y1')).toBe(line?.getAttribute('y2'))
@@ -582,13 +580,13 @@ describe('MetricTimeSeriesChart keyboard model', () => {
       document.querySelector('.metric-time-series-chart__selection-legend')
     ).toHaveTextContent('4')
     expect(
-      document.querySelector('.metric-time-series-chart__selection-legend')
+      document.querySelector('.series-stat-tooltip--right')
     ).toHaveTextContent('slope')
     expect(
       [...document.querySelectorAll('.series-stat-tooltip')].some(tooltip =>
         tooltip.textContent?.includes('slope')
       )
-    ).toBe(false)
+    ).toBe(true)
     expect(
       [...document.querySelectorAll('.series-stat-marker title')].some(title =>
         title.textContent?.startsWith('rate slope')
@@ -601,7 +599,7 @@ describe('MetricTimeSeriesChart keyboard model', () => {
     expect(
       document
         .querySelector(
-          '.metric-time-series-chart__selection-legend .chart-selection-legend__row:last-child .chart-selection-legend__dot'
+          '.series-stat-tooltip--right .chart-selection-legend__dot'
         )
         ?.getAttribute('style')
     ).toContain('--color: var(--color-primary)')
