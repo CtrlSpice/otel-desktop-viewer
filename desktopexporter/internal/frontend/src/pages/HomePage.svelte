@@ -218,32 +218,11 @@
     </div>
   </DetailBubble>
 {/snippet}
-{#snippet statistics()}
-  <DetailBubble label="Stats" initialOpen={false}>
-    <p class="px-3 py-2 text-rp-subtle">All stored telemetry</p>
+{#snippet storage()}
+  <DetailBubble label="Storage" initialOpen={false}>
     {#if statsError}<p class="px-3" role="alert">
         {statsError}{stats ? ' · Showing the last successful reading.' : ''}
       </p>{/if}
-    {#if stats}
-      <table class="detail-fields w-full" aria-label="Stored telemetry stats">
-        <tbody>
-          {#each [['Traces', stats.traces.traceCount], ['Spans', stats.traces.spanCount], ['Error spans', stats.traces.errorCount], ['Logs', stats.logs.logCount], ['Error logs', stats.logs.errorCount], ['Metrics', stats.metrics.metricCount], ['Datapoints', stats.metrics.dataPointCount]] as [name, value] (name)}
-            <DetailProperty
-              fieldName={String(name)}
-              fieldType="uint64"
-              showType={false}
-              fieldValue={String(value)}
-            />
-          {/each}
-        </tbody>
-      </table>
-    {:else}<p class="p-3 text-rp-subtle">
-        {statsError ? 'Statistics unavailable.' : 'Loading statistics…'}
-      </p>{/if}
-  </DetailBubble>
-{/snippet}
-{#snippet storage()}
-  <DetailBubble label="Storage" initialOpen={false}>
     {#if stats?.storage}<table
         class="detail-fields w-full"
         aria-label="Viewer storage"
@@ -398,7 +377,6 @@
       storageKey="home-details"
       sections={[
         { id: 'attributes', content: attributes },
-        { id: 'stats', content: statistics },
         { id: 'storage', content: storage },
         { id: 'issues', content: issues },
       ]}
