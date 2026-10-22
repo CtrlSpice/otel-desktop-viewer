@@ -26,7 +26,6 @@
       id: 'traces' as const,
       title: 'Traces',
       count: service.traceCount,
-      unit: service.traceCount === 1 ? 'trace' : 'traces',
       detailCount: service.spanCount,
       detail: service.spanCount === 1 ? 'span' : 'spans',
       extraCount: service.errorSpanCount,
@@ -37,7 +36,6 @@
       id: 'logs' as const,
       title: 'Logs',
       count: service.logCount,
-      unit: service.logCount === 1 ? 'log' : 'logs',
       detailCount: null,
       detail: '',
       extraCount: service.errorLogCount,
@@ -48,7 +46,6 @@
       id: 'metrics' as const,
       title: 'Metrics',
       count: service.metricCount,
-      unit: service.metricCount === 1 ? 'metric' : 'metrics',
       detailCount: service.dataPointCount,
       detail: 'pts',
       extraCount: service.exemplarCount,
@@ -103,13 +100,10 @@
             'unnamed service'} {signal.id}"
         >
           <span class="service-summary__label text-rp-subtle"
-            >{signal.title}</span
+            >{signal.title}:</span
           >
           <span class="service-summary__counts">
-            <span
-              >{signal.count.toLocaleString()}
-              <span class="text-rp-subtle">{signal.unit}</span></span
-            >
+            <span>{signal.count.toLocaleString()}</span>
             {#if signal.detailCount !== null}
               <span class="text-rp-subtle" aria-hidden="true">·</span>
               <span

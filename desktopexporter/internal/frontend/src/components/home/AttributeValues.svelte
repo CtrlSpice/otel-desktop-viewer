@@ -4,7 +4,7 @@
     AttributeFrequency,
     DiscoveryOptions,
   } from '@/services/discovery-types'
-  import { ArcChart } from 'layerchart'
+  import { BarChart } from 'layerchart'
   import { traceSpanPalette } from '@/utils/chart-palette'
   import AttributeValue from '@/components/shared/AttributeValue.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
@@ -22,31 +22,29 @@
   let more = $state(false)
   const colors = $derived(traceSpanPalette(offset + values.length))
   const total = $derived(values.reduce((sum, item) => sum + item.count, 0))
-  // A pie requires a complete, non-overlapping distribution. Preserve record
+  // A stacked bar requires a complete, non-overlapping distribution. Preserve record
   // percentages in the legend for paginated or multi-valued attributes too.
-  const showPie = $derived(
+  const showBar = $derived(
     values.length > 0 &&
       offset === 0 &&
       !more &&
       total > 0 &&
       total === values[0].denominator
   )
-  const slices = $derived.by(() => {
-    let start = 0
-    return values.map((item, index) => {
-      const end = start + item.relativeFrequency * 360
-      const slice = {
-        key: String(index),
-        value: item.count,
-        color: colors[offset + index],
-        maxValue: item.count,
-        data: [{ value: item.count }],
-        props: { range: [start, end] as [number, number] },
-      }
-      start = end
-      return slice
-    })
-  })
+  const series = $derived(
+    values.map((_, index) => ({
+      key: String(index),
+      color: colors[offset + index],
+    }))
+  )
+  const distribution = $derived([
+    {
+      key: 'frequency',
+      ...Object.fromEntries(
+        values.map((item, index) => [String(index), item.relativeFrequency])
+      ),
+    },
+  ])
   $effect(() => {
     const controller = new AbortController()
     const request = { ...options, key: name, offset, limit: 25 }
@@ -75,22 +73,27 @@
   {#if values.length === 0}<p class="p-3 text-rp-subtle">
       No retained values.
     </p>{/if}
-  <div
-    role="group"
-    aria-label="Values of {name}"
-    class="flex items-start gap-2"
-  >
-    {#if showPie}
-      <div class="size-16 shrink-0" aria-hidden="true">
-        <ArcChart
-          series={slices}
-          width={64}
-          height={64}
+  <div role="group" aria-label="Values of {name}" class="flex flex-col gap-2">
+    {#if showBar}
+      <div class="w-full" aria-hidden="true">
+        <BarChart
+          data={distribution}
+          {series}
+          seriesLayout="stack"
+          orientation="horizontal"
+          y="key"
+          xDomain={[0, 1]}
+          height={8}
+          bandPadding={0}
           padding={{ top: 0, right: 0, bottom: 0, left: 0 }}
+          axis={false}
+          grid={false}
+          rule={false}
+          highlight={false}
           legend={false}
           tooltipContext={false}
           motion="none"
-          props={{ arc: { track: false, strokeWidth: 0 } }}
+          props={{ bars: { strokeWidth: 0 } }}
         />
       </div>
     {/if}
