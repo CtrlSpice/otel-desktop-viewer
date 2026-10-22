@@ -61,6 +61,8 @@
     copyLabel?: string
     /** Flush inside a parent chrome card (no border/radius on the panel). */
     embedded?: boolean
+    /** Editor only: the caller supplies its surrounding layout and Copy action. */
+    bare?: boolean
   }
 
   let {
@@ -69,6 +71,7 @@
     class: className = '',
     copyLabel = 'Copy to clipboard',
     embedded = false,
+    bare = false,
   }: Props = $props()
 
   let mountEl: HTMLDivElement | undefined = $state()
@@ -90,6 +93,15 @@
           EditorView.contentAttributes.of({ 'aria-label': ariaLabel }),
           EditorView.lineWrapping,
           ...readonlyCodeTheme,
+          ...(bare
+            ? [
+                EditorView.theme({
+                  '&': { backgroundColor: 'transparent' },
+                  '.cm-content': { padding: '0' },
+                  '.cm-line': { padding: '0' },
+                }),
+              ]
+            : []),
         ],
       }),
       parent: mountEl,
@@ -124,39 +136,43 @@
   }
 </script>
 
-<div
-  class="readonly-code-panel {className}"
-  class:readonly-code-panel--embedded={embedded}
->
-  {#if !embedded}
-    <button
-      type="button"
-      class="readonly-code-panel__copy drawer-header-btn tooltip tooltip-left"
-      onclick={copyToClipboard}
-      data-tip={copied ? 'Copied!' : copyLabel}
-      aria-label={copied ? 'Copied' : copyLabel}
-    >
-      {#if copied}
-        <HugeiconsIcon
-          icon={CheckmarkCircle02Icon}
-          size="1em"
-          strokeWidth={1.5}
-          class="h-4 w-4 shrink-0"
-          aria-hidden="true"
-        />
-      {:else}
-        <HugeiconsIcon
-          icon={Copy01Icon}
-          size="1em"
-          strokeWidth={1.5}
-          class="h-4 w-4 shrink-0"
-          aria-hidden="true"
-        />
-      {/if}
-    </button>
-  {/if}
-  <div class="readonly-code-panel__editor" bind:this={mountEl}></div>
-</div>
+{#if bare}
+  <div bind:this={mountEl}></div>
+{:else}
+  <div
+    class="readonly-code-panel {className}"
+    class:readonly-code-panel--embedded={embedded}
+  >
+    {#if !embedded}
+      <button
+        type="button"
+        class="readonly-code-panel__copy drawer-header-btn tooltip tooltip-left"
+        onclick={copyToClipboard}
+        data-tip={copied ? 'Copied!' : copyLabel}
+        aria-label={copied ? 'Copied' : copyLabel}
+      >
+        {#if copied}
+          <HugeiconsIcon
+            icon={CheckmarkCircle02Icon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-4 w-4 shrink-0"
+            aria-hidden="true"
+          />
+        {:else}
+          <HugeiconsIcon
+            icon={Copy01Icon}
+            size="1em"
+            strokeWidth={1.5}
+            class="h-4 w-4 shrink-0"
+            aria-hidden="true"
+          />
+        {/if}
+      </button>
+    {/if}
+    <div class="readonly-code-panel__editor" bind:this={mountEl}></div>
+  </div>
+{/if}
 
 <style lang="postcss">
   @reference "../../app.css";

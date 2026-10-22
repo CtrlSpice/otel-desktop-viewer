@@ -25,23 +25,32 @@
     {
       id: 'traces' as const,
       title: 'Traces',
-      count: service.spanCount,
-      noun: 'spans',
-      errors: service.errorSpanCount,
+      count: service.traceCount,
+      detailCount: service.spanCount,
+      detail: service.spanCount === 1 ? 'span' : 'spans',
+      extraCount: service.errorSpanCount,
+      extra: '',
+      marker: service.errorSpanCount > 0 ? 'bg-error' : '',
     },
     {
       id: 'logs' as const,
       title: 'Logs',
       count: service.logCount,
-      noun: 'logs',
-      errors: service.errorLogCount,
+      detailCount: service.errorLogCount,
+      detail: '',
+      extraCount: 0,
+      extra: '',
+      marker: '',
     },
     {
       id: 'metrics' as const,
       title: 'Metrics',
       count: service.metricCount,
-      noun: 'metrics',
-      errors: null,
+      detailCount: service.dataPointCount,
+      detail: 'pts',
+      extraCount: service.exemplarCount,
+      extra: service.exemplarCount === 1 ? 'exemplar' : 'exemplars',
+      marker: '',
     },
   ])
 </script>
@@ -89,22 +98,47 @@
             class="stat-title"
             href={serviceSignalHref(service, signal.id, range)}
             aria-label="Open {service.serviceName ||
-              'unnamed service'} {signal.id}">{signal.title}</a
+              'unnamed service'} {signal.id}"
+            >{signal.title}<span class="text-rp-subtle"
+              >[{signal.count.toLocaleString()}]</span
+            ></a
           >
-          <div class="stat-value">
-            {signal.count.toLocaleString()}
-            {signal.noun}
-          </div>
-          <div class="stat-desc">
-            {#if signal.errors !== null}
-              {#if signal.errors > 0}<span
-                  class="inline-block size-2 shrink-0 rounded-full bg-error"
+          {#if signal.id !== 'logs' || signal.detailCount > 0}<div
+              class="stat-desc"
+            >
+              {#if signal.id === 'logs' && service.errorLogCount > 0}
+                <span
+                  class="size-2 shrink-0 rounded-full bg-error"
+                  aria-hidden="true"
+                ></span>
+              {/if}
+              <span
+                class="text-base-content"
+                aria-label={signal.id === 'logs'
+                  ? `${signal.detailCount} error or fatal logs`
+                  : undefined}
+                >{signal.id === 'logs'
+                  ? `[${signal.detailCount.toLocaleString()}]`
+                  : signal.detailCount.toLocaleString()}</span
+              >
+              {signal.detail}
+            </div>{/if}
+          {#if signal.extraCount > 0}<div class="stat-desc">
+              {#if signal.marker}<span
+                  class="size-2 shrink-0 rounded-full {signal.marker}"
                   aria-hidden="true"
                 ></span>{/if}
-              {signal.errors.toLocaleString()}
-              {signal.errors === 1 ? 'error' : 'errors'}
-            {:else}{service.dataPointCount.toLocaleString()} pts{/if}
-          </div>
+              <span
+                class="text-base-content"
+                aria-label={signal.id === 'traces'
+                  ? `${signal.extraCount} error spans`
+                  : undefined}
+                >{signal.id === 'traces'
+                  ? `[${signal.extraCount.toLocaleString()}]`
+                  : signal.extraCount.toLocaleString()}</span
+              >
+              {signal.extra}
+            </div>{/if}
         </div>
       {/each}
     </div>
@@ -123,24 +157,19 @@
     @apply grid w-full min-w-0 grid-cols-3 gap-2 overflow-visible rounded-none bg-transparent shadow-none;
   }
   .service-stats .stat {
-    @apply min-w-0 border-0 p-0;
+    @apply flex min-w-0 flex-col items-center border-0 p-0;
   }
   .stat-title {
-    @apply flex items-center text-sm font-normal text-secondary no-underline;
+    @apply flex flex-wrap items-center justify-center gap-1 text-sm font-normal text-secondary no-underline;
   }
   .stat-title:hover {
     @apply underline;
-  }
-  .stat-value {
-    @apply whitespace-normal text-sm font-normal text-base-content;
-    overflow-wrap: anywhere;
   }
   .stat-desc {
     @apply flex items-center gap-2 whitespace-normal text-sm;
     color: var(--color-subtle);
   }
   .stat-title,
-  .stat-value,
   .stat-desc {
     min-height: var(--signal-card-row-h);
   }

@@ -27,12 +27,18 @@ export type DiscoveryOptions = {
 export type ServiceSummary = {
   serviceName: string
   serviceNamespace: string
+  traceCount: number
   spanCount: number
   errorSpanCount: number
   logCount: number
   errorLogCount: number
+  logSeverityCounts: Record<
+    'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal' | 'other',
+    number
+  >
   metricCount: number
   dataPointCount: number
+  exemplarCount: number
   lastSeen: string | null
 }
 export type AttributeKey = {

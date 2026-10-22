@@ -1,19 +1,15 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
   import { onMount } from 'svelte'
-  import PaneHeader, {
-    paneTabID,
-    type PaneTab,
-  } from '@/components/shared/PaneHeader.svelte'
+  import PaneHeader, { paneTabID } from '@/components/shared/PaneHeader.svelte'
   import ReadonlyCodePanel from '@/components/shared/ReadonlyCodePanel.svelte'
-  import FieldGroup from '@/components/shared/FieldGroup.svelte'
+  import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
-  import luluImage from '@/assets/images/lulu.webp'
 
   let { importContent }: { importContent?: Snippet } = $props()
   let protocol = $state('http')
   let httpPort = $state<number | null>(null)
-  const tabs: PaneTab[] = [
+  const tabs = [
     { id: 'http', label: 'HTTP' },
     { id: 'grpc', label: 'gRPC' },
   ]
@@ -21,6 +17,9 @@
     protocol === 'http'
       ? `export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:${httpPort ?? 4318}"\nexport OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"`
       : 'export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"\nexport OTEL_EXPORTER_OTLP_PROTOCOL="grpc"'
+  )
+  const example = $derived(
+    `export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:${httpPort ?? 4318}\notel-cli exec --service my-service --name "curl google" curl https://google.com`
   )
   onMount(() => {
     let alive = true
@@ -50,15 +49,22 @@
       <p class="text-rp-subtle">
         Send telemetry from your SDK, Collector, or agent.
       </p>
-      <PaneHeader
-        mode="tabs"
-        pill
-        {tabs}
-        activeID={protocol}
-        onSelect={id => (protocol = id)}
-        ariaLabel="OTLP endpoint protocol"
-        tabPanelID="home-otlp"
-      />
+      <div class="flex items-center justify-between gap-2">
+        <PaneHeader
+          mode="tabs"
+          bare
+          {tabs}
+          activeID={protocol}
+          onSelect={id => (protocol = id)}
+          ariaLabel="OTLP endpoint protocol"
+          tabPanelID="home-otlp"
+        />
+        <ValueCopyButton
+          text={code}
+          label="OTLP environment variables"
+          tooltip="Copy"
+        />
+      </div>
       <div
         id="home-otlp"
         role="tabpanel"
@@ -67,8 +73,8 @@
       >
         <ReadonlyCodePanel
           {code}
+          bare
           ariaLabel="OTLP exporter environment variables"
-          copyLabel="Copy OTLP environment variables"
         />
       </div>
       <p class="text-rp-subtle">
@@ -80,35 +86,20 @@
       </p>
     </section>
     <section class="guide-section">
-      <h2 class="text-lg font-normal text-base-content">Try an example</h2>
-      <FieldGroup detail label="Send a trace with otel-cli" open={false}>
-        <ReadonlyCodePanel
-          ariaLabel="otel-cli example commands"
-          code={`export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:${httpPort ?? 4318}\notel-cli exec --service my-service --name "curl google" curl https://google.com`}
+      <div class="flex items-center justify-between gap-2">
+        <h2 class="text-lg font-normal text-base-content">Try an example</h2>
+        <ValueCopyButton
+          text={example}
+          label="otel-cli example"
+          tooltip="Copy"
         />
-      </FieldGroup>
-      <a
-        class="link text-secondary"
-        href="https://opentelemetry.io/docs/languages/"
-        target="_blank"
-        rel="noopener noreferrer">SDK setup</a
-      >
-    </section>
-    <footer class="guide-footer">
-      <img
-        src={luluImage}
-        alt="Lulu the pink axolotl looking through her telescope."
-        class="size-24 object-contain"
+      </div>
+      <ReadonlyCodePanel
+        bare
+        ariaLabel="otel-cli example commands"
+        code={example}
       />
-      <p class="text-rp-subtle">
-        Artwork by <a
-          class="link text-secondary"
-          href="https://cbatesonart.artstation.com/"
-          target="_blank"
-          rel="noopener noreferrer">Chelsey Bateson</a
-        >
-      </p>
-    </footer>
+    </section>
   </div>
 </div>
 
@@ -122,8 +113,5 @@
   }
   .guide-section {
     @apply flex flex-col gap-2 py-3;
-  }
-  .guide-footer {
-    @apply flex flex-col items-center gap-2 py-4 text-center;
   }
 </style>

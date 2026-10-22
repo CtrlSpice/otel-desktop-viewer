@@ -113,30 +113,26 @@
 </script>
 
 {#if service}
-  <p class="px-3 py-2 text-base-content">
-    {service.serviceName ||
-      'Unnamed service'}{#if service.serviceNamespace}<span
-        class="text-rp-subtle"
-      >
-        · {service.serviceNamespace}</span
-      >{/if}
-  </p>
-  <PaneHeader
-    mode="tabs"
-    pill
-    tabs={signals}
-    activeID={signal}
-    onSelect={selectSignal}
-    ariaLabel="Attribute signal"
-  />
-  <PaneHeader
-    mode="tabs"
-    pill
-    tabs={owners}
-    activeID={owner}
-    onSelect={selectOwner}
-    ariaLabel="Attribute owner"
-  />
+  <div class="flex flex-wrap items-center gap-2 px-3 py-2">
+    <PaneHeader
+      mode="tabs"
+      bare
+      tabs={signals}
+      activeID={signal}
+      onSelect={selectSignal}
+      ariaLabel="Attribute signal"
+    />
+    <select
+      class="select select-ghost select-sm w-auto min-w-0 text-sm"
+      aria-label="Attribute owner"
+      value={owner}
+      onchange={event => selectOwner(event.currentTarget.value)}
+    >
+      {#each owners as item (item.id)}<option value={item.id}
+          >{item.label}</option
+        >{/each}
+    </select>
+  </div>
   <div class="p-3">
     <FilterInput
       label="Filter attribute keys"

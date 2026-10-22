@@ -40,12 +40,23 @@ describe('Home service discovery', () => {
     const base = {
       serviceName: 'checkout',
       serviceNamespace: 'storefront',
+      traceCount: 42,
       spanCount: 248,
       errorSpanCount: 3,
       logCount: 36,
       errorLogCount: 2,
+      logSeverityCounts: {
+        trace: 0,
+        debug: 0,
+        info: 30,
+        warn: 4,
+        error: 1,
+        fatal: 1,
+        other: 0,
+      },
       metricCount: 8,
       dataPointCount: 640,
+      exemplarCount: 12,
       lastSeen: '1792692000000000000',
     }
     const services = vi

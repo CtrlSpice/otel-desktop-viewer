@@ -125,6 +125,8 @@
 
   type TabsProps = CommonProps & {
     mode: 'tabs'
+    /** Render only the shared tab controls, without a pane-heading surface. */
+    bare?: boolean
     tabs: PaneTab[]
     activeID: string
     onSelect: (id: string, event?: MouseEvent) => void
@@ -364,6 +366,16 @@
       {@render metaRow()}
     {/if}
   </div>
+{:else if props.mode === 'tabs' && props.bare}
+  {@render tabStrip(
+    props.tabs,
+    props.activeID,
+    props.onSelect,
+    props.ariaLabel ?? 'Pane tabs',
+    props.tabLayout ?? 'left',
+    props.navigation ?? false,
+    props.tabPanelID
+  )}
 {:else if props.mode === 'tabs'}
   <div class="pane-header pane-header--tabs {roundedClass} {stackedClass}">
     <div class="pane-header__top">

@@ -9,12 +9,23 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   const services = Array.from({ length: 8 }, (_, index) => ({
     serviceName: index === 0 ? 'checkout' : `worker-${index}`,
     serviceNamespace: 'storefront',
+    traceCount: 42,
     spanCount: 248,
     errorSpanCount: 3,
     logCount: 36,
     errorLogCount: 2,
+    logSeverityCounts: {
+      trace: 0,
+      debug: 0,
+      info: 30,
+      warn: 4,
+      error: 1,
+      fatal: 1,
+      other: 0,
+    },
     metricCount: 8,
     dataPointCount: 640,
+    exemplarCount: 12,
     lastSeen: '1792692000000000000',
   }))
   await page.route('**/api/features', route =>
@@ -81,6 +92,19 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   await page.setViewportSize({ width: 1600, height: 1000 })
   await page.goto('/?time=all')
   await expect(page.getByRole('article')).toHaveCount(8)
+  const card = page.getByRole('article').first()
+  await expect(
+    card.getByRole('link', { name: 'Open checkout traces' })
+  ).toContainText('[42]')
+  await expect(
+    card.getByRole('link', { name: 'Open checkout logs' })
+  ).toContainText('[36]')
+  await expect(
+    card.getByRole('link', { name: 'Open checkout metrics' })
+  ).toContainText('[8]')
+  for (const text of ['248 spans', '640 pts', '12 exemplars']) {
+    await expect(card).toContainText(text)
+  }
   const columns: number[] = []
   for (const width of [1600, 2400, 3200]) {
     await page.setViewportSize({ width, height: 1000 })

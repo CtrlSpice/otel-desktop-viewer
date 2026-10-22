@@ -148,6 +148,13 @@
 
 {#snippet attributes()}
   <DetailBubble label="Attributes" layoutKey="home-attributes">
+    {#snippet labelSuffix()}
+      {#if selected}<span class="min-w-0 truncate text-base-content"
+          >· {selected.serviceName ||
+            'Unnamed service'}{#if selected.serviceNamespace}
+            · {selected.serviceNamespace}{/if}</span
+        >{/if}
+    {/snippet}
     <AttributeDiscovery service={selected} {range} {revision} />
   </DetailBubble>
 {/snippet}
@@ -346,7 +353,7 @@
   }
   .service-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr));
     gap: var(--header-gap);
     align-items: start;
   }

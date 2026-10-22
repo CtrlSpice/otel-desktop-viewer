@@ -12,15 +12,28 @@ import (
 )
 
 type serviceSummary struct {
-	ServiceNamespace string `json:"serviceNamespace"`
-	ServiceName      string `json:"serviceName"`
-	SpanCount        uint64 `json:"spanCount"`
-	ErrorSpanCount   uint64 `json:"errorSpanCount"`
-	LogCount         uint64 `json:"logCount"`
-	ErrorLogCount    uint64 `json:"errorLogCount"`
-	MetricCount      uint64 `json:"metricCount"`
-	DataPointCount   uint64 `json:"dataPointCount"`
-	LastSeen         string `json:"lastSeen"`
+	ServiceNamespace  string            `json:"serviceNamespace"`
+	ServiceName       string            `json:"serviceName"`
+	TraceCount        uint64            `json:"traceCount"`
+	SpanCount         uint64            `json:"spanCount"`
+	ErrorSpanCount    uint64            `json:"errorSpanCount"`
+	LogCount          uint64            `json:"logCount"`
+	ErrorLogCount     uint64            `json:"errorLogCount"`
+	LogSeverityCounts logSeverityCounts `json:"logSeverityCounts"`
+	MetricCount       uint64            `json:"metricCount"`
+	DataPointCount    uint64            `json:"dataPointCount"`
+	ExemplarCount     uint64            `json:"exemplarCount"`
+	LastSeen          string            `json:"lastSeen"`
+}
+
+type logSeverityCounts struct {
+	Trace uint64 `json:"trace"`
+	Debug uint64 `json:"debug"`
+	Info  uint64 `json:"info"`
+	Warn  uint64 `json:"warn"`
+	Error uint64 `json:"error"`
+	Fatal uint64 `json:"fatal"`
+	Other uint64 `json:"other"`
 }
 
 type servicesResult struct {
@@ -38,7 +51,8 @@ func newServicesCommand(client *http.Client, now func() time.Time) *cobra.Comman
 		Short: "Discover services and their telemetry counts",
 		Long: "Discover services with spans, logs or Metric datapoints in a running viewer. " +
 			"Group by service.namespace and service.name, ordered by namespace then name. " +
-			"Show span/error-span, log/error-log and Metric/datapoint counts, plus lastSeen in Unix nanoseconds. " +
+			"Show distinct trace, span/error-span, log/error-log and Metric/datapoint/exemplar counts, plus lastSeen in Unix nanoseconds. " +
+			"JSON includes log severity bands; errorLogCount includes Error and Fatal. Exemplars belong to datapoints in the selected window. " +
 			"Counts describe stored telemetry, not requests or service health. Defaults to the last hour and 25 services. " +
 			"--service matches an exact name across namespaces. --json includes window bounds and truncation.",
 		Example: "  otel-desktop-viewer services\n" +
@@ -90,21 +104,21 @@ func writeServicesResult(writer io.Writer, result servicesResult, jsonOutput boo
 	rows := make([][]any, 0, len(result.Services))
 	for _, service := range result.Services {
 		rows = append(rows, []any{service.ServiceNamespace, service.ServiceName,
-			service.SpanCount, service.ErrorSpanCount, service.LogCount, service.ErrorLogCount,
-			service.MetricCount, service.DataPointCount, service.LastSeen})
+			service.TraceCount, service.SpanCount, service.ErrorSpanCount, service.LogCount, service.ErrorLogCount,
+			service.MetricCount, service.DataPointCount, service.ExemplarCount, service.LastSeen})
 	}
 	_, err := io.WriteString(writer, formatQueryColumns(queryResult{
 		Columns: []queryColumn{
 			{Name: "serviceNamespace"}, {Name: "serviceName"},
-			{Name: "spanCount"}, {Name: "errorSpanCount"}, {Name: "logCount"}, {Name: "errorLogCount"},
-			{Name: "metricCount"}, {Name: "dataPointCount"}, {Name: "lastSeen"},
+			{Name: "traceCount"}, {Name: "spanCount"}, {Name: "errorSpanCount"}, {Name: "logCount"}, {Name: "errorLogCount"},
+			{Name: "metricCount"}, {Name: "dataPointCount"}, {Name: "exemplarCount"}, {Name: "lastSeen"},
 		},
 		Rows: rows, Truncated: result.Truncated,
 	}))
 	return err
 }
 
-// Aggregate each signal independently before joining Resource attributes. This
+// Aggregate each signal independently by service identity. This
 // prevents cross-signal joins from multiplying counts and counts a histogram
 // datapoint once, irrespective of its received observation count. Original
 // Resource attributes retain their received types. Discovery groups the existing

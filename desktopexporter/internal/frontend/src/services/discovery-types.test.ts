@@ -7,12 +7,23 @@ describe('service signal links', () => {
   const service: ServiceSummary = {
     serviceName: 'checkout',
     serviceNamespace: '',
+    traceCount: 1,
     spanCount: 1,
     errorSpanCount: 0,
     logCount: 0,
     errorLogCount: 0,
+    logSeverityCounts: {
+      trace: 0,
+      debug: 0,
+      info: 0,
+      warn: 0,
+      error: 0,
+      fatal: 0,
+      other: 0,
+    },
     metricCount: 0,
     dataPointCount: 0,
+    exemplarCount: 0,
     lastSeen: null,
   }
   for (const signal of ['traces', 'logs', 'metrics'] as const) {

@@ -126,37 +126,58 @@ ORDER BY v.count DESC, json_extract_string(v.value, '$.kind'), v.value::VARCHAR`
 
 func Services(query Query) string {
 	predicate := Predicate(query)
-	return `WITH resource_counts AS (
-    SELECT resource_id, service_name, count(*) AS span_count,
-        count(*) FILTER (WHERE status_code = 2) AS error_span_count,
-        0 AS log_count, 0 AS error_log_count, 0 AS metric_count, 0 AS data_point_count,
-        max(time_ns) AS last_seen
-    FROM (SELECT resource_id, service_name, start_time AS time_ns, status_code FROM spans) s
-    WHERE ` + predicate + ` GROUP BY resource_id, service_name
-    UNION ALL
-    SELECT resource_id, service_name, 0, 0, count(*),
-        count(*) FILTER (WHERE severity_number BETWEEN 17 AND 24), 0, 0, max(time_ns)
-    FROM (SELECT resource_id, service_name,
-        coalesce(nullif(timestamp, 0), observed_timestamp) AS time_ns, severity_number FROM logs) s
-    WHERE ` + predicate + ` GROUP BY resource_id, service_name
-    UNION ALL
-    SELECT resource_id, service_name, 0, 0, 0, 0, count(DISTINCT metric_id), count(*), max(time_ns)
-    FROM (SELECT m.resource_id, m.service_name, m.id AS metric_id, d.timestamp AS time_ns
-        FROM metric_datapoints d JOIN metrics m ON m.id = d.metric_id) s
-    WHERE ` + predicate + ` GROUP BY resource_id, service_name
-), identities AS (
+	return `WITH identities AS (
     SELECT r.id,
         coalesce((SELECT attribute_text(a.value)
             FROM attributes a WHERE a.key = 'service.namespace' AND list_contains(r.attribute_ids, a.id)), '') AS service_namespace
-    FROM resources r JOIN (SELECT DISTINCT resource_id FROM resource_counts) used ON used.resource_id = r.id
+    FROM resources r
+), exemplar_counts AS (
+    SELECT metric_datapoint_id, count(*) AS exemplar_count FROM exemplars GROUP BY metric_datapoint_id
+), service_counts AS (
+    SELECT i.service_namespace, s.service_name, count(DISTINCT trace_id) AS trace_count, count(*) AS span_count,
+        count(*) FILTER (WHERE status_code = 2) AS error_span_count,
+        max(time_ns) AS last_seen
+    FROM (SELECT resource_id, service_name, trace_id, start_time AS time_ns, status_code FROM spans) s
+    JOIN identities i ON i.id = s.resource_id
+    WHERE ` + predicate + ` GROUP BY i.service_namespace, s.service_name
+    UNION ALL BY NAME
+    SELECT i.service_namespace, s.service_name, count(*) AS log_count,
+        count(*) FILTER (WHERE severity_number BETWEEN 17 AND 24) AS error_log_count,
+        count(*) FILTER (WHERE severity_number BETWEEN 1 AND 4) AS trace_log_count,
+        count(*) FILTER (WHERE severity_number BETWEEN 5 AND 8) AS debug_log_count,
+        count(*) FILTER (WHERE severity_number BETWEEN 9 AND 12) AS info_log_count,
+        count(*) FILTER (WHERE severity_number BETWEEN 13 AND 16) AS warn_log_count,
+        count(*) FILTER (WHERE severity_number BETWEEN 17 AND 20) AS error_severity_log_count,
+        count(*) FILTER (WHERE severity_number BETWEEN 21 AND 24) AS fatal_log_count,
+        count(*) FILTER (WHERE severity_number IS NULL OR severity_number NOT BETWEEN 1 AND 24) AS other_log_count,
+        max(time_ns) AS last_seen
+    FROM (SELECT resource_id, service_name,
+        coalesce(nullif(timestamp, 0), observed_timestamp) AS time_ns, severity_number FROM logs) s
+    JOIN identities i ON i.id = s.resource_id
+    WHERE ` + predicate + ` GROUP BY i.service_namespace, s.service_name
+    UNION ALL BY NAME
+    SELECT i.service_namespace, s.service_name, count(DISTINCT metric_id) AS metric_count,
+        count(*) AS data_point_count, sum(coalesce(e.exemplar_count, 0)) AS exemplar_count, max(time_ns) AS last_seen
+    FROM (SELECT m.resource_id, m.service_name, m.id AS metric_id, d.id AS datapoint_id, d.timestamp AS time_ns
+        FROM metric_datapoints d JOIN metrics m ON m.id = d.metric_id) s
+    JOIN identities i ON i.id = s.resource_id
+    LEFT JOIN exemplar_counts e ON e.metric_datapoint_id = s.datapoint_id
+    WHERE ` + predicate + ` GROUP BY i.service_namespace, s.service_name
 )
 SELECT json_object(
-    'serviceNamespace', i.service_namespace, 'serviceName', c.service_name,
-    'spanCount', sum(c.span_count), 'errorSpanCount', sum(c.error_span_count),
-    'logCount', sum(c.log_count), 'errorLogCount', sum(c.error_log_count),
-    'metricCount', sum(c.metric_count), 'dataPointCount', sum(c.data_point_count),
+    'serviceNamespace', c.service_namespace, 'serviceName', c.service_name,
+    'traceCount', coalesce(sum(c.trace_count), 0),
+    'spanCount', coalesce(sum(c.span_count), 0), 'errorSpanCount', coalesce(sum(c.error_span_count), 0),
+    'logCount', coalesce(sum(c.log_count), 0), 'errorLogCount', coalesce(sum(c.error_log_count), 0),
+    'logSeverityCounts', json_object(
+        'trace', coalesce(sum(c.trace_log_count), 0), 'debug', coalesce(sum(c.debug_log_count), 0),
+        'info', coalesce(sum(c.info_log_count), 0), 'warn', coalesce(sum(c.warn_log_count), 0),
+        'error', coalesce(sum(c.error_severity_log_count), 0), 'fatal', coalesce(sum(c.fatal_log_count), 0),
+        'other', coalesce(sum(c.other_log_count), 0)),
+    'metricCount', coalesce(sum(c.metric_count), 0), 'dataPointCount', coalesce(sum(c.data_point_count), 0),
+    'exemplarCount', coalesce(sum(c.exemplar_count), 0),
     'lastSeen', max(c.last_seen)::VARCHAR) AS entry
-FROM resource_counts c JOIN identities i ON i.id = c.resource_id
-GROUP BY i.service_namespace, c.service_name
-ORDER BY i.service_namespace, c.service_name`
+FROM service_counts c
+GROUP BY c.service_namespace, c.service_name
+ORDER BY c.service_namespace, c.service_name`
 }
