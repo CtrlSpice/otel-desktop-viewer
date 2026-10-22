@@ -150,10 +150,30 @@
     label={row.name}
     layoutKey={row.kind === 'case' ? 'Question' : row.name}
   >
-    {#snippet trailing()}<EvalStatus
-        label={completionLabel(row.state, row.internalFault)}
-        tone={completionTone(row.state, row.internalFault)}
-      />{/snippet}
+    {#snippet trailing()}
+      {#if row.kind === 'case'}
+        <span
+          class="inline-flex flex-wrap items-center justify-end gap-4"
+          role="list"
+          aria-label="Test case outcomes"
+        >
+          {#each outcomes as outcome}
+            <span
+              class="inline-flex items-center gap-2 whitespace-nowrap"
+              role="listitem"
+            >
+              <EvalStatus label={outcome.label} tone={outcome.tone} />
+              <span class="text-rp-subtle tabular-nums">[{outcome.count}]</span>
+            </span>
+          {/each}
+        </span>
+      {:else}
+        <EvalStatus
+          label={completionLabel(row.state, row.internalFault)}
+          tone={completionTone(row.state, row.internalFault)}
+        />
+      {/if}
+    {/snippet}
     {#if mode === 'cost'}
       <table class="detail-fields w-full" aria-label={`${row.name} accounting`}>
         <tbody>
@@ -221,21 +241,6 @@
         {/if}
       {:else if row.kind === 'rep' && mode === 'results'}
         <p class="eval-row-detail__prose">No answer recorded</p>
-      {/if}
-
-      {#if mode === 'results' && row.kind === 'case' && !rep}
-        <div
-          class="eval-row-detail__outcomes"
-          role="list"
-          aria-label="Test case outcomes"
-        >
-          {#each outcomes as outcome}
-            <span class="inline-flex items-center gap-2" role="listitem">
-              <EvalStatus label={outcome.label} tone={outcome.tone} />
-              <span class="text-rp-subtle tabular-nums">[{outcome.count}]</span>
-            </span>
-          {/each}
-        </div>
       {/if}
 
       {#if (row.kind === 'case' || row.kind === 'rep' || row.kind === 'execution') && rep?.error !== undefined}
@@ -373,9 +378,5 @@
     @apply py-2 text-sm text-base-content;
     padding-inline: var(--pane-inline-inset);
     overflow-wrap: anywhere;
-  }
-  .eval-row-detail__outcomes {
-    @apply flex flex-wrap items-center gap-x-4 text-sm;
-    padding-inline: var(--pane-inline-inset);
   }
 </style>

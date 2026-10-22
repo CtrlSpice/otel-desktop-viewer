@@ -335,6 +335,9 @@
   trace's `· root` suffix.
   Experiment outcome counts sit at the right of this header, not in a repeated
   outcomes field in the body.
+  Test-case headers likewise show the recorded outcome breakdown at the right,
+  replacing execution completion status and the repeated body legend. Do not
+  infer a single combined case verdict.
   Grading contains assessment coverage; investigator/grader totals belong in a
   separate Cost section. Cost and Tool calls view controls are disabled and muted
   when the full experiment has no corresponding recorded data. Recorded zero
