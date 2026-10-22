@@ -60,6 +60,7 @@
   style:width="calc(var(--tree-count-width) + {depth + 1} * var(--waterfall-gutter-col)
   + var(--waterfall-gutter-tail))"
   style:--tree-accent={color}
+  style:--tree-count-width={hasChildren ? undefined : '0px'}
 >
   {#each segments as kind, d}
     <span

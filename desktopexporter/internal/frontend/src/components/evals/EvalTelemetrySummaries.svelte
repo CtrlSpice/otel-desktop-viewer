@@ -2,7 +2,8 @@
   import SignalCard from '@/components/shared/SignalCard.svelte'
   import SignalDate from '@/components/shared/SignalDate.svelte'
   import Identifier from '@/components/shared/Identifier.svelte'
-  import type { SpanNode } from '@/types/api-types'
+  import type { SpanNode, TraceSummary } from '@/types/api-types'
+  import { telemetryAPI } from '@/services/telemetry-service'
   import { getServiceName } from '@/utils/resource'
   import { formatDurationParts } from '@/utils/time'
   import { formatMetricValuePlain } from '@/components/metrics/utils/format-metric-value'
@@ -22,6 +23,45 @@
     loading?: boolean
   } = $props()
 
+  let traces = $state<Map<string, TraceSummary | null>>(new Map())
+  const lookupIDs = $derived(
+    [
+      ...new Set(
+        entries
+          .filter(entry => !nodes.has(referenceKey(entry.reference)))
+          .map(entry => entry.reference.traceID.toLowerCase())
+      ),
+    ]
+      .sort()
+      .join(',')
+  )
+  $effect(() => {
+    const ids = lookupIDs ? lookupIDs.split(',') : []
+    const controller = new AbortController()
+    traces = new Map()
+    async function load() {
+      for (let offset = 0; offset < ids.length; offset += 4) {
+        if (controller.signal.aborted) return
+        await Promise.all(
+          ids.slice(offset, offset + 4).map(async id => {
+            try {
+              const trace = await telemetryAPI.getTraceSummary(
+                id,
+                controller.signal
+              )
+              if (!controller.signal.aborted)
+                traces = new Map(traces).set(id, trace)
+            } catch {
+              // A failed request does not establish that the trace is absent.
+            }
+          })
+        )
+      }
+    }
+    void load()
+    return () => controller.abort()
+  })
+
   function formatTelemetryDuration(nanoseconds: bigint): string {
     const { value, unit } = formatDurationParts(nanoseconds)
     return formatMetricValuePlain(Number(value), {
@@ -34,12 +74,27 @@
 <div aria-label="Referenced telemetry" class="eval-telemetry min-w-0">
   {#each entries as entry (referenceKey(entry.reference))}
     {@const span = nodes.get(referenceKey(entry.reference))?.spanData}
-    {@const service = span ? getServiceName(span.resource) : undefined}
+    {@const trace = traces.get(entry.reference.traceID.toLowerCase())}
+    {@const unavailable = !span && trace === null}
+    {@const traceOnly = !entry.reference.spanID}
+    {@const startedAt =
+      span?.startTime ?? (traceOnly ? trace?.startTime : undefined)}
+    {@const service = span
+      ? getServiceName(span.resource)
+      : traceOnly
+        ? trace?.rootSpan?.serviceName
+        : undefined}
     {@const title =
-      span?.name ?? (entry.reference.spanID ? entry.label : 'Trace')}
+      span?.name ??
+      (traceOnly ? (trace?.rootSpan?.name ?? 'Trace') : entry.label)}
+    {#snippet startDate()}
+      <SignalDate label="Started" timestamp={startedAt} />
+    {/snippet}
     <SignalCard
       id={referenceKey(entry.reference)}
       href={traceHref(entry.reference)}
+      disabled={unavailable}
+      date={startedAt !== undefined ? startDate : undefined}
       {title}
     >
       {#snippet beforeTitle()}
@@ -85,6 +140,7 @@
               <Identifier value={entry.reference.spanID} />
             </span>
           {/if}
+          {#if unavailable}<span class="text-rp-subtle">Unavailable</span>{/if}
         </div>
       {/snippet}
       {#snippet badge()}
@@ -110,10 +166,6 @@
             ></span
           >{/if}
       {/snippet}
-      {#snippet date()}<SignalDate
-          label="Started"
-          timestamp={span?.startTime}
-        />{/snippet}
     </SignalCard>
   {/each}
 </div>
@@ -128,11 +180,11 @@
     text-underline-offset: 0.2em;
     color: var(--color-base-content);
   }
-  .eval-telemetry :global(.signal-row:focus-visible) {
+  .eval-telemetry :global(a.signal-row[href]:focus-visible) {
     --eval-id-decoration: underline;
   }
   @media (hover: hover) {
-    .eval-telemetry :global(.signal-row:hover) {
+    .eval-telemetry :global(a.signal-row[href]:hover) {
       --eval-id-decoration: underline;
     }
   }

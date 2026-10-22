@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { expect, it } from 'vitest'
-import { screen, within } from '@testing-library/svelte'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { screen, waitFor, within } from '@testing-library/svelte'
+import { telemetryAPI } from '@/services/telemetry-service'
 import { renderWithContexts as render } from '@/test/render-helpers'
 import type { SpanNode } from '@/types/api-types'
 import EvalTelemetrySummaries from './EvalTelemetrySummaries.svelte'
@@ -10,6 +11,13 @@ import { buildEvalOutline } from './eval-outline'
 import { groupReps } from './group-reps'
 import { indexEvalTraces, referenceKey } from './eval-traces'
 import { traceHref } from './model'
+
+beforeEach(() => {
+  vi.spyOn(telemetryAPI, 'getTraceSummary').mockRejectedValue(
+    new Error('Lookup unavailable')
+  )
+})
+afterEach(() => vi.restoreAllMocks())
 
 const reference = { traceID: 'a'.repeat(32), spanID: 'b'.repeat(16) }
 const node: SpanNode = {
@@ -133,10 +141,78 @@ it('shows a trace-only identity without inventing an unavailable span', () => {
     entries: [{ reference: received, label: 'Execution' }],
   })
   expect(screen.getByText('Trace', { exact: true })).toBeVisible()
+  expect(screen.queryByText('Started:')).toBeNull()
   expect(screen.queryByRole('button', { name: 'Copy span ID' })).toBeNull()
   expect(screen.getByRole('link')).toHaveAttribute('href', traceHref(received))
   expect(screen.getByRole('link')).toHaveAttribute(
     'href',
     `/traces/${received.traceID}`
   )
+})
+
+it.each([undefined, reference.spanID])(
+  'disables a confirmed absent trace while retaining its IDs (span: %s)',
+  async spanID => {
+    let finish!: (value: null) => void
+    vi.mocked(telemetryAPI.getTraceSummary).mockReturnValue(
+      new Promise(resolve => {
+        finish = resolve
+      })
+    )
+    const received = { traceID: reference.traceID, spanID }
+    render(EvalTelemetrySummaries, {
+      entries: [{ reference: received, label: 'Execution' }],
+    })
+    const link = screen.getByRole('link')
+    expect(link).toHaveAttribute('href', traceHref(received))
+    expect(screen.queryByText('Unavailable', { exact: true })).toBeNull()
+    finish(null)
+    await waitFor(() => expect(link).toHaveAttribute('aria-disabled', 'true'))
+    expect(link).not.toHaveAttribute('href')
+    expect(link).toHaveAttribute('tabindex', '-1')
+    const ids = screen.getByRole('group', { name: 'Execution identifiers' })
+    expect(within(ids).getByText('Unavailable', { exact: true })).toBeVisible()
+    expect(within(ids).getByTitle(received.traceID)).toBeVisible()
+    if (spanID) expect(within(ids).getByTitle(spanID)).toBeVisible()
+    expect(screen.queryByText('Started:')).toBeNull()
+  }
+)
+
+it('shows the stored trace root summary and start without inventing a span identity', async () => {
+  vi.mocked(telemetryAPI.getTraceSummary).mockResolvedValue({
+    traceID: reference.traceID,
+    hasRootSpan: true,
+    rootSpan: { name: 'Recorded trace root', serviceName: 'eval-agent' },
+    startTime: 0n,
+    durationNs: 100n,
+    spanCount: 2,
+    errorCount: 0,
+  })
+  render(EvalTelemetrySummaries, {
+    entries: [
+      { reference: { traceID: reference.traceID }, label: 'Execution' },
+    ],
+  })
+  await screen.findByText('Recorded trace root')
+  expect(screen.getByText('Started:')).toBeVisible()
+  expect(screen.getByRole('link')).toHaveAttribute(
+    'href',
+    `/traces/${reference.traceID}`
+  )
+  expect(screen.getByRole('link')).not.toHaveAttribute('aria-disabled')
+  expect(screen.queryByText('Span ID')).toBeNull()
+})
+
+it('does not mark a failed lookup as a confirmed missing trace', async () => {
+  render(EvalTelemetrySummaries, {
+    entries: [
+      { reference: { traceID: reference.traceID }, label: 'Execution' },
+    ],
+  })
+  await waitFor(() => expect(telemetryAPI.getTraceSummary).toHaveBeenCalled())
+  expect(screen.getByRole('link')).toHaveAttribute(
+    'href',
+    `/traces/${reference.traceID}`
+  )
+  expect(screen.queryByText('Unavailable', { exact: true })).toBeNull()
 })

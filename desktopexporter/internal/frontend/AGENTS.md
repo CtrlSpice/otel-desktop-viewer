@@ -255,6 +255,9 @@
   Duration-only and derived timing bars use Primary too when no span supplies
   a colour. Keep error overrides. Trace-only telemetry cards link to the trace's
   default root view and omit missing-span commentary.
+  Telemetry cards omit Started when no start timestamp is available. Confirm
+  trace absence before marking IDs Unavailable and disabling navigation; a
+  pending or failed lookup does not establish absence. Retain selectable IDs.
   Keep recorded and propagated error indicators; lifecycle status is not a
   substitute for a span colour.
   Omit unavailable experiment lifecycle status from summary cards, headers and
@@ -305,7 +308,10 @@
   Distinguish Love "Span error" from Papaya "Internal fault" (evaluation
   machinery). A failed assessment is "Fail", not an execution error. Preserve
   these meanings during parent propagation, including in dogfooding datasets.
-  Evals uses two stable sections, Details and Telemetry, across row modes.
+  Evals keeps Details and Telemetry across row modes, with a sibling Assessments
+  section when judgments are present. Empty Telemetry retains a muted, disabled
+  heading. Assessment details separate explanation, criterion and scoring from
+  collapsed evidence and grader instructions; keep the original input copyable.
   Keep the selected row name and parent context in Details. Results shows case
   questions/outcomes, Rep answers/scores, tool output/errors and grader
   scores/explanations at their own level. Tool calls shows the selected level's
@@ -357,7 +363,7 @@
   The whole bracketed label uses Subtle, including the brackets; no Mono or Muted.
   Align the waterfall table's name heading with the root title, reserving the
   same count slot when present.
-  Keep counts visible when collapsed; omit counts for leaves.
+  Keep counts visible when collapsed; omit counts and their reserved space for leaves.
   Do not add separate count gutters.
   Each parent has one native expand/collapse button covering the whole left
   gutter (ancestor columns, dot and count), at full row height. Clicking any
@@ -423,6 +429,7 @@
 - Details has no fixed maximum width. Preserve its saved width above 40rem and
   let the shared split limit the displayed width using the main pane's existing
   minimum (30% or 28rem, whichever is larger). The drawer retains its 40rem cap.
+- Disabled and zero-count Details headers use Muted for their labels, icons and counts.
 - Detail-section resize precedence: preserve header order and at least one open,
   non-empty section; open sections fill the remaining height. A divider grows the
   nearest available section on one side by shrinking the nearest open section on

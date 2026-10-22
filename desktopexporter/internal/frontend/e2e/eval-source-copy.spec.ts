@@ -132,6 +132,79 @@ function row(index: number, output: unknown) {
   }
 }
 
+test('assessment packets stay readable and retain exact full-input Copy', async ({
+  page,
+}) => {
+  const input =
+    'Grade the answer.\n\n' +
+    JSON.stringify({
+      question: 'Why did checkout fail?',
+      criteria: [
+        {
+          id: 'cause',
+          text: 'Identify the **reported cause**.',
+          scoring: { Fail: 'Wrong cause.', Pass: 'Supported cause.' },
+        },
+      ],
+      reference: 'Payment declined: insufficient funds',
+      viewerSkill:
+        '# Viewer instructions\n' + 'Recorded commands only. '.repeat(2000),
+      evidence: { events: [{ raw: '{"type":"tool_execution_end"}' }] },
+    })
+  await openSource(page, [
+    {
+      ...row(
+        0,
+        '<img src=x onerror="alert(1)">\n\n[unsafe](javascript:alert(1))'
+      ),
+      gradingResult: {
+        pass: true,
+        reason: 'Combined judgment',
+        componentResults: [
+          {
+            pass: true,
+            score: 1,
+            reason: 'Cites the **payment decline**.',
+            assertion: { type: 'llm-rubric', value: input },
+          },
+        ],
+      },
+    },
+  ])
+  const detail = page.locator('#signal-drawer-detail')
+  await expect(
+    detail.getByRole('group', { name: 'criterion', exact: true })
+  ).toContainText('Identify the reported cause.')
+  await expect(
+    detail.locator('strong').filter({ hasText: 'reported cause' })
+  ).toBeVisible()
+  await expect(
+    detail.getByRole('group', { name: 'scoring', exact: true })
+  ).toContainText('Supported cause.')
+  await expect(detail.locator('img, a[href^="javascript:"]')).toHaveCount(0)
+  const evidence = detail
+    .locator('details')
+    .filter({ has: page.locator('summary', { hasText: /^\s*Evidence\s*$/ }) })
+    .last()
+  await expect(evidence).not.toHaveAttribute('open')
+  const instructions = detail
+    .locator('details')
+    .filter({
+      has: page.locator('summary', { hasText: /^\s*Grader instructions\s*$/ }),
+    })
+    .last()
+  await expect(instructions).not.toHaveAttribute('open')
+  await detail
+    .getByRole('button', { name: 'Copy grader input', exact: true })
+    .click()
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(input)
+  await expect(
+    detail.getByRole('button', { name: 'Telemetry', exact: true })
+  ).toHaveAttribute('aria-disabled', 'true')
+})
+
 test('native results need no ordinal or execution wrapper and show their own grades', async ({
   page,
 }) => {

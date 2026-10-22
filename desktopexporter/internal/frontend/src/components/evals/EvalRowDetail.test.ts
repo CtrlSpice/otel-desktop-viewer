@@ -76,17 +76,17 @@ it('keeps Details and Telemetry stable while the selected mode surfaces its own 
     sections.map(
       section => section.querySelector('summary > span')?.textContent
     )
-  ).toEqual(['Result', 'Telemetry'])
+  ).toEqual(['Result', 'Assessments', 'Telemetry'])
   expect(screen.getByText('Recorded answer')).toBeVisible()
   expect(screen.getByText(rep.assessments[0].explanation)).toBeVisible()
-  await fireEvent.click(sections[1].querySelector('summary')!)
-  expect(sections[1].open).toBe(false)
+  await fireEvent.click(sections[2].querySelector('summary')!)
+  expect(sections[2].open).toBe(false)
 
   await view.rerender({ componentProps: { run, row, mode: 'time' } })
   expect(screen.queryByText('Recorded answer')).toBeNull()
   expect(screen.getByRole('group', { name: 'tool calls' })).toBeVisible()
   expect(screen.getByText('0 s')).toBeVisible()
-  expect(sections[1].open).toBe(false)
+  expect(sections[2].open).toBe(false)
 
   await view.rerender({ componentProps: { run, row, mode: 'cost' } })
   const accounting = screen.getByRole('table', {
@@ -107,7 +107,7 @@ it('keeps Details and Telemetry stable while the selected mode surfaces its own 
       name: 'total estimate (CAD)',
     })
   ).toHaveTextContent('C$0.000 · partial')
-  expect(sections[1].open).toBe(false)
+  expect(sections[2].open).toBe(false)
 })
 
 it('retains the recorded rep start and exact Copy when its spans are unavailable', async () => {

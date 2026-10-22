@@ -50,7 +50,8 @@ export function evalSourceFieldText(payload: string, pointer: string): string {
   return node.name === 'String' ? (JSON.parse(raw) as string) : raw
 }
 
-/** Capture the immutable payload and row mapping. Parse only on explicit Copy. */
+/** Capture the immutable payload and row mapping. Parse on demand for Copy or
+ * full assessment details, without replacing the retained payload. */
 export function evalSourceFieldCopy(
   payload: string,
   rows: EvalSourceRowReference[]

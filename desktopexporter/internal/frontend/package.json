@@ -44,6 +44,7 @@
     "d3-shape": "^3.2.0",
     "daisyui": "^5.7.47",
     "layerchart": "^2.5.0",
+    "marked": "18.1.1",
     "moment-timezone": "^0.6.4",
     "svelte": "^5.57.1"
   },

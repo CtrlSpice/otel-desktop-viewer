@@ -45,6 +45,7 @@
     onclick?: (id: string) => void
     /** Navigation cards retain native link and open-in-new-tab behaviour. */
     href?: string
+    disabled?: boolean
   }
 
   let {
@@ -75,6 +76,7 @@
     meta,
     onclick,
     href,
+    disabled = false,
   }: Props = $props()
 </script>
 
@@ -195,14 +197,19 @@
 {#snippet card()}
   {#if href}
     <a
-      {href}
-      class="signal-row item-state {selected ? 'signal-row--selected' : ''}"
+      href={disabled ? undefined : href}
+      role={disabled ? 'link' : undefined}
+      aria-disabled={disabled || undefined}
+      tabindex={disabled ? -1 : undefined}
+      class="signal-row {selected ? 'signal-row--selected' : ''}"
+      class:item-state={!disabled}
       class:signal-row--interactive-subtitle={!!interactiveSubtitle}
       >{@render cardContent()}</a
     >
   {:else}
     <button
       type="button"
+      {disabled}
       class="signal-row item-state {selected ? 'signal-row--selected' : ''}"
       class:signal-row--interactive-subtitle={!!interactiveSubtitle}
       onclick={() => onclick?.(id)}
@@ -243,6 +250,10 @@
 
   .signal-row.signal-row--selected {
     --item-state-bg: var(--item-selected-bg);
+  }
+
+  .signal-row[aria-disabled='true'] {
+    cursor: default;
   }
 
   .signal-row__body {

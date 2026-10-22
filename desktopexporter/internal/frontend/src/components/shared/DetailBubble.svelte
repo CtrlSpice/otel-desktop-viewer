@@ -20,8 +20,8 @@
       label,
       layoutKey,
       element,
-      available: () => count !== 0,
-      expanded: () => count !== 0 && expanded,
+      available: () => !disabled && count !== 0,
+      expanded: () => !disabled && count !== 0 && expanded,
       setExpanded: open => {
         expanded = open
         if (disclosure) disclosure.open = open
@@ -41,6 +41,7 @@
     action,
     children,
     initialOpen = true,
+    disabled = false,
   }: {
     label: string
     /** Preserve stored section sizing when its visible heading changes. */
@@ -53,6 +54,7 @@
     action?: Snippet
     children: Snippet
     initialOpen?: boolean
+    disabled?: boolean
   } = $props()
   let expanded = $state(untrack(() => initialOpen))
 
@@ -76,14 +78,17 @@
 {/snippet}
 
 {#snippet bubble()}
-  {#if count === 0}
+  {#if disabled || count === 0}
     <section
       class="collapse collapse-close min-h-0 bg-base-100"
       aria-label={label}
     >
       <div
+        role={disabled ? 'button' : undefined}
+        aria-disabled={disabled || undefined}
         class="collapse-title detail-bubble__heading"
         class:detail-bubble__heading--action={Boolean(action)}
+        class:detail-bubble__heading--disabled={disabled || count === 0}
       >
         {@render heading()}
       </div>
@@ -127,7 +132,9 @@
     use:register
   >
     {@render bubble()}
-    {#if action}<div class="detail-bubble__action">{@render action()}</div>{/if}
+    {#if action && !disabled}<div class="detail-bubble__action">
+        {@render action()}
+      </div>{/if}
   </div>
 {:else}
   {@render bubble()}
@@ -174,6 +181,13 @@
     min-height: var(--pane-header-h);
     min-width: 0;
     overflow: hidden;
+  }
+  .detail-bubble__heading--disabled {
+    color: var(--color-muted);
+    cursor: default;
+  }
+  .detail-bubble__heading--disabled :global(*) {
+    color: inherit;
   }
 
   .detail-bubble--resizable > .detail-bubble__disclosure {

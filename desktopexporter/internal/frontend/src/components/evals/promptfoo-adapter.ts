@@ -31,7 +31,13 @@ export type EvalSourceRowReference = {
 }
 
 export type EvalSourceTextField =
-  'name' | 'question' | 'answer' | 'explanation' | 'error'
+  | 'name'
+  | 'question'
+  | 'answer'
+  | 'explanation'
+  | 'error'
+  | `assessment:${string}:rubric`
+  | `assessment:${string}:explanation`
 
 export type EvalRunTextSource = {
   evaluation?: string
@@ -468,6 +474,7 @@ export function projectPromptfooDataset(
       }
       const execution = reference(row.traceId)
       const assessments = [assessment]
+      const assessmentFields: Partial<Record<EvalSourceTextField, string>> = {}
       const components = Array.isArray(grading?.componentResults)
         ? grading.componentResults
         : []
@@ -481,6 +488,12 @@ export function projectPromptfooDataset(
           text(assertion?.type),
           text(assertion?.metric)
         )
+        if (text(assertion?.value) !== undefined)
+          assessmentFields[`assessment:${id}:rubric`] =
+            `${pointer}/gradingResult/componentResults/${componentIndex}/assertion/value`
+        if (text(component.reason) !== undefined)
+          assessmentFields[`assessment:${id}:explanation`] =
+            `${pointer}/gradingResult/componentResults/${componentIndex}/reason`
         if (!run.assessments.some(item => item.id === id))
           run.assessments.push({
             id,
@@ -513,7 +526,7 @@ export function projectPromptfooDataset(
       let answer: string | undefined
       if (rawOutput !== undefined)
         answer = display(text(rawOutput) ?? JSON.stringify(rawOutput))
-      const fields: EvalSourceRowReference['fields'] = {}
+      const fields: EvalSourceRowReference['fields'] = assessmentFields
       const sourceField = (
         field: EvalSourceTextField,
         candidates: [Json | undefined, string][]

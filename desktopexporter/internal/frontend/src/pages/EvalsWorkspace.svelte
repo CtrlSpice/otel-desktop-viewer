@@ -22,6 +22,7 @@
   } from '@/components/evals/run-outcome-filter'
   import EvalResults from '@/components/evals/EvalResults.svelte'
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
+  import DetailNav from '@/components/shared/DetailNav.svelte'
   import EvalDetail from '@/components/evals/EvalDetail.svelte'
   import EvalRowDetail from '@/components/evals/EvalRowDetail.svelte'
   import {
@@ -225,6 +226,9 @@
     return run.reps
   })
   const selectedIndex = $derived(results.findIndex(item => item.id === rep?.id))
+  const selectedRunIndex = $derived(
+    visibleRuns.findIndex(item => item.id === (query.run ?? run?.id))
+  )
   $effect(() => {
     const enabled = databaseMode
     const text = query.q
@@ -399,6 +403,10 @@
     const item = results[index]
     if (item) showDetail(item.id)
   }
+  function selectRunIndex(index: number) {
+    const item = visibleRuns[index]
+    if (item) selectRun(item.id)
+  }
   async function loadMoreRuns() {
     if (!databaseMode || !runListHasMore || runListLoadingMore) return
     const requestVersion = runListRequestVersion
@@ -508,31 +516,44 @@
     <EvalRunSummary run={item} {selected} onclick={selectRun} />
   {/snippet}
   {#snippet drawerFooter()}
-    <div class="flex min-w-0 flex-col px-2 py-1 text-sm">
-      {#if databaseMode && runIndexing.remaining > 0}<p
-          class="px-2 py-1 text-rp-subtle"
-          role="status"
-        >
-          Indexing saved evaluations… [{runIndexing.remaining}]
-        </p>{/if}
-      {#if databaseMode && (runIndexing.unsupported || runIndexing.empty)}<p
-          class="px-2 py-1 text-rp-subtle"
-        >
-          {runIndexing.unsupported} unsupported · {runIndexing.empty} empty
-        </p>{/if}
-      {#if runListError}<p class="px-2 py-1" role="alert">
-          {runListError}
-        </p>{/if}
-      {#if databaseMode && runListHasMore}<button
-          type="button"
-          class="btn btn-ghost btn-sm w-full font-normal"
-          disabled={runListLoadingMore}
-          onclick={loadMoreRuns}
-          >{runListLoadingMore
-            ? 'Loading experiments…'
-            : 'Load more experiments'}</button
-        >{/if}
+    <div class="flex justify-center">
+      <DetailNav
+        index={selectedRunIndex}
+        total={visibleRuns.length}
+        label="experiment"
+        onFirst={() => selectRunIndex(0)}
+        onPrev={() => selectRunIndex(selectedRunIndex - 1)}
+        onNext={() => selectRunIndex(selectedRunIndex + 1)}
+        onLast={() => selectRunIndex(visibleRuns.length - 1)}
+      />
     </div>
+    {#if (databaseMode && (runIndexing.remaining || runIndexing.unsupported || runIndexing.empty || runListHasMore)) || runListError}
+      <div class="flex min-w-0 flex-col px-2 py-1 text-sm">
+        {#if databaseMode && runIndexing.remaining > 0}<p
+            class="px-2 py-1 text-rp-subtle"
+            role="status"
+          >
+            Indexing saved evaluations… [{runIndexing.remaining}]
+          </p>{/if}
+        {#if databaseMode && (runIndexing.unsupported || runIndexing.empty)}<p
+            class="px-2 py-1 text-rp-subtle"
+          >
+            {runIndexing.unsupported} unsupported · {runIndexing.empty} empty
+          </p>{/if}
+        {#if runListError}<p class="px-2 py-1" role="alert">
+            {runListError}
+          </p>{/if}
+        {#if databaseMode && runListHasMore}<button
+            type="button"
+            class="btn btn-ghost btn-sm w-full font-normal"
+            disabled={runListLoadingMore}
+            onclick={loadMoreRuns}
+            >{runListLoadingMore
+              ? 'Loading experiments…'
+              : 'Load more experiments'}</button
+          >{/if}
+      </div>
+    {/if}
   {/snippet}
   {#snippet main()}
     {#if importFailure}<div class="alert alert-error">

@@ -2,10 +2,10 @@
   import DetailStack from '@/components/shared/DetailStack.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import DetailField from '@/components/shared/DetailProperty.svelte'
-  import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import EvalStatus from './EvalStatus.svelte'
-  import AssessmentBadge from './AssessmentBadge.svelte'
+  import EvalAssessmentDetail from './EvalAssessmentDetail.svelte'
+  import MarkdownText from '@/components/shared/MarkdownText.svelte'
   import { cost, localTimestamp, type EvalRun, type EvalView } from './model'
   import { caseSummary } from './case-summary'
   import { runSummary } from './run-summary'
@@ -189,14 +189,14 @@
               /></tbody
             >
           </table>
-        {:else}<p class="eval-row-detail__prose">
-            {prose === '' ? '""' : prose}
-          </p>{/if}
+        {:else}<div class="eval-row-detail__prose">
+            <MarkdownText text={prose === '' ? '""' : prose} />
+          </div>{/if}
       {:else if row.kind === 'rep' && mode === 'results'}
         <p class="eval-row-detail__prose">No answer recorded</p>
       {/if}
 
-      {#if mode === 'results' && row.kind === 'case'}
+      {#if mode === 'results' && row.kind === 'case' && !rep}
         <div
           class="eval-row-detail__outcomes"
           role="list"
@@ -223,61 +223,6 @@
             /></tbody
           >
         </table>
-      {/if}
-
-      {#if assessments.length}
-        <FieldGroup label="Assessments" detail>
-          {#each assessments as assessment}
-            {@const definition = run.assessments.find(
-              item => item.id === assessment.id
-            )}
-            <FieldGroup label={definition?.name ?? assessment.id} detail>
-              {#snippet heading()}
-                <span>{definition?.name ?? assessment.id}</span>
-                {#if mode === 'results'}<AssessmentBadge
-                    {assessment}
-                    maximum={definition?.maximum}
-                  />{/if}
-              {/snippet}
-              <table
-                class="detail-fields w-full"
-                aria-label={`${definition?.name ?? assessment.id} explanation`}
-              >
-                <tbody>
-                  {#if mode === 'results'}
-                    <DetailField
-                      fieldName="score"
-                      fieldType="string"
-                      fieldValue={assessment.value === null
-                        ? 'Unscored'
-                        : `${assessment.value}${definition?.maximum !== undefined ? ` / ${definition.maximum}` : ''}`}
-                    />
-                    <DetailField
-                      fieldName="explanation"
-                      fieldType="string"
-                      fieldValue={assessment.explanation}
-                      loadText={rep && assessment.id === run.headlineAssessment
-                        ? sourceCopy?.(rep.id, 'explanation')
-                        : undefined}
-                      multiline
-                    />
-                  {/if}
-                  <DetailField
-                    fieldName="evaluator"
-                    fieldType="string"
-                    fieldValue={assessment.evaluator}
-                  />
-                  <DetailField
-                    fieldName="rubric"
-                    fieldType="string"
-                    fieldValue={assessment.rubric}
-                    multiline
-                  />
-                </tbody>
-              </table>
-            </FieldGroup>
-          {/each}
-        </FieldGroup>
       {/if}
     {/if}
 
@@ -336,29 +281,47 @@
       </tbody>
     </table>
   </DetailBubble>
-  <DetailBubble label="Telemetry" initialOpen={references.length > 0}>
+  {#if mode !== 'cost' && assessments.length}
+    <DetailBubble label="Assessments">
+      {#each assessments as assessment (assessment.id)}
+        <EvalAssessmentDetail
+          {assessment}
+          definition={run.assessments.find(item => item.id === assessment.id)}
+          showScore={mode === 'results'}
+          loadRubric={rep
+            ? sourceCopy?.(rep.id, `assessment:${assessment.id}:rubric`)
+            : undefined}
+          loadExplanation={rep
+            ? sourceCopy?.(
+                rep.id,
+                assessment.id === run.headlineAssessment
+                  ? 'explanation'
+                  : `assessment:${assessment.id}:explanation`
+              )
+            : undefined}
+        />
+      {/each}
+    </DetailBubble>
+  {/if}
+  <DetailBubble
+    label="Telemetry"
+    disabled={references.length === 0}
+    initialOpen={references.length > 0}
+  >
     {#if references.length}
       <EvalTelemetrySummaries
         entries={references}
         nodes={telemetryNodes}
         loading={telemetryLoading}
       />
-    {:else}<p class="eval-row-detail__context">
-        No telemetry reference recorded for this row.
-      </p>{/if}
+    {/if}
   </DetailBubble>
 </DetailStack>
 
 <style lang="postcss">
   @reference "../../app.css";
   .eval-row-detail__prose {
-    @apply py-2 text-sm text-base-content whitespace-pre-wrap;
-    padding-inline: var(--pane-inline-inset);
-    overflow-wrap: anywhere;
-  }
-  .eval-row-detail__context {
-    @apply py-2 text-sm;
-    color: var(--color-subtle);
+    @apply py-2 text-sm text-base-content;
     padding-inline: var(--pane-inline-inset);
     overflow-wrap: anywhere;
   }

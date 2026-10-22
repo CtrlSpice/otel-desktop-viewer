@@ -208,15 +208,17 @@
       </table>
     </FieldGroup>
   </DetailBubble>
-  <DetailBubble label="Telemetry" initialOpen={references.length > 0}>
+  <DetailBubble
+    label="Telemetry"
+    disabled={references.length === 0}
+    initialOpen={references.length > 0}
+  >
     {#if references.length}
       <EvalTelemetrySummaries
         entries={references}
         nodes={telemetryNodes}
         loading={telemetryLoading}
       />
-    {:else}<p class="px-3 py-2 text-sm text-rp-subtle">
-        No telemetry reference recorded for this run.
-      </p>{/if}
+    {/if}
   </DetailBubble>
 </DetailStack>
