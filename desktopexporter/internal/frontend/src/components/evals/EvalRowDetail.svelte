@@ -98,6 +98,14 @@
           ? 'Sum of recorded durations'
           : undefined
   )
+  const durationSeconds = $derived(
+    row.seconds ?? (row.kind === 'case' ? summary.duration.total : null)
+  )
+  const showDuration = $derived(
+    row.window
+      ? row.window.endTime - row.window.startTime > 1n
+      : durationSeconds === null || durationSeconds > 1e-9
+  )
   const costFields = $derived(
     row.kind === 'case' || row.kind === 'rep'
       ? [
@@ -261,12 +269,14 @@
               timestampLabel={localTimestamp(rep.startedAt)}
             />
           {/if}
-          <DetailField
-            fieldName="duration"
-            fieldType="string"
-            fieldValue={duration}
-            qualifier={durationSource}
-          />
+          {#if showDuration}
+            <DetailField
+              fieldName="duration"
+              fieldType="string"
+              fieldValue={duration}
+              qualifier={durationSource}
+            />
+          {/if}
         {/if}
         {#if row.kind !== 'case' && mode !== 'time'}
           <DetailField

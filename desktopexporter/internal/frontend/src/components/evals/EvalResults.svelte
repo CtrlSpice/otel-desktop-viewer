@@ -97,7 +97,10 @@
         : 0
     if (!direction) return
     event.preventDefault()
-    const next = (index + direction + views.length) % views.length
+    let next = index
+    do {
+      next = (next + direction + views.length) % views.length
+    } while (!availableViews[views[next].id])
     viewKey = views[next].id
     const button = event.currentTarget as HTMLButtonElement
     button.parentElement
@@ -393,6 +396,17 @@
       ? outline
       : buildEvalOutline(groupReps(measuredReps, measuredReps), run, traceIndex)
   )
+  const availableViews = $derived<Record<EvalView, boolean>>({
+    results: true,
+    time:
+      run.reps.some(rep => rep.toolsKnown === true) ||
+      selectionOutline.some(row => row.kind === 'tool'),
+    cost: selectionOutline.some(row => row.estimate.total !== null),
+  })
+  $effect(() => {
+    if (!availableViews[viewKey] && !(viewKey === 'time' && timingsLoading))
+      viewKey = 'results'
+  })
   const visibleRows = $derived(
     visibleOutlineRows(outline, enabledViews, overrides)
   )
@@ -570,9 +584,12 @@
             role="radio"
             class="btn btn-xs header-tab header-toggle tooltip tooltip-left"
             aria-checked={viewKey === item.id}
+            disabled={!availableViews[item.id]}
             tabindex={viewKey === item.id ? 0 : -1}
             aria-controls={panelID}
-            data-tip={item.label}
+            data-tip={availableViews[item.id]
+              ? item.label
+              : `${item.label}: no recorded data`}
             onclick={() => (viewKey = item.id)}
             onkeydown={event => selectView(event, index)}
           >

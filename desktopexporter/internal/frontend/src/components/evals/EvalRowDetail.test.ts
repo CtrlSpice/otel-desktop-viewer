@@ -85,7 +85,7 @@ it('keeps Details and Telemetry stable while the selected mode surfaces its own 
   await view.rerender({ componentProps: { run, row, mode: 'time' } })
   expect(screen.queryByText('Recorded answer')).toBeNull()
   expect(screen.getByRole('group', { name: 'tool calls' })).toBeVisible()
-  expect(screen.getByText('0 s')).toBeVisible()
+  expect(screen.queryByRole('group', { name: 'duration' })).toBeNull()
   expect(sections[2].open).toBe(false)
 
   await view.rerender({ componentProps: { run, row, mode: 'cost' } })

@@ -324,6 +324,13 @@
   default, sharing the available height equally unless saved sizing exists.
   Experiment Configuration and Grading use sibling section headers in the
   Details stack, initially collapsed.
+  Grading contains assessment coverage; investigator/grader totals belong in a
+  separate Cost section. Cost and Tool calls view controls are disabled and muted
+  when the full experiment has no corresponding recorded data. Recorded zero
+  costs or explicitly known zero tool calls remain available. Keyboard navigation
+  skips unavailable views; an unavailable selected view falls back to Results.
+  Omit Evals Details duration fields for durations of 0–1ns; preserve the recorded
+  values in source data and timing geometry.
   Other later sections start collapsed. Preserve manual disclosure and resizing.
   Evals telemetry links reuse SignalCard: service-colour dot and span name,
   neutral status text with its status dot, Pine/Secondary provenance, duration,

@@ -51,6 +51,11 @@
         ? `${run.seconds} s`
         : undefined
   )
+  const showDuration = $derived(
+    row?.window
+      ? row.window.endTime - row.window.startTime > 1n
+      : run.seconds === undefined || run.seconds > 1e-9
+  )
   const durationSource = $derived(
     row?.window
       ? span && span.endTime >= span.startTime
@@ -123,12 +128,14 @@
               >{/snippet}
           </DetailField>
         {/if}
-        <DetailField
-          fieldName="duration"
-          fieldType="string"
-          fieldValue={duration ?? 'Unknown'}
-          qualifier={durationSource}
-        />
+        {#if showDuration}
+          <DetailField
+            fieldName="duration"
+            fieldType="string"
+            fieldValue={duration ?? 'Unknown'}
+            qualifier={durationSource}
+          />
+        {/if}
         <DetailField
           fieldName="test cases"
           fieldType="number"
@@ -193,15 +200,25 @@
           fieldType="string"
           fieldValue={`${run.reps.filter(item => item.assessments.length > 0).length} / ${run.reps.length}`}
         />
-        <DetailField
-          fieldName="grader estimate (CAD)"
-          fieldType="string"
-          fieldValue={`${cost(grader.total)}${grader.incomplete && grader.total !== null ? ' · incomplete' : ''}`}
-        />
+      </tbody>
+    </table>
+  </DetailBubble>
+  <DetailBubble
+    label="Cost"
+    initialOpen={false}
+    disabled={investigator.total === null && grader.total === null}
+  >
+    <table class="detail-fields w-full" aria-label="Cost for this experiment">
+      <tbody>
         <DetailField
           fieldName="investigator estimate (CAD)"
           fieldType="string"
           fieldValue={`${cost(investigator.total)}${investigator.incomplete && investigator.total !== null ? ' · incomplete' : ''}`}
+        />
+        <DetailField
+          fieldName="grader estimate (CAD)"
+          fieldType="string"
+          fieldValue={`${cost(grader.total)}${grader.incomplete && grader.total !== null ? ' · incomplete' : ''}`}
         />
       </tbody>
     </table>

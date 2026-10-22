@@ -797,6 +797,16 @@ svg {
   color: var(--color-primary);
 }
 
+.btn.header-tab:disabled {
+  color: var(--color-muted);
+  background: transparent;
+  opacity: 1;
+}
+
+.btn.header-tab:disabled :is(.header-tab__icon, .header-tab__count) {
+  color: inherit;
+}
+
 @media (hover: hover) {
   .btn.chart-header-control:hover:not(:disabled, [aria-disabled='true']),
   .btn.header-tab:hover:not(:disabled, [aria-disabled='true']) {

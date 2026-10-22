@@ -63,6 +63,68 @@ async function showOnlyTime() {
 }
 
 describe('EvalResults repetitions', () => {
+  it('disables missing views, skips them with arrows and retains recorded zero costs', async () => {
+    const lookup = vi
+      .spyOn(telemetryAPI, 'getReferencedTraceViews')
+      .mockResolvedValue(traceViews([]))
+    try {
+      const rep = {
+        ...exampleRuns[0].reps[0],
+        telemetry: undefined,
+        repTelemetry: undefined,
+        tools: [],
+        toolsKnown: false,
+        assessments: [],
+        investigatorCost: undefined,
+        graderCost: undefined,
+      }
+      const run = { ...exampleRuns[0], telemetry: undefined, reps: [rep] }
+      const { rerender } = render(EvalResults, {
+        run,
+        reps: run.reps,
+        viewKey: 'cost',
+      })
+      const results = screen.getByRole('radio', { name: 'Results' })
+      const tools = screen.getByRole('radio', { name: 'Tool calls' })
+      const cost = screen.getByRole('radio', { name: 'Cost' })
+      await waitFor(() =>
+        expect(results).toHaveAttribute('aria-checked', 'true')
+      )
+      expect(tools).toBeDisabled()
+      expect(cost).toBeDisabled()
+      const user = userEvent.setup()
+      results.focus()
+      await user.keyboard('{ArrowRight}')
+      expect(results).toHaveFocus()
+
+      const withCost = { ...run, reps: [{ ...rep, investigatorCost: 0 }] }
+      await rerender({ run: withCost, reps: withCost.reps })
+      expect(cost).toBeEnabled()
+      await user.keyboard('{ArrowRight}')
+      expect(cost).toHaveFocus()
+      expect(cost).toHaveAttribute('aria-checked', 'true')
+      await rerender({ reps: [] })
+      expect(cost).toBeEnabled()
+      expect(cost).toHaveAttribute('aria-checked', 'true')
+      await user.keyboard('{ArrowLeft}')
+      expect(results).toHaveFocus()
+
+      const knownZero = { ...run, reps: [{ ...rep, toolsKnown: true }] }
+      await rerender({ run: knownZero, reps: knownZero.reps })
+      expect(cost).toBeDisabled()
+      expect(tools).toBeEnabled()
+      await user.click(tools)
+      expect(tools).toHaveAttribute('aria-checked', 'true')
+      await rerender({ run, reps: run.reps })
+      await waitFor(() =>
+        expect(results).toHaveAttribute('aria-checked', 'true')
+      )
+      expect(tools).toBeDisabled()
+    } finally {
+      lookup.mockRestore()
+    }
+  })
+
   it('retains selected tool telemetry when filtering its case out of the table', async () => {
     const rep = exampleRuns[0].reps[0]
     const tool = rep.tools[0]
