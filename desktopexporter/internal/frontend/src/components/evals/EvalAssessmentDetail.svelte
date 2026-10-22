@@ -3,7 +3,6 @@
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import MarkdownText from '@/components/shared/MarkdownText.svelte'
-  import JsonEditor from '@/components/shared/JsonEditor.svelte'
   import { formatRawJSON } from '@/components/shared/utils/raw-json-format'
   import AssessmentBadge from './AssessmentBadge.svelte'
   import type { Assessment, AssessmentDefinition } from './model'
@@ -28,7 +27,6 @@
   let rubric = $state('')
   let loading = $state(false)
   let loadError = $state('')
-  let evidenceOpen = $state(false)
   let instructionsOpen = $state(false)
   const packet = $derived(loading ? undefined : parseGradingInput(rubric))
   const name = $derived(definition?.name ?? assessment.id)
@@ -127,39 +125,31 @@
   {#if loadError}<p class="px-3 py-2 text-sm" role="alert">{loadError}</p>{/if}
   {#if packet}
     {#if packet.reference !== undefined || packet.evidence !== undefined || packet.artifact !== undefined}
-      <FieldGroup label="Evidence" detail bind:open={evidenceOpen}>
-        {#if evidenceOpen}
-          <table class="detail-fields w-full" aria-label="Assessment evidence">
-            <tbody>
-              {#if packet.reference !== undefined}
-                <DetailField
-                  fieldName="reference"
-                  fieldType="string"
-                  fieldValue={packet.reference}
-                  multiline
-                >
-                  {#snippet value()}<pre
-                      class="whitespace-pre-wrap font-mono text-sm">{packet.reference}</pre>{/snippet}
-                </DetailField>
-              {/if}
-              {#each [['evidence', packet.evidence], ['artifact', packet.artifact]] as [label, json]}
-                {#if json !== undefined}
-                  <DetailField
-                    fieldName={label!}
-                    fieldType="JSON"
-                    fieldValue={json}
-                  >
-                    {#snippet value()}<JsonEditor
-                        text={formatRawJSON(json)}
-                        label={`${label} JSON`}
-                      />{/snippet}
-                  </DetailField>
-                {/if}
-              {/each}
-            </tbody>
-          </table>
-        {/if}
-      </FieldGroup>
+      <table class="detail-fields w-full" aria-label="Assessment evidence">
+        <tbody>
+          {#if packet.reference !== undefined}
+            <DetailField
+              fieldName="reference"
+              fieldType="string"
+              fieldValue={packet.reference}
+              multiline
+            >
+              {#snippet value()}<pre
+                  class="whitespace-pre-wrap font-mono text-sm">{packet.reference}</pre>{/snippet}
+            </DetailField>
+          {/if}
+          {#each [['evidence', packet.evidence], ['artifact', packet.artifact]] as [label, json]}
+            {#if json !== undefined}
+              <DetailField
+                fieldName={label!}
+                fieldType="JSON"
+                fieldValue={json}
+                jsonText={formatRawJSON(json)}
+              />
+            {/if}
+          {/each}
+        </tbody>
+      </table>
     {/if}
     {#if packet.instructions || packet.viewerSkill}
       <FieldGroup

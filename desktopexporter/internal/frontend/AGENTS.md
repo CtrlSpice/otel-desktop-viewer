@@ -315,8 +315,10 @@
   these meanings during parent propagation, including in dogfooding datasets.
   Evals keeps Details and Telemetry across row modes, with a sibling Assessments
   section when judgments are present. Empty Telemetry retains a muted, disabled
-  heading. Assessment details separate explanation, criterion and scoring from
-  collapsed evidence and grader instructions; keep the original input copyable.
+  heading. Assessment details show explanation, criterion, scoring and source
+  evidence fields directly, without a duplicate Evidence wrapper. JSON fields
+  use folding controls. Keep grader instructions collapsed separately and the
+  original input copyable. Collapsible Detail field-group headings have carets.
   Each scoring level (such as Fail, Partial and Pass) has its own field card.
   When the source supplies Overall, put its judgment at the far right of the
   Assessments header and omit the repeated Overall subheading. Preserve its
@@ -473,8 +475,10 @@
   and do not restore card-click or tap-to-copy handlers or card pointer cursors.
   Field values that fit in three rendered lines stay whole. Longer values use
   native two-line ellipsis and Show more / Show less on the next line, including
-  multiline text, Markdown and structured values across
-  all signals. Keep Copy exact and complete. Evals answers use an Output field
+  multiline text and Markdown across all signals. Structured JSON instead uses
+  Expand all / Collapse all controls in its field header, with only the first
+  container level open by default and nested objects and arrays folded. Keep Copy exact and
+  complete. Evals answers use an Output field
   card rather than unlabeled prose.
   Evals type labels describe the underlying value, not its formatted display.
   Scores, counts and costs are numbers; duration is numeric (int64 for span

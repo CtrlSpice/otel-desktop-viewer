@@ -10,6 +10,27 @@ const text =
   '{\n  "same": 9223372036854775807,\n  "same": -0,\n  "items": [\n    "line\\n  content",\n    false\n  ]\n}'
 
 describe('JsonEditor', () => {
+  it('opens only the first level when requested, keeping nested objects and arrays folded', () => {
+    const source = JSON.stringify(
+      { summary: { result: 'recorded' }, events: [1, 2, 3, 4] },
+      null,
+      2
+    )
+    const result = render(JsonEditor, { text: source, defaultOpenDepth: 1 })
+    const view = jsonEditorView(result.container)
+    expect(result.container.querySelector('.cm-content')).not.toHaveTextContent(
+      'recorded'
+    )
+    const ranges: string[] = []
+    foldedRanges(view.state).between(0, view.state.doc.length, (from, to) => {
+      ranges.push(view.state.doc.sliceString(from, to).replace(/\s/g, ''))
+    })
+    expect(ranges).toEqual(['"result":"recorded"', '1,2,3,4'])
+    result.component.expandAll()
+    expect(foldedRanges(view.state).size).toBe(0)
+    expect(view.state.doc.toString()).toBe(source)
+  })
+
   it('decodes only value-string presentation and preserves the JSON document', () => {
     const command = `curl -d '{"method":"getTraceView"}'`
     const source = JSON.stringify(
@@ -109,9 +130,11 @@ describe('JsonEditor', () => {
       text: '[\n  1\n]',
       label: 'Second JSON',
     })
+    const firstView = jsonEditorView(first.container)
     first.component.collapseAll()
     expect(foldedRanges(jsonEditorView(second.container).state).size).toBe(0)
     await first.rerender({ text: '{\n  "next": 9007199254740993\n}' })
+    expect(jsonEditorView(first.container)).toBe(firstView)
     expect(jsonEditorView(first.container).state.doc.toString()).toBe(
       '{\n  "next": 9007199254740993\n}'
     )

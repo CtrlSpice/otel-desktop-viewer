@@ -111,23 +111,6 @@
     display: contents;
   }
 
-  /* Let native line clamping reach JSON text through the editor's flex boxes.
-     Override CodeMirror's runtime styles only in the collapsed preview.
-     Expanded editors retain their normal layout and folding controls. */
-  .detail-pair .detail-pair__value--clamped :global(.cm-editor),
-  .detail-pair .detail-pair__value--clamped :global(.cm-scroller) {
-    display: block !important;
-    overflow: visible !important;
-  }
-
-  .detail-pair .detail-pair__value--clamped :global(.cm-gutters) {
-    display: none !important;
-  }
-
-  .detail-pair .detail-pair__value--clamped :global(.cm-content) {
-    contain: none !important;
-  }
-
   .detail-pair__disclosure {
     @apply flex items-baseline gap-1;
     white-space: normal;

@@ -1,7 +1,13 @@
 <script lang="ts">
-  import { EditorState } from '@codemirror/state'
+  import { onMount } from 'svelte'
+  import { Compartment, EditorState } from '@codemirror/state'
   import { EditorView } from '@codemirror/view'
-  import { foldAll, unfoldAll } from '@codemirror/language'
+  import {
+    foldAll,
+    unfoldAll,
+    ensureSyntaxTree,
+    foldEffect,
+  } from '@codemirror/language'
   import { jsonEditorExtensions } from './utils/json-editor'
   import { jsonReadableStrings } from './utils/json-readable-strings'
 
@@ -9,9 +15,47 @@
     text,
     label = 'JSON value',
     raw = false,
-  }: { text: string; label?: string; raw?: boolean } = $props()
+    defaultOpenDepth,
+  }: {
+    text: string
+    label?: string
+    raw?: boolean
+    defaultOpenDepth?: number
+  } = $props()
   let host = $state<HTMLDivElement>()
-  let view: EditorView | undefined
+  let view = $state.raw<EditorView>()
+  const presentation = new Compartment()
+  let appliedDepth: number | undefined
+
+  function initialFolds(instance: EditorView) {
+    appliedDepth = defaultOpenDepth
+    if (defaultOpenDepth === undefined) return
+    const tree = ensureSyntaxTree(instance.state, instance.state.doc.length, 50)
+    if (!tree) return
+    const effects: ReturnType<typeof foldEffect.of>[] = []
+    let depth = 0
+    tree.iterate({
+      enter(node) {
+        if (node.name !== 'Object' && node.name !== 'Array') return
+        if (depth >= defaultOpenDepth! && node.to - node.from > 2) {
+          effects.push(foldEffect.of({ from: node.from + 1, to: node.to - 1 }))
+          return false
+        }
+        depth++
+      },
+      leave(node) {
+        if (node.name === 'Object' || node.name === 'Array') depth--
+      },
+    })
+    instance.dispatch({ effects })
+  }
+
+  function presentationExtensions() {
+    return [
+      ...(raw ? [] : [jsonReadableStrings]),
+      EditorView.contentAttributes.of({ 'aria-label': label, tabindex: '0' }),
+    ]
+  }
 
   export function collapseAll() {
     if (view) foldAll(view)
@@ -20,7 +64,7 @@
   export function expandAll() {
     if (view) unfoldAll(view)
   }
-  $effect(() => {
+  onMount(() => {
     if (!host) return
     view = new EditorView({
       parent: host,
@@ -28,19 +72,31 @@
         doc: text,
         extensions: [
           jsonEditorExtensions,
-          ...(raw ? [] : [jsonReadableStrings]),
-          EditorView.contentAttributes.of({
-            'aria-label': label,
-            tabindex: '0',
-          }),
+          presentation.of(presentationExtensions()),
         ],
       }),
     })
     const instance = view
+    initialFolds(instance)
     return () => {
       instance.destroy()
       if (view === instance) view = undefined
     }
+  })
+
+  $effect(() => {
+    if (!view) return
+    const changed = view.state.doc.toString() !== text
+    if (changed) {
+      unfoldAll(view)
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: text },
+      })
+    }
+    view.dispatch({
+      effects: presentation.reconfigure(presentationExtensions()),
+    })
+    if (changed || appliedDepth !== defaultOpenDepth) initialFolds(view)
   })
 </script>
 

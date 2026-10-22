@@ -6,6 +6,17 @@ export type ValueToken = {
   type?: AttributeValue['kind']
 }
 
+/** Display-only JSON; copy continues to use the original received value. */
+export function structuredValueText(value: AttributeValue): string | undefined {
+  const tokens =
+    value.kind === 'string'
+      ? jsonContainerTokens(value.value, true)
+      : value.kind === 'array' || value.kind === 'map'
+        ? attributeValueTokens(value, true)
+        : null
+  return tokens?.map(token => token.text).join('')
+}
+
 /** Colour bounded previews; optionally decode embedded container strings for display. */
 export function compactValueTokens(
   text: string,

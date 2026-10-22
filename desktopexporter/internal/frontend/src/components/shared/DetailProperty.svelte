@@ -6,13 +6,21 @@
   import AttributeValueView from './AttributeValue.svelte'
   import ConflictMarker from './ConflictMarker.svelte'
   import ValueCopyButton from './ValueCopyButton.svelte'
-  import { attributeValueCopy, hasConflictingKeys } from './detail-value'
+  import JsonEditor from './JsonEditor.svelte'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import { UnfoldLessIcon, UnfoldMoreIcon } from '@hugeicons/core-free-icons'
+  import {
+    attributeValueCopy,
+    hasConflictingKeys,
+    structuredValueText,
+  } from './detail-value'
 
   let {
     fieldName,
     fieldType,
     fieldValue = '',
     typedValue,
+    jsonText,
     value,
     copyValue,
     loadText,
@@ -35,6 +43,8 @@
     fieldType: string
     fieldValue?: string
     typedValue?: AttributeValue
+    /** Already-formatted JSON for an explicitly structured source value. */
+    jsonText?: string
     value?: Snippet
     copyValue?: string
     loadText?: (signal: AbortSignal) => Promise<string>
@@ -64,6 +74,17 @@
   let copyText = $derived(
     copyValue ?? (typedValue ? attributeValueCopy(typedValue) : fieldValue)
   )
+  let structuredText = $derived(
+    jsonText ??
+      (!value && !valueLabel && timestampLabel === undefined && !identifier
+        ? typedValue
+          ? structuredValueText(typedValue)
+          : fieldType === 'string'
+            ? structuredValueText({ kind: 'string', value: fieldValue })
+            : undefined
+        : undefined)
+  )
+  let editor = $state<{ collapseAll: () => void; expandAll: () => void }>()
 </script>
 
 {#snippet header()}
@@ -81,6 +102,42 @@
           class="detail-property__origin">{origin}</span
         >{/if}
     </div>
+    {#if structuredText !== undefined}
+      <div
+        class="detail-property__folding"
+        role="group"
+        aria-label={`JSON folding for ${fieldName}`}
+      >
+        <button
+          type="button"
+          class="header-icon-button tooltip tooltip-left"
+          aria-label={`Collapse all ${fieldName} JSON`}
+          data-tip="Collapse all"
+          onclick={() => editor?.collapseAll()}
+        >
+          <HugeiconsIcon
+            icon={UnfoldLessIcon}
+            size={16}
+            strokeWidth={1.5}
+            aria-hidden="true"
+          />
+        </button>
+        <button
+          type="button"
+          class="header-icon-button tooltip tooltip-left"
+          aria-label={`Expand all ${fieldName} JSON`}
+          data-tip="Expand all"
+          onclick={() => editor?.expandAll()}
+        >
+          <HugeiconsIcon
+            icon={UnfoldMoreIcon}
+            size={16}
+            strokeWidth={1.5}
+            aria-hidden="true"
+          />
+        </button>
+      </div>
+    {/if}
     <ValueCopyButton
       text={copyText}
       {loadText}
@@ -111,43 +168,52 @@
           {#if valueTone === 'error'}
             <span class="detail-property__error-dot" aria-hidden="true"></span>
           {/if}
-          <ExpandableValue value={copyText}>
-            {#if timestampLabel !== undefined}
-              <div class="detail-property__value" title={fieldValue}>
-                {#if value}{@render value()}{:else}{timestampLabel}{/if}
-              </div>
-              {#if /^[+-]?\d+(?:\.\d+)?$/.test(fieldValue.trim()) && fieldValue !== timestampLabel}
-                <div class="detail-property__raw-timestamp">{fieldValue}</div>
+          {#if structuredText !== undefined}
+            <JsonEditor
+              text={structuredText}
+              label={`JSON value of ${fieldName}`}
+              defaultOpenDepth={1}
+              bind:this={editor}
+            />
+          {:else}
+            <ExpandableValue value={copyText}>
+              {#if timestampLabel !== undefined}
+                <div class="detail-property__value" title={fieldValue}>
+                  {#if value}{@render value()}{:else}{timestampLabel}{/if}
+                </div>
+                {#if /^[+-]?\d+(?:\.\d+)?$/.test(fieldValue.trim()) && fieldValue !== timestampLabel}
+                  <div class="detail-property__raw-timestamp">{fieldValue}</div>
+                {/if}
+              {:else if identifier && !value}
+                <div class="detail-property__value">
+                  <Identifier value={fieldValue} />
+                </div>
+              {:else if !value && !valueLabel && !typedValue && fieldType === 'string'}
+                <AttributeValueView
+                  value={{ kind: 'string', value: fieldValue }}
+                  path={fieldName}
+                />
+              {:else if value || typedValue || multiline || valueLabel}
+                <div class="detail-property__value">
+                  {#if value}{@render value()}
+                  {:else if typedValue}<AttributeValueView
+                      value={typedValue}
+                      path={fieldName}
+                    />
+                  {:else}{fieldValue}{#if valueLabel}<span
+                        class="detail-property__annotation"
+                        class:detail-property__annotation--enum={fieldType ===
+                          'enum'}
+                        >{fieldType === 'enum'
+                          ? ` (${valueLabel})`
+                          : valueLabel}</span
+                      >{/if}{/if}
+                </div>
+              {:else}
+                <div class="detail-property__value">{fieldValue}</div>
               {/if}
-            {:else if identifier && !value}
-              <div class="detail-property__value">
-                <Identifier value={fieldValue} />
-              </div>
-            {:else if !value && !valueLabel && !typedValue && fieldType === 'string'}
-              <AttributeValueView
-                value={{ kind: 'string', value: fieldValue }}
-                path={fieldName}
-              />
-            {:else if value || typedValue || multiline || valueLabel}
-              <div class="detail-property__value">
-                {#if value}{@render value()}
-                {:else if typedValue}<AttributeValueView
-                    value={typedValue}
-                    path={fieldName}
-                  />
-                {:else}{fieldValue}{#if valueLabel}<span
-                      class="detail-property__annotation"
-                      class:detail-property__annotation--enum={fieldType ===
-                        'enum'}
-                      >{fieldType === 'enum'
-                        ? ` (${valueLabel})`
-                        : valueLabel}</span
-                    >{/if}{/if}
-              </div>
-            {:else}
-              <div class="detail-property__value">{fieldValue}</div>
-            {/if}
-          </ExpandableValue>
+            </ExpandableValue>
+          {/if}
         </div>
       </div>
     </td>
@@ -179,6 +245,12 @@
   }
   .detail-property__header > :global(.value-copy) {
     @apply ml-auto size-5 shrink-0 self-start;
+  }
+  .detail-property__folding {
+    @apply ml-auto flex shrink-0 self-start gap-1;
+  }
+  .detail-property__folding + :global(.value-copy) {
+    margin-left: 0;
   }
   .detail-property__heading {
     min-width: 0;

@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
 
   type Props = {
     label: string
@@ -75,6 +77,11 @@
   ontoggle={e => setOpen(e.currentTarget.open)}
 >
   <summary class="field-group__heading" class:item-state={card}>
+    {#if detail}
+      <span class="field-group__caret" aria-hidden="true">
+        <HugeiconsIcon icon={ArrowRight01Icon} size={16} strokeWidth={1.5} />
+      </span>
+    {/if}
     {#if headerAction}
       {@render headerAction()}
     {:else if icon}
@@ -120,6 +127,12 @@
 
   .field-group__heading-content {
     @apply flex min-w-0 flex-1 items-center gap-2;
+  }
+  .field-group__caret {
+    @apply flex shrink-0;
+  }
+  .field-group[open] > .field-group__heading > .field-group__caret {
+    transform: rotate(90deg);
   }
 
   .field-group__badges {

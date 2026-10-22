@@ -185,12 +185,44 @@ test('assessment packets stay readable and retain exact full-input Copy', async 
   await expect(
     detail.getByRole('group', { name: 'Pass', exact: true })
   ).toContainText('Supported cause.')
-  await expect(detail.locator('img, a[href^="javascript:"]')).toHaveCount(0)
+  await expect(
+    detail.locator('img:not(.cm-widgetBuffer), a[href^="javascript:"]')
+  ).toHaveCount(0)
+  await expect(
+    detail.locator('summary', { hasText: /^\s*Evidence\s*$/ })
+  ).toHaveCount(0)
   const evidence = detail
-    .locator('details')
-    .filter({ has: page.locator('summary', { hasText: /^\s*Evidence\s*$/ }) })
+    .getByRole('table', { name: 'Assessment evidence' })
     .last()
-  await expect(evidence).not.toHaveAttribute('open')
+  const jsonField = evidence.getByRole('group', {
+    name: 'evidence',
+    exact: true,
+  })
+  await expect(jsonField.locator('.cm-foldPlaceholder')).toHaveCount(1)
+  await expect(
+    jsonField.getByRole('button', { name: 'Show more' })
+  ).toHaveCount(0)
+  await jsonField
+    .getByRole('button', { name: 'Expand all evidence JSON' })
+    .click()
+  await expect(jsonField.locator('.cm-foldPlaceholder')).toHaveCount(0)
+  await expect(jsonField.locator('.cm-content')).toContainText(
+    'tool_execution_end'
+  )
+  await jsonField
+    .getByRole('button', { name: 'Collapse all evidence JSON' })
+    .click()
+  await expect(jsonField.locator('.cm-content')).not.toContainText(
+    'tool_execution_end'
+  )
+  await jsonField
+    .getByRole('button', { name: 'Copy evidence', exact: true })
+    .click()
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(
+      JSON.stringify({ events: [{ raw: '{"type":"tool_execution_end"}' }] })
+    )
   const instructions = detail
     .locator('details')
     .filter({
@@ -198,6 +230,9 @@ test('assessment packets stay readable and retain exact full-input Copy', async 
     })
     .last()
   await expect(instructions).not.toHaveAttribute('open')
+  await expect(
+    instructions.locator(':scope > summary .field-group__caret')
+  ).toBeVisible()
   await expect(
     detail.locator('summary button[aria-label="Copy grader input"]')
   ).toHaveCount(0)

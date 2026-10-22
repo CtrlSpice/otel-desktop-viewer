@@ -3,10 +3,50 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import DetailProperty from './DetailProperty.svelte'
-import { foldAll } from '@codemirror/language'
+import { foldAll, foldedRanges } from '@codemirror/language'
 import { jsonEditorView } from '@/test/json-editor-helpers'
 
 describe('DetailProperty copy controls', () => {
+  it('opens the first JSON level and copies the entire source through header controls', async () => {
+    const user = userEvent.setup()
+    const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+    const source =
+      '{"outer":{"deep":{"id":9223372036854775807}},"items":[{"keep":-0}]}'
+    const result = render(DetailProperty, {
+      fieldName: 'Output',
+      fieldType: 'string',
+      fieldValue: source,
+    })
+    const view = jsonEditorView(result.container)
+    const ranges: string[] = []
+    foldedRanges(view.state).between(0, view.state.doc.length, (from, to) => {
+      ranges.push(view.state.doc.sliceString(from, to).replace(/\s/g, ''))
+    })
+    expect(ranges).toEqual(['"deep":{"id":9223372036854775807}', '{"keep":-0}'])
+    expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull()
+    const header = result.container.querySelector('.detail-property__header')!
+    const expand = screen.getByRole('button', {
+      name: 'Expand all Output JSON',
+    })
+    const collapse = screen.getByRole('button', {
+      name: 'Collapse all Output JSON',
+    })
+    expect(header).toContainElement(expand)
+    expect(header).toContainElement(collapse)
+    await user.click(expand)
+    expect(foldedRanges(view.state).size).toBe(0)
+    await user.click(collapse)
+    expect(foldedRanges(view.state).size).toBeGreaterThan(0)
+    await user.click(screen.getByRole('button', { name: 'Copy Output' }))
+    expect(copy).toHaveBeenCalledExactlyOnceWith(source)
+    const editorNode = result.container.querySelector('.cm-editor')
+    await result.rerender({ fieldValue: '{"next":{"child":{"value":true}}}' })
+    expect(jsonEditorView(result.container)).toBe(view)
+    expect(result.container.querySelector('.cm-editor')).toBe(editorNode)
+    expect(foldedRanges(view.state).size).toBe(1)
+    expect(view.state.doc.toString()).toContain('"value": true')
+  })
+
   it('formats a stringified object inside a log body but copies the received array', async () => {
     const user = userEvent.setup()
     const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
@@ -373,9 +413,9 @@ describe('DetailProperty copy controls', () => {
           ? { typedValue: { kind: 'string' as const, value: text } }
           : { fieldValue: text }),
       })
-      expect(
-        container.querySelector('.attribute-value .cm-content')
-      ).toHaveTextContent('9223372036854775807')
+      expect(container.querySelector('.cm-content')).toHaveTextContent(
+        '9223372036854775807'
+      )
       expect(jsonEditorView(container).state.doc.toString()).toContain(
         '\n  "items": [\n    "hello",'
       )
