@@ -186,18 +186,16 @@
 
 {#snippet attributes()}
   <DetailBubble label="Attributes" layoutKey="home-attributes">
-    {#snippet leading()}
-      <div class="shrink-0">
-        <PaneHeader
-          mode="tabs"
-          bare
-          tabs={attributeTabs}
-          activeID={attributeSignal}
-          onSelect={selectAttributeSignal}
-          ariaLabel="Attribute signal"
-          tabPanelID={attributePanelID}
-        />
-      </div>
+    {#snippet trailing()}
+      <PaneHeader
+        mode="tabs"
+        bare
+        tabs={attributeTabs}
+        activeID={attributeSignal}
+        onSelect={selectAttributeSignal}
+        ariaLabel="Attribute signal"
+        tabPanelID={attributePanelID}
+      />
     {/snippet}
     {#snippet labelSuffix()}
       {#if selected}<span class="min-w-0 truncate text-base-content"
