@@ -71,23 +71,25 @@
 
 <FieldGroup label={name} detail bare bind:open>
   {#snippet heading()}
-    <span class="min-w-0 flex-1">{@render attributeHeading()}</span>
-    {#if showBar}
-      <span class="flex min-h-(--signal-card-row-h) w-1/3 shrink-0 gap-1">
-        {#each headerValues as item, index (index)}
-          <BreakdownSegment
-            part={{
-              key: String(index),
-              label: attributeValueCopy(item.value),
-              count: item.count,
-              color: headerColors[index],
-            }}
-            unit="record"
-            relativeFrequency={item.relativeFrequency}
-          />
-        {/each}
-      </span>
-    {/if}
+    <span class="flex min-w-0 flex-1 flex-col">
+      <span class="min-w-0">{@render attributeHeading()}</span>
+      {#if showBar}
+        <span class="flex min-h-(--signal-card-row-h) w-full gap-1">
+          {#each headerValues as item, index (index)}
+            <BreakdownSegment
+              part={{
+                key: String(index),
+                label: attributeValueCopy(item.value),
+                count: item.count,
+                color: headerColors[index],
+              }}
+              unit="record"
+              relativeFrequency={item.relativeFrequency}
+            />
+          {/each}
+        </span>
+      {/if}
+    </span>
   {/snippet}
   {@render breakdown()}
 </FieldGroup>
