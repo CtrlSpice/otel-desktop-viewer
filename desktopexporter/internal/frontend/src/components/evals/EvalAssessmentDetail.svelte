@@ -199,25 +199,46 @@
 {/snippet}
 
 {#if showHeading}
-  <FieldGroup label={name} detail>
-    {#snippet heading()}
-      <span>{name}</span>
-      {#if showScore}<AssessmentBadge
-          {assessment}
-          maximum={definition?.maximum}
-        />{/if}
-      {#if assessment.rubric || loadRubric}
-        <span class="ml-auto"
-          ><ValueCopyButton
-            text={rubric}
-            loadText={loadRubric}
-            label="grader input"
-          /></span
-        >
-      {/if}
-    {/snippet}
-    {@render content()}
-  </FieldGroup>
+  <div
+    class="eval-assessment-detail"
+    class:eval-assessment-detail--copy={!!(assessment.rubric || loadRubric)}
+  >
+    <FieldGroup label={name} detail>
+      {#snippet heading()}
+        <span>{name}</span>
+        {#if showScore}<AssessmentBadge
+            {assessment}
+            maximum={definition?.maximum}
+          />{/if}
+      {/snippet}
+      {@render content()}
+    </FieldGroup>
+    {#if assessment.rubric || loadRubric}
+      <div class="eval-assessment-detail__copy">
+        <ValueCopyButton
+          text={rubric}
+          loadText={loadRubric}
+          label="grader input"
+        />
+      </div>
+    {/if}
+  </div>
 {:else}
   {@render content()}
 {/if}
+
+<style lang="postcss">
+  .eval-assessment-detail {
+    position: relative;
+  }
+  .eval-assessment-detail--copy
+    > :global(.field-group)
+    > :global(.field-group__heading) {
+    padding-right: calc(var(--pane-inline-inset) + 2.5rem);
+  }
+  .eval-assessment-detail__copy {
+    position: absolute;
+    top: 0;
+    right: var(--pane-inline-inset);
+  }
+</style>

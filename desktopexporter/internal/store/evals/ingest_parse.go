@@ -318,7 +318,7 @@ func envelopeFormat(raw []byte) (string, error) {
 	var id string
 	var config map[string]json.RawMessage
 	if json.Unmarshal(root["evalId"], &id) != nil || id == "" || json.Unmarshal(root["config"], &config) != nil || config == nil {
-		return "", fmt.Errorf("Promptfoo requires evalId, config and results in the full export; bare rows lack run context")
+		return "", fmt.Errorf("Promptfoo requires evalId, config and results in the full export; bare rows lack experiment context")
 	}
 	summaryRaw := root["results"]
 	var summary map[string]json.RawMessage

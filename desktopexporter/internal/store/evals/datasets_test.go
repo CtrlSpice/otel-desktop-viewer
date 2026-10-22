@@ -41,7 +41,7 @@ func TestIngestDatasetReopenAndPendingVisibility(t *testing.T) {
 		}
 		return evals.Publish(t.Context(), db, importID)
 	}))
-	require.NoError(t, evals.EnsureRunIndex(t.Context(), s, evals.DatasetID(importID, 0), "dataset"))
+	require.NoError(t, evals.EnsureExperimentIndex(t.Context(), s, evals.DatasetID(importID, 0), "dataset"))
 	require.NoError(t, s.Close())
 	s, err = store.NewStore(t.Context(), path, nil)
 	require.NoError(t, err)
@@ -56,10 +56,10 @@ func TestIngestDatasetReopenAndPendingVisibility(t *testing.T) {
 		var byteSize int64
 		require.NoError(t, db.QueryRow(`select byte_size from eval_datasets where id=?`, evals.DatasetID(importID, 0)).Scan(&byteSize))
 		require.Equal(t, fmt.Sprint(len(input)), fmt.Sprint(byteSize))
-		runs, err := evals.SearchRuns(t.Context(), db, evals.RunSearch{Limit: 10, Sort: "name", Direction: "asc"})
+		experiments, err := evals.SearchExperiments(t.Context(), db, evals.ExperimentSearch{Limit: 10, Sort: "name", Direction: "asc"})
 		require.NoError(t, err)
-		require.Len(t, runs.Runs, 1)
-		detail, err := evals.GetRunPage(t.Context(), db, runs.Runs[0].ID, -1, 100)
+		require.Len(t, experiments.Experiments, 1)
+		detail, err := evals.GetExperimentPage(t.Context(), db, experiments.Experiments[0].ID, -1, 100)
 		require.NoError(t, err)
 		require.Equal(t, string(parts[0].Payload), detail.Rows[0].JSON)
 		return nil

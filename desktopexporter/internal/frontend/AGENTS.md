@@ -207,7 +207,7 @@
   that gap on cards without a bar.
   Do not use bold or semibold for titles; the user prefers regular weight.
   Card identifiers use `subtle`: they are for checking identity, not primary scanning.
-  Apply these rules to every summary card: traces, logs, metrics, eval runs and
+  Apply these rules to every summary card: traces, logs, metrics, eval experiments and
   disclosure summaries. Reuse `SignalCard`; avoid per-summary typography or
   extra vertical padding between detail rows.
 - Evals uses plain text and counts without badges. Use small 8px decorative
@@ -215,15 +215,15 @@
   labels. Keep Results, Time, Cost, summaries and Details consistent with shared
   table and field-card typography and spacing.
   Evals has no legacy snapshot/archive workflow. The global drop/file-picker
-  queue ingests producer-native Promptfoo v3 envelopes into DuckDB; the Run list
+  queue ingests producer-native Promptfoo v3 envelopes into DuckDB; the Experiment list
   reads the database-wide materialized index.
-  Evals run cards show name/state, an outcome bar and the shared date row when
+  Evals experiment cards show name/state, an outcome bar and the shared date row when
   a valid start time is available.
   Outcome-bar segments use the same compact hover/focus tooltips as trace-service
   segments: coloured dot, status label and `[count]`. Keep segment controls outside
   the card selection button. Hover/focus previews a status; activating a segment
-  also selects its parent run, with immediate selected highlighting.
-  Run summary cards keep status labels and `[count]` in the compact segment
+  also selects its parent experiment, with immediate selected highlighting.
+  Experiment summary cards keep status labels and `[count]` in the compact segment
   tooltips; do not repeat an outcome legend below the bar.
   Do not show an execution-status legend in the results header for now.
   A single breakdown category uses its colour dot and name instead of a full-width
@@ -238,9 +238,9 @@
   Cost has Investigator, Grader and Total cost columns, in that
   order. Cells and footer totals show only numeric amounts (Unknown if missing);
   CAD and estimate labels stay in headers, and partial-estimate context is on hover.
-  Evals lists database-wide run summaries and loads full run data only for the
-  selected run, as the other signals do. Summary cards consume summary data rather
-  than loading Reps to calculate their counts. Reuse existing signal cards,
+  Evals lists database-wide experiment summaries and loads full experiment data only for the
+  selected experiment, as the other signals do. Summary cards consume summary data rather
+  than loading Results to calculate their counts. Reuse existing signal cards,
   headers, tree rows, Details panels and loading states; do not invent new styles.
   The normalized hierarchy is Experiment → Test case → Result. Show only levels
   supported by the source. Native result IDs identify individual results; Result
@@ -264,22 +264,22 @@
   Details. Do not show Unknown or explanatory lifecycle boilerplate there.
   Cost shows each visible level in the summary column, without adding a tree depth or summing
   parent estimates together with their child estimates. Missing costs are Unknown.
-  Rep labels are left-aligned beside their tree dots. Attempt is a distinct retry
-  node only when a producer explicitly records retries within a Rep; adapters do
+  Result labels are left-aligned beside their tree dots. Attempt is a distinct retry
+  node only when a producer explicitly records retries within a Result; adapters do
   not invent it.
-  The Run root is selectable and collapsible, opens Run details, and is initially
-  expanded in every view. Run timing/cost/outcome summaries include the full run,
+  The Experiment root is selectable and collapsible, opens Experiment details, and is initially
+  expanded in every view. Experiment timing/cost/outcome summaries include the full experiment,
   even when a case or repetition is filtered out. Never add child costs to an
   already aggregated parent estimate.
   The identity heading reads Experiment · Test case · Result on one line with uniform separator
   spacing and no extra gap between the labels.
-  An explicit repTelemetry reference identifies the enclosing Rep span;
+  An explicit resultTelemetry reference identifies the enclosing Result span;
   attemptTelemetry does the same for a producer-recorded retry. Telemetry identifies
   target execution. Without an enclosing reference, label derived timing as the
   extent of available references rather than claiming another stored span.
-  Align recorded starts to the earliest available span in the run, including
-  when there is no enclosing run span. Keep recorded-duration-only fallbacks.
-  Case root bars span available Rep references across all repetitions,
+  Align recorded starts to the earliest available span in the experiment, including
+  when there is no enclosing experiment span. Keep recorded-duration-only fallbacks.
+  Case root bars span available Result references across all repetitions,
   including hidden repetitions. Distinguish elapsed windows from summed durations.
   Never display summed result durations as a case duration in the timeline or
   Details. Without a recorded duration or span-based window, omit the duration.
@@ -291,8 +291,10 @@
   Keep zero durations and never sum overlapping child durations
   into an elapsed window or invent a start offset for duration-only values.
   Missing timing rows stay blank, including started/completed rows; do not draw
-  broken-line placeholders. Keep a continuous separator under the table header
-  and ruler ticks. Ruler ticks extend 4px into the header below their labels,
+  broken-line placeholders. Omit the separator under the Evals column headings.
+  When timing is unavailable, omit Duration's heading and sort control and let
+  empty space separate left-aligned identities from the right-hand data columns.
+  Ruler ticks extend 4px into the header below their labels,
   aligned with the time guides.
   Do not show an execution-status legend in the results header for now; reserve
   that space while a less crowded placement is being selected.
@@ -320,10 +322,10 @@
   Assessments header and omit the repeated Overall subheading. Preserve its
   explanation, score and full grader-input Copy; do not infer a combined judgment.
   Keep the selected row name and parent context in Details. Results shows case
-  questions/outcomes, Rep answers/scores, tool output/errors and grader
+  questions/outcomes, Result answers/scores, tool output/errors and grader
   scores/explanations at their own level. Tool calls shows the selected level's
   execution/output, timing, faults and tool totals. Cost shows the selected
-  level's estimates; Case/Rep totals separate investigator and grader costs.
+  level's estimates; Case/Result totals separate investigator and grader costs.
   The whole table row selects Details; tree controls only expand/collapse.
   Native row-name buttons preserve keyboard access. Keep text selection intact.
   Mode changes preserve the selected row, manual disclosure and section sizing.
@@ -366,7 +368,7 @@
   and the shared bottom-left Recorded date/offset. Preserve the exception dot
   and disclosure controls; do not invent severity or span status for events.
   Keep tool execution in the waterfall; do not repeat its Tool calls list in
-  Rep Details.
+  Result Details.
 - All signal cards place the shared date row at the bottom-left, after summary
   content. Label its meaning: `Started` for traces/Evals,
   `Last seen` for metrics and `Recorded` for logs. Align values through the shared
@@ -374,7 +376,7 @@
   retain the full timezone on hover and in Details. Missing dates stay unavailable,
   not invented. Keep trace `Duration:` separately labelled.
   Missing dates display `—` with the reason on hover.
-  Evals run cards omit the entire Started row when no valid start is available.
+  Evals experiment cards omit the entire Started row when no valid start is available.
   Let date labels use their natural width with the shared gap; do not reserve a
   wide empty label column.
 - Log severity uses an 8px coloured dot followed by neutral `LABEL (number)`
@@ -482,6 +484,10 @@
   let the shared split limit the displayed width using the main pane's existing
   minimum (30% or 28rem, whichever is larger). The drawer retains its 40rem cap.
 - Disabled and zero-count Details headers use Muted for their labels, icons and counts.
+  Put these closed, unavailable sections at the bottom. Keep bg-base-200 headers
+  with Muted text and no visible border. Keep canonical order within both groups;
+  restore a section's normal position as soon as data makes it available.
+  Dawn Muted uses the original `#9893a5`, restored by user approval; do not darken it.
 - Detail-section resize precedence: preserve header order and at least one open,
   non-empty section. Use each non-first available section header as the resize
   handle for the boundary above it; omit separate resize strips. A click toggles

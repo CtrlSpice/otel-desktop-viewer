@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildEvalOutline } from './eval-outline'
-import { groupReps } from './group-reps'
+import { groupResults } from './group-results'
 import { indexEvalTraces } from './eval-traces'
 import {
   projectPromptfooDataset,
@@ -60,7 +60,7 @@ function supported(value: unknown, overrides: Partial<EvalSourceDataset> = {}) {
   return result
 }
 
-it('preserves selected-run identities with global source ordinals and local copy pointers', () => {
+it('preserves selected-experiment identities with global source ordinals and local copy pointers', () => {
   const rows = [
     promptfooRow({ id: 'first' }),
     promptfooRow({ provider: { id: 'other' } }),
@@ -70,10 +70,10 @@ it('preserves selected-run identities with global source ordinals and local copy
   const selected = supported(promptfoo([rows[0], rows[2]]), {
     rowOrdinals: [0, 2],
   })
-  expect(selected.runs).toHaveLength(1)
-  expect(selected.runs[0].id).toBe(all.runs[0].id)
-  expect(selected.runs[0].reps.map(row => row.id)).toEqual(
-    all.runs[0].reps.map(row => row.id)
+  expect(selected.experiments).toHaveLength(1)
+  expect(selected.experiments[0].id).toBe(all.experiments[0].id)
+  expect(selected.experiments[0].results.map(row => row.id)).toEqual(
+    all.experiments[0].results.map(row => row.id)
   )
   expect(selected.rows[1].pointer).toBe('/results/results/1')
   const missingIdentity = promptfooRow({
@@ -83,8 +83,10 @@ it('preserves selected-run identities with global source ordinals and local copy
   })
   const full = supported(promptfoo([rows[0], missingIdentity]))
   const single = supported(promptfoo([missingIdentity]), { rowOrdinals: [1] })
-  expect(single.runs[0].id).toBe(full.runs[1].id)
-  expect(single.runs[0].reps[0].id).toBe(full.runs[1].reps[0].id)
+  expect(single.experiments[0].id).toBe(full.experiments[1].id)
+  expect(single.experiments[0].results[0].id).toBe(
+    full.experiments[1].results[0].id
+  )
   expect(
     projectPromptfooDataset(
       datasetSource(promptfoo(rows), { rowOrdinals: [0, 0, 2] })
@@ -120,36 +122,40 @@ describe('persisted source dataset projections', () => {
         )
       )
     )
-    const run = result.runs[0]
-    expect(new Set(run.reps.map(rep => rep.caseID)).size).toBe(1)
-    expect(run.reps.map(rep => rep.sourceID)).toEqual([
+    const experiment = result.experiments[0]
+    expect(new Set(experiment.results.map(result => result.caseID)).size).toBe(
+      1
+    )
+    expect(experiment.results.map(result => result.sourceID)).toEqual([
       'native-result-0',
       'native-result-1',
       'native-result-2',
     ])
-    expect(run.reps.every(rep => rep.repetition === undefined)).toBe(true)
+    expect(
+      experiment.results.every(result => result.repetition === undefined)
+    ).toBe(true)
     const outline = buildEvalOutline(
-      groupReps(run.reps, run.reps),
-      run,
+      groupResults(experiment.results, experiment.results),
+      experiment,
       indexEvalTraces([])
     )
     expect(outline.map(row => row.kind)).toEqual([
-      'run',
+      'experiment',
       'case',
-      'rep',
-      'rep',
-      'rep',
+      'result',
+      'result',
+      'result',
     ])
     expect(
-      outline.filter(row => row.kind === 'rep').map(row => row.name)
+      outline.filter(row => row.kind === 'result').map(row => row.name)
     ).toEqual(['Result', 'Result', 'Result'])
-    expect(run.reps[1].assessments[1]).toMatchObject({
+    expect(experiment.results[1].assessments[1]).toMatchObject({
       pass: false,
       value: 0,
       explanation: 'Native explanation',
       rubric: 'Approved rubric',
     })
-    expect(run.reps[1].toolsKnown).toBe(false)
+    expect(experiment.results[1].toolsKnown).toBe(false)
   })
 
   it('puts a singleton result directly on its test case and keeps resolved inputs distinct', () => {
@@ -167,15 +173,15 @@ describe('persisted source dataset projections', () => {
         }),
       ])
     )
-    const run = result.runs[0]
+    const experiment = result.experiments[0]
     const outline = buildEvalOutline(
-      groupReps(run.reps, run.reps),
-      run,
+      groupResults(experiment.results, experiment.results),
+      experiment,
       indexEvalTraces([])
     )
-    expect(outline.map(row => row.kind)).toEqual(['run', 'case', 'case'])
-    expect(outline[1].rep?.answer).toBe('Non-chat output')
-    expect(outline[1].rep?.sourceID).toBe('a')
+    expect(outline.map(row => row.kind)).toEqual(['experiment', 'case', 'case'])
+    expect(outline[1].result?.answer).toBe('Non-chat output')
+    expect(outline[1].result?.sourceID).toBe('a')
   })
   it('accepts Promptfoo declarations and rejects unsupported formats', () => {
     expect(supported(promptfoo(), { format: 'promptfoo-v3' }).adapter).toBe(
@@ -196,22 +202,22 @@ describe('persisted source dataset projections', () => {
   it('projects a full v3 export with native names and source references', () => {
     const result = supported(promptfoo())
     expect(result.adapter).toBe('promptfoo-v3')
-    expect(result.runs).toHaveLength(1)
-    const run = result.runs[0]
-    expect(run.name).toBe('Source model name')
-    expect(run.source).toBe('User source')
-    expect(run.configuration).toContainEqual({
+    expect(result.experiments).toHaveLength(1)
+    const experiment = result.experiments[0]
+    expect(experiment.name).toBe('Source model name')
+    expect(experiment.source).toBe('User source')
+    expect(experiment.configuration).toContainEqual({
       name: 'Source evaluation ID',
       value: 'eval-source-id',
     })
-    expect(run.reps[0]).toMatchObject({
+    expect(experiment.results[0]).toMatchObject({
       name: 'Source test name',
       answer: 'Non-chat output',
       question: 'Non-chat input',
       repetition: 1,
     })
     expect(result.rows[0]).toMatchObject({
-      resultID: 'source-result-id',
+      sourceResultID: 'source-result-id',
       evaluationID: 'eval-source-id',
       providerID: 'provider:model',
       promptID: 'source-prompt-id',
@@ -219,24 +225,30 @@ describe('persisted source dataset projections', () => {
       repeatIndex: 0,
       pointer: '/results/results/0',
     })
-    expect(result.runs[0].reps[0].id).toContain('source-result-id')
+    expect(result.experiments[0].results[0].id).toContain('source-result-id')
   })
 
   it('qualifies every presentation identity by dataset, with collision-safe components', () => {
     const a = supported(promptfoo(), { id: 'a/b' })
     const b = supported(promptfoo(), { id: 'a' })
-    expect(a.runs[0].id).not.toBe(b.runs[0].id)
-    expect(a.runs[0].reps[0].id).not.toBe(b.runs[0].reps[0].id)
-    expect(a.runs[0].reps[0].caseID).not.toBe(b.runs[0].reps[0].caseID)
-    expect(a.runs[0].assessments[0].id).not.toBe(b.runs[0].assessments[0].id)
-    expect(supported(promptfoo(), { id: '\ud800' }).runs).toHaveLength(1)
+    expect(a.experiments[0].id).not.toBe(b.experiments[0].id)
+    expect(a.experiments[0].results[0].id).not.toBe(
+      b.experiments[0].results[0].id
+    )
+    expect(a.experiments[0].results[0].caseID).not.toBe(
+      b.experiments[0].results[0].caseID
+    )
+    expect(a.experiments[0].assessments[0].id).not.toBe(
+      b.experiments[0].assessments[0].id
+    )
+    expect(supported(promptfoo(), { id: '\ud800' }).experiments).toHaveLength(1)
   })
 
   it('groups native test definitions and separates providers and prompts', () => {
     const result = supported(
       promptfoo([
         promptfooRow(),
-        promptfooRow({ id: 'rep-2', repeatIndex: 1 }),
+        promptfooRow({ id: 'result-2', repeatIndex: 1 }),
         promptfooRow({
           id: 'other-test',
           testIdx: 1,
@@ -249,13 +261,17 @@ describe('persisted source dataset projections', () => {
         promptfooRow({ id: 'other-prompt', promptId: 'other-prompt' }),
       ])
     )
-    expect(result.runs).toHaveLength(3)
-    const reps = result.runs[0].reps
-    expect(reps[0].caseID).toBe(reps[1].caseID)
-    expect(reps[1].repetition).toBe(2)
-    expect(reps[0].caseID).not.toBe(reps[2].caseID)
+    expect(result.experiments).toHaveLength(3)
+    const results = result.experiments[0].results
+    expect(results[0].caseID).toBe(results[1].caseID)
+    expect(results[1].repetition).toBe(2)
+    expect(results[0].caseID).not.toBe(results[2].caseID)
     expect(
-      new Set(result.runs.flatMap(run => run.reps.map(rep => rep.id))).size
+      new Set(
+        result.experiments.flatMap(experiment =>
+          experiment.results.map(result => result.id)
+        )
+      ).size
     ).toBe(5)
   })
 
@@ -275,10 +291,10 @@ describe('persisted source dataset projections', () => {
         }),
       ])
     )
-    const reps = result.runs[0].reps
-    expect(reps[0].caseID).toBe(reps[1].caseID)
-    expect(reps[2].caseID).toBe(reps[1].caseID)
-    expect(new Set(reps.map(rep => rep.id)).size).toBe(3)
+    const results = result.experiments[0].results
+    expect(results[0].caseID).toBe(results[1].caseID)
+    expect(results[2].caseID).toBe(results[1].caseID)
+    expect(new Set(results.map(result => result.id)).size).toBe(3)
   })
 
   it('never merges equal question text when required identities are missing', () => {
@@ -290,9 +306,11 @@ describe('persisted source dataset projections', () => {
       }
       const row = promptfooRow(overrides)
       const result = supported(promptfoo([row, row]))
-      const reps = result.runs.flatMap(run => run.reps)
-      expect(reps[0].caseID).not.toBe(reps[1].caseID)
-      expect(reps[0].id).not.toBe(reps[1].id)
+      const results = result.experiments.flatMap(
+        experiment => experiment.results
+      )
+      expect(results[0].caseID).not.toBe(results[1].caseID)
+      expect(results[0].id).not.toBe(results[1].id)
     }
   })
 
@@ -316,26 +334,25 @@ describe('persisted source dataset projections', () => {
         promptfooRow({ failureReason: 0, error: 'error', score: 0 }),
       ])
     )
-    expect(result.runs.flatMap(run => run.reps.map(rep => rep.state))).toEqual([
-      'Error',
-      'Complete',
-      'Complete',
-      'Complete',
-    ])
+    expect(
+      result.experiments.flatMap(experiment =>
+        experiment.results.map(result => result.state)
+      )
+    ).toEqual(['Error', 'Complete', 'Complete', 'Complete'])
     expect(result.rows.map(row => row.outcome)).toEqual([
       'execution-error',
       'assessment-failed',
       'unspecified',
       'passed',
     ])
-    const reps = result.runs[0].reps
-    expect(reps[1].assessments[0]).toMatchObject({
+    const results = result.experiments[0].results
+    expect(results[1].assessments[0]).toMatchObject({
       label: 'Fail',
       value: 0,
       explanation: 'Latency error',
     })
-    expect(reps[1].error).toBeUndefined()
-    expect(reps[2].error).toBeUndefined()
+    expect(results[1].error).toBeUndefined()
+    expect(results[2].error).toBeUndefined()
   })
 
   it('does not infer numeric scales or reducers from arbitrary or named Promptfoo scores', () => {
@@ -349,10 +366,10 @@ describe('persisted source dataset projections', () => {
           }),
         ])
       )
-      expect(result.runs[0].reps[0].assessments[0].value).toBe(
+      expect(result.experiments[0].results[0].assessments[0].value).toBe(
         typeof score === 'number' ? score : null
       )
-      expect(result.runs[0].assessments[0].maximum).toBeUndefined()
+      expect(result.experiments[0].assessments[0].maximum).toBeUndefined()
       expect(result.notes.join(' ')).toContain('no guaranteed maximum')
     }
   })
@@ -364,8 +381,8 @@ describe('persisted source dataset projections', () => {
       ])
     )
     expect(result.rows[0].outcome).toBe('unspecified')
-    expect(result.runs[0].reps[0].state).toBe('Complete')
-    expect(result.runs[0].reps[0].assessments[0].value).toBe(0)
+    expect(result.experiments[0].results[0].state).toBe('Complete')
+    expect(result.experiments[0].results[0].assessments[0].value).toBe(0)
   })
 
   it('distinguishes native grader errors from an assessed failure without changing the source score', () => {
@@ -390,11 +407,11 @@ describe('persisted source dataset projections', () => {
       ])
     )
     expect(result.rows[0].outcome).toBe('execution-error')
-    expect(result.runs[0].reps[0]).toMatchObject({
+    expect(result.experiments[0].results[0]).toMatchObject({
       state: 'Error',
       error: 'Malformed grader response',
     })
-    expect(result.runs[0].reps[0].assessments[0].value).toBe(0)
+    expect(result.experiments[0].results[0].assessments[0].value).toBe(0)
   })
 
   it.each([
@@ -409,11 +426,11 @@ describe('persisted source dataset projections', () => {
     const result = supported(
       promptfoo([promptfooRow({ response: { output } })])
     )
-    expect(result.runs[0].reps[0]).toMatchObject({
+    expect(result.experiments[0].results[0]).toMatchObject({
       answerType,
       answer: typeof output === 'string' ? output : JSON.stringify(output),
     })
-    expect(result.runs[0].configuration).toContainEqual({
+    expect(result.experiments[0].configuration).toContainEqual({
       name: 'Prompt index',
       value: 0,
     })
@@ -424,9 +441,9 @@ describe('persisted source dataset projections', () => {
       const result = supported(
         promptfoo([promptfooRow({ provider: { id: 'echo' }, latencyMs })])
       )
-      expect(result.runs[0].reps[0].seconds).toBeUndefined()
+      expect(result.experiments[0].results[0].seconds).toBeUndefined()
       const execution = supported(promptfoo([promptfooRow({ latencyMs })]))
-      expect(execution.runs[0].reps[0].seconds).toBe(latencyMs / 1000)
+      expect(execution.experiments[0].results[0].seconds).toBe(latencyMs / 1000)
     }
   })
 
@@ -442,12 +459,12 @@ describe('persisted source dataset projections', () => {
           }),
         ])
       )
-      expect(result.runs[0].reps[0]).toMatchObject({
+      expect(result.experiments[0].results[0]).toMatchObject({
         seconds: 0,
         answer: '',
       })
-      expect(result.runs[0].reps[0].investigatorCost).toBeUndefined()
-      expect(result.runs[0].reps[0].graderCost).toBeUndefined()
+      expect(result.experiments[0].results[0].investigatorCost).toBeUndefined()
+      expect(result.experiments[0].results[0].graderCost).toBeUndefined()
       expect(result.notes.join(' ')).toContain('UI labels costs CAD')
     }
   })
@@ -475,12 +492,12 @@ describe('persisted source dataset projections', () => {
         promptfooRow({ traceId: traceID, evaluationId: 'trace-evaluation' }),
       ])
     )
-    expect(native.runs[0].reps[0].telemetry).toEqual({
+    expect(native.experiments[0].results[0].telemetry).toEqual({
       traceID,
       spanID: undefined,
     })
     expect(native.rows[0].evaluationID).toBe('trace-evaluation')
-    expect(native.runs[0].reps[0].tools).toEqual([])
+    expect(native.experiments[0].results[0].tools).toEqual([])
     const prose = supported(
       promptfoo([
         promptfooRow({
@@ -491,8 +508,8 @@ describe('persisted source dataset projections', () => {
         }),
       ])
     )
-    expect(prose.runs[0].reps[0].telemetry).toBeUndefined()
-    expect(prose.runs[0].reps[0].tools).toEqual([])
+    expect(prose.experiments[0].results[0].telemetry).toBeUndefined()
+    expect(prose.experiments[0].results[0].tools).toEqual([])
   })
 
   it('handles missing, structured, scalar and long outputs without chat assumptions', () => {
@@ -507,15 +524,15 @@ describe('persisted source dataset projections', () => {
     const result = supported(
       promptfoo(outputs.map(output => promptfooRow({ response: { output } })))
     )
-    const reps = result.runs[0].reps
-    expect(reps.slice(0, 4).map(rep => rep.answer)).toEqual([
+    const results = result.experiments[0].results
+    expect(results.slice(0, 4).map(result => result.answer)).toEqual([
       undefined,
       'null',
       'false',
       '0',
     ])
-    expect(reps[4].answer).toContain('file:///opaque')
-    expect(reps[5].answer!.length).toBeLessThan(33000)
+    expect(results[4].answer).toContain('file:///opaque')
+    expect(results[5].answer!.length).toBeLessThan(33000)
     expect(result.notes.join(' ')).toContain('Long display text is truncated')
   })
 
@@ -612,8 +629,8 @@ describe('persisted source dataset projections', () => {
       )
     )
     expect(
-      result.runs[0].reps.reduce(
-        (sum, rep) => sum + (rep.answer?.length ?? 0),
+      result.experiments[0].results.reduce(
+        (sum, result) => sum + (result.answer?.length ?? 0),
         0
       )
     ).toBeLessThan(evalProjectionLimits.projectedCharacters + 1000)

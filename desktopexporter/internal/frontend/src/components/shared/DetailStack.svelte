@@ -15,6 +15,10 @@
     storageKey ? createDetailStackState(storageKey) : undefined
   )
   setContext(DETAIL_STACK, stack)
+  $effect(() => {
+    const key = storageKey
+    if (key) untrack(() => stack?.setStorageKey(key))
+  })
   onDestroy(() => stack?.destroy())
 </script>
 

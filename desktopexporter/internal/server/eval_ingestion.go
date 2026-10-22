@@ -157,7 +157,7 @@ func (s *Server) ingestEvals(w http.ResponseWriter, r *http.Request) {
 		}
 		if err == nil {
 			for n := 0; n < envelopes; n++ {
-				if err = s.ensureEvalRunIndex(r.Context(), evals.DatasetID(id, n), "dataset"); err != nil {
+				if err = s.ensureEvalExperimentIndex(r.Context(), evals.DatasetID(id, n), "dataset"); err != nil {
 					break
 				}
 			}
@@ -203,7 +203,7 @@ func (s *Server) discardEvalImport(id string) {
 		return
 	}
 	for _, datasetID := range datasets {
-		if err := evals.PurgeRunIndex(ctx, s.store, datasetID); err != nil {
+		if err := evals.PurgeExperimentIndex(ctx, s.store, datasetID); err != nil {
 			return
 		}
 	}

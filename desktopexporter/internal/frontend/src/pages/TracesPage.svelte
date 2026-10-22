@@ -555,6 +555,9 @@
     {#snippet detail()}
       <DetailView
         span={selectedSpan}
+        rootSpanID={currentTraceData?.spans.find(
+          node => !node.spanData.parentSpanID
+        )?.spanData.spanID}
         fieldTarget={fieldRequest?.spanID === selectedSpanID
           ? fieldRequest.target
           : undefined}

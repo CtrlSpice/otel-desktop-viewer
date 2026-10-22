@@ -15,7 +15,8 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    overflow: hidden;
+    /* The end tick starts at 100%; keep its 1px stroke visible like the ruler. */
+    overflow: visible;
   }
 
   .waterfall-time-guides span {

@@ -1,4 +1,4 @@
-import type { AssessmentDefinition, EvalRep, EvalRun } from './model'
+import type { AssessmentDefinition, EvalResult, EvalExperiment } from './model'
 
 // Deliberately illustrative data, not a regrading of the completed cohort.
 const assessments: AssessmentDefinition[] = [
@@ -97,7 +97,7 @@ const cases = [
   },
 ]
 
-function reps(variant: 'guided' | 'direct' | 'planned'): EvalRep[] {
+function results(variant: 'guided' | 'direct' | 'planned'): EvalResult[] {
   return cases.flatMap((item, index) =>
     Array.from({ length: item.repetitions }, (_, offset) => {
       const repetition = offset + 1
@@ -107,9 +107,9 @@ function reps(variant: 'guided' | 'direct' | 'planned'): EvalRep[] {
       const error = variant === 'direct' && index === 5
       const completion = index === 1 ? 0.5 : index === 2 ? 0 : 1
       const support = index === 1 ? 0.5 : 1
-      const rep: EvalRep = {
+      const result: EvalResult = {
         ...item,
-        id: repetition === 1 ? item.id : `${item.id}-rep-${repetition}`,
+        id: repetition === 1 ? item.id : `${item.id}-result-${repetition}`,
         caseID: item.id,
         repetition,
         answer: planned || error ? undefined : item.answer,
@@ -123,7 +123,7 @@ function reps(variant: 'guided' | 'direct' | 'planned'): EvalRep[] {
         investigatorCost: planned || error ? undefined : 0.035 + index * 0.011,
         graderCost: planned || error ? undefined : 0.072 + index * 0.005,
         error: error
-          ? 'The investigator process exited before producing an answer. This configuration is paused; the remaining reps have not started.'
+          ? 'The investigator process exited before producing an answer. This configuration is paused; the remaining results have not started.'
           : undefined,
         assessments:
           planned || error
@@ -198,26 +198,26 @@ function reps(variant: 'guided' | 'direct' | 'planned'): EvalRep[] {
       // Stable, synthetic IDs let the optional seed script supply matching OTLP.
       if (!planned) {
         const traceID = `eeee${variant === 'guided' ? '01' : '02'}${String(slot + 1).padStart(26, '0')}`
-        rep.telemetry = { traceID, spanID: 'eeee000000000001' }
-        rep.tools.forEach((tool, toolIndex) => {
+        result.telemetry = { traceID, spanID: 'eeee000000000001' }
+        result.tools.forEach((tool, toolIndex) => {
           tool.telemetry = {
             traceID,
             spanID: `eeee${String(toolIndex + 2).padStart(12, '0')}`,
           }
         })
-        rep.assessments.forEach((assessment, scoreIndex) => {
+        result.assessments.forEach((assessment, scoreIndex) => {
           assessment.telemetry = {
             traceID,
             spanID: `eeee${String(scoreIndex + 101).padStart(12, '0')}`,
           }
         })
       }
-      return rep
+      return result
     })
   )
 }
 
-export const exampleRuns: EvalRun[] = [
+export const exampleExperiments: EvalExperiment[] = [
   {
     id: 'guide-assisted',
     name: 'Guide-assisted agent',
@@ -232,7 +232,7 @@ export const exampleRuns: EvalRun[] = [
     ],
     assessments,
     headlineAssessment: 'completion',
-    reps: reps('guided'),
+    results: results('guided'),
   },
   {
     id: 'direct',
@@ -249,7 +249,7 @@ export const exampleRuns: EvalRun[] = [
     ],
     assessments,
     headlineAssessment: 'completion',
-    reps: reps('direct'),
+    results: results('direct'),
   },
   {
     id: 'next',
@@ -264,6 +264,6 @@ export const exampleRuns: EvalRun[] = [
     ],
     assessments,
     headlineAssessment: 'completion',
-    reps: reps('planned'),
+    results: results('planned'),
   },
 ]

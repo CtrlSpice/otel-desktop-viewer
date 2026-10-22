@@ -3,14 +3,14 @@
   import { FilterIcon, Tick02Icon } from '@hugeicons/core-free-icons'
   import FilterPopover from '@/components/shared/Toolbar/FilterPopover.svelte'
   import EvalStatus from './EvalStatus.svelte'
-  import type { RunOutcomeOption } from './run-outcome-filter'
+  import type { ExperimentOutcomeOption } from './experiment-outcome-filter'
 
   let {
     options,
     selected,
     onchange,
   }: {
-    options: RunOutcomeOption[]
+    options: ExperimentOutcomeOption[]
     selected: string[]
     onchange: (keys: string[]) => void
   } = $props()

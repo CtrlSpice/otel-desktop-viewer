@@ -9,10 +9,10 @@
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import Identifier from '@/components/shared/Identifier.svelte'
   import AssessmentBadge from './AssessmentBadge.svelte'
-  import RunStatusBadge from './RunStatusBadge.svelte'
+  import ExperimentStatusBadge from './ExperimentStatusBadge.svelte'
   import EvalStatus from './EvalStatus.svelte'
   import { caseSummary } from './case-summary'
-  import { runSummary } from './run-summary'
+  import { experimentSummary } from './experiment-summary'
   import TableSortButton from '@/components/shared/TableSortButton.svelte'
   import TableColumnHeading from '@/components/shared/TableColumnHeading.svelte'
   import ResizableTable from '@/components/shared/ResizableTable.svelte'
@@ -43,20 +43,24 @@
     getTraceBounds,
   } from '@/components/traces/Waterfall/WaterfallView.svelte'
   import { themeSignal } from '@/state/theme.svelte'
-  import { completionLabel, completionTone, groupReps } from './group-reps'
+  import {
+    completionLabel,
+    completionTone,
+    groupResults,
+  } from './group-results'
   import {
     estimatedCost,
     type TelemetryReference,
     type AssessmentDefinition,
-    type EvalRep,
-    type EvalRun,
+    type EvalResult,
+    type EvalExperiment,
     type EvalView,
   } from './model'
-  import { type RepSort, type RepSortKey } from './sort-reps'
+  import { type ResultSort, type ResultSortKey } from './sort-results'
 
   let {
-    run,
-    reps,
+    experiment,
+    results,
     selectedID,
     selectedRowID,
     onSelect,
@@ -68,8 +72,8 @@
     disclosure = $bindable({}),
     sorts = $bindable({}),
   }: {
-    run: EvalRun
-    reps: EvalRep[]
+    experiment: EvalExperiment
+    results: EvalResult[]
     selectedID?: string
     selectedRowID?: string
     onSelect?: (row: EvalOutlineRow) => void
@@ -79,7 +83,7 @@
     headerActions?: Snippet
     beforeTable?: Snippet
     disclosure?: Record<string, Record<string, boolean>>
-    sorts?: Record<string, RepSort | undefined>
+    sorts?: Record<string, ResultSort | undefined>
   } = $props()
   const panelID = $props.id()
   const views: { id: EvalView; label: string; icon: typeof CheckListIcon }[] = [
@@ -108,27 +112,30 @@
       [next]?.focus()
   }
   let caseGutterWidth = $state(0)
-  let repGutterWidth = $state(0)
+  let resultGutterWidth = $state(0)
   const countDigits = $derived.by(() => {
     const repetitions = new Map<string, number>()
-    let maximum = Math.max(1, new Set(run.reps.map(item => item.caseID)).size)
-    for (const rep of run.reps) {
-      const count = (repetitions.get(rep.caseID) ?? 0) + 1
-      repetitions.set(rep.caseID, count)
+    let maximum = Math.max(
+      1,
+      new Set(experiment.results.map(item => item.caseID)).size
+    )
+    for (const result of experiment.results) {
+      const count = (repetitions.get(result.caseID) ?? 0) + 1
+      repetitions.set(result.caseID, count)
       maximum = Math.max(
         maximum,
         count,
-        rep.tools.length +
-          rep.assessments.filter(item => item.telemetry?.spanID).length
+        result.tools.length +
+          result.assessments.filter(item => item.telemetry?.spanID).length
       )
     }
     return String(maximum).length
   })
-  const overrides = $derived(disclosure[run.id] ?? {})
+  const overrides = $derived(disclosure[experiment.id] ?? {})
   function toggleOutline(row: EvalOutlineRow) {
     disclosure = {
       ...disclosure,
-      [run.id]: {
+      [experiment.id]: {
         ...overrides,
         [row.id]: !outlineOpen(row, enabledViews, overrides),
       },
@@ -160,7 +167,10 @@
   )
   const execution = $derived(
     Object.fromEntries(
-      run.reps.map(rep => [rep.id, evalExecutionRows(rep, traceIndex)])
+      experiment.results.map(result => [
+        result.id,
+        evalExecutionRows(result, traceIndex),
+      ])
     )
   )
   let timingsLoading = $state(false)
@@ -195,32 +205,36 @@
     }
     return window
   }
-  const repWindows = $derived(
+  const resultWindows = $derived(
     Object.fromEntries(
-      run.reps.map(rep => [
-        rep.id,
+      experiment.results.map(result => [
+        result.id,
         spanWindow([
-          timingFor(rep.telemetry),
-          timingFor(rep.repTelemetry),
-          ...rep.tools.map(tool => timingFor(tool.telemetry)),
-          ...rep.assessments.map(assessment => timingFor(assessment.telemetry)),
+          timingFor(result.telemetry),
+          timingFor(result.resultTelemetry),
+          ...result.tools.map(tool => timingFor(tool.telemetry)),
+          ...result.assessments.map(assessment =>
+            timingFor(assessment.telemetry)
+          ),
         ]),
       ])
     )
   )
-  const runWindow = $derived(spanWindow(Object.values(spanTimings)))
+  const experimentWindow = $derived(spanWindow(Object.values(spanTimings)))
   const maximumDuration = $derived.by(() => {
-    const extent = runWindow ? runWindow.endTime - runWindow.startTime : 0n
-    return [run, ...run.reps.flatMap(rep => [rep, ...rep.tools])].reduce(
-      (maximum, item) => {
-        const duration = durationFor(item.telemetry, item.seconds) ?? 0n
-        return duration > maximum ? duration : maximum
-      },
-      extent
-    )
+    const extent = experimentWindow
+      ? experimentWindow.endTime - experimentWindow.startTime
+      : 0n
+    return [
+      experiment,
+      ...experiment.results.flatMap(result => [result, ...result.tools]),
+    ].reduce((maximum, item) => {
+      const duration = durationFor(item.telemetry, item.seconds) ?? 0n
+      return duration > maximum ? duration : maximum
+    }, extent)
   })
   $effect(() => {
-    const references = evalTraceReferences(run)
+    const references = evalTraceReferences(experiment)
     const controller = new AbortController()
     traceViews = []
     timingsLoading = true
@@ -243,7 +257,7 @@
     return () => controller.abort()
   })
   type Column = {
-    key: RepSortKey
+    key: ResultSortKey
     label: string
     group: string
     width: number
@@ -255,8 +269,9 @@
     assessment?: AssessmentDefinition
   }
   const headline = $derived(
-    run.assessments.find(item => item.id === run.headlineAssessment) ??
-      run.assessments[0]
+    experiment.assessments.find(
+      item => item.id === experiment.headlineAssessment
+    ) ?? experiment.assessments[0]
   )
   const columns = $derived<Column[]>([
     {
@@ -272,19 +287,19 @@
       label: 'Result',
       hint: 'Recorded result',
       group: 'Test case',
-      width: Math.max(320, repGutterWidth),
-      min: Math.max(144, repGutterWidth),
+      width: Math.max(320, resultGutterWidth),
+      min: Math.max(144, resultGutterWidth),
       numeric: true,
     },
     {
       key: 'seconds',
       label: 'Duration',
-      hint: runWindow
-        ? 'Recorded starts and durations on one timeline across this run'
+      hint: experimentWindow
+        ? 'Recorded starts and durations on one timeline across this experiment'
         : 'Recorded durations; start offsets unavailable',
       group: 'Duration',
       width: 288,
-      min: 224,
+      min: maximumDuration > 1n ? 224 : 0,
     },
     ...(viewKey === 'time'
       ? [
@@ -335,41 +350,43 @@
             } as Column,
           ]),
   ])
-  const sortScope = $derived(JSON.stringify([run.id, viewKey]))
+  const sortScope = $derived(JSON.stringify([experiment.id, viewKey]))
   const activeSort = $derived(sorts[sortScope])
-  const measuredReps = $derived(
-    run.reps.map(rep => {
-      const window = repWindows[rep.id]
+  const measuredResults = $derived(
+    experiment.results.map(result => {
+      const window = resultWindows[result.id]
       const duration =
-        durationFor(rep.repTelemetry) ??
+        durationFor(result.resultTelemetry) ??
         (window
           ? window.endTime - window.startTime
-          : durationFor(rep.telemetry, rep.seconds))
+          : durationFor(result.telemetry, result.seconds))
       return {
-        ...rep,
-        state: execution[rep.id]?.state ?? rep.state,
+        ...result,
+        state: execution[result.id]?.state ?? result.state,
         seconds: duration !== undefined ? Number(duration) / 1e9 : undefined,
         startedAt: window
           ? new Date(Number(window.startTime / 1000000n)).toISOString()
-          : rep.startedAt,
+          : result.startedAt,
       }
     })
   )
   const groups = $derived(
-    groupReps(
-      measuredReps.filter(item => reps.some(rep => rep.id === item.id)),
-      measuredReps,
+    groupResults(
+      measuredResults.filter(item =>
+        results.some(result => result.id === item.id)
+      ),
+      measuredResults,
       activeSort
     ).map(group => ({
       ...group,
-      internalFault: group.allReps.some(
+      internalFault: group.allResults.some(
         item => execution[item.id]?.internalFault
       ),
-      summary: caseSummary(group.allReps, run.assessments),
+      summary: caseSummary(group.allResults, experiment.assessments),
     }))
   )
 
-  function toggleSort(key: RepSortKey) {
+  function toggleSort(key: ResultSortKey) {
     sorts[sortScope] = {
       key,
       direction:
@@ -379,24 +396,28 @@
     }
   }
   const estimates = $derived([
-    { key: 'investigatorCost', ...estimatedCost(reps, 'investigatorCost') },
-    { key: 'graderCost', ...estimatedCost(reps, 'graderCost') },
+    { key: 'investigatorCost', ...estimatedCost(results, 'investigatorCost') },
+    { key: 'graderCost', ...estimatedCost(results, 'graderCost') },
   ])
-  const runTotals = $derived(runSummary(run))
-  const runCosts = $derived({
-    investigatorCost: estimatedCost(run.reps, 'investigatorCost'),
-    graderCost: estimatedCost(run.reps, 'graderCost'),
+  const experimentTotals = $derived(experimentSummary(experiment))
+  const experimentCosts = $derived({
+    investigatorCost: estimatedCost(experiment.results, 'investigatorCost'),
+    graderCost: estimatedCost(experiment.results, 'graderCost'),
   })
-  const outline = $derived(buildEvalOutline(groups, run, traceIndex))
+  const outline = $derived(buildEvalOutline(groups, experiment, traceIndex))
   const selectionOutline = $derived(
-    reps.length === run.reps.length
+    results.length === experiment.results.length
       ? outline
-      : buildEvalOutline(groupReps(measuredReps, measuredReps), run, traceIndex)
+      : buildEvalOutline(
+          groupResults(measuredResults, measuredResults),
+          experiment,
+          traceIndex
+        )
   )
   const availableViews = $derived<Record<EvalView, boolean>>({
     results: true,
     time:
-      run.reps.some(rep => rep.toolsKnown === true) ||
+      experiment.results.some(result => result.toolsKnown === true) ||
       selectionOutline.some(row => row.kind === 'tool'),
     cost: selectionOutline.some(row => row.estimate.total !== null),
   })
@@ -430,7 +451,9 @@
         row =>
           row.id ===
           (selectedRowID ??
-            (selectedID ? `rep/${selectedID}` : `run/${run.id}`))
+            (selectedID
+              ? `result/${selectedID}`
+              : `experiment/${experiment.id}`))
       )
     )
   })
@@ -552,24 +575,26 @@
       <span
         class="block min-h-[var(--signal-card-row-h)]"
         title={planned ? 'Not started' : missingTiming(reference)}
-        aria-label={planned ? 'Not started' : missingTiming(reference)}
         aria-busy={!!reference?.spanID && timingsLoading}
-      ></span>
+        ><span class="sr-only"
+          >{planned ? 'Not started' : missingTiming(reference)}</span
+        ></span
+      >
     {/if}
   </TimingCell>
 {/snippet}
 
 <div class="eval-results__header shrink-0">
-  <PaneHeader pill mode="title" title={run.name}>
-    {#snippet right()}<RunStatusBadge
-        state={run.state}
-        pauseReason={run.pauseReason}
+  <PaneHeader pill mode="title" title={experiment.name}>
+    {#snippet right()}<ExperimentStatusBadge
+        state={experiment.state}
+        pauseReason={experiment.pauseReason}
       />{/snippet}
     {#snippet badge()}
       <span
         class="text-sm text-rp-subtle tabular-nums"
         title="Shown results / total results"
-        >{reps.length}/{run.reps.length} results</span
+        >{results.length}/{experiment.results.length} results</span
       >
     {/snippet}
     {#snippet metaRight()}
@@ -622,7 +647,7 @@
       fixed: column.fixed,
     }))}
     storageKey="evals-column-widths"
-    caption={`${viewLabel} for ${run.name}`}
+    caption={`${viewLabel} for ${experiment.name}`}
     pinnedCount={columns.length > 2 ? 2 : 0}
     fillColumn="seconds"
     stableColumns={['repetition']}
@@ -667,8 +692,8 @@
                   <span aria-hidden="true">·</span>
                 </span>
                 <span
-                  class="eval-results__rep-heading"
-                  bind:offsetWidth={repGutterWidth}
+                  class="eval-results__result-heading"
+                  bind:offsetWidth={resultGutterWidth}
                 >
                   <TableSortButton
                     label="Started"
@@ -683,6 +708,9 @@
                 </span>
               </span>
             </th>
+          {:else if column.key === 'seconds' && maximumDuration <= 1n}
+            <td class="table-cell eval-results__timing-cell" aria-hidden="true"
+            ></td>
           {:else if column.key !== 'repetition'}
             <th
               class="table-cell"
@@ -725,27 +753,28 @@
     {/snippet}
     {#snippet children(layout)}
       {#each visibleRows as row (row.id)}
-        {@const item = row.rep}
+        {@const item = row.result}
         {@const open = outlineOpen(row, enabledViews, overrides)}
         {@const selected = selectedRowID
           ? selectedRowID === row.id
           : selectedID
-            ? row.kind === 'rep' && selectedID === item?.id
-            : row.kind === 'run'}
+            ? row.kind === 'result' && selectedID === item?.id
+            : row.kind === 'experiment'}
         <!-- Native row-name and duration buttons retain keyboard access. Tree controls stay independent. -->
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
         <tr
           class="table-row"
           onclick={event => selectRow(event, row)}
-          class:eval-results__case={row.kind === 'case' || row.kind === 'run'}
+          class:eval-results__case={row.kind === 'case' ||
+            row.kind === 'experiment'}
           class:table-row--selected={selected}
           data-outline-id={row.id}
           data-row-kind={row.kind}
           data-depth={row.depth}
           data-case-id={row.caseID}
-          data-rep-id={row.kind === 'rep' ? item?.id : undefined}
-          data-tool-rep-id={row.kind === 'tool' ? item?.id : undefined}
+          data-result-id={row.kind === 'result' ? item?.id : undefined}
+          data-tool-result-id={row.kind === 'tool' ? item?.id : undefined}
           data-execution-id={row.kind === 'tool' || row.kind === 'grader'
             ? row.id
             : undefined}
@@ -767,7 +796,7 @@
               depth={row.depth}
               tree={row.tree}
               subtreeCollapsed={!open}
-              toggleLabel={`${open ? 'Collapse' : 'Expand'} ${row.name}${item && row.kind !== 'case' ? ` for ${item.name}` : ''}, ${row.tree.childrenCount} ${row.kind === 'run' ? 'test cases' : 'children'}`}
+              toggleLabel={`${open ? 'Collapse' : 'Expand'} ${row.name}${item && row.kind !== 'case' ? ` for ${item.name}` : ''}, ${row.tree.childrenCount} ${row.kind === 'experiment' ? 'test cases' : 'children'}`}
               onToggle={() => toggleOutline(row)}
             >
               {#snippet node()}{@render executionNode(
@@ -778,7 +807,7 @@
               <button
                 type="button"
                 onclick={event => selectRow(event, row)}
-                aria-label={row.kind === 'rep' && item?.sourceID
+                aria-label={row.kind === 'result' && item?.sourceID
                   ? `${row.name} ${item.sourceID}`
                   : row.name}
                 aria-pressed={selected}
@@ -786,14 +815,14 @@
                 title={row.state === 'Unknown'
                   ? row.name
                   : `${row.name} · ${completionLabel(row.state, row.internalFault)}`}
-                >{row.name}{#if row.kind === 'rep' && item?.sourceID}<span
+                >{row.name}{#if row.kind === 'result' && item?.sourceID}<span
                     class="ml-2 text-rp-subtle"
                     ><Identifier value={item.sourceID} /></span
                   >{/if}</button
               >
             </TreeRowIdentity>
           </th>
-          {#if row.kind === 'run'}
+          {#if row.kind === 'experiment'}
             {#each columns.slice(2) as column (column.key)}
               <td
                 class="table-cell text-left tabular-nums"
@@ -802,21 +831,21 @@
                 {#if column.key === 'seconds'}
                   {@render spanBar(
                     row.reference,
-                    runWindow?.startTime,
+                    experimentWindow?.startTime,
                     row.seconds,
                     row.spanError,
                     row.window,
                     row.name,
-                    run.state === 'Planned'
+                    experiment.state === 'Planned'
                   )}
                 {:else if column.key === 'cost'}
                   {@render rowCost(row.estimate)}
                 {:else if column.key === 'investigatorCost' || column.key === 'graderCost'}
-                  {@render rowCost(runCosts[column.key])}
+                  {@render rowCost(experimentCosts[column.key])}
                 {:else if column.key === 'tools'}
                   {@render toolCount(
-                    runTotals.toolCalls,
-                    runTotals.failedTools
+                    experimentTotals.toolCalls,
+                    experimentTotals.failedTools
                   )}
                 {/if}
               </td>
@@ -835,15 +864,15 @@
                 {#if column.key === 'seconds'}
                   {@render spanBar(
                     row.reference,
-                    runWindow?.startTime ??
-                      (item ? repWindows[item.id]?.startTime : undefined),
+                    experimentWindow?.startTime ??
+                      (item ? resultWindows[item.id]?.startTime : undefined),
                     row.seconds,
                     row.spanError,
                     row.window,
                     row.name,
                     row.state === 'Planned'
                   )}
-                {:else if column.assessment && item && (row.kind === 'case' || row.kind === 'rep' || row.kind === 'grading' || row.assessmentID === column.assessment.id)}
+                {:else if column.assessment && item && (row.kind === 'case' || row.kind === 'result' || row.kind === 'grading' || row.assessmentID === column.assessment.id)}
                   {@const assessment = item.assessments.find(
                     score => score.id === column.assessment?.id
                   )}
@@ -860,7 +889,7 @@
                           : `/${column.assessment.maximum}`})</span
                       >{/if}
                   </div>
-                {:else if column.key === 'tools' && item && (row.kind === 'case' || row.kind === 'rep' || row.kind === 'execution')}
+                {:else if column.key === 'tools' && item && (row.kind === 'case' || row.kind === 'result' || row.kind === 'execution')}
                   {@render toolCount(
                     item.tools.length,
                     item.tools.filter(tool => tool.state === 'Error').length
@@ -870,7 +899,7 @@
                 {:else if column.key === 'cost'}
                   {@render rowCost(row.estimate)}
                 {:else if item && (column.key === 'investigatorCost' || column.key === 'graderCost')}
-                  {#if row.kind === 'rep' || row.kind === 'case'}
+                  {#if row.kind === 'result' || row.kind === 'case'}
                     {@render rowCost({
                       total: item[column.key] ?? null,
                       incomplete: item[column.key] === undefined,
@@ -892,15 +921,15 @@
             <td
               class="table-cell eval-results__timing-cell text-left tabular-nums"
               title={row.window
-                ? 'Elapsed time across available rep references'
-                : group.allReps.length === 1
-                  ? 'Rep elapsed time'
+                ? 'Elapsed time across available result references'
+                : group.allResults.length === 1
+                  ? 'Result elapsed time'
                   : undefined}
             >
-              {#if row.window || group.allReps.length === 1}
+              {#if row.window || group.allResults.length === 1}
                 {@render spanBar(
                   undefined,
-                  runWindow?.startTime ?? row.window?.startTime,
+                  experimentWindow?.startTime ?? row.window?.startTime,
                   row.seconds,
                   row.spanError,
                   row.window,
@@ -927,7 +956,7 @@
       {/snippet}
     {/snippet}
     {#snippet footer(layout)}
-      {#if reps.length && viewKey === 'cost'}
+      {#if results.length && viewKey === 'cost'}
         <tr aria-label="Estimated cost for shown results">
           {#each columns as column (column.key)}
             {#if column.key === 'name'}
@@ -939,7 +968,7 @@
                 style:left={layout.pinned[column.key] === undefined
                   ? undefined
                   : `${layout.pinned[column.key]}px`}
-                title={`${reps.length} shown results`}>Total</th
+                title={`${results.length} shown results`}>Total</th
               >
             {:else}
               <td
@@ -970,10 +999,6 @@
   @reference "../../app.css";
   .table-row {
     cursor: pointer;
-  }
-  .eval-results__head > th.table-cell {
-    box-shadow: inset 0 -1px
-      color-mix(in srgb, var(--color-muted) 35%, transparent);
   }
   .eval-results__header :global(.pane-header__time-range) {
     flex-basis: 20rem;
@@ -1007,7 +1032,7 @@
   .eval-results__case-heading {
     @apply inline-flex flex-none items-center gap-1 pl-4;
   }
-  .eval-results__rep-heading {
+  .eval-results__result-heading {
     @apply inline-flex flex-none items-center;
   }
   .eval-results__assessment {

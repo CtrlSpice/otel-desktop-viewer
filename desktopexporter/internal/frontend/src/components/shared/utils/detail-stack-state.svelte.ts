@@ -49,7 +49,8 @@ export function createDetailStackState(storageKey: string) {
   let drag: DragHandle | undefined
 
   function previous(id: string) {
-    return sections[sections.findIndex(section => section.id === id) - 1]
+    const index = sections.findIndex(section => section.id === id)
+    return sections.slice(0, index).findLast(section => section.available())
   }
 
   function sides(id: string) {
@@ -66,12 +67,13 @@ export function createDetailStackState(storageKey: string) {
   }
 
   function collapseReceiver(id: string) {
-    const index = sections.findIndex(section => section.id === id)
+    const available = sections.filter(section => section.available())
+    const index = available.findIndex(section => section.id === id)
     if (index < 0) return
-    const below = sections.slice(index + 1)
-    const above = sections.slice(0, index).reverse()
+    const below = available.slice(index + 1)
+    const above = available.slice(0, index).reverse()
     const candidates =
-      index <= (sections.length - 1) / 2
+      index <= (available.length - 1) / 2
         ? [...below, ...above]
         : [...above, ...below]
     return candidates.find(section => section.available())
@@ -150,6 +152,9 @@ export function createDetailStackState(storageKey: string) {
     if (total <= 0) return
     let lastDelta = 0
     const remembered = { ...weights }
+    const layoutKeys = new Map(
+      sections.map(section => [section.id, section.layoutKey ?? section.label])
+    )
 
     function commit(sizes: Map<string, number>, settle: boolean) {
       const updated = { ...remembered }
@@ -157,8 +162,7 @@ export function createDetailStackState(storageKey: string) {
         if (!section.available()) continue
         const height = sizes.get(section.id) ?? 0
         // Keep the last useful size for reopening with the heading.
-        if (height > 0)
-          updated[section.layoutKey ?? section.label] = height / total
+        if (height > 0) updated[layoutKeys.get(section.id)!] = height / total
         section.setExpanded(height > 0)
       }
       if (settle) {
@@ -213,6 +217,14 @@ export function createDetailStackState(storageKey: string) {
   }
 
   return {
+    setStorageKey(key: string) {
+      if (key === storageKey) return
+      // Finish any resize in its original layout before loading the next one.
+      drag?.cancel()
+      previewSizes = null
+      storageKey = key
+      weights = loadWeights(key)
+    },
     get dragging() {
       return dragging
     },

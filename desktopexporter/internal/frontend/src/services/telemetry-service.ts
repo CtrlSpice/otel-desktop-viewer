@@ -57,10 +57,10 @@ import type {
 } from '@/types/wire-types'
 import type { Attribute, AttributeValue } from '@/types/api-types'
 import type {
-  EvalRunSearch,
-  EvalRunSearchPage,
-  EvalRunSourcePage,
-} from './eval-run-types'
+  EvalExperimentSearch,
+  EvalExperimentSearchPage,
+  EvalExperimentSourcePage,
+} from './eval-experiment-types'
 import {
   getOperatorsForFieldType,
   type FieldDefinition,
@@ -825,31 +825,31 @@ function statsFromJSON(json: JsonStats): Stats {
 }
 
 export let telemetryAPI = {
-  searchEvalRuns: async (
-    query: EvalRunSearch = {},
+  searchEvalExperiments: async (
+    query: EvalExperimentSearch = {},
     signal?: AbortSignal
-  ): Promise<EvalRunSearchPage> => {
+  ): Promise<EvalExperimentSearchPage> => {
     const params = new URLSearchParams()
     if (query.query !== undefined) params.set('q', query.query)
     for (const outcome of query.outcomes ?? [])
       params.append('outcome', outcome)
     for (const key of ['sort', 'direction', 'limit', 'offset'] as const)
       if (query[key] !== undefined) params.set(key, String(query[key]))
-    const response = await fetch(`/api/evals/runs?${params}`, { signal })
+    const response = await fetch(`/api/evals/experiments?${params}`, { signal })
     if (!response.ok)
       throw new Error(
         (await response.text()).trim() || `HTTP ${response.status}`
       )
     return response.json()
   },
-  getEvalRunPage: async (
+  getEvalExperimentPage: async (
     id: string,
     after = -1,
     limit = 100,
     signal?: AbortSignal
-  ): Promise<EvalRunSourcePage> => {
+  ): Promise<EvalExperimentSourcePage> => {
     const response = await fetch(
-      `/api/evals/runs/${encodeURIComponent(id)}/rows?after=${after}&limit=${limit}`,
+      `/api/evals/experiments/${encodeURIComponent(id)}/rows?after=${after}&limit=${limit}`,
       { signal }
     )
     if (!response.ok)

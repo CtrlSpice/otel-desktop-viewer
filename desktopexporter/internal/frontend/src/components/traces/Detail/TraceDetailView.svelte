@@ -76,7 +76,12 @@
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
   import { formatDuration, formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
-  import { setSpanInQuery } from '@/route'
+  import {
+    isPlainLeftClick,
+    itemHref,
+    setSpanInQuery,
+    SPAN_PARAM,
+  } from '@/route'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import { spanCopyJSON, spanExportURL } from './span-copy'
   import {
@@ -86,6 +91,7 @@
 
   type Props = {
     span: SpanData | undefined
+    rootSpanID?: string
     fieldTarget?: DetailFieldTarget
     /** Node-level flags from the salvage walk; absent on healthy traces. */
     salvaged?: boolean
@@ -99,6 +105,7 @@
 
   let {
     span,
+    rootSpanID,
     fieldTarget,
     salvaged = false,
     cyclePoint = false,
@@ -327,7 +334,24 @@
                 identifier
                 fieldValue={span.traceID}
                 fieldType="bytes"
-              />
+              >
+                {#snippet value()}
+                  {#if rootSpanID}
+                    <a
+                      class="detail-cell__value link link-primary"
+                      href={itemHref('traces', span.traceID, {
+                        [SPAN_PARAM]: rootSpanID,
+                      })}
+                      aria-label={`Open root span in trace ${span.traceID}`}
+                      onclick={event => {
+                        if (!isPlainLeftClick(event)) return
+                        event.preventDefault()
+                        setSpanInQuery(rootSpanID, 'push')
+                      }}><Identifier value={span.traceID} /></a
+                    >
+                  {:else}<Identifier value={span.traceID} />{/if}
+                {/snippet}
+              </SpanField>
             {/if}
             {#if !isRoot && detailSearchFieldVisible(columnFilter, 'parentSpanID')}
               <SpanField

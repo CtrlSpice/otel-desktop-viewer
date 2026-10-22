@@ -1,4 +1,9 @@
-import type { Assessment, EvalRep, EvalRun, TelemetryReference } from './model'
+import type {
+  Assessment,
+  EvalResult,
+  EvalExperiment,
+  TelemetryReference,
+} from './model'
 
 /** The caller retains payload verbatim, including for unsupported/error results.
  * These projections are disposable display data, never authoritative source. */
@@ -8,17 +13,17 @@ export type EvalSourceDataset = Readonly<{
   source: string
   format: string
   payload: string
-  /** Global source positions when payload contains only a selected run's rows. */
+  /** Global source positions when payload contains only a selected experiment's rows. */
   rowOrdinals?: readonly number[]
 }>
 
 export type EvalSourceRowReference = {
-  repID: string
+  resultID: string
   /** JSON Pointer into the caller's original payload. */
   pointer: string
   /** Source-native prose only; absent entries are presentation fallbacks. */
   fields: Partial<Record<EvalSourceTextField, string>>
-  resultID?: string
+  sourceResultID?: string
   evaluationID?: string
   providerID?: string
   promptID?: string
@@ -39,7 +44,7 @@ export type EvalSourceTextField =
   | `assessment:${string}:rubric`
   | `assessment:${string}:explanation`
 
-export type EvalRunTextSource = {
+export type EvalExperimentTextSource = {
   evaluation?: string
   providerName?: string
   promptLabel?: string
@@ -50,9 +55,9 @@ export type EvalSourceProjection =
       status: 'supported'
       datasetID: string
       adapter: 'promptfoo-v3'
-      runs: EvalRun[]
+      experiments: EvalExperiment[]
       rows: EvalSourceRowReference[]
-      runSources: Record<string, EvalRunTextSource>
+      experimentSources: Record<string, EvalExperimentTextSource>
       notes: string[]
     }
   | {
@@ -281,9 +286,9 @@ export function projectPromptfooDataset(
     }
     const localID = (...parts: (string | number | undefined)[]) =>
       JSON.stringify([dataset.id, ...parts])
-    const runs = new Map<string, EvalRun>()
+    const experiments = new Map<string, EvalExperiment>()
     const rows: EvalSourceRowReference[] = []
-    const runSources: Record<string, EvalRunTextSource> = {}
+    const experimentSources: Record<string, EvalExperimentTextSource> = {}
     const testDefinitions = new Map<string, number>()
     const evaluationID = identity(root.evalId)
     const evaluation = display(text(config?.description) || dataset.name)
@@ -338,10 +343,10 @@ export function projectPromptfooDataset(
       const testIndex = index(row.testIdx)
       const repeatIndex = index(row.repeatIndex)
       const repeatGroupID = identity(row.repeatGroupId)
-      const resultID = identity(row.id)
+      const sourceResultID = identity(row.id)
       const hasProvider = providerID !== undefined
       const hasPrompt = promptID !== undefined || promptIndex !== undefined
-      const runID = localID(
+      const experimentID = localID(
         'run',
         evaluationID,
         providerID,
@@ -351,10 +356,10 @@ export function projectPromptfooDataset(
         promptIndex,
         hasProvider && hasPrompt ? undefined : position
       )
-      let run = runs.get(runID)
+      let experiment = experiments.get(experimentID)
       const assessmentID = localID('assessment', 'outcome')
-      if (!run) {
-        runSources[runID] = {
+      if (!experiment) {
+        experimentSources[experimentID] = {
           evaluation: text(config?.description)
             ? '/config/description'
             : undefined,
@@ -367,7 +372,7 @@ export function projectPromptfooDataset(
             ? pointer + '/prompt/label'
             : undefined,
         }
-        const configuration: EvalRun['configuration'] = [
+        const configuration: EvalExperiment['configuration'] = [
           { name: 'Dataset ID', value: dataset.id },
         ]
         if (evaluationID)
@@ -383,8 +388,8 @@ export function projectPromptfooDataset(
             name: 'Prompt index',
             value: promptIndex,
           })
-        run = {
-          id: runID,
+        experiment = {
+          id: experimentID,
           name: display(providerName ?? evaluation),
           evaluation,
           promptLabel:
@@ -406,15 +411,15 @@ export function projectPromptfooDataset(
             },
           ],
           headlineAssessment: assessmentID,
-          reps: [],
+          results: [],
         }
-        runs.set(runID, run)
+        experiments.set(experimentID, experiment)
       }
-      const repID = localID('result', evaluationID, resultID, position)
+      const resultID = localID('result', evaluationID, sourceResultID, position)
       // Promptfoo expands testIdx across repetitions. Group the complete native
       // test definition plus resolved variables, never question text alone.
       const definition = test
-        ? runID +
+        ? experimentID +
           '\n' +
           canonical(test) +
           '\n' +
@@ -432,7 +437,7 @@ export function projectPromptfooDataset(
               : undefined
       const groupable = hasProvider && hasPrompt && testKey !== undefined
       const caseID = groupable
-        ? localID('case', runID, testKey)
+        ? localID('case', experimentID, testKey)
         : localID('case-row', position)
       if (!groupable)
         notes.add(
@@ -496,8 +501,8 @@ export function projectPromptfooDataset(
         if (text(component.reason) !== undefined)
           assessmentFields[`assessment:${id}:explanation`] =
             `${pointer}/gradingResult/componentResults/${componentIndex}/reason`
-        if (!run.assessments.some(item => item.id === id))
-          run.assessments.push({
+        if (!experiment.assessments.some(item => item.id === id))
+          experiment.assessments.push({
             id,
             name: display(
               text(assertion?.metric) ??
@@ -523,7 +528,7 @@ export function projectPromptfooDataset(
           rubric: display(text(assertion?.value) ?? ''),
         })
       }
-      const tools: EvalRep['tools'] = []
+      const tools: EvalResult['tools'] = []
       const rawOutput = response?.output
       let answer: string | undefined
       if (rawOutput !== undefined)
@@ -539,7 +544,7 @@ export function projectPromptfooDataset(
       sourceField('name', [
         [test?.description, '/testCase/description'],
         [row.description, '/description'],
-        [resultID, '/id'],
+        [sourceResultID, '/id'],
       ])
       sourceField('question', [[prompt?.raw, '/prompt/raw']])
       sourceField('explanation', [
@@ -556,15 +561,15 @@ export function projectPromptfooDataset(
       // The built-in echo provider replays a saved answer. Its latency is not
       // the original model execution duration; the export retains that value.
       const latency = providerID === 'echo' ? undefined : number(row.latencyMs)
-      run.reps.push({
-        id: repID,
-        sourceID: resultID,
+      experiment.results.push({
+        id: resultID,
+        sourceID: sourceResultID,
         caseID,
         repetition: repeatIndex === undefined ? undefined : repeatIndex + 1,
         name: display(
           text(test?.description) ??
             text(row.description) ??
-            resultID ??
+            sourceResultID ??
             `Result ${position + 1}`
         ),
         question: display(text(prompt?.raw) ?? ''),
@@ -599,10 +604,10 @@ export function projectPromptfooDataset(
         telemetry: execution,
       })
       rows.push({
-        repID,
+        resultID,
         pointer,
         fields,
-        resultID,
+        sourceResultID,
         evaluationID: identity(row.evaluationId) ?? evaluationID,
         providerID,
         promptID,
@@ -617,9 +622,9 @@ export function projectPromptfooDataset(
       status: 'supported',
       datasetID: dataset.id,
       adapter: 'promptfoo-v3',
-      runs: [...runs.values()],
+      experiments: [...experiments.values()],
       rows,
-      runSources,
+      experimentSources,
       notes: [...notes],
     }
   } catch (error) {

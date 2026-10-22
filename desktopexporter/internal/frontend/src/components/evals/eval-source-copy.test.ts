@@ -6,7 +6,7 @@ import {
 import {
   evalSourceFieldCopy,
   evalSourceFieldText,
-  evalSourceRunCopy,
+  evalSourceExperimentCopy,
 } from './eval-source-copy'
 
 function project(rows: Record<string, unknown>[]) {
@@ -37,13 +37,13 @@ describe('exact dataset field copy', () => {
         error: value,
       },
     ])
-    const rep = projection.runs[0].reps[0]
+    const result = projection.experiments[0].results[0]
     const previews = [
-      rep.name,
-      rep.question,
-      rep.answer,
-      rep.assessments[0].explanation,
-      rep.error,
+      result.name,
+      result.question,
+      result.answer,
+      result.assessments[0].explanation,
+      result.error,
     ]
     for (const preview of previews)
       expect(preview).toBe(value.slice(0, 32768) + '… [see original JSON]')
@@ -54,7 +54,7 @@ describe('exact dataset field copy', () => {
       'explanation',
       'error',
     ] as const) {
-      const exact = await copy(rep.id, field)!(new AbortController().signal)
+      const exact = await copy(result.id, field)!(new AbortController().signal)
       expect(exact).toBe(value)
       expect(exact).not.toContain('… [see original JSON]')
     }
@@ -70,18 +70,18 @@ describe('exact dataset field copy', () => {
         gradingResult: { reason: 'Late explanation' },
       }))
     )
-    const rep = projection.runs.at(-1)!.reps[0]
-    expect(rep.answer).toBe('… [see original JSON]')
-    expect(rep.question).toBe('… [see original JSON]')
-    expect(rep.assessments[0].explanation).toBe('… [see original JSON]')
-    expect(await copy(rep.id, 'answer')!(new AbortController().signal)).toBe(
+    const result = projection.experiments.at(-1)!.results[0]
+    expect(result.answer).toBe('… [see original JSON]')
+    expect(result.question).toBe('… [see original JSON]')
+    expect(result.assessments[0].explanation).toBe('… [see original JSON]')
+    expect(await copy(result.id, 'answer')!(new AbortController().signal)).toBe(
       value
     )
-    expect(await copy(rep.id, 'question')!(new AbortController().signal)).toBe(
-      'Late question'
-    )
     expect(
-      await copy(rep.id, 'explanation')!(new AbortController().signal)
+      await copy(result.id, 'question')!(new AbortController().signal)
+    ).toBe('Late question')
+    expect(
+      await copy(result.id, 'explanation')!(new AbortController().signal)
     ).toBe('Late explanation')
   })
 
@@ -89,19 +89,23 @@ describe('exact dataset field copy', () => {
     const { projection, copy } = project(
       [undefined, null, false, 0, ''].map(output => ({ response: { output } }))
     )
-    const reps = projection.runs.flatMap(run => run.reps)
-    expect(reps.map(rep => rep.answer)).toEqual([
+    const results = projection.experiments.flatMap(
+      experiment => experiment.results
+    )
+    expect(results.map(result => result.answer)).toEqual([
       undefined,
       'null',
       'false',
       '0',
       '',
     ])
-    expect(copy(reps[0].id, 'answer')).toBeUndefined()
-    expect(copy(reps[0].id, 'question')).toBeUndefined()
+    expect(copy(results[0].id, 'answer')).toBeUndefined()
+    expect(copy(results[0].id, 'question')).toBeUndefined()
     for (const [index, expected] of ['null', 'false', '0', ''].entries())
       expect(
-        await copy(reps[index + 1].id, 'answer')!(new AbortController().signal)
+        await copy(results[index + 1].id, 'answer')!(
+          new AbortController().signal
+        )
       ).toBe(expected)
   })
 
@@ -120,13 +124,15 @@ describe('exact dataset field copy', () => {
       },
       { failureReason: 2, response: { error: '' } },
     ])
-    const reps = projection.runs.flatMap(run => run.reps)
+    const results = projection.experiments.flatMap(
+      experiment => experiment.results
+    )
     const signal = new AbortController().signal
-    expect(await copy(reps[0].id, 'question')!(signal)).toBe('')
-    expect(await copy(reps[0].id, 'explanation')!(signal)).toBe('')
-    expect(await copy(reps[1].id, 'question')!(signal)).toBe('fallback')
-    expect(await copy(reps[1].id, 'explanation')!(signal)).toBe('failure')
-    expect(await copy(reps[2].id, 'error')!(signal)).toBe('')
+    expect(await copy(results[0].id, 'question')!(signal)).toBe('')
+    expect(await copy(results[0].id, 'explanation')!(signal)).toBe('')
+    expect(await copy(results[1].id, 'question')!(signal)).toBe('fallback')
+    expect(await copy(results[1].id, 'explanation')!(signal)).toBe('failure')
+    expect(await copy(results[2].id, 'error')!(signal)).toBe('')
   })
 
   it('extracts structured subtrees without losing unknown fields or numeric lexemes', () => {
@@ -160,16 +166,16 @@ describe('exact dataset field copy', () => {
       payload,
     })
     if (projection.status !== 'supported') throw new Error(projection.reason)
-    const rep = projection.runs[0].reps[0]
-    expect(rep.answer).not.toBe(value)
+    const result = projection.experiments[0].results[0]
+    expect(result.answer).not.toBe(value)
     expect(
-      await evalSourceFieldCopy(payload, projection.rows)(rep.id, 'answer')!(
+      await evalSourceFieldCopy(payload, projection.rows)(result.id, 'answer')!(
         new AbortController().signal
       )
     ).toBe(value)
   })
 
-  it('copies full native run text and reconstructs the derived run label from full operands', async () => {
+  it('copies full native experiment text and reconstructs the derived experiment label from full operands', async () => {
     const description = 'evaluation'.repeat(5000)
     const label = 'prompt'.repeat(7000)
     const source = {
@@ -190,14 +196,14 @@ describe('exact dataset field copy', () => {
     }
     const projection = projectPromptfooDataset(source)
     if (projection.status !== 'supported') throw new Error(projection.reason)
-    const run = projection.runs[0]
-    const copy = evalSourceRunCopy(source, projection.runSources)
+    const experiment = projection.experiments[0]
+    const copy = evalSourceExperimentCopy(source, projection.experimentSources)
     const signal = new AbortController().signal
-    expect(run.name).toBe('provider')
-    expect(await copy(run.id, 'name')!(signal)).toBe('provider')
-    expect(await copy(run.id, 'evaluation')!(signal)).toBe(description)
-    expect(await copy(run.id, 'prompt')!(signal)).toBe(label)
-    expect(await copy(run.id, 'source')!(signal)).toBe(source.source)
+    expect(experiment.name).toBe('provider')
+    expect(await copy(experiment.id, 'name')!(signal)).toBe('provider')
+    expect(await copy(experiment.id, 'evaluation')!(signal)).toBe(description)
+    expect(await copy(experiment.id, 'prompt')!(signal)).toBe(label)
+    expect(await copy(experiment.id, 'source')!(signal)).toBe(source.source)
   })
 
   it('never invents tool output from an imported telemetry identity', () => {
@@ -214,6 +220,6 @@ describe('exact dataset field copy', () => {
         },
       },
     ])
-    expect(projection.runs[0].reps[0].tools).toEqual([])
+    expect(projection.experiments[0].results[0].tools).toEqual([])
   })
 })

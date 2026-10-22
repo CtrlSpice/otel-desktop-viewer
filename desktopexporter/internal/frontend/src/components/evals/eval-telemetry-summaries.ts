@@ -1,4 +1,4 @@
-import type { EvalRep, EvalRun, TelemetryReference } from './model'
+import type { EvalResult, EvalExperiment, TelemetryReference } from './model'
 import type { EvalOutlineRow } from './eval-outline'
 import { referenceKey } from './eval-traces'
 
@@ -9,9 +9,9 @@ export type EvalTelemetrySummary = {
 
 /** Logical ownership labels references; it never invents an enclosing span. */
 export function evalTelemetrySummaries(
-  run: EvalRun,
+  experiment: EvalExperiment,
   row?: EvalOutlineRow,
-  selectedRep?: EvalRep
+  selectedResult?: EvalResult
 ): EvalTelemetrySummary[] {
   const entries = new Map<string, EvalTelemetrySummary>()
   function add(reference: TelemetryReference | undefined, label: string) {
@@ -19,27 +19,28 @@ export function evalTelemetrySummaries(
     const key = referenceKey(reference)
     if (!entries.has(key)) entries.set(key, { reference, label })
   }
-  function repRoots(rep: EvalRep, includeExecution = false) {
+  function resultRoots(result: EvalResult, includeExecution = false) {
     const prefix = 'Result'
-    add(rep.repTelemetry, prefix)
-    if (includeExecution || !rep.repTelemetry)
-      add(rep.telemetry, `${prefix} · Execution`)
+    add(result.resultTelemetry, prefix)
+    if (includeExecution || !result.resultTelemetry)
+      add(result.telemetry, `${prefix} · Execution`)
   }
   if (row?.kind === 'case') {
-    for (const rep of run.reps) if (rep.caseID === row.caseID) repRoots(rep)
+    for (const result of experiment.results)
+      if (result.caseID === row.caseID) resultRoots(result)
   } else if (row?.kind === 'grading') {
-    for (const assessment of row.rep?.assessments ?? [])
+    for (const assessment of row.result?.assessments ?? [])
       add(assessment.telemetry, assessment.evaluator || assessment.id)
-  } else if (row && row.kind !== 'rep' && row.kind !== 'run') {
+  } else if (row && row.kind !== 'result' && row.kind !== 'experiment') {
     add(row.reference, row.name)
-  } else if (row?.rep || selectedRep) {
-    const rep = (row?.rep ?? selectedRep)!
-    repRoots(rep, true)
-    for (const assessment of rep.assessments)
+  } else if (row?.result || selectedResult) {
+    const result = (row?.result ?? selectedResult)!
+    resultRoots(result, true)
+    for (const assessment of result.assessments)
       add(assessment.telemetry, assessment.evaluator || assessment.id)
   } else {
-    add(run.telemetry, 'Run')
-    for (const rep of run.reps) repRoots(rep)
+    add(experiment.telemetry, 'Experiment')
+    for (const result of experiment.results) resultRoots(result)
   }
   return [...entries.values()]
 }

@@ -2,29 +2,29 @@ import {
   assessmentSummary,
   estimatedCost,
   type AssessmentDefinition,
-  type EvalRep,
+  type EvalResult,
 } from './model'
 
 export function caseSummary(
-  reps: EvalRep[],
+  results: EvalResult[],
   definitions: AssessmentDefinition[] = []
 ) {
   let calls = 0
   let failures = 0
-  for (const rep of reps) {
-    calls += rep.tools.length
-    failures += rep.tools.filter(tool => tool.state === 'Error').length
+  for (const result of results) {
+    calls += result.tools.length
+    failures += result.tools.filter(tool => tool.state === 'Error').length
   }
   return {
     scores: Object.fromEntries(
       definitions.map(definition => [
         definition.id,
-        assessmentSummary({ reps }, definition),
+        assessmentSummary({ results }, definition),
       ])
     ),
     calls,
     failures,
-    investigatorCost: estimatedCost(reps, 'investigatorCost'),
-    graderCost: estimatedCost(reps, 'graderCost'),
+    investigatorCost: estimatedCost(results, 'investigatorCost'),
+    graderCost: estimatedCost(results, 'graderCost'),
   }
 }

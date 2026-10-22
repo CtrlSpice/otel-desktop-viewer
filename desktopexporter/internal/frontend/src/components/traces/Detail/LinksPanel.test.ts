@@ -57,7 +57,7 @@ describe('LinksPanel trace correlation', () => {
       ],
     })
     expect(screen.getByRole('button')).toHaveAccessibleName(
-      'linked-trace / linked-span · Link 3 fields'
+      'Traces: Trace ID linked-trace Span ID linked-span (unavailable) · Link 3 fields'
     )
   })
 
@@ -87,6 +87,7 @@ describe('LinksPanel trace correlation', () => {
       ],
     })
     expect(screen.getByRole('button')).toHaveTextContent('Invalid link target')
+    expect(screen.queryByText('(unavailable)')).toBeNull()
     expect(screen.queryByRole('link')).toBeNull()
   })
 
@@ -95,6 +96,7 @@ describe('LinksPanel trace correlation', () => {
     const card = screen.getByRole('button', { expanded: false })
     expect(card).toHaveTextContent('linked-trace')
     expect(card).toHaveTextContent('linked-span')
+    expect(screen.queryByText('(unavailable)')).toBeNull()
     expect(screen.queryByRole('link')).toBeNull()
     await userEvent.click(card)
     expect(screen.getByRole('link', { name: 'linked-trace' })).toHaveAttribute(
@@ -183,6 +185,45 @@ describe('LinksPanel trace correlation', () => {
     expect(window.location.pathname).toBe('/traces/trace-1')
     await userEvent.click(cards[0]!)
     expect(cards[1]).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('updates an unavailable target in place while preserving disclosure and exact copy values', async () => {
+    const user = userEvent.setup()
+    const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()
+    const link = makeLink({
+      traceID: 'A'.repeat(32),
+      spanID: 'B'.repeat(16),
+      traceState: 'vendor=recorded',
+      summary: { target: null },
+    })
+    const view = renderWithContexts(LinksPanel, { links: [link] })
+    const card = screen.getByRole('button', { expanded: false })
+    expect(card).toHaveTextContent('(unavailable)')
+    await user.click(card)
+    await user.click(screen.getByRole('button', { name: 'Copy spanId' }))
+    expect(copy).toHaveBeenCalledWith(link.spanID)
+    expect(screen.getByRole('link', { name: link.spanID! })).toHaveAttribute(
+      'href',
+      `/traces/${link.traceID}?start=0&end=1&span=${link.spanID}`
+    )
+    await view.rerender({
+      componentProps: {
+        links: [
+          {
+            ...link,
+            summary: {
+              target: { name: 'Arrived target', serviceName: 'worker' },
+            },
+          },
+        ],
+      },
+    })
+    expect(screen.getByRole('button', { expanded: true })).toBe(card)
+    expect(card).toHaveTextContent('Arrived target (worker)')
+    expect(screen.queryByText('(unavailable)')).toBeNull()
+    expect(screen.getByText('vendor=recorded')).toBeVisible()
+    expect(screen.getByRole('link', { name: link.spanID! })).toBeVisible()
+    copy.mockRestore()
   })
 })
 

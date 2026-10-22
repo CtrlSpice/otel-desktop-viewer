@@ -33,8 +33,8 @@
 <BubbleBreakdown
   parts={colouredParts}
   label={`${label} outcomes`}
-  barLabel={`${label} by rep count`}
-  unit="rep"
+  barLabel={`${label} by result count`}
+  unit="result"
   emptyLabel="No results"
   tooltipOnly
   staticSingle

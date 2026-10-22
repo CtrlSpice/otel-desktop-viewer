@@ -4,19 +4,19 @@ import {
   isErrorSpan,
 } from '@/components/traces/Waterfall/WaterfallView.svelte'
 import type { TreeConnectorMeta } from '@/components/shared/TreeGutter.svelte'
-import type { EvalRep, EvalRun, TelemetryReference } from './model'
+import type { EvalResult, EvalExperiment, TelemetryReference } from './model'
 
 export const referenceKey = (reference: TelemetryReference) =>
   `${reference.traceID.toLowerCase()}/${reference.spanID?.toLowerCase() ?? ''}`
 
-export function evalTraceReferences(run: EvalRun) {
+export function evalTraceReferences(experiment: EvalExperiment) {
   return [
-    run.telemetry,
-    ...run.reps.flatMap(rep => [
-      rep.telemetry,
-      rep.repTelemetry,
-      ...rep.tools.map(tool => tool.telemetry),
-      ...rep.assessments.map(assessment => assessment.telemetry),
+    experiment.telemetry,
+    ...experiment.results.flatMap(result => [
+      result.telemetry,
+      result.resultTelemetry,
+      ...result.tools.map(tool => tool.telemetry),
+      ...result.assessments.map(assessment => assessment.telemetry),
     ]),
   ].flatMap(reference =>
     reference?.spanID
@@ -51,7 +51,7 @@ export type EvalExecutionRow = {
   seconds?: number
   cost?: number
   assessmentID?: string
-  state: EvalRep['state']
+  state: EvalResult['state']
   node?: SpanNode
   depth: number
   tree: TreeConnectorMeta
@@ -59,12 +59,12 @@ export type EvalExecutionRow = {
 
 /** Retain eval evidence rows, but connect stored references by actual ancestry. */
 export function evalExecutionRows(
-  rep: EvalRep,
+  result: EvalResult,
   index: ReturnType<typeof indexEvalTraces>
 ) {
   const items = [
-    ...rep.tools.map((tool, position) => ({
-      id: `${rep.id}/tool/${position}`,
+    ...result.tools.map((tool, position) => ({
+      id: `${result.id}/tool/${position}`,
       name: tool.name,
       reference: tool.telemetry,
       seconds: tool.seconds,
@@ -72,10 +72,10 @@ export function evalExecutionRows(
       state:
         tool.state === 'Error' ? ('Error' as const) : ('Complete' as const),
     })),
-    ...rep.assessments
+    ...result.assessments
       .filter(item => item.telemetry)
       .map(item => ({
-        id: `${rep.id}/assessment/${item.id}`,
+        id: `${result.id}/assessment/${item.id}`,
         name: `${item.evaluator || 'Grader'} · ${item.id}`,
         reference: item.telemetry,
         seconds: undefined,
@@ -84,21 +84,24 @@ export function evalExecutionRows(
         state: 'Complete' as const,
       })),
   ]
-  const repKey = rep.telemetry ? referenceKey(rep.telemetry) : undefined
+  const resultKey = result.telemetry
+    ? referenceKey(result.telemetry)
+    : undefined
   const identities = new Map<string, string>()
   for (const item of items) {
     if (item.reference?.spanID) {
       const key = referenceKey(item.reference)
-      if (key !== repKey && !identities.has(key)) identities.set(key, item.id)
+      if (key !== resultKey && !identities.has(key))
+        identities.set(key, item.id)
     }
   }
   const children = new Map<string, typeof items>()
   for (const item of items) {
-    let parentID = rep.id
+    let parentID = result.id
     let parent = item.reference
       ? index.parents.get(referenceKey(item.reference))
       : undefined
-    while (parent && parent !== repKey) {
+    while (parent && parent !== resultKey) {
       const ancestor = identities.get(parent)
       if (ancestor) {
         parentID = ancestor
@@ -138,7 +141,7 @@ export function evalExecutionRows(
       visit(item.id, depth + 1)
     }
   }
-  visit(rep.id, 1)
+  visit(result.id, 1)
   // Propagate execution errors through the displayed ancestry without changing
   // the recorded eval result or assessment score.
   const errorAtDepth: boolean[] = []
@@ -156,7 +159,7 @@ export function evalExecutionRows(
     {
       depth: 0,
       spanData: {
-        spanID: repKey ?? rep.id,
+        spanID: resultKey ?? result.id,
         parentSpanID: null,
       },
     },
@@ -174,14 +177,15 @@ export function evalExecutionRows(
       },
     })),
   ])
-  const repNode = repKey ? index.nodes.get(repKey) : undefined
+  const resultNode = resultKey ? index.nodes.get(resultKey) : undefined
   const spanError =
     rows.some(row => row.state === 'Error') ||
-    !!(repNode && isErrorSpan(repNode.spanData))
+    !!(resultNode && isErrorSpan(resultNode.spanData))
   return {
-    internalFault: rep.state === 'Error',
+    internalFault: result.state === 'Error',
     spanError,
-    state: rep.state === 'Error' || spanError ? ('Error' as const) : rep.state,
+    state:
+      result.state === 'Error' || spanError ? ('Error' as const) : result.state,
     childrenCount: metadata[0]!.childrenCount,
     rows: rows.map((row, position) => ({
       ...row,

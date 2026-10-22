@@ -45,9 +45,11 @@ including for syntax and metadata.
 | Dawn colour  | Original  | Adjusted  | Minimum contrast |
 | ------------ | --------- | --------- | ---------------- |
 | Subtle       | `#797593` | `#625d7a` | 4.506:1          |
-| Muted        | `#9893a5` | `#635e6f` | 4.513:1          |
 | Iris/Primary | `#907aa9` | `#6d5784` | 4.532:1          |
 | Foam/Accent  | `#56949f` | `#296974` | 4.505:1          |
+
+Dawn Muted retains its original `#9893a5`, restored by user approval so unavailable
+and disabled content remains visually distinct from Subtle text.
 
 Dawn Gold/Warning retains its original `#ea9d34`. The user rejected the darkened
 `#895500`. Do not change Gold or add a local override to satisfy contrast checks;

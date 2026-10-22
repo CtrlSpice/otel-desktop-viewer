@@ -6,9 +6,6 @@
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import { readOTLPText } from '@/services/export-service'
   import DetailViews from '@/components/shared/DetailViews.svelte'
-  import RawJsonStatus, {
-    type RawJsonStatusData,
-  } from '@/components/shared/RawJsonStatus.svelte'
   import DetailViewTabs, {
     type DetailViewMode,
   } from '@/components/shared/DetailViewTabs.svelte'
@@ -16,10 +13,8 @@
   import LogField from '@/components/shared/DetailProperty.svelte'
   import AttributeRows from '@/components/shared/AttributeRows.svelte'
   import AssociatedTrace from './AssociatedTrace.svelte'
-  import {
-    severityLabel as buildSeverityLabel,
-    severityColor,
-  } from '@/components/logs/log-severity'
+  import { severityLabel as buildSeverityLabel } from '@/components/logs/log-severity'
+  import LogSeverity from './LogSeverity.svelte'
   import { getServiceName } from '@/utils/resource'
   import { formatTimestamp } from '@/utils/time'
   import { getTimeContext } from '@/contexts/time-context.svelte'
@@ -42,7 +37,6 @@
     detailView = $bindable<DetailViewMode>('fields'),
   }: Props = $props()
   const detailViewID = $props.id()
-  let rawStatus = $state<RawJsonStatusData>()
   const exportURL = $derived(
     log ? `/export/logs/${encodeURIComponent(log.logRef)}` : ''
   )
@@ -104,18 +98,7 @@
     data-field-source="log"
     use:revealDetailField={resolvedTarget}
   >
-    {#snippet jsonStatus()}{#if rawStatus}<RawJsonStatus
-          status={rawStatus}
-        />{/if}{/snippet}
-    <PaneHeader
-      pill
-      mode="title"
-      title={service || '—'}
-      ariaLabel="Log record"
-      badge={detailView === 'raw' && rawStatus?.url === exportURL
-        ? jsonStatus
-        : undefined}
-    >
+    <PaneHeader pill mode="title" title={service || '—'} ariaLabel="Log record">
       {#snippet right()}
         <DetailViewTabs id={detailViewID} bind:view={detailView} />
         {#key log.logRef}
@@ -141,8 +124,6 @@
           id={detailViewID}
           showTabs={false}
           bind:view={detailView}
-          bind:rawStatus
-          showRawStatus={false}
           wholeURL={exportURL}
           scopes={[
             {
@@ -183,15 +164,26 @@
                 fieldName="severityText"
                 fieldType="string"
                 fieldValue={log.severityText}
-                valueColor={severityColor(log.severityNumber)}
-              />
+              >
+                {#snippet value()}<LogSeverity
+                    number={log.severityNumber}
+                    text={log.severityText}
+                    >{log.severityText === ''
+                      ? '""'
+                      : log.severityText}</LogSeverity
+                  >{/snippet}
+              </LogField>
               <LogField
                 fieldName="severityNumber"
                 fieldType="enum"
                 fieldValue={String(log.severityNumber)}
-                valueColor={severityColor(log.severityNumber)}
-                valueLabel={severityLabel}
-              />
+              >
+                {#snippet value()}<LogSeverity
+                    number={log.severityNumber}
+                    text={log.severityText}
+                    >{log.severityNumber} ({severityLabel})</LogSeverity
+                  >{/snippet}
+              </LogField>
               {#if log.spanID && !log.traceID}
                 <LogField
                   identifier

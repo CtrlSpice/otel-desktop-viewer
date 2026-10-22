@@ -3,11 +3,11 @@ import {
   computeTreeMeta,
   isErrorSpan,
 } from '@/components/traces/Waterfall/WaterfallView.svelte'
-import { completionState, type groupReps } from './group-reps'
+import { completionState, type groupResults } from './group-results'
 import {
   estimatedCost,
-  type EvalRep,
-  type EvalRun,
+  type EvalResult,
+  type EvalExperiment,
   type TelemetryReference,
 } from './model'
 import {
@@ -22,12 +22,19 @@ export type TimeWindow = { startTime: bigint; endTime: bigint }
 export type EvalOutlineRow = {
   id: string
   parentID: string | null
-  kind: 'run' | 'case' | 'rep' | 'execution' | 'grading' | 'tool' | 'grader'
+  kind:
+    | 'experiment'
+    | 'case'
+    | 'result'
+    | 'execution'
+    | 'grading'
+    | 'tool'
+    | 'grader'
   caseID: string
-  rep?: EvalRep
+  result?: EvalResult
   name: string
   depth: number
-  state: EvalRep['state'] | 'Unknown'
+  state: EvalResult['state'] | 'Unknown'
   internalFault: boolean
   spanError: boolean
   reference?: TelemetryReference
@@ -79,11 +86,11 @@ function mergeWindows(
 /** Logical eval ownership supplies grouping; stored ancestry supplies tool connections.
  * Grouping IDs are display-only and never replace received trace/span identities. */
 export function buildEvalOutline(
-  groups: ReturnType<typeof groupReps>,
-  run: EvalRun,
+  groups: ReturnType<typeof groupResults>,
+  experiment: EvalExperiment,
   index: ReturnType<typeof indexEvalTraces>
 ): EvalOutlineRow[] {
-  const source = new Map(run.reps.map(rep => [rep.id, rep]))
+  const source = new Map(experiment.results.map(result => [result.id, result]))
   const nodeFor = (reference?: TelemetryReference) =>
     reference ? index.nodes.get(referenceKey(reference)) : undefined
   const rows: EvalOutlineRow[] = []
@@ -92,69 +99,70 @@ export function buildEvalOutline(
     ancestorHasNextSibling: [],
     isLastChild: true,
   }
-  // The run's totals, timing and execution state include every rep, even
+  // The experiment's totals, timing and execution state include every result, even
   // when search hides a case or repetition from the visible outline.
-  const repStatuses = new Map(
-    run.reps.map(rep => {
-      const execution = evalExecutionRows(rep, index)
-      const repNode = nodeFor(rep.repTelemetry)
+  const resultStatuses = new Map(
+    experiment.results.map(result => {
+      const execution = evalExecutionRows(result, index)
+      const resultNode = nodeFor(result.resultTelemetry)
       const spanError =
-        execution.spanError || !!(repNode && isErrorSpan(repNode.spanData))
+        execution.spanError ||
+        !!(resultNode && isErrorSpan(resultNode.spanData))
       return [
-        rep.id,
+        result.id,
         {
           state: spanError ? ('Error' as const) : execution.state,
           spanError,
           internalFault: execution.internalFault,
           window:
-            spanWindow([repNode]) ??
+            spanWindow([resultNode]) ??
             spanWindow([
-              nodeFor(rep.telemetry),
+              nodeFor(result.telemetry),
               ...execution.rows.map(row => row.node),
             ]),
         },
       ]
     })
   )
-  const allStatuses = [...repStatuses.values()]
-  const runNode = nodeFor(run.telemetry)
-  const runSpanError =
-    !!(runNode && isErrorSpan(runNode.spanData)) ||
+  const allStatuses = [...resultStatuses.values()]
+  const experimentNode = nodeFor(experiment.telemetry)
+  const experimentSpanError =
+    !!(experimentNode && isErrorSpan(experimentNode.spanData)) ||
     allStatuses.some(item => item.spanError)
-  const runInternalFault =
-    run.pauseReason === 'internal-error' ||
+  const experimentInternalFault =
+    experiment.pauseReason === 'internal-error' ||
     allStatuses.some(item => item.internalFault)
-  const runRow: EvalOutlineRow = {
-    id: `run/${run.id}`,
+  const experimentRow: EvalOutlineRow = {
+    id: `experiment/${experiment.id}`,
     parentID: null,
-    kind: 'run',
+    kind: 'experiment',
     caseID: '',
-    name: run.name,
+    name: experiment.name,
     depth: 0,
     state:
-      runSpanError || runInternalFault
+      experimentSpanError || experimentInternalFault
         ? 'Error'
-        : run.state === 'Paused'
+        : experiment.state === 'Paused'
           ? 'Running'
-          : run.state,
-    internalFault: runInternalFault,
-    spanError: runSpanError,
-    reference: run.telemetry,
+          : experiment.state,
+    internalFault: experimentInternalFault,
+    spanError: experimentSpanError,
+    reference: experiment.telemetry,
     window:
-      spanWindow([runNode]) ??
+      spanWindow([experimentNode]) ??
       mergeWindows(allStatuses.map(item => item.window)),
-    seconds: run.seconds,
+    seconds: experiment.seconds,
     estimate: combineEstimates([
-      estimatedCost(run.reps, 'investigatorCost'),
-      estimatedCost(run.reps, 'graderCost'),
+      estimatedCost(experiment.results, 'investigatorCost'),
+      estimatedCost(experiment.results, 'graderCost'),
     ]),
     tree: emptyTree,
   }
-  rows.push(runRow)
+  rows.push(experimentRow)
   for (const group of groups) {
     const caseRow: EvalOutlineRow = {
       id: `case/${group.id}`,
-      parentID: runRow.id,
+      parentID: experimentRow.id,
       kind: 'case',
       caseID: group.id,
       name: group.name,
@@ -163,72 +171,72 @@ export function buildEvalOutline(
       internalFault: false,
       spanError: false,
       estimate: combineEstimates([
-        estimatedCost(group.allReps, 'investigatorCost'),
-        estimatedCost(group.allReps, 'graderCost'),
+        estimatedCost(group.allResults, 'investigatorCost'),
+        estimatedCost(group.allResults, 'graderCost'),
       ]),
       tree: emptyTree,
     }
     rows.push(caseRow)
     // Hidden repetitions still contribute to the case's status and cost.
-    const statuses = group.allReps.map(item => repStatuses.get(item.id)!)
+    const statuses = group.allResults.map(item => resultStatuses.get(item.id)!)
     caseRow.state = completionState(statuses)
     caseRow.spanError = statuses.some(item => item.spanError)
     caseRow.internalFault = statuses.some(item => item.internalFault)
     caseRow.window = mergeWindows(statuses.map(item => item.window))
-    for (const item of group.reps) {
-      const rep = source.get(item.id)!
-      const execution = evalExecutionRows({ ...rep, assessments: [] }, index)
+    for (const item of group.results) {
+      const result = source.get(item.id)!
+      const execution = evalExecutionRows({ ...result, assessments: [] }, index)
       const grading = evalExecutionRows(
-        { ...rep, telemetry: undefined, tools: [], state: 'Complete' },
+        { ...result, telemetry: undefined, tools: [], state: 'Complete' },
         index
       )
-      const repNode = nodeFor(rep.repTelemetry)
+      const resultNode = nodeFor(result.resultTelemetry)
       const spanError =
         execution.spanError ||
         grading.spanError ||
-        !!(repNode && isErrorSpan(repNode.spanData))
-      const repRow: EvalOutlineRow = {
-        id: `rep/${rep.id}`,
+        !!(resultNode && isErrorSpan(resultNode.spanData))
+      const resultRow: EvalOutlineRow = {
+        id: `result/${result.id}`,
         parentID: caseRow.id,
-        kind: 'rep',
+        kind: 'result',
         caseID: group.id,
-        rep,
+        result,
         name: 'Result',
         depth: 2,
-        state: spanError ? 'Error' : rep.state,
-        internalFault: rep.state === 'Error',
+        state: spanError ? 'Error' : result.state,
+        internalFault: result.state === 'Error',
         spanError,
-        reference: rep.repTelemetry,
+        reference: result.resultTelemetry,
         window:
-          spanWindow([repNode]) ??
+          spanWindow([resultNode]) ??
           spanWindow([
-            nodeFor(rep.telemetry),
+            nodeFor(result.telemetry),
             ...execution.rows.map(row => row.node),
             ...grading.rows.map(row => row.node),
           ]),
-        seconds: rep.seconds,
+        seconds: result.seconds,
         estimate: combineEstimates([
-          estimate(rep.investigatorCost),
-          estimate(rep.graderCost),
+          estimate(result.investigatorCost),
+          estimate(result.graderCost),
         ]),
         tree: emptyTree,
       }
       // A result without recorded repetition identity belongs directly on its
-      // test case. This is a display projection, not an invented Rep 1.
+      // test case. This is a display projection, not an invented Result 1.
       const owner =
-        rep.repetition === undefined && group.allReps.length === 1
+        result.repetition === undefined && group.allResults.length === 1
           ? caseRow
-          : repRow
+          : resultRow
       if (owner === caseRow) {
         Object.assign(caseRow, {
-          rep,
-          reference: rep.repTelemetry ?? rep.telemetry,
-          window: repRow.window,
-          seconds: rep.seconds,
+          result,
+          reference: result.resultTelemetry ?? result.telemetry,
+          window: resultRow.window,
+          seconds: result.seconds,
         })
       } else {
-        repRow.reference ??= rep.telemetry
-        rows.push(repRow)
+        resultRow.reference ??= result.telemetry
+        rows.push(resultRow)
       }
       // Roles are attributes. A separate execution row requires a distinct,
       // explicitly referenced span; scores alone do not create grading spans.
@@ -240,25 +248,26 @@ export function buildEvalOutline(
         let parent = owner
         if (
           phase.kind === 'execution' &&
-          rep.repTelemetry &&
-          rep.telemetry?.spanID &&
-          referenceKey(rep.repTelemetry) !== referenceKey(rep.telemetry)
+          result.resultTelemetry &&
+          result.telemetry?.spanID &&
+          referenceKey(result.resultTelemetry) !==
+            referenceKey(result.telemetry)
         ) {
           parent = {
-            id: `execution/${rep.id}`,
+            id: `execution/${result.id}`,
             parentID: owner.id,
             kind: 'execution',
             caseID: group.id,
-            rep,
-            name: nodeFor(rep.telemetry)?.spanData.name ?? 'Execution',
+            result,
+            name: nodeFor(result.telemetry)?.spanData.name ?? 'Execution',
             depth: owner.depth + 1,
-            reference: rep.telemetry,
-            window: spanWindow([nodeFor(rep.telemetry)]),
-            seconds: rep.seconds,
+            reference: result.telemetry,
+            window: spanWindow([nodeFor(result.telemetry)]),
+            seconds: result.seconds,
             state: execution.state,
             internalFault: execution.internalFault,
             spanError: execution.spanError,
-            estimate: estimate(rep.investigatorCost),
+            estimate: estimate(result.investigatorCost),
             tree: emptyTree,
           }
           rows.push(parent)
@@ -273,7 +282,7 @@ export function buildEvalOutline(
             parentID,
             kind: phase.kind === 'execution' ? 'tool' : 'grader',
             caseID: group.id,
-            rep,
+            result,
             name: child.name,
             depth: child.depth + parent.depth,
             state: child.state,
@@ -295,9 +304,9 @@ export function buildEvalOutline(
           })
         }
       }
-      if (group.allReps.length === 1) {
-        caseRow.window = repRow.window
-        caseRow.seconds = repRow.seconds
+      if (group.allResults.length === 1) {
+        caseRow.window = resultRow.window
+        caseRow.seconds = resultRow.seconds
       }
     }
   }
@@ -332,11 +341,11 @@ export function outlineOpen(
 ) {
   return (
     overrides[row.id] ??
-    (row.kind === 'run'
+    (row.kind === 'experiment'
       ? true
       : row.kind === 'case'
         ? views.includes('results') || views.includes('time')
-        : row.kind === 'rep' || row.kind === 'execution'
+        : row.kind === 'result' || row.kind === 'execution'
           ? views.includes('time')
           : false)
   )

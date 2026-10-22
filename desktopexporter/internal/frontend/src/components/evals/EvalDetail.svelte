@@ -2,58 +2,64 @@
   import DetailStack from '@/components/shared/DetailStack.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import DetailField from '@/components/shared/DetailProperty.svelte'
-  import type { EvalRun } from './model'
+  import type { EvalExperiment } from './model'
   import { cost, estimatedCost, localTimestamp } from './model'
-  import RunStatusBadge from './RunStatusBadge.svelte'
+  import ExperimentStatusBadge from './ExperimentStatusBadge.svelte'
   import EvalTelemetrySummaries from './EvalTelemetrySummaries.svelte'
   import { evalTelemetrySummaries } from './eval-telemetry-summaries'
   import type { SpanNode } from '@/types/api-types'
-  import type { EvalSourceRunCopy } from './eval-source-copy'
+  import type { EvalSourceExperimentCopy } from './eval-source-copy'
   import type { EvalOutlineRow } from './eval-outline'
   import { referenceKey } from './eval-traces'
   import { formatDuration } from '@/utils/time'
-  import { runSummary } from './run-summary'
+  import { experimentSummary } from './experiment-summary'
   import EvalStatus from './EvalStatus.svelte'
-  import type { EvalStoredRunSummary } from '@/services/eval-run-types'
+  import type { EvalStoredExperimentSummary } from '@/services/eval-experiment-types'
 
   let {
-    run,
+    experiment,
     row,
     telemetryNodes,
     telemetryLoading = false,
-    runCopy,
+    experimentCopy,
     storedSummary,
   }: {
-    run: EvalRun
+    experiment: EvalExperiment
     row?: EvalOutlineRow
     telemetryNodes?: Map<string, SpanNode>
     telemetryLoading?: boolean
-    runCopy?: EvalSourceRunCopy
-    storedSummary?: EvalStoredRunSummary
+    experimentCopy?: EvalSourceExperimentCopy
+    storedSummary?: EvalStoredExperimentSummary
   } = $props()
-  const investigator = $derived(estimatedCost(run.reps, 'investigatorCost'))
-  const references = $derived(evalTelemetrySummaries(run))
-  const grader = $derived(estimatedCost(run.reps, 'graderCost'))
-  const summary = $derived(runSummary(run))
+  const investigator = $derived(
+    estimatedCost(experiment.results, 'investigatorCost')
+  )
+  const references = $derived(evalTelemetrySummaries(experiment))
+  const grader = $derived(estimatedCost(experiment.results, 'graderCost'))
+  const summary = $derived(experimentSummary(experiment))
   const outcomes = $derived(storedSummary?.outcomes ?? summary.parts)
-  const repCount = $derived(storedSummary?.repCount ?? run.reps.length)
-  const cases = $derived(new Set(run.reps.map(rep => rep.caseID)).size)
+  const resultCount = $derived(
+    storedSummary?.resultCount ?? experiment.results.length
+  )
+  const cases = $derived(
+    new Set(experiment.results.map(result => result.caseID)).size
+  )
   const span = $derived(
-    run.telemetry
-      ? telemetryNodes?.get(referenceKey(run.telemetry))?.spanData
+    experiment.telemetry
+      ? telemetryNodes?.get(referenceKey(experiment.telemetry))?.spanData
       : undefined
   )
   const duration = $derived(
     row?.window
       ? formatDuration(row.window.endTime - row.window.startTime)
-      : run.seconds !== undefined
-        ? `${run.seconds} s`
+      : experiment.seconds !== undefined
+        ? `${experiment.seconds} s`
         : undefined
   )
   const showDuration = $derived(
     row?.window
       ? row.window.endTime - row.window.startTime > 1n
-      : run.seconds === undefined || run.seconds > 1e-9
+      : experiment.seconds === undefined || experiment.seconds > 1e-9
   )
   const durationSource = $derived(
     row?.window
@@ -64,14 +70,18 @@
   )
 </script>
 
+<!-- Retain the saved layout key across the terminology rename. -->
 <DetailStack label="Experiment details" storageKey="eval-run-detail-layout">
-  <DetailBubble label={run.name} layoutKey="Experiment">
+  <DetailBubble label={experiment.name} layoutKey="Experiment">
     {#snippet labelSuffix()}<span class="text-secondary">· experiment</span
       >{/snippet}
     {#snippet trailing()}<span
         class="inline-flex flex-wrap items-center justify-end gap-4"
       >
-        <RunStatusBadge state={run.state} pauseReason={run.pauseReason} />
+        <ExperimentStatusBadge
+          state={experiment.state}
+          pauseReason={experiment.pauseReason}
+        />
         {#if outcomes.length}
           <span
             class="inline-flex flex-wrap items-center justify-end gap-4"
@@ -95,42 +105,42 @@
         <DetailField
           fieldName="name"
           fieldType="string"
-          fieldValue={run.name}
-          loadText={runCopy?.(run.id, 'name')}
+          fieldValue={experiment.name}
+          loadText={experimentCopy?.(experiment.id, 'name')}
         />
         <DetailField
           fieldName="evaluation"
           fieldType="string"
-          fieldValue={run.evaluation}
-          loadText={runCopy?.(run.id, 'evaluation')}
+          fieldValue={experiment.evaluation}
+          loadText={experimentCopy?.(experiment.id, 'evaluation')}
         />
-        {#if run.state !== 'Unknown'}<DetailField
+        {#if experiment.state !== 'Unknown'}<DetailField
             fieldName="state"
             fieldType="enum"
-            fieldValue={run.state}
+            fieldValue={experiment.state}
           >
-            {#snippet value()}<RunStatusBadge
-                state={run.state}
-                pauseReason={run.pauseReason}
+            {#snippet value()}<ExperimentStatusBadge
+                state={experiment.state}
+                pauseReason={experiment.pauseReason}
               />{/snippet}
           </DetailField>{/if}
-        {#if run.promptLabel !== undefined}
+        {#if experiment.promptLabel !== undefined}
           <DetailField
             fieldName="prompt"
             fieldType="string"
-            fieldValue={run.promptLabel}
-            loadText={runCopy?.(run.id, 'prompt')}
+            fieldValue={experiment.promptLabel}
+            loadText={experimentCopy?.(experiment.id, 'prompt')}
             multiline
           />
         {/if}
         <DetailField
           fieldName="source"
           fieldType="string"
-          fieldValue={run.source}
-          loadText={runCopy?.(run.id, 'source')}
+          fieldValue={experiment.source}
+          loadText={experimentCopy?.(experiment.id, 'source')}
         />
-        {#if run.startedAt}
-          {@const startedAt = run.startedAt}
+        {#if experiment.startedAt}
+          {@const startedAt = experiment.startedAt}
           <DetailField
             fieldName="started"
             fieldType="timestamp"
@@ -160,7 +170,7 @@
         <DetailField
           fieldName="results"
           fieldType="number"
-          fieldValue={String(repCount)}
+          fieldValue={String(resultCount)}
         />
       </tbody>
     </table>
@@ -168,12 +178,12 @@
   <DetailBubble
     label="Configuration"
     initialOpen={false}
-    count={run.configuration.length}
+    count={experiment.configuration.length}
     countLabel="fields"
   >
     <table class="detail-fields w-full" aria-label="Experiment configuration">
       <tbody
-        >{#each run.configuration as field}<DetailField
+        >{#each experiment.configuration as field}<DetailField
             fieldName={field.name}
             fieldType={field.value === null ? 'null' : typeof field.value}
             fieldValue={String(field.value)}
@@ -190,7 +200,7 @@
         <DetailField
           fieldName="assessed results"
           fieldType="number"
-          fieldValue={`${run.reps.filter(item => item.assessments.length > 0).length} / ${run.reps.length}`}
+          fieldValue={`${experiment.results.filter(item => item.assessments.length > 0).length} / ${experiment.results.length}`}
         />
       </tbody>
     </table>

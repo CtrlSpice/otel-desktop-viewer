@@ -125,7 +125,7 @@ type RecordPage struct {
 	HasMore bool              `json:"hasMore"`
 }
 
-// Records returns an ordered byte-bounded page plus the original run context.
+// Records returns an ordered byte-bounded page plus the original experiment context.
 // Clients must preserve row ordinals when constructing source pointers.
 func Records(ctx context.Context, db *sql.DB, id string, offset, limit int64) (RecordPage, error) {
 	out := RecordPage{ID: id, Offset: offset, Rows: []json.RawMessage{}}

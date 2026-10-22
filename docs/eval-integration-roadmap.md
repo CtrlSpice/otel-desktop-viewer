@@ -5,13 +5,13 @@ Research date: 2026-10-20. Vendor capabilities below are documented, not end-to-
 ## Current foundation
 
 The [ingestion path](eval-ingestion.md) stores producer context and ordered source
-rows as DuckDB JSON, then builds disposable Run, row-membership and text-search
+rows as DuckDB JSON, then builds disposable Experiment, row-membership and text-search
 indexes. Unknown fields remain in retained source data. The supported production
 adapter currently targets producer-native Promptfoo v3 full-result exports.
 
-The shared projection keeps Run, Case and Rep distinct. Attempt is a separate,
+The shared projection keeps Experiment, Case and Result distinct. Attempt is a separate,
 optional retry concept and must be emitted only when a producer records retry
-identity. Promptfoo v3 rows currently map to Reps; they do not define the model
+identity. Promptfoo v3 rows currently map to Results; they do not define the model
 for later adapters.
 
 The current presentation is intentionally narrower than the retained source. It assumes string questions/answers, numeric normalized assessments and CAD estimates. An adapter must omit incompatible projections with an explanation rather than invent a score maximum, relabel USD as CAD, infer execution errors from prose or manufacture telemetry IDs.
@@ -35,7 +35,7 @@ The current presentation is intentionally narrower than the retained source. It 
 | [Promptfoo](https://www.promptfoo.dev/docs/configuration/outputs/) | Full JSON/YAML and streaming JSONL; reduced CSV/JUnit outputs | Preserve provider/prompt/test variants and assertion components. Reduced formats cannot recover omitted evidence. |
 | [DeepEval](https://deepeval.com/docs/evaluation-flags-and-configs) | Saved TestRun JSON; version-dependent local SQLite | Preserve metric reasons, errors, configuration and SDK version. Start with the documented JSON artifact. |
 | [Inspect AI](https://inspect.aisi.org.uk/eval-logs.html) | `.eval`/JSON logs; public dump/convert/read commands | Start with externally dumped JSON. Preserve sample/epoch/retry identity, score edits, reductions and attachment references. Summary reads can truncate evidence. |
-| [lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness/blob/main/docs/interface.md) | Results JSON and optional sample artifacts | Support aggregate-only runs, uncertainty, direction and non-chat likelihood evidence. Do not fabricate per-case scores from aggregates. |
+| [lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness/blob/main/docs/interface.md) | Results JSON and optional sample artifacts | Support aggregate-only experiments, uncertainty, direction and non-chat likelihood evidence. Do not fabricate per-case scores from aggregates. |
 | [OpenAI Evals OSS](https://github.com/openai/evals/blob/main/docs/run-evals.md) / [hosted API](https://developers.openai.com/api/reference/python/resources/evals/subresources/runs/subresources/output_items/) | OSS JSONL event logs / hosted output-item reads | Separate schemas and readers. Preserve grader pass/fail independently from numeric score and sample execution error. |
 | [Braintrust](https://www.braintrust.dev/docs/annotate/export) | JSON/CSV experiment exports and paginated BTQL JSON/Parquet | Preserve experiment/dataset/project identities and audit fields. Record query, projection and page completeness. |
 | [LangSmith](https://docs.langchain.com/langsmith/data-export) | SDK/API run reads and bulk Parquet | Preserve run hierarchy, dataset references and raw feedback. Comments and rollups depend on export options; UUIDs are not automatically OTLP span IDs. |
@@ -49,7 +49,7 @@ The current presentation is intentionally narrower than the retained source. It 
 
 A platform accepting OTLP does not establish that historical experiments, feedback and datasets can be downloaded as OTLP. Public read/export adapters remain necessary.
 
-[GenAI semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/README.md) are Development. Pin interpreted versions and retain original attributes, resource/scope, schema URLs, events and links. Message content is optional; absent content is not an empty conversation. Token breakdowns may overlap totals. The [evaluation-result event](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-events.md) carries score/label/explanation and correlation, but does not establish a universal run/dataset/repetition identity.
+[GenAI semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/README.md) are Development. Pin interpreted versions and retain original attributes, resource/scope, schema URLs, events and links. Message content is optional; absent content is not an empty conversation. Token breakdowns may overlap totals. The [evaluation-result event](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-events.md) carries score/label/explanation and correlation, but does not establish a universal experiment/dataset/repetition identity.
 
 ## Small extensible core
 

@@ -4,35 +4,35 @@ import { fireEvent, screen, within } from '@testing-library/svelte'
 import { renderWithContexts as render } from '@/test/render-helpers'
 import { copyText } from '@/utils/clipboard'
 import EvalRowDetail from './EvalRowDetail.svelte'
-import { exampleRuns } from './examples'
+import { exampleExperiments } from './examples'
 import { buildEvalOutline } from './eval-outline'
-import { groupReps } from './group-reps'
+import { groupResults } from './group-results'
 import { indexEvalTraces } from './eval-traces'
 
 vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn() }))
 
 it('promotes only an explicit Overall judgment and preserves its evidence and input Copy', async () => {
-  const rep = exampleRuns[0].reps[0]
-  const run = { ...exampleRuns[0], reps: [rep] }
+  const result = exampleExperiments[0].results[0]
+  const experiment = { ...exampleExperiments[0], results: [result] }
   const row = buildEvalOutline(
-    groupReps(run.reps, run.reps),
-    run,
+    groupResults(experiment.results, experiment.results),
+    experiment,
     indexEvalTraces([])
-  ).find(row => row.kind === 'rep')!
-  const view = render(EvalRowDetail, { run, row })
+  ).find(row => row.kind === 'result')!
+  const view = render(EvalRowDetail, { experiment, row })
   const heading = () =>
     [...view.container.querySelectorAll('summary.detail-bubble__heading')].find(
       el => el.textContent?.includes('Assessments')
     )!
   expect(heading()).not.toHaveTextContent('Pass')
-  const overall = rep.assessments.find(
-    item => item.id === run.headlineAssessment
+  const overall = result.assessments.find(
+    item => item.id === experiment.headlineAssessment
   )!
   await view.rerender({
     componentProps: {
-      run: {
-        ...run,
-        assessments: run.assessments.map(item =>
+      experiment: {
+        ...experiment,
+        assessments: experiment.assessments.map(item =>
           item.id === overall.id ? { ...item, name: 'Overall' } : item
         ),
       },
@@ -43,8 +43,12 @@ it('promotes only an explicit Overall judgment and preserves its evidence and in
   expect(heading()).not.toHaveTextContent('Overall')
   expect(screen.queryByText('Overall', { exact: true })).toBeNull()
   expect(screen.getByText(overall.explanation)).toBeVisible()
+  expect(heading().querySelector('button')).toBeNull()
+  const action = heading()
+    .closest('details')!
+    .parentElement!.querySelector(':scope > .detail-bubble__action')!
   await fireEvent.click(
-    within(heading() as HTMLElement).getByRole('button', {
+    within(action as HTMLElement).getByRole('button', {
       name: 'Copy grader input',
     })
   )
@@ -52,18 +56,18 @@ it('promotes only an explicit Overall judgment and preserves its evidence and in
 })
 
 it('keeps an explicitly empty tool output inspectable and copyable', async () => {
-  const original = exampleRuns[0].reps[0]
-  const rep = {
+  const original = exampleExperiments[0].results[0]
+  const result = {
     ...original,
     tools: [{ ...original.tools[0], message: '' }],
   }
-  const run = { ...exampleRuns[0], reps: [rep] }
+  const experiment = { ...exampleExperiments[0], results: [result] }
   const row = buildEvalOutline(
-    groupReps(run.reps, run.reps),
-    run,
+    groupResults(experiment.results, experiment.results),
+    experiment,
     indexEvalTraces([])
   ).find(row => row.kind === 'tool')!
-  render(EvalRowDetail, { run, row, mode: 'time' })
+  render(EvalRowDetail, { experiment, row, mode: 'time' })
   const output = screen.getByRole('table', { name: `${row.name} output` })
   expect(within(output).getByText('""')).toBeVisible()
   expect(screen.getByRole('button', { name: 'Copy output' })).toBeEnabled()
@@ -72,18 +76,18 @@ it('keeps an explicitly empty tool output inspectable and copyable', async () =>
 })
 
 it('omits output and its copy actions when a tool has no recorded message', () => {
-  const original = exampleRuns[0].reps[0]
-  const rep = {
+  const original = exampleExperiments[0].results[0]
+  const result = {
     ...original,
     tools: [{ ...original.tools[0], message: undefined }],
   }
-  const run = { ...exampleRuns[0], reps: [rep] }
+  const experiment = { ...exampleExperiments[0], results: [result] }
   const row = buildEvalOutline(
-    groupReps(run.reps, run.reps),
-    run,
+    groupResults(experiment.results, experiment.results),
+    experiment,
     indexEvalTraces([])
   ).find(row => row.kind === 'tool')!
-  render(EvalRowDetail, { run, row, mode: 'time' })
+  render(EvalRowDetail, { experiment, row, mode: 'time' })
   expect(
     screen.queryByRole('table', { name: `${row.name} output` })
   ).not.toBeInTheDocument()
@@ -93,20 +97,20 @@ it('omits output and its copy actions when a tool has no recorded message', () =
 })
 
 it('keeps Details and Telemetry stable while the selected mode surfaces its own evidence', async () => {
-  const rep = {
-    ...exampleRuns[0].reps[0],
+  const result = {
+    ...exampleExperiments[0].results[0],
     answer: 'Recorded answer',
     seconds: 0,
     investigatorCost: 0,
     graderCost: undefined,
   }
-  const run = { ...exampleRuns[0], reps: [rep] }
+  const experiment = { ...exampleExperiments[0], results: [result] }
   const row = buildEvalOutline(
-    groupReps(run.reps, run.reps),
-    run,
+    groupResults(experiment.results, experiment.results),
+    experiment,
     indexEvalTraces([])
-  ).find(row => row.kind === 'rep')!
-  const view = render(EvalRowDetail, { run, row, mode: 'results' })
+  ).find(row => row.kind === 'result')!
+  const view = render(EvalRowDetail, { experiment, row, mode: 'results' })
   const sections = [
     ...view.container.querySelectorAll<HTMLDetailsElement>('details.collapse'),
   ]
@@ -116,17 +120,17 @@ it('keeps Details and Telemetry stable while the selected mode surfaces its own 
     )
   ).toEqual(['Result', 'Assessments', 'Telemetry'])
   expect(screen.getByText('Recorded answer')).toBeVisible()
-  expect(screen.getByText(rep.assessments[0].explanation)).toBeVisible()
+  expect(screen.getByText(result.assessments[0].explanation)).toBeVisible()
   await fireEvent.click(sections[2].querySelector('summary')!)
   expect(sections[2].open).toBe(false)
 
-  await view.rerender({ componentProps: { run, row, mode: 'time' } })
+  await view.rerender({ componentProps: { experiment, row, mode: 'time' } })
   expect(screen.queryByText('Recorded answer')).toBeNull()
   expect(screen.getByRole('group', { name: 'tool calls' })).toBeVisible()
   expect(screen.queryByRole('group', { name: 'duration' })).toBeNull()
   expect(sections[2].open).toBe(false)
 
-  await view.rerender({ componentProps: { run, row, mode: 'cost' } })
+  await view.rerender({ componentProps: { experiment, row, mode: 'cost' } })
   const accounting = screen.getByRole('table', {
     name: 'Result accounting',
   })
@@ -148,20 +152,20 @@ it('keeps Details and Telemetry stable while the selected mode surfaces its own 
   expect(sections[2].open).toBe(false)
 })
 
-it('retains the recorded rep start and exact Copy when its spans are unavailable', async () => {
+it('retains the recorded result start and exact Copy when its spans are unavailable', async () => {
   const startedAt = '2026-10-20T12:34:56.123456789-07:00'
-  const rep = { ...exampleRuns[0].reps[0], startedAt }
-  const run = { ...exampleRuns[0], reps: [rep] }
+  const result = { ...exampleExperiments[0].results[0], startedAt }
+  const experiment = { ...exampleExperiments[0], results: [result] }
   const row = buildEvalOutline(
-    groupReps(run.reps, run.reps),
-    run,
+    groupResults(experiment.results, experiment.results),
+    experiment,
     indexEvalTraces([])
-  ).find(row => row.kind === 'rep')!
-  const view = render(EvalRowDetail, { run, row, mode: 'results' })
+  ).find(row => row.kind === 'result')!
+  const view = render(EvalRowDetail, { experiment, row, mode: 'results' })
   expect(screen.getAllByText('Span unavailable').length).toBeGreaterThan(0)
 
   for (const mode of ['results', 'time'] as const) {
-    await view.rerender({ componentProps: { run, row, mode } })
+    await view.rerender({ componentProps: { experiment, row, mode } })
     const started = screen.getByRole('group', { name: 'started' })
     expect(within(started).getByTitle(startedAt)).toBeVisible()
     expect(started.querySelector('.detail-property__raw-timestamp')).toBeNull()
@@ -173,8 +177,8 @@ it('retains the recorded rep start and exact Copy when its spans are unavailable
 
   await view.rerender({
     componentProps: {
-      run,
-      row: { ...row, rep: { ...rep, startedAt: undefined } },
+      experiment,
+      row: { ...row, result: { ...result, startedAt: undefined } },
       mode: 'time',
     },
   })

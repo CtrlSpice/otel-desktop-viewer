@@ -22,6 +22,6 @@ idx_metric_datapoints_series.sql
 idx_metric_series_metric.sql
 idx_metric_series_identity.sql
 idx_exemplars_metric_datapoint.sql
-idx_eval_run_rows_run.sql
-idx_eval_runs_dataset.sql
-idx_eval_run_search_run.sql
+idx_eval_experiment_rows_experiment.sql
+idx_eval_experiments_dataset.sql
+idx_eval_experiment_search_experiment.sql

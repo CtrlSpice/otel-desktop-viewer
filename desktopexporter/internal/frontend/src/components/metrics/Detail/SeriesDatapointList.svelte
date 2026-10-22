@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Identifier from '@/components/shared/Identifier.svelte'
+  import ExemplarTraceReference from './ExemplarTraceReference.svelte'
   /*
    * Paginated datapoint rows for a single timeseries. Nested under an expanded
    * series row in TimeseriesPanel. Selection, flags/exemplar expansion, and
@@ -14,9 +14,6 @@
   import { attributeValueLabel } from '@/components/shared/attribute-label'
   import DetailNav from '@/components/shared/DetailNav.svelte'
   import DetailProperty from '@/components/shared/DetailProperty.svelte'
-  import { itemHref, navigateToItem } from '@/route'
-  import { detailPanel } from '@/state/detail-panel.svelte'
-  import { SPAN_PARAM } from '@/route/query-params'
   import type { Attributes, DataPoint, Exemplar } from '@/types/api-types'
 
   type Props = {
@@ -258,17 +255,6 @@
     )
   }
 
-  function exemplarSpanPatch(ex: Exemplar) {
-    return ex.spanID ? { [SPAN_PARAM]: ex.spanID } : undefined
-  }
-
-  function goToExemplarTrace(e: MouseEvent, ex: Exemplar) {
-    if (!ex.traceID) return
-    detailPanel.reveal()
-    e.preventDefault()
-    navigateToItem('traces', ex.traceID, 'push', exemplarSpanPatch(ex))
-  }
-
   function exemplarValue(ex: Exemplar): number | bigint | string {
     switch (ex.valueType) {
       case 'Double':
@@ -404,27 +390,7 @@
                 <span class="dp-list__detail-value tabular-nums">
                   time: {formatDatapointTime(ex.timestamp)}
                 </span>
-                {#if ex.traceID}
-                  {@const patch = exemplarSpanPatch(ex)}
-                  <a
-                    class="dp-list__detail-value link link-primary"
-                    href={itemHref('traces', ex.traceID, patch)}
-                    onclick={e => goToExemplarTrace(e, ex)}
-                    >trace: <Identifier value={ex.traceID} /></a
-                  >
-                {/if}
-                {#if ex.spanID && ex.traceID}
-                  <a
-                    class="dp-list__detail-value link link-primary"
-                    href={itemHref('traces', ex.traceID, exemplarSpanPatch(ex))}
-                    onclick={e => goToExemplarTrace(e, ex)}
-                    >span: <Identifier value={ex.spanID} /></a
-                  >
-                {:else if ex.spanID}
-                  <span class="dp-list__detail-value"
-                    >span: <Identifier value={ex.spanID} /></span
-                  >
-                {/if}
+                <ExemplarTraceReference exemplar={ex} />
                 {#each dedupeAttributes(ex.filteredAttributes) as attr, attributeIndex (`exemplar:${i}:${attr.id ?? 'unidentified'}:${attributeIndex}`)}
                   <span class="dp-list__detail-value"
                     >{attr.key}: {attributeValueLabel(attr.value)}</span

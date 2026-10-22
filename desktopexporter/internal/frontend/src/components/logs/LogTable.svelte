@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import { CheckListIcon } from '@hugeicons/core-free-icons'
   import TableSortButton from '@/components/shared/TableSortButton.svelte'
   import ListHeaderControls from '@/components/shared/ListHeaderControls.svelte'
   import DrawerSortControl from '@/components/shared/Drawer/DrawerSortControl.svelte'
@@ -508,6 +510,23 @@
 
 <div class="log-table" class:log-table--pinned={pinColumns} bind:this={table}>
   <PaneHeader pill mode="title" title="Logs" ariaLabel="Log table summary">
+    {#snippet leading()}
+      <button
+        type="button"
+        class="header-icon-button item-state tooltip tooltip-right disabled:cursor-default disabled:text-rp-muted"
+        aria-label="Select logs"
+        data-tip="Select logs"
+        aria-pressed={selectionMode}
+        disabled={selectionBusy}
+        onclick={toggleSelection}
+        ><HugeiconsIcon
+          icon={CheckListIcon}
+          size={16}
+          strokeWidth={1.5}
+          aria-hidden="true"
+        /></button
+      >
+    {/snippet}
     {#snippet badge()}<span class="badge-count"
         >{#if logs.length}<span class="text-base-content"
             >{((pageNumber - 1) * pageSize + 1).toLocaleString()}–{(
@@ -521,14 +540,6 @@
       >
     {/snippet}
     {#snippet right()}
-      <button
-        type="button"
-        class="btn btn-ghost btn-sm text-sm"
-        aria-label="Select logs"
-        aria-pressed={selectionMode}
-        disabled={selectionBusy}
-        onclick={toggleSelection}>Select</button
-      >
       {#if errorNavigation}<ErrorNavigationBadge
           count={errorNavigation.count}
           busy={errorNavigationLoading}

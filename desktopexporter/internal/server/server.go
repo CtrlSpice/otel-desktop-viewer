@@ -45,10 +45,10 @@ type Server struct {
 	tel            *telemetry.Telemetry
 	features       *features.Flags
 
-	serveDone      chan struct{}
-	startMu        sync.Mutex
-	evalImports    sync.Map
-	evalRunIndexes sync.Map
+	serveDone             chan struct{}
+	startMu               sync.Mutex
+	evalImports           sync.Map
+	evalExperimentIndexes sync.Map
 }
 
 func NewServer(endpoint string, otlpHTTPPort int, store *store.Store, logger *zap.Logger, tel *telemetry.Telemetry, options ...Option) (*Server, error) {
@@ -164,8 +164,8 @@ func (s *Server) initHandler() error {
 	mux.Handle("/api/evals", s.requireEvals(http.NotFoundHandler()))
 	mux.Handle("/api/evals/", s.requireEvals(http.NotFoundHandler()))
 	mux.HandleFunc("POST /api/evals/ingest", s.ingestEvals)
-	mux.Handle("GET /api/evals/runs", s.requireEvals(http.HandlerFunc(s.searchEvalRuns)))
-	mux.Handle("GET /api/evals/runs/{id}/rows", s.requireEvals(http.HandlerFunc(s.getEvalRunPage)))
+	mux.Handle("GET /api/evals/experiments", s.requireEvals(http.HandlerFunc(s.searchEvalExperiments)))
+	mux.Handle("GET /api/evals/experiments/{id}/rows", s.requireEvals(http.HandlerFunc(s.getEvalExperimentPage)))
 
 	// CORS for the Vite frontend
 	c := cors.New(cors.Options{

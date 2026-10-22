@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { SpanNode, TraceData } from '@/types/api-types'
-import { exampleRuns } from './examples'
+import { exampleExperiments } from './examples'
 import { buildEvalOutline, visibleOutlineRows } from './eval-outline'
-import { groupReps } from './group-reps'
+import { groupResults } from './group-results'
 import {
   evalExecutionRows,
   evalTraceReferences,
@@ -56,13 +56,13 @@ function node(
 }
 
 describe('referenced eval hierarchy', () => {
-  it('keeps run totals and derived timing complete when a case is filtered out', () => {
+  it('keeps experiment totals and derived timing complete when a case is filtered out', () => {
     const first = {
-      ...exampleRuns[0].reps[0],
+      ...exampleExperiments[0].results[0],
       id: 'first',
       caseID: 'first-case',
       state: 'Complete' as const,
-      repTelemetry: ref(1),
+      resultTelemetry: ref(1),
       telemetry: undefined,
       tools: [],
       assessments: [],
@@ -73,27 +73,27 @@ describe('referenced eval hierarchy', () => {
       ...first,
       id: 'second',
       caseID: 'second-case',
-      repTelemetry: ref(2),
+      resultTelemetry: ref(2),
       investigatorCost: 3,
       graderCost: 2,
     }
-    const run = {
-      ...exampleRuns[0],
+    const experiment = {
+      ...exampleExperiments[0],
       telemetry: undefined,
       seconds: undefined,
-      reps: [first, second],
+      results: [first, second],
     }
     const early = node(1, null, 0)
     const late = node(2, null, 0, true)
     late.spanData.startTime += 100n
     late.spanData.endTime += 100n
     const rows = buildEvalOutline(
-      groupReps([first], run.reps),
-      run,
+      groupResults([first], experiment.results),
+      experiment,
       indexEvalTraces([{ traceID, unplacedSpanCount: 0, spans: [early, late] }])
     )
     const root = rows[0]
-    expect(root.kind).toBe('run')
+    expect(root.kind).toBe('experiment')
     expect(root.parentID).toBeNull()
     expect(root.estimate).toEqual({ total: 5, incomplete: false })
     expect(root.spanError).toBe(true)
@@ -108,26 +108,26 @@ describe('referenced eval hierarchy', () => {
     ])
   })
 
-  it('prefers a recorded zero-length run span to wider child timings and never sums duration-only children', () => {
-    const rep = {
-      ...exampleRuns[0].reps[0],
+  it('prefers a recorded zero-length experiment span to wider child timings and never sums duration-only children', () => {
+    const result = {
+      ...exampleExperiments[0].results[0],
       telemetry: ref(2),
-      repTelemetry: undefined,
+      resultTelemetry: undefined,
       tools: [],
       assessments: [],
       seconds: 4,
     }
-    const run = {
-      ...exampleRuns[0],
+    const experiment = {
+      ...exampleExperiments[0],
       telemetry: ref(1),
       seconds: 0,
-      reps: [rep],
+      results: [result],
     }
     const parent = node(1, null, 0)
     parent.spanData.endTime = parent.spanData.startTime
     const rows = buildEvalOutline(
-      groupReps(run.reps, run.reps),
-      run,
+      groupResults(experiment.results, experiment.results),
+      experiment,
       indexEvalTraces([
         { traceID, unplacedSpanCount: 0, spans: [parent, node(2, 1, 1)] },
       ])
@@ -137,9 +137,9 @@ describe('referenced eval hierarchy', () => {
       startTime: parent.spanData.startTime,
       endTime: parent.spanData.startTime,
     })
-    const untraced = { ...run, telemetry: undefined, seconds: undefined }
+    const untraced = { ...experiment, telemetry: undefined, seconds: undefined }
     const fallback = buildEvalOutline(
-      groupReps(untraced.reps, untraced.reps),
+      groupResults(untraced.results, untraced.results),
       untraced,
       indexEvalTraces([])
     )[0]
@@ -147,11 +147,11 @@ describe('referenced eval hierarchy', () => {
     expect(fallback.seconds).toBeUndefined()
   })
 
-  it('places the traced rep above sibling execution and grading branches, with costs counted once', () => {
-    const rep = {
-      ...exampleRuns[0].reps[0],
+  it('places the traced result above sibling execution and grading branches, with costs counted once', () => {
+    const evidence = {
+      ...exampleExperiments[0].results[0],
       state: 'Complete' as const,
-      repTelemetry: ref(1),
+      resultTelemetry: ref(1),
       telemetry: ref(2),
       investigatorCost: 10,
       graderCost: 2,
@@ -166,13 +166,13 @@ describe('referenced eval hierarchy', () => {
       ],
       assessments: [
         {
-          ...exampleRuns[0].reps[0].assessments[0]!,
+          ...exampleExperiments[0].results[0].assessments[0]!,
           telemetry: ref(4),
           cost: 0.5,
         },
       ],
     }
-    const run = { ...exampleRuns[0], reps: [rep] }
+    const experiment = { ...exampleExperiments[0], results: [evidence] }
     const index = indexEvalTraces([
       {
         traceID,
@@ -185,11 +185,15 @@ describe('referenced eval hierarchy', () => {
         ],
       },
     ])
-    const rows = buildEvalOutline(groupReps(run.reps, run.reps), run, index)
+    const rows = buildEvalOutline(
+      groupResults(experiment.results, experiment.results),
+      experiment,
+      index
+    )
     expect(rows.map(row => [row.kind, row.depth])).toEqual([
-      ['run', 0],
+      ['experiment', 0],
       ['case', 1],
-      ['rep', 2],
+      ['result', 2],
       ['execution', 3],
       ['tool', 4],
       ['grader', 3],
@@ -218,16 +222,16 @@ describe('referenced eval hierarchy', () => {
     expect(rows.map(row => row.estimate.total)).toEqual([
       12, 12, 12, 10, 1, 0.5,
     ])
-    expect(evalTraceReferences(run)).toContainEqual(ref(1))
+    expect(evalTraceReferences(experiment)).toContainEqual(ref(1))
     expect(visibleOutlineRows(rows, [], {}).map(row => row.kind)).toEqual([
-      'run',
+      'experiment',
       'case',
     ])
     expect(
       visibleOutlineRows(rows, ['results'], {}).map(row => row.kind)
-    ).toEqual(['run', 'case', 'rep'])
+    ).toEqual(['experiment', 'case', 'result'])
     expect(visibleOutlineRows(rows, ['time'], {}).map(row => row.kind)).toEqual(
-      ['run', 'case', 'rep', 'execution', 'tool', 'grader']
+      ['experiment', 'case', 'result', 'execution', 'tool', 'grader']
     )
     expect(
       visibleOutlineRows(rows, ['time', 'cost'], {}).map(row => row.id)
@@ -236,7 +240,7 @@ describe('referenced eval hierarchy', () => {
       visibleOutlineRows(rows, ['time'], { [rows[3].id]: false }).map(
         row => row.kind
       )
-    ).toEqual(['run', 'case', 'rep', 'execution', 'grader'])
+    ).toEqual(['experiment', 'case', 'result', 'execution', 'grader'])
     expect(
       visibleOutlineRows(rows, ['time'], { [rows[5].id]: true }).map(
         row => row.kind
@@ -250,9 +254,9 @@ describe('referenced eval hierarchy', () => {
   it.each(['missing', 'invalid'])(
     'uses phase-specific child extents when parent timing is %s',
     mode => {
-      const rep = {
-        ...exampleRuns[0].reps[0],
-        repTelemetry: ref(1),
+      const result = {
+        ...exampleExperiments[0].results[0],
+        resultTelemetry: ref(1),
         telemetry: ref(2),
         tools: [3, 4].map(id => ({
           name: `tool ${id}`,
@@ -261,7 +265,10 @@ describe('referenced eval hierarchy', () => {
           telemetry: ref(id),
         })),
         assessments: [
-          { ...exampleRuns[0].reps[0].assessments[0]!, telemetry: ref(5) },
+          {
+            ...exampleExperiments[0].results[0].assessments[0]!,
+            telemetry: ref(5),
+          },
         ],
       }
       const first = node(3, 2, 0)
@@ -274,10 +281,10 @@ describe('referenced eval hierarchy', () => {
       const invalidParents = [node(1, null, 0), node(2, 1, 0)]
       for (const parent of invalidParents)
         parent.spanData.endTime = parent.spanData.startTime - 1n
-      const run = { ...exampleRuns[0], reps: [rep] }
+      const experiment = { ...exampleExperiments[0], results: [result] }
       const rows = buildEvalOutline(
-        groupReps(run.reps, run.reps),
-        run,
+        groupResults(experiment.results, experiment.results),
+        experiment,
         indexEvalTraces([
           {
             traceID,
@@ -299,7 +306,7 @@ describe('referenced eval hierarchy', () => {
         startTime: grader.spanData.startTime,
         endTime: grader.spanData.endTime,
       })
-      for (const kind of ['run', 'case', 'rep'])
+      for (const kind of ['experiment', 'case', 'result'])
         expect(rows.find(row => row.kind === kind)?.window).toEqual({
           startTime: first.spanData.startTime,
           endTime: grader.spanData.endTime,
@@ -308,24 +315,32 @@ describe('referenced eval hierarchy', () => {
   )
 
   it('retains untraced tools and grading without inventing span timing or costs', () => {
-    const rep = {
-      ...exampleRuns[0].reps[0],
+    const result = {
+      ...exampleExperiments[0].results[0],
       telemetry: undefined,
       seconds: undefined,
       investigatorCost: undefined,
       graderCost: undefined,
       tools: [{ name: 'untraced tool', state: 'OK' as const, message: '' }],
       assessments: [
-        { ...exampleRuns[0].reps[0].assessments[0]!, telemetry: undefined },
+        {
+          ...exampleExperiments[0].results[0].assessments[0]!,
+          telemetry: undefined,
+        },
       ],
     }
-    const run = { ...exampleRuns[0], reps: [rep] }
+    const experiment = { ...exampleExperiments[0], results: [result] }
     const rows = buildEvalOutline(
-      groupReps(run.reps, run.reps),
-      run,
+      groupResults(experiment.results, experiment.results),
+      experiment,
       indexEvalTraces([])
     )
-    expect(rows.map(row => row.kind)).toEqual(['run', 'case', 'rep', 'tool'])
+    expect(rows.map(row => row.kind)).toEqual([
+      'experiment',
+      'case',
+      'result',
+      'tool',
+    ])
     expect(
       rows.every(
         row => !row.reference && !row.window && row.seconds === undefined
@@ -344,8 +359,8 @@ describe('referenced eval hierarchy', () => {
         node(5, 1, 1),
       ],
     }
-    const rep = {
-      ...exampleRuns[0].reps[0],
+    const evidence = {
+      ...exampleExperiments[0].results[0],
       state: 'Complete' as const,
       telemetry: ref(1),
       assessments: [],
@@ -356,7 +371,7 @@ describe('referenced eval hierarchy', () => {
         telemetry: ref(id),
       })),
     }
-    const result = evalExecutionRows(rep, indexEvalTraces([trace]))
+    const result = evalExecutionRows(evidence, indexEvalTraces([trace]))
     expect(result.rows.map(row => row.name)).toEqual([
       'tool 3',
       'tool 4',
@@ -377,8 +392,10 @@ describe('referenced eval hierarchy', () => {
     expect(result.spanError).toBe(true)
     expect(result.internalFault).toBe(false)
     expect(
-      evalExecutionRows({ ...rep, state: 'Error' }, indexEvalTraces([trace]))
-        .internalFault
+      evalExecutionRows(
+        { ...evidence, state: 'Error' },
+        indexEvalTraces([trace])
+      ).internalFault
     ).toBe(true)
     expect(result.childrenCount).toBe(2)
     expect(
@@ -386,15 +403,15 @@ describe('referenced eval hierarchy', () => {
         row => row.name
       )
     ).toEqual(['tool 3', 'tool 5'])
-    expect(rep.state).toBe('Complete')
-    expect(rep.tools.every(tool => tool.state === 'OK')).toBe(true)
+    expect(evidence.state).toBe('Complete')
+    expect(evidence.tools.every(tool => tool.state === 'OK')).toBe(true)
   })
 
   it('keeps missing evidence and grader references without inventing cross-trace ancestry', () => {
     const foreign = node(3, 1, 0)
     foreign.spanData.traceID = 'b'.repeat(32)
-    const rep = {
-      ...exampleRuns[0].reps[0],
+    const evidence = {
+      ...exampleExperiments[0].results[0],
       telemetry: ref(1),
       tools: [
         {
@@ -407,7 +424,7 @@ describe('referenced eval hierarchy', () => {
       ],
       assessments: [
         {
-          ...exampleRuns[0].reps[0].assessments[0]!,
+          ...exampleExperiments[0].results[0].assessments[0]!,
           telemetry: ref(3, foreign.spanData.traceID),
         },
       ],
@@ -420,7 +437,7 @@ describe('referenced eval hierarchy', () => {
         spans: [foreign],
       },
     ])
-    const result = evalExecutionRows(rep, index)
+    const result = evalExecutionRows(evidence, index)
     expect(result.rows).toHaveLength(2)
     expect(
       result.rows.every(row => row.depth === 1 && row.tree.brokenParent)
@@ -431,7 +448,7 @@ describe('referenced eval hierarchy', () => {
     })
     expect(index.nodes.get(referenceKey(foreign.spanData))).toBe(foreign)
     expect(
-      evalTraceReferences({ ...exampleRuns[0], reps: [rep] })
-    ).toContainEqual(rep.assessments[0]!.telemetry)
+      evalTraceReferences({ ...exampleExperiments[0], results: [evidence] })
+    ).toContainEqual(evidence.assessments[0]!.telemetry)
   })
 })

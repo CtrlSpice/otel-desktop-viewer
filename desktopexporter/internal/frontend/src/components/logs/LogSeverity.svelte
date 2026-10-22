@@ -1,7 +1,12 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte'
   import { severityColor, severityLabel } from './log-severity'
 
-  let { number, text }: { number: number; text: string } = $props()
+  let {
+    number,
+    text,
+    children,
+  }: { number: number; text: string; children?: Snippet } = $props()
   let label = $derived(severityLabel(text, number))
 </script>
 
@@ -11,7 +16,9 @@
     style:background-color={severityColor(number)}
     aria-hidden="true"
   ></span>
-  <span class="log-severity__label">{label} ({number})</span>
+  <span class="log-severity__label"
+    >{#if children}{@render children()}{:else}{label} ({number}){/if}</span
+  >
 </span>
 
 <style lang="postcss">

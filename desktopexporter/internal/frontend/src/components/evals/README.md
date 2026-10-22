@@ -17,7 +17,8 @@ results remain assessments in Details. Native scores and assertion reasons are
 displayed without inventing a maximum; missing tool detail remains unknown.
 
 The database ingestion/API contract is documented in `docs/eval-ingestion.md`.
-Internal `run`/`rep` identifiers and routes retain their existing spellings.
+Selection routes use `experiment`/`result`; opaque source identities retain their
+original values, including the adapter's `"run"` identity namespace.
 
 The Result row's **Assessment** cell shows the producer's recorded overall judgment.
 Result Details groups judgments under **Assessments**, with the producer's combined
@@ -33,26 +34,26 @@ App-wide navigation, search and controls live above the drawer in
 `/api/features` capability gates navigation and loading; Evals remains off by
 default and is labelled experimental and unsupported.
 
-`examples.ts` supplies clearly labelled, synthetic runs, including a completed
-run, a paused investigator, missing assessments and unstarted work. Each of the
-eight cases has one, two or three repetitions (16 reps per run). Reps retain a shared
-case ID and distinct rep/telemetry IDs; repetition 1 keeps the original URLs.
+`examples.ts` supplies clearly labelled, synthetic experiments, including a completed
+experiment, a paused investigator, missing assessments and unstarted work. Each of the
+eight cases has one, two or three repetitions (16 results per experiment). Results retain a shared
+case ID and distinct result/telemetry IDs; repetition 1 keeps the original URLs.
 These are
 not the completed viewer-usability cohort and do not establish a new rubric.
 No model calls, launch controls or persistence writes occur when opening Evals.
 
-`model.ts` is a presentation model, not an import contract. Run configuration,
+`model.ts` is a presentation model, not an import contract. Experiment configuration,
 assessment names, score scales, headline assessment and aggregation rules belong
 to the supplied data. Storage integration should replace the fixture source;
-the **Search evals** control currently filters only loaded fixture reps and
+the **Search evals** control currently filters only loaded fixture results and
 their assessment text. It does not execute the viewer's DuckDB search language.
 
-Run/rep selection and the result filter are URL-backed. Browser history
-returns to the selected run/rep; detail disclosures are local UI state and
-existing panel widths remain resizable. Column headings sort the loaded reps
+Experiment/result selection and the result filter are URL-backed. Browser history
+returns to the selected experiment/result; detail disclosures are local UI state and
+existing panel widths remain resizable. Column headings sort the loaded results
 locally in ascending or descending order.
 Scores sort by their numeric value, not outcome labels. Cases stay together,
-ranked by their first sorted visible rep; repetitions sort within each case.
+ranked by their first sorted visible result; repetitions sort within each case.
 Missing measurements stay last within each case in both directions; cases with
 no known measurements come last. Ties preserve source order and sorting preserves selection.
 Columns use the shared resize geometry, drag lifecycle and handles. Widths are
@@ -60,32 +61,32 @@ saved by column ID across group combinations. Handles follow the visible table b
 the footer, and stop before unused space below the last row.
 
 The main pane has independent Results / Tool calls / Cost toggle buttons. Results
-starts on; any combination can be shown, including none (Case, Rep and Duration remain).
+starts on; any combination can be shown, including none (Case, Result and Duration remain).
 Native buttons expose `aria-pressed` and toggle with Enter or Space. They reuse
 the shared header control styling: active icons use Primary, inactive icons and
 all labels use Text, with no persistent selected fill. Results contains assessments;
-Tool calls contains call and failure counts; Cost contains investigator and grader estimates. Tool branches remain available independently of these toggles. Case and Rep
-remain visible in each combination. Column order is always Case · Rep, Duration,
+Tool calls contains call and failure counts; Cost contains investigator and grader estimates. Tool branches remain available independently of these toggles. Case and Result
+remain visible in each combination. Column order is always Case · Result, Duration,
 Tool calls, Results, Cost, regardless of activation order. Case width stays stable
 across toggles; Duration absorbs spare width. Combinations share collapse state,
-rep selection and saved widths, with independent sorting. The assessment
+result selection and saved widths, with independent sorting. The assessment
 legend appears whenever Results is shown; otherwise Tool calls/Cost use the execution
 legend. Each table has one regular-weight
 heading row. Logs and the trace waterfall retain their shared Columns picker.
 Case names stay on one line with ellipsis; hover retains the full name. Cases
-with multiple reps share a parent row with aggregate values and branch to
-their repetition rows. A case with one rep renders that rep directly,
+with multiple results share a parent row with aggregate values and branch to
+their repetition rows. A case with one result renders that result directly,
 with its name selecting Details, duration and assessment on the same row.
-Filtering a multi-rep case down to one visible rep does not flatten it.
+Filtering a multi-result case down to one visible result does not flatten it.
 Branches reuse the waterfall's rounded 1px Muted
 connectors at 50% opacity. Result rows select their Details; all values stay
-under their column headings. Case completion uses every rep, including
-reps hidden by the current filter.
+under their column headings. Case completion uses every result, including
+results hidden by the current filter.
 Case collapse uses the same TreeRowIdentity, TreeGutter, TreeChildCount and TreeToggle components
 as traces. A plain parenthesised child count sits in the left gutter before the dot,
 using global 14px/21px Atkinson Next typography and Subtle text. The count rail reserves enough width for
 the largest count and keeps ancestor connectors aligned on leaves and parents.
-The whole gutter is one full-height button; Enter and Space toggle it without changing rep selection.
+The whole gutter is one full-height button; Enter and Space toggle it without changing result selection.
 The identity heading is `Experiment · Test case · Result`, with test-name and start-time sorting.
 Their compact heading slots and branches are measured from rendered labels,
 padding and shared tree spacing. The combined identity area keeps its resized width
@@ -94,14 +95,14 @@ The branch gutter stays fixed; the identity area and answer columns use shared
 resize handles. Native result IDs use Subtle.
 Resizing stays within the available table width and stops at readable column
 minimums. Horizontal scrolling is needed only when those minimums cannot fit.
-Case and Rep pin to the left during horizontal scrolling, including their heading,
+Case and Result pin to the left during horizontal scrolling, including their heading,
 connectors and the Total label. Case titles truncate in the combined identity area.
 As in Logs, pinning releases when the pane cannot fit
 the pinned columns plus one complete scrolling column. Saved widths and shared
 hover/selection motion remain intact.
 Assessment dots, labels and numeric fractions stay together at the left; case
 percentages align above them. Measurements and their headings also align left.
-Duration is always present, directly after Case · Rep. Its header uses the shared waterfall timing ruler, with the
+Duration is always present, directly after Case · Result. Its header uses the shared waterfall timing ruler, with the
 same guide renderer behind the bars and one aligned plotting width per column.
 Stored span timings take precedence for
 bars, sorting and totals. Otherwise a recorded eval duration draws a plain,
@@ -109,8 +110,8 @@ unlinked bar; absent durations leave the cell empty. Zero is a recorded duration
 not a missing value. Hover distinguishes recorded eval durations from span data.
 Linked bars open their exact trace/span. Both kinds reuse DurationBar and the
 waterfall's SpanBar component. Tool bars use their recorded start offsets within each question, with
-one duration scale across questions. When a stored run span exists, all linked
-bars use one run-wide timeline. Bounds include early starts and late ends, so
+one duration scale across questions. When a stored experiment span exists, all linked
+bars use one experiment-wide timeline. Bounds include early starts and late ends, so
 children outside a parent span are not clipped. With a missing question span,
 its earliest stored tool supplies the local origin. Hover shows the start offset;
 duration labels follow bar ends. Tool calls include failed calls; Failures counts those
@@ -118,30 +119,30 @@ calls separately for each repetition and the full case. Cost keeps
 investigator and grader estimates separate. The Total footer aligns each estimate
 under its visible cost column, with unknown and partial estimates explicit. Its
 top divider is a solid 1px Muted line at 60% opacity. The footer appears whenever Cost is enabled.
-Totals cover the shown reps; drawer summaries cover the whole run.
-The duration table fetches only explicit run, question/rep and tool-call span references,
+Totals cover the shown results; drawer summaries cover the whole experiment.
+The duration table fetches only explicit experiment, question/result and tool-call span references,
 using exact trace/span pairs and batches of at most 64 lightweight timing rows.
-It does not load trace trees, attributes or logs. Run spans appear when the run
+It does not load trace trees, attributes or logs. Experiment spans appear when the experiment
 has a reference; question rows can fan out to their tool calls using the same
 tree gutter, counts and collapse control as traces. Tool expansion preserves
-rep selection. When neither a stored span nor a recorded duration is available,
+result selection. When neither a stored span nor a recorded duration is available,
 the empty cell's tooltip explains missing references, missing spans or request
 errors. Case duration totals sum question durations (not nested tool durations),
 retain exact span nanoseconds and mark partial totals explicitly. Plain eval
 durations never acquire a trace link or an inferred start offset.
 
-Run cards show a proportional breakdown and every outcome in a visible list,
-with neutral labels, small colour dots and exact rep counts. Neutral outcome
+Experiment cards show a proportional breakdown and every outcome in a visible list,
+with neutral labels, small colour dots and exact result counts. Neutral outcome
 fills use base-300. Completion dots use base-300 for Planned, Iris for in-progress,
-Pine for Complete and Papaya for execution errors or interrupted runs. Assessment
-success dots and bars use Foam, independently of completion. Run statuses use
+Pine for Complete and Papaya for execution errors or interrupted experiments. Assessment
+success dots and bars use Foam, independently of completion. Experiment statuses use
 neutral text and small status dots. Planned
 cards show only their title and `Planned (count)` status. Completed counts are omitted only
-when the run is complete and every rep completed; graded counts appear only
+when the experiment is complete and every result completed; graded counts appear only
 when they differ from completed counts. The labelled score is not a pass rate.
-Clicking the card selects the run and opens Details. Tiny bar groups have an 8px
+Clicking the card selects the experiment and opens Details. Tiny bar groups have an 8px
 visual minimum. Outcome grouping and the headline assessment mean remain separate.
-Run metadata uses the shared working text size and continuous card rows, with
+Experiment metadata uses the shared working text size and continuous card rows, with
 regular-weight scores. Metadata wraps when needed instead of shrinking text.
 Assessments use neutral text with small decorative outcome dots;
 counts are plain text. Tables, Details and summaries use the shared 14px working
@@ -161,7 +162,7 @@ Rubric and evaluator provenance remain attached to each assessment.
 
 The standalone saved-results report remains a separate presentation. Its
 Trace / Span links target this viewer's existing trace routes; the report's
-score-column positions do not define Evals run identities. Import, storage-backed
+score-column positions do not define Evals experiment identities. Import, storage-backed
 search and launch behavior are still proposed in
 `notes/evals-observer-integration-plan.md`.
 
@@ -194,7 +195,7 @@ Each case has a collapsible parent row with its name, plain repetition count,
 and normal-Text aggregates aligned with the visible data columns. The circle/count
 gutter toggle (shared with the waterfall) opens its repetitions with pointer,
 Enter or Space without changing
-rep selection. Expanded repetition values use Subtle. Case and Rep headings
+result selection. Expanded repetition values use Subtle. Case and Result headings
 stay together, with compact branches and repetition numbers beneath them;
 the wider combined identity area accommodates the parent name. Each assessment uses its own percentage and declared
 planned/scored denominator. Duration sums recorded repetition durations; calls

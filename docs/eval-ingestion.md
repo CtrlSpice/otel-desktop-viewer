@@ -22,10 +22,10 @@ The eval endpoint accepts:
   separate envelopes; pretty-printed single JSON is also supported.
 
 This is supported envelope framing, **not a claim that Promptfoo's native
-row-only JSONL export contains full run context**. The checked-in adapter evidence
-does not establish a canonical run-metadata association for bare-row JSONL.
+row-only JSONL export contains full experiment context**. The checked-in adapter evidence
+does not establish a canonical experiment-metadata association for bare-row JSONL.
 Bare rows are rejected. Supporting those requires producer evidence or an explicit
-manifest/row association contract; no run, repetition, score maximum, timing,
+manifest/row association contract; no experiment, repetition, score maximum, timing,
 grader identity, or relationship is inferred. Non-Promptfoo envelopes,
 OTLP/eval mixtures, duplicate decoded JSON keys, malformed UTF-8, and unpaired
 Unicode surrogate escapes are rejected.
@@ -56,15 +56,15 @@ Additive tables:
   with its result array replaced by `[]`.
 - `eval_records`: ordered result objects, keyed by import/envelope/ordinal, with
   byte sizes and native JSON payloads.
-- `eval_runs` / `eval_run_rows`: rebuildable Run summaries and source-row mapping.
-- `eval_run_search`: rebuildable text extracted from every JSON string value in
+- `eval_experiments` / `eval_experiment_rows`: rebuildable Experiment summaries and source-row mapping.
+- `eval_experiment_search`: rebuildable text extracted from every JSON string value in
   each result row. Object keys and non-string scalars are not copied into search.
 
 Raw JSON is validated/compacted without float64 decoding and cast directly to
 DuckDB JSON. Exact numeric lexemes, Unicode meaning, unknown fields, source IDs,
 missing/null/zero/false distinctions, array order and producer context survive.
 Whitespace, object formatting and escape spelling are not a download guarantee.
-Local dataset IDs identify storage, never replace received run/sample IDs.
+Local dataset IDs identify storage, never replace received experiment/sample IDs.
 The local import identity hashes the compact staging representation; it is not
 a claim of semantic equivalence across reordered fields or different escapes.
 
@@ -101,11 +101,11 @@ source/index boundary.
 
 The normalized presentation distinguishes:
 
-- **Experiment**: the top-level evaluation group (existing APIs use `run`).
+- **Experiment**: the top-level evaluation group.
 - **Test case**: one logical sample, question or test item.
 - **Result**: one recorded outcome for a test case. Its native result ID
   identifies it; a repetition number is not required.
-- **Attempt**: an explicit retry within one Rep, only when the producer records it.
+- **Attempt**: an explicit retry within one Result, only when the producer records it.
 
 Promptfoo expands `testIdx` across repetitions. The adapter groups complete native
 test definitions and resolved variables within each provider/prompt group; equal
@@ -123,29 +123,36 @@ maximum. Missing tool evidence is unknown, not zero calls.
 Attempt nodes require explicit retry evidence. Native bare-row producer JSONL
 remains an explicit contract/evidence gap.
 
-## DB-wide run summaries and selected-run source pages
+## DB-wide experiment summaries and selected-experiment source pages
 
-The new run APIs supersede the dataset-list approach for the parent sidebar:
+The new experiment APIs supersede the dataset-list approach for the parent sidebar:
 
 ```
-GET /api/evals/runs?q=run+name&sort=started&direction=desc&limit=50&offset=0
-GET /api/evals/runs?outcome=success%3APass&outcome=error%3AFail
-GET /api/evals/runs/{runID}/rows?after=-1&limit=100
+GET /api/evals/experiments?q=experiment+name&sort=started&direction=desc&limit=50&offset=0
+GET /api/evals/experiments?outcome=success%3APass&outcome=error%3AFail
+GET /api/evals/experiments/{experimentID}/rows?after=-1&limit=100
 ```
 
 Typed methods and DTOs live in `telemetry-service.ts` and the new
-`src/services/eval-run-types.ts`: `searchEvalRuns` and `getEvalRunPage`.
+`src/services/eval-experiment-types.ts`: `searchEvalExperiments` and `getEvalExperimentPage`.
 
-`eval_runs` holds precomputed whole-run counts. `eval_run_rows` maps global source
-ordinals to a run without copying newly ingested result bodies. `eval_run_search`
-stores materialized string values per source row. `eval_run_indexes` records
+`eval_experiments` holds precomputed whole-experiment counts. `eval_experiment_rows` maps global source
+ordinals to an experiment without copying newly ingested result bodies. `eval_experiment_search`
+stores materialized string values per source row. `eval_experiment_indexes` records
 completion/unsupported/empty status and source context. The source remains
 authoritative; all four are rebuildable indexes. New imports build the index before
 their publication marker, with projection outside the write lock and at most 64
 projected rows per write transaction. A malformed display-semantic row marks that
 dataset's index unsupported; source ingestion itself can still succeed and the
 received data remains retained in source tables. Unsupported indexes never
-expose partial run counts.
+expose partial experiment counts.
+
+The terminology rename uses schema version 23. Older databases are rejected;
+there is no migration or parallel legacy table set. Use a new database and
+reimport retained source exports. Experiment IDs remain stable for the same
+imported data. The UI accepts old `run`/`rep` selection links and replaces their
+keys with `experiment`/`result`; new API responses use `experiments`,
+`adapterExperimentID`, and `resultCount`.
 
 Grouping matches the adapter tuple:
 
@@ -155,19 +162,20 @@ Grouping matches the adapter tuple:
 ```
 
 `id` is a stable local SHA-256 identifier over that tuple with a version prefix;
-`adapterRunID` is the corresponding adapter tuple string. Provider/prompt variants
+the opaque `"run"` namespace is retained so existing experiment IDs remain stable.
+`adapterExperimentID` is the corresponding adapter tuple string. Provider/prompt variants
 remain distinct. Missing identities isolate source rows instead of inferring
 cross-row membership. Name and prompt-label display use the first source row in
 the group. Source identifiers and global source ordinals remain available in the
 source records. Names above 32,768 UTF-8 bytes and grouping identities above 8,192
 bytes produce explicit unsupported-index reasons instead of unbounded summaries.
 
-The summary returns `repCount`, `outcomes`, `assessmentName`, name,
+The summary returns `resultCount`, `outcomes`, `assessmentName`, name,
 evaluation, source, format, dataset locator, and recorded start timestamp where
 the adapter recognizes one. `plannedCount:null`, `state:"Unknown"`,
-`pauseReason:null`, and `stateReason` explicitly avoid inferring a completed run
+`pauseReason:null`, and `stateReason` explicitly avoid inferring a completed experiment
 or planned-slot coverage from saved rows. The parent must not turn unknown planned
-counts into zero or treat received Rep counts as declared planned counts.
+counts into zero or treat received Result counts as declared planned counts.
 
 Outcome counts preserve received Promptfoo pass/fail labels without inventing a
 numeric maximum. Failure reason 2 and native assertion `metadata.graderError`
@@ -175,17 +183,17 @@ map to the existing Internal fault category;
 otherwise reason 1 / explicit grading failure wins over success. Other numeric
 scores do not establish a scale. Decimal equality is
 checked exactly without float rounding or evaluating unbounded exponents.
-Counts cover every stored row in the run, never just the current detail page.
+Counts cover every stored row in the experiment, never just the current detail page.
 This intentionally fixes the old card helper's loss of Promptfoo pass/fail-only
 labels into its Unscored category; parent should consume these precomputed parts.
 
 Search splits plain whitespace-separated text into case-insensitive terms. Each
-term can occur in Run name/evaluation/source or any materialized JSON string value
-from that Run's result rows. This includes questions, answers, errors, grader
+term can occur in Experiment name/evaluation/source or any materialized JSON string value
+from that Experiment's result rows. This includes questions, answers, errors, grader
 explanations, tool output, IDs and unknown string fields without assigning those
 fields new semantics. Object keys, numbers and booleans are not search text. It is
-not a telemetry query parser. Outcome choices are ORed. `total` is the matching indexed run count across
-the DB, and `hasMore` describes the requested page. `facets` counts each run once
+not a telemetry query parser. Outcome choices are ORed. `total` is the matching indexed experiment count across
+the DB, and `hasMore` describes the requested page. `facets` counts each experiment once
 per category after text search but before outcome filtering. Started sorting uses
 recorded timestamps, unknown dates last. Name sorting is case-insensitive with
 natural ASCII digit sequences; stable IDs break ties. Server order is authoritative
@@ -199,15 +207,15 @@ dataset issue records (`hasMoreIssues` distinguishes a truncated issue list).
 While `remaining > 0`, totals/facets cover indexed sources and are not a claim that
 backfill is complete. Parent should continue requesting lists while showing that
 state; unsupported and empty sources remain explicit, not phantom zero-result
-runs. Cancellation leaves a hidden pending index; the next attempt clears partial
+experiments. Cancellation leaves a hidden pending index; the next attempt clears partial
 derived rows in bounded batches before rebuilding. A per-dataset server guard
 prevents concurrent duplicate backfills. No startup scan or service restart is
 required. Very large previously unindexed *new-style* datasets can take a long
 request despite bounded buffers; no time-bounded background job scheduler exists.
 
-### Selected-run integration
+### Selected-experiment integration
 
-`getEvalRunPage` always returns the selected run's **full summary**, independent
+`getEvalExperimentPage` always returns the selected experiment's **full summary**, independent
 of current sidebar filters, plus:
 
 ```
@@ -221,28 +229,28 @@ of current sidebar filters, plus:
 ```
 
 Use `nextAfter` for the next request. It is a global source ordinal, not a
-run-relative offset. Pages return only the selected run's members, at most 100
+experiment-relative offset. Pages return only the selected experiment's members, at most 100
 rows and 4 MiB of source row bytes plus 4 MiB context. The typed JSON strings avoid
 precision loss in ordinary `response.json()` calls. This is bounded response
 serialization, not the old whole-file escaped upload path. Context can contain
-dataset-wide producer stats; use `summary` for selected-run counts.
+dataset-wide producer stats; use `summary` for selected-experiment counts.
 
 `projectPromptfooDataset` accepts optional `rowOrdinals`. Parent can assemble just
-the selected run with `assembleEvalRunSource(pages)` from `eval-run-source.ts`.
+the selected experiment with `assembleEvalExperimentSource(pages)` from `eval-experiment-source.ts`.
 This helper rejects mixed, incomplete, duplicate-ordinal or oversized page sets
 and replaces the source result-array syntax range without parsing/re-encoding
 received values. It returns the exact `EvalSourceDataset` input for the adapter.
-Check `summary.repCount` before fetching when using the bounded adapter.
+Check `summary.resultCount` before fetching when using the bounded adapter.
 Alternatively, parent can assemble
-the selected run's rows into its source envelope, retain their exact strings,
+the selected experiment's rows into its source envelope, retain their exact strings,
 and pass those global ordinals with `id: summary.datasetID` and
 `format: summary.format`. Copy pointers address the assembled local payload while
-run/rep/case identities use global positions. Aggregate selected-run pages
+experiment/result/case identities use global positions. Aggregate selected-experiment pages
 before using the current adapter's duplicate-slot logic; independent projections
 of pages cannot establish duplicate-slot relationships across pages. The existing
 8 MiB / 5,000-row / safe-display-number adapter limits still apply. Numeric-safe,
 arbitrarily large result-table projection remains parent/future work; the API does
-not require downloading other runs to select one.
+not require downloading other experiments to select one.
 
 The workspace consumes DB-wide summaries, pages the sidebar, maps unknown lifecycle
-state honestly, and lazily fetches only the selected Run's rows.
+state honestly, and lazily fetches only the selected Experiment's rows.

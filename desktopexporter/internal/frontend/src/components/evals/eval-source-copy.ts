@@ -3,17 +3,17 @@ import type { SyntaxNode } from '@lezer/common'
 import type {
   EvalSourceDataset,
   EvalSourceRowReference,
-  EvalRunTextSource,
+  EvalExperimentTextSource,
   EvalSourceTextField,
 } from './promptfoo-adapter'
 
 export type EvalSourceTextLoader = (signal: AbortSignal) => Promise<string>
 export type EvalSourceFieldCopy = (
-  repID: string,
+  resultID: string,
   field: EvalSourceTextField
 ) => EvalSourceTextLoader | undefined
-export type EvalSourceRunCopy = (
-  runID: string,
+export type EvalSourceExperimentCopy = (
+  experimentID: string,
   field: 'name' | 'evaluation' | 'source' | 'prompt'
 ) => EvalSourceTextLoader | undefined
 
@@ -56,9 +56,9 @@ export function evalSourceFieldCopy(
   payload: string,
   rows: EvalSourceRowReference[]
 ): EvalSourceFieldCopy {
-  const sources = new Map(rows.map(row => [row.repID, row.fields]))
-  return (repID, field) => {
-    const pointer = sources.get(repID)?.[field]
+  const sources = new Map(rows.map(row => [row.resultID, row.fields]))
+  return (resultID, field) => {
+    const pointer = sources.get(resultID)?.[field]
     if (pointer === undefined) return undefined
     return async signal => {
       signal.throwIfAborted()
@@ -67,15 +67,15 @@ export function evalSourceFieldCopy(
   }
 }
 
-/** Evaluation/source are native text. The run name is a derived joined label:
+/** Evaluation/source are native text. The experiment name is a derived joined label:
  * reconstruct its established formatting from full operands, not a fictional
  * source field. Scores, durations and costs keep their formatted copy semantics. */
-export function evalSourceRunCopy(
+export function evalSourceExperimentCopy(
   dataset: EvalSourceDataset,
-  sources: Record<string, EvalRunTextSource>
-): EvalSourceRunCopy {
-  return (runID, field) => {
-    const source = sources[runID]
+  sources: Record<string, EvalExperimentTextSource>
+): EvalSourceExperimentCopy {
+  return (experimentID, field) => {
+    const source = sources[experimentID]
     if (!source) return undefined
     if (field === 'prompt' && source.promptLabel === undefined) return undefined
     return async signal => {

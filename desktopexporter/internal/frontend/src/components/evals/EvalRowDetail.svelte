@@ -7,44 +7,53 @@
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import EvalAssessmentDetail from './EvalAssessmentDetail.svelte'
   import MarkdownText from '@/components/shared/MarkdownText.svelte'
-  import { cost, localTimestamp, type EvalRun, type EvalView } from './model'
+  import {
+    cost,
+    localTimestamp,
+    type EvalExperiment,
+    type EvalView,
+  } from './model'
   import { caseSummary } from './case-summary'
-  import { runSummary } from './run-summary'
+  import { experimentSummary } from './experiment-summary'
   import EvalTelemetrySummaries from './EvalTelemetrySummaries.svelte'
   import { evalTelemetrySummaries } from './eval-telemetry-summaries'
   import { referenceKey } from './eval-traces'
   import type { SpanNode } from '@/types/api-types'
-  import { completionLabel, completionTone } from './group-reps'
+  import { completionLabel, completionTone } from './group-results'
   import type { EvalOutlineRow } from './eval-outline'
   import { formatDuration } from '@/utils/time'
   import type { EvalSourceFieldCopy } from './eval-source-copy'
 
   let {
-    run,
+    experiment,
     row,
     mode = 'results',
     telemetryNodes,
     telemetryLoading = false,
     sourceCopy,
   }: {
-    run: EvalRun
+    experiment: EvalExperiment
     row: EvalOutlineRow
     mode?: EvalView
     telemetryNodes?: Map<string, SpanNode>
     telemetryLoading?: boolean
     sourceCopy?: EvalSourceFieldCopy
   } = $props()
-  const rep = $derived(row.rep)
-  const references = $derived(evalTelemetrySummaries(run, row))
-  const members = $derived(run.reps.filter(item => item.caseID === row.caseID))
-  const summary = $derived(caseSummary(members, run.assessments))
-  const outcomes = $derived(runSummary({ ...run, reps: members }).parts)
+  const result = $derived(row.result)
+  const references = $derived(evalTelemetrySummaries(experiment, row))
+  const members = $derived(
+    experiment.results.filter(item => item.caseID === row.caseID)
+  )
+  const summary = $derived(caseSummary(members, experiment.assessments))
+  const outcomes = $derived(
+    experimentSummary({ ...experiment, results: members }).parts
+  )
   const tool = $derived(
-    rep?.tools.find((_, index) => row.id === `${rep.id}/tool/${index}`)
+    result?.tools.find((_, index) => row.id === `${result.id}/tool/${index}`)
   )
   const assessments = $derived(
-    rep?.assessments.filter(item =>
-      row.kind === 'rep' || row.kind === 'case'
+    result?.assessments.filter(item =>
+      row.kind === 'result' || row.kind === 'case'
         ? mode === 'results'
         : row.kind === 'grading' || item.id === row.assessmentID
     ) ?? []
@@ -52,21 +61,22 @@
   const prose = $derived(
     mode === 'cost'
       ? undefined
-      : row.kind === 'case' && !rep
+      : row.kind === 'case' && !result
         ? mode === 'results'
           ? members[0]?.question
           : undefined
-        : row.kind === 'rep' || row.kind === 'case'
+        : row.kind === 'result' || row.kind === 'case'
           ? mode === 'results'
-            ? rep?.answer
+            ? result?.answer
             : undefined
           : row.kind === 'execution'
-            ? rep?.answer
+            ? result?.answer
             : tool?.message
   )
   const overallDefinition = $derived(
-    run.assessments.find(
-      item => item.id === run.headlineAssessment && item.name === 'Overall'
+    experiment.assessments.find(
+      item =>
+        item.id === experiment.headlineAssessment && item.name === 'Overall'
     )
   )
   const overall = $derived(
@@ -75,13 +85,13 @@
       : undefined
   )
   const proseCopy = $derived(
-    row.kind === 'case' && !rep && members[0]
+    row.kind === 'case' && !result && members[0]
       ? sourceCopy?.(members[0].id, 'question')
       : (row.kind === 'case' ||
-            row.kind === 'rep' ||
+            row.kind === 'result' ||
             row.kind === 'execution') &&
-          rep
-        ? sourceCopy?.(rep.id, 'answer')
+          result
+        ? sourceCopy?.(result.id, 'answer')
         : undefined
   )
   const span = $derived(
@@ -109,7 +119,7 @@
       : row.seconds !== undefined && row.seconds > 1e-9
   )
   const costFields = $derived(
-    row.kind === 'case' || row.kind === 'rep'
+    row.kind === 'case' || row.kind === 'result'
       ? [
           {
             name: 'investigator estimate (CAD)',
@@ -117,7 +127,7 @@
               row.kind === 'case'
                 ? summary.investigatorCost
                 : {
-                    total: rep?.investigatorCost ?? null,
+                    total: result?.investigatorCost ?? null,
                     incomplete: false,
                   },
           },
@@ -126,25 +136,37 @@
             estimate:
               row.kind === 'case'
                 ? summary.graderCost
-                : { total: rep?.graderCost ?? null, incomplete: false },
+                : { total: result?.graderCost ?? null, incomplete: false },
           },
           { name: 'total estimate (CAD)', estimate: row.estimate },
         ]
       : [{ name: 'estimate (CAD)', estimate: row.estimate }]
   )
   const calls = $derived(
-    row.kind === 'case' ? summary.calls : (rep?.tools.length ?? 0)
+    row.kind === 'case' ? summary.calls : (result?.tools.length ?? 0)
   )
   const failures = $derived(
     row.kind === 'case'
       ? summary.failures
-      : (rep?.tools.filter(item => item.state === 'Error').length ?? 0)
+      : (result?.tools.filter(item => item.state === 'Error').length ?? 0)
   )
 </script>
 
+{#snippet overallInputCopy()}
+  {#if overall}
+    <ValueCopyButton
+      text={overall.rubric}
+      loadText={result
+        ? sourceCopy?.(result.id, `assessment:${overall.id}:rubric`)
+        : undefined}
+      label="grader input"
+    />
+  {/if}
+{/snippet}
+
 <DetailStack
-  label={row.kind === 'rep' ? 'Result details' : `${row.name} details`}
-  storageKey={`eval-${row.kind}-detail-layout`}
+  label={row.kind === 'result' ? 'Result details' : `${row.name} details`}
+  storageKey={`eval-${row.kind === 'result' ? 'rep' : row.kind}-detail-layout`}
 >
   <DetailBubble
     label={row.name}
@@ -187,14 +209,14 @@
         </tbody>
       </table>
     {:else}
-      {#if row.kind === 'case' && rep && mode === 'results'}
+      {#if row.kind === 'case' && result && mode === 'results'}
         <table class="detail-fields w-full" aria-label="Test case input">
           <tbody>
             <DetailField
               fieldName="input"
               fieldType="string"
-              fieldValue={rep.question}
-              loadText={sourceCopy?.(rep.id, 'question')}
+              fieldValue={result.question}
+              loadText={sourceCopy?.(result.id, 'question')}
               multiline
             />
           </tbody>
@@ -213,7 +235,8 @@
             >
           </table>
         {:else}
-          {@const fieldName = row.kind === 'case' && !rep ? 'input' : 'output'}
+          {@const fieldName =
+            row.kind === 'case' && !result ? 'input' : 'output'}
           <table
             class="detail-fields w-full"
             aria-label={`${row.name} ${fieldName}`}
@@ -222,14 +245,14 @@
               <DetailField
                 {fieldName}
                 fieldType={fieldName === 'output'
-                  ? (rep?.answerType ?? 'string')
+                  ? (result?.answerType ?? 'string')
                   : 'string'}
                 fieldValue={prose}
                 loadText={proseCopy}
                 multiline
               >
                 {#snippet value()}
-                  {#if fieldName === 'output' && rep?.answerType && rep.answerType !== 'string'}
+                  {#if fieldName === 'output' && result?.answerType && result.answerType !== 'string'}
                     {prose}
                   {:else}
                     <MarkdownText text={prose === '' ? '""' : prose} />
@@ -239,18 +262,18 @@
             </tbody>
           </table>
         {/if}
-      {:else if row.kind === 'rep' && mode === 'results'}
+      {:else if row.kind === 'result' && mode === 'results'}
         <p class="eval-row-detail__prose">No answer recorded</p>
       {/if}
 
-      {#if (row.kind === 'case' || row.kind === 'rep' || row.kind === 'execution') && rep?.error !== undefined}
+      {#if (row.kind === 'case' || row.kind === 'result' || row.kind === 'execution') && result?.error !== undefined}
         <table class="detail-fields w-full" aria-label="Result fault">
           <tbody
             ><DetailField
               fieldName="internal fault"
               fieldType="string"
-              fieldValue={rep.error}
-              loadText={sourceCopy?.(rep.id, 'error')}
+              fieldValue={result.error}
+              loadText={sourceCopy?.(result.id, 'error')}
               multiline
             /></tbody
           >
@@ -260,22 +283,22 @@
 
     <table class="detail-fields w-full" aria-label={`${row.name} fields`}>
       <tbody>
-        {#if (row.kind === 'rep' || row.kind === 'case') && rep?.sourceID}
+        {#if (row.kind === 'result' || row.kind === 'case') && result?.sourceID}
           <DetailField
             fieldName="result ID"
             fieldType="string"
-            fieldValue={rep.sourceID}
+            fieldValue={result.sourceID}
             identifier
           />
         {/if}
-        {#if row.kind === 'case' && !rep}
+        {#if row.kind === 'case' && !result}
           <DetailField
             fieldName="results"
             fieldType="number"
             fieldValue={String(members.length)}
           />
         {/if}
-        {#if mode === 'time' && ['case', 'rep', 'execution'].includes(row.kind)}
+        {#if mode === 'time' && ['case', 'result', 'execution'].includes(row.kind)}
           <DetailField
             fieldName="tool calls"
             fieldType="number"
@@ -285,12 +308,12 @@
           />
         {/if}
         {#if mode !== 'cost'}
-          {#if (row.kind === 'case' || row.kind === 'rep') && rep?.startedAt !== undefined}
+          {#if (row.kind === 'case' || row.kind === 'result') && result?.startedAt !== undefined}
             <DetailField
               fieldName="started"
               fieldType="timestamp"
-              fieldValue={rep.startedAt}
-              timestampLabel={localTimestamp(rep.startedAt)}
+              fieldValue={result.startedAt}
+              timestampLabel={localTimestamp(result.startedAt)}
             />
           {/if}
           {#if showDuration}
@@ -316,19 +339,15 @@
     </table>
   </DetailBubble>
   {#if mode !== 'cost' && assessments.length}
-    <DetailBubble label="Assessments">
+    <DetailBubble
+      label="Assessments"
+      action={overall && (overall.rubric || sourceCopy)
+        ? overallInputCopy
+        : undefined}
+    >
       {#snippet trailing()}
         {#if overall}
           <span class="inline-flex items-center gap-2">
-            {#if overall.rubric || sourceCopy}
-              <ValueCopyButton
-                text={overall.rubric}
-                loadText={rep
-                  ? sourceCopy?.(rep.id, `assessment:${overall.id}:rubric`)
-                  : undefined}
-                label="grader input"
-              />
-            {/if}
             <AssessmentBadge
               assessment={overall}
               maximum={overallDefinition?.maximum}
@@ -339,16 +358,18 @@
       {#each assessments as assessment (assessment.id)}
         <EvalAssessmentDetail
           {assessment}
-          definition={run.assessments.find(item => item.id === assessment.id)}
+          definition={experiment.assessments.find(
+            item => item.id === assessment.id
+          )}
           showScore={mode === 'results'}
           showHeading={assessment.id !== overall?.id}
-          loadRubric={rep
-            ? sourceCopy?.(rep.id, `assessment:${assessment.id}:rubric`)
+          loadRubric={result
+            ? sourceCopy?.(result.id, `assessment:${assessment.id}:rubric`)
             : undefined}
-          loadExplanation={rep
+          loadExplanation={result
             ? sourceCopy?.(
-                rep.id,
-                assessment.id === run.headlineAssessment
+                result.id,
+                assessment.id === experiment.headlineAssessment
                   ? 'explanation'
                   : `assessment:${assessment.id}:explanation`
               )

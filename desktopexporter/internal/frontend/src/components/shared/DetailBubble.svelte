@@ -40,8 +40,12 @@
   function register(element: HTMLElement) {
     const unregister = stack?.register({
       id: sectionID,
-      label,
-      layoutKey,
+      get label() {
+        return label
+      },
+      get layoutKey() {
+        return layoutKey
+      },
       element,
       available: () => !disabled && count !== 0,
       expanded: () => !disabled && count !== 0 && expanded,
@@ -113,7 +117,7 @@
 {#snippet bubble()}
   {#if disabled || count === 0}
     <section
-      class="collapse collapse-close min-h-0 bg-base-100"
+      class="collapse collapse-close detail-bubble--unavailable min-h-0 bg-transparent"
       aria-label={label}
     >
       <div
@@ -174,6 +178,7 @@
     id={sectionID}
     class:detail-bubble__with-action={Boolean(action)}
     class:detail-bubble--resizable={Boolean(stack)}
+    class:detail-bubble--unavailable={disabled || count === 0}
     style:flex={stack?.flex(sectionID)}
     use:register
   >
@@ -212,6 +217,12 @@
     outline: none;
   }
 
+  /* The summary owns focus feedback; an outer disclosure ring is clipped by
+     the stack and leaves stray marks at the section corners. */
+  .detail-bubble__disclosure {
+    outline: none;
+  }
+
   .detail-bubble--resizable {
     display: flex;
     flex-direction: column;
@@ -220,8 +231,12 @@
     overflow: hidden;
   }
   .detail-bubble__heading--disabled {
+    border-color: transparent;
     color: var(--color-muted);
     cursor: default;
+  }
+  .detail-bubble--unavailable {
+    order: 1;
   }
   .detail-bubble__heading--disabled :global(*) {
     color: inherit;

@@ -6,12 +6,12 @@ import { detectImportFile } from './import-file'
 const signals: readonly ImportSignal[] = ['traces', 'logs', 'metrics']
 const evalRunListeners = new Set<() => void>()
 
-export function onEvalRunsChanged(listener: () => void): () => void {
+export function onEvalExperimentsChanged(listener: () => void): () => void {
   evalRunListeners.add(listener)
   return () => evalRunListeners.delete(listener)
 }
 
-function notifyEvalRunsChanged() {
+function notifyEvalExperimentsChanged() {
   for (const listener of evalRunListeners) listener()
 }
 
@@ -143,7 +143,7 @@ export function createFileImporter(
                 file,
                 controller.signal
               )
-              notifyEvalRunsChanged()
+              notifyEvalExperimentsChanged()
             }
           } catch (error) {
             if (controller.signal.aborted) return

@@ -116,7 +116,7 @@ func TestEvalIngestionAtomicBatchesRetryAndQuery(t *testing.T) {
 		require.Len(t, page.Rows, 2)
 		require.Equal(t, row, string(page.Rows[0]))
 		require.True(t, page.HasMore)
-		list, err := evals.SearchRuns(t.Context(), db, evals.RunSearch{Sort: "started", Direction: "desc", Limit: 10})
+		list, err := evals.SearchExperiments(t.Context(), db, evals.ExperimentSearch{Sort: "started", Direction: "desc", Limit: 10})
 		require.NoError(t, err)
 		require.Equal(t, int64(130), list.Total)
 		return nil
@@ -127,9 +127,9 @@ func TestEvalIngestionAtomicBatchesRetryAndQuery(t *testing.T) {
 	// Simulate a prior process interrupted before publication; retry replaces hidden rows.
 	require.NoError(t, h.store.WithDBWrite(func(db *sql.DB) error { _, err := db.Exec(`update eval_imports set complete = false`); return err }))
 	require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
-		list, err := evals.SearchRuns(t.Context(), db, evals.RunSearch{Sort: "started", Direction: "desc", Limit: 10})
+		list, err := evals.SearchExperiments(t.Context(), db, evals.ExperimentSearch{Sort: "started", Direction: "desc", Limit: 10})
 		require.NoError(t, err)
-		require.Empty(t, list.Runs)
+		require.Empty(t, list.Experiments)
 		return nil
 	}))
 	response = post(input)

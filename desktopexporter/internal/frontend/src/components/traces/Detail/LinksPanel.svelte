@@ -1,9 +1,10 @@
 <script lang="ts">
   import Identifier from '@/components/shared/Identifier.svelte'
+  import UnavailableTelemetryReference from '@/components/shared/UnavailableTelemetryReference.svelte'
   import type { LinkData } from '@/types/api-types'
   import DisclosureSignalCard from '@/components/shared/DisclosureSignalCard.svelte'
   import SpanField from '@/components/shared/DetailProperty.svelte'
-  import { itemHref, navigateToItem } from '@/route'
+  import { isPlainLeftClick, itemHref, navigateToItem } from '@/route'
   import { SPAN_PARAM } from '@/route/query-params'
   import { detailPanel } from '@/state/detail-panel.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
@@ -52,6 +53,7 @@
   }
 
   function goToLink(e: MouseEvent, link: LinkData) {
+    if (!isPlainLeftClick(e)) return
     e.preventDefault()
     if (!link.traceID) return
     detailPanel.reveal()
@@ -89,7 +91,10 @@
         {#if link.summary.target.serviceName.trim()}
           ({link.summary.target.serviceName.trim()}){/if}
       {:else if link.spanID && link.traceID}
-        <Identifier value={link.traceID} /> / <Identifier value={link.spanID} />
+        <UnavailableTelemetryReference
+          traceID={link.traceID}
+          spanID={link.spanID}
+        />
       {:else}Invalid link target{/if}
       <span class="text-sm text-rp-subtle">{' · Link'}</span>
     {/snippet}

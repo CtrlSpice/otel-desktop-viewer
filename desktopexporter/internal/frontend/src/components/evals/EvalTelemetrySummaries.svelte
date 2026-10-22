@@ -90,15 +90,38 @@
     {#snippet startDate()}
       <SignalDate label="Started" timestamp={startedAt} />
     {/snippet}
+    {#snippet identifiers()}
+      <span
+        class="eval-telemetry__identity"
+        role="group"
+        aria-label={`${entry.label} identifiers`}
+      >
+        <span class="text-rp-subtle">Traces:</span>
+        <span
+          ><span class="sr-only">Trace ID </span><Identifier
+            value={entry.reference.traceID}
+          /></span
+        >
+        {#if entry.reference.spanID !== undefined}
+          <span
+            ><span class="sr-only">Span ID </span><Identifier
+              value={entry.reference.spanID}
+            /></span
+          >
+        {/if}
+        {#if unavailable}<span class="text-rp-subtle">(unavailable)</span>{/if}
+      </span>
+    {/snippet}
     <SignalCard
       id={referenceKey(entry.reference)}
       href={traceHref(entry.reference)}
       disabled={unavailable}
       date={startedAt !== undefined ? startDate : undefined}
-      {title}
+      title={unavailable ? entry.label : title}
+      subtitleContent={unavailable ? undefined : identifiers}
     >
       {#snippet beforeTitle()}
-        {#if entry.reference.spanID}
+        {#if entry.reference.spanID && !unavailable}
           <div
             class="min-h-[var(--signal-card-row-h)] truncate text-sm text-secondary"
             title={entry.label}
@@ -120,28 +143,10 @@
               : 'var(--color-muted)'}
             aria-hidden="true"
           ></span>
-          <span class="truncate">{title}</span>
+          {#if unavailable}{@render identifiers()}{:else}<span class="truncate"
+              >{title}</span
+            >{/if}
         </span>
-      {/snippet}
-      {#snippet subtitleContent()}
-        <div
-          class="eval-telemetry__identity"
-          role="group"
-          aria-label={`${entry.label} identifiers`}
-        >
-          <span class="text-rp-subtle">Traces:</span>
-          <span>
-            <span class="sr-only">Trace ID </span>
-            <Identifier value={entry.reference.traceID} />
-          </span>
-          {#if entry.reference.spanID !== undefined}
-            <span>
-              <span class="sr-only">Span ID </span>
-              <Identifier value={entry.reference.spanID} />
-            </span>
-          {/if}
-          {#if unavailable}<span class="text-rp-subtle">Unavailable</span>{/if}
-        </div>
       {/snippet}
       {#snippet badge()}
         {#if span}<span

@@ -50,22 +50,22 @@ type EvalExecutionEvidence = {
   tools: EvalTool[]
   /** False when the source supplies no tool-call evidence. */
   toolsKnown?: boolean
-  /** Target execution, distinct from an enclosing Rep or retry Attempt span. */
+  /** Target execution, distinct from an enclosing Result or retry Attempt span. */
   telemetry?: TelemetryReference
 }
 
-/** An explicit producer-recorded retry within one Rep. Adapters must not invent
- * Attempts for producers, such as Promptfoo v3, that expose only Rep rows. */
+/** An explicit producer-recorded retry within one Result. Adapters must not invent
+ * Attempts for producers, such as Promptfoo v3, that expose only Result rows. */
 export type EvalAttempt = EvalExecutionEvidence & {
   id: string
-  repID: string
+  resultID: string
   attempt: number
   name: string
   /** Optional enclosing retry span; telemetry identifies target execution. */
   attemptTelemetry?: TelemetryReference
 }
 
-export type EvalRep = EvalExecutionEvidence & {
+export type EvalResult = EvalExecutionEvidence & {
   id: string
   /** Unmodified producer result identity; id above is the local display key. */
   sourceID?: string
@@ -74,13 +74,13 @@ export type EvalRep = EvalExecutionEvidence & {
   repetition?: number
   name: string
   question: string
-  /** Present only when the producer explicitly records retries within this Rep. */
+  /** Present only when the producer explicitly records retries within this Result. */
   attempts?: EvalAttempt[]
-  /** Optional enclosing rep span; telemetry identifies target execution. */
-  repTelemetry?: TelemetryReference
+  /** Optional enclosing result span; telemetry identifies target execution. */
+  resultTelemetry?: TelemetryReference
 }
 
-export type EvalRun = {
+export type EvalExperiment = {
   id: string
   name: string
   evaluation: string
@@ -94,26 +94,28 @@ export type EvalRun = {
   configuration: { name: string; value: string | number | boolean | null }[]
   assessments: AssessmentDefinition[]
   headlineAssessment: string
-  reps: EvalRep[]
+  results: EvalResult[]
   seconds?: number
   telemetry?: TelemetryReference
 }
 
 export function assessmentSummary(
-  run: Pick<EvalRun, 'reps'>,
+  experiment: Pick<EvalExperiment, 'results'>,
   definition: AssessmentDefinition
 ) {
   let total = 0
   let scored = 0
-  for (const rep of run.reps) {
-    const assessment = rep.assessments.find(item => item.id === definition.id)
+  for (const result of experiment.results) {
+    const assessment = result.assessments.find(
+      item => item.id === definition.id
+    )
     if (assessment?.value != null) {
       total += assessment.value
       scored++
     }
   }
   const denominator =
-    definition.aggregation === 'planned' ? run.reps.length : scored
+    definition.aggregation === 'planned' ? experiment.results.length : scored
   return {
     scored,
     denominator,
@@ -132,18 +134,18 @@ export function percent(value: number | null): string {
 }
 
 export function estimatedCost(
-  reps: EvalRep[],
+  results: EvalResult[],
   field: 'investigatorCost' | 'graderCost'
 ) {
   let total = 0
   let known = 0
-  for (const rep of reps) {
-    if (rep[field] !== undefined) {
-      total += rep[field]
+  for (const result of results) {
+    if (result[field] !== undefined) {
+      total += result[field]
       known++
     }
   }
-  return { total: known ? total : null, incomplete: known < reps.length }
+  return { total: known ? total : null, incomplete: known < results.length }
 }
 
 export function cost(value: number | null | undefined): string {

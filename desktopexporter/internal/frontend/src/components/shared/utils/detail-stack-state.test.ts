@@ -30,6 +30,18 @@ function fixture(available = [true, true, true]) {
 beforeEach(() => localStorage.clear())
 
 describe('detail heading collapse handoff', () => {
+  it('skips unavailable headers and restores their resize position when data arrives', () => {
+    const available = [false, false, true]
+    const { stack } = fixture(available)
+    expect(stack.previous('Links')).toBeUndefined()
+    available[0] = true
+    expect(stack.previous('Links')?.id).toBe('Span')
+    available[1] = true
+    expect(stack.previous('Links')?.id).toBe('Events')
+    available[1] = false
+    expect(stack.previous('Links')?.id).toBe('Span')
+  })
+
   it.each([
     ['Span', 'Events', 'Links'],
     ['Events', 'Links', 'Span'],

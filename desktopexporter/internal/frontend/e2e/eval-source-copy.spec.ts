@@ -26,27 +26,27 @@ async function openSource(
     config: { description: 'Copy eval' },
     results: { version: 3, results: [] },
   })
-  const summaries = projection.runs.map((run, index) => ({
+  const summaries = projection.experiments.map((experiment, index) => ({
     id: String(index + 1).padStart(64, '0'),
-    adapterRunID: run.id,
+    adapterExperimentID: experiment.id,
     datasetID,
-    name: run.name,
-    evaluation: run.evaluation,
-    source: run.source,
+    name: experiment.name,
+    evaluation: experiment.evaluation,
+    source: experiment.source,
     format: 'promptfoo-v3' as const,
     state: 'Unknown' as const,
     stateReason: 'Received rows do not establish lifecycle.',
     pauseReason: null,
     startedAt: null,
     plannedCount: null,
-    repCount: run.reps.length,
+    resultCount: experiment.results.length,
     assessmentName: 'Recorded outcome' as const,
     outcomes: [
       {
         key: 'neutral:Unscored',
         label: 'Unscored' as const,
         tone: 'neutral' as const,
-        count: run.reps.length,
+        count: experiment.results.length,
       },
     ],
   }))
@@ -54,13 +54,15 @@ async function openSource(
   await page.route('**/api/features', route =>
     route.fulfill({ json: { evals: { enabled: true } } })
   )
-  await page.route('**/api/evals/runs**', route => {
+  await page.route('**/api/evals/experiments**', route => {
     const url = new URL(route.request().url())
-    const detail = url.pathname.match(/^\/api\/evals\/runs\/([^/]+)\/rows$/)
+    const detail = url.pathname.match(
+      /^\/api\/evals\/experiments\/([^/]+)\/rows$/
+    )
     if (!detail)
       return route.fulfill({
         json: {
-          runs: summaries,
+          experiments: summaries,
           total: summaries.length,
           hasMore: false,
           facets: summaries[0]?.outcomes ?? [],
@@ -74,12 +76,14 @@ async function openSource(
         },
       })
     const summary = summaries.find(item => item.id === detail[1])
-    const run = projection.runs.find(item => item.id === summary?.adapterRunID)
-    if (!summary || !run) return route.fulfill({ status: 404 })
-    const repIDs = new Set(run.reps.map(rep => rep.id))
+    const experiment = projection.experiments.find(
+      item => item.id === summary?.adapterExperimentID
+    )
+    if (!summary || !experiment) return route.fulfill({ status: 404 })
+    const resultIDs = new Set(experiment.results.map(result => result.id))
     const sourceRows = projection.rows
       .map((entry, index) => ({ entry, index }))
-      .filter(({ entry }) => repIDs.has(entry.repID))
+      .filter(({ entry }) => resultIDs.has(entry.resultID))
       .map(({ index }) => ({
         ordinal: index,
         json: JSON.stringify(rows[index]),
@@ -107,15 +111,15 @@ async function openSource(
         : []
     await route.fulfill({ json: { jsonrpc: '2.0', id: request.id, result } })
   })
-  const run = projection.runs[0]
+  const experiment = projection.experiments[0]
   const summary = summaries[0]
-  const rep = run.reps[selected]
+  const result = experiment.results[selected]
   const query = new URLSearchParams({
-    run: summary.id,
-    rep: rep.id,
+    experiment: summary.id,
+    result: result.id,
   })
   await page.goto(`/evals?${query}`)
-  return { run, rep, query }
+  return { experiment, result, query }
 }
 
 function row(index: number, output: unknown) {
@@ -179,7 +183,7 @@ test('assessment packets stay readable and retain exact full-input Copy', async 
     detail.locator('strong').filter({ hasText: 'reported cause' })
   ).toBeVisible()
   await expect(
-    detail.getByRole('group', { name: 'scoring', exact: true })
+    detail.getByRole('group', { name: 'Pass', exact: true })
   ).toContainText('Supported cause.')
   await expect(detail.locator('img, a[href^="javascript:"]')).toHaveCount(0)
   const evidence = detail
@@ -194,12 +198,23 @@ test('assessment packets stay readable and retain exact full-input Copy', async 
     })
     .last()
   await expect(instructions).not.toHaveAttribute('open')
-  await detail
-    .getByRole('button', { name: 'Copy grader input', exact: true })
-    .click()
+  await expect(
+    detail.locator('summary button[aria-label="Copy grader input"]')
+  ).toHaveCount(0)
+  const assessment = detail.locator('.eval-assessment-detail').last()
+  const disclosure = assessment.locator(':scope > details')
+  const copyInput = assessment.getByRole('button', {
+    name: 'Copy grader input',
+    exact: true,
+  })
+  await expect(copyInput.locator('xpath=ancestor::summary')).toHaveCount(0)
+  await disclosure.locator(':scope > summary').click()
+  await expect(disclosure).not.toHaveAttribute('open')
+  await copyInput.click()
   await expect
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toBe(input)
+  await expect(disclosure).not.toHaveAttribute('open')
   await expect(
     detail.getByRole('button', { name: 'Telemetry', exact: true })
   ).toHaveAttribute('aria-disabled', 'true')
@@ -238,7 +253,7 @@ test('native results need no ordinal or execution wrapper and show their own gra
     table.getByRole('columnheader', { name: 'Experiment · Test case · Result' })
   ).toBeVisible()
   await expect(table.locator('[data-row-kind="case"]')).toHaveCount(1)
-  await expect(table.locator('[data-row-kind="rep"]')).toHaveCount(3)
+  await expect(table.locator('[data-row-kind="result"]')).toHaveCount(3)
   await expect(
     table.getByRole('columnheader', { name: 'Sort by Assessment', exact: true })
   ).toBeVisible()
@@ -251,23 +266,22 @@ test('native results need no ordinal or execution wrapper and show their own gra
   ).toContainText('result-1')
   await expect(details).toContainText('Output 1')
   await expect(
-    details.locator('summary').filter({ hasText: /^\s*Assessments\s*$/ })
-  ).toBeVisible()
+    details.locator('summary').filter({ hasText: /^\s*Assessments/ })
+  ).toContainText('Pass')
   await expect(
     details.locator('summary').filter({ hasText: /^Overall/ })
-  ).toBeVisible()
+  ).toHaveCount(0)
   await expect(details).toContainText('Reason 1')
   await expect(details).toContainText('Approved criterion')
   await expect(
     details.getByRole('group', { name: 'score', exact: true }).last()
   ).toContainText('7')
-  await page.getByRole('radio', { name: 'Tool calls', exact: true }).click()
+  await expect(
+    page.getByRole('radio', { name: 'Tool calls', exact: true })
+  ).toBeDisabled()
   await expect(
     table.locator('[data-row-kind="execution"], [data-row-kind="grading"]')
   ).toHaveCount(0)
-  await expect(
-    details.getByRole('group', { name: 'tool calls', exact: true })
-  ).toContainText('Unknown')
 })
 
 test('a singleton without repetition metadata shows output and identity on its test case', async ({
@@ -277,7 +291,7 @@ test('a singleton without repetition metadata shows output and identity on its t
     { ...row(0, 'Singleton output'), repeatIndex: undefined },
   ])
   const details = page.locator('#signal-drawer-detail')
-  await expect(page.locator('[data-row-kind="rep"]')).toHaveCount(0)
+  await expect(page.locator('[data-row-kind="result"]')).toHaveCount(0)
   await expect(details).toContainText('Singleton output')
   await expect(
     details.getByRole('group', { name: 'result ID', exact: true })
@@ -299,11 +313,12 @@ for (const mode of ['field limit', 'aggregate budget']) {
       prompt: { raw: exact },
       gradingResult: { reason: exact, pass: true },
     }
-    const { rep, query } = await openSource(page, rows, selected)
+    const { result, query } = await openSource(page, rows, selected)
     const detail = page.locator('#signal-drawer-detail')
     await expect(detail).toContainText('… [see original JSON]')
+    await detail.getByRole('group', { name: 'output', exact: true }).hover()
     await detail
-      .getByRole('button', { name: 'Copy answer', exact: true })
+      .getByRole('button', { name: 'Copy output', exact: true })
       .click()
     await expect
       .poll(() => page.evaluate(() => navigator.clipboard.readText()))
@@ -316,13 +331,14 @@ for (const mode of ['field limit', 'aggregate budget']) {
     await expect
       .poll(() => page.evaluate(() => navigator.clipboard.readText()))
       .toBe(exact)
-    query.delete('rep')
-    query.set('row', `case/${rep.caseID}`)
+    query.delete('result')
+    query.set('row', `case/${result.caseID}`)
     await page.goto(`/evals?${query}`)
     await expect(detail).toContainText('… [see original JSON]')
     await page.evaluate(() => navigator.clipboard.writeText('sentinel'))
+    await detail.getByRole('group', { name: 'input', exact: true }).hover()
     await detail
-      .getByRole('button', { name: `Copy ${rep.name}`, exact: true })
+      .getByRole('button', { name: 'Copy input', exact: true })
       .click()
     await expect
       .poll(() => page.evaluate(() => navigator.clipboard.readText()))
@@ -333,16 +349,16 @@ for (const mode of ['field limit', 'aggregate budget']) {
 test('answer Copy preserves empty, zero, null and missing semantics', async ({
   page,
 }) => {
-  const { run, query } = await openSource(
+  const { experiment, query } = await openSource(
     page,
     ['', 0, null, undefined].map((output, index) => row(index, output))
   )
   for (const [index, expected] of ['', '0', 'null', undefined].entries()) {
-    query.set('rep', run.reps[index].id)
+    query.set('result', experiment.results[index].id)
     await page.goto(`/evals?${query}`)
     const copy = page
       .locator('#signal-drawer-detail')
-      .getByRole('button', { name: 'Copy answer', exact: true })
+      .getByRole('button', { name: 'Copy output', exact: true })
     if (expected === undefined) {
       await expect(page.locator('#signal-drawer-detail')).toContainText(
         'No answer recorded'
@@ -350,6 +366,10 @@ test('answer Copy preserves empty, zero, null and missing semantics', async ({
       await expect(copy).toHaveCount(0)
     } else {
       await page.evaluate(() => navigator.clipboard.writeText('sentinel'))
+      await page
+        .locator('#signal-drawer-detail')
+        .getByRole('group', { name: 'output', exact: true })
+        .hover()
       await copy.click()
       await expect
         .poll(() => page.evaluate(() => navigator.clipboard.readText()))
@@ -358,7 +378,7 @@ test('answer Copy preserves empty, zero, null and missing semantics', async ({
   }
 })
 
-test('switching imported runs preserves each run disclosure and sort', async ({
+test('switching imported experiments preserves each experiment disclosure and sort', async ({
   page,
 }) => {
   await openSource(page, [

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen, within, waitFor } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import EvalResults from './EvalResults.svelte'
-import { exampleRuns } from './examples'
+import { exampleExperiments } from './examples'
 import { telemetryAPI } from '@/services/telemetry-service'
 import type { SpanTiming, TraceData } from '@/types/api-types'
 
@@ -68,20 +68,24 @@ describe('EvalResults repetitions', () => {
       .spyOn(telemetryAPI, 'getReferencedTraceViews')
       .mockResolvedValue(traceViews([]))
     try {
-      const rep = {
-        ...exampleRuns[0].reps[0],
+      const result = {
+        ...exampleExperiments[0].results[0],
         telemetry: undefined,
-        repTelemetry: undefined,
+        resultTelemetry: undefined,
         tools: [],
         toolsKnown: false,
         assessments: [],
         investigatorCost: undefined,
         graderCost: undefined,
       }
-      const run = { ...exampleRuns[0], telemetry: undefined, reps: [rep] }
+      const experiment = {
+        ...exampleExperiments[0],
+        telemetry: undefined,
+        results: [result],
+      }
       const { rerender } = render(EvalResults, {
-        run,
-        reps: run.reps,
+        experiment,
+        results: experiment.results,
         viewKey: 'cost',
       })
       const results = screen.getByRole('radio', { name: 'Results' })
@@ -97,25 +101,31 @@ describe('EvalResults repetitions', () => {
       await user.keyboard('{ArrowRight}')
       expect(results).toHaveFocus()
 
-      const withCost = { ...run, reps: [{ ...rep, investigatorCost: 0 }] }
-      await rerender({ run: withCost, reps: withCost.reps })
+      const withCost = {
+        ...experiment,
+        results: [{ ...result, investigatorCost: 0 }],
+      }
+      await rerender({ experiment: withCost, results: withCost.results })
       expect(cost).toBeEnabled()
       await user.keyboard('{ArrowRight}')
       expect(cost).toHaveFocus()
       expect(cost).toHaveAttribute('aria-checked', 'true')
-      await rerender({ reps: [] })
+      await rerender({ results: [] })
       expect(cost).toBeEnabled()
       expect(cost).toHaveAttribute('aria-checked', 'true')
       await user.keyboard('{ArrowLeft}')
       expect(results).toHaveFocus()
 
-      const knownZero = { ...run, reps: [{ ...rep, toolsKnown: true }] }
-      await rerender({ run: knownZero, reps: knownZero.reps })
+      const knownZero = {
+        ...experiment,
+        results: [{ ...result, toolsKnown: true }],
+      }
+      await rerender({ experiment: knownZero, results: knownZero.results })
       expect(cost).toBeDisabled()
       expect(tools).toBeEnabled()
       await user.click(tools)
       expect(tools).toHaveAttribute('aria-checked', 'true')
-      await rerender({ run, reps: run.reps })
+      await rerender({ experiment, results: experiment.results })
       await waitFor(() =>
         expect(results).toHaveAttribute('aria-checked', 'true')
       )
@@ -126,8 +136,8 @@ describe('EvalResults repetitions', () => {
   })
 
   it('retains selected tool telemetry when filtering its case out of the table', async () => {
-    const rep = exampleRuns[0].reps[0]
-    const tool = rep.tools[0]
+    const result = exampleExperiments[0].results[0]
+    const tool = result.tools[0]
     const reference = tool.telemetry!
     const lookup = vi
       .spyOn(telemetryAPI, 'getReferencedTraceViews')
@@ -146,19 +156,19 @@ describe('EvalResults repetitions', () => {
       )
     const onResolveSelection = vi.fn()
     try {
-      const run = {
-        ...exampleRuns[0],
+      const experiment = {
+        ...exampleExperiments[0],
         telemetry: undefined,
-        reps: [rep],
+        results: [result],
       }
       const { rerender, container } = render(EvalResults, {
-        run,
-        reps: run.reps,
-        selectedRowID: `${rep.id}/tool/0`,
+        experiment,
+        results: experiment.results,
+        selectedRowID: `${result.id}/tool/0`,
         onResolveSelection,
       })
       const evidence = expect.objectContaining({
-        id: `${rep.id}/tool/0`,
+        id: `${result.id}/tool/0`,
         state: 'Error',
         spanError: true,
         window: { startTime: 10n, endTime: 30n },
@@ -166,7 +176,7 @@ describe('EvalResults repetitions', () => {
       await waitFor(() =>
         expect(onResolveSelection).toHaveBeenLastCalledWith(evidence)
       )
-      await rerender({ reps: [] })
+      await rerender({ results: [] })
       expect(container.querySelectorAll('[data-outline-id]')).toHaveLength(1)
       await waitFor(() =>
         expect(onResolveSelection).toHaveBeenLastCalledWith(evidence)
@@ -177,17 +187,21 @@ describe('EvalResults repetitions', () => {
   })
 
   it('selects one summary view, combines totals and preserves manual disclosure', async () => {
-    const rep = exampleRuns[0].reps[0]
+    const result = exampleExperiments[0].results[0]
     const telemetry = { traceID: 'a'.repeat(32), spanID: 'b'.repeat(16) }
     const lookup = vi
       .spyOn(telemetryAPI, 'getReferencedTraceViews')
       .mockResolvedValue(traceViews([]))
     try {
-      const run = { ...exampleRuns[0], telemetry, reps: [rep] }
+      const experiment = {
+        ...exampleExperiments[0],
+        telemetry,
+        results: [result],
+      }
       const { container } = render(EvalResults, {
-        run,
-        reps: run.reps,
-        selectedID: rep.id,
+        experiment,
+        results: experiment.results,
+        selectedID: result.id,
       })
       const user = userEvent.setup()
       const toggles = within(
@@ -219,8 +233,8 @@ describe('EvalResults repetitions', () => {
           )
         ).toBe(expectedColumns)
       }
-      const toolCount = rep.tools.length
-      expect(container.querySelectorAll('[data-tool-rep-id]')).toHaveLength(
+      const toolCount = result.tools.length
+      expect(container.querySelectorAll('[data-tool-result-id]')).toHaveLength(
         toolCount
       )
       await user.click(screen.getByRole('button', { name: /^Collapse Result/ }))
@@ -233,31 +247,35 @@ describe('EvalResults repetitions', () => {
       ).toEqual([
         '',
         '',
-        rep.investigatorCost!.toFixed(3),
-        rep.graderCost!.toFixed(3),
-        (rep.investigatorCost! + rep.graderCost!).toFixed(3),
+        result.investigatorCost!.toFixed(3),
+        result.graderCost!.toFixed(3),
+        (result.investigatorCost! + result.graderCost!).toFixed(3),
       ])
       expect(
         screen.getByRole('button', { name: 'Sort by Total cost' })
       ).toBeInTheDocument()
-      expect(container.querySelectorAll('[data-tool-rep-id]')).toHaveLength(0)
+      expect(container.querySelectorAll('[data-tool-result-id]')).toHaveLength(
+        0
+      )
       await user.click(toggle('Tool calls'))
-      expect(container.querySelectorAll('[data-tool-rep-id]')).toHaveLength(0)
+      expect(container.querySelectorAll('[data-tool-result-id]')).toHaveLength(
+        0
+      )
       await user.click(screen.getByRole('button', { name: /^Expand Result/ }))
-      expect(container.querySelectorAll('[data-tool-rep-id]')).toHaveLength(
+      expect(container.querySelectorAll('[data-tool-result-id]')).toHaveLength(
         toolCount
       )
-      expect(container.querySelector(`[data-rep-id="${rep.id}"]`)).toHaveClass(
-        'table-row--selected'
-      )
+      expect(
+        container.querySelector(`[data-result-id="${result.id}"]`)
+      ).toHaveClass('table-row--selected')
     } finally {
       lookup.mockRestore()
     }
   })
 
   it.each([false, true])(
-    'positions tools by stored start time, retaining late ends (run span: %s)',
-    async withRun => {
+    'positions tools by stored start time, retaining late ends (experiment span: %s)',
+    async withExperiment => {
       const traceID = 'a'.repeat(32)
       const reference = (id: number) => ({
         traceID,
@@ -277,8 +295,8 @@ describe('EvalResults repetitions', () => {
         endTime: epoch + end * 1_000_000_000n,
         statusCodeValue: 1,
       })
-      const rep = {
-        ...exampleRuns[0].reps[0],
+      const result = {
+        ...exampleExperiments[0].results[0],
         telemetry: reference(1),
         tools: [2, 3].map(id => ({
           name: `tool ${id}`,
@@ -294,17 +312,17 @@ describe('EvalResults repetitions', () => {
             timing(1, 'question', 10n, 20n),
             timing(2, 'tool 2', 12n, 14n),
             timing(3, 'tool 3', 18n, 26n),
-            ...(withRun ? [timing(4, 'run', 0n, 40n)] : []),
+            ...(withExperiment ? [timing(4, 'experiment', 0n, 40n)] : []),
           ])
         )
       try {
         render(EvalResults, {
-          run: {
-            ...exampleRuns[0],
-            reps: [rep],
-            telemetry: withRun ? reference(4) : undefined,
+          experiment: {
+            ...exampleExperiments[0],
+            results: [result],
+            telemetry: withExperiment ? reference(4) : undefined,
           },
-          reps: [rep],
+          results: [result],
         })
         await showOnlyTime()
         await screen.findByRole('button', {
@@ -317,20 +335,20 @@ describe('EvalResults repetitions', () => {
           name: 'Span tool 3, 8.000 s',
         })
         expect(early.querySelector('.span-bar')).toHaveStyle({
-          left: withRun ? '30%' : '12.5%',
-          width: withRun ? '5%' : '12.5%',
+          left: withExperiment ? '30%' : '12.5%',
+          width: withExperiment ? '5%' : '12.5%',
         })
         expect(late.querySelector('.span-bar')).toHaveStyle({
-          left: withRun ? '45%' : '50%',
-          width: withRun ? '20%' : '50%',
+          left: withExperiment ? '45%' : '50%',
+          width: withExperiment ? '20%' : '50%',
         })
         expect(early.querySelector('.duration-bar__label')).toHaveStyle({
-          left: withRun ? 'calc(35% + 16px)' : 'calc(25% + 16px)',
+          left: withExperiment ? 'calc(35% + 16px)' : 'calc(25% + 16px)',
         })
         expect(early).toHaveAttribute(
           'title',
           expect.stringContaining(
-            withRun ? 'Start offset 12.000 s' : 'Start offset 2.000 s'
+            withExperiment ? 'Start offset 12.000 s' : 'Start offset 2.000 s'
           )
         )
       } finally {
@@ -339,14 +357,14 @@ describe('EvalResults repetitions', () => {
     }
   )
 
-  it('aligns reps from different traces to one origin without a run span', async () => {
+  it('aligns results from different traces to one origin without a experiment span', async () => {
     const epoch = 1700000000000000001n
-    const reps = [0, 1].map(index => ({
-      ...exampleRuns[0].reps[0],
-      id: `rep-${index}`,
+    const results = [0, 1].map(index => ({
+      ...exampleExperiments[0].results[0],
+      id: `result-${index}`,
       caseID: `case-${index}`,
       telemetry: undefined,
-      repTelemetry: {
+      resultTelemetry: {
         traceID: String(index + 1).repeat(32),
         spanID: 'a'.repeat(16),
       },
@@ -357,9 +375,9 @@ describe('EvalResults repetitions', () => {
       .spyOn(telemetryAPI, 'getReferencedTraceViews')
       .mockResolvedValue(
         traceViews(
-          reps.map((rep, index) => ({
-            ...rep.repTelemetry,
-            name: `rep span ${index}`,
+          results.map((result, index) => ({
+            ...result.resultTelemetry,
+            name: `result span ${index}`,
             serviceName: 'runner',
             startTime: epoch + BigInt(index * 20) * 1_000_000_000n,
             endTime: epoch + BigInt(index * 20 + 10) * 1_000_000_000n,
@@ -369,11 +387,11 @@ describe('EvalResults repetitions', () => {
       )
     try {
       const { container } = render(EvalResults, {
-        run: { ...exampleRuns[0], telemetry: undefined, reps },
-        reps,
+        experiment: { ...exampleExperiments[0], telemetry: undefined, results },
+        results,
       })
       const second = await screen.findByRole('button', {
-        name: 'Span rep span 1, 10.000 s',
+        name: 'Span result span 1, 10.000 s',
       })
       expect(second.querySelector('.span-bar')).toHaveStyle({
         left: '66.66%',
@@ -391,15 +409,15 @@ describe('EvalResults repetitions', () => {
     }
   })
 
-  it('keeps case and missing-run fallback bars across spaced repetitions, including filtered reps', async () => {
+  it('keeps case and missing-experiment fallback bars across spaced repetitions, including filtered results', async () => {
     const epoch = 1700000000000000001n
-    const reps = [0, 1].map(index => ({
-      ...exampleRuns[0].reps[0],
-      id: `rep-${index}`,
+    const results = [0, 1].map(index => ({
+      ...exampleExperiments[0].results[0],
+      id: `result-${index}`,
       caseID: 'shared-case',
       repetition: index + 1,
       telemetry: undefined,
-      repTelemetry: {
+      resultTelemetry: {
         traceID: String(index + 1).repeat(32),
         spanID: 'a'.repeat(16),
       },
@@ -410,9 +428,9 @@ describe('EvalResults repetitions', () => {
       .spyOn(telemetryAPI, 'getReferencedTraceViews')
       .mockResolvedValue(
         traceViews(
-          reps.map((rep, index) => ({
-            ...rep.repTelemetry,
-            name: `rep span ${index}`,
+          results.map((result, index) => ({
+            ...result.resultTelemetry,
+            name: `result span ${index}`,
             serviceName: 'runner',
             startTime: epoch + BigInt(index * 20) * 1_000_000_000n,
             endTime: epoch + BigInt(index * 20 + 10) * 1_000_000_000n,
@@ -422,33 +440,33 @@ describe('EvalResults repetitions', () => {
       )
     try {
       const { container } = render(EvalResults, {
-        run: {
-          ...exampleRuns[0],
+        experiment: {
+          ...exampleExperiments[0],
           telemetry: { traceID: 'f'.repeat(32), spanID: 'f'.repeat(16) },
-          reps,
+          results,
         },
-        reps: [reps[0]],
+        results: [results[0]],
       })
       const root = await screen.findByRole('button', {
-        name: `${reps[0].name}, 30.000 s`,
+        name: `${results[0].name}, 30.000 s`,
       })
       expect(root.querySelector('.span-bar')).toHaveStyle({
         left: '0%',
         width: '100%',
       })
-      expect(container.querySelectorAll('[data-rep-id]')).toHaveLength(1)
+      expect(container.querySelectorAll('[data-result-id]')).toHaveLength(1)
       expect(root).toHaveAttribute(
         'title',
         expect.stringContaining('elapsed time across available references')
       )
-      const runBar = screen.getByRole('button', {
-        name: `${exampleRuns[0].name}, 30.000 s`,
+      const experimentBar = screen.getByRole('button', {
+        name: `${exampleExperiments[0].name}, 30.000 s`,
       })
-      expect(runBar.querySelector('.span-bar')).toHaveStyle({
+      expect(experimentBar.querySelector('.span-bar')).toHaveStyle({
         left: '0%',
         width: '100%',
       })
-      expect(runBar).toHaveAttribute(
+      expect(experimentBar).toHaveAttribute(
         'title',
         expect.stringContaining('Timing fallback')
       )
@@ -457,7 +475,7 @@ describe('EvalResults repetitions', () => {
     }
   })
 
-  it('shows a referenced run span and keeps an absent question span as an unlinked recorded duration', async () => {
+  it('shows a referenced experiment span and keeps an absent question span as an unlinked recorded duration', async () => {
     const telemetry = { traceID: 'a'.repeat(32), spanID: 'b'.repeat(16) }
     const lookup = vi
       .spyOn(telemetryAPI, 'getReferencedTraceViews')
@@ -465,7 +483,7 @@ describe('EvalResults repetitions', () => {
         traceViews([
           {
             ...telemetry,
-            name: 'eval run',
+            name: 'eval experiment',
             serviceName: 'runner',
             startTime: 1700000000000000001n,
             endTime: 1700000001000000001n,
@@ -474,14 +492,16 @@ describe('EvalResults repetitions', () => {
         ])
       )
     try {
-      const reps = [exampleRuns[0].reps[0]]
+      const results = [exampleExperiments[0].results[0]]
       render(EvalResults, {
-        run: { ...exampleRuns[0], telemetry, reps },
-        reps,
+        experiment: { ...exampleExperiments[0], telemetry, results },
+        results,
       })
       await showOnlyTime()
       expect(
-        await screen.findByRole('button', { name: 'Span eval run, 1.000 s' })
+        await screen.findByRole('button', {
+          name: 'Span eval experiment, 1.000 s',
+        })
       ).not.toHaveAttribute('href')
       expect(screen.getAllByText('24.000 s')).toHaveLength(2)
       expect(
@@ -500,27 +520,33 @@ describe('EvalResults repetitions', () => {
       if (failed) lookup.mockRejectedValue(new Error('unavailable'))
       else lookup.mockResolvedValue(traceViews([]))
       try {
-        const reps = [24, 0, undefined, 1e-9].map((seconds, index) => ({
-          ...exampleRuns[0].reps[0],
+        const results = [24, 0, undefined, 1e-9].map((seconds, index) => ({
+          ...exampleExperiments[0].results[0],
           id: `duration-${index}`,
           repetition: index + 1,
           seconds,
-          telemetry: index === 0 ? exampleRuns[0].reps[0].telemetry : undefined,
+          telemetry:
+            index === 0
+              ? exampleExperiments[0].results[0].telemetry
+              : undefined,
           tools: [],
         }))
         const { container } = render(EvalResults, {
-          run: { ...exampleRuns[0], reps },
-          reps,
+          experiment: { ...exampleExperiments[0], results },
+          results,
         })
         await showOnlyTime()
-        const rows = [...container.querySelectorAll('[data-rep-id]')]
+        const rows = [...container.querySelectorAll('[data-result-id]')]
         const cells = rows.map(row => row.querySelector('td')!)
         expect(cells[0]).toHaveTextContent('24.000 s')
         expect(cells[0].querySelector('.span-bar')).toHaveStyle({
           width: '100%',
         })
         for (const cell of cells.slice(1)) {
-          expect(cell).toHaveTextContent('')
+          expect(cell.querySelector('.sr-only')).toHaveTextContent(
+            'No recorded duration'
+          )
+          expect(cell.querySelector('[aria-label]')).toBeNull()
           expect(cell.querySelector('.span-bar')).toBeNull()
         }
         expect(cells[2].querySelector('.timing-cell__unavailable')).toBeNull()
@@ -537,7 +563,7 @@ describe('EvalResults repetitions', () => {
   )
 
   it('selects eval details from labels without selecting through collapse controls', async () => {
-    const [first, second, third] = exampleRuns[0].reps.filter(
+    const [first, second, third] = exampleExperiments[0].results.filter(
       item => item.caseID === 'request-latency'
     )
     const single = {
@@ -546,28 +572,28 @@ describe('EvalResults repetitions', () => {
       caseID: 'single',
       name: 'Single case',
     }
-    const reps = [single, first, second, third]
+    const results = [single, first, second, third]
     const onSelect = vi.fn()
     const { container } = render(EvalResults, {
-      run: { ...exampleRuns[0], reps },
-      reps,
+      experiment: { ...exampleExperiments[0], results },
+      results,
       selectedID: second.id,
       onSelect,
     })
     expect(container.querySelectorAll('tbody tr')).toHaveLength(7)
     const singleton = container.querySelector(
-      '[data-rep-id="single"]'
+      '[data-result-id="single"]'
     )! as HTMLElement
     expect(within(singleton).getByText('Result')).toBeInTheDocument()
     expect(singleton.querySelector('.seg__arm--elbow')).not.toBeNull()
-    // The Run root and both Case roots use the aggregate-row treatment.
+    // The Experiment root and both Case roots use the aggregate-row treatment.
     expect(container.querySelectorAll('.eval-results__case')).toHaveLength(3)
     expect(
-      screen.queryByText(exampleRuns[0].evaluation)
+      screen.queryByText(exampleExperiments[0].evaluation)
     ).not.toBeInTheDocument()
     const labels = [
       ...container.querySelectorAll(
-        '[data-row-kind="rep"] button[aria-pressed]'
+        '[data-row-kind="result"] button[aria-pressed]'
       ),
     ]
     expect(labels.map(label => label.textContent)).toEqual([
@@ -591,25 +617,25 @@ describe('EvalResults repetitions', () => {
     )
     await userEvent.setup().click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    expect(container.querySelectorAll('[data-rep-id]')).toHaveLength(1)
+    expect(container.querySelectorAll('[data-result-id]')).toHaveLength(1)
     expect(
       [...parent.querySelectorAll('td')].map(cell => cell.textContent)
     ).toEqual(aggregateValues)
     await userEvent.setup().keyboard('[Enter]')
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
-    expect(container.querySelector(`[data-rep-id="${second.id}"]`)).toHaveClass(
-      'table-row--selected'
-    )
+    expect(
+      container.querySelector(`[data-result-id="${second.id}"]`)
+    ).toHaveClass('table-row--selected')
     expect(onSelect).not.toHaveBeenCalled()
     await userEvent
       .setup()
       .click(
         container.querySelector(
-          `[data-rep-id="${second.id}"] button[aria-pressed]`
+          `[data-result-id="${second.id}"] button[aria-pressed]`
         )!
       )
     expect(onSelect).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: 'rep', rep: second })
+      expect.objectContaining({ kind: 'result', result: second })
     )
   })
 })

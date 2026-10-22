@@ -6,9 +6,9 @@ import { renderWithContexts as render } from '@/test/render-helpers'
 import type { SpanNode } from '@/types/api-types'
 import EvalTelemetrySummaries from './EvalTelemetrySummaries.svelte'
 import { evalTelemetrySummaries } from './eval-telemetry-summaries'
-import { exampleRuns } from './examples'
+import { exampleExperiments } from './examples'
 import { buildEvalOutline } from './eval-outline'
-import { groupReps } from './group-reps'
+import { groupResults } from './group-results'
 import { indexEvalTraces, referenceKey } from './eval-traces'
 import { traceHref } from './model'
 
@@ -54,13 +54,13 @@ const node: SpanNode = {
 
 it('summarizes stored evidence and provides a native exact-span link, preserving zero duration', () => {
   render(EvalTelemetrySummaries, {
-    entries: [{ reference, label: 'Rep 1 · Execution' }],
+    entries: [{ reference, label: 'Result 1 · Execution' }],
     nodes: new Map([[referenceKey(reference), node]]),
   })
   const link = screen.getByRole('link', { name: /recorded operation/ })
   expect(link).toHaveAttribute('href', traceHref(reference))
   expect(link).not.toHaveAttribute('aria-pressed')
-  expect(screen.getByText('Rep 1 · Execution')).toHaveClass('text-secondary')
+  expect(screen.getByText('Result 1 · Execution')).toHaveClass('text-secondary')
   expect(screen.getByTitle('eval-agent')).toBeVisible()
   expect(screen.getByText('Error')).toBeVisible()
   expect(screen.getByText('0 ns')).toBeVisible()
@@ -79,8 +79,8 @@ it('keeps unavailable references navigable and does not borrow a same-ID span fr
 
 it('keeps all case repetitions without inventing a case span or repeating tool lists', () => {
   const first = {
-    ...exampleRuns[0].reps[0],
-    repTelemetry: undefined,
+    ...exampleExperiments[0].results[0],
+    resultTelemetry: undefined,
     telemetry: reference,
   }
   const second = {
@@ -89,14 +89,14 @@ it('keeps all case repetitions without inventing a case span or repeating tool l
     repetition: 2,
     telemetry: { ...reference, traceID: 'c'.repeat(32) },
   }
-  const run = { ...exampleRuns[0], reps: [first, second] }
+  const experiment = { ...exampleExperiments[0], results: [first, second] }
   const rows = buildEvalOutline(
-    groupReps(run.reps, run.reps),
-    run,
+    groupResults(experiment.results, experiment.results),
+    experiment,
     indexEvalTraces([])
   )
   const entries = evalTelemetrySummaries(
-    run,
+    experiment,
     rows.find(row => row.kind === 'case')
   )
   expect(entries).toEqual([
@@ -104,21 +104,21 @@ it('keeps all case repetitions without inventing a case span or repeating tool l
     { reference: second.telemetry, label: 'Result · Execution' },
   ])
   const tool = rows.find(row => row.kind === 'tool')!
-  expect(evalTelemetrySummaries(run, tool)).toEqual([
+  expect(evalTelemetrySummaries(experiment, tool)).toEqual([
     { reference: tool.reference, label: tool.name },
   ])
 })
 
-it('deduplicates an rep and execution that reference the same stored span', () => {
-  const rep = {
-    ...exampleRuns[0].reps[0],
-    repTelemetry: reference,
+it('deduplicates an result and execution that reference the same stored span', () => {
+  const result = {
+    ...exampleExperiments[0].results[0],
+    resultTelemetry: reference,
     telemetry: { ...reference, traceID: reference.traceID.toUpperCase() },
     assessments: [],
   }
-  expect(evalTelemetrySummaries(exampleRuns[0], undefined, rep)).toEqual([
-    { reference, label: 'Result' },
-  ])
+  expect(
+    evalTelemetrySummaries(exampleExperiments[0], undefined, result)
+  ).toEqual([{ reference, label: 'Result' }])
 })
 
 it('keeps exact reference IDs in the native navigation link even when the span is unavailable', () => {
@@ -165,13 +165,15 @@ it.each([undefined, reference.spanID])(
     })
     const link = screen.getByRole('link')
     expect(link).toHaveAttribute('href', traceHref(received))
-    expect(screen.queryByText('Unavailable', { exact: true })).toBeNull()
+    expect(screen.queryByText('(unavailable)', { exact: true })).toBeNull()
     finish(null)
     await waitFor(() => expect(link).toHaveAttribute('aria-disabled', 'true'))
     expect(link).not.toHaveAttribute('href')
     expect(link).toHaveAttribute('tabindex', '-1')
     const ids = screen.getByRole('group', { name: 'Execution identifiers' })
-    expect(within(ids).getByText('Unavailable', { exact: true })).toBeVisible()
+    expect(
+      within(ids).getByText('(unavailable)', { exact: true })
+    ).toBeVisible()
     expect(within(ids).getByTitle(received.traceID)).toBeVisible()
     if (spanID) expect(within(ids).getByTitle(spanID)).toBeVisible()
     expect(screen.queryByText('Started:')).toBeNull()
@@ -214,5 +216,5 @@ it('does not mark a failed lookup as a confirmed missing trace', async () => {
     'href',
     `/traces/${reference.traceID}`
   )
-  expect(screen.queryByText('Unavailable', { exact: true })).toBeNull()
+  expect(screen.queryByText('(unavailable)', { exact: true })).toBeNull()
 })

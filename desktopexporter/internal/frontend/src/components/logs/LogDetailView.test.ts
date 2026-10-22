@@ -63,7 +63,7 @@ describe('LogDetailView trace correlation', () => {
     [17, 'error'],
     [21, 'error'],
   ] as const)(
-    'colours both received severity values for level %s',
+    'uses coloured dots with neutral received severity values for level %s',
     (severityNumber, colour) => {
       const { container } = renderLog(
         makeLog({
@@ -79,6 +79,10 @@ describe('LogDetailView trace correlation', () => {
         )!
         expect(
           row.style.getPropertyValue('--detail-property-value-color')
+        ).toBe('')
+        expect(
+          row.querySelector<HTMLElement>('.log-severity__dot')?.style
+            .backgroundColor
         ).toBe(`var(--color-${colour})`)
       }
       expect(
