@@ -26,6 +26,7 @@
       id: 'traces' as const,
       title: 'Traces',
       count: service.traceCount,
+      unit: service.traceCount === 1 ? 'trace' : 'traces',
       detailCount: service.spanCount,
       detail: service.spanCount === 1 ? 'span' : 'spans',
       extraCount: service.errorSpanCount,
@@ -36,6 +37,7 @@
       id: 'logs' as const,
       title: 'Logs',
       count: service.logCount,
+      unit: service.logCount === 1 ? 'log' : 'logs',
       detailCount: null,
       detail: '',
       extraCount: service.errorLogCount,
@@ -46,6 +48,7 @@
       id: 'metrics' as const,
       title: 'Metrics',
       count: service.metricCount,
+      unit: service.metricCount === 1 ? 'metric' : 'metrics',
       detailCount: service.dataPointCount,
       detail: 'pts',
       extraCount: service.exemplarCount,
@@ -91,40 +94,51 @@
     </button>
   {/snippet}
   {#snippet meta()}
-    <div class="stats service-stats">
+    <div class="service-summary">
       {#each signals as signal (signal.id)}
-        <div class="stat place-items-center text-center">
-          <a
-            class="stat-title"
-            href={serviceSignalHref(service, signal.id, range)}
-            aria-label="Open {service.serviceName ||
-              'unnamed service'} {signal.id}"
-            >{signal.title}<span class="text-rp-subtle"
-              >{signal.count.toLocaleString()}</span
-            ></a
+        <a
+          class="service-summary__row"
+          href={serviceSignalHref(service, signal.id, range)}
+          aria-label="Open {service.serviceName ||
+            'unnamed service'} {signal.id}"
+        >
+          <span class="service-summary__label text-rp-subtle"
+            >{signal.title}</span
           >
-          {#if signal.detailCount !== null}<div class="stat-desc">
-              <span class="text-base-content"
-                >{signal.detailCount.toLocaleString()}</span
-              >
-              {signal.detail}
-            </div>{/if}
-          {#if signal.extraCount > 0}<div class="stat-desc stat-desc--extra">
-              {#if signal.marker}<span
-                  class="size-2 shrink-0 rounded-full {signal.marker}"
-                  aria-hidden="true"
-                ></span>{/if}
+          <span class="service-summary__counts">
+            <span
+              >{signal.count.toLocaleString()}
+              <span class="text-rp-subtle">{signal.unit}</span></span
+            >
+            {#if signal.detailCount !== null}
+              <span class="text-rp-subtle" aria-hidden="true">·</span>
               <span
-                class="text-base-content"
-                aria-label={signal.id === 'traces'
-                  ? `${signal.extraCount} error spans`
-                  : signal.id === 'logs'
-                    ? `${signal.extraCount} error or fatal logs`
-                    : undefined}>{signal.extraCount.toLocaleString()}</span
+                >{signal.detailCount.toLocaleString()}
+                <span class="text-rp-subtle">{signal.detail}</span></span
               >
-              {signal.extra}
-            </div>{/if}
-        </div>
+            {/if}
+            {#if signal.extraCount > 0}
+              <span class="text-rp-subtle" aria-hidden="true">·</span>
+              <span class="inline-flex items-center gap-2">
+                {#if signal.marker}<span
+                    class="size-2 shrink-0 rounded-full {signal.marker}"
+                    aria-hidden="true"
+                  ></span>{/if}
+                <span
+                  class="text-base-content"
+                  aria-label={signal.id === 'traces'
+                    ? `${signal.extraCount} error spans`
+                    : signal.id === 'logs'
+                      ? `${signal.extraCount} error or fatal logs`
+                      : undefined}>{signal.extraCount.toLocaleString()}</span
+                >
+                {#if signal.extra}<span class="text-rp-subtle"
+                    >{signal.extra}</span
+                  >{/if}
+              </span>
+            {/if}
+          </span>
+        </a>
       {/each}
     </div>
   {/snippet}
@@ -138,31 +152,19 @@
 
 <style lang="postcss">
   @reference '../../app.css';
-  .service-stats {
-    @apply grid w-full min-w-0 grid-cols-3 gap-x-2 overflow-visible rounded-none bg-transparent shadow-none;
+  .service-summary {
+    @apply grid w-full min-w-0 gap-x-2 text-sm;
+    grid-template-columns: max-content minmax(0, 1fr);
   }
-  .service-stats .stat {
-    @apply grid min-w-0 items-center border-0 p-0;
-    grid-row: span 3;
-    grid-template-rows: subgrid;
+  .service-summary__row {
+    @apply col-span-2 grid items-center text-base-content no-underline;
+    grid-template-columns: subgrid;
+    min-height: var(--signal-card-row-h);
   }
-  .stat-title {
-    grid-row: 1;
-    @apply flex flex-wrap items-center justify-center gap-1 self-start text-sm font-normal text-secondary no-underline;
-  }
-  .stat-title:hover {
+  .service-summary__row:hover .service-summary__label {
     @apply underline;
   }
-  .stat-desc {
-    grid-row: 2;
-    @apply flex items-center gap-2 whitespace-normal text-sm;
-    color: var(--color-subtle);
-  }
-  .stat-desc--extra {
-    grid-row: 3;
-  }
-  .stat-title,
-  .stat-desc {
-    min-height: var(--signal-card-row-h);
+  .service-summary__counts {
+    @apply flex items-center gap-2 whitespace-nowrap;
   }
 </style>

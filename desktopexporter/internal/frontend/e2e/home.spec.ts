@@ -127,8 +127,8 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
         )
     )
   }
-  for (const stat of await page.locator('.service-stats .stat').all())
-    await expect(stat).toHaveCSS('border-width', '0px')
+  for (const row of await page.locator('.service-summary__row').all())
+    await expect(row).toHaveCSS('border-width', '0px')
   await page
     .locator('summary')
     .filter({ hasText: 'exact.number' })
