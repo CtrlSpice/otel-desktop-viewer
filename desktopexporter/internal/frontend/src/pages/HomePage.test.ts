@@ -67,12 +67,26 @@ describe('Home service discovery', () => {
       })
     const keys = vi
       .spyOn(telemetryAPI, 'discoverAttributeKeys')
-      .mockResolvedValue({ items: [], truncated: false })
+      .mockImplementation(async options => ({
+        items:
+          options.ownerType === 'resource' || options.ownerType === 'span'
+            ? [
+                {
+                  key: 'shared.name',
+                  kind: 'string',
+                  foundOn: [
+                    { signal: options.signal!, ownerType: options.ownerType },
+                  ],
+                },
+              ]
+            : [],
+        truncated: false,
+      }))
     setTestUrl('/?time=all')
     renderWithContexts(HomePage)
     await screen.findByRole('button', { name: 'Inspect checkout · storefront' })
     await waitFor(() =>
-      expect(keys).toHaveBeenLastCalledWith(
+      expect(keys).toHaveBeenCalledWith(
         expect.objectContaining({
           serviceName: 'checkout',
           namespace: 'storefront',
@@ -82,6 +96,14 @@ describe('Home service discovery', () => {
         expect.any(AbortSignal)
       )
     )
+    await waitFor(() =>
+      expect(screen.getAllByText('shared.name', { exact: false })).toHaveLength(
+        2
+      )
+    )
+    expect(
+      screen.queryByRole('combobox', { name: 'Attribute owner' })
+    ).not.toBeInTheDocument()
     const link = screen.getAllByRole('link', {
       name: 'Open checkout traces',
     })[0]!
@@ -95,14 +117,14 @@ describe('Home service discovery', () => {
       screen.getByRole('button', { name: 'Inspect checkout · internal' })
     )
     await waitFor(() =>
-      expect(keys).toHaveBeenLastCalledWith(
+      expect(keys).toHaveBeenCalledWith(
         expect.objectContaining({ namespace: 'internal' }),
         expect.any(AbortSignal)
       )
     )
     await fireEvent.click(screen.getByRole('tab', { name: 'Logs' }))
     await waitFor(() =>
-      expect(keys).toHaveBeenLastCalledWith(
+      expect(keys).toHaveBeenCalledWith(
         expect.objectContaining({ namespace: 'internal', signal: 'logs' }),
         expect.any(AbortSignal)
       )

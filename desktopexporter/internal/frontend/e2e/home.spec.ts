@@ -95,13 +95,13 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   const card = page.getByRole('article').first()
   await expect(
     card.getByRole('link', { name: 'Open checkout traces' })
-  ).toContainText('[42]')
+  ).toContainText('42')
   await expect(
     card.getByRole('link', { name: 'Open checkout logs' })
-  ).toContainText('[36]')
+  ).toContainText('36')
   await expect(
     card.getByRole('link', { name: 'Open checkout metrics' })
-  ).toContainText('[8]')
+  ).toContainText('8')
   for (const text of ['248 spans', '640 pts', '12 exemplars']) {
     await expect(card).toContainText(text)
   }
@@ -129,8 +129,15 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   }
   for (const stat of await page.locator('.service-stats .stat').all())
     await expect(stat).toHaveCSS('border-width', '0px')
-  await page.locator('summary').filter({ hasText: 'exact.number' }).click()
-  const values = page.getByRole('table', { name: 'Values of exact.number' })
+  await page
+    .locator('summary')
+    .filter({ hasText: 'exact.number' })
+    .filter({ hasText: 'resource' })
+    .click()
+  const values = page.getByRole('group', {
+    name: 'Values of exact.number',
+    exact: true,
+  })
   await expect(values).toContainText('9007199254740993')
   await expect(values).toContainText('2 / 3 records · 66.7%')
   const imported = page.waitForResponse('http://127.0.0.1:54318/v1/logs')

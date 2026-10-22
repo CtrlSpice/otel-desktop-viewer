@@ -36,11 +36,11 @@
       id: 'logs' as const,
       title: 'Logs',
       count: service.logCount,
-      detailCount: service.errorLogCount,
+      detailCount: null,
       detail: '',
-      extraCount: 0,
+      extraCount: service.errorLogCount,
       extra: '',
-      marker: '',
+      marker: service.errorLogCount > 0 ? 'bg-error' : '',
     },
     {
       id: 'metrics' as const,
@@ -100,30 +100,16 @@
             aria-label="Open {service.serviceName ||
               'unnamed service'} {signal.id}"
             >{signal.title}<span class="text-rp-subtle"
-              >[{signal.count.toLocaleString()}]</span
+              >{signal.count.toLocaleString()}</span
             ></a
           >
-          {#if signal.id !== 'logs' || signal.detailCount > 0}<div
-              class="stat-desc"
-            >
-              {#if signal.id === 'logs' && service.errorLogCount > 0}
-                <span
-                  class="size-2 shrink-0 rounded-full bg-error"
-                  aria-hidden="true"
-                ></span>
-              {/if}
-              <span
-                class="text-base-content"
-                aria-label={signal.id === 'logs'
-                  ? `${signal.detailCount} error or fatal logs`
-                  : undefined}
-                >{signal.id === 'logs'
-                  ? `[${signal.detailCount.toLocaleString()}]`
-                  : signal.detailCount.toLocaleString()}</span
+          {#if signal.detailCount !== null}<div class="stat-desc">
+              <span class="text-base-content"
+                >{signal.detailCount.toLocaleString()}</span
               >
               {signal.detail}
             </div>{/if}
-          {#if signal.extraCount > 0}<div class="stat-desc">
+          {#if signal.extraCount > 0}<div class="stat-desc stat-desc--extra">
               {#if signal.marker}<span
                   class="size-2 shrink-0 rounded-full {signal.marker}"
                   aria-hidden="true"
@@ -132,10 +118,9 @@
                 class="text-base-content"
                 aria-label={signal.id === 'traces'
                   ? `${signal.extraCount} error spans`
-                  : undefined}
-                >{signal.id === 'traces'
-                  ? `[${signal.extraCount.toLocaleString()}]`
-                  : signal.extraCount.toLocaleString()}</span
+                  : signal.id === 'logs'
+                    ? `${signal.extraCount} error or fatal logs`
+                    : undefined}>{signal.extraCount.toLocaleString()}</span
               >
               {signal.extra}
             </div>{/if}
@@ -154,20 +139,27 @@
 <style lang="postcss">
   @reference '../../app.css';
   .service-stats {
-    @apply grid w-full min-w-0 grid-cols-3 gap-2 overflow-visible rounded-none bg-transparent shadow-none;
+    @apply grid w-full min-w-0 grid-cols-3 gap-x-2 overflow-visible rounded-none bg-transparent shadow-none;
   }
   .service-stats .stat {
-    @apply flex min-w-0 flex-col items-center border-0 p-0;
+    @apply grid min-w-0 items-center border-0 p-0;
+    grid-row: span 3;
+    grid-template-rows: subgrid;
   }
   .stat-title {
-    @apply flex flex-wrap items-center justify-center gap-1 text-sm font-normal text-secondary no-underline;
+    grid-row: 1;
+    @apply flex flex-wrap items-center justify-center gap-1 self-start text-sm font-normal text-secondary no-underline;
   }
   .stat-title:hover {
     @apply underline;
   }
   .stat-desc {
+    grid-row: 2;
     @apply flex items-center gap-2 whitespace-normal text-sm;
     color: var(--color-subtle);
+  }
+  .stat-desc--extra {
+    grid-row: 3;
   }
   .stat-title,
   .stat-desc {

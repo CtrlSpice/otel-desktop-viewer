@@ -24,12 +24,16 @@
 >
   {#snippet heading()}
     <span class="min-w-0 wrap-anywhere"
-      >{entry.key}<span aria-hidden="true"> · </span><span
-        class="text-secondary">{entry.kind}</span
-      ><span aria-hidden="true"> · </span><span class="text-secondary"
-        >{options.ownerType}</span
-      ></span
+      >{entry.key}<span class="text-rp-subtle" aria-hidden="true">{' · '}</span
+      ><span class="text-secondary">{entry.kind}</span><span
+        class="text-rp-subtle"
+        aria-hidden="true">{' · '}</span
+      ><span class="text-secondary">{options.ownerType}</span></span
     >
   {/snippet}
-  {#if requested}<AttributeValues {options} name={entry.key} />{/if}
+  {#if requested}<AttributeValues
+      {options}
+      name={entry.key}
+      kind={entry.kind}
+    />{/if}
 </FieldGroup>
