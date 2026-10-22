@@ -61,6 +61,15 @@ for (const structured of [false, true]) {
     await expect(more).toBeVisible()
     await expect(content).toHaveCSS('max-height', '63px')
     expect((await content.boundingBox())!.height).toBe(63)
+    const ellipsis = field.locator('.detail-pair__ellipsis')
+    const previewBox = (await content.boundingBox())!
+    const ellipsisBox = (await ellipsis.boundingBox())!
+    expect(ellipsisBox.y + ellipsisBox.height).toBe(
+      previewBox.y + previewBox.height
+    )
+    expect((await more.boundingBox())!.y).toBeGreaterThanOrEqual(
+      previewBox.y + previewBox.height
+    )
     await field.hover()
     await field.getByRole('button', { name: 'Copy body', exact: true }).click()
     await expect
@@ -71,6 +80,7 @@ for (const structured of [false, true]) {
     const less = field.getByRole('button', { name: 'Show less', exact: true })
     await expect(less).toBeFocused()
     await expect(less).toHaveAttribute('aria-expanded', 'true')
+    await expect(ellipsis).toHaveCount(0)
     expect((await content.boundingBox())!.height).toBeGreaterThan(63)
     await expect(content).toContainText('Retained line 12')
     await less.click()

@@ -110,20 +110,17 @@
           >
             {#snippet value()}<MarkdownText text={criterion.text} />{/snippet}
           </DetailField>
-          <DetailField
-            fieldName="scoring"
-            fieldType="object"
-            fieldValue={JSON.stringify(criterion.scoring)}
-          >
-            {#snippet value()}
-              <dl>
-                {#each Object.entries(criterion.scoring) as [label, description]}
-                  <dt class="text-rp-subtle">{label}</dt>
-                  <dd><MarkdownText text={description} /></dd>
-                {/each}
-              </dl>
-            {/snippet}
-          </DetailField>
+          {#each Object.entries(criterion.scoring) as [label, description]}
+            <DetailField
+              fieldName={label}
+              qualifier="scoring"
+              fieldType="string"
+              fieldValue={description}
+              multiline
+            >
+              {#snippet value()}<MarkdownText text={description} />{/snippet}
+            </DetailField>
+          {/each}
         {/each}
       {:else if !loading && rubric}
         <DetailField

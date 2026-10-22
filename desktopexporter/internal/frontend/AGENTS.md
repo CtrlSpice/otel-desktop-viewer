@@ -312,6 +312,7 @@
   section when judgments are present. Empty Telemetry retains a muted, disabled
   heading. Assessment details separate explanation, criterion and scoring from
   collapsed evidence and grader instructions; keep the original input copyable.
+  Each scoring level (such as Fail, Partial and Pass) has its own field card.
   Keep the selected row name and parent context in Details. Results shows case
   questions/outcomes, Rep answers/scores, tool output/errors and grader
   scores/explanations at their own level. Tool calls shows the selected level's
@@ -452,8 +453,9 @@
 - In Details, copy only through explicit copy buttons. Links navigate; plain
   values and card backgrounds have no click action. Preserve native text selection
   and do not restore card-click or tap-to-copy handlers or card pointer cursors.
-  Field values longer than three rendered lines use an ellipsis and Show more /
-  Show less, including multiline text, Markdown and structured values across
+  Field values longer than three rendered lines end the third line with an
+  ellipsis and put Show more / Show less on a separate line below, including
+  multiline text, Markdown and structured values across
   all signals. Keep Copy exact and complete. Evals answers use an Output field
   card rather than unlabeled prose.
 - Details has no fixed maximum width. Preserve its saved width above 40rem and

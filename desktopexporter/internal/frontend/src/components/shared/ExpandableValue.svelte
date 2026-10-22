@@ -64,10 +64,12 @@
     {#if children}<div class="detail-pair__content" bind:this={content}>
         {@render children()}
       </div>{:else}{value}{/if}
+    {#if children && clipped && !expanded}
+      <span class="detail-pair__ellipsis" aria-hidden="true">…</span>
+    {/if}
   </div>
   {#if clipped}
     <div class="detail-pair__disclosure">
-      {#if children && !expanded}<span aria-hidden="true">…</span>{/if}
       <button
         type="button"
         class="detail-pair__toggle"
@@ -87,7 +89,7 @@
   }
 
   .detail-pair__value {
-    @apply min-w-0 w-full text-base-content;
+    @apply relative min-w-0 w-full text-base-content;
     overflow-wrap: anywhere;
   }
 
@@ -105,6 +107,16 @@
 
   .detail-pair__content {
     display: flow-root;
+  }
+
+  .detail-pair__ellipsis {
+    position: absolute;
+    inset-block-end: 0;
+    inset-inline-end: 0;
+    padding-inline-start: 0.25em;
+    background-color: var(--item-state-bg, var(--color-base-100));
+    pointer-events: none;
+    user-select: none;
   }
 
   .detail-pair__disclosure {
