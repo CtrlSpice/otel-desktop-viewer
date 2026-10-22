@@ -177,6 +177,9 @@ func (s *Store) enforceRound(ctx context.Context, maxBytes int64) (bool, error) 
 		if err := s.pruneOldestLogs(ctx, db); err != nil {
 			return err
 		}
+		if err := ingest.InvalidateEvalEvidence(ctx, db); err != nil {
+			return err
+		}
 		if err := s.pruneOldestDatapoints(ctx, db); err != nil {
 			return err
 		}

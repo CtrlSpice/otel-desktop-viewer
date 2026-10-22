@@ -1,4 +1,4 @@
-package evals
+package evaldecode
 
 import (
 	"bufio"
@@ -11,19 +11,6 @@ import (
 	"strings"
 	"unicode/utf8"
 )
-
-const MaxRecordBytes = 4 << 20
-
-// IngestPart is a bounded staging record. Row -1 contains the envelope context,
-// with its result array replaced by []. Other rows retain producer order.
-type IngestPart struct {
-	Envelope int             `json:"envelope"`
-	Row      int64           `json:"row"`
-	Payload  json.RawMessage `json:"payload"`
-	Format   string          `json:"format,omitempty"`
-	Count    int64           `json:"count,omitempty"`
-	Bytes    int64           `json:"bytes,omitempty"`
-}
 
 type envelopeReader struct {
 	r        *bufio.Reader
@@ -133,6 +120,10 @@ done:
 }
 
 func validateIngestJSON(raw []byte) error {
+	return validateJSONDepth(raw, 64)
+}
+
+func validateJSONDepth(raw []byte, maxDepth int) error {
 	if !utf8.Valid(raw) || !json.Valid(raw) {
 		return fmt.Errorf("invalid UTF-8 JSON value")
 	}
@@ -164,8 +155,8 @@ func validateIngestJSON(raw []byte) error {
 	d.UseNumber()
 	var visit func(int) error
 	visit = func(depth int) error {
-		if depth > 64 {
-			return fmt.Errorf("JSON nesting exceeds 64 levels")
+		if depth > maxDepth {
+			return fmt.Errorf("JSON nesting exceeds %d levels", maxDepth)
 		}
 		t, err := d.Token()
 		if err != nil {
@@ -305,7 +296,7 @@ func (p *envelopeReader) object(path string) ([]byte, error) {
 	}
 }
 
-func envelopeFormat(raw []byte) (string, error) {
+func promptfooFormat(raw []byte) (string, error) {
 	var root map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &root); err != nil {
 		return "", err
@@ -332,9 +323,8 @@ func envelopeFormat(raw []byte) (string, error) {
 	return "promptfoo-v3", nil
 }
 
-// ParseIngest stages complete independent producer envelopes, separated by LF.
-// No database writes occur here. The caller must discard staging on any error.
-func ParseIngest(ctx context.Context, input io.Reader, emit func(IngestPart) error) error {
+// parsePromptfoo stages complete independent producer envelopes, separated by LF.
+func parsePromptfoo(ctx context.Context, input io.Reader, emit func(IngestPart) error) error {
 	p := envelopeReader{r: bufio.NewReader(input), ctx: ctx, emit: emit}
 	if prefix, _ := p.r.Peek(3); bytes.Equal(prefix, []byte{0xef, 0xbb, 0xbf}) {
 		_, _ = p.r.Discard(3)
@@ -359,7 +349,7 @@ func ParseIngest(ctx context.Context, input io.Reader, emit func(IngestPart) err
 		if err != nil {
 			return err
 		}
-		format, err := envelopeFormat(raw)
+		format, err := Detect(raw)
 		if err != nil {
 			return err
 		}

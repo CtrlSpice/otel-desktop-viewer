@@ -31,6 +31,7 @@ func TestEvalIngestionHandlesLargeNativePayload(t *testing.T) {
 	h := setupHandler(t)
 	s, err := NewServer("localhost:0", 0, h.store, zap.NewNop(), nil, WithFeatures(enabledEvalFlags(t)))
 	require.NoError(t, err)
+	startEvalReceiver(t, s)
 	row := `{"answer":"` + strings.Repeat("x", 3<<20) + `","exact":9007199254740993}`
 	input := `{"evalId":"large","config":{},"results":{"version":3,"results":[` + strings.TrimSuffix(strings.Repeat(row+",", 6), ",") + `]}}`
 	reader := &evalUploadReader{Reader: strings.NewReader(input), check: func() {
@@ -75,6 +76,7 @@ func TestEvalIngestionAtomicBatchesRetryAndQuery(t *testing.T) {
 	h := setupHandler(t)
 	s, err := NewServer("localhost:0", 0, h.store, zap.NewNop(), nil, WithFeatures(enabledEvalFlags(t)))
 	require.NoError(t, err)
+	startEvalReceiver(t, s)
 	row := `{"id":"source-id","future":9007199254740993,"value":-0,"missingIsNotNull":null,"unicode":"雪😀"}`
 	input := `{"evalId":"source-run","config":{},"results":{"version":3,"results":[` + strings.TrimSuffix(strings.Repeat(row+",", 130), ",") + `]}}`
 	post := func(body string) *httptest.ResponseRecorder {
@@ -106,15 +108,16 @@ func TestEvalIngestionAtomicBatchesRetryAndQuery(t *testing.T) {
 	require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
 		return db.QueryRow(`select import_id from eval_datasets where id = ?`, id).Scan(&importID)
 	}))
-	// A cancelled publish may have committed before its caller observes an error.
-	// Cleanup must never erase an already-completed dataset.
-	s.discardEvalImport(importID)
+	// Explicit reads can reconcile a completed transfer repeatedly.
+	require.NoError(t, s.reconcileEvalEvidence(t.Context()))
 	require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
 		page, err := evals.Records(t.Context(), db, id, 64, 2)
 		require.NoError(t, err)
 		require.Equal(t, int64(130), page.Total)
 		require.Len(t, page.Rows, 2)
-		require.Equal(t, row, string(page.Rows[0]))
+		require.JSONEq(t, row, string(page.Rows[0]))
+		require.Contains(t, string(page.Rows[0]), `9007199254740993`)
+		require.Contains(t, string(page.Rows[0]), `"value":-0`)
 		require.True(t, page.HasMore)
 		list, err := evals.SearchExperiments(t.Context(), db, evals.ExperimentSearch{Sort: "started", Direction: "desc", Limit: 10})
 		require.NoError(t, err)
@@ -124,8 +127,15 @@ func TestEvalIngestionAtomicBatchesRetryAndQuery(t *testing.T) {
 	response = post(input)
 	require.Equal(t, 200, response.Code)
 	require.Contains(t, response.Body.String(), `"created":false`)
-	// Simulate a prior process interrupted before publication; retry replaces hidden rows.
-	require.NoError(t, h.store.WithDBWrite(func(db *sql.DB) error { _, err := db.Exec(`update eval_imports set complete = false`); return err }))
+	// Simulate a prior process interrupted before publication; retained evidence
+	// rebuilds the hidden cache without submitting the file a second time.
+	require.NoError(t, h.store.WithDBWrite(func(db *sql.DB) error {
+		if _, err := db.Exec(`update eval_imports set complete = false`); err != nil {
+			return err
+		}
+		_, err := db.Exec(`update eval_transfers set dirty=true`)
+		return err
+	}))
 	require.NoError(t, h.store.WithDBRead(func(db *sql.DB) error {
 		list, err := evals.SearchExperiments(t.Context(), db, evals.ExperimentSearch{Sort: "started", Direction: "desc", Limit: 10})
 		require.NoError(t, err)
@@ -134,5 +144,5 @@ func TestEvalIngestionAtomicBatchesRetryAndQuery(t *testing.T) {
 	}))
 	response = post(input)
 	require.Equal(t, 200, response.Code, response.Body.String())
-	require.Contains(t, response.Body.String(), `"created":true`)
+	require.Contains(t, response.Body.String(), `"created":false`)
 }

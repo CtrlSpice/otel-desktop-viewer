@@ -510,7 +510,7 @@ func Clear(ctx context.Context, db *sql.DB) error {
 			return fmt.Errorf("Clear: %w: %w", ErrLogsStoreInternal, err)
 		}
 	}
-	return nil
+	return ingest.InvalidateEvalEvidence(ctx, db)
 }
 
 // DeleteLogsByRefs deletes multiple logs by their IDs.
@@ -527,7 +527,7 @@ func DeleteLogsByRefs(ctx context.Context, db *sql.DB, logRefs []any) error {
 			return fmt.Errorf("DeleteLogsByRefs: %w: %w", ErrLogsStoreInternal, err)
 		}
 	}
-	return nil
+	return ingest.InvalidateEvalEvidence(ctx, db)
 }
 
 func buildLogSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (cteSQL string, whereSQL string, args []any, err error) {

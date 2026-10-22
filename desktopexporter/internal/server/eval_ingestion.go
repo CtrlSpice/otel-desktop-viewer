@@ -1,11 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,21 +14,21 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/evaldecode"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/evals"
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/plog/plogotlp"
 )
 
-// Upload/parsing touch only viewer-owned temporary storage, never the DB lock.
-// Staging is deleted on every return. Only a completely validated file is written.
+// Staging is request-owned plaintext temporary storage, removed on return.
+// Persistent source data travels exclusively through the configured receiver.
 func (s *Server) ingestEvals(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if !s.features.EvalsEnabled(r.Context()) {
-		http.Error(w, "Evaluation import is disabled. Enable evals.enabled on the viewer server.", http.StatusForbidden)
+		http.Error(w, "Evaluation import is disabled. Enable evals.enabled on the viewer server.", 403)
 		return
 	}
-	// Large Blob uploads are cancellation-bound, not capped by the ordinary
-	// server's 30-second body deadline.
 	_ = http.NewResponseController(w).SetReadDeadline(time.Time{})
-	w.Header().Set("Cache-Control", "no-store")
 	name := r.URL.Query().Get("name")
 	if name == "" {
 		name = "Imported evaluation"
@@ -48,7 +48,7 @@ func (s *Server) ingestEvals(w http.ResponseWriter, r *http.Request) {
 	encoder := json.NewEncoder(io.MultiWriter(f, hash))
 	encoder.SetEscapeHTML(false)
 	envelopes := 0
-	err = evals.ParseIngest(r.Context(), r.Body, func(part evals.IngestPart) error {
+	err = evaldecode.ParseIngest(r.Context(), r.Body, func(part evaldecode.IngestPart) error {
 		if part.Row == -1 {
 			envelopes++
 		}
@@ -59,12 +59,10 @@ func (s *Server) ingestEvals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := fmt.Sprintf("%x", hash.Sum(nil))
-	// Deletion is intentional. A subsequent explicit import gets a fresh,
-	// deterministic generation rather than returning deleted dataset IDs.
 	for {
 		var deleted int
 		err = s.store.WithDBRead(func(db *sql.DB) error {
-			return db.QueryRowContext(r.Context(), `select count(*) from eval_datasets where import_id = ? and deleted`, id).Scan(&deleted)
+			return db.QueryRowContext(r.Context(), `select count(*) from eval_datasets where import_id=? and deleted`, id).Scan(&deleted)
 		})
 		if err != nil {
 			http.Error(w, "could not inspect evaluation import", 500)
@@ -80,96 +78,80 @@ func (s *Server) ingestEvals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.evalImports.Delete(id)
-	// A pending copy with no live owner is from an interrupted request/process.
-	var pending bool
-	err = s.store.WithDBRead(func(db *sql.DB) error {
-		var complete bool
-		err := db.QueryRowContext(r.Context(), `select complete from eval_imports where id = ?`, id).Scan(&complete)
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil
-		}
-		pending = err == nil && !complete
-		return err
-	})
+	if err := s.reconcileEvalEvidence(r.Context()); err != nil {
+		http.Error(w, "could not inspect retained evaluation evidence: "+err.Error(), 500)
+		return
+	}
+	complete, _, err := s.evalImportState(r.Context(), id)
 	if err != nil {
 		http.Error(w, "could not inspect evaluation import", 500)
 		return
 	}
-	if pending {
-		s.discardEvalImport(id)
-	}
-	created := false
-	err = s.store.WithDBWrite(func(db *sql.DB) error {
-		var complete bool
-		err := db.QueryRowContext(r.Context(), `select complete from eval_imports where id = ?`, id).Scan(&complete)
-		if err == nil {
-			if !complete {
-				return fmt.Errorf("this import is already in progress or needs interrupted-import recovery")
-			}
-			return nil
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		_, err = db.ExecContext(r.Context(), `insert into eval_imports (id) values (?)`, id)
-		created = err == nil
-		return err
-	})
-	if err != nil {
-		http.Error(w, err.Error(), 409)
-		return
-	}
-	if created {
-		published := false
-		defer func() {
-			if !published {
-				s.discardEvalImport(id)
-			}
-		}()
-		_, err = f.Seek(0, io.SeekStart)
-		decoder := json.NewDecoder(f)
-		for err == nil {
-			parts := make([]evals.IngestPart, 0, 64)
-			bytes := 0
-			for len(parts) < 64 && bytes < evals.MaxRecordBytes {
-				var part evals.IngestPart
-				err = decoder.Decode(&part)
-				if err != nil {
-					break
-				}
-				bytes += len(part.Payload)
-				parts = append(parts, part)
-			}
-			if err != nil && err != io.EOF {
-				break
-			}
-			if len(parts) > 0 {
-				writeErr := s.store.WithDBWrite(func(db *sql.DB) error { return evals.AppendParts(r.Context(), db, id, name, parts) })
-				if writeErr != nil {
-					err = writeErr
-					break
-				}
-			}
-			if err == io.EOF {
-				err = nil
-				break
-			}
-		}
-		if err == nil {
-			for n := 0; n < envelopes; n++ {
-				if err = s.ensureEvalExperimentIndex(r.Context(), evals.DatasetID(id, n), "dataset"); err != nil {
-					break
-				}
-			}
-		}
-		if err == nil {
-			err = s.store.WithDBWrite(func(db *sql.DB) error { return evals.Publish(r.Context(), db, id) })
-		}
-		if err != nil {
-			http.Error(w, "evaluation import did not complete: "+err.Error(), 500)
+	created := !complete
+	if !complete {
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			http.Error(w, "could not read evaluation staging", 500)
 			return
 		}
-		published = true
+		decoder := json.NewDecoder(f)
+		for {
+			var part evaldecode.IngestPart
+			err = decoder.Decode(&part)
+			if err == io.EOF {
+				break
+			}
+			if err == nil {
+				err = s.forwardEvalPart(r.Context(), id, part)
+			}
+			if err != nil {
+				http.Error(w, "evaluation submission did not complete: "+err.Error(), 502)
+				return
+			}
+		}
+		manifest, _ := json.Marshal(map[string]string{"name": name})
+		err = s.forwardEvalPart(r.Context(), id, evaldecode.IngestPart{Envelope: -1, Row: -2, Count: int64(envelopes), Payload: manifest})
+		if err != nil {
+			http.Error(w, "evaluation manifest submission failed: "+err.Error(), 502)
+			return
+		}
+		// Receiver acceptance is not persistence confirmation. Cancellation stops
+		// waiting, but already accepted telemetry can still complete later.
+		ctx := r.Context()
+		// Bound waiting for missing evidence, not the size of an otherwise valid
+		// transfer. Projection itself remains request-cancellable and may take
+		// longer than this timer for a large file.
+		deadline := time.NewTimer(time.Minute)
+		defer deadline.Stop()
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			if err := s.reconcileEvalEvidence(ctx); err != nil {
+				http.Error(w, "could not project retained evaluation evidence: "+err.Error(), 500)
+				return
+			}
+			var reason string
+			complete, reason, err = s.evalImportState(ctx, id)
+			if err != nil {
+				http.Error(w, "could not inspect evaluation persistence", 500)
+				return
+			}
+			if complete {
+				break
+			}
+			if strings.HasPrefix(reason, "Conflicting") || strings.HasPrefix(reason, "Invalid") || strings.HasPrefix(reason, "Retained") {
+				http.Error(w, "evaluation import remains incomplete: "+reason, 422)
+				return
+			}
+			select {
+			case <-ctx.Done():
+				http.Error(w, "evaluation persistence was not confirmed; accepted telemetry may still arrive; retry the same file", 504)
+				return
+			case <-deadline.C:
+				http.Error(w, "evaluation persistence was not confirmed; accepted telemetry may still arrive; retry the same file", 504)
+				return
+			case <-ticker.C:
+			}
+		}
 	}
 	ids := make([]string, envelopes)
 	for n := range ids {
@@ -179,57 +161,88 @@ func (s *Server) ingestEvals(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ids": ids, "created": created, "complete": true})
 }
 
-// Cancellation cleanup uses short write windows too. A crash/cleanup timeout
-// can leave hidden pending rows; they are never returned as completed datasets.
-func (s *Server) discardEvalImport(id string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	var datasets []string
-	if err := s.store.WithDBRead(func(db *sql.DB) error {
-		rows, err := db.QueryContext(ctx, `select id from eval_datasets where import_id=? and import_id in (select id from eval_imports where not complete)`, id)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var id string
-			if err := rows.Scan(&id); err != nil {
-				return err
-			}
-			datasets = append(datasets, id)
-		}
-		return rows.Err()
-	}); err != nil {
-		return
+func (s *Server) forwardEvalPart(ctx context.Context, id string, part evaldecode.IngestPart) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	for _, datasetID := range datasets {
-		if err := evals.PurgeExperimentIndex(ctx, s.store, datasetID); err != nil {
-			return
-		}
+	logs, err := evaldecode.Encode(id, part)
+	if err != nil {
+		return err
 	}
-	for {
-		var count int64
-		err := s.store.WithDBWrite(func(db *sql.DB) error {
-			result, err := db.ExecContext(ctx, `delete from eval_records where import_id = ? and import_id in (select id from eval_imports where not complete) and (envelope, ordinal) in (select envelope, ordinal from eval_records where import_id = ? limit 64)`, id, id)
-			if err != nil {
-				return err
-			}
-			count, err = result.RowsAffected()
-			return err
-		})
-		if err != nil {
-			return
-		}
-		if count == 0 {
-			break
-		}
+	logs.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0).SetObservedTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+	data, err := plogotlp.NewExportRequestFromLogs(logs).MarshalProto()
+	if err != nil {
+		return err
 	}
-	_ = s.store.WithDBWrite(func(db *sql.DB) error {
-		_, err := db.ExecContext(ctx, `delete from eval_datasets where import_id = ? and import_id in (select id from eval_imports where not complete)`, id)
-		if err != nil {
-			return err
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.evalReceiverURL, bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-protobuf")
+	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	response, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("local OTLP receiver: %w", err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, (1<<20)+1))
+	if err != nil {
+		return err
+	}
+	if response.StatusCode != 200 {
+		return fmt.Errorf("local OTLP receiver returned HTTP %d", response.StatusCode)
+	}
+	if len(body) > 1<<20 {
+		return fmt.Errorf("OTLP response exceeds 1 MiB")
+	}
+	reply := plogotlp.NewExportResponse()
+	if strings.Contains(response.Header.Get("Content-Type"), "application/json") {
+		err = reply.UnmarshalJSON(body)
+	} else {
+		err = reply.UnmarshalProto(body)
+	}
+	if err != nil {
+		return fmt.Errorf("invalid OTLP response: %w", err)
+	}
+	if reply.PartialSuccess().RejectedLogRecords() != 0 || reply.PartialSuccess().ErrorMessage() != "" {
+		return fmt.Errorf("local OTLP receiver reported partial success")
+	}
+	return nil
+}
+
+func (s *Server) reconcileEvalEvidence(ctx context.Context) error {
+	select {
+	case s.evalEvidenceLock <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	defer func() { <-s.evalEvidenceLock }()
+	if err := evals.ReconcileEvidence(ctx, s.store); err != nil {
+		return err
+	}
+	// Cache-only repairs share the same cancellable gate as evidence rebuilds;
+	// two HTTP requests must not concurrently rebuild one experiment index.
+	candidate, err := storeRead(s.store, func(db *sql.DB) (evals.ExperimentIndexCandidate, error) {
+		return evals.NextExperimentIndex(ctx, db)
+	})
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return evals.EnsureExperimentIndex(ctx, s.store, candidate.ID, candidate.Kind)
+}
+
+func (s *Server) evalImportState(ctx context.Context, id string) (bool, string, error) {
+	var complete bool
+	var reason string
+	err := s.store.WithDBRead(func(db *sql.DB) error {
+		err := db.QueryRowContext(ctx, `select i.complete, coalesce(t.reason,'') from eval_imports i left join eval_transfers t on t.id=i.id where i.id=?`, id).Scan(&complete, &reason)
+		if err == sql.ErrNoRows {
+			return nil
 		}
-		_, err = db.ExecContext(ctx, `delete from eval_imports where id = ? and not complete`, id)
 		return err
 	})
+	return complete, reason, err
 }

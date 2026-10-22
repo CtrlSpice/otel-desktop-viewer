@@ -16,6 +16,7 @@ func TestEvalExperimentSummarySearchAndScopedDetail(t *testing.T) {
 	h := setupHandler(t)
 	s, err := NewServer("localhost:0", 0, h.store, zap.NewNop(), nil, WithFeatures(enabledEvalFlags(t)))
 	require.NoError(t, err)
+	startEvalReceiver(t, s)
 	input := `{"evalId":"experiment","config":{"description":"Experiment 2"},"results":{"version":3,"timestamp":"2026-10-21T10:00:00Z","results":[
 {"provider":{"id":"a"},"promptId":"p","success":true,"future":9007199254740993},
 {"provider":{"id":"b"},"promptId":"p","success":true,"answer":"OTHER RUN"},

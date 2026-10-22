@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/evaldecode"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/evals"
 	"github.com/stretchr/testify/require"
@@ -19,7 +20,7 @@ func TestIngestDatasetReopenAndPendingVisibility(t *testing.T) {
 	importID := strings.Repeat("a", 64)
 	var parts []evals.IngestPart
 	input := `{"evalId":"source-run","config":{},"results":{"version":3,"results":[{"id":"sample","exact":18446744073709551615,"unknown":null,"zero":-0.00,"unicode":"雪😀"}]}}`
-	require.NoError(t, evals.ParseIngest(t.Context(), strings.NewReader(input), func(p evals.IngestPart) error { parts = append(parts, p); return nil }))
+	require.NoError(t, evaldecode.ParseIngest(t.Context(), strings.NewReader(input), func(p evals.IngestPart) error { parts = append(parts, p); return nil }))
 	require.NoError(t, s.WithDBWrite(func(db *sql.DB) error {
 		_, err := db.Exec(`insert into eval_imports(id) values (?)`, importID)
 		if err != nil {

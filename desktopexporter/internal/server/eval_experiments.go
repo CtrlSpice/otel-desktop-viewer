@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -10,14 +9,6 @@ import (
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/evals"
 )
-
-func (s *Server) ensureEvalExperimentIndex(ctx context.Context, id, kind string) error {
-	if _, active := s.evalExperimentIndexes.LoadOrStore(id, struct{}{}); active {
-		return nil
-	}
-	defer s.evalExperimentIndexes.Delete(id)
-	return evals.EnsureExperimentIndex(ctx, s.store, id, kind)
-}
 
 func evalExperimentHTTPError(w http.ResponseWriter, err error) {
 	status := 500
@@ -32,6 +23,10 @@ func evalExperimentHTTPError(w http.ResponseWriter, err error) {
 
 func (s *Server) searchEvalExperiments(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
+	if err := s.reconcileEvalEvidence(r.Context()); err != nil {
+		evalExperimentHTTPError(w, err)
+		return
+	}
 	query := evals.ExperimentSearch{Query: r.URL.Query().Get("q"), Outcomes: r.URL.Query()["outcome"], Sort: r.URL.Query().Get("sort"), Direction: r.URL.Query().Get("direction"), Limit: 50}
 	if query.Sort == "" {
 		query.Sort = "started"
@@ -53,21 +48,6 @@ func (s *Server) searchEvalExperiments(w http.ResponseWriter, r *http.Request) {
 			*target = parsed
 		}
 	}
-	// At most one native dataset is indexed per request. The reply explicitly
-	// reports remaining work; normal list reads use only derived query tables.
-	candidate, err := storeRead(s.store, func(db *sql.DB) (evals.ExperimentIndexCandidate, error) {
-		return evals.NextExperimentIndex(r.Context(), db)
-	})
-	if err != nil && err != sql.ErrNoRows {
-		evalExperimentHTTPError(w, err)
-		return
-	}
-	if err == nil {
-		if err := s.ensureEvalExperimentIndex(r.Context(), candidate.ID, candidate.Kind); err != nil {
-			evalExperimentHTTPError(w, err)
-			return
-		}
-	}
 	page, err := storeRead(s.store, func(db *sql.DB) (evals.ExperimentSearchPage, error) {
 		return evals.SearchExperiments(r.Context(), db, query)
 	})
@@ -80,6 +60,10 @@ func (s *Server) searchEvalExperiments(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getEvalExperimentPage(w http.ResponseWriter, r *http.Request) {
+	if err := s.reconcileEvalEvidence(r.Context()); err != nil {
+		evalExperimentHTTPError(w, err)
+		return
+	}
 	after, limit := int64(-1), int64(100)
 	for key, target := range map[string]*int64{"after": &after, "limit": &limit} {
 		if value := r.URL.Query().Get(key); value != "" {

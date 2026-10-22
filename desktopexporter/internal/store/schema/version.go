@@ -14,9 +14,9 @@ package schema
 // `create table if not exists` silently leaves an old table in place and the
 // mismatch first surfaces as a duckdb appender column-count error during ingest,
 // or as an index creation failure against a column that does not exist.
-// Version 23 renames the Evals experiment tables and experiment_id columns.
+// Version 24 makes Evals a projection of retained Collector-processed logs.
 // Older databases are incompatible; select a new database or recreate the file.
-const Version = 23
+const Version = 24
 
 // VersionTableQuery creates the version table.
 //

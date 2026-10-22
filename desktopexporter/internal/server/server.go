@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -45,10 +46,11 @@ type Server struct {
 	tel            *telemetry.Telemetry
 	features       *features.Flags
 
-	serveDone             chan struct{}
-	startMu               sync.Mutex
-	evalImports           sync.Map
-	evalExperimentIndexes sync.Map
+	serveDone        chan struct{}
+	startMu          sync.Mutex
+	evalImports      sync.Map
+	evalEvidenceLock chan struct{}
+	evalReceiverURL  string
 }
 
 func NewServer(endpoint string, otlpHTTPPort int, store *store.Store, logger *zap.Logger, tel *telemetry.Telemetry, options ...Option) (*Server, error) {
@@ -56,6 +58,7 @@ func NewServer(endpoint string, otlpHTTPPort int, store *store.Store, logger *za
 		tel = telemetry.Disabled()
 	}
 	s := Server{
+		evalEvidenceLock: make(chan struct{}, 1),
 		server: http.Server{
 			Addr: endpoint,
 
@@ -81,6 +84,17 @@ func NewServer(endpoint string, otlpHTTPPort int, store *store.Store, logger *za
 		logger:         logger,
 		tel:            tel,
 	}
+	host, _, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("invalid viewer endpoint: %w", err)
+	}
+	if host == "" || host == "0.0.0.0" {
+		host = "127.0.0.1"
+	}
+	if host == "::" {
+		host = "::1"
+	}
+	s.evalReceiverURL = "http://" + net.JoinHostPort(host, strconv.Itoa(otlpHTTPPort)) + "/v1/logs"
 
 	for _, option := range options {
 		option(&s)
