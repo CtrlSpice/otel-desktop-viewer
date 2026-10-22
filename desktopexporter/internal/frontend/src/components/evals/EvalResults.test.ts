@@ -525,7 +525,11 @@ describe('EvalResults repetitions', () => {
         }
         expect(cells[2].querySelector('.timing-cell__unavailable')).toBeNull()
         expect(container.querySelector('.eval-results__span-bar')).toBeNull()
-        expect(screen.getByText('Partial total')).toBeInTheDocument()
+        expect(screen.queryByText('Partial total')).not.toBeInTheDocument()
+        const caseRow = container.querySelector('[data-outline-id^="case/"]')!
+        expect(
+          caseRow.querySelector('.timing-cell__value')
+        ).toBeEmptyDOMElement()
       } finally {
         lookup.mockRestore()
       }

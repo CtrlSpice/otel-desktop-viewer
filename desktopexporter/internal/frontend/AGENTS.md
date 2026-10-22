@@ -281,6 +281,8 @@
   when there is no enclosing run span. Keep recorded-duration-only fallbacks.
   Case root bars span available Rep references across all repetitions,
   including hidden repetitions. Distinguish elapsed windows from summed durations.
+  Never display summed result durations as a case duration in the timeline or
+  Details. Without a recorded duration or span-based window, omit the duration.
   Timing fallback order at each level: valid referenced span, available child
   timing extent, recorded duration, then unavailable. Put duration-source context
   in the field heading as `duration · source · type`, using the shared small

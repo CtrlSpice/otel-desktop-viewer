@@ -47,7 +47,6 @@ describe('case totals', () => {
       denominator: 2,
       percent: 50,
     })
-    expect(summary.duration).toEqual({ total: 12, incomplete: true })
     expect(summary.investigatorCost).toEqual({ total: 0, incomplete: true })
     expect(summary.graderCost).toEqual({ total: 0.2, incomplete: true })
     expect([summary.calls, summary.failures]).toEqual([1, 1])
@@ -57,18 +56,17 @@ describe('case totals', () => {
         [{ ...definition, aggregation: 'scored' }]
       ).scores[definition.id].percent
     ).toBe(100)
-    expect(caseSummary([planned], [definition]).duration.total).toBeNull()
     expect(
       caseSummary([planned], [definition]).scores[definition.id].percent
     ).toBeNull()
   })
 
-  it('sums repetition durations, costs and failures rather than averaging them', () => {
+  it('sums costs and failures without inventing a case duration', () => {
     const summary = caseSummary(
       [complete, { ...complete, seconds: 8 }],
       [definition]
     )
-    expect(summary.duration).toEqual({ total: 20, incomplete: false })
+    expect(summary).not.toHaveProperty('duration')
     expect(summary.graderCost).toEqual({ total: 0.4, incomplete: false })
     expect([summary.calls, summary.failures]).toEqual([2, 2])
   })

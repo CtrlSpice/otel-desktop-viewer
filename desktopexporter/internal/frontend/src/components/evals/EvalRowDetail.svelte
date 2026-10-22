@@ -94,28 +94,19 @@
       ? formatDuration(row.window.endTime - row.window.startTime)
       : row.seconds !== undefined
         ? `${row.seconds} s`
-        : row.kind === 'case' && summary.duration.total !== null
-          ? `${summary.duration.total} s${summary.duration.incomplete ? ' · partial total' : ''}`
-          : 'Unknown'
+        : undefined
   )
   const durationSource = $derived(
     row.window
       ? span && span.endTime >= span.startTime
         ? 'Recorded span'
         : 'Derived from spans'
-      : row.seconds !== undefined
-        ? undefined
-        : row.kind === 'case' && summary.duration.total !== null
-          ? 'Sum of recorded durations'
-          : undefined
-  )
-  const durationSeconds = $derived(
-    row.seconds ?? (row.kind === 'case' ? summary.duration.total : null)
+      : undefined
   )
   const showDuration = $derived(
     row.window
       ? row.window.endTime - row.window.startTime > 1n
-      : durationSeconds === null || durationSeconds > 1e-9
+      : row.seconds !== undefined && row.seconds > 1e-9
   )
   const costFields = $derived(
     row.kind === 'case' || row.kind === 'rep'

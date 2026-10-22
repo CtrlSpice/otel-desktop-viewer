@@ -366,9 +366,6 @@
         item => execution[item.id]?.internalFault
       ),
       summary: caseSummary(group.allReps, run.assessments),
-      duration: group.allReps.reduce((total, rep) => {
-        return total + (durationFor(rep.repTelemetry, rep.seconds) ?? 0n)
-      }, 0n),
     }))
   )
 
@@ -898,7 +895,7 @@
                 ? 'Elapsed time across available rep references'
                 : group.allReps.length === 1
                   ? 'Rep elapsed time'
-                  : 'Sum of recorded result durations'}
+                  : undefined}
             >
               {#if row.window || group.allReps.length === 1}
                 {@render spanBar(
@@ -910,14 +907,7 @@
                   row.name,
                   row.state === 'Planned'
                 )}
-              {:else}<TimingCell maximum={maximumDuration}>
-                  {group.summary.duration.total === null
-                    ? ''
-                    : formatDuration(group.duration)}
-                  {#if group.summary.duration.incomplete && group.summary.duration.total !== null}<span
-                      class="block text-rp-subtle">Partial total</span
-                    >{/if}
-                </TimingCell>{/if}
+              {:else}<TimingCell maximum={maximumDuration} />{/if}
             </td>
           {:else if column.key === 'tools'}
             <td
