@@ -9,6 +9,8 @@ import {
   indexEvalTraces,
   referenceKey,
   visibleExecutionRows,
+  projectEvalTraceEvidence,
+  resolveEvalReference,
 } from './eval-traces'
 
 const traceID = 'a'.repeat(32)
@@ -56,6 +58,133 @@ function node(
 }
 
 describe('referenced eval hierarchy', () => {
+  it('resolves trace-only results and builds start-ordered native execution, tool and grader rows', () => {
+    const root = node(1, null, 0)
+    const target = node(2, 1, 1)
+    target.spanData.attributes = [
+      {
+        key: 'promptfoo.span.role',
+        value: { kind: 'string', value: 'target' },
+      },
+    ]
+    const tool = node(3, 2, 2)
+    tool.spanData.attributes = [
+      {
+        key: 'gen_ai.operation.name',
+        value: { kind: 'string', value: 'execute_tool' },
+      },
+    ]
+    const model = node(4, 2, 2)
+    const grader = node(5, 1, 1)
+    grader.spanData.attributes = [
+      {
+        key: 'promptfoo.span.role',
+        value: { kind: 'string', value: 'grader' },
+      },
+    ]
+    const index = indexEvalTraces([
+      {
+        traceID,
+        unplacedSpanCount: 0,
+        spans: [root, target, model, tool, grader],
+      },
+    ])
+    const result = {
+      ...exampleExperiments[0].results[0],
+      repetition: 1,
+      resultTelemetry: undefined,
+      telemetry: { traceID },
+      tools: [],
+      assessments: [],
+    }
+    const source = {
+      ...exampleExperiments[0],
+      results: [result],
+      telemetry: undefined,
+    }
+    expect(evalTraceReferences(source)).toEqual([{ traceID }])
+    const experiment = projectEvalTraceEvidence(source, index)
+    expect(experiment.results[0].resultTelemetry).toEqual(ref(1))
+    expect(experiment.results[0].tools.map(tool => tool.telemetry)).toEqual([
+      ref(3),
+    ])
+    expect(source.results[0].tools).toEqual([])
+    const rows = buildEvalOutline(
+      groupResults(experiment.results, experiment.results),
+      experiment,
+      index
+    )
+    expect(rows.map(row => row.kind)).toEqual([
+      'experiment',
+      'case',
+      'result',
+      'execution',
+      'tool',
+      'span',
+      'grader',
+    ])
+    expect(rows.slice(2).map(row => row.reference)).toEqual([
+      ref(1),
+      ref(2),
+      ref(3),
+      ref(4),
+      ref(5),
+    ])
+    expect(rows[2].toolCounts).toEqual({ total: 1, failed: 0 })
+    expect(rows[3].toolCounts).toEqual({ total: 1, failed: 0 })
+    expect(rows[6].toolCounts).toEqual({ total: 0, failed: 0 })
+    expect(rows.slice(2).every(row => !row.tree.brokenParent)).toBe(true)
+  })
+
+  it('shows partial branches without borrowing a root and resolves late parents with stable span row IDs', () => {
+    const root = node(1, null, 0)
+    const parent = node(2, 1, 1)
+    const child = node(3, 2, 2)
+    const result = {
+      ...exampleExperiments[0].results[0],
+      repetition: 1,
+      resultTelemetry: undefined,
+      telemetry: { traceID },
+      tools: [],
+      assessments: [],
+      seconds: undefined,
+    }
+    const source = {
+      ...exampleExperiments[0],
+      results: [result],
+      telemetry: undefined,
+    }
+    const project = (spans: SpanNode[]) => {
+      const index = indexEvalTraces([{ traceID, unplacedSpanCount: 0, spans }])
+      const experiment = projectEvalTraceEvidence(source, index)
+      return {
+        index,
+        rows: buildEvalOutline(
+          groupResults(experiment.results, experiment.results),
+          experiment,
+          index
+        ),
+      }
+    }
+    const partial = project([{ ...child, depth: 0 }])
+    expect(resolveEvalReference({ traceID }, partial.index)).toBeUndefined()
+    expect(partial.rows[2].reference).toEqual({ traceID })
+    expect(partial.rows[2].window).toEqual({
+      startTime: child.spanData.startTime,
+      endTime: child.spanData.endTime,
+    })
+    const before = partial.rows[3]
+    expect(before.tree.brokenParent).toBe(true)
+    const complete = project([root, parent, child])
+    const after = complete.rows.find(row => row.id === before.id)!
+    expect(after.tree.brokenParent).toBe(false)
+    expect(after.parentID).not.toBe(before.parentID)
+    expect(complete.rows[2].reference).toEqual(ref(1))
+    expect(
+      resolveEvalReference({ traceID }, project([root, node(4, null, 0)]).index)
+    ).toBeUndefined()
+  })
+
   it('keeps experiment totals and derived timing complete when a case is filtered out', () => {
     const first = {
       ...exampleExperiments[0].results[0],

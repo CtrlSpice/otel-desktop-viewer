@@ -1369,6 +1369,67 @@ describe('telemetryAPI.getSpanTimings', () => {
 })
 
 describe('telemetryAPI.getReferencedTraceViews', () => {
+  it('discovers a bounded complete selection for trace-only references and coalesces exact references', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async (_url, init: RequestInit) => {
+        const request = JSON.parse(String(init.body))
+        return {
+          ok: true,
+          json: async () => ({
+            jsonrpc: '2.0',
+            id: request.id,
+            result:
+              request.method === 'query'
+                ? {
+                    rows: [['1'.repeat(16)], ['2'.repeat(16)]],
+                    truncated: false,
+                  }
+                : {
+                    traceID: request.params.traceID,
+                    traceStart: '0',
+                    resources: {},
+                    scopes: {},
+                    spans: [],
+                    unplacedSpanCount: 0,
+                  },
+          }),
+        }
+      })
+    )
+    const traceID = 'a'.repeat(32)
+    const result = await telemetryAPI.getReferencedTraceViews([
+      { traceID },
+      { traceID, spanID: '1'.repeat(16) },
+      { traceID },
+    ])
+    expect(result.unavailableTraceIDs).toEqual([])
+    const calls = vi
+      .mocked(fetch)
+      .mock.calls.map(([, init]) => JSON.parse(String(init!.body)))
+    expect(calls).toHaveLength(2)
+    expect(calls[0]).toMatchObject({ method: 'query', params: { limit: 257 } })
+    expect(calls[1]).toMatchObject({
+      method: 'getTraceView',
+      params: { traceID, spanIDs: ['1'.repeat(16), '2'.repeat(16)] },
+    })
+  })
+
+  it('does not present oversized trace-only selections as complete trees', async () => {
+    stubRpcResult({
+      rows: Array.from({ length: 257 }, (_, i) => [
+        i.toString(16).padStart(16, '0'),
+      ]),
+      truncated: false,
+    })
+    const traceID = 'a'.repeat(32)
+    expect(await telemetryAPI.getReferencedTraceViews([{ traceID }])).toEqual({
+      traces: [],
+      unavailableTraceIDs: [traceID],
+    })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
   it('deduplicates exact selections, keeps traces separate and retains successful groups when another fails', async () => {
     vi.stubGlobal(
       'fetch',

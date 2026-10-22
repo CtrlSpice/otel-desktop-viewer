@@ -14,6 +14,7 @@
     /** Provenance or type information immediately above the title. */
     beforeTitle?: Snippet
     titleContent?: Snippet
+    wrapTitle?: boolean
     subtitle?: string
     subtitleContent?: Snippet
     /** Independent controls below the title, outside the card selection button. */
@@ -57,6 +58,7 @@
     title,
     beforeTitle,
     titleContent,
+    wrapTitle = false,
     subtitle,
     subtitleContent,
     interactiveSubtitle,
@@ -83,7 +85,7 @@
 {#snippet cardContent()}
   <div class="signal-row__identity">
     {@render beforeTitle?.()}
-    <div class="signal-row__header">
+    <div class="signal-row__header" class:signal-row__header--wrap={wrapTitle}>
       <span class="signal-row__title-cluster" {title}>
         <span class="signal-row__title"
           >{#if titleContent}{@render titleContent()}{:else}{title}{/if}</span
@@ -333,6 +335,18 @@
 
   .signal-row__identity {
     @apply min-w-0;
+  }
+
+  .signal-row__header--wrap {
+    height: auto;
+    min-height: var(--signal-card-row-h);
+    align-items: flex-start;
+  }
+
+  .signal-row__header--wrap .signal-row__title {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    overflow: visible;
   }
 
   .signal-row__title-cluster {

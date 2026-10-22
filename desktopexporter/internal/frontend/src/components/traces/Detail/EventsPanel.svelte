@@ -11,10 +11,16 @@
   type Props = {
     events: EventData[]
     spanStartTime: bigint
+    spanKey?: string
     selectedEventIndex?: number | null
   }
 
-  let { events, spanStartTime, selectedEventIndex = null }: Props = $props()
+  let {
+    events,
+    spanStartTime,
+    spanKey,
+    selectedEventIndex = null,
+  }: Props = $props()
 
   let timeContext = getTimeContext()
 
@@ -40,6 +46,13 @@
     aria-label="Event {event.name}"
   >
     <DisclosureSignalCard
+      identity={JSON.stringify([
+        spanKey,
+        spanStartTime.toString(),
+        index,
+        event.name,
+        event.timestamp.toString(),
+      ])}
       title={event.name}
       description={message?.kind === 'string' ? message.value : undefined}
       reveal={selectedEventIndex === index}

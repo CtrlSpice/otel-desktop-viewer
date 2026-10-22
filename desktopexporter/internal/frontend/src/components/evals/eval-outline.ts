@@ -13,6 +13,9 @@ import {
 import {
   evalExecutionRows,
   referenceKey,
+  resultTraceNodes,
+  spanAttribute,
+  resolveEvalReference,
   type indexEvalTraces,
 } from './eval-traces'
 import type { TreeConnectorMeta } from '@/components/shared/TreeGutter.svelte'
@@ -30,6 +33,7 @@ export type EvalOutlineRow = {
     | 'grading'
     | 'tool'
     | 'grader'
+    | 'span'
   caseID: string
   result?: EvalResult
   name: string
@@ -41,6 +45,7 @@ export type EvalOutlineRow = {
   window?: TimeWindow
   seconds?: number
   assessmentID?: string
+  toolCounts?: { total: number; failed: number }
   estimate: Estimate
   tree: TreeConnectorMeta
 }
@@ -92,7 +97,7 @@ export function buildEvalOutline(
 ): EvalOutlineRow[] {
   const source = new Map(experiment.results.map(result => [result.id, result]))
   const nodeFor = (reference?: TelemetryReference) =>
-    reference ? index.nodes.get(referenceKey(reference)) : undefined
+    resolveEvalReference(reference, index)
   const rows: EvalOutlineRow[] = []
   const emptyTree = {
     childrenCount: 0,
@@ -119,6 +124,7 @@ export function buildEvalOutline(
             spanWindow([
               nodeFor(result.telemetry),
               ...execution.rows.map(row => row.node),
+              ...resultTraceNodes(result, index),
             ]),
         },
       ]
@@ -213,6 +219,7 @@ export function buildEvalOutline(
             nodeFor(result.telemetry),
             ...execution.rows.map(row => row.node),
             ...grading.rows.map(row => row.node),
+            ...resultTraceNodes(result, index),
           ]),
         seconds: result.seconds,
         estimate: combineEstimates([
@@ -237,6 +244,64 @@ export function buildEvalOutline(
       } else {
         resultRow.reference ??= result.telemetry
         rows.push(resultRow)
+      }
+      const nativeNodes = resultTraceNodes(result, index)
+      if (nativeNodes.length) {
+        owner.toolCounts = { total: 0, failed: 0 }
+        const root = resolveEvalReference(result.telemetry, index)?.spanData
+        if (root)
+          owner.reference = { traceID: root.traceID, spanID: root.spanID }
+        const parents = new Map<string, EvalOutlineRow>(
+          root ? [[referenceKey(root), owner]] : []
+        )
+        for (const node of nativeNodes) {
+          const span = node.spanData
+          if (root && referenceKey(span) === referenceKey(root)) continue
+          const recordedParent = span.parentSpanID
+            ? parents.get(
+                referenceKey({
+                  traceID: span.traceID,
+                  spanID: span.parentSpanID,
+                })
+              )
+            : undefined
+          const parent = recordedParent ?? owner
+          const role = spanAttribute(node, 'promptfoo.span.role')
+          const kind =
+            spanAttribute(node, 'gen_ai.operation.name') === 'execute_tool'
+              ? 'tool'
+              : role === 'grader'
+                ? 'grader'
+                : role === 'target'
+                  ? 'execution'
+                  : 'span'
+          const child: EvalOutlineRow = {
+            id: `${result.id}/span/${referenceKey(span)}`,
+            parentID: parent.id,
+            kind,
+            caseID: group.id,
+            result,
+            name: span.name,
+            depth: parent.depth + 1,
+            state: isErrorSpan(span) ? 'Error' : 'Complete',
+            internalFault: false,
+            toolCounts: {
+              total: kind === 'tool' ? 1 : 0,
+              failed: kind === 'tool' && isErrorSpan(span) ? 1 : 0,
+            },
+            spanError: isErrorSpan(span),
+            reference: { traceID: span.traceID, spanID: span.spanID },
+            window: spanWindow([node]),
+            estimate: estimate(),
+            tree: {
+              ...emptyTree,
+              brokenParent: !!span.parentSpanID && !recordedParent,
+            },
+          }
+          parents.set(referenceKey(span), child)
+          rows.push(child)
+        }
+        continue
       }
       // Roles are attributes. A separate execution row requires a distinct,
       // explicitly referenced span; scores alone do not create grading spans.
@@ -322,6 +387,18 @@ export function buildEvalOutline(
       childWindows.set(row.parentID, siblings)
     }
   }
+  const byID = new Map(rows.map(row => [row.id, row]))
+  for (const row of [...rows].reverse()) {
+    const parent = row.parentID ? byID.get(row.parentID) : undefined
+    if (parent?.toolCounts && row.toolCounts) {
+      parent.toolCounts.total += row.toolCounts.total
+      parent.toolCounts.failed += row.toolCounts.failed
+    }
+    if (parent && row.spanError) {
+      parent.spanError = true
+      parent.state = 'Error'
+    }
+  }
   const metadata = computeTreeMeta(
     rows.map(row => ({
       depth: row.depth,
@@ -345,7 +422,9 @@ export function outlineOpen(
       ? true
       : row.kind === 'case'
         ? views.includes('results') || views.includes('time')
-        : row.kind === 'result' || row.kind === 'execution'
+        : row.kind === 'result' ||
+            row.kind === 'execution' ||
+            row.kind === 'span'
           ? views.includes('time')
           : false)
   )

@@ -10,6 +10,7 @@
     events: EventData[]
     logs: TraceLogSummary[]
     spanStartTime: bigint
+    spanKey?: string
     selectedEventIndex?: number | null
     selectedLogRef?: string | null
   }
@@ -18,6 +19,7 @@
     events,
     logs,
     spanStartTime,
+    spanKey,
     selectedEventIndex = null,
     selectedLogRef = null,
   }: Props = $props()
@@ -33,7 +35,7 @@
   })
 </script>
 
-<EventsPanel {events} {spanStartTime} {selectedEventIndex} />
+<EventsPanel {events} {spanStartTime} {spanKey} {selectedEventIndex} />
 
 {#each logs as log (log.logRef)}
   <section

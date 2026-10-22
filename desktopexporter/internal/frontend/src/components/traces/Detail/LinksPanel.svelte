@@ -13,9 +13,10 @@
 
   type Props = {
     links: LinkData[]
+    spanKey?: string
   }
 
-  let { links }: Props = $props()
+  let { links, spanKey }: Props = $props()
 
   function linkFieldCount(link: LinkData): number {
     let n = 3
@@ -76,6 +77,8 @@
   {@const href = link.traceID ? itemHref('traces', link.traceID, patch) : null}
   {@const invalid = !link.traceID || !link.spanID}
   <DisclosureSignalCard
+    identity={JSON.stringify([spanKey, index, link.traceID, link.spanID])}
+    wrapTitle
     title={linkLabel(link)}
     description={link.summary ? undefined : (link.spanID ?? 'Missing span ID')}
     descriptionIsID={!link.summary && !!link.spanID}

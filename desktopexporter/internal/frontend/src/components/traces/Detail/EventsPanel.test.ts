@@ -60,6 +60,33 @@ describe('EventsPanel selected event', () => {
     })
   })
 
+  it('retains disclosure on refresh but starts closed on another span without remounting', async () => {
+    const props = {
+      events: [makeEvent('tool.output', 0n)],
+      spanStartTime: 1_000n,
+      spanKey: 'trace/first',
+    }
+    const { rerender } = renderWithContexts(EventsPanel, props)
+    const card = screen.getByRole('button', { expanded: false })
+    await userEvent.click(card)
+    const table = screen.getByRole('table')
+    await rerender({ componentProps: { ...props, events: [...props.events] } })
+    expect(card).toHaveAttribute('aria-expanded', 'true')
+    await rerender({ componentProps: { ...props, spanKey: 'trace/second' } })
+    expect(card).toHaveAttribute('aria-expanded', 'false')
+    expect(table.isConnected).toBe(true)
+    expect(table).not.toBeVisible()
+    await rerender({
+      componentProps: {
+        ...props,
+        spanKey: 'trace/third',
+        selectedEventIndex: 0,
+      },
+    })
+    expect(card).toHaveAttribute('aria-expanded', 'true')
+    expect(table).toBeVisible()
+  })
+
   it('marks only exception events with a Love dot and keeps their title neutral', () => {
     const { container } = renderWithContexts(EventsPanel, {
       events: [makeEvent('exception', 0n), makeEvent('checkpoint', 1n)],

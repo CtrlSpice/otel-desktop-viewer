@@ -14,6 +14,8 @@
     badge,
     badgePlacement = 'end',
     reveal = false,
+    identity,
+    wrapTitle = false,
     children,
   }: {
     title: string
@@ -27,6 +29,9 @@
     badge?: Snippet
     badgePlacement?: 'inline' | 'end'
     reveal?: boolean
+    /** Stable record identity; a different record starts closed without remounting. */
+    identity?: string
+    wrapTitle?: boolean
     children: Snippet
   } = $props()
 
@@ -34,6 +39,12 @@
   let open = $state(false)
 
   $effect(() => {
+    void identity
+    open = false
+  })
+
+  $effect(() => {
+    void identity
     if (reveal) open = true
   })
 </script>
@@ -43,6 +54,7 @@
     id={contentID}
     {title}
     {titleContent}
+    {wrapTitle}
     {description}
     {descriptionIsID}
     {date}

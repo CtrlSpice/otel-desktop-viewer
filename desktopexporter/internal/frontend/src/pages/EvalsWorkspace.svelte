@@ -42,7 +42,10 @@
   } from '@/components/evals/eval-outline'
   import { groupResults } from '@/components/evals/group-results'
   import type { ResultSort } from '@/components/evals/sort-results'
-  import { indexEvalTraces } from '@/components/evals/eval-traces'
+  import {
+    indexEvalTraces,
+    projectEvalTraceEvidence,
+  } from '@/components/evals/eval-traces'
   import { exampleExperiments } from '@/components/evals/examples'
   import { assembleEvalExperimentSource } from '@/services/eval-experiment-source'
   import type {
@@ -243,6 +246,11 @@
   let traceViews = $state<TraceData[]>([])
   let telemetryLoading = $state(false)
   const telemetryNodes = $derived(indexEvalTraces(traceViews).nodes)
+  const detailExperiment = $derived(
+    experiment
+      ? projectEvalTraceEvidence(experiment, indexEvalTraces(traceViews))
+      : undefined
+  )
   let evalView = $state<EvalView>('results')
   let resultDisclosure = $state<Record<string, Record<string, boolean>>>({})
   let resultSorts = $state<Record<string, ResultSort | undefined>>({})
@@ -710,7 +718,7 @@
           class:hidden={!rowDetails}
         >
           {#if fallbackOutline[0]}<EvalRowDetail
-              {experiment}
+              experiment={detailExperiment ?? experiment}
               row={selectedRow ?? fallbackOutline[0]}
               {sourceCopy}
               mode={evalView}
@@ -724,7 +732,7 @@
           class:hidden={!!rowDetails}
         >
           <EvalDetail
-            {experiment}
+            experiment={detailExperiment ?? experiment}
             row={selectedRow?.kind === 'experiment' ? selectedRow : undefined}
             storedSummary={databaseMode ? storedExperimentSummary : undefined}
             {experimentCopy}

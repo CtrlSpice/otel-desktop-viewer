@@ -18,15 +18,17 @@ export function evalTraceReferences(experiment: EvalExperiment) {
       ...result.tools.map(tool => tool.telemetry),
       ...result.assessments.map(assessment => assessment.telemetry),
     ]),
-  ].flatMap(reference =>
-    reference?.spanID
-      ? [{ traceID: reference.traceID, spanID: reference.spanID }]
-      : []
-  )
+  ].flatMap(reference => {
+    if (!reference) return []
+    const identity: TelemetryReference = { traceID: reference.traceID }
+    if (reference.spanID) identity.spanID = reference.spanID
+    return [identity]
+  })
 }
 
 export function indexEvalTraces(traces: TraceData[]) {
   const nodes = new Map<string, SpanNode>()
+  const roots = new Map<string, SpanNode[]>()
   const parents = new Map<string, string>()
   const order = new Map<string, number>()
   for (const trace of traces) {
@@ -34,6 +36,10 @@ export function indexEvalTraces(traces: TraceData[]) {
     for (const node of trace.spans) {
       const key = referenceKey(node.spanData)
       nodes.set(key, node)
+      if (!node.spanData.parentSpanID) {
+        const traceID = node.spanData.traceID.toLowerCase()
+        roots.set(traceID, [...(roots.get(traceID) ?? []), node])
+      }
       order.set(key, order.size)
       const parent = node.depth > 0 ? stack[node.depth - 1] : undefined
       if (parent) parents.set(key, parent)
@@ -41,7 +47,110 @@ export function indexEvalTraces(traces: TraceData[]) {
       stack.length = node.depth + 1
     }
   }
-  return { nodes, parents, order }
+  return { nodes, parents, order, roots }
+}
+
+/** A trace-only reference resolves only to one recorded root, never the first row. */
+export function resolveEvalReference(
+  reference: TelemetryReference | undefined,
+  index: ReturnType<typeof indexEvalTraces>
+) {
+  if (!reference) return undefined
+  if (reference.spanID) return index.nodes.get(referenceKey(reference))
+  const roots = index.roots.get(reference.traceID.toLowerCase()) ?? []
+  return roots.length === 1 ? roots[0] : undefined
+}
+
+export function spanAttribute(node: SpanNode, key: string): string | undefined {
+  const attribute = node.spanData.attributes.find(item => item.key === key)
+  return attribute?.value.kind === 'string' && !attribute.hasConflict
+    ? attribute.value.value
+    : undefined
+}
+
+/** Available trace branches, preserving missing parent IDs and start-ordered siblings. */
+export function resultTraceNodes(
+  result: EvalResult,
+  index: ReturnType<typeof indexEvalTraces>
+): SpanNode[] {
+  if (!result.telemetry || result.telemetry.spanID) return []
+  const nodes = [...index.nodes.values()].filter(
+    node =>
+      node.spanData.traceID.toLowerCase() ===
+      result.telemetry!.traceID.toLowerCase()
+  )
+  const ids = new Set(nodes.map(node => node.spanData.spanID))
+  const children = new Map<string | null, SpanNode[]>()
+  for (const node of nodes) {
+    const parent = node.spanData.parentSpanID
+    const key = parent && ids.has(parent) ? parent : null
+    children.set(key, [...(children.get(key) ?? []), node])
+  }
+  const ordered: SpanNode[] = []
+  const visited = new Set<string>()
+  const visit = (node: SpanNode) => {
+    if (visited.has(node.spanData.spanID)) return
+    visited.add(node.spanData.spanID)
+    ordered.push(node)
+    for (const child of siblings(node.spanData.spanID)) visit(child)
+  }
+  const siblings = (id: string | null) =>
+    (children.get(id) ?? []).sort((a, b) =>
+      a.spanData.startTime < b.spanData.startTime
+        ? -1
+        : a.spanData.startTime > b.spanData.startTime
+          ? 1
+          : 0
+    )
+  for (const node of siblings(null)) visit(node)
+  for (const node of nodes) visit(node)
+  return ordered
+}
+
+/** Enrich display data from received spans without altering the native export. */
+export function projectEvalTraceEvidence(
+  experiment: EvalExperiment,
+  index: ReturnType<typeof indexEvalTraces>
+): EvalExperiment {
+  return {
+    ...experiment,
+    results: experiment.results.map(result => {
+      const nodes = resultTraceNodes(result, index)
+      if (!nodes.length) return result
+      const tools = [...result.tools]
+      const known = new Set(
+        tools.flatMap(tool =>
+          tool.telemetry ? [referenceKey(tool.telemetry)] : []
+        )
+      )
+      for (const node of nodes) {
+        if (
+          spanAttribute(node, 'gen_ai.operation.name') !== 'execute_tool' ||
+          known.has(referenceKey(node.spanData))
+        )
+          continue
+        tools.push({
+          name: spanAttribute(node, 'gen_ai.tool.name') ?? node.spanData.name,
+          state: isErrorSpan(node.spanData) ? 'Error' : 'OK',
+          message: node.spanData.statusMessage || undefined,
+          telemetry: {
+            traceID: node.spanData.traceID,
+            spanID: node.spanData.spanID,
+          },
+        })
+        known.add(referenceKey(node.spanData))
+      }
+      const root = resolveEvalReference(result.telemetry, index)?.spanData
+      return {
+        ...result,
+        resultTelemetry:
+          result.resultTelemetry ??
+          (root ? { traceID: root.traceID, spanID: root.spanID } : undefined),
+        tools,
+        toolsKnown: result.toolsKnown || tools.length > 0,
+      }
+    }),
+  }
 }
 
 export type EvalExecutionRow = {

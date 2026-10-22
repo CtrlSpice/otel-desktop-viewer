@@ -111,7 +111,7 @@
   }
   .field-group--detail > .field-group__heading {
     --item-idle-bg: var(--color-base-200);
-    @apply mb-1 rounded-xl font-normal;
+    @apply my-1 rounded-xl font-normal;
   }
 
   /* Content aligns with heading inset (icon or label). */

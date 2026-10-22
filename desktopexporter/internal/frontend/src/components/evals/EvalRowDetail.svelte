@@ -49,7 +49,14 @@
     experimentSummary({ ...experiment, results: members }).parts
   )
   const tool = $derived(
-    result?.tools.find((_, index) => row.id === `${result.id}/tool/${index}`)
+    result?.tools.find(
+      (tool, index) =>
+        row.id === `${result.id}/tool/${index}` ||
+        (row.kind === 'tool' &&
+          row.reference &&
+          tool.telemetry &&
+          referenceKey(row.reference) === referenceKey(tool.telemetry))
+    )
   )
   const assessments = $derived(
     result?.assessments.filter(item =>
@@ -143,12 +150,16 @@
       : [{ name: 'estimate (CAD)', estimate: row.estimate }]
   )
   const calls = $derived(
-    row.kind === 'case' ? summary.calls : (result?.tools.length ?? 0)
+    row.kind === 'case'
+      ? summary.calls
+      : (row.toolCounts?.total ?? result?.tools.length ?? 0)
   )
   const failures = $derived(
     row.kind === 'case'
       ? summary.failures
-      : (result?.tools.filter(item => item.state === 'Error').length ?? 0)
+      : (row.toolCounts?.failed ??
+          result?.tools.filter(item => item.state === 'Error').length ??
+          0)
   )
 </script>
 

@@ -121,7 +121,7 @@
       subtitleContent={unavailable ? undefined : identifiers}
     >
       {#snippet beforeTitle()}
-        {#if entry.reference.spanID && !unavailable}
+        {#if entry.reference.spanID && !unavailable && (!span || entry.label !== title)}
           <div
             class="min-h-[var(--signal-card-row-h)] truncate text-sm text-secondary"
             title={entry.label}

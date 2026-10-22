@@ -22,7 +22,14 @@ export function evalTelemetrySummaries(
   function resultRoots(result: EvalResult, includeExecution = false) {
     const prefix = 'Result'
     add(result.resultTelemetry, prefix)
-    if (includeExecution || !result.resultTelemetry)
+    if (
+      (includeExecution || !result.resultTelemetry) &&
+      !(
+        result.resultTelemetry &&
+        !result.telemetry?.spanID &&
+        result.telemetry?.traceID === result.resultTelemetry.traceID
+      )
+    )
       add(result.telemetry, `${prefix} · Execution`)
   }
   if (row?.kind === 'case') {

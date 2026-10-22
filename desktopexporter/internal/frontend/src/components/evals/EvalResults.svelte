@@ -27,6 +27,9 @@
     evalTraceReferences,
     indexEvalTraces,
     referenceKey,
+    resolveEvalReference,
+    projectEvalTraceEvidence,
+    resultTraceNodes,
   } from './eval-traces'
   import {
     buildEvalOutline,
@@ -59,7 +62,7 @@
   import { type ResultSort, type ResultSortKey } from './sort-results'
 
   let {
-    experiment,
+    experiment: sourceExperiment,
     results,
     selectedID,
     selectedRowID,
@@ -85,6 +88,11 @@
     disclosure?: Record<string, Record<string, boolean>>
     sorts?: Record<string, ResultSort | undefined>
   } = $props()
+  let traceViews = $state<TraceData[]>([])
+  const traceIndex = $derived(indexEvalTraces(traceViews))
+  const experiment = $derived(
+    projectEvalTraceEvidence(sourceExperiment, traceIndex)
+  )
   const panelID = $props.id()
   const views: { id: EvalView; label: string; icon: typeof CheckListIcon }[] = [
     { id: 'results', label: 'Results', icon: CheckListIcon },
@@ -141,8 +149,6 @@
       },
     }
   }
-  let traceViews = $state<TraceData[]>([])
-  const traceIndex = $derived(indexEvalTraces(traceViews))
   const spanColors = $derived(
     Object.fromEntries(
       traceViews.flatMap(trace =>
@@ -177,8 +183,10 @@
   let timingsFailed = $state(false)
   $effect(() => onTraceViews?.(traceViews, timingsLoading))
   const timingKey = referenceKey
-  const timingFor = (reference?: TelemetryReference) =>
-    reference?.spanID ? spanTimings[timingKey(reference)] : undefined
+  const timingFor = (reference?: TelemetryReference) => {
+    const node = resolveEvalReference(reference, traceIndex)
+    return node ? spanTimings[timingKey(node.spanData)] : undefined
+  }
   function durationFor(reference?: TelemetryReference, seconds?: number) {
     const span = timingFor(reference)
     if (span && span.endTime >= span.startTime)
@@ -212,6 +220,9 @@
         spanWindow([
           timingFor(result.telemetry),
           timingFor(result.resultTelemetry),
+          ...resultTraceNodes(result, traceIndex).map(node =>
+            timingFor(node.spanData)
+          ),
           ...result.tools.map(tool => timingFor(tool.telemetry)),
           ...result.assessments.map(assessment =>
             timingFor(assessment.telemetry)
@@ -234,7 +245,7 @@
     }, extent)
   })
   $effect(() => {
-    const references = evalTraceReferences(experiment)
+    const references = evalTraceReferences(sourceExperiment)
     const controller = new AbortController()
     traceViews = []
     timingsLoading = true
@@ -891,8 +902,9 @@
                   </div>
                 {:else if column.key === 'tools' && item && (row.kind === 'case' || row.kind === 'result' || row.kind === 'execution')}
                   {@render toolCount(
-                    item.tools.length,
-                    item.tools.filter(tool => tool.state === 'Error').length
+                    row.toolCounts?.total ?? item.tools.length,
+                    row.toolCounts?.failed ??
+                      item.tools.filter(tool => tool.state === 'Error').length
                   )}
                 {:else if column.key === 'tools' && row.kind === 'tool'}
                   {@render toolCount(1, row.spanError ? 1 : 0)}

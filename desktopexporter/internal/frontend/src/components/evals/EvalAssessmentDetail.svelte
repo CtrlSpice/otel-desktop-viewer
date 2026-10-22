@@ -228,7 +228,7 @@
   }
   .eval-assessment-detail__copy {
     position: absolute;
-    top: 0;
+    top: 0.25rem;
     right: var(--pane-inline-inset);
   }
 </style>

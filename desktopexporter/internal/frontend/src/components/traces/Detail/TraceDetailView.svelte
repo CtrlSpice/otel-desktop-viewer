@@ -468,6 +468,7 @@
         </p>
       {:else}
         <ActivityPanel
+          spanKey={`${span.traceID}/${span.spanID}`}
           events={span.events}
           {logs}
           spanStartTime={span.startTime}
@@ -482,7 +483,10 @@
           No links recorded for this span
         </p>
       {:else}
-        <LinksPanel links={span.links} />
+        <LinksPanel
+          links={span.links}
+          spanKey={`${span.traceID}/${span.spanID}`}
+        />
       {/if}
     </DetailBubble>
   </DetailStack>

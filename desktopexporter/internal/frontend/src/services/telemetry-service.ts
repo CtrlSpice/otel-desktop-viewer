@@ -1070,25 +1070,29 @@ LIMIT ${batch.length}`,
     return timings
   },
 
-  /** Fetch only referenced spans, retaining the trace query's compressed ancestry and details. */
+  /** Resolve trace-only references to a bounded span selection; retain exact selections. */
   getReferencedTraceViews: async (
-    references: readonly Pick<SpanTiming, 'traceID' | 'spanID'>[],
+    references: readonly { traceID: string; spanID?: string }[],
     signal?: AbortSignal
   ): Promise<{ traces: TraceData[]; unavailableTraceIDs: string[] }> => {
-    const groups = new Map<string, Set<string>>()
+    const groups = new Map<string, Set<string> | null>()
     for (const reference of references) {
       if (
         !/^[a-f0-9]{32}$/i.test(reference.traceID) ||
-        !/^[a-f0-9]{16}$/i.test(reference.spanID)
+        (reference.spanID !== undefined &&
+          !/^[a-f0-9]{16}$/i.test(reference.spanID))
       ) {
         throw new Error(
           'Trace references require a 32-hex trace ID and a 16-hex span ID.'
         )
       }
       const traceID = reference.traceID.toLowerCase()
-      const ids = groups.get(traceID) ?? new Set<string>()
-      ids.add(reference.spanID.toLowerCase())
-      groups.set(traceID, ids)
+      if (reference.spanID === undefined) groups.set(traceID, null)
+      else if (groups.get(traceID) !== null) {
+        const ids = groups.get(traceID) ?? new Set<string>()
+        ids.add(reference.spanID.toLowerCase())
+        groups.set(traceID, ids)
+      }
     }
     const traces: TraceData[] = []
     const unavailableTraceIDs: string[] = []
@@ -1100,6 +1104,27 @@ LIMIT ${batch.length}`,
       const batch = entries.slice(offset, offset + 4)
       const results = await Promise.allSettled(
         batch.map(async ([traceID, ids]) => {
+          if (ids === null) {
+            const uuid = `${traceID.slice(0, 8)}-${traceID.slice(8, 12)}-${traceID.slice(12, 16)}-${traceID.slice(16, 20)}-${traceID.slice(20)}`
+            const selection = await callRPC<{
+              rows: [string][]
+              truncated: boolean
+            }>(
+              'query',
+              named({
+                sql: `SELECT span_id_wire(span_id) FROM spans WHERE trace_id = '${uuid}'::UUID ORDER BY start_time, span_id LIMIT 257`,
+                limit: 257,
+              }),
+              signal
+            )
+            if (selection.truncated || selection.rows.length > 256)
+              throw new Error(
+                'Referenced trace exceeds the 256-span view limit.'
+              )
+            if (!selection.rows.length)
+              return { traceID, spans: [], unplacedSpanCount: 0 }
+            ids = new Set(selection.rows.map(([id]) => id))
+          }
           if (ids.size > 256)
             throw new Error('Referenced trace exceeds the 256-span view limit.')
           const raw = await callRPC<JsonTraceData>(
