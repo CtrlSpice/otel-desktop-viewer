@@ -11,6 +11,46 @@ import { indexEvalTraces } from './eval-traces'
 
 vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn() }))
 
+it('promotes only an explicit Overall judgment and preserves its evidence and input Copy', async () => {
+  const rep = exampleRuns[0].reps[0]
+  const run = { ...exampleRuns[0], reps: [rep] }
+  const row = buildEvalOutline(
+    groupReps(run.reps, run.reps),
+    run,
+    indexEvalTraces([])
+  ).find(row => row.kind === 'rep')!
+  const view = render(EvalRowDetail, { run, row })
+  const heading = () =>
+    [...view.container.querySelectorAll('summary.detail-bubble__heading')].find(
+      el => el.textContent?.includes('Assessments')
+    )!
+  expect(heading()).not.toHaveTextContent('Pass')
+  const overall = rep.assessments.find(
+    item => item.id === run.headlineAssessment
+  )!
+  await view.rerender({
+    componentProps: {
+      run: {
+        ...run,
+        assessments: run.assessments.map(item =>
+          item.id === overall.id ? { ...item, name: 'Overall' } : item
+        ),
+      },
+      row,
+    },
+  })
+  expect(heading()).toHaveTextContent(overall.label)
+  expect(heading()).not.toHaveTextContent('Overall')
+  expect(screen.queryByText('Overall', { exact: true })).toBeNull()
+  expect(screen.getByText(overall.explanation)).toBeVisible()
+  await fireEvent.click(
+    within(heading() as HTMLElement).getByRole('button', {
+      name: 'Copy grader input',
+    })
+  )
+  expect(copyText).toHaveBeenLastCalledWith(overall.rubric)
+})
+
 it('keeps an explicitly empty tool output inspectable and copyable', async () => {
   const original = exampleRuns[0].reps[0]
   const rep = {

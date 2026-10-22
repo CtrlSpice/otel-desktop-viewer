@@ -11,8 +11,31 @@
   setContext(DETAIL_STACK, undefined)
   const sectionID = $props.id()
   let disclosure = $state<HTMLDetailsElement>()
-  let nextSection = $derived(stack?.next(sectionID))
-  let resizable = $derived(stack?.enabled(sectionID) ?? false)
+  let previousSection = $derived(stack?.previous(sectionID))
+  let suppressClick = false
+  let pointerFocus = $state(false)
+
+  function startResize(event: PointerEvent) {
+    pointerFocus = true
+    suppressClick = false
+    if (!resizable || !stack || !previousSection || event.button !== 0) return
+    if (
+      event.target instanceof Element &&
+      event.target.closest('button, a, input, select, textarea, [role="tab"]')
+    )
+      return
+    ;(event.currentTarget as HTMLElement).focus({ preventScroll: true })
+    stack.start(previousSection.id, event, () => {
+      suppressClick = true
+    })
+  }
+
+  function resizeKey(event: KeyboardEvent) {
+    if (event.target === event.currentTarget) pointerFocus = false
+    if (event.target !== event.currentTarget || !resizable || !previousSection)
+      return
+    stack?.keydown(previousSection.id, event)
+  }
 
   function register(element: HTMLElement) {
     const unregister = stack?.register({
@@ -57,12 +80,22 @@
     disabled?: boolean
   } = $props()
   let expanded = $state(untrack(() => initialOpen))
+  let resizable = $derived(
+    !disabled &&
+      count !== 0 &&
+      previousSection &&
+      stack?.enabled(previousSection.id)
+  )
 
   $effect(() => stack?.ensureOpen())
 
   function toggle(event: Event) {
     if (!stack) return
     event.preventDefault()
+    const dragged =
+      suppressClick && event instanceof MouseEvent && event.detail > 0
+    suppressClick = false
+    if (dragged) return
     stack.setOpen(sectionID, !expanded)
   }
 </script>
@@ -109,6 +142,19 @@
       <summary
         class="collapse-title detail-bubble__heading"
         class:detail-bubble__heading--action={Boolean(action)}
+        class:detail-bubble__heading--resizable={!!resizable}
+        class:detail-bubble__heading--pointer-focus={pointerFocus}
+        data-resize-before={resizable ? previousSection?.id : undefined}
+        title={resizable
+          ? 'Drag or use arrow keys to resize; click to expand or collapse; double-click to reset sizes'
+          : undefined}
+        aria-describedby={resizable ? `${sectionID}-resize-help` : undefined}
+        onpointerdown={startResize}
+        onkeydown={resizeKey}
+        onblur={() => (pointerFocus = false)}
+        ondblclick={() => {
+          if (resizable) stack?.reset()
+        }}
         aria-disabled={stack && expanded && !stack.canClose(sectionID)
           ? 'true'
           : undefined}
@@ -132,38 +178,16 @@
     use:register
   >
     {@render bubble()}
+    {#if resizable}<span class="sr-only" id={`${sectionID}-resize-help`}
+        >Drag to resize sections. Up and Down arrows resize; Shift increases the
+        step. Home and End collapse either side.</span
+      >{/if}
     {#if action && !disabled}<div class="detail-bubble__action">
         {@render action()}
       </div>{/if}
   </div>
 {:else}
   {@render bubble()}
-{/if}
-
-{#if stack && nextSection}
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <div
-    class="col-resize-bar col-resize-bar--row-in-flow detail-bubble__resize"
-    class:col-resize-bar--active={stack.dragging === sectionID}
-    role="separator"
-    aria-orientation="horizontal"
-    aria-label={`Resize ${label} and ${nextSection.label} sections`}
-    aria-controls={`${sectionID} ${nextSection.id}`}
-    aria-disabled={!resizable}
-    aria-valuenow={stack.percent(sectionID)}
-    aria-valuemin={0}
-    aria-valuemax={100}
-    tabindex={resizable ? 0 : -1}
-    title="Drag to resize or collapse; double-click to reset section sizes"
-    onpointerdown={event => stack.start(sectionID, event)}
-    onkeydown={event => stack.keydown(sectionID, event)}
-    ondblclick={() => {
-      if (resizable) stack.reset()
-    }}
-  >
-    <div class="col-resize-bar__line"></div>
-  </div>
 {/if}
 
 <style lang="postcss">
@@ -173,6 +197,19 @@
     min-height: var(--pane-header-h);
     padding: var(--header-padding) var(--header-padding-inline);
     line-height: 1.5;
+  }
+
+  .detail-bubble__heading:focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  .detail-bubble__heading:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -3px;
+  }
+
+  .detail-bubble__heading--pointer-focus:focus {
+    outline: none;
   }
 
   .detail-bubble--resizable {
@@ -194,9 +231,10 @@
     flex: 1;
   }
 
-  .detail-bubble__resize[aria-disabled='true'] {
-    pointer-events: none;
-    cursor: default;
+  .detail-bubble__heading--resizable {
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
   }
 
   @media (prefers-reduced-motion: no-preference) {

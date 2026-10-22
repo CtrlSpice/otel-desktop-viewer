@@ -14,12 +14,14 @@
     assessment,
     definition,
     showScore = true,
+    showHeading = true,
     loadRubric,
     loadExplanation,
   }: {
     assessment: Assessment
     definition?: AssessmentDefinition
     showScore?: boolean
+    showHeading?: boolean
     loadRubric?: EvalSourceTextLoader
     loadExplanation?: EvalSourceTextLoader
   } = $props()
@@ -53,23 +55,7 @@
   })
 </script>
 
-<FieldGroup label={name} detail>
-  {#snippet heading()}
-    <span>{name}</span>
-    {#if showScore}<AssessmentBadge
-        {assessment}
-        maximum={definition?.maximum}
-      />{/if}
-    {#if assessment.rubric || loadRubric}
-      <span class="ml-auto"
-        ><ValueCopyButton
-          text={rubric}
-          loadText={loadRubric}
-          label="grader input"
-        /></span
-      >
-    {/if}
-  {/snippet}
+{#snippet content()}
   <table class="detail-fields w-full" aria-label={`${name} explanation`}>
     <tbody>
       {#if showScore}
@@ -210,4 +196,28 @@
       </FieldGroup>
     {/if}
   {/if}
-</FieldGroup>
+{/snippet}
+
+{#if showHeading}
+  <FieldGroup label={name} detail>
+    {#snippet heading()}
+      <span>{name}</span>
+      {#if showScore}<AssessmentBadge
+          {assessment}
+          maximum={definition?.maximum}
+        />{/if}
+      {#if assessment.rubric || loadRubric}
+        <span class="ml-auto"
+          ><ValueCopyButton
+            text={rubric}
+            loadText={loadRubric}
+            label="grader input"
+          /></span
+        >
+      {/if}
+    {/snippet}
+    {@render content()}
+  </FieldGroup>
+{:else}
+  {@render content()}
+{/if}

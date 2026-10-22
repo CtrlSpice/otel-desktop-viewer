@@ -397,6 +397,17 @@ describe('persisted source dataset projections', () => {
     expect(result.runs[0].reps[0].assessments[0].value).toBe(0)
   })
 
+  it('does not present echo replay latency as model execution duration', () => {
+    for (const latencyMs of [0, 1, 250]) {
+      const result = supported(
+        promptfoo([promptfooRow({ provider: { id: 'echo' }, latencyMs })])
+      )
+      expect(result.runs[0].reps[0].seconds).toBeUndefined()
+      const execution = supported(promptfoo([promptfooRow({ latencyMs })]))
+      expect(execution.runs[0].reps[0].seconds).toBe(latencyMs / 1000)
+    }
+  })
+
   it('keeps missing usage and incompatible zero/nonzero costs unknown', () => {
     for (const value of [undefined, 0, 0.25]) {
       const result = supported(

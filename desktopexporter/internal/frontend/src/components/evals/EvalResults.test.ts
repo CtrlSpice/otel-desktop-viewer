@@ -494,13 +494,13 @@ describe('EvalResults repetitions', () => {
   })
 
   it.each([false, true])(
-    'renders unlinked durations, preserves zero and leaves absent values empty (lookup failed: %s)',
+    'renders unlinked durations and leaves trivial or absent values empty (lookup failed: %s)',
     async failed => {
       const lookup = vi.spyOn(telemetryAPI, 'getReferencedTraceViews')
       if (failed) lookup.mockRejectedValue(new Error('unavailable'))
       else lookup.mockResolvedValue(traceViews([]))
       try {
-        const reps = [24, 0, undefined].map((seconds, index) => ({
+        const reps = [24, 0, undefined, 1e-9].map((seconds, index) => ({
           ...exampleRuns[0].reps[0],
           id: `duration-${index}`,
           repetition: index + 1,
@@ -519,10 +519,10 @@ describe('EvalResults repetitions', () => {
         expect(cells[0].querySelector('.span-bar')).toHaveStyle({
           width: '100%',
         })
-        expect(cells[1]).toHaveTextContent('0 ns')
-        expect(cells[1].querySelector('.span-bar')).toHaveStyle({ width: '0%' })
-        expect(cells[2]).toHaveTextContent('')
-        expect(cells[2].querySelector('.span-bar')).toBeNull()
+        for (const cell of cells.slice(1)) {
+          expect(cell).toHaveTextContent('')
+          expect(cell.querySelector('.span-bar')).toBeNull()
+        }
         expect(cells[2].querySelector('.timing-cell__unavailable')).toBeNull()
         expect(container.querySelector('.eval-results__span-bar')).toBeNull()
         expect(screen.getByText('Partial total')).toBeInTheDocument()

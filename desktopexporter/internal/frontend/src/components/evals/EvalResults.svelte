@@ -507,7 +507,7 @@
   {@const span = timingFor(reference)}
   {@const duration = durationFor(reference, seconds)}
   <TimingCell maximum={maximumDuration}>
-    {#if window && (!span || span.endTime < span.startTime)}<button
+    {#if window && window.endTime - window.startTime > 1n && (!span || span.endTime < span.startTime)}<button
         type="button"
         onclick={selectBar}
         class="eval-results__span-bar block"
@@ -522,7 +522,7 @@
           offset={window.startTime - (origin ?? window.startTime)}
         /></button
       >
-    {:else if span && span.endTime >= span.startTime}<button
+    {:else if span && span.endTime - span.startTime > 1n}<button
         type="button"
         onclick={selectBar}
         class="eval-results__span-bar block"
@@ -538,7 +538,7 @@
           offset={span.startTime - (origin ?? span.startTime)}
         /></button
       >
-    {:else if duration !== undefined}
+    {:else if duration !== undefined && duration > 1n}
       <button
         type="button"
         onclick={selectBar}
@@ -712,7 +712,7 @@
                 title={column.hint}
                 onclick={() => toggleSort(column.key)}
               >
-                {#if column.key === 'seconds'}
+                {#if column.key === 'seconds' && maximumDuration > 1n}
                   <TimingCell maximum={maximumDuration} header />
                 {:else}<TableColumnHeading
                     label={column.label}

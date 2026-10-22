@@ -115,8 +115,6 @@
       grid-column: 2;
       grid-row: 1;
       grid-template-columns: max-content minmax(0, 1fr);
-      max-width: 76rem;
-      justify-self: center;
     }
 
     .workspace-toolbar__navigation,

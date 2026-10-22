@@ -48,8 +48,8 @@ export function createDetailStackState(storageKey: string) {
   let previewSizes = $state<Record<string, number> | null>(null)
   let drag: DragHandle | undefined
 
-  function next(id: string) {
-    return sections[sections.findIndex(section => section.id === id) + 1]
+  function previous(id: string) {
+    return sections[sections.findIndex(section => section.id === id) - 1]
   }
 
   function sides(id: string) {
@@ -223,7 +223,7 @@ export function createDetailStackState(storageKey: string) {
         sections = sections.filter(candidate => candidate.id !== section.id)
       }
     },
-    next,
+    previous,
     canClose,
     setOpen,
     ensureOpen() {
@@ -241,33 +241,31 @@ export function createDetailStackState(storageKey: string) {
         .reduce((sum, candidate) => sum + weight(candidate), 0)
       return `${(100 * weight(section)) / total} 1 var(--pane-header-h)`
     },
-    percent(id: string) {
-      const groups = sides(id)
-      if (!groups) return 0
-      const sum = (group: Section[]) =>
-        group.reduce(
-          (total, section) =>
-            total + (section.expanded() ? weight(section) : 0),
-          0
-        )
-      const above = sum(groups.above)
-      return Math.round((above / (above + sum(groups.below))) * 100)
-    },
-    start(id: string, event: PointerEvent) {
+    start(id: string, event: PointerEvent, onDrag: () => void) {
       if (event.button !== 0) return
       drag?.cancel()
       const sizes = snapshot(id)
       if (!sizes) return
-      dragging = id
-      sizes.apply(0)
+      let moved = false
       drag = startDrag(event, {
         axis: 'y',
-        onMove: delta => sizes.apply(delta),
+        cursor: 'grabbing',
+        onMove: delta => {
+          if (!moved) {
+            if (Math.abs(delta) < 4) return
+            moved = true
+            dragging = id
+            onDrag()
+          }
+          sizes.apply(delta)
+        },
         onEnd: () => {
-          sizes.finish()
+          if (moved) {
+            sizes.finish()
+            save()
+          }
           dragging = null
           drag = undefined
-          save()
         },
       })
     },

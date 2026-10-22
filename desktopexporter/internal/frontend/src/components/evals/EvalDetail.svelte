@@ -13,7 +13,6 @@
   import { referenceKey } from './eval-traces'
   import { formatDuration } from '@/utils/time'
   import { runSummary } from './run-summary'
-  import LegendRows from '@/components/shared/LegendRows.svelte'
   import EvalStatus from './EvalStatus.svelte'
   import type { EvalStoredRunSummary } from '@/services/eval-run-types'
 
@@ -61,19 +60,36 @@
       ? span && span.endTime >= span.startTime
         ? 'Recorded span'
         : 'Derived from spans'
-      : run.seconds !== undefined
-        ? 'Recorded duration'
-        : undefined
+      : undefined
   )
 </script>
 
 <DetailStack label="Experiment details" storageKey="eval-run-detail-layout">
   <DetailBubble label={run.name} layoutKey="Experiment">
-    {#snippet labelSuffix()}<span class="text-secondary">· root</span>{/snippet}
-    {#snippet trailing()}<RunStatusBadge
-        state={run.state}
-        pauseReason={run.pauseReason}
-      />{/snippet}
+    {#snippet labelSuffix()}<span class="text-secondary">· experiment</span
+      >{/snippet}
+    {#snippet trailing()}<span
+        class="inline-flex flex-wrap items-center justify-end gap-4"
+      >
+        <RunStatusBadge state={run.state} pauseReason={run.pauseReason} />
+        {#if outcomes.length}
+          <span
+            class="inline-flex flex-wrap items-center justify-end gap-4"
+            role="list"
+            aria-label="Experiment outcomes"
+          >
+            {#each outcomes as entry}
+              <span
+                class="inline-flex items-center gap-2 whitespace-nowrap"
+                role="listitem"
+              >
+                <EvalStatus label={entry.label} tone={entry.tone} />
+                <span class="text-rp-subtle tabular-nums">[{entry.count}]</span>
+              </span>
+            {/each}
+          </span>
+        {/if}
+      </span>{/snippet}
     <table class="detail-fields w-full" aria-label="Experiment fields">
       <tbody>
         <DetailField
@@ -146,30 +162,6 @@
           fieldType="number"
           fieldValue={String(repCount)}
         />
-        {#if outcomes.length}
-          <DetailField
-            fieldName="outcomes"
-            fieldType="string"
-            fieldValue={outcomes
-              .map(part => `${part.label}: ${part.count}`)
-              .join(', ')}
-          >
-            {#snippet value()}
-              <LegendRows
-                items={outcomes}
-                label="Experiment outcomes"
-                itemKey={entry => `${entry.tone}:${entry.label}`}
-              >
-                {#snippet children(entry)}
-                  <EvalStatus label={entry.label} tone={entry.tone} />
-                  <span class="text-rp-subtle tabular-nums"
-                    >[{entry.count}]</span
-                  >
-                {/snippet}
-              </LegendRows>
-            {/snippet}
-          </DetailField>
-        {/if}
       </tbody>
     </table>
   </DetailBubble>

@@ -192,7 +192,7 @@ for (const kind of ['event', 'log'] as const) {
   })
 }
 
-test('detail dividers collapse, reopen and redistribute space across collapsed neighbours', async ({
+test('detail headers drag, collapse, reopen and redistribute space across collapsed neighbours', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1920, height: 1000 })
@@ -261,12 +261,8 @@ test('detail dividers collapse, reopen and redistribute space across collapsed n
   const span = sections.nth(0)
   const events = sections.nth(1)
   const links = sections.nth(2)
-  const top = stack.getByRole('separator', {
-    name: 'Resize Span and Events sections',
-  })
-  const bottom = stack.getByRole('separator', {
-    name: 'Resize Events and Links sections',
-  })
+  const top = events.locator(':scope > details > summary')
+  const bottom = links.locator(':scope > details > summary')
   const open = (section: typeof span) => section.locator(':scope > details')
   const height = (section: typeof span) =>
     section.evaluate(element => element.getBoundingClientRect().height)
@@ -293,6 +289,11 @@ test('detail dividers collapse, reopen and redistribute space across collapsed n
     ).toBeGreaterThan(0)
   }
   await expect(sections).toHaveCount(3)
+  await expect(stack.getByRole('separator')).toHaveCount(0)
+  await expect(span.locator(':scope > details > summary')).not.toHaveAttribute(
+    'data-resize-before'
+  )
+  await expect(top).toHaveAttribute('data-resize-before')
   await anchored()
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   // Events must track the pointer one-for-one while pushing Links down,
@@ -400,7 +401,7 @@ test('detail dividers collapse, reopen and redistribute space across collapsed n
   await expect(open(events)).not.toHaveAttribute('open')
 
   // Both neighbours of this divider are collapsed; borrow from Span above them.
-  await expect(bottom).toHaveAttribute('aria-disabled', 'false')
+  await expect(bottom).toHaveAttribute('data-resize-before')
   await drag(bottom, -120)
   await expect(open(links)).toHaveAttribute('open')
   await expect(open(events)).not.toHaveAttribute('open')
@@ -767,7 +768,7 @@ test('detail targets reopen the panel with independent native disclosures', asyn
     await expect(
       detail.getByRole('tabpanel', { name: 'Properties', exact: true })
     ).toBeVisible()
-    await expect(fields.locator(':scope > summary')).toHaveText('Span * root')
+    await expect(fields.locator(':scope > summary')).toHaveText('Span · root')
     await expect(fields.locator('details')).toHaveCount(0)
     const table = fields.getByRole('table', { name: 'Span fields' })
     const resource = table.locator('[data-field="service.name"]')
@@ -899,10 +900,7 @@ test('detail targets reopen the panel with independent native disclosures', asyn
     detail.getByRole('table', { name: 'Event second event' })
   ).toBeVisible()
   await page.emulateMedia({ reducedMotion: 'no-preference' })
-  const resize = detail.getByRole('separator', {
-    name: 'Resize Span and Events sections',
-    exact: true,
-  })
+  const resize = activity.locator(':scope > summary')
   const sectionHeight = () =>
     fields.evaluate(
       element => element.parentElement!.getBoundingClientRect().height
@@ -938,13 +936,13 @@ test('detail targets reopen the panel with independent native disclosures', asyn
     .locator(':scope > summary')
     .getByText('Span', { exact: true })
     .click()
-  await expect(resize).toHaveAttribute('aria-disabled', 'false')
+  await expect(resize).toHaveAttribute('data-resize-before')
   await expect.poll(sectionHeight).toBeLessThan(60)
   await fields
     .locator(':scope > summary')
     .getByText('Span', { exact: true })
     .click()
-  await expect(resize).toHaveAttribute('aria-disabled', 'false')
+  await expect(resize).toHaveAttribute('data-resize-before')
   await fields.evaluate(async element => {
     await new Promise(requestAnimationFrame)
     await Promise.all(

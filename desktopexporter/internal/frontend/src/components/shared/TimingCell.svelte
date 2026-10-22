@@ -20,9 +20,11 @@
 
 <div class="timing-cell">
   <div class="timing-cell__plot" bind:clientWidth={width}>
-    {#if header}<WaterfallTimeRuler {axis} />{:else}<WaterfallTimeGuides
-        {axis}
-      />{/if}
+    {#if maximum > 1n}
+      {#if header}<WaterfallTimeRuler {axis} />{:else}<WaterfallTimeGuides
+          {axis}
+        />{/if}
+    {/if}
   </div>
   <div class="timing-cell__value">{@render children?.()}</div>
 </div>

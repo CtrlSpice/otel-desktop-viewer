@@ -3,6 +3,8 @@
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import DetailField from '@/components/shared/DetailProperty.svelte'
   import EvalStatus from './EvalStatus.svelte'
+  import AssessmentBadge from './AssessmentBadge.svelte'
+  import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import EvalAssessmentDetail from './EvalAssessmentDetail.svelte'
   import MarkdownText from '@/components/shared/MarkdownText.svelte'
   import { cost, localTimestamp, type EvalRun, type EvalView } from './model'
@@ -62,6 +64,16 @@
             ? rep?.answer
             : tool?.message
   )
+  const overallDefinition = $derived(
+    run.assessments.find(
+      item => item.id === run.headlineAssessment && item.name === 'Overall'
+    )
+  )
+  const overall = $derived(
+    mode === 'results'
+      ? assessments.find(item => item.id === overallDefinition?.id)
+      : undefined
+  )
   const proseCopy = $derived(
     row.kind === 'case' && !rep && members[0]
       ? sourceCopy?.(members[0].id, 'question')
@@ -92,7 +104,7 @@
         ? 'Recorded span'
         : 'Derived from spans'
       : row.seconds !== undefined
-        ? 'Recorded duration'
+        ? undefined
         : row.kind === 'case' && summary.duration.total !== null
           ? 'Sum of recorded durations'
           : undefined
@@ -303,11 +315,31 @@
   </DetailBubble>
   {#if mode !== 'cost' && assessments.length}
     <DetailBubble label="Assessments">
+      {#snippet trailing()}
+        {#if overall}
+          <span class="inline-flex items-center gap-2">
+            {#if overall.rubric || sourceCopy}
+              <ValueCopyButton
+                text={overall.rubric}
+                loadText={rep
+                  ? sourceCopy?.(rep.id, `assessment:${overall.id}:rubric`)
+                  : undefined}
+                label="grader input"
+              />
+            {/if}
+            <AssessmentBadge
+              assessment={overall}
+              maximum={overallDefinition?.maximum}
+            />
+          </span>
+        {/if}
+      {/snippet}
       {#each assessments as assessment (assessment.id)}
         <EvalAssessmentDetail
           {assessment}
           definition={run.assessments.find(item => item.id === assessment.id)}
           showScore={mode === 'results'}
+          showHeading={assessment.id !== overall?.id}
           loadRubric={rep
             ? sourceCopy?.(rep.id, `assessment:${assessment.id}:rubric`)
             : undefined}

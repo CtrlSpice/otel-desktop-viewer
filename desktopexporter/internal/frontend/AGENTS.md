@@ -285,6 +285,7 @@
   timing extent, recorded duration, then unavailable. Put duration-source context
   in the field heading as `duration · source · type`, using the shared small
   middle-dot separators and Subtle source text.
+  Omit the redundant `Recorded duration` qualifier for plain duration values.
   Keep zero durations and never sum overlapping child durations
   into an elapsed window or invent a start offset for duration-only values.
   Missing timing rows stay blank, including started/completed rows; do not draw
@@ -313,6 +314,9 @@
   heading. Assessment details separate explanation, criterion and scoring from
   collapsed evidence and grader instructions; keep the original input copyable.
   Each scoring level (such as Fail, Partial and Pass) has its own field card.
+  When the source supplies Overall, put its judgment at the far right of the
+  Assessments header and omit the repeated Overall subheading. Preserve its
+  explanation, score and full grader-input Copy; do not infer a combined judgment.
   Keep the selected row name and parent context in Details. Results shows case
   questions/outcomes, Rep answers/scores, tool output/errors and grader
   scores/explanations at their own level. Tool calls shows the selected level's
@@ -325,6 +329,10 @@
   default, sharing the available height equally unless saved sizing exists.
   Experiment Configuration and Grading use sibling section headers in the
   Details stack, initially collapsed.
+  The experiment heading uses `· experiment` in the same Secondary style as a
+  trace's `· root` suffix.
+  Experiment outcome counts sit at the right of this header, not in a repeated
+  outcomes field in the body.
   Grading contains assessment coverage; investigator/grader totals belong in a
   separate Cost section. Cost and Tool calls view controls are disabled and muted
   when the full experiment has no corresponding recorded data. Recorded zero
@@ -332,6 +340,9 @@
   skips unavailable views; an unavailable selected view falls back to Results.
   Omit Evals Details duration fields for durations of 0–1ns; preserve the recorded
   values in source data and timing geometry.
+  Omit 0–1ns duration bars and empty timeline rulers too. Promptfoo's built-in
+  echo provider latency measures saved-answer replay, not original execution:
+  retain it in the source export but exclude it from execution duration displays.
   Other later sections start collapsed. Preserve manual disclosure and resizing.
   Evals telemetry links reuse SignalCard: service-colour dot and span name,
   neutral status text with its status dot, Pine/Secondary provenance, duration,
@@ -453,8 +464,8 @@
 - In Details, copy only through explicit copy buttons. Links navigate; plain
   values and card backgrounds have no click action. Preserve native text selection
   and do not restore card-click or tap-to-copy handlers or card pointer cursors.
-  Field values longer than three rendered lines end the third line with an
-  ellipsis and put Show more / Show less on a separate line below, including
+  Field values that fit in three rendered lines stay whole. Longer values use
+  native two-line ellipsis and Show more / Show less on the next line, including
   multiline text, Markdown and structured values across
   all signals. Keep Copy exact and complete. Evals answers use an Output field
   card rather than unlabeled prose.
@@ -463,7 +474,12 @@
   minimum (30% or 28rem, whichever is larger). The drawer retains its 40rem cap.
 - Disabled and zero-count Details headers use Muted for their labels, icons and counts.
 - Detail-section resize precedence: preserve header order and at least one open,
-  non-empty section; open sections fill the remaining height. A divider grows the
+  non-empty section. Use each non-first available section header as the resize
+  handle for the boundary above it; omit separate resize strips. A click toggles
+  disclosure, while a drag beyond the click threshold resizes without toggling.
+  Keep header actions independent and preserve keyboard resizing and size reset.
+  Draggable headers use grab/grabbing cursors; stacked sections have a 4px gap.
+  Open sections fill the remaining height. Dragging a header grows the
   nearest available section on one side by shrinking the nearest open section on
   the other. Pass movement to another donor only after the first exhausts its
   content and collapse resistance. Collapsed sections can reopen through dragging;

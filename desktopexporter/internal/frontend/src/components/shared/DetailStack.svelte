@@ -37,11 +37,15 @@
   .detail-stack--resizable {
     display: flex;
     flex-direction: column;
-    gap: 0;
+    gap: calc(var(--header-gap) / 2);
   }
 
   .detail-stack--dragging :global(.detail-bubble--resizable) {
     transition: none;
+  }
+
+  .detail-stack--dragging :global(.detail-bubble__heading--resizable) {
+    cursor: grabbing;
   }
 
   .detail-stack--dragging :global(details),

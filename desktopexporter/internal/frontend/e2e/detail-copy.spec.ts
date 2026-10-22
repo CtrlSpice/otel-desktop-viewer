@@ -47,7 +47,7 @@ async function openCopyField(
 }
 
 for (const structured of [false, true]) {
-  test(`long ${structured ? 'JSON' : 'text'} detail fields preview three lines and copy the full value`, async ({
+  test(`long ${structured ? 'JSON' : 'text'} detail fields use native two-line previews and copy the full value`, async ({
     page,
     context,
   }) => {
@@ -59,14 +59,9 @@ for (const structured of [false, true]) {
     const content = field.locator('.detail-pair__value')
     const more = field.getByRole('button', { name: 'Show more', exact: true })
     await expect(more).toBeVisible()
-    await expect(content).toHaveCSS('max-height', '63px')
-    expect((await content.boundingBox())!.height).toBe(63)
-    const ellipsis = field.locator('.detail-pair__ellipsis')
+    await expect(content).toHaveCSS('-webkit-line-clamp', '2')
+    expect((await content.boundingBox())!.height).toBe(42)
     const previewBox = (await content.boundingBox())!
-    const ellipsisBox = (await ellipsis.boundingBox())!
-    expect(ellipsisBox.y + ellipsisBox.height).toBe(
-      previewBox.y + previewBox.height
-    )
     expect((await more.boundingBox())!.y).toBeGreaterThanOrEqual(
       previewBox.y + previewBox.height
     )
@@ -80,14 +75,27 @@ for (const structured of [false, true]) {
     const less = field.getByRole('button', { name: 'Show less', exact: true })
     await expect(less).toBeFocused()
     await expect(less).toHaveAttribute('aria-expanded', 'true')
-    await expect(ellipsis).toHaveCount(0)
     expect((await content.boundingBox())!.height).toBeGreaterThan(63)
     await expect(content).toContainText('Retained line 12')
     await less.click()
     await expect(more).toBeVisible()
-    expect((await content.boundingBox())!.height).toBe(63)
+    expect((await content.boundingBox())!.height).toBe(42)
   })
 }
+
+test('a complete three-line detail value needs no disclosure', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  const field = await openCopyField(page, 'First line\nSecond line\nThird line')
+  await expect(field.locator('.detail-pair__value')).toBeVisible()
+  await expect(
+    field.getByRole('button', { name: 'Show more', exact: true })
+  ).toHaveCount(0)
+  expect(
+    (await field.locator('.detail-pair__value').boundingBox())!.height
+  ).toBe(63)
+})
 
 for (const fallback of [false, true]) {
   test(`detail values copy to the clipboard ${fallback ? 'when the async API is denied' : 'through the async API'}`, async ({

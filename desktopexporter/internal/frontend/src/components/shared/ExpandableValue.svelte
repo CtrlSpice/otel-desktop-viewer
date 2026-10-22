@@ -1,7 +1,7 @@
 <script lang="ts">
   /*
-   * Keys remain fully readable. Values clamp to three measured lines and use a
-   * separate button so text selection and copying still work.
+   * Keep values up to three lines whole. Longer values use two native-clamped
+   * lines and a separate disclosure so text selection and copying still work.
    */
   import type { Snippet } from 'svelte'
 
@@ -39,13 +39,23 @@
     if (!node) return
     const measure = () => {
       if (expanded) return
-      clipped = node.scrollHeight > node.clientHeight + 1
+      const lineHeight = Number.parseFloat(getComputedStyle(node).lineHeight)
+      clipped = node.scrollHeight > lineHeight * 3 + 1
     }
     measure()
     const ro = new ResizeObserver(measure)
     ro.observe(node)
-    if (content) ro.observe(content)
-    return () => ro.disconnect()
+    const mutations = new MutationObserver(measure)
+    if (content)
+      mutations.observe(content, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      })
+    return () => {
+      ro.disconnect()
+      mutations.disconnect()
+    }
   })
 </script>
 
@@ -55,8 +65,8 @@
     id={contentID}
     bind:this={el}
     class="detail-pair__value {valueClass}"
-    class:detail-pair__value--rich={!!children}
     class:detail-pair__value--clamped={!expanded}
+    style:--preview-lines={clipped ? 2 : 3}
     onfocusin={() => {
       if (clipped) expanded = true
     }}
@@ -64,9 +74,6 @@
     {#if children}<div class="detail-pair__content" bind:this={content}>
         {@render children()}
       </div>{:else}{value}{/if}
-    {#if children && clipped && !expanded}
-      <span class="detail-pair__ellipsis" aria-hidden="true">…</span>
-    {/if}
   </div>
   {#if clipped}
     <div class="detail-pair__disclosure">
@@ -89,34 +96,36 @@
   }
 
   .detail-pair__value {
-    @apply relative min-w-0 w-full text-base-content;
+    @apply min-w-0 w-full text-base-content;
     overflow-wrap: anywhere;
   }
 
   .detail-pair__value--clamped {
     display: -webkit-box;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
+    -webkit-line-clamp: var(--preview-lines);
     overflow: hidden;
   }
 
-  .detail-pair__value--rich.detail-pair__value--clamped {
-    display: block;
-    max-height: 3lh;
-  }
-
   .detail-pair__content {
-    display: flow-root;
+    display: contents;
   }
 
-  .detail-pair__ellipsis {
-    position: absolute;
-    inset-block-end: 0;
-    inset-inline-end: 0;
-    padding-inline-start: 0.25em;
-    background-color: var(--item-state-bg, var(--color-base-100));
-    pointer-events: none;
-    user-select: none;
+  /* Let native line clamping reach JSON text through the editor's flex boxes.
+     Override CodeMirror's runtime styles only in the collapsed preview.
+     Expanded editors retain their normal layout and folding controls. */
+  .detail-pair .detail-pair__value--clamped :global(.cm-editor),
+  .detail-pair .detail-pair__value--clamped :global(.cm-scroller) {
+    display: block !important;
+    overflow: visible !important;
+  }
+
+  .detail-pair .detail-pair__value--clamped :global(.cm-gutters) {
+    display: none !important;
+  }
+
+  .detail-pair .detail-pair__value--clamped :global(.cm-content) {
+    contain: none !important;
   }
 
   .detail-pair__disclosure {

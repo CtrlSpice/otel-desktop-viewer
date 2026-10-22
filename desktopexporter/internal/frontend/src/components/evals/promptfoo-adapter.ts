@@ -551,7 +551,9 @@ export function projectPromptfooDataset(
           [grading?.reason, '/gradingResult/reason'],
         ])
       if (rawOutput !== undefined) fields.answer = pointer + '/response/output'
-      const latency = number(row.latencyMs)
+      // The built-in echo provider replays a saved answer. Its latency is not
+      // the original model execution duration; the export retains that value.
+      const latency = providerID === 'echo' ? undefined : number(row.latencyMs)
       run.reps.push({
         id: repID,
         sourceID: resultID,
