@@ -61,7 +61,7 @@
       {#if showScore}
         <DetailField
           fieldName="score"
-          fieldType="string"
+          fieldType="number"
           fieldValue={assessment.value === null
             ? 'Unscored'
             : `${assessment.value}${definition?.maximum !== undefined ? ` / ${definition.maximum}` : ''}`}

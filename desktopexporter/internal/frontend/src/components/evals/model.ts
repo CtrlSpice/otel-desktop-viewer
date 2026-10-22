@@ -38,6 +38,8 @@ export type EvalTool = {
 
 type EvalExecutionEvidence = {
   answer?: string
+  /** Source type before formatting the output for display. */
+  answerType?: 'string' | 'number' | 'boolean' | 'null' | 'array' | 'map'
   state: 'Complete' | 'Running' | 'Error' | 'Planned'
   startedAt?: string
   seconds?: number
@@ -89,7 +91,7 @@ export type EvalRun = {
   stateReason?: string
   pauseReason?: 'internal-error' | 'manual'
   startedAt?: string
-  configuration: { name: string; value: string }[]
+  configuration: { name: string; value: string | number | boolean | null }[]
   assessments: AssessmentDefinition[]
   headlineAssessment: string
   reps: EvalRep[]

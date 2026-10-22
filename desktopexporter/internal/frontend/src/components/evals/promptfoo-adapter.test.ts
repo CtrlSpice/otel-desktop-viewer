@@ -397,6 +397,28 @@ describe('persisted source dataset projections', () => {
     expect(result.runs[0].reps[0].assessments[0].value).toBe(0)
   })
 
+  it.each([
+    [0, 'number'],
+    [false, 'boolean'],
+    [null, 'null'],
+    [[1, 'two'], 'array'],
+    [{ answer: true }, 'map'],
+    ['123', 'string'],
+    ['{"answer":true}', 'string'],
+  ])('retains the native output type for %j', (output, answerType) => {
+    const result = supported(
+      promptfoo([promptfooRow({ response: { output } })])
+    )
+    expect(result.runs[0].reps[0]).toMatchObject({
+      answerType,
+      answer: typeof output === 'string' ? output : JSON.stringify(output),
+    })
+    expect(result.runs[0].configuration).toContainEqual({
+      name: 'Prompt index',
+      value: 0,
+    })
+  })
+
   it('does not present echo replay latency as model execution duration', () => {
     for (const latencyMs of [0, 1, 250]) {
       const result = supported(

@@ -106,7 +106,7 @@
         />
         {#if run.state !== 'Unknown'}<DetailField
             fieldName="state"
-            fieldType="string"
+            fieldType="enum"
             fieldValue={run.state}
           >
             {#snippet value()}<RunStatusBadge
@@ -147,7 +147,7 @@
         {#if showDuration}
           <DetailField
             fieldName="duration"
-            fieldType="string"
+            fieldType={row?.window ? 'int64' : 'number'}
             fieldValue={duration ?? 'Unknown'}
             qualifier={durationSource}
           />
@@ -175,8 +175,8 @@
       <tbody
         >{#each run.configuration as field}<DetailField
             fieldName={field.name}
-            fieldType="string"
-            fieldValue={field.value}
+            fieldType={field.value === null ? 'null' : typeof field.value}
+            fieldValue={String(field.value)}
           />{/each}</tbody
       >
     </table>
@@ -189,7 +189,7 @@
       <tbody>
         <DetailField
           fieldName="assessed results"
-          fieldType="string"
+          fieldType="number"
           fieldValue={`${run.reps.filter(item => item.assessments.length > 0).length} / ${run.reps.length}`}
         />
       </tbody>
@@ -204,12 +204,12 @@
       <tbody>
         <DetailField
           fieldName="investigator estimate (CAD)"
-          fieldType="string"
+          fieldType="number"
           fieldValue={`${cost(investigator.total)}${investigator.incomplete && investigator.total !== null ? ' · incomplete' : ''}`}
         />
         <DetailField
           fieldName="grader estimate (CAD)"
-          fieldType="string"
+          fieldType="number"
           fieldValue={`${cost(grader.total)}${grader.incomplete && grader.total !== null ? ' · incomplete' : ''}`}
         />
       </tbody>

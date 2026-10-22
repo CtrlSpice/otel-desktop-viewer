@@ -169,7 +169,7 @@
           {#each costFields as field}
             <DetailField
               fieldName={field.name}
-              fieldType="string"
+              fieldType="number"
               fieldValue={`${cost(field.estimate.total)}${field.estimate.incomplete && field.estimate.total !== null ? ' · partial' : ''}`}
             />
           {/each}
@@ -210,14 +210,20 @@
             <tbody>
               <DetailField
                 {fieldName}
-                fieldType="string"
+                fieldType={fieldName === 'output'
+                  ? (rep?.answerType ?? 'string')
+                  : 'string'}
                 fieldValue={prose}
                 loadText={proseCopy}
                 multiline
               >
-                {#snippet value()}<MarkdownText
-                    text={prose === '' ? '""' : prose}
-                  />{/snippet}
+                {#snippet value()}
+                  {#if fieldName === 'output' && rep?.answerType && rep.answerType !== 'string'}
+                    {prose}
+                  {:else}
+                    <MarkdownText text={prose === '' ? '""' : prose} />
+                  {/if}
+                {/snippet}
               </DetailField>
             </tbody>
           </table>
@@ -269,14 +275,14 @@
         {#if row.kind === 'case' && !rep}
           <DetailField
             fieldName="results"
-            fieldType="string"
+            fieldType="number"
             fieldValue={String(members.length)}
           />
         {/if}
         {#if mode === 'time' && ['case', 'rep', 'execution'].includes(row.kind)}
           <DetailField
             fieldName="tool calls"
-            fieldType="string"
+            fieldType="number"
             fieldValue={members.some(item => item.toolsKnown === false)
               ? 'Unknown'
               : `${calls} total · ${failures} failed`}
@@ -294,7 +300,7 @@
           {#if showDuration}
             <DetailField
               fieldName="duration"
-              fieldType="string"
+              fieldType={row.window ? 'int64' : 'number'}
               fieldValue={duration}
               qualifier={durationSource}
             />

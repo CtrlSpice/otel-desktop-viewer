@@ -367,7 +367,9 @@ export function projectPromptfooDataset(
             ? pointer + '/prompt/label'
             : undefined,
         }
-        const configuration = [{ name: 'Dataset ID', value: dataset.id }]
+        const configuration: EvalRun['configuration'] = [
+          { name: 'Dataset ID', value: dataset.id },
+        ]
         if (evaluationID)
           configuration.push({
             name: 'Source evaluation ID',
@@ -379,7 +381,7 @@ export function projectPromptfooDataset(
         if (promptIndex !== undefined)
           configuration.push({
             name: 'Prompt index',
-            value: String(promptIndex),
+            value: promptIndex,
           })
         run = {
           id: runID,
@@ -567,6 +569,20 @@ export function projectPromptfooDataset(
         ),
         question: display(text(prompt?.raw) ?? ''),
         answer,
+        answerType:
+          rawOutput === undefined
+            ? undefined
+            : rawOutput === null
+              ? 'null'
+              : Array.isArray(rawOutput)
+                ? 'array'
+                : typeof rawOutput === 'object'
+                  ? 'map'
+                  : typeof rawOutput === 'number'
+                    ? 'number'
+                    : typeof rawOutput === 'boolean'
+                      ? 'boolean'
+                      : 'string',
         state: machineryError ? 'Error' : 'Complete',
         seconds: latency === undefined ? undefined : latency / 1000,
         error: machineryError

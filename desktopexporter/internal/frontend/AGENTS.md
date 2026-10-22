@@ -469,6 +469,10 @@
   multiline text, Markdown and structured values across
   all signals. Keep Copy exact and complete. Evals answers use an Output field
   card rather than unlabeled prose.
+  Evals type labels describe the underlying value, not its formatted display.
+  Scores, counts and costs are numbers; duration is numeric (int64 for span
+  nanoseconds). Preserve native output and configuration types through projection;
+  do not infer types by parsing strings that happen to resemble JSON or numbers.
 - Details has no fixed maximum width. Preserve its saved width above 40rem and
   let the shared split limit the displayed width using the main pane's existing
   minimum (30% or 28rem, whichever is larger). The drawer retains its 40rem cap.
