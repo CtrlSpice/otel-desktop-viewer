@@ -388,6 +388,8 @@
   shared plot insets (24px top, 72px right, 96px bottom, 136px left), labels and scales; disable the old
   separate axis rules. Time-series charts place the unit horizontally above the
   Y-axis and use a 96px left inset to reclaim the side-label gutter.
+  When zero coincides with the bottom axis, use its rounded join without a
+  duplicate straight zero rule. Retain zero rules inside the plot.
   Axis tick marks also use 1px Muted. The shared border is
   decorative, hidden from assistive technology and cannot intercept pointers.
   Keep axis range labels on one line with both bounds and brackets visible.

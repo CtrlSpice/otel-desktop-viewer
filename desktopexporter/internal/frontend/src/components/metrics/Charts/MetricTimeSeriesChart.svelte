@@ -3,7 +3,14 @@
   import { createOverlayEmphasis } from '@/components/metrics/utils/overlay-emphasis.svelte'
 
   import ChartSticky from '@/components/metrics/Charts/ChartSticky.svelte'
-  import { LineChart, Line, Spline, Tooltip, type ChartState } from 'layerchart'
+  import {
+    LineChart,
+    Line,
+    Rule,
+    Spline,
+    Tooltip,
+    type ChartState,
+  } from 'layerchart'
   import { bisector } from 'd3-array'
   import { scaleTime } from 'd3-scale'
   import { curveStepAfter } from 'd3-shape'
@@ -1003,6 +1010,11 @@
           props={chartProps}
         >
           {#snippet grid()}{''}{/snippet}
+          {#snippet rule({ context })}
+            {#if context.yScale(0) !== Math.max(...context.yRange)}
+              <Rule y={0} />
+            {/if}
+          {/snippet}
           {#snippet marks()}
             {#each chartSeries as series (series.key)}
               {@const emphasized =

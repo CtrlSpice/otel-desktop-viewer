@@ -197,6 +197,46 @@ afterEach(() => {
 })
 
 describe('MetricTimeSeriesChart keyboard model', () => {
+  it.each([
+    { values: [2, 8], ruleCount: 0 },
+    { values: [-2, 8], ruleCount: 1 },
+    { values: [-8, -2], ruleCount: 1 },
+  ])(
+    'keeps only zero rules that do not duplicate the rounded bottom axis: $values',
+    async ({ values, ruleCount }) => {
+      const datapoints = values.map((value, index) =>
+        gaugeDatapoint(
+          `point-${index}`,
+          BASE_NS + BigInt(index) * 1_000_000_000n,
+          value
+        )
+      )
+      renderChart(
+        MetricTimeSeriesChart,
+        {
+          timeseries: [
+            {
+              key: 'series-a',
+              label: 'Series A',
+              points: datapoints.map(point => ({
+                date: new Date(point.timestampMs),
+                value: point.doubleValue,
+                timestampNs: point.timestamp,
+              })),
+            },
+          ],
+          colorByKey: new Map([['series-a', '#123456']]),
+        },
+        metricWithDatapoints('Gauge', datapoints)
+      )
+      await tick()
+      expect(document.querySelectorAll('.lc-rule-y-line')).toHaveLength(
+        ruleCount
+      )
+      expect(document.querySelector('.metric-axes')).toBeInTheDocument()
+    }
+  )
+
   it('draws aggregate buckets as step-after geometry while preserving raw sample interpolation', async () => {
     const datapoints = [2, 8, 4].map((value, index) =>
       gaugeDatapoint(
