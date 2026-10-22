@@ -90,13 +90,16 @@
 
 {#each records as record (record.id)}
   <table class="detail-fields w-full" aria-label={record.source}>
+    <caption
+      class="px-[var(--pane-inline-inset)] py-2 text-left text-sm font-normal text-secondary"
+      >{record.source}</caption
+    >
     <tbody>
       {#each record.fields as attribute, index (`${attribute.key}/${index}`)}
         <DetailField
           fieldName={attribute.key}
           fieldType={attribute.value.kind}
           typedValue={attribute.value}
-          origin={record.source}
           fieldKind="attribute"
           defectLabel={attribute.hasConflict
             ? `Conflicting typed values retained for ${attribute.key}.`
