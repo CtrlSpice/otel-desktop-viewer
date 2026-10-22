@@ -94,6 +94,12 @@
     line-height: 1.5;
     overflow-wrap: anywhere;
   }
+  .markdown-text > :first-child {
+    margin-block-start: 0;
+  }
+  .markdown-text > :last-child {
+    margin-block-end: 0;
+  }
   p,
   pre,
   blockquote,

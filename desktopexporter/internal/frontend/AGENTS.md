@@ -452,6 +452,10 @@
 - In Details, copy only through explicit copy buttons. Links navigate; plain
   values and card backgrounds have no click action. Preserve native text selection
   and do not restore card-click or tap-to-copy handlers or card pointer cursors.
+  Field values longer than three rendered lines use an ellipsis and Show more /
+  Show less, including multiline text, Markdown and structured values across
+  all signals. Keep Copy exact and complete. Evals answers use an Output field
+  card rather than unlabeled prose.
 - Details has no fixed maximum width. Preserve its saved width above 40rem and
   let the shared split limit the displayed width using the main pane's existing
   minimum (30% or 28rem, whichever is larger). The drawer retains its 40rem cap.

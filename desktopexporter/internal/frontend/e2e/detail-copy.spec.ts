@@ -3,7 +3,10 @@ import type { JsonLogData } from '../src/types/wire-types'
 
 // Exercise the shared field card with retained telemetry, independently of
 // Evals' run/attempt navigation and its retired presentation-only examples.
-async function openCopyField(page: Page) {
+async function openCopyField(
+  page: Page,
+  body = 'Exact retained clipboard text'
+) {
   const log: JsonLogData = {
     logRef: '00000000-0000-0000-0000-000000000001',
     timestamp: '1700000000000000000',
@@ -12,7 +15,7 @@ async function openCopyField(page: Page) {
     spanID: null,
     severityText: 'INFO',
     severityNumber: 9,
-    body: { kind: 'string', value: 'Exact retained clipboard text' },
+    body: { kind: 'string', value: body },
     resource: { attributes: [], droppedAttributesCount: 0 },
     scope: { name: '', version: '', attributes: [], droppedAttributesCount: 0 },
     attributes: [],
@@ -41,6 +44,39 @@ async function openCopyField(page: Page) {
   return page
     .getByRole('table', { name: 'Log fields' })
     .locator('[data-field="body"]')
+}
+
+for (const structured of [false, true]) {
+  test(`long ${structured ? 'JSON' : 'text'} detail fields preview three lines and copy the full value`, async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    const lines = Array.from({ length: 12 }, (_, i) => `Retained line ${i + 1}`)
+    const text = structured ? JSON.stringify({ lines }) : lines.join('\n')
+    const field = await openCopyField(page, text)
+    const content = field.locator('.detail-pair__value')
+    const more = field.getByRole('button', { name: 'Show more', exact: true })
+    await expect(more).toBeVisible()
+    await expect(content).toHaveCSS('max-height', '63px')
+    expect((await content.boundingBox())!.height).toBe(63)
+    await field.hover()
+    await field.getByRole('button', { name: 'Copy body', exact: true }).click()
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe(text)
+    await more.focus()
+    await page.keyboard.press('Enter')
+    const less = field.getByRole('button', { name: 'Show less', exact: true })
+    await expect(less).toBeFocused()
+    await expect(less).toHaveAttribute('aria-expanded', 'true')
+    expect((await content.boundingBox())!.height).toBeGreaterThan(63)
+    await expect(content).toContainText('Retained line 12')
+    await less.click()
+    await expect(more).toBeVisible()
+    expect((await content.boundingBox())!.height).toBe(63)
+  })
 }
 
 for (const fallback of [false, true]) {

@@ -26,10 +26,8 @@ it('keeps an explicitly empty tool output inspectable and copyable', async () =>
   render(EvalRowDetail, { run, row, mode: 'time' })
   const output = screen.getByRole('table', { name: `${row.name} output` })
   expect(within(output).getByText('""')).toBeVisible()
-  expect(screen.getByRole('button', { name: `Copy ${row.name}` })).toBeEnabled()
-  await fireEvent.click(
-    screen.getByRole('button', { name: `Copy ${row.name}` })
-  )
+  expect(screen.getByRole('button', { name: 'Copy output' })).toBeEnabled()
+  await fireEvent.click(screen.getByRole('button', { name: 'Copy output' }))
   expect(copyText).toHaveBeenCalledExactlyOnceWith('')
 })
 
@@ -50,7 +48,7 @@ it('omits output and its copy actions when a tool has no recorded message', () =
     screen.queryByRole('table', { name: `${row.name} output` })
   ).not.toBeInTheDocument()
   expect(
-    screen.queryByRole('button', { name: `Copy ${row.name}` })
+    screen.queryByRole('button', { name: 'Copy output' })
   ).not.toBeInTheDocument()
 })
 

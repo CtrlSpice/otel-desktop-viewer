@@ -36,23 +36,20 @@
             >{/if}
         </span>
       {/snippet}
-      {#if value}
-        {@render keyLabel()}
-        <div class="detail-field__value">{@render value()}</div>
-      {:else if multiline}
-        <!-- Multiline record content is shown whole rather than clamped. -->
-        {@render keyLabel()}
-        <span
-          class="detail-cell__value detail-field__value detail-field__value--multiline"
-          class:tabular-nums={fieldType === 'timestamp'}>{fieldValue}</span
-        >
-      {:else}
-        <ExpandableValue
-          {keyLabel}
-          value={fieldValue ?? ''}
-          valueClass={fieldType === 'timestamp' ? 'tabular-nums' : ''}
-        />
-      {/if}
+      <ExpandableValue {keyLabel} value={fieldValue ?? ''}>
+        {#if value}
+          <div class="detail-field__value">{@render value()}</div>
+        {:else if multiline}
+          <span
+            class="detail-cell__value detail-field__value detail-field__value--multiline"
+            class:tabular-nums={fieldType === 'timestamp'}>{fieldValue}</span
+          >
+        {:else}
+          <div class:tabular-nums={fieldType === 'timestamp'}>
+            {fieldValue ?? ''}
+          </div>
+        {/if}
+      </ExpandableValue>
     </td>
   </tr>
 {/if}

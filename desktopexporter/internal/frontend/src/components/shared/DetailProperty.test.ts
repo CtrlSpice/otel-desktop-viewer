@@ -117,10 +117,12 @@ describe('DetailProperty copy controls', () => {
     expect(cell.children[0]).toHaveClass('detail-property__header')
     expect(cell.children[1]).toHaveClass('detail-property__body')
     const content = cell.querySelector('.detail-property__body')!
-    expect(content.children[0]).toHaveTextContent(
+    expect(content.querySelector('.detail-property__value')).toHaveTextContent(
       '2023-11-14, 14:13:20.000 PST'
     )
-    expect(content.children[1]).toHaveTextContent('1700000000000000001')
+    expect(
+      content.querySelector('.detail-property__raw-timestamp')
+    ).toHaveTextContent('1700000000000000001')
     const button = screen.getByRole('button', {
       name: 'Copy startTimeUnixNano',
     })

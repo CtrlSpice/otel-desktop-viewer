@@ -1,15 +1,10 @@
 <script lang="ts">
   import type { AttributeValue } from '@/types/api-types'
   import { attributeValueTokens, jsonContainerTokens } from './detail-value'
-  import ExpandableValue from './ExpandableValue.svelte'
   import ValueSyntax from './ValueSyntax.svelte'
   import JsonEditor from './JsonEditor.svelte'
 
-  let {
-    value,
-    path,
-    clamp = false,
-  }: { value: AttributeValue; path?: string; clamp?: boolean } = $props()
+  let { value, path }: { value: AttributeValue; path?: string } = $props()
   let json = $derived(
     value.kind === 'string' ? jsonContainerTokens(value.value, true) : null
   )
@@ -28,7 +23,7 @@
   aria-label={path ? `Value of ${path}` : undefined}
 >
   {#if readable && value.kind === 'string'}
-    {#if clamp}<ExpandableValue value={value.value} />{:else}{value.value}{/if}
+    {value.value}
   {:else if structured}
     <JsonEditor
       text={tokens.map(token => token.text).join('')}
@@ -58,8 +53,5 @@
   }
   .attribute-value--text {
     @apply font-sans text-sm;
-  }
-  .attribute-value :global(.detail-pair__value) {
-    color: inherit;
   }
 </style>

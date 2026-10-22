@@ -9,15 +9,19 @@
     /** The key, rendered by the caller so each signal keeps its own markup. */
     keyLabel?: Snippet
     value: string
+    /** Rich field content. The value remains its identity for expansion reset. */
+    children?: Snippet
     /** Extra classes for the value (tabular-nums, font-mono, ...). */
     valueClass?: string
   }
 
-  let { keyLabel, value, valueClass = '' }: Props = $props()
+  let { keyLabel, value, children, valueClass = '' }: Props = $props()
+  const contentID = $props.id()
 
   let expanded = $state(false)
   let clipped = $state(false)
   let el = $state<HTMLElement | null>(null)
+  let content = $state<HTMLElement | null>(null)
 
   // Clicking between spans should not leave a field open from the previous
   // one: the same field on the next span is a different question.
@@ -30,6 +34,7 @@
   // on the width the value ends up with, which the string cannot know. The
   // observer keeps it honest as the pane is dragged.
   $effect(() => {
+    void value
     const node = el
     if (!node) return
     const measure = () => {
@@ -39,26 +44,40 @@
     measure()
     const ro = new ResizeObserver(measure)
     ro.observe(node)
+    if (content) ro.observe(content)
     return () => ro.disconnect()
   })
 </script>
 
-<span class="detail-pair">
+<div class="detail-pair">
   {@render keyLabel?.()}
-  <span
+  <div
+    id={contentID}
     bind:this={el}
     class="detail-pair__value {valueClass}"
-    class:detail-pair__value--clamped={!expanded}>{value}</span
+    class:detail-pair__value--rich={!!children}
+    class:detail-pair__value--clamped={!expanded}
+    onfocusin={() => {
+      if (clipped) expanded = true
+    }}
   >
+    {#if children}<div class="detail-pair__content" bind:this={content}>
+        {@render children()}
+      </div>{:else}{value}{/if}
+  </div>
   {#if clipped}
-    <button
-      type="button"
-      class="detail-pair__toggle"
-      onclick={() => (expanded = !expanded)}
-      aria-expanded={expanded}>{expanded ? 'Show less' : 'Show more'}</button
-    >
+    <div class="detail-pair__disclosure">
+      {#if children && !expanded}<span aria-hidden="true">…</span>{/if}
+      <button
+        type="button"
+        class="detail-pair__toggle"
+        onclick={() => (expanded = !expanded)}
+        aria-controls={contentID}
+        aria-expanded={expanded}>{expanded ? 'Show less' : 'Show more'}</button
+      >
+    </div>
   {/if}
-</span>
+</div>
 
 <style lang="postcss">
   @reference "../../app.css";
@@ -77,6 +96,21 @@
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
     overflow: hidden;
+  }
+
+  .detail-pair__value--rich.detail-pair__value--clamped {
+    display: block;
+    max-height: 3lh;
+  }
+
+  .detail-pair__content {
+    display: flow-root;
+  }
+
+  .detail-pair__disclosure {
+    @apply flex items-baseline gap-1;
+    white-space: normal;
+    color: var(--color-subtle);
   }
 
   .detail-pair__toggle {

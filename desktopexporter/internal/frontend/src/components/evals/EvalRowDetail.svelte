@@ -2,7 +2,6 @@
   import DetailStack from '@/components/shared/DetailStack.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import DetailField from '@/components/shared/DetailProperty.svelte'
-  import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import EvalStatus from './EvalStatus.svelte'
   import EvalAssessmentDetail from './EvalAssessmentDetail.svelte'
   import MarkdownText from '@/components/shared/MarkdownText.svelte'
@@ -152,13 +151,6 @@
         label={completionLabel(row.state, row.internalFault)}
         tone={completionTone(row.state, row.internalFault)}
       />{/snippet}
-    {#snippet action()}
-      {#if prose !== undefined}<ValueCopyButton
-          text={prose}
-          loadText={proseCopy}
-          label={row.kind === 'rep' ? 'answer' : row.name}
-        />{/if}
-    {/snippet}
     {#if mode === 'cost'}
       <table class="detail-fields w-full" aria-label={`${row.name} accounting`}>
         <tbody>
@@ -197,9 +189,27 @@
               /></tbody
             >
           </table>
-        {:else}<div class="eval-row-detail__prose">
-            <MarkdownText text={prose === '' ? '""' : prose} />
-          </div>{/if}
+        {:else}
+          {@const fieldName = row.kind === 'case' && !rep ? 'input' : 'output'}
+          <table
+            class="detail-fields w-full"
+            aria-label={`${row.name} ${fieldName}`}
+          >
+            <tbody>
+              <DetailField
+                {fieldName}
+                fieldType="string"
+                fieldValue={prose}
+                loadText={proseCopy}
+                multiline
+              >
+                {#snippet value()}<MarkdownText
+                    text={prose === '' ? '""' : prose}
+                  />{/snippet}
+              </DetailField>
+            </tbody>
+          </table>
+        {/if}
       {:else if row.kind === 'rep' && mode === 'results'}
         <p class="eval-row-detail__prose">No answer recorded</p>
       {/if}
