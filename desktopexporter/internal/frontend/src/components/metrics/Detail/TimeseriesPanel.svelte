@@ -103,10 +103,8 @@
     void tick().then(async () => {
       if (cancelled) return
       const disclosure = panel.closest('details')
-      if (disclosure && !disclosure.open) {
+      if (disclosure) {
         disclosure.open = true
-        // Apply the native reveal to DetailStack before measuring for scroll.
-        disclosure.dispatchEvent(new Event('toggle'))
         await tick()
       }
       if (cancelled) return

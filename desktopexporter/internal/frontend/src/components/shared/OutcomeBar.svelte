@@ -14,12 +14,10 @@
     parts,
     label,
     right,
-    onsegmentclick,
   }: {
     parts: OutcomePart[]
     label: string
     right?: Snippet
-    onsegmentclick?: () => void
   } = $props()
   const colouredParts = $derived(
     parts.map(part => ({
@@ -41,5 +39,4 @@
   subtleLabels
   countFormat="bracketed"
   {right}
-  {onsegmentclick}
 />

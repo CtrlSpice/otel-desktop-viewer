@@ -47,7 +47,7 @@
   {selected}
   title={titleLabel}
   subtitle={serviceLabel}
-  interactiveSubtitle={serviceBreakdown}
+  subtitleContent={serviceBreakdown}
   titleContent={!trace.hasRootSpan ? missingRootTitle : undefined}
   {onclick}
 >

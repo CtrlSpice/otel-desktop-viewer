@@ -17,12 +17,13 @@ test('native providers × repetitions retain six fresh Pi sessions and untouched
   fs.writeFileSync(binary, '#!/bin/sh\nprintf PI_TOOL_OK\n', { mode: 0o700 })
   const requests: { messages: { role: string }[] }[] = []
   const batches: any[] = []
+  const logBatches: any[] = []
   const server = http.createServer(async (req, res) => {
     let body = ''
     for await (const chunk of req) body += chunk
     const request = JSON.parse(body)
-    if (req.url === '/v1/traces') {
-      batches.push(request)
+    if (req.url === '/v1/traces' || req.url === '/v1/logs') {
+      (req.url === '/v1/logs' ? logBatches : batches).push(request)
       res.writeHead(200, { 'Content-Type': 'application/json' }).end('{}')
       return
     }
@@ -67,6 +68,8 @@ test('native providers × repetitions retain six fresh Pi sessions and untouched
     assert.ok(rows.every((row: { success: boolean }) => row.success), JSON.stringify(rows))
     assert.equal(new Set(rows.map((row: any) => row.response.metadata.sessionID)).size, 6)
     const spans = batches.flatMap(batch => batch.resourceSpans.flatMap((r: any) => r.scopeSpans.flatMap((s: any) => s.spans)))
+    const logs = logBatches.flatMap(batch => batch.resourceLogs.flatMap((r: any) => r.scopeLogs.flatMap((s: any) => s.logRecords)))
+    assert.equal(logs.length, 12)
     const cases = spans.filter(span => span.name === 'promptfoo.test_case')
     assert.equal(cases.length, 6)
     const attribute = (span: any, key: string) => span.attributes.find((a: any) => a.key === key)?.value
@@ -76,7 +79,8 @@ test('native providers × repetitions retain six fresh Pi sessions and untouched
       const [, traceId, spanId] = identity.promptfoo.traceparent.split('-')
       const providerSpan = spans.find(span => span.traceId === traceId && span.spanId === spanId)
       assert.ok(providerSpan, 'Pi response must identify an exported native Promptfoo provider span')
-      const toolEvents = providerSpan.events.filter((event: any) => event.name === 'tool.execution')
+      assert.equal(providerSpan.events.filter((event: any) => event.name === 'tool.execution').length, 0)
+      const toolEvents = logs.filter(log => log.traceId === traceId && log.spanId === spanId && log.eventName === 'tool.execution')
       assert.equal(toolEvents.length, 2)
       assert.equal(attribute(toolEvents[0], 'gen_ai.tool.call.id')?.stringValue, 'tool-0')
       assert.equal(attribute(toolEvents[0], 'tool.is_error')?.boolValue, false)

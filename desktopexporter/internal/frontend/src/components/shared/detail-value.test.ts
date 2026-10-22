@@ -138,6 +138,43 @@ describe('detail value formatting', () => {
     )
   })
 
+  it('recursively formats runtime dumps with the same literal categories as table previews', () => {
+    const inner =
+      '{"event":{"location":{"workspaceID":undefined},"id":9223372036854775807,"value":NaN,"limit":-Infinity}}'
+    const value: AttributeValue = {
+      kind: 'array',
+      value: [
+        { kind: 'string', value: 'event' },
+        {
+          kind: 'string',
+          value: JSON.stringify({
+            payload: inner,
+            prose: 'keep undefined as text',
+          }),
+        },
+      ],
+    }
+    const tokens = attributeValueTokens(value, true)
+    const display = tokens.map(token => token.text).join('')
+    expect(display).toContain('"workspaceID": undefined')
+    expect(display).toContain('"id": 9223372036854775807')
+    expect(display).toContain('"prose": "keep undefined as text"')
+    expect(
+      tokens.filter(token => token.kind === 'literal').map(token => token.text)
+    ).toEqual(['undefined', 'NaN', '-Infinity'])
+    expect(
+      compactValueTokens(display)
+        .filter(token => token.kind === 'literal')
+        .map(token => token.text)
+    ).toEqual(['undefined', 'NaN', '-Infinity'])
+    expect(attributeValueCopy(value)).toBe(
+      JSON.stringify(['event', value.value[1].value], null, 2)
+    )
+    expect(jsonContainerTokens(inner)).toBeNull()
+    expect(jsonContainerTokens('{"value":invoke()}', true)).toBeNull()
+    expect(jsonContainerTokens('{"value":undefined} trailing', true)).toBeNull()
+  })
+
   it('groups nested tokens for folding without losing duplicate keys or numeric lexemes', () => {
     const tokens = jsonContainerTokens(
       '{"same":9007199254740993,"same":-0,"items":[{}, {"a":1.2300e+40},false]}'

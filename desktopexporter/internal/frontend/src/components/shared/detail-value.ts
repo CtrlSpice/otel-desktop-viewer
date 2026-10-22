@@ -6,6 +6,13 @@ export type ValueToken = {
   type?: AttributeValue['kind']
 }
 
+/** JSON-like runtime dumps can contain these bare values. Display them as code,
+ * never coerce them into JSON values or evaluate the received text. */
+export const isRuntimeLiteral = (text: string) =>
+  /^(?:undefined|NaN|-?Infinity)$/.test(text)
+const isLiteral = (text: string) =>
+  /^(?:true|false|null)$/.test(text) || isRuntimeLiteral(text)
+
 /** Display-only JSON; copy continues to use the original received value. */
 export function structuredValueText(value: AttributeValue): string | undefined {
   const tokens =
@@ -47,7 +54,7 @@ export function compactValueTokens(
             ? 'string'
             : /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(lexeme)
               ? 'number'
-              : /^(true|false|null)$/.test(lexeme)
+              : isLiteral(lexeme)
                 ? 'literal'
                 : 'punctuation',
       },
@@ -114,7 +121,9 @@ export function valueTokenTree(
   return read(path, false, true)
 }
 
-/** Recognize only complete JSON containers; format lexemes, never parsed numbers. */
+/** Recognize complete containers; formatted display also accepts runtime literals.
+ * Validation uses a throwaway JSON-compatible copy; output always uses source
+ * lexemes, retaining exact numbers, duplicate keys and non-JSON literal spelling. */
 export function jsonContainerTokens(
   text: string,
   expandStrings = false
@@ -129,7 +138,14 @@ export function jsonContainerTokens(
   function format(text: string, baseDepth: number): ValueToken[] | null {
     if (text.length > maxCharacters || !/^\s*[[{]/.test(text)) return null
     try {
-      JSON.parse(text)
+      JSON.parse(
+        expandStrings
+          ? text.replace(
+              /"(?:[^"\\]|\\.)*"|\bundefined\b|\bNaN\b|-?\bInfinity\b/g,
+              token => (isRuntimeLiteral(token) ? 'null' : token)
+            )
+          : text
+      )
     } catch {
       return null
     }
@@ -179,7 +195,7 @@ export function jsonContainerTokens(
             ? parts[index + 1] === ':'
               ? 'key'
               : 'string'
-            : /^(true|false|null)$/.test(part)
+            : isLiteral(part)
               ? 'literal'
               : 'number',
         })

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { expect, it, vi } from 'vitest'
 import { fireEvent, screen, within } from '@testing-library/svelte'
+import userEvent from '@testing-library/user-event'
 import { renderWithContexts as render } from '@/test/render-helpers'
 import { copyText } from '@/utils/clipboard'
 import EvalRowDetail from './EvalRowDetail.svelte'
@@ -121,7 +122,7 @@ it('keeps Details and Telemetry stable while the selected mode surfaces its own 
   ).toEqual(['Result', 'Assessments', 'Telemetry'])
   expect(screen.getByText('Recorded answer')).toBeVisible()
   expect(screen.getByText(result.assessments[0].explanation)).toBeVisible()
-  await fireEvent.click(sections[2].querySelector('summary')!)
+  await userEvent.click(sections[2].querySelector('summary')!)
   expect(sections[2].open).toBe(false)
 
   await view.rerender({ componentProps: { experiment, row, mode: 'time' } })

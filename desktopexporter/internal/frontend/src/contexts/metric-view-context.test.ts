@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
 import { tick } from 'svelte'
-import { fireEvent, screen, within } from '@testing-library/svelte'
+import { fireEvent, screen, waitFor, within } from '@testing-library/svelte'
 import { navigateCurrentRoute, readRoute, withQueryPatch } from '@/route'
 import {
   aggregateToSlices,
@@ -83,13 +83,18 @@ it('keeps chart selection and native disclosures independent', async () => {
       expect(document.querySelector('[data-dp-id="dp-a1"]')).toBeVisible()
       expect(context.expandedTimeseries.has('route=/a')).toBe(true)
     }
-    expect(scroll).toHaveBeenCalledWith({ block: 'nearest' })
+    await waitFor(() =>
+      expect(scroll).toHaveBeenCalledWith({ block: 'nearest' })
+    )
     await fireEvent.click(series.querySelector('summary')!)
+    expect(series.open).toBe(true)
+    await fireEvent.click(fields.querySelector('summary')!)
     detailPanel.setOpen(false)
     await tick()
     detailPanel.setOpen(true)
     await tick()
-    expect(series.open).toBe(false)
+    expect(series.open).toBe(true)
+    expect(fields.open).toBe(false)
     detailPanel.setOpen(false)
     await view.rerender({
       componentProps: { metric: { ...metric }, showDetail: true },

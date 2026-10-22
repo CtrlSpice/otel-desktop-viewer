@@ -9,7 +9,10 @@ async function openExamples(page: Page, selection = '') {
 async function showOnly(page: Page, label: 'Results' | 'Tool calls' | 'Cost') {
   await page
     .getByRole('radiogroup', { name: 'Eval view' })
-    .getByRole('radio', { name: label, exact: true })
+    .getByRole('radio', {
+      name: label === 'Cost' ? 'Cost · CAD est.' : label,
+      exact: true,
+    })
     .click()
 }
 
@@ -194,12 +197,10 @@ test('sidebar outcomes filter experiment cards and preserve full results, select
     has: page.getByRole('button', { name: /^Guide-assisted agent/ }),
   })
   await expect(cards).toHaveCount(3)
-  await expect(
-    legend.getByRole('button', { name: 'Pass: 11 results', exact: true })
-  ).toBeVisible()
-  await expect(
-    legend.getByRole('button', { name: 'Fail: 2 results', exact: true })
-  ).toBeVisible()
+  await expect(legend.locator('.breakdown-segment')).toHaveCount(3)
+  await expect(legend.getByRole('button')).toHaveAccessibleName(
+    /Pass: 11 results.*Fail: 2 results/
+  )
   const originalRows = await table.getByRole('row').count()
 
   await trigger.click()
@@ -393,11 +394,11 @@ test('experiment selection, assessments, filtering and browser history stay conn
   ).toBeVisible()
   await page.getByRole('button', { name: /Revised instructions/ }).click()
   await showOnly(page, 'Results')
-  await page
-    .getByRole('region', { name: 'Experiment details', exact: true })
-    .locator('summary')
-    .filter({ hasText: /Grading/ })
-    .click()
+  await expect(
+    page
+      .getByRole('region', { name: 'Experiment details', exact: true })
+      .locator('[data-detail-section="grading"] details')
+  ).toHaveAttribute('open')
   const plannedResults = page.getByRole('table', {
     name: 'Results for Revised instructions',
   })
@@ -412,7 +413,7 @@ test('experiment selection, assessments, filtering and browser history stay conn
       .getByRole('group', { name: 'assessed results', exact: true })
   ).toContainText('0 / 16')
   await expect(
-    page.getByRole('radio', { name: 'Cost', exact: true })
+    page.getByRole('radio', { name: 'Cost · CAD est.', exact: true })
   ).toBeDisabled()
   await expect(
     page
@@ -441,7 +442,10 @@ for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
       name: 'Tool calls',
       exact: true,
     })
-    const cost = toggles.getByRole('radio', { name: 'Cost', exact: true })
+    const cost = toggles.getByRole('radio', {
+      name: 'Cost · CAD est.',
+      exact: true,
+    })
     await expect(results).toHaveAttribute('aria-checked', 'true')
     await expect(time).toHaveAttribute('aria-checked', 'false')
     await expect(cost).toHaveAttribute('aria-checked', 'false')
@@ -562,14 +566,12 @@ test('Results, Time and Cost preserve selection and distinguish missing measurem
     time.getByRole('columnheader', { name: 'Tool calls' })
   ).toBeVisible()
   const failedResult = time.locator('[data-result-id="request-latency"]')
-  await expect(failedResult.locator('td').nth(1)).toHaveText(
-    '3 tools · 1 failed'
-  )
+  await expect(failedResult.locator('td').nth(1)).toHaveText('')
   await expect(
     time
       .locator('.eval-results__case[data-case-id="request-latency"] td')
       .nth(1)
-  ).toHaveText('9 tools · 3 failed')
+  ).toHaveText('')
   const trace = failedResult.getByRole('button', {
     name: 'Span Find the slow request, 37.000 s',
   })

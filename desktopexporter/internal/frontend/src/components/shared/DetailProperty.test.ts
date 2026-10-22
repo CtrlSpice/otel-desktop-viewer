@@ -7,6 +7,53 @@ import { foldAll, foldedRanges } from '@codemirror/language'
 import { jsonEditorView } from '@/test/json-editor-helpers'
 
 describe('DetailProperty copy controls', () => {
+  it.each(['body', 'output', 'attributes'])(
+    'formats nested runtime code in shared %s Details without changing Copy or type',
+    async fieldName => {
+      const user = userEvent.setup()
+      const copy = vi
+        .spyOn(navigator.clipboard, 'writeText')
+        .mockResolvedValue()
+      const inner =
+        '{"event":{"location":{"workspaceID":undefined},"created":9223372036854775807}}'
+      const result = render(DetailProperty, {
+        fieldName,
+        fieldType: 'array',
+        typedValue: {
+          kind: 'array',
+          value: [
+            { kind: 'string', value: 'event' },
+            { kind: 'string', value: inner },
+          ],
+        },
+      })
+      const view = jsonEditorView(result.container)
+      expect(view.state.doc.toString()).toContain('"workspaceID": undefined')
+      await user.click(
+        screen.getByRole('button', { name: `Expand all ${fieldName} JSON` })
+      )
+      expect(
+        result.container.querySelector('.json-runtime-literal')
+      ).toHaveTextContent('undefined')
+      expect(
+        result.container.querySelector('.detail-property__type')
+      ).toHaveTextContent('array')
+      await user.click(
+        screen.getByRole('button', { name: `Copy ${fieldName}` })
+      )
+      expect(copy).toHaveBeenCalledExactlyOnceWith(
+        JSON.stringify(['event', inner], null, 2)
+      )
+      const document = view.state.doc.toString()
+      await user.click(
+        screen.getByRole('button', { name: `Collapse all ${fieldName} JSON` })
+      )
+      await result.rerender({ fieldName })
+      expect(view.state.doc.toString()).toBe(document)
+      expect(foldedRanges(view.state).size).toBeGreaterThan(0)
+    }
+  )
+
   it('opens the first JSON level and copies the entire source through header controls', async () => {
     const user = userEvent.setup()
     const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue()

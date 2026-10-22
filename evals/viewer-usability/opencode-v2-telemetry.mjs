@@ -7,8 +7,8 @@ import { gunzipSync } from 'node:zlib'
 
 // A byte-preserving receiver, not an instrumentor. Only the owned V2 executable
 // receives this endpoint. Wrapper exports use their existing separate receiver.
-export async function nativeTelemetryReceiver(root, forward) {
-  const directory = path.join(root, 'native-otlp')
+export async function nativeTelemetryReceiver(root, forward, { directoryName = 'native-otlp', origin = 'owned-opencode-v2' } = {}) {
+  const directory = path.join(root, directoryName)
   fs.mkdirSync(directory, { mode: 0o700 })
   const receipts = [], pending = new Set()
   const server = http.createServer((request, response) => {
@@ -19,7 +19,7 @@ export async function nativeTelemetryReceiver(root, forward) {
       const bytes = Buffer.concat(chunks)
       const name = String(receipts.length).padStart(5, '0') + '-' + route.split('/').at(-1) + '.otlp'
       const receipt = { name, route, contentType: request.headers['content-type'], contentEncoding: request.headers['content-encoding'],
-        bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), origin: 'owned-opencode-v2', forwarded: Boolean(forward) }
+        bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), origin, forwarded: Boolean(forward) }
       receipts.push(receipt)
       fs.writeFileSync(path.join(directory, name), bytes, { flag: 'wx', mode: 0o600 })
       if (forward) {
@@ -38,6 +38,7 @@ export async function nativeTelemetryReceiver(root, forward) {
   })
   server.listen(0, '127.0.0.1'); await once(server, 'listening')
   return { endpoint: 'http://127.0.0.1:' + server.address().port, receipts,
+    async flush() { await Promise.all([...pending]) },
     async close() {
       await Promise.all([...pending])
       await new Promise(resolve => server.close(resolve))
@@ -46,11 +47,12 @@ export async function nativeTelemetryReceiver(root, forward) {
   }
 }
 
-export function readNativeTelemetry(root, receipts) {
+export function readNativeTelemetry(root, receipts, directoryName = 'native-otlp') {
   const spans = [], logs = [], metrics = [], resources = [], scopes = new Map()
+  const spanReceipts = {}, logReceipts = {}, metricReceipts = {}
   for (const receipt of receipts) {
-    let bytes = fs.readFileSync(path.join(root, 'native-otlp', receipt.name))
-    if (createHash('sha256').update(bytes).digest('hex') !== receipt.sha256) throw new Error('Native OTLP receipt hash mismatch')
+    let bytes = fs.readFileSync(path.join(root, directoryName, receipt.name))
+    if (receipt.sha256 && createHash('sha256').update(bytes).digest('hex') !== receipt.sha256) throw new Error('Native OTLP receipt hash mismatch')
     if (receipt.contentEncoding === 'gzip') bytes = gunzipSync(bytes)
     else if (receipt.contentEncoding) throw new Error('Unsupported native OTLP content encoding; raw bytes retained')
     if (!receipt.contentType?.includes('application/json')) throw new Error('Native OTLP is not JSON; raw bytes retained for separate decoding')
@@ -64,11 +66,16 @@ export function readNativeTelemetry(root, receipts) {
         const count = scopes.get(key) ?? { scope: scope.scope, spans: 0, logs: 0, metrics: 0 }
         count[itemsKey === 'logRecords' ? 'logs' : itemsKey] += (scope[itemsKey] ?? []).length; scopes.set(key, count)
         target.push(...(scope[itemsKey] ?? []))
+        for (const item of scope[itemsKey] ?? []) {
+          const index = itemsKey === 'spans' ? spanReceipts : itemsKey === 'logRecords' ? logReceipts : metricReceipts
+          const key = itemsKey === 'spans' ? item.traceId + '/' + item.spanId : JSON.stringify(item)
+          ;(index[key] ??= []).push(receipt.name)
+        }
       }
     }
   }
   const counts = values => Object.fromEntries([...values.reduce((map, value) => map.set(value, (map.get(value) ?? 0) + 1), new Map())].sort((a, b) => b[1] - a[1]))
-  return { spans, logs, metrics, summary: { spans: spans.length, logs: logs.length, metricRecords: metrics.length,
+  return { spans, logs, metrics, spanReceipts, logReceipts, metricReceipts, summary: { spans: spans.length, logs: logs.length, metricRecords: metrics.length,
     scopes: [...scopes.values()], resources: [...new Map(resources.map(resource => [JSON.stringify(resource), resource])).values()],
     spanNames: counts(spans.map(span => span.name)), traces: counts(spans.map(span => span.traceId)),
     errors: spans.filter(span => span.status?.code === 2).length,
@@ -91,7 +98,7 @@ export function nativeTelemetryBoundaries(data, traceparent) {
     nativeUsageAttributeSpans: data.spans.filter(span => span.attributes?.some(item => /token|usage/i.test(item.key))).length,
     propagation: { traceparent, matchingSpans: matching.length, directChildren: matching.filter(span => span.parentSpanId === parentID).length,
       sessionOrToolWork: matching.filter(span => /^(Session|Tool\.)/.test(span.name)).length },
-    toolCounting: 'Native Tool.execute names alone do not establish call identity. Count wrapper tool.execution events by native call ID; use native spans only when a received call ID supports deduplication. Do not infer matches from timing or order.',
+    toolCounting: 'Native Tool.execute names alone do not establish call identity. Count correlated tool.execution logs by recorded call ID; use native spans only when a received call ID supports deduplication. Do not infer matches from timing or order.',
     metricsBoundary: 'No metric exporter is wired by the inspected V2 2.0.29 startup layer. Zero received metrics is not a zero-usage measurement.',
   }
 }

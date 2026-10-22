@@ -91,7 +91,11 @@
     selectedRowID?: string
     onSelect?: (row: EvalOutlineRow) => void
     onResolveSelection?: (row: EvalOutlineRow | undefined) => void
-    onTraceViews?: (traces: TraceData[], loading: boolean) => void
+    onTraceViews?: (
+      traces: TraceData[],
+      loading: boolean,
+      logs: LogData[]
+    ) => void
     viewKey?: EvalView
     headerActions?: Snippet
     beforeTable?: Snippet
@@ -99,9 +103,10 @@
     sorts?: Record<string, ResultSort | undefined>
   } = $props()
   let traceViews = $state<TraceData[]>([])
+  let correlationLogs = $state<LogData[]>([])
   const traceIndex = $derived(indexEvalTraces(traceViews))
   const experiment = $derived(
-    projectEvalTraceEvidence(sourceExperiment, traceIndex)
+    projectEvalTraceEvidence(sourceExperiment, traceIndex, correlationLogs)
   )
   const panelID = $props.id()
   const views: { id: EvalView; label: string; icon: typeof CheckListIcon }[] = [
@@ -192,7 +197,6 @@
   let timingsLoading = $state(false)
   let timingsFailed = $state(false)
   let timelineLogs = $state(new Map<string, TraceLogSummary[]>())
-  let correlationLogs = $state<LogData[]>([])
   $effect(() => {
     const nodes = traceIndex.nodes
     const traces = traceViews
@@ -216,6 +220,18 @@
         timelineLogs = new Map(summaries)
       }
       const owners = new Map<string, SpanData>()
+      for (const [traceID, logs] of summaries) {
+        for (const log of logs) {
+          if (
+            !log.spanID ||
+            !['tool.execution', 'tool.execution.start'].includes(log.eventName)
+          )
+            continue
+          const key = referenceKey({ traceID, spanID: log.spanID })
+          const span = nodes.get(key)?.spanData
+          if (span) owners.set(key, span)
+        }
+      }
       for (const { spanData: span } of nodes.values()) {
         const callID = uniqueToolCallID(span, nodes)
         if (!callID) continue
@@ -244,22 +260,13 @@
     })()
     return () => controller.abort()
   })
-  function selectActivity(
-    record: TimelineRecord,
-    span: SpanTiming,
-    row?: EvalOutlineRow
-  ) {
-    if (record.kind === 'annotation') {
-      if (record.href) navigate(record.href)
-      else if (row) onSelect?.(row)
-      return
-    }
+  function selectActivity(record: TimelineRecord, span: SpanTiming) {
     const params = new URLSearchParams({ span: span.spanID })
     if (record.kind === 'event') params.set('event', String(record.eventIndex))
     else params.set('log', record.log.logRef)
     navigate(`/traces/${span.traceID}?${params}`)
   }
-  $effect(() => onTraceViews?.(traceViews, timingsLoading))
+  $effect(() => onTraceViews?.(traceViews, timingsLoading, correlationLogs))
   const timingKey = referenceKey
   const timingFor = (reference?: TelemetryReference) => {
     const node = resolveEvalReference(reference, traceIndex)
@@ -690,17 +697,14 @@
         <EvalTimelineMarkers
           records={evalTimelineRecords(
             node,
-            traceIndex.nodes,
-            timelineLogs.get(span.traceID.toLowerCase()) ?? [],
-            correlationLogs,
-            row
+            timelineLogs.get(span.traceID.toLowerCase()) ?? []
           )}
           start={origin}
           end={origin + maximumDuration}
           spanStart={span.startTime}
           color={spanColors[referenceKey(span)] ??
             spanTimingColor(span, themeSignal.value)}
-          onSelect={record => selectActivity(record, span, row)}
+          onSelect={record => selectActivity(record, span)}
         />
       {/if}
     {/if}
@@ -724,17 +728,19 @@
       {@render headerActions?.()}
       <div class="header-controls" role="radiogroup" aria-label="Eval view">
         {#each views as item, index (item.id)}
+          {@const label = item.id === 'cost' ? 'Cost · CAD est.' : item.label}
           <button
             type="button"
             role="radio"
+            aria-label={label}
             class="btn btn-xs header-tab header-toggle tooltip tooltip-left"
             aria-checked={viewKey === item.id}
             disabled={!availableViews[item.id]}
             tabindex={viewKey === item.id ? 0 : -1}
             aria-controls={panelID}
             data-tip={availableViews[item.id]
-              ? item.label
-              : `${item.label}: no recorded data`}
+              ? label
+              : `${label}: no recorded data`}
             onclick={() => (viewKey = item.id)}
             onkeydown={event => selectView(event, index)}
           >
@@ -746,7 +752,12 @@
                 aria-hidden="true"
               />
             </span>
-            <span class="header-tab__label">{item.label}</span>
+            <span class="header-tab__label"
+              >{item.label}{#if item.id === 'cost'}<span
+                  class:text-rp-subtle={availableViews[item.id]}
+                  >{' · CAD est.'}</span
+                >{/if}</span
+            >
           </button>
         {/each}
       </div>

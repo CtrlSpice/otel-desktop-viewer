@@ -1,4 +1,5 @@
 import { startDrag, type DragHandle } from './drag'
+import { tick } from 'svelte'
 import {
   remToPx,
   resolvePanelResize,
@@ -6,6 +7,7 @@ import {
 } from '@/state/panel-width'
 
 export const DETAIL_STACK = Symbol('detail-stack')
+export const DETAIL_SECTION = Symbol('detail-section')
 
 type Section = {
   id: string
@@ -37,74 +39,128 @@ function loadWeights(key: string): Record<string, number> {
   }
 }
 
-/** Shared panel dragging with ordered content transfer:
- * fixed headers → nearest receiver → nearest open donor → resistance → next donor.
- * Open sections fill the stack; only the resize controller commits drag state.
- */
+/** One layout owner: the primary section stays open; remaining sections group
+ * as open, closed available, then inactive.
+ * Keys retain mounted content. Only open neighbours exchange space during drag;
+ * disclosure/group changes commit on release. */
 export function createDetailStackState(storageKey: string) {
   let sections = $state<Section[]>([])
   let weights = $state(loadWeights(storageKey))
   let dragging = $state<string | null>(null)
-  let keyboard = $state(false)
   let previewSizes = $state<Record<string, number> | null>(null)
   let drag: DragHandle | undefined
+  let order: string[] = []
+
+  const opened = () =>
+    sections.filter(section => section.available() && section.expanded())
+  const primary = () =>
+    sections.find(section => section.id === order[0]) ?? sections[0]
+  const group = (section?: Section) =>
+    !section ? 0 : !section.available() ? 2 : section.expanded() ? 0 : 1
+  function preserveFocus() {
+    const focused =
+      document.activeElement instanceof HTMLElement &&
+      sections.some(section => section.element.contains(document.activeElement))
+        ? document.activeElement
+        : undefined
+    void tick().then(() => {
+      if (focused?.isConnected && document.activeElement === document.body)
+        focused.focus({ preventScroll: true })
+    })
+  }
 
   function previous(id: string) {
     const index = sections.findIndex(section => section.id === id)
-    return sections.slice(0, index).findLast(section => section.available())
+    return sections
+      .slice(0, index)
+      .findLast(section => section.available() && section.expanded())
   }
 
   function sides(id: string) {
-    const boundary = sections.findIndex(section => section.id === id)
+    const open = opened()
+    const boundary = open.findIndex(section => section.id === id)
     if (boundary < 0) return
-    const above = sections
-      .slice(0, boundary + 1)
-      .filter(section => section.available())
-      .reverse()
-    const below = sections
-      .slice(boundary + 1)
-      .filter(section => section.available())
-    return above.length && below.length ? { above, below } : undefined
-  }
-
-  function collapseReceiver(id: string) {
-    const available = sections.filter(section => section.available())
-    const index = available.findIndex(section => section.id === id)
-    if (index < 0) return
-    const below = available.slice(index + 1)
-    const above = available.slice(0, index).reverse()
-    const candidates =
-      index <= (available.length - 1) / 2
-        ? [...below, ...above]
-        : [...above, ...below]
-    return candidates.find(section => section.available())
+    const above = open[boundary]!
+    const below = open[boundary + 1]
+    return below ? { above, below } : undefined
   }
 
   function canClose(id: string) {
-    return Boolean(collapseReceiver(id))
+    return id !== primary()?.id && Boolean(previous(id))
   }
 
-  function setOpen(id: string, open: boolean, immediate = false) {
+  function setOpen(id: string, open: boolean) {
     const section = sections.find(candidate => candidate.id === id)
     if (!section?.available()) return
     drag?.cancel()
-    keyboard = immediate
+    if (!open && !canClose(id)) {
+      section.setExpanded(true)
+      return
+    }
+    if (section.expanded() === open) {
+      section.setExpanded(open)
+      return
+    }
+    preserveFocus()
     if (open) {
+      const current = opened()
+      const total = current.reduce((sum, item) => sum + weight(item), 0)
+      const contentHeight = current.reduce(
+        (sum, item) =>
+          sum +
+          Math.max(
+            0,
+            item.element.getBoundingClientRect().height -
+              (item.element
+                .querySelector('.detail-bubble__heading')
+                ?.getBoundingClientRect().height ?? 0)
+          ),
+        0
+      )
+      const minimum =
+        contentHeight > 0
+          ? Math.min(1 / (current.length + 1), remToPx(3.5) / contentHeight)
+          : 0
+      const remembered =
+        weights[section.layoutKey ?? section.label] ?? 1 / (current.length + 1)
+      const desired = Math.min(
+        1 - minimum * current.length,
+        remembered > 1 ? remembered / (total + remembered) : remembered
+      )
+      const updated = { ...weights }
+      for (const item of current)
+        updated[item.layoutKey ?? item.label] = weight(item) / total
+      let remaining = desired
+      const index = sections.indexOf(section)
+      const donors = [
+        ...current.filter(item => sections.indexOf(item) < index).reverse(),
+        ...current.filter(item => sections.indexOf(item) > index),
+      ]
+      for (const donor of donors) {
+        const key = donor.layoutKey ?? donor.label
+        const transfer = Math.min(
+          remaining,
+          Math.max(0, updated[key] - minimum)
+        )
+        updated[key] -= transfer
+        remaining -= transfer
+      }
+      updated[section.layoutKey ?? section.label] = current.length
+        ? desired - remaining
+        : 1
+      weights = updated
       section.setExpanded(true)
+      save()
       return
     }
-    const receiver = collapseReceiver(id)
-    if (!receiver) {
-      section.setExpanded(true)
-      return
-    }
-    if (!section.expanded()) return
-    // A heading collapse hands its entire allocation to one neighbour.
-    // Open the receiver first so the stack never has an all-closed state.
-    const received =
-      (receiver.expanded() ? weight(receiver) : 0) + weight(section)
-    weights = { ...weights, [receiver.layoutKey ?? receiver.label]: received }
-    receiver.setExpanded(true)
+    const receiver = previous(id)!
+    const total = opened().reduce((sum, item) => sum + weight(item), 0)
+    const updated = { ...weights }
+    for (const item of opened())
+      updated[item.layoutKey ?? item.label] = weight(item) / total
+    updated[receiver.layoutKey ?? receiver.label] +=
+      updated[section.layoutKey ?? section.label]
+    weights = updated
     section.setExpanded(false)
     save()
   }
@@ -112,8 +168,7 @@ export function createDetailStackState(storageKey: string) {
   function weight(section: Section) {
     return (
       weights[section.layoutKey ?? section.label] ??
-      1 /
-        Math.max(1, sections.filter(candidate => candidate.available()).length)
+      1 / Math.max(1, opened().length)
     )
   }
 
@@ -129,7 +184,7 @@ export function createDetailStackState(storageKey: string) {
     const groups = sides(id)
     if (!groups) return
     const { above, below } = groups
-    // Headers never move out of order. Only the content space crosses a divider.
+    // Group/order stays fixed until release. Only open content crosses the boundary.
     const headers = new Map(
       sections.map(section => [
         section.id,
@@ -140,15 +195,15 @@ export function createDetailStackState(storageKey: string) {
     )
     const initial = new Map(
       sections.map(section => {
-        // A closing section can still occupy space while its transition runs.
-        // Interrupt from that rendered allocation, rather than its target state.
-        const height = section.available()
-          ? Math.max(
-              0,
-              section.element.getBoundingClientRect().height -
-                headers.get(section.id)!
-            )
-          : 0
+        // Closed and inactive headers never contribute resize space.
+        const height =
+          section.available() && section.expanded()
+            ? Math.max(
+                0,
+                section.element.getBoundingClientRect().height -
+                  headers.get(section.id)!
+              )
+            : 0
         return [section.id, height] as const
       })
     )
@@ -156,13 +211,15 @@ export function createDetailStackState(storageKey: string) {
     if (total <= 0) return
     let lastDelta = 0
     const remembered = { ...weights }
+    for (const section of opened())
+      remembered[section.layoutKey ?? section.label] =
+        initial.get(section.id)! / total
     const layoutKeys = new Map(
       sections.map(section => [section.id, section.layoutKey ?? section.label])
     )
 
     function preview(sizes: Map<string, number>) {
-      // Fixed pixel previews keep unrelated sections still instead of making
-      // flex growers compete, including while interrupting a settling layout.
+      // Fixed pixel previews keep unrelated sections still during resizing.
       previewSizes = Object.fromEntries(
         [...sizes].map(([sectionID, height]) => [
           sectionID,
@@ -174,11 +231,11 @@ export function createDetailStackState(storageKey: string) {
     function commit(sizes: Map<string, number>, settle: boolean) {
       const updated = { ...remembered }
       for (const section of sections) {
-        if (!section.available()) continue
+        if (!section.available() || !section.expanded()) continue
         const height = sizes.get(section.id) ?? 0
         // Keep the last useful size for reopening with the heading.
         if (height > 0) updated[layoutKeys.get(section.id)!] = height / total
-        section.setExpanded(height > 0)
+        if (settle) section.setExpanded(height > 0)
       }
       if (settle) {
         weights = updated
@@ -191,41 +248,49 @@ export function createDetailStackState(storageKey: string) {
     function apply(delta: number, settle = false) {
       lastDelta = delta
       const sizes = new Map(initial)
-      const receivers = delta >= 0 ? above : below
-      const donors = delta >= 0 ? below : above
-      const receiver = receivers[0]!
-      let remaining = Math.abs(delta)
-      for (const donor of donors) {
-        const height = sizes.get(donor.id) ?? 0
-        if (height <= 0 || remaining <= 0) continue
-        const resized = resolvePanelResize(
-          height - remaining,
-          Math.min(remToPx(3.5), height),
-          total,
-          remToPx(PANEL_CLOSE_OVERSHOOT_REM)
-        )
-        const nextHeight = settle
-          ? resized.collapsed
-            ? 0
-            : resized.size
-          : resized.preview
-        const transfer = height - nextHeight
-        sizes.set(donor.id, nextHeight)
-        sizes.set(receiver.id, (sizes.get(receiver.id) ?? 0) + transfer)
-        remaining = resized.remainingCloseTravel
-      }
+      const receiver = delta >= 0 ? above : below
+      const donor = delta >= 0 ? below : above
+      const height = initial.get(donor.id)!
+      const resized = resolvePanelResize(
+        height - Math.abs(delta),
+        Math.min(remToPx(3.5), height),
+        total,
+        remToPx(PANEL_CLOSE_OVERSHOOT_REM)
+      )
+      const nextHeight =
+        donor.id === primary()?.id
+          ? resized.size
+          : settle
+            ? resized.collapsed
+              ? 0
+              : resized.size
+            : resized.preview
+      sizes.set(donor.id, nextHeight)
+      sizes.set(receiver.id, initial.get(receiver.id)! + height - nextHeight)
       commit(sizes, settle)
     }
 
     return {
       total,
       apply,
-      freeze: () => preview(initial),
       finish: () => apply(lastDelta, true),
     }
   }
 
   return {
+    setOrder(keys: string[]) {
+      order = keys
+      sections = [...sections].sort(
+        (a, b) => order.indexOf(a.id) - order.indexOf(b.id)
+      )
+    },
+    ordered<T extends { id: string }>(slots: T[]) {
+      return [...slots].sort(
+        (a, b) =>
+          group(sections.find(section => section.id === a.id)) -
+          group(sections.find(section => section.id === b.id))
+      )
+    },
     setStorageKey(key: string) {
       if (key === storageKey) return
       // Finish any resize in its original layout before loading the next one.
@@ -237,17 +302,10 @@ export function createDetailStackState(storageKey: string) {
     get dragging() {
       return dragging
     },
-    get immediate() {
-      return keyboard || dragging !== null
-    },
     register(section: Section) {
-      // Conditional sections can mount after siblings that follow them on screen.
-      // Boundaries and collapse handoffs follow document order, not mount order.
-      sections = [...sections, section].sort((a, b) => {
-        const position = a.element.compareDocumentPosition(b.element)
-        if (position & Node.DOCUMENT_POSITION_DISCONNECTED) return 0
-        return position & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1
-      })
+      sections = [...sections, section].sort(
+        (a, b) => order.indexOf(a.id) - order.indexOf(b.id)
+      )
       return () => {
         drag?.cancel()
         sections = sections.filter(candidate => candidate.id !== section.id)
@@ -257,7 +315,9 @@ export function createDetailStackState(storageKey: string) {
     canClose,
     setOpen,
     ensureOpen() {
-      if (!sections.some(section => section.expanded())) {
+      const first = primary()
+      if (first?.available() && !first.expanded()) first.setExpanded(true)
+      if (!opened().length) {
         sections.find(section => section.available())?.setExpanded(true)
       }
     },
@@ -267,19 +327,15 @@ export function createDetailStackState(storageKey: string) {
       const section = sections.find(candidate => candidate.id === id)
       if (!section?.expanded()) return '0 0 var(--pane-header-h)'
       const total = sections
-        .filter(candidate => candidate.expanded())
+        .filter(candidate => candidate.available() && candidate.expanded())
         .reduce((sum, candidate) => sum + weight(candidate), 0)
       return `${(100 * weight(section)) / total} 1 var(--pane-header-h)`
     },
     start(id: string, event: PointerEvent, onDrag: () => void) {
       if (event.button !== 0) return
       drag?.cancel()
-      keyboard = false
       const sizes = snapshot(id)
       if (!sizes) return
-      // Freeze at the press, before the click threshold: a settling transition
-      // must not keep moving the boundary beneath a stationary pointer.
-      sizes.freeze()
       dragging = id
       let moved = false
       drag = startDrag(event, {
@@ -294,6 +350,7 @@ export function createDetailStackState(storageKey: string) {
           sizes.apply(delta)
         },
         onEnd: () => {
+          preserveFocus()
           if (moved) {
             sizes.finish()
             save()
@@ -304,11 +361,18 @@ export function createDetailStackState(storageKey: string) {
       })
     },
     keydown(id: string, event: KeyboardEvent) {
+      if (event.key === '0') {
+        event.preventDefault()
+        drag?.cancel()
+        weights = {}
+        save()
+        return
+      }
       if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
       drag?.cancel()
       const sizes = snapshot(id)
       if (!sizes) return
-      keyboard = true
+      preserveFocus()
       event.preventDefault()
       const step = sizes.total * (event.shiftKey ? 0.05 : 0.01)
       sizes.apply(
@@ -321,12 +385,6 @@ export function createDetailStackState(storageKey: string) {
               : step
       )
       sizes.finish()
-      save()
-    },
-    reset() {
-      drag?.cancel()
-      keyboard = false
-      weights = {}
       save()
     },
     destroy() {

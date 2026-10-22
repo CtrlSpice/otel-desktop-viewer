@@ -72,10 +72,12 @@
       strokeWidth={1.5}
     />{/snippet}
 
-  <DetailStack label="Metric details" storageKey="metric-detail-section-sizes">
+  {#snippet seriesSection()}
     <DetailBubble label="Series" icon={seriesIcon} count={seriesCount}>
       <TimeseriesPanel />
     </DetailBubble>
+  {/snippet}
+  {#snippet metricSection()}
     <DetailBubble label="Metric" icon={metricIcon}>
       {#snippet action()}
         <DetailViewTabs id={detailViewID} bind:view={detailView}>
@@ -215,7 +217,15 @@
         </table>
       </DetailViews>
     </DetailBubble>
-  </DetailStack>
+  {/snippet}
+  <DetailStack
+    label="Metric details"
+    storageKey="metric-detail-section-sizes"
+    sections={[
+      { id: 'series', content: seriesSection },
+      { id: 'metric', content: metricSection },
+    ]}
+  />
 {/if}
 
 <style lang="postcss">

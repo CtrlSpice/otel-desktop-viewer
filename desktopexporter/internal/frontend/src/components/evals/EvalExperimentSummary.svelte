@@ -20,11 +20,7 @@
 </script>
 
 {#snippet outcomeSummary()}
-  <OutcomeBar
-    parts={experiment.outcomes}
-    label={experiment.outcomeLabel}
-    onsegmentclick={() => onclick(experiment.id)}
-  />
+  <OutcomeBar parts={experiment.outcomes} label={experiment.outcomeLabel} />
 {/snippet}
 
 {#snippet startDate()}
@@ -34,9 +30,7 @@
 <SignalCard
   id={experiment.id}
   title={experiment.name}
-  interactiveSubtitle={experiment.state === 'Planned'
-    ? undefined
-    : outcomeSummary}
+  subtitleContent={experiment.state === 'Planned' ? undefined : outcomeSummary}
   date={Number.isFinite(started) ? startDate : undefined}
   {selected}
   {onclick}

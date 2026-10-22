@@ -127,11 +127,7 @@
     )
     untrack(() => {
       const disclosure = target?.closest('details')
-      if (disclosure && !disclosure.open) {
-        disclosure.open = true
-        // Sync DetailStack before the child panels' pending scroll effects run.
-        disclosure.dispatchEvent(new Event('toggle'))
-      }
+      if (disclosure) disclosure.open = true
     })
     let cancelled = false
     void tick().then(() => {
@@ -195,7 +191,7 @@
       strokeWidth={1.5}
     />{/snippet}
 
-  <DetailStack label="Span details" storageKey="trace-detail-section-sizes">
+  {#snippet spanSection()}
     <DetailBubble label="Span" icon={spanIcon}>
       {#snippet labelSuffix()}{#if isRoot}<span class="text-secondary"
             >· root</span
@@ -461,6 +457,8 @@
         </table>
       </DetailViews>
     </DetailBubble>
+  {/snippet}
+  {#snippet eventsSection()}
     <DetailBubble label="Events" icon={eventsIcon} count={numCombinedEvents}>
       {#if numCombinedEvents === 0}
         <p class="detail-view__section-empty">
@@ -477,6 +475,8 @@
         />
       {/if}
     </DetailBubble>
+  {/snippet}
+  {#snippet linksSection()}
     <DetailBubble label="Links" icon={linksIcon} count={numLinks}>
       {#if numLinks === 0}
         <p class="detail-view__section-empty">
@@ -489,7 +489,16 @@
         />
       {/if}
     </DetailBubble>
-  </DetailStack>
+  {/snippet}
+  <DetailStack
+    label="Span details"
+    storageKey="trace-detail-section-sizes"
+    sections={[
+      { id: 'span', content: spanSection },
+      { id: 'events', content: eventsSection },
+      { id: 'links', content: linksSection },
+    ]}
+  />
 {:else}
   <div class="detail-view detail-view--empty">
     <p class="detail-view__empty">No span selected</p>

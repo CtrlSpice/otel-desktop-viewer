@@ -41,7 +41,8 @@ export type EvalTool = {
 export type EvalEventTool = {
   callID: string
   parent: TelemetryReference
-  eventIndex: number
+  eventIndex?: number
+  logRef?: string
   failed?: boolean
 }
 
@@ -68,7 +69,7 @@ type EvalExecutionEvidence = {
   error?: string
   assessments: Assessment[]
   tools: EvalTool[]
-  /** Recorded parent-span events, kept distinct from native tool spans. */
+  /** Received log/span-event call evidence, kept distinct from native tool spans. */
   eventTools?: EvalEventTool[]
   /** False when the source supplies no tool-call evidence. */
   toolsKnown?: boolean

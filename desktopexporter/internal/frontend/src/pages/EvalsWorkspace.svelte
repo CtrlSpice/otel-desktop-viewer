@@ -59,7 +59,7 @@
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
   import type { ImportFailure } from '@/types/import-types'
   import { detailPanel } from '@/state/detail-panel.svelte'
-  import type { TraceData } from '@/types/api-types'
+  import type { LogData, TraceData } from '@/types/api-types'
   import type { EvalExperiment, EvalView } from '@/components/evals/model'
   import { onEvalExperimentsChanged } from '@/services/import-service'
   import { evalQuery } from '@/components/evals/eval-query'
@@ -244,11 +244,16 @@
   )
   let resolvedRow = $state<EvalOutlineRow>()
   let traceViews = $state<TraceData[]>([])
+  let toolLogs = $state<LogData[]>([])
   let telemetryLoading = $state(false)
   const telemetryNodes = $derived(indexEvalTraces(traceViews).nodes)
   const detailExperiment = $derived(
     experiment
-      ? projectEvalTraceEvidence(experiment, indexEvalTraces(traceViews))
+      ? projectEvalTraceEvidence(
+          experiment,
+          indexEvalTraces(traceViews),
+          toolLogs
+        )
       : undefined
   )
   let evalView = $state<EvalView>('results')
@@ -421,6 +426,7 @@
     void experiment?.id
     resolvedRow = undefined
     traceViews = []
+    toolLogs = []
     telemetryLoading = false
   })
 
@@ -660,8 +666,9 @@
           selectedRowID={detailRowID}
           onSelect={selectRow}
           onResolveSelection={row => (resolvedRow = row)}
-          onTraceViews={(traces, loading) => {
+          onTraceViews={(traces, loading, logs) => {
             traceViews = traces
+            toolLogs = logs
             telemetryLoading = loading
           }}
         />

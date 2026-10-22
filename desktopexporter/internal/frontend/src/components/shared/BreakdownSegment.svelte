@@ -6,30 +6,27 @@
     part,
     unit,
     single = false,
-    onclick,
   }: {
     part: BubbleBreakdownPart
     unit: string
     single?: boolean
-    onclick?: () => void
   } = $props()
   const tooltipID = $props.id()
-  let trigger = $state<HTMLButtonElement>()
+  let trigger = $state<HTMLSpanElement>()
   let tooltip = $state<HTMLDivElement>()
   let open = $state(false)
-  let toggling = false
   let closeTimer: ReturnType<typeof setTimeout> | undefined
 
   function show() {
     clearTimeout(closeTimer)
-    if (!toggling && !tooltip?.matches(':popover-open')) tooltip?.showPopover()
+    if (!tooltip?.matches(':popover-open')) tooltip?.showPopover()
   }
 
   function scheduleClose() {
     clearTimeout(closeTimer)
     closeTimer = setTimeout(() => {
       if (
-        trigger?.matches(':hover, :focus') ||
+        trigger?.matches(':hover') ||
         tooltip?.matches(':hover, :focus-within')
       )
         return
@@ -45,46 +42,35 @@
       anchor: 'below-end',
       onOpenChange: value => {
         open = value
-        toggling = false
       },
     })
   })
   $effect(() => () => clearTimeout(closeTimer))
 </script>
 
-<button
+<span
   bind:this={trigger}
-  type="button"
   class="breakdown-segment"
   class:breakdown-segment--single={single}
   style:flex={part.count}
   style:--part-color={part.color}
+  role="img"
   aria-label={`${part.label}: ${part.count.toLocaleString()} ${unit}${part.count === 1 ? '' : 's'}`}
   aria-describedby={open ? tooltipID : undefined}
   onpointerenter={show}
   onpointerleave={scheduleClose}
-  onfocus={show}
-  onblur={scheduleClose}
-  onclick={() => {
-    show()
-    onclick?.()
-  }}
 >
   <span class="breakdown-segment__fill" aria-hidden="true"></span>
-  {#if single}<span class="min-w-0 truncate text-rp-subtle">{part.label}</span
+  {#if single}<span class="min-w-0 truncate text-rp-subtle" aria-hidden="true"
+      >{part.label}</span
     >{/if}
-</button>
+</span>
 <div
   bind:this={tooltip}
   id={tooltipID}
   popover="auto"
   role="tooltip"
   class="anchor-popover anchor-popover--anchored breakdown-tooltip"
-  onbeforetoggle={() => {
-    // Native toggling can restore focus to the trigger. Wait for its toggle
-    // event before allowing that focus handler to start another operation.
-    toggling = true
-  }}
   onpointerenter={show}
   onpointerleave={scheduleClose}
   onfocusout={scheduleClose}
@@ -117,10 +103,6 @@
   }
   .breakdown-segment--single .breakdown-segment__fill {
     @apply w-2 shrink-0;
-  }
-  .breakdown-segment:focus-visible {
-    outline: 2px solid var(--color-primary);
-    outline-offset: -2px;
   }
   .breakdown-tooltip {
     @apply overflow-y-auto px-3 py-2 font-normal;

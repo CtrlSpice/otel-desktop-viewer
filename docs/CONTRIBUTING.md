@@ -12,6 +12,14 @@ Please read the [Code of Conduct](CODE_OF_CONDUCT.md) first.
 - Preserve the repository's architecture, interaction patterns, accessibility, and generated-file conventions.
 - Keep pull requests small enough to review and verify with confidence.
 
+### Documentation and private notes
+
+`docs/` is live documentation for functionality on `main`, not proposals or
+roadmaps. Keep plans, research, drafts, and handoffs in `notes/`, which is private
+local material excluded from Git. Do not commit or publish those notes, or link
+to them from public documentation. When functionality lands on `main`, document
+its implemented behavior in `docs/`.
+
 ### AI tools and coding agents
 
 AI tools and coding agents are allowed. Contributors must review and understand their output, keep it within the agreed scope, and test every behavioral change.

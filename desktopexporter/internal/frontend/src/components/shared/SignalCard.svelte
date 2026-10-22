@@ -17,8 +17,6 @@
     wrapTitle?: boolean
     subtitle?: string
     subtitleContent?: Snippet
-    /** Independent controls below the title, outside the card selection button. */
-    interactiveSubtitle?: Snippet
     /** Full-width date between identity and description. */
     date?: Snippet
     /** `plain`: value grid. `interval`: Start + Duration (traces). `labeled`: one labeled timestamp (logs/metrics). */
@@ -61,7 +59,6 @@
     wrapTitle = false,
     subtitle,
     subtitleContent,
-    interactiveSubtitle,
     date,
     timeLayout = 'plain',
     timestampLabel,
@@ -102,9 +99,9 @@
       {/if}
     </div>
 
-    {#if !interactiveSubtitle && subtitleContent}
+    {#if subtitleContent}
       {@render subtitleContent()}
-    {:else if !interactiveSubtitle && subtitle}
+    {:else if subtitle}
       <div class="signal-row__subtitle" title={subtitle}>{subtitle}</div>
     {/if}
   </div>
@@ -196,63 +193,31 @@
   </div>
 {/snippet}
 
-{#snippet card()}
-  {#if href}
-    <a
-      href={disabled ? undefined : href}
-      role={disabled ? 'link' : undefined}
-      aria-disabled={disabled || undefined}
-      tabindex={disabled ? -1 : undefined}
-      class="signal-row {selected ? 'signal-row--selected' : ''}"
-      class:item-state={!disabled}
-      class:signal-row--interactive-subtitle={!!interactiveSubtitle}
-      >{@render cardContent()}</a
-    >
-  {:else}
-    <button
-      type="button"
-      {disabled}
-      class="signal-row item-state {selected ? 'signal-row--selected' : ''}"
-      class:signal-row--interactive-subtitle={!!interactiveSubtitle}
-      onclick={() => onclick?.(id)}
-      aria-pressed={expanded === undefined ? selected : undefined}
-      aria-expanded={expanded}
-      aria-controls={controls}>{@render cardContent()}</button
-    >
-  {/if}
-{/snippet}
-
-{#if interactiveSubtitle}
-  <div class="signal-card-shell">
-    {@render card()}
-    <div class="signal-card-shell__subtitle">
-      {@render interactiveSubtitle()}
-    </div>
-  </div>
+{#if href}
+  <a
+    href={disabled ? undefined : href}
+    role={disabled ? 'link' : undefined}
+    aria-disabled={disabled || undefined}
+    tabindex={disabled ? -1 : undefined}
+    class="signal-row {selected ? 'signal-row--selected' : ''}"
+    data-selected={selected || undefined}
+    class:item-state={!disabled}>{@render cardContent()}</a
+  >
 {:else}
-  {@render card()}
+  <button
+    type="button"
+    {disabled}
+    class="signal-row item-state {selected ? 'signal-row--selected' : ''}"
+    data-selected={selected || undefined}
+    onclick={() => onclick?.(id)}
+    aria-pressed={expanded === undefined ? selected : undefined}
+    aria-expanded={expanded}
+    aria-controls={controls}>{@render cardContent()}</button
+  >
 {/if}
 
 <style lang="postcss">
   @reference "../../app.css";
-
-  /* A shared grid keeps independent disclosure controls inside the visual card
-     without nesting their buttons inside the card's selection button. */
-  .signal-card-shell {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto auto;
-    min-width: 0;
-  }
-
-  /* Independent subtitle controls share the parent card's hover surface. */
-  .signal-card-shell:hover > .signal-row:not(.signal-row--selected) {
-    --item-state-bg: var(--item-hover-bg);
-  }
-
-  .signal-row.signal-row--selected {
-    --item-state-bg: var(--item-selected-bg);
-  }
 
   .signal-row[aria-disabled='true'] {
     cursor: default;
@@ -262,41 +227,8 @@
     @apply flex min-w-0 flex-col;
   }
 
-  .signal-row.signal-row--interactive-subtitle {
-    display: grid;
-    grid-area: 1 / 1 / 4 / 2;
-    grid-template-rows: subgrid;
-    min-width: 0;
-  }
-
-  .signal-row--interactive-subtitle .signal-row__identity {
-    grid-row: 1;
-  }
-
-  .signal-row--interactive-subtitle .signal-row__body {
-    grid-row: 3;
-  }
-
-  .signal-card-shell__subtitle {
-    grid-area: 2 / 1;
-    z-index: 1;
-    min-width: 0;
-    margin-inline: 0.75rem;
-    pointer-events: none;
-  }
-
-  .signal-row :global(.identifier),
-  .signal-card-shell__subtitle :global(.identifier) {
+  .signal-row :global(.identifier) {
     color: var(--color-subtle);
-  }
-
-  /* Static label space remains part of the card's click target. Only the
-     independent controls and hover titles intercept that selection button. */
-  .signal-card-shell__subtitle
-    :global(
-      :is(button, a, input, select, textarea, label, [tabindex], [title])
-    ) {
-    pointer-events: auto;
   }
 
   .signal-row {

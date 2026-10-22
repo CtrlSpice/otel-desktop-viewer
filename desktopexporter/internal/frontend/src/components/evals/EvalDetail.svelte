@@ -70,8 +70,7 @@
   )
 </script>
 
-<!-- Retain the saved layout key across the terminology rename. -->
-<DetailStack label="Experiment details" storageKey="eval-run-detail-layout">
+{#snippet experimentSection()}
   <DetailBubble label={experiment.name} layoutKey="Experiment">
     {#snippet labelSuffix()}<span class="text-secondary">· experiment</span
       >{/snippet}
@@ -175,6 +174,8 @@
       </tbody>
     </table>
   </DetailBubble>
+{/snippet}
+{#snippet configurationSection()}
   <DetailBubble
     label="Configuration"
     initialOpen={false}
@@ -191,6 +192,8 @@
       >
     </table>
   </DetailBubble>
+{/snippet}
+{#snippet gradingSection()}
   <DetailBubble label="Grading" initialOpen={false}>
     <table
       class="detail-fields w-full"
@@ -205,6 +208,8 @@
       </tbody>
     </table>
   </DetailBubble>
+{/snippet}
+{#snippet costSection()}
   <DetailBubble
     label="Cost"
     initialOpen={false}
@@ -225,6 +230,8 @@
       </tbody>
     </table>
   </DetailBubble>
+{/snippet}
+{#snippet telemetrySection()}
   <EvalTelemetrySection
     entries={references}
     nodes={telemetryNodes}
@@ -232,4 +239,16 @@
     wholeTraces
     evidenceLogs={[]}
   />
-</DetailStack>
+{/snippet}
+<!-- Retain the saved layout key across the terminology rename. -->
+<DetailStack
+  label="Experiment details"
+  storageKey="eval-run-detail-layout"
+  sections={[
+    { id: 'experiment', content: experimentSection },
+    { id: 'configuration', content: configurationSection },
+    { id: 'grading', content: gradingSection },
+    { id: 'cost', content: costSection },
+    { id: 'telemetry', content: telemetrySection },
+  ]}
+/>

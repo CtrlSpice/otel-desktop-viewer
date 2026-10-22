@@ -5,10 +5,12 @@ import { spawn, execFileSync } from 'node:child_process'
 import { once } from 'node:events'
 import { pathToFileURL } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
-import { context as otelContext, propagation, trace } from '@opentelemetry/api'
+import { context as otelContext, propagation } from '@opentelemetry/api'
+import { exportToolLogs, missingToolLogs } from './tool-logs.ts'
 import { stopOwnedGroup } from './run-cancellation.ts'
 import { aggregateUsage, toolEvidence } from './opencode-v2-evidence.mjs'
 import { openV2EventStream } from './opencode-v2-stream.mjs'
+import { nativeTelemetryReceiver, readNativeTelemetry, nativeTelemetryBoundaries } from './opencode-v2-telemetry.mjs'
 
 export const V2_BINARY = '/Users/moya/Library/Application Support/ai.opencode.desktop/cli/2.0.29-arm64/opencode-cli'
 const children = new Set()
@@ -30,6 +32,39 @@ export default class OpenCodeV2Provider {
     fs.mkdirSync(path.join(root, 'runs'), { recursive: true, mode: 0o700 })
     const evidence = fs.mkdtempSync(path.join(root, 'runs/investigator-opencode-v2-'))
     fs.chmodSync(evidence, 0o700)
+    let telemetry
+    try {
+      if (this.config.telemetryForward) telemetry = await nativeTelemetryReceiver(evidence, this.config.telemetryForward)
+      return await this.callAttempt(prompt, context, options, root, evidence, telemetry?.endpoint ?? this.config.telemetryEndpoint, telemetry)
+    } catch (error) {
+      // Preflight/lifecycle failures must remain ordinary error rows, retaining
+      // slot identity so subsequent scheduled repetitions can run normally.
+      const carrier = {}; propagation.inject(otelContext.active(), carrier)
+      const identityFile = path.join(evidence, 'identity.json')
+      if (!fs.existsSync(identityFile)) fs.writeFileSync(identityFile, JSON.stringify({ task: context.vars?.task_id, provider: this.id(), role: 'investigator',
+        promptfoo: { evaluationId: context.evaluationId, testIdx: context.testIdx, repeatIndex: context.repeatIndex, traceparent: carrier.traceparent ?? context.traceparent } }), { flag: 'wx', mode: 0o600 })
+      const response = { error: error instanceof Error ? error.message : String(error), metadata: {
+        runtime: 'opencode-v2', expectedRuntimeVersion: '2.0.29', role: 'investigator', model: 'openai/' + this.config.model,
+        task: context.vars?.task_id, evidence, workspace: path.join(evidence, 'workspace'), repeatIndex: context.repeatIndex,
+        exit: 'provider-exception', captureUnavailable: true,
+      } }
+      fs.writeFileSync(path.join(evidence, 'provider-exception.json'), JSON.stringify(response, null, 2), { flag: 'wx', mode: 0o600 })
+      if (!fs.existsSync(path.join(evidence, 'response.json'))) fs.writeFileSync(path.join(evidence, 'response.json'), JSON.stringify(response, null, 2), { flag: 'wx', mode: 0o600 })
+      return response
+    } finally {
+      if (telemetry) {
+        try {
+          await telemetry.close()
+          const identity = json(path.join(evidence, 'identity.json'))
+          fs.writeFileSync(path.join(evidence, 'native-telemetry-summary.json'), JSON.stringify(nativeTelemetryBoundaries(readNativeTelemetry(evidence, telemetry.receipts), identity.promptfoo.traceparent), null, 2), { flag: 'wx', mode: 0o600 })
+        } catch (error) {
+          fs.writeFileSync(path.join(evidence, 'native-telemetry-error.json'), JSON.stringify({ error: String(error), rawBytesRetained: true }), { flag: 'wx', mode: 0o600 })
+        }
+      }
+    }
+  }
+
+  async callAttempt(prompt, context, options, root, evidence, telemetryEndpoint, telemetry) {
     const save = (name, value) => fs.writeFileSync(path.join(evidence, name), typeof value === 'string' ? value : JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 })
     const env = { PATH: '/opt/homebrew/bin:/usr/bin:/bin', SHELL: '/bin/sh', LANG: 'en_US.UTF-8',
       OPENCODE_CONFIG_PROJECT_DISABLE: '1', OPENCODE_FILEWATCHER_DISABLE: '1' }
@@ -80,12 +115,12 @@ export default class OpenCodeV2Provider {
       `(deny file-write* (require-all (subpath ${JSON.stringify(boundary)}) (require-not (subpath ${JSON.stringify(evidence)}))))\n`
     ).join('')
     save('sandbox.sb', policy)
-    const parentSpan = trace.getSpan(otelContext.active())
+    const invocation = otelContext.active()
     const carrier = {}; propagation.inject(otelContext.active(), carrier)
     const traceparent = carrier.traceparent ?? context.traceparent
     if (traceparent && !/^00-[a-f0-9]{32}-[a-f0-9]{16}-0[01]$/.test(traceparent)) throw new Error('Invalid evaluation traceparent')
-    if (this.config.telemetryEndpoint) {
-      const endpoint = new URL(this.config.telemetryEndpoint)
+    if (telemetryEndpoint) {
+      const endpoint = new URL(telemetryEndpoint)
       if (endpoint.protocol !== 'http:' || endpoint.hostname !== '127.0.0.1' || endpoint.pathname !== '/') throw new Error('Native telemetry requires an owned loopback receiver')
       env.OTEL_EXPORTER_OTLP_ENDPOINT = endpoint.origin
       env.OPENCODE_CLIENT = 'viewer-eval-v2'
@@ -109,7 +144,7 @@ export default class OpenCodeV2Provider {
     options.abortSignal?.addEventListener('abort', abort, { once: true })
     const timer = setTimeout(() => { timedOut = true; deadline.abort() }, this.config.timeoutMs ?? 600000)
     const api = async (route, method = 'GET', body, name, signal = deadline.signal) => {
-      const response = await fetch(url + route, { method, headers: { Authorization: 'Basic ' + Buffer.from('opencode:' + password).toString('base64'), 'Content-Type': 'application/json', ...(this.config.telemetryEndpoint && traceparent ? { traceparent } : {}) },
+      const response = await fetch(url + route, { method, headers: { Authorization: 'Basic ' + Buffer.from('opencode:' + password).toString('base64'), 'Content-Type': 'application/json', ...(telemetryEndpoint && traceparent ? { traceparent } : {}) },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal })
       const raw = await response.text()
       if (name) save(name, redact(raw))
@@ -213,13 +248,19 @@ export default class OpenCodeV2Provider {
     const modelMismatch = assistants.some(message => message.model.providerID !== 'openai' || message.model.id !== this.config.model)
     const { usage, usageAvailability, tokenUsage } = aggregateUsage(assistants)
     const evidenceErrors = []
-    for (const tool of tools) {
+    const observedTimestamp = Date.now()
+    const toolLogs = tools.map(tool => {
       const event = toolEvidence(tool)
       evidenceErrors.push(...event.errors)
-      parentSpan?.addEvent('tool.execution', event.attributes, event.timestamp)
-    }
+      return { eventName: 'tool.execution', attributes: event.attributes, timestamp: event.timestamp, observedTimestamp }
+    })
+    save('tool-logs.json', toolLogs)
+    await telemetry?.flush()
+    const nativeSpans = telemetry ? readNativeTelemetry(evidence, telemetry.receipts).spans : []
+    const enrichment = traceparent ? missingToolLogs(toolLogs, traceparent.split('-')[1], nativeSpans) : toolLogs
+    await exportToolLogs(enrichment, invocation, 'OpenCode', path.basename(evidence))
     const metadata = { runtime: 'opencode-v2', runtimeVersion: '2.0.29', model: 'openai/' + this.config.model,
-      role: 'investigator', task: context.vars?.task_id, evidence, workspace, sessionID, usage, usageAvailability, evidenceErrors,
+      role: 'investigator', task: context.vars?.task_id, evidence, workspace, sessionID, repeatIndex: context.repeatIndex, usage, usageAvailability, evidenceErrors,
       elapsedSeconds: (performance.now() - started) / 1000, toolCalls: tools.length, failedToolCalls: tools.filter(tool => tool.state.status === 'error').length,
       exit: idle?.outcome ?? 'incomplete', errors, harnessBlocker,
     }

@@ -7,7 +7,7 @@
   import SignalDate from '@/components/shared/SignalDate.svelte'
   import { formatTimestamp } from '@/utils/time'
   import {
-    toolEventAnnotation,
+    toolEventProvenance,
     toolEventError,
     toolEventName,
   } from '@/utils/tool-event'
@@ -42,7 +42,7 @@
 
 {#each events as event, index (index)}
   {@const name = toolEventName(event)}
-  {@const annotation = toolEventAnnotation(event)}
+  {@const provenance = toolEventProvenance(event)}
   {@const exception = event.name === 'exception'}
   {@const message = event.attributes.find(
     attribute => attribute.key === 'exception.message'
@@ -74,11 +74,19 @@
             ></span>{/if}
           <span class="truncate">{name}</span>
           <span class="shrink-0 text-sm text-secondary"
-            ><span aria-hidden="true">{'· '}</span><span
-              title={annotation?.description}
-              >{annotation?.label ?? 'Span event'}</span
+            ><span class="text-rp-subtle" aria-hidden="true">{'· '}</span><span
+              >Span event</span
             ></span
           >
+          {#if provenance}
+            <span class="shrink-0 text-sm text-rp-subtle" aria-hidden="true"
+              >·</span
+            >
+            <span
+              class="shrink-0 text-sm text-secondary"
+              title={provenance.description}>{provenance.source}</span
+            >
+          {/if}
           {#if toolEventError(event)}<span class="shrink-0 text-sm"
               >· Tool error</span
             >{/if}

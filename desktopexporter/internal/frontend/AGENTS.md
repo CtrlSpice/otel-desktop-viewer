@@ -33,9 +33,9 @@
 - Shared item states use Highlight Low for hover and Highlight Medium for
   persistent selection. Hover temporarily uses Low even on selected items;
   leaving the item restores Medium. Text selection also uses Medium.
-  Signal cards keep Medium while selected, including under the pointer, so a
-  click shows selection immediately. Unselected cards share Low across the whole
-  parent card, including independent breakdown controls.
+  Signal cards use the same precedence: activation changes selection, but the
+  pointer keeps Low until it leaves, then selected cards show Medium. Cards share
+  Low across the whole parent card, including its tooltip-only breakdown bars.
   Text selection is transient; it does not use the persistent-selection token.
 - Buttons stay still on press and release. Use colour and focus feedback;
   remove DaisyUI's active press translation from buttons and controls that apply
@@ -84,6 +84,9 @@
   height or line-height overrides.
   Header tab groups add no outer padding; detail actions are vertically centred
   in their heading rather than positioned by a fixed top inset.
+  Properties/JSON Details tabs switch immediately. Apply the selected background
+  to the active tab itself; do not slide a shared indicator between these tabs or
+  animate their content on selection. Preserve keyboard tablist behavior.
   Header tabs share the 8px header gap. Reserve at least 16px for counters via
   the shared counter token; full counts may grow the slot. Known tab counts stay
   visible whether selected or inactive. Reserve the slot when a count is
@@ -131,6 +134,12 @@
   JSON quotes. Retain meaningful quotes/backslashes, and show empty strings as
   `""`. Raw JSON and explicit Copy/Download retain the original value. Keep the
   editor document and syntax tree intact for folding, search and exact numbers.
+  Shared value formatting recursively recognizes complete embedded JSON-like
+  containers, including runtime literals `undefined`, `NaN` and `Infinity`.
+  Use the same literal classification and palette in table previews and Details;
+  never add per-field or per-signal formatting exceptions. This is display-only:
+  keep received types, exact Copy/raw JSON, duplicate keys and numeric lexemes.
+  Do not evaluate code, coerce runtime literals to null, or parse prose as code.
   Keep header surfaces separate; retain shared hover and selection highlights.
   Structured attribute wrappers add no extra left padding. JSON uses the shared
   Hugeicons fold-caret gutter; retain existing folding commands and raw-inspector
@@ -178,9 +187,15 @@
   Timeline activity popover entries put the event/tool name or received log name
   (falling back to body preview) in Text, with the Subtle offset at the right and
   Subtle record type below. Retain the shared log severity dot and accessible label.
-  Viewer-only correlations say `Eval annotation`; put their timing provenance on
-  a separate line. Collected runtime tool records say `Reconstructed Pi annotation`
-  or `Reconstructed OpenCode annotation`, including when stored as OTel events.
+  Timeline markers represent stored span events and logs, with received ownership
+  and timestamps. Do not manufacture viewer-only annotation markers or place
+  assessments at span ends. Adapter-created tool enrichment is stored as named telemetry
+  logs with native trace/span correlation fields, not added to span events.
+  Genuine received span events retain their original signal and content.
+  Enrichment labels use name · kind · source, such as
+  `shell · Log event · OpenCode`. Pi/OpenCode identifies the runtime source,
+  not the record type or model provider. Retain reconstruction and timestamp
+  provenance in the source tooltip.
   Recorded `tool.is_error: true` adds neutral `Tool error` text, not warning dots
   or assessment outcomes. Tool names come only from received attributes.
   Align metadata under the title text after a dot when present. Keep chronological
@@ -224,27 +239,33 @@
   reads the database-wide materialized index.
   Evals experiment cards show name/state, an outcome bar and the shared date row when
   a valid start time is available.
-  Outcome-bar segments use the same compact hover/focus tooltips as trace-service
-  segments: coloured dot, status label and `[count]`. Keep segment controls outside
-  the card selection button. Hover/focus previews a status; activating a segment
-  also selects its parent experiment, with immediate selected highlighting.
+  Outcome-bar segments use the same compact hover tooltips as trace-service
+  segments: coloured dot, status label and `[count]`. Card breakdowns are
+  non-interactive content inside the card's native button or link. A bar click
+  bubbles to the card exactly once; do not select on pointerdown or add segment
+  filtering, pinning, click forwarding or nested controls. Preserve native link
+  modifiers, keyboard card activation and accessible category counts.
   Experiment summary cards keep status labels and `[count]` in the compact segment
   tooltips; do not repeat an outcome legend below the bar.
   Do not show an execution-status legend in the results header for now.
   A single breakdown category uses its colour dot and name instead of a full-width
-  bar. Multiple categories retain the proportionate bar with hover/focus details.
+  bar. Multiple categories retain the proportionate bar with hover details.
   Results, Tool calls and Cost are a single-select radio group. The active view
   uses Highlight Medium and Highlight Low on hover. Results has recorded score
   with its dot/label, without a duplicate case-percentage Summary column. Tool calls
   combines tool total and failed count, with plain failed labels and no status dot.
   Show these counts only on the row that owns the calls: a native tool span or
-  the parent span carrying tool events. Do not repeat subtree totals on ancestors.
+  the span owning correlated tool logs or received tool events. Do not repeat
+  subtree totals on ancestors. Correlation requires recorded trace/span and call
+  IDs; never match by tool name, command, timing or display order.
   Omit zero tool/failed counts and show the separator only when both counts appear.
   Default the resizable identity portion to 320px, Results to 160px and Tool calls
   to 176px; keep saved widths and let the timeline fill the remaining space.
   Cost has Investigator, Grader and Total cost columns, in that
   order. Cells and footer totals show only numeric amounts (Unknown if missing);
   CAD and estimate labels stay in headers, and partial-estimate context is on hover.
+  The Cost view control reads `Cost · CAD est.` so its estimate/currency meaning
+  is visible before entering that view.
   Costs are presentation-only API-price estimates in CAD. Label them `API estimate`
   and retain the dated pricing/FX provenance. Do not relabel producer costs as CAD,
   infer missing usage as zero, or treat estimates as actual subscription charges.
@@ -423,6 +444,10 @@
   Timeline activity markers use the same 14px circle icon for single and grouped
   records. Grouped markers show a small 8px plus icon instead of a visible count;
   keep exact event/log counts in the accessible label and tooltip.
+  Activity dots overlay duration bars at the same Y position, with the bar below
+  the dots. Position logs by their recorded timestamps on the trace timeline,
+  even when outside their owning span's duration. Preserve exact log timestamps
+  and offsets; logs must not extend the time axis or distort bars.
   Tree columns use 18px spacing. Guides must span
   the shared table row height so they remain connected.
   Tree connector trunks, arms and stems use solid 1px Muted lines at 50% opacity.
@@ -506,26 +531,53 @@
 - Details has no fixed maximum width. Preserve its saved width above 40rem and
   let the shared split limit the displayed width using the main pane's existing
   minimum (30% or 28rem, whichever is larger). The drawer retains its 40rem cap.
+- Persistent-shell rule: pane identity follows its role, not its position or the
+  number of visible panes. Use optional List, required Main, and optional Details
+  slots. Keep shared navigation, outer shell and surviving pane containers mounted
+  across routes; replace workspace content inside those slots.
+  Use one app-wide saved set of List/Details widths and responsive split sizing,
+  not separate sizes per signal or route. Main takes the remaining space.
+  When a route omits a pane, Main absorbs that space; do not redistribute widths
+  among surviving side panes or overwrite the omitted pane's saved width/open
+  preference. Restore those preferences when that role returns.
+  Resolve route pane availability and saved geometry before showing destination
+  content. Loading, empty results and failed requests render inside the declared
+  slots; they must not temporarily remove panes or introduce a second layout shift.
+  Route changes apply their destination geometry immediately, without width/height
+  tweening, entrance choreography, or replaying panel-open transitions. Explicit
+  pointer toggles may use the shared interruptible settle motion; keyboard changes
+  are immediate and dragging follows the pointer directly. Preserve reduced motion.
+  Responsive clamping affects rendered geometry only, not saved user sizes. Keep
+  outer insets, header heights and gaps consistent between two- and three-pane
+  layouts. Verify cross-route DOM identity and geometry as well as restored state.
 - Disabled and zero-count Details headers use Muted for their labels, icons and counts.
   Put these closed, unavailable sections at the bottom. Keep the normal top-level
-  background and border with a Highlight Low overlay and Muted text. Keep canonical order within both groups;
-  restore a section's normal position as soon as data makes it available.
+  background and border with a Highlight Low overlay and Muted text. Keep canonical
+  order within each group: open, closed available, then inactive. The primary
+  (first) section stays open at the top and cannot collapse by click, keyboard or
+  drag. Use the existing sticky heading and scroll container, without extra
+  wrappers or CSS overrides. Restore an
+  available section to the group matching its retained disclosure state.
   Dawn Muted uses the original `#9893a5`, restored by user approval; do not darken it.
-- Detail-section resize precedence: preserve header order and at least one open,
-  non-empty section. Use each non-first available section header as the resize
+- Detail-section resize precedence: keep the primary section open.
+  Use each non-first open section header as the resize
   handle for the boundary above it; omit separate resize strips. A click toggles
   disclosure, while a drag beyond the click threshold resizes without toggling.
   Keep header actions independent and preserve keyboard resizing and size reset.
   Draggable headers use grab/grabbing cursors; stacked sections have a 4px gap.
   Open sections fill the remaining height. Dragging a header grows the
-  nearest available section on one side by shrinking the nearest open section on
-  the other. Pass movement to another donor only after the first exhausts its
-  content and collapse resistance. Collapsed sections can reopen through dragging;
-  empty sections remain headers. Heading collapse hands space to one available
-  neighbour: upper half (including the exact middle) prefers below; lower half
-  prefers above. Skip empty sections and fall back to the opposite direction.
-  Open a closed receiver before closing the source; only the sole non-empty
-  section cannot collapse. Other sections keep their allocation.
+  adjacent open section on one side by shrinking the adjacent open section on
+  the other. Closed and inactive sections never become resize donors or reopen
+  through dragging. Defer drag-induced collapse and regrouping until release.
+  Heading collapse hands space to the nearest open section above.
+  Reopening restores remembered size within
+  available bounds, taking space from above first. Preserve mounted section
+  identity, focus, scroll positions and JSON folds when regrouping or reopening.
+  Use stable keyed snippets in the shared Details stack across signals and Evals.
+  Use native details/summary disclosure with immediate grouping. Keep one open
+  state; do not add delayed docking, fold animations or a reveal registry.
+  Pointer and keyboard changes are immediate, including reduced motion.
+  Press 0 on a resize header to reset section sizes.
   Reuse `startDrag` and `resolvePanelResize` for pointer lifecycle, resistance, and
   release thresholds. Keep resize previews separate from saved sizing; queued
   native disclosure events must not reapply internal resize changes.

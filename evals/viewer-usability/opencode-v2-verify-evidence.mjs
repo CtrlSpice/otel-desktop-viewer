@@ -3,7 +3,11 @@ import assert from 'node:assert/strict'
 // Check normalized attributes independently of the producer projection. Equality
 // of opencode.tool.raw alone cannot detect invented success or empty output.
 export function verifyToolEvent(tool, event) {
-  assert.equal(event.name, 'tool.execution')
+  assert.equal(event.eventName ?? event.name, 'tool.execution')
+  if (event.eventName) {
+    assert.equal(event.timeUnixNano, String(BigInt(tool.time.completed ?? tool.time.created) * 1000000n))
+    assert.ok(BigInt(event.observedTimeUnixNano) > 0n)
+  }
   const attributes = new Map(event.attributes.map(attribute => [attribute.key, attribute.value]))
   assert.equal(attributes.size, event.attributes.length, 'Duplicate tool-event attributes')
   const text = (key, value) => assert.deepEqual(attributes.get(key), { stringValue: value }, key)

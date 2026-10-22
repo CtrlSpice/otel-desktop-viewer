@@ -1,8 +1,9 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
-  import { getContext, setContext, untrack } from 'svelte'
+  import { getContext, setContext, tick, untrack } from 'svelte'
   import {
     DETAIL_STACK,
+    DETAIL_SECTION,
     type DetailStackState,
   } from './utils/detail-stack-state.svelte'
 
@@ -10,10 +11,42 @@
   // Only this stack's top-level sections participate in its split.
   setContext(DETAIL_STACK, undefined)
   const sectionID = $props.id()
+  const sectionKey = getContext<(() => string) | undefined>(DETAIL_SECTION)
+  const stackID = $derived(sectionKey?.() ?? sectionID)
   let disclosure = $state<HTMLDetailsElement>()
-  let previousSection = $derived(stack?.previous(sectionID))
+  let previousSection = $derived(stack?.previous(stackID))
   let suppressClick = false
   let pointerFocus = $state(false)
+  let scrollTop = 0
+  let disclosureGeneration = 0
+
+  function rememberScroll() {
+    // Native collapse and resize clamping must not replace the reading position.
+    if (disclosure?.open && expanded && !stack?.dragging)
+      scrollTop = disclosure.scrollTop
+  }
+
+  function setExpanded(open: boolean) {
+    if (expanded === open) {
+      if (disclosure) disclosure.open = open
+      return
+    }
+    if (!open) rememberScroll()
+    expanded = open
+    const element = disclosure
+    if (element) element.open = open
+    const generation = ++disclosureGeneration
+    if (open && element) {
+      void tick().then(() => {
+        if (
+          generation === disclosureGeneration &&
+          element === disclosure &&
+          element.open
+        )
+          element.scrollTop = scrollTop
+      })
+    }
+  }
 
   function startResize(event: PointerEvent) {
     pointerFocus = true
@@ -39,7 +72,7 @@
 
   function register(element: HTMLElement) {
     const unregister = stack?.register({
-      id: sectionID,
+      id: stackID,
       get label() {
         return label
       },
@@ -49,10 +82,7 @@
       element,
       available: () => !disabled && count !== 0,
       expanded: () => !disabled && count !== 0 && expanded,
-      setExpanded: open => {
-        expanded = open
-        if (disclosure) disclosure.open = open
-      },
+      setExpanded,
     })
     return { destroy: () => unregister?.() }
   }
@@ -87,6 +117,7 @@
   let resizable = $derived(
     !disabled &&
       count !== 0 &&
+      expanded &&
       previousSection &&
       stack?.enabled(previousSection.id)
   )
@@ -95,16 +126,11 @@
 
   function toggle(event: Event) {
     if (!stack) return
-    event.preventDefault()
     const dragged =
       suppressClick && event instanceof MouseEvent && event.detail > 0
     suppressClick = false
-    if (dragged) return
-    stack.setOpen(
-      sectionID,
-      !expanded,
-      event instanceof MouseEvent && event.detail === 0
-    )
+    if (dragged || (expanded && !stack.canClose(stackID)))
+      event.preventDefault()
   }
 </script>
 
@@ -139,12 +165,13 @@
       class="collapse detail-bubble__disclosure min-h-0 overflow-y-auto bg-base-100"
       bind:this={disclosure}
       open={expanded}
+      onscroll={rememberScroll}
       ontoggle={event => {
-        // Native toggle is queued. Internal resize updates already own this state;
-        // only external reveals need to flow back into the stack controller.
+        // Native disclosure owns clicks, keyboard activation and field reveals.
+        // Resizing also writes `open`; ignore those already-synchronized toggles.
         if (event.currentTarget.open === expanded) return
-        if (stack) stack.setOpen(sectionID, event.currentTarget.open)
-        else expanded = event.currentTarget.open
+        if (stack) stack.setOpen(stackID, event.currentTarget.open)
+        else setExpanded(event.currentTarget.open)
       }}
     >
       <summary
@@ -152,18 +179,15 @@
         class:detail-bubble__heading--action={Boolean(action)}
         class:detail-bubble__heading--resizable={!!resizable}
         class:detail-bubble__heading--pointer-focus={pointerFocus}
-        data-resize-before={resizable ? previousSection?.id : undefined}
+        data-resize-before={resizable ? previousSection?.element.id : undefined}
         title={resizable
-          ? 'Drag or use arrow keys to resize; click to expand or collapse; double-click to reset sizes'
+          ? 'Drag or use arrow keys to resize; click to collapse; press 0 to reset sizes'
           : undefined}
         aria-describedby={resizable ? `${sectionID}-resize-help` : undefined}
         onpointerdown={startResize}
         onkeydown={resizeKey}
         onblur={() => (pointerFocus = false)}
-        ondblclick={() => {
-          if (resizable) stack?.reset()
-        }}
-        aria-disabled={stack && expanded && !stack.canClose(sectionID)
+        aria-disabled={stack && expanded && !stack.canClose(stackID)
           ? 'true'
           : undefined}
         onclick={toggle}
@@ -183,13 +207,20 @@
     class="detail-bubble"
     class:detail-bubble--resizable={Boolean(stack)}
     class:detail-bubble--unavailable={disabled || count === 0}
-    style:flex={stack?.flex(sectionID)}
+    data-detail-section={stackID}
+    data-detail-group={disabled || count === 0
+      ? 'inactive'
+      : expanded
+        ? 'open'
+        : 'closed'}
+    style:flex={stack?.flex(stackID)}
     use:register
   >
     {@render bubble()}
     {#if resizable}<span class="sr-only" id={`${sectionID}-resize-help`}
-        >Drag to resize sections. Up and Down arrows resize; Shift increases the
-        step. Home and End collapse either side.</span
+        >Drag to resize open sections. Up and Down arrows resize; Shift
+        increases the step. Home and End shrink either side; the top stays open.
+        Press 0 to reset sizes.</span
       >{/if}
     {#if action && !disabled}<div class="detail-bubble__action">
         {@render action()}
@@ -245,9 +276,6 @@
     color: var(--color-muted);
     cursor: default;
   }
-  .detail-bubble--unavailable {
-    order: 1;
-  }
   .detail-bubble__heading--disabled :global(*) {
     color: inherit;
   }
@@ -258,14 +286,6 @@
     user-select: none;
   }
 
-  @media (prefers-reduced-motion: no-preference) {
-    .detail-bubble--resizable {
-      interpolate-size: allow-keywords;
-      transition:
-        flex-basis var(--detail-motion-duration) var(--detail-motion-easing),
-        flex-grow var(--detail-motion-duration) var(--detail-motion-easing);
-    }
-  }
   .detail-bubble__heading--action {
     padding-inline-end: calc(var(--pane-inline-inset) + 2.25rem - 1px);
   }

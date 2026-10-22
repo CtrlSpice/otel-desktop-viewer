@@ -77,6 +77,30 @@ function log(
 }
 
 describe('timeline marker projection', () => {
+  it('positions logs by recorded trace time even outside their owning span duration', () => {
+    const owner = span()
+    owner.spanData.startTime = 100n
+    owner.spanData.endTime = 200n
+    const records = recordsForSpan(owner, [
+      log('before', 'span-1', 99n),
+      log('start', 'span-1', 100n),
+      log('end', 'span-1', 200n),
+      log('after', 'span-1', 201n),
+    ])
+    const markers = clusterTimelineRecords(records, 0n, 1000n, 1000, 0)
+    expect(
+      markers
+        .filter(marker => marker.position.placement === 'inside')
+        .flatMap(marker => marker.members.map(record => record.id))
+    ).toEqual(['log:before', 'log:start', 'log:end', 'log:after'])
+    expect(markers.at(-1)).toMatchObject({
+      position: { placement: 'inside', pixel: 201, percent: 20.1 },
+      members: [{ id: 'log:after', timestamp: 201n }],
+    })
+    expect(markers.flatMap(marker => marker.members)).toHaveLength(
+      records.length
+    )
+  })
   it('pins the shared row/header gutter and uniform marker geometry', () => {
     expect({
       barHeight: WATERFALL_BAR_HEIGHT_REM,

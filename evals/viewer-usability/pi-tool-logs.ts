@@ -1,4 +1,5 @@
-import type { Attributes, Span, TimeInput } from '@opentelemetry/api'
+import type { Attributes } from '@opentelemetry/api'
+import type { ToolLog } from './tool-logs.ts'
 
 type RecordValue = Record<string, unknown>
 type Received = { value: RecordValue; observedAt: number }
@@ -8,12 +9,12 @@ const object = (value: unknown): RecordValue | undefined =>
     ? value as RecordValue : undefined
 const text = (value: unknown) => typeof value === 'string' && value ? value : undefined
 
-/** Rich events on the actual provider span, never synthetic tool spans.
+/** Named log events correlated to the actual provider span, never synthetic tool spans.
  * Pi 1.3.0 tool start/end records have no source timestamp. A unique toolResult
  * message records its creation time after execution; it is not an execution start.
  * Without that message, retain the collector's observed time and label it as such.
  * Original records remain in events.jsonl, including ambiguous and partial calls. */
-export class PiToolEvents {
+export class PiToolLogs {
   private records: Received[] = []
 
   observe(value: RecordValue, observedAt = Date.now()) {
@@ -22,8 +23,8 @@ export class PiToolEvents {
       this.records.push({ value, observedAt })
   }
 
-  flush(span: Pick<Span, 'addEvent'> | undefined) {
-    if (!span) return
+  drain(): ToolLog[] {
+    const logs: ToolLog[] = []
     const records = this.records
     this.records = []
     const starts = records.filter(record => record.value.type === 'tool_execution_start')
@@ -58,15 +59,16 @@ export class PiToolEvents {
         attributes['tool.duration_ms'] = value.durationMs
       if (timestamp !== undefined) attributes['pi.tool.result.raw'] = JSON.stringify(results[0]!.value)
       attributes['pi.event.timestamp.source'] = timestamp === undefined ? 'collector.observed' : 'toolResult.timestamp'
-      span.addEvent('tool.execution', attributes, (timestamp ?? end.observedAt) as TimeInput)
+      logs.push({ eventName: 'tool.execution', attributes, timestamp: timestamp ?? end.observedAt, observedTimestamp: end.observedAt })
     }
     for (const start of starts) {
       if (joined.has(start)) continue
       const attributes = this.attributes(start.value)
       if (start.value.args !== undefined) attributes['tool.input'] = JSON.stringify(start.value.args)
       attributes['pi.event.timestamp.source'] = 'collector.observed'
-      span.addEvent('tool.execution.start', attributes, start.observedAt)
+      logs.push({ eventName: 'tool.execution.start', attributes, timestamp: start.observedAt, observedTimestamp: start.observedAt })
     }
+    return logs
   }
 
   private attributes(value: RecordValue): Attributes {

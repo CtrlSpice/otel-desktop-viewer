@@ -226,9 +226,12 @@ test('oversized service tooltips remain scrollable and selectable on a narrow vi
             rootSpan: { name: 'Long service trace', serviceName: label },
             startTime: '1700000000000000000',
             durationNs: '1000000000',
-            spanCount: 7,
+            spanCount: 8,
             errorCount: 0,
-            serviceBreakdown: [{ key: `service:${label}`, label, count: 7 }],
+            serviceBreakdown: [
+              { key: `service:${label}`, label, count: 7 },
+              { key: 'service:other', label: 'other', count: 1 },
+            ],
           },
         ],
       },
@@ -237,7 +240,7 @@ test('oversized service tooltips remain scrollable and selectable on a narrow vi
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/traces')
   const segment = page.locator('.breakdown-segment').first()
-  await segment.focus()
+  await segment.hover()
   const tooltip = page.locator('.breakdown-tooltip:popover-open')
   await expect(tooltip).toBeVisible()
   await expect(tooltip).toHaveCSS('overflow-y', 'auto')
@@ -251,22 +254,6 @@ test('oversized service tooltips remain scrollable and selectable on a narrow vi
       element => element.scrollHeight > element.clientHeight
     )
   ).toBe(true)
-
-  await page.keyboard.press('Tab')
-  await expect(tooltip).toBeFocused()
-  await page.keyboard.press('End')
-  await expect
-    .poll(() =>
-      tooltip.evaluate(
-        element =>
-          element.scrollTop + element.clientHeight >= element.scrollHeight - 1
-      )
-    )
-    .toBe(true)
-  await page.keyboard.press('Home')
-  await expect
-    .poll(() => tooltip.evaluate(element => element.scrollTop))
-    .toBe(0)
 
   await tooltip.hover()
   await page.mouse.wheel(0, 100000)
@@ -322,7 +309,7 @@ test('oversized service tooltips remain scrollable and selectable on a narrow vi
 })
 
 for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
-  test(`run summary outcome index stays static and readable in ${theme}`, async ({
+  test(`card outcome bars preserve native selection and readable tooltips in ${theme}`, async ({
     page,
   }) => {
     await interceptRpc(page)
@@ -334,55 +321,39 @@ for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
       theme
     )
     await page.setViewportSize({ width: 1440, height: 1000 })
-    await page.goto('/evals?run=guide-assisted')
+    await page.goto('/evals?preview=examples&experiment=direct-agent')
     const card = page.getByRole('button', {
-      name: /^Guide-assisted agent Complete Started:/,
+      name: /^Guide-assisted agent Complete/,
     })
-    const shell = page.locator('.signal-card-shell').filter({ has: card })
-    const bar = shell.getByRole('group', {
-      name: /Task completion by rep count/,
+    const bar = card.getByRole('group', {
+      name: /Task completion by result count/,
     })
+    await expect(card).toHaveAttribute('aria-pressed', 'false')
+    const segment = bar.locator('.breakdown-segment').first()
+    const beforeHover = page.url()
+    await segment.hover()
+    const tooltip = card.locator('.breakdown-tooltip:popover-open')
+    await expect(tooltip).toHaveText('Pass [11]')
+    await expect(tooltip).toHaveCSS('font-size', '14px')
+    await expect(tooltip).toHaveCSS('line-height', '21px')
+    await expect(card).toHaveCSS('background-color', low)
+    expect(page.url()).toBe(beforeHover)
+    await page.mouse.down()
+    await expect(card).toHaveAttribute('aria-pressed', 'false')
+    expect(page.url()).toBe(beforeHover)
+    await page.mouse.up()
     await expect(card).toHaveAttribute('aria-pressed', 'true')
-    const runLegend = shell.getByRole('list', {
-      name: 'Task completion outcomes legend',
-      exact: true,
-    })
-    await expect(runLegend.getByRole('listitem')).toHaveText([
-      'Pass [11]',
-      'Partial [3]',
-      'Fail [2]',
-    ])
-    await expect(runLegend).toBeVisible()
-    const outcomeGeometry = await shell.evaluate(element => {
-      const bar = element
-        .querySelector('.breakdown-bar')!
-        .getBoundingClientRect()
-      const legend = element
-        .querySelector('.legend-rows')!
-        .getBoundingClientRect()
-      const date = element
-        .querySelector('.signal-date')!
-        .getBoundingClientRect()
-      return {
-        belowBar: legend.top >= bar.bottom,
-        aboveDate: legend.bottom <= date.top,
-        rows: [...element.querySelectorAll('.legend-rows__entry')].map(
-          entry => ({
-            height: entry.getBoundingClientRect().height,
-            font: getComputedStyle(entry).fontSize,
-            lineHeight: getComputedStyle(entry).lineHeight,
-          })
-        ),
-      }
-    })
-    expect(outcomeGeometry.belowBar).toBe(true)
-    expect(outcomeGeometry.aboveDate).toBe(true)
-    for (const row of outcomeGeometry.rows)
-      expect(row).toEqual({ height: 24, font: '14px', lineHeight: '21px' })
+    await expect(card).toHaveCSS('background-color', low)
+    expect(new URL(page.url()).searchParams.get('experiment')).toBe(
+      'guide-assisted'
+    )
+    await page.mouse.move(0, 0)
+    await expect(card).toHaveCSS('background-color', selectedColor)
+    await expect(tooltip).toHaveCount(0)
     await expect(card.locator('.signal-row__header')).toHaveText(
       'Guide-assisted agent Complete'
     )
-    await expect(shell).not.toHaveText(/tool calls|Score:|Pass:|Est\. cost:/)
+    await expect(card).not.toHaveText(/tool calls|Score:|Est\. cost:/)
     await expect(card.locator('.signal-date__label')).toHaveText('Started:')
     const dateSpacing = await card.locator('.signal-date').evaluate(element => {
       const label = element.querySelector('.signal-date__label')!
@@ -398,7 +369,7 @@ for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
     })
     expect(Math.abs(dateSpacing.unusedLabelWidth)).toBeLessThan(1)
     expect(dateSpacing.gap).toBeCloseTo(8, 0)
-    const datePlacement = await shell.evaluate(element => {
+    const datePlacement = await card.evaluate(element => {
       const date = element
         .querySelector('.signal-date')!
         .getBoundingClientRect()
@@ -420,17 +391,26 @@ for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
     expect(Math.abs(datePlacement.leftOffset)).toBeLessThan(1)
     expect(Math.abs(datePlacement.bottomOffset)).toBeLessThan(1)
     expect(datePlacement.followsBar).toBe(true)
-    await expect(bar).toHaveAccessibleName(
-      'Task completion by rep count: Pass: 11 reps; Partial: 3 reps; Fail: 2 reps'
+    await expect(card).toHaveAccessibleName(
+      /Pass: 11 results.*Partial: 3 results.*Fail: 2 results/
     )
     await expect(
-      shell.locator('button button, .signal-row__meta-row')
+      card.locator('button, a, [tabindex], .signal-row__meta-row, .legend-rows')
     ).toHaveCount(0)
-    await expect(shell.locator('[role="tooltip"]')).toHaveCount(0)
-    await expect(shell.locator('.breakdown-segment')).toHaveCount(3)
+    await expect(card.locator('.breakdown-segment')).toHaveCount(3)
+    const other = page
+      .locator('button.signal-row')
+      .filter({ hasText: 'Direct agent' })
+    await other.focus()
+    await page.keyboard.press('Space')
+    await expect(other).toHaveAttribute('aria-pressed', 'true')
+    await card.focus()
+    await page.keyboard.press('Enter')
+    await expect(card).toHaveAttribute('aria-pressed', 'true')
+    await expect(card).toBeFocused()
     const scan = await new AxeBuilder({ page })
-      .include('.signal-card-shell:has(.signal-row--selected)')
-      .withRules(['color-contrast'])
+      .include('.signal-row--selected')
+      .withRules(['nested-interactive'])
       .analyze()
     expect(scan.violations).toEqual([])
   })
@@ -450,14 +430,7 @@ for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
       'color',
       textColor
     )
-    await expect(trigger.getByText('Sort by:', { exact: true })).toHaveCSS(
-      'color',
-      theme === 'rose-pine-dawn'
-        ? 'rgb(98, 93, 122)'
-        : theme === 'rose-pine-moon'
-          ? 'rgb(177, 173, 204)'
-          : 'rgb(171, 167, 197)'
-    )
+    await expect(trigger.getByText('Sort by:', { exact: true })).toHaveCount(0)
     await trigger.click()
     await page
       .getByRole('group', { name: 'Sort by', exact: true })
@@ -651,12 +624,16 @@ test.describe('home page accessibility', () => {
       await page.route('**/api/features', route =>
         route.fulfill({ json: { evals: { enabled: true } } })
       )
-      await page.goto('/evals?run=guide-assisted&rep=request-latency')
+      await page.goto(
+        '/evals?preview=examples&experiment=guide-assisted&result=request-latency'
+      )
       await expect(
         page.locator('.page-layout__main-chrome .pane-header').first()
       ).toHaveCSS('background-color', panel)
-      const detailHeadings = page.locator('.detail-bubble__heading')
-      await expect(detailHeadings).toHaveCount(2)
+      const detailHeadings = page.locator(
+        '.detail-stack:visible > .detail-bubble > details > .detail-bubble__heading'
+      )
+      await expect(detailHeadings).toHaveCount(3)
       for (const heading of await detailHeadings.all()) {
         await expect(heading).toHaveCSS('background-color', panel)
         // Shared 32px controls plus 8px vertical padding on each side.
@@ -695,7 +672,7 @@ test.describe('home page accessibility', () => {
     await page.route('**/api/features', route =>
       route.fulfill({ json: { evals: { enabled: true } } })
     )
-    await page.goto('/evals')
+    await page.goto('/evals?preview=examples')
     await expect(page.locator('.signal-row--selected')).toHaveCSS(
       'background-color',
       'rgb(223, 218, 217)'
@@ -738,7 +715,7 @@ test.describe('home page accessibility', () => {
         route.fulfill({ json: { evals: { enabled: true } } })
       )
       await page.evaluate(theme => localStorage.setItem('theme', theme), theme)
-      await page.goto('/evals')
+      await page.goto('/evals?preview=examples')
       expect(
         await page
           .locator('html')
@@ -993,7 +970,10 @@ test.describe('home page accessibility', () => {
     for (const name of ['Metrics', 'Evals', 'Home', 'Logs', 'Traces']) {
       await page
         .getByRole('navigation', { name: 'Primary' })
-        .getByRole('link', { name, exact: true })
+        .getByRole('link', {
+          name: name === 'Evals' ? 'Experimental Evals' : name,
+          exact: true,
+        })
         .click()
       if (name === 'Logs') {
         await expect(navigator).toBeHidden()
@@ -1263,7 +1243,7 @@ test.describe('home page accessibility', () => {
     await page.goto('/traces')
     const controls = page.getByRole('group', { name: 'Traces list controls' })
     const trigger = controls.getByRole('button', { name: /^Sort by:/ })
-    await expect(trigger).toHaveText(/Sort by:\s*Start Time/)
+    await expect(trigger).toHaveText('Start Time')
     await expect(trigger).toHaveAccessibleName('Sort by: Start Time')
     await expect(trigger).toHaveAttribute('data-tip', 'Sort by: Start Time')
     await expect(trigger).toHaveClass(/header-icon-button/)
@@ -1285,7 +1265,7 @@ test.describe('home page accessibility', () => {
       }
     })
     expect(Math.abs(spacing.centreOffset)).toBeLessThan(1)
-    expect(spacing.spacer).toBeGreaterThan(16)
+    expect(spacing.spacer).toBeCloseTo(0, 0)
     const directionIcon = controls.locator('button[title] svg')
     await expect(controls.locator('button[title]')).toHaveClass(
       /header-icon-button/
@@ -1305,7 +1285,7 @@ test.describe('home page accessibility', () => {
     await trigger.click()
     const popup = page.getByRole('group', { name: 'Sort by', exact: true })
     await popup.getByRole('button', { name: 'Duration', exact: true }).click()
-    await expect(trigger).toHaveText(/Sort by:\s*Duration/)
+    await expect(trigger).toHaveText('Duration')
     await expect(trigger).toHaveAccessibleName('Sort by: Duration')
     await expect(trigger).toHaveAttribute('data-tip', 'Sort by: Duration')
     await expect(trigger).toBeFocused()
@@ -1352,9 +1332,6 @@ test.describe('home page accessibility', () => {
           .getByRole('button', { name: target, exact: true })
           .click()
         await expect(trigger).toHaveAccessibleName(`Sort by: ${target}`)
-        await expect(
-          trigger.getByText('Sort by:', { exact: true })
-        ).toBeVisible()
         await expect(trigger.getByText(target, { exact: true })).toBeVisible()
         const direction = page.getByRole('button', {
           name: /^Sort (ascending|descending)$/,

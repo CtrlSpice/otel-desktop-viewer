@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it } from 'vitest'
 import { fireEvent, render } from '@testing-library/svelte'
+import userEvent from '@testing-library/user-event'
 import DetailStackHarness from '@/test/DetailStackHarness.svelte'
 
 beforeEach(() => localStorage.clear())
@@ -34,10 +35,13 @@ it('resizes the visible boundary when a middle section mounts after its siblings
     Assessments: 194 / 600,
     Telemetry: 200 / 600,
   })
-  await fireEvent.click(headers[1]!)
+  await userEvent.click(headers[1]!)
   expect(telemetry.open).toBe(true)
+  expect(JSON.parse(localStorage.getItem('layout')!).Details).toBeCloseTo(
+    400 / 600
+  )
   expect(JSON.parse(localStorage.getItem('layout')!).Telemetry).toBeCloseTo(
-    394 / 600
+    200 / 600
   )
 
   await view.rerender({ assessments: false })
@@ -54,7 +58,7 @@ it('resizes the visible boundary when a middle section mounts after its siblings
 it('updates row headings and saved layouts without replacing sections or disclosure state', async () => {
   localStorage.setItem(
     'case-layout',
-    JSON.stringify({ Question: 3, Telemetry: 1 })
+    JSON.stringify({ Question: 0.75, Telemetry: 0.25 })
   )
   localStorage.setItem('tool-layout', JSON.stringify({ Tool: 1, Telemetry: 3 }))
   const view = render(DetailStackHarness, {
@@ -82,15 +86,15 @@ it('updates row headings and saved layouts without replacing sections or disclos
   expect(stack.querySelectorAll('details')[0]).toBe(disclosures[0])
   expect(disclosures.map(section => section.open)).toEqual([true, true, false])
   expect(parseFloat(sections[0]!.style.flex)).toBe(25)
-  await fireEvent.click(disclosures[0]!.querySelector('summary')!)
-  expect(disclosures.map(section => section.open)).toEqual([false, true, false])
+  await userEvent.click(disclosures[1]!.querySelector('summary')!)
+  expect(disclosures.map(section => section.open)).toEqual([true, false, false])
   expect(JSON.parse(localStorage.getItem('tool-layout')!)).toEqual({
     Tool: 1,
-    Telemetry: 4,
+    Telemetry: 0.75,
   })
   expect(JSON.parse(localStorage.getItem('case-layout')!)).toEqual({
-    Question: 3,
-    Telemetry: 1,
+    Question: 0.75,
+    Telemetry: 0.25,
   })
 
   await view.rerender({
@@ -98,9 +102,9 @@ it('updates row headings and saved layouts without replacing sections or disclos
     label: 'Third question',
     layoutKey: 'Question',
   })
-  expect(disclosures.map(section => section.open)).toEqual([false, true, false])
+  expect(disclosures.map(section => section.open)).toEqual([true, false, false])
   expect(stack.querySelectorAll('details')[0]).toBe(disclosures[0])
-  await fireEvent.click(disclosures[0]!.querySelector('summary')!)
+  await userEvent.click(disclosures[1]!.querySelector('summary')!)
   expect(parseFloat(sections[0]!.style.flex)).toBe(75)
 })
 
@@ -129,7 +133,7 @@ it('saves keyboard resizing under the current section layout key', async () => {
   expect(disclosures[0]).toHaveTextContent('New heading')
 })
 
-it('interrupts a closing section from its rendered allocation', async () => {
+it('resizes only open neighbours and never reopens a closed section during resizing', async () => {
   const view = render(DetailStackHarness, {
     storageKey: 'layout',
     label: 'Details',
@@ -141,19 +145,92 @@ it('interrupts a closing section from its rendered allocation', async () => {
     ),
   ]
   const headers = sections.map(section => section.querySelector('summary')!)
-  await fireEvent.click(headers[1]!)
+  await userEvent.click(headers[1]!)
   expect(headers[1]!.closest('details')!.open).toBe(false)
-  // The disclosure has closed, but its layout transition has not yet settled.
+  // A closed card must not become a resize donor.
   for (const [index, section] of sections.entries()) {
     section.getBoundingClientRect = () =>
       ({ height: [300, 180, 240, 40][index] }) as DOMRect
     headers[index]!.getBoundingClientRect = () => ({ height: 40 }) as DOMRect
   }
   await fireEvent.keyDown(headers[2]!, { key: 'ArrowDown' })
-  expect(headers[1]!.closest('details')!.open).toBe(true)
-  expect(JSON.parse(localStorage.getItem('layout')!)).toEqual({
-    Details: 260 / 600,
-    Assessments: 146 / 600,
-    Telemetry: 194 / 600,
+  expect(headers[1]!.closest('details')!.open).toBe(false)
+  expect(headers[1]!.dataset.resizeBefore).toBeUndefined()
+  expect(headers[2]!.dataset.resizeBefore).toBe(sections[0]!.id)
+  expect(JSON.parse(localStorage.getItem('layout')!).Details).toBeCloseTo(
+    264.6 / 460
+  )
+  expect(JSON.parse(localStorage.getItem('layout')!).Telemetry).toBeCloseTo(
+    195.4 / 460
+  )
+})
+
+it('groups open, closed and inactive cards in real DOM order, retaining nodes and one open section', async () => {
+  const view = render(DetailStackHarness, {
+    storageKey: 'layout',
+    label: 'Details',
+    assessments: true,
+    unavailable: true,
   })
+  const stack = view.container.querySelector('.detail-stack')!
+  const keys = () =>
+    [...stack.querySelectorAll<HTMLElement>(':scope > .detail-bubble')].map(
+      element => element.dataset.detailSection
+    )
+  const details = view.getByText('Details', { exact: true }).closest('details')!
+  const assessments = view
+    .getByText('Assessments', { exact: true })
+    .closest('details')!
+  const telemetry = view
+    .getByText('Telemetry', { exact: true })
+    .closest('details')!
+  const configuration = view
+    .getByText('Configuration', { exact: true })
+    .closest('details')!
+  expect(keys()).toEqual([
+    'details',
+    'assessments',
+    'telemetry',
+    'configuration',
+    'unavailable',
+  ])
+  const header = assessments.querySelector('summary')!
+  header.focus()
+  await userEvent.click(header)
+  expect(keys()).toEqual([
+    'details',
+    'telemetry',
+    'assessments',
+    'configuration',
+    'unavailable',
+  ])
+  expect(
+    view.getByText('Assessments', { exact: true }).closest('details')
+  ).toBe(assessments)
+  expect(header).toHaveFocus()
+  expect(header).not.toHaveClass('detail-bubble__heading--resizable')
+  expect(configuration.querySelector('summary')).not.toHaveClass(
+    'detail-bubble__heading--resizable'
+  )
+  await userEvent.click(telemetry.querySelector('summary')!)
+  expect(details.open).toBe(true)
+  expect(details.querySelector('summary')).toHaveAttribute(
+    'aria-disabled',
+    'true'
+  )
+  await userEvent.click(details.querySelector('summary')!)
+  expect(details.open).toBe(true)
+  expect(keys()).toEqual([
+    'details',
+    'assessments',
+    'telemetry',
+    'configuration',
+    'unavailable',
+  ])
+  await userEvent.click(header)
+  expect(assessments.open).toBe(true)
+  expect(header).toHaveClass('detail-bubble__heading--resizable')
+  expect(stack.querySelector('[data-detail-section="details"] details')).toBe(
+    details
+  )
 })

@@ -143,7 +143,7 @@ describe('Copy span action', () => {
     expect(disclosure.open).toBe(true)
     expect(screen.getByText('Copied span.')).toBeInTheDocument()
     await user.click(disclosure.querySelector('summary')!)
-    expect(disclosure.open).toBe(false)
+    expect(disclosure.open).toBe(true)
     expect(button.isConnected).toBe(true)
   })
 

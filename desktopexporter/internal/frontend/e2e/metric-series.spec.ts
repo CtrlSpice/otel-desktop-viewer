@@ -492,7 +492,7 @@ test.describe('independent histogram aggregate loading', () => {
   for (const [theme, colour] of [
     ['rose-pine', 'rgb(110, 106, 134)'],
     ['rose-pine-moon', 'rgb(110, 106, 134)'],
-    ['rose-pine-dawn', 'rgb(99, 94, 111)'],
+    ['rose-pine-dawn', 'rgb(152, 147, 165)'],
   ]) {
     test(`rounded axes and header count legends stay legible in ${theme}`, async ({
       page,
@@ -1892,7 +1892,7 @@ test('raw plot clicks still select source points beneath passive overlays', asyn
     .toBe(selectedID)
 })
 
-test('Raw selection reveals a collapsed Series section and preserves Metric disclosure state', async ({
+test('Raw selection keeps Series open and preserves the lower Metric disclosure state', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1920, height: 1000 })
@@ -1906,8 +1906,12 @@ test('Raw selection reveals a collapsed Series section and preserves Metric disc
   const series = sections.nth(0)
   const fields = sections.nth(1)
   await series.locator(':scope > summary').click()
-  await expect(series).not.toHaveAttribute('open')
-  await expect(fields).toHaveAttribute('open')
+  await expect(series).toHaveAttribute('open')
+  await fields
+    .locator(':scope > summary')
+    .getByText('Metric', { exact: true })
+    .click()
+  await expect(fields).not.toHaveAttribute('open')
   const graph = page.getByRole('application', {
     name: 'Metric time series chart',
     exact: true,
@@ -1916,19 +1920,21 @@ test('Raw selection reveals a collapsed Series section and preserves Metric disc
   await graph.press('Home')
   await graph.press('Enter')
   await expect(series).toHaveAttribute('open')
-  await expect(fields).toHaveAttribute('open')
+  await expect(fields).not.toHaveAttribute('open')
   const selectedID = new URL(page.url()).searchParams.get('dp')!
   const selected = series.locator(`[data-dp-id="${selectedID}"]`)
   await expect(selected).toHaveAttribute('aria-selected', 'true')
   await expect(selected).toBeInViewport()
-  // A manual close remains closed until the same datapoint is activated again.
+  // The top section also resists keyboard collapse; field disclosure is independent.
   await series.locator(':scope > summary').click()
-  await expect(series).not.toHaveAttribute('open')
+  await series.locator(':scope > summary').press('Enter')
+  await series.locator(':scope > summary').press('Space')
+  await expect(series).toHaveAttribute('open')
   await graph.focus()
   await graph.press('Enter')
   await expect(series).toHaveAttribute('open')
   await expect(selected).toBeInViewport()
-  await expect(fields).toHaveAttribute('open')
+  await expect(fields).not.toHaveAttribute('open')
 })
 
 test('dense pinned legends scroll by wheel and keyboard at the 280px chart floor', async ({
@@ -2300,7 +2306,7 @@ test('header tabs use icons and tooltips only when their panel is narrow', async
   await page.goto(`/metrics/${metric.metricRef}?agg=raw`)
   const bubble = page
     .getByRole('region', { name: 'Metric details', exact: true })
-    .locator('.detail-bubble__with-action')
+    .locator('[data-detail-section="metric"]')
   const properties = bubble.getByRole('tab', {
     name: 'Properties',
     exact: true,
@@ -2387,7 +2393,7 @@ test('metric JSON loads without datapoints or a Load button while Copy and Downl
     name: 'Metric details',
     exact: true,
   })
-  const bubble = detail.locator('.detail-bubble__with-action')
+  const bubble = detail.locator('[data-detail-section="metric"]')
   await bubble.getByRole('tab', { name: 'JSON', exact: true }).click()
   const json = bubble.getByRole('region', {
     name: 'Raw JSON inspector',
@@ -2438,7 +2444,7 @@ test('Copy metric stays in its heading and copies exact OTLP only for the select
     name: 'Metric details',
     exact: true,
   })
-  const bubble = detail.locator('.detail-bubble__with-action')
+  const bubble = detail.locator('[data-detail-section="metric"]')
   const heading = bubble.locator('summary').first()
   const copy = bubble.getByRole('button', { name: 'Copy metric', exact: true })
   await expect(copy).toBeVisible()

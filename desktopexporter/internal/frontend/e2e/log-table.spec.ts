@@ -253,25 +253,41 @@ test('Details pins enriched trace context above scrolling fields', async ({
     const { id, method, params } = route.request().postDataJSON()
     if (method === 'getLog' && params.logRef === firstID) {
       return route.fulfill({
-        json: { jsonrpc: '2.0', id, result: { ...logs[0]!, traceID, spanID } },
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result: { ...logs[0]!, traceID, spanID },
+        },
+      })
+    }
+    if (
+      method === 'query' &&
+      params.sql.includes('WITH requested(trace_id, span_id)')
+    ) {
+      associatedFetches++
+      expect(params.sql).toContain(spanID)
+      return route.fulfill({
+        json: {
+          jsonrpc: '2.0',
+          id,
+          result: {
+            rows: [
+              [
+                traceID,
+                spanID,
+                'POST /checkout',
+                'api',
+                '1700000000000000000',
+                '1700000001000000000',
+                0,
+              ],
+            ],
+            truncated: false,
+          },
+        },
       })
     }
     if (method === 'searchTraceSummaries') {
-      if (params.query) {
-        associatedFetches++
-        expect(params).toMatchObject({
-          startTime: null,
-          endTime: null,
-          limit: 1,
-          query: {
-            query: {
-              field: { name: 'traceID' },
-              fieldOperator: '=',
-              value: traceID,
-            },
-          },
-        })
-      }
       return route.fulfill({
         json: {
           jsonrpc: '2.0',
@@ -311,8 +327,11 @@ test('Details pins enriched trace context above scrolling fields', async ({
   await expect(card).toBeVisible()
   await expect(trace.locator('.signal-row')).toHaveCount(0)
   await expect(
-    trace.getByRole('link', { name: `Open trace ${traceID}`, exact: true })
-  ).toHaveAttribute('href', `/traces/${traceID}?time=all`)
+    trace.getByRole('link', {
+      name: `Open span ${spanID} in trace ${traceID}`,
+      exact: true,
+    })
+  ).toHaveAttribute('href', `/traces/${traceID}?time=all&span=${spanID}`)
   expect(waterfallFetches).toBe(0)
   expect(associatedFetches).toBe(1)
   expect(await trace.evaluate(element => element.closest('details'))).toBeNull()
@@ -370,12 +389,17 @@ test('Details pins enriched trace context above scrolling fields', async ({
     probe.remove()
     return colour
   })
-  await expect(
-    panel.locator('[data-field="severityText"] .attribute-value')
-  ).toHaveCSS('color', errorColour)
-  await expect(
-    panel.locator('[data-field="severityNumber"] .detail-property__value')
-  ).toHaveCSS('color', errorColour)
+  for (const field of ['severityText', 'severityNumber']) {
+    const severity = panel.locator(`[data-field="${field}"] .log-severity`)
+    await expect(severity.locator('.log-severity__dot')).toHaveCSS(
+      'background-color',
+      errorColour
+    )
+    await expect(severity.locator('.log-severity__label')).not.toHaveCSS(
+      'color',
+      errorColour
+    )
+  }
   await trace
     .getByRole('link', {
       name: `Open span ${spanID} in trace ${traceID}`,
@@ -716,19 +740,16 @@ test('Raw JSON folding uses waterfall-style icon controls on the top line', asyn
     await expect(button).toHaveClass(/chart-header-control/)
     await expect(button.locator('svg')).toBeVisible()
   }
-  const metadataBounds = (await page
+  const headerBounds = (await page
     .getByRole('region', { name: 'Log record', exact: true })
-    .getByRole('status')
-    .filter({ hasText: /^OTLP JSON/ })
     .boundingBox())!
   const groupBounds = (await folding.boundingBox())!
   const toolbarBounds = (await inspector
     .locator('.raw-inspector__controls')
     .boundingBox())!
   const editorBounds = (await editor.boundingBox())!
-  // Status now shares the record header. Folding stays on the first raw-toolbar
-  // line, above the editor and right-aligned within its horizontal padding.
-  expect(metadataBounds.y + metadataBounds.height).toBeLessThanOrEqual(
+  // Folding stays on the first raw-toolbar line below the record header.
+  expect(headerBounds.y + headerBounds.height).toBeLessThanOrEqual(
     groupBounds.y
   )
   expect(groupBounds.y).toBeCloseTo(toolbarBounds.y, 0)
@@ -936,6 +957,7 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
   await expect(cell.locator('.cm-editor')).toHaveCount(0)
   const bodyField = page.locator('[data-field="body"]')
   const editor = bodyField.locator('.cm-editor')
+  await bodyField.getByRole('button', { name: 'Expand all body JSON' }).click()
   await expect
     .poll(() =>
       editor
@@ -1061,16 +1083,18 @@ test('embedded JSON previews are coloured and Details wraps at keys with working
     })
   )
   const header = page.getByRole('region', { name: 'Log record', exact: true })
-  const jsonStatus = header.getByRole('status', {
-    name: /^OpenTelemetry Protocol JSON\./,
-  })
+  const jsonStatus = page
+    .getByRole('region', { name: 'Raw JSON inspector' })
+    .getByRole('status', {
+      name: /^OpenTelemetry Protocol JSON\./,
+    })
   await header.getByRole('tab', { name: 'JSON', exact: true }).click()
   await expect(jsonStatus).toHaveText(/^OTLP JSON · /)
   await expect(header.locator('.pane-header__title-row')).toContainText('api')
-  await expect(header.locator('.pane-header__title-row')).toContainText(
+  await expect(header.locator('.pane-header__title-row')).not.toContainText(
     'OTLP JSON'
   )
-  await expect(page.locator('.raw-inspector__controls')).not.toContainText(
+  await expect(page.locator('.raw-inspector__controls')).toContainText(
     'OTLP JSON'
   )
   await expect(
@@ -1193,6 +1217,8 @@ test('structured previews have static syntax colours and Details folds Body and 
   )
 
   const detailBody = page.locator('[data-field="body"]')
+  await expect(detailBody).not.toContainText('9223372036854775807')
+  await detailBody.getByRole('button', { name: 'Expand all body JSON' }).click()
   await expect(detailBody).toContainText('9223372036854775807')
   const bodyHeader = detailBody.locator('.detail-property__header')
   const copyBody = bodyHeader.getByRole('button', {
@@ -1213,11 +1239,8 @@ test('structured previews have static syntax colours and Details folds Body and 
     headerBounds.x + headerBounds.width,
     0
   )
-  // Align to the heading line box, not the inset bounds of its inline glyphs.
-  const headingBounds = (await bodyHeader
-    .locator('.detail-property__heading')
-    .boundingBox())!
-  expect(copyBounds.y).toBeCloseTo(headingBounds.y, 0)
+  // Copy stays at the header's top-right beside the folding controls.
+  expect(copyBounds.y).toBeCloseTo(headerBounds.y, 0)
   await expect(
     detailBody.locator('.detail-property__body button.value-copy')
   ).toHaveCount(0)
@@ -1730,7 +1753,7 @@ test('toolbar filters draft service and severity selections and search once on A
   await expect.poll(() => searches).toBe(1)
   await expect(filtersToggle).toHaveAttribute('aria-expanded', 'false')
   await expect(filtersToggle).toBeFocused()
-  await expect(filtersToggle).toContainText('(2)')
+  await expect(filtersToggle).toContainText('[2]')
   await expect(editor).toContainText(
     'attr(resource, "service.name", string) IN ["api"]'
   )
@@ -1746,7 +1769,9 @@ test('toolbar filters draft service and severity selections and search once on A
   expect(searches).toBe(1)
   await filtersToggle.click()
   await expect(service).toHaveAttribute('aria-pressed', 'true')
-  await page.getByRole('button', { name: 'Clear filters', exact: true }).click()
+  await page
+    .getByRole('button', { name: 'Clear filters filter', exact: true })
+    .click()
   await expect(service).toHaveAttribute('aria-pressed', 'false')
   await expect(error).toHaveAttribute('aria-pressed', 'false')
   await page.keyboard.press('Escape')

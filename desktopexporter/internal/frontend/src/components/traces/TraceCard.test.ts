@@ -35,7 +35,7 @@ describe('TraceCard', () => {
     renderCard({ trace: makeTrace() })
     const button = cardButton()
     expect(within(button).getByText('GET /api/orders')).toBeInTheDocument()
-    const breakdown = screen.getByRole('group', { name: 'Spans by service' })
+    const breakdown = screen.getByRole('group', { name: /^Spans by service/ })
     expect(within(breakdown).getByText('orders-service')).toBeInTheDocument()
     expect(breakdown).toHaveTextContent('orders-service [4]')
     expect(within(breakdown).queryByRole('button')).not.toBeInTheDocument()
@@ -168,7 +168,7 @@ describe('TraceCard', () => {
     expect(onclick).toHaveBeenCalledWith('trace-42')
   })
 
-  it('gives each service only its own tooltip without selecting the trace', async () => {
+  it('previews service counts and selects the trace once on bar click, not pointerdown', async () => {
     const user = userEvent.setup()
     const onclick = vi.fn()
     renderCard({
@@ -181,8 +181,8 @@ describe('TraceCard', () => {
       }),
       onclick,
     })
-    const group = screen.getByRole('group', { name: 'Spans by service' })
-    const bar = within(group).getByRole('button', { name: 'database: 2 spans' })
+    const group = screen.getByRole('group', { name: /^Spans by service/ })
+    const bar = within(group).getByRole('img', { name: 'database: 2 spans' })
     expect(
       [...group.querySelectorAll('[role="tooltip"]')].map(node =>
         node.textContent?.trim()
@@ -190,12 +190,17 @@ describe('TraceCard', () => {
     ).toEqual(['orders-service [1]', 'database [2]', 'cache [1]'])
     expect(group.querySelectorAll('.breakdown-segment')).toHaveLength(3)
     expect(group.querySelector('.breakdown-label, .legend-rows')).toBeNull()
-    await user.click(bar)
+    await user.hover(bar)
     expect(onclick).not.toHaveBeenCalled()
+    await user.pointer({ target: bar, keys: '[MouseLeft>]' })
+    expect(onclick).not.toHaveBeenCalled()
+    await user.pointer({ keys: '[/MouseLeft]' })
+    expect(onclick).toHaveBeenCalledExactlyOnceWith('trace-1')
+    expect(cardButton()).toContainElement(bar)
     expect(document.querySelector('button button')).toBeNull()
   })
 
-  it('makes a multi-service segment keyboard reachable without selecting the trace', async () => {
+  it('exposes service counts on the card without adding keyboard stops', async () => {
     const user = userEvent.setup()
     const onclick = vi.fn()
     renderCard({
@@ -211,19 +216,19 @@ describe('TraceCard', () => {
       }),
       onclick,
     })
-    const group = screen.getByRole('group', { name: 'Spans by service' })
-    const bar = within(group).getByRole('button', {
-      name: /^orders-service:/,
-    })
+    const group = screen.getByRole('group', { name: /^Spans by service/ })
+    expect(within(group).queryByRole('button')).not.toBeInTheDocument()
     await user.tab()
     expect(cardButton()).toHaveFocus()
-    await user.tab()
-    expect(bar).toHaveFocus()
-    expect(bar).toHaveAccessibleName(
+    expect(cardButton()).toHaveAccessibleName(
       expect.stringContaining('orders-service: 3 spans')
     )
     await user.keyboard('{Enter}')
-    expect(onclick).not.toHaveBeenCalled()
-    expect(cardButton()).toHaveAttribute('aria-pressed', 'false')
+    expect(onclick).toHaveBeenCalledExactlyOnceWith('trace-1')
+    await user.keyboard(' ')
+    expect(onclick).toHaveBeenCalledTimes(2)
+    await user.tab()
+    expect(cardButton()).not.toHaveFocus()
+    expect(group).not.toContainElement(document.activeElement as HTMLElement)
   })
 })

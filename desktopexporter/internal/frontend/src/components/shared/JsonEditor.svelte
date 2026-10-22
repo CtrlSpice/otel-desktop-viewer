@@ -10,6 +10,7 @@
   } from '@codemirror/language'
   import { jsonEditorExtensions } from './utils/json-editor'
   import { jsonReadableStrings } from './utils/json-readable-strings'
+  import { jsonRuntimeLiterals } from './utils/json-runtime-literals'
 
   let {
     text,
@@ -60,7 +61,7 @@
 
   function presentationExtensions() {
     return [
-      ...(raw ? [] : [jsonReadableStrings]),
+      ...(raw ? [] : [jsonReadableStrings, jsonRuntimeLiterals]),
       EditorView.contentAttributes.of({ 'aria-label': label, tabindex: '0' }),
     ]
   }

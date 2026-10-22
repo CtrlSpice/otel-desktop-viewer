@@ -9,7 +9,7 @@
   import { severityLabel } from '@/components/logs/log-severity'
   import { formatSignedDuration } from '@/utils/time'
   import {
-    toolEventAnnotation,
+    toolEventProvenance,
     toolEventError,
     toolEventName,
   } from '@/utils/tool-event'
@@ -52,11 +52,9 @@
   }
 
   function recordName(record: TimelineRecord): string {
-    return record.kind === 'annotation'
-      ? record.name
-      : record.kind === 'event'
-        ? toolEventName(record.event)
-        : record.log.eventName || record.log.bodyPreview
+    return record.kind === 'event'
+      ? toolEventName(record.event)
+      : record.log.eventName || record.log.bodyPreview
   }
 
   function buttonTitle(): string {
@@ -294,19 +292,19 @@
           </span>
           <span
             class="activity-popover__metadata text-rp-subtle"
-            class:activity-popover__metadata--annotation={record.kind ===
-              'annotation'}
             class:activity-popover__metadata--with-dot={record.kind === 'log' ||
               name === 'exception'}
           >
             {#if record.kind === 'event'}
-              {@const annotation = toolEventAnnotation(record.event)}
-              <span title={annotation?.description}
-                >{annotation?.label ?? 'Span event'}</span
+              {@const provenance = toolEventProvenance(record.event)}
+              <span
+                >Span event{#if provenance}<span aria-hidden="true">
+                    ·
+                  </span><span
+                    class="text-secondary"
+                    title={provenance.description}>{provenance.source}</span
+                  >{/if}</span
               >
-            {:else if record.kind === 'annotation'}
-              <span>Eval annotation</span>
-              <span>{record.description}</span>
             {:else}
               <span>Log</span>
             {/if}
@@ -375,10 +373,6 @@
 
   .activity-popover__metadata {
     @apply flex w-full min-w-0 items-center gap-2 whitespace-nowrap;
-  }
-
-  .activity-popover__metadata--annotation {
-    @apply flex-col items-start gap-0 whitespace-normal;
   }
 
   .activity-popover__metadata--with-dot {

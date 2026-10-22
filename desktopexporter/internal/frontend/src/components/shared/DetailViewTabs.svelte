@@ -22,7 +22,6 @@
     aria-label="Detail view"
     class="detail-view-tabs header-tabs"
     style:--header-tab-count={2}
-    style:--header-active-index={view === 'fields' ? 0 : 1}
     onkeydown={handleTablistKeydown}
   >
     <button
@@ -70,3 +69,17 @@
   </div>
   {#if action}{@render action()}{/if}
 </div>
+
+<style>
+  .detail-view-tabs.header-tabs::before {
+    content: none;
+  }
+
+  .detail-view-tabs .header-tab {
+    transition: none;
+  }
+
+  .detail-view-tabs .header-tab[aria-selected='true'] {
+    background: var(--item-selected-bg);
+  }
+</style>

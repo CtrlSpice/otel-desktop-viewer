@@ -26,7 +26,6 @@
     subtleLabels = false,
     emptyLabel,
     right,
-    onsegmentclick,
   }: {
     parts: BubbleBreakdownPart[]
     defaultKey?: string
@@ -37,7 +36,7 @@
     countFormat?: 'detailed' | 'compact' | 'bracketed'
     /** Show every label with a decorative bar instead of interactive previews. */
     showAll?: boolean
-    /** Keep the breakdown visible while moving labels into hover/focus context. */
+    /** Non-interactive segments with hover tooltips and accessible counts. */
     tooltipOnly?: boolean
     /** Keep a sole category's label and count visible without a tooltip. */
     staticSingle?: boolean
@@ -45,7 +44,6 @@
     subtleLabels?: boolean
     emptyLabel?: string
     right?: Snippet
-    onsegmentclick?: () => void
   } = $props()
   const colouredParts = $derived(parts.filter(part => part.count > 0))
   let pinnedKey = $state<string | null>(null)
@@ -98,9 +96,11 @@
   class="flow-root min-w-0"
   class:breakdown--subtle-labels={subtleLabels}
   role="group"
-  aria-label={label}
+  aria-label={tooltipOnly && colouredParts.length
+    ? `${label}: ${colouredParts.map(part => `${part.label}: ${countLabel(part)}`).join('; ')}`
+    : label}
   onpointermove={event => {
-    if (showAll || event.pointerType === 'touch') return
+    if (showAll || tooltipOnly || event.pointerType === 'touch') return
     const target = event.target
     if (!(target instanceof Element)) return
     const choice = target.closest<HTMLElement>('[data-breakdown-key]')
@@ -130,12 +130,7 @@
       aria-label={barLabel}
     >
       {#each colouredParts as part (part.key)}
-        <BreakdownSegment
-          {part}
-          {unit}
-          single={colouredParts.length === 1}
-          onclick={onsegmentclick}
-        />
+        <BreakdownSegment {part} {unit} single={colouredParts.length === 1} />
       {/each}
     </div>
   {:else if colouredParts.length > 1}

@@ -1,26 +1,25 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { PiToolEvents } from './pi-tool-events.ts'
+import { PiToolLogs } from './pi-tool-logs.ts'
 
 function collected(records: Record<string, unknown>[]) {
-  const collector = new PiToolEvents()
+  const collector = new PiToolLogs()
   records.forEach((record, index) => collector.observe(record, 1000 + index))
-  const events: any[] = []
-  const span = { addEvent: (...args: any[]) => { events.push(args); return span as any } }
-  collector.flush(span)
-  collector.flush(span)
-  return events
+  const logs = collector.drain()
+  assert.deepEqual(collector.drain(), [])
+  return logs.map(log => [log.eventName, log.attributes, log.timestamp, log.observedTimestamp] as const)
 }
 const start = { type: 'tool_execution_start', toolCallId: 'call-1', toolName: 'bash', args: { command: 'printf exact' } }
 const end = { type: 'tool_execution_end', toolCallId: 'call-1', toolName: 'bash', result: { content: [{ type: 'text', text: 'exact\n' }] }, durationMs: 23, isError: false }
 const message = { type: 'message_end', message: { role: 'toolResult', toolCallId: 'call-1', toolName: 'bash', durationMs: 23, isError: false, timestamp: 999 } }
 
-test('one rich parent event retains exact source records and recorded message time, without a derived start', () => {
+test('one log event retains exact source records, source and observed time without a derived start', () => {
   const events = collected([start, end, message])
   assert.equal(events.length, 1)
-  const [name, attributes, timestamp] = events[0]
+  const [name, attributes, timestamp, observed] = events[0]
   assert.equal(name, 'tool.execution')
   assert.equal(timestamp, 999)
+  assert.equal(observed, 1001)
   assert.equal(attributes['pi.event.timestamp.source'], 'toolResult.timestamp')
   assert.equal(attributes['tool.duration_ms'], 23)
   assert.equal(attributes['tool.is_error'], false)
@@ -54,10 +53,7 @@ test('ambiguous IDs and conflicting names never borrow input or message time', (
   }
 })
 
-test('failed tools remain failed and tracing is optional', () => {
+test('failed tools remain failed', () => {
   const [[, attributes]] = collected([{ ...end, isError: true }])
   assert.equal(attributes['tool.is_error'], true)
-  const collector = new PiToolEvents()
-  collector.observe(start)
-  assert.doesNotThrow(() => collector.flush(undefined))
 })

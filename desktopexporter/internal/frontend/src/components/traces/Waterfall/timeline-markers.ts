@@ -23,15 +23,6 @@ export type TimelineRecord =
       timestamp: bigint
       log: TraceLogSummary
     }
-  | {
-      /** Viewer-only correlation, never a stored OTel event or span. */
-      kind: 'annotation'
-      id: string
-      timestamp: bigint
-      name: string
-      description: string
-      href?: string
-    }
 
 export type MarkerPosition =
   | { placement: 'inside'; pixel: number; percent: number }
@@ -97,7 +88,7 @@ export function compareTimelineRecords(
   if (left.timestamp !== right.timestamp)
     return left.timestamp < right.timestamp ? -1 : 1
   if (left.kind !== right.kind) {
-    const order = { event: 0, log: 1, annotation: 2 }
+    const order = { event: 0, log: 1 }
     return order[left.kind] - order[right.kind]
   }
   if (left.kind === 'event' && right.kind === 'event')
@@ -189,15 +180,9 @@ export function markerLabel(marker: TimelineMarker): string {
     member => member.kind === 'event'
   ).length
   const logCount = marker.members.filter(member => member.kind === 'log').length
-  const annotationCount = marker.members.filter(
-    member => member.kind === 'annotation'
-  ).length
   const parts = [
     eventCount > 0 ? `${eventCount} event${eventCount === 1 ? '' : 's'}` : '',
     logCount > 0 ? `${logCount} log${logCount === 1 ? '' : 's'}` : '',
-    annotationCount > 0
-      ? `${annotationCount} eval annotation${annotationCount === 1 ? '' : 's'}`
-      : '',
   ].filter(Boolean)
   return marker.members.length === 1
     ? `Select ${parts[0]}`

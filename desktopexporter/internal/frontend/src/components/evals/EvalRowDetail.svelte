@@ -176,10 +176,7 @@
   {/if}
 {/snippet}
 
-<DetailStack
-  label={row.kind === 'result' ? 'Result details' : `${row.name} details`}
-  storageKey={`eval-${row.kind === 'result' ? 'rep' : row.kind}-detail-layout`}
->
+{#snippet detailsSection()}
   <DetailBubble
     label={row.name}
     layoutKey={row.kind === 'case' ? 'Question' : row.name}
@@ -359,46 +356,48 @@
       </tbody>
     </table>
   </DetailBubble>
-  {#if mode !== 'cost' && assessments.length}
-    <DetailBubble
-      label="Assessments"
-      action={overall && (overall.rubric || sourceCopy)
-        ? overallInputCopy
-        : undefined}
-    >
-      {#snippet trailing()}
-        {#if overall}
-          <span class="inline-flex items-center gap-2">
-            <AssessmentBadge
-              assessment={overall}
-              maximum={overallDefinition?.maximum}
-            />
-          </span>
-        {/if}
-      {/snippet}
-      {#each assessments as assessment (assessment.id)}
-        <EvalAssessmentDetail
-          {assessment}
-          definition={experiment.assessments.find(
-            item => item.id === assessment.id
-          )}
-          showScore={mode === 'results'}
-          showHeading={assessment.id !== overall?.id}
-          loadRubric={result
-            ? sourceCopy?.(result.id, `assessment:${assessment.id}:rubric`)
-            : undefined}
-          loadExplanation={result
-            ? sourceCopy?.(
-                result.id,
-                assessment.id === experiment.headlineAssessment
-                  ? 'explanation'
-                  : `assessment:${assessment.id}:explanation`
-              )
-            : undefined}
-        />
-      {/each}
-    </DetailBubble>
-  {/if}
+{/snippet}
+{#snippet assessmentsSection()}
+  <DetailBubble
+    label="Assessments"
+    action={overall && (overall.rubric || sourceCopy)
+      ? overallInputCopy
+      : undefined}
+  >
+    {#snippet trailing()}
+      {#if overall}
+        <span class="inline-flex items-center gap-2">
+          <AssessmentBadge
+            assessment={overall}
+            maximum={overallDefinition?.maximum}
+          />
+        </span>
+      {/if}
+    {/snippet}
+    {#each assessments as assessment (assessment.id)}
+      <EvalAssessmentDetail
+        {assessment}
+        definition={experiment.assessments.find(
+          item => item.id === assessment.id
+        )}
+        showScore={mode === 'results'}
+        showHeading={assessment.id !== overall?.id}
+        loadRubric={result
+          ? sourceCopy?.(result.id, `assessment:${assessment.id}:rubric`)
+          : undefined}
+        loadExplanation={result
+          ? sourceCopy?.(
+              result.id,
+              assessment.id === experiment.headlineAssessment
+                ? 'explanation'
+                : `assessment:${assessment.id}:explanation`
+            )
+          : undefined}
+      />
+    {/each}
+  </DetailBubble>
+{/snippet}
+{#snippet telemetrySection()}
   <EvalTelemetrySection
     entries={references}
     nodes={telemetryNodes}
@@ -412,7 +411,18 @@
       ? evidenceLogs
       : []}
   />
-</DetailStack>
+{/snippet}
+<DetailStack
+  label={row.kind === 'result' ? 'Result details' : `${row.name} details`}
+  storageKey={`eval-${row.kind === 'result' ? 'rep' : row.kind}-detail-layout`}
+  sections={[
+    { id: 'details', content: detailsSection },
+    ...(mode !== 'cost' && assessments.length
+      ? [{ id: 'assessments', content: assessmentsSection }]
+      : []),
+    { id: 'telemetry', content: telemetrySection },
+  ]}
+/>
 
 <style lang="postcss">
   @reference "../../app.css";

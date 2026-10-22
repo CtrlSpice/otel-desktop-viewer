@@ -3,8 +3,9 @@ import path from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { StringDecoder } from 'node:string_decoder'
-import { context as otelContext, propagation, trace } from '@opentelemetry/api'
-import { PiToolEvents } from './pi-tool-events.ts'
+import { context as otelContext, propagation } from '@opentelemetry/api'
+import { PiToolLogs } from './pi-tool-logs.ts'
+import { exportToolLogs } from './tool-logs.ts'
 import { record, saveJson, SUITE } from './runtime.ts'
 import { stopOwnedGroup } from './run-cancellation.ts'
 
@@ -53,8 +54,8 @@ export default class PiProvider {
     const workspace = path.join(evidence, 'workspace')
     const write = (name: string, text: string) => fs.writeFileSync(path.join(evidence, name), text, { mode: 0o600, flag: 'wx' })
     const carrier: Record<string, string> = {}
-    const parentSpan = trace.getSpan(otelContext.active())
-    const toolEvents = new PiToolEvents()
+    const invocation = otelContext.active()
+    const toolEvents = new PiToolLogs()
     propagation.inject(otelContext.active(), carrier)
     const promptfoo = { evaluationId: context.evaluationId, testIdx: context.testIdx, repeatIndex: context.repeatIndex,
       traceparent: carrier.traceparent ?? context.traceparent }
@@ -140,7 +141,9 @@ export default class PiProvider {
     try { exit = await new Promise<number | null>((resolve, reject) => { child.once('error', reject); child.once('close', resolve) }) }
     finally { clearTimeout(timer); children.delete(child) }
     consume(decoder.end())
-    toolEvents.flush(parentSpan)
+    const toolLogs = toolEvents.drain()
+    saveJson(path.join(evidence, 'tool-logs.json'), toolLogs)
+    await exportToolLogs(toolLogs, invocation, 'Pi', path.basename(evidence))
     const messages = events.filter(event => event.type === 'message_end').map(event => record(event.message))
     const message = messages.findLast(message => message.role === 'assistant')
     const content = Array.isArray(message?.content) ? message.content.map(record) : []

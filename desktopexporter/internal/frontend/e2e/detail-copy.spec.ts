@@ -47,7 +47,7 @@ async function openCopyField(
 }
 
 for (const structured of [false, true]) {
-  test(`long ${structured ? 'JSON' : 'text'} detail fields use native two-line previews and copy the full value`, async ({
+  test(`long ${structured ? 'JSON detail fields fold' : 'text detail fields use native two-line previews'} and copy the full value`, async ({
     page,
     context,
   }) => {
@@ -56,6 +56,28 @@ for (const structured of [false, true]) {
     const lines = Array.from({ length: 12 }, (_, i) => `Retained line ${i + 1}`)
     const text = structured ? JSON.stringify({ lines }) : lines.join('\n')
     const field = await openCopyField(page, text)
+    if (structured) {
+      const editor = field.locator('.cm-editor')
+      await expect(editor).toBeVisible()
+      await expect(
+        field.getByRole('button', { name: 'Show more', exact: true })
+      ).toHaveCount(0)
+      await field
+        .getByRole('button', { name: 'Expand all body JSON', exact: true })
+        .click()
+      await expect(editor).toContainText('Retained line 12')
+      await field
+        .getByRole('button', { name: 'Collapse all body JSON', exact: true })
+        .click()
+      await expect(editor).not.toContainText('Retained line 12')
+      await field
+        .getByRole('button', { name: 'Copy body', exact: true })
+        .click()
+      await expect
+        .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+        .toBe(text)
+      return
+    }
     const content = field.locator('.detail-pair__value')
     const more = field.getByRole('button', { name: 'Show more', exact: true })
     await expect(more).toBeVisible()

@@ -7,9 +7,10 @@ import type {
 } from '@/types/api-types'
 import { referenceKey } from './eval-traces'
 import {
-  toolEventAnnotation,
+  toolEventProvenance,
   toolEventError,
   toolEventName,
+  toolLogProvenance,
 } from '@/utils/tool-event'
 
 export type EvalSpanEvidence = {
@@ -140,16 +141,16 @@ export function evalSpanEvidence(
         fields,
       })
     span.events.forEach((event, index) => {
-      const annotation = toolEventAnnotation(event)
+      const provenance = toolEventProvenance(event)
       const fields = evidenceEvent(event.name)
         ? event.attributes
         : event.attributes.filter(attribute => evidenceKey(attribute.key))
       if (fields.length)
         records.push({
           id: `${key}/event/${index}`,
-          source: `${toolEventName(event)} · ${annotation?.label ?? 'Span event'} ${index + 1}`,
-          sourceDescription: annotation
-            ? `${annotation.description} · Event name: ${event.name}`
+          source: `${toolEventName(event)} · Span event ${index + 1}`,
+          sourceDescription: provenance
+            ? `${provenance.description} · Event name: ${event.name}`
             : undefined,
           toolError: toolEventError(event),
           fields,
@@ -157,6 +158,7 @@ export function evalSpanEvidence(
     })
   }
   for (const log of logs) {
+    const provenance = toolLogProvenance(log)
     const exact =
       !!log.traceID &&
       !!log.spanID &&
@@ -194,7 +196,11 @@ export function evalSpanEvidence(
       if (fields.length)
         records.push({
           id: `log/${log.logRef}`,
-          source: `${log.eventName ? `${log.eventName} · ` : ''}Log`,
+          source: provenance
+            ? `${provenance.name} · Log event · ${provenance.source}`
+            : `${log.eventName ? `${log.eventName} · ` : ''}Log`,
+          sourceDescription: provenance?.description,
+          toolError: provenance?.toolError,
           fields,
         })
     }

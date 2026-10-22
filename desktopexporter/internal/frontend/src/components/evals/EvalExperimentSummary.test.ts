@@ -46,7 +46,7 @@ describe('EvalExperimentSummary', () => {
       onclick,
     })
     const group = screen.getByRole('group', {
-      name: 'Task completion outcomes',
+      name: /^Task completion outcomes/,
     })
     within(group).getByRole('group', {
       name: /Task completion by result count/,
@@ -58,22 +58,26 @@ describe('EvalExperimentSummary', () => {
         node.textContent?.trim()
       )
     ).toEqual(['Pass [11]', 'Partial [3]', 'Fail [2]'])
-    const segment = within(group).getByRole('button', {
-      name: 'Pass: 11 results',
-    })
+    const segment = within(group).getByRole('img', { name: 'Pass: 11 results' })
+    const card = screen.getByRole('button', { name: /Guide-assisted agent/ })
     await user.tab()
-    await user.tab()
-    expect(segment).toHaveFocus()
+    expect(card).toHaveFocus()
+    expect(card).toHaveAccessibleName(
+      expect.stringContaining('Pass: 11 results')
+    )
+    expect(within(group).queryByRole('button')).not.toBeInTheDocument()
     expect(onclick).not.toHaveBeenCalled()
     await user.keyboard('{Enter}')
     expect(onclick).toHaveBeenCalledWith('guide-assisted')
     expect(onclick).toHaveBeenCalledTimes(1)
-    await user.click(segment)
+    await user.hover(segment)
+    expect(onclick).toHaveBeenCalledTimes(1)
+    await user.pointer({ target: segment, keys: '[MouseLeft>]' })
+    expect(onclick).toHaveBeenCalledTimes(1)
+    await user.pointer({ keys: '[/MouseLeft]' })
     expect(onclick).toHaveBeenCalledTimes(2)
     expect(document.querySelector('button button')).toBeNull()
-    await user.click(
-      screen.getByRole('button', { name: /Guide-assisted agent/ })
-    )
+    await user.click(card)
     expect(onclick).toHaveBeenCalledWith('guide-assisted')
     expect(onclick).toHaveBeenCalledTimes(3)
   })
@@ -84,7 +88,7 @@ describe('EvalExperimentSummary', () => {
       onclick: vi.fn(),
     })
     const group = screen.getByRole('group', {
-      name: 'Task completion outcomes',
+      name: /^Task completion outcomes/,
     })
     expect(group).toHaveTextContent('Internal fault [2]')
     expect(group).toHaveTextContent('Planned [4]')
@@ -99,7 +103,7 @@ describe('EvalExperimentSummary', () => {
     const card = screen.getByRole('button', { name: /Revised instructions/ })
     expect(card).toHaveTextContent('Planned [16]')
     expect(
-      screen.queryByRole('group', { name: 'Task completion outcomes' })
+      screen.queryByRole('group', { name: /^Task completion outcomes/ })
     ).not.toBeInTheDocument()
     expect(screen.queryByText('Unscored')).not.toBeInTheDocument()
     expect(screen.queryByText(/Est\. cost:/)).not.toBeInTheDocument()
@@ -122,7 +126,7 @@ describe('EvalExperimentSummary', () => {
       onclick: vi.fn(),
     })
     const group = screen.getByRole('group', {
-      name: 'Task completion outcomes',
+      name: /^Task completion outcomes/,
     })
     expect(group).toHaveTextContent('Unscored [16]')
     expect(group.querySelector('[role="tooltip"]')).toBeNull()
@@ -146,7 +150,7 @@ describe('EvalExperimentSummary', () => {
       onclick: vi.fn(),
     })
     const group = screen.getByRole('group', {
-      name: 'Task completion outcomes',
+      name: /^Task completion outcomes/,
     })
     expect(group).toHaveTextContent('Fail [16]')
     expect(group.querySelector('[role="tooltip"]')).toBeNull()

@@ -64,7 +64,7 @@ const trace: JsonTraceData = {
 }
 
 for (const kind of ['event', 'log'] as const) {
-  test(`${kind} marker reveals collapsed Events without reopening manually closed Span`, async ({
+  test(`${kind} marker reveals collapsed Events while Span stays open`, async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1920, height: 1000 })
@@ -134,6 +134,15 @@ for (const kind of ['event', 'log'] as const) {
       await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
     })
     await page.goto(`/traces/${traceID}?span=${spanID}`)
+    const bar = page.locator('.waterfall-row__bar').first()
+    const glyph = page.locator('.timeline-marker__circle').first()
+    await expect(glyph).toBeVisible()
+    const barBounds = (await bar.boundingBox())!
+    const glyphBounds = (await glyph.boundingBox())!
+    expect(glyphBounds.y + glyphBounds.height / 2).toBeCloseTo(
+      barBounds.y + barBounds.height / 2,
+      0
+    )
     await page.evaluate(() => {
       const states: boolean[] = []
       Object.assign(window, { revealScrollStates: states })
@@ -152,20 +161,24 @@ for (const kind of ['event', 'log'] as const) {
       name: 'Span details',
       exact: true,
     })
-    const sections = stack.locator('.detail-bubble__disclosure')
-    const span = sections.nth(0)
-    const events = sections.nth(1)
-    const links = sections.nth(2)
+    const span = stack.locator('[data-detail-section="span"] > details')
+    const events = stack.locator('[data-detail-section="events"] > details')
+    const links = stack.locator('[data-detail-section="links"] > details')
     await span.locator(':scope > summary').press('Enter')
-    await expect(span).not.toHaveAttribute('open')
+    await expect(span).toHaveAttribute('open')
     for (let attempt = 0; attempt < 2; attempt++) {
-      await events.locator(':scope > summary').click()
-      await expect(events).not.toHaveAttribute('open')
+      await page.emulateMedia({
+        reducedMotion: attempt ? 'no-preference' : 'reduce',
+      })
+      await events
+        .locator(':scope > summary')
+        .dispatchEvent('click', { detail: 1 })
+      if (!attempt) await expect(events).not.toHaveAttribute('open')
       await page
         .getByRole('button', { name: `Select 1 ${kind}`, exact: true })
         .click()
       await expect(events).toHaveAttribute('open')
-      await expect(span).not.toHaveAttribute('open')
+      await expect(span).toHaveAttribute('open')
       await expect(links).toHaveAttribute('open')
       const target =
         kind === 'event'
@@ -192,7 +205,7 @@ for (const kind of ['event', 'log'] as const) {
   })
 }
 
-test('detail headers drag, collapse, reopen and redistribute space across collapsed neighbours', async ({
+test('detail headers regroup and resize only open neighbours while retaining mounted state', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1920, height: 1000 })
@@ -201,6 +214,13 @@ test('detail headers drag, collapse, reopen and redistribute space across collap
     localStorage.setItem('signal-detail:open', 'true')
   )
   const linked = structuredClone(trace)
+  linked.spans[0]!.spanData.events[0]!.attributes.push({
+    key: 'nested',
+    value: {
+      kind: 'string',
+      value: '{"outer":{"inner":{"value":"retained"}},"other":{"value":2}}',
+    },
+  })
   linked.spans[0]!.spanData.links.push({
     traceID,
     spanID,
@@ -258,9 +278,9 @@ test('detail headers drag, collapse, reopen and redistribute space across collap
   await page.goto(`/traces/${traceID}?span=${spanID}`)
   const stack = page.getByRole('region', { name: 'Span details', exact: true })
   const sections = stack.locator('.detail-bubble--resizable')
-  const span = sections.nth(0)
-  const events = sections.nth(1)
-  const links = sections.nth(2)
+  const span = stack.locator('[data-detail-section="span"]')
+  const events = stack.locator('[data-detail-section="events"]')
+  const links = stack.locator('[data-detail-section="links"]')
   const top = events.locator(':scope > details > summary')
   const bottom = links.locator(':scope > details > summary')
   const open = (section: typeof span) => section.locator(':scope > details')
@@ -280,8 +300,8 @@ test('detail headers drag, collapse, reopen and redistribute space across collap
   }
   async function anchored() {
     const bounds = (await stack.boundingBox())!
-    const first = (await span.boundingBox())!
-    const last = (await links.boundingBox())!
+    const first = (await sections.first().boundingBox())!
+    const last = (await sections.last().boundingBox())!
     expect(first.y).toBeCloseTo(bounds.y, 0)
     expect(last.y + last.height).toBeCloseTo(bounds.y + bounds.height, 0)
     expect(
@@ -295,9 +315,41 @@ test('detail headers drag, collapse, reopen and redistribute space across collap
   )
   await expect(top).toHaveAttribute('data-resize-before')
   await anchored()
+  await events.getByRole('button', { name: /target event/ }).click()
+  const json = events.locator('[data-field="nested"] .json-editor')
+  await json.locator('.cm-foldPlaceholder').first().click()
+  const editor = await json.locator('.cm-editor').elementHandle()
+  const folds = await json.locator('.cm-foldPlaceholder').count()
+  await open(events).evaluate(element => {
+    element.scrollTop = 240
+  })
+  const scrollTop = await open(events).evaluate(element => element.scrollTop)
+  expect(scrollTop).toBeGreaterThan(0)
+  await heading(events).press('Enter')
+  await expect(open(events)).not.toHaveAttribute('open')
+  await heading(events).press('Enter')
+  await expect(open(events)).toHaveAttribute('open')
+  expect(
+    await json
+      .locator('.cm-editor')
+      .evaluate((node, original) => node === original, editor)
+  ).toBe(true)
+  await expect(json.locator('.cm-foldPlaceholder')).toHaveCount(folds)
+  expect(await open(events).evaluate(element => element.scrollTop)).toBe(
+    scrollTop
+  )
   await page.emulateMedia({ reducedMotion: 'no-preference' })
-  // Events must track the pointer one-for-one while pushing Links down,
-  // including a reversal before the previous release animation settles.
+  await top.click()
+  await expect(open(events)).not.toHaveAttribute('open')
+  await expect(events).toHaveAttribute('data-detail-group', 'closed')
+  await expect(top).toBeFocused()
+  await top.click()
+  await expect(open(events)).toHaveAttribute('open')
+  await expect(events).toHaveAttribute('data-detail-group', 'open')
+  expect(await events.evaluate(element => element.getAnimations().length)).toBe(
+    0
+  )
+  // Events must track the pointer one-for-one while pushing Links down.
   for (const delta of [80, -80, 80, -80]) {
     const before = (await bottom.boundingBox())!
     const beforeHeights = await Promise.all([
@@ -319,8 +371,8 @@ test('detail headers drag, collapse, reopen and redistribute space across collap
     await page.mouse.up()
   }
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  // One continuous Links drag exhausts Events, then takes space from Span.
-  // Reversing that same gesture restores both donors without a second grab.
+  // A long drag only takes space from Events. Disclosure/order stay fixed until
+  // release, and reversing within the same gesture restores the original sizes.
   const cascadeHeights = await Promise.all([
     height(span),
     height(events),
@@ -334,11 +386,9 @@ test('detail headers drag, collapse, reopen and redistribute space across collap
   await page.mouse.move(cascadeX, cascadeY - cascadeHeights[1]! - 180, {
     steps: 12,
   })
-  await expect(open(events)).not.toHaveAttribute('open')
-  expect(await height(span)).toBeLessThan(cascadeHeights[0]! - 80)
-  expect(await height(links)).toBeGreaterThan(
-    cascadeHeights[2]! + cascadeHeights[1]!
-  )
+  await expect(open(events)).toHaveAttribute('open')
+  expect(await height(span)).toBeCloseTo(cascadeHeights[0]!, 0)
+  expect(await height(links)).toBeGreaterThan(cascadeHeights[2]! + 100)
   await anchored()
   await page.mouse.move(cascadeX, cascadeY, { steps: 12 })
   await page.mouse.up()
@@ -367,55 +417,86 @@ test('detail headers drag, collapse, reopen and redistribute space across collap
   await expect(open(events)).not.toHaveAttribute('open')
   expect(await height(links)).toBeCloseTo(lowerHeight, 0)
   await heading(events).click()
+  await expect(events).toHaveAttribute('data-detail-group', 'open')
   const initial = await height(span)
   await drag(top, -initial - 80, true)
   await expect(open(span)).toHaveAttribute('open')
   expect(await height(span)).toBeCloseTo(initial, 0)
-  await drag(top, -initial - 80)
-  await expect(open(span)).not.toHaveAttribute('open')
-  await anchored()
-  await drag(top, 120)
+  const beforeDragScroll = await open(events).evaluate(async element => {
+    element.scrollTop = 120
+    await new Promise(requestAnimationFrame)
+    return element.scrollTop
+  })
+  expect(beforeDragScroll).toBeGreaterThan(0)
+  await drag(bottom, -(await height(events)) - 80)
+  await expect(open(events)).not.toHaveAttribute('open')
   await expect(open(span)).toHaveAttribute('open')
-  expect(await height(span)).toBeGreaterThan(140)
+  await expect(top).not.toHaveAttribute('data-resize-before')
+  await anchored()
+  // Closed headers do not resize or reopen through arrow keys.
+  await heading(events).press('ArrowDown')
+  await expect(open(events)).not.toHaveAttribute('open')
+  await heading(events).press('Enter')
+  await expect(open(events)).toHaveAttribute('open')
+  expect(await open(events).evaluate(element => element.scrollTop)).toBe(
+    beforeDragScroll
+  )
+
+  // The top section cannot close through its heading or the boundary below it.
+  await expect(heading(span)).toHaveAttribute('aria-disabled', 'true')
+  await heading(span).press('Enter')
+  await heading(span).press('Space')
+  await heading(span).getByText('Span', { exact: true }).click({ force: true })
+  await expect(open(span)).toHaveAttribute('open')
+  await drag(top, -(await height(span)) - 200)
+  await expect(open(span)).toHaveAttribute('open')
+  expect(await height(span)).toBeGreaterThan(60)
+  await top.press('Home')
+  await expect(open(span)).toHaveAttribute('open')
+  expect(await height(span)).toBeGreaterThan(60)
+  await top.press('0')
 
   await top.focus()
   await top.press('End')
-  await expect(open(links)).not.toHaveAttribute('open')
-  await expect(open(events)).not.toHaveAttribute('open')
-  await anchored()
-  expect(await height(span)).toBeGreaterThan(700)
-  await heading(span).focus()
-  await heading(span).press('Enter')
-  await expect(open(span)).not.toHaveAttribute('open')
-  await expect(open(events)).toHaveAttribute('open')
-  await expect(open(links)).not.toHaveAttribute('open')
-  expect(await height(events)).toBeGreaterThan(700)
-  await anchored()
-  await heading(events).click()
-  await expect(open(events)).not.toHaveAttribute('open')
   await expect(open(links)).toHaveAttribute('open')
+  await expect(open(events)).not.toHaveAttribute('open')
+  await expect(top).toBeFocused()
+  await anchored()
+  const retained = await open(span).elementHandle()
+  // Collapse gives space to the nearest open section above and leaves one open.
   await heading(links).click()
   await expect(open(links)).not.toHaveAttribute('open')
-  await expect(open(events)).toHaveAttribute('open')
-  await top.focus()
-  await top.press('End')
   await expect(open(span)).toHaveAttribute('open')
-  await expect(open(events)).not.toHaveAttribute('open')
-
-  // Both neighbours of this divider are collapsed; borrow from Span above them.
-  await expect(bottom).toHaveAttribute('data-resize-before')
-  await drag(bottom, -120)
+  await expect(heading(span)).toHaveAttribute('aria-disabled', 'true')
+  await heading(span).press('Enter')
+  await expect(open(span)).toHaveAttribute('open')
+  await expect(bottom).not.toHaveAttribute('data-resize-before')
+  await bottom.press('ArrowUp')
+  await expect(open(links)).not.toHaveAttribute('open')
+  await heading(links).click()
   await expect(open(links)).toHaveAttribute('open')
   await expect(open(events)).not.toHaveAttribute('open')
+  await expect(bottom).toHaveAttribute(
+    'data-resize-before',
+    (await span.getAttribute('id')) as string
+  )
+  expect(
+    await sections.evaluateAll(nodes =>
+      nodes.map(node => (node as HTMLElement).dataset.detailSection)
+    )
+  ).toEqual(['span', 'links', 'events'])
   await anchored()
-  await drag(top, -120)
+  await heading(events).click()
   await expect(open(events)).toHaveAttribute('open')
+  expect(
+    await open(span).evaluate((node, original) => node === original, retained)
+  ).toBe(true)
   await anchored()
   await bottom.focus()
   await bottom.press('End')
   await expect(open(links)).not.toHaveAttribute('open')
   await bottom.press('ArrowUp')
-  await expect(open(links)).toHaveAttribute('open')
+  await expect(open(links)).not.toHaveAttribute('open')
   await expect(bottom).toHaveCSS('outline-style', 'solid')
   await expect(bottom).toHaveCSS('outline-offset', '-3px')
   await expect(open(links)).toHaveCSS('outline-style', 'none')
@@ -441,8 +522,8 @@ test('associated logs reuse summary cards and open the full log without losing t
   const logRef = '00000000-0000-0000-0000-000000000001'
   const log: JsonLogData = {
     logRef,
-    timestamp: '1700000000500000000',
-    observedTimestamp: '1700000000500000000',
+    timestamp: '1700000002500000000',
+    observedTimestamp: '1700000002500000000',
     traceID,
     spanID,
     severityText: 'WARN',
@@ -552,6 +633,22 @@ test('associated logs reuse summary cards and open the full log without losing t
   const card = associated.getByRole('button')
   await expect(card).toBeVisible()
   const selectedRow = page.locator('.waterfall-row[aria-selected="true"]')
+  const outsideLog = selectedRow.getByRole('button', {
+    name: 'Select 1 log outside timeline',
+    exact: true,
+  })
+  await expect(outsideLog).toHaveClass(/timeline-marker--outside/)
+  expect(
+    await selectedRow
+      .locator('.span-bar')
+      .evaluate(element => (element as HTMLElement).style.width)
+  ).toBe('100%')
+  await outsideLog.hover()
+  const preview = page.getByRole('dialog', { name: 'Span activity' })
+  await expect(preview).toBeVisible()
+  await expect(preview).toContainText('order.delayed')
+  await expect(preview).toContainText('+2.500 s')
+  await page.keyboard.press('Escape')
   await expect(selectedRow).toHaveCSS('border-radius', '12px')
   await expect(selectedRow).toHaveCSS('overflow', 'visible')
   const mainHeader = page.getByRole('region', {
@@ -614,9 +711,7 @@ test('associated logs reuse summary cards and open the full log without losing t
     associated.getByText('order.delayed', { exact: true })
   ).toBeVisible()
   await expect(
-    card
-      .locator('.signal-row__date')
-      .getByText('(+500.000 ms)', { exact: true })
+    card.locator('.signal-row__date').getByText('(+2.500 s)', { exact: true })
   ).toBeVisible()
   await expect(associated.locator('table, details, [data-field]')).toHaveCount(
     0
@@ -741,8 +836,8 @@ test('detail targets reopen the panel with independent native disclosures', asyn
   await expect(span).toBeVisible()
   // Loading a selected trace must not override the persisted collapsed state.
   await expect(detail).toBeHidden()
-  const fields = detail.locator('details.collapse').nth(0)
-  const activity = detail.locator('details.collapse').nth(1)
+  const fields = detail.locator('[data-detail-section="span"] > details')
+  const activity = detail.locator('[data-detail-section="events"] > details')
   const links = detail.getByRole('region', { name: 'Links', exact: true })
   const darkestSurface = await page.evaluate(() => {
     const probe = document.createElement('div')
@@ -819,7 +914,7 @@ test('detail targets reopen the panel with independent native disclosures', asyn
     })
     await fields.locator(':scope > summary').focus()
     await page.keyboard.press('Enter')
-    await expect(fields).not.toHaveAttribute('open')
+    await expect(fields).toHaveAttribute('open')
     await expect(activity).toHaveAttribute('open')
     const extraHeight = await links.evaluate(element => {
       const heading = element.querySelector('.detail-bubble__heading')!
@@ -942,7 +1037,7 @@ test('detail targets reopen the panel with independent native disclosures', asyn
     .getByText('Span', { exact: true })
     .click()
   await expect(resize).toHaveAttribute('data-resize-before')
-  await expect.poll(sectionHeight).toBeLessThan(60)
+  await expect.poll(sectionHeight).toBeCloseTo(savedHeight, 0)
   await fields
     .locator(':scope > summary')
     .getByText('Span', { exact: true })
@@ -961,7 +1056,8 @@ test('detail targets reopen the panel with independent native disclosures', asyn
   await page.reload()
   await span.click()
   await expect.poll(sectionHeight).toBeCloseTo(reopenedHeight, 0)
-  await resize.dblclick()
+  await resize.focus()
+  await resize.press('0')
   await expect
     .poll(() =>
       page.evaluate(() => localStorage.getItem('trace-detail-section-sizes'))

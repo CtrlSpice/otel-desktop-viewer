@@ -43,15 +43,25 @@ function mixedMarker(): TimelineMarker {
 }
 
 describe('TimelineMarkers', () => {
-  it('uses the shared popover for eval annotations with explicit anchor provenance', async () => {
+  it('keeps the received signal type separate from tool provenance', async () => {
     const marker = mixedMarker()
     marker.members = [
       {
-        kind: 'annotation',
-        id: 'assessment:rubric',
+        kind: 'event',
+        id: 'event:span-1:0',
         timestamp: 55n,
-        name: 'llm-rubric',
-        description: 'Correlated assessment · recorded span end',
+        eventIndex: 0,
+        event: {
+          name: 'tool.execution',
+          timestamp: 55n,
+          droppedAttributesCount: 0,
+          attributes: [
+            {
+              key: 'opencode.event.timestamp.source',
+              value: { kind: 'string', value: 'tool.time.completed' },
+            },
+          ],
+        },
       },
     ]
     const onSelectRecord = vi.fn()
@@ -62,11 +72,13 @@ describe('TimelineMarkers', () => {
       onSelectRecord,
     })
     const trigger = screen.getByRole('button', {
-      name: 'Select 1 eval annotation',
+      name: 'Select 1 event',
     })
     await fireEvent.mouseEnter(trigger)
     expect(screen.getByRole('dialog', { name: 'Span activity' })).toBeVisible()
-    expect(screen.getByText('Eval annotation')).toBeVisible()
+    expect(screen.getByText('Span event')).toBeVisible()
+    expect(screen.getByText('OpenCode')).toBeVisible()
+    expect(screen.queryByText('Tool event')).toBeNull()
     await fireEvent.click(trigger)
     expect(onSelectRecord).toHaveBeenCalledWith(marker.members[0])
   })

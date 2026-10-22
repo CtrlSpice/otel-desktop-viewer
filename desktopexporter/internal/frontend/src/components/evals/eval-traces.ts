@@ -1,4 +1,4 @@
-import type { SpanNode, TraceData } from '@/types/api-types'
+import type { LogData, SpanNode, TraceData } from '@/types/api-types'
 import {
   computeTreeMeta,
   isErrorSpan,
@@ -112,7 +112,8 @@ export function resultTraceNodes(
 /** Enrich display data from received spans without altering the native export. */
 export function projectEvalTraceEvidence(
   experiment: EvalExperiment,
-  index: ReturnType<typeof indexEvalTraces>
+  index: ReturnType<typeof indexEvalTraces>,
+  logs: LogData[] = []
 ): EvalExperiment {
   return {
     ...experiment,
@@ -143,7 +144,7 @@ export function projectEvalTraceEvidence(
         known.add(referenceKey(node.spanData))
       }
       const root = resolveEvalReference(result.telemetry, index)?.spanData
-      const eventTools = evalEventTools(nodes)
+      const eventTools = evalEventTools(nodes, logs)
       const assessments = result.assessments.map(assessment => {
         if (
           assessment.telemetry ||

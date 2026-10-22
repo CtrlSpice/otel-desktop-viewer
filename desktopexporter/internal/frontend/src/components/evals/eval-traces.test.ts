@@ -67,8 +67,119 @@ function node(
 }
 
 describe('referenced eval hierarchy', () => {
-  it('places events, owned logs and explicit correlations without borrowing sibling or cross-trace evidence', () => {
-    const parent = node(1, null, 0)
+  it('counts correlated tool logs only on their owning span and keeps genuine span events intact', () => {
+    const root = node(1, null, 0)
+    const parent = node(2, 1, 1)
+    parent.spanData.events = [
+      {
+        name: 'genuine-event',
+        timestamp: parent.spanData.startTime,
+        attributes: [],
+        droppedAttributesCount: 0,
+      },
+    ]
+    const log: LogData = {
+      ...ref(2),
+      logRef: 'received-log',
+      eventName: 'tool.execution',
+      timestamp: parent.spanData.endTime,
+      observedTimestamp: parent.spanData.endTime + 10n,
+      body: { kind: 'string', value: 'shell' },
+      severityNumber: 0,
+      severityText: '',
+      flags: 0,
+      resource: parent.spanData.resource,
+      scope: parent.spanData.scope,
+      droppedAttributesCount: 0,
+      attributes: [
+        {
+          key: 'gen_ai.tool.call.id',
+          value: { kind: 'string', value: 'call' },
+        },
+        { key: 'gen_ai.tool.name', value: { kind: 'string', value: 'shell' } },
+        { key: 'tool.is_error', value: { kind: 'bool', value: true } },
+        {
+          key: 'tool.output',
+          value: { kind: 'string', value: 'exact\nerror' },
+        },
+        {
+          key: 'eval.evidence.source',
+          value: { kind: 'string', value: 'OpenCode' },
+        },
+        {
+          key: 'eval.evidence.origin',
+          value: { kind: 'string', value: 'runtime-records' },
+        },
+        {
+          key: 'opencode.event.timestamp.source',
+          value: { kind: 'string', value: 'tool.time.completed' },
+        },
+      ],
+    }
+    const source = {
+      ...exampleExperiments[0],
+      telemetry: undefined,
+      results: [
+        {
+          ...exampleExperiments[0].results[0],
+          telemetry: { traceID },
+          resultTelemetry: undefined,
+          tools: [],
+          toolsKnown: false,
+        },
+      ],
+    }
+    const index = indexEvalTraces([
+      { traceID, spans: [root, parent], unplacedSpanCount: 0 },
+    ])
+    const experiment = projectEvalTraceEvidence(source, index, [log])
+    expect(evalToolCounts(experiment.results[0])).toEqual({
+      total: 1,
+      failed: 1,
+    })
+    const rows = buildEvalOutline(
+      groupResults(experiment.results, experiment.results),
+      experiment,
+      index
+    )
+    expect(
+      rows.find(row => row.reference?.spanID === ref(2).spanID)?.toolCounts
+    ).toEqual({ total: 1, failed: 1 })
+    expect(rows.filter(row => row.kind === 'tool')).toEqual([])
+    expect(rows.every(row => !row.spanError)).toBe(true)
+    expect(parent.spanData.events.map(event => event.name)).toEqual([
+      'genuine-event',
+    ])
+    expect(evalSpanEvidence([parent.spanData], [log])[0]).toMatchObject({
+      source: 'shell · Log event · OpenCode',
+      toolError: true,
+    })
+    expect(
+      evalSpanEvidence([parent.spanData], [log])[0].sourceDescription
+    ).toContain('tool.time.completed')
+    expect(evalEventTools([parent], [log, log])).toHaveLength(1)
+    expect(
+      evalEventTools([parent], [{ ...log, spanID: ref(3).spanID }])
+    ).toEqual([])
+    expect(
+      evalEventTools([parent], [{ ...log, traceID: 'b'.repeat(32) }])
+    ).toEqual([])
+    expect(
+      evalEventTools([parent], [log, { ...log, logRef: 'ambiguous' }])
+    ).toEqual([])
+    const native = node(3, 2, 2)
+    native.spanData.attributes = [
+      {
+        key: 'gen_ai.operation.name',
+        value: { kind: 'string', value: 'execute_tool' },
+      },
+      { key: 'gen_ai.tool.call.id', value: { kind: 'string', value: 'call' } },
+    ]
+    expect(evalEventTools([parent, native], [log])).toEqual([])
+    expect(source.results[0].toolsKnown).toBe(false)
+  })
+
+  it('places received events and owned logs without duplicating logs on call-ID-linked spans', () => {
     const tool = node(2, 1, 1)
     tool.spanData.attributes = [
       {
@@ -88,73 +199,35 @@ describe('referenced eval hierarchy', () => {
         droppedAttributesCount: 0,
       },
     ]
-    const nodes = indexEvalTraces([
-      { traceID, unplacedSpanCount: 0, spans: [parent, tool] },
-    ]).nodes
-    const log: LogData = {
-      ...ref(1),
-      logRef: 'linked',
-      timestamp: 13n,
-      observedTimestamp: 14n,
-      severityText: '',
-      severityNumber: 0,
-      body: { kind: 'string', value: 'tool result' },
-      eventName: '',
-      resource: parent.spanData.resource,
-      scope: parent.spanData.scope,
-      flags: 0,
-      droppedAttributesCount: 0,
-      attributes: [
-        { key: 'tool_use_id', value: { kind: 'string', value: 'one-call' } },
-      ],
-    }
-    const records = evalTimelineRecords(
-      tool,
-      nodes,
-      [
-        {
-          logRef: 'owned',
-          spanID: ref(2).spanID,
-          timestamp: 11n,
-          severityNumber: 0,
-          severityText: '',
-          serviceName: '',
-          eventName: 'owned',
-          bodyPreview: '',
-        },
-        {
-          logRef: 'not-owned',
-          spanID: ref(1).spanID,
-          timestamp: 11n,
-          severityNumber: 0,
-          severityText: '',
-          serviceName: '',
-          eventName: 'not-owned',
-          bodyPreview: '',
-        },
-      ],
-      [
-        log,
-        log,
-        { ...log, logRef: 'sibling', spanID: ref(3).spanID },
-        { ...log, logRef: 'cross-trace', traceID: 'b'.repeat(32) },
-      ]
-    )
+    const records = evalTimelineRecords(tool, [
+      {
+        logRef: 'owned',
+        spanID: ref(2).spanID,
+        timestamp: 11n,
+        severityNumber: 0,
+        severityText: '',
+        serviceName: '',
+        eventName: 'owned',
+        bodyPreview: '',
+      },
+      {
+        logRef: 'not-owned',
+        spanID: ref(1).spanID,
+        timestamp: 11n,
+        severityNumber: 0,
+        severityText: '',
+        serviceName: '',
+        eventName: 'not-owned',
+        bodyPreview: '',
+      },
+    ])
     expect(records.map(record => [record.kind, record.timestamp])).toEqual([
       ['log', 11n],
       ['event', 12n],
-      ['annotation', 13n],
     ])
-    expect(records[2]).toMatchObject({
-      description: 'Call-ID-linked log · recorded log time',
-      href: `/traces/${traceID}?span=${ref(1).spanID}&log=linked`,
+    expect(records[0]).toMatchObject({
+      log: { logRef: 'owned', spanID: ref(2).spanID },
     })
-    const duplicate = node(3, 1, 1)
-    duplicate.spanData.attributes = tool.spanData.attributes
-    nodes.set(referenceKey(duplicate.spanData), duplicate)
-    expect(
-      evalTimelineRecords(tool, nodes, [], [log]).map(record => record.kind)
-    ).toEqual(['event'])
   })
 
   it('counts rich Pi parent events without creating tool spans, timing or span errors', () => {

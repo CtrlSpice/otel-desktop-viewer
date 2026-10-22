@@ -90,7 +90,7 @@ describe('EvalResults repetitions', () => {
       })
       const results = screen.getByRole('radio', { name: 'Results' })
       const tools = screen.getByRole('radio', { name: 'Tool calls' })
-      const cost = screen.getByRole('radio', { name: 'Cost' })
+      const cost = screen.getByRole('radio', { name: 'Cost · CAD est.' })
       await waitFor(() =>
         expect(results).toHaveAttribute('aria-checked', 'true')
       )
@@ -207,10 +207,13 @@ describe('EvalResults repetitions', () => {
       const toggles = within(
         screen.getByRole('radiogroup', { name: 'Eval view' })
       )
-      const toggle = (name: string) => toggles.getByRole('radio', { name })
+      const toggle = (name: string) =>
+        toggles.getByRole('radio', {
+          name: name === 'Cost' ? 'Cost · CAD est.' : name,
+        })
       await user.click(toggle('Cost'))
       await user.click(toggle('Tool calls'))
-      for (const name of ['Results', 'Tool calls', 'Cost'])
+      for (const name of ['Results', 'Tool calls', 'Cost · CAD est.'])
         expect(toggle(name)).toHaveAttribute(
           'aria-checked',
           String(name === 'Tool calls')

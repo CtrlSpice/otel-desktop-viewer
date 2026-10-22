@@ -2,6 +2,7 @@
 .cursor/
 .claude/
 .clinerules/
+.opencode/
 otel-desktop-viewer
 desktopexporter/internal/frontend-legacy/
 .vscode/

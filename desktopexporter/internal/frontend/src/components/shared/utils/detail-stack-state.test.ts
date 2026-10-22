@@ -35,16 +35,18 @@ describe('detail heading collapse handoff', () => {
     const { stack } = fixture(available)
     expect(stack.previous('Links')).toBeUndefined()
     available[0] = true
+    stack.ensureOpen()
     expect(stack.previous('Links')?.id).toBe('Span')
     available[1] = true
+    expect(stack.previous('Links')?.id).toBe('Span')
+    stack.setOpen('Events', true)
     expect(stack.previous('Links')?.id).toBe('Events')
     available[1] = false
     expect(stack.previous('Links')?.id).toBe('Span')
   })
 
   it.each([
-    ['Span', 'Events', 'Links'],
-    ['Events', 'Links', 'Span'],
+    ['Events', 'Span', 'Links'],
     ['Links', 'Events', 'Span'],
   ])(
     'hands %s space to %s without resizing %s',
@@ -59,24 +61,20 @@ describe('detail heading collapse handoff', () => {
     }
   )
 
-  it('opens Events when the only open Span is collapsed, leaving Links closed', () => {
+  it('keeps the primary section open even when other sections are open', () => {
     const { stack, sections, open } = fixture()
+    expect(stack.canClose('Span')).toBe(false)
+    stack.setOpen('Span', false)
+    expect(open()).toEqual(['Span', 'Events', 'Links'])
     sections[1]!.setExpanded(false)
     sections[2]!.setExpanded(false)
-    expect(stack.canClose('Span')).toBe(true)
     stack.setOpen('Span', false)
-    expect(open()).toEqual(['Events'])
-    expect(parseFloat(stack.flex('Events'))).toBeCloseTo(100)
-    stack.setOpen('Events', false)
-    expect(open()).toEqual(['Links'])
-    stack.setOpen('Links', false)
-    expect(open()).toEqual(['Events'])
+    expect(open()).toEqual(['Span'])
+    expect(parseFloat(stack.flex('Span'))).toBeCloseTo(100)
   })
 
-  it('skips empty neighbours in either direction', () => {
+  it('hands space upward past empty neighbours', () => {
     const { stack, open } = fixture([true, false, true])
-    stack.setOpen('Span', false)
-    expect(open()).toEqual(['Links'])
     stack.setOpen('Links', false)
     expect(open()).toEqual(['Span'])
   })
