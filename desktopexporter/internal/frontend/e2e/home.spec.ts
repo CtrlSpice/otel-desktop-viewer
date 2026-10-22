@@ -129,17 +129,17 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   }
   for (const row of await page.locator('.service-summary__row').all())
     await expect(row).toHaveCSS('border-width', '0px')
-  await page
-    .locator('summary')
-    .filter({ hasText: 'exact.number' })
-    .filter({ hasText: 'resource' })
-    .click()
-  const values = page.getByRole('group', {
+  const attribute = page.getByRole('region', {
+    name: 'exact.number · resource',
+    exact: true,
+  })
+  const values = attribute.getByRole('group', {
     name: 'Values of exact.number',
     exact: true,
   })
   await expect(values).toContainText('9007199254740993')
-  await expect(values).toContainText('2 / 3 records · 66.7%')
+  await expect(values).toContainText('66.7%')
+  await expect(values.getByTitle('2 / 3 records')).toBeVisible()
   const imported = page.waitForResponse('http://127.0.0.1:54318/v1/logs')
   await page
     .getByLabel('Choose telemetry or evaluation JSON / JSONL files')

@@ -83,6 +83,10 @@ describe('Home service discovery', () => {
         truncated: false,
       }))
     setTestUrl('/?time=all')
+    vi.spyOn(telemetryAPI, 'discoverAttributeValues').mockResolvedValue({
+      items: [],
+      truncated: false,
+    })
     renderWithContexts(HomePage)
     await screen.findByRole('button', { name: 'Inspect checkout · storefront' })
     await waitFor(() =>
