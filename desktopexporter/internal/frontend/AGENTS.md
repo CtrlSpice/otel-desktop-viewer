@@ -389,7 +389,10 @@
   separate axis rules. Time-series charts place the unit horizontally above the
   Y-axis and use a 96px left inset to reclaim the side-label gutter.
   When zero coincides with the bottom axis, use its rounded join without a
-  duplicate straight zero rule. Retain zero rules inside the plot.
+  duplicate straight zero rule or zero label. Retain zero rules and labels inside the plot.
+  Statistics can show min/max/average for an explicitly selected series or the
+  sole visible source series without selecting a datapoint. Rate slope still
+  requires a selected point; do not choose an arbitrary series when several are visible.
   Axis tick marks also use 1px Muted. The shared border is
   decorative, hidden from assistive technology and cannot intercept pointers.
   Keep axis range labels on one line with both bounds and brackets visible.

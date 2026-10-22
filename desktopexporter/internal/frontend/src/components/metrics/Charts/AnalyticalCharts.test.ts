@@ -233,6 +233,10 @@ describe('MetricTimeSeriesChart keyboard model', () => {
       expect(document.querySelectorAll('.lc-rule-y-line')).toHaveLength(
         ruleCount
       )
+      const zeroLabels = [
+        ...document.querySelectorAll('.lc-axis-tick-label'),
+      ].filter(label => label.textContent === '0')
+      expect(zeroLabels).toHaveLength(ruleCount)
       expect(document.querySelector('.metric-axes')).toBeInTheDocument()
     }
   )
@@ -390,6 +394,59 @@ describe('MetricTimeSeriesChart keyboard model', () => {
       expectMarkerColours('#abcdef')
     }
   )
+
+  it('shows window statistics without a point selection and requires a series choice when several are visible', async () => {
+    const datapoints = [2, 4].map((value, index) =>
+      gaugeDatapoint(
+        `point-${index}`,
+        BASE_NS + BigInt(index) * 1_000_000_000n,
+        value
+      )
+    )
+    const metric = metricWithDatapoints('Gauge', datapoints)
+    const series = {
+      key: 'series-a',
+      label: 'Series A',
+      points: datapoints.map(point => ({
+        date: new Date(point.timestampMs),
+        value: point.doubleValue,
+        timestampNs: point.timestamp,
+      })),
+    }
+    const props = {
+      timeseries: [series],
+      colorByKey: new Map([
+        ['series-a', '#123456'],
+        ['series-b', '#abcdef'],
+      ]),
+      seriesStats: new Map([['series-a', { min: 2, max: 4, avg: 3 }]]),
+    }
+    const view = renderChart(MetricTimeSeriesChart, props, metric)
+    await tick()
+    expect(document.querySelectorAll('.series-stat-tooltip')).toHaveLength(3)
+    await view.rerender({
+      component: MetricTimeSeriesChart,
+      componentProps: { ...props, showStatOverlays: false },
+      metric,
+    })
+    expect(document.querySelectorAll('.series-stat-tooltip')).toHaveLength(0)
+    const multiple = {
+      ...props,
+      timeseries: [series, { ...series, key: 'series-b' }],
+    }
+    await view.rerender({
+      component: MetricTimeSeriesChart,
+      componentProps: multiple,
+      metric,
+    })
+    expect(document.querySelectorAll('.series-stat-tooltip')).toHaveLength(0)
+    await view.rerender({
+      component: MetricTimeSeriesChart,
+      componentProps: { ...multiple, selectedSeriesKey: 'series-a' },
+      metric,
+    })
+    expect(document.querySelectorAll('.series-stat-tooltip')).toHaveLength(3)
+  })
 
   it('distinguishes sub-millisecond source points, follows external selection on focus, and activates the exact id', async () => {
     const first = gaugeDatapoint('first', BASE_NS + 100n, 10)

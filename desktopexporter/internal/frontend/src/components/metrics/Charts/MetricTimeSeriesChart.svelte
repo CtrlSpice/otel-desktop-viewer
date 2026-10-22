@@ -721,7 +721,15 @@
    * `format` closures on every render, for values that almost never change. */
   let chartProps = $derived({
     xAxis: axisTime(timeContext.tz),
-    yAxis: axisValue(yAxisLabel),
+    yAxis: {
+      ...axisValue(yAxisLabel),
+      format: (value: number) =>
+        value === 0 &&
+        lineChartContext &&
+        lineChartContext.yScale(0) === Math.max(...lineChartContext.yRange)
+          ? ''
+          : formatMetricValue(value),
+    },
   })
 
   /** Series the selection rule should drop colored dots on. Persistent dots
@@ -794,16 +802,24 @@
     slopeTo?: ChartPoint
   }
 
-  /** Min / max / avg (or slope segment in rate view) for the selected series. */
+  /** Use an explicit series selection, or the only visible source series. */
+  const statSeries = $derived.by(() => {
+    if (selectedSeriesKey)
+      return chartSeries.find(series => series.key === selectedSeriesKey)
+    const sources = chartSeries.filter(
+      series => !isAggregateLineKey(series.key)
+    )
+    return sources.length === 1 ? sources[0] : undefined
+  })
+
+  /** Whole-window stats need a series; only rate slope needs a selected point. */
   let seriesStatMarks = $derived.by((): SeriesStatMark[] => {
     if (!showStatOverlays) return []
-    if (highlightDate === null) return []
-    if (!selectedSeriesKey || isAggregateLineKey(selectedSeriesKey)) return []
+    const series = statSeries
+    if (!series || isAggregateLineKey(series.key) || series.data.length === 0)
+      return []
 
-    const series = chartSeries.find(s => s.key === selectedSeriesKey)
-    if (!series || series.data.length === 0) return []
-
-    const stats = seriesStats?.get(selectedSeriesKey)
+    const stats = seriesStats?.get(series.key)
     if (!stats) return []
     const color = 'var(--color-primary)'
     const marks: SeriesStatMark[] = []
@@ -868,7 +884,7 @@
         valueText,
         title: `avg ${formatMetricHoverValue(stats.avg)}`,
         color,
-        dotDate: highlightDate,
+        dotDate: series.data[0]!.date,
         y: stats.avg,
       })
     }
