@@ -39,7 +39,7 @@ describe('heatmapSwatches', () => {
 
 describe.each([
   ['metric', metricSeriesPalette, 22],
-  ['trace', traceSpanPalette, 20],
+  ['trace', traceSpanPalette, 19],
 ] as const)('%s series colours', (_, palette, size) => {
   it('provides a distinct pool without reserved status/annotation colours', () => {
     const pool = palette(size)
@@ -70,11 +70,11 @@ describe.each([
   })
 })
 
-it('allows gold/yellow in normal span identities', () => {
+it('keeps fault-like orange out of span identities while retaining lemon', () => {
   expect(metricSeriesPalette(22)).toContain('#e3940b')
   expect(metricSeriesPalette(22)).toContain('#eec307')
-  expect(traceSpanPalette(20)).toContain('#e3940b')
-  expect(traceSpanPalette(20)).toContain('#eec307')
+  expect(traceSpanPalette(38)).not.toContain('#e3940b')
+  expect(traceSpanPalette(19)).toContain('#eec307')
 })
 
 it('keeps error-like pinks and mauves out of normal span identities', () => {

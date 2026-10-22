@@ -224,8 +224,9 @@ The shared set removes the five-step family ramps, very pale variations, and
 peach/salmon near-neighbours. Blue, pink, green, purple, and yellow are interleaved.
 Themes can share colours: a theme switch does not change series identity.
 
-Trace identities allow golden/lemon but exclude the error-like pink/mauve family,
-with lavender/bluebell additions giving 20 colours. Normal spans retain
+Trace identities allow lemon but exclude the error-like pink/mauve family and
+golden orange, which resembles the Papaya internal-fault indicator.
+Lavender/bluebell additions give 19 colours. Normal spans retain
 distinct service/operation colours; errors use Love. Exact Love/error colours,
 primary annotation colours, and papaya are not categorical series colours.
 

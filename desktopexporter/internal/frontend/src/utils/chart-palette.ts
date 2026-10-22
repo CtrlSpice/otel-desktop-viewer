@@ -1,7 +1,7 @@
 // Colour allocation from the shared theme definitions.
 //
 //   - `metricSeriesPalette()` -- one type-independent sequence for plotted series.
-//   - `traceSpanPalette()` -- operation/service identities, without error-like pinks.
+//   - `traceSpanPalette()` -- identities, without error-like pinks or fault-like orange.
 //
 //   - `heatmapSwatches()` -- per-theme count ramp, interpolated in HCL.
 //
@@ -49,7 +49,7 @@ function repeatPalette(count: number, pool: readonly string[]): string[] {
   return out
 }
 
-/** Keep error-like pinks out of trace identities; exact papaya stays reserved. */
+/** Keep error-like pinks and fault-like orange out of trace identities. */
 export function traceSpanPalette(count: number, _theme: string = ''): string[] {
   return repeatPalette(count, TRACE_SERIES)
 }

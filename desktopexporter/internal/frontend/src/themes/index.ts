@@ -10,7 +10,7 @@ const metricOnly = new Set<string>(seriesPalette.metricOnly)
 export const TRACE_SERIES = Object.entries(seriesPalette.series)
   .filter(([name]) => !metricOnly.has(name))
   .map(([, color]) => color)
-// Normal trace identities exclude error-like pinks/mauves; gold/yellow are allowed.
+// Trace identities exclude error-like pinks/mauves and fault-like orange.
 TRACE_SERIES.splice(4, 0, ...Object.values(seriesPalette.traceOnly))
 export const THEMES = ORDER.map(id => ({
   id,

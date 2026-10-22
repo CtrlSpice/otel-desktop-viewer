@@ -23,7 +23,7 @@
     "chartreuse": "#aece34",
     "periwinkle": "#aaa4ff"
   },
-  "metricOnly": ["orchid", "peony", "raspberry", "mauve"],
+  "metricOnly": ["orchid", "peony", "raspberry", "mauve", "golden"],
   "traceOnly": {
     "lavender": "#bd91da",
     "bluebell": "#99b2f5"
