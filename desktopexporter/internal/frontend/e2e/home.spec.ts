@@ -75,6 +75,15 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
                   relativeFrequency: 2 / 3,
                 },
               ],
+              [
+                {
+                  value: { kind: 'int64', value: '2' },
+                  foundOn,
+                  count: 1,
+                  denominator: 3,
+                  relativeFrequency: 1 / 3,
+                },
+              ],
             ],
             truncated: false,
           }
@@ -137,6 +146,13 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
     name: 'Values of exact.number',
     exact: true,
   })
+  await expect(values).toBeHidden()
+  await attribute
+    .getByRole('img', { name: '9007199254740993: 2 records' })
+    .hover()
+  await expect(attribute.getByRole('tooltip')).toContainText('[66.7%]')
+  await expect(values).toBeHidden()
+  await attribute.locator('summary').click()
   await expect(values).toContainText('9007199254740993')
   await expect(values).toContainText('66.7%')
   await expect(values.getByTitle('2 / 3 records')).toBeVisible()

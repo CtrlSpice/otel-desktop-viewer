@@ -6,12 +6,19 @@
     part,
     unit,
     single = false,
+    relativeFrequency,
   }: {
     part: BubbleBreakdownPart
     unit: string
     single?: boolean
+    relativeFrequency?: number
   } = $props()
   const tooltipID = $props.id()
+  const tooltipValue = $derived(
+    relativeFrequency === undefined
+      ? part.count.toLocaleString()
+      : `${(relativeFrequency * 100).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
+  )
   let trigger = $state<HTMLSpanElement>()
   let tooltip = $state<HTMLDivElement>()
   let open = $state(false)
@@ -82,9 +89,7 @@
       aria-hidden="true"
     ></span>
     <span class="breakdown-tooltip__label">{part.label}</span>
-    <span class="shrink-0 text-rp-subtle tabular-nums"
-      >[{part.count.toLocaleString()}]</span
-    >
+    <span class="shrink-0 text-rp-subtle tabular-nums">[{tooltipValue}]</span>
   </span>
 </div>
 
