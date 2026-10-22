@@ -113,6 +113,9 @@
   .field-group--detail {
     --field-group-inline: var(--pane-inline-inset);
   }
+  .field-group--bare {
+    --field-group-inline: 0;
+  }
   .field-group--detail > .field-group__heading {
     @apply my-1 rounded-xl font-normal;
   }

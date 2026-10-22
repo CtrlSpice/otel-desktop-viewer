@@ -106,10 +106,13 @@
         {#each values as item, index (index)}
           <div class="item-state flex items-start gap-2 rounded-xl">
             <span
-              class="mt-2 size-2 shrink-0 rounded-full"
-              style:background-color={colors[offset + index]}
+              class="flex h-[1.5em] w-4 shrink-0 items-center justify-center"
               aria-hidden="true"
-            ></span>
+              ><span
+                class="size-2 rounded-full"
+                style:background-color={colors[offset + index]}
+              ></span></span
+            >
             <div class="min-w-0">
               <AttributeValue value={item.value} path={name} />
             </div>
