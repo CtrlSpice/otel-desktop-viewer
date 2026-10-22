@@ -118,6 +118,12 @@ Large resource groups are split at scope, span, log-record, Metric or datapoint
 boundaries while repeating the associated metadata. An individual record or
 required metadata that cannot fit is reported rather than truncated.
 
+The receiver sends these requests through the same [redaction processor](redaction.md)
+as live OTLP traffic, before batching and storage. Matching secret values are
+masked; credential identifiers and nonmatching telemetry remain available.
+Native Evals JSON import uses a separate storage path and is outside this
+Collector policy.
+
 The viewer's `getImportConfig` JSON-RPC method returns `otlpHttpPort`, populated
 from the CLI's `--http` setting. The browser connects using the viewer's hostname
 and that HTTP port. That receiver must be reachable from the browser; a reverse

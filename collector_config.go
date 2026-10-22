@@ -1,11 +1,15 @@
 package main
 
 import (
+	_ "embed"
 	"net"
 	"strconv"
 
 	"go.opentelemetry.io/collector/otelcol"
 )
+
+//go:embed collector_redaction.yaml
+var collectorRedaction string
 
 type configOptions struct {
 	host             string
@@ -51,15 +55,16 @@ func collectorURIs(o configOptions) []string {
 		// its defaults.
 		`yaml:exporters::desktop: {}`,
 		`yaml:service::pipelines::traces::receivers: [otlp]`,
-		`yaml:service::pipelines::traces::processors: [batch]`,
+		`yaml:service::pipelines::traces::processors: [redaction, batch]`,
 		`yaml:service::pipelines::traces::exporters: [desktop]`,
 		`yaml:service::pipelines::metrics::receivers: [otlp]`,
-		`yaml:service::pipelines::metrics::processors: [batch]`,
+		`yaml:service::pipelines::metrics::processors: [redaction, batch]`,
 		`yaml:service::pipelines::metrics::exporters: [desktop]`,
 		`yaml:service::pipelines::logs::receivers: [otlp]`,
-		`yaml:service::pipelines::logs::processors: [batch]`,
+		`yaml:service::pipelines::logs::processors: [redaction, batch]`,
 		`yaml:service::pipelines::logs::exporters: [desktop]`,
 	}
+	URIs = append(URIs, "yaml:"+collectorRedaction)
 	return append(URIs, telemetryURIs(o)...)
 }
 

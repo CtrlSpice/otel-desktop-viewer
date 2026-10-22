@@ -1,0 +1,42 @@
+# Redact before batching/storage. Keep nonmatching values and exact numbers;
+# in particular, token usage, credential IDs and trace/span IDs are not secrets.
+processors:
+  redaction:
+    allow_all_keys: true
+    redact_all_types: true
+    summary: silent
+    blocked_key_patterns:
+      # Anchored key segments avoid matching gen_ai.usage.input_tokens and IDs.
+      - '(?i)(^|[._-])(authorization|proxy[_-]?authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|auth[_-]?token|client[_-]?secret|secret[_-]?access[_-]?key|password|passwd|secret|private[_-]?key|cookie|set[_-]?cookie|token)$'
+      - '(?i)^(access|refresh|token)$'
+    blocked_values:
+      # PEM private keys, including multiline values.
+      - '(?s)-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----.*?-----END (?:[A-Z0-9]+ )*PRIVATE KEY-----'
+      # Authorization schemes. These and the assignment rules are viewer policy.
+      - '(?i)\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+'
+      # Provider/JWT token shapes adapted from Gitleaks v8.30.1 (MIT).
+      # See third_party/gitleaks/README.md for the pinned source, rule IDs,
+      # adaptations and omitted detector semantics. This is not full Gitleaks.
+      # jwt (token capture only, no trailing delimiter consumption)
+      - '\bey[a-zA-Z0-9]{17,}\.ey[a-zA-Z0-9/\\_-]{17,}\.(?:[a-zA-Z0-9/\\_-]{10,}={0,2})?'
+      # openai-api-key
+      - '\b(?:sk-(?:proj|svcacct|admin)-(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58})T3BlbkFJ(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58})\b|sk-[a-zA-Z0-9]{20}T3BlbkFJ[a-zA-Z0-9]{20})'
+      # anthropic-api-key, anthropic-admin-api-key
+      - '\bsk-ant-(?:api03|admin01)-[a-zA-Z0-9_\-]{93}AA'
+      # github-pat, github-oauth, github-app-token, github-refresh-token
+      - 'gh[pousr]_[0-9a-zA-Z]{36}'
+      # github-fine-grained-pat
+      - 'github_pat_\w{82}'
+      # slack-bot-token, slack-user-token, slack-app-token
+      - 'xoxb-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*'
+      - 'xox[pe](?:-[0-9]{10,13}){3}-[a-zA-Z0-9-]{28,34}'
+      - '(?i)xapp-\d-[A-Z0-9]+-\d+-[a-z0-9]+'
+      # Secret assignments also occur inside JSON strings, shell output and URLs.
+      # The processor masks the whole matched assignment, not only its value.
+      # Structured secret values cannot be safely delimited by a regex: mask the
+      # containing string. Matching composite attributes also become strings in
+      # the upstream processor (see docs/redaction.md).
+      - >-
+        (?is)^.*(?:^|[^A-Za-z0-9])(?:authorization|proxy[_-]?authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|auth[_-]?token|client[_-]?secret|secret[_-]?access[_-]?key|password|passwd|secret|private[_-]?key|cookie|set[_-]?cookie|access|refresh|token)["']?\s*[:=]\s*[\[{].*$
+      - >-
+        (?i)(?:^|[^A-Za-z0-9])(?:authorization|proxy[_-]?authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|session[_-]?token|auth[_-]?token|client[_-]?secret|secret[_-]?access[_-]?key|password|passwd|secret|private[_-]?key|cookie|set[_-]?cookie|access|refresh|token)["']?\s*[:=]\s*(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;&}\]]+)

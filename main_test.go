@@ -172,8 +172,8 @@ func TestPipelinesBatch(t *testing.T) {
 
 	for _, signal := range []string{"traces", "metrics", "logs"} {
 		assert.Contains(t, joined,
-			"service::pipelines::"+signal+"::processors: [batch]",
-			"%s pipeline must batch", signal)
+			"service::pipelines::"+signal+"::processors: [redaction, batch]",
+			"%s pipeline must redact before batching", signal)
 	}
 
 	// send_batch_max_size bounds a merged batch, which is what makes the

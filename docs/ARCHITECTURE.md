@@ -11,7 +11,8 @@ UI.
 flowchart TB
   subgraph ingest [Ingestion]
     SDK[OTel SDK or Collector] -->|OTLP gRPC :4317 or HTTP :4318| OTLP[otlp receiver]
-    OTLP --> Batch[batch processor]
+    OTLP --> Redaction[redaction processor]
+    Redaction --> Batch[batch processor]
     Batch --> Desktop[desktop exporter]
     Desktop --> Spans[spans.Ingest]
     Desktop --> Metrics[metrics.Ingest]
@@ -48,17 +49,21 @@ The binary uses these Collector components:
 | Kind | Component |
 | --- | --- |
 | Receiver | `otlp` |
-| Processor | `batch` |
+| Processor | `redaction`, `batch` |
 | Exporter | `desktop` |
 | Extension | `duckdb` |
 
 The default pipelines are:
 
 ```text
-traces:  otlp -> batch -> desktop
-metrics: otlp -> batch -> desktop
-logs:    otlp -> batch -> desktop
+traces:  otlp -> redaction -> batch -> desktop
+metrics: otlp -> redaction -> batch -> desktop
+logs:    otlp -> redaction -> batch -> desktop
 ```
+
+The standard Contrib redaction processor masks configured secret patterns before
+batching and storage, including browser OTLP telemetry file imports. See
+[redaction coverage and policy](redaction.md).
 
 The batch processor sends at 8,192 items or after 1 second. The exporter uses a
 blocking sending queue with one consumer. Each write has a 30-second ingest
