@@ -110,7 +110,7 @@
     --field-group-inline: var(--pane-inline-inset);
   }
   .field-group--detail > .field-group__heading {
-    --item-idle-bg: var(--color-base-300);
+    --item-idle-bg: var(--color-highlight-low);
     @apply mb-1 rounded-xl font-normal;
   }
 

@@ -319,7 +319,7 @@
   evidence fields directly, without a duplicate Evidence wrapper. JSON fields
   use folding controls. Keep grader instructions collapsed separately and the
   original input copyable. Collapsible Detail field-group headings have carets.
-  These subsection headings use borderless rounded bg-base-300 surfaces,
+  These subsection headings use borderless rounded Highlight Low surfaces,
   regular Subtle labels and Text carets, with shared hover feedback. Unavailable
   top-level headers retain their separate bg-base-200 and Muted treatment.
   Each scoring level (such as Fail, Partial and Pass) has its own field card.
