@@ -36,7 +36,7 @@
   import { telemetryAPI } from '@/services/telemetry-service'
   import type { Stats } from '@/types/api-types'
   import type { ImportFailure } from '@/types/import-types'
-  import luluImage from '@/assets/images/lulu-telescope-front.svg'
+  import luluImage from '@/assets/images/lulu.webp'
 
   let {
     importContent,
@@ -167,7 +167,7 @@ $ export OTEL_EXPORTER_OTLP_PROTOCOL="grpc"`,
           >
             <img
               src={luluImage}
-              alt="Lulu the pink pixel-art axolotl looking through her telescope."
+              alt="Lulu the pink axolotl looking through her telescope."
               class="h-48 w-48 shrink-0 object-contain min-[1100px]:h-64 min-[1100px]:w-64"
             />
             <div class="min-w-0 py-2">
@@ -454,15 +454,7 @@ $ otel-cli exec --service my-service --name "curl google" curl https://google.co
     {#snippet pageFooter()}
       <div class="home-page__footer">
         <p class="home-page__footer-text">
-          <a
-            href="https://github.com/CtrlSpice/lulu"
-            class="home-page__footer-link"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Pixel Lulu
-          </a>
-          · Original painting by
+          Artwork by
           <a
             href="https://cbatesonart.artstation.com/"
             class="home-page__footer-link"
