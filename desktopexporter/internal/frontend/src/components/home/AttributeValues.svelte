@@ -105,25 +105,27 @@
             style:background-color={colors[offset + index]}
             aria-hidden="true"
           ></span>
-          <div class="min-w-0 flex-1">
+          <div class="min-w-0">
             <AttributeValue value={item.value} path={name} />
           </div>
           {#if item.value.kind !== kind}<span class="text-secondary"
               >{item.value.kind}</span
             >{/if}
           <span
-            class="shrink-0 text-sm text-base-content"
+            class="shrink-0 text-sm text-rp-subtle"
             title={`${item.count.toLocaleString()} / ${item.denominator.toLocaleString()} records`}
             aria-label={`${item.count.toLocaleString()} / ${item.denominator.toLocaleString()} records · ${(item.relativeFrequency * 100).toLocaleString(undefined, { maximumFractionDigits: 1 })}%`}
-            >{(item.relativeFrequency * 100).toLocaleString(undefined, {
+            >[{(item.relativeFrequency * 100).toLocaleString(undefined, {
               maximumFractionDigits: 1,
-            })}%</span
+            })}%]</span
           >
-          <ValueCopyButton
-            text={attributeValueCopy(item.value)}
-            label={`${name} value`}
-            tooltip="Copy"
-          />
+          <div class="ml-auto shrink-0">
+            <ValueCopyButton
+              text={attributeValueCopy(item.value)}
+              label={`${name} value`}
+              tooltip="Copy"
+            />
+          </div>
         </div>
       {/each}
     </div>
