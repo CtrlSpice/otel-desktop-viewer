@@ -319,9 +319,9 @@
   evidence fields directly, without a duplicate Evidence wrapper. JSON fields
   use folding controls. Keep grader instructions collapsed separately and the
   original input copyable. Collapsible Detail field-group headings have carets.
-  These subsection headings use borderless rounded Highlight Low surfaces,
+  These subsection headings use borderless rounded bg-base-300 surfaces,
   regular Subtle labels and Text carets, with shared hover feedback. Unavailable
-  top-level headers retain their separate bg-base-200 and Muted treatment.
+  top-level headers use Highlight Low backgrounds and Muted text.
   Each scoring level (such as Fail, Partial and Pass) has its own field card.
   When the source supplies Overall, put its judgment at the far right of the
   Assessments header and omit the repeated Overall subheading. Preserve its
@@ -491,7 +491,7 @@
   let the shared split limit the displayed width using the main pane's existing
   minimum (30% or 28rem, whichever is larger). The drawer retains its 40rem cap.
 - Disabled and zero-count Details headers use Muted for their labels, icons and counts.
-  Put these closed, unavailable sections at the bottom. Keep bg-base-200 headers
+  Put these closed, unavailable sections at the bottom. Use Highlight Low headers
   with Muted text and no visible border. Keep canonical order within both groups;
   restore a section's normal position as soon as data makes it available.
   Dawn Muted uses the original `#9893a5`, restored by user approval; do not darken it.

@@ -231,6 +231,7 @@
     overflow: hidden;
   }
   .detail-bubble__heading--disabled {
+    background-color: var(--color-highlight-low);
     border-color: transparent;
     color: var(--color-muted);
     cursor: default;
