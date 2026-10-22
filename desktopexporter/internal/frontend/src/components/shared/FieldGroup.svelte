@@ -76,7 +76,7 @@
   {open}
   ontoggle={e => setOpen(e.currentTarget.open)}
 >
-  <summary class="field-group__heading" class:item-state={card}>
+  <summary class="field-group__heading" class:item-state={card || detail}>
     {#if detail}
       <span class="field-group__caret" aria-hidden="true">
         <HugeiconsIcon icon={ArrowRight01Icon} size={16} strokeWidth={1.5} />
@@ -109,6 +109,10 @@
   .field-group--detail {
     --field-group-inline: var(--pane-inline-inset);
   }
+  .field-group--detail > .field-group__heading {
+    --item-idle-bg: var(--color-base-300);
+    @apply mb-1 rounded-xl font-normal;
+  }
 
   /* Content aligns with heading inset (icon or label). */
   .field-group__content {
@@ -129,7 +133,7 @@
     @apply flex min-w-0 flex-1 items-center gap-2;
   }
   .field-group__caret {
-    @apply flex shrink-0;
+    @apply flex shrink-0 text-base-content;
   }
   .field-group[open] > .field-group__heading > .field-group__caret {
     transform: rotate(90deg);
