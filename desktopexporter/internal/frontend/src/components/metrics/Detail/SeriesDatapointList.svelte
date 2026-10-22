@@ -597,6 +597,11 @@
     @apply px-2 py-1 align-middle;
   }
 
+  .dp-list__th:last-child,
+  .dp-list__td:last-child {
+    padding-inline-end: calc(var(--pane-inline-inset) + var(--header-gap));
+  }
+
   .dp-list__td--swatch,
   .dp-list__th--swatch {
     @apply pl-3 pr-1;
