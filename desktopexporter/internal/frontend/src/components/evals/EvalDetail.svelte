@@ -213,12 +213,12 @@
     <table class="detail-fields w-full" aria-label="Cost for this experiment">
       <tbody>
         <DetailField
-          fieldName="investigator estimate (CAD)"
+          fieldName="investigator API estimate (CAD)"
           fieldType="number"
           fieldValue={`${cost(investigator.total)}${investigator.incomplete && investigator.total !== null ? ' · incomplete' : ''}`}
         />
         <DetailField
-          fieldName="grader estimate (CAD)"
+          fieldName="grader API estimate (CAD)"
           fieldType="number"
           fieldValue={`${cost(grader.total)}${grader.incomplete && grader.total !== null ? ' · incomplete' : ''}`}
         />

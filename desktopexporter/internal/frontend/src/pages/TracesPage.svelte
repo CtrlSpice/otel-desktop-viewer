@@ -273,7 +273,7 @@
     detailPanel.reveal()
     if (record.kind === 'event') {
       selectSpanEvent(spanID, record.eventIndex, 'push')
-    } else {
+    } else if (record.kind === 'log') {
       selectSpanLog(spanID, record.log.logRef, 'push')
     }
   }

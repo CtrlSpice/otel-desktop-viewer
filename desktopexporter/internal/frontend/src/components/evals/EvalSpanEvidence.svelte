@@ -91,8 +91,11 @@
 {#each records as record (record.id)}
   <table class="detail-fields w-full" aria-label={record.source}>
     <caption
+      title={record.sourceDescription}
       class="px-[var(--pane-inline-inset)] py-2 text-left text-sm font-normal text-secondary"
-      >{record.source}</caption
+      >{record.source}{#if record.toolError}<span class="text-rp-subtle">
+          ·
+        </span><span class="text-base-content">Tool error</span>{/if}</caption
     >
     <tbody>
       {#each record.fields as attribute, index (`${attribute.key}/${index}`)}

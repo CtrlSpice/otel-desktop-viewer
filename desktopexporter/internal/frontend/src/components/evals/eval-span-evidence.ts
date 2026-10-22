@@ -6,11 +6,18 @@ import type {
   SpanNode,
 } from '@/types/api-types'
 import { referenceKey } from './eval-traces'
+import {
+  toolEventAnnotation,
+  toolEventError,
+  toolEventName,
+} from '@/utils/tool-event'
 
 export type EvalSpanEvidence = {
   id: string
   source: string
   fields: Attribute[]
+  toolError?: boolean
+  sourceDescription?: string
 }
 
 const toolKey = (key: string) => /^(tool\.|gen_ai\.tool\.)/.test(key)
@@ -30,7 +37,7 @@ function attributeString(attributes: Attributes, key: string) {
 
 const stringAttribute = (span: SpanData, key: string) =>
   attributeString(span.attributes, key)
-function callID(attributes: Attributes) {
+export function recordedToolCallID(attributes: Attributes) {
   for (const key of ['gen_ai.tool.call.id', 'tool_use_id']) {
     const matches = attributes.filter(attribute => attribute.key === key)
     if (
@@ -48,7 +55,7 @@ function callID(attributes: Attributes) {
 }
 
 export function uniqueToolCallID(span: SpanData, nodes: Map<string, SpanNode>) {
-  const id = callID(span.attributes)
+  const id = recordedToolCallID(span.attributes)
   if (!id || stringAttribute(span, 'gen_ai.operation.name') !== 'execute_tool')
     return undefined
   const matches = [...nodes.values()].filter(
@@ -56,7 +63,7 @@ export function uniqueToolCallID(span: SpanData, nodes: Map<string, SpanNode>) {
       node.spanData.traceID.toLowerCase() === span.traceID.toLowerCase() &&
       stringAttribute(node.spanData, 'gen_ai.operation.name') ===
         'execute_tool' &&
-      callID(node.spanData.attributes) === id
+      recordedToolCallID(node.spanData.attributes) === id
   )
   return matches.length === 1 ? id : undefined
 }
@@ -133,13 +140,18 @@ export function evalSpanEvidence(
         fields,
       })
     span.events.forEach((event, index) => {
+      const annotation = toolEventAnnotation(event)
       const fields = evidenceEvent(event.name)
         ? event.attributes
         : event.attributes.filter(attribute => evidenceKey(attribute.key))
       if (fields.length)
         records.push({
           id: `${key}/event/${index}`,
-          source: `${event.name} · Span event ${index + 1}`,
+          source: `${toolEventName(event)} · ${annotation?.label ?? 'Span event'} ${index + 1}`,
+          sourceDescription: annotation
+            ? `${annotation.description} · Event name: ${event.name}`
+            : undefined,
+          toolError: toolEventError(event),
           fields,
         })
     })
@@ -152,12 +164,12 @@ export function evalSpanEvidence(
     const linkedCall =
       !!toolCallID &&
       log.traceID?.toLowerCase() === spans[0]?.traceID.toLowerCase() &&
-      callID(log.attributes) === toolCallID
+      recordedToolCallID(log.attributes) === toolCallID
     if (!exact && !linkedCall) continue
     if (
       toolCallID &&
-      callID(log.attributes) &&
-      callID(log.attributes) !== toolCallID
+      recordedToolCallID(log.attributes) &&
+      recordedToolCallID(log.attributes) !== toolCallID
     )
       continue
     const named = evidenceEvent(log.eventName)

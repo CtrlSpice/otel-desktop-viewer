@@ -364,7 +364,10 @@ test('experiment selection, assessments, filtering and browser history stay conn
   ).toBeVisible()
   await showOnly(page, 'Cost')
   const accounting = detail.getByRole('table', { name: 'Result accounting' })
-  for (const key of ['investigator estimate (CAD)', 'grader estimate (CAD)']) {
+  for (const key of [
+    'investigator API estimate (CAD)',
+    'grader API estimate (CAD)',
+  ]) {
     await expect(
       accounting.locator(`[data-field="${key}"] .detail-property__body`)
     ).toHaveText('Unknown')
@@ -945,13 +948,16 @@ test('row cells open mode-specific Details with stable Telemetry and exact IDs',
     exact: true,
   })
   await expect(
-    accounting.getByRole('group', { name: 'total estimate (CAD)', exact: true })
+    accounting.getByRole('group', {
+      name: 'total API estimate (CAD)',
+      exact: true,
+    })
   ).toContainText('C$0.123')
   const caseRow = page.locator('[data-outline-id="case/request-latency"]')
   await caseRow.locator('td').last().click()
   await expect(caseRow).toHaveClass(/table-row--selected/)
   await expect(
-    detail.getByRole('group', { name: 'total estimate (CAD)', exact: true })
+    detail.getByRole('group', { name: 'total API estimate (CAD)', exact: true })
   ).toContainText('C$0.369')
 
   await showOnly(page, 'Tool calls')

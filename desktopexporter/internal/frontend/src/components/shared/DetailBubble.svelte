@@ -100,7 +100,11 @@
       suppressClick && event instanceof MouseEvent && event.detail > 0
     suppressClick = false
     if (dragged) return
-    stack.setOpen(sectionID, !expanded)
+    stack.setOpen(
+      sectionID,
+      !expanded,
+      event instanceof MouseEvent && event.detail === 0
+    )
   }
 </script>
 
@@ -176,7 +180,7 @@
 {#if action || stack}
   <div
     id={sectionID}
-    class:detail-bubble__with-action={Boolean(action)}
+    class="detail-bubble"
     class:detail-bubble--resizable={Boolean(stack)}
     class:detail-bubble--unavailable={disabled || count === 0}
     style:flex={stack?.flex(sectionID)}
@@ -197,6 +201,11 @@
 
 <style lang="postcss">
   @reference "../../app.css";
+  .detail-bubble {
+    @apply relative flex min-h-0 flex-col;
+    container: header / inline-size;
+  }
+
   .detail-bubble__heading {
     @apply sticky top-0 z-10 flex items-center gap-2 rounded-xl border border-base-300 bg-base-200 text-sm font-medium text-(--color-subtle);
     min-height: var(--pane-header-h);
@@ -224,8 +233,6 @@
   }
 
   .detail-bubble--resizable {
-    display: flex;
-    flex-direction: column;
     min-height: var(--pane-header-h);
     min-width: 0;
     overflow: hidden;
@@ -245,10 +252,6 @@
     color: inherit;
   }
 
-  .detail-bubble--resizable > .detail-bubble__disclosure {
-    flex: 1;
-  }
-
   .detail-bubble__heading--resizable {
     cursor: grab;
     touch-action: none;
@@ -266,17 +269,11 @@
   .detail-bubble__heading--action {
     padding-inline-end: calc(var(--pane-inline-inset) + 2.25rem - 1px);
   }
-  .detail-bubble__with-action:has(
-      .detail-bubble__action :global([role='tablist'])
-    )
+  .detail-bubble:has(.detail-bubble__action :global([role='tablist']))
     .detail-bubble__heading--action {
     padding-inline-end: calc(var(--detail-tabs-space, 16.5rem) - 1px);
   }
-  .detail-bubble__with-action {
-    @apply relative flex min-h-0 flex-col;
-    container: header / inline-size;
-  }
-  .detail-bubble__with-action .detail-bubble__disclosure {
+  .detail-bubble > .detail-bubble__disclosure {
     @apply flex-1;
   }
   .detail-bubble__action {

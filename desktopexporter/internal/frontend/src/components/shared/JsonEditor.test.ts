@@ -10,6 +10,36 @@ const text =
   '{\n  "same": 9223372036854775807,\n  "same": -0,\n  "items": [\n    "line\\n  content",\n    false\n  ]\n}'
 
 describe('JsonEditor', () => {
+  it('opens the first array item once while preserving deeper folds, later items and manual collapse', async () => {
+    const source = JSON.stringify(
+      [
+        { text: 'first output', nested: { detail: 'deep value' } },
+        { text: 'later output' },
+      ],
+      null,
+      2
+    )
+    const result = render(JsonEditor, { text: source, defaultOpenDepth: 1 })
+    const view = jsonEditorView(result.container)
+    const content = result.container.querySelector('.cm-content')!
+    expect(content).toHaveTextContent('first output')
+    expect(content).not.toHaveTextContent('deep value')
+    expect(content).not.toHaveTextContent('later output')
+    result.component.collapseAll()
+    await result.rerender({
+      text: source,
+      defaultOpenDepth: 1,
+      label: 'Updated label',
+    })
+    expect(content).not.toHaveTextContent('first output')
+    expect(view.state.doc.toString()).toBe(source)
+    await result.rerender({
+      text: '[0, {"text":"later output"}]',
+      defaultOpenDepth: 1,
+    })
+    expect(content).not.toHaveTextContent('later output')
+  })
+
   it('opens only the first level when requested, keeping nested objects and arrays folded', () => {
     const source = JSON.stringify(
       { summary: { result: 'recorded' }, events: [1, 2, 3, 4] },

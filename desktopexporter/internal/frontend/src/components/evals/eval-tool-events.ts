@@ -27,12 +27,7 @@ export function evalEventTools(nodes: SpanNode[]): EvalEventTool[] {
     )
       native.add(key(nativeID))
     span.events.forEach((event, eventIndex) => {
-      const type = text(event.attributes, 'pi.event.type')
-      if (!(
-        (event.name === 'tool.execution' && type === 'tool_execution_end') ||
-        (event.name === 'tool.execution.start' &&
-          type === 'tool_execution_start')
-      ))
+      if (!['tool.execution', 'tool.execution.start'].includes(event.name))
         return
       const callID = text(event.attributes, 'gen_ai.tool.call.id')
       if (!callID) return

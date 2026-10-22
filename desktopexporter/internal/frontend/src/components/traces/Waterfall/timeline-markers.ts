@@ -23,6 +23,15 @@ export type TimelineRecord =
       timestamp: bigint
       log: TraceLogSummary
     }
+  | {
+      /** Viewer-only correlation, never a stored OTel event or span. */
+      kind: 'annotation'
+      id: string
+      timestamp: bigint
+      name: string
+      description: string
+      href?: string
+    }
 
 export type MarkerPosition =
   | { placement: 'inside'; pixel: number; percent: number }
@@ -87,7 +96,10 @@ export function compareTimelineRecords(
 ): number {
   if (left.timestamp !== right.timestamp)
     return left.timestamp < right.timestamp ? -1 : 1
-  if (left.kind !== right.kind) return left.kind === 'event' ? -1 : 1
+  if (left.kind !== right.kind) {
+    const order = { event: 0, log: 1, annotation: 2 }
+    return order[left.kind] - order[right.kind]
+  }
   if (left.kind === 'event' && right.kind === 'event')
     return left.eventIndex - right.eventIndex
   return left.id.localeCompare(right.id)
@@ -159,10 +171,9 @@ export function clusterTimelineRecords(
 
 export function markerComposition(
   marker: TimelineMarker
-): 'event' | 'log' | 'mixed' {
-  const events = marker.members.some(member => member.kind === 'event')
-  const logs = marker.members.some(member => member.kind === 'log')
-  return events && logs ? 'mixed' : events ? 'event' : 'log'
+): TimelineRecord['kind'] | 'mixed' {
+  const kinds = new Set(marker.members.map(member => member.kind))
+  return kinds.size === 1 ? marker.members[0]!.kind : 'mixed'
 }
 
 export function markerColor(marker: TimelineMarker, spanColor: string): string {
@@ -177,10 +188,16 @@ export function markerLabel(marker: TimelineMarker): string {
   const eventCount = marker.members.filter(
     member => member.kind === 'event'
   ).length
-  const logCount = marker.members.length - eventCount
+  const logCount = marker.members.filter(member => member.kind === 'log').length
+  const annotationCount = marker.members.filter(
+    member => member.kind === 'annotation'
+  ).length
   const parts = [
     eventCount > 0 ? `${eventCount} event${eventCount === 1 ? '' : 's'}` : '',
     logCount > 0 ? `${logCount} log${logCount === 1 ? '' : 's'}` : '',
+    annotationCount > 0
+      ? `${annotationCount} eval annotation${annotationCount === 1 ? '' : 's'}`
+      : '',
   ].filter(Boolean)
   return marker.members.length === 1
     ? `Select ${parts[0]}`

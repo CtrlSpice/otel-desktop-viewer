@@ -43,6 +43,34 @@ function mixedMarker(): TimelineMarker {
 }
 
 describe('TimelineMarkers', () => {
+  it('uses the shared popover for eval annotations with explicit anchor provenance', async () => {
+    const marker = mixedMarker()
+    marker.members = [
+      {
+        kind: 'annotation',
+        id: 'assessment:rubric',
+        timestamp: 55n,
+        name: 'llm-rubric',
+        description: 'Correlated assessment · recorded span end',
+      },
+    ]
+    const onSelectRecord = vi.fn()
+    renderWithContexts(TimelineMarkers, {
+      markers: [marker],
+      spanColor: '#abc',
+      spanStartTime: 40n,
+      onSelectRecord,
+    })
+    const trigger = screen.getByRole('button', {
+      name: 'Select 1 eval annotation',
+    })
+    await fireEvent.mouseEnter(trigger)
+    expect(screen.getByRole('dialog', { name: 'Span activity' })).toBeVisible()
+    expect(screen.getByText('Eval annotation')).toBeVisible()
+    await fireEvent.click(trigger)
+    expect(onSelectRecord).toHaveBeenCalledWith(marker.members[0])
+  })
+
   it.each(['event', 'log', 'mixed'] as const)(
     'previews %s clusters on hover and focus, and pins them on click',
     async kind => {

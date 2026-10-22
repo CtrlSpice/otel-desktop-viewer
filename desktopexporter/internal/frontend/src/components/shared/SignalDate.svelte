@@ -1,17 +1,20 @@
 <script lang="ts">
   import { getTimeContext } from '@/contexts/time-context.svelte'
-  import { formatTimestampParts } from '@/utils/time'
+  import { formatTimestampParts, formatSignedDuration } from '@/utils/time'
 
   let {
     label,
     timestamp,
     unavailable = 'Unavailable',
     suffix,
+    relativeTo,
   }: {
     label: string
     timestamp?: bigint
     unavailable?: string
     suffix?: string
+    /** Show an offset while retaining the full recorded date on hover. */
+    relativeTo?: bigint
   } = $props()
   const timeContext = getTimeContext()
   const parts = $derived(
@@ -29,7 +32,9 @@
 >
   <span class="signal-date__label">{label}:</span>
   <span class="min-w-0 truncate text-base-content"
-    >{parts?.value ?? '—'}{#if suffix}
+    >{timestamp !== undefined && relativeTo !== undefined
+      ? formatSignedDuration(timestamp - relativeTo)
+      : (parts?.value ?? '—')}{#if suffix}
       <span class="text-rp-subtle">{' '}{suffix}</span>{/if}</span
   >
 </div>

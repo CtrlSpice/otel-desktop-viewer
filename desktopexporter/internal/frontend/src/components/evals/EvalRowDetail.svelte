@@ -132,7 +132,7 @@
     row.kind === 'case' || row.kind === 'result'
       ? [
           {
-            name: 'investigator estimate (CAD)',
+            name: 'investigator API estimate (CAD)',
             estimate:
               row.kind === 'case'
                 ? summary.investigatorCost
@@ -142,15 +142,15 @@
                   },
           },
           {
-            name: 'grader estimate (CAD)',
+            name: 'grader API estimate (CAD)',
             estimate:
               row.kind === 'case'
                 ? summary.graderCost
                 : { total: result?.graderCost ?? null, incomplete: false },
           },
-          { name: 'total estimate (CAD)', estimate: row.estimate },
+          { name: 'total API estimate (CAD)', estimate: row.estimate },
         ]
-      : [{ name: 'estimate (CAD)', estimate: row.estimate }]
+      : [{ name: 'API estimate (CAD)', estimate: row.estimate }]
   )
   const calls = $derived(
     row.kind === 'case'

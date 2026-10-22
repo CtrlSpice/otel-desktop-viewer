@@ -175,9 +175,14 @@
   Secondary metadata and Subtle dot separators. Service/severity filter options
   use plain text with meaningful colour dots and the shared item selection/hover
   highlights, not coloured pills. Datapoint flags use plain neutral Text.
-  Timeline activity popover entries use two lines: event name or shared log
-  severity in Text, with the Subtle offset at the right; Subtle record type below.
-  Logs put a received event name after `Log ·` on the second line when present.
+  Timeline activity popover entries put the event/tool name or received log name
+  (falling back to body preview) in Text, with the Subtle offset at the right and
+  Subtle record type below. Retain the shared log severity dot and accessible label.
+  Viewer-only correlations say `Eval annotation`; put their timing provenance on
+  a separate line. Collected runtime tool records say `Reconstructed Pi annotation`
+  or `Reconstructed OpenCode annotation`, including when stored as OTel events.
+  Recorded `tool.is_error: true` adds neutral `Tool error` text, not warning dots
+  or assessment outcomes. Tool names come only from received attributes.
   Align metadata under the title text after a dot when present. Keep chronological
   order; nameless entries have no separator or invented name.
   Log summary labels are plain Subtle text. Shared log severity labels use
@@ -240,6 +245,9 @@
   Cost has Investigator, Grader and Total cost columns, in that
   order. Cells and footer totals show only numeric amounts (Unknown if missing);
   CAD and estimate labels stay in headers, and partial-estimate context is on hover.
+  Costs are presentation-only API-price estimates in CAD. Label them `API estimate`
+  and retain the dated pricing/FX provenance. Do not relabel producer costs as CAD,
+  infer missing usage as zero, or treat estimates as actual subscription charges.
   Evals lists database-wide experiment summaries and loads full experiment data only for the
   selected experiment, as the other signals do. Summary cards consume summary data rather
   than loading Results to calculate their counts. Reuse existing signal cards,
@@ -375,6 +383,9 @@
   Pine/Secondary `Span event` provenance, recorded exception message when present,
   and the shared bottom-left Recorded date/offset. Preserve the exception dot
   and disclosure controls; do not invent severity or span status for events.
+  Event cards use the recorded tool name when supplied, retaining a different
+  underlying event name in a typed field. Their Recorded row shows the offset from
+  the parent span; retain the full timestamp in its field and on hover.
   Keep tool execution in the waterfall; do not repeat its Tool calls list in
   Result Details.
 - All signal cards place the shared date row at the bottom-left, after summary
@@ -483,7 +494,9 @@
   native two-line ellipsis and Show more / Show less on the next line, including
   multiline text and Markdown across all signals. Structured JSON instead uses
   Expand all / Collapse all controls in its field header, with only the first
-  container level open by default and nested objects and arrays folded. Keep Copy exact and
+  container level open by default and nested objects and arrays folded. When the
+  first array item is a container, open that item one additional level too; keep
+  deeper contents and later items folded. Preserve manual folds. Keep Copy exact and
   complete. Evals answers use an Output field
   card rather than unlabeled prose.
   Evals type labels describe the underlying value, not its formatted display.

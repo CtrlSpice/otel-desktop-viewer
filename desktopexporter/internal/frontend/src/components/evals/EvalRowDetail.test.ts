@@ -136,17 +136,17 @@ it('keeps Details and Telemetry stable while the selected mode surfaces its own 
   })
   expect(
     within(accounting).getByRole('group', {
-      name: 'investigator estimate (CAD)',
+      name: 'investigator API estimate (CAD)',
     })
   ).toHaveTextContent('C$0.000')
   expect(
     within(accounting).getByRole('group', {
-      name: 'grader estimate (CAD)',
+      name: 'grader API estimate (CAD)',
     })
   ).toHaveTextContent('Unknown')
   expect(
     within(accounting).getByRole('group', {
-      name: 'total estimate (CAD)',
+      name: 'total API estimate (CAD)',
     })
   ).toHaveTextContent('C$0.000 · partial')
   expect(sections[2].open).toBe(false)

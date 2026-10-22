@@ -45,6 +45,7 @@ export function createDetailStackState(storageKey: string) {
   let sections = $state<Section[]>([])
   let weights = $state(loadWeights(storageKey))
   let dragging = $state<string | null>(null)
+  let keyboard = $state(false)
   let previewSizes = $state<Record<string, number> | null>(null)
   let drag: DragHandle | undefined
 
@@ -83,10 +84,11 @@ export function createDetailStackState(storageKey: string) {
     return Boolean(collapseReceiver(id))
   }
 
-  function setOpen(id: string, open: boolean) {
+  function setOpen(id: string, open: boolean, immediate = false) {
     const section = sections.find(candidate => candidate.id === id)
     if (!section?.available()) return
     drag?.cancel()
+    keyboard = immediate
     if (open) {
       section.setExpanded(true)
       return
@@ -138,7 +140,9 @@ export function createDetailStackState(storageKey: string) {
     )
     const initial = new Map(
       sections.map(section => {
-        const height = section.expanded()
+        // A closing section can still occupy space while its transition runs.
+        // Interrupt from that rendered allocation, rather than its target state.
+        const height = section.available()
           ? Math.max(
               0,
               section.element.getBoundingClientRect().height -
@@ -156,6 +160,17 @@ export function createDetailStackState(storageKey: string) {
       sections.map(section => [section.id, section.layoutKey ?? section.label])
     )
 
+    function preview(sizes: Map<string, number>) {
+      // Fixed pixel previews keep unrelated sections still instead of making
+      // flex growers compete, including while interrupting a settling layout.
+      previewSizes = Object.fromEntries(
+        [...sizes].map(([sectionID, height]) => [
+          sectionID,
+          height + headers.get(sectionID)!,
+        ])
+      )
+    }
+
     function commit(sizes: Map<string, number>, settle: boolean) {
       const updated = { ...remembered }
       for (const section of sections) {
@@ -169,14 +184,7 @@ export function createDetailStackState(storageKey: string) {
         weights = updated
         previewSizes = null
       } else {
-        // Match the page resizer's preview/commit split. Fixed pixel previews
-        // keep unrelated sections still instead of making flex growers compete.
-        previewSizes = Object.fromEntries(
-          [...sizes].map(([sectionID, height]) => [
-            sectionID,
-            height + headers.get(sectionID)!,
-          ])
-        )
+        preview(sizes)
       }
     }
 
@@ -212,6 +220,7 @@ export function createDetailStackState(storageKey: string) {
     return {
       total,
       apply,
+      freeze: () => preview(initial),
       finish: () => apply(lastDelta, true),
     }
   }
@@ -228,8 +237,17 @@ export function createDetailStackState(storageKey: string) {
     get dragging() {
       return dragging
     },
+    get immediate() {
+      return keyboard || dragging !== null
+    },
     register(section: Section) {
-      sections = [...sections, section]
+      // Conditional sections can mount after siblings that follow them on screen.
+      // Boundaries and collapse handoffs follow document order, not mount order.
+      sections = [...sections, section].sort((a, b) => {
+        const position = a.element.compareDocumentPosition(b.element)
+        if (position & Node.DOCUMENT_POSITION_DISCONNECTED) return 0
+        return position & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1
+      })
       return () => {
         drag?.cancel()
         sections = sections.filter(candidate => candidate.id !== section.id)
@@ -256,8 +274,13 @@ export function createDetailStackState(storageKey: string) {
     start(id: string, event: PointerEvent, onDrag: () => void) {
       if (event.button !== 0) return
       drag?.cancel()
+      keyboard = false
       const sizes = snapshot(id)
       if (!sizes) return
+      // Freeze at the press, before the click threshold: a settling transition
+      // must not keep moving the boundary beneath a stationary pointer.
+      sizes.freeze()
+      dragging = id
       let moved = false
       drag = startDrag(event, {
         axis: 'y',
@@ -266,7 +289,6 @@ export function createDetailStackState(storageKey: string) {
           if (!moved) {
             if (Math.abs(delta) < 4) return
             moved = true
-            dragging = id
             onDrag()
           }
           sizes.apply(delta)
@@ -275,7 +297,7 @@ export function createDetailStackState(storageKey: string) {
           if (moved) {
             sizes.finish()
             save()
-          }
+          } else previewSizes = null
           dragging = null
           drag = undefined
         },
@@ -283,8 +305,10 @@ export function createDetailStackState(storageKey: string) {
     },
     keydown(id: string, event: KeyboardEvent) {
       if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
+      drag?.cancel()
       const sizes = snapshot(id)
       if (!sizes) return
+      keyboard = true
       event.preventDefault()
       const step = sizes.total * (event.shiftKey ? 0.05 : 0.01)
       sizes.apply(
@@ -301,6 +325,7 @@ export function createDetailStackState(storageKey: string) {
     },
     reset() {
       drag?.cancel()
+      keyboard = false
       weights = {}
       save()
     },

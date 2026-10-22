@@ -18,8 +18,19 @@
   import TreeRowIdentity from '@/components/shared/TreeRowIdentity.svelte'
   import DurationBar from '@/components/shared/DurationBar.svelte'
   import TimingCell from '@/components/shared/TimingCell.svelte'
+  import EvalTimelineMarkers from './EvalTimelineMarkers.svelte'
+  import { evalTimelineRecords } from './eval-timeline'
+  import { uniqueToolCallID, toolLogOwners } from './eval-span-evidence'
+  import type { TimelineRecord } from '@/components/traces/Waterfall/timeline-markers'
+  import { navigate } from '@/route'
   import { telemetryAPI } from '@/services/telemetry-service'
-  import type { SpanTiming, TraceData } from '@/types/api-types'
+  import type {
+    LogData,
+    SpanData,
+    SpanTiming,
+    TraceData,
+    TraceLogSummary,
+  } from '@/types/api-types'
   import { getServiceName } from '@/utils/resource'
   import {
     evalExecutionRows,
@@ -180,6 +191,74 @@
   )
   let timingsLoading = $state(false)
   let timingsFailed = $state(false)
+  let timelineLogs = $state(new Map<string, TraceLogSummary[]>())
+  let correlationLogs = $state<LogData[]>([])
+  $effect(() => {
+    const nodes = traceIndex.nodes
+    const traces = traceViews
+    const controller = new AbortController()
+    timelineLogs = new Map()
+    correlationLogs = []
+    void (async () => {
+      const summaries = new Map<string, TraceLogSummary[]>()
+      for (let offset = 0; offset < traces.length; offset += 4) {
+        const batch = traces.slice(offset, offset + 4)
+        const results = await Promise.allSettled(
+          batch.map(trace =>
+            telemetryAPI.getTraceLogSummaries(trace.traceID, controller.signal)
+          )
+        )
+        if (controller.signal.aborted) return
+        results.forEach((result, index) => {
+          if (result.status === 'fulfilled')
+            summaries.set(batch[index]!.traceID.toLowerCase(), result.value)
+        })
+        timelineLogs = new Map(summaries)
+      }
+      const owners = new Map<string, SpanData>()
+      for (const { spanData: span } of nodes.values()) {
+        const callID = uniqueToolCallID(span, nodes)
+        if (!callID) continue
+        for (const owner of toolLogOwners([span], nodes, callID).slice(1))
+          owners.set(referenceKey(owner), owner)
+      }
+      const selected = [...owners.values()]
+      const received: LogData[] = []
+      for (let offset = 0; offset < selected.length; offset += 4) {
+        const results = await Promise.allSettled(
+          selected
+            .slice(offset, offset + 4)
+            .map(span =>
+              telemetryAPI.getSpanLogs(
+                span.traceID,
+                span.spanID,
+                controller.signal
+              )
+            )
+        )
+        if (controller.signal.aborted) return
+        for (const result of results)
+          if (result.status === 'fulfilled') received.push(...result.value)
+        correlationLogs = [...received]
+      }
+    })()
+    return () => controller.abort()
+  })
+  function selectActivity(
+    record: TimelineRecord,
+    span: SpanTiming,
+    row?: EvalOutlineRow
+  ) {
+    if (record.kind === 'annotation') {
+      if (record.href) navigate(record.href)
+      else if (row) onSelect?.(row)
+      return
+    }
+    const params = new URLSearchParams({ span: span.spanID })
+    if (record.kind === 'event') params.set('event', String(record.eventIndex))
+    else params.set('log', record.log.logRef)
+    navigate(`/traces/${span.traceID}?${params}`)
+  }
   $effect(() => onTraceViews?.(traceViews, timingsLoading))
   const timingKey = referenceKey
   const timingFor = (reference?: TelemetryReference) => {
@@ -340,7 +419,7 @@
               group: 'Cost',
               width: 160,
               min: 144,
-              description: 'Estimate · CAD',
+              description: 'API estimate · CAD',
             } as Column,
             {
               key: 'graderCost',
@@ -348,7 +427,7 @@
               group: 'Cost',
               width: 160,
               min: 144,
-              description: 'Estimate · CAD',
+              description: 'API estimate · CAD',
             } as Column,
             {
               key: 'cost',
@@ -356,7 +435,7 @@
               group: 'Cost',
               width: 160,
               min: 144,
-              description: 'Estimate · CAD',
+              description: 'API estimate · CAD',
             } as Column,
           ]),
   ])
@@ -545,7 +624,8 @@
   spanError = false,
   window?: TimeWindow,
   label = 'Referenced execution window',
-  planned = false
+  planned = false,
+  row?: EvalOutlineRow
 )}
   {@const span = timingFor(reference)}
   {@const duration = durationFor(reference, seconds)}
@@ -603,6 +683,26 @@
           >{planned ? 'Not started' : missingTiming(reference)}</span
         ></span
       >
+    {/if}
+    {#if span && origin !== undefined && maximumDuration > 1n}
+      {@const node = traceIndex.nodes.get(referenceKey(span))}
+      {#if node}
+        <EvalTimelineMarkers
+          records={evalTimelineRecords(
+            node,
+            traceIndex.nodes,
+            timelineLogs.get(span.traceID.toLowerCase()) ?? [],
+            correlationLogs,
+            row
+          )}
+          start={origin}
+          end={origin + maximumDuration}
+          spanStart={span.startTime}
+          color={spanColors[referenceKey(span)] ??
+            spanTimingColor(span, themeSignal.value)}
+          onSelect={record => selectActivity(record, span, row)}
+        />
+      {/if}
     {/if}
   </TimingCell>
 {/snippet}
@@ -859,7 +959,8 @@
                     row.spanError,
                     row.window,
                     row.name,
-                    experiment.state === 'Planned'
+                    experiment.state === 'Planned',
+                    row
                   )}
                 {:else if column.key === 'cost'}
                   {@render rowCost(row.estimate)}
@@ -890,7 +991,8 @@
                     row.spanError,
                     row.window,
                     row.name,
-                    row.state === 'Planned'
+                    row.state === 'Planned',
+                    row
                   )}
                 {:else if column.assessment && item && (row.kind === 'case' || row.kind === 'result' || row.kind === 'grading' || row.assessmentID === column.assessment.id)}
                   {@const assessment = item.assessments.find(
@@ -949,7 +1051,8 @@
                   row.spanError,
                   row.window,
                   row.name,
-                  row.state === 'Planned'
+                  row.state === 'Planned',
+                  row
                 )}
               {:else}<TimingCell maximum={maximumDuration} />{/if}
             </td>

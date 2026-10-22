@@ -37,7 +37,15 @@
     tree.iterate({
       enter(node) {
         if (node.name !== 'Object' && node.name !== 'Array') return
-        if (depth >= defaultOpenDepth! && node.to - node.from > 2) {
+        const firstArrayItem =
+          depth === defaultOpenDepth &&
+          node.node.parent?.name === 'Array' &&
+          node.node.prevSibling?.name === '['
+        if (
+          depth >= defaultOpenDepth! &&
+          !firstArrayItem &&
+          node.to - node.from > 2
+        ) {
           effects.push(foldEffect.of({ from: node.from + 1, to: node.to - 1 }))
           return false
         }

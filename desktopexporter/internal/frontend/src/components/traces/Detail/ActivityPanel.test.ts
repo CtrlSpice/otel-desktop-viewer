@@ -91,7 +91,8 @@ describe('ActivityPanel', () => {
       spanStartTime: 1_000_000_000n,
     })
 
-    expect(screen.getAllByText('(-1.000 s)')).toHaveLength(2)
+    expect(screen.getByText('-1.000 s')).toBeVisible()
+    expect(screen.getAllByText('(-1.000 s)')).toHaveLength(1)
     const summary = screen.getByRole('region', { name: 'Log summary' })
     const offset = within(summary).getByText('(-1.000 s)', { exact: true })
     expect(offset).toHaveClass('text-rp-subtle')

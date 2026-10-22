@@ -9,6 +9,11 @@
   import { severityLabel } from '@/components/logs/log-severity'
   import { formatSignedDuration } from '@/utils/time'
   import {
+    toolEventAnnotation,
+    toolEventError,
+    toolEventName,
+  } from '@/utils/tool-event'
+  import {
     MARKER_GLYPH_REM,
     MARKER_HIT_AREA_REM,
     markerColor,
@@ -47,20 +52,22 @@
   }
 
   function recordName(record: TimelineRecord): string {
-    return record.kind === 'event'
-      ? record.event.name
-      : record.log.eventName || record.log.bodyPreview
+    return record.kind === 'annotation'
+      ? record.name
+      : record.kind === 'event'
+        ? toolEventName(record.event)
+        : record.log.eventName || record.log.bodyPreview
   }
 
   function buttonTitle(): string {
     const placement = marker.position.placement
     const suffix =
       placement === 'before'
-        ? ' before trace'
+        ? ' before timeline'
         : placement === 'after'
-          ? ' after trace'
+          ? ' after timeline'
           : placement === 'outside'
-            ? ' outside trace axis'
+            ? ' outside timeline'
             : ''
     return `${markerLabel(marker)}${suffix}`
   }
@@ -252,15 +259,18 @@
           }}
         >
           <span class="activity-popover__heading">
-            {#if record.kind === 'event'}
+            {#if record.kind !== 'log'}
               <span class="activity-popover__name">
-                {#if name === 'exception'}
+                {#if record.kind === 'event' && name === 'exception'}
                   <span
                     class="size-2 shrink-0 rounded-full bg-error"
                     aria-hidden="true"
                   ></span>
                 {/if}
                 <span class="min-w-0 truncate" title={name}>{name}</span>
+                {#if record.kind === 'event' && toolEventError(record.event)}
+                  <span class="shrink-0"> · Tool error</span>
+                {/if}
               </span>
             {:else if name}
               <LogSeverity
@@ -284,11 +294,19 @@
           </span>
           <span
             class="activity-popover__metadata text-rp-subtle"
+            class:activity-popover__metadata--annotation={record.kind ===
+              'annotation'}
             class:activity-popover__metadata--with-dot={record.kind === 'log' ||
               name === 'exception'}
           >
             {#if record.kind === 'event'}
-              <span>Span event</span>
+              {@const annotation = toolEventAnnotation(record.event)}
+              <span title={annotation?.description}
+                >{annotation?.label ?? 'Span event'}</span
+              >
+            {:else if record.kind === 'annotation'}
+              <span>Eval annotation</span>
+              <span>{record.description}</span>
             {:else}
               <span>Log</span>
             {/if}
@@ -357,6 +375,10 @@
 
   .activity-popover__metadata {
     @apply flex w-full min-w-0 items-center gap-2 whitespace-nowrap;
+  }
+
+  .activity-popover__metadata--annotation {
+    @apply flex-col items-start gap-0 whitespace-normal;
   }
 
   .activity-popover__metadata--with-dot {

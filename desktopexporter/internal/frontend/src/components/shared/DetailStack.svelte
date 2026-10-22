@@ -10,22 +10,20 @@
     label,
     children,
     storageKey,
-  }: { label: string; children: Snippet; storageKey?: string } = $props()
-  const stack = untrack(() =>
-    storageKey ? createDetailStackState(storageKey) : undefined
-  )
+  }: { label: string; children: Snippet; storageKey: string } = $props()
+  const stack = untrack(() => createDetailStackState(storageKey))
   setContext(DETAIL_STACK, stack)
   $effect(() => {
     const key = storageKey
-    if (key) untrack(() => stack?.setStorageKey(key))
+    untrack(() => stack.setStorageKey(key))
   })
-  onDestroy(() => stack?.destroy())
+  onDestroy(() => stack.destroy())
 </script>
 
 <div
-  class="detail-stack grid min-h-0 flex-1 auto-rows-[minmax(0,auto)] content-start gap-2 overflow-hidden"
-  class:detail-stack--resizable={Boolean(stack)}
-  class:detail-stack--dragging={stack?.dragging != null}
+  class="detail-stack detail-stack--resizable min-h-0 flex-1 overflow-hidden"
+  class:detail-stack--dragging={stack.dragging != null}
+  class:detail-stack--immediate={stack.immediate}
   role="region"
   aria-label={label}
 >
@@ -36,26 +34,13 @@
   .detail-stack {
     --detail-motion-duration: var(--motion-compact-duration);
     --detail-motion-easing: var(--motion-settle-easing);
-  }
-
-  .detail-stack--resizable {
     display: flex;
     flex-direction: column;
     gap: calc(var(--header-gap) / 2);
   }
 
-  .detail-stack--dragging :global(.detail-bubble--resizable) {
-    transition: none;
-  }
-
   .detail-stack--dragging :global(.detail-bubble__heading--resizable) {
     cursor: grabbing;
-  }
-
-  .detail-stack--dragging :global(details),
-  .detail-stack--dragging :global(details)::details-content,
-  .detail-stack--dragging :global(.collapse-content) {
-    transition: none;
   }
 
   @media (prefers-reduced-motion: no-preference) {
@@ -86,5 +71,12 @@
         visibility var(--detail-motion-duration) allow-discrete,
         padding var(--detail-motion-duration) var(--detail-motion-easing);
     }
+  }
+
+  .detail-stack--immediate :global(.detail-bubble--resizable),
+  .detail-stack--immediate :global(details),
+  .detail-stack--immediate :global(details)::details-content,
+  .detail-stack--immediate :global(.collapse-content) {
+    transition: none;
   }
 </style>
