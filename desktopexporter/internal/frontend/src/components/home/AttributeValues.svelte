@@ -165,6 +165,7 @@
           >
             <TableSortButton
               label="name"
+              inlineDirection
               direction={sortBy === 'name' ? sortDirection : undefined}
               onclick={() => sort('name')}>Name</TableSortButton
             >
@@ -180,6 +181,7 @@
           >
             <TableSortButton
               label="percentage"
+              inlineDirection
               align="right"
               direction={sortBy === 'frequency' ? sortDirection : undefined}
               onclick={() => sort('frequency')}>%</TableSortButton

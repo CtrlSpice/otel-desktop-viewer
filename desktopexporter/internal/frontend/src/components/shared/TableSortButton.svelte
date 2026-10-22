@@ -9,6 +9,7 @@
     onclick,
     children,
     inset = true,
+    inlineDirection = false,
   }: {
     label: string
     direction?: 'asc' | 'desc'
@@ -17,6 +18,7 @@
     onclick: () => void
     children: Snippet
     inset?: boolean
+    inlineDirection?: boolean
   } = $props()
 </script>
 
@@ -25,6 +27,7 @@
   class="table-sort"
   class:table-sort--right={align === 'right'}
   class:table-sort--flush={!inset}
+  class:table-sort--inline-direction={inlineDirection}
   aria-label={`Sort by ${label}`}
   {title}
   {onclick}
@@ -54,5 +57,15 @@
 
   .table-sort--right .table-sort__direction {
     @apply left-0 right-auto;
+  }
+  .table-sort--inline-direction {
+    @apply flex items-center gap-1;
+  }
+  .table-sort--inline-direction.table-sort--right {
+    @apply justify-end;
+  }
+  .table-sort--inline-direction .table-sort__direction {
+    position: static;
+    transform: none;
   }
 </style>
