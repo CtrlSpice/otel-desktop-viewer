@@ -1,6 +1,7 @@
 import {
   assessmentSummary,
   estimatedCost,
+  evalToolCounts,
   type AssessmentDefinition,
   type EvalResult,
 } from './model'
@@ -12,8 +13,8 @@ export function caseSummary(
   let calls = 0
   let failures = 0
   for (const result of results) {
-    calls += result.tools.length
-    failures += result.tools.filter(tool => tool.state === 'Error').length
+    calls += evalToolCounts(result).total
+    failures += evalToolCounts(result).failed
   }
   return {
     scores: Object.fromEntries(

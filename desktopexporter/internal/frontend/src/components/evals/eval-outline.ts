@@ -247,8 +247,18 @@ export function buildEvalOutline(
       }
       const nativeNodes = resultTraceNodes(result, index)
       if (nativeNodes.length) {
-        owner.toolCounts = { total: 0, failed: 0 }
         const root = resolveEvalReference(result.telemetry, index)?.spanData
+        const eventCounts = (span?: TelemetryReference) => {
+          const tools =
+            result.eventTools?.filter(
+              tool => span && referenceKey(tool.parent) === referenceKey(span)
+            ) ?? []
+          return {
+            total: tools.length,
+            failed: tools.filter(tool => tool.failed === true).length,
+          }
+        }
+        owner.toolCounts = eventCounts(root)
         if (root)
           owner.reference = { traceID: root.traceID, spanID: root.spanID }
         const parents = new Map<string, EvalOutlineRow>(
@@ -292,8 +302,10 @@ export function buildEvalOutline(
             state: isErrorSpan(span) ? 'Error' : 'Complete',
             internalFault: false,
             toolCounts: {
-              total: kind === 'tool' ? 1 : 0,
-              failed: kind === 'tool' && isErrorSpan(span) ? 1 : 0,
+              total: (kind === 'tool' ? 1 : 0) + eventCounts(span).total,
+              failed:
+                (kind === 'tool' && isErrorSpan(span) ? 1 : 0) +
+                eventCounts(span).failed,
             },
             spanError: isErrorSpan(span),
             reference: { traceID: span.traceID, spanID: span.spanID },

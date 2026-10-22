@@ -104,9 +104,14 @@ provider spans over OTLP during evaluation. Its SDK flushes on evaluation shutdo
 The provider saves the active `traceparent` in local `identity.json` diagnostics.
 `PROMPTFOO_DISABLE_TELEMETRY=1` disables product analytics, not this OTel exporter.
 
-Pi's internal model/tool events are streamed to durable JSONL; they are not yet
-converted to OTel child spans. Promptfoo's outer spans do not expose those internal
-operations automatically. Claude Code exports its native interaction/model/tool
+Pi's internal model/tool events are streamed to durable JSONL. The provider attaches
+rich `tool.execution` events to its existing Promptfoo span, joining inputs and
+outputs only through unique recorded call IDs. These are collector events, not
+native Pi spans. Each event retains source records, tool duration and failure when
+supplied. Its timestamp is the recorded tool-result message time, or explicitly
+labelled collector observation time; no execution-start time is inferred. Incomplete
+starts remain `tool.execution.start` events. Old exports are not backfilled.
+Claude Code exports its native interaction/model/tool
 spans, logs and metrics, and receives the Promptfoo parent through `TRACEPARENT`.
 
 The viewer's Evals saved-import/live-update association still needs integration.

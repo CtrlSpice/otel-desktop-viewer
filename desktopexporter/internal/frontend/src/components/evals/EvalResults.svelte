@@ -53,6 +53,7 @@
   } from './group-results'
   import {
     estimatedCost,
+    evalToolCounts,
     type TelemetryReference,
     type AssessmentDefinition,
     type EvalResult,
@@ -902,9 +903,8 @@
                   </div>
                 {:else if column.key === 'tools' && item && (row.kind === 'case' || row.kind === 'result' || row.kind === 'execution')}
                   {@render toolCount(
-                    row.toolCounts?.total ?? item.tools.length,
-                    row.toolCounts?.failed ??
-                      item.tools.filter(tool => tool.state === 'Error').length
+                    row.toolCounts?.total ?? evalToolCounts(item).total,
+                    row.toolCounts?.failed ?? evalToolCounts(item).failed
                   )}
                 {:else if column.key === 'tools' && row.kind === 'tool'}
                   {@render toolCount(1, row.spanError ? 1 : 0)}

@@ -9,6 +9,8 @@ import {
 import { exampleExperiments } from './examples'
 import { buildEvalOutline, visibleOutlineRows } from './eval-outline'
 import { groupResults } from './group-results'
+import { evalToolCounts } from './model'
+import { evalEventTools } from './eval-tool-events'
 import {
   evalExecutionRows,
   evalTraceReferences,
@@ -64,6 +66,94 @@ function node(
 }
 
 describe('referenced eval hierarchy', () => {
+  it('counts rich Pi parent events without creating tool spans, timing or span errors', () => {
+    const root = node(1, null, 0)
+    const parent = node(2, 1, 1)
+    parent.spanData.events = [
+      {
+        name: 'tool.execution',
+        timestamp: parent.spanData.endTime,
+        droppedAttributesCount: 0,
+        attributes: [
+          {
+            key: 'pi.event.type',
+            value: { kind: 'string', value: 'tool_execution_end' },
+          },
+          {
+            key: 'gen_ai.tool.call.id',
+            value: { kind: 'string', value: 'pi-call' },
+          },
+          { key: 'tool.is_error', value: { kind: 'bool', value: true } },
+          {
+            key: 'tool.output',
+            value: { kind: 'string', value: 'exact\nerror' },
+          },
+        ],
+      },
+    ]
+    const source = {
+      ...exampleExperiments[0],
+      telemetry: undefined,
+      results: [
+        {
+          ...exampleExperiments[0].results[0],
+          state: 'Complete' as const,
+          telemetry: { traceID },
+          resultTelemetry: undefined,
+          tools: [],
+          toolsKnown: false,
+        },
+      ],
+    }
+    const index = indexEvalTraces([
+      { traceID, unplacedSpanCount: 0, spans: [root, parent] },
+    ])
+    const experiment = projectEvalTraceEvidence(source, index)
+    expect(evalToolCounts(experiment.results[0])).toEqual({
+      total: 1,
+      failed: 1,
+    })
+    expect(experiment.results[0].tools).toEqual([])
+    expect(experiment.results[0].assessments).toEqual(
+      source.results[0].assessments
+    )
+    const rows = buildEvalOutline(
+      groupResults(experiment.results, experiment.results),
+      experiment,
+      index
+    )
+    expect(rows.filter(row => row.kind === 'tool')).toEqual([])
+    expect(rows.every(row => !row.spanError)).toBe(true)
+    expect(
+      rows.find(row => row.reference?.spanID === ref(2).spanID)?.toolCounts
+    ).toEqual({ total: 1, failed: 1 })
+    expect(evalSpanEvidence([parent.spanData])[0].fields).toEqual(
+      parent.spanData.events[0].attributes
+    )
+    expect(source.results[0].toolsKnown).toBe(false)
+
+    const duplicate = node(3, 1, 1)
+    duplicate.spanData.events = parent.spanData.events
+    expect(evalEventTools([parent, duplicate])).toEqual([])
+    duplicate.spanData.events = []
+    duplicate.spanData.attributes = [
+      {
+        key: 'gen_ai.operation.name',
+        value: { kind: 'string', value: 'execute_tool' },
+      },
+      {
+        key: 'gen_ai.tool.call.id',
+        value: { kind: 'string', value: 'pi-call' },
+      },
+    ]
+    expect(evalEventTools([parent, duplicate])).toEqual([])
+    parent.spanData.events[0].attributes.push({
+      key: 'gen_ai.tool.call.id',
+      value: { kind: 'string', value: 'conflict' },
+    })
+    expect(evalEventTools([parent])).toEqual([])
+  })
+
   it('links unique recorded grader identities without rewriting judgments or guessing duplicate names', () => {
     const grader = node(2, 1, 1)
     grader.spanData.attributes = [

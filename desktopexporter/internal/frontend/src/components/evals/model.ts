@@ -38,6 +38,24 @@ export type EvalTool = {
   cost?: number
 }
 
+export type EvalEventTool = {
+  callID: string
+  parent: TelemetryReference
+  eventIndex: number
+  failed?: boolean
+}
+
+export function evalToolCounts(
+  result: Pick<EvalResult, 'tools' | 'eventTools'>
+) {
+  return {
+    total: result.tools.length + (result.eventTools?.length ?? 0),
+    failed:
+      result.tools.filter(tool => tool.state === 'Error').length +
+      (result.eventTools?.filter(tool => tool.failed === true).length ?? 0),
+  }
+}
+
 type EvalExecutionEvidence = {
   answer?: string
   /** Source type before formatting the output for display. */
@@ -50,6 +68,8 @@ type EvalExecutionEvidence = {
   error?: string
   assessments: Assessment[]
   tools: EvalTool[]
+  /** Recorded parent-span events, kept distinct from native tool spans. */
+  eventTools?: EvalEventTool[]
   /** False when the source supplies no tool-call evidence. */
   toolsKnown?: boolean
   /** Target execution, distinct from an enclosing Result or retry Attempt span. */

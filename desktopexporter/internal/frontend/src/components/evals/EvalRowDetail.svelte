@@ -10,6 +10,7 @@
   import MarkdownText from '@/components/shared/MarkdownText.svelte'
   import {
     cost,
+    evalToolCounts,
     localTimestamp,
     type EvalExperiment,
     type EvalView,
@@ -154,14 +155,12 @@
   const calls = $derived(
     row.kind === 'case'
       ? summary.calls
-      : (row.toolCounts?.total ?? result?.tools.length ?? 0)
+      : (row.toolCounts?.total ?? (result ? evalToolCounts(result).total : 0))
   )
   const failures = $derived(
     row.kind === 'case'
       ? summary.failures
-      : (row.toolCounts?.failed ??
-          result?.tools.filter(item => item.state === 'Error').length ??
-          0)
+      : (row.toolCounts?.failed ?? (result ? evalToolCounts(result).failed : 0))
   )
 </script>
 

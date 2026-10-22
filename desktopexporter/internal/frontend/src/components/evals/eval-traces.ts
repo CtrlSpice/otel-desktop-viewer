@@ -5,6 +5,7 @@ import {
 } from '@/components/traces/Waterfall/WaterfallView.svelte'
 import type { TreeConnectorMeta } from '@/components/shared/TreeGutter.svelte'
 import type { EvalResult, EvalExperiment, TelemetryReference } from './model'
+import { evalEventTools } from './eval-tool-events'
 
 export const referenceKey = (reference: TelemetryReference) =>
   `${reference.traceID.toLowerCase()}/${reference.spanID?.toLowerCase() ?? ''}`
@@ -142,6 +143,7 @@ export function projectEvalTraceEvidence(
         known.add(referenceKey(node.spanData))
       }
       const root = resolveEvalReference(result.telemetry, index)?.spanData
+      const eventTools = evalEventTools(nodes)
       const assessments = result.assessments.map(assessment => {
         if (
           assessment.telemetry ||
@@ -173,7 +175,9 @@ export function projectEvalTraceEvidence(
           result.resultTelemetry ??
           (root ? { traceID: root.traceID, spanID: root.spanID } : undefined),
         tools,
-        toolsKnown: result.toolsKnown || tools.length > 0,
+        eventTools,
+        toolsKnown:
+          result.toolsKnown || tools.length > 0 || eventTools.length > 0,
       }
     }),
   }

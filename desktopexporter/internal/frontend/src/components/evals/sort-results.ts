@@ -1,4 +1,4 @@
-import type { EvalResult } from './model'
+import { evalToolCounts, type EvalResult } from './model'
 
 export type ResultSortKey =
   | 'name'
@@ -33,9 +33,9 @@ function sortValue(result: EvalResult, key: ResultSortKey) {
     case 'seconds':
       return result.seconds
     case 'tools':
-      return result.tools.length
+      return evalToolCounts(result).total
     case 'failures':
-      return result.tools.filter(tool => tool.state === 'Error').length
+      return evalToolCounts(result).failed
     case 'investigatorCost':
       return result.investigatorCost
     case 'graderCost':

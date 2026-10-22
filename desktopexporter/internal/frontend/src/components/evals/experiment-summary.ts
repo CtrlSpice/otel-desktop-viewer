@@ -1,5 +1,10 @@
 import type { OutcomePart } from '@/components/shared/OutcomeBar.svelte'
-import { assessmentSummary, estimatedCost, type EvalExperiment } from './model'
+import {
+  assessmentSummary,
+  estimatedCost,
+  evalToolCounts,
+  type EvalExperiment,
+} from './model'
 
 /** Card data is independent of the full result/configuration payload. */
 export type EvalExperimentCardData = Pick<
@@ -48,8 +53,8 @@ export function experimentSummary(experiment: EvalExperiment) {
 
   for (const result of experiment.results) {
     if (result.state !== 'Planned') started++
-    toolCalls += result.tools.length
-    failedTools += result.tools.filter(tool => tool.state === 'Error').length
+    toolCalls += evalToolCounts(result).total
+    failedTools += evalToolCounts(result).failed
     const assessment = result.assessments.find(
       item => item.id === definition?.id
     )
