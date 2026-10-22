@@ -59,6 +59,9 @@ file upload → evaldecode → OTLP HTTP receiver → redaction → batch
 conversion. The server owns staging, forwarding, cancellation, and persistence
 confirmation. Native OTLP bypasses the producer decoder. No receiver or port is
 added, and upload data is never written directly to persistent Evals storage.
+The internal HTTP hop uses a server-owned reusable client with proxying disabled,
+including for non-loopback bind addresses. Environment proxy settings cannot
+redirect pre-redaction observations; HTTP redirects are refused.
 
 The following tables are derived from retained, processed log evidence:
 
@@ -118,6 +121,9 @@ experiment index. Missing, invalid, conflicting or unsupported evidence stays
 hidden from completed Evals. Identical physical duplicates count once; conflicting
 content at one logical identity is not silently resolved. Ordinary logs retain
 their existing append-only behavior, so retries can leave duplicate physical logs.
+Before publication, the write-locked check also examines relevant retained logs
+that discovery has not registered yet. Late arrivals trigger rediscovery before
+completion, including benign duplicates and conflicts.
 
 Reconciliation reads one retained log at a time, outside cache-write windows.
 Cache cleanup and experiment projection use bounded batches. Upload, validation,
@@ -131,7 +137,8 @@ already accepted by the Collector. A fully submitted transfer can complete on a
 later explicit read. Waiting for missing evidence has a one-minute timer; a large
 reconciliation itself can take longer. An unconfirmed request can be retried with
 the same file. Retention and log deletion invalidate affected completion and
-remove source/search caches. Reconciliation can rebuild only from evidence still
+remove source/search caches in the same transaction as evidence deletion.
+Cancellation or cleanup failure rolls back both changes. Reconciliation can rebuild only from evidence still
 retained. Existing dataset deletion markers survive cache rebuilds; explicit
 reimport of a marked dataset uses a fresh deterministic generation.
 

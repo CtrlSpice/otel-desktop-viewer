@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -161,6 +162,21 @@ func (s *Server) ingestEvals(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"ids": ids, "created": created, "complete": true})
 }
 
+// The pre-redaction internal hop must never use environment-configured proxies.
+// One client/connection pool belongs to each Server and is closed on shutdown.
+func newEvalReceiverClient() *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			Proxy:           nil,
+			DialContext:     (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+			MaxIdleConns:    2,
+			IdleConnTimeout: 90 * time.Second,
+		},
+		Timeout:       30 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+}
+
 func (s *Server) forwardEvalPart(ctx context.Context, id string, part evaldecode.IngestPart) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -179,8 +195,7 @@ func (s *Server) forwardEvalPart(ctx context.Context, id string, part evaldecode
 		return err
 	}
 	req.Header.Set("Content-Type", "application/x-protobuf")
-	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	response, err := client.Do(req)
+	response, err := s.evalReceiverClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("local OTLP receiver: %w", err)
 	}

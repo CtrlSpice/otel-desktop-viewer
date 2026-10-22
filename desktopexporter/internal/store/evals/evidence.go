@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/evaldecode"
@@ -15,6 +16,8 @@ import (
 
 const evidenceFrom = `logs l join scopes s on s.id=l.scope_id where l.event_name='viewer.eval.import.v1' and s.name='otel-desktop-viewer.evaldecode' and s.version='1' and l.service_name='otel-desktop-viewer'`
 
+var errUndiscoveredEvidence = errors.New("evaluation evidence arrived during reconstruction")
+
 // ReconcileEvidence is called on explicit Evals reads and by an importing
 // request waiting for persistence. The caller serializes calls. Each retained
 // log is read separately; no whole transfer is materialized. All cache writes
@@ -23,6 +26,7 @@ func ReconcileEvidence(ctx context.Context, db ExperimentDB) error {
 	if err := db.WithDBWrite(func(conn *sql.DB) error { return ingest.InvalidateEvalEvidence(ctx, conn) }); err != nil {
 		return err
 	}
+discover:
 	for {
 		var ids []string
 		err := db.WithDBRead(func(conn *sql.DB) error {
@@ -96,6 +100,11 @@ func ReconcileEvidence(ctx context.Context, db ExperimentDB) error {
 			return err
 		}
 		if err := rebuildEvidence(ctx, db, id); err != nil {
+			// Restart bounded discovery rather than publishing an older snapshot.
+			// Database calls honor ctx even under repeated concurrent arrivals.
+			if errors.Is(err, errUndiscoveredEvidence) {
+				goto discover
+			}
 			return err
 		}
 	}
@@ -322,6 +331,16 @@ func rebuildEvidence(ctx context.Context, db ExperimentDB, id string) error {
 		}
 	}
 	return db.WithDBWrite(func(conn *sql.DB) error {
+		// Ingestion can retain more logs between reconstruction's write windows.
+		// Tracking-table counts alone cannot establish a current snapshot. Check
+		// relevant unregistered records while holding the publication write lock.
+		undiscovered, err := hasUndiscoveredEvidence(ctx, conn, id)
+		if err != nil {
+			return err
+		}
+		if undiscovered {
+			return errUndiscoveredEvidence
+		}
 		var unchanged bool
 		if err := conn.QueryRowContext(ctx, `select (select count(*) from eval_evidence where import_id=?)=? and not exists(select 1 from eval_evidence e where e.import_id=? and not exists(select 1 from logs l where l.id=e.log_id))`, id, physical, id).Scan(&unchanged); err != nil {
 			return err
@@ -344,4 +363,49 @@ func rebuildEvidence(ctx context.Context, db ExperimentDB, id string) error {
 		}
 		return tx.Commit()
 	})
+}
+
+// Called under the publication write lock. Page only IDs, then inspect one
+// canonical stored body at a time; an unrelated large transfer must not make
+// this check materialize all its source bodies. Every query is cancellable.
+func hasUndiscoveredEvidence(ctx context.Context, db *sql.DB, importID string) (bool, error) {
+	last := ""
+	for {
+		rows, err := db.QueryContext(ctx, `select l.id::varchar from `+evidenceFrom+` and l.id::varchar>? and not exists(select 1 from eval_evidence e where e.log_id=l.id) order by l.id limit 64`, last)
+		if err != nil {
+			return false, err
+		}
+		var ids []string
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return false, err
+			}
+			ids = append(ids, id)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return false, err
+		}
+		if len(ids) == 0 {
+			return false, nil
+		}
+		for _, id := range ids {
+			var matching bool
+			// Stored map entries have unique keys, matching ImportID's lookup.
+			err := db.QueryRowContext(ctx, `select exists(select 1 from logs l, json_each(l.body,'$.value') field
+			 where l.id=try_cast(? as uuid) and json_extract_string(field.value,'$.key')='importID'
+			 and json_extract_string(field.value,'$.value.kind')='string'
+			 and json_extract_string(field.value,'$.value.value')=?)`, id, importID).Scan(&matching)
+			if err != nil {
+				return false, err
+			}
+			if matching {
+				return true, nil
+			}
+		}
+		last = ids[len(ids)-1]
+	}
 }

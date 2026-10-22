@@ -46,11 +46,12 @@ type Server struct {
 	tel            *telemetry.Telemetry
 	features       *features.Flags
 
-	serveDone        chan struct{}
-	startMu          sync.Mutex
-	evalImports      sync.Map
-	evalEvidenceLock chan struct{}
-	evalReceiverURL  string
+	serveDone          chan struct{}
+	startMu            sync.Mutex
+	evalImports        sync.Map
+	evalEvidenceLock   chan struct{}
+	evalReceiverURL    string
+	evalReceiverClient *http.Client
 }
 
 func NewServer(endpoint string, otlpHTTPPort int, store *store.Store, logger *zap.Logger, tel *telemetry.Telemetry, options ...Option) (*Server, error) {
@@ -58,7 +59,8 @@ func NewServer(endpoint string, otlpHTTPPort int, store *store.Store, logger *za
 		tel = telemetry.Disabled()
 	}
 	s := Server{
-		evalEvidenceLock: make(chan struct{}, 1),
+		evalReceiverClient: newEvalReceiverClient(),
+		evalEvidenceLock:   make(chan struct{}, 1),
 		server: http.Server{
 			Addr: endpoint,
 
@@ -137,6 +139,7 @@ func (s *Server) Start() error {
 
 // Shutdown drains in-flight requests and waits for the serve goroutine to exit.
 func (s *Server) Shutdown(ctx context.Context) error {
+	defer s.evalReceiverClient.CloseIdleConnections()
 	s.startMu.Lock()
 	done := s.serveDone
 	s.startMu.Unlock()

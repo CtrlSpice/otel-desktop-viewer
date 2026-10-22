@@ -502,15 +502,10 @@ func Clear(ctx context.Context, db *sql.DB) error {
 	// cannot know whether the ones it just abandoned are still in use.
 	// ingest.SweepOrphans collects them; the store runs it once for all three
 	// signals rather than three times here.
-	childQueries := []string{
-		`truncate table logs`,
+	if err := ingest.DeleteLogs(ctx, db, `truncate table logs`); err != nil {
+		return fmt.Errorf("Clear: %w: %w", ErrLogsStoreInternal, err)
 	}
-	for _, q := range childQueries {
-		if _, err := db.ExecContext(ctx, q); err != nil {
-			return fmt.Errorf("Clear: %w: %w", ErrLogsStoreInternal, err)
-		}
-	}
-	return ingest.InvalidateEvalEvidence(ctx, db)
+	return nil
 }
 
 // DeleteLogsByRefs deletes multiple logs by their IDs.
@@ -519,15 +514,10 @@ func DeleteLogsByRefs(ctx context.Context, db *sql.DB, logRefs []any) error {
 		return nil
 	}
 	ids := util.ToStringList(logRefs)
-	childQueries := []string{
-		`delete from logs where id in (select id from uuid_list(?))`,
+	if err := ingest.DeleteLogs(ctx, db, `delete from logs where id in (select id from uuid_list(?))`, ids); err != nil {
+		return fmt.Errorf("DeleteLogsByRefs: %w: %w", ErrLogsStoreInternal, err)
 	}
-	for _, q := range childQueries {
-		if _, err := db.ExecContext(ctx, q, ids); err != nil {
-			return fmt.Errorf("DeleteLogsByRefs: %w: %w", ErrLogsStoreInternal, err)
-		}
-	}
-	return ingest.InvalidateEvalEvidence(ctx, db)
+	return nil
 }
 
 func buildLogSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (cteSQL string, whereSQL string, args []any, err error) {

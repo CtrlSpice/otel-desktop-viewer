@@ -177,9 +177,6 @@ func (s *Store) enforceRound(ctx context.Context, maxBytes int64) (bool, error) 
 		if err := s.pruneOldestLogs(ctx, db); err != nil {
 			return err
 		}
-		if err := ingest.InvalidateEvalEvidence(ctx, db); err != nil {
-			return err
-		}
 		if err := s.pruneOldestDatapoints(ctx, db); err != nil {
 			return err
 		}
@@ -254,12 +251,8 @@ func (s *Store) pruneOldestLogs(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 
-	for _, q := range []string{
-		`delete from logs where ` + logTime + ` <= (select unnest(?::ubigint[]))`,
-	} {
-		if _, err := db.ExecContext(ctx, q, []uint64{cutoff}); err != nil {
-			return fmt.Errorf("pruneOldestLogs: %w: %w", ErrRetentionInternal, err)
-		}
+	if err := ingest.DeleteLogs(ctx, db, `delete from logs where `+logTime+` <= (select unnest(?::ubigint[]))`, []uint64{cutoff}); err != nil {
+		return fmt.Errorf("pruneOldestLogs: %w: %w", ErrRetentionInternal, err)
 	}
 	return nil
 }
