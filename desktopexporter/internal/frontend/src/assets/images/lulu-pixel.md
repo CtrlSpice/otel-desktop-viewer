@@ -13,7 +13,7 @@ geometry is preserved, with transparent padding trimmed to one pixel around the
 artwork. No raster image is embedded.
 
 The stills use a balanced Rosé Pine artwork palette: Pine Rose for the body,
-Dawn Rose for its shading, Love for the gills, Dawn Text for purple outlines,
+Dawn Rose for its shading, Love for the gills, the original warm plum outlines,
 and the viewer's approved Pine blues for the telescope. Original Gold, lens,
 and eye-highlight colours remain. These are fixed illustration colours; they
 do not alter the application's theme tokens.
