@@ -139,7 +139,8 @@
     @apply flex min-w-0 flex-1 items-center gap-2;
   }
   .field-group__caret {
-    @apply flex shrink-0 text-base-content;
+    @apply flex shrink-0 self-start items-center text-base-content;
+    min-height: 1.5em;
   }
   .field-group[open] > .field-group__heading > .field-group__caret {
     transform: rotate(90deg);
