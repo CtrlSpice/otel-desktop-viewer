@@ -231,8 +231,10 @@
     overflow: hidden;
   }
   .detail-bubble__heading--disabled {
-    background-color: var(--color-highlight-low);
-    border-color: transparent;
+    background-image: linear-gradient(
+      var(--color-highlight-low),
+      var(--color-highlight-low)
+    );
     color: var(--color-muted);
     cursor: default;
   }
