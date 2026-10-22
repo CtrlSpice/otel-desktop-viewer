@@ -14,49 +14,37 @@
 </script>
 
 <section
-  class="card card-dash mb-6 border-primary/40 bg-base-100"
+  class="flex flex-col items-center gap-2 px-3 py-4 text-center text-sm"
   aria-label="Import telemetry from files"
 >
-  <div class="card-body gap-4">
-    <div class="min-w-0">
-      <h2 class="card-title text-base text-base-content">
-        Import telemetry from files
-      </h2>
-      <p class="import-copy mt-1 text-sm leading-relaxed">
-        Drop telemetry or evaluation JSON / JSONL files anywhere on the screen.
-        I'm not a cop.
-      </p>
-    </div>
-    <div class="card-actions">
-      <button
-        type="button"
-        class="btn btn-soft btn-primary btn-sm"
-        style="--btn-color: var(--home-accent-text, var(--color-primary))"
-        onclick={() => input?.click()}
-      >
-        <HugeiconsIcon
-          icon={FileImportIcon}
-          size={18}
-          strokeWidth={1.5}
-          aria-hidden="true"
-        />
-        Import files
-      </button>
-      <input
-        bind:this={input}
-        type="file"
-        accept=".json,.jsonl,application/json,application/x-ndjson"
-        multiple
-        hidden
-        aria-label="Choose telemetry or evaluation JSON / JSONL files"
-        onchange={chooseFiles}
-      />
-    </div>
-  </div>
+  <h2 class="text-lg font-normal text-base-content">
+    Import telemetry from files
+  </h2>
+  <p class="text-rp-subtle">
+    Drop telemetry or evaluation JSON / JSONL files anywhere on the screen. I'm
+    not a cop.
+  </p>
+  <button
+    type="button"
+    class="header-icon-button tooltip tooltip-bottom"
+    aria-label="Import files"
+    data-tip="Import files"
+    onclick={() => input?.click()}
+  >
+    <HugeiconsIcon
+      icon={FileImportIcon}
+      size={16}
+      strokeWidth={1.5}
+      aria-hidden="true"
+    />
+  </button>
+  <input
+    bind:this={input}
+    type="file"
+    accept=".json,.jsonl,application/json,application/x-ndjson"
+    multiple
+    hidden
+    aria-label="Choose telemetry or evaluation JSON / JSONL files"
+    onchange={chooseFiles}
+  />
 </section>
-
-<style>
-  .import-copy {
-    color: var(--home-secondary-text, var(--color-base-content));
-  }
-</style>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import AttributeValues from './AttributeValues.svelte'
+  import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import type {
     AttributeKey,
     DiscoveryOptions,
@@ -9,33 +10,26 @@
     options,
   }: { entry: AttributeKey; options: Omit<DiscoveryOptions, 'kind'> } = $props()
   let requested = $state(false)
+  let open = $state(false)
 </script>
 
-<details
-  class="attribute-key"
-  ontoggle={event => {
-    if (event.currentTarget.open) requested = true
+<FieldGroup
+  label={entry.key}
+  detail
+  {open}
+  onOpenChange={next => {
+    open = next
+    if (next) requested = true
   }}
 >
-  <summary
-    ><span>{entry.key}</span><span class="text-secondary">
-      · {entry.kind} · {options.ownerType}</span
-    ></summary
-  >
+  {#snippet heading()}
+    <span class="min-w-0 wrap-anywhere"
+      >{entry.key}<span aria-hidden="true"> · </span><span
+        class="text-secondary">{entry.kind}</span
+      ><span aria-hidden="true"> · </span><span class="text-secondary"
+        >{options.ownerType}</span
+      ></span
+    >
+  {/snippet}
   {#if requested}<AttributeValues {options} name={entry.key} />{/if}
-</details>
-
-<style lang="postcss">
-  @reference '../../app.css';
-  .attribute-key {
-    @apply rounded-xl;
-  }
-  summary {
-    @apply cursor-pointer rounded-xl px-3 py-2 text-sm;
-    color: var(--color-subtle);
-    overflow-wrap: anywhere;
-  }
-  summary:hover {
-    background: var(--color-highlight-low);
-  }
-</style>
+</FieldGroup>

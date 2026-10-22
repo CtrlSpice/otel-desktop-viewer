@@ -55,7 +55,7 @@
 >
   {#snippet titleContent()}
     <button
-      class="service-title"
+      class="flex min-w-0 items-center gap-2 text-left font-normal"
       onclick={onSelect}
       aria-pressed={selected}
       aria-label="Inspect {service.serviceName ||
@@ -64,7 +64,7 @@
         : ''}"
     >
       <span
-        class="service-dot"
+        class="inline-block size-2 shrink-0 rounded-full"
         style:background-color={traceServiceColor(
           service.serviceName,
           themeSignal.value
@@ -84,7 +84,7 @@
   {#snippet meta()}
     <div class="stats service-stats">
       {#each signals as signal (signal.id)}
-        <div class="stat">
+        <div class="stat place-items-center text-center">
           <a
             class="stat-title"
             href={serviceSignalHref(service, signal.id, range)}
@@ -97,7 +97,9 @@
           </div>
           <div class="stat-desc">
             {#if signal.errors !== null}
-              {#if signal.errors > 0}<span class="error-dot" aria-hidden="true"
+              {#if signal.errors > 0}<span
+                  class="inline-block size-2 shrink-0 rounded-full bg-error"
+                  aria-hidden="true"
                 ></span>{/if}
               {signal.errors.toLocaleString()}
               {signal.errors === 1 ? 'error' : 'errors'}
@@ -117,24 +119,14 @@
 
 <style lang="postcss">
   @reference '../../app.css';
-  .service-title {
-    @apply flex min-w-0 items-center gap-2 text-left font-normal;
-  }
-  .service-dot,
-  .error-dot {
-    @apply inline-block size-2 shrink-0 rounded-full;
-  }
-  .error-dot {
-    @apply bg-error;
-  }
   .service-stats {
-    @apply grid w-full min-w-0 grid-cols-3 gap-2 overflow-visible rounded-none bg-transparent py-2 shadow-none;
+    @apply grid w-full min-w-0 grid-cols-3 gap-2 overflow-visible rounded-none bg-transparent shadow-none;
   }
   .service-stats .stat {
     @apply min-w-0 border-0 p-0;
   }
   .stat-title {
-    @apply text-sm font-normal text-secondary no-underline;
+    @apply flex items-center text-sm font-normal text-secondary no-underline;
   }
   .stat-title:hover {
     @apply underline;
@@ -144,7 +136,12 @@
     overflow-wrap: anywhere;
   }
   .stat-desc {
-    @apply flex min-h-6 items-center gap-2 whitespace-normal text-sm;
+    @apply flex items-center gap-2 whitespace-normal text-sm;
     color: var(--color-subtle);
+  }
+  .stat-title,
+  .stat-value,
+  .stat-desc {
+    min-height: var(--signal-card-row-h);
   }
 </style>

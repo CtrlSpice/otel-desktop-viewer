@@ -123,6 +123,7 @@
   </p>
   <PaneHeader
     mode="tabs"
+    pill
     tabs={signals}
     activeID={signal}
     onSelect={selectSignal}
@@ -130,6 +131,7 @@
   />
   <PaneHeader
     mode="tabs"
+    pill
     tabs={owners}
     activeID={owner}
     onSelect={selectOwner}

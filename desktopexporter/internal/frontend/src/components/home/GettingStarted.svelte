@@ -6,6 +6,7 @@
     type PaneTab,
   } from '@/components/shared/PaneHeader.svelte'
   import ReadonlyCodePanel from '@/components/shared/ReadonlyCodePanel.svelte'
+  import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
   import luluImage from '@/assets/images/lulu.webp'
 
@@ -45,12 +46,13 @@
   <div class="guide-scroll">
     {@render importContent?.()}
     <section class="guide-section">
-      <h2>Connect an exporter</h2>
+      <h2 class="text-lg font-normal text-base-content">Connect an exporter</h2>
       <p class="text-rp-subtle">
         Send telemetry from your SDK, Collector, or agent.
       </p>
       <PaneHeader
         mode="tabs"
+        pill
         {tabs}
         activeID={protocol}
         onSelect={id => (protocol = id)}
@@ -78,16 +80,13 @@
       </p>
     </section>
     <section class="guide-section">
-      <h2>Try an example</h2>
-      <details>
-        <summary class="cursor-pointer text-secondary"
-          >Send a trace with otel-cli</summary
-        >
+      <h2 class="text-lg font-normal text-base-content">Try an example</h2>
+      <FieldGroup detail label="Send a trace with otel-cli" open={false}>
         <ReadonlyCodePanel
           ariaLabel="otel-cli example commands"
           code={`export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:${httpPort ?? 4318}\notel-cli exec --service my-service --name "curl google" curl https://google.com`}
         />
-      </details>
+      </FieldGroup>
       <a
         class="link text-secondary"
         href="https://opentelemetry.io/docs/languages/"
@@ -122,10 +121,7 @@
     @apply min-h-0 flex-1 overflow-y-auto p-3 text-sm;
   }
   .guide-section {
-    @apply flex flex-col gap-3 py-4;
-  }
-  h2 {
-    @apply text-lg font-normal;
+    @apply flex flex-col gap-2 py-3;
   }
   .guide-footer {
     @apply flex flex-col items-center gap-2 py-4 text-center;

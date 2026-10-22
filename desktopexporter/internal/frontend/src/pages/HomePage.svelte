@@ -24,6 +24,7 @@
     INGESTION_ISSUES_ID,
   } from '@/components/shared/IngestionIssues.svelte'
   import SignalDate from '@/components/shared/SignalDate.svelte'
+  import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import GettingStarted from '@/components/home/GettingStarted.svelte'
   import ServiceCard from '@/components/home/ServiceCard.svelte'
   import AttributeDiscovery from '@/components/home/AttributeDiscovery.svelte'
@@ -298,27 +299,31 @@
         {/each}
       </div>
     </div>
-    <footer class="services-footer">
-      <div class="min-w-0">
-        <p class="text-rp-subtle">
-          {range.startTime == null
-            ? 'All stored telemetry'
-            : 'Selected time range'}
-        </p>
-        <SignalDate label="Refreshed" timestamp={refreshedAt} />
-      </div>
-      {#if offset > 0 || more}<div class="flex gap-2">
-          <button
-            class="btn btn-ghost btn-sm"
-            disabled={loading || offset === 0}
-            onclick={() => load(offset - 100)}>Previous</button
-          ><button
-            class="btn btn-ghost btn-sm"
-            disabled={loading || !more}
-            onclick={() => load(offset + 100)}>Next</button
-          >
-        </div>{/if}
-    </footer>
+    <SignalFooter label="services">
+      {#snippet leading()}
+        <div class="min-w-0">
+          <p class="text-rp-subtle">
+            {range.startTime == null
+              ? 'All stored telemetry'
+              : 'Selected time range'}
+          </p>
+          <SignalDate label="Refreshed" timestamp={refreshedAt} />
+        </div>
+      {/snippet}
+      {#snippet trailing()}
+        {#if offset > 0 || more}<div class="flex gap-2">
+            <button
+              class="btn btn-ghost btn-sm"
+              disabled={loading || offset === 0}
+              onclick={() => load(offset - 100)}>Previous</button
+            ><button
+              class="btn btn-ghost btn-sm"
+              disabled={loading || !more}
+              onclick={() => load(offset + 100)}>Next</button
+            >
+          </div>{/if}
+      {/snippet}
+    </SignalFooter>
   {/snippet}
   {#snippet detail()}
     <DetailStack
@@ -344,8 +349,5 @@
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
     gap: var(--header-gap);
     align-items: start;
-  }
-  .services-footer {
-    @apply flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm;
   }
 </style>
