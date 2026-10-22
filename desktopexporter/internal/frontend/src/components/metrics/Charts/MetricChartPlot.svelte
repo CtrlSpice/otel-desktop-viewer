@@ -28,6 +28,9 @@
     right: 72,
   } as const
 
+  /** A horizontal unit above the value axis needs no side-label gutter. */
+  export const timeSeriesChartPadding = { ...chartPadding, left: 96 } as const
+
   function valueYAxis(label: string) {
     return {
       label: label.trim() || 'value',
@@ -64,7 +67,11 @@
 
   /** Unit or fixed label on the y-axis. */
   export function axisValue(label: string) {
-    return valueYAxis(label)
+    return {
+      ...valueYAxis(label),
+      labelPlacement: 'start' as const,
+      labelProps: { x: 0, dy: 8, textAnchor: 'start' as const },
+    }
   }
 
   export function axisCount() {
@@ -81,11 +88,18 @@
     height?: number
     /** Plot width in px (e.g. scrollable histogram). */
     width?: number
+    padding?: { top: number; right: number; bottom: number; left: number }
     class?: string
     children: Snippet
   }
 
-  let { height, width, class: className = '', children }: Props = $props()
+  let {
+    height,
+    width,
+    padding = chartPadding,
+    class: className = '',
+    children,
+  }: Props = $props()
 </script>
 
 <div
@@ -94,7 +108,7 @@
   style:width={width != null ? `${width}px` : undefined}
 >
   {@render children()}
-  <MetricAxes padding={chartPadding} />
+  <MetricAxes {padding} />
 </div>
 
 <style lang="postcss">

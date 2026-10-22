@@ -19,7 +19,7 @@
   import MetricChartPlot, {
     axisTime,
     axisValue,
-    chartPadding,
+    timeSeriesChartPadding as chartPadding,
     DEFAULT_METRIC_CHART_HEIGHT,
   } from '@/components/metrics/Charts/MetricChartPlot.svelte'
   import { chartNeutral } from '@/utils/chart-palette'
@@ -984,7 +984,10 @@
       bind:clientHeight={plotAreaHeight}
       onclick={handlePlotClick}
     >
-      <MetricChartPlot height={plotAreaHeight > 0 ? plotAreaHeight : height}>
+      <MetricChartPlot
+        height={plotAreaHeight > 0 ? plotAreaHeight : height}
+        padding={chartPadding}
+      >
         <LineChart
           bind:context={lineChartContext}
           x="date"

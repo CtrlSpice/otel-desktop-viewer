@@ -386,7 +386,9 @@
   Metric line, histogram and heatmap charts use a continuous solid 1px Muted
   left/bottom axis border with the cards' --radius-xl bottom-left join. Keep
   shared plot insets (24px top, 72px right, 96px bottom, 136px left), labels and scales; disable the old
-  separate axis rules. Axis tick marks also use 1px Muted. The shared border is
+  separate axis rules. Time-series charts place the unit horizontally above the
+  Y-axis and use a 96px left inset to reclaim the side-label gutter.
+  Axis tick marks also use 1px Muted. The shared border is
   decorative, hidden from assistive technology and cannot intercept pointers.
   Keep axis range labels on one line with both bounds and brackets visible.
   Graph measurements share grouped decimal formatting from 0.000001 inclusive
