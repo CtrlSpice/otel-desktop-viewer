@@ -267,7 +267,7 @@
   {/snippet}
   {#snippet drawerContent()}<GettingStarted {importContent} />{/snippet}
   {#snippet main()}
-    <PaneHeader mode="title" title="Services" ariaLabel="Services">
+    <PaneHeader mode="title" pill title="Services" ariaLabel="Services">
       {#snippet right()}<span class="text-rp-subtle"
           >{loaded
             ? `[${offset + services.length}${more ? '+' : ''}]`

@@ -38,6 +38,7 @@
 <div class="getting-started">
   <PaneHeader
     mode="title"
+    pill
     title="Getting started"
     ariaLabel="Getting started"
   />
