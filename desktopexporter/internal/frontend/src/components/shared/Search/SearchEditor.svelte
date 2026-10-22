@@ -42,6 +42,7 @@
   import { Cancel01Icon } from '@hugeicons/core-free-icons'
   import { QuestionMarkIcon } from '@/icons'
   import FieldErrorMessage from '@/components/shared/FieldErrorMessage.svelte'
+  import { navigateCurrentRoute, readRoute, subscribeToRoute } from '@/route'
 
   import type { SearchEditorAPI } from './search-editor-api'
   import type { SortDirection } from '@/contexts/signal-list-page.svelte'
@@ -229,11 +230,21 @@
       })
   }
 
+  let routeQuery = ''
+  function rememberQuery(text: string) {
+    const route = readRoute()
+    const next = text.trim() ? text : ''
+    routeQuery = next
+    if ((route.query.q ?? '') !== next)
+      navigateCurrentRoute({ ...route.query, q: next || undefined }, 'replace')
+  }
+
   function onSubmit() {
     const text = editorView?.state.doc.toString() ?? ''
 
     if (!text.trim()) {
       searchError = null
+      rememberQuery(text)
       onQuerySubmit?.(text)
       if (onSearchRequest) {
         onSearchRequest(null)
@@ -246,6 +257,7 @@
     try {
       const request = parseSearchRequest(text, availableFields, signal)
       searchError = null
+      rememberQuery(text)
       onQuerySubmit?.(text)
       if (onSearchRequest) {
         onSearchRequest(request)
@@ -337,8 +349,11 @@
       signal
     )
 
+    const initialQuery = readRoute().query.q ?? ''
+    routeQuery = initialQuery
+    queryText = initialQuery
     const state = EditorState.create({
-      doc: '',
+      doc: initialQuery,
       extensions: [
         queryLanguageSupport(),
         autocompletion({
@@ -395,6 +410,19 @@
         })
         onSubmit()
       },
+    })
+    if (initialQuery) onSubmit()
+    return subscribeToRoute(() => {
+      const route = readRoute()
+      if (route.path !== `/${signal}` && !route.path.startsWith(`/${signal}/`))
+        return
+      const next = route.query.q ?? ''
+      if (next === routeQuery || !editorView) return
+      routeQuery = next
+      editorView.dispatch({
+        changes: { from: 0, to: editorView.state.doc.length, insert: next },
+      })
+      onSubmit()
     })
   })
 

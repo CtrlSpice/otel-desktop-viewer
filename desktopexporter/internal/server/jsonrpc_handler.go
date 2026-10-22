@@ -173,6 +173,8 @@ func (h *JSONRPCHandler) Handle(ctx context.Context, req *jsonrpc2.Request) (any
 		return h.getTraceAttributeDefinitionsByTraceID(ctx, req)
 	case "getStats":
 		return h.getStats(ctx)
+	case "discoverTelemetry":
+		return h.discoverTelemetry(ctx, req)
 	case "getTraceSpanCount":
 		return h.getTraceSpanCount(ctx, req)
 	case "query":

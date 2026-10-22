@@ -637,6 +637,11 @@ func mapLogAttributeExpressions(field *search.FieldDefinition, query *search.Que
 	}
 	kindPredicate := search.AttributeKindPredicate(kindParam)
 	valueExpression := search.AttributeValueExpression(kind)
+	if mode != search.OTelArrayOperand {
+		if expression, ok := search.OwnerNullExpression(field, query, keyParam, kindPredicate, valueExpression); ok {
+			return []search.ResolvedExpression{expression}, nil
+		}
+	}
 	if mode == search.OTelArrayOperand {
 		var attributeIDs string
 		switch field.AttributeScope {

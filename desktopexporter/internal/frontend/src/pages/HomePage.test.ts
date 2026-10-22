@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen } from '@testing-library/svelte'
-import userEvent from '@testing-library/user-event'
+import { fireEvent, screen, waitFor } from '@testing-library/svelte'
 import HomePage, { rejectionLabel } from './HomePage.svelte'
 import { telemetryAPI } from '@/services/telemetry-service'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
@@ -19,10 +18,10 @@ describe('rejectionLabel', () => {
   })
 })
 
-describe('signal overview disclosures', () => {
+describe('Home service discovery', () => {
   afterEach(() => vi.restoreAllMocks())
 
-  it('keeps navigation links visible and independently focusable when collapsed', async () => {
+  it('scopes discovery by namespace and service and refreshes only on request', async () => {
     vi.spyOn(telemetryAPI, 'getStats').mockResolvedValue({
       traces: {
         traceCount: 0,
@@ -35,35 +34,71 @@ describe('signal overview disclosures', () => {
       logs: { logCount: 0, errorCount: 0, lastReceived: null },
       rejections: [],
     })
-    setTestUrl('/')
-    const user = userEvent.setup()
-    renderWithContexts(HomePage)
-
-    for (const label of ['Traces', 'Metrics', 'Logs']) {
-      const link = screen.getByRole('link', {
-        name: `View all ${label.toLowerCase()}`,
-      })
-      const details = screen
-        .getByRole('table', { name: `${label} overview` })
-        .closest('details')!
-      const summary = details.querySelector('summary')!
-
-      expect(link).toHaveAttribute('href', `/${label.toLowerCase()}`)
-      expect(link.closest('details')).toBeNull()
-      expect(summary.querySelector('a, button, input, [tabindex]')).toBeNull()
-      expect(details.open).toBe(true)
-
-      await fireEvent.click(summary)
-      expect(details.open).toBe(false)
-      expect(link).toBeVisible()
-
-      link.focus()
-      expect(link).toHaveFocus()
-      await user.tab()
-      expect(summary).toHaveFocus()
-
-      await fireEvent.click(summary)
-      expect(details.open).toBe(true)
+    vi.spyOn(telemetryAPI, 'getImportConfig').mockResolvedValue({
+      otlpHttpPort: 4318,
+    })
+    const base = {
+      serviceName: 'checkout',
+      serviceNamespace: 'storefront',
+      spanCount: 248,
+      errorSpanCount: 3,
+      logCount: 36,
+      errorLogCount: 2,
+      metricCount: 8,
+      dataPointCount: 640,
+      lastSeen: '1792692000000000000',
     }
+    const services = vi
+      .spyOn(telemetryAPI, 'discoverServices')
+      .mockResolvedValue({
+        items: [base, { ...base, serviceNamespace: 'internal' }],
+        truncated: false,
+      })
+    const keys = vi
+      .spyOn(telemetryAPI, 'discoverAttributeKeys')
+      .mockResolvedValue({ items: [], truncated: false })
+    setTestUrl('/?time=all')
+    renderWithContexts(HomePage)
+    await screen.findByRole('button', { name: 'Inspect checkout · storefront' })
+    await waitFor(() =>
+      expect(keys).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          serviceName: 'checkout',
+          namespace: 'storefront',
+          signal: 'traces',
+          ownerType: 'resource',
+        }),
+        expect.any(AbortSignal)
+      )
+    )
+    const link = screen.getAllByRole('link', {
+      name: 'Open checkout traces',
+    })[0]!
+    const target = new URL(link.getAttribute('href')!, window.location.origin)
+    expect(target.pathname).toBe('/traces')
+    expect(target.searchParams.get('q')).toBe(
+      'attr(resource, "service.name", string) = "checkout" AND attr(resource, "service.namespace", string) = "storefront"'
+    )
+    expect(link.closest('button')).toBeNull()
+    await fireEvent.click(
+      screen.getByRole('button', { name: 'Inspect checkout · internal' })
+    )
+    await waitFor(() =>
+      expect(keys).toHaveBeenLastCalledWith(
+        expect.objectContaining({ namespace: 'internal' }),
+        expect.any(AbortSignal)
+      )
+    )
+    await fireEvent.click(screen.getByRole('tab', { name: 'Logs' }))
+    await waitFor(() =>
+      expect(keys).toHaveBeenLastCalledWith(
+        expect.objectContaining({ namespace: 'internal', signal: 'logs' }),
+        expect.any(AbortSignal)
+      )
+    )
+    expect(services).toHaveBeenCalledTimes(1)
+    expect(window.location.pathname).toBe('/')
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+    await waitFor(() => expect(services).toHaveBeenCalledTimes(2))
   })
 })

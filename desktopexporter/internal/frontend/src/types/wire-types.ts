@@ -676,7 +676,6 @@ export type JsonRejection = {
 }
 
 export type JsonStats = {
-  // Served by the backend but not yet consumed by the UI.
   storage: {
     sizeBytes: number
     maxSizeBytes: number

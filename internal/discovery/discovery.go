@@ -1,0 +1,162 @@
+// Package discovery builds the read-only discovery queries shared by the CLI and UI.
+package discovery
+
+import (
+	"fmt"
+	"strings"
+)
+
+type Query struct {
+	StartTime *string
+	EndTime   *string
+	Service   string
+	// ServiceName distinguishes an exact empty service name from no filter.
+	ServiceName *string
+	Namespace   *string
+}
+
+type Location struct {
+	Signal    string `json:"signal"`
+	OwnerType string `json:"ownerType"`
+}
+
+func Literal(value string) string { return "'" + strings.ReplaceAll(value, "'", "''") + "'" }
+
+func Predicate(query Query) string {
+	p := []string{"true"}
+	if query.StartTime != nil {
+		p = append(p, "s.time_ns >= "+Literal(*query.StartTime)+"::UBIGINT")
+	}
+	if query.EndTime != nil {
+		p = append(p, "s.time_ns <= "+Literal(*query.EndTime)+"::UBIGINT")
+	}
+	if query.ServiceName != nil {
+		p = append(p, "s.service_name = "+Literal(*query.ServiceName))
+	} else if query.Service != "" {
+		p = append(p, "s.service_name = "+Literal(query.Service))
+	}
+	if query.Namespace != nil {
+		p = append(p, `coalesce((SELECT attribute_text(a.value) FROM resources r, attributes a WHERE r.id = s.resource_id AND a.key = 'service.namespace' AND list_contains(r.attribute_ids, a.id)), '') = `+Literal(*query.Namespace))
+	}
+	return strings.Join(p, " AND ")
+}
+
+// Records keeps counted record identity distinct from the attribute owner.
+func Records(signal, ownerType string) (string, error) {
+	var identity, timestamp, service, from, directOwner, attributes, resource, scope, allowed string
+	switch signal {
+	case "traces":
+		identity, timestamp, service = "struct_pack(trace_id := s.trace_id, span_id := s.span_id)", "s.start_time", "s.service_name"
+		from, directOwner, attributes, resource, scope = "spans s", "span", "s.attribute_ids", "s.resource_id", "s.scope_id"
+		allowed = "span, event, link, resource or scope"
+		switch ownerType {
+		case "event":
+			from += " JOIN events e ON e.trace_id = s.trace_id AND e.span_id = s.span_id"
+			attributes, directOwner, timestamp = "e.attribute_ids", "event", "e.timestamp"
+		case "link":
+			from += " JOIN links l ON l.trace_id = s.trace_id AND l.span_id = s.span_id"
+			attributes, directOwner = "l.attribute_ids", "link"
+		}
+	case "logs":
+		identity, timestamp, service = "l.id", "coalesce(nullif(l.timestamp, 0), l.observed_timestamp)", "l.service_name"
+		from, directOwner, attributes, resource, scope = "logs l", "log", "l.attribute_ids", "l.resource_id", "l.scope_id"
+		allowed = "log, resource or scope"
+	case "metrics":
+		identity, timestamp, service = "d.id", "d.timestamp", "m.service_name"
+		from, directOwner = "metric_datapoints d JOIN metrics m ON m.id = d.metric_id", "datapoint"
+		attributes, resource, scope = "d.attribute_ids", "m.resource_id", "m.scope_id"
+		allowed = "datapoint, exemplar, metadata, resource or scope"
+		switch ownerType {
+		case "exemplar":
+			from += " JOIN exemplars e ON e.metric_datapoint_id = d.id"
+			attributes, directOwner, timestamp = "e.attribute_ids", "exemplar", "e.timestamp"
+		case "metadata":
+			attributes, directOwner = "m.metadata_ids", "metadata"
+		}
+	default:
+		return "", fmt.Errorf("unsupported --signal %q: use traces, logs or metrics", signal)
+	}
+	switch ownerType {
+	case directOwner:
+	case "resource":
+		from += " JOIN resources r ON r.id = " + resource
+		attributes = "r.attribute_ids"
+	case "scope":
+		from += " JOIN scopes sc ON sc.id = " + scope
+		attributes = "sc.attribute_ids"
+	default:
+		return "", fmt.Errorf("--signal %s supports --owner-type %s; got %q", signal, allowed, ownerType)
+	}
+	return "SELECT " + identity + " AS record_id, " + timestamp + " AS time_ns, " + service + " AS service_name, " + resource + " AS resource_id, " + attributes + " AS attribute_ids FROM " + from, nil
+}
+
+func foundOn(location Location) string {
+	return "json_array(json_object('signal', " + Literal(location.Signal) + ", 'ownerType', " + Literal(location.OwnerType) + "))"
+}
+
+func Keys(query Query, location Location, records string) string {
+	return `WITH records AS (` + records + `)
+SELECT json_object('key', a.key, 'kind', json_extract_string(a.value, '$.kind'),
+    'foundOn', ` + foundOn(location) + `) AS entry
+FROM records s
+CROSS JOIN unnest(s.attribute_ids) owned(attribute_id)
+JOIN attributes a ON a.id = owned.attribute_id
+WHERE ` + Predicate(query) + `
+GROUP BY a.key, json_extract_string(a.value, '$.kind')
+ORDER BY a.key, json_extract_string(a.value, '$.kind')`
+}
+
+func Values(query Query, location Location, records, key string) string {
+	return `WITH records AS (` + records + `), owned_values AS (
+    SELECT s.record_id, a.value FROM records s
+    CROSS JOIN unnest(s.attribute_ids) owned(attribute_id)
+    JOIN attributes a ON a.id = owned.attribute_id
+    WHERE ` + Predicate(query) + ` AND a.key = ` + Literal(key) + `
+), value_counts AS (
+    SELECT value, count(DISTINCT record_id) AS count FROM owned_values GROUP BY value
+), denominator AS (
+    SELECT count(DISTINCT record_id) AS count FROM owned_values
+)
+SELECT json_object('value', v.value, 'foundOn', ` + foundOn(location) + `,
+    'count', v.count, 'denominator', d.count,
+    'relativeFrequency', v.count::DOUBLE / nullif(d.count, 0)::DOUBLE) AS entry
+FROM value_counts v CROSS JOIN denominator d
+ORDER BY v.count DESC, json_extract_string(v.value, '$.kind'), v.value::VARCHAR`
+}
+
+func Services(query Query) string {
+	predicate := Predicate(query)
+	return `WITH resource_counts AS (
+    SELECT resource_id, service_name, count(*) AS span_count,
+        count(*) FILTER (WHERE status_code = 2) AS error_span_count,
+        0 AS log_count, 0 AS error_log_count, 0 AS metric_count, 0 AS data_point_count,
+        max(time_ns) AS last_seen
+    FROM (SELECT resource_id, service_name, start_time AS time_ns, status_code FROM spans) s
+    WHERE ` + predicate + ` GROUP BY resource_id, service_name
+    UNION ALL
+    SELECT resource_id, service_name, 0, 0, count(*),
+        count(*) FILTER (WHERE severity_number BETWEEN 17 AND 24), 0, 0, max(time_ns)
+    FROM (SELECT resource_id, service_name,
+        coalesce(nullif(timestamp, 0), observed_timestamp) AS time_ns, severity_number FROM logs) s
+    WHERE ` + predicate + ` GROUP BY resource_id, service_name
+    UNION ALL
+    SELECT resource_id, service_name, 0, 0, 0, 0, count(DISTINCT metric_id), count(*), max(time_ns)
+    FROM (SELECT m.resource_id, m.service_name, m.id AS metric_id, d.timestamp AS time_ns
+        FROM metric_datapoints d JOIN metrics m ON m.id = d.metric_id) s
+    WHERE ` + predicate + ` GROUP BY resource_id, service_name
+), identities AS (
+    SELECT r.id,
+        coalesce((SELECT attribute_text(a.value)
+            FROM attributes a WHERE a.key = 'service.namespace' AND list_contains(r.attribute_ids, a.id)), '') AS service_namespace
+    FROM resources r JOIN (SELECT DISTINCT resource_id FROM resource_counts) used ON used.resource_id = r.id
+)
+SELECT json_object(
+    'serviceNamespace', i.service_namespace, 'serviceName', c.service_name,
+    'spanCount', sum(c.span_count), 'errorSpanCount', sum(c.error_span_count),
+    'logCount', sum(c.log_count), 'errorLogCount', sum(c.error_log_count),
+    'metricCount', sum(c.metric_count), 'dataPointCount', sum(c.data_point_count),
+    'lastSeen', max(c.last_seen)::VARCHAR) AS entry
+FROM resource_counts c JOIN identities i ON i.id = c.resource_id
+GROUP BY i.service_namespace, c.service_name
+ORDER BY i.service_namespace, c.service_name`
+}

@@ -23,8 +23,8 @@
         Import telemetry from files
       </h2>
       <p class="import-copy mt-1 text-sm leading-relaxed">
-        Select telemetry or evaluation JSON / JSONL files, or drop them
-        literally anywhere on the screen. I'm not a cop.
+        Drop telemetry or evaluation JSON / JSONL files anywhere on the screen.
+        I'm not a cop.
       </p>
     </div>
     <div class="card-actions">

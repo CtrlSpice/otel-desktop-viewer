@@ -44,6 +44,10 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
     ...actual,
     telemetryAPI: {
       ...actual.telemetryAPI,
+      discoverServices: vi
+        .fn()
+        .mockResolvedValue({ items: [], truncated: false }),
+      getImportConfig: vi.fn().mockResolvedValue({ otlpHttpPort: 4318 }),
       getStats,
       searchTraceSummaries,
       searchLogPage,
@@ -275,10 +279,7 @@ describe('App real-page composition', () => {
     expect(searchLogPage).toHaveBeenCalled()
 
     navigate('/unknown')
-    await screen.findByRole('heading', {
-      level: 1,
-      name: 'OpenTelemetry Desktop Viewer',
-    })
+    await screen.findByRole('region', { name: 'Services' })
     expect(getStats).toHaveBeenCalled()
   })
 

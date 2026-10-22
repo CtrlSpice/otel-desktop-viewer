@@ -6,9 +6,9 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/internal/discovery"
 	"github.com/spf13/cobra"
 )
 
@@ -204,111 +204,22 @@ func decodeAttributeEntry(row []any, entry any) error {
 
 // SQL text is sent through the existing read-only query method. Every caller-
 // supplied string is a quoted SQL literal; identifiers are fixed here.
-func attributeSQLLiteral(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
-}
+func attributeSQLLiteral(value string) string { return discovery.Literal(value) }
 
 // These projections keep the counted record identity separate from the owner
 // of the attributes. Resource/scope joins do not deduplicate referencing records.
 func attributeRecordsSQL(signal, ownerType string) (string, error) {
-	var identity, timestamp, service, from, directOwner, attributes, resource, scope, allowed string
-	switch signal {
-	case "traces":
-		identity, timestamp, service = "struct_pack(trace_id := s.trace_id, span_id := s.span_id)", "s.start_time", "s.service_name"
-		from, directOwner, attributes, resource, scope = "spans s", "span", "s.attribute_ids", "s.resource_id", "s.scope_id"
-		allowed = "span, event, link, resource or scope"
-		switch ownerType {
-		case "event":
-			from += " JOIN events e ON e.trace_id = s.trace_id AND e.span_id = s.span_id"
-			attributes, directOwner = "e.attribute_ids", "event"
-			timestamp = "e.timestamp"
-		case "link":
-			from += " JOIN links l ON l.trace_id = s.trace_id AND l.span_id = s.span_id"
-			attributes, directOwner = "l.attribute_ids", "link"
-		}
-	case "logs":
-		identity, timestamp, service = "l.id", "coalesce(nullif(l.timestamp, 0), l.observed_timestamp)", "l.service_name"
-		from, directOwner, attributes, resource, scope = "logs l", "log", "l.attribute_ids", "l.resource_id", "l.scope_id"
-		allowed = "log, resource or scope"
-	case "metrics":
-		identity, timestamp, service = "d.id", "d.timestamp", "m.service_name"
-		from, directOwner = "metric_datapoints d JOIN metrics m ON m.id = d.metric_id", "datapoint"
-		attributes, resource, scope = "d.attribute_ids", "m.resource_id", "m.scope_id"
-		allowed = "datapoint, exemplar, metadata, resource or scope"
-		switch ownerType {
-		case "exemplar":
-			from += " JOIN exemplars e ON e.metric_datapoint_id = d.id"
-			attributes, directOwner = "e.attribute_ids", "exemplar"
-			timestamp = "e.timestamp"
-		case "metadata":
-			attributes, directOwner = "m.metadata_ids", "metadata"
-		}
-	default:
-		return "", fmt.Errorf("unsupported --signal %q: use traces, logs or metrics", signal)
-	}
-	switch ownerType {
-	case directOwner:
-	case "resource":
-		from += " JOIN resources r ON r.id = " + resource
-		attributes = "r.attribute_ids"
-	case "scope":
-		from += " JOIN scopes sc ON sc.id = " + scope
-		attributes = "sc.attribute_ids"
-	default:
-		return "", fmt.Errorf("--signal %s supports --owner-type %s; got %q", signal, allowed, ownerType)
-	}
-	return "SELECT " + identity + " AS record_id, " + timestamp + " AS time_ns, " + service +
-		" AS service_name, " + attributes + " AS attribute_ids FROM " + from, nil
+	return discovery.Records(signal, ownerType)
 }
 
-func attributeRecordPredicate(query telemetrySearchQuery) string {
-	predicates := []string{"true"}
-	if query.StartTime != nil {
-		predicates = append(predicates, "s.time_ns >= "+attributeSQLLiteral(*query.StartTime)+"::UBIGINT")
-	}
-	if query.EndTime != nil {
-		predicates = append(predicates, "s.time_ns <= "+attributeSQLLiteral(*query.EndTime)+"::UBIGINT")
-	}
-	if query.Service != "" {
-		predicates = append(predicates, "s.service_name = "+attributeSQLLiteral(query.Service))
-	}
-	return strings.Join(predicates, " AND ")
-}
-
-func attributeFoundOnSQL(location attributeLocation) string {
-	return "json_array(json_object('signal', " + attributeSQLLiteral(location.Signal) + ", 'ownerType', " + attributeSQLLiteral(location.OwnerType) + "))"
+func discoveryQuery(query telemetrySearchQuery) discovery.Query {
+	return discovery.Query{StartTime: query.StartTime, EndTime: query.EndTime, Service: query.Service}
 }
 
 func attributeKeysSQL(query attributeSearchQuery) string {
-	return `WITH records AS (` + query.records + `)
-SELECT json_object('key', a.key, 'kind', json_extract_string(a.value, '$.kind'),
-    'foundOn', ` + attributeFoundOnSQL(query.location) + `) AS entry
-FROM records s
-CROSS JOIN unnest(s.attribute_ids) owned(attribute_id)
-JOIN attributes a ON a.id = owned.attribute_id
-WHERE ` + attributeRecordPredicate(query.telemetrySearchQuery) + `
-GROUP BY a.key, json_extract_string(a.value, '$.kind')
-ORDER BY a.key, json_extract_string(a.value, '$.kind')`
+	return discovery.Keys(discoveryQuery(query.telemetrySearchQuery), discovery.Location(query.location), query.records)
 }
 
 func attributeValuesSQL(query attributeSearchQuery, key string) string {
-	return `WITH records AS (` + query.records + `), owned_values AS (
-    SELECT s.record_id, a.value
-    FROM records s
-    CROSS JOIN unnest(s.attribute_ids) owned(attribute_id)
-    JOIN attributes a ON a.id = owned.attribute_id
-    WHERE ` + attributeRecordPredicate(query.telemetrySearchQuery) + ` AND a.key = ` + attributeSQLLiteral(key) + `
-), value_counts AS (
-    SELECT value, count(DISTINCT record_id) AS count
-    FROM owned_values GROUP BY value
-), denominator AS (
-    SELECT count(DISTINCT record_id) AS count
-    FROM owned_values
-)
-SELECT json_object('value', v.value,
-    'foundOn', ` + attributeFoundOnSQL(query.location) + `,
-    'count', v.count, 'denominator', d.count,
-    'relativeFrequency', v.count::DOUBLE / nullif(d.count, 0)::DOUBLE) AS entry
-FROM value_counts v CROSS JOIN denominator d
-ORDER BY v.count DESC, json_extract_string(v.value, '$.kind'), v.value::VARCHAR`
+	return discovery.Values(discoveryQuery(query.telemetrySearchQuery), discovery.Location(query.location), query.records, key)
 }

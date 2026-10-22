@@ -25,9 +25,11 @@ test.beforeEach(async ({ page }) => {
         ? stats
         : request.method === 'getImportConfig'
           ? { otlpHttpPort: 54318 }
-          : request.method === 'searchLogPage'
-            ? { total: 0, logs: [] }
-            : []
+          : request.method === 'discoverTelemetry'
+            ? { rows: [], truncated: false }
+            : request.method === 'searchLogPage'
+              ? { total: 0, logs: [] }
+              : []
     await route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({ jsonrpc: '2.0', id: request.id, result }),
@@ -82,6 +84,7 @@ test('picker sends supported signal groups and lists profiles/invalid files with
     '/v1/logs',
   ])
   expect(requests[1].body).toBe(`{"resourceLogs":[${resource}]}`)
+  await page.locator('[data-detail-section="issues"] summary').click()
   const issues = page.getByRole('region', { name: 'Ingestion issues' })
   await expect(issues).toContainText('Profiles support coming soon')
   await expect(issues).toContainText('broken.json')

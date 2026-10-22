@@ -58,6 +58,7 @@
     drawerChromeToolbar?: Snippet
     drawerSearch?: Snippet
     drawerControls?: Snippet
+    drawerContent?: Snippet
     hideDrawer?: boolean
     navigationTrailing?: Snippet
     navigationCount?: number
@@ -84,6 +85,7 @@
     drawerChromeToolbar,
     drawerSearch,
     drawerControls,
+    drawerContent,
     hideDrawer = false,
     navigationTrailing,
     navigationCount,
@@ -563,68 +565,72 @@
             <PanelClip
               minimumSize={emptyDrawer ? 0 : remToPx(MIN_DRAWER_WIDTH_REM)}
             >
-              {#if !emptyDrawer && drawerControls}
-                <div
-                  class="signal-drawer__controls"
-                  role="group"
-                  aria-label={`${label} list controls`}
-                >
-                  {@render drawerControls()}
-                </div>
-              {/if}
-              {#if !emptyDrawer}
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <div
-                  class="signal-drawer__body"
-                  bind:this={drawerBodyEl}
-                  onfocusin={handleListFocusin}
-                  onkeydown={handleListKeydown}
-                  onscrollcapture={handleListScroll}
-                >
-                  {#if showEmptyState}
-                    <div class="signal-drawer__empty" role="status">
-                      <p class="signal-drawer__empty-title">
-                        No {label.toLowerCase()} found
-                      </p>
-                      <p class="signal-drawer__empty-hint">
-                        Try widening the time range or clearing the search.
-                      </p>
-                    </div>
-                  {:else}
-                    <VirtualList
-                      bind:this={vlistRef}
-                      {items}
-                      {itemKey}
-                      defaultEstimatedItemHeight={72}
-                      bufferSize={10}
-                      containerClass="signal-drawer__vlist"
-                      viewportClass="signal-drawer__vlist-viewport"
-                      viewportLabel={`${label} list`}
-                      itemsClass="signal-drawer__vlist-items"
-                      onRangeChange={handleRenderedRange}
-                    >
-                      {#snippet renderItem(item)}
-                        {@const key = itemKey(item)}
-                        <div
-                          class="signal-drawer__item"
-                          data-drawer-item-key={key}
-                          use:navigableDrawerItem={{
-                            tabIndex: key === rovingItemKey ? 0 : -1,
-                          }}
-                        >
-                          {@render itemSnippet(item, selectedID === key)}
-                        </div>
-                      {/snippet}
-                    </VirtualList>
-                  {/if}
-                </div>
-              {/if}
+              {#if drawerContent}
+                {@render drawerContent()}
+              {:else}
+                {#if !emptyDrawer && drawerControls}
+                  <div
+                    class="signal-drawer__controls"
+                    role="group"
+                    aria-label={`${label} list controls`}
+                  >
+                    {@render drawerControls()}
+                  </div>
+                {/if}
+                {#if !emptyDrawer}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div
+                    class="signal-drawer__body"
+                    bind:this={drawerBodyEl}
+                    onfocusin={handleListFocusin}
+                    onkeydown={handleListKeydown}
+                    onscrollcapture={handleListScroll}
+                  >
+                    {#if showEmptyState}
+                      <div class="signal-drawer__empty" role="status">
+                        <p class="signal-drawer__empty-title">
+                          No {label.toLowerCase()} found
+                        </p>
+                        <p class="signal-drawer__empty-hint">
+                          Try widening the time range or clearing the search.
+                        </p>
+                      </div>
+                    {:else}
+                      <VirtualList
+                        bind:this={vlistRef}
+                        {items}
+                        {itemKey}
+                        defaultEstimatedItemHeight={72}
+                        bufferSize={10}
+                        containerClass="signal-drawer__vlist"
+                        viewportClass="signal-drawer__vlist-viewport"
+                        viewportLabel={`${label} list`}
+                        itemsClass="signal-drawer__vlist-items"
+                        onRangeChange={handleRenderedRange}
+                      >
+                        {#snippet renderItem(item)}
+                          {@const key = itemKey(item)}
+                          <div
+                            class="signal-drawer__item"
+                            data-drawer-item-key={key}
+                            use:navigableDrawerItem={{
+                              tabIndex: key === rovingItemKey ? 0 : -1,
+                            }}
+                          >
+                            {@render itemSnippet(item, selectedID === key)}
+                          </div>
+                        {/snippet}
+                      </VirtualList>
+                    {/if}
+                  </div>
+                {/if}
 
-              <!-- Expanded: footer -->
-              {#if !emptyDrawer}
-                <div class="signal-drawer__footer">
-                  <div class="min-w-0 flex-1">{@render footer?.()}</div>
-                </div>
+                <!-- Expanded: footer -->
+                {#if !emptyDrawer}
+                  <div class="signal-drawer__footer">
+                    <div class="min-w-0 flex-1">{@render footer?.()}</div>
+                  </div>
+                {/if}
               {/if}
             </PanelClip>
           </div>

@@ -59,16 +59,24 @@ async function interceptRpc(page: Page): Promise<void> {
     const response =
       request.method === 'getStats'
         ? { jsonrpc: '2.0', id: request.id, result: EMPTY_STATS }
-        : EMPTY_ATTRIBUTE_METHODS.has(request.method)
-          ? { jsonrpc: '2.0', id: request.id, result: [] }
-          : {
+        : request.method === 'discoverTelemetry'
+          ? {
               jsonrpc: '2.0',
               id: request.id,
-              error: {
-                code: -32601,
-                message: `No accessibility-test fixture for ${request.method}`,
-              },
+              result: { rows: [], truncated: false },
             }
+          : request.method === 'getImportConfig'
+            ? { jsonrpc: '2.0', id: request.id, result: { otlpHttpPort: 4318 } }
+            : EMPTY_ATTRIBUTE_METHODS.has(request.method)
+              ? { jsonrpc: '2.0', id: request.id, result: [] }
+              : {
+                  jsonrpc: '2.0',
+                  id: request.id,
+                  error: {
+                    code: -32601,
+                    message: `No accessibility-test fixture for ${request.method}`,
+                  },
+                }
 
     await route.fulfill({
       status: 200,
@@ -83,7 +91,7 @@ async function showMetadataExamples(page: Page, theme: string) {
   await page.addInitScript(theme => localStorage.setItem('theme', theme), theme)
   await page.goto('/')
   await expect(
-    page.getByRole('heading', { name: 'OpenTelemetry Desktop Viewer' })
+    page.getByRole('region', { name: 'Services', exact: true })
   ).toBeVisible()
   await page.evaluate(() => {
     const examples = document.createElement('section')
@@ -530,10 +538,7 @@ test.describe('home page accessibility', () => {
     await interceptRpc(page)
     await page.goto('/')
     await expect(
-      page.getByRole('heading', {
-        level: 1,
-        name: 'OpenTelemetry Desktop Viewer',
-      })
+      page.getByRole('region', { name: 'Services', exact: true })
     ).toBeVisible()
   })
 
@@ -1688,8 +1693,10 @@ test.describe('home page accessibility', () => {
     expect(selectedStyle.background).toBe('rgba(0, 0, 0, 0)')
 
     await page.keyboard.press('Tab')
+    await expect(page.getByRole('tabpanel')).toBeFocused()
+    await page.keyboard.press('Tab')
     await expect(
-      page.getByRole('button', { name: 'Copy snippet' })
+      page.getByRole('button', { name: 'Copy OTLP environment variables' })
     ).toBeFocused()
   })
 

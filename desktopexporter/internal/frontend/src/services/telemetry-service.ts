@@ -57,6 +57,13 @@ import type {
 } from '@/types/wire-types'
 import type { Attribute, AttributeValue } from '@/types/api-types'
 import type {
+  DiscoveryOptions,
+  DiscoveryPage,
+  ServiceSummary,
+  AttributeKey,
+  AttributeFrequency,
+} from './discovery-types'
+import type {
   EvalExperimentSearch,
   EvalExperimentSearchPage,
   EvalExperimentSourcePage,
@@ -78,6 +85,7 @@ type JsonRpcParamValue =
   | readonly string[]
   | readonly number[]
   | readonly LogColumn[]
+  | DiscoveryOptions
 
 type JsonRpcNamedParams = Record<string, JsonRpcParamValue | undefined>
 type JsonRpcParams = JsonRpcNamedParams | readonly string[]
@@ -803,6 +811,7 @@ function metricSummariesFromJSON(json: JsonMetricSummary[]): MetricSummary[] {
 
 function statsFromJSON(json: JsonStats): Stats {
   return {
+    storage: json.storage,
     traces: {
       ...json.traces,
       lastReceived: nullableBigintFromWire(json.traces.lastReceived),
@@ -824,7 +833,42 @@ function statsFromJSON(json: JsonStats): Stats {
   }
 }
 
+async function discover<T>(
+  options: DiscoveryOptions,
+  signal?: AbortSignal
+): Promise<DiscoveryPage<T>> {
+  const result = await callRPC<{ rows: [T][]; truncated: boolean }>(
+    'discoverTelemetry',
+    named({ options }),
+    signal
+  )
+  return { items: result.rows.map(row => row[0]), truncated: result.truncated }
+}
+
 export let telemetryAPI = {
+  discoverServices: (
+    options: Omit<DiscoveryOptions, 'kind'> = {},
+    signal?: AbortSignal
+  ) => discover<ServiceSummary>({ ...options, kind: 'services' }, signal),
+  discoverAttributeKeys: (
+    options: Omit<DiscoveryOptions, 'kind'>,
+    signal?: AbortSignal
+  ) => discover<AttributeKey>({ ...options, kind: 'keys' }, signal),
+  discoverAttributeValues: async (
+    options: Omit<DiscoveryOptions, 'kind'>,
+    signal?: AbortSignal
+  ): Promise<DiscoveryPage<AttributeFrequency>> => {
+    const page = await discover<
+      Omit<AttributeFrequency, 'value'> & { value: JsonAttributeValue }
+    >({ ...options, kind: 'values' }, signal)
+    return {
+      ...page,
+      items: page.items.map(item => ({
+        ...item,
+        value: attributeValueFromJSON(item.value),
+      })),
+    }
+  },
   searchEvalExperiments: async (
     query: EvalExperimentSearch = {},
     signal?: AbortSignal
