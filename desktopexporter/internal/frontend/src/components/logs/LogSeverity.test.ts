@@ -2,8 +2,20 @@
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/svelte'
 import LogSeverity from './LogSeverity.svelte'
+import { severityBand } from './log-severity'
 
 describe('LogSeverity', () => {
+  it('distinguishes omitted severity from TRACE and preserves supplied text', async () => {
+    const view = render(LogSeverity, { number: 0, text: '' })
+    expect(screen.getByText('Unspecified (0)')).toBeInTheDocument()
+    expect(severityBand(0)).toBe('unspecified')
+    await view.rerender({ text: 'CUSTOM' })
+    expect(screen.getByText('CUSTOM (0)')).toBeInTheDocument()
+    await view.rerender({ number: 1, text: '' })
+    expect(screen.getByText('TRACE (1)')).toBeInTheDocument()
+    expect(severityBand(1)).toBe('trace')
+  })
+
   it.each([
     [1, 'TRACE', 'neutral'],
     [5, 'DEBUG', 'success'],
