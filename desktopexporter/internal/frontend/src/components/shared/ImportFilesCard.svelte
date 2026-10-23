@@ -28,7 +28,7 @@
     />
   </span>
   <span class="text-balance text-rp-subtle">
-    Drop telemetry JSON files anywhere on the screen. I'm not a cop.
+    Drop telemetry JSON files here or anywhere on the screen.
   </span>
 </button>
 <input

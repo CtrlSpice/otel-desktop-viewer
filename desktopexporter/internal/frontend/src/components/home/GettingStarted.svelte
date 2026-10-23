@@ -17,11 +17,11 @@
   ]
   const code = $derived(
     protocol === 'http'
-      ? `export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:${httpPort ?? 4318}"\nexport OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"`
-      : 'export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"\nexport OTEL_EXPORTER_OTLP_PROTOCOL="grpc"'
+      ? `export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:${httpPort ?? 4318}"\nexport OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"\nexport OTEL_SERVICE_NAME="my-service"`
+      : 'export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"\nexport OTEL_EXPORTER_OTLP_PROTOCOL="grpc"\nexport OTEL_SERVICE_NAME="my-service"'
   )
   const example = $derived(
-    `export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:${httpPort ?? 4318}\notel-cli exec --service my-service --name "curl google" curl https://google.com`
+    `otel-cli exec \\\n  --endpoint http://localhost:${httpPort ?? 4318} \\\n  --protocol http/protobuf \\\n  --service my-service \\\n  --name "test trace" \\\n  -- sleep 1`
   )
   onMount(() => {
     let alive = true
@@ -42,7 +42,7 @@
     <img
       src={lulu}
       alt="Lulu the axolotl with her telescope"
-      class="size-24 shrink-0 object-contain"
+      class="size-32 shrink-0 object-contain"
     />
     <div class="flex min-w-0 flex-col gap-2">
       <h2 class="text-lg font-normal text-balance text-base-content">
@@ -59,61 +59,80 @@
           Connect an exporter
         </h2>
         <p class="text-pretty text-rp-subtle">
-          Send telemetry from your SDK, Collector, or agent.
+          Set these variables before starting your instrumented app.
         </p>
       </div>
-      <div class="flex items-center justify-between gap-2">
-        <PaneHeader
-          mode="tabs"
-          bare
-          {tabs}
-          activeID={protocol}
-          onSelect={id => (protocol = id)}
-          ariaLabel="OTLP endpoint protocol"
-          tabPanelID="home-otlp"
-        />
-        <ValueCopyButton
-          text={code}
-          label="OTLP environment variables"
-          tooltip="Copy"
-        />
-      </div>
-      <div
-        id="home-otlp"
-        role="tabpanel"
-        aria-labelledby={paneTabID('home-otlp', protocol)}
-        tabindex="0"
-      >
-        <ReadonlyCodePanel
-          {code}
-          bare
-          ariaLabel="OTLP exporter environment variables"
-        />
+      <div class="terminal">
+        <div class="flex items-center justify-between gap-2 px-3 py-2">
+          <PaneHeader
+            mode="tabs"
+            bare
+            {tabs}
+            activeID={protocol}
+            onSelect={id => (protocol = id)}
+            ariaLabel="OTLP endpoint protocol"
+            tabPanelID="home-otlp"
+          />
+          <ValueCopyButton
+            text={code}
+            label="OTLP environment variables"
+            tooltip="Copy"
+          />
+        </div>
+        <div
+          id="home-otlp"
+          role="tabpanel"
+          aria-labelledby={paneTabID('home-otlp', protocol)}
+          tabindex="0"
+          class="px-3 pb-3"
+        >
+          <ReadonlyCodePanel
+            {code}
+            bare
+            ariaLabel="OTLP exporter environment variables"
+          />
+        </div>
       </div>
       <p class="text-pretty text-rp-subtle">
         {protocol === 'grpc'
           ? 'Default gRPC port. Use your configured port if different.'
           : httpPort === null
             ? 'Default HTTP port. Use your configured port if different.'
-            : 'Configured HTTP port.'} Use the viewer host for a remote exporter.
+            : 'Configured HTTP port.'} Use the viewer’s host when sending from another
+        machine.
       </p>
     </section>
     <section class="guide-section">
-      <div class="flex items-center justify-between gap-2">
+      <div class="flex flex-col gap-1">
         <h2 class="text-lg font-normal text-balance text-base-content">
-          Try an example
+          Send a test trace
         </h2>
-        <ValueCopyButton
-          text={example}
-          label="otel-cli example"
-          tooltip="Copy"
-        />
+        <p class="text-pretty text-rp-subtle">
+          Run this with <a
+            class="text-secondary underline"
+            href="https://github.com/equinix-labs/otel-cli#readme"
+            target="_blank"
+            rel="noreferrer">otel-cli</a
+          > installed.
+        </p>
       </div>
-      <ReadonlyCodePanel
-        bare
-        ariaLabel="otel-cli example commands"
-        code={example}
-      />
+      <div class="terminal">
+        <div class="flex items-center justify-between gap-2 px-3 py-2">
+          <span class="text-rp-subtle">Shell</span>
+          <ValueCopyButton
+            text={example}
+            label="otel-cli example"
+            tooltip="Copy"
+          />
+        </div>
+        <div class="px-3 pb-3">
+          <ReadonlyCodePanel
+            bare
+            ariaLabel="otel-cli example commands"
+            code={example}
+          />
+        </div>
+      </div>
     </section>
     <div class="mt-auto flex shrink-0 flex-col gap-3">
       {@render issues?.()}
@@ -131,5 +150,8 @@
   }
   .guide-section {
     @apply flex shrink-0 flex-col gap-3;
+  }
+  .terminal {
+    @apply min-w-0 rounded-xl border border-base-300 bg-base-100;
   }
 </style>
