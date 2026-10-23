@@ -26,11 +26,13 @@ test('Home counts, attributes and enabled links share the submitted cross-signal
     lastSeen: null,
   }
   const discovery: Record<string, unknown>[] = []
+  const metricQueries: unknown[] = []
   await page.route('**/api/features', route =>
     route.fulfill({ json: { evals: { enabled: false } } })
   )
   await page.route('**/rpc', async route => {
     const { id, method, params } = route.request().postDataJSON()
+    if (method === 'searchMetricSummaries') metricQueries.push(params)
     const result = (() => {
       if (method === 'getStats')
         return {
@@ -151,6 +153,11 @@ test('Home counts, attributes and enabled links share the submitted cross-signal
   await expect(
     page.getByRole('link', { name: 'Logs', exact: true })
   ).toHaveAccessibleDescription('Stored logs: [10]')
+  await page.reload()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  expect(new URL(page.url()).searchParams.get('q')).toBe(
+    target.searchParams.get('q')
+  )
   await page.goBack()
   expect(new URL(page.url()).searchParams.get('q')).toBe('declined')
   await expect(page.getByRole('article')).toHaveCount(1)
@@ -180,5 +187,16 @@ test('Home counts, attributes and enabled links share the submitted cross-signal
   await expect(
     page.getByText('Select a service to discover its attributes.')
   ).toBeVisible()
+  // A fresh metric URL submits before reactive parent notifications can run.
+  const metricQuery = `serviceIdentity = ${JSON.stringify(service.serviceIdentity)}`
+  await page.goto(`/metrics?time=all&q=${encodeURIComponent(metricQuery)}`)
+  await expect
+    .poll(() =>
+      JSON.stringify(metricQueries).includes(
+        JSON.stringify(service.serviceIdentity)
+      )
+    )
+    .toBe(true)
+  await expect(page.getByRole('alert')).toHaveCount(0)
   expect(errors).toEqual([])
 })

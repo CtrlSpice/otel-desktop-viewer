@@ -241,6 +241,8 @@
 
   function onSubmit() {
     const text = editorView?.state.doc.toString() ?? ''
+    // Initial URL submission can precede the reactive change notification.
+    onQueryChange?.(text, availableFields)
 
     if (!text.trim()) {
       searchError = null
