@@ -66,7 +66,7 @@ describe('ActivityPanel', () => {
     expect(summary.querySelector('table, [data-field]')).toBeNull()
     await waitFor(() =>
       expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
-        block: 'nearest',
+        block: 'start',
       })
     )
 

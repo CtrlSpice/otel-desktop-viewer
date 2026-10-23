@@ -317,7 +317,7 @@ describe('App real-page composition', () => {
     render(App)
     const main = screen.getByRole('main')
     const trigger = await screen.findByRole('button', {
-      name: /change time range/i,
+      name: 'Delete all metrics',
     })
     trigger.focus()
     let oldPageWasDestroyedBeforeFocus: boolean | undefined

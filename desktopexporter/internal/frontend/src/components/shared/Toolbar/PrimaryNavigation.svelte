@@ -100,8 +100,9 @@
   } from '@/route'
   import { evalsEnabled } from '@/state/features'
   import { getRouteContext } from '@/contexts/route-context.svelte'
+  import type { NavigationCounts } from '@/contexts/navigation-counts.svelte'
 
-  let { count, evalsCount }: { count?: number; evalsCount?: number } = $props()
+  let { counts = {} }: { counts?: NavigationCounts } = $props()
   const countID = $props.id()
   const routeContext = getRouteContext()
   const items = $derived(
@@ -129,7 +130,7 @@
 >
   {#each items as item (item.id)}
     {@const active = isNavItemActive(item.id, routeContext.route.path)}
-    {@const itemCount = item.id === 'evals' && active ? evalsCount : count}
+    {@const itemCount = counts[item.id]}
     <a
       href={item.id === 'home' || item.id === 'evals'
         ? item.path
@@ -138,6 +139,7 @@
       class:tab-active={active}
       aria-current={active ? 'page' : undefined}
       aria-label={item.id === 'evals' ? 'Experimental Evals' : item.label}
+      title={item.id === 'evals' ? 'Test Feature Please Ignore' : undefined}
       aria-describedby={itemCount !== undefined
         ? `${countID}-${item.id}`
         : undefined}
@@ -161,8 +163,12 @@
         class:invisible={itemCount === undefined}
         aria-hidden={itemCount === undefined}
         ><span class="sr-only"
-          >{item.id === 'evals' ? 'Experiments: ' : 'Results: '}</span
-        >{itemCount === undefined ? '' : `[${itemCount}]`}</span
+          >{item.id === 'evals'
+            ? 'Stored experiments:'
+            : item.id === 'home'
+              ? 'Stored services:'
+              : `Stored ${item.id}:`}</span
+        >{' '}{itemCount === undefined ? '' : `[${itemCount}]`}</span
       >
     </a>
   {/each}

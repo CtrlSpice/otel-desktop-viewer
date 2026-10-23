@@ -1,7 +1,12 @@
 <script module lang="ts">
   import type { Snippet } from 'svelte'
+  import type { WorkspaceHeaderState } from '@/contexts/workspace-header.svelte'
 
   export type WorkspaceProps<T> = {
+    mainTitle?: string
+    mainHeaderRows?: 1 | 2
+    mainHeaderInert?: boolean
+    header?: WorkspaceHeaderState
     // ── Drawer (forwarded to SignalListDrawer) ─────────────────────
     /** Items rendered in the drawer list. Pass `[]` together with
      * `emptyDrawer` for pages with no list yet (Home). On list pages an
@@ -21,8 +26,6 @@
     refreshPulse?: boolean
     refreshAsideTip?: string
     loading?: boolean
-    /** Current result count shown in the active navigation tab. */
-    navigationCount?: number
     drawerChromeToolbar?: Snippet
     drawerSearch?: Snippet
     drawerControls?: Snippet
@@ -52,6 +55,7 @@
   import ResizablePanels from './ResizablePanels.svelte'
   import SignalListDrawer from './Drawer/SignalListDrawer.svelte'
   import PanelToggle from './PanelToggle.svelte'
+  import PaneHeader from './PaneHeader.svelte'
   import {
     detailWidth,
     DETAIL_SPLIT_STORAGE_KEY,
@@ -65,6 +69,8 @@
   } from '@/state/panel-width'
 
   let {
+    header,
+    mainHeaderInert,
     items,
     emptyDrawer,
     selectedID,
@@ -76,7 +82,6 @@
     refreshPulse,
     refreshAsideTip,
     loading,
-    navigationCount,
     drawerChromeToolbar,
     drawerSearch,
     drawerControls,
@@ -150,7 +155,6 @@
     {refreshPulse}
     {refreshAsideTip}
     {loading}
-    {navigationCount}
     {drawerChromeToolbar}
     {drawerSearch}
     {drawerControls}
@@ -180,6 +184,10 @@
               class="page-layout__main-chrome"
               class:page-layout__main-chrome--base={mainSurface === 'base'}
             >
+              <PaneHeader
+                {...header?.props ?? { mode: 'title', title: '', pill: true }}
+                inert={mainHeaderInert}
+              />
               {@render main()}
             </div>
           {/snippet}

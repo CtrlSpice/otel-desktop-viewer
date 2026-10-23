@@ -1,5 +1,6 @@
 <script lang="ts">
   import PageLayout from '@/components/shared/PageLayout.svelte'
+  import EvalDetailPlaceholder from '@/components/evals/EvalDetailPlaceholder.svelte'
   import { evalsEnabled } from '@/state/features'
   import type { ImportFailure } from '@/types/import-types'
 
@@ -18,6 +19,8 @@
 {#if workspace}
   {#await workspace}
     <PageLayout
+      mainTitle="Evals"
+      mainHeaderRows={2}
       items={[]}
       selectedID={null}
       drawerID="signal-drawer"
@@ -28,12 +31,14 @@
       {#snippet main()}<p class="p-6 text-sm" role="status">
           Opening Evals…
         </p>{/snippet}
-      {#snippet detail()}{/snippet}
+      {#snippet detail()}<EvalDetailPlaceholder />{/snippet}
     </PageLayout>
   {:then module}
     <module.default {importFailure} {onViewIssue} />
   {:catch}
     <PageLayout
+      mainTitle="Evals"
+      mainHeaderRows={2}
       items={[]}
       selectedID={null}
       drawerID="signal-drawer"
@@ -43,7 +48,7 @@
       {#snippet main()}<p class="p-6 text-sm text-papaya" role="alert">
           Could not load Evals. Reload the page to try again.
         </p>{/snippet}
-      {#snippet detail()}{/snippet}
+      {#snippet detail()}<EvalDetailPlaceholder />{/snippet}
     </PageLayout>
   {/await}
 {:else}

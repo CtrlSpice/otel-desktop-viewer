@@ -228,7 +228,7 @@ describe('WaterfallView bigint domain geometry', () => {
     expect(rows[1]).toMatchObject({ offsetPercent: 50, widthPercent: 50 })
   })
 
-  it('uses the shared span palette while preserving error semantics', () => {
+  it('keeps service colours across operations while preserving error semantics', () => {
     const spans = [
       spanNode('first', null, 0),
       spanNode('second', null, 0),
@@ -243,8 +243,8 @@ describe('WaterfallView bigint domain geometry', () => {
     )
 
     expect(rows.map(row => row.color)).toEqual([
-      '#829eeb',
-      '#7bd6b6',
+      traceServiceColor('', 'rose-pine-dawn'),
+      traceServiceColor('', 'rose-pine-dawn'),
       'var(--color-error)',
     ])
     for (const span of spans)
@@ -262,6 +262,7 @@ describe('WaterfallView bigint domain geometry', () => {
     expect(serviceRows[0].color).toBe(
       traceServiceColor('one-service', 'rose-pine-dawn')
     )
+    expect(serviceRows[1].color).toBe(serviceRows[0].color)
     expect(serviceRows[2].color).toBe('var(--color-error)')
   })
 })

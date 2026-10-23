@@ -4,13 +4,15 @@
   import SearchBar from '../Search/SearchBar.svelte'
   import PaneHeader from '../PaneHeader.svelte'
   import ThemeToggle from '../ThemeToggle.svelte'
+  import { getNavigationCounts } from '@/contexts/navigation-counts.svelte'
+
+  const totals = getNavigationCounts()
 
   let {
     search,
     controls,
     navigationLeading,
     navigationTrailing,
-    navigationCount,
     onRefresh,
     refreshPulse = false,
     refreshAsideTip = '',
@@ -19,7 +21,6 @@
     controls?: Snippet
     navigationLeading?: Snippet
     navigationTrailing?: Snippet
-    navigationCount?: number
     onRefresh?: () => void
     refreshPulse?: boolean
     refreshAsideTip?: string
@@ -42,13 +43,18 @@
         </div>
         <div class="workspace-toolbar__centre">
           <div class="workspace-toolbar__navigation">
-            <PrimaryNavigation count={42} evalsCount={navigationCount} />
+            <PrimaryNavigation counts={totals?.counts} />
           </div>
           <div class="workspace-toolbar__search">
             <SearchBar
               {search}
               {controls}
-              {onRefresh}
+              onRefresh={onRefresh
+                ? () => {
+                    onRefresh()
+                    void totals?.refresh()
+                  }
+                : undefined}
               {refreshPulse}
               {refreshAsideTip}
             />

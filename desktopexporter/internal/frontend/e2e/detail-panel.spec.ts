@@ -70,6 +70,15 @@ for (const kind of ['event', 'log'] as const) {
     await page.setViewportSize({ width: 1920, height: 1000 })
     await page.emulateMedia({ reducedMotion: 'reduce' })
     const linked = structuredClone(trace)
+    // The selected card is taller than the Events viewport. Its heading must
+    // remain visible rather than aligning the card's bottom or middle.
+    linked.spans[0]!.spanData.events[0]!.attributes = Array.from(
+      { length: 12 },
+      (_, index) => ({
+        key: `field.${index}`,
+        value: { kind: 'string' as const, value: `value ${index}` },
+      })
+    )
     linked.spans[0]!.spanData.links.push({
       traceID,
       spanID,
@@ -189,6 +198,19 @@ for (const kind of ['event', 'log'] as const) {
           : events.locator(`#span-log-${logRef}`)
       await expect(target).toBeVisible()
       await expect(target).toBeInViewport()
+      const card = events.locator(
+        kind === 'event' ? '#span-event-0' : `#span-log-${logRef}`
+      )
+      const headingBounds = (await events
+        .locator(':scope > summary')
+        .boundingBox())!
+      const cardBounds = (await card.boundingBox())!
+      expect(cardBounds.y).toBeGreaterThanOrEqual(
+        headingBounds.y + headingBounds.height - 1
+      )
+      expect(cardBounds.y).toBeLessThan(
+        (await events.boundingBox())!.y + (await events.boundingBox())!.height
+      )
       const scrollStates = await page.evaluate(
         () =>
           (window as Window & { revealScrollStates?: boolean[] })

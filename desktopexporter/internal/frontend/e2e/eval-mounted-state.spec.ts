@@ -106,7 +106,7 @@ async function openWorkspace(page: Page, legacyBookmark = false) {
     const query = url.searchParams.get('q') ?? ''
     const gate = source ? sourceGates.get(source[1]) : listGates.get(query)
     if (source) sourceRequests.push(source[1])
-    else listRequests.push(query)
+    else if (url.searchParams.get('limit') !== '1') listRequests.push(query)
     gate?.requested.resolve()
     if (gate) await gate.released.promise
     try {
@@ -331,7 +331,9 @@ test('a delayed experiment source keeps Results mounted through loading and repl
         exact: true,
       })
     )
-    await expect(page.locator('.eval-results__header')).toContainText('Beta')
+    await expect(
+      page.getByRole('region', { name: 'Evaluation results', exact: true })
+    ).toContainText('Beta')
     await expect(nextTable).toContainText('Beta case 0')
     await expect(nextTable).not.toContainText('Alpha case 0')
     await expect(search).toBeFocused()
@@ -451,7 +453,9 @@ test('a superseded source response cannot replace the latest experiment or its C
     await expect(
       detail.getByRole('group', { name: 'result ID', exact: true })
     ).toContainText('gamma-result-1')
-    await expect(page.locator('.eval-results__header')).toContainText('Gamma')
+    await expect(
+      page.getByRole('region', { name: 'Evaluation results', exact: true })
+    ).toContainText('Gamma')
     await sameTable()
     expect(fixture.sourceRequests).toHaveLength(3)
   } finally {

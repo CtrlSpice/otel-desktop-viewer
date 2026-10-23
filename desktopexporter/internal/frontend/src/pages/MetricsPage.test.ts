@@ -252,7 +252,7 @@ describe('Metric main-header range', () => {
     'removes the redundant %s time range from the count-legend header',
     async metricType => {
       await renderSelected(metricType)
-      const header = screen.getByRole('region', { name: 'Metric chart' })
+      const header = await screen.findByRole('region', { name: 'Metric chart' })
       expect(header.querySelector('[aria-label="Chart time range"]')).toBeNull()
       expect(
         document.querySelector('.metric-chart-view .heatmap-legend')
@@ -276,7 +276,7 @@ describe('Metric main-header export', () => {
       renderWithContexts(MetricsPage)
       await screen.findByRole('region', { name: 'Metric details' })
 
-      const header = screen.getByRole('region', { name: 'Metric chart' })
+      const header = await screen.findByRole('region', { name: 'Metric chart' })
       const button = within(header).getByRole('button', {
         name: 'Download metric',
       })

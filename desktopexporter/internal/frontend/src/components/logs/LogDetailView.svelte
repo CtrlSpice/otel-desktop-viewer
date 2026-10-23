@@ -2,6 +2,7 @@
   import type { Snippet } from 'svelte'
   import type { LogData } from '@/types/api-types'
   import PaneHeader from '@/components/shared/PaneHeader.svelte'
+  import ServiceDot from '@/components/shared/ServiceDot.svelte'
   import ExportButton from '@/components/shared/ExportButton.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import { readOTLPText } from '@/services/export-service'
@@ -28,6 +29,8 @@
     footer?: Snippet
     fieldTarget?: DetailFieldTarget
     detailView?: DetailViewMode
+    loading?: boolean
+    error?: string
   }
 
   let {
@@ -35,6 +38,8 @@
     footer,
     fieldTarget,
     detailView = $bindable<DetailViewMode>('fields'),
+    loading = false,
+    error = '',
   }: Props = $props()
   const detailViewID = $props.id()
   const exportURL = $derived(
@@ -92,26 +97,32 @@
   )
 </script>
 
-{#if log}
-  <div
-    class="log-detail-panel"
-    data-field-source="log"
-    use:revealDetailField={resolvedTarget}
+<div
+  class="log-detail-panel"
+  data-field-source="log"
+  use:revealDetailField={resolvedTarget}
+>
+  <PaneHeader
+    pill
+    mode="title"
+    title={service || 'Log record'}
+    ariaLabel="Log record"
   >
-    <PaneHeader pill mode="title" title={service || '—'} ariaLabel="Log record">
-      {#snippet right()}
-        <DetailViewTabs id={detailViewID} bind:view={detailView} />
-        {#key log.logRef}
+    {#snippet leading()}{#if log}<ServiceDot {service} />{/if}{/snippet}
+    {#snippet right()}
+      <DetailViewTabs id={detailViewID} bind:view={detailView} />
+      {#if log}{#key log.logRef}
           <ValueCopyButton
             label="log"
             tooltip="Copy log"
             loadText={loadLogJSON}
           />
           <ExportButton signal="log" id={log.logRef} />
-        {/key}
-      {/snippet}
-    </PaneHeader>
+        {/key}{/if}
+    {/snippet}
+  </PaneHeader>
 
+  {#if log}
     {#if log.traceID}
       <div class="log-detail-panel__trace">
         <AssociatedTrace traceID={log.traceID} spanID={log.spanID} />
@@ -279,22 +290,17 @@
     {#if footer}
       {@render footer()}
     {/if}
-  </div>
-{:else}
-  <div class="log-detail-panel log-detail-panel--empty">
-    <p class="text-rp-muted text-sm">Select a log to view details</p>
-  </div>
-{/if}
+  {:else if error}<p class="p-3" role="alert">Error: {error}</p>
+  {:else}<p class="p-3 text-subtle" role={loading ? 'status' : undefined}>
+      {loading ? 'Loading log details…' : 'Select a log to view details'}
+    </p>{/if}
+</div>
 
 <style lang="postcss">
   @reference "../../app.css";
 
   .log-detail-panel {
     @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden;
-  }
-
-  .log-detail-panel--empty {
-    @apply items-center justify-center;
   }
 
   .log-detail-panel__scroll {

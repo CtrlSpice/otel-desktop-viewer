@@ -308,8 +308,8 @@ test('experiment selection, assessments, filtering and browser history stay conn
     toolbar.getByRole('button', { name: /^Change time range/ })
   ).toHaveText('')
   await expect(
-    page.getByRole('region', { name: 'Guide-assisted agent', exact: true })
-  ).toBeVisible()
+    page.getByRole('region', { name: 'Evaluation results', exact: true })
+  ).toContainText('Guide-assisted agent')
   await openExamples(page, 'experiment=guide-assisted&result=request-latency')
   const detail = page.getByRole('region', {
     name: 'Result details',
@@ -357,8 +357,8 @@ test('experiment selection, assessments, filtering and browser history stay conn
     .locator('.signal-row__title')
     .click()
   await expect(
-    page.getByRole('region', { name: 'Direct agent', exact: true })
-  ).toBeVisible()
+    page.getByRole('region', { name: 'Evaluation results', exact: true })
+  ).toContainText('Direct agent')
   await openExamples(page, 'experiment=direct&result=cpu-evidence')
   await expect(
     page.getByText('The investigator process exited', { exact: false })

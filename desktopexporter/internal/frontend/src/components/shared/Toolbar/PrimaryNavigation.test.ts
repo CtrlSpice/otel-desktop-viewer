@@ -48,6 +48,27 @@ describe('isNavItemActive', () => {
 })
 
 describe('PrimaryNavigation', () => {
+  it('keeps known totals on inactive tabs and distinguishes zero from unavailable', async () => {
+    setTestUrl('/')
+    renderWithContexts(PrimaryNavigation, {
+      counts: { home: 9, traces: 62, logs: 0 },
+    })
+    const logs = screen.getByRole('link', { name: 'Logs' })
+    expect(logs).toHaveAccessibleDescription('Stored logs: [0]')
+    expect(
+      screen.getByRole('link', { name: 'Traces' })
+    ).toHaveAccessibleDescription('Stored traces: [62]')
+    expect(screen.getByRole('link', { name: 'Metrics' })).not.toHaveAttribute(
+      'aria-describedby'
+    )
+    await userEvent.click(logs)
+    expect(
+      screen.getByRole('link', { name: 'Home' })
+    ).toHaveAccessibleDescription('Stored services: [9]')
+    expect(
+      screen.getByRole('link', { name: 'Traces' })
+    ).toHaveAccessibleDescription('Stored traces: [62]')
+  })
   it('renders a labelled tab for each signal', () => {
     setTestUrl('/traces')
     renderTabs()

@@ -30,7 +30,7 @@
     void tick().then(() => {
       document
         .getElementById(`span-log-${logRef}`)
-        ?.scrollIntoView?.({ block: 'nearest' })
+        ?.scrollIntoView?.({ block: 'start' })
     })
   })
 </script>

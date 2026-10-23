@@ -77,6 +77,9 @@
   const DEFAULT_BADGE_CLASS = 'badge-count'
 
   type CommonProps = {
+    inert?: boolean
+    /** Keep the destination's control row in place while its data loads. */
+    reserveMetaRow?: boolean
     /** Optional action before the title in title and title-tabs headers. */
     leading?: Snippet
     /** Right-aligned badges (counts, severity, offsets) as
@@ -160,6 +163,7 @@
 </script>
 
 <script lang="ts">
+  import ServiceDot from './ServiceDot.svelte'
   import { handleTablistKeydown } from './utils/tablist-keyboard'
   let props: PaneHeaderProps = $props()
   let roundedClass = $derived(
@@ -170,7 +174,8 @@
         : 'pane-header--flush'
   )
   let stackedClass = $derived(
-    props.timeRange !== undefined ||
+    props.reserveMetaRow ||
+      props.timeRange !== undefined ||
       props.timestampMs !== undefined ||
       props.metaLeft !== undefined ||
       props.metaCenter !== undefined ||
@@ -335,9 +340,10 @@
   </div>
 {/snippet}
 
-{#if props.mode === 'title'}
+{#if props.mode === 'title' || props.mode === 'title-tabs'}
   <div
-    class="pane-header pane-header--title {roundedClass} {stackedClass}"
+    class="pane-header pane-header--{props.mode} {roundedClass} {stackedClass}"
+    inert={props.inert}
     role="region"
     aria-label={props.ariaLabel ?? props.title}
   >
@@ -349,7 +355,9 @@
         <span class="pane-header__title">{props.title}</span>
         {#if props.subtitle?.trim()}
           <span class="pane-header__separator" aria-hidden="true">·</span>
-          <span class="pane-header__subtitle">({props.subtitle.trim()})</span>
+          <ServiceDot service={props.subtitle} /><span
+            class="pane-header__subtitle">({props.subtitle.trim()})</span
+          >
         {/if}
         {#if props.badge || props.badges?.length}
           <span class="pane-header__separator" aria-hidden="true">·</span>
@@ -362,7 +370,23 @@
         </div>
       {/if}
     </div>
-    {#if props.timeRange !== undefined || props.timestampMs !== undefined || props.metaLeft || props.metaRight}
+    {#if props.mode === 'title-tabs'}
+      <div class="pane-header__tabs-row">
+        {#if props.timeRange !== undefined || props.timestampMs !== undefined || props.metaLeft || props.metaRight}
+          {@render metaRow(false)}
+        {/if}
+        {@render tabStrip(
+          props.tabs,
+          props.activeID,
+          props.onSelect,
+          props.ariaLabel ?? `${props.title} tabs`,
+          props.tabLayout ?? 'right',
+          false,
+          props.tabPanelID,
+          true
+        )}
+      </div>
+    {:else if props.reserveMetaRow || props.timeRange !== undefined || props.timestampMs !== undefined || props.metaLeft || props.metaRight}
       {@render metaRow()}
     {/if}
   </div>
@@ -407,49 +431,6 @@
     {#if props.right}
       <div class="pane-header__toolbar">{@render props.right()}</div>
     {/if}
-  </div>
-{:else}
-  <div
-    class="pane-header pane-header--title-tabs {roundedClass} {stackedClass}"
-    role="region"
-    aria-label={props.ariaLabel ?? props.title}
-  >
-    <div class="pane-header__top">
-      <div class="pane-header__title-row">
-        {#if props.leading}
-          <div class="pane-header__leading">{@render props.leading()}</div>
-        {/if}
-        <span class="pane-header__title">{props.title}</span>
-        {#if props.subtitle?.trim()}
-          <span class="pane-header__separator" aria-hidden="true">·</span>
-          <span class="pane-header__subtitle">({props.subtitle.trim()})</span>
-        {/if}
-        {#if props.badge || props.badges?.length}
-          <span class="pane-header__separator" aria-hidden="true">·</span>
-          {@render badgeBlock(props.badges, props.badge)}
-        {/if}
-      </div>
-      {#if props.right}
-        <div class="header-controls pane-header__right">
-          {@render props.right()}
-        </div>
-      {/if}
-    </div>
-    <div class="pane-header__tabs-row">
-      {#if props.timeRange !== undefined || props.timestampMs !== undefined || props.metaLeft || props.metaRight}
-        {@render metaRow(false)}
-      {/if}
-      {@render tabStrip(
-        props.tabs,
-        props.activeID,
-        props.onSelect,
-        props.ariaLabel ?? `${props.title} tabs`,
-        props.tabLayout ?? 'right',
-        false,
-        props.tabPanelID,
-        true
-      )}
-    </div>
   </div>
 {/if}
 
@@ -503,6 +484,7 @@
 
   .pane-header__meta-row {
     @apply flex w-full min-w-0 flex-wrap items-center justify-between gap-2;
+    min-height: var(--pane-header-row-h);
   }
 
   .pane-header__meta-row--centered {

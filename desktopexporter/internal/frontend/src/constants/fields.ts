@@ -68,11 +68,11 @@ export const LOG_SEVERITY_TEXT_ENUM = [
 
 /** Metric instrument / datapoint type strings used in this app’s store and API. */
 export const METRIC_TYPE_ENUM = [
-  'Empty',
   'Gauge',
   'Sum',
   'Histogram',
   'ExponentialHistogram',
+  'Empty',
 ] as const
 
 // Field suggestions based on signal

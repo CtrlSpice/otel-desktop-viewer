@@ -4,6 +4,7 @@
   import SignalCard from '@/components/shared/SignalCard.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
   import SignalDate from '@/components/shared/SignalDate.svelte'
+  import ServiceDot from '@/components/shared/ServiceDot.svelte'
   import { metricTypeSummary } from './utils/metric-type'
 
   type Props = {
@@ -47,6 +48,7 @@
   {#snippet subtitleContent()}
     <div class="metric-card__classification">
       {#if metric.serviceName?.trim()}
+        <ServiceDot service={metric.serviceName} />
         <span class="min-w-0 truncate text-rp-subtle" title={metric.serviceName}
           >{metric.serviceName.trim()}</span
         >

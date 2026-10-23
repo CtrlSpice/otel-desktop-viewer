@@ -3,7 +3,6 @@
   import type { TreeConnectorMeta } from '@/components/shared/TreeGutter.svelte'
   import { getServiceName } from '@/utils/resource'
   import ExportButton from '@/components/shared/ExportButton.svelte'
-  import { traceSpanPalette } from '@/utils/chart-palette'
   import { traceServiceColor } from '@/utils/trace-service-color'
   import { themeSignal } from '@/state/theme.svelte'
   import { recordsForSpan, type TimelineRecord } from './timeline-markers'
@@ -13,19 +12,6 @@
     end: bigint
     duration: bigint
   }
-
-  //
-  // Categorical key per span: span.name in single-service traces, service
-  // name in multi-service traces. Error spans are coloured by a separate
-  // semantic token (`--color-error`) and never participate in the rotation.
-  //
-  // Colours come from the same approved static palette as metric charts. We
-  // start at iris so the root begins in that family, then interleave all six
-  // families before returning for another lightness level. The finite table
-  // repeats deterministically for traces with more than thirty keys.
-
-  /** Keep the short-trace palette shape consistent with existing callers. */
-  const MIN_TRACE_PALETTE = 5
 
   export type WaterfallRowData = {
     spanNode: SpanNode
@@ -145,73 +131,20 @@
     })
   }
 
-  function categoricalKeyFor(
-    span: SpanData,
-    multiService: boolean
-  ): string | null {
-    if (isErrorSpan(span)) return null
-    return multiService ? (getServiceName(span.resource) ?? '') : span.name
-  }
-
-  function isMultiService(spans: SpanNode[]): boolean {
-    return (
-      new Set(spans.map(node => getServiceName(node.spanData.resource) ?? ''))
-        .size > 1
-    )
-  }
-
-  /** Use stable service colours for multi-service traces; otherwise assign
-   *  operation colours in first-seen order from the shared span palette. */
-  function buildColorMap(
-    spans: SpanNode[],
-    keyFn: (s: SpanData) => string | null,
-    theme: string,
-    byService: boolean
-  ): Map<string, string> {
-    const orderedKeys = spans.reduce<string[]>((acc, node) => {
-      const k = keyFn(node.spanData)
-      if (k !== null && !acc.includes(k)) acc.push(k)
-      return acc
-    }, [])
-    if (byService) {
-      return new Map(
-        orderedKeys.map(key => [key, traceServiceColor(key, theme)])
-      )
-    }
-    const palette = traceSpanPalette(
-      Math.max(orderedKeys.length, MIN_TRACE_PALETTE),
-      theme
-    )
-    const service = spans.length
-      ? getServiceName(spans[0]!.spanData.resource)
-      : undefined
-    return new Map(
-      orderedKeys.map((k, i) => [
-        k,
-        i === 0 && service ? traceServiceColor(service, theme) : palette[i]!,
-      ])
-    )
-  }
-
-  /** Services share stable summary colours; single-service operations use
-   *  first-seen palette order. Error spans retain their semantic colour. */
+  /** Every service uses its Home colour. Errors retain their semantic colour. */
   export function buildWaterfallRows(
     spans: SpanNode[],
     bounds: TraceBounds,
     theme: string,
     logsBySpanID: ReadonlyMap<string, TraceLogSummary[]> = new Map()
   ): WaterfallRowData[] {
-    const multi = isMultiService(spans)
-    const keyFn = (s: SpanData) => categoricalKeyFor(s, multi)
-    const colorMap = buildColorMap(spans, keyFn, theme, multi)
     const treeMeta = computeTreeMeta(spans)
 
     return spans.map((node, i) => {
-      const key = keyFn(node.spanData)
-      const isError = key === null
+      const isError = isErrorSpan(node.spanData)
       const color = isError
         ? 'var(--color-error)'
-        : (colorMap.get(key) ?? 'var(--color-primary)')
+        : traceServiceColor(getServiceName(node.spanData.resource) ?? '', theme)
       return {
         spanNode: node,
         color,
@@ -239,7 +172,8 @@
   import { onDestroy, tick, untrack } from 'svelte'
   import type { Snippet } from 'svelte'
   import VirtualList from '@humanspeak/svelte-virtual-list'
-  import PaneHeader from '@/components/shared/PaneHeader.svelte'
+  import PaneHeader from '@/components/shared/WorkspaceHeader.svelte'
+  import ServiceDot from '@/components/shared/ServiceDot.svelte'
   import ErrorNavigationBadge from '@/components/shared/ErrorNavigationBadge.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
   import ScrollToTopButton from '@/components/shared/ScrollToTopButton.svelte'
@@ -375,7 +309,7 @@
   let headerService = $derived.by(() => {
     if (spans.length === 0) return ''
     const root = spans.find(n => n.depth === 0) ?? spans[0]
-    return root ? (getServiceName(root.spanData.resource)?.trim() ?? '') : ''
+    return root ? (getServiceName(root.spanData.resource) ?? '') : ''
   })
 
   let errorSpans = $derived(
@@ -1115,8 +1049,9 @@
   <PaneHeader pill mode="title" title={headerName} ariaLabel="Trace waterfall">
     {#snippet metaLeft()}
       <div class="flex min-w-0 items-center gap-2 text-rp-subtle">
-        {#if headerService}
-          <span class="truncate">({headerService})</span>
+        {#if headerService.trim()}
+          <ServiceDot service={headerService} />
+          <span class="truncate">({headerService.trim()})</span>
           <span aria-hidden="true">·</span>
         {/if}
         <SignalBadges signal="trace" spanCount={spans.length} errorCount={0} />

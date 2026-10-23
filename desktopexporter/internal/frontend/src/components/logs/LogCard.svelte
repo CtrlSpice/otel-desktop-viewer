@@ -3,6 +3,7 @@
   import SignalCard from '@/components/shared/SignalCard.svelte'
   import SignalBadges from '@/components/shared/SignalBadges.svelte'
   import SignalDate from '@/components/shared/SignalDate.svelte'
+  import ServiceDot from '@/components/shared/ServiceDot.svelte'
 
   type Props = {
     log: LogSummary
@@ -37,6 +38,7 @@
       suffix={offset ? `(${offset})` : undefined}
     />{/snippet}
   {#snippet titleContent()}
+    <ServiceDot service={log.serviceName ?? ''} />
     {serviceTitle}{#if showLogBadge}<span class="text-xs text-rp-subtle"
         >{` · Log`}</span
       >{/if}

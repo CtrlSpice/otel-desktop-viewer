@@ -419,9 +419,9 @@
 </script>
 
 <PageLayout
+  mainHeaderRows={2}
   mainSurface="base"
   items={page.sortedItems}
-  navigationCount={page.sortedItems.length}
   selectedID={page.selectedID}
   drawerID="signal-drawer"
   drawerLabel="Traces"
@@ -431,15 +431,6 @@
   loading={page.loading}
   itemKey={t => t.traceID}
 >
-  {#snippet drawerChromeToolbar()}
-    <DrawerSearchPanel
-      segment="toolbar"
-      signal="traces"
-      sortValue={page.sortColumn}
-      sortDirection={page.sortDirection}
-    />
-  {/snippet}
-
   {#snippet drawerSearch()}
     <DrawerSearchPanel
       segment="search"
@@ -529,8 +520,8 @@
         </div>
       {/if}
       <WaterfallView
-        traceID={currentTraceData.traceID}
-        spans={currentTraceData.spans}
+        traceID={currentTraceData?.traceID ?? ''}
+        spans={currentTraceData?.spans ?? []}
         logs={traceLogs}
         {selectedSpanID}
         searchActive={activeQueryTree !== undefined}

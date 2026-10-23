@@ -5,7 +5,14 @@
   import FilterInput from './Search/FilterInput.svelte'
   import FieldGroup from './FieldGroup.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { FilterIcon } from '@hugeicons/core-free-icons'
+  import {
+    FilterIcon,
+    GaugeIcon,
+    SigmaIcon,
+    ChartHistogramIcon,
+    ChartIncreaseIcon,
+    CircleIcon,
+  } from '@hugeicons/core-free-icons'
   import { METRIC_TYPE_ENUM } from '@/constants/fields'
   import { traceServiceColor } from '@/utils/trace-service-color'
   import { themeSignal } from '@/state/theme.svelte'
@@ -31,6 +38,13 @@
     editor: SearchEditorAPI | null
   } = $props()
   let draftQuery = $state('')
+  const metricTypeIcons = {
+    Gauge: GaugeIcon,
+    Sum: SigmaIcon,
+    Histogram: ChartHistogramIcon,
+    ExponentialHistogram: ChartIncreaseIcon,
+    Empty: CircleIcon,
+  }
   let serviceSearch = $state('')
   let kinds = $derived([
     'service',
@@ -165,7 +179,12 @@
           {#if signal === 'traces'}<span
               class="filter-dot bg-error"
               aria-hidden="true"
-            ></span>{/if}
+            ></span>{:else if value in metricTypeIcons}<HugeiconsIcon
+              icon={metricTypeIcons[value as keyof typeof metricTypeIcons]}
+              size={16}
+              strokeWidth={1.5}
+              aria-hidden="true"
+            />{/if}
           {value === 'ExponentialHistogram' ? 'Exp. Histogram' : value}
         </button>
       {/each}

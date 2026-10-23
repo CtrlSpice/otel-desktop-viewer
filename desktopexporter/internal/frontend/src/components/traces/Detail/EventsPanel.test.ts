@@ -56,7 +56,7 @@ describe('EventsPanel selected event', () => {
     expect(screen.queryByRole('table', { name: 'Event first' })).toBeNull()
     expect(screen.getByRole('table', { name: 'Event second' })).toBeVisible()
     expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({
-      block: 'nearest',
+      block: 'start',
     })
   })
 

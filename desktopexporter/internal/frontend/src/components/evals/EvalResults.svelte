@@ -6,7 +6,7 @@
     ToolsIcon,
     Coins01Icon,
   } from '@hugeicons/core-free-icons'
-  import PaneHeader from '@/components/shared/PaneHeader.svelte'
+  import PaneHeader from '@/components/shared/WorkspaceHeader.svelte'
   import Identifier from '@/components/shared/Identifier.svelte'
   import AssessmentBadge from './AssessmentBadge.svelte'
   import ExperimentStatusBadge from './ExperimentStatusBadge.svelte'
@@ -711,59 +711,62 @@
   </TimingCell>
 {/snippet}
 
-<div class="eval-results__header shrink-0">
-  <PaneHeader pill mode="title" title={experiment.name}>
-    {#snippet right()}<ExperimentStatusBadge
-        state={experiment.state}
-        pauseReason={experiment.pauseReason}
-      />{/snippet}
-    {#snippet badge()}
-      <span
-        class="text-sm text-rp-subtle tabular-nums"
-        title="Shown results / total results"
-        >{results.length}/{experiment.results.length} results</span
-      >
-    {/snippet}
-    {#snippet metaRight()}
-      {@render headerActions?.()}
-      <div class="header-controls" role="radiogroup" aria-label="Eval view">
-        {#each views as item, index (item.id)}
-          {@const label = item.id === 'cost' ? 'Cost · CAD est.' : item.label}
-          <button
-            type="button"
-            role="radio"
-            aria-label={label}
-            class="btn btn-xs header-tab header-toggle tooltip tooltip-left"
-            aria-checked={viewKey === item.id}
-            disabled={!availableViews[item.id]}
-            tabindex={viewKey === item.id ? 0 : -1}
-            aria-controls={panelID}
-            data-tip={availableViews[item.id]
-              ? label
-              : `${label}: no recorded data`}
-            onclick={() => (viewKey = item.id)}
-            onkeydown={event => selectView(event, index)}
+<PaneHeader
+  pill
+  mode="title"
+  title={experiment.name}
+  ariaLabel="Evaluation results"
+>
+  {#snippet right()}<ExperimentStatusBadge
+      state={experiment.state}
+      pauseReason={experiment.pauseReason}
+    />{/snippet}
+  {#snippet badge()}
+    <span
+      class="text-sm text-rp-subtle tabular-nums"
+      title="Shown results / total results"
+      >{results.length}/{experiment.results.length} results</span
+    >
+  {/snippet}
+  {#snippet metaRight()}
+    {@render headerActions?.()}
+    <div class="header-controls" role="radiogroup" aria-label="Eval view">
+      {#each views as item, index (item.id)}
+        {@const label = item.id === 'cost' ? 'Cost · CAD est.' : item.label}
+        <button
+          type="button"
+          role="radio"
+          aria-label={label}
+          class="btn btn-xs header-tab header-toggle tooltip tooltip-left"
+          aria-checked={viewKey === item.id}
+          disabled={!availableViews[item.id]}
+          tabindex={viewKey === item.id ? 0 : -1}
+          aria-controls={panelID}
+          data-tip={availableViews[item.id]
+            ? label
+            : `${label}: no recorded data`}
+          onclick={() => (viewKey = item.id)}
+          onkeydown={event => selectView(event, index)}
+        >
+          <span class="header-tab__icon shrink-0">
+            <HugeiconsIcon
+              icon={item.icon}
+              size={16}
+              strokeWidth={1.5}
+              aria-hidden="true"
+            />
+          </span>
+          <span class="header-tab__label"
+            >{item.label}{#if item.id === 'cost'}<span
+                class:text-rp-subtle={availableViews[item.id]}
+                >{' · CAD est.'}</span
+              >{/if}</span
           >
-            <span class="header-tab__icon shrink-0">
-              <HugeiconsIcon
-                icon={item.icon}
-                size={16}
-                strokeWidth={1.5}
-                aria-hidden="true"
-              />
-            </span>
-            <span class="header-tab__label"
-              >{item.label}{#if item.id === 'cost'}<span
-                  class:text-rp-subtle={availableViews[item.id]}
-                  >{' · CAD est.'}</span
-                >{/if}</span
-            >
-          </button>
-        {/each}
-      </div>
-    {/snippet}
-  </PaneHeader>
-</div>
+        </button>
+      {/each}
+    </div>
+  {/snippet}
+</PaneHeader>
 
 {@render beforeTable?.()}
 
@@ -1125,12 +1128,6 @@
   @reference "../../app.css";
   .table-row {
     cursor: pointer;
-  }
-  .eval-results__header :global(.pane-header__time-range) {
-    flex-basis: 20rem;
-  }
-  .eval-results__header :global(.pane-header__meta-controls) {
-    @apply min-w-0 max-w-full flex-wrap;
   }
   .eval-results__timing-cell {
     padding-block: 0;

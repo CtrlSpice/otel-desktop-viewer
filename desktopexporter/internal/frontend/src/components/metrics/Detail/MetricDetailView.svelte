@@ -52,37 +52,36 @@
   ])
 </script>
 
-{#if !ctx.metric}
-  <div class="detail-view detail-view--empty">
-    <p class="text-rp-muted text-sm">Select a metric to view details</p>
-  </div>
-{:else}
-  {@const metric = ctx.metric}
+{#snippet metricIcon()}<HugeiconsIcon
+    icon={ChartHistogramIcon}
+    size={16}
+    class="shrink-0 text-rp-subtle"
+    strokeWidth={1.5}
+  />{/snippet}
+{#snippet seriesIcon()}<HugeiconsIcon
+    icon={ChartLineData02Icon}
+    size={16}
+    class="shrink-0 text-rp-subtle"
+    strokeWidth={1.5}
+  />{/snippet}
 
-  {#snippet metricIcon()}<HugeiconsIcon
-      icon={ChartHistogramIcon}
-      size={16}
-      class="shrink-0 text-rp-subtle"
-      strokeWidth={1.5}
-    />{/snippet}
-  {#snippet seriesIcon()}<HugeiconsIcon
-      icon={ChartLineData02Icon}
-      size={16}
-      class="shrink-0 text-rp-subtle"
-      strokeWidth={1.5}
-    />{/snippet}
-
-  {#snippet seriesSection()}
-    <DetailBubble label="Series" icon={seriesIcon} count={seriesCount}>
-      <TimeseriesPanel />
-    </DetailBubble>
-  {/snippet}
-  {#snippet metricSection()}
-    <DetailBubble label="Metric" icon={metricIcon}>
-      {#snippet action()}
-        <DetailViewTabs id={detailViewID} bind:view={detailView}>
-          {#snippet action()}
-            {#key metric.metricRef}
+{#snippet seriesSection()}
+  <DetailBubble
+    label="Series"
+    icon={seriesIcon}
+    count={ctx.metric ? seriesCount : undefined}
+  >
+    {#if ctx.metric}<TimeseriesPanel />{:else}<p class="p-3 text-subtle">
+        Select a metric to view details
+      </p>{/if}
+  </DetailBubble>
+{/snippet}
+{#snippet metricSection()}
+  <DetailBubble label="Metric" icon={metricIcon}>
+    {#snippet action()}
+      <DetailViewTabs id={detailViewID} bind:view={detailView}>
+        {#snippet action()}
+          {#if ctx.metric}{@const metric = ctx.metric}{#key metric.metricRef}
               <ValueCopyButton
                 grouped
                 loadText={signal =>
@@ -90,11 +89,11 @@
                 label="metric"
                 tooltip="Copy metric as OTLP JSON"
               />
-            {/key}
-          {/snippet}
-        </DetailViewTabs>
-      {/snippet}
-      <DetailViews
+            {/key}{/if}
+        {/snippet}
+      </DetailViewTabs>
+    {/snippet}
+    {#if ctx.metric}{@const metric = ctx.metric}<DetailViews
         id={detailViewID}
         showTabs={false}
         bind:view={detailView}
@@ -215,27 +214,14 @@
             />
           </tbody>
         </table>
-      </DetailViews>
-    </DetailBubble>
-  {/snippet}
-  <DetailStack
-    label="Metric details"
-    storageKey="metric-detail-section-sizes"
-    sections={[
-      { id: 'series', content: seriesSection },
-      { id: 'metric', content: metricSection },
-    ]}
-  />
-{/if}
-
-<style lang="postcss">
-  @reference "../../../app.css";
-
-  .detail-view {
-    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden;
-  }
-
-  .detail-view--empty {
-    @apply items-center justify-center;
-  }
-</style>
+      </DetailViews>{/if}
+  </DetailBubble>
+{/snippet}
+<DetailStack
+  label="Metric details"
+  storageKey="metric-detail-section-sizes"
+  sections={[
+    { id: 'series', content: seriesSection },
+    { id: 'metric', content: metricSection },
+  ]}
+/>

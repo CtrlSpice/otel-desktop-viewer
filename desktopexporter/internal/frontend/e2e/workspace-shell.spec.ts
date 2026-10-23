@@ -6,6 +6,9 @@ const shellSelectors = [
   'nav[aria-label="Primary"]',
   '#signal-drawer-panel',
   '.page-layout__main-chrome',
+  '.page-layout__main-chrome > .pane-header',
+  '.page-layout__main-chrome > .pane-header .pane-header__top',
+  '.time-filter-trigger',
   '#signal-drawer-detail',
 ]
 

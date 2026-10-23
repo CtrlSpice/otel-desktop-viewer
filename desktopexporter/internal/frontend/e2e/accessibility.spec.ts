@@ -1188,7 +1188,9 @@ test.describe('home page accessibility', () => {
               counterStyle.fontWeight === '400' &&
               counterStyle.backgroundColor === 'rgba(0, 0, 0, 0)' &&
               counterStyle.borderWidth === '0px' &&
-              counter.textContent?.trim() === 'Results: [42]',
+              /^Stored (services|traces|metrics|logs): \[0\]$/.test(
+                counter.textContent?.trim() ?? ''
+              ),
             centred:
               Math.abs(
                 centreY(link.querySelector('svg')!) -

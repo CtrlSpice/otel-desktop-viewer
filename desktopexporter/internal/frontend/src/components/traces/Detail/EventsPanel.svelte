@@ -35,7 +35,7 @@
     void tick().then(() => {
       document
         .getElementById(`span-event-${index}`)
-        ?.scrollIntoView?.({ block: 'nearest' })
+        ?.scrollIntoView?.({ block: 'start' })
     })
   })
 </script>

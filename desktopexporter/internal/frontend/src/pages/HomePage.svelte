@@ -21,6 +21,7 @@
   } from '@hugeicons/core-free-icons'
   import { LogIcon } from '@/icons'
   import PageLayout from '@/components/shared/PageLayout.svelte'
+  import WorkspaceHeader from '@/components/shared/WorkspaceHeader.svelte'
   import PaneHeader, {
     paneTabID,
     type PaneTab,
@@ -285,6 +286,7 @@
 {/snippet}
 
 <PageLayout
+  mainTitle="Services"
   items={[]}
   emptyDrawer
   selectedID={null}
@@ -331,13 +333,13 @@
       {issues}
     />{/snippet}
   {#snippet main()}
-    <PaneHeader mode="title" pill title="Services" ariaLabel="Services">
+    <WorkspaceHeader mode="title" pill title="Services" ariaLabel="Services">
       {#snippet right()}<span class="text-rp-subtle"
           >{loaded
             ? `[${offset + services.length}${more ? '+' : ''}]`
             : '[—]'}</span
         >{/snippet}
-    </PaneHeader>
+    </WorkspaceHeader>
     <div class="service-scroll" aria-busy={loading}>
       {#if error}<p role="alert" class="p-3">
           {error}{loaded ? ' · Showing the last successful reading.' : ''}

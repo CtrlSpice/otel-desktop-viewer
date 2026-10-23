@@ -45,7 +45,6 @@
     drawerContent?: Snippet
     hideDrawer?: boolean
     navigationTrailing?: Snippet
-    navigationCount?: number
     footer?: Snippet
     children: Snippet
   }
@@ -72,7 +71,6 @@
     drawerContent,
     hideDrawer = false,
     navigationTrailing,
-    navigationCount,
     footer,
     children,
   }: Props<T> = $props()
@@ -477,7 +475,6 @@
     search={drawerSearch}
     controls={drawerChromeToolbar}
     {navigationTrailing}
-    {navigationCount}
     {onRefresh}
     {refreshPulse}
     {refreshAsideTip}

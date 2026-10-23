@@ -131,7 +131,7 @@
     })
     let cancelled = false
     void tick().then(() => {
-      if (!cancelled) target?.scrollIntoView({ block: 'nearest' })
+      if (!cancelled) target?.scrollIntoView({ block: 'start' })
     })
     return () => {
       cancelled = true
@@ -172,41 +172,40 @@
   )
 </script>
 
-{#if span}
-  {#snippet spanIcon()}<HugeiconsIcon
-      icon={BarChartHorizontalIcon}
-      size={16}
-      class="shrink-0 text-rp-subtle"
-      strokeWidth={1.5}
-    />{/snippet}
+{#snippet spanIcon()}<HugeiconsIcon
+    icon={BarChartHorizontalIcon}
+    size={16}
+    class="shrink-0 text-rp-subtle"
+    strokeWidth={1.5}
+  />{/snippet}
 
-  {#snippet eventsIcon()}<LogIcon
-      class="size-4 shrink-0 text-rp-subtle"
-      aria-hidden="true"
-    />{/snippet}
-  {#snippet linksIcon()}<HugeiconsIcon
-      icon={Link01Icon}
-      size={16}
-      class="shrink-0 text-rp-subtle"
-      strokeWidth={1.5}
-    />{/snippet}
+{#snippet eventsIcon()}<LogIcon
+    class="size-4 shrink-0 text-rp-subtle"
+    aria-hidden="true"
+  />{/snippet}
+{#snippet linksIcon()}<HugeiconsIcon
+    icon={Link01Icon}
+    size={16}
+    class="shrink-0 text-rp-subtle"
+    strokeWidth={1.5}
+  />{/snippet}
 
-  {#snippet spanSection()}
-    <DetailBubble label="Span" icon={spanIcon}>
-      {#snippet labelSuffix()}{#if isRoot}<span class="text-secondary"
-            >· root</span
-          >{/if}{/snippet}
-      {#snippet action()}
-        <DetailViewTabs id={detailViewID} bind:view={detailView}>
-          {#snippet action()}<ValueCopyButton
+{#snippet spanSection()}
+  <DetailBubble label="Span" icon={spanIcon}>
+    {#snippet labelSuffix()}{#if span && isRoot}<span class="text-secondary"
+          >· root</span
+        >{/if}{/snippet}
+    {#snippet action()}
+      <DetailViewTabs id={detailViewID} bind:view={detailView}>
+        {#snippet action()}{#if span}<ValueCopyButton
               grouped
               loadText={loadSpanJSON}
               label="span"
               tooltip="Copy span as JSON"
-            />{/snippet}
-        </DetailViewTabs>
-      {/snippet}
-      <DetailViews
+            />{/if}{/snippet}
+      </DetailViewTabs>
+    {/snippet}
+    {#if span}<DetailViews
         id={detailViewID}
         showTabs={false}
         bind:view={detailView}
@@ -455,69 +454,52 @@
             {/if}
           </tbody>
         </table>
-      </DetailViews>
-    </DetailBubble>
-  {/snippet}
-  {#snippet eventsSection()}
-    <DetailBubble label="Events" icon={eventsIcon} count={numCombinedEvents}>
-      {#if numCombinedEvents === 0}
-        <p class="detail-view__section-empty">
-          No events recorded for this span
-        </p>
-      {:else}
-        <ActivityPanel
-          spanKey={`${span.traceID}/${span.spanID}`}
-          events={span.events}
-          {logs}
-          spanStartTime={span.startTime}
-          {selectedEventIndex}
-          {selectedLogRef}
-        />
-      {/if}
-    </DetailBubble>
-  {/snippet}
-  {#snippet linksSection()}
-    <DetailBubble label="Links" icon={linksIcon} count={numLinks}>
-      {#if numLinks === 0}
-        <p class="detail-view__section-empty">
-          No links recorded for this span
-        </p>
-      {:else}
-        <LinksPanel
-          links={span.links}
-          spanKey={`${span.traceID}/${span.spanID}`}
-        />
-      {/if}
-    </DetailBubble>
-  {/snippet}
-  <DetailStack
-    label="Span details"
-    storageKey="trace-detail-section-sizes"
-    sections={[
-      { id: 'span', content: spanSection },
-      { id: 'events', content: eventsSection },
-      { id: 'links', content: linksSection },
-    ]}
-  />
-{:else}
-  <div class="detail-view detail-view--empty">
-    <p class="detail-view__empty">No span selected</p>
-  </div>
-{/if}
+      </DetailViews>{:else}<p class="p-3 text-subtle">No span selected</p>{/if}
+  </DetailBubble>
+{/snippet}
+{#snippet eventsSection()}
+  <DetailBubble label="Events" icon={eventsIcon} count={numCombinedEvents}>
+    {#if numCombinedEvents === 0}
+      <p class="detail-view__section-empty">No events recorded for this span</p>
+    {:else if span}
+      <ActivityPanel
+        spanKey={`${span.traceID}/${span.spanID}`}
+        events={span.events}
+        {logs}
+        spanStartTime={span.startTime}
+        {selectedEventIndex}
+        {selectedLogRef}
+      />
+    {/if}
+  </DetailBubble>
+{/snippet}
+{#snippet linksSection()}
+  <DetailBubble label="Links" icon={linksIcon} count={numLinks}>
+    {#if numLinks === 0}
+      <p class="detail-view__section-empty">No links recorded for this span</p>
+    {:else if span}
+      <LinksPanel
+        links={span.links}
+        spanKey={`${span.traceID}/${span.spanID}`}
+      />
+    {/if}
+  </DetailBubble>
+{/snippet}
+<DetailStack
+  label="Span details"
+  storageKey="trace-detail-section-sizes"
+  sections={[
+    { id: 'span', content: spanSection },
+    { id: 'events', content: eventsSection },
+    { id: 'links', content: linksSection },
+  ]}
+/>
 
 <style lang="postcss">
   @reference "../../../app.css";
 
   .span-fields :global(.detail-property__key) {
     color: var(--color-subtle);
-  }
-
-  .detail-view {
-    @apply flex h-full min-h-0 min-w-0 flex-col overflow-hidden;
-  }
-
-  .detail-view--empty {
-    @apply items-center justify-center;
   }
 
   /* Repeats the waterfall's cycle marks where the reader is actually
@@ -537,10 +519,6 @@
   .detail-view__paradox :global(svg) {
     display: inline-block;
     vertical-align: -0.125em;
-  }
-
-  .detail-view__empty {
-    @apply py-8 text-center text-sm text-base-content/60;
   }
 
   .detail-view__section-empty {

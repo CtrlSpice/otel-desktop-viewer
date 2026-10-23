@@ -3,9 +3,16 @@
   import WorkspaceShell, { type WorkspaceProps } from './WorkspaceShell.svelte'
   import WorkspaceContent from './WorkspaceContent.svelte'
   import { getWorkspaceContext } from '@/contexts/workspace-context.svelte'
+  import { createWorkspaceHeader } from '@/contexts/workspace-header.svelte'
 
   const props: WorkspaceProps<T> = $props()
   const workspace = getWorkspaceContext()
+  const header = createWorkspaceHeader(() => ({
+    mode: 'title',
+    pill: true,
+    title: props.mainTitle ?? props.drawerLabel,
+    reserveMetaRow: props.mainHeaderRows === 2,
+  }))
   const contexts = getAllContexts<Map<unknown, unknown>>()
 
   // Routes own their content and data requests. App owns the persistent shell.
@@ -14,6 +21,7 @@
     onDestroy(
       workspace.register(() => ({
         ...props,
+        header,
         main: mainSlot,
         detail: props.detail ? detailSlot : undefined,
         itemSnippet: props.itemSnippet ? itemSlot : undefined,
@@ -58,5 +66,5 @@
   >{/snippet}
 
 {#if !workspace}
-  <WorkspaceShell {...props} />
+  <WorkspaceShell {...props} {header} />
 {/if}

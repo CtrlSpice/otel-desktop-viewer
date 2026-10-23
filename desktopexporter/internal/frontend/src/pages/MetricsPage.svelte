@@ -112,7 +112,9 @@
   import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import { INGESTION_ISSUES_ID } from '@/components/shared/IngestionIssues.svelte'
   import type { ImportFailure } from '@/types/import-types'
-  import PaneHeader, { paneTabID } from '@/components/shared/PaneHeader.svelte'
+  import PaneHeader, {
+    paneTabID,
+  } from '@/components/shared/WorkspaceHeader.svelte'
   import HistogramCountLegend from '@/components/metrics/Charts/HistogramCountLegend.svelte'
   import ExportButton from '@/components/shared/ExportButton.svelte'
   import type { AggregationView } from '@/components/metrics/utils/aggregation'
@@ -784,9 +786,9 @@
 </script>
 
 <PageLayout
+  mainHeaderRows={2}
   mainSurface="base"
   items={page.sortedItems}
-  navigationCount={page.sortedItems.length}
   selectedID={page.selectedID}
   drawerID="signal-drawer"
   drawerLabel="Metrics"
@@ -796,15 +798,6 @@
   loading={page.loading}
   itemKey={metricSummaryKey}
 >
-  {#snippet drawerChromeToolbar()}
-    <DrawerSearchPanel
-      segment="toolbar"
-      signal="metrics"
-      sortValue={page.sortColumn}
-      sortDirection={page.sortDirection}
-    />
-  {/snippet}
-
   {#snippet drawerSearch()}
     <DrawerSearchPanel
       segment="search"
@@ -869,12 +862,14 @@
   {#snippet main()}
     {#if selectedSummary}
       {#snippet metricChartHeaderBadge()}
-        <SignalBadges
-          signal="metric"
-          metricType={selectedSummary.metricType}
-          aggregationTemporality={selectedSummary.aggregationTemporality}
-          isMonotonic={selectedSummary.isMonotonic}
-        />
+        {#if selectedSummary}
+          <SignalBadges
+            signal="metric"
+            metricType={selectedSummary.metricType}
+            aggregationTemporality={selectedSummary.aggregationTemporality}
+            isMonotonic={selectedSummary.isMonotonic}
+          />
+        {/if}
       {/snippet}
 
       {#snippet overlayControl()}
@@ -911,7 +906,7 @@
           pill
           mode="title-tabs"
           title={selectedSummary.name}
-          subtitle={selectedSummary.serviceName?.trim() || undefined}
+          subtitle={selectedSummary.serviceName || undefined}
           tabs={showChartAggregationTabs
             ? chartAggregationTabs
             : histogramChartTabs}
@@ -933,9 +928,11 @@
         >
           {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
           {#snippet right()}
-            {#key selectedSummary.metricRef}
-              <ExportButton signal="metric" id={selectedSummary.metricRef} />
-            {/key}
+            {#if selectedSummary}
+              {#key selectedSummary.metricRef}
+                <ExportButton signal="metric" id={selectedSummary.metricRef} />
+              {/key}
+            {/if}
           {/snippet}
         </PaneHeader>
       {:else}
@@ -943,16 +940,18 @@
           pill
           mode="title"
           title={selectedSummary.name}
-          subtitle={selectedSummary.serviceName?.trim() || undefined}
+          subtitle={selectedSummary.serviceName || undefined}
           ariaLabel="Metric chart"
           timeRange={chartHeaderTimeRange}
           metaRight={showChartOverlayControls ? overlayControl : undefined}
         >
           {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
           {#snippet right()}
-            {#key selectedSummary.metricRef}
-              <ExportButton signal="metric" id={selectedSummary.metricRef} />
-            {/key}
+            {#if selectedSummary}
+              {#key selectedSummary.metricRef}
+                <ExportButton signal="metric" id={selectedSummary.metricRef} />
+              {/key}
+            {/if}
           {/snippet}
         </PaneHeader>
       {/if}

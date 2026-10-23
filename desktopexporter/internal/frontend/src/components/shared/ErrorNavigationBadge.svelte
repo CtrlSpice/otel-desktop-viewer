@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { ChevronLeftIcon, ChevronRightIcon } from '@hugeicons/core-free-icons'
 
@@ -20,10 +21,39 @@
     onNext: () => void
     busy?: boolean
   } = $props()
+  let controls = $state<HTMLElement>()
+  $effect.pre(() => {
+    if (!busy) return
+    const button = document.activeElement
+    if (!(button instanceof HTMLButtonElement) || !controls?.contains(button))
+      return
+    // Disabling a focused navigation button blurs it. Preserve focus unless
+    // the user moves elsewhere while the next error is loading.
+    let moved = false
+    const onFocus = () => (moved = true)
+    document.addEventListener('focusin', onFocus)
+    return () => {
+      document.removeEventListener('focusin', onFocus)
+      void tick().then(() => {
+        if (
+          !moved &&
+          button.isConnected &&
+          !button.disabled &&
+          document.activeElement === document.body
+        )
+          button.focus({ preventScroll: true })
+      })
+    }
+  })
 </script>
 
 {#if count > 0}
-  <span class="error-nav" role="group" aria-label="Error navigation">
+  <span
+    bind:this={controls}
+    class="error-nav"
+    role="group"
+    aria-label="Error navigation"
+  >
     <button
       type="button"
       class="error-nav__button"

@@ -4,8 +4,8 @@
   import { Cancel01Icon } from '@hugeicons/core-free-icons'
   import { QuestionMarkIcon } from '@/icons'
   import PageLayout from '@/components/shared/PageLayout.svelte'
-  import PaneHeader from '@/components/shared/PaneHeader.svelte'
-  import DateTimeFilter from '@/components/shared/Toolbar/DateTimeFilter.svelte'
+  import EvalDetailPlaceholder from '@/components/evals/EvalDetailPlaceholder.svelte'
+  import PaneHeader from '@/components/shared/WorkspaceHeader.svelte'
   import DrawerSortControl from '@/components/shared/Drawer/DrawerSortControl.svelte'
   import ListHeaderControls from '@/components/shared/ListHeaderControls.svelte'
   import {
@@ -98,7 +98,6 @@
   const localExperiments = $derived(exampleMode ? exampleExperiments : [])
   let storedExperiments = $state<EvalStoredExperimentSummary[]>([])
   let storedFacets = $state<EvalStoredExperimentSummary['outcomes']>([])
-  let experimentListTotal = $state(0)
   let experimentListHasMore = $state(false)
   let experimentListLoading = $state(false)
   let experimentListLoadingMore = $state(false)
@@ -336,7 +335,6 @@
             return
           storedExperiments = page.experiments
           storedFacets = page.facets
-          experimentListTotal = page.total
           experimentListHasMore = page.hasMore
           experimentIndexing = page.indexing
         } while (page.indexing.remaining > 0)
@@ -493,7 +491,6 @@
         ...page.experiments.filter(item => !seen.has(item.id)),
       ]
       storedFacets = page.facets
-      experimentListTotal = page.total
       experimentListHasMore = page.hasMore
       experimentIndexing = page.indexing
     } catch (error) {
@@ -513,11 +510,11 @@
 </script>
 
 <PageLayout
+  mainTitle="Evals"
+  mainHeaderRows={2}
+  mainHeaderInert={selectionPending}
   mainSurface="base"
   items={visibleExperiments}
-  navigationCount={databaseMode
-    ? experimentListTotal
-    : visibleExperiments.length}
   selectedID={selectedExperimentID ?? experiment?.id ?? null}
   loading={databaseMode && experimentListLoading && !visibleExperiments.length}
   drawerID="signal-drawer"
@@ -562,7 +559,6 @@
       </button>
     </div>
   {/snippet}
-  {#snippet drawerChromeToolbar()}<DateTimeFilter />{/snippet}
   {#snippet drawerControls()}
     <ListHeaderControls label="Experiment controls">
       {#snippet sort()}
@@ -682,6 +678,7 @@
           pill
           mode="title"
           title={storedExperimentSummary?.name ?? 'Evals'}
+          reserveMetaRow
         />
         <p class="p-3 text-sm text-rp-subtle" role="status">
           Loading experiment…
@@ -692,6 +689,7 @@
         pill
         mode="title"
         title={storedExperimentSummary?.name ?? 'Evals'}
+        reserveMetaRow
       />
       <p class="p-3 text-sm" role="alert">{storedExperimentError}</p>
     {:else if experimentListLoading}
@@ -748,6 +746,8 @@
           />
         </div>
       </div>
+    {:else}
+      <EvalDetailPlaceholder />
     {/if}
   {/snippet}
   {#snippet pageFooter()}

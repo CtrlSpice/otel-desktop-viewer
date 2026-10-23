@@ -59,7 +59,6 @@
   import { createDebouncedDetailFetcher } from '@/components/shared/utils/debounced-detail-fetcher.svelte'
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import DrawerSearchPanel from '@/components/shared/Drawer/DrawerSearchPanel.svelte'
-  import DateTimeFilter from '@/components/shared/Toolbar/DateTimeFilter.svelte'
   import LogTable from '@/components/logs/LogTable.svelte'
   import {
     loadLogColumns,
@@ -359,10 +358,10 @@
 </script>
 
 <PageLayout
+  mainTitle="Logs"
   hideDrawer
   mainSurface="base"
   items={page.sortedItems}
-  navigationCount={total}
   selectedID={page.selectedID}
   drawerID="signal-drawer"
   drawerLabel="Filters"
@@ -372,10 +371,6 @@
   loading={page.loading}
   itemKey={l => l.logRef}
 >
-  {#snippet drawerChromeToolbar()}
-    <DateTimeFilter />
-  {/snippet}
-
   {#snippet drawerSearch()}
     <DrawerSearchPanel
       segment="search"
@@ -463,31 +458,22 @@
   {/snippet}
 
   {#snippet detail()}
-    {#if page.selectedID && !selectedLog && !detailFetcher.error}
-      <div class="logs-page__placeholder logs-empty">Loading log details…</div>
-    {:else if page.selectedID && detailFetcher.error}
-      <div class="logs-page__placeholder alert alert-error">
-        <span>Error: {detailFetcher.error}</span>
-      </div>
-    {:else}
-      <LogDetailPanel
-        log={selectedLog}
-        bind:detailView
-        fieldTarget={inspection?.id === selectedLog?.logRef
-          ? inspection?.target
-          : undefined}
-      >
-        {#snippet footer()}
-          {#if selectedLog}
-            {@const logRef = selectedLog.logRef}
-            <SignalFooter
-              label="log"
-              onDelete={() => handleDeleteLog(logRef)}
-            />
-          {/if}
-        {/snippet}
-      </LogDetailPanel>
-    {/if}
+    <LogDetailPanel
+      loading={!!page.selectedID && !selectedLog && !detailFetcher.error}
+      error={page.selectedID ? (detailFetcher.error ?? '') : ''}
+      log={selectedLog}
+      bind:detailView
+      fieldTarget={inspection?.id === selectedLog?.logRef
+        ? inspection?.target
+        : undefined}
+    >
+      {#snippet footer()}
+        {#if selectedLog}
+          {@const logRef = selectedLog.logRef}
+          <SignalFooter label="log" onDelete={() => handleDeleteLog(logRef)} />
+        {/if}
+      {/snippet}
+    </LogDetailPanel>
   {/snippet}
 </PageLayout>
 
@@ -500,10 +486,5 @@
 
   .logs-page__table {
     @apply min-h-0 min-w-0 flex-1;
-  }
-
-  .logs-empty {
-    @apply px-4 py-12 text-center;
-    color: var(--color-subtle);
   }
 </style>

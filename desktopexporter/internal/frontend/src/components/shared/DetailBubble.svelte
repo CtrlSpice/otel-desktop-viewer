@@ -18,6 +18,7 @@
   let suppressClick = false
   let pointerFocus = $state(false)
   let actionWidth = $state(0)
+  let headingHeight = $state(0)
   let scrollTop = 0
   let disclosureGeneration = 0
 
@@ -165,6 +166,9 @@
     <details
       class="collapse detail-bubble__disclosure min-h-0 overflow-y-auto bg-base-100"
       bind:this={disclosure}
+      style:scroll-padding-block-start={headingHeight
+        ? `${headingHeight}px`
+        : 'var(--pane-header-h)'}
       open={expanded}
       onscroll={rememberScroll}
       ontoggle={event => {
@@ -176,6 +180,7 @@
       }}
     >
       <summary
+        bind:clientHeight={headingHeight}
         class="collapse-title detail-bubble__heading"
         class:detail-bubble__heading--action={Boolean(action)}
         class:detail-bubble__heading--resizable={!!resizable}

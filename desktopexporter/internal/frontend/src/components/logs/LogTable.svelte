@@ -11,7 +11,7 @@
     LogErrorNavigation,
     LogErrorTarget,
   } from '@/types/api-types'
-  import PaneHeader from '@/components/shared/PaneHeader.svelte'
+  import PaneHeader from '@/components/shared/WorkspaceHeader.svelte'
   import ErrorNavigationBadge from '@/components/shared/ErrorNavigationBadge.svelte'
   import TableColumnHeading from '@/components/shared/TableColumnHeading.svelte'
   import TableValueCell from '@/components/shared/TableValueCell.svelte'
@@ -128,33 +128,6 @@
     widths = reconcileWidths(specs, widths, width, 'body')
   }
   let table = $state<HTMLDivElement>()
-  $effect.pre(() => {
-    if (!errorNavigationLoading) return
-    const button = document.activeElement
-    if (
-      !(button instanceof HTMLButtonElement) ||
-      !table?.contains(button) ||
-      !button.closest('[aria-label="Error navigation"]')
-    )
-      return
-    // Disabling the focused button blurs it. Restore it only if the user
-    // has not moved focus elsewhere while navigation was loading.
-    let moved = false
-    const onFocus = () => (moved = true)
-    document.addEventListener('focusin', onFocus)
-    return () => {
-      document.removeEventListener('focusin', onFocus)
-      void tick().then(() => {
-        if (
-          !moved &&
-          button.isConnected &&
-          !button.disabled &&
-          document.activeElement === document.body
-        )
-          button.focus({ preventScroll: true })
-      })
-    }
-  })
   let timestampTimezone = $derived(
     logs.length
       ? [

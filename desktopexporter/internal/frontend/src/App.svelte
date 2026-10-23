@@ -18,6 +18,7 @@
   import { createTimeContext } from '@/contexts/time-context.svelte'
   import { createWorkspaceContext } from '@/contexts/workspace-context.svelte'
   import WorkspaceShell from '@/components/shared/WorkspaceShell.svelte'
+  import { createNavigationCounts } from '@/contexts/navigation-counts.svelte'
 
   let {
     importFiles,
@@ -43,6 +44,7 @@
 
   createRouteContext()
   createTimeContext()
+  createNavigationCounts()
   const workspace = createWorkspaceContext()
 
   const routeContext = getRouteContext()
