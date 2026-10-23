@@ -38,7 +38,7 @@
 </script>
 
 <div class="getting-started">
-  <div class="flex shrink-0 flex-col items-center gap-4 px-3 py-6 text-center">
+  <div class="flex shrink-0 items-center gap-4 px-3 py-6">
     <img
       src={lulu}
       alt="Lulu the axolotl with her telescope"

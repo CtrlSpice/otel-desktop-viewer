@@ -19,7 +19,9 @@
   aria-label="Import files"
   onclick={() => input?.click()}
 >
-  <span class="absolute top-2 right-2 text-base-content">
+  <span
+    class="absolute top-2 right-3 flex size-7 items-center justify-center text-base-content"
+  >
     <HugeiconsIcon
       icon={FileImportIcon}
       size={16}
