@@ -38,11 +38,11 @@
 </script>
 
 <div class="getting-started">
-  <div class="flex shrink-0 items-center gap-3 px-3 py-2">
+  <div class="flex shrink-0 flex-col items-center gap-4 px-3 py-6 text-center">
     <img
       src={lulu}
       alt="Lulu the axolotl with her telescope"
-      class="size-32 shrink-0 object-contain"
+      class="size-48 shrink-0 object-contain"
     />
     <div class="flex min-w-0 flex-col gap-2">
       <h2 class="text-lg font-normal text-balance text-base-content">
