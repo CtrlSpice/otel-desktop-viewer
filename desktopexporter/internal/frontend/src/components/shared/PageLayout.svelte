@@ -23,6 +23,7 @@
         ...props,
         header,
         main: mainSlot,
+        pageBanner: props.pageBanner ? bannerSlot : undefined,
         detail: props.detail ? detailSlot : undefined,
         itemSnippet: props.itemSnippet ? itemSlot : undefined,
         drawerContent: props.drawerContent ? drawerSlot : undefined,
@@ -39,6 +40,9 @@
 
 {#snippet mainSlot()}<WorkspaceContent {contexts}
     >{@render props.main()}</WorkspaceContent
+  >{/snippet}
+{#snippet bannerSlot()}<WorkspaceContent {contexts}
+    >{@render props.pageBanner?.()}</WorkspaceContent
   >{/snippet}
 {#snippet detailSlot()}<WorkspaceContent {contexts}
     >{@render props.detail?.()}</WorkspaceContent

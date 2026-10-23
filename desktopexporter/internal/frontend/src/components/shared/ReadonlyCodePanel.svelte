@@ -47,8 +47,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte'
   import { EditorState } from '@codemirror/state'
-  import { StreamLanguage } from '@codemirror/language'
-  import { shell } from '@codemirror/legacy-modes/mode/shell'
+  import { shellLanguage } from './utils/shell-highlighting'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { CheckmarkCircle02Icon, Copy01Icon } from '@hugeicons/core-free-icons'
 
@@ -77,8 +76,6 @@
   let mountEl: HTMLDivElement | undefined = $state()
   let editorView: EditorView | null = null
   let copied = $state(false)
-
-  const shellLanguage = StreamLanguage.define(shell)
 
   onMount(() => {
     if (!mountEl) return

@@ -119,6 +119,7 @@
           <AttributeRows
             attributes={event.attributes}
             owner={`event ${index + 1}`}
+            source="event"
           />
           {#if event.droppedAttributesCount > 0}
             <SpanField

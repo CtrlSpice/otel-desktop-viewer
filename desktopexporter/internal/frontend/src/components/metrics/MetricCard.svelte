@@ -11,9 +11,17 @@
     metric: MetricSummary
     selected?: boolean
     onclick?: (id: string) => void
+    href?: string
+    matchingPointCount?: number
   }
 
-  let { metric, selected = false, onclick }: Props = $props()
+  let {
+    metric,
+    selected = false,
+    onclick,
+    href,
+    matchingPointCount,
+  }: Props = $props()
 
   let key = $derived(metricSummaryKey(metric))
 
@@ -42,8 +50,11 @@
   {selected}
   title={metric.name}
   description={description || undefined}
-  meta={lastValueLabel !== null ? reading : undefined}
+  meta={lastValueLabel !== null || matchingPointCount !== undefined
+    ? reading
+    : undefined}
   {onclick}
+  {href}
 >
   {#snippet subtitleContent()}
     <div class="metric-card__classification">
@@ -79,7 +90,13 @@
 </SignalCard>
 
 {#snippet reading()}
-  <div class="flex w-full min-w-0 text-sm tabular-nums">
+  <div class="flex w-full min-w-0 flex-wrap gap-x-2 text-sm tabular-nums">
+    {#if matchingPointCount !== undefined}<span class="text-rp-subtle"
+        >[{matchingPointCount.toLocaleString()} matching {matchingPointCount ===
+        1
+          ? 'datapoint'
+          : 'datapoints'}]</span
+      >{/if}
     {#if lastValueLabel}
       <span class="flex min-w-0 items-center gap-1">
         <span class="shrink-0">Last value:</span>

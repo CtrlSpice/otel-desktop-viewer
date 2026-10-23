@@ -13,27 +13,37 @@
     text: string
     numeric?: boolean
     inset?: boolean
-    onInspect: () => void
+    onInspect?: () => void
     children?: Snippet
   } = $props()
 </script>
 
 <div class="table-value-cell" class:table-value-cell--inset={inset}>
-  <button
-    type="button"
-    class="table-value-cell__inspect"
-    class:text-right={numeric}
-    title={text}
-    aria-label={`Show ${label} in details`}
-    onclick={event => {
-      event.stopPropagation()
-      if (event.detail !== 0 && window.getSelection()?.isCollapsed === false)
-        return
-      onInspect()
-    }}
-  >
-    {#if children}{@render children()}{:else}{text}{/if}
-  </button>
+  {#if onInspect}
+    <button
+      type="button"
+      class="table-value-cell__inspect"
+      class:text-right={numeric}
+      title={text}
+      aria-label={`Show ${label} in details`}
+      onclick={event => {
+        event.stopPropagation()
+        if (event.detail !== 0 && window.getSelection()?.isCollapsed === false)
+          return
+        onInspect()
+      }}
+    >
+      {#if children}{@render children()}{:else}{text}{/if}
+    </button>
+  {:else}
+    <span
+      class="table-value-cell__text"
+      class:text-right={numeric}
+      title={text}
+    >
+      {#if children}{@render children()}{:else}{text}{/if}
+    </span>
+  {/if}
 </div>
 
 <style lang="postcss">
@@ -48,12 +58,17 @@
       var(--table-cell-inline-padding, 0.5rem)
     );
   }
-  .table-value-cell__inspect {
-    @apply min-w-0 flex-1 cursor-pointer select-text truncate rounded-sm border-0 bg-transparent p-0 text-left;
+  .table-value-cell__inspect,
+  .table-value-cell__text {
+    @apply min-w-0 flex-1 select-text truncate rounded-sm border-0 bg-transparent p-0 text-left;
     font: inherit;
     color: inherit;
   }
-  .table-value-cell__inspect.text-right {
+  .table-value-cell__inspect {
+    cursor: pointer;
+  }
+  .table-value-cell__inspect.text-right,
+  .table-value-cell__text.text-right {
     text-align: right;
   }
 </style>

@@ -153,7 +153,7 @@ describe('DetailProperty copy controls', () => {
     expect(copy).toHaveClass('value-copy--contextual')
     expect(copy).toHaveClass('tooltip-left')
     expect(copy).not.toHaveClass('tooltip-right')
-    expect(header.firstElementChild!.nextElementSibling).toBe(copy)
+    expect(header.querySelector(':scope > .value-copy')).toBe(copy)
     expect(header).toContainElement(copy)
     expect(
       container.querySelector('.detail-property__body')
@@ -275,7 +275,7 @@ describe('DetailProperty copy controls', () => {
         '.detail-property__type'
       )!
       expect(
-        container.querySelector('.detail-property__heading')!.nextElementSibling
+        container.querySelector('.detail-property__header > .value-copy')
       ).toBe(screen.getByRole('button', { name: 'Copy example (scope)' }))
       expect(key).toHaveTextContent(`example · ${fieldType}`)
       expect(key).toContainElement(badge)
@@ -340,9 +340,7 @@ describe('DetailProperty copy controls', () => {
         name: origin ? 'Copy name (resource)' : 'Copy name',
       })
       expect(header).toContainElement(copy)
-      expect(
-        header.querySelector('.detail-property__heading')!.nextElementSibling
-      ).toBe(copy)
+      expect(header.querySelector(':scope > .value-copy')).toBe(copy)
       expect(container.querySelector('.detail-property__type')).toBeNull()
       if (origin) {
         expect(

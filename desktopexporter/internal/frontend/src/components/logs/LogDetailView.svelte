@@ -206,6 +206,7 @@
               {#if log.body}
                 <LogField
                   fieldName="body"
+                  fieldSource="log"
                   fieldType={log.body.kind}
                   typedValue={log.body}
                 />

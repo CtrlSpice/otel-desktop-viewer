@@ -206,6 +206,7 @@ export function logColumnCell(log: LogTableRow, column: LogColumnOption) {
         value => value.kind === 'int64' || value.kind === 'double'
       ),
     present: result.values.length > 0,
+    string: result.values.length === 1 && result.values[0].kind === 'string',
   }
 }
 

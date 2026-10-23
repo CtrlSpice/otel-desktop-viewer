@@ -7,11 +7,13 @@
     unit,
     single = false,
     relativeFrequency,
+    detail,
   }: {
     part: BubbleBreakdownPart
     unit: string
     single?: boolean
     relativeFrequency?: number
+    detail?: string
   } = $props()
   const tooltipID = $props.id()
   const tooltipValue = $derived(
@@ -62,7 +64,7 @@
   style:flex={part.count}
   style:--part-color={part.color}
   role="img"
-  aria-label={`${part.label}: ${part.count.toLocaleString()} ${unit}${part.count === 1 ? '' : 's'}`}
+  aria-label={`${part.label}: ${part.count.toLocaleString()} ${unit}${part.count === 1 ? '' : 's'}${relativeFrequency === undefined ? '' : ` [${tooltipValue}]`}${detail ? ` · ${detail}` : ''}`}
   aria-describedby={open ? tooltipID : undefined}
   onpointerenter={show}
   onpointerleave={scheduleClose}
@@ -91,6 +93,7 @@
     <span class="breakdown-tooltip__label">{part.label}</span>
     <span class="shrink-0 text-rp-subtle tabular-nums">[{tooltipValue}]</span>
   </span>
+  {#if detail}<div class="text-rp-subtle">{detail}</div>{/if}
 </div>
 
 <style lang="postcss">
@@ -116,7 +119,7 @@
     overscroll-behavior: contain;
   }
   .breakdown-tooltip__label {
-    min-width: 0;
-    overflow-wrap: anywhere;
+    @apply min-w-0 truncate;
+    max-width: 40ch;
   }
 </style>

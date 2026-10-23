@@ -11,6 +11,7 @@
     showLogBadge?: boolean
     offset?: string
     onclick?: (id: string) => void
+    href?: string
   }
 
   let {
@@ -19,6 +20,7 @@
     showLogBadge = false,
     offset,
     onclick,
+    href,
   }: Props = $props()
 
   let serviceTitle = $derived(log.serviceName?.trim() || '(unknown service)')
@@ -31,6 +33,7 @@
   title={serviceTitle}
   description={bodyPreview || undefined}
   {onclick}
+  {href}
 >
   {#snippet date()}<SignalDate
       label="Recorded"

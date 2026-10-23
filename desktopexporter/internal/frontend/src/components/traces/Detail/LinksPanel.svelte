@@ -158,6 +158,7 @@
         <AttributeRows
           attributes={link.attributes}
           owner={`link ${index + 1}`}
+          source="link"
         />
         {#if link.flags > 0}
           <SpanField

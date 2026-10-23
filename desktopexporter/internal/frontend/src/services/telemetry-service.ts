@@ -69,6 +69,11 @@ import type {
   EvalExperimentSourcePage,
 } from './eval-experiment-types'
 import {
+  attributeMatchesSQL,
+  type AttributeMatchOptions,
+  type AttributeRecordMatch,
+} from './attribute-matches'
+import {
   getOperatorsForFieldType,
   type FieldDefinition,
   type FieldType,
@@ -868,6 +873,36 @@ async function discover<T>(
 }
 
 export let telemetryAPI = {
+  getAttributeRecordMatches: async (
+    options: AttributeMatchOptions,
+    signal?: AbortSignal
+  ): Promise<AttributeRecordMatch[]> => {
+    const matches: AttributeRecordMatch[] = []
+    let more = true
+    while (more) {
+      signal?.throwIfAborted()
+      const result = await callRPC<{
+        rows: [string, string[], number][]
+        truncated: boolean
+      }>(
+        'query',
+        named({
+          sql: attributeMatchesSQL(options, matches.length),
+          limit: 500,
+        }),
+        signal
+      )
+      matches.push(
+        ...result.rows.map(([itemRef, spanIDs, count]) => ({
+          itemRef,
+          spanIDs,
+          count,
+        }))
+      )
+      more = result.truncated
+    }
+    return matches
+  },
   discoverServices: (
     options: Omit<DiscoveryOptions, 'kind'> = {},
     signal?: AbortSignal
@@ -1048,7 +1083,8 @@ export let telemetryAPI = {
     endTime: QueryTimeBound,
     queryTree?: QueryNode,
     limit?: number,
-    sort?: SearchSort
+    sort?: SearchSort,
+    signal?: AbortSignal
   ): Promise<TraceSummary[]> => {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
@@ -1061,7 +1097,8 @@ export let telemetryAPI = {
         query: queryTree && convertQueryTreeForBackend(queryTree),
         limit,
         sort,
-      })
+      }),
+      signal
     )
     return traceSummariesFromJSON(rawData)
   },
@@ -1292,7 +1329,8 @@ LIMIT ${batch.length}`,
     endTime: QueryTimeBound,
     queryTree?: QueryNode,
     limit?: number,
-    sort?: SearchSort
+    sort?: SearchSort,
+    signal?: AbortSignal
   ): Promise<LogSummary[]> => {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
@@ -1304,7 +1342,8 @@ LIMIT ${batch.length}`,
         query: queryTree && convertQueryTreeForBackend(queryTree),
         limit,
         sort,
-      })
+      }),
+      signal
     )
     return logSummariesFromJSON(rawData)
   },
@@ -1382,7 +1421,8 @@ LIMIT ${batch.length}`,
     endTime: QueryTimeBound,
     queryTree?: QueryNode,
     limit?: number,
-    sort?: SearchSort
+    sort?: SearchSort,
+    signal?: AbortSignal
   ): Promise<MetricSummary[]> => {
     const startTimeNs = serializeNanoseconds(startTime)
     const endTimeNs = serializeNanoseconds(endTime)
@@ -1394,7 +1434,8 @@ LIMIT ${batch.length}`,
         query: queryTree && convertQueryTreeForBackend(queryTree),
         limit,
         sort,
-      })
+      }),
+      signal
     )
     return metricSummariesFromJSON(rawData)
   },

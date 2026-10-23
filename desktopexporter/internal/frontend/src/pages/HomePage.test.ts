@@ -126,7 +126,7 @@ describe('Home service discovery', () => {
         expect.any(AbortSignal)
       )
     )
-    await fireEvent.click(screen.getByRole('tab', { name: 'Logs' }))
+    expect(screen.queryByRole('tab', { name: 'Logs' })).not.toBeInTheDocument()
     await waitFor(() =>
       expect(keys).toHaveBeenCalledWith(
         expect.objectContaining({ namespace: 'internal', signal: 'logs' }),

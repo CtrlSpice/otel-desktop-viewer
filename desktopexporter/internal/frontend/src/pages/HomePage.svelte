@@ -14,18 +14,10 @@
 <script lang="ts">
   import { onDestroy, onMount, untrack, type Snippet } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import {
-    Cancel01Icon,
-    BarChartHorizontalIcon,
-    ChartHistogramIcon,
-  } from '@hugeicons/core-free-icons'
-  import { LogIcon } from '@/icons'
+  import { Cancel01Icon } from '@hugeicons/core-free-icons'
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import WorkspaceHeader from '@/components/shared/WorkspaceHeader.svelte'
-  import PaneHeader, {
-    paneTabID,
-    type PaneTab,
-  } from '@/components/shared/PaneHeader.svelte'
+  import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import DetailStack from '@/components/shared/DetailStack.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import DetailProperty from '@/components/shared/DetailProperty.svelte'
@@ -37,6 +29,12 @@
   import GettingStarted from '@/components/home/GettingStarted.svelte'
   import ServiceCard from '@/components/home/ServiceCard.svelte'
   import AttributeDiscovery from '@/components/home/AttributeDiscovery.svelte'
+  import AttributeTelemetry from '@/components/home/AttributeTelemetry.svelte'
+  import {
+    coverageCounts,
+    type CoverageValue,
+    type DiscoveredAttribute,
+  } from '@/components/home/attribute-coverage'
   import {
     homeFields,
     homeQueries,
@@ -48,12 +46,12 @@
   import { getNavigationCounts } from '@/contexts/navigation-counts.svelte'
   import { readRoute, navigateCurrentRoute, subscribeToRoute } from '@/route'
   import { telemetryAPI } from '@/services/telemetry-service'
+  import { detailPanel } from '@/state/detail-panel.svelte'
   import {
     serviceIdentity,
     discoverySignalHref,
     type ServiceSummary,
     type DiscoveryOptions,
-    type DiscoverySignal,
   } from '@/services/discovery-types'
   import {
     getTimeContext,
@@ -69,6 +67,8 @@
     $props()
   const time = getTimeContext()
   const navigation = getNavigationCounts()
+  if (window.location.hash === `#${INGESTION_ISSUES_ID}`)
+    detailPanel.setOpen(true)
   const signals = ['traces', 'metrics', 'logs'] as const
   let fields = homeFields(signals.map(getStaticFieldsForSearch))
   let fieldsReady = $state(false)
@@ -90,16 +90,23 @@
   let more = $state(false)
   let loaded = $state(false)
   let revision = $state(0)
-  let attributeSignal = $state<DiscoverySignal>('traces')
-  const attributePanelID = $props.id()
-  const attributeTabs: PaneTab[] = [
-    { id: 'traces', label: 'Traces', icon: tracesIcon },
-    { id: 'metrics', label: 'Metrics', icon: metricsIcon },
-    { id: 'logs', label: 'Logs', icon: logsIcon },
-  ]
-  function selectAttributeSignal(id: string) {
-    if (id === 'traces' || id === 'logs' || id === 'metrics')
-      attributeSignal = id
+  let selectedAttribute = $state<DiscoveredAttribute | null>(null)
+  let selectedValue = $state<CoverageValue>()
+  const selectedServiceIdentity = $derived(
+    selected ? serviceIdentity(selected) : null
+  )
+  $effect(() => {
+    void selectedServiceIdentity
+    selectedAttribute = null
+    selectedValue = undefined
+  })
+  function selectAttribute(
+    attribute: DiscoveredAttribute,
+    value?: CoverageValue
+  ) {
+    selectedAttribute = attribute
+    selectedValue = value
+    detailPanel.setOpen(true)
   }
   let refreshedAt = $state<bigint>()
   let range = $state<Pick<DiscoveryOptions, 'startTime' | 'endTime'>>({
@@ -258,57 +265,59 @@
   }
 </script>
 
-{#snippet tracesIcon()}<HugeiconsIcon
-    icon={BarChartHorizontalIcon}
-    size={16}
-    strokeWidth={1.5}
-    aria-hidden="true"
-  />{/snippet}
-{#snippet logsIcon()}<LogIcon
-    width={16}
-    height={16}
-    aria-hidden="true"
-  />{/snippet}
-{#snippet metricsIcon()}<HugeiconsIcon
-    icon={ChartHistogramIcon}
-    size={16}
-    strokeWidth={1.5}
-    aria-hidden="true"
-  />{/snippet}
-
 {#snippet attributes()}
-  <DetailBubble label="Attributes" layoutKey="home-attributes">
-    {#snippet action()}
-      <PaneHeader
-        mode="tabs"
-        bare
-        tabs={attributeTabs}
-        activeID={attributeSignal}
-        onSelect={selectAttributeSignal}
-        ariaLabel="Attribute signal"
-        tabPanelID={attributePanelID}
-      />
-    {/snippet}
-    {#snippet labelSuffix()}
-      {#if selected}<span class="min-w-0 truncate text-base-content"
-          >· {selected.serviceName ||
-            'Unnamed service'}{#if selected.serviceNamespace}
-            · {selected.serviceNamespace}{/if}</span
-        >{/if}
-    {/snippet}
-    <div
-      id={attributePanelID}
-      role="tabpanel"
-      aria-labelledby={paneTabID(attributePanelID, attributeSignal)}
-    >
-      <AttributeDiscovery
+  <AttributeDiscovery
+    service={selected}
+    {range}
+    {queries}
+    {revision}
+    {selectedAttribute}
+    selectedValue={selectedValue?.identity}
+    onSelectAttribute={selectAttribute}
+  />
+{/snippet}
+{#snippet value()}
+  <DetailBubble label="Value" disabled={!selectedValue}>
+    {#if selectedAttribute && selectedValue}
+      {#key selectedValue.identity}
+        <table
+          class="detail-fields w-full"
+          aria-label="Selected attribute value"
+        >
+          <tbody>
+            <DetailProperty
+              fieldName={selectedAttribute.key}
+              fieldType={selectedValue.value.kind}
+              typedValue={selectedValue.value}
+              fieldKind="attribute"
+              fieldSource={selectedAttribute.ownerType}
+              origin={selectedAttribute.ownerType}
+            />
+          </tbody>
+        </table>
+        <p class="px-3 pb-3 text-rp-subtle">
+          {coverageCounts(selectedValue.counts)} [{(
+            selectedValue.relativeFrequency * 100
+          ).toLocaleString(undefined, { maximumFractionDigits: 1 })}%]<br />Of {selectedValue.denominator.toLocaleString()}
+          records carrying this attribute.
+        </p>
+      {/key}
+    {/if}
+  </DetailBubble>
+{/snippet}
+{#snippet foundOn()}
+  <DetailBubble label="Found on">
+    {#if selectedAttribute && selected}
+      <AttributeTelemetry
+        attribute={selectedAttribute}
+        valueIdentity={selectedValue?.identity}
         service={selected}
-        {range}
-        {queries}
+        options={{ ...range, queries }}
         {revision}
-        signal={attributeSignal}
       />
-    </div>
+    {:else}<p class="p-3 text-rp-subtle">
+        Select an attribute or value to see the telemetry that carries it.
+      </p>{/if}
   </DetailBubble>
 {/snippet}
 {#snippet storage()}
@@ -372,13 +381,12 @@
 {/snippet}
 
 <PageLayout
-  revealDrawer={window.location.hash === `#${INGESTION_ISSUES_ID}`}
-  mainTitle="Services"
+  mainTitle="Attributes"
   items={[]}
   emptyDrawer
   selectedID={null}
   drawerID="signal-drawer"
-  drawerLabel="Getting started"
+  drawerLabel="Services"
   mainSurface="base"
   onRefresh={submit}
   {loading}
@@ -415,18 +423,17 @@
       >
     </form>
   {/snippet}
-  {#snippet drawerContent()}<GettingStarted
-      {importContent}
-      {issues}
-    />{/snippet}
-  {#snippet main()}
-    <WorkspaceHeader mode="title" pill title="Services" ariaLabel="Services">
+  {#snippet pageBanner()}<div hidden>
+      <GettingStarted {importContent} />
+    </div>{/snippet}
+  {#snippet drawerContent()}
+    <PaneHeader mode="title" pill title="Services" ariaLabel="Services">
       {#snippet right()}<span class="text-rp-subtle"
           >{loaded
             ? `[${totalServices ?? `${offset + services.length}${more ? '+' : ''}`}]`
             : '[—]'}</span
         >{/snippet}
-    </WorkspaceHeader>
+    </PaneHeader>
     <div class="service-scroll" aria-busy={loading}>
       {#if error}<p role="alert" class="p-3">
           {error}{loaded ? ' · Showing the last successful reading.' : ''}
@@ -452,6 +459,17 @@
         {/each}
       </div>
     </div>
+  {/snippet}
+  {#snippet main()}
+    <WorkspaceHeader
+      mode="title"
+      pill
+      title="Attributes"
+      subtitle={selected
+        ? selected.serviceName || 'Unnamed service'
+        : undefined}
+    />
+    <div class="attribute-scroll">{@render attributes()}</div>
   {/snippet}
   {#snippet pageFooter()}
     <SignalFooter label="services">
@@ -487,8 +505,17 @@
       label="Home details"
       storageKey="home-details"
       sections={[
-        { id: 'attributes', content: attributes },
+        ...(selectedValue
+          ? [
+              { id: 'value', content: value },
+              { id: 'found-on', content: foundOn },
+            ]
+          : [
+              { id: 'found-on', content: foundOn },
+              { id: 'value', content: value },
+            ]),
         { id: 'storage', content: storage },
+        { id: 'issues', content: issues },
       ]}
     />
   {/snippet}
@@ -500,9 +527,12 @@
     @apply min-h-0 flex-1 overflow-y-auto p-3;
   }
   .service-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(0, min(100%, 18rem)));
+    display: flex;
+    flex-direction: column;
     gap: var(--header-gap);
     align-items: start;
+  }
+  .attribute-scroll {
+    @apply flex min-h-0 flex-1 flex-col;
   }
 </style>

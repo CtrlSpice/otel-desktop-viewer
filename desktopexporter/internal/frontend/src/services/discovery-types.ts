@@ -87,6 +87,10 @@ export function serviceSignalHref(
   range: Pick<DiscoveryOptions, 'startTime' | 'endTime'> = {},
   query = ''
 ): string {
+  return discoverySignalHref(signal, range, serviceQueryText(service, query))
+}
+
+export function serviceQueryText(service: ServiceSummary, query = ''): string {
   const match = (key: string, value: string) => {
     const field = `attr(resource, ${JSON.stringify(key)}, string)`
     return value === ''
@@ -97,8 +101,7 @@ export function serviceSignalHref(
     service.serviceIdentity !== undefined
       ? `serviceIdentity = ${JSON.stringify(service.serviceIdentity)}`
       : `${match('service.name', service.serviceName)} AND ${match('service.namespace', service.serviceNamespace)}`
-  const q = query ? `(${query}) AND ${serviceQuery}` : serviceQuery
-  return discoverySignalHref(signal, range, q)
+  return query ? `(${query}) AND ${serviceQuery}` : serviceQuery
 }
 
 export function discoverySignalHref(

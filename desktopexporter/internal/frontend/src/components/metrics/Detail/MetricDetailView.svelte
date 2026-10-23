@@ -117,6 +117,7 @@
             <AttributeRows
               attributes={metric.metadata}
               owner="metric metadata"
+              source="metadata"
             />
             <MetricField
               fieldName="type"

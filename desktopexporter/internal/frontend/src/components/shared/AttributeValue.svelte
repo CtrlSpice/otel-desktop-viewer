@@ -3,8 +3,13 @@
   import { attributeValueTokens, jsonContainerTokens } from './detail-value'
   import ValueSyntax from './ValueSyntax.svelte'
   import JsonEditor from './JsonEditor.svelte'
+  import ShellValue from './ShellValue.svelte'
 
-  let { value, path }: { value: AttributeValue; path?: string } = $props()
+  let {
+    value,
+    path,
+    shell = false,
+  }: { value: AttributeValue; path?: string; shell?: boolean } = $props()
   let json = $derived(
     value.kind === 'string' ? jsonContainerTokens(value.value, true) : null
   )
@@ -22,7 +27,9 @@
   class:attribute-value--text={readable}
   aria-label={path ? `Value of ${path}` : undefined}
 >
-  {#if readable && value.kind === 'string'}
+  {#if shell && value.kind === 'string'}
+    <ShellValue text={value.value} label={path ?? 'value'} />
+  {:else if readable && value.kind === 'string'}
     {value.value}
   {:else if structured}
     <JsonEditor

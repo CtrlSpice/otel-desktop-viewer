@@ -91,7 +91,7 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     })
     await page.goto('/?time=all')
     await expect(
-      page.getByRole('button', { name: 'Import files' })
+      page.getByRole('region', { name: 'Services', exact: true })
     ).toBeVisible()
     const nodes = await page.evaluateHandle(
       selectors => selectors.map(selector => document.querySelector(selector)),
@@ -118,6 +118,18 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
         )
       ).toBe(true)
       await expect(page.locator('.workspace-shell')).toHaveCount(1)
+      if (await list.isVisible()) {
+        expect((await list.boundingBox())!.y).toBeCloseTo(
+          (await main.boundingBox())!.y,
+          0
+        )
+        const controls = page.locator('.signal-drawer__controls')
+        if (await controls.isVisible())
+          expect((await controls.boundingBox())!.y).toBeCloseTo(
+            (await main.boundingBox())!.y,
+            0
+          )
+      }
       expect(
         await page.evaluate(() => [
           localStorage.getItem('signal-drawer-width'),
@@ -208,7 +220,7 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
 
     await nav.getByRole('link', { name: 'Home', exact: true }).click()
     await expect(
-      page.getByRole('button', { name: 'Import files' })
+      page.getByRole('region', { name: 'Services', exact: true })
     ).toBeVisible()
     await assertShell()
     await expect.poll(async () => (await list.boundingBox())?.width).toBe(384)

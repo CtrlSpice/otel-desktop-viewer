@@ -18,6 +18,11 @@
   import Identifier from '@/components/shared/Identifier.svelte'
   import type { FieldDefinition } from '@/search/model'
   import ValueSyntax from '@/components/shared/ValueSyntax.svelte'
+  import ShellSyntax from '@/components/shared/ShellSyntax.svelte'
+  import {
+    valuePresentation,
+    valuePresentationKey,
+  } from '@/state/value-presentation.svelte'
   import { compactValueTokens } from '@/components/shared/detail-value'
   import ScrollToTopButton from '@/components/shared/ScrollToTopButton.svelte'
   import type { DetailFieldTarget } from '@/components/shared/utils/reveal-detail-field'
@@ -729,7 +734,9 @@
                             time.tz,
                             'milliseconds'
                           )
-                            .value}{:else if column.id === 'body' && (log.bodyType === 'map' || log.bodyType === 'array' || /^\s*[[{]/.test(log.bodyPreview))}<ValueSyntax
+                            .value}{:else if (cell?.string || (column.id === 'body' && log.bodyType === 'string')) && valuePresentation.isShell(valuePresentationKey(column.target.source, column.target.kind, column.target.key))}<ShellSyntax
+                            text={text(log, column)}
+                          />{:else if column.id === 'body' && (log.bodyType === 'map' || log.bodyType === 'array' || /^\s*[[{]/.test(log.bodyPreview))}<ValueSyntax
                             tokens={compactValueTokens(log.bodyPreview, true)}
                           />{:else if column.identifier && cell?.present}<Identifier
                             value={cell.text}

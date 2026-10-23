@@ -120,72 +120,57 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   for (const text of ['248 spans', '640 pts', '12 exemplars']) {
     await expect(card).toContainText(text)
   }
-  const columns: number[] = []
   for (const width of [1600, 2400, 3200]) {
     await page.setViewportSize({ width, height: 1000 })
-    await expect
-      .poll(() =>
-        page
-          .locator('.service-grid')
-          .evaluate(
-            element =>
-              getComputedStyle(element).gridTemplateColumns.split(' ').length
-          )
-      )
-      .toBeGreaterThan(columns.at(-1) ?? 0)
-    columns.push(
-      await page
-        .locator('.service-grid')
-        .evaluate(
-          element =>
-            getComputedStyle(element).gridTemplateColumns.split(' ').length
-        )
+    await expect(page.locator('.service-grid')).toHaveCSS(
+      'flex-direction',
+      'column'
     )
   }
   for (const row of await page.locator('.service-summary__row').all())
     await expect(row).toHaveCSS('border-width', '0px')
-  const attribute = page.getByRole('region', {
-    name: 'exact.number · resource',
-    exact: true,
-  })
-  const values = attribute.getByRole('table', {
-    name: 'Values of exact.number',
-    exact: true,
-  })
-  await expect(values).toBeHidden()
+  const table = page.getByRole('table', { name: 'Attributes', exact: true })
+  const attribute = table.locator(
+    'tr[data-attribute-heading="exact.number"][data-attribute-source="resource"]'
+  )
+  const values = table.locator(
+    'tr[data-attribute-key="exact.number"][data-attribute-source="resource"]'
+  )
+  await expect(attribute).toHaveCount(1)
+  await expect(values.first()).toBeHidden()
   await attribute
-    .getByRole('img', { name: '9007199254740993: 2 records' })
+    .getByRole('img', { name: /^9007199254740993: 6 records/ })
     .hover()
-  await expect(attribute.getByRole('tooltip')).toContainText('[66.7%]')
-  await expect(values).toBeHidden()
-  await attribute.locator('summary').click()
-  await expect(values).toContainText('9007199254740993')
-  await expect(values).toContainText('66.7%')
-  await expect(values.getByTitle('2 / 3 records')).toBeVisible()
-  const sortRequest = page.waitForRequest(request => {
-    if (!request.url().endsWith('/rpc') || request.method() !== 'POST')
-      return false
-    const body = request.postDataJSON()
-    return (
-      body.method === 'discoverTelemetry' &&
-      body.params.options.sortBy === 'name' &&
-      body.params.options.sortDirection === 'asc'
-    )
-  })
-  await values
-    .getByRole('button', { name: 'Sort by name', exact: true })
+  await expect(
+    attribute.getByRole('tooltip', { includeHidden: false })
+  ).toContainText('[66.7%]')
+  await expect(values.first()).toBeHidden()
+  await attribute
+    .getByRole('button', { name: 'Expand exact.number · resource values' })
     .click()
-  expect((await sortRequest).postDataJSON().params.options.offset).toBe(0)
+  await expect(values.first()).toContainText('9007199254740993')
+  await expect(values.first()).toContainText('66.7%')
   await expect(
-    values.getByRole('columnheader', { name: 'Sort by name' })
+    values
+      .first()
+      .getByTitle(
+        '2 / 3 spans · 2 / 3 logs · 2 / 3 datapoints · Of records carrying this attribute'
+      )
+  ).toBeVisible()
+  await table
+    .getByRole('button', { name: 'Sort by value', exact: true })
+    .click()
+  await expect(
+    table.getByRole('columnheader', { name: 'Sort by value' })
   ).toHaveAttribute('aria-sort', 'ascending')
-  await values.getByRole('button', { name: 'Sort by percentage' }).click()
+  await expect(values.first()).toContainText('33.3%')
+  await table.getByRole('button', { name: 'Sort by percentage' }).click()
   await expect(
-    values.getByRole('columnheader', { name: 'Sort by percentage' })
+    table.getByRole('columnheader', { name: 'Sort by percentage' })
   ).toHaveAttribute('aria-sort', 'descending')
-  await values.getByRole('button', { name: 'Sort by percentage' }).click()
+  await table.getByRole('button', { name: 'Sort by percentage' }).click()
   await expect(
-    values.getByRole('columnheader', { name: 'Sort by percentage' })
+    table.getByRole('columnheader', { name: 'Sort by percentage' })
   ).toHaveAttribute('aria-sort', 'ascending')
   const imported = page.waitForResponse('http://127.0.0.1:54318/v1/logs')
   services.push({ ...services[0]!, serviceName: 'new-worker' })

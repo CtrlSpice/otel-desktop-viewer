@@ -7,6 +7,11 @@
   import ConflictMarker from './ConflictMarker.svelte'
   import ValueCopyButton from './ValueCopyButton.svelte'
   import JsonEditor from './JsonEditor.svelte'
+  import ShellValue from './ShellValue.svelte'
+  import {
+    valuePresentation,
+    valuePresentationKey,
+  } from '@/state/value-presentation.svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { UnfoldLessIcon, UnfoldMoreIcon } from '@hugeicons/core-free-icons'
   import {
@@ -38,6 +43,7 @@
     colspan = 1,
     identifier = false,
     fieldKind = 'field',
+    fieldSource,
   }: {
     fieldName: string
     fieldType: string
@@ -63,6 +69,7 @@
     colspan?: number
     identifier?: boolean
     fieldKind?: 'field' | 'attribute'
+    fieldSource?: string
   } = $props()
 
   let conflict = $derived(
@@ -85,6 +92,25 @@
         : undefined)
   )
   let editor = $state<{ collapseAll: () => void; expandAll: () => void }>()
+  const presentationKey = $derived(
+    valuePresentationKey(fieldSource ?? origin ?? 'field', fieldKind, fieldName)
+  )
+  const shellText = $derived(
+    !value &&
+      !identifier &&
+      timestampLabel === undefined &&
+      !valueLabel &&
+      !jsonText
+      ? typedValue?.kind === 'string'
+        ? typedValue.value
+        : !typedValue && fieldType === 'string'
+          ? fieldValue
+          : undefined
+      : undefined
+  )
+  const showShell = $derived(
+    shellText !== undefined && valuePresentation.isShell(presentationKey)
+  )
 </script>
 
 {#snippet header()}
@@ -102,7 +128,7 @@
           class="detail-property__origin">{origin}</span
         >{/if}
     </div>
-    {#if structuredText !== undefined}
+    {#if structuredText !== undefined && !showShell}
       <div
         class="detail-property__folding"
         role="group"
@@ -168,7 +194,9 @@
           {#if valueTone === 'error'}
             <span class="detail-property__error-dot" aria-hidden="true"></span>
           {/if}
-          {#if structuredText !== undefined}
+          {#if showShell && shellText !== undefined}
+            <ShellValue text={shellText} label={fieldName} />
+          {:else if structuredText !== undefined}
             <JsonEditor
               text={structuredText}
               label={`JSON value of ${fieldName}`}

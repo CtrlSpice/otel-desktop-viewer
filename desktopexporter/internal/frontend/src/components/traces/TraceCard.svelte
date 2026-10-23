@@ -10,9 +10,17 @@
     trace: TraceSummary
     selected?: boolean
     onclick?: (id: string) => void
+    href?: string
+    matchingSpanCount?: number
   }
 
-  let { trace, selected = false, onclick }: Props = $props()
+  let {
+    trace,
+    selected = false,
+    onclick,
+    href,
+    matchingSpanCount,
+  }: Props = $props()
 
   // Not "yet": a promoted-orphan or salvaged-cycle trace has no null-parent
   // span and is not waiting for one.
@@ -50,6 +58,7 @@
   subtitleContent={serviceBreakdown}
   titleContent={!trace.hasRootSpan ? missingRootTitle : undefined}
   {onclick}
+  {href}
 >
   {#snippet badge()}
     <SignalBadges
@@ -62,6 +71,11 @@
     <SignalDate label="Started" timestamp={trace.startTime} />
   {/snippet}
   {#snippet meta()}
+    {#if matchingSpanCount !== undefined}<span class="text-rp-subtle"
+        >[{matchingSpanCount.toLocaleString()} matching {matchingSpanCount === 1
+          ? 'span'
+          : 'spans'}]</span
+      >{/if}
     {#if durationParts}
       <span class="flex shrink-0 items-center gap-1">
         <span>Duration:</span>

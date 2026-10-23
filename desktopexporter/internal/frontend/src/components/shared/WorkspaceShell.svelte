@@ -39,6 +39,8 @@
     // ── Content slots ──────────────────────────────────────────────
     /** Primary view (waterfall, chart, logs table, home content). */
     main: Snippet
+    /** Optional banner spanning List, Main and Details below navigation. */
+    pageBanner?: Snippet
     /** Optional inspector pane. When present, content area becomes
      * a resizable horizontal split. */
     detail?: Snippet
@@ -91,6 +93,7 @@
     hideDrawer,
     revealDrawer,
     main,
+    pageBanner,
     detail,
     pageFooter,
     mainSurface = 'panel',
@@ -165,6 +168,7 @@
     {revealDrawer}
     navigationTrailing={detail ? detailToggle : undefined}
     footer={drawerFooter}
+    banner={pageBanner}
   >
     <div class="page-layout__content">
       <div class="page-layout__region">
@@ -238,13 +242,12 @@
      shrink/min-size discipline either way so ResizablePanels can
      collapse past its children's intrinsic widths.
 
-     Horizontal + top inset gives main+detail breathing room from the
-     drawer's right edge and the top of the page. No bottom pad — panels
-     sit flush against the page footer. */
+      The shared drawer grid owns the top inset for all three panes. This
+      region supplies horizontal spacing around Main/Details. No bottom
+      pad — panels sit flush against the page footer. */
   .page-layout__region {
     @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden;
     padding-inline: var(--layout-gap);
-    padding-top: var(--layout-gap);
   }
 
   /* Keep the footer surface continuous across custom page content. */

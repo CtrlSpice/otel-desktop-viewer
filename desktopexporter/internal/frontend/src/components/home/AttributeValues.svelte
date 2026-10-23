@@ -1,84 +1,97 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
-  import FieldGroup from '@/components/shared/FieldGroup.svelte'
-  import TableSortButton from '@/components/shared/TableSortButton.svelte'
-  import { telemetryAPI } from '@/services/telemetry-service'
-  import type {
-    AttributeFrequency,
-    DiscoveryOptions,
-  } from '@/services/discovery-types'
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
+  import TreeToggle from '@/components/shared/TreeToggle.svelte'
+  import TableValueCell from '@/components/shared/TableValueCell.svelte'
   import BreakdownSegment from '@/components/shared/BreakdownSegment.svelte'
+  import type { DiscoveryOptions } from '@/services/discovery-types'
+  import {
+    coverageCounts,
+    loadAttributeCoverage,
+    sortCoverageValues,
+    type AttributeCoverage,
+    type CoverageValue,
+  } from './attribute-coverage'
+  import AttributeCoverageBar from './AttributeCoverageBar.svelte'
   import { traceSpanPalette } from '@/utils/chart-palette'
-  import AttributeValue from '@/components/shared/AttributeValue.svelte'
+  import ShellSyntax from '@/components/shared/ShellSyntax.svelte'
+  import ValueSyntax from '@/components/shared/ValueSyntax.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
-  import { attributeValueCopy } from '@/components/shared/detail-value'
+  import {
+    attributeValueCopy,
+    attributeValueTokens,
+    jsonContainerTokens,
+  } from '@/components/shared/detail-value'
+  import {
+    valuePresentation,
+    valuePresentationKey,
+  } from '@/state/value-presentation.svelte'
   let {
     options,
     name,
     kind,
     heading: attributeHeading,
+    sortBy,
+    sortDirection,
+    pinnedLeft,
+    selected,
+    selectedValue,
+    onSelectValue,
   }: {
     options: Omit<DiscoveryOptions, 'kind'>
     name: string
     kind: string
     heading: Snippet
+    sortBy: 'name' | 'frequency'
+    sortDirection: 'asc' | 'desc'
+    pinnedLeft?: number
+    selected: boolean
+    selectedValue?: string
+    onSelectValue: (value: CoverageValue) => void
   } = $props()
-  let values = $state<AttributeFrequency[]>([])
+  let coverage = $state<AttributeCoverage>()
+  let offset = $state(0)
+  const values = $derived(
+    sortCoverageValues(
+      coverage?.values.filter(item => item.value.kind === kind) ?? [],
+      sortBy,
+      sortDirection
+    )
+  )
+  const page = $derived(values.slice(offset, offset + 25))
+  const presentationKey = $derived(
+    valuePresentationKey(options.ownerType ?? '', 'attribute', name)
+  )
   let loading = $state(false)
   let error = $state('')
-  let offset = $state(0)
-  let more = $state(false)
-  let open = $state(false)
-  let sortBy = $state<'name' | 'frequency'>('frequency')
-  let sortDirection = $state<'asc' | 'desc'>('desc')
-  let valueColors = $state<Record<string, string>>({})
-  let headerValues = $state<AttributeFrequency[]>([])
-  let headerMore = $state(false)
-  const total = $derived(
-    headerValues.reduce((sum, item) => sum + item.count, 0)
-  )
-  // A stacked bar requires a complete, non-overlapping distribution. Preserve record
-  // percentages in the legend for paginated or multi-valued attributes too.
-  const showBar = $derived(
-    headerValues.length > 0 &&
-      !headerMore &&
-      total > 0 &&
-      total === headerValues[0].denominator
-  )
+  const valueColors = $derived.by(() => {
+    const identities = coverage?.values.map(item => item.identity).sort() ?? []
+    const palette = traceSpanPalette(identities.length)
+    return Object.fromEntries(
+      identities.map((identity, index) => [identity, palette[index]])
+    )
+  })
+  const headingID = $props.id()
+  let expanded = $state(false)
+  const canExpand = $derived(values.length > 0)
+  $effect.pre(() => {
+    void sortBy
+    void sortDirection
+    offset = 0
+  })
   $effect(() => {
     const controller = new AbortController()
     const request = {
       ...options,
       key: name,
-      offset,
-      limit: 25,
-      sortBy,
-      sortDirection,
     }
     loading = true
     error = ''
-    void telemetryAPI
-      .discoverAttributeValues(request, controller.signal)
-      .then(page => {
+    void loadAttributeCoverage(request, controller.signal)
+      .then(result => {
         if (controller.signal.aborted) return
-        values = page.items
-        more = page.truncated
-        for (const item of page.items) {
-          const key = valueKey(item)
-          if (!valueColors[key]) {
-            const index = Object.keys(valueColors).length
-            valueColors[key] = traceSpanPalette(index + 1)[index]
-          }
-        }
-        if (
-          headerValues.length === 0 &&
-          request.offset === 0 &&
-          request.sortBy === 'frequency' &&
-          request.sortDirection === 'desc'
-        ) {
-          headerValues = page.items
-          headerMore = page.truncated
-        }
+        coverage = result
       })
       .catch(reason => {
         if (!controller.signal.aborted) error = String(reason)
@@ -88,162 +101,155 @@
       })
     return () => controller.abort()
   })
-  function valueKey(item: AttributeFrequency) {
-    return item.identity
-  }
-  function sort(column: 'name' | 'frequency') {
-    sortDirection =
-      sortBy === column
-        ? sortDirection === 'asc'
-          ? 'desc'
-          : 'asc'
-        : column === 'name'
-          ? 'asc'
-          : 'desc'
-    sortBy = column
-    offset = 0
-  }
 </script>
 
-<FieldGroup label={name} detail bare bind:open>
-  {#snippet heading()}
-    <span class="flex min-w-0 flex-1 flex-col">
-      <span class="min-w-0">{@render attributeHeading()}</span>
-      {#if showBar}
-        <span class="flex min-h-(--signal-card-row-h) w-full gap-1">
-          {#each headerValues as item, index (index)}
-            <BreakdownSegment
-              part={{
-                key: String(index),
-                label: attributeValueCopy(item.value),
-                count: item.count,
-                color: valueColors[valueKey(item)],
-              }}
-              unit="record"
-              relativeFrequency={item.relativeFrequency}
-            />
-          {/each}
-        </span>
-      {/if}
-    </span>
-  {/snippet}
-  {@render breakdown()}
-</FieldGroup>
-
-{#snippet breakdown()}
-  {#if loading && values.length === 0}<p
-      class="p-3 text-rp-subtle"
-      role="status"
-    >
-      Loading values…
-    </p>
-  {:else if error}<p class="p-3" role="alert">{error}</p>
-  {:else}
-    {#if values.length === 0}<p class="p-3 text-rp-subtle">
-        No retained values.
-      </p>{/if}
-    <table
-      aria-label="Values of {name}"
-      aria-busy={loading}
-      class="w-full table-fixed text-sm"
-    >
-      {#if values.length > 1 || more || offset > 0}<thead
-          class="text-rp-subtle"
-        >
-          <tr>
-            <th
-              class="pl-6 pr-2 text-left font-normal"
-              scope="col"
-              aria-sort={sortBy === 'name'
-                ? sortDirection === 'asc'
-                  ? 'ascending'
-                  : 'descending'
-                : 'none'}
-            >
-              <TableSortButton
-                label="name"
-                inlineDirection
-                direction={sortBy === 'name' ? sortDirection : undefined}
-                onclick={() => sort('name')}>Name</TableSortButton
-              >
-            </th>
-            <th
-              class="w-20 pr-2 font-normal"
-              scope="col"
-              aria-sort={sortBy === 'frequency'
-                ? sortDirection === 'asc'
-                  ? 'ascending'
-                  : 'descending'
-                : 'none'}
-            >
-              <TableSortButton
-                label="percentage"
-                inlineDirection
-                align="right"
-                direction={sortBy === 'frequency' ? sortDirection : undefined}
-                onclick={() => sort('frequency')}>%</TableSortButton
-              >
-            </th>
-            <th class="w-8 font-normal" scope="col"
-              ><span class="sr-only">Copy</span></th
-            >
-          </tr>
-        </thead>{/if}
-      <tbody>
-        {#each values as item (valueKey(item))}
-          <tr class="item-state">
-            <td class="py-0 pr-2 align-top">
-              <div class="flex min-h-(--signal-card-row-h) items-start gap-2">
-                <span
-                  class="flex h-[1.5em] w-4 shrink-0 items-center justify-center"
-                  aria-hidden="true"
-                  ><span
-                    class="size-2 rounded-full"
-                    style:background-color={valueColors[valueKey(item)]}
-                  ></span></span
-                >
-                <div class="min-w-0">
-                  <AttributeValue value={item.value} path={name} />
-                </div>
-                {#if item.value.kind !== kind}<span class="text-secondary"
-                    >{item.value.kind}</span
-                  >{/if}
-              </div>
-            </td>
-            <td class="py-0 pr-2 text-right align-top">
-              <span
-                class="shrink-0 text-sm text-rp-subtle"
-                title={`${item.count.toLocaleString()} / ${item.denominator.toLocaleString()} records`}
-                aria-label={`${item.count.toLocaleString()} / ${item.denominator.toLocaleString()} records · ${(item.relativeFrequency * 100).toLocaleString(undefined, { maximumFractionDigits: 1 })}%`}
-                >[{(item.relativeFrequency * 100).toLocaleString(undefined, {
-                  maximumFractionDigits: 1,
-                })}%]</span
-              >
-            </td>
-            <td class="py-0 text-right align-top">
-              <ValueCopyButton
-                text={attributeValueCopy(item.value)}
-                label={`${name} value`}
-                tooltip="Copy"
-              />
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
-    {#if offset > 0 || more}<div
-        class="flex items-center justify-between gap-2 px-3 py-2"
+{#snippet heading()}
+  <div id={headingID} class="flex min-w-0 items-center gap-2 text-rp-subtle">
+    {#if canExpand}
+      <TreeToggle
+        label={`${expanded ? 'Collapse' : 'Expand'} ${name} · ${options.ownerType} values`}
+        {expanded}
+        onclick={() => (expanded = !expanded)}
+        ><HugeiconsIcon
+          icon={ArrowRight01Icon}
+          size={16}
+          strokeWidth={1.5}
+          class={expanded ? 'rotate-90' : ''}
+          aria-hidden="true"
+        /></TreeToggle
       >
-        <button
-          class="btn btn-ghost btn-sm"
-          disabled={loading || offset === 0}
-          onclick={() => (offset -= 25)}>Previous values</button
-        >
-        <button
-          class="btn btn-ghost btn-sm"
-          disabled={loading || !more}
-          onclick={() => (offset += 25)}>Next values</button
-        >
-      </div>{/if}
-  {/if}
+    {:else}<span class="w-4 shrink-0" aria-hidden="true"></span>{/if}
+    {@render attributeHeading()}
+  </div>
 {/snippet}
+
+<tr
+  class="table-row"
+  class:table-row--selected={selected && !selectedValue}
+  data-attribute-heading={name}
+  data-attribute-source={options.ownerType}
+>
+  <th
+    scope="row"
+    class="table-cell text-left font-normal"
+    class:table-cell--pinned={pinnedLeft !== undefined}
+    style:left={pinnedLeft === undefined ? undefined : `${pinnedLeft}px`}
+  >
+    {@render heading()}
+  </th>
+  <td class="table-cell" colspan="3">
+    {#if coverage && values.length}<AttributeCoverageBar
+        {coverage}
+        {kind}
+        colors={valueColors}
+      />{/if}
+  </td>
+</tr>
+
+{#if error || values.length === 0}
+  <tr>
+    <td class="table-cell" colspan="4">
+      <div class="pl-6">
+        {#if error}<span role="alert">{error}</span>
+        {:else}<span class="text-rp-subtle" role="status"
+            >{loading ? 'Loading values…' : 'No retained values.'}</span
+          >{/if}
+      </div>
+    </td>
+  </tr>
+{:else}
+  {#each page as item (item.identity)}
+    {@const text = attributeValueCopy(item.value)}
+    {@const tokens =
+      item.value.kind === 'string'
+        ? jsonContainerTokens(item.value.value, true)
+        : item.value.kind === 'array' || item.value.kind === 'map'
+          ? attributeValueTokens(item.value, true)
+          : null}
+    <tr
+      class="table-row"
+      class:table-row--selected={selected && selectedValue === item.identity}
+      hidden={!expanded}
+      data-attribute-key={name}
+      data-attribute-source={options.ownerType}
+      data-value-identity={item.identity}
+      aria-describedby={headingID}
+      aria-busy={loading}
+    >
+      <td
+        class="table-cell text-left"
+        class:table-cell--pinned={pinnedLeft !== undefined}
+        style:left={pinnedLeft === undefined ? undefined : `${pinnedLeft}px`}
+      >
+        <div class="flex min-w-0 items-center gap-2 pl-6">
+          <div class="min-w-0 flex-1">
+            <TableValueCell
+              label={`${options.ownerType} attribute: ${name}`}
+              {text}
+              inset={false}
+              onInspect={() => onSelectValue(item)}
+            >
+              {#if item.value.kind === 'string' && valuePresentation.isShell(presentationKey)}<ShellSyntax
+                  text={item.value.value}
+                />
+              {:else if tokens}<ValueSyntax {tokens} />
+              {:else}{text === '' ? '""' : text}{/if}
+            </TableValueCell>
+          </div>
+          {#if item.value.kind !== kind}<span class="shrink-0 text-secondary"
+              >{item.value.kind}</span
+            >{/if}
+        </div>
+      </td>
+      <td class="table-cell">
+        <div
+          class="flex h-2"
+          style:width={`max(0.5rem, ${item.relativeFrequency * 100}%)`}
+        >
+          <BreakdownSegment
+            part={{
+              key: item.identity,
+              label: text,
+              count: item.count,
+              color: valueColors[item.identity],
+            }}
+            unit="record"
+            relativeFrequency={item.relativeFrequency}
+            detail={coverageCounts(item.counts, coverage?.denominators)}
+          />
+        </div>
+      </td>
+      <td class="table-cell text-right text-rp-subtle tabular-nums">
+        <span
+          title={`${coverageCounts(item.counts, coverage?.denominators)} · Of records carrying this attribute`}
+          aria-label={`${item.count.toLocaleString()} / ${item.denominator.toLocaleString()} records · ${(item.relativeFrequency * 100).toLocaleString(undefined, { maximumFractionDigits: 1 })}%`}
+        >
+          [{(item.relativeFrequency * 100).toLocaleString(undefined, {
+            maximumFractionDigits: 1,
+          })}%]
+        </span>
+      </td>
+      <td class="table-cell text-right">
+        <ValueCopyButton {text} label={`${name} value`} tooltip="Copy" />
+      </td>
+    </tr>
+  {/each}
+  {#if offset > 0 || values.length > offset + 25}
+    <tr hidden={!expanded}>
+      <td class="table-cell" colspan="4">
+        <div class="flex items-center justify-between gap-2 pl-6">
+          <button
+            class="btn btn-ghost btn-sm"
+            disabled={loading || offset === 0}
+            onclick={() => (offset -= 25)}>Previous values</button
+          >
+          <button
+            class="btn btn-ghost btn-sm"
+            disabled={loading || values.length <= offset + 25}
+            onclick={() => (offset += 25)}>Next values</button
+          >
+        </div>
+      </td>
+    </tr>
+  {/if}
+{/if}

@@ -7,8 +7,9 @@
     owner: string
     /** Display context only; the received key is unchanged. */
     origin?: string
+    source?: string
   }
-  let { attributes, owner, origin }: Props = $props()
+  let { attributes, owner, origin, source }: Props = $props()
 </script>
 
 {#each attributes as attribute, index (`${owner}:${attribute.id ?? 'unidentified'}:${index}`)}
@@ -17,6 +18,7 @@
     fieldType={attribute.value.kind}
     typedValue={attribute.value}
     fieldKind="attribute"
+    fieldSource={source ?? origin ?? owner}
     {origin}
     defectLabel={attribute.hasConflict
       ? `Conflicting typed values retained for ${attribute.key} in ${owner}.`
