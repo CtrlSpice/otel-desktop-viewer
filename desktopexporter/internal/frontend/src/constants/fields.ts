@@ -612,6 +612,13 @@ export const SCOPE_FIELDS: FieldDefinition[] = withScalarMembership([
 // Resource fields
 export const RESOURCE_FIELDS: FieldDefinition[] = withScalarMembership([
   {
+    name: 'serviceIdentity',
+    type: 'string',
+    searchScope: 'field',
+    operators: [OPERATORS.EQUALS, OPERATORS.NOT_EQUALS],
+    description: 'Exact typed service name and namespace, as a JSON pair',
+  },
+  {
     name: 'resource.droppedAttributesCount',
     type: 'int64',
     searchScope: 'field',

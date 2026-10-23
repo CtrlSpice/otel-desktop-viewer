@@ -7,7 +7,13 @@ test('Home counts, attributes and enabled links share the submitted cross-signal
   page.on('pageerror', error => errors.push(error.message))
   const service = {
     serviceName: 'checkout',
-    serviceNamespace: 'storefront',
+    serviceNamespace: '7',
+    serviceNameKind: 'string',
+    serviceNamespaceKind: 'string',
+    serviceIdentity: JSON.stringify([
+      { kind: 'string', value: 'checkout' },
+      { kind: 'string', value: '7' },
+    ]),
     traceCount: 2,
     spanCount: 3,
     errorSpanCount: 0,
@@ -60,7 +66,25 @@ test('Home counts, attributes and enabled links share the submitted cross-signal
                       logCount: 1,
                     },
                   ]
-                : [service, { ...service, serviceName: 'worker' }]
+                : [
+                    service,
+                    {
+                      ...service,
+                      serviceName: 'worker',
+                      serviceIdentity: JSON.stringify([
+                        { kind: 'string', value: 'worker' },
+                        { kind: 'string', value: '7' },
+                      ]),
+                    },
+                    {
+                      ...service,
+                      serviceNamespaceKind: 'int64',
+                      serviceIdentity: JSON.stringify([
+                        { kind: 'string', value: 'checkout' },
+                        { kind: 'int64', value: '7' },
+                      ]),
+                    },
+                  ]
           return {
             rows: items.map(item => [item]),
             truncated: false,
@@ -78,7 +102,13 @@ test('Home counts, attributes and enabled links share the submitted cross-signal
     await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
   })
   await page.goto('/?time=all')
-  await expect(page.getByRole('article')).toHaveCount(2)
+  await expect(page.getByRole('article')).toHaveCount(3)
+  await expect(
+    page.getByRole('button', {
+      name: 'Inspect checkout · 7 · namespace int64',
+      exact: true,
+    })
+  ).toBeVisible()
   const input = page.getByRole('searchbox', { name: 'Search all telemetry' })
   await input.fill('declined')
   await input.press('Enter')
@@ -114,7 +144,7 @@ test('Home counts, attributes and enabled links share the submitted cross-signal
   const target = new URL((await link.getAttribute('href'))!, page.url())
   expect(target.searchParams.get('q')).toContain('search("declined")')
   expect(target.searchParams.get('q')).toContain(
-    'attr(resource, "service.name", string) = "checkout"'
+    `serviceIdentity = ${JSON.stringify(service.serviceIdentity)}`
   )
   await link.click()
   await expect(page).toHaveURL(/\/logs\?q=/)
@@ -131,6 +161,15 @@ test('Home counts, attributes and enabled links share the submitted cross-signal
     'body !~ "healthcheck"'
   )
   await expect(page.getByRole('alert')).toHaveCount(0)
+  // Workspace navigation carries time, but each signal keeps its own query.
+  const logsQuery = new URL(page.url()).searchParams.get('q')
+  await page.getByRole('link', { name: 'Metrics', exact: true }).click()
+  expect(new URL(page.url()).searchParams.get('q')).toBeNull()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await page.getByRole('link', { name: 'Logs', exact: true }).click()
+  expect(new URL(page.url()).searchParams.get('q')).toBe(logsQuery)
+  await page.goBack()
+  await page.goBack()
   await page.goBack()
   await input.fill('missing')
   await input.press('Enter')

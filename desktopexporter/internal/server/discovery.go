@@ -19,20 +19,21 @@ import (
 )
 
 type discoveryOptions struct {
-	Kind          string            `json:"kind"`
-	Signal        string            `json:"signal"`
-	OwnerType     string            `json:"ownerType"`
-	ServiceName   *string           `json:"serviceName"`
-	Namespace     *string           `json:"namespace"`
-	Key           *string           `json:"key"`
-	StartTime     *string           `json:"startTime"`
-	EndTime       *string           `json:"endTime"`
-	Limit         *uint64           `json:"limit"`
-	Offset        uint64            `json:"offset"`
-	Term          string            `json:"term"`
-	SortBy        string            `json:"sortBy"`
-	SortDirection string            `json:"sortDirection"`
-	Queries       *discoveryQueries `json:"queries"`
+	Kind            string            `json:"kind"`
+	Signal          string            `json:"signal"`
+	OwnerType       string            `json:"ownerType"`
+	ServiceName     *string           `json:"serviceName"`
+	Namespace       *string           `json:"namespace"`
+	ServiceIdentity *string           `json:"serviceIdentity"`
+	Key             *string           `json:"key"`
+	StartTime       *string           `json:"startTime"`
+	EndTime         *string           `json:"endTime"`
+	Limit           *uint64           `json:"limit"`
+	Offset          uint64            `json:"offset"`
+	Term            string            `json:"term"`
+	SortBy          string            `json:"sortBy"`
+	SortDirection   string            `json:"sortDirection"`
+	Queries         *discoveryQueries `json:"queries"`
 }
 
 // A false predicate excludes a signal whose fields cannot satisfy the Home query.
@@ -73,7 +74,7 @@ func (h *JSONRPCHandler) discoverTelemetry(ctx context.Context, req *jsonrpc2.Re
 	if limit < 1 || limit > 500 || options.Offset > 1_000_000_000 {
 		return nil, jsonrpc2.ErrInvalidParams
 	}
-	query := discovery.Query{StartTime: options.StartTime, EndTime: options.EndTime, ServiceName: options.ServiceName, Namespace: options.Namespace}
+	query := discovery.Query{StartTime: options.StartTime, EndTime: options.EndTime, ServiceName: options.ServiceName, Namespace: options.Namespace, ServiceIdentity: options.ServiceIdentity}
 	var prefix string
 	var args []any
 	if options.Queries != nil {
@@ -89,7 +90,7 @@ func (h *JSONRPCHandler) discoverTelemetry(ctx context.Context, req *jsonrpc2.Re
 	case "services":
 		statement = discovery.Services(query)
 		search = "concat(json_extract_string(entry, '$.serviceNamespace'), ' ', json_extract_string(entry, '$.serviceName'))"
-		order = "json_extract_string(entry, '$.serviceNamespace'), json_extract_string(entry, '$.serviceName')"
+		order = "json_extract_string(entry, '$.serviceNamespace'), json_extract_string(entry, '$.serviceName'), json_extract_string(entry, '$.serviceIdentity')"
 	case "keys", "values":
 		records, err := discovery.RecordsFrom(options.Signal, options.OwnerType, query.Sources)
 		if err != nil {

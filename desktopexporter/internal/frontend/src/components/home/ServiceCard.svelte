@@ -73,6 +73,11 @@
       aria-label="Inspect {service.serviceName ||
         'unnamed service'}{service.serviceNamespace
         ? ` · ${service.serviceNamespace}`
+        : ''}{service.serviceNameKind && service.serviceNameKind !== 'string'
+        ? ` · name ${service.serviceNameKind}`
+        : ''}{service.serviceNamespaceKind &&
+      service.serviceNamespaceKind !== 'string'
+        ? ` · namespace ${service.serviceNamespaceKind}`
         : ''}"
     >
       <span
@@ -85,10 +90,18 @@
       ></span>
       <span
         >{service.serviceName ||
-          'Unnamed service'}{#if service.serviceNamespace}<span
+          'Unnamed service'}{#if service.serviceNameKind && service.serviceNameKind !== 'string'}<span
+            class="text-secondary text-sm"
+          >
+            · {service.serviceNameKind}</span
+          >{/if}{#if service.serviceNamespace || (service.serviceNamespaceKind && service.serviceNamespaceKind !== 'string')}<span
             class="text-rp-subtle"
           >
-            · {service.serviceNamespace}</span
+            · {service.serviceNamespace}{#if service.serviceNamespaceKind && service.serviceNamespaceKind !== 'string'}<span
+                class="text-secondary text-sm"
+              >
+                · {service.serviceNamespaceKind}</span
+              >{/if}</span
           >{/if}</span
       >
     </button>

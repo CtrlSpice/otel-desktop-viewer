@@ -244,10 +244,7 @@
       // Don't tear down the detail view while the list is still loading -- a
       // shared link's trace id may simply not be in the list yet.
       if (!page.mounted || page.loading) return
-      if (
-        page.selectedID &&
-        untrack(() => traceData?.traceID) === page.selectedID
-      ) {
+      if (page.selectedID) {
         fetchTraceDetail(page.selectedID, activeQueryTree)
         return
       }
@@ -328,9 +325,7 @@
   }
 
   async function fetchTraceDetail(traceID: string, queryTree?: QueryNode) {
-    const retainedSpanID = untrack(() =>
-      traceData?.traceID === traceID ? getSpanFromQuery() : null
-    )
+    const retainedSpanID = untrack(() => getSpanFromQuery())
     detailFetch?.abort()
     const fetchCtl = new AbortController()
     detailFetch = fetchCtl

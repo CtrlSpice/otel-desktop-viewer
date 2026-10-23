@@ -82,6 +82,7 @@
     inspectingSize = false
     if (!url) return
     const controller = new AbortController()
+    let inspected = false
     inspectingSize = true
     void fetch(url, { method: 'HEAD', signal: controller.signal })
       .then(async response => {
@@ -103,6 +104,7 @@
         ) {
           if (bytes !== null && bytes <= PREVIEW_BYTES) requestedURL = url
         }
+        inspected = true
       })
       .catch(err => {
         if (!controller.signal.aborted)
@@ -115,13 +117,14 @@
     return () => {
       controller.abort()
       inspectingSize = false
-      currentURL = ''
+      if (!inspected) currentURL = ''
     }
   })
 
   $effect(() => {
     const url = requestedURL
     if (!active || !url || url !== previewURL) return
+    if (untrack(() => formatted && currentURL === url)) return
     const controller = new AbortController()
     let worker: Worker | undefined
     loadingPreview = true

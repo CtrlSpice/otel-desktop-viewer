@@ -39,8 +39,12 @@
     ...range,
     queries,
     signal,
-    serviceName: service?.serviceName,
-    namespace: service?.serviceNamespace,
+    ...(service?.serviceIdentity !== undefined
+      ? { serviceIdentity: service.serviceIdentity }
+      : {
+          serviceName: service?.serviceName,
+          namespace: service?.serviceNamespace,
+        }),
   })
   const identity = $derived(service ? serviceIdentity(service) : '')
   $effect(() => {

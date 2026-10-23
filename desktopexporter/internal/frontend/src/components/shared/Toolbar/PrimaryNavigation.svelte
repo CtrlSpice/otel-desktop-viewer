@@ -92,12 +92,7 @@
 </script>
 
 <script lang="ts">
-  import {
-    isPlainLeftClick,
-    navigate,
-    navigateToSignal,
-    signalHref,
-  } from '@/route'
+  import { isPlainLeftClick, navigate, signalHref } from '@/route'
   import { evalsEnabled } from '@/state/features'
   import { getRouteContext } from '@/contexts/route-context.svelte'
   import {
@@ -109,6 +104,14 @@
   const countID = $props.id()
   const routeContext = getRouteContext()
   const totals = getNavigationCounts()
+  function destination(signal: SignalName) {
+    return totals?.matching && totals.links[signal]
+      ? totals.links[signal]!
+      : signalHref(signal, {
+          ...routeContext.route.query,
+          q: routeContext.queryFor(signal),
+        })
+  }
   const items = $derived(
     $evalsEnabled
       ? [HOME_NAV, ...NAV_ITEMS, EVALS_NAV]
@@ -129,7 +132,7 @@
       return
     }
     if (item.id === 'home' || item.id === 'evals') navigate(item.path)
-    else navigateToSignal(item.id)
+    else navigate(destination(item.id))
   }
 </script>
 
@@ -148,10 +151,9 @@
     <a
       href={disabled
         ? undefined
-        : (totals?.links[item.id] ??
-          (item.id === 'home' || item.id === 'evals'
-            ? item.path
-            : signalHref(item.id, routeContext.route.query)))}
+        : item.id === 'home' || item.id === 'evals'
+          ? item.path
+          : destination(item.id)}
       aria-disabled={disabled ? true : undefined}
       class:tab-disabled={disabled}
       class="tab shrink-0 flex-nowrap items-center gap-2 px-4 text-sm"

@@ -14,6 +14,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/timerange"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
+	"github.com/CtrlSpice/otel-desktop-viewer/internal/discovery"
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -574,6 +575,9 @@ func logFieldMapper() search.FieldMapper {
 }
 
 func mapLogFieldExpression(field *search.FieldDefinition) (search.ResolvedExpression, error) {
+	if field.Name == "serviceIdentity" {
+		return search.Text(discovery.ServiceIdentity("r")), nil
+	}
 	name := field.Name
 	if name == "" {
 		return search.ResolvedExpression{}, fmt.Errorf("empty field name: %w", ErrInvalidLogQuery)

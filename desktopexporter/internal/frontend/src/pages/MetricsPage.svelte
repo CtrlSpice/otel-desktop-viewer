@@ -202,7 +202,16 @@
   ])
 
   // A submitted filter changes the list, not the record already open in Details.
-  let retainedSummary = $state<MetricSummary>()
+  type MetricSelection = Pick<
+    MetricSummary,
+    | 'metricRef'
+    | 'name'
+    | 'metricType'
+    | 'aggregationTemporality'
+    | 'isMonotonic'
+    | 'serviceName'
+  >
+  let retainedSummary = $state<MetricSelection>()
   let selectedSummary = $derived(
     page.selectedSummary ??
       (retainedSummary?.metricRef === page.selectedID
@@ -210,7 +219,54 @@
         : undefined)
   )
   $effect(() => {
-    if (page.selectedSummary) retainedSummary = page.selectedSummary
+    const summary = page.selectedSummary
+    if (summary) {
+      retainedSummary = summary
+      return
+    }
+    const id = page.selectedID
+    if (
+      !id ||
+      !page.mounted ||
+      page.loading ||
+      untrack(() => retainedSummary?.metricRef) === id
+    )
+      return
+    // A shared URL selects an identity independently of filtered-list membership.
+    let cancelled = false
+    void telemetryAPI
+      .getMetric(id)
+      .then(metric => {
+        if (cancelled || !metric) return
+        const service = metric.resource.attributes.find(
+          attribute =>
+            attribute.key === 'service.name' &&
+            attribute.value.kind === 'string'
+        )
+        const temporality =
+          metric.metricType === 'Gauge'
+            ? null
+            : metric.aggregationTemporalityCode
+        retainedSummary = {
+          metricRef: metric.metricRef,
+          name: metric.name,
+          metricType: metric.metricType,
+          aggregationTemporality:
+            temporality === null
+              ? null
+              : (['Unspecified', 'Delta', 'Cumulative'][temporality] ??
+                String(temporality)),
+          isMonotonic: metric.metricType === 'Sum' ? metric.isMonotonic : null,
+          serviceName:
+            service?.value.kind === 'string' ? service.value.value : '',
+        }
+      })
+      .catch(error => {
+        if (!cancelled) console.error('Failed to fetch selected metric:', error)
+      })
+    return () => {
+      cancelled = true
+    }
   })
 
   let selectedMetric = $state<MetricViewData | undefined>(undefined)
@@ -303,7 +359,7 @@
   // Polling may replace a summary object without changing its metric identity.
   $effect(() => {
     void timeContext.selection
-    const id = selectedSummary ? metricSummaryKey(selectedSummary) : null
+    const id = selectedSummary?.metricRef
     if (!id) {
       selectedMetric = undefined
       return
@@ -371,7 +427,7 @@
   })
 
   async function fetchAggregate(
-    summary: MetricSummary,
+    summary: MetricSelection,
     visibleKeys: string[],
     bounds: { startTime: bigint; endTime: bigint },
     token: number,
@@ -686,7 +742,7 @@
   })
 
   async function fetchMetricDetail(
-    summary: MetricSummary,
+    summary: MetricSelection,
     /** Series that include datapoints. Null lets the store apply the initial limit. */
     datapointSeries: string[] | null = null,
     /** Whether to seed per-metric state from the result. */

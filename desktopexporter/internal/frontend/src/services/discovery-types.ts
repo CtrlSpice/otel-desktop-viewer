@@ -18,6 +18,7 @@ export type DiscoveryOptions = {
   ownerType?: DiscoveryOwner
   serviceName?: string
   namespace?: string
+  serviceIdentity?: string
   key?: string
   term?: string
   startTime?: string | null
@@ -31,6 +32,9 @@ export type DiscoveryOptions = {
 export type ServiceSummary = {
   serviceName: string
   serviceNamespace: string
+  serviceIdentity?: string
+  serviceNameKind?: string
+  serviceNamespaceKind?: string
   traceCount: number
   spanCount: number
   errorSpanCount: number
@@ -71,7 +75,10 @@ export type DiscoveryPage<T> = {
 }
 
 export function serviceIdentity(service: ServiceSummary): string {
-  return JSON.stringify([service.serviceNamespace, service.serviceName])
+  return (
+    service.serviceIdentity ??
+    JSON.stringify([service.serviceNamespace, service.serviceName])
+  )
 }
 
 export function serviceSignalHref(
@@ -86,7 +93,10 @@ export function serviceSignalHref(
       ? `(${field} = "" OR ${field} = NULL)`
       : `${field} = ${JSON.stringify(value)}`
   }
-  const serviceQuery = `${match('service.name', service.serviceName)} AND ${match('service.namespace', service.serviceNamespace)}`
+  const serviceQuery =
+    service.serviceIdentity !== undefined
+      ? `serviceIdentity = ${JSON.stringify(service.serviceIdentity)}`
+      : `${match('service.name', service.serviceName)} AND ${match('service.namespace', service.serviceNamespace)}`
   const q = query ? `(${query}) AND ${serviceQuery}` : serviceQuery
   return discoverySignalHref(signal, range, q)
 }

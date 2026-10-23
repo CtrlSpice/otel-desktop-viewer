@@ -4,6 +4,7 @@ import { parseQuery } from '@/components/shared/Search/queryParser'
 import { homeFields, homeQueries, queryText } from './home-search'
 import {
   serviceSignalHref,
+  serviceIdentity,
   type ServiceSummary,
 } from '@/services/discovery-types'
 
@@ -20,6 +21,56 @@ function withoutIDs(value: unknown) {
 }
 
 describe('cross-signal Home queries', () => {
+  it('keeps textual lookalikes distinct and round-trips their exact identity predicate', () => {
+    const base = { serviceName: 'api', serviceNamespace: '7' } as ServiceSummary
+    const services = ['string', 'int64'].map(kind => ({
+      ...base,
+      serviceIdentity: JSON.stringify([
+        { kind: 'string', value: 'api' },
+        { kind, value: '7' },
+      ]),
+    }))
+    expect(serviceIdentity(services[0])).not.toBe(serviceIdentity(services[1]))
+    for (const service of services) {
+      const url = new URL(
+        serviceSignalHref(service, 'logs'),
+        'http://localhost'
+      )
+      const parsed = predicate(url.searchParams.get('q')!)
+      expect(parsed?.type === 'condition' && parsed.query.field).toMatchObject({
+        name: 'serviceIdentity',
+        searchScope: 'field',
+      })
+      expect(parsed?.type === 'condition' && parsed.query.value).toBe(
+        service.serviceIdentity
+      )
+    }
+  })
+  it.each(
+    Array.from({ length: 32 }, (_, code) => String.fromCharCode(code)).concat([
+      '\\u0001',
+      '\\f',
+      '"',
+      '\\',
+      '🦎',
+    ])
+  )('preserves exact string code units through generated links: %j', value => {
+    const service = {
+      serviceName: value,
+      serviceNamespace: value,
+    } as ServiceSummary
+    const url = new URL(serviceSignalHref(service, 'logs'), 'http://localhost')
+    const parsed = predicate(url.searchParams.get('q')!)
+    expect(parsed?.type).toBe('group')
+    if (parsed?.type !== 'group') throw new Error('Expected service conditions')
+    for (const child of parsed.group.children) {
+      expect(child.type).toBe('condition')
+      if (child.type === 'condition') expect(child.query.value).toBe(value)
+    }
+    const global = predicate(`search(${JSON.stringify(value)})`)
+    expect(global?.type === 'condition' && global.query.value).toBe(value)
+    expect(withoutIDs(predicate(queryText(global)))).toEqual(withoutIDs(global))
+  })
   it('keeps supported OR branches and excludes impossible AND branches', () => {
     const disjunction = homeQueries(
       predicate('severityNumber >= 17 OR name = "checkout"')

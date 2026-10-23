@@ -182,6 +182,31 @@ function normalizedText(el: HTMLElement): string {
 }
 
 describe('TracesPage unplaced spans banner', () => {
+  it('opens a route-selected trace and span outside the filtered list on a fresh mount', async () => {
+    searchTraceSummaries.mockResolvedValue([])
+    getStats.mockResolvedValue(makeStats())
+    const other = makeSpanNode('other')
+    const selected = makeSpanNode('selected')
+    selected.matched = false
+    getTraceView.mockResolvedValue({
+      traceID: 'trace-1',
+      unplacedSpanCount: 0,
+      spans: [other, selected],
+    })
+    setTestUrl('/traces/trace-1?span=selected&q=name%20%3D%20%22excluded%22')
+    renderWithContexts(TracesPage)
+    await waitFor(() =>
+      expect(
+        document.querySelector('tr[data-span-id="selected"]')
+      ).not.toBeNull()
+    )
+    expect(new URLSearchParams(window.location.search).get('span')).toBe(
+      'selected'
+    )
+    expect(new URLSearchParams(window.location.search).get('q')).toBe(
+      'name = "excluded"'
+    )
+  })
   it('allows exporting the selected trace when all its spans are unplaced', async () => {
     searchTraceSummaries.mockResolvedValue([makeTraceSummary()])
     getStats.mockResolvedValue(makeStats())

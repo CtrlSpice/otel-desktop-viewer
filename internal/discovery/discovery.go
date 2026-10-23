@@ -11,9 +11,10 @@ type Query struct {
 	EndTime   *string
 	Service   string
 	// ServiceName distinguishes an exact empty service name from no filter.
-	ServiceName *string
-	Namespace   *string
-	Sources     Sources
+	ServiceName     *string
+	Namespace       *string
+	ServiceIdentity *string
+	Sources         Sources
 }
 
 // Sources names server-owned relations that have already applied a signal query.
@@ -38,6 +39,16 @@ type Location struct {
 
 func Literal(value string) string { return "'" + strings.ReplaceAll(value, "'", "''") + "'" }
 
+// ServiceIdentity retains received value kinds and exact wire values. OTel treats
+// an absent namespace as an empty string; an absent name remains distinct.
+// resource is a server-owned SQL alias, never query input.
+func ServiceIdentity(resource string) string {
+	value := func(key string) string {
+		return "(SELECT a.value FROM attributes a WHERE a.key = " + Literal(key) + " AND list_contains(" + resource + ".attribute_ids, a.id))"
+	}
+	return "json_array(" + value("service.name") + ", coalesce(" + value("service.namespace") + ", '{\"kind\":\"string\",\"value\":\"\"}'::JSON))::VARCHAR"
+}
+
 func Predicate(query Query) string {
 	p := []string{"true"}
 	if query.StartTime != nil {
@@ -53,6 +64,9 @@ func Predicate(query Query) string {
 	}
 	if query.Namespace != nil {
 		p = append(p, `coalesce((SELECT attribute_text(a.value) FROM resources r, attributes a WHERE r.id = s.resource_id AND a.key = 'service.namespace' AND list_contains(r.attribute_ids, a.id)), '') = `+Literal(*query.Namespace))
+	}
+	if query.ServiceIdentity != nil {
+		p = append(p, "(SELECT "+ServiceIdentity("r")+" FROM resources r WHERE r.id = s.resource_id) = "+Literal(*query.ServiceIdentity))
 	}
 	return strings.Join(p, " AND ")
 }
@@ -147,21 +161,21 @@ ORDER BY v.count DESC, json_extract_string(v.value, '$.kind'), v.value::VARCHAR`
 func Services(query Query) string {
 	predicate := Predicate(query)
 	return `WITH identities AS (
-    SELECT r.id,
-        coalesce((SELECT attribute_text(a.value)
-            FROM attributes a WHERE a.key = 'service.namespace' AND list_contains(r.attribute_ids, a.id)), '') AS service_namespace
-    FROM resources r
+    SELECT id, service_identity,
+        coalesce(attribute_text(json_extract(service_identity, '$[0]')), '') AS service_name,
+        coalesce(attribute_text(json_extract(service_identity, '$[1]')), '') AS service_namespace
+    FROM (SELECT r.id, ` + ServiceIdentity("r") + ` AS service_identity FROM resources r)
 ), exemplar_counts AS (
     SELECT metric_datapoint_id, count(*) AS exemplar_count FROM exemplars GROUP BY metric_datapoint_id
 ), service_counts AS (
-    SELECT i.service_namespace, s.service_name, count(DISTINCT trace_id) AS trace_count, count(*) AS span_count,
+    SELECT i.service_identity, i.service_namespace, i.service_name, count(DISTINCT trace_id) AS trace_count, count(*) AS span_count,
         count(*) FILTER (WHERE status_code = 2) AS error_span_count,
         max(time_ns) AS last_seen
     FROM (SELECT resource_id, service_name, trace_id, start_time AS time_ns, status_code FROM ` + source(query.Sources.Spans, "spans") + `) s
     JOIN identities i ON i.id = s.resource_id
-    WHERE ` + predicate + ` GROUP BY i.service_namespace, s.service_name
+    WHERE ` + predicate + ` GROUP BY i.service_identity, i.service_namespace, i.service_name
     UNION ALL BY NAME
-    SELECT i.service_namespace, s.service_name, count(*) AS log_count,
+    SELECT i.service_identity, i.service_namespace, i.service_name, count(*) AS log_count,
         count(*) FILTER (WHERE severity_number BETWEEN 17 AND 24) AS error_log_count,
         count(*) FILTER (WHERE severity_number BETWEEN 1 AND 4) AS trace_log_count,
         count(*) FILTER (WHERE severity_number BETWEEN 5 AND 8) AS debug_log_count,
@@ -174,18 +188,21 @@ func Services(query Query) string {
     FROM (SELECT resource_id, service_name,
         coalesce(nullif(timestamp, 0), observed_timestamp) AS time_ns, severity_number FROM ` + source(query.Sources.Logs, "logs") + `) s
     JOIN identities i ON i.id = s.resource_id
-    WHERE ` + predicate + ` GROUP BY i.service_namespace, s.service_name
+    WHERE ` + predicate + ` GROUP BY i.service_identity, i.service_namespace, i.service_name
     UNION ALL BY NAME
-    SELECT i.service_namespace, s.service_name, count(DISTINCT metric_id) AS metric_count,
+    SELECT i.service_identity, i.service_namespace, i.service_name, count(DISTINCT metric_id) AS metric_count,
         count(*) AS data_point_count, sum(coalesce(e.exemplar_count, 0)) AS exemplar_count, max(time_ns) AS last_seen
     FROM (SELECT m.resource_id, m.service_name, m.id AS metric_id, d.id AS datapoint_id, d.timestamp AS time_ns
         FROM metric_datapoints d JOIN ` + source(query.Sources.Metrics, "metrics") + ` m ON m.id = d.metric_id) s
     JOIN identities i ON i.id = s.resource_id
     LEFT JOIN exemplar_counts e ON e.metric_datapoint_id = s.datapoint_id
-    WHERE ` + predicate + ` GROUP BY i.service_namespace, s.service_name
+    WHERE ` + predicate + ` GROUP BY i.service_identity, i.service_namespace, i.service_name
 )
 SELECT json_object(
     'serviceNamespace', c.service_namespace, 'serviceName', c.service_name,
+    'serviceIdentity', c.service_identity,
+    'serviceNameKind', coalesce(json_extract_string(c.service_identity, '$[0].kind'), 'missing'),
+    'serviceNamespaceKind', json_extract_string(c.service_identity, '$[1].kind'),
     'traceCount', coalesce(sum(c.trace_count), 0),
     'spanCount', coalesce(sum(c.span_count), 0), 'errorSpanCount', coalesce(sum(c.error_span_count), 0),
     'logCount', coalesce(sum(c.log_count), 0), 'errorLogCount', coalesce(sum(c.error_log_count), 0),
@@ -198,6 +215,6 @@ SELECT json_object(
     'exemplarCount', coalesce(sum(c.exemplar_count), 0),
     'lastSeen', max(c.last_seen)::VARCHAR) AS entry
 FROM service_counts c
-GROUP BY c.service_namespace, c.service_name
-ORDER BY c.service_namespace, c.service_name`
+GROUP BY c.service_identity, c.service_namespace, c.service_name
+ORDER BY c.service_namespace, c.service_name, c.service_identity`
 }

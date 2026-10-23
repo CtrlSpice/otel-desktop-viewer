@@ -24,6 +24,7 @@ const {
   searchMetricSummaries,
   getStats,
   getMetricView,
+  getMetric,
   getMetricAggregateView,
   getMetricAttributeDefinitions,
   clearMetrics,
@@ -31,6 +32,7 @@ const {
   searchMetricSummaries: vi.fn(),
   getStats: vi.fn(),
   getMetricView: vi.fn(),
+  getMetric: vi.fn(),
   getMetricAggregateView: vi.fn(),
   getMetricAttributeDefinitions: vi.fn(),
   clearMetrics: vi.fn(),
@@ -46,6 +48,7 @@ vi.mock('@/services/telemetry-service', async importOriginal => {
       searchMetricSummaries,
       getStats,
       getMetricView,
+      getMetric,
       getMetricAggregateView,
       getMetricAttributeDefinitions,
       clearMetrics,
@@ -183,6 +186,8 @@ beforeEach(() => {
   searchMetricSummaries.mockReset()
   getStats.mockReset()
   getMetricView.mockReset()
+  getMetric.mockReset()
+  getMetric.mockResolvedValue(null)
   getMetricAggregateView.mockReset()
   getMetricAttributeDefinitions.mockReset()
   getMetricAttributeDefinitions.mockResolvedValue([])
@@ -212,6 +217,46 @@ async function renderSelected(metricType: MetricType) {
 }
 
 describe('Metric main-header range', () => {
+  it('opens an exact route-selected metric outside the filtered list on a fresh mount', async () => {
+    searchMetricSummaries.mockResolvedValue([])
+    getStats.mockResolvedValue(makeStats())
+    getMetric.mockResolvedValue({
+      metricRef: 'metric-1',
+      name: 'demo.metric',
+      description: '',
+      unit: 'ms',
+      metricType: 'Gauge',
+      metadata: [],
+      series: [],
+      resource: {
+        ...EMPTY_RESOURCE,
+        schemaUrl: '',
+        attributes: [
+          {
+            key: 'service.name',
+            value: { kind: 'string', value: 'checkout-api' },
+          },
+        ],
+      },
+      scope: { ...EMPTY_SCOPE, schemaUrl: '' },
+    })
+    getMetricView.mockResolvedValue(makeMetric('Gauge'))
+    getMetricAggregateView.mockResolvedValue({
+      aggregate: null,
+      scalarAggregate: null,
+    })
+    setTestUrl('/metrics/metric-1?q=name%20%3D%20%22excluded%22')
+    renderWithContexts(MetricsPage)
+    await waitFor(() => expect(getMetric).toHaveBeenCalledWith('metric-1'))
+    await waitFor(() => expect(getMetricView).toHaveBeenCalled())
+    expect(
+      await screen.findByRole('region', { name: 'Metric chart' })
+    ).toHaveTextContent('demo.metric')
+    expect(window.location.pathname).toBe('/metrics/metric-1')
+    expect(new URLSearchParams(window.location.search).get('q')).toBe(
+      'name = "excluded"'
+    )
+  })
   it('requires confirmation before deleting all stored metrics', async () => {
     await renderSelected('Gauge')
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)

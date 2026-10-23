@@ -48,7 +48,15 @@ function unquote(text: string): string {
     if (next === 'n') out += '\n'
     else if (next === 't') out += '\t'
     else if (next === 'r') out += '\r'
-    else out += next
+    else if (next === 'b') out += '\b'
+    else if (next === 'f') out += '\f'
+    else if (
+      next === 'u' &&
+      /^[0-9a-fA-F]{4}$/.test(body.slice(i + 1, i + 5))
+    ) {
+      out += String.fromCharCode(parseInt(body.slice(i + 1, i + 5), 16))
+      i += 4
+    } else out += next
   }
   return out
 }

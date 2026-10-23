@@ -14,6 +14,7 @@ import (
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/search"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/timerange"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/util"
+	"github.com/CtrlSpice/otel-desktop-viewer/internal/discovery"
 	"github.com/duckdb/duckdb-go/v2"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -929,6 +930,9 @@ func traceFieldMapper() search.FieldMapper {
 }
 
 func mapTraceFieldExpression(field *search.FieldDefinition) (search.ResolvedExpression, error) {
+	if field.Name == "serviceIdentity" {
+		return search.Text(discovery.ServiceIdentity("r")), nil
+	}
 	if resourceField, found := strings.CutPrefix(field.Name, "resource."); found {
 		col := util.CamelToSnake(resourceField)
 		if err := util.ValidateColumnName(col, resourceColumns); err != nil {

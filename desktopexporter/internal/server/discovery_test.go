@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql/driver"
 	"encoding/json"
+	"math"
 	"testing"
 
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
@@ -13,6 +14,68 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.uber.org/zap/zaptest"
 )
+
+func TestServiceIdentityRetainsTypesAcrossDiscoveryAndSignalSearch(t *testing.T) {
+	h := setupHandler(t)
+	h.logger = zaptest.NewLogger(t)
+	ctx := context.Background()
+	values := []any{"7", int64(7), true, float64(7), math.Copysign(0, -1), float64(0), []any{"7"}, map[string]any{"a": "7"}, nil}
+	for index, value := range values {
+		attrs := pcommon.NewMap()
+		require.NoError(t, attrs.PutEmpty("service.name").FromRaw(value))
+		require.NoError(t, attrs.PutEmpty("service.namespace").FromRaw(value))
+		data := buildTestTraces()
+		r := data.ResourceSpans().At(0)
+		attrs.CopyTo(r.Resource().Attributes())
+		s := r.ScopeSpans().At(0).Spans().At(0)
+		s.SetTraceID([16]byte{byte(index + 1)})
+		s.SetStartTimestamp(100)
+		s.Attributes().PutInt("identity-index", int64(index))
+		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(ctx, conn, data, h.store.FlushedIDs()) }))
+		ld := buildTestLogs()
+		attrs.CopyTo(ld.ResourceLogs().At(0).Resource().Attributes())
+		ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0).SetTimestamp(100)
+		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, ld, h.store.FlushedIDs()) }))
+		md := buildTestMetrics()
+		attrs.CopyTo(md.ResourceMetrics().At(0).Resource().Attributes())
+		md.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0).Gauge().DataPoints().At(0).SetTimestamp(100)
+		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return metrics.Ingest(ctx, conn, md, h.store.FlushedIDs()) }))
+	}
+	result, err := h.Handle(ctx, createRequest("discoverTelemetry", map[string]any{"options": map[string]any{"kind": "services"}}))
+	require.NoError(t, err)
+	var page struct {
+		Rows [][]struct {
+			Identity    string `json:"serviceIdentity"`
+			SpanCount   int    `json:"spanCount"`
+			LogCount    int    `json:"logCount"`
+			MetricCount int    `json:"metricCount"`
+		} `json:"rows"`
+	}
+	require.NoError(t, json.Unmarshal(result.(json.RawMessage), &page))
+	require.Len(t, page.Rows, len(values))
+	for _, row := range page.Rows {
+		service := row[0]
+		require.Equal(t, 1, service.SpanCount)
+		require.Equal(t, 1, service.LogCount)
+		require.Equal(t, 1, service.MetricCount)
+		query := map[string]any{"type": "condition", "query": map[string]any{"field": map[string]any{"name": "serviceIdentity", "searchScope": "field", "type": "string"}, "fieldOperator": "=", "value": service.Identity}}
+		for _, method := range []string{"searchTraceSummaries", "searchLogSummaries", "searchMetricSummaries"} {
+			result, err := h.Handle(ctx, createRequest(method, []any{nil, nil, query}))
+			require.NoError(t, err, method)
+			var rows []json.RawMessage
+			require.NoError(t, json.Unmarshal(result.(json.RawMessage), &rows))
+			require.Len(t, rows, 1, method)
+		}
+		result, err := h.Handle(ctx, createRequest("discoverTelemetry", map[string]any{"options": map[string]any{"kind": "values", "signal": "traces", "ownerType": "span", "key": "identity-index", "serviceIdentity": service.Identity}}))
+		require.NoError(t, err)
+		var valuesPage struct {
+			Rows [][]json.RawMessage `json:"rows"`
+		}
+		require.NoError(t, json.Unmarshal(result.(json.RawMessage), &valuesPage))
+		require.Len(t, valuesPage.Rows, 1)
+		require.Contains(t, string(valuesPage.Rows[0][0]), `"denominator":1`)
+	}
+}
 
 func TestHomeSearchCountsBeforePaginationAndFiltersAttributes(t *testing.T) {
 	h := setupHandler(t)

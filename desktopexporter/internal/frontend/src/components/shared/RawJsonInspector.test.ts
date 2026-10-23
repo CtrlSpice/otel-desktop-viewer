@@ -82,6 +82,43 @@ function expectEmptyPreview() {
 }
 
 describe('RawJsonInspector selection changes', () => {
+  it('retains the completed editor and folds across tab changes without fetching again', async () => {
+    const request = await mockExport()
+    const view = render(RawJsonInspector, {
+      active: true,
+      wholeURL: datapoint.url,
+      scopes: [datapoint],
+    })
+    const editor = await screen.findByLabelText('Raw OTLP JSON')
+    await fireEvent.click(screen.getByRole('button', { name: 'Collapse JSON' }))
+    await waitFor(() =>
+      expect(editor.querySelector('.cm-foldPlaceholder')).not.toBeNull()
+    )
+    const fold = editor.querySelector('.cm-foldPlaceholder')
+    await view.rerender({ active: false })
+    await view.rerender({ active: true })
+    expect(screen.getByLabelText('Raw OTLP JSON')).toBe(editor)
+    expect(editor.querySelector('.cm-foldPlaceholder')).toBe(fold)
+    expect(request.fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['HEAD', 'GET', 'decode', 'format'] as const)(
+    'resumes cancelled %s work when JSON is reopened',
+    async stage => {
+      const request = await mockExport(stage)
+      const view = render(RawJsonInspector, {
+        active: true,
+        wholeURL: datapoint.url,
+        scopes: [datapoint],
+      })
+      await waitFor(() => expect(request.reached).toHaveBeenCalledOnce())
+      await view.rerender({ active: false })
+      expect(request.signals.every(signal => signal.aborted)).toBe(true)
+      await act(async () => request.resume())
+      await view.rerender({ active: true })
+      await screen.findByLabelText('Raw OTLP JSON')
+    }
+  )
   it.each(['decode', 'format'] as const)(
     'keeps loading during preview %s',
     async stage => {
