@@ -16,6 +16,8 @@
     getRouteContext,
   } from '@/contexts/route-context.svelte'
   import { createTimeContext } from '@/contexts/time-context.svelte'
+  import { createWorkspaceContext } from '@/contexts/workspace-context.svelte'
+  import WorkspaceShell from '@/components/shared/WorkspaceShell.svelte'
 
   let {
     importFiles,
@@ -41,6 +43,7 @@
 
   createRouteContext()
   createTimeContext()
+  const workspace = createWorkspaceContext()
 
   const routeContext = getRouteContext()
   let mainElement = $state<HTMLElement | null>(null)
@@ -60,6 +63,7 @@
     const page = pagePath(routeContext.route.path)
     if (page === lastFocusedPage) return
     lastFocusedPage = page
+    const focused = document.activeElement
     void tick().then(() => {
       if (pagePath(routeContext.route.path) !== page) return
       const issuePanel =
@@ -69,7 +73,7 @@
       if (issuePanel) {
         issuePanel.scrollIntoView({ block: 'nearest' })
         issuePanel.focus({ preventScroll: true })
-      } else {
+      } else if (!focused?.isConnected || focused === document.body) {
         mainElement?.focus()
       }
     })
@@ -109,6 +113,8 @@
   }
 </script>
 
+{#snippet emptyPane()}{/snippet}
+
 <main
   bind:this={mainElement}
   tabindex="-1"
@@ -123,6 +129,18 @@
   {:else}
     <Page {importFailure} onViewIssue={viewIssue} />
   {/if}
+  <WorkspaceShell
+    {...workspace.props ?? {
+      items: [],
+      selectedID: null,
+      drawerID: 'signal-drawer',
+      drawerLabel: '',
+      hideDrawer: Page === LogsPage,
+      mainSurface: 'base',
+      main: emptyPane,
+      detail: emptyPane,
+    }}
+  />
 </main>
 
 <FileDropOverlay onFiles={handleImportFiles} />

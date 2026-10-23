@@ -298,11 +298,10 @@
             {#if record.kind === 'event'}
               {@const provenance = toolEventProvenance(record.event)}
               <span
-                >Span event{#if provenance}<span aria-hidden="true">
-                    ·
-                  </span><span
-                    class="text-secondary"
-                    title={provenance.description}>{provenance.source}</span
+                >Span event{#if provenance}<span aria-hidden="true"
+                    >{' · '}</span
+                  ><span class="text-secondary" title={provenance.description}
+                    >{provenance.source}</span
                   >{/if}</span
               >
             {:else}

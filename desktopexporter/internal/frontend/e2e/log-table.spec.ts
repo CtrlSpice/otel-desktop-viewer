@@ -1728,7 +1728,7 @@ test('toolbar filters draft service and severity selections and search once on A
     )
       searches++
   })
-  await expect(page.locator('.drawer-side')).toHaveCount(0)
+  await expect(page.locator('.drawer-side')).toBeHidden()
   await expect(page.locator('.log-table__row').first()).toHaveCSS(
     'font-size',
     '14px'

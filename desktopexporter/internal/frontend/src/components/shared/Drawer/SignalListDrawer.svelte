@@ -1,22 +1,6 @@
-<script module lang="ts">
-  // Cache the persisted state across route-level drawer remounts.
-  let lastOpen: boolean | undefined
-
-  /** Skip the width tween when remounting with the same open preference. */
-  function shouldSkipDrawerWidthTransition(open: boolean): boolean {
-    const skip = lastOpen !== undefined && lastOpen === open
-    lastOpen = open
-    return skip
-  }
-
-  function syncDrawerOpenPreference(open: boolean): void {
-    lastOpen = open
-  }
-</script>
-
 <script lang="ts" generics="T">
   import type { Snippet } from 'svelte'
-  import { onDestroy, onMount, tick } from 'svelte'
+  import { onDestroy, tick } from 'svelte'
   import VirtualList from '@humanspeak/svelte-virtual-list'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { ArrowUp02Icon } from '@hugeicons/core-free-icons'
@@ -93,14 +77,7 @@
     children,
   }: Props<T> = $props()
 
-  /*
-   * Drawer open/closed is a single global preference shared by every
-   * signal page. Each route mounts its own SignalListDrawer instance,
-   * so they don't share in-memory state -- but they all read/write the
-   * same localStorage key on mount/toggle, which gives "opened on
-   * Traces => still opened on Logs" behavior with no cross-component
-   * plumbing.
-   */
+  // One app-wide drawer retains its open preference when a route omits List.
   const DRAWER_OPEN_KEY = 'signal-drawer:open'
 
   function loadDrawerOpen(): boolean {
@@ -129,7 +106,6 @@
   const REOPEN_THRESHOLD_REM = 1.5
 
   function persistDrawerOpen(open: boolean) {
-    syncDrawerOpenPreference(open)
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(DRAWER_OPEN_KEY, String(open))
     }
@@ -194,6 +170,7 @@
   // width. The handle stays mounted in both states, so focus survives the
   // toggle.
   function handleResizeKeydown(e: KeyboardEvent) {
+    skipWidthTransition = true
     if (!drawerOpen) {
       if (e.key === 'ArrowRight' || e.key === 'Enter' || e.key === 'Home') {
         drawerOpen = true
@@ -242,15 +219,16 @@
     drag?.cancel()
   })
 
-  // Suppress width tween when remounting across signal routes (same preference).
-  let skipWidthTransition = $state(
-    shouldSkipDrawerWidthTransition(initialDrawerOpen)
-  )
+  let skipWidthTransition = $state(true)
 
-  onMount(() => {
-    requestAnimationFrame(() => {
-      skipWidthTransition = false
+  $effect(() => {
+    if (!skipWidthTransition) return
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        skipWidthTransition = false
+      })
     })
+    return () => cancelAnimationFrame(frame)
   })
 
   let showEmptyState = $derived(items.length === 0 && !loading)
@@ -510,7 +488,8 @@
           side="left"
           open={drawerOpen}
           controls={drawerPanelID}
-          onclick={() => {
+          onclick={event => {
+            skipWidthTransition = event.detail === 0
             drawerOpen = !drawerOpen
             persistDrawerOpen(drawerOpen)
           }}
@@ -519,145 +498,142 @@
     {/snippet}
   </WorkspaceToolbar>
   <div class="signal-drawer drawer drawer-open">
-    {#if !hideDrawer}
-      <input
-        id={drawerID}
-        type="checkbox"
-        class="drawer-toggle signal-drawer-toggle"
-        checked={drawerOpen}
-        disabled
-        aria-hidden="true"
-        tabindex="-1"
-      />
+    <input
+      id={drawerID}
+      type="checkbox"
+      class="drawer-toggle signal-drawer-toggle"
+      checked={drawerOpen}
+      disabled
+      aria-hidden="true"
+      tabindex="-1"
+    />
 
-      <div class="drawer-side">
+    <div class="drawer-side" style:display={hideDrawer ? 'none' : undefined}>
+      <div
+        id={drawerPanelID}
+        class="signal-drawer__panel flex h-full flex-col"
+        class:signal-drawer__panel--instant={skipWidthTransition || isResizing}
+        style:width={`${dragWidthRem ?? (drawerOpen ? drawerWidth.rem : 0)}rem`}
+      >
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
         <div
-          id={drawerPanelID}
-          class="signal-drawer__panel flex h-full flex-col"
-          class:signal-drawer__panel--instant={skipWidthTransition ||
-            isResizing}
-          style:width={`${dragWidthRem ?? (drawerOpen ? drawerWidth.rem : 0)}rem`}
+          class="col-resize-bar col-resize-bar--in-flow signal-drawer__resize"
+          class:col-resize-bar--active={isResizing}
+          onpointerdown={handleResizeStart}
+          ondblclick={handleResizeDblclick}
+          onkeydown={handleResizeKeydown}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={drawerOpen ? 'Resize the list' : 'Open the list'}
+          aria-valuenow={Math.round(drawerWidth.rem)}
+          aria-valuemin={MIN_DRAWER_WIDTH_REM}
+          aria-valuemax={MAX_DRAWER_WIDTH_REM}
+          tabindex="0"
         >
-          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-          <div
-            class="col-resize-bar col-resize-bar--in-flow signal-drawer__resize"
-            class:col-resize-bar--active={isResizing}
-            onpointerdown={handleResizeStart}
-            ondblclick={handleResizeDblclick}
-            onkeydown={handleResizeKeydown}
-            role="separator"
-            aria-orientation="vertical"
-            aria-label={drawerOpen ? 'Resize the list' : 'Open the list'}
-            aria-valuenow={Math.round(drawerWidth.rem)}
-            aria-valuemin={MIN_DRAWER_WIDTH_REM}
-            aria-valuemax={MAX_DRAWER_WIDTH_REM}
-            tabindex="0"
-          >
-            <div class="col-resize-bar__line"></div>
-          </div>
-          <div
-            class="signal-drawer__contents"
-            class:signal-drawer__contents--closed={!drawerShown}
-            inert={!drawerShown}
-            aria-hidden={!drawerShown}
-          >
-            <PanelClip
-              minimumSize={emptyDrawer ? 0 : remToPx(MIN_DRAWER_WIDTH_REM)}
-            >
-              {#if drawerContent}
-                {@render drawerContent()}
-              {:else}
-                {#if !emptyDrawer && drawerControls}
-                  <div
-                    class="signal-drawer__controls"
-                    role="group"
-                    aria-label={`${label} list controls`}
-                  >
-                    {@render drawerControls()}
-                  </div>
-                {/if}
-                {#if !emptyDrawer}
-                  <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <div
-                    class="signal-drawer__body"
-                    bind:this={drawerBodyEl}
-                    onfocusin={handleListFocusin}
-                    onkeydown={handleListKeydown}
-                    onscrollcapture={handleListScroll}
-                  >
-                    {#if showEmptyState}
-                      <div class="signal-drawer__empty" role="status">
-                        <p class="signal-drawer__empty-title">
-                          No {label.toLowerCase()} found
-                        </p>
-                        <p class="signal-drawer__empty-hint">
-                          Try widening the time range or clearing the search.
-                        </p>
-                      </div>
-                    {:else}
-                      <VirtualList
-                        bind:this={vlistRef}
-                        {items}
-                        {itemKey}
-                        defaultEstimatedItemHeight={72}
-                        bufferSize={10}
-                        containerClass="signal-drawer__vlist"
-                        viewportClass="signal-drawer__vlist-viewport"
-                        viewportLabel={`${label} list`}
-                        itemsClass="signal-drawer__vlist-items"
-                        onRangeChange={handleRenderedRange}
-                      >
-                        {#snippet renderItem(item)}
-                          {@const key = itemKey(item)}
-                          <div
-                            class="signal-drawer__item"
-                            data-drawer-item-key={key}
-                            use:navigableDrawerItem={{
-                              tabIndex: key === rovingItemKey ? 0 : -1,
-                            }}
-                          >
-                            {@render itemSnippet(item, selectedID === key)}
-                          </div>
-                        {/snippet}
-                      </VirtualList>
-                    {/if}
-                  </div>
-                {/if}
-
-                <!-- Expanded: footer -->
-                {#if !emptyDrawer}
-                  <div class="signal-drawer__footer">
-                    <div class="min-w-0 flex-1">{@render footer?.()}</div>
-                  </div>
-                {/if}
-              {/if}
-            </PanelClip>
-          </div>
-          {#if !emptyDrawer && !showEmptyState}
-            <button
-              type="button"
-              class="pointy-uppy btn btn-circle btn-primary"
-              class:pointy-uppy--visible={scrollTopVisible}
-              inert={!scrollTopVisible}
-              aria-hidden={!scrollTopVisible}
-              aria-label="Scroll to top"
-              title="Scroll to top"
-              onclick={scrollToTop}
-              onfocus={() => (scrollTopFocused = true)}
-              onblur={() => (scrollTopFocused = false)}
-            >
-              <HugeiconsIcon
-                icon={ArrowUp02Icon}
-                size={20}
-                strokeWidth={1.75}
-                aria-hidden="true"
-              />
-            </button>
-          {/if}
+          <div class="col-resize-bar__line"></div>
         </div>
+        <div
+          class="signal-drawer__contents"
+          class:signal-drawer__contents--closed={!drawerShown}
+          inert={!drawerShown}
+          aria-hidden={!drawerShown}
+        >
+          <PanelClip
+            minimumSize={emptyDrawer ? 0 : remToPx(MIN_DRAWER_WIDTH_REM)}
+          >
+            {#if drawerContent}
+              {@render drawerContent()}
+            {:else}
+              {#if !emptyDrawer && drawerControls}
+                <div
+                  class="signal-drawer__controls"
+                  role="group"
+                  aria-label={`${label} list controls`}
+                >
+                  {@render drawerControls()}
+                </div>
+              {/if}
+              {#if !emptyDrawer}
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div
+                  class="signal-drawer__body"
+                  bind:this={drawerBodyEl}
+                  onfocusin={handleListFocusin}
+                  onkeydown={handleListKeydown}
+                  onscrollcapture={handleListScroll}
+                >
+                  {#if showEmptyState}
+                    <div class="signal-drawer__empty" role="status">
+                      <p class="signal-drawer__empty-title">
+                        No {label.toLowerCase()} found
+                      </p>
+                      <p class="signal-drawer__empty-hint">
+                        Try widening the time range or clearing the search.
+                      </p>
+                    </div>
+                  {:else}
+                    <VirtualList
+                      bind:this={vlistRef}
+                      {items}
+                      {itemKey}
+                      defaultEstimatedItemHeight={72}
+                      bufferSize={10}
+                      containerClass="signal-drawer__vlist"
+                      viewportClass="signal-drawer__vlist-viewport"
+                      viewportLabel={`${label} list`}
+                      itemsClass="signal-drawer__vlist-items"
+                      onRangeChange={handleRenderedRange}
+                    >
+                      {#snippet renderItem(item)}
+                        {@const key = itemKey(item)}
+                        <div
+                          class="signal-drawer__item"
+                          data-drawer-item-key={key}
+                          use:navigableDrawerItem={{
+                            tabIndex: key === rovingItemKey ? 0 : -1,
+                          }}
+                        >
+                          {@render itemSnippet(item, selectedID === key)}
+                        </div>
+                      {/snippet}
+                    </VirtualList>
+                  {/if}
+                </div>
+              {/if}
+
+              <!-- Expanded: footer -->
+              {#if !emptyDrawer}
+                <div class="signal-drawer__footer">
+                  <div class="min-w-0 flex-1">{@render footer?.()}</div>
+                </div>
+              {/if}
+            {/if}
+          </PanelClip>
+        </div>
+        {#if !emptyDrawer && !showEmptyState}
+          <button
+            type="button"
+            class="pointy-uppy btn btn-circle btn-primary"
+            class:pointy-uppy--visible={scrollTopVisible}
+            inert={!scrollTopVisible}
+            aria-hidden={!scrollTopVisible}
+            aria-label="Scroll to top"
+            title="Scroll to top"
+            onclick={scrollToTop}
+            onfocus={() => (scrollTopFocused = true)}
+            onblur={() => (scrollTopFocused = false)}
+          >
+            <HugeiconsIcon
+              icon={ArrowUp02Icon}
+              size={20}
+              strokeWidth={1.75}
+              aria-hidden="true"
+            />
+          </button>
+        {/if}
       </div>
-    {/if}
+    </div>
 
     <div class="drawer-content min-h-0 min-w-0">
       {@render children()}
@@ -703,7 +679,8 @@
     transition-delay: var(--panel-motion-duration);
   }
 
-  .signal-drawer__panel--instant {
+  .signal-drawer__panel--instant,
+  .signal-drawer__panel--instant .signal-drawer__contents {
     transition: none !important;
   }
 

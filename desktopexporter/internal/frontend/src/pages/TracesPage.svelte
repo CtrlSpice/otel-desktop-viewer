@@ -418,178 +418,171 @@
   }
 </script>
 
-<div class="traces-page">
-  <PageLayout
-    mainSurface="base"
-    items={page.sortedItems}
-    navigationCount={page.sortedItems.length}
-    selectedID={page.selectedID}
-    drawerID="signal-drawer"
-    drawerLabel="Traces"
-    onRefresh={page.handleRefresh}
-    refreshPulse={page.refreshPulse}
-    refreshAsideTip={page.refreshAsideTip}
-    loading={page.loading}
-    itemKey={t => t.traceID}
-  >
-    {#snippet drawerChromeToolbar()}
-      <DrawerSearchPanel
-        segment="toolbar"
-        signal="traces"
-        sortValue={page.sortColumn}
-        sortDirection={page.sortDirection}
-      />
-    {/snippet}
+<PageLayout
+  mainSurface="base"
+  items={page.sortedItems}
+  navigationCount={page.sortedItems.length}
+  selectedID={page.selectedID}
+  drawerID="signal-drawer"
+  drawerLabel="Traces"
+  onRefresh={page.handleRefresh}
+  refreshPulse={page.refreshPulse}
+  refreshAsideTip={page.refreshAsideTip}
+  loading={page.loading}
+  itemKey={t => t.traceID}
+>
+  {#snippet drawerChromeToolbar()}
+    <DrawerSearchPanel
+      segment="toolbar"
+      signal="traces"
+      sortValue={page.sortColumn}
+      sortDirection={page.sortDirection}
+    />
+  {/snippet}
 
-    {#snippet drawerSearch()}
-      <DrawerSearchPanel
-        segment="search"
-        signal="traces"
-        sortValue={page.sortColumn}
-        sortDirection={page.sortDirection}
-        onSearchResults={handleSearchResults}
-        onSearchReady={api => (page.searchEditorApi = api)}
-        onQueryChange={(text, availableFields) => {
-          query = text
-          fields = availableFields
-        }}
-        onQuerySubmit={text => {
-          submittedText = text
-          submittedRequest = parseSearchRequest(text, fields, 'traces')
-        }}
-      />
-    {/snippet}
+  {#snippet drawerSearch()}
+    <DrawerSearchPanel
+      segment="search"
+      signal="traces"
+      sortValue={page.sortColumn}
+      sortDirection={page.sortDirection}
+      onSearchResults={handleSearchResults}
+      onSearchReady={api => (page.searchEditorApi = api)}
+      onQueryChange={(text, availableFields) => {
+        query = text
+        fields = availableFields
+      }}
+      onQuerySubmit={text => {
+        submittedText = text
+        submittedRequest = parseSearchRequest(text, fields, 'traces')
+      }}
+    />
+  {/snippet}
 
-    {#snippet drawerControls()}
-      <ListHeaderControls label="Trace list controls">
-        {#snippet sort()}
-          <DrawerSortControl
-            options={[
-              { value: 'startTime', label: 'Start Time' },
-              { value: 'duration', label: 'Duration' },
-              { value: 'rootSpanName', label: 'Root Span Name' },
-              { value: 'serviceName', label: 'Service Name' },
-              { value: 'spanCount', label: 'Span Count' },
-              { value: 'errorCount', label: 'Error Count' },
-            ]}
-            value={page.sortColumn}
-            direction={page.sortDirection}
-            onchange={page.handleSortChange}
-          />
-        {/snippet}
-        {#snippet filters()}<TelemetryListFilters
-            signal="traces"
-            {query}
-            appliedQuery={submittedText}
-            {fields}
-            {services}
-            editor={page.searchEditorApi}
-          />{/snippet}
-      </ListHeaderControls>
-    {/snippet}
-
-    {#snippet itemSnippet(trace, selected)}
-      <TraceCard {trace} {selected} onclick={selectTrace} />
-    {/snippet}
-
-    {#snippet drawerFooter()}
-      <SignalDrawerFooter label="trace" onDeleteAll={handleDeleteAllTraces} />
-    {/snippet}
-
-    {#snippet main()}
-      {#if displayError || importFailure}
-        <div class="traces-page__placeholder alert alert-error">
-          {#if displayError}
-            <span>Error: {displayError}</span>
-          {:else if importFailure}
-            <span>Import issue in {importFailure.fileName}.</span>
-            <a class="link" href="/#{INGESTION_ISSUES_ID}" onclick={onViewIssue}
-              >View issue</a
-            >
-          {/if}
-        </div>
-      {:else if page.loading && !hasTraceRows}
-        <div class="traces-page__placeholder traces-empty">Loading traces…</div>
-      {:else if !page.loading && !hasTraceRows && !currentTraceData}
-        <div class="traces-page__placeholder traces-empty">
-          <p class="text-rp-subtle">No traces in this time range</p>
-          <p class="mt-2 text-sm text-rp-subtle">
-            Send telemetry to the exporter or adjust the time range
-          </p>
-        </div>
-      {:else if currentTraceData}
-        {#if currentTraceData.unplacedSpanCount > 0}
-          <div class="traces-page__unplaced alert alert-warning" role="alert">
-            <span>
-              {currentTraceData.unplacedSpanCount}
-              {currentTraceData.unplacedSpanCount === 1
-                ? 'span is'
-                : 'spans are'} missing from this trace. Their parent links form a
-              loop, so they have no place in the tree — usually an instrumentation
-              bug in the service that emitted them.
-            </span>
-          </div>
-        {/if}
-        <WaterfallView
-          traceID={currentTraceData.traceID}
-          spans={currentTraceData.spans}
-          logs={traceLogs}
-          {selectedSpanID}
-          searchActive={activeQueryTree !== undefined}
-          onSelectSpan={handleSelectSpan}
-          onInspectColumn={handleInspectColumn}
-          onSelectTimelineRecord={handleSelectTimelineRecord}
-          loading={detailLoading}
+  {#snippet drawerControls()}
+    <ListHeaderControls label="Trace list controls">
+      {#snippet sort()}
+        <DrawerSortControl
+          options={[
+            { value: 'startTime', label: 'Start Time' },
+            { value: 'duration', label: 'Duration' },
+            { value: 'rootSpanName', label: 'Root Span Name' },
+            { value: 'serviceName', label: 'Service Name' },
+            { value: 'spanCount', label: 'Span Count' },
+            { value: 'errorCount', label: 'Error Count' },
+          ]}
+          value={page.sortColumn}
+          direction={page.sortDirection}
+          onchange={page.handleSortChange}
         />
-      {:else if detailLoading}
-        <div class="traces-page__placeholder traces-empty">
-          Loading trace detail…
-        </div>
-      {:else}
-        <div class="traces-page__placeholder traces-empty">
-          <p class="text-rp-subtle">Select a trace to view details</p>
+      {/snippet}
+      {#snippet filters()}<TelemetryListFilters
+          signal="traces"
+          {query}
+          appliedQuery={submittedText}
+          {fields}
+          {services}
+          editor={page.searchEditorApi}
+        />{/snippet}
+    </ListHeaderControls>
+  {/snippet}
+
+  {#snippet itemSnippet(trace, selected)}
+    <TraceCard {trace} {selected} onclick={selectTrace} />
+  {/snippet}
+
+  {#snippet drawerFooter()}
+    <SignalDrawerFooter label="trace" onDeleteAll={handleDeleteAllTraces} />
+  {/snippet}
+
+  {#snippet main()}
+    {#if displayError || importFailure}
+      <div class="traces-page__placeholder alert alert-error">
+        {#if displayError}
+          <span>Error: {displayError}</span>
+        {:else if importFailure}
+          <span>Import issue in {importFailure.fileName}.</span>
+          <a class="link" href="/#{INGESTION_ISSUES_ID}" onclick={onViewIssue}
+            >View issue</a
+          >
+        {/if}
+      </div>
+    {:else if page.loading && !hasTraceRows}
+      <div class="traces-page__placeholder traces-empty">Loading traces…</div>
+    {:else if !page.loading && !hasTraceRows && !currentTraceData}
+      <div class="traces-page__placeholder traces-empty">
+        <p class="text-rp-subtle">No traces in this time range</p>
+        <p class="mt-2 text-sm text-rp-subtle">
+          Send telemetry to the exporter or adjust the time range
+        </p>
+      </div>
+    {:else if currentTraceData}
+      {#if currentTraceData.unplacedSpanCount > 0}
+        <div class="traces-page__unplaced alert alert-warning" role="alert">
+          <span>
+            {currentTraceData.unplacedSpanCount}
+            {currentTraceData.unplacedSpanCount === 1 ? 'span is' : 'spans are'} missing
+            from this trace. Their parent links form a loop, so they have no place
+            in the tree — usually an instrumentation bug in the service that emitted
+            them.
+          </span>
         </div>
       {/if}
-    {/snippet}
-
-    {#snippet detail()}
-      <DetailView
-        span={selectedSpan}
-        rootSpanID={currentTraceData?.spans.find(
-          node => !node.spanData.parentSpanID
-        )?.spanData.spanID}
-        fieldTarget={fieldRequest?.spanID === selectedSpanID
-          ? fieldRequest.target
-          : undefined}
-        salvaged={selectedNode?.salvaged ?? false}
-        cyclePoint={selectedNode?.cyclePoint ?? false}
-        selectedEventIndex={resolvedEventIndex}
-        selectedLogRef={resolvedLogRef}
-        logs={selectedSpanLogs}
+      <WaterfallView
+        traceID={currentTraceData.traceID}
+        spans={currentTraceData.spans}
+        logs={traceLogs}
+        {selectedSpanID}
+        searchActive={activeQueryTree !== undefined}
+        onSelectSpan={handleSelectSpan}
+        onInspectColumn={handleInspectColumn}
+        onSelectTimelineRecord={handleSelectTimelineRecord}
+        loading={detailLoading}
       />
-    {/snippet}
+    {:else if detailLoading}
+      <div class="traces-page__placeholder traces-empty">
+        Loading trace detail…
+      </div>
+    {:else}
+      <div class="traces-page__placeholder traces-empty">
+        <p class="text-rp-subtle">Select a trace to view details</p>
+      </div>
+    {/if}
+  {/snippet}
 
-    {#snippet pageFooter()}
-      <SignalFooter
-        index={page.selectedIndex}
-        total={page.sortedItems.length}
-        label="trace"
-        onFirst={page.selectFirst}
-        onPrev={() => page.selectByOffset(-1)}
-        onNext={() => page.selectByOffset(1)}
-        onLast={page.selectLast}
-        onDelete={currentTraceData ? deleteSelectedTrace : undefined}
-      />
-    {/snippet}
-  </PageLayout>
-</div>
+  {#snippet detail()}
+    <DetailView
+      span={selectedSpan}
+      rootSpanID={currentTraceData?.spans.find(
+        node => !node.spanData.parentSpanID
+      )?.spanData.spanID}
+      fieldTarget={fieldRequest?.spanID === selectedSpanID
+        ? fieldRequest.target
+        : undefined}
+      salvaged={selectedNode?.salvaged ?? false}
+      cyclePoint={selectedNode?.cyclePoint ?? false}
+      selectedEventIndex={resolvedEventIndex}
+      selectedLogRef={resolvedLogRef}
+      logs={selectedSpanLogs}
+    />
+  {/snippet}
+
+  {#snippet pageFooter()}
+    <SignalFooter
+      index={page.selectedIndex}
+      total={page.sortedItems.length}
+      label="trace"
+      onFirst={page.selectFirst}
+      onPrev={() => page.selectByOffset(-1)}
+      onNext={() => page.selectByOffset(1)}
+      onLast={page.selectLast}
+      onDelete={currentTraceData ? deleteSelectedTrace : undefined}
+    />
+  {/snippet}
+</PageLayout>
 
 <style lang="postcss">
   @reference "../app.css";
-
-  .traces-page {
-    @apply flex min-h-0 min-w-0 w-full flex-1;
-  }
 
   .traces-page__placeholder {
     @apply m-[var(--layout-gap)];

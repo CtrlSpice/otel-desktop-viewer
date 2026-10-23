@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import {
     remToFraction,
     remToPx,
@@ -52,6 +52,8 @@
     maxRightPx?: number
     storageKey?: string
     stackBreakpoint?: number
+    /** Re-measure destination slots before paint when the app route changes. */
+    layoutKey?: string
   }
 
   let {
@@ -73,6 +75,7 @@
     maxRightPx,
     storageKey,
     stackBreakpoint = 800,
+    layoutKey,
   }: Props = $props()
 
   let leftWidth = $state(DEFAULT_LEFT_WIDTH)
@@ -330,6 +333,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    skipWidthTransition = true
     const step = e.shiftKey ? 0.05 : 0.01
     const lo = effectiveMinLeft
     const hi = effectiveMaxLeft
@@ -356,22 +360,33 @@
     }
   }
 
+  function measure(bounds: DOMRectReadOnly) {
+    if (containerWidth !== bounds.width || containerHeight !== bounds.height)
+      skipWidthTransition = true
+    containerWidth = bounds.width
+    containerHeight = bounds.height
+  }
+
   $effect(() => {
-    if (!containerRef) return
+    void layoutKey
+    const element = containerRef
+    if (element) untrack(() => measure(element.getBoundingClientRect()))
+  })
+
+  $effect(() => {
+    const element = containerRef
+    if (!element) return
     let frame: number | undefined
-    let bounds: DOMRectReadOnly
-    const ro = new ResizeObserver(entries => {
-      bounds = entries[entries.length - 1]!.contentRect
-      // Switching the split direction replaces measured descendants. Apply
-      // the new layout outside observer delivery so they can report next frame.
+    const ro = new ResizeObserver(() => {
+      // Responsive measurements can resize descendant observers. Coalesce
+      // outside delivery; route changes use the before-paint measurement above.
       if (frame !== undefined) return
       frame = requestAnimationFrame(() => {
         frame = undefined
-        containerWidth = bounds.width
-        containerHeight = bounds.height
+        measure(element.getBoundingClientRect())
       })
     })
-    ro.observe(containerRef)
+    ro.observe(element)
     return () => {
       ro.disconnect()
       if (frame !== undefined) cancelAnimationFrame(frame)
@@ -379,115 +394,69 @@
   })
 </script>
 
-{#if stacked}
+<div
+  class="panel-split flex h-full w-full"
+  class:flex-col={stacked}
+  class:panel-split--collapsed={rightCollapsed}
+  class:panel-split--dragging={isDragging}
+  class:panel-split--initializing={skipWidthTransition}
+  bind:this={containerRef}
+>
   <div
-    class="panel-split flex h-full w-full flex-col"
-    class:panel-split--collapsed={rightCollapsed}
-    class:panel-split--dragging={isDragging}
-    class:panel-split--initializing={skipWidthTransition}
-    bind:this={containerRef}
+    class="panel-shell min-h-0 min-w-0 overflow-hidden {stacked &&
+    !rightCollapsed
+      ? 'rounded-t-xl rounded-b-none'
+      : 'rounded-xl'}"
+    style="flex: {stacked && !rightCollapsed ? renderedLeftWidth : 1} 1 0px"
   >
-    <div
-      class="panel-shell min-h-0 overflow-hidden {rightCollapsed
-        ? 'rounded-xl'
-        : 'rounded-t-xl rounded-b-none'}"
-      style="flex: {rightCollapsed ? 1 : renderedLeftWidth} 1 0px"
-    >
-      {@render leftPanel()}
-    </div>
-
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <div
-      bind:this={dividerRef}
-      class="col-resize-bar col-resize-bar--row-in-flow"
-      inert={rightCollapsed}
-      aria-hidden={rightCollapsed}
-      class:col-resize-bar--active={isDragging}
-      onpointerdown={handlePointerDown}
-      ondblclick={handleDoubleClick}
-      onkeydown={handleKeydown}
-      role="separator"
-      aria-orientation="horizontal"
-      aria-label="Resize the panels"
-      aria-valuenow={Math.round(leftWidth * 100)}
-      aria-valuemin={Math.round(effectiveMinLeft * 100)}
-      aria-valuemax={Math.round(effectiveMaxLeft * 100)}
-      tabindex="0"
-    >
-      <div class="col-resize-bar__line"></div>
-    </div>
-
-    <div
-      class="panel-shell panel-detail min-h-0 overflow-hidden rounded-t-none rounded-b-xl"
-      id={rightPanelID}
-      inert={rightCollapsed}
-      aria-hidden={rightCollapsed}
-      style="flex: {rightCollapsed ? 0 : 1 - renderedLeftWidth} 1 0px"
-    >
-      <PanelClip
-        axis="height"
-        minimumSize={flexSpacePx() * (1 - effectiveMaxLeft)}
-      >
-        {@render rightPanel()}
-      </PanelClip>
-    </div>
+    {@render leftPanel()}
   </div>
-{:else}
+
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div
-    class="panel-split flex h-full w-full"
-    class:panel-split--collapsed={rightCollapsed}
-    class:panel-split--dragging={isDragging}
-    class:panel-split--initializing={skipWidthTransition}
-    bind:this={containerRef}
+    bind:this={dividerRef}
+    class="col-resize-bar {stacked
+      ? 'col-resize-bar--row-in-flow'
+      : 'col-resize-bar--in-flow'}"
+    inert={rightCollapsed}
+    aria-hidden={rightCollapsed}
+    class:col-resize-bar--active={isDragging}
+    onpointerdown={handlePointerDown}
+    ondblclick={handleDoubleClick}
+    onkeydown={handleKeydown}
+    role="separator"
+    aria-orientation={stacked ? 'horizontal' : 'vertical'}
+    aria-label="Resize the panels"
+    aria-valuenow={Math.round(leftWidth * 100)}
+    aria-valuemin={Math.round(effectiveMinLeft * 100)}
+    aria-valuemax={Math.round(effectiveMaxLeft * 100)}
+    tabindex="0"
   >
-    <div
-      class="panel-shell h-full min-w-0 overflow-hidden rounded-xl"
-      style="flex: 1 1 0px"
-    >
-      {@render leftPanel()}
-    </div>
-
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <div
-      bind:this={dividerRef}
-      class="col-resize-bar col-resize-bar--in-flow"
-      inert={rightCollapsed}
-      aria-hidden={rightCollapsed}
-      class:col-resize-bar--active={isDragging}
-      onpointerdown={handlePointerDown}
-      ondblclick={handleDoubleClick}
-      onkeydown={handleKeydown}
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize the panels"
-      aria-valuenow={Math.round(leftWidth * 100)}
-      aria-valuemin={Math.round(effectiveMinLeft * 100)}
-      aria-valuemax={Math.round(effectiveMaxLeft * 100)}
-      tabindex="0"
-    >
-      <div class="col-resize-bar__line"></div>
-    </div>
-
-    <div
-      class="panel-shell panel-detail h-full min-w-0 overflow-hidden rounded-xl"
-      id={rightPanelID}
-      inert={rightCollapsed}
-      aria-hidden={rightCollapsed}
-      style="flex: 0 0 {rightCollapsed ? 0 : rightSize}px"
-    >
-      <PanelClip
-        minimumSize={Math.max(
-          rightSize,
-          flexSpacePx() * (1 - effectiveMaxLeft)
-        )}
-      >
-        {@render rightPanel()}
-      </PanelClip>
-    </div>
+    <div class="col-resize-bar__line"></div>
   </div>
-{/if}
+
+  <div
+    class="panel-shell panel-detail min-h-0 min-w-0 overflow-hidden {stacked
+      ? 'rounded-t-none rounded-b-xl'
+      : 'rounded-xl'}"
+    id={rightPanelID}
+    inert={rightCollapsed}
+    aria-hidden={rightCollapsed}
+    style:flex={stacked
+      ? `${rightCollapsed ? 0 : 1 - renderedLeftWidth} 1 0px`
+      : `0 0 ${rightCollapsed ? 0 : rightSize}px`}
+  >
+    <PanelClip
+      axis={stacked ? 'height' : 'width'}
+      minimumSize={stacked
+        ? flexSpacePx() * (1 - effectiveMaxLeft)
+        : Math.max(rightSize, flexSpacePx() * (1 - effectiveMaxLeft))}
+    >
+      {@render rightPanel()}
+    </PanelClip>
+  </div>
+</div>
 
 <style lang="postcss">
   @reference "../../app.css";
@@ -529,7 +498,9 @@
     transition-delay: 0s, 0s, var(--panel-motion-duration);
   }
 
+  .panel-split--initializing,
   .panel-split--initializing .panel-shell,
+  .panel-split--initializing .col-resize-bar,
   .panel-split--dragging,
   .panel-split--dragging .panel-shell,
   .panel-split--dragging .col-resize-bar {

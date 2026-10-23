@@ -769,8 +769,8 @@ test.describe('home page accessibility', () => {
       ).toHaveCSS('background-color', selectedColor)
       await page.goto('/')
       const paneTab = page
-        .locator('.pane-header .header-tab[aria-selected="true"]')
-        .first()
+        .getByRole('tablist', { name: 'OTLP endpoint protocol' })
+        .getByRole('tab', { selected: true })
       await paneTab.hover()
       await expect(paneTab).toHaveCSS('background-color', low)
       await page.mouse.move(0, 0)
@@ -1022,7 +1022,7 @@ test.describe('home page accessibility', () => {
         const split = panel.parentElement!
         document
           .querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!
-          .click()
+          .dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
         const frames = []
         for (let frame = 0; frame < 24; frame++) {
           await new Promise<void>(resolve =>
@@ -1693,10 +1693,12 @@ test.describe('home page accessibility', () => {
     expect(selectedStyle.background).toBe('rgba(0, 0, 0, 0)')
 
     await page.keyboard.press('Tab')
-    await expect(page.getByRole('tabpanel')).toBeFocused()
-    await page.keyboard.press('Tab')
     await expect(
       page.getByRole('button', { name: 'Copy OTLP environment variables' })
+    ).toBeFocused()
+    await page.keyboard.press('Tab')
+    await expect(
+      page.getByRole('tabpanel', { name: 'gRPC', exact: true })
     ).toBeFocused()
   })
 

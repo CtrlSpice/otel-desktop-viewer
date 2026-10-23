@@ -192,7 +192,7 @@
 
 {#snippet attributes()}
   <DetailBubble label="Attributes" layoutKey="home-attributes">
-    {#snippet trailing()}
+    {#snippet action()}
       <PaneHeader
         mode="tabs"
         bare

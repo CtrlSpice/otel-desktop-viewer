@@ -59,7 +59,15 @@
           Connect an exporter
         </h2>
         <p class="text-pretty text-rp-subtle">
-          Set these variables before starting your instrumented app.
+          Run these commands in your terminal, then start your app with
+          OpenTelemetry enabled. If your app runs on another machine, replace <code
+            >localhost</code
+          >
+          with this viewer’s hostname or IP address.
+          {#if protocol === 'grpc' || httpPort === null}
+            Replace port {protocol === 'grpc' ? 4317 : 4318} if your viewer uses a
+            different port.
+          {/if}
         </p>
       </div>
       <div class="terminal">
@@ -93,14 +101,6 @@
           />
         </div>
       </div>
-      <p class="text-pretty text-rp-subtle">
-        {protocol === 'grpc'
-          ? 'Default gRPC port. Use your configured port if different.'
-          : httpPort === null
-            ? 'Default HTTP port. Use your configured port if different.'
-            : 'Configured HTTP port.'} Use the viewer’s host when sending from another
-        machine.
-      </p>
     </section>
     <section class="guide-section">
       <div class="flex flex-col gap-1">

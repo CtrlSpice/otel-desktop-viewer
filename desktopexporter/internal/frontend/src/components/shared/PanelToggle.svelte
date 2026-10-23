@@ -14,7 +14,7 @@
     side: 'left' | 'right'
     open: boolean
     controls: string
-    onclick: () => void
+    onclick: (event: MouseEvent) => void
   } = $props()
 
   const label = $derived(

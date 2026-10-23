@@ -17,6 +17,7 @@
   let previousSection = $derived(stack?.previous(stackID))
   let suppressClick = false
   let pointerFocus = $state(false)
+  let actionWidth = $state(0)
   let scrollTop = 0
   let disclosureGeneration = 0
 
@@ -214,6 +215,7 @@
         ? 'open'
         : 'closed'}
     style:flex={stack?.flex(stackID)}
+    style:--detail-action-width={actionWidth ? `${actionWidth}px` : undefined}
     use:register
   >
     {@render bubble()}
@@ -222,7 +224,10 @@
         increases the step. Home and End shrink either side; the top stays open.
         Press 0 to reset sizes.</span
       >{/if}
-    {#if action && !disabled}<div class="detail-bubble__action">
+    {#if action && !disabled}<div
+        class="detail-bubble__action"
+        bind:clientWidth={actionWidth}
+      >
         {@render action()}
       </div>{/if}
   </div>
@@ -287,11 +292,10 @@
   }
 
   .detail-bubble__heading--action {
-    padding-inline-end: calc(var(--pane-inline-inset) + 2.25rem - 1px);
-  }
-  .detail-bubble:has(.detail-bubble__action :global([role='tablist']))
-    .detail-bubble__heading--action {
-    padding-inline-end: calc(var(--detail-tabs-space, 16.5rem) - 1px);
+    padding-inline-end: calc(
+      var(--header-padding-inline) + var(--detail-action-width, 2rem) +
+        var(--header-gap)
+    );
   }
   .detail-bubble > .detail-bubble__disclosure {
     @apply flex-1;
@@ -302,11 +306,6 @@
     transform: translateY(-50%);
     right: var(--header-padding-inline);
     gap: var(--header-gap);
-  }
-  @container header (width < 25rem) {
-    .detail-bubble__heading--action {
-      --detail-tabs-space: 8.5rem;
-    }
   }
   .detail-bubble__content {
     @apply px-0;

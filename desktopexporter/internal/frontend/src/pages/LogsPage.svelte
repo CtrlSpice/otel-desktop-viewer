@@ -358,149 +358,141 @@
   }
 </script>
 
-<div class="logs-page">
-  <PageLayout
-    hideDrawer
-    mainSurface="base"
-    items={page.sortedItems}
-    navigationCount={total}
-    selectedID={page.selectedID}
-    drawerID="signal-drawer"
-    drawerLabel="Filters"
-    onRefresh={handleRefresh}
-    refreshPulse={page.refreshPulse}
-    refreshAsideTip={page.refreshAsideTip}
-    loading={page.loading}
-    itemKey={l => l.logRef}
-  >
-    {#snippet drawerChromeToolbar()}
-      <DateTimeFilter />
-    {/snippet}
+<PageLayout
+  hideDrawer
+  mainSurface="base"
+  items={page.sortedItems}
+  navigationCount={total}
+  selectedID={page.selectedID}
+  drawerID="signal-drawer"
+  drawerLabel="Filters"
+  onRefresh={handleRefresh}
+  refreshPulse={page.refreshPulse}
+  refreshAsideTip={page.refreshAsideTip}
+  loading={page.loading}
+  itemKey={l => l.logRef}
+>
+  {#snippet drawerChromeToolbar()}
+    <DateTimeFilter />
+  {/snippet}
 
-    {#snippet drawerSearch()}
-      <DrawerSearchPanel
-        segment="search"
-        signal="logs"
-        sortValue={page.sortColumn}
-        sortDirection={page.sortDirection}
-        onSearchReady={api => (page.searchEditorApi = api)}
-        onQueryChange={(text, availableFields) => {
-          query = text
-          fields = availableFields
-        }}
-        onQuerySubmit={text => {
-          if (text !== submittedText) {
-            requestedPage = 1
-            queryWindow = null
-            submittedText = text
-          }
-        }}
-        onSearchRequest={request => {
-          submittedQuery = request
-          void page.runListFetch()
-        }}
-      />
-    {/snippet}
+  {#snippet drawerSearch()}
+    <DrawerSearchPanel
+      segment="search"
+      signal="logs"
+      sortValue={page.sortColumn}
+      sortDirection={page.sortDirection}
+      onSearchReady={api => (page.searchEditorApi = api)}
+      onQueryChange={(text, availableFields) => {
+        query = text
+        fields = availableFields
+      }}
+      onQuerySubmit={text => {
+        if (text !== submittedText) {
+          requestedPage = 1
+          queryWindow = null
+          submittedText = text
+        }
+      }}
+      onSearchRequest={request => {
+        submittedQuery = request
+        void page.runListFetch()
+      }}
+    />
+  {/snippet}
 
-    {#snippet main()}
-      {#if displayError || importFailure}
-        <div class="logs-page__placeholder alert alert-error">
-          {#if displayError}
-            <span>Error: {displayError}</span>
-          {:else if importFailure}
-            <span>Import issue in {importFailure.fileName}.</span>
-            <a class="link" href="/#{INGESTION_ISSUES_ID}" onclick={onViewIssue}
-              >View issue</a
-            >
-          {/if}
-        </div>
-      {/if}
-      <div class="logs-page__table">
-        <LogTable
-          {total}
-          {pageNumber}
-          {pageSize}
-          {errorNavigation}
-          {errorNavigationError}
-          {errorNavigationLoading}
-          onSelectError={selectError}
-          logs={page.sortedItems}
-          selectedID={page.selectedID}
-          sortColumn={page.sortColumn}
-          sortDirection={page.sortDirection}
-          loading={page.loading}
-          onSelect={selectLog}
-          onInspect={inspectLog}
-          onSort={changeSort}
-          {fields}
-          bind:selectedColumns
-          bind:selectionMode
-          bind:checkedIDs
-          selectionBusy={deletingSelected}
-          onColumnsChange={() => void page.runListFetch()}
-        >
-          {#snippet filters()}<LogFilters
-              {query}
-              appliedQuery={submittedText}
-              {fields}
-              {services}
-              editor={page.searchEditorApi}
-            />{/snippet}
-        </LogTable>
+  {#snippet main()}
+    {#if displayError || importFailure}
+      <div class="logs-page__placeholder alert alert-error">
+        {#if displayError}
+          <span>Error: {displayError}</span>
+        {:else if importFailure}
+          <span>Import issue in {importFailure.fileName}.</span>
+          <a class="link" href="/#{INGESTION_ISSUES_ID}" onclick={onViewIssue}
+            >View issue</a
+          >
+        {/if}
       </div>
-      <Pagination
-        page={pageNumber}
-        {pageSize}
+    {/if}
+    <div class="logs-page__table">
+      <LogTable
         {total}
+        {pageNumber}
+        {pageSize}
+        {errorNavigation}
+        {errorNavigationError}
+        {errorNavigationLoading}
+        onSelectError={selectError}
+        logs={page.sortedItems}
+        selectedID={page.selectedID}
+        sortColumn={page.sortColumn}
+        sortDirection={page.sortDirection}
         loading={page.loading}
-        onPage={changePage}
-        onPageSize={changePageSize}
-        onDeleteAll={handleDeleteAllLogs}
-        {selectionMode}
-        selectedCount={checkedIDs.length}
-        deleting={deletingSelected}
-        onDeleteSelected={handleDeleteSelectedLogs}
-      />
-    {/snippet}
+        onSelect={selectLog}
+        onInspect={inspectLog}
+        onSort={changeSort}
+        {fields}
+        bind:selectedColumns
+        bind:selectionMode
+        bind:checkedIDs
+        selectionBusy={deletingSelected}
+        onColumnsChange={() => void page.runListFetch()}
+      >
+        {#snippet filters()}<LogFilters
+            {query}
+            appliedQuery={submittedText}
+            {fields}
+            {services}
+            editor={page.searchEditorApi}
+          />{/snippet}
+      </LogTable>
+    </div>
+    <Pagination
+      page={pageNumber}
+      {pageSize}
+      {total}
+      loading={page.loading}
+      onPage={changePage}
+      onPageSize={changePageSize}
+      onDeleteAll={handleDeleteAllLogs}
+      {selectionMode}
+      selectedCount={checkedIDs.length}
+      deleting={deletingSelected}
+      onDeleteSelected={handleDeleteSelectedLogs}
+    />
+  {/snippet}
 
-    {#snippet detail()}
-      {#if page.selectedID && !selectedLog && !detailFetcher.error}
-        <div class="logs-page__placeholder logs-empty">
-          Loading log details…
-        </div>
-      {:else if page.selectedID && detailFetcher.error}
-        <div class="logs-page__placeholder alert alert-error">
-          <span>Error: {detailFetcher.error}</span>
-        </div>
-      {:else}
-        <LogDetailPanel
-          log={selectedLog}
-          bind:detailView
-          fieldTarget={inspection?.id === selectedLog?.logRef
-            ? inspection?.target
-            : undefined}
-        >
-          {#snippet footer()}
-            {#if selectedLog}
-              {@const logRef = selectedLog.logRef}
-              <SignalFooter
-                label="log"
-                onDelete={() => handleDeleteLog(logRef)}
-              />
-            {/if}
-          {/snippet}
-        </LogDetailPanel>
-      {/if}
-    {/snippet}
-  </PageLayout>
-</div>
+  {#snippet detail()}
+    {#if page.selectedID && !selectedLog && !detailFetcher.error}
+      <div class="logs-page__placeholder logs-empty">Loading log details…</div>
+    {:else if page.selectedID && detailFetcher.error}
+      <div class="logs-page__placeholder alert alert-error">
+        <span>Error: {detailFetcher.error}</span>
+      </div>
+    {:else}
+      <LogDetailPanel
+        log={selectedLog}
+        bind:detailView
+        fieldTarget={inspection?.id === selectedLog?.logRef
+          ? inspection?.target
+          : undefined}
+      >
+        {#snippet footer()}
+          {#if selectedLog}
+            {@const logRef = selectedLog.logRef}
+            <SignalFooter
+              label="log"
+              onDelete={() => handleDeleteLog(logRef)}
+            />
+          {/if}
+        {/snippet}
+      </LogDetailPanel>
+    {/if}
+  {/snippet}
+</PageLayout>
 
 <style lang="postcss">
   @reference "../app.css";
-
-  .logs-page {
-    @apply flex min-h-0 min-w-0 w-full flex-1;
-  }
 
   .logs-page__placeholder {
     @apply m-[var(--layout-gap)];

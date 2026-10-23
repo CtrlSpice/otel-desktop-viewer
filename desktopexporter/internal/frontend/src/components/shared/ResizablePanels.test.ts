@@ -69,9 +69,12 @@ beforeEach(() => {
 
 async function measure(width: number, height = 600) {
   await tick()
+  const target = document.querySelector('.panel-split')!
+  const bounds = new DOMRect(0, 0, width, height)
+  vi.spyOn(target, 'getBoundingClientRect').mockReturnValue(bounds)
   const entry = {
-    target: document.body,
-    contentRect: new DOMRect(0, 0, width, height),
+    target,
+    contentRect: bounds,
     borderBoxSize: [],
     contentBoxSize: [],
     devicePixelContentBoxSize: [],

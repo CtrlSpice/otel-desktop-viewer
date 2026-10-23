@@ -783,248 +783,240 @@
   }
 </script>
 
-<div class="metrics-page">
-  <PageLayout
-    mainSurface="base"
-    items={page.sortedItems}
-    navigationCount={page.sortedItems.length}
-    selectedID={page.selectedID}
-    drawerID="signal-drawer"
-    drawerLabel="Metrics"
-    onRefresh={page.handleRefresh}
-    refreshPulse={page.refreshPulse}
-    refreshAsideTip={page.refreshAsideTip}
-    loading={page.loading}
-    itemKey={metricSummaryKey}
-  >
-    {#snippet drawerChromeToolbar()}
-      <DrawerSearchPanel
-        segment="toolbar"
-        signal="metrics"
-        sortValue={page.sortColumn}
-        sortDirection={page.sortDirection}
-      />
-    {/snippet}
+<PageLayout
+  mainSurface="base"
+  items={page.sortedItems}
+  navigationCount={page.sortedItems.length}
+  selectedID={page.selectedID}
+  drawerID="signal-drawer"
+  drawerLabel="Metrics"
+  onRefresh={page.handleRefresh}
+  refreshPulse={page.refreshPulse}
+  refreshAsideTip={page.refreshAsideTip}
+  loading={page.loading}
+  itemKey={metricSummaryKey}
+>
+  {#snippet drawerChromeToolbar()}
+    <DrawerSearchPanel
+      segment="toolbar"
+      signal="metrics"
+      sortValue={page.sortColumn}
+      sortDirection={page.sortDirection}
+    />
+  {/snippet}
 
-    {#snippet drawerSearch()}
-      <DrawerSearchPanel
-        segment="search"
-        signal="metrics"
-        sortValue={page.sortColumn}
-        sortDirection={page.sortDirection}
-        onSearchResults={page.handleSearchResults}
-        onSearchReady={api => (page.searchEditorApi = api)}
-        onQueryChange={(text, availableFields) => {
-          query = text
-          fields = availableFields
-        }}
-        onQuerySubmit={text => {
-          submittedText = text
-          submittedRequest = parseSearchRequest(text, fields, 'metrics')
-        }}
-      />
-    {/snippet}
+  {#snippet drawerSearch()}
+    <DrawerSearchPanel
+      segment="search"
+      signal="metrics"
+      sortValue={page.sortColumn}
+      sortDirection={page.sortDirection}
+      onSearchResults={page.handleSearchResults}
+      onSearchReady={api => (page.searchEditorApi = api)}
+      onQueryChange={(text, availableFields) => {
+        query = text
+        fields = availableFields
+      }}
+      onQuerySubmit={text => {
+        submittedText = text
+        submittedRequest = parseSearchRequest(text, fields, 'metrics')
+      }}
+    />
+  {/snippet}
 
-    {#snippet drawerControls()}
-      <ListHeaderControls label="Metric list controls">
-        {#snippet sort()}
-          <DrawerSortControl
-            options={[
-              { value: 'lastSeen', label: 'Last Seen' },
-              { value: 'name', label: 'Name' },
-              {
-                value: 'metricType',
-                label: 'Type',
-                description:
-                  'Type, then applicable temporality (Delta, Cumulative, Unspecified), then Sum monotonicity. Missing values sort last ascending.',
-              },
-              { value: 'serviceName', label: 'Service Name' },
-              { value: 'description', label: 'Description' },
-              { value: 'dataPointCount', label: 'Datapoint Count' },
-              { value: 'seriesCount', label: 'Timeseries Count' },
-            ]}
-            value={page.sortColumn}
-            direction={page.sortDirection}
-            onchange={page.handleSortChange}
-          />
-        {/snippet}
-        {#snippet filters()}<TelemetryListFilters
-            signal="metrics"
-            {query}
-            appliedQuery={submittedText}
-            {fields}
-            {services}
-            editor={page.searchEditorApi}
-          />{/snippet}
-      </ListHeaderControls>
-    {/snippet}
+  {#snippet drawerControls()}
+    <ListHeaderControls label="Metric list controls">
+      {#snippet sort()}
+        <DrawerSortControl
+          options={[
+            { value: 'lastSeen', label: 'Last Seen' },
+            { value: 'name', label: 'Name' },
+            {
+              value: 'metricType',
+              label: 'Type',
+              description:
+                'Type, then applicable temporality (Delta, Cumulative, Unspecified), then Sum monotonicity. Missing values sort last ascending.',
+            },
+            { value: 'serviceName', label: 'Service Name' },
+            { value: 'description', label: 'Description' },
+            { value: 'dataPointCount', label: 'Datapoint Count' },
+            { value: 'seriesCount', label: 'Timeseries Count' },
+          ]}
+          value={page.sortColumn}
+          direction={page.sortDirection}
+          onchange={page.handleSortChange}
+        />
+      {/snippet}
+      {#snippet filters()}<TelemetryListFilters
+          signal="metrics"
+          {query}
+          appliedQuery={submittedText}
+          {fields}
+          {services}
+          editor={page.searchEditorApi}
+        />{/snippet}
+    </ListHeaderControls>
+  {/snippet}
 
-    {#snippet itemSnippet(metric, selected)}
-      <MetricCard {metric} {selected} onclick={selectMetric} />
-    {/snippet}
+  {#snippet itemSnippet(metric, selected)}
+    <MetricCard {metric} {selected} onclick={selectMetric} />
+  {/snippet}
 
-    {#snippet drawerFooter()}
-      <SignalDrawerFooter label="metric" onDeleteAll={handleDeleteAllMetrics} />
-    {/snippet}
+  {#snippet drawerFooter()}
+    <SignalDrawerFooter label="metric" onDeleteAll={handleDeleteAllMetrics} />
+  {/snippet}
 
-    {#snippet main()}
-      {#if selectedSummary}
-        {#snippet metricChartHeaderBadge()}
-          <SignalBadges
-            signal="metric"
-            metricType={selectedSummary.metricType}
-            aggregationTemporality={selectedSummary.aggregationTemporality}
-            isMonotonic={selectedSummary.isMonotonic}
-          />
-        {/snippet}
+  {#snippet main()}
+    {#if selectedSummary}
+      {#snippet metricChartHeaderBadge()}
+        <SignalBadges
+          signal="metric"
+          metricType={selectedSummary.metricType}
+          aggregationTemporality={selectedSummary.aggregationTemporality}
+          isMonotonic={selectedSummary.isMonotonic}
+        />
+      {/snippet}
 
-        {#snippet overlayControl()}
-          <ChartStatOverlaysToggle />
-        {/snippet}
+      {#snippet overlayControl()}
+        <ChartStatOverlaysToggle />
+      {/snippet}
 
-        {#snippet countLegend()}
-          <HistogramCountLegend />
-        {/snippet}
+      {#snippet countLegend()}
+        <HistogramCountLegend />
+      {/snippet}
 
-        {#snippet heatmapIcon()}
-          <HugeiconsIcon
-            icon={GridTableIcon}
-            size={16}
-            strokeWidth={1.5}
-            aria-hidden="true"
-          />
-        {/snippet}
-        {#snippet histogramIcon()}
-          <HugeiconsIcon
-            icon={ChartHistogramIcon}
-            size={16}
-            strokeWidth={1.5}
-            aria-hidden="true"
-          />
-        {/snippet}
-        {@const histogramChartTabs = histogramViewTabs().map(tab => ({
-          ...tab,
-          icon: tab.id === 'heatmap' ? heatmapIcon : histogramIcon,
-        }))}
+      {#snippet heatmapIcon()}
+        <HugeiconsIcon
+          icon={GridTableIcon}
+          size={16}
+          strokeWidth={1.5}
+          aria-hidden="true"
+        />
+      {/snippet}
+      {#snippet histogramIcon()}
+        <HugeiconsIcon
+          icon={ChartHistogramIcon}
+          size={16}
+          strokeWidth={1.5}
+          aria-hidden="true"
+        />
+      {/snippet}
+      {@const histogramChartTabs = histogramViewTabs().map(tab => ({
+        ...tab,
+        icon: tab.id === 'heatmap' ? heatmapIcon : histogramIcon,
+      }))}
 
-        {#if showChartTitleTabs}
-          <PaneHeader
-            pill
-            mode="title-tabs"
-            title={selectedSummary.name}
-            subtitle={selectedSummary.serviceName?.trim() || undefined}
-            tabs={showChartAggregationTabs
-              ? chartAggregationTabs
-              : histogramChartTabs}
-            activeID={showChartAggregationTabs
-              ? metricCtx.aggregationView
-              : metricCtx.activeHistogramTab}
-            onSelect={id => {
-              if (showChartAggregationTabs) {
-                metricCtx.setAggregationView(id as AggregationView)
-              } else {
-                metricCtx.setActiveHistogramTab(id as HistogramTab)
-              }
-            }}
-            ariaLabel="Metric chart"
-            tabPanelID={METRIC_CHART_PANEL_ID}
-            timeRange={showChartHistogramTabs
-              ? undefined
-              : chartHeaderTimeRange}
-            metaLeft={showChartHistogramTabs ? countLegend : undefined}
-            metaRight={showChartOverlayControls ? overlayControl : undefined}
-          >
-            {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
-            {#snippet right()}
-              {#key selectedSummary.metricRef}
-                <ExportButton signal="metric" id={selectedSummary.metricRef} />
-              {/key}
-            {/snippet}
-          </PaneHeader>
-        {:else}
-          <PaneHeader
-            pill
-            mode="title"
-            title={selectedSummary.name}
-            subtitle={selectedSummary.serviceName?.trim() || undefined}
-            ariaLabel="Metric chart"
-            timeRange={chartHeaderTimeRange}
-            metaRight={showChartOverlayControls ? overlayControl : undefined}
-          >
-            {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
-            {#snippet right()}
-              {#key selectedSummary.metricRef}
-                <ExportButton signal="metric" id={selectedSummary.metricRef} />
-              {/key}
-            {/snippet}
-          </PaneHeader>
-        {/if}
-      {/if}
-      {#if displayError || importFailure}
-        <div
-          {...chartTabPanelAttrs}
-          class="metrics-page__placeholder alert alert-error"
+      {#if showChartTitleTabs}
+        <PaneHeader
+          pill
+          mode="title-tabs"
+          title={selectedSummary.name}
+          subtitle={selectedSummary.serviceName?.trim() || undefined}
+          tabs={showChartAggregationTabs
+            ? chartAggregationTabs
+            : histogramChartTabs}
+          activeID={showChartAggregationTabs
+            ? metricCtx.aggregationView
+            : metricCtx.activeHistogramTab}
+          onSelect={id => {
+            if (showChartAggregationTabs) {
+              metricCtx.setAggregationView(id as AggregationView)
+            } else {
+              metricCtx.setActiveHistogramTab(id as HistogramTab)
+            }
+          }}
+          ariaLabel="Metric chart"
+          tabPanelID={METRIC_CHART_PANEL_ID}
+          timeRange={showChartHistogramTabs ? undefined : chartHeaderTimeRange}
+          metaLeft={showChartHistogramTabs ? countLegend : undefined}
+          metaRight={showChartOverlayControls ? overlayControl : undefined}
         >
-          {#if displayError}
-            <span>Error: {displayError}</span>
-          {:else if importFailure}
-            <span>Import issue in {importFailure.fileName}.</span>
-            <a class="link" href="/#{INGESTION_ISSUES_ID}" onclick={onViewIssue}
-              >View issue</a
-            >
-          {/if}
-        </div>
-      {:else if page.loading && !hasMetricRows}
-        <div
-          {...chartTabPanelAttrs}
-          class="metrics-page__placeholder metrics-empty"
-        >
-          Loading metrics…
-        </div>
-      {:else if !page.loading && !hasMetricRows}
-        <div
-          {...chartTabPanelAttrs}
-          class="metrics-page__placeholder metrics-empty"
-        >
-          <p class="text-rp-subtle">No metrics in this time range</p>
-          <p class="mt-2 text-sm text-rp-subtle">
-            Send telemetry to the exporter or adjust the time range
-          </p>
-        </div>
+          {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
+          {#snippet right()}
+            {#key selectedSummary.metricRef}
+              <ExportButton signal="metric" id={selectedSummary.metricRef} />
+            {/key}
+          {/snippet}
+        </PaneHeader>
       {:else}
-        <div {...chartTabPanelAttrs} class="metrics-page__chart">
-          <MetricChartView />
-        </div>
+        <PaneHeader
+          pill
+          mode="title"
+          title={selectedSummary.name}
+          subtitle={selectedSummary.serviceName?.trim() || undefined}
+          ariaLabel="Metric chart"
+          timeRange={chartHeaderTimeRange}
+          metaRight={showChartOverlayControls ? overlayControl : undefined}
+        >
+          {#snippet badge()}{@render metricChartHeaderBadge()}{/snippet}
+          {#snippet right()}
+            {#key selectedSummary.metricRef}
+              <ExportButton signal="metric" id={selectedSummary.metricRef} />
+            {/key}
+          {/snippet}
+        </PaneHeader>
       {/if}
-    {/snippet}
+    {/if}
+    {#if displayError || importFailure}
+      <div
+        {...chartTabPanelAttrs}
+        class="metrics-page__placeholder alert alert-error"
+      >
+        {#if displayError}
+          <span>Error: {displayError}</span>
+        {:else if importFailure}
+          <span>Import issue in {importFailure.fileName}.</span>
+          <a class="link" href="/#{INGESTION_ISSUES_ID}" onclick={onViewIssue}
+            >View issue</a
+          >
+        {/if}
+      </div>
+    {:else if page.loading && !hasMetricRows}
+      <div
+        {...chartTabPanelAttrs}
+        class="metrics-page__placeholder metrics-empty"
+      >
+        Loading metrics…
+      </div>
+    {:else if !page.loading && !hasMetricRows}
+      <div
+        {...chartTabPanelAttrs}
+        class="metrics-page__placeholder metrics-empty"
+      >
+        <p class="text-rp-subtle">No metrics in this time range</p>
+        <p class="mt-2 text-sm text-rp-subtle">
+          Send telemetry to the exporter or adjust the time range
+        </p>
+      </div>
+    {:else}
+      <div {...chartTabPanelAttrs} class="metrics-page__chart">
+        <MetricChartView />
+      </div>
+    {/if}
+  {/snippet}
 
-    {#snippet detail()}
-      <MetricDetailView />
-    {/snippet}
+  {#snippet detail()}
+    <MetricDetailView />
+  {/snippet}
 
-    {#snippet pageFooter()}
-      <SignalFooter
-        index={page.selectedIndex}
-        total={page.sortedItems.length}
-        label="metric"
-        onFirst={page.selectFirst}
-        onPrev={() => page.selectByOffset(-1)}
-        onNext={() => page.selectByOffset(1)}
-        onLast={page.selectLast}
-        onDelete={selectedSummary
-          ? () => handleDeleteMetric(selectedSummary!.metricRef)
-          : undefined}
-      />
-    {/snippet}
-  </PageLayout>
-</div>
+  {#snippet pageFooter()}
+    <SignalFooter
+      index={page.selectedIndex}
+      total={page.sortedItems.length}
+      label="metric"
+      onFirst={page.selectFirst}
+      onPrev={() => page.selectByOffset(-1)}
+      onNext={() => page.selectByOffset(1)}
+      onLast={page.selectLast}
+      onDelete={selectedSummary
+        ? () => handleDeleteMetric(selectedSummary!.metricRef)
+        : undefined}
+    />
+  {/snippet}
+</PageLayout>
 
 <style lang="postcss">
   @reference "../app.css";
-
-  .metrics-page {
-    @apply flex min-h-0 min-w-0 w-full flex-1 flex-col;
-  }
 
   .metrics-page__chart {
     @apply flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden;
