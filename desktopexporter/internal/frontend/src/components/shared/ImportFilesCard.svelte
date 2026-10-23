@@ -27,9 +27,8 @@
       aria-hidden="true"
     />
   </span>
-  <span class="text-rp-subtle">
-    Drop telemetry or evaluation JSON / JSONL files anywhere on the screen. I'm
-    not a cop.
+  <span class="text-balance text-rp-subtle">
+    Drop telemetry JSON files anywhere on the screen. I'm not a cop.
   </span>
 </button>
 <input
@@ -38,6 +37,6 @@
   accept=".json,.jsonl,application/json,application/x-ndjson"
   multiple
   hidden
-  aria-label="Choose telemetry or evaluation JSON / JSONL files"
+  aria-label="Choose telemetry JSON files"
   onchange={chooseFiles}
 />

@@ -7,9 +7,7 @@ import ImportFilesCard from './ImportFilesCard.svelte'
 describe('ImportFilesCard', () => {
   it('opens the file picker from its keyboard-accessible button', async () => {
     render(ImportFilesCard, { onFiles: vi.fn() })
-    const input = screen.getByLabelText(
-      'Choose telemetry or evaluation JSON / JSONL files'
-    )
+    const input = screen.getByLabelText('Choose telemetry JSON files')
     const open = vi.spyOn(input, 'click')
     const button = screen.getByRole('button', { name: 'Import files' })
     button.focus()
@@ -21,9 +19,7 @@ describe('ImportFilesCard', () => {
   it('hands off files immediately and supports choosing the same file again', async () => {
     const onFiles = vi.fn()
     render(ImportFilesCard, { onFiles })
-    const input = screen.getByLabelText(
-      'Choose telemetry or evaluation JSON / JSONL files'
-    )
+    const input = screen.getByLabelText('Choose telemetry JSON files')
     const file = new File(['{"resourceMetrics":[]}'], 'metric.json')
     await fireEvent.change(input, { target: { files: [file] } })
     expect(onFiles).toHaveBeenLastCalledWith([file])

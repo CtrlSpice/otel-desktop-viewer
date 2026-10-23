@@ -58,27 +58,25 @@ test('picker sends supported signal groups and lists profiles/invalid files with
   await page.goto('/')
   const resource =
     '{"scopeLogs":[{"logRecords":[{"body":{"doubleValue":-0},"timeUnixNano":"18446744073709551615"}]}]}'
-  await page
-    .getByLabel('Choose telemetry or evaluation JSON / JSONL files')
-    .setInputFiles([
-      {
-        name: 'mixed.json',
-        mimeType: 'application/json',
-        buffer: Buffer.from(
-          `{"resourceSpans":[{}],"resourceLogs":[${resource}],"resourceMetrics":[{}],"resourceProfiles":[]}`
-        ),
-      },
-      {
-        name: 'broken.json',
-        mimeType: 'application/json',
-        buffer: Buffer.from('{"resourceLogs":['),
-      },
-      {
-        name: 'later.json',
-        mimeType: 'application/json',
-        buffer: Buffer.from('{"resourceLogs":[{}]}'),
-      },
-    ])
+  await page.getByLabel('Choose telemetry JSON files').setInputFiles([
+    {
+      name: 'mixed.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(
+        `{"resourceSpans":[{}],"resourceLogs":[${resource}],"resourceMetrics":[{}],"resourceProfiles":[]}`
+      ),
+    },
+    {
+      name: 'broken.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from('{"resourceLogs":['),
+    },
+    {
+      name: 'later.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from('{"resourceLogs":[{}]}'),
+    },
+  ])
   await expect.poll(() => requests.length).toBe(4)
   expect(requests.map(request => request.path)).toEqual([
     '/v1/traces',

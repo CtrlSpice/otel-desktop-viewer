@@ -182,13 +182,11 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
     values.getByRole('columnheader', { name: 'Sort by percentage' })
   ).toHaveAttribute('aria-sort', 'ascending')
   const imported = page.waitForResponse('http://127.0.0.1:54318/v1/logs')
-  await page
-    .getByLabel('Choose telemetry or evaluation JSON / JSONL files')
-    .setInputFiles({
-      name: 'logs.json',
-      mimeType: 'application/json',
-      buffer: Buffer.from('{"resourceLogs":[{}]}'),
-    })
+  await page.getByLabel('Choose telemetry JSON files').setInputFiles({
+    name: 'logs.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from('{"resourceLogs":[{}]}'),
+  })
   await imported
   await expect(page).toHaveURL(/\/\?time=all$/)
   expect(serviceReads).toBe(1)

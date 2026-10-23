@@ -44,20 +44,24 @@
       alt="Lulu the axolotl with her telescope"
       class="size-24 shrink-0 object-contain"
     />
-    <div class="min-w-0">
-      <h2 class="text-lg font-normal text-base-content">
+    <div class="flex min-w-0 flex-col gap-2">
+      <h2 class="text-lg font-normal text-balance text-base-content">
         Welcome to otel-desktop-viewer
       </h2>
-      <p class="text-rp-subtle">A cozy place for your telemetry.</p>
+      <p class="text-pretty text-rp-subtle">A cozy place for your telemetry.</p>
     </div>
   </div>
   <div class="guide-scroll">
     {@render importContent?.()}
     <section class="guide-section">
-      <h2 class="text-lg font-normal text-base-content">Connect an exporter</h2>
-      <p class="text-rp-subtle">
-        Send telemetry from your SDK, Collector, or agent.
-      </p>
+      <div class="flex flex-col gap-1">
+        <h2 class="text-lg font-normal text-balance text-base-content">
+          Connect an exporter
+        </h2>
+        <p class="text-pretty text-rp-subtle">
+          Send telemetry from your SDK, Collector, or agent.
+        </p>
+      </div>
       <div class="flex items-center justify-between gap-2">
         <PaneHeader
           mode="tabs"
@@ -86,7 +90,7 @@
           ariaLabel="OTLP exporter environment variables"
         />
       </div>
-      <p class="text-rp-subtle">
+      <p class="text-pretty text-rp-subtle">
         {protocol === 'grpc'
           ? 'Default gRPC port. Use your configured port if different.'
           : httpPort === null
@@ -96,7 +100,9 @@
     </section>
     <section class="guide-section">
       <div class="flex items-center justify-between gap-2">
-        <h2 class="text-lg font-normal text-base-content">Try an example</h2>
+        <h2 class="text-lg font-normal text-balance text-base-content">
+          Try an example
+        </h2>
         <ValueCopyButton
           text={example}
           label="otel-cli example"
@@ -121,9 +127,9 @@
     @apply flex h-full min-h-0 min-w-0 flex-col pt-3;
   }
   .guide-scroll {
-    @apply flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-3 text-sm;
+    @apply flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto p-3 text-sm;
   }
   .guide-section {
-    @apply flex shrink-0 flex-col gap-2;
+    @apply flex shrink-0 flex-col gap-3;
   }
 </style>
