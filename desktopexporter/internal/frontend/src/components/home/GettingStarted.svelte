@@ -11,9 +11,13 @@
     $props()
   const taglines = [
     'OpenTelemetry made cozy',
-    "I'm not changing the name, friend.",
+    "I'm not changing the name, buddy.",
     'Now with “a lot more functionality”™',
     "I have splintered the ecosystem. Pray I don't splinter it any further.",
+    'Axolotls are salamanders.',
+    'Those fluffy frills are gills.',
+    'Axolotls can regrow limbs.',
+    'Wild axolotls call Xochimilco home.',
   ]
   const tagline = taglines[Math.floor(Math.random() * taglines.length)]
   let protocol = $state('http')
@@ -53,7 +57,7 @@
     />
     <div class="flex min-w-0 flex-col gap-2">
       <h2 class="text-lg font-normal text-balance text-base-content">
-        Welcome to otel-desktop-viewer
+        otel-desktop-viewer
       </h2>
       <p class="text-pretty text-rp-subtle">{tagline}</p>
     </div>
