@@ -12,7 +12,7 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy, untrack, type Snippet } from 'svelte'
+  import { onDestroy, onMount, untrack, type Snippet } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import {
     Cancel01Icon,
@@ -37,9 +37,20 @@
   import GettingStarted from '@/components/home/GettingStarted.svelte'
   import ServiceCard from '@/components/home/ServiceCard.svelte'
   import AttributeDiscovery from '@/components/home/AttributeDiscovery.svelte'
+  import {
+    homeFields,
+    homeQueries,
+    queryText,
+  } from '@/components/home/home-search'
+  import { getStaticFieldsForSearch } from '@/constants/fields'
+  import { getDynamicAttributes } from '@/services/search-field-service'
+  import { parseQuery } from '@/components/shared/Search/queryParser'
+  import { getNavigationCounts } from '@/contexts/navigation-counts.svelte'
+  import { readRoute, navigateCurrentRoute, subscribeToRoute } from '@/route'
   import { telemetryAPI } from '@/services/telemetry-service'
   import {
     serviceIdentity,
+    discoverySignalHref,
     type ServiceSummary,
     type DiscoveryOptions,
     type DiscoverySignal,
@@ -57,13 +68,22 @@
   }: { importContent?: Snippet; importFailures?: readonly ImportFailure[] } =
     $props()
   const time = getTimeContext()
+  const navigation = getNavigationCounts()
+  const signals = ['traces', 'metrics', 'logs'] as const
+  let fields = homeFields(signals.map(getStaticFieldsForSearch))
+  let fieldsReady = $state(false)
+  let queries = $state(homeQueries(null))
+  let pendingQueries = homeQueries(null)
+  let totalServices = $state<number>()
+  let alive = true
+  let initialized = false
   let services = $state<ServiceSummary[]>([])
   let selected = $state<ServiceSummary | null>(null)
   let stats = $state<Stats | null>(null)
   let statsError = $state('')
   let error = $state('')
   let loading = $state(false)
-  let draft = $state('')
+  let draft = $state(readRoute().query.q ?? '')
   let term = $state('')
   let offset = $state(0)
   let more = $state(false)
@@ -96,14 +116,20 @@
     request?.abort()
     const controller = new AbortController()
     request = controller
+    let nextRange = range
     if (refresh) {
       const bounds = selectionToQueryRangeNs(time.selection, Date.now())
-      range = {
+      nextRange = {
         startTime: bounds.startTime?.toString() ?? null,
         endTime: bounds.endTime?.toString() ?? null,
       }
     }
-    const options = { ...range, term, offset: pageOffset, limit: 100 }
+    const options = {
+      ...nextRange,
+      queries: pendingQueries,
+      offset: pageOffset,
+      limit: 100,
+    }
     loading = true
     error = ''
     if (refresh) {
@@ -124,6 +150,18 @@
       )
       if (controller.signal.aborted) return
       services = page.items
+      range = nextRange
+      queries = options.queries
+      totalServices = page.totals?.home
+      navigation?.setHomeCounts(page.totals ?? {}, {
+        traces: discoverySignalHref('traces', range, queryText(queries.traces)),
+        metrics: discoverySignalHref(
+          'metrics',
+          range,
+          queryText(queries.metrics)
+        ),
+        logs: discoverySignalHref('logs', range, queryText(queries.logs)),
+      })
       more = page.truncated
       offset = pageOffset
       loaded = true
@@ -131,7 +169,9 @@
         selected =
           services.find(
             service => serviceIdentity(service) === serviceIdentity(selected!)
-          ) ?? selected
+          ) ??
+          services[0] ??
+          null
       else selected = services[0] ?? null
       if (refresh) {
         revision++
@@ -144,16 +184,50 @@
     }
   }
   function submit() {
-    term = draft
-    void load(0, true)
+    try {
+      pendingQueries = homeQueries(parseQuery(draft, fields))
+      term = draft
+      const route = readRoute()
+      if ((route.query.q ?? '') !== draft)
+        navigateCurrentRoute(
+          { ...route.query, q: draft || undefined },
+          'replace'
+        )
+      void load(0, true)
+    } catch (reason) {
+      error = reason instanceof Error ? reason.message : String(reason)
+    }
   }
   $effect(() => {
     void time.selection
+    if (!fieldsReady) return
     untrack(() => {
-      void load(0, true)
+      if (!initialized) {
+        initialized = true
+        submit()
+      } else void load(0, true)
     })
   })
-  onDestroy(() => request?.abort())
+  onMount(() => {
+    void Promise.all(signals.map(getDynamicAttributes)).then(groups => {
+      if (!alive) return
+      fields = homeFields([fields, ...groups])
+      fieldsReady = true
+    })
+    return subscribeToRoute(() => {
+      const route = readRoute()
+      if (route.path !== '/') return
+      const next = route.query.q ?? ''
+      if (next === draft) return
+      draft = next
+      if (fieldsReady) submit()
+    })
+  })
+  onDestroy(() => {
+    alive = false
+    request?.abort()
+    navigation?.setHomeCounts(null)
+  })
   function relative(timestamp: bigint | null | undefined) {
     if (timestamp == null) return 'Unavailable'
     const minutes = Math.max(
@@ -219,6 +293,7 @@
       <AttributeDiscovery
         service={selected}
         {range}
+        {queries}
         {revision}
         signal={attributeSignal}
       />
@@ -286,6 +361,7 @@
 {/snippet}
 
 <PageLayout
+  revealDrawer={window.location.hash === `#${INGESTION_ISSUES_ID}`}
   mainTitle="Services"
   items={[]}
   emptyDrawer
@@ -307,8 +383,8 @@
       <input
         class="input typed-field typed-field--pill min-w-0 flex-1"
         type="search"
-        aria-label="Search services"
-        placeholder="Search services…"
+        aria-label="Search all telemetry"
+        placeholder="Search all telemetry…"
         bind:value={draft}
       />
       <button
@@ -336,7 +412,7 @@
     <WorkspaceHeader mode="title" pill title="Services" ariaLabel="Services">
       {#snippet right()}<span class="text-rp-subtle"
           >{loaded
-            ? `[${offset + services.length}${more ? '+' : ''}]`
+            ? `[${totalServices ?? `${offset + services.length}${more ? '+' : ''}`}]`
             : '[—]'}</span
         >{/snippet}
     </WorkspaceHeader>
@@ -357,6 +433,7 @@
           <ServiceCard
             {service}
             {range}
+            {queries}
             selected={selected !== null &&
               serviceIdentity(selected) === serviceIdentity(service)}
             onSelect={() => (selected = service)}

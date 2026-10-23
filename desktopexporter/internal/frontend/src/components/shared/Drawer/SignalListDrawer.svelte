@@ -44,6 +44,7 @@
     drawerControls?: Snippet
     drawerContent?: Snippet
     hideDrawer?: boolean
+    revealDrawer?: boolean
     navigationTrailing?: Snippet
     footer?: Snippet
     children: Snippet
@@ -70,6 +71,7 @@
     drawerControls,
     drawerContent,
     hideDrawer = false,
+    revealDrawer = false,
     navigationTrailing,
     footer,
     children,
@@ -86,6 +88,12 @@
 
   const initialDrawerOpen = loadDrawerOpen()
   let drawerOpen = $state(initialDrawerOpen)
+  $effect.pre(() => {
+    if (revealDrawer) {
+      drawerOpen = true
+      persistDrawerOpen(true)
+    }
+  })
   // Resize state. The width tween is suppressed while dragging: a 200ms
   // transition on a value changing every pointermove makes the edge lag the
   // cursor instead of tracking it.

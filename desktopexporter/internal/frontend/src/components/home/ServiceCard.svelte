@@ -9,17 +9,20 @@
   } from '@/services/discovery-types'
   import { traceServiceColor } from '@/utils/trace-service-color'
   import { themeSignal } from '@/state/theme.svelte'
+  import { queryText, type HomeQueries } from './home-search'
 
   let {
     service,
     selected,
     onSelect,
     range,
+    queries,
   }: {
     service: ServiceSummary
     selected: boolean
     onSelect: () => void
     range: Pick<DiscoveryOptions, 'startTime' | 'endTime'>
+    queries?: HomeQueries
   } = $props()
   const signals = $derived([
     {
@@ -95,7 +98,16 @@
       {#each signals as signal (signal.id)}
         <a
           class="service-summary__row"
-          href={serviceSignalHref(service, signal.id, range)}
+          href={signal.count > 0
+            ? serviceSignalHref(
+                service,
+                signal.id,
+                range,
+                queryText(queries?.[signal.id] ?? null)
+              )
+            : undefined}
+          aria-disabled={signal.count === 0 ? true : undefined}
+          class:service-summary__row--disabled={signal.count === 0}
           aria-label="Open {service.serviceName ||
             'unnamed service'} {signal.id}"
         >
@@ -155,8 +167,13 @@
     grid-template-columns: subgrid;
     min-height: var(--signal-card-row-h);
   }
-  .service-summary__row:hover .service-summary__label {
+  .service-summary__row[href]:hover .service-summary__label {
     @apply underline;
+  }
+  .service-summary__row--disabled,
+  .service-summary__row--disabled .service-summary__label,
+  .service-summary__row--disabled .text-rp-subtle {
+    color: var(--color-muted);
   }
   .service-summary__counts {
     @apply flex items-center gap-2 whitespace-nowrap;

@@ -784,6 +784,13 @@ func buildTraceSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (
 	return cteSQL, eligibilityWhere, queryWhere, args, err
 }
 
+// MatchingRowsSQL shares the trace search predicate with cross-signal discovery.
+// It returns matching spans, rather than expanding them to their complete traces.
+func MatchingRowsSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (string, []any, error) {
+	cte, where, _, args, err := buildTraceSQL(queryNode, timeRange)
+	return cte + " SELECT s.* " + spanSearchFrom + " WHERE " + where, args, err
+}
+
 // Two idioms compare a trace id in this file, and they are not
 // interchangeable. Which one applies depends on the operation:
 //

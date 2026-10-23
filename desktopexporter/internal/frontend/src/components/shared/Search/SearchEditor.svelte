@@ -602,6 +602,10 @@
         tighter, parentheses <code class="q-paren">( )</code> override
       </p>
       <p>
+        Combine plain-text search with filters using
+        <code class="q-field">search("checkout")</code>.
+      </p>
+      <p>
         Quote values containing spaces:
         <code class="q-value">"Red Bull Racing"</code> — keywords work lowercase too
       </p>

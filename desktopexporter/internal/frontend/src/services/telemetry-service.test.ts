@@ -48,6 +48,29 @@ function stubRpcResult<T>(result: T) {
   stubRpcResponse({ jsonrpc: '2.0', result })
 }
 
+it('retains distinct discovery identities for signed zero and nested NaN payloads', async () => {
+  const values = [
+    { kind: 'double', value: 0 },
+    { kind: 'double', value: '0x8000000000000000' },
+    { kind: 'array', value: [{ kind: 'double', value: '0x7ff8000000000001' }] },
+    { kind: 'array', value: [{ kind: 'double', value: '0x7ff8000000000002' }] },
+  ]
+  stubRpcResult({
+    rows: values.map(value => [
+      { value, foundOn: [], count: 1, denominator: 4, relativeFrequency: 0.25 },
+    ]),
+    truncated: false,
+  })
+  const page = await telemetryAPI.discoverAttributeValues({
+    signal: 'traces',
+    ownerType: 'span',
+    key: 'number',
+  })
+  expect(new Set(page.items.map(item => item.identity)).size).toBe(4)
+  expect(page.items[0].value.value).toBe(0)
+  expect(Object.is(page.items[1].value.value, -0)).toBe(true)
+})
+
 function metricResult(
   overrides: Partial<JsonMetricViewData> = {}
 ): JsonMetricViewData {

@@ -11,7 +11,7 @@ export function createWorkspaceContext() {
       return current?.() ?? null
     },
     register<T>(read: () => WorkspaceProps<T>) {
-      // Erase only the list's item type. Its items, key function and renderer
+      // SAFETY: Erase only the list's item type. Its items, key function and renderer
       // always travel together; the shell never supplies an item of its own.
       const registration = read as () => WorkspaceProps<unknown>
       const token = {}

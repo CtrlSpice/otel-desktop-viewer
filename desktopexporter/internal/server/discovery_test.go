@@ -6,11 +6,82 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/logs"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/metrics"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/spans"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.uber.org/zap/zaptest"
 )
+
+func TestHomeSearchCountsBeforePaginationAndFiltersAttributes(t *testing.T) {
+	h := setupHandler(t)
+	h.logger = zaptest.NewLogger(t)
+	ctx := context.Background()
+	for index, name := range []string{"api", "worker", "unmatched"} {
+		data := buildTestTraces()
+		r := data.ResourceSpans().At(0)
+		r.Resource().Attributes().PutStr("service.name", name)
+		s := r.ScopeSpans().At(0).Spans().At(0)
+		s.SetSpanID([8]byte{byte(index + 1)})
+		s.SetStartTimestamp(100)
+		s.SetName("needle")
+		s.Attributes().PutStr("matched", name)
+		if index == 2 {
+			s.SetName("other")
+			s.Attributes().PutStr("excluded", "yes")
+		}
+		require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return spans.Ingest(ctx, conn, data, h.store.FlushedIDs()) }))
+	}
+	ld := buildTestLogs()
+	l := ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
+	l.SetTimestamp(0)
+	l.SetObservedTimestamp(100)
+	l.Body().SetStr("needle")
+	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return logs.Ingest(ctx, conn, ld, h.store.FlushedIDs()) }))
+	md := buildTestMetrics()
+	m := md.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0)
+	m.SetName("needle")
+	m.Gauge().DataPoints().At(0).SetTimestamp(100)
+	require.NoError(t, h.store.WithConn(func(conn driver.Conn) error { return metrics.Ingest(ctx, conn, md, h.store.FlushedIDs()) }))
+	predicate := map[string]any{"type": "condition", "query": map[string]any{"field": map[string]any{"searchScope": "global"}, "fieldOperator": "CONTAINS", "value": "needle"}}
+	queries := map[string]any{"traces": predicate, "logs": predicate, "metrics": predicate}
+	options := map[string]any{"kind": "services", "queries": queries, "startTime": "100", "endTime": "100", "limit": 1}
+	read := func() map[string]json.RawMessage {
+		t.Helper()
+		result, err := h.Handle(ctx, createRequest("discoverTelemetry", map[string]any{"options": options}))
+		require.NoError(t, err)
+		var page map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(result.(json.RawMessage), &page))
+		return page
+	}
+	page := read()
+	require.JSONEq(t, `{"home":4,"traces":1,"logs":1,"metrics":1}`, string(page["totals"]))
+	require.Equal(t, "true", string(page["truncated"]))
+	require.Contains(t, string(page["rows"]), `"serviceName":"api"`)
+	options["offset"] = 3
+	page = read()
+	require.JSONEq(t, `{"home":4,"traces":1,"logs":1,"metrics":1}`, string(page["totals"]))
+	require.Equal(t, "false", string(page["truncated"]))
+	options["offset"] = 20
+	page = read()
+	require.JSONEq(t, `[]`, string(page["rows"]))
+	require.Contains(t, string(page["totals"]), `"home":4`)
+	options["offset"] = 0
+	options["limit"] = 100
+	options["kind"] = "keys"
+	options["signal"] = "traces"
+	options["ownerType"] = "span"
+	page = read()
+	require.Contains(t, string(page["rows"]), `"matched"`)
+	require.NotContains(t, string(page["rows"]), `"excluded"`)
+	options["kind"] = "values"
+	options["key"] = "matched"
+	page = read()
+	require.Contains(t, string(page["rows"]), `"denominator":2`)
+	queries["traces"] = false
+	require.JSONEq(t, `[]`, string(read()["rows"]))
+}
 
 func TestDiscoveryNamespaceValuesAndPagination(t *testing.T) {
 	h := setupHandler(t)

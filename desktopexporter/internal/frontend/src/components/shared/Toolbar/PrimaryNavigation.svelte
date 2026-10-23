@@ -100,11 +100,15 @@
   } from '@/route'
   import { evalsEnabled } from '@/state/features'
   import { getRouteContext } from '@/contexts/route-context.svelte'
-  import type { NavigationCounts } from '@/contexts/navigation-counts.svelte'
+  import {
+    getNavigationCounts,
+    type NavigationCounts,
+  } from '@/contexts/navigation-counts.svelte'
 
   let { counts = {} }: { counts?: NavigationCounts } = $props()
   const countID = $props.id()
   const routeContext = getRouteContext()
+  const totals = getNavigationCounts()
   const items = $derived(
     $evalsEnabled
       ? [HOME_NAV, ...NAV_ITEMS, EVALS_NAV]
@@ -119,6 +123,11 @@
     const item = items.find(item => item.id === id)
     if (!item) return
     event.preventDefault()
+    if (totals?.matching && item.id !== 'home' && item.id !== 'evals') {
+      if (counts[item.id] !== 0 && totals.links[item.id])
+        navigate(totals.links[item.id]!)
+      return
+    }
     if (item.id === 'home' || item.id === 'evals') navigate(item.path)
     else navigateToSignal(item.id)
   }
@@ -131,10 +140,20 @@
   {#each items as item (item.id)}
     {@const active = isNavItemActive(item.id, routeContext.route.path)}
     {@const itemCount = counts[item.id]}
+    {@const disabled =
+      totals?.matching &&
+      item.id !== 'home' &&
+      item.id !== 'evals' &&
+      itemCount === 0}
     <a
-      href={item.id === 'home' || item.id === 'evals'
-        ? item.path
-        : signalHref(item.id, routeContext.route.query)}
+      href={disabled
+        ? undefined
+        : (totals?.links[item.id] ??
+          (item.id === 'home' || item.id === 'evals'
+            ? item.path
+            : signalHref(item.id, routeContext.route.query)))}
+      aria-disabled={disabled ? true : undefined}
+      class:tab-disabled={disabled}
       class="tab shrink-0 flex-nowrap items-center gap-2 px-4 text-sm"
       class:tab-active={active}
       aria-current={active ? 'page' : undefined}
@@ -166,8 +185,8 @@
           >{item.id === 'evals'
             ? 'Stored experiments:'
             : item.id === 'home'
-              ? 'Stored services:'
-              : `Stored ${item.id}:`}</span
+              ? `${totals?.matching ? 'Matching' : 'Stored'} services:`
+              : `${totals?.matching ? 'Matching' : 'Stored'} ${item.id}:`}</span
         >{' '}{itemCount === undefined ? '' : `[${itemCount}]`}</span
       >
     </a>

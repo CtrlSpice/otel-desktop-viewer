@@ -99,6 +99,9 @@ test('picker sends supported signal groups and lists profiles/invalid files with
 test('a dropped file uses the current signal page error display and links to Home issues', async ({
   page,
 }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem('signal-drawer:open', 'false')
+  )
   await page.route('http://127.0.0.1:54318/v1/logs', route =>
     route.fulfill({
       status: 400,
@@ -122,6 +125,11 @@ test('a dropped file uses the current signal page error display and links to Hom
   await main.getByRole('link', { name: 'View issue' }).click()
   const issues = page.getByRole('region', { name: 'Ingestion issues' })
   await expect(issues).toBeFocused()
+  await expect(issues).toBeVisible()
+  await expect(page.locator('#signal-drawer-panel')).not.toHaveAttribute(
+    'inert',
+    ''
+  )
   await expect(issues).toContainText('Invalid OTLP log body')
   await expect(page).toHaveURL(/\/#ingestion-issues$/)
 })

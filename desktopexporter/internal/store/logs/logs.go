@@ -525,6 +525,13 @@ func buildLogSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (ct
 	return search.BuildSearchSQL(queryNode, logFieldMapper(), timeCondition, timeParams)
 }
 
+// MatchingRowsSQL shares log search's exact predicate and timestamp fallback.
+func MatchingRowsSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (string, []any, error) {
+	cte, where, args, err := buildLogSQL(queryNode, timeRange)
+	where = strings.ReplaceAll(where, "l.log_time", "coalesce(nullif(l.timestamp, 0), l.observed_timestamp)")
+	return cte + " SELECT l.* " + logSearchFrom + " WHERE " + where, args, err
+}
+
 // logSearchFrom is the FROM clause log search predicates are written against.
 // Mirrors spans.spanSearchFrom: resources and scopes are joined in
 // unconditionally so resource.* and scope.* fields have somewhere to resolve.

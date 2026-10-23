@@ -89,12 +89,7 @@
     return () => controller.abort()
   })
   function valueKey(item: AttributeFrequency) {
-    return JSON.stringify(item.value, (_, value) =>
-      typeof value === 'bigint' ||
-      (typeof value === 'number' && !Number.isFinite(value))
-        ? String(value)
-        : value
-    )
+    return item.identity
   }
   function sort(column: 'name' | 'frequency') {
     sortDirection =

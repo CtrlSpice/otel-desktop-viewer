@@ -15,11 +15,13 @@
     range,
     revision,
     signal,
+    queries,
   }: {
     service: ServiceSummary | null
     range: Pick<DiscoveryOptions, 'startTime' | 'endTime'>
     revision: number
     signal: DiscoverySignal
+    queries?: DiscoveryOptions['queries']
   } = $props()
   let filter = $state('')
   let term = $state('')
@@ -35,6 +37,7 @@
   }
   const options = $derived({
     ...range,
+    queries,
     signal,
     serviceName: service?.serviceName,
     namespace: service?.serviceNamespace,

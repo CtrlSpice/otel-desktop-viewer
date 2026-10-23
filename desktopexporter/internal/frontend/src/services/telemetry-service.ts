@@ -85,7 +85,12 @@ type JsonRpcParamValue =
   | readonly string[]
   | readonly number[]
   | readonly LogColumn[]
-  | DiscoveryOptions
+  | (Omit<DiscoveryOptions, 'queries'> & {
+      queries?: Record<
+        'traces' | 'metrics' | 'logs',
+        JsonQueryNode | false | null
+      >
+    })
 
 type JsonRpcNamedParams = Record<string, JsonRpcParamValue | undefined>
 type JsonRpcParams = JsonRpcNamedParams | readonly string[]
@@ -837,12 +842,29 @@ async function discover<T>(
   options: DiscoveryOptions,
   signal?: AbortSignal
 ): Promise<DiscoveryPage<T>> {
-  const result = await callRPC<{ rows: [T][]; truncated: boolean }>(
-    'discoverTelemetry',
-    named({ options }),
-    signal
-  )
-  return { items: result.rows.map(row => row[0]), truncated: result.truncated }
+  const convert = (query: QueryNode | false | null) =>
+    query ? convertQueryTreeForBackend(query) : query
+  const { queries, ...plainOptions } = options
+  const wireOptions = queries
+    ? {
+        ...plainOptions,
+        queries: {
+          traces: convert(queries.traces),
+          metrics: convert(queries.metrics),
+          logs: convert(queries.logs),
+        },
+      }
+    : plainOptions
+  const result = await callRPC<{
+    rows: [T][]
+    truncated: boolean
+    totals?: DiscoveryPage<T>['totals']
+  }>('discoverTelemetry', named({ options: wireOptions }), signal)
+  return {
+    items: result.rows.map(row => row[0]),
+    truncated: result.truncated,
+    totals: result.totals,
+  }
 }
 
 export let telemetryAPI = {
@@ -859,12 +881,15 @@ export let telemetryAPI = {
     signal?: AbortSignal
   ): Promise<DiscoveryPage<AttributeFrequency>> => {
     const page = await discover<
-      Omit<AttributeFrequency, 'value'> & { value: JsonAttributeValue }
+      Omit<AttributeFrequency, 'value' | 'identity'> & {
+        value: JsonAttributeValue
+      }
     >({ ...options, kind: 'values' }, signal)
     return {
       ...page,
       items: page.items.map(item => ({
         ...item,
+        identity: JSON.stringify(item.value),
         value: attributeValueFromJSON(item.value),
       })),
     }

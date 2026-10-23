@@ -1559,6 +1559,12 @@ func buildMetricSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) 
 	return search.BuildSearchSQL(queryNode, metricFieldMapper(), timeCondition, timeParams)
 }
 
+// MatchingRowsSQL uses the same metric identity and datapoint eligibility as search.
+func MatchingRowsSQL(queryNode *search.QueryNode, timeRange timerange.TimeRange) (string, []any, error) {
+	cte, where, args, err := buildMetricSQL(queryNode, timeRange)
+	return cte + " SELECT s.* " + metricSearchFrom + " WHERE " + where, args, err
+}
+
 func metricDatapointWhere(timeRange timerange.TimeRange) string {
 	predicate, _ := search.TimePredicate("d.timestamp", timeRange.Start, timeRange.End)
 	if predicate == "" {

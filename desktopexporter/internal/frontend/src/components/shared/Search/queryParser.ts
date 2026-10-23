@@ -191,6 +191,7 @@ function surveyTree(
       if (n.from >= predicateEnd) return false
       if (
         n.name === 'Comparison' ||
+        n.name === 'GlobalText' ||
         n.name === 'AndExpression' ||
         n.name === 'OrExpression' ||
         n.name === 'Operator' ||
@@ -271,6 +272,15 @@ function walkLimit(ctx: WalkContext, clause: SyntaxNode): number | null {
 
 function walkExpression(ctx: WalkContext, node: SyntaxNode): QueryNode | null {
   switch (node.name) {
+    case 'GlobalText': {
+      const name = node.getChild('Word')
+      const value = node.getChild('QuotedString')
+      if (!name || text(ctx, name) !== 'search' || !value) {
+        fail(ctx, node.from, node.to, 'Global text uses search("text")')
+        return null
+      }
+      return createGlobalTextSearch(unquote(text(ctx, value)))
+    }
     case 'AndExpression':
     case 'OrExpression': {
       const operator = node.name === 'AndExpression' ? 'AND' : 'OR'
@@ -532,7 +542,7 @@ function createGlobalTextSearch(input: string): QueryNode {
     query: {
       field: { searchScope: 'global' },
       operator: OPERATORS.CONTAINS,
-      value: input.trim(),
+      value: input,
     },
   }
 }

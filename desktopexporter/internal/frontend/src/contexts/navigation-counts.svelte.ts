@@ -11,6 +11,8 @@ const key = Symbol('navigation-counts')
 /** A database-wide reading, independent of route filters and incoming telemetry. */
 export function createNavigationCounts() {
   let counts = $state<NavigationCounts>({})
+  let homeCounts = $state<NavigationCounts | null>(null)
+  let homeLinks = $state<Partial<Record<keyof NavigationCounts, string>>>({})
   let generation = 0
   let request: AbortController | undefined
   async function serviceCount(signal: AbortSignal) {
@@ -56,7 +58,20 @@ export function createNavigationCounts() {
   }
   const state = {
     get counts() {
-      return counts
+      return homeCounts ? { ...counts, ...homeCounts } : counts
+    },
+    get matching() {
+      return homeCounts !== null
+    },
+    get links() {
+      return homeLinks
+    },
+    setHomeCounts(
+      value: NavigationCounts | null,
+      links: typeof homeLinks = {}
+    ) {
+      homeCounts = value
+      homeLinks = links
     },
     refresh,
   }

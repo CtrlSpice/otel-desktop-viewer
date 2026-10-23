@@ -34,6 +34,7 @@
     drawerContent?: Snippet
     /** Omit the list pane and its toggle without changing the saved preference. */
     hideDrawer?: boolean
+    revealDrawer?: boolean
 
     // ── Content slots ──────────────────────────────────────────────
     /** Primary view (waterfall, chart, logs table, home content). */
@@ -88,6 +89,7 @@
     drawerFooter,
     drawerContent,
     hideDrawer,
+    revealDrawer,
     main,
     detail,
     pageFooter,
@@ -160,6 +162,7 @@
     {drawerControls}
     {drawerContent}
     {hideDrawer}
+    {revealDrawer}
     navigationTrailing={detail ? detailToggle : undefined}
     footer={drawerFooter}
   >

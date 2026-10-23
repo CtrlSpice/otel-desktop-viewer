@@ -13,6 +13,22 @@ type Query struct {
 	// ServiceName distinguishes an exact empty service name from no filter.
 	ServiceName *string
 	Namespace   *string
+	Sources     Sources
+}
+
+// Sources names server-owned relations that have already applied a signal query.
+// Empty names use the stored signal tables.
+type Sources struct {
+	Spans   string
+	Logs    string
+	Metrics string
+}
+
+func source(name, fallback string) string {
+	if name == "" {
+		return fallback
+	}
+	return name
 }
 
 type Location struct {
@@ -43,11 +59,15 @@ func Predicate(query Query) string {
 
 // Records keeps counted record identity distinct from the attribute owner.
 func Records(signal, ownerType string) (string, error) {
+	return RecordsFrom(signal, ownerType, Sources{})
+}
+
+func RecordsFrom(signal, ownerType string, sources Sources) (string, error) {
 	var identity, timestamp, service, from, directOwner, attributes, resource, scope, allowed string
 	switch signal {
 	case "traces":
 		identity, timestamp, service = "struct_pack(trace_id := s.trace_id, span_id := s.span_id)", "s.start_time", "s.service_name"
-		from, directOwner, attributes, resource, scope = "spans s", "span", "s.attribute_ids", "s.resource_id", "s.scope_id"
+		from, directOwner, attributes, resource, scope = source(sources.Spans, "spans")+" s", "span", "s.attribute_ids", "s.resource_id", "s.scope_id"
 		allowed = "span, event, link, resource or scope"
 		switch ownerType {
 		case "event":
@@ -59,11 +79,11 @@ func Records(signal, ownerType string) (string, error) {
 		}
 	case "logs":
 		identity, timestamp, service = "l.id", "coalesce(nullif(l.timestamp, 0), l.observed_timestamp)", "l.service_name"
-		from, directOwner, attributes, resource, scope = "logs l", "log", "l.attribute_ids", "l.resource_id", "l.scope_id"
+		from, directOwner, attributes, resource, scope = source(sources.Logs, "logs")+" l", "log", "l.attribute_ids", "l.resource_id", "l.scope_id"
 		allowed = "log, resource or scope"
 	case "metrics":
 		identity, timestamp, service = "d.id", "d.timestamp", "m.service_name"
-		from, directOwner = "metric_datapoints d JOIN metrics m ON m.id = d.metric_id", "datapoint"
+		from, directOwner = "metric_datapoints d JOIN "+source(sources.Metrics, "metrics")+" m ON m.id = d.metric_id", "datapoint"
 		attributes, resource, scope = "d.attribute_ids", "m.resource_id", "m.scope_id"
 		allowed = "datapoint, exemplar, metadata, resource or scope"
 		switch ownerType {
@@ -137,7 +157,7 @@ func Services(query Query) string {
     SELECT i.service_namespace, s.service_name, count(DISTINCT trace_id) AS trace_count, count(*) AS span_count,
         count(*) FILTER (WHERE status_code = 2) AS error_span_count,
         max(time_ns) AS last_seen
-    FROM (SELECT resource_id, service_name, trace_id, start_time AS time_ns, status_code FROM spans) s
+    FROM (SELECT resource_id, service_name, trace_id, start_time AS time_ns, status_code FROM ` + source(query.Sources.Spans, "spans") + `) s
     JOIN identities i ON i.id = s.resource_id
     WHERE ` + predicate + ` GROUP BY i.service_namespace, s.service_name
     UNION ALL BY NAME
@@ -152,14 +172,14 @@ func Services(query Query) string {
         count(*) FILTER (WHERE severity_number IS NULL OR severity_number NOT BETWEEN 1 AND 24) AS other_log_count,
         max(time_ns) AS last_seen
     FROM (SELECT resource_id, service_name,
-        coalesce(nullif(timestamp, 0), observed_timestamp) AS time_ns, severity_number FROM logs) s
+        coalesce(nullif(timestamp, 0), observed_timestamp) AS time_ns, severity_number FROM ` + source(query.Sources.Logs, "logs") + `) s
     JOIN identities i ON i.id = s.resource_id
     WHERE ` + predicate + ` GROUP BY i.service_namespace, s.service_name
     UNION ALL BY NAME
     SELECT i.service_namespace, s.service_name, count(DISTINCT metric_id) AS metric_count,
         count(*) AS data_point_count, sum(coalesce(e.exemplar_count, 0)) AS exemplar_count, max(time_ns) AS last_seen
     FROM (SELECT m.resource_id, m.service_name, m.id AS metric_id, d.id AS datapoint_id, d.timestamp AS time_ns
-        FROM metric_datapoints d JOIN metrics m ON m.id = d.metric_id) s
+        FROM metric_datapoints d JOIN ` + source(query.Sources.Metrics, "metrics") + ` m ON m.id = d.metric_id) s
     JOIN identities i ON i.id = s.resource_id
     LEFT JOIN exemplar_counts e ON e.metric_datapoint_id = s.datapoint_id
     WHERE ` + predicate + ` GROUP BY i.service_namespace, s.service_name
