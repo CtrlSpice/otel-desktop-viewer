@@ -75,12 +75,16 @@
   @reference "../../../app.css";
 
   .workspace-toolbar {
+    --workspace-toolbar-edge-width: 3rem;
     @apply grid w-full min-w-0 items-center gap-x-4 gap-y-2;
-    grid-template-columns: 3rem minmax(0, 1fr) 3rem;
+    grid-template-columns: var(--workspace-toolbar-edge-width) minmax(
+        0,
+        1fr
+      ) var(--workspace-toolbar-edge-width);
   }
 
   .workspace-toolbar--details {
-    grid-template-columns: 5.5rem minmax(0, 1fr) 5.5rem;
+    --workspace-toolbar-edge-width: 5.5rem;
   }
 
   .workspace-toolbar__leading,
@@ -110,23 +114,28 @@
   }
 
   .workspace-toolbar__search {
-    @apply flex min-w-0;
+    @apply flex min-w-0 w-full justify-self-end;
+    max-width: 28rem;
     grid-column: 1 / -1;
     grid-row: 2;
   }
 
-  @media (min-width: 64rem) {
-    .workspace-toolbar__centre {
-      @apply grid w-full min-w-0 items-center gap-8;
-      grid-column: 2;
-      grid-row: 1;
-      grid-template-columns: max-content minmax(0, 1fr);
+  @media (min-width: 96rem) {
+    .workspace-toolbar {
+      grid-template-columns: var(--workspace-toolbar-edge-width) minmax(
+          0,
+          1fr
+        ) max-content minmax(0, 1fr) var(--workspace-toolbar-edge-width);
     }
-
-    .workspace-toolbar__navigation,
+    .workspace-toolbar__navigation {
+      grid-column: 3;
+    }
     .workspace-toolbar__search {
-      grid-column: auto;
-      grid-row: auto;
+      grid-column: 4;
+      grid-row: 1;
+    }
+    .workspace-toolbar__actions {
+      grid-column: 5;
     }
   }
 </style>

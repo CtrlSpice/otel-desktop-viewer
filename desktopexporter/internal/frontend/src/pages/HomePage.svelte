@@ -364,19 +364,22 @@
         {/each}
       </div>
     </div>
+  {/snippet}
+  {#snippet pageFooter()}
     <SignalFooter label="services">
       {#snippet leading()}
-        <div class="min-w-0">
-          <p class="text-rp-subtle">
-            {range.startTime == null
-              ? 'All stored telemetry'
-              : 'Selected time range'}
-          </p>
-          <SignalDate label="Refreshed" timestamp={refreshedAt} />
-        </div>
+        <span class="text-rp-subtle">
+          {range.startTime == null
+            ? 'All stored telemetry'
+            : 'Selected time range'}
+        </span>
       {/snippet}
       {#snippet trailing()}
-        {#if offset > 0 || more}<div class="flex gap-2">
+        <SignalDate label="Refreshed" timestamp={refreshedAt} />
+      {/snippet}
+      {#snippet navigation()}
+        <div class="flex gap-2">
+          {#if offset > 0 || more}
             <button
               class="btn btn-ghost btn-sm"
               disabled={loading || offset === 0}
@@ -386,7 +389,8 @@
               disabled={loading || !more}
               onclick={() => load(offset + 100)}>Next</button
             >
-          </div>{/if}
+          {/if}
+        </div>
       {/snippet}
     </SignalFooter>
   {/snippet}
