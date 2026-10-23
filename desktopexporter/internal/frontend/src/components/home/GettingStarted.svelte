@@ -12,6 +12,8 @@
   const taglines = [
     'OpenTelemetry made cozy',
     "I'm not changing the name, friend.",
+    'Now with “a lot more functionality”™',
+    "I have splintered the ecosystem. Pray I don't splinter it any further.",
   ]
   const tagline = taglines[Math.floor(Math.random() * taglines.length)]
   let protocol = $state('http')
