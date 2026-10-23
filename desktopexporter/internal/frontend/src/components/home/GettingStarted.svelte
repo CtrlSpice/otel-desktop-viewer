@@ -9,6 +9,11 @@
 
   let { importContent, issues }: { importContent?: Snippet; issues?: Snippet } =
     $props()
+  const taglines = [
+    'OpenTelemetry made cozy',
+    "I'm not changing the name, friend.",
+  ]
+  const tagline = taglines[Math.floor(Math.random() * taglines.length)]
   let protocol = $state('http')
   let httpPort = $state<number | null>(null)
   const tabs = [
@@ -38,7 +43,7 @@
 </script>
 
 <div class="getting-started">
-  <div class="flex shrink-0 items-center gap-4 px-3 py-6">
+  <div class="flex shrink-0 items-center gap-4 px-3 py-2">
     <img
       src={lulu}
       alt="Lulu the axolotl with her telescope"
@@ -48,7 +53,7 @@
       <h2 class="text-lg font-normal text-balance text-base-content">
         Welcome to otel-desktop-viewer
       </h2>
-      <p class="text-pretty text-rp-subtle">A cozy place for your telemetry.</p>
+      <p class="text-pretty text-rp-subtle">{tagline}</p>
     </div>
   </div>
   <div class="guide-scroll">

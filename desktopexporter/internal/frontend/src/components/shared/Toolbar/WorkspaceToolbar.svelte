@@ -77,10 +77,9 @@
   .workspace-toolbar {
     --workspace-toolbar-edge-width: 3rem;
     @apply grid w-full min-w-0 items-center gap-x-4 gap-y-2;
-    grid-template-columns: var(--workspace-toolbar-edge-width) minmax(
-        0,
-        1fr
-      ) var(--workspace-toolbar-edge-width);
+    grid-template-columns:
+      var(--workspace-toolbar-edge-width) minmax(0, 1fr)
+      var(--workspace-toolbar-edge-width);
   }
 
   .workspace-toolbar--details {
@@ -122,10 +121,9 @@
 
   @media (min-width: 96rem) {
     .workspace-toolbar {
-      grid-template-columns: var(--workspace-toolbar-edge-width) minmax(
-          0,
-          1fr
-        ) max-content minmax(0, 1fr) var(--workspace-toolbar-edge-width);
+      grid-template-columns:
+        var(--workspace-toolbar-edge-width) minmax(0, 1fr)
+        max-content minmax(0, 1fr) var(--workspace-toolbar-edge-width);
     }
     .workspace-toolbar__navigation {
       grid-column: 3;
