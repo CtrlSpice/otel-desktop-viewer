@@ -44,6 +44,7 @@ describe('cross-signal Home queries', () => {
 
   it.each([
     'search("  exact spacing  ")',
+    'body !~ "healthcheck"',
     'search("checkout") AND attr(resource, "service.name", string) = "api"',
     'search("a\\\"b\\\\c") OR severityNumber >= 17',
     'attr(span, "exact", int64) IN [9007199254740993, -9223372036854775808]',

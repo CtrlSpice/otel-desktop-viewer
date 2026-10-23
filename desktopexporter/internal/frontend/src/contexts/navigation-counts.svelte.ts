@@ -12,6 +12,7 @@ const key = Symbol('navigation-counts')
 export function createNavigationCounts() {
   let counts = $state<NavigationCounts>({})
   let homeCounts = $state<NavigationCounts | null>(null)
+  let homeSearchActive = $state(false)
   let homeLinks = $state<Partial<Record<keyof NavigationCounts, string>>>({})
   let generation = 0
   let request: AbortController | undefined
@@ -61,17 +62,19 @@ export function createNavigationCounts() {
       return homeCounts ? { ...counts, ...homeCounts } : counts
     },
     get matching() {
-      return homeCounts !== null
+      return homeCounts !== null && homeSearchActive
     },
     get links() {
       return homeLinks
     },
     setHomeCounts(
       value: NavigationCounts | null,
-      links: typeof homeLinks = {}
+      links: typeof homeLinks = {},
+      searchActive = false
     ) {
       homeCounts = value
       homeLinks = links
+      homeSearchActive = searchActive
     },
     refresh,
   }

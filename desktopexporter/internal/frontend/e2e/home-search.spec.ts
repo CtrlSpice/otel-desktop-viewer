@@ -94,6 +94,13 @@ test('Home counts, attributes and enabled links share the submitted cross-signal
   await expect(page.getByLabel('Open checkout traces')).not.toHaveAttribute(
     'href'
   )
+  await input.fill('an unsubmitted draft')
+  await page.getByRole('button', { name: /^Change time range,/ }).click()
+  await page.getByRole('button', { name: 'Last 5 min', exact: true }).click()
+  await expect(page).toHaveURL(/start=/)
+  await page.keyboard.press('Escape')
+  await expect(input).toHaveValue('an unsubmitted draft')
+  expect(new URL(page.url()).searchParams.get('q')).toBe('declined')
   await expect
     .poll(() =>
       discovery.some(
@@ -115,8 +122,16 @@ test('Home counts, attributes and enabled links share the submitted cross-signal
     page.getByRole('link', { name: 'Logs', exact: true })
   ).toHaveAccessibleDescription('Stored logs: [10]')
   await page.goBack()
-  await expect(input).toHaveValue('declined')
+  expect(new URL(page.url()).searchParams.get('q')).toBe('declined')
   await expect(page.getByRole('article')).toHaveCount(1)
+  await input.fill('body !~ "healthcheck"')
+  await input.press('Enter')
+  await page.getByRole('link', { name: 'Open checkout logs' }).click()
+  expect(new URL(page.url()).searchParams.get('q')).toContain(
+    'body !~ "healthcheck"'
+  )
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await page.goBack()
   await input.fill('missing')
   await input.press('Enter')
   await expect(page.getByRole('article')).toHaveCount(0)

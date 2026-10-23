@@ -86,5 +86,6 @@ export function queryText(node: QueryNode | false | null): string {
     field.type === 'array'
       ? value
       : JSON.stringify(value)
-  return `${name} ${operator.symbol} ${operand}`
+  const symbol = operator.symbol === 'NOT REGEXP' ? '!~' : operator.symbol
+  return `${name} ${symbol} ${operand}`
 }

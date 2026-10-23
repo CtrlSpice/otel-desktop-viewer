@@ -84,6 +84,7 @@
   let error = $state('')
   let loading = $state(false)
   let draft = $state(readRoute().query.q ?? '')
+  let routeQuery = readRoute().query.q ?? ''
   let term = $state('')
   let offset = $state(0)
   let more = $state(false)
@@ -153,15 +154,23 @@
       range = nextRange
       queries = options.queries
       totalServices = page.totals?.home
-      navigation?.setHomeCounts(page.totals ?? {}, {
-        traces: discoverySignalHref('traces', range, queryText(queries.traces)),
-        metrics: discoverySignalHref(
-          'metrics',
-          range,
-          queryText(queries.metrics)
-        ),
-        logs: discoverySignalHref('logs', range, queryText(queries.logs)),
-      })
+      navigation?.setHomeCounts(
+        page.totals ?? {},
+        {
+          traces: discoverySignalHref(
+            'traces',
+            range,
+            queryText(queries.traces)
+          ),
+          metrics: discoverySignalHref(
+            'metrics',
+            range,
+            queryText(queries.metrics)
+          ),
+          logs: discoverySignalHref('logs', range, queryText(queries.logs)),
+        },
+        term.trim().length > 0
+      )
       more = page.truncated
       offset = pageOffset
       loaded = true
@@ -187,6 +196,7 @@
     try {
       pendingQueries = homeQueries(parseQuery(draft, fields))
       term = draft
+      routeQuery = draft
       const route = readRoute()
       if ((route.query.q ?? '') !== draft)
         navigateCurrentRoute(
@@ -218,7 +228,8 @@
       const route = readRoute()
       if (route.path !== '/') return
       const next = route.query.q ?? ''
-      if (next === draft) return
+      if (next === routeQuery) return
+      routeQuery = next
       draft = next
       if (fieldsReady) submit()
     })

@@ -106,7 +106,7 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   await page.goto('/?time=all')
   await expect(page.getByRole('article')).toHaveCount(8)
   const homeTab = page.getByRole('link', { name: 'Home', exact: true })
-  await expect(homeTab).toHaveAccessibleDescription('Matching services: [8]')
+  await expect(homeTab).toHaveAccessibleDescription('Stored services: [8]')
   const card = page.getByRole('article').first()
   await expect(
     card.getByRole('link', { name: 'Open checkout traces' })
@@ -197,11 +197,11 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   await imported
   await expect(page).toHaveURL(/\/\?time=all$/)
   expect(serviceReads).toBe(2) // Home's page and the database-wide tab total.
-  await expect(homeTab).toHaveAccessibleDescription('Matching services: [8]')
+  await expect(homeTab).toHaveAccessibleDescription('Stored services: [8]')
   await expect(page.getByRole('article')).toHaveCount(8)
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
   await expect.poll(() => serviceReads).toBe(4)
-  await expect(homeTab).toHaveAccessibleDescription('Matching services: [9]')
+  await expect(homeTab).toHaveAccessibleDescription('Stored services: [9]')
   await expect(page.getByRole('article')).toHaveCount(9)
   const destination = new URL(
     (await page
