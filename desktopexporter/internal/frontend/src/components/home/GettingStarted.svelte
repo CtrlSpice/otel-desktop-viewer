@@ -42,7 +42,7 @@
     <img
       src={lulu}
       alt="Lulu the axolotl with her telescope"
-      class="size-16 shrink-0 object-contain"
+      class="size-24 shrink-0 object-contain"
     />
     <div class="min-w-0">
       <h2 class="text-lg font-normal text-base-content">
