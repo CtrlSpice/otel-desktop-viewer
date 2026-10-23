@@ -92,7 +92,6 @@
           EditorView.editable.of(false),
           EditorView.contentAttributes.of({ 'aria-label': ariaLabel }),
           EditorView.lineWrapping,
-          ...readonlyCodeTheme,
           ...(bare
             ? [
                 EditorView.theme({
@@ -102,6 +101,7 @@
                 }),
               ]
             : []),
+          ...readonlyCodeTheme,
         ],
       }),
       parent: mountEl,

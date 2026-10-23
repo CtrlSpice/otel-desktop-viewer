@@ -5,8 +5,10 @@
   import ReadonlyCodePanel from '@/components/shared/ReadonlyCodePanel.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
   import { telemetryAPI } from '@/services/telemetry-service'
+  import lulu from '@/assets/images/lulu.webp'
 
-  let { importContent }: { importContent?: Snippet } = $props()
+  let { importContent, issues }: { importContent?: Snippet; issues?: Snippet } =
+    $props()
   let protocol = $state('http')
   let httpPort = $state<number | null>(null)
   const tabs = [
@@ -100,6 +102,22 @@
         code={example}
       />
     </section>
+    <div class="mt-auto flex shrink-0 flex-col gap-3">
+      <div class="flex items-center gap-3">
+        <img
+          src={lulu}
+          alt="Lulu the axolotl with her telescope"
+          class="size-16 shrink-0 object-contain"
+        />
+        <div class="min-w-0">
+          <p class="text-lg font-normal text-base-content">
+            Welcome to otel-desktop-viewer
+          </p>
+          <p class="text-rp-subtle">A cozy place for your telemetry.</p>
+        </div>
+      </div>
+      {@render issues?.()}
+    </div>
   </div>
 </div>
 
@@ -109,9 +127,9 @@
     @apply flex h-full min-h-0 min-w-0 flex-col pt-3;
   }
   .guide-scroll {
-    @apply min-h-0 flex-1 overflow-y-auto p-3 text-sm;
+    @apply flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-3 text-sm;
   }
   .guide-section {
-    @apply flex flex-col gap-2 py-3;
+    @apply flex shrink-0 flex-col gap-2;
   }
 </style>

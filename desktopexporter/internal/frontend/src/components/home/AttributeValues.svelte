@@ -152,46 +152,48 @@
       aria-busy={loading}
       class="w-full table-fixed text-sm"
     >
-      <thead class="text-rp-subtle">
-        <tr>
-          <th
-            class="pl-6 pr-2 text-left font-normal"
-            scope="col"
-            aria-sort={sortBy === 'name'
-              ? sortDirection === 'asc'
-                ? 'ascending'
-                : 'descending'
-              : 'none'}
-          >
-            <TableSortButton
-              label="name"
-              inlineDirection
-              direction={sortBy === 'name' ? sortDirection : undefined}
-              onclick={() => sort('name')}>Name</TableSortButton
+      {#if values.length > 1 || more || offset > 0}<thead
+          class="text-rp-subtle"
+        >
+          <tr>
+            <th
+              class="pl-6 pr-2 text-left font-normal"
+              scope="col"
+              aria-sort={sortBy === 'name'
+                ? sortDirection === 'asc'
+                  ? 'ascending'
+                  : 'descending'
+                : 'none'}
             >
-          </th>
-          <th
-            class="w-20 pr-2 font-normal"
-            scope="col"
-            aria-sort={sortBy === 'frequency'
-              ? sortDirection === 'asc'
-                ? 'ascending'
-                : 'descending'
-              : 'none'}
-          >
-            <TableSortButton
-              label="percentage"
-              inlineDirection
-              align="right"
-              direction={sortBy === 'frequency' ? sortDirection : undefined}
-              onclick={() => sort('frequency')}>%</TableSortButton
+              <TableSortButton
+                label="name"
+                inlineDirection
+                direction={sortBy === 'name' ? sortDirection : undefined}
+                onclick={() => sort('name')}>Name</TableSortButton
+              >
+            </th>
+            <th
+              class="w-20 pr-2 font-normal"
+              scope="col"
+              aria-sort={sortBy === 'frequency'
+                ? sortDirection === 'asc'
+                  ? 'ascending'
+                  : 'descending'
+                : 'none'}
             >
-          </th>
-          <th class="w-8 font-normal" scope="col"
-            ><span class="sr-only">Copy</span></th
-          >
-        </tr>
-      </thead>
+              <TableSortButton
+                label="percentage"
+                inlineDirection
+                align="right"
+                direction={sortBy === 'frequency' ? sortDirection : undefined}
+                onclick={() => sort('frequency')}>%</TableSortButton
+              >
+            </th>
+            <th class="w-8 font-normal" scope="col"
+              ><span class="sr-only">Copy</span></th
+            >
+          </tr>
+        </thead>{/if}
       <tbody>
         {#each values as item (valueKey(item))}
           <tr class="item-state">

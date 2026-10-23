@@ -15,6 +15,9 @@ const stats = {
 }
 
 test.beforeEach(async ({ page }) => {
+  await page.route('**/api/features', route =>
+    route.fulfill({ json: { evals: { enabled: false } } })
+  )
   await page.route('**/rpc', async route => {
     const request = route.request().postDataJSON() as {
       id: number
@@ -84,7 +87,10 @@ test('picker sends supported signal groups and lists profiles/invalid files with
     '/v1/logs',
   ])
   expect(requests[1].body).toBe(`{"resourceLogs":[${resource}]}`)
-  await page.locator('[data-detail-section="issues"] summary').click()
+  await page
+    .locator('#signal-drawer-panel summary')
+    .filter({ hasText: 'Ingestion issues' })
+    .click()
   const issues = page.getByRole('region', { name: 'Ingestion issues' })
   await expect(issues).toContainText('Profiles support coming soon')
   await expect(issues).toContainText('broken.json')

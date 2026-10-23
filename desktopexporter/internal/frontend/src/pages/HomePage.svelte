@@ -326,7 +326,10 @@
       >
     </form>
   {/snippet}
-  {#snippet drawerContent()}<GettingStarted {importContent} />{/snippet}
+  {#snippet drawerContent()}<GettingStarted
+      {importContent}
+      {issues}
+    />{/snippet}
   {#snippet main()}
     <PaneHeader mode="title" pill title="Services" ariaLabel="Services">
       {#snippet right()}<span class="text-rp-subtle"
@@ -392,7 +395,6 @@
       sections={[
         { id: 'attributes', content: attributes },
         { id: 'storage', content: storage },
-        { id: 'issues', content: issues },
       ]}
     />
   {/snippet}

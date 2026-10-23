@@ -15,7 +15,7 @@
 
 <button
   type="button"
-  class="item-state relative flex w-full cursor-pointer flex-col items-center rounded-xl px-3 py-4 pr-10 text-center text-sm"
+  class="item-state relative flex min-h-28 w-full cursor-pointer flex-col items-center justify-center rounded-xl border border-dotted border-rp-subtle px-8 py-6 text-center text-sm"
   aria-label="Import files"
   onclick={() => input?.click()}
 >
