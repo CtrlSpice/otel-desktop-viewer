@@ -38,12 +38,19 @@
 </script>
 
 <div class="getting-started">
-  <PaneHeader
-    mode="title"
-    pill
-    title="Getting started"
-    ariaLabel="Getting started"
-  />
+  <div class="flex shrink-0 items-center gap-3 px-3 py-2">
+    <img
+      src={lulu}
+      alt="Lulu the axolotl with her telescope"
+      class="size-16 shrink-0 object-contain"
+    />
+    <div class="min-w-0">
+      <h2 class="text-lg font-normal text-base-content">
+        Welcome to otel-desktop-viewer
+      </h2>
+      <p class="text-rp-subtle">A cozy place for your telemetry.</p>
+    </div>
+  </div>
   <div class="guide-scroll">
     {@render importContent?.()}
     <section class="guide-section">
@@ -103,19 +110,6 @@
       />
     </section>
     <div class="mt-auto flex shrink-0 flex-col gap-3">
-      <div class="flex items-center gap-3">
-        <img
-          src={lulu}
-          alt="Lulu the axolotl with her telescope"
-          class="size-16 shrink-0 object-contain"
-        />
-        <div class="min-w-0">
-          <p class="text-lg font-normal text-base-content">
-            Welcome to otel-desktop-viewer
-          </p>
-          <p class="text-rp-subtle">A cozy place for your telemetry.</p>
-        </div>
-      </div>
       {@render issues?.()}
     </div>
   </div>
