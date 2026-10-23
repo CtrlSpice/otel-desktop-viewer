@@ -1026,14 +1026,14 @@
           >
         {/if}
       </div>
-    {:else if page.loading && !hasMetricRows}
+    {:else if page.loading && !hasMetricRows && !selectedSummary}
       <div
         {...chartTabPanelAttrs}
         class="metrics-page__placeholder metrics-empty"
       >
         Loading metrics…
       </div>
-    {:else if !page.loading && !hasMetricRows}
+    {:else if !page.loading && !hasMetricRows && !selectedSummary}
       <div
         {...chartTabPanelAttrs}
         class="metrics-page__placeholder metrics-empty"

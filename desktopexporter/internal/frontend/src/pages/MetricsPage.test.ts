@@ -253,6 +253,8 @@ describe('Metric main-header range', () => {
       await screen.findByRole('region', { name: 'Metric chart' })
     ).toHaveTextContent('demo.metric')
     expect(window.location.pathname).toBe('/metrics/metric-1')
+    expect(screen.queryByText('No metrics in this time range')).toBeNull()
+    expect(document.querySelector('.metrics-page__chart')).not.toBeNull()
     expect(new URLSearchParams(window.location.search).get('q')).toBe(
       'name = "excluded"'
     )
