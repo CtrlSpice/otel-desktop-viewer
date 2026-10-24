@@ -12,12 +12,16 @@ The interface uses Madoromi's four seasons, each in Day and Night:
 | Winter | `madoromi-fuyu-hiru`  | `madoromi-fuyu-yoru`  |
 
 The theme picker and day/night button share one compact control group.
-The picker opens in the centre of the screen, with a live app-style sample
-preview beside the choices. The preview shows paper, selection, text and shared
-JSON syntax colours. Ink and season changes apply immediately and keep the
+The picker opens in the centre of the screen, with a full-width live app-style
+sample preview above a compact swatch strip. A sample trace summary, service
+breakdown, attribute fields and JSON inspector use the same components as the
+viewer. Sample service colours are fixed and do not allocate saved assignments.
+Ink and season changes apply immediately and keep the
 picker open; Escape, clicking outside or Close dismisses it.
-The theme picker has compact ink choices with three colour dots and the Japanese
-name, with four icon-only season choices below the swatches. Section names
+Ink choices show three vertically stacked colour dots in one horizontal row,
+with the selected Japanese and English names
+shown once above them. All choices retain named tooltips and accessible labels.
+Four icon-only season choices sit below the swatches. Section names
 remain accessible but visually hidden; there is no filter field. Flower, sun,
 leaf and snowflake icons select Haru (Spring), Natsu (Summer), Aki (Autumn) and
 Fuyu (Winter). Season changes keep the picker open so its inherited paper,
@@ -123,11 +127,12 @@ The top-bar appearance group contains **Theme · Day/Night**. The theme picker
 contains background-season choices and ink selection. Ink chooses
 one of the 32 named seed inks, defaulting to To-ro (warm lantern). The pinned
 Madoromi mixer supplies its analogous family: the seed and neighbouring hues.
-To-ro's family is To-ro, Fuyu-gaki and Daikokuten. Compact three-column choices
-show three dots in each named ink's official shades 1, 4 and 7, followed by its
-Japanese name. English names remain in accessible labels and on hover. The
-selected ink is focused and revealed when the picker opens; the ink list scrolls.
-The three-column grid falls back to fewer columns when the window is too narrow.
+To-ro's family is To-ro, Fuyu-gaki and Daikokuten. Compact swatches show three dots
+in each named ink's official shades 1, 4 and 7. The selected ink's name appears
+once; each choice's Japanese and English names remain in accessible labels and
+tooltips. The selected ink is focused and revealed when the picker opens.
+The swatch group has one Tab stop. Arrow keys and Home/End select inks, updating
+the preview immediately. The row scrolls horizontally when the window is narrower.
 The analogous family applies when the seed is selected; mixed syntax-role
 colours do not replace the named ink's preview.
 The top-bar control shows three 8px dots in the selected ink's official shades
@@ -258,9 +263,9 @@ moving previous owners. `colorSlotReuses()` exposes read-only diagnostics and on
 console warning is emitted per exhausted scope. The scalar chart's 22-visible-
 series cap is independent of the 224-colour capacity.
 
-Each Home service name has a DaisyUI `btn btn-circle btn-sm` customised to a
-24px circle, centred in its 32px alignment slot and filled with its assigned colour,
-with a readable 16px paintbrush icon. It replaces the small colour dot and opens
+Each Home service name has its assigned 8px colour dot in a 32px circular target.
+The target stays transparent at rest, with shared Low hover and Medium open-state
+highlights and a visible keyboard focus ring. The dot opens
 the shared ink picker. It is a sibling of the card button, so changing colour does not select the card. Gauge
 and Sum series have the same control in their metric Details row; it does not
 toggle visibility or disclosure. Seven official shades per ink have 32px click

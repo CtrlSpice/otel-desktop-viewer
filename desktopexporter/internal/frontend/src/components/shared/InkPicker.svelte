@@ -18,8 +18,6 @@
   } from '@hugeicons/core-free-icons'
   import FilterPopover from './Toolbar/FilterPopover.svelte'
   import FilterInput from './Search/FilterInput.svelte'
-  import { readableTextColor } from '@/utils/chart-palette'
-  import { themeSignal } from '@/state/theme.svelte'
 
   let {
     label,
@@ -179,22 +177,27 @@
   {label}
   compact
   triggerClass={triggerColor
-    ? 'btn btn-circle btn-sm ink-picker-trigger--filled border-0 shadow-none font-normal tooltip tooltip-right'
+    ? 'ink-picker-trigger--dot item-state tooltip tooltip-right'
     : 'header-icon-button tooltip tooltip-left'}
-  triggerStyle={triggerColor
-    ? `--btn-color: ${triggerColor}; --btn-fg: ${readableTextColor(triggerColor, themeSignal.value)}`
-    : undefined}
   popoverClass={`ink-picker-popover ${mode === 'shade' ? 'ink-picker--shades' : ''}`}
   showHeader={false}
   onOpenChange={handleOpenChange}
 >
   {#snippet icon()}
-    <HugeiconsIcon
-      icon={PaintBrush01Icon}
-      size={16}
-      strokeWidth={1.5}
-      aria-hidden="true"
-    />
+    {#if triggerColor}
+      <span
+        class="size-2 shrink-0 rounded-full"
+        style:background-color={triggerColor}
+        aria-hidden="true"
+      ></span>
+    {:else}
+      <HugeiconsIcon
+        icon={PaintBrush01Icon}
+        size={16}
+        strokeWidth={1.5}
+        aria-hidden="true"
+      />
+    {/if}
   {/snippet}
   {#snippet children(close)}
     {#if open}
@@ -360,9 +363,11 @@
 
 <style lang="postcss">
   @reference '../../app.css';
-  :global(.btn.ink-picker-trigger--filled) {
-    --size: 1.5rem;
-    min-height: var(--size);
+  :global(.ink-picker-trigger--dot) {
+    @apply inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 p-0;
+  }
+  :global(.ink-picker-trigger--dot[aria-expanded='true']) {
+    --item-idle-bg: var(--item-selected-bg);
   }
   .ink-picker-options {
     max-height: min(55vh, 22rem);

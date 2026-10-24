@@ -30,12 +30,15 @@
   service/series ownership and saved assignments when changing graph palettes.
   Group appearance controls as the theme picker and Day/Night, with
   pill-rounded exterior corners and flat internal joins. The theme picker opens
-  in the centre of the screen with an app-style sample preview beside the choices.
+  in the centre of the screen with a full-width app-style sample preview above
+  the compact swatches. The preview is the main visual element.
   The preview reuses shared JSON styling and seasonal tokens, not a separate palette.
-  The theme picker has
-  compact three-column ink choices: three 8px colour dots followed by the Japanese
-  name, with four icon-only season choices below the swatches. Fall back to fewer
-  columns in narrow windows. Keep section names accessible but visually hidden.
+  Each ink choice has three vertically stacked 8px colour dots in a 32px-wide,
+  48px-high target. Use one horizontal row below the preview, scrolling when
+  necessary, with the selected Japanese/English name shown once.
+  Keep every ink's name in its tooltip and accessible label. Use radio-group
+  semantics, arrow/Home/End selection and one Tab stop for the swatch group.
+  Keep four icon-only season choices below the swatches. Keep section names accessible but visually hidden.
   Omit its filter field and checkmark column.
   Keep English meanings in accessible names and on hover. Ink controls interface and syntax accents;
   season controls the background. Preserve selected-ink focus and scrolling.
@@ -43,6 +46,8 @@
   update its inherited seasonal paper,
   hover and selection surfaces without changing the selected ink or its swatches.
   Preserve Escape, light dismissal, explicit Close and trigger-focus restoration.
+  The sample preview uses shared trace-summary, attribute field and JSON components.
+  It must not allocate sample service colours or modify saved service/series assignments.
   Accent ink selects one of the 32 named seed
   inks, with an analogous family from the pinned upstream
   mixer; default to To-ro (warm lantern) with Autumn and the system's Day/Night
@@ -53,13 +58,14 @@
   Changing the global ink also selects that ink for histogram/heatmap counts
   and their legends. The chart picker can subsequently choose a different count
   ink. Retain saved choices on load and keep service/series colours independent.
-  Keep ink-family names visible in every picker.
+  Keep the selected ink-family name visible in the theme picker; chart pickers
+  retain ink-family names beside their swatches.
   Accent-ink previews show the named seed's exact official shades 1, 4 and 7,
   from the graph ink catalogue. Do not use mixed syntax-role colours as ink previews.
   The top-bar theme control shows three 8px dots using official shades 1, 4
   and 7, followed by a simple 18px monitor. Keep the ink's original and English names in its
-  accessible name and tooltip. Picker rows show only the Japanese name, with
-  English available to assistive technology and on hover. Put the parenthesised English name
+  accessible name and tooltip. Compact swatches show their Japanese and English
+  names on hover and keyboard focus. Put the parenthesised English name
   on a separate line in the top-bar tooltip, using the standard tooltip style.
   Left-align top navigation beside the leading pane control. Let search fill
   the remaining desktop width, with appearance controls grouped at the right.
@@ -142,10 +148,10 @@
   curves between official shades 1 and 7. Skip occupied hex colours. Keep the
   layout fixed while open and retain slider mode for a saved curve choice.
   Preserve exact preset colours and persist curve positions in the same scope.
-  Home service controls replace the name's colour dot with a DaisyUI
-  `btn btn-circle btn-sm` customised to a 24px circle in its 32px alignment slot,
-  filled with that service's colour and a readable 16px brush icon. Keep the
-  swatch flat, without borders or shadows, and retain its keyboard focus ring. Keep it before
+  Home service and metric-series colour controls use their normal 8px colour dot
+  inside a 32px circular target. Keep the idle background transparent; use shared
+  Low hover, Medium open-state highlights and a visible keyboard focus ring.
+  Do not fill the target with the colour or add a brush icon. Keep it before
   the name and outside the whole-card button. Centre the service summary icons
   under the brush button, with their labels aligned under the service name.
   Align Last seen beneath the left edge of the log icon.

@@ -1,39 +1,102 @@
 <script lang="ts">
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { MonitorIcon } from '@hugeicons/core-free-icons'
+  import { BarChartHorizontalIcon } from '@hugeicons/core-free-icons'
   import JsonEditor from './JsonEditor.svelte'
+  import SignalCard from './SignalCard.svelte'
+  import SignalBadges from './SignalBadges.svelte'
+  import SignalDate from './SignalDate.svelte'
+  import BubbleBreakdown from './BubbleBreakdown.svelte'
+  import DetailProperty from './DetailProperty.svelte'
+  import { GRAPH_INKS } from '@/themes/graph-inks'
+
+  // Fixed sample colours must not allocate service identities in saved palettes.
+  const services = [
+    {
+      key: 'checkout-api',
+      label: 'checkout-api',
+      count: 9,
+      color: GRAPH_INKS.find(ink => ink.id === 'kon-peki')!.swatches[3]!.color,
+    },
+    {
+      key: 'postgres',
+      label: 'postgres',
+      count: 3,
+      color: GRAPH_INKS.find(ink => ink.id === 'murasaki-shikibu')!.swatches[3]!
+        .color,
+    },
+  ]
+  let selected = $state(true)
 </script>
 
-<section class="theme-preview" aria-label="Theme preview (sample telemetry)">
+<section class="theme-preview" aria-label="Theme preview (sample trace)">
   <div class="theme-preview__chrome">
     <HugeiconsIcon
-      icon={MonitorIcon}
+      icon={BarChartHorizontalIcon}
       size={16}
       strokeWidth={1.5}
+      class="theme-preview__accent text-primary"
       aria-hidden="true"
     />
-    <span>Preview</span>
+    <span>Trace preview</span>
   </div>
   <div class="theme-preview__content">
-    <div class="theme-preview__query text-subtle">Search telemetry…</div>
-    <div class="theme-preview__record">
-      <div class="flex items-center gap-2">
-        <span class="size-2 shrink-0 rounded-full bg-primary" aria-hidden="true"
-        ></span>
-        <span class="text-lg">GET /checkout</span>
+    <div class="flex min-w-0 flex-col gap-3">
+      <SignalCard
+        id="theme-preview-trace"
+        title="GET /checkout"
+        {selected}
+        onclick={() => (selected = !selected)}
+      >
+        {#snippet badge()}<SignalBadges
+            signal="trace"
+            spanCount={12}
+            errorCount={1}
+          />{/snippet}
+        {#snippet subtitleContent()}
+          <BubbleBreakdown
+            parts={services}
+            defaultKey="checkout-api"
+            label="Spans by service"
+            barLabel="Sample service breakdown by span count"
+            unit="span"
+            tooltipOnly
+          />
+        {/snippet}
+        {#snippet meta()}<span>Duration: 42 ms</span>{/snippet}
+        {#snippet date()}<SignalDate
+            label="Started"
+            timestamp={1770000000000000000n}
+          />{/snippet}
+      </SignalCard>
+      <div>
+        <h3 class="mb-1 px-3 text-sm font-normal text-subtle">Attributes</h3>
+        <table class="w-full table-fixed" aria-label="Sample span attributes">
+          <tbody>
+            <DetailProperty
+              fieldName="service.name"
+              fieldType="string"
+              fieldValue="checkout-api"
+              origin="Resource"
+            />
+            <DetailProperty
+              fieldName="http.request.method"
+              fieldType="string"
+              fieldValue="GET"
+            />
+            <DetailProperty
+              fieldName="http.response.status_code"
+              fieldType="int64"
+              fieldValue="200"
+            />
+          </tbody>
+        </table>
       </div>
-      <div class="flex justify-between gap-2 text-subtle">
-        <span>checkout</span><span>42 ms</span>
-      </div>
-    </div>
-    <div class="theme-preview__field">
-      <span class="text-subtle">service.name</span>
-      <span>checkout</span>
     </div>
     <div class="theme-preview__code">
+      <h3 class="mb-2 text-sm font-normal text-subtle">JSON</h3>
       <JsonEditor
-        label="Theme preview JSON (sample telemetry)"
-        text={'{\n  "service.name": "checkout",\n  "duration_ms": 42,\n  "ok": true\n}'}
+        label="Theme preview JSON (sample trace)"
+        text={'{\n  "name": "GET /checkout",\n  "duration_ns": 42000000,\n  "attributes": {\n    "http.request.method": "GET",\n    "url.path": "/checkout",\n    "http.response.status_code": 200\n  }\n}'}
         raw
       />
     </div>
@@ -45,6 +108,7 @@
 
   .theme-preview {
     @apply overflow-hidden rounded-xl border border-base-300 bg-base-200 text-base-content;
+    container-type: inline-size;
   }
 
   .theme-preview__chrome {
@@ -52,29 +116,17 @@
   }
 
   .theme-preview__content {
-    @apply flex flex-col gap-3 bg-base-100 p-3;
-  }
-
-  .theme-preview__query {
-    @apply rounded-full border px-3 py-1.5 text-sm;
-    background-color: var(--color-input);
-    border-color: var(--color-input-border);
-  }
-
-  .theme-preview__record {
-    @apply flex flex-col gap-1 rounded-xl p-3;
-    background-color: var(--color-highlight-med);
-  }
-
-  .theme-preview__record:hover {
-    background-color: var(--color-highlight-low);
-  }
-
-  .theme-preview__field {
-    @apply flex flex-col gap-1 rounded-xl bg-base-200 p-3;
+    @apply grid gap-3 bg-base-100 p-3;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
   }
 
   .theme-preview__code {
     @apply min-w-0 overflow-hidden rounded-xl border border-base-300 bg-base-100 p-3;
+  }
+
+  @container (max-width: 36rem) {
+    .theme-preview__content {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 </style>

@@ -46,20 +46,41 @@
     await tick()
     if (!open || !optionsList) return
     const button = optionsList.querySelector<HTMLButtonElement>(
-      '[aria-pressed="true"]'
+      '[aria-checked="true"]'
     )
     if (!button) return
     button.focus({ preventScroll: true })
-    const item = button.getBoundingClientRect()
-    const list = optionsList.getBoundingClientRect()
-    optionsList.scrollTop +=
-      item.top - list.top - (optionsList.clientHeight - item.height) / 2
     button.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }
+
+  function selectInk(event: KeyboardEvent, index: number) {
+    let next: number
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      next = (index + 1) % inks.length
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      next = (index - 1 + inks.length) % inks.length
+    } else if (event.key === 'Home') {
+      next = 0
+    } else if (event.key === 'End') {
+      next = inks.length - 1
+    } else {
+      return
+    }
+    event.preventDefault()
+    const ink = inks[next]!
+    accentInk.set(ink.id)
+    optionsList
+      ?.querySelector<HTMLButtonElement>(`[data-ink-choice="${ink.id}"]`)
+      ?.focus()
   }
 </script>
 
-{#snippet swatches(colors: readonly string[])}
-  <span class="flex shrink-0 items-center gap-1" aria-hidden="true">
+{#snippet swatches(colors: readonly string[], vertical = false)}
+  <span
+    class="flex shrink-0 items-center gap-1"
+    class:flex-col={vertical}
+    aria-hidden="true"
+  >
     {#each colors as color}
       <span class="size-2 shrink-0 rounded-full" style:background-color={color}
       ></span>
@@ -105,40 +126,39 @@
       </button>
     </div>
     <div class="theme-picker__layout">
-      <div class="min-w-0">
-        <div class="mb-3">
-          <p class="text-lg">{chosen.name}</p>
-          <p class="text-subtle">{chosen.english} · {theme.name}</p>
-        </div>
-        {#if open}<ThemePreview />{/if}
-        <p class="mt-3 text-sm text-subtle">
-          Ink sets accents and syntax. Seasons set backgrounds and highlights.
+      {#if open}<ThemePreview />{/if}
+      <div class="theme-picker__controls">
+        <p class="theme-picker__current text-center text-sm">
+          {chosen.name}
+          <span class="text-subtle">({chosen.english}) · {theme.name}</span>
         </p>
-      </div>
-      <div class="flex min-h-0 min-w-0 flex-col gap-3">
-        <fieldset class="m-0 min-h-0 min-w-0 border-0 p-0">
+        <fieldset class="m-0 min-w-0 border-0 p-0">
           <legend class="sr-only">Ink</legend>
           <div
-            class="theme-picker__inks theme-picker__choices anchor-popover__body"
+            class="theme-picker__inks"
+            role="radiogroup"
+            aria-label="Theme inks"
             bind:this={optionsList}
           >
-            {#each inks as ink (ink.id)}
+            {#each inks as ink, index (ink.id)}
               <button
                 type="button"
-                class="theme-picker__choice item-state item-state--menu"
+                role="radio"
+                class="theme-picker__choice item-state"
                 data-ink-choice={ink.id}
                 aria-label={`${ink.name} (${ink.english})`}
-                title={ink.english}
-                aria-pressed={ink.id === accentInk.value}
+                title={`${ink.name} (${ink.english})`}
+                aria-checked={ink.id === accentInk.value}
+                tabindex={ink.id === accentInk.value ? 0 : -1}
+                onkeydown={event => selectInk(event, index)}
                 onclick={() => accentInk.set(ink.id)}
               >
-                {@render swatches(ink.preview)}
-                <span>{ink.name}</span>
+                {@render swatches(ink.preview, true)}
               </button>
             {/each}
           </div>
         </fieldset>
-        <fieldset class="m-0 min-w-0 shrink-0 border-0 p-0">
+        <fieldset class="theme-picker__seasons">
           <legend class="sr-only">Background</legend>
           <div class="grid grid-cols-4 gap-1">
             {#each SEASONS as season (season.id)}
@@ -188,7 +208,7 @@
   @reference '../../app.css';
 
   :global(.filter-popover.theme-picker-popover) {
-    width: 58rem;
+    width: 72rem;
     padding: 1.25rem;
     max-height: calc(100dvh - 2rem);
   }
@@ -198,30 +218,28 @@
   }
 
   .theme-picker__layout {
-    @apply grid items-start gap-6;
-    grid-template-columns: minmax(15rem, 1fr) minmax(0, 1.7fr);
+    @apply flex min-w-0 flex-col gap-4;
+  }
+
+  .theme-picker__controls {
+    @apply flex min-w-0 flex-col gap-3;
   }
 
   .theme-picker__choice {
-    @apply flex min-w-0 items-center gap-2 px-2 py-1.5 text-left text-sm font-normal;
+    @apply flex h-12 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full p-0;
   }
 
   .theme-picker__season {
     @apply flex items-center justify-center p-2;
   }
 
-  .theme-picker__choices {
-    @apply grid gap-1;
-    grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  .theme-picker__seasons {
+    @apply m-0 mx-auto w-full min-w-0 max-w-64 shrink-0 border-0 p-0;
   }
 
   .theme-picker__inks {
-    max-height: min(55vh, 26rem);
-  }
-
-  @media (max-width: 52rem) {
-    .theme-picker__layout {
-      grid-template-columns: minmax(0, 1fr);
-    }
+    @apply mx-auto grid max-w-full grid-flow-col gap-0.5 overflow-x-auto py-1;
+    width: max-content;
+    grid-auto-columns: 2rem;
   }
 </style>

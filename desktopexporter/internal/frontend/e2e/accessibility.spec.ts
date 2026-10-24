@@ -470,13 +470,14 @@ for (const { id: theme, scheme, name } of THEMES) {
     await expect(themePicker).toHaveRole('dialog')
     await expect(
       themePicker.getByRole('region', {
-        name: 'Theme preview (sample telemetry)',
+        name: 'Theme preview (sample trace)',
       })
     ).toBeVisible()
     await expect(themePicker.getByRole('searchbox')).toHaveCount(0)
     await expect(themePicker.locator('[data-ink-choice]')).toHaveCount(32)
     const toRoChoice = themePicker.locator('[data-ink-choice="to-ro"]')
-    await expect(toRoChoice).toHaveText('To-ro')
+    await expect(toRoChoice).toHaveText('')
+    await expect(toRoChoice).toHaveAccessibleName('To-ro (warm lantern)')
     await expect(
       toRoChoice.locator('span[aria-hidden="true"] > span')
     ).toHaveCount(3)
@@ -488,7 +489,7 @@ for (const { id: theme, scheme, name } of THEMES) {
     await page.keyboard.press('Enter')
     const selectedInk = page.locator('[data-ink-choice="to-ro"]')
     await expect(selectedInk).toBeFocused()
-    await expect(selectedInk).toHaveAttribute('aria-pressed', 'true')
+    await expect(selectedInk).toHaveAttribute('aria-checked', 'true')
     await page.keyboard.press('Escape')
     await expect(ink).toBeFocused()
     for (const pane of ['sidebar', 'details']) {
@@ -559,12 +560,12 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
       .map(hex => parseInt(hex, 16))
       .join(', ')})`
   for (const viewport of [
-    { width: 320, height: 720, columns: 1 },
-    { width: 390, height: 720, columns: 2 },
-    { width: 520, height: 720, columns: 2 },
-    { width: 1024, height: 768, columns: 3 },
-    { width: 1440, height: 900, columns: 3 },
-    { width: 1920, height: 1080, columns: 3 },
+    { width: 320, height: 720 },
+    { width: 390, height: 720 },
+    { width: 520, height: 720 },
+    { width: 1024, height: 768 },
+    { width: 1440, height: 900 },
+    { width: 1920, height: 1080 },
   ]) {
     await page.setViewportSize({
       width: viewport.width,
@@ -577,6 +578,11 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
       .boundingBox())!
     const monitor = (await trigger.locator('svg').boundingBox())!
     expect(dots.x + dots.width).toBeLessThan(monitor.x)
+    const savedAssignments = await page.evaluate(() =>
+      Object.entries(localStorage).filter(([key]) =>
+        key.startsWith('graph-colour-')
+      )
+    )
     await trigger.click()
     const picker = page.locator('.theme-picker-popover:popover-open')
     await expect(picker.getByRole('searchbox')).toHaveCount(0)
@@ -592,6 +598,7 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
         buttons.map(button => ({
           id: button.getAttribute('data-ink-choice'),
           text: button.textContent!.trim(),
+          label: button.getAttribute('aria-label'),
           dots: [...button.querySelectorAll<HTMLElement>('span[style]')].map(
             dot => dot.style.backgroundColor
           ),
@@ -601,7 +608,8 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
     ).toEqual(
       ACCENT_INKS.map(ink => ({
         id: ink.id,
-        text: ink.name,
+        text: '',
+        label: `${ink.name} (${ink.english})`,
         dots: [0, 3, 6].map(index => rgb(ink.swatches[index]!.color)),
         overflow: false,
       }))
@@ -610,19 +618,39 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
     await expect(selected).toBeFocused()
     const selectedBox = (await selected.boundingBox())!
     const list = picker.locator('.theme-picker__inks')
-    expect(
-      await list.evaluate(
-        element =>
-          getComputedStyle(element).gridTemplateColumns.split(' ').length
-      )
-    ).toBe(viewport.columns)
+    await expect(list).toHaveRole('radiogroup')
+    await expect(list.getByRole('radio')).toHaveCount(32)
+    await expect(list.locator('[tabindex="0"]')).toHaveCount(1)
+    const inkBoxes = await choices.evaluateAll(buttons =>
+      buttons.map(button => button.getBoundingClientRect().toJSON())
+    )
+    expect(new Set(inkBoxes.map(box => box.y)).size).toBe(1)
+    for (const inkBox of inkBoxes) {
+      expect(inkBox.width).toBe(32)
+      expect(inkBox.height).toBe(48)
+    }
     const listBox = (await list.boundingBox())!
     const seasonBox = (await seasons.boundingBox())!
+    const previewBox = (await picker
+      .getByRole('region', { name: 'Theme preview (sample trace)' })
+      .boundingBox())!
+    expect(previewBox.y + previewBox.height).toBeLessThanOrEqual(listBox.y)
     expect(seasonBox.y).toBeGreaterThanOrEqual(listBox.y + listBox.height)
     expect(selectedBox.y).toBeGreaterThanOrEqual(listBox.y)
     expect(selectedBox.y + selectedBox.height).toBeLessThanOrEqual(
       listBox.y + listBox.height
     )
+    expect(selectedBox.x).toBeGreaterThanOrEqual(listBox.x)
+    expect(selectedBox.x + selectedBox.width).toBeLessThanOrEqual(
+      listBox.x + listBox.width
+    )
+    expect(
+      await page.evaluate(() =>
+        Object.entries(localStorage).filter(([key]) =>
+          key.startsWith('graph-colour-')
+        )
+      )
+    ).toEqual(savedAssignments)
     const box = (await picker.boundingBox())!
     expect(box.x).toBeGreaterThanOrEqual(8)
     expect(box.x + box.width).toBeLessThanOrEqual(viewport.width - 8)
@@ -671,20 +699,20 @@ test('persists the chosen ink independently of season and Day/Night', async ({
     themeRgb('madoromi-fuyu-hiru', 'canvas')
   )
   const selectedInk = picker.locator('[data-ink-choice="rikka"]')
-  await expect(selectedInk).toHaveAttribute('aria-pressed', 'true')
+  await expect(selectedInk).toHaveAttribute('aria-checked', 'true')
   await expect(selectedInk).toHaveCSS(
     'background-color',
     themeRgb('madoromi-fuyu-hiru', 'highlightMedium')
   )
   const preview = picker.getByRole('region', {
-    name: 'Theme preview (sample telemetry)',
+    name: 'Theme preview (sample trace)',
   })
-  await expect(preview.locator('.theme-preview__record')).toHaveCSS(
+  await expect(preview.locator('.signal-row')).toHaveCSS(
     'background-color',
     themeRgb('madoromi-fuyu-hiru', 'highlightMedium')
   )
-  await expect(preview.locator('.bg-primary')).toHaveCSS(
-    'background-color',
+  await expect(preview.locator('.theme-preview__accent')).toHaveCSS(
+    'color',
     themeRgb('madoromi-fuyu-hiru', 'primary', 'rikka')
   )
   await selectedInk.hover()

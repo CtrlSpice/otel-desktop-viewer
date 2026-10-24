@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { themeRgb } from './theme-colours'
 
 test('Home reflows services, discovers exact values, and keeps incoming imports out of the current reading', async ({
   page,
@@ -119,6 +120,49 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   await expect(card).toHaveAttribute('aria-pressed', 'true')
   await expect(card.getByRole('link')).toHaveCount(0)
   await expect(card.getByRole('button')).toHaveCount(0)
+  const colour = page.getByRole('button', {
+    name: 'Colour for checkout',
+    exact: true,
+  })
+  const colourDot = colour.locator('span[aria-hidden="true"]')
+  const theme = (await page.locator('html').getAttribute('data-theme'))!
+  await expect(colour).toHaveCSS('width', '32px')
+  await expect(colour).toHaveCSS('height', '32px')
+  await expect(colourDot).toHaveCSS('width', '8px')
+  await expect(colourDot).toHaveCSS('height', '8px')
+  await expect(colour.locator('svg')).toHaveCount(0)
+  await expect(colour).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+  const automaticColour = await colourDot.evaluate(
+    element => getComputedStyle(element).backgroundColor
+  )
+  await colour.hover()
+  await expect(colour).toHaveCSS(
+    'background-color',
+    themeRgb(theme, 'highlightLow')
+  )
+  await colour.click()
+  const picker = page.getByRole('group', {
+    name: 'Colour for checkout options',
+    exact: true,
+  })
+  await expect(picker).toBeVisible()
+  await page.mouse.move(0, 0)
+  await expect(colour).toHaveCSS(
+    'background-color',
+    themeRgb(theme, 'highlightMedium')
+  )
+  await picker
+    .locator('[data-ink-choice]:not(:disabled):not([aria-pressed="true"])')
+    .first()
+    .click()
+  await expect(colourDot).not.toHaveCSS('background-color', automaticColour)
+  await expect(card).toHaveAttribute('aria-pressed', 'true')
+  await colour.click()
+  await picker
+    .getByRole('button', { name: 'Reset to automatic colour' })
+    .click()
+  await expect(colourDot).toHaveCSS('background-color', automaticColour)
+  await expect(colour).toBeFocused()
   await expect(card.locator('.service-summary__row')).toHaveText([
     /^\s*Traces:\s*42\s*·\s*248\s*spans\s*3\s*err\s*$/,
     /^\s*Metrics:\s*8\s*·\s*640\s*pts\s*·\s*12\s*exemplars\s*$/,

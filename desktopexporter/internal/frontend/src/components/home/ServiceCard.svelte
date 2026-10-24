@@ -78,7 +78,6 @@
       identity={service.serviceName}
       label={`Colour for ${service.serviceName || 'Unnamed service'}`}
       color={serviceColor}
-      filled
     />
   {/snippet}
   {#snippet titleContent()}

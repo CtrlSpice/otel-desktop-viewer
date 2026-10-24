@@ -15,13 +15,11 @@
     identity,
     label,
     color,
-    filled = false,
   }: {
     scope: string
     identity: string
     label: string
     color?: string
-    filled?: boolean
   } = $props()
   const override = $derived(graphColorOverrides.get(scope, identity))
   const availability = $derived(graphColorAvailability(scope, identity))
@@ -59,7 +57,7 @@
   {label}
   options={GRAPH_INKS}
   {value}
-  triggerColor={filled ? color : undefined}
+  triggerColor={color}
   mode="shade"
   automatic={!override}
   unavailable={availability.unavailable}

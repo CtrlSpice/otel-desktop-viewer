@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { render, screen } from '@testing-library/svelte'
+import { screen } from '@testing-library/svelte'
+import { renderWithContexts as render } from '@/test/render-helpers'
 import userEvent from '@testing-library/user-event'
 import ThemeToggle from './ThemeToggle.svelte'
+import { accentInk } from '@/state/accent-ink.svelte'
+import { DEFAULT_ACCENT_INK } from '@/themes/accent-inks'
 
 // document.documentElement persists across tests in this file, so reset the
 // attribute the component owns before/after each test.
@@ -10,6 +13,7 @@ beforeEach(() => {
   document.documentElement.removeAttribute('data-theme')
   document.documentElement.removeAttribute('data-color-scheme')
   localStorage.clear()
+  accentInk.set(DEFAULT_ACCENT_INK)
 })
 
 afterEach(() => {
@@ -18,6 +22,27 @@ afterEach(() => {
 })
 
 describe('ThemeToggle', () => {
+  it('lets arrow and Home/End keys select named ink swatches', async () => {
+    const user = userEvent.setup()
+    render(ThemeToggle)
+    await user.click(screen.getByRole('button', { name: /^Theme:/ }))
+    const toRo = screen.getByRole('radio', { name: 'To-ro (warm lantern)' })
+    await user.keyboard('{ArrowRight}')
+    expect(screen.getByRole('radio', { name: /^Daikokuten \(/ })).toHaveFocus()
+    await user.keyboard('{ArrowLeft}')
+    expect(toRo).toHaveFocus()
+    expect(toRo).toHaveAttribute('aria-checked', 'true')
+    await user.keyboard('{Home}')
+    expect(
+      screen.getByRole('radio', { name: /^Shimbashi-iro \(/ })
+    ).toHaveAttribute('aria-checked', 'true')
+    await user.keyboard('{End}')
+    expect(screen.getByRole('radio', { name: /^Syo-ro \(/ })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    )
+  })
+
   it('defaults to Autumn Day when nothing is saved and the OS prefers light', () => {
     render(ThemeToggle)
     expect(document.documentElement.getAttribute('data-theme')).toBe(
