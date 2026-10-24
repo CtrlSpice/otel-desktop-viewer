@@ -324,7 +324,7 @@ and replaces the source result-array syntax range without parsing/re-encoding
 received values. It returns the exact `EvalSourceDataset` input for the adapter.
 The workspace uses `loadEvalExperimentSource(id, signal)` to enforce the row and
 text limits during pagination. It stops requesting pages when the retained source
-exceeds the display budget and retains one shared context string across pages.
+exceeds the display budget and retains one summary and context across pages.
 Alternatively, parent can assemble
 the selected experiment's rows into its source envelope, retain their exact strings,
 and pass those global ordinals with `id: summary.datasetID` and

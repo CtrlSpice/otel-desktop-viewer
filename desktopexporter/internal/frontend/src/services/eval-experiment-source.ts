@@ -12,7 +12,7 @@ export async function loadEvalExperimentSource(
   id: string,
   signal: AbortSignal
 ) {
-  const pages: EvalExperimentSourcePage[] = []
+  let selected: EvalExperimentSourcePage | undefined
   let after = -1
   let characters = 0
   let rows = 0
@@ -23,7 +23,7 @@ export async function loadEvalExperimentSource(
       throw new Error(
         `This experiment has ${page.summary.resultCount.toLocaleString()} results and exceeds the current 5,000-row display limit.`
       )
-    const first = pages[0]
+    const first = selected
     if (
       first &&
       (page.summary.id !== first.summary.id ||
@@ -44,16 +44,20 @@ export async function loadEvalExperimentSource(
       throw new Error(
         'Selected experiment exceeds the current 5,000-row display adapter limit.'
       )
-    // Retain one shared context string rather than a copy from every response.
-    pages.push({ ...page, contextJSON })
+    // Keep one summary/context; later responses contribute only rows and cursor state.
+    if (selected) {
+      selected.rows.push(...page.rows)
+      selected.nextAfter = page.nextAfter
+      selected.hasMore = page.hasMore
+    } else selected = { ...page, rows: [...page.rows] }
     if (!page.hasMore) break
     if (page.nextAfter <= after)
       throw new Error('Selected-experiment source pagination did not advance.')
     after = page.nextAfter
   }
   return {
-    summary: pages[0]!.summary,
-    source: assembleEvalExperimentSource(pages),
+    summary: selected.summary,
+    source: assembleEvalExperimentSource([selected]),
   }
 }
 

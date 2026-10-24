@@ -89,28 +89,33 @@ it('rejects an oversized context before requesting another page', async () => {
   expect(getPage).toHaveBeenCalledOnce()
 })
 
-it('counts repeated context once while preserving complete source rows', async () => {
+it('loads repeated large summary/context text while preserving complete source rows', async () => {
+  const evaluation = 'x'.repeat(1024 * 1024)
   const contextJSON = page.contextJSON.replace(
     '"config":{}',
-    `"config":{"text":"${'x'.repeat(1024 * 1024)}"}`
+    `"config":{"description":"${evaluation}"}`
   )
   const getPage = vi
     .spyOn(evalAPI, 'getEvalExperimentPage')
-    .mockImplementation(async (_id, after = -1) => ({
-      ...page,
-      contextJSON,
-      summary: { ...page.summary, resultCount: 9 },
-      rows: [
-        { ordinal: after + 1, json: '{"exact":9007199254740993,"zero":-0}' },
-      ],
-      nextAfter: after + 1,
-      hasMore: after < 7,
-    }))
-  const { source } = await loadEvalExperimentSource(
+    .mockImplementation(async (_id, after = -1) =>
+      Response.json({
+        ...page,
+        contextJSON,
+        summary: { ...page.summary, evaluation, resultCount: 9 },
+        rows: [
+          { ordinal: after + 1, json: '{"exact":9007199254740993,"zero":-0}' },
+        ],
+        nextAfter: after + 1,
+        hasMore: after < 7,
+      }).json()
+    )
+  const { source, summary } = await loadEvalExperimentSource(
     'experiment',
     new AbortController().signal
   )
   expect(getPage).toHaveBeenCalledTimes(9)
+  expect(summary.evaluation).toBe(evaluation)
+  expect(source.name).toBe(evaluation)
   expect(source.rowOrdinals).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8])
   expect(source.payload).toContain('"exact":9007199254740993,"zero":-0')
 })

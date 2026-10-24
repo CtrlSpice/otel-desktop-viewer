@@ -33,6 +33,41 @@ function fixture(
 beforeEach(() => localStorage.clear())
 
 describe('detail heading collapse handoff', () => {
+  it.each([
+    { Span: 1e308 },
+    { Span: 1e308, Events: 1e308, Links: 1e308 },
+    { Span: 1e308, Events: Number.MIN_VALUE, Links: 1 },
+  ])(
+    'restores overflow-sized preferences without invalid geometry: %o',
+    saved => {
+      localStorage.setItem('test-detail-handoff', JSON.stringify(saved))
+      const { stack } = fixture()
+      const sizes = () =>
+        ['Span', 'Events', 'Links'].map(name => parseFloat(stack.flex(name)))
+      expect(sizes().every(size => Number.isFinite(size) && size >= 0)).toBe(
+        true
+      )
+      expect(sizes().reduce((sum, size) => sum + size, 0)).toBeCloseTo(100)
+      stack.setOpen('Events', false)
+      stack.setOpen('Events', true)
+      expect(sizes().every(size => Number.isFinite(size) && size >= 0)).toBe(
+        true
+      )
+      expect(sizes().reduce((sum, size) => sum + size, 0)).toBeCloseTo(100)
+    }
+  )
+
+  it('keeps valid fractional saved sizing unchanged', () => {
+    localStorage.setItem(
+      'test-detail-handoff',
+      '{"Span":0.6,"Events":0.3,"Links":0.1}'
+    )
+    const { stack } = fixture()
+    expect(parseFloat(stack.flex('Span'))).toBeCloseTo(60)
+    expect(parseFloat(stack.flex('Events'))).toBeCloseTo(30)
+    expect(parseFloat(stack.flex('Links'))).toBeCloseTo(10)
+  })
+
   it('treats prototype-shaped section names as literal sizing keys', () => {
     const names = ['constructor', 'toString', '__proto__']
     const { stack } = fixture([true, true, true], names)

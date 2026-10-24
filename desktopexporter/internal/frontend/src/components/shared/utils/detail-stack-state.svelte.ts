@@ -32,8 +32,21 @@ function loadWeights(key: string): Map<string, number> {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(key) ?? 'null')
     if (!isStoredWeights(value)) return new Map()
+    const entries = Object.entries(value).flatMap(
+      ([name, weight]): [string, number][] =>
+        isPositiveWeight(weight) ? [[name, weight]] : []
+    )
+    // Preserve ordinary weights and ratios of oversized saved weights
+    // without allowing their sums or percentage scaling to overflow.
+    const largest = entries.reduce(
+      (max, [, weight]) => Math.max(max, weight),
+      1
+    )
+    const scale = largest > Number.MAX_SAFE_INTEGER ? largest : 1
     return new Map(
-      Object.entries(value).filter(([, weight]) => isPositiveWeight(weight))
+      entries
+        .map(([name, weight]): [string, number] => [name, weight / scale])
+        .filter(([, weight]) => weight > 0)
     )
   } catch {
     return new Map()
