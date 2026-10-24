@@ -46,10 +46,8 @@ ruri, accent uses tokiwa, info uses sora and success uses wakaba. Text and accen
 foregrounds move in 0.001 OKLCH lightness steps only as needed to reach 4.5:1
 against all three surfaces, hover and selection. Subtle usuzumi 1, Muted kasure 1,
 sakura and yamabuki warning fills retain their original colours without contrast
-adjustments. Error uses the Momiji
-curve in all eight variants, sampled at each variant's original beni lightness.
-Interpolation between stored OKLab points follows upstream `colourAt` in
-`src/core/palette.ts`, with the pinned conversion code handling the sRGB gamut.
+adjustments. Error uses each variant's original Beni colour from the pinned
+upstream palette.
 
 The global Accent ink picker runs the unmodified upstream analogous mixer for
 each of the 32 seed inks. Ajisai is the default; its family adds Ama-iro and
@@ -68,7 +66,7 @@ uses the same shared readability correction. The upstream guide assigns Wakaba
 to strings and Kaki to literals; the viewer uses Sumi for their value text and
 JSON/query quote marks for calmer, cohesive reading. Keywords use Fuji, keys Ruri,
 operators Sora and escapes Botan. Syntax Beni is the
-native built-in colour; invalid syntax uses the viewer's Momiji Error colour.
+native built-in colour; invalid syntax uses the semantic Beni Error colour.
 Editor bracket outlines use original Kasure 0 and fills use tinted Nijimi 2.
 
 Histogram count palettes offer 32 colourful inks. The picker excludes the four

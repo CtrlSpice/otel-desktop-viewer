@@ -58,6 +58,7 @@ const roles = {
   accent: 'tokiwa',
   rose: 'sakura',
   warning: 'yamabuki',
+  error: 'beni',
   info: 'sora',
   success: 'wakaba',
 }
@@ -144,8 +145,6 @@ const definitions = Object.fromEntries(
       ...Object.fromEntries(
         Object.entries(roles).map(([key, sourceKey]) => [key, c[sourceKey].hex])
       ),
-      // Momiji owns Error; retain each variant's upstream error lightness.
-      error: inkAt('momiji', c.beni.at),
       highlightLow: tint('nijimi0'),
       highlightMedium: selection(tint('nijimi2'), tint('hyoshi')),
       highlightHigh: tint('nijimi1'),

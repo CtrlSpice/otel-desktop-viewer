@@ -117,8 +117,8 @@
   saved automatic assignment and is disabled when no override is set. Keep only
   Madoromi attribution in the footer. New automatic assignments
   probe past occupied slots and explicit overrides without moving existing owners.
-  Error uses Momiji sampled at each variant's original Beni lightness; generate
-  it from the pinned ink curve. Warning fills use original Yamabuki. Warning
+  Error uses each variant's original Beni colour from the pinned upstream
+  palette. Warning fills use original Yamabuki. Warning
   text uses neutral Text. Do not add separate darkened error text colours.
   Historical Love/Pine/Iris names below refer to Error/Secondary/Primary roles.
   Preserve marker/fill palette colours. Obtain explicit user
@@ -222,7 +222,7 @@
   Sora, and escapes or regular expressions Botan, including compact JSON previews.
   Plain Markdown code uses Sumi too. Functions use Ai, built-ins Beni, types/attributes
   Yamabuki, namespaces Kikyo, annotations Nadeshiko, and labels/cursors Sakura.
-  Invalid syntax uses the Momiji Error role. Comments use readable Kasure 2 in
+  Invalid syntax uses the Beni Error role. Comments use readable Kasure 2 in
   italic; punctuation uses readable Usuzumi 0. Generate syntax foreground
   corrections theme-wide with the same shared readability target. JSON quote and
   escape accents are display decorations over the intact document; decoded

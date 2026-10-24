@@ -79,7 +79,7 @@ nijimi 1. Hover takes precedence over selection while the pointer is present.
 | Success                               | Wakaba                     |
 | Rose compatibility token              | Sakura                     |
 | Warning markers and fills             | Yamabuki                   |
-| Error markers                         | Momiji at Beni's lightness |
+| Error markers                         | Beni                       |
 
 These role assignments apply to all eight variants. Each variant supplies its
 own source ink and shade. Info and Success have independent Sora and Wakaba
@@ -90,8 +90,8 @@ lightness steps until they reach 4.5:1 on canvas, panel, chrome, hover and
 selection. Gamut mapping reduces chroma only when needed for sRGB. Stronger
 reveal highlights are outside this five-background target. Subtle, Muted and
 the original sakura/yamabuki colours retain their source values without contrast
-adjustments. Error uses the
-pinned Momiji curve at each variant's original Beni lightness. Warning
+adjustments. Error uses each variant's original Beni colour from the pinned
+upstream palette. Warning
 and received error values use neutral Text with meaningful coloured markers.
 Papaya (`#ff8000`) continues to identify internal faults rather than span errors.
 
@@ -152,7 +152,7 @@ cohesive reading. Keys, punctuation and escapes retain their distinct roles:
 | Labels and editor cursors             | Sakura          |
 | Punctuation                           | Usuzumi 0       |
 | Comments                              | Kasure 2        |
-| Invalid syntax                        | Momiji / Error  |
+| Invalid syntax                        | Beni / Error    |
 
 The role names identify slots in the selected analogous mix, rather than fixed
 rainbow hues. The generated `syntax` palette also contains each season's readable
