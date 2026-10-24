@@ -94,7 +94,7 @@
   }
 
   .workspace-toolbar__actions {
-    @apply justify-end gap-2;
+    @apply flex-wrap justify-end gap-2;
   }
 
   .workspace-toolbar__navigation {

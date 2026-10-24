@@ -1,12 +1,12 @@
 <script lang="ts">
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import { PaintBrush01Icon } from '@hugeicons/core-free-icons'
   import InkPicker from './InkPicker.svelte'
   import { ACCENT_INKS, restoreAccentInk } from '@/themes/accent-inks'
   import { accentInk } from '@/state/accent-ink.svelte'
 
   const chosen = $derived(ACCENT_INKS.find(ink => ink.id === accentInk.value)!)
-  const gradient = $derived(
-    `linear-gradient(to right in oklab, ${chosen.swatches.map(swatch => swatch.color).join(', ')})`
-  )
+  const preview = $derived(chosen.swatches.filter((_, index) => index % 3 === 0))
 </script>
 
 <InkPicker
@@ -17,11 +17,21 @@
   onchange={id => accentInk.set(restoreAccentInk(id))}
 >
   {#snippet triggerContent()}
-    <span
-      class="h-2 w-6 shrink-0 rounded-full"
-      style:background-image={gradient}
+    <HugeiconsIcon
+      icon={PaintBrush01Icon}
+      size={16}
+      strokeWidth={1.5}
+      class="shrink-0"
       aria-hidden="true"
-    ></span>
+    />
     <span>{chosen.name}</span>
+    <span class="flex shrink-0 items-center gap-2" aria-hidden="true">
+      {#each preview as swatch (swatch.id)}
+        <span
+          class="size-2 shrink-0 rounded-full"
+          style:background-color={swatch.color}
+        ></span>
+      {/each}
+    </span>
   {/snippet}
 </InkPicker>
