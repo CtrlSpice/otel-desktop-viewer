@@ -14,6 +14,7 @@
   import type { MetricSeriesViewData } from '@/types/api-types'
   import { MAX_VISIBLE_TIMESERIES } from '@/components/metrics/utils/metric-timeseries-visible'
   import { chartNeutral, readableTextColor } from '@/utils/chart-palette'
+  import { themeSignal } from '@/state/theme.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import GraphColorPicker from '@/components/shared/GraphColorPicker.svelte'
   import SeriesDatapointList from '@/components/metrics/Detail/SeriesDatapointList.svelte'
@@ -129,7 +130,7 @@
     {@const color = checked && seriesColor ? seriesColor : chartNeutral()}
     {@const fg = checked
       ? seriesColor
-        ? readableTextColor(seriesColor)
+        ? readableTextColor(seriesColor, themeSignal.value)
         : 'var(--color-neutral-content)'
       : chartNeutral()}
     {@const hasAttrs = dedupeAttributes(ts.attributes).length > 0}

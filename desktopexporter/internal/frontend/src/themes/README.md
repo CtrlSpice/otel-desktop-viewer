@@ -64,6 +64,11 @@ variants. The shared surface hierarchy flips with the mode:
 Hover uses tinted nijimi 0. Persistent selection uses tinted nijimi 2 at 45%
 over the panel, blended in sRGB. Stronger reveal highlights use tinted
 nijimi 1. Hover takes precedence over selection while the pointer is present.
+Ghost buttons use the same hover and active/selected surfaces. Tooltips use
+Panel with regular-weight neutral Text. Timeline activity markers retain their
+assigned ink or Error colour without brightening. Swatch glyphs choose the
+higher-contrast seasonal light/dark foreground using linear-sRGB luminance,
+recalculating when the theme changes.
 
 | Shared role                           | Madoromi source            |
 | ------------------------------------- | -------------------------- |

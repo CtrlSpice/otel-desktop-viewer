@@ -19,6 +19,7 @@
   import FilterPopover from './Toolbar/FilterPopover.svelte'
   import FilterInput from './Search/FilterInput.svelte'
   import { readableTextColor } from '@/utils/chart-palette'
+  import { themeSignal } from '@/state/theme.svelte'
 
   let {
     label,
@@ -186,7 +187,7 @@
       ? 'btn btn-circle btn-sm ink-picker-trigger--filled border-0 shadow-none font-normal tooltip tooltip-right'
       : 'header-icon-button tooltip tooltip-left')}
   triggerStyle={triggerColor
-    ? `--btn-color: ${triggerColor}; --btn-fg: ${readableTextColor(triggerColor)}`
+    ? `--btn-color: ${triggerColor}; --btn-fg: ${readableTextColor(triggerColor, themeSignal.value)}`
     : undefined}
   popoverClass={`ink-picker-popover ${mode === 'shade' ? 'ink-picker--shades' : ''}`}
   showHeader={false}

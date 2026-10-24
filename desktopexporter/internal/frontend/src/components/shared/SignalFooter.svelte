@@ -49,7 +49,7 @@
     {@render trailing?.()}
     {#if onDelete}
       <div
-        class="tooltip tooltip-left tooltip-error"
+        class="tooltip tooltip-left"
         data-tip="Delete this {label}"
       >
         <button

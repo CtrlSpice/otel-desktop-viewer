@@ -137,6 +137,12 @@
   Span and summary breakdown bars use solid palette fills without light-mode
   fading or borders. Error status code/message values use neutral Text with an
   8px Error dot before the value, only when the received status code is 2.
+  Timeline activity markers retain their exact assigned colour without brightening.
+  Swatch glyphs choose between the active theme's light/dark foregrounds using
+  linear-sRGB contrast ratios, recalculating on theme changes.
+  Tooltips use the seasonal Panel surface with regular-weight neutral Text.
+  Ghost buttons use the shared Low hover and Medium active/selected backgrounds;
+  hover takes precedence while the pointer remains over the button.
 - Shared item states use Highlight Low for hover and Highlight Medium for
   persistent selection. Medium blends tinted Nijimi 2 at 45% over the panel in
   sRGB. Hover temporarily uses Low even on selected items;

@@ -72,31 +72,16 @@
   --panel-motion-easing: var(--motion-settle-easing);
 }
 
-/* Tooltips — inverted against the page.
-
-   Inverting against the surface — Text as the background, Base as the
-   foreground — clears AA and reads as a bubble floating above the UI
-   rather than a panel inside it, in both light and dark themes.
-
-   --tt-bg is daisyUI's own hook, so the tail (::after) follows the bubble for
-   free. --tt-fg lets error tooltips retain their contrasting text. */
+/* Tooltips use the seasonal panel and neutral Text; the tail shares the fill. */
 .tooltip {
-  --tt-bg: var(--color-base-content);
-  --tt-fg: var(--color-base-100);
-}
-
-.tooltip-error {
-  --tt-fg: var(--color-error-content);
+  --tt-bg: var(--color-base-200);
 }
 
 .tooltip[data-tip]::before {
-  color: var(--tt-fg);
-  /* Small lift so the bubble separates from busy chart and table content;
-     light mode especially needs it, where bubble and page are both low contrast
-     against the mid greys in between. */
+  color: var(--color-base-content);
   box-shadow: 0 2px 8px -2px
     color-mix(in oklab, var(--color-base-content) 35%, transparent);
-  font-weight: 500;
+  font-weight: 400;
   @apply text-xs;
 }
 
@@ -842,31 +827,22 @@ svg {
   }
 }
 
-/*
- * Ghost buttons: muted wash on hover/active instead of Daisy’s default fill + no hover border ring.
- */
+/* Ghost buttons share item selection and hover colours. */
+.btn.btn-ghost:active:not(:disabled, [disabled], .btn-disabled),
+.btn.btn-ghost.btn-active:not(:disabled, [disabled], .btn-disabled) {
+  --btn-border: #0000;
+  --btn-noise: none;
+  --btn-bg: var(--item-selected-bg);
+  box-shadow: none;
+}
+
 @media (hover: hover) {
   .btn.btn-ghost:hover:not(:disabled, [disabled], .btn-disabled) {
     --btn-border: #0000;
     --btn-noise: none;
-    --btn-bg: color-mix(
-      in oklab,
-      var(--color-base-content) 10%,
-      var(--color-base-100)
-    );
+    --btn-bg: var(--item-hover-bg);
     box-shadow: none;
   }
-}
-.btn.btn-ghost:active:not(:disabled, [disabled], .btn-disabled),
-.btn.btn-ghost.btn-active {
-  --btn-border: #0000;
-  --btn-noise: none;
-  --btn-bg: color-mix(
-    in oklab,
-    var(--color-base-content) 14%,
-    var(--color-base-100)
-  );
-  box-shadow: none;
 }
 
 /*

@@ -3,6 +3,7 @@
   import { MAX_VISIBLE_TIMESERIES } from '@/components/metrics/utils/metric-timeseries-visible'
   import { getMetricViewContext } from '@/contexts/metric-view-context.svelte'
   import { chartNeutral, readableTextColor } from '@/utils/chart-palette'
+  import { themeSignal } from '@/state/theme.svelte'
   import type { LegendTimeseries as Timeseries } from '@/types/metric-chart-types'
   import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
   import { attributeValueLabel } from '@/components/shared/attribute-label'
@@ -53,7 +54,7 @@
       {@const color = checked && seriesColor ? seriesColor : chartNeutral()}
       {@const fg =
         checked && seriesColor
-          ? readableTextColor(seriesColor)
+          ? readableTextColor(seriesColor, themeSignal.value)
           : chartNeutral()}
       {@const rowAttrs = dedupeAttributes(ts.attributes)}
       {@const tooltip =

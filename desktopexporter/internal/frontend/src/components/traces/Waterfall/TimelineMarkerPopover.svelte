@@ -331,11 +331,7 @@
   .timeline-marker :global(.timeline-marker__circle) {
     width: var(--marker-glyph);
     height: var(--marker-glyph);
-    fill: color-mix(
-      in oklab,
-      var(--marker-color),
-      var(--waterfall-marker-mix-target) var(--waterfall-marker-mix-strength)
-    );
+    fill: var(--marker-color);
     color: var(--color-base-200);
   }
 

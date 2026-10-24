@@ -69,14 +69,7 @@ export function themeTokens(theme: Theme) {
     '--tree-count-width': '22px',
     '--waterfall-gutter-hub': '8px',
     '--waterfall-gutter-leaf': '8px',
-    '--waterfall-bar-label-color': light
-      ? 'var(--color-base-content)'
-      : 'var(--color-base-200)',
-    '--waterfall-marker-mix-target': 'var(--color-base-content)',
-    '--waterfall-marker-mix-strength': light ? '0%' : '40%',
     '--metric-series-line-opacity': light ? '0.6' : '1',
-    '--waterfall-tick-mix-target': 'white',
-    '--waterfall-tick-mix-strength': light ? '60%' : '45%',
     ...accentInkTokens(theme, DEFAULT_ACCENT_INK),
   }
 }

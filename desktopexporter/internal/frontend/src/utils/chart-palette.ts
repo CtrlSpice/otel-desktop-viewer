@@ -68,29 +68,32 @@ export function chartNeutral(): string {
 export const AGG_COLOR_SELECTED = 'var(--color-primary)'
 export const AGG_COLOR_ALL = 'var(--color-secondary)'
 
-// On-swatch glyph colour (checkbox tick, etc.) for a categorical-palette
-// entry. The legend swatches use the same colours as the chart lines; some
-// need a light glyph and others need a dark one.
-// Pre-baked fg tables don't survive theme switches or palette length changes,
-// so we do the contrast check at read time.
-
-/** Pick the active theme's on-light or on-dark glyph colour for a given
- *  background swatch. Accepts d3's `rgb(r, g, b)` (from interpolateHcl) or
- *  `#rrggbb`. Returns one of two CSS variables -- `--color-on-light` for
- *  dark glyphs on bright swatches, `--color-on-dark` for light glyphs on
- *  dark swatches -- both defined by the shared theme tokens. Using vars (not
- *  literal hex) means a theme switch reroutes glyphs without touching
- *  this function. Uses Rec. 709 luminance: WCAG-style without gamma, fine
- *  for "which of two glyphs reads better here". Unparseable input falls
- *  back to the on-dark glyph so the answer always resolves to a defined
- *  theme variable. */
-export function readableTextColor(bg: string): string {
+/** Choose the higher-contrast seasonal glyph using linear-sRGB luminance. */
+export function readableTextColor(bg: string, theme: string = ''): string {
   const rgb = parseRgbLike(bg)
   if (!rgb) return 'var(--color-on-dark)'
-  const [r, g, b] = rgb
-  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
-  // Choose between the theme's light and dark glyphs using swatch brightness.
-  return luminance > 140 ? 'var(--color-on-light)' : 'var(--color-on-dark)'
+  const { colors, scheme } = getTheme(theme)
+  const dark = scheme === 'light' ? colors.text : colors.canvas
+  const light = scheme === 'light' ? colors.canvas : colors.text
+  const background = luminance(rgb)
+  const contrast = (color: string) => {
+    const foreground = luminance(parseRgbLike(color)!)
+    return (
+      (Math.max(background, foreground) + 0.05) /
+      (Math.min(background, foreground) + 0.05)
+    )
+  }
+  return contrast(dark) >= contrast(light)
+    ? 'var(--color-on-light)'
+    : 'var(--color-on-dark)'
+}
+
+function luminance(rgb: [number, number, number]): number {
+  const [r, g, b] = rgb.map(channel => {
+    const value = channel / 255
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
 }
 
 function parseRgbLike(s: string): [number, number, number] | null {
