@@ -356,7 +356,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     )
     await expect(page.getByRole('button', { name: /^Season:/ })).toHaveCount(0)
     await expect(
-      page.getByRole('button', { name: 'Theme: To-ro (warm lantern)' })
+      page.getByRole('button', { name: 'Theme: To-ro' })
     ).toBeVisible()
     await expect(page.getByRole('link', { name: /Evals/ })).toHaveCount(0)
   })
@@ -416,10 +416,7 @@ for (const { id: theme, scheme, name } of THEMES) {
     )
     await expect(ink.locator('svg')).toHaveCSS('width', '18px')
     await expect(ink).toHaveText('')
-    await expect(ink).toHaveAttribute(
-      'data-tip',
-      'Theme: To-ro\n(warm lantern)'
-    )
+    await expect(ink).toHaveAttribute('data-tip', 'To-ro')
     const geometry = await appearance.evaluate(element => {
       const buttons = [...element.children].filter(
         child => child.tagName === 'BUTTON'
@@ -458,9 +455,7 @@ for (const { id: theme, scheme, name } of THEMES) {
     )!
     await expect(
       seasons.getByRole('button', { pressed: true })
-    ).toHaveAccessibleName(
-      `${selectedSeason.japanese} (${selectedSeason.name}) background`
-    )
+    ).toHaveAccessibleName(`${selectedSeason.japanese} background`)
     await expect(seasons.getByRole('button')).toHaveCount(4)
     for (const choice of await seasons.getByRole('button').all()) {
       await expect(choice.locator('svg')).toHaveCount(1)
@@ -477,7 +472,7 @@ for (const { id: theme, scheme, name } of THEMES) {
     await expect(themePicker.locator('[data-ink-choice]')).toHaveCount(32)
     const toRoChoice = themePicker.locator('[data-ink-choice="to-ro"]')
     await expect(toRoChoice).toHaveText('')
-    await expect(toRoChoice).toHaveAccessibleName('To-ro (warm lantern)')
+    await expect(toRoChoice).toHaveAccessibleName('To-ro')
     await expect(
       toRoChoice.locator('span[aria-hidden="true"] > span')
     ).toHaveCount(3)
@@ -599,9 +594,12 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
           id: button.getAttribute('data-ink-choice'),
           text: button.textContent!.trim(),
           label: button.getAttribute('aria-label'),
-          dots: [...button.querySelectorAll<HTMLElement>('span[style]')].map(
-            dot => dot.style.backgroundColor
-          ),
+          dots: [...button.querySelectorAll<HTMLElement>('span[style]')]
+            .sort(
+              (a, b) =>
+                a.getBoundingClientRect().top - b.getBoundingClientRect().top
+            )
+            .map(dot => dot.style.backgroundColor),
           overflow: button.scrollWidth > button.clientWidth,
         }))
       )
@@ -609,8 +607,8 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
       ACCENT_INKS.map(ink => ({
         id: ink.id,
         text: '',
-        label: `${ink.name} (${ink.english})`,
-        dots: [0, 3, 6].map(index => rgb(ink.swatches[index]!.color)),
+        label: ink.name,
+        dots: [6, 3, 0].map(index => rgb(ink.swatches[index]!.color)),
         overflow: false,
       }))
     )
@@ -619,6 +617,11 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
     const selectedBox = (await selected.boundingBox())!
     const list = picker.locator('.theme-picker__inks')
     await expect(list).toHaveRole('radiogroup')
+    await expect(list).toHaveCSS('overflow-x', 'auto')
+    await expect(list).toHaveCSS('scroll-snap-type', 'none')
+    expect(
+      await list.evaluate(element => element.scrollWidth > element.clientWidth)
+    ).toBe(true)
     await expect(list.getByRole('radio')).toHaveCount(32)
     await expect(list.locator('[tabindex="0"]')).toHaveCount(1)
     const inkBoxes = await choices.evaluateAll(buttons =>
@@ -634,6 +637,14 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
     const previewBox = (await picker
       .getByRole('region', { name: 'Theme preview (sample trace)' })
       .boundingBox())!
+    await expect(picker.locator('.theme-preview')).toHaveCSS(
+      'border-width',
+      '0px'
+    )
+    await expect(picker.locator('.theme-preview__code')).toHaveCSS(
+      'border-width',
+      '0px'
+    )
     expect(previewBox.y + previewBox.height).toBeLessThanOrEqual(listBox.y)
     expect(seasonBox.y).toBeGreaterThanOrEqual(listBox.y + listBox.height)
     expect(selectedBox.y).toBeGreaterThanOrEqual(listBox.y)
@@ -661,6 +672,17 @@ test('theme picker keeps icon-only seasons and three-dot ink choices compact', a
     expect(selectedBox.y + selectedBox.height).toBeLessThanOrEqual(
       box.y + box.height
     )
+    expect(box.width).toBeLessThanOrEqual(832)
+    await list.hover()
+    await page.mouse.wheel(-2000, 0)
+    await expect
+      .poll(() => list.evaluate(element => element.scrollLeft))
+      .toBe(0)
+    await page.mouse.wheel(200, 0)
+    await expect
+      .poll(() => list.evaluate(element => element.scrollLeft))
+      .toBeGreaterThan(0)
+    await expect(selected).toHaveAttribute('aria-checked', 'true')
     await page.keyboard.press('Escape')
     await expect(trigger).toBeFocused()
   }
@@ -684,7 +706,7 @@ test('persists the chosen ink independently of season and Day/Night', async ({
   await expect(ink).toHaveAttribute('aria-expanded', 'true')
   const winter = page
     .getByRole('group', { name: 'Background', exact: true })
-    .getByRole('button', { name: 'Fuyu (Winter) background', exact: true })
+    .getByRole('button', { name: 'Fuyu background', exact: true })
   await winter.focus()
   await page.keyboard.press('Enter')
   await expect(winter).toBeFocused()
@@ -2115,7 +2137,7 @@ test.describe('home page accessibility', () => {
         {
           name: /^Theme:/,
           direction: width < 768 ? 'bottom' : 'left',
-          multiline: true,
+          themeInk: true,
         },
         { name: /theme active$/, direction: 'left' },
         { name: /^Refresh$/, direction: 'bottom' },
@@ -2123,7 +2145,7 @@ test.describe('home page accessibility', () => {
         { name: /^Search query help$/, direction: 'bottom' },
         { name: /^Change time range/, direction: 'bottom' },
       ]
-      for (const { name, direction, multiline } of controls) {
+      for (const { name, direction, themeInk } of controls) {
         const button = header.getByRole('button', { name })
         await expect(button).toHaveAttribute('data-tip', /\S/)
         await button.hover()
@@ -2195,7 +2217,6 @@ test.describe('home page accessibility', () => {
             trigger: trigger.toJSON(),
             clippedBy,
             palette,
-            whiteSpace: style.whiteSpace,
           }
         })
         expect(bounds.palette).toEqual({
@@ -2209,12 +2230,8 @@ test.describe('home page accessibility', () => {
         expect(bounds.bubble.right).toBeLessThanOrEqual(width)
         expect(bounds.bubble.top).toBeGreaterThanOrEqual(0)
         expect(bounds.bubble.bottom).toBeLessThanOrEqual(900)
-        if (multiline) {
-          await expect(button).toHaveAttribute(
-            'data-tip',
-            'Theme: To-ro\n(warm lantern)'
-          )
-          expect(bounds.whiteSpace).toBe('pre-line')
+        if (themeInk) {
+          await expect(button).toHaveAttribute('data-tip', 'To-ro')
         }
         if (direction === 'right')
           expect(bounds.bubble.left).toBeGreaterThan(bounds.trigger.right)

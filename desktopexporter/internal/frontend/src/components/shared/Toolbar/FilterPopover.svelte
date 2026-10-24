@@ -10,6 +10,7 @@
 
   let {
     label,
+    tooltip,
     anchor = 'below-end',
     role = 'group',
     count = 0,
@@ -28,6 +29,7 @@
     children,
   }: {
     label: string
+    tooltip?: string
     anchor?: PopoverAnchor
     role?: 'group' | 'dialog'
     count?: number
@@ -83,7 +85,7 @@
       : 'btn btn-ghost btn-sm rounded-full text-sm font-normal')}
   class:text-primary={count > 0 || custom}
   aria-label={compact ? label : `${label} filter`}
-  data-tip={compact ? label : undefined}
+  data-tip={compact ? (tooltip ?? label) : undefined}
   aria-expanded={open}
   aria-haspopup={role === 'dialog' ? 'dialog' : undefined}
   aria-controls={id}

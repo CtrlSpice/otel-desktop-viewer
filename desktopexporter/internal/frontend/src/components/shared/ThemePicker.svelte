@@ -78,7 +78,7 @@
 {#snippet swatches(colors: readonly string[], vertical = false)}
   <span
     class="flex shrink-0 items-center gap-1"
-    class:flex-col={vertical}
+    class:flex-col-reverse={vertical}
     aria-hidden="true"
   >
     {#each colors as color}
@@ -89,11 +89,12 @@
 {/snippet}
 
 <FilterPopover
-  label={`Theme: ${chosen.name}\n(${chosen.english})`}
+  label={`Theme: ${chosen.name}`}
+  tooltip={chosen.name}
   anchor="center"
   role="dialog"
   compact
-  triggerClass="btn btn-ghost btn-sm chart-header-control theme-ink tooltip tooltip-bottom md:tooltip-left before:whitespace-pre-line"
+  triggerClass="btn btn-ghost btn-sm chart-header-control theme-ink tooltip tooltip-bottom md:tooltip-left"
   popoverClass="theme-picker-popover"
   showHeader={false}
   onOpenChange={focusInk}
@@ -130,7 +131,6 @@
       <div class="theme-picker__controls">
         <p class="theme-picker__current text-center text-sm">
           {chosen.name}
-          <span class="text-subtle">({chosen.english}) · {theme.name}</span>
         </p>
         <fieldset class="m-0 min-w-0 border-0 p-0">
           <legend class="sr-only">Ink</legend>
@@ -146,8 +146,8 @@
                 role="radio"
                 class="theme-picker__choice item-state"
                 data-ink-choice={ink.id}
-                aria-label={`${ink.name} (${ink.english})`}
-                title={`${ink.name} (${ink.english})`}
+                aria-label={ink.name}
+                title={ink.name}
                 aria-checked={ink.id === accentInk.value}
                 tabindex={ink.id === accentInk.value ? 0 : -1}
                 onkeydown={event => selectInk(event, index)}
@@ -165,8 +165,8 @@
               <button
                 type="button"
                 class="theme-picker__season item-state item-state--menu"
-                aria-label={`${season.japanese} (${season.name}) background`}
-                title={season.name}
+                aria-label={`${season.japanese} background`}
+                title={season.japanese}
                 aria-pressed={theme.season === season.id}
                 onclick={() => onSeasonChange(season.id)}
               >
@@ -208,7 +208,7 @@
   @reference '../../app.css';
 
   :global(.filter-popover.theme-picker-popover) {
-    width: 72rem;
+    width: 52rem;
     padding: 1.25rem;
     max-height: calc(100dvh - 2rem);
   }

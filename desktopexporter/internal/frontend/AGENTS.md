@@ -34,19 +34,24 @@
   the compact swatches. The preview is the main visual element.
   The preview reuses shared JSON styling and seasonal tokens, not a separate palette.
   Each ink choice has three vertically stacked 8px colour dots in a 32px-wide,
-  48px-high target. Use one horizontal row below the preview, scrolling when
-  necessary, with the selected Japanese/English name shown once.
+  48px-high target, brightest at the top (official shades 7, 4, 1). Use one
+  horizontal row below the preview, scrolling when
+  necessary, with the selected original ink name shown once.
+  Keep the chooser 52rem wide at most. Use native side-to-side scrolling for
+  overflow, without carousel controls, snapping or auto-advance.
   Keep every ink's name in its tooltip and accessible label. Use radio-group
   semantics, arrow/Home/End selection and one Tab stop for the swatch group.
   Keep four icon-only season choices below the swatches. Keep section names accessible but visually hidden.
   Omit its filter field and checkmark column.
-  Keep English meanings in accessible names and on hover. Ink controls interface and syntax accents;
+  Use the original names for ink and season labels, including tooltips and
+  accessible names. Ink controls interface and syntax accents;
   season controls the background. Preserve selected-ink focus and scrolling.
   Ink and season changes keep the picker open for live comparison. Season changes
   update its inherited seasonal paper,
   hover and selection surfaces without changing the selected ink or its swatches.
   Preserve Escape, light dismissal, explicit Close and trigger-focus restoration.
   The sample preview uses shared trace-summary, attribute field and JSON components.
+  Keep its sample and JSON surfaces flat, without extra enclosing borders.
   It must not allocate sample service colours or modify saved service/series assignments.
   Accent ink selects one of the 32 named seed
   inks, with an analogous family from the pinned upstream
@@ -63,10 +68,9 @@
   Accent-ink previews show the named seed's exact official shades 1, 4 and 7,
   from the graph ink catalogue. Do not use mixed syntax-role colours as ink previews.
   The top-bar theme control shows three 8px dots using official shades 1, 4
-  and 7, followed by a simple 18px monitor. Keep the ink's original and English names in its
-  accessible name and tooltip. Compact swatches show their Japanese and English
-  names on hover and keyboard focus. Put the parenthesised English name
-  on a separate line in the top-bar tooltip, using the standard tooltip style.
+  and 7, followed by a simple 18px monitor. Use original ink names in the theme
+  picker's visible text, tooltips and accessible labels; omit English translations.
+  Use the standard tooltip style.
   Left-align top navigation beside the leading pane control. Let search fill
   the remaining desktop width, with appearance controls grouped at the right.
   Use additional rows on narrow screens so search and appearance do not overlap.

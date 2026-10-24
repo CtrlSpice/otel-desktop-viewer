@@ -26,18 +26,18 @@ describe('ThemeToggle', () => {
     const user = userEvent.setup()
     render(ThemeToggle)
     await user.click(screen.getByRole('button', { name: /^Theme:/ }))
-    const toRo = screen.getByRole('radio', { name: 'To-ro (warm lantern)' })
+    const toRo = screen.getByRole('radio', { name: 'To-ro' })
     await user.keyboard('{ArrowRight}')
-    expect(screen.getByRole('radio', { name: /^Daikokuten \(/ })).toHaveFocus()
+    expect(screen.getByRole('radio', { name: 'Daikokuten' })).toHaveFocus()
     await user.keyboard('{ArrowLeft}')
     expect(toRo).toHaveFocus()
     expect(toRo).toHaveAttribute('aria-checked', 'true')
     await user.keyboard('{Home}')
     expect(
-      screen.getByRole('radio', { name: /^Shimbashi-iro \(/ })
+      screen.getByRole('radio', { name: 'Shimbashi-iro' })
     ).toHaveAttribute('aria-checked', 'true')
     await user.keyboard('{End}')
-    expect(screen.getByRole('radio', { name: /^Syo-ro \(/ })).toHaveAttribute(
+    expect(screen.getByRole('radio', { name: 'Syo-ro' })).toHaveAttribute(
       'aria-checked',
       'true'
     )
@@ -92,7 +92,7 @@ describe('ThemeToggle', () => {
     const view = render(ThemeToggle)
     await userEvent.click(screen.getByRole('button', { name: /^Theme:/ }))
     await userEvent.click(
-      screen.getByRole('button', { name: 'Natsu (Summer) background' })
+      screen.getByRole('button', { name: 'Natsu background' })
     )
     expect(document.documentElement.getAttribute('data-theme')).toBe(
       'madoromi-natsu-yoru'
@@ -102,7 +102,7 @@ describe('ThemeToggle', () => {
     render(ThemeToggle)
     await userEvent.click(screen.getByRole('button', { name: /^Theme:/ }))
     expect(
-      screen.getByRole('button', { name: 'Natsu (Summer) background' })
+      screen.getByRole('button', { name: 'Natsu background' })
     ).toHaveAttribute('aria-pressed', 'true')
     expect(
       screen.getByRole('button', { name: 'Summer Night theme active' })

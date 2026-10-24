@@ -15,13 +15,17 @@ The theme picker and day/night button share one compact control group.
 The picker opens in the centre of the screen, with a full-width live app-style
 sample preview above a compact swatch strip. A sample trace summary, service
 breakdown, attribute fields and JSON inspector use the same components as the
-viewer. Sample service colours are fixed and do not allocate saved assignments.
+viewer, with flat surfaces rather than nested borders. Sample service colours
+are fixed and do not allocate saved assignments.
 Ink and season changes apply immediately and keep the
 picker open; Escape, clicking outside or Close dismisses it.
-Ink choices show three vertically stacked colour dots in one horizontal row,
-with the selected Japanese and English names
-shown once above them. All choices retain named tooltips and accessible labels.
-Four icon-only season choices sit below the swatches. Section names
+Ink choices show three vertically stacked colour dots, brightest at the top
+(official shades 7, 4, 1), in one horizontal row,
+with the selected original ink name shown once above them. All choices retain
+original-name tooltips and accessible labels, without English translations.
+The chooser is at most 52rem wide. The ink row uses ordinary horizontal scrolling,
+without carousel controls or snapping. Four icon-only season choices sit below
+the swatches. Section names
 remain accessible but visually hidden; there is no filter field. Flower, sun,
 leaf and snowflake icons select Haru (Spring), Natsu (Summer), Aki (Autumn) and
 Fuyu (Winter). Season changes keep the picker open so its inherited paper,
@@ -129,16 +133,15 @@ one of the 32 named seed inks, defaulting to To-ro (warm lantern). The pinned
 Madoromi mixer supplies its analogous family: the seed and neighbouring hues.
 To-ro's family is To-ro, Fuyu-gaki and Daikokuten. Compact swatches show three dots
 in each named ink's official shades 1, 4 and 7. The selected ink's name appears
-once; each choice's Japanese and English names remain in accessible labels and
-tooltips. The selected ink is focused and revealed when the picker opens.
+once; each choice's original name remains in its accessible label and tooltip.
+The selected ink is focused and revealed when the picker opens.
 The swatch group has one Tab stop. Arrow keys and Home/End select inks, updating
 the preview immediately. The row scrolls horizontally when the window is narrower.
 The analogous family applies when the seed is selected; mixed syntax-role
 colours do not replace the named ink's preview.
 The top-bar control shows three 8px dots in the selected ink's official shades
-1, 4 and 7, followed by a simple monitor. The ink's original and English names remain in
-its accessible name and tooltip. The tooltip puts the parenthesised English
-name on a separate second line.
+1, 4 and 7, followed by a simple monitor. Its tooltip shows only the Japanese
+ink name, which is also used in its accessible name and inside the picker.
 
 The choice supplies interface Primary, Secondary and Accent, plus the fourteen
 syntax accent slots below. Season supplies the softened paper, neutral text,

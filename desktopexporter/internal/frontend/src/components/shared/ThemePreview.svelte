@@ -107,7 +107,7 @@
   @reference '../../app.css';
 
   .theme-preview {
-    @apply overflow-hidden rounded-xl border border-base-300 bg-base-200 text-base-content;
+    @apply overflow-hidden rounded-xl bg-base-200 text-base-content;
     container-type: inline-size;
   }
 
@@ -121,7 +121,7 @@
   }
 
   .theme-preview__code {
-    @apply min-w-0 overflow-hidden rounded-xl border border-base-300 bg-base-100 p-3;
+    @apply min-w-0 overflow-hidden p-3;
   }
 
   @container (max-width: 36rem) {
