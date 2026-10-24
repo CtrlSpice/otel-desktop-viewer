@@ -57,7 +57,9 @@
   Align Last seen beneath the left edge of the log icon. Gauge/Sum series
   overrides live in metric Details, independently of visibility and disclosure.
   Persist overrides by service name or metric reference + native series identity;
-  Automatic restores the saved automatic assignment. New automatic assignments
+  Put an icon-only reset to the right of the ink search field; it restores the
+  saved automatic assignment and is disabled when no override is set. Keep only
+  Madoromi attribution in the footer. New automatic assignments
   probe past occupied slots and explicit overrides without moving existing owners.
   Error uses Momiji sampled at each variant's original Beni lightness; generate
   it from the pinned ink curve. Warning fills use original Yamabuki. Warning

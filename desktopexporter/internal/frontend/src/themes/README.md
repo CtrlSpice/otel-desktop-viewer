@@ -197,8 +197,9 @@ identity/ink-shade pairs. Services share the `services` scope, while series use
 `metric:<native metric reference>`. Changes propagate to chart lines, sparklines,
 service dots and non-error waterfall bars, including across open tabs. Explicit
 overrides can reuse a chosen shade; new automatic assignments avoid overridden
-shades as well as occupied automatic slots. Automatic retains the owner's saved
-base slot, so resetting never reallocates another identity. Blocked storage keeps
+shades as well as occupied automatic slots. The reset icon to the right of Find
+ink restores the owner's saved automatic slot and is disabled when no override
+is set. Resetting never reallocates another identity. Blocked storage keeps
 overrides in memory. Actual error bars retain the semantic Error colour.
 
 Histogram and exponential-histogram heatmaps, distribution bars and count

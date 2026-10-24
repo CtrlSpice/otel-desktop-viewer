@@ -13,6 +13,7 @@
   import {
     HeartIcon,
     PaintBrush01Icon,
+    RefreshIcon,
     Tick02Icon,
   } from '@hugeicons/core-free-icons'
   import FilterPopover from './Toolbar/FilterPopover.svelte'
@@ -166,22 +167,44 @@
           class:ink-picker__measure-dots--shades={mode === 'shade'}
         ></div>
       </div>
-      <div class="mb-2 shrink-0">
-        <FilterInput
-          bind:value={search}
-          label="Find ink"
-          placeholder="Find an ink…"
-          onkeydown={event => {
-            if (
-              mode === 'shade' &&
-              event.key === 'ArrowDown' &&
-              visible.length
-            ) {
-              event.preventDefault()
-              focusShade(0, 0)
-            }
-          }}
-        />
+      <div class="mb-2 flex shrink-0 items-center gap-2">
+        <div class="min-w-0 flex-1">
+          <FilterInput
+            bind:value={search}
+            label="Find ink"
+            placeholder="Find an ink…"
+            onkeydown={event => {
+              if (
+                mode === 'shade' &&
+                event.key === 'ArrowDown' &&
+                visible.length
+              ) {
+                event.preventDefault()
+                focusShade(0, 0)
+              }
+            }}
+          />
+        </div>
+        {#if onreset}
+          <button
+            type="button"
+            class="btn btn-ghost btn-circle btn-sm tooltip tooltip-left"
+            aria-label="Reset to automatic colour"
+            data-tip="Reset to automatic colour"
+            disabled={automatic}
+            onclick={() => {
+              onreset?.()
+              close()
+            }}
+          >
+            <HugeiconsIcon
+              icon={RefreshIcon}
+              size={16}
+              strokeWidth={1.5}
+              aria-hidden="true"
+            />
+          </button>
+        {/if}
       </div>
       <div
         class="ink-picker-options anchor-popover__body"
@@ -263,34 +286,21 @@
       </div>
     {/if}
   {/snippet}
-  {#snippet footer(close)}
-    <div class="flex w-full flex-col gap-2">
-      {#if onreset}
-        <button
-          type="button"
-          class="item-state item-state--menu cursor-pointer rounded-lg px-3 py-2 text-sm font-normal"
-          aria-pressed={automatic}
-          onclick={() => {
-            onreset?.()
-            close()
-          }}>Automatic</button
-        >
-      {/if}
-      <a
-        class="link mx-auto inline-flex items-center gap-2 text-sm text-rp-subtle"
-        href="https://madoromi.moonwit.ch/"
-        target="_blank"
-        rel="noreferrer"
-      >
-        <span>Inks by Madoromi</span><HugeiconsIcon
-          icon={HeartIcon}
-          size={16}
-          strokeWidth={1.5}
-          class="shrink-0 text-(--color-rose)"
-          aria-hidden="true"
-        />
-      </a>
-    </div>
+  {#snippet footer()}
+    <a
+      class="link mx-auto inline-flex items-center gap-2 text-sm text-rp-subtle"
+      href="https://madoromi.moonwit.ch/"
+      target="_blank"
+      rel="noreferrer"
+    >
+      <span>Inks by Madoromi</span><HugeiconsIcon
+        icon={HeartIcon}
+        size={16}
+        strokeWidth={1.5}
+        class="shrink-0 text-(--color-rose)"
+        aria-hidden="true"
+      />
+    </a>
   {/snippet}
 </FilterPopover>
 
