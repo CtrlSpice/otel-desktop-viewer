@@ -12,10 +12,10 @@ import {
 
 describe('countSwatches', () => {
   it.each(THEMES)(
-    'uses the approved Rikka high-count endpoint in $name',
+    'uses the default To-ro high-count endpoint in $name',
     theme => {
       expect(countSwatches(1, theme.id)).toEqual([
-        theme.scheme === 'light' ? '#512442' : '#a9e5ff',
+        theme.scheme === 'light' ? '#eb2822' : '#fff6ba',
       ])
       expect(countSwatches(12, theme.id)).toHaveLength(12)
     }

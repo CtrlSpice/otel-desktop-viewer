@@ -264,7 +264,7 @@ const accentJson =
   JSON.stringify(
     {
       harmony: accentHarmony,
-      default: 'ajisai',
+      default: 'to-ro',
       inks: accentInks,
     },
     null,

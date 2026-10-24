@@ -26,7 +26,8 @@
   corners and flat internal joins. The Season button has an icon and label,
   without a dropdown caret. Accent ink selects one of the 32 named seed
   inks, with an analogous family from the pinned upstream
-  mixer; default to Ajisai. Persist it as `theme-accent-ink`. Use that family for
+  mixer; default to To-ro (warm lantern) with Autumn and the system's Day/Night
+  preference. Saved user choices take precedence. Persist ink as `theme-accent-ink`. Use that family for
   Primary/Secondary/Accent and syntax accent slots. Season owns paper, neutral
   text and Nijimi highlights; retain semantic status colours and the Sakura
   attribution heart. Generate readable strengths against all five UI surfaces.
@@ -86,7 +87,7 @@
   allowed. The palest, eighth swatch is omitted from automatic assignments and
   the seven-dot override picker. Use current Madoromi theme IDs and graph
   palettes directly; do not add compatibility migrations for prior UI experiments.
-  Histogram and heatmap count ramps use 32 colourful Madoromi inks, default Rikka, with one
+  Histogram and heatmap count ramps use 32 colourful Madoromi inks, default To-ro, with one
   app-wide saved choice. Generate each adaptive size 1–12 from the full pinned
   curve; Day reverses Night's exact shades, and seasons do not change the ink.
   The count-palette picker omits its redundant visible heading; retain its

@@ -50,8 +50,8 @@ adjustments. Error uses each variant's original Beni colour from the pinned
 upstream palette.
 
 The global Accent ink picker runs the unmodified upstream analogous mixer for
-each of the 32 seed inks. Ajisai is the default; its family adds Ama-iro and
-Murasaki-shikibu. The mixed slots supply Primary, Secondary, Accent and the
+each of the 32 seed inks. To-ro is the default; its family adds Fuyu-gaki and
+Daikokuten. The mixed slots supply Primary, Secondary, Accent and the
 fourteen syntax accents. Seasonal paper, text, highlights and semantic status
 colours retain their existing roles. Each mixed foreground receives the same
 readability adjustment against the viewer's five seasonal surfaces. The choice

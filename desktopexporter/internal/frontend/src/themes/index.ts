@@ -2,7 +2,7 @@ import definitions from './madoromi.json'
 import { GRAPH_COLORS, GRAPH_PALETTE_VERSION } from './graph-inks'
 
 export type ThemeName = keyof typeof definitions
-export const DEFAULT_THEME: ThemeName = 'madoromi-fuyu-yoru'
+export const DEFAULT_THEME: ThemeName = 'madoromi-aki-yoru'
 export const SEASONS = [
   { id: 'haru', name: 'Spring' },
   { id: 'natsu', name: 'Summer' },
@@ -26,7 +26,7 @@ export const THEMES = SEASONS.flatMap(season =>
 export type Theme = (typeof THEMES)[number]
 
 const byName = new Map<string, Theme>(THEMES.map(theme => [theme.id, theme]))
-/** Unknown names use Winter Night. */
+/** Unknown names use Autumn Night. */
 export function getTheme(name: string = ''): Theme {
   return byName.get(name) ?? byName.get(DEFAULT_THEME)!
 }
@@ -41,5 +41,5 @@ export function restoreTheme(
   prefersDark: boolean
 ): Theme {
   if (saved && byName.has(saved)) return getTheme(saved)
-  return getTheme(themeName('fuyu', prefersDark ? 'dark' : 'light'))
+  return getTheme(themeName('aki', prefersDark ? 'dark' : 'light'))
 }

@@ -15,7 +15,7 @@ The Season dropdown and day/night button share one compact control group, with
 the season on the left. Hugeicons identify Spring (flower), Summer (sun), Autumn
 (leaf) and Winter (snowflake) in the trigger and the menu. Changing
 season retains the current mode; changing mode retains the season. The complete
-theme ID is saved in localStorage under `theme`. With no valid saved choice, Winter uses
+theme ID is saved in localStorage under `theme`. With no valid saved choice, Autumn uses
 the operating system's preferred mode. If storage is blocked, controls still work
 for the current page.
 
@@ -28,7 +28,7 @@ Font families, sizes, weights and layout use the existing shared tokens.
 - `madoromi.json`: generated interface colours for all eight variants.
 - `count-palettes.json`: generated Madoromi histogram count ramps, sizes 1–12.
 - `count-palette-names.json`: generated English ink names from the pinned source.
-- `count-palettes.ts`: ordered count-palette catalogue and default Rikka ink.
+- `count-palettes.ts`: ordered count-palette catalogue and default To-ro ink.
 - `index.ts`: catalogue, seasonal selection and graph lookup.
 - `tokens.ts` / `plugin.ts`: shared DaisyUI, chart and editor CSS adapter.
 - `graph-inks.json`: official ink swatches and 224 categorical slots.
@@ -101,9 +101,9 @@ Papaya (`#ff8000`) continues to identify internal faults rather than span errors
 ## Editor roles
 
 The top-bar appearance group orders **Ink · Season · Day/Night**. Ink chooses
-one of the 32 named seed inks, defaulting to Ajisai (hydrangea). The pinned
+one of the 32 named seed inks, defaulting to To-ro (warm lantern). The pinned
 Madoromi mixer supplies its analogous family: the seed and neighbouring hues.
-Ajisai's family is Ajisai, Ama-iro and Murasaki-shikibu. Original names and English
+To-ro's family is To-ro, Fuyu-gaki and Daikokuten. Original names and English
 names stay visible and searchable; seven preview dots show that named ink's
 official shades 1–7, matching the graph colour picker across seasons and modes.
 The analogous family applies when the seed is selected; mixed syntax-role
@@ -120,7 +120,7 @@ strengths checked against the five actual seasonal UI surfaces. The theme
 generator writes these overrides to `accent-inks.json` with the source family.
 
 `theme-accent-ink` persists the seed independently of `theme`; invalid or absent
-values use Ajisai. Changes propagate across tabs, and blocked storage retains
+values use To-ro. Changes propagate across tabs, and blocked storage retains
 the selection in memory. Selecting an accent ink also applies that ink to the
 histogram/heatmap count palette and its legend. The chart's count picker can then
 select a different ink; reloading restores both saved choices. Service/series
@@ -272,9 +272,9 @@ Tsukushi. These are the grey, black, muted-green and brown-dominant families.
 Each original ink name is followed by Madoromi's English name in Subtle
 parentheses, such as `Ajisai (hydrangea)`. Search matches either name.
 The seven-dot previews show each full ramp in the current mode. Its footer links
-to Madoromi with visible ink attribution. Rikka is the default. The choice is saved
+to Madoromi with visible ink attribution. To-ro is the default. The choice is saved
 in localStorage under `graph-count-palette`; invalid saved values fall back
-to Rikka, and blocked storage retains the choice for the current page. Existing
+to To-ro, and blocked storage retains the choice for the current page. Existing
 saved choices retain their ink and shades. Palette changes propagate across tabs.
 Opening the picker focuses and reveals
 the saved choice inside its scrollable list; searching does not change the choice.

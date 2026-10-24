@@ -562,7 +562,7 @@ test.describe('home page accessibility', () => {
       'data-theme',
       'madoromi-fuyu-hiru'
     )
-    // 20% surfaces, 45% selection, native Subtle/Muted and default Ajisai ink.
+    // 20% surfaces, 45% selection, native Subtle/Muted and default To-ro ink.
     const expected = {
       '--color-base-100': '#f1f2f3',
       '--color-base-200': '#e7e8ea',
@@ -576,9 +576,9 @@ test.describe('home page accessibility', () => {
       '--color-muted': '#8d91a4',
       '--color-subtle': '#5e6277',
       '--color-sakura': '#aa6e89',
-      '--color-primary': '#6a29bf',
-      '--color-secondary': '#1a4fb7',
-      '--color-accent': '#0053bd',
+      '--color-primary': '#ad2100',
+      '--color-secondary': '#ad2100',
+      '--color-accent': '#ad2100',
       '--color-neutral': '#8d91a4',
       '--color-neutral-content': '#4a4e63',
       '--color-info': '#005d92',

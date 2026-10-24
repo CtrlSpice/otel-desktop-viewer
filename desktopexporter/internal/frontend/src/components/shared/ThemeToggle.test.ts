@@ -18,17 +18,17 @@ afterEach(() => {
 })
 
 describe('ThemeToggle', () => {
-  it('defaults to Winter Day when nothing is saved and the OS prefers light', () => {
+  it('defaults to Autumn Day when nothing is saved and the OS prefers light', () => {
     render(ThemeToggle)
     expect(document.documentElement.getAttribute('data-theme')).toBe(
-      'madoromi-fuyu-hiru'
+      'madoromi-aki-hiru'
     )
     expect(
-      screen.getByRole('button', { name: 'Winter Day theme active' })
+      screen.getByRole('button', { name: 'Autumn Day theme active' })
     ).toBeInTheDocument()
-    expect(localStorage.getItem('theme')).toBe('madoromi-fuyu-hiru')
+    expect(localStorage.getItem('theme')).toBe('madoromi-aki-hiru')
     expect(
-      screen.getByRole('button', { name: 'Season: Winter' })
+      screen.getByRole('button', { name: 'Season: Autumn' })
     ).toBeInTheDocument()
   })
 
