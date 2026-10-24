@@ -40,20 +40,41 @@
   } = $props()
   let filter = $state('')
   let term = $state('')
-  let offset = $state(0)
   let keys = $state<DiscoveredAttribute[]>([])
-  let more = $state(false)
+  let counts = $state<Record<string, number>>({})
   let loading = $state(false)
   let error = $state('')
-  let sortBy = $state<'name' | 'frequency'>('frequency')
-  let sortDirection = $state<'asc' | 'desc'>('desc')
+  type SortColumn = 'name' | 'count' | 'frequency'
+  let sortBy = $state<SortColumn>('name')
+  let sortDirection = $state<'asc' | 'desc'>('asc')
+  const sortedKeys = $derived.by(() => {
+    const sign = sortDirection === 'asc' ? 1 : -1
+    return [...keys].sort((a, b) => {
+      let comparison = 0
+      if (sortBy === 'count') {
+        const left = counts[attributeIdentity(a)]
+        const right = counts[attributeIdentity(b)]
+        if (left === undefined || right === undefined) {
+          if (left !== right) return left === undefined ? 1 : -1
+        } else comparison = left - right
+      } else if (sortBy === 'name') {
+        comparison = a.key.localeCompare(b.key)
+      }
+      return (
+        sign * comparison ||
+        a.key.localeCompare(b.key) ||
+        a.kind.localeCompare(b.kind) ||
+        a.ownerType.localeCompare(b.ownerType)
+      )
+    })
+  })
   const columns = [
     { id: 'name', label: 'Name', min: 240, width: 400 },
-    { id: 'bar', label: 'Frequency', min: 96, width: 240 },
+    { id: 'count', label: 'Count', min: 80, width: 88 },
     { id: 'frequency', label: '%', min: 80, width: 88 },
     { id: 'copy', label: 'Copy', min: 64, width: 64, fixed: true },
   ]
-  function sort(column: 'name' | 'frequency') {
+  function sort(column: SortColumn) {
     sortDirection =
       sortBy === column
         ? sortDirection === 'asc'
@@ -79,22 +100,16 @@
     const text = filter
     const timer = setTimeout(() => {
       term = text
-      offset = 0
     }, 200)
     return () => clearTimeout(timer)
   })
   $effect(() => {
-    void identity
-    void revision
-    offset = 0
-  })
-  $effect(() => {
     const active = service
-    const request = { ...options, term, offset, limit: 100 }
+    const request = { ...options, term, limit: 100 }
     void revision
     const controller = new AbortController()
-    if (offset === 0) keys = []
-    more = false
+    keys = []
+    counts = {}
     error = ''
     loading = Boolean(active)
     if (active)
@@ -103,24 +118,26 @@
           .filter(signal => queries?.[signal] !== false)
           .flatMap(signal =>
             attributeOwners[signal].map(async ownerType => {
-              const page = await telemetryAPI.discoverAttributeKeys(
-                { ...request, signal, ownerType },
-                controller.signal
-              )
-              return {
-                ...page,
-                items: page.items.map(entry => ({ ...entry, ownerType })),
+              const items: DiscoveredAttribute[] = []
+              let more = true
+              while (more) {
+                controller.signal.throwIfAborted()
+                const page = await telemetryAPI.discoverAttributeKeys(
+                  { ...request, signal, ownerType, offset: items.length },
+                  controller.signal
+                )
+                items.push(
+                  ...page.items.map(entry => ({ ...entry, ownerType }))
+                )
+                more = page.truncated
               }
+              return items
             })
           )
       )
         .then(pages => {
           if (controller.signal.aborted) return
-          keys = mergeAttributeKeys([
-            ...keys,
-            ...pages.flatMap(page => page.items),
-          ])
-          more = pages.some(page => page.truncated)
+          keys = mergeAttributeKeys(pages.flat())
         })
         .catch(reason => {
           if (!controller.signal.aborted) error = String(reason)
@@ -156,7 +173,7 @@
         {columns}
         storageKey="home-attribute-column-widths"
         caption="Attributes"
-        fillColumn="bar"
+        fillColumn="name"
         pinnedCount={1}
       >
         {#snippet header(layout)}
@@ -175,18 +192,34 @@
                 : 'none'}
             >
               <TableSortButton
-                label="value"
+                label="name"
                 inlineDirection
-                title="Sort values within each attribute"
+                title="Sort attributes and their values by name"
                 direction={sortBy === 'name' ? sortDirection : undefined}
                 onclick={() => sort('name')}
               >
                 <TableColumnHeading label="Name" />
               </TableSortButton>
             </th>
-            <th class="table-cell" scope="col"
-              ><span class="sr-only">Frequency</span></th
+            <th
+              class="table-cell text-right"
+              scope="col"
+              aria-sort={sortBy === 'count'
+                ? sortDirection === 'asc'
+                  ? 'ascending'
+                  : 'descending'
+                : 'none'}
             >
+              <TableSortButton
+                label="count"
+                inlineDirection
+                align="right"
+                direction={sortBy === 'count' ? sortDirection : undefined}
+                onclick={() => sort('count')}
+              >
+                <TableColumnHeading label="Count" align="right" />
+              </TableSortButton>
+            </th>
             <th
               class="table-cell text-right"
               scope="col"
@@ -213,11 +246,12 @@
           </tr>
         {/snippet}
         {#snippet children(layout)}
-          {#each keys as entry (attributeIdentity(entry))}<AttributeKey
+          {#each sortedKeys as entry (attributeIdentity(entry))}<AttributeKey
               {entry}
-              options={{ ...options, ownerType: entry.ownerType }}
-              {sortBy}
+              {options}
+              sortBy={sortBy === 'name' ? 'name' : 'frequency'}
               {sortDirection}
+              onCount={count => (counts[attributeIdentity(entry)] = count)}
               pinnedLeft={layout.pinned.name}
               selected={selectedAttribute !== null &&
                 attributeIdentity(selectedAttribute) ===
@@ -230,15 +264,6 @@
       </ResizableTable>
     {/key}
   {/if}
-
-  {#if more || (loading && offset > 0)}<div class="px-3 py-2">
-      <button
-        class="btn btn-ghost btn-sm"
-        disabled={loading || !more}
-        onclick={() => (offset += 100)}
-        >{loading ? 'Loading…' : 'Load more attributes'}</button
-      >
-    </div>{/if}
 {:else}<p class="p-3 text-rp-subtle">
     Select a service to discover its attributes.
   </p>{/if}

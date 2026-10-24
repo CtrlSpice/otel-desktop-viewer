@@ -75,6 +75,7 @@ import {
   metricSeriesPalette,
 } from '@/utils/chart-palette'
 import { themeSignal } from '@/state/theme.svelte'
+import { SERIES_COLOR_COUNT } from '@/themes'
 import { detailPanel } from '@/state/detail-panel.svelte'
 import {
   DEFAULT_VISIBLE_TIMESERIES,
@@ -585,7 +586,10 @@ export function createMetricViewContext(
       }
     }
 
-    if (acquireColor(timeseriesChartColors, assigned, key) === null) return
+    if (
+      acquireColor(timeseriesChartColors, assigned, key, colorScope()) === null
+    )
+      return
     visible.add(key)
     view.visibleSeries = visible
     replaceColorAssignments(assigned)
@@ -1342,28 +1346,18 @@ export function createMetricViewContext(
     return m.timeseries.filter(ts => filter.has(ts.seriesRef))
   })
 
-  const legendOrderKeys = $derived.by((): string[] => {
-    if (metricType === 'Gauge' || metricType === 'Sum') {
-      return gaugeSumLegendTimeseries.map(ts => ts.key)
-    }
-    if (isHistogramKind) {
-      return histogramTimeseriesGroups.map(g => g.key)
-    }
-    return []
-  })
-
-  const timeseriesChartColors = $derived.by(() => {
-    const theme = themeSignal.value
-    if (isHistogramKind) {
-      const n = Math.max(legendOrderKeys.length, view.visibleSeries.size, 1)
-      return metricSeriesPalette(n, theme)
-    }
-    return metricSeriesPalette(MAX_VISIBLE_TIMESERIES, theme)
-  })
+  // Palette capacity is separate from the existing scalar visibility cap.
+  const timeseriesChartColors = $derived(
+    metricSeriesPalette(SERIES_COLOR_COUNT, themeSignal.value)
+  )
 
   const legendFilterActive = $derived(visibleDpCanonicalKeys !== null)
 
   let assignedColorPool: readonly string[] = []
+
+  function colorScope(metricRef = getMetric()?.metricRef): string {
+    return `metric:${metricRef ?? ''}`
+  }
 
   function replaceColorAssignments(
     next: TimeseriesColorByKey,
@@ -1393,7 +1387,12 @@ export function createMetricViewContext(
     if (allAssigned) return
     // Use the same shape-specific pool as every other assignment path.
     replaceColorAssignments(
-      seedColorAssignments(timeseriesChartColors, visible, legendKeys)
+      seedColorAssignments(
+        timeseriesChartColors,
+        visible,
+        legendKeys,
+        colorScope()
+      )
     )
   }
 
@@ -1441,11 +1440,16 @@ export function createMetricViewContext(
       )
       view.visibleSeries = histVisible
       const histPool = metricSeriesPalette(
-        Math.max(histKeys.length, 1),
+        SERIES_COLOR_COUNT,
         themeSignal.value
       )
       replaceColorAssignments(
-        seedColorAssignments(histPool, histVisible, histKeys)
+        seedColorAssignments(
+          histPool,
+          histVisible,
+          histKeys,
+          colorScope(metricRef)
+        )
       )
     } else {
       const gsKeys = gaugeSumKeys
@@ -1455,11 +1459,10 @@ export function createMetricViewContext(
           : gsKeys.slice(0, MAX_VISIBLE_TIMESERIES)
       )
       view.visibleSeries = gsVisible
-      const pool = metricSeriesPalette(
-        MAX_VISIBLE_TIMESERIES,
-        themeSignal.value
+      const pool = metricSeriesPalette(SERIES_COLOR_COUNT, themeSignal.value)
+      replaceColorAssignments(
+        seedColorAssignments(pool, gsVisible, gsKeys, colorScope(metricRef))
       )
-      replaceColorAssignments(seedColorAssignments(pool, gsVisible, gsKeys))
     }
 
     // A valid route sub-view overrides seeded defaults.
@@ -1522,7 +1525,13 @@ export function createMetricViewContext(
         const visible = new SvelteSet(next)
         view.visibleSeries = visible
         const assigned = new Map(view.timeseriesColorByKey)
-        syncColorAssignments(timeseriesChartColors, assigned, visible, keys)
+        syncColorAssignments(
+          timeseriesChartColors,
+          assigned,
+          visible,
+          keys,
+          colorScope()
+        )
         replaceColorAssignments(assigned)
       } else {
         ensureColorAssignments(view.visibleSeries, keys)
@@ -1544,7 +1553,13 @@ export function createMetricViewContext(
       const visible = new SvelteSet(next)
       view.visibleSeries = visible
       const assigned = new Map(view.timeseriesColorByKey)
-      syncColorAssignments(timeseriesChartColors, assigned, visible, keys)
+      syncColorAssignments(
+        timeseriesChartColors,
+        assigned,
+        visible,
+        keys,
+        colorScope()
+      )
       replaceColorAssignments(assigned)
     } else {
       ensureColorAssignments(view.visibleSeries, keys)
@@ -1658,17 +1673,13 @@ export function createMetricViewContext(
 
   function toggleTimeseriesVisible(key: string, checked: boolean) {
     const metricRef = getMetric()?.metricRef
-    let pool = timeseriesChartColors
     const assigned = new Map(view.timeseriesColorByKey)
     if (checked) {
-      if (acquireColor(pool, assigned, key) === null) {
-        if (!isHistogramKind) return
-        pool = metricSeriesPalette(
-          Math.max(pool.length, assigned.size + 1, legendOrderKeys.length),
-          themeSignal.value
-        )
-        if (acquireColor(pool, assigned, key) === null) return
-      }
+      if (
+        acquireColor(timeseriesChartColors, assigned, key, colorScope()) ===
+        null
+      )
+        return
     } else {
       releaseColor(assigned, key)
     }

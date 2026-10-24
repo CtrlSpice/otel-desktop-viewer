@@ -118,7 +118,10 @@
                       style:--color={row.color}
                       aria-hidden="true"
                     ></span>
-                    <span class="chart-selection-legend__label">
+                    <span
+                      class="chart-selection-legend__label"
+                      title={row.label}
+                    >
                       {#if row.glyph}<span
                           class="chart-selection-legend__glyph"
                           title={row.glyphTitle ?? undefined}
@@ -153,7 +156,7 @@
               style:--color={row.color}
               aria-hidden="true"
             ></span>
-            <span class="chart-selection-legend__label">
+            <span class="chart-selection-legend__label" title={row.label}>
               {#if row.glyph}<span
                   class="chart-selection-legend__glyph"
                   title={row.glyphTitle ?? undefined}

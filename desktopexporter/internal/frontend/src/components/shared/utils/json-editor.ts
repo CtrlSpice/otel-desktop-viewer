@@ -11,6 +11,8 @@ import { search, searchKeymap } from '@codemirror/search'
 import { editorHighlightStyle } from './editor-highlighting'
 import { jsonWrapping } from './json-wrapping'
 import { jsonFoldGroups } from './json-fold-groups'
+import { editorColors as c } from './editor-colors'
+import { stringEscapeHighlighting } from './string-escape-highlighting'
 
 /** One read-only configuration shared by all JSON detail editors. */
 export const jsonEditorExtensions = [
@@ -19,6 +21,7 @@ export const jsonEditorExtensions = [
   json(),
   jsonWrapping,
   syntaxHighlighting(editorHighlightStyle),
+  stringEscapeHighlighting,
   codeFolding(),
   bracketMatching(),
   jsonFoldGroups,
@@ -71,14 +74,15 @@ export const jsonEditorExtensions = [
     '.cm-textfield': {
       backgroundColor: 'var(--color-base-100)',
       color: 'var(--color-base-content)',
+      caretColor: c.cursor,
     },
-    '.cm-searchMatch': { backgroundColor: 'var(--color-highlight-low)' },
+    '.cm-searchMatch': { backgroundColor: c.searchMatch },
     '&.cm-focused .cm-matchingBracket': {
-      backgroundColor: 'var(--color-highlight-med)',
+      backgroundColor: c.bracketFill,
       color: 'inherit',
-      outline: '1px solid var(--color-primary)',
+      outline: `1px solid ${c.bracketBorder}`,
     },
-    '.cm-searchMatch-selected': { outline: '1px solid var(--color-primary)' },
+    '.cm-searchMatch-selected': { backgroundColor: c.searchMatchSelected },
     '.cm-selectionBackground': {
       backgroundColor: 'var(--color-highlight-med) !important',
     },

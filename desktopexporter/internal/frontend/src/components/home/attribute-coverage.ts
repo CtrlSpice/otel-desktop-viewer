@@ -1,10 +1,11 @@
 import { telemetryAPI } from '@/services/telemetry-service'
-import type {
-  AttributeFrequency,
-  AttributeKey,
-  DiscoveryOptions,
-  DiscoveryOwner,
-  DiscoverySignal,
+import {
+  SIGNAL_ORDER as discoverySignals,
+  type AttributeFrequency,
+  type AttributeKey,
+  type DiscoveryOptions,
+  type DiscoveryOwner,
+  type DiscoverySignal,
 } from '@/services/discovery-types'
 import { attributeValueCopy } from '@/components/shared/detail-value'
 
@@ -13,7 +14,7 @@ export const attributeOwners: Record<DiscoverySignal, DiscoveryOwner[]> = {
   logs: ['resource', 'scope', 'log'],
   metrics: ['resource', 'scope', 'datapoint', 'exemplar', 'metadata'],
 }
-export const discoverySignals = ['traces', 'logs', 'metrics'] as const
+export { discoverySignals }
 export type DiscoveredAttribute = AttributeKey & { ownerType: DiscoveryOwner }
 export type RecordCounts = Record<DiscoverySignal, number>
 export type CoverageValue = AttributeFrequency & { counts: RecordCounts }
@@ -21,7 +22,6 @@ export type AttributeCoverage = {
   values: CoverageValue[]
   denominators: RecordCounts
   denominator: number
-  overlapping: boolean
 }
 
 export function attributeIdentity(entry: DiscoveredAttribute): string {
@@ -87,12 +87,10 @@ export function mergeAttributeValues(
     values,
     denominators,
     denominator,
-    overlapping:
-      values.reduce((sum, item) => sum + item.count, 0) > denominator,
   }
 }
 
-/** Read the full distribution before combining signals, sorting, or drawing a bar. */
+/** Read all values before combining signals, sorting, or pagination. */
 export async function loadAttributeCoverage(
   options: Omit<DiscoveryOptions, 'kind' | 'signal'>,
   signal: AbortSignal

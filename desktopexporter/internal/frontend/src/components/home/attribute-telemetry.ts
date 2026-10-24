@@ -12,13 +12,13 @@ import type { QueryNode } from '@/search/model'
 import type { DiscoveredAttribute } from './attribute-coverage'
 
 export type AttributeTelemetryCard =
-  | { signal: 'traces'; trace: TraceSummary; count: number }
+  | { signal: 'traces'; trace: TraceSummary; count?: number }
   | { signal: 'logs'; log: LogSummary }
-  | { signal: 'metrics'; metric: MetricSummary; count: number }
+  | { signal: 'metrics'; metric: MetricSummary; count?: number }
 
 export async function loadAttributeTelemetry(
   source: DiscoverySignal,
-  attribute: DiscoveredAttribute,
+  attribute: DiscoveredAttribute | null,
   valueIdentity: string | undefined,
   service: ServiceSummary,
   options: Pick<DiscoveryOptions, 'queries' | 'startTime' | 'endTime'>,
@@ -39,20 +39,24 @@ export async function loadAttributeTelemetry(
     : serviceQuery
   const start = options.startTime == null ? null : BigInt(options.startTime)
   const end = options.endTime == null ? null : BigInt(options.endTime)
-  const matches = await telemetryAPI.getAttributeRecordMatches(
-    {
-      ...options,
-      signal: source,
-      ownerType: attribute.ownerType,
-      key: attribute.key,
-      kind: attribute.kind,
-      valueIdentity,
-    },
-    signal
-  )
+  const matches = attribute
+    ? await telemetryAPI.getAttributeRecordMatches(
+        {
+          ...options,
+          signal: source,
+          ownerType: attribute.ownerType,
+          key: attribute.key,
+          kind: attribute.kind,
+          valueIdentity,
+        },
+        signal
+      )
+    : undefined
   signal.throwIfAborted()
-  if (!matches.length) return []
-  const byID = new Map(matches.map(match => [match.itemRef, match]))
+  if (matches?.length === 0) return []
+  const byID = matches
+    ? new Map(matches.map(match => [match.itemRef, match]))
+    : undefined
   if (source === 'traces') {
     const traces = await telemetryAPI.searchTraceSummaries(
       start,
@@ -62,6 +66,7 @@ export async function loadAttributeTelemetry(
       undefined,
       signal
     )
+    if (!byID) return traces.map(trace => ({ signal: 'traces', trace }))
     return traces.flatMap(trace => {
       const match = byID.get(trace.traceID)
       if (!match) return []
@@ -89,7 +94,7 @@ export async function loadAttributeTelemetry(
       signal
     )
     return logs
-      .filter(log => byID.has(log.logRef))
+      .filter(log => !byID || byID.has(log.logRef))
       .map(log => ({ signal: 'logs', log }))
   }
   const metrics = await telemetryAPI.searchMetricSummaries(
@@ -101,6 +106,7 @@ export async function loadAttributeTelemetry(
     signal
   )
   return metrics.flatMap(metric => {
+    if (!byID) return [{ signal: 'metrics', metric }]
     const match = byID.get(metric.metricRef)
     return match ? [{ signal: 'metrics', metric, count: match.count }] : []
   })

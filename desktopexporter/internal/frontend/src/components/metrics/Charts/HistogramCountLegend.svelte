@@ -3,6 +3,7 @@
   import { computeHeatmapLegendEntries } from '@/components/metrics/utils/heatmap-legend'
   import { computeHistogramBarColorScale } from '@/components/metrics/utils/heatmap-color-scale'
   import { themeSignal } from '@/state/theme.svelte'
+  import { countPalette } from '@/state/count-palette.svelte'
   import LegendRows from '@/components/shared/LegendRows.svelte'
 
   const ctx = getMetricViewContext()
@@ -11,13 +12,20 @@
     if (ctx.activeHistogramTab === 'histogram') {
       const datapoint = ctx.histogramChartDatapoint
       return datapoint
-        ? computeHistogramBarColorScale(datapoint, themeSignal.value)
-            .legendEntries
+        ? computeHistogramBarColorScale(
+            datapoint,
+            themeSignal.value,
+            countPalette.value
+          ).legendEntries
         : []
     }
     const points = ctx.heatmapBucketSeries
     if (!points || points.length === 0) return []
-    return computeHeatmapLegendEntries(points, themeSignal.value)
+    return computeHeatmapLegendEntries(
+      points,
+      themeSignal.value,
+      countPalette.value
+    )
   })
 </script>
 
@@ -25,6 +33,7 @@
   <div class="heatmap-legend">
     <LegendRows
       items={legendEntries}
+      alignedColumns={6}
       itemKey={entry => entry.label}
       label={ctx.activeHistogramTab === 'histogram'
         ? 'Histogram count scale'
@@ -46,7 +55,7 @@
   @reference "../../../app.css";
 
   .heatmap-legend {
-    @apply min-w-0 text-sm font-normal text-base-content;
+    @apply min-w-0 shrink-0 px-1 py-2 text-sm font-normal text-base-content;
     --legend-row-gap: 0.5rem;
     --legend-entry-height: 1.5em;
   }

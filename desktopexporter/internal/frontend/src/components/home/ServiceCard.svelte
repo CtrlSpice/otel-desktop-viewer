@@ -1,85 +1,75 @@
 <script lang="ts">
+  import { HugeiconsIcon } from '@hugeicons/svelte'
+  import {
+    BarChartHorizontalIcon,
+    ChartHistogramIcon,
+  } from '@hugeicons/core-free-icons'
+  import { LogIcon } from '@/icons'
   import SignalCard from '@/components/shared/SignalCard.svelte'
   import SignalDate from '@/components/shared/SignalDate.svelte'
   import {
+    SIGNAL_ORDER,
     serviceIdentity,
-    serviceSignalHref,
     type ServiceSummary,
-    type DiscoveryOptions,
   } from '@/services/discovery-types'
   import { traceServiceColor } from '@/utils/trace-service-color'
   import { themeSignal } from '@/state/theme.svelte'
-  import { queryText, type HomeQueries } from './home-search'
 
   let {
     service,
     selected,
     onSelect,
-    range,
-    queries,
   }: {
     service: ServiceSummary
     selected: boolean
     onSelect: () => void
-    range: Pick<DiscoveryOptions, 'startTime' | 'endTime'>
-    queries?: HomeQueries
   } = $props()
-  const signals = $derived([
-    {
-      id: 'traces' as const,
-      title: 'Traces',
-      count: service.traceCount,
-      detailCount: service.spanCount,
-      detail: service.spanCount === 1 ? 'span' : 'spans',
-      extraCount: service.errorSpanCount,
-      extra: '',
-      marker: service.errorSpanCount > 0 ? 'bg-error' : '',
-    },
-    {
-      id: 'logs' as const,
-      title: 'Logs',
-      count: service.logCount,
-      detailCount: null,
-      detail: '',
-      extraCount: service.errorLogCount,
-      extra: '',
-      marker: service.errorLogCount > 0 ? 'bg-error' : '',
-    },
-    {
-      id: 'metrics' as const,
-      title: 'Metrics',
-      count: service.metricCount,
-      detailCount: service.dataPointCount,
-      detail: 'pts',
-      extraCount: service.exemplarCount,
-      extra: service.exemplarCount === 1 ? 'exemplar' : 'exemplars',
-      marker: '',
-    },
-  ])
+  const signals = $derived.by(() => {
+    const bySignal = {
+      traces: {
+        id: 'traces' as const,
+        title: 'Traces',
+        count: service.traceCount,
+        detailCount: service.spanCount,
+        detail: service.spanCount === 1 ? 'span' : 'spans',
+        extraCount: service.errorSpanCount,
+        extra: 'err',
+        marker: service.errorSpanCount > 0 ? 'bg-error' : '',
+      },
+      logs: {
+        id: 'logs' as const,
+        title: 'Logs',
+        count: service.logCount,
+        detailCount: null,
+        detail: '',
+        extraCount: service.errorLogCount,
+        extra: 'err',
+        marker: service.errorLogCount > 0 ? 'bg-error' : '',
+      },
+      metrics: {
+        id: 'metrics' as const,
+        title: 'Metrics',
+        count: service.metricCount,
+        detailCount: service.dataPointCount,
+        detail: 'pts',
+        extraCount: service.exemplarCount,
+        extra: service.exemplarCount === 1 ? 'exemplar' : 'exemplars',
+        marker: '',
+      },
+    }
+    return SIGNAL_ORDER.map(signal => bySignal[signal])
+  })
 </script>
 
 <SignalCard
-  container
   id={serviceIdentity(service)}
   title={service.serviceName || 'Unnamed service'}
   {selected}
+  onclick={onSelect}
   wrapTitle
 >
   {#snippet titleContent()}
-    <button
-      class="flex min-w-0 items-center gap-2 text-left font-normal"
-      onclick={onSelect}
-      aria-pressed={selected}
-      aria-label="Inspect {service.serviceName ||
-        'unnamed service'}{service.serviceNamespace
-        ? ` · ${service.serviceNamespace}`
-        : ''}{service.serviceNameKind && service.serviceNameKind !== 'string'
-        ? ` · name ${service.serviceNameKind}`
-        : ''}{service.serviceNamespaceKind &&
-      service.serviceNamespaceKind !== 'string'
-        ? ` · namespace ${service.serviceNamespaceKind}`
-        : ''}"
-    >
+    <span class="flex min-w-0 items-center gap-2 text-left font-normal">
       <span
         class="inline-block size-2 shrink-0 rounded-full"
         style:background-color={traceServiceColor(
@@ -104,29 +94,30 @@
               >{/if}</span
           >{/if}</span
       >
-    </button>
+    </span>
   {/snippet}
   {#snippet meta()}
     <div class="service-summary">
       {#each signals as signal (signal.id)}
-        <a
-          class="service-summary__row"
-          href={signal.count > 0
-            ? serviceSignalHref(
-                service,
-                signal.id,
-                range,
-                queryText(queries?.[signal.id] ?? null)
-              )
-            : undefined}
-          aria-disabled={signal.count === 0 ? true : undefined}
-          class:service-summary__row--disabled={signal.count === 0}
-          aria-label="Open {service.serviceName ||
-            'unnamed service'} {signal.id}"
-        >
-          <span class="service-summary__label text-rp-subtle"
-            >{signal.title}:</span
+        <div class="service-summary__row">
+          <span
+            class="service-summary__label inline-flex items-center gap-2 text-rp-subtle"
           >
+            {#if signal.id === 'logs'}
+              <LogIcon class="size-4 shrink-0" aria-hidden="true" />
+            {:else}
+              <HugeiconsIcon
+                icon={signal.id === 'traces'
+                  ? BarChartHorizontalIcon
+                  : ChartHistogramIcon}
+                size={16}
+                strokeWidth={1.5}
+                class="shrink-0"
+                aria-hidden="true"
+              />
+            {/if}
+            <span>{signal.title}:</span>
+          </span>
           <span class="service-summary__counts">
             <span>{signal.count.toLocaleString()}</span>
             {#if signal.detailCount !== null}
@@ -157,7 +148,7 @@
               </span>
             {/if}
           </span>
-        </a>
+        </div>
       {/each}
     </div>
   {/snippet}
@@ -176,17 +167,9 @@
     grid-template-columns: max-content minmax(0, 1fr);
   }
   .service-summary__row {
-    @apply col-span-2 grid items-center text-base-content no-underline;
+    @apply col-span-2 grid items-center text-base-content;
     grid-template-columns: subgrid;
     min-height: var(--signal-card-row-h);
-  }
-  .service-summary__row[href]:hover .service-summary__label {
-    @apply underline;
-  }
-  .service-summary__row--disabled,
-  .service-summary__row--disabled .service-summary__label,
-  .service-summary__row--disabled .text-rp-subtle {
-    color: var(--color-muted);
   }
   .service-summary__counts {
     @apply flex items-center gap-2 whitespace-nowrap;

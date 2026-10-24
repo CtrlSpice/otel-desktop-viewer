@@ -299,7 +299,8 @@
 <style lang="postcss">
   @reference "../../app.css";
   .resizable-table {
-    @apply relative flex min-h-0 min-w-0 flex-1 overflow-hidden;
+    /* Table headers and resize handles stay below surrounding section headers. */
+    @apply relative isolate flex min-h-0 min-w-0 flex-1 overflow-hidden;
   }
   .resizable-table__scroll {
     @apply min-h-0 min-w-0 flex-1 overflow-auto;

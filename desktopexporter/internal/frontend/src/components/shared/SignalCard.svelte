@@ -45,8 +45,6 @@
     /** Navigation cards retain native link and open-in-new-tab behaviour. */
     href?: string
     disabled?: boolean
-    /** Noninteractive shell when content contains independent controls or links. */
-    container?: boolean
   }
 
   let {
@@ -78,7 +76,6 @@
     onclick,
     href,
     disabled = false,
-    container = false,
   }: Props = $props()
 </script>
 
@@ -196,17 +193,7 @@
   </div>
 {/snippet}
 
-{#if container}
-  <article
-    class="signal-row signal-row--container item-state {selected
-      ? 'signal-row--selected'
-      : ''}"
-    data-selected={selected || undefined}
-    aria-label={title}
-  >
-    {@render cardContent()}
-  </article>
-{:else if href}
+{#if href}
   <a
     href={disabled ? undefined : href}
     role={disabled ? 'link' : undefined}
@@ -233,10 +220,6 @@
   @reference "../../app.css";
 
   .signal-row[aria-disabled='true'] {
-    cursor: default;
-  }
-
-  .signal-row.signal-row--container {
     cursor: default;
   }
 

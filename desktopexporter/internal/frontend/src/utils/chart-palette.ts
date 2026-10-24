@@ -1,37 +1,34 @@
 // Colour allocation from the shared theme definitions.
 //
 //   - `metricSeriesPalette()` -- one type-independent sequence for plotted series.
-//   - `traceSpanPalette()` -- identities, without error-like pinks or fault-like orange.
+//   - `traceSpanPalette()` -- the same theme-specific identity slots.
 //
-//   - `heatmapSwatches()` -- per-theme count ramp, interpolated in HCL.
+//   - `countSwatches()` -- selected Madoromi ink in Day/Night count order.
 //
-// Density ramps end at Iris in Dawn and Love in the dark themes.
 // Error spans use `var(--color-error)` directly.
 
-import { interpolateHcl } from 'd3-interpolate'
-import { getTheme, METRIC_SERIES, TRACE_SERIES } from '@/themes'
+import { getSeriesPalette, getTheme } from '@/themes'
+import {
+  countPaletteRamps,
+  DEFAULT_COUNT_PALETTE,
+  type CountPaletteId,
+} from '@/themes/count-palettes'
 
 /**
- * Sample the HCL ramp at 1/steps through 1, excluding the cold endpoint.
- * A single step uses the hot endpoint. Unknown themes
- * use the Moon ramp.
+ * Full pinned ink curve at 1–12 equally spaced OKLab lightness samples.
+ * Day reverses Night's exact shades; a singleton uses its mode's high-count end.
  */
-export function heatmapSwatches(steps: number, theme: string = ''): string[] {
+export function countSwatches(
+  steps: number,
+  theme: string = '',
+  palette: CountPaletteId = DEFAULT_COUNT_PALETTE
+): string[] {
   const safeSteps = Math.max(1, Math.floor(steps))
-  if (!Number.isFinite(safeSteps) || safeSteps >= 2 ** 32) {
-    throw new RangeError('steps must produce a valid array length')
+  if (!Number.isFinite(safeSteps) || safeSteps > 12) {
+    throw new RangeError('steps must produce a count ramp length from 1 to 12')
   }
-  const definition = getTheme(theme)
-  const { colors } = definition
-  const start = definition.scheme === 'light' ? colors.canvas : colors.panel
-  const end = definition.scheme === 'light' ? colors.primary : colors.error
-  if (safeSteps === 1) return [end]
-  const interpolator = interpolateHcl(start, end)
-  const out: string[] = []
-  for (let i = 0; i < safeSteps; i++) {
-    out.push(interpolator((i + 1) / safeSteps))
-  }
-  return out
+  const mode = getTheme(theme).scheme === 'light' ? 'day' : 'night'
+  return [...countPaletteRamps[palette][safeSteps]![mode]]
 }
 
 /** Stable prefixes: visibility and theme changes never shuffle colour identities. */
@@ -49,17 +46,17 @@ function repeatPalette(count: number, pool: readonly string[]): string[] {
   return out
 }
 
-/** Keep error-like pinks and fault-like orange out of trace identities. */
-export function traceSpanPalette(count: number, _theme: string = ''): string[] {
-  return repeatPalette(count, TRACE_SERIES)
+/** Approved per-theme Bloom identities; actual errors still use Love. */
+export function traceSpanPalette(count: number, theme: string = ''): string[] {
+  return repeatPalette(count, getSeriesPalette(theme))
 }
 
-/** One shared 22-colour sequence; no metric-type colour coding. */
+/** The same 32 logical slots for every metric shape. */
 export function metricSeriesPalette(
   count: number,
-  _theme: string = ''
+  theme: string = ''
 ): string[] {
-  return repeatPalette(count, METRIC_SERIES)
+  return repeatPalette(count, getSeriesPalette(theme))
 }
 
 /** Neutral swatch / unchecked-checkbox colour. */

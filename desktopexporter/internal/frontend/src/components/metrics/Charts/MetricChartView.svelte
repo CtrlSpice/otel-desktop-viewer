@@ -19,6 +19,7 @@
   import MetricTimeSeriesChart from '@/components/metrics/Charts/MetricTimeSeriesChart.svelte'
   import HistogramChart from '@/components/metrics/Charts/HistogramChart.svelte'
   import HistogramHeatmap from '@/components/metrics/Charts/HistogramHeatmap.svelte'
+  import HistogramCountLegend from '@/components/metrics/Charts/HistogramCountLegend.svelte'
   import UnspecifiedTemporalityCallout from '@/components/metrics/Detail/UnspecifiedTemporalityCallout.svelte'
   import {
     DEFAULT_METRIC_CHART_HEIGHT,
@@ -73,6 +74,7 @@
 
 {#snippet histogramChartSlot()}
   <div class="metric-chart-view metric-chart-view--fill">
+    <HistogramCountLegend />
     <div
       class="metric-chart-view__plot-host"
       bind:clientHeight={plotHostHeight}

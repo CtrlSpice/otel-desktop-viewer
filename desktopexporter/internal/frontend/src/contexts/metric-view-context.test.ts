@@ -18,6 +18,7 @@ import MetricViewProbe from '@/test/MetricViewProbe.svelte'
 import { renderWithContexts, setTestUrl } from '@/test/render-helpers'
 import { metricViewStorageKey } from '@/components/metrics/utils/metric-timeseries-visible'
 import { detailPanel } from '@/state/detail-panel.svelte'
+import { getSeriesPalette } from '@/themes'
 
 const BASE_TIMESTAMP_MS = 1_700_000_000_000
 
@@ -680,7 +681,7 @@ describe('metric view context visibility seeding', () => {
       expect(visible).toEqual([...persistedKeys.slice(0, -1), 'series-022'])
       expect(visible).toHaveLength(22)
       expect(ctx.timeseriesColorByKey.get('series-021')).toBeUndefined()
-      expect(ctx.timeseriesColorByKey.get('series-022')).toBe(
+      expect(ctx.timeseriesColorByKey.get('series-022')).not.toBe(
         colorsBeforeReveal.get('series-021')
       )
       for (const key of persistedKeys.slice(0, -1)) {
@@ -708,11 +709,13 @@ describe('metric view context visibility seeding', () => {
       await tick()
 
       expect([...ctx.timeseriesColorByKey.keys()]).toEqual([...before.keys()])
-      expect([...ctx.timeseriesColorByKey.values()]).toEqual([
-        ...before.values(),
-      ])
-      expect(ctx.timeseriesColorByKey.get('route=/a')).toBe('#829eeb')
-      expect(ctx.timeseriesColorByKey.get('route=/b')).toBe('#d18bb7')
+      const previous = getSeriesPalette('rose-pine')
+      const next = getSeriesPalette('rose-pine-dawn')
+      for (const [key, color] of before) {
+        expect(ctx.timeseriesColorByKey.get(key)).toBe(
+          next[previous.indexOf(color)]
+        )
+      }
     } finally {
       if (previousTheme === null)
         document.documentElement.removeAttribute('data-theme')

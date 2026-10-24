@@ -6,28 +6,32 @@
   assets for final verification and commits. Concurrent test/preview servers must
   use separate Vite caches so dependency optimization cannot break the preview.
 
-- Use the original Rosé Pine, Moon and Dawn palette values with the approved
-  adjustments below. The palette is settled; routine frontend work does not
-  require colour reviews or contrast reports. Keep Dawn's approved flipped surfaces:
-  bg-100/canvas is #fffaf3, bg-200/panel is #faf4ed and
-  bg-300/chrome remains #f2e9e1 (brightest to darkest). Use `subtle` for
+- Use the Madoromi seasonal interface themes in `src/themes/madoromi.json`.
+  The approved background tint is 20% of upstream chroma for all four seasons,
+  day and night. Generate shared colours with `scripts/generate-madoromi.mjs`;
+  retain the pinned source and full MPL-2.0 licence. Routine frontend work does
+  not require colour reviews or contrast reports. Day canvas/panel/chrome map
+  to kami/hyoshi/chitsu, brightest to darkest; Night maps to
+  chitsu/hyoshi/kami, darkest to brightest. Use `subtle` for
   keys, column/section headers, helper text and app-added bracketed annotations,
   and `text` for data values and main page/pane titles. Reserve muted or dimmed
   text for unavailable or disabled states.
-  User-approved Pine/Secondary contrast adjustment: Pine #70b3cf, Moon #6bbadc,
-  Dawn #266781. Keep regular weight; do not use bold or
-  semibold to strengthen text or compensate for low contrast.
-  Dawn's other foreground colours use the approved values in
-  `src/themes/rose-pine.json`, documented in `src/themes/README.md`. Keep these
-  theme-wide. Subtle is #aba7c5 in Pine and #b1adcc in Moon app-wide.
-  Pine and Moon's remaining foreground colours retain their original values.
-  Love/Error uses the original palette colour in every theme, including Dawn
-  #b4637a. Do not use a separate darkened error-text colour.
-  Dawn Gold/Warning is the original #ea9d34. The user rejected #895500.
-  Gold is for markers and fills, never text. Warning text uses neutral Text.
-  Preserve marker/fill palette colours, including Gold. Obtain explicit user
+  Keep regular weight; do not use bold or semibold to strengthen text.
+  Shared readable foreground corrections are generated theme-wide to meet
+  4.5:1 on canvas, panel, chrome, hover and selection. Text uses Sumi, Subtle
+  uses Usuzumi 1, Primary uses Fuji and Secondary uses Ruri. Preserve the
+  existing 32-slot Bloom graph palettes and saved assignments during this
+  UI-only migration: seasonal Day uses Dawn, Night uses Moon. Histogram and
+  heatmap count ramps use the approved six Madoromi inks, default Rikka, with one
+  app-wide saved choice. Generate each adaptive size 1–12 from the full pinned
+  curve; Day reverses Night's exact shades, and seasons do not change the ink.
+  Error uses Momiji sampled at each variant's original Beni lightness; generate
+  it from the pinned ink curve. Warning fills use original Yamabuki. Warning
+  text uses neutral Text. Do not add separate darkened error text colours.
+  Historical Love/Pine/Iris names below refer to Error/Secondary/Primary roles.
+  Preserve marker/fill palette colours. Obtain explicit user
   approval before changing the palette or adding local colour overrides.
-  Span and summary breakdown bars use solid palette fills without Dawn-specific
+  Span and summary breakdown bars use solid palette fills without light-mode
   fading or borders. Error status code/message values use neutral Text with an
   8px Love dot before the value, only when the received status code is 2.
 - Shared item states use Highlight Low for hover and Highlight Medium for
@@ -115,18 +119,23 @@
   data's scalar type.
   Search text and placeholders use the shared 21px line-height. Centre text with
   padding, not a control-height line box that stretches the blinking caret.
-  JSON, search and code views share the official Rosé Pine editor syntax mapping
+  JSON, search and code views share the semantic editor syntax mapping
   documented in `src/themes/README.md`, through `utils/editor-highlighting.ts`.
-  Use the shared theme palette, including the approved Pine contrast adjustment;
-  do not add separate Dawn code colours or
+  Use the shared theme palette and generated foreground adjustments;
+  do not add separate light-mode code colours or
   flatten JSON syntax to the plain-value colour rule. Keep UI field names Subtle.
-  User-approved editor exceptions: strings use Text instead of Gold and keys use
-  Pine instead of Foam, including compact JSON previews.
-  Literals (numbers, booleans, null and bare query values) use Iris/Primary in
-  all three themes through `--color-code-literal`, including compact JSON. Dawn's
-  Rose palette value is restored to its original #d7827e at the user's request.
-  Code comments use Subtle, not Muted. Code surfaces and all search inputs use
-  bg-base-100: darkest in Pine/Moon, brightest in Dawn. Apply this to JSON,
+  Follow Madoromi's native code guide through generated syntax colours:
+  strings use Wakaba, keys Ruri, keywords Fuji, operators Sora, and escapes or
+  regular expressions Botan, including compact JSON previews. Literals (numbers,
+  booleans, null and bare query values) use Kaki in all eight variants through
+  `--color-code-literal`. Functions use Ai, built-ins Beni, types/attributes
+  Yamabuki, namespaces Kikyo, annotations Nadeshiko, and labels/cursors Sakura.
+  Invalid syntax uses the Momiji Error role. Comments use readable Kasure 2 in
+  italic; punctuation uses readable Usuzumi 0. Generate syntax foreground
+  corrections theme-wide with the same shared readability target. JSON escapes
+  are display decorations over the intact document; decoded Properties values
+  retain their string colour. Code surfaces and all search inputs use
+  bg-base-100: darkest at night, brightest by day. Apply this to JSON,
   shell examples, code snippets, compact JSON, query inputs and filter searches.
   JSON inside a Details field card uses a transparent editor background so the
   card's shared hover, reveal and selection highlights remain continuous.
@@ -493,13 +502,18 @@
   Joined shapes retain the existing density-scaled border around their shared
   perimeter and holes, following each cell's colour without internal borders.
   Do not add decorative grid styling.
-  Histogram/heatmap count legends sit on the left of the chart header's lower
-  row, replacing the displayed chart time range. Keep chart tabs/controls on the
-  right and retain the global time-range selector. At the regular 14px size,
-  legend rows fit as many whole entries as the measured width permits. Move one
+  Histogram/heatmap count legends sit outside the header, directly above the
+  graph on the chart surface, with breathing room above and below. Right-align a
+  compact group of at most six columns, with dots aligned vertically across rows.
+  Size columns to the widest whole entry and use consistent gaps; reduce the
+  column count when the available width requires it.
+  Keep Heatmap/Histogram tabs and Percentiles
+  together in the compact header's second row, right-aligned. Retain the global
+  time-range selector without repeating the chart time range. At the regular 14px size,
+  legend rows fit up to six whole entries as the measured width permits. Move one
   entry down only to avoid a lone final item when the pair fits and at least two
   entries remain in the previous row. Keep count order and whole
-  labels; do not keep a separate legend above the plot.
+  labels.
   Use plain 8px colour dots beside numeric count ranges, without borders or outlines.
 
 - Display opaque identifiers with the shared `Identifier.svelte` component, which
@@ -558,7 +572,7 @@
   drag. Use the existing sticky heading and scroll container, without extra
   wrappers or CSS overrides. Restore an
   available section to the group matching its retained disclosure state.
-  Dawn Muted uses the original `#9893a5`, restored by user approval; do not darken it.
+  Muted uses the source Kasure 1 colour; do not darken disabled text.
 - Detail-section resize precedence: keep the primary section open.
   Use each non-first open section header as the resize
   handle for the boundary above it; omit separate resize strips. A click toggles

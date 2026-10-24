@@ -17,23 +17,19 @@
   import { Cancel01Icon } from '@hugeicons/core-free-icons'
   import PageLayout from '@/components/shared/PageLayout.svelte'
   import WorkspaceHeader from '@/components/shared/WorkspaceHeader.svelte'
-  import PaneHeader from '@/components/shared/PaneHeader.svelte'
   import DetailStack from '@/components/shared/DetailStack.svelte'
   import DetailBubble from '@/components/shared/DetailBubble.svelte'
   import DetailProperty from '@/components/shared/DetailProperty.svelte'
   import IngestionIssues, {
     INGESTION_ISSUES_ID,
   } from '@/components/shared/IngestionIssues.svelte'
-  import SignalDate from '@/components/shared/SignalDate.svelte'
-  import SignalFooter from '@/components/shared/SignalFooter.svelte'
   import GettingStarted from '@/components/home/GettingStarted.svelte'
   import ServiceCard from '@/components/home/ServiceCard.svelte'
   import AttributeDiscovery from '@/components/home/AttributeDiscovery.svelte'
   import AttributeTelemetry from '@/components/home/AttributeTelemetry.svelte'
-  import {
-    coverageCounts,
-    type CoverageValue,
-    type DiscoveredAttribute,
+  import type {
+    CoverageValue,
+    DiscoveredAttribute,
   } from '@/components/home/attribute-coverage'
   import {
     homeFields,
@@ -48,6 +44,7 @@
   import { telemetryAPI } from '@/services/telemetry-service'
   import { detailPanel } from '@/state/detail-panel.svelte'
   import {
+    SIGNAL_ORDER,
     serviceIdentity,
     discoverySignalHref,
     type ServiceSummary,
@@ -69,7 +66,7 @@
   const navigation = getNavigationCounts()
   if (window.location.hash === `#${INGESTION_ISSUES_ID}`)
     detailPanel.setOpen(true)
-  const signals = ['traces', 'metrics', 'logs'] as const
+  const signals = SIGNAL_ORDER
   let fields = homeFields(signals.map(getStaticFieldsForSearch))
   let fieldsReady = $state(false)
   let queries = $state(homeQueries(null))
@@ -108,7 +105,6 @@
     selectedValue = value
     detailPanel.setOpen(true)
   }
-  let refreshedAt = $state<bigint>()
   let range = $state<Pick<DiscoveryOptions, 'startTime' | 'endTime'>>({
     startTime: null,
     endTime: null,
@@ -191,7 +187,6 @@
       else selected = services[0] ?? null
       if (refresh) {
         revision++
-        refreshedAt = BigInt(Date.now()) * 1_000_000n
       }
     } catch (reason) {
       if (!controller.signal.aborted) error = String(reason)
@@ -266,48 +261,33 @@
 </script>
 
 {#snippet attributes()}
-  <AttributeDiscovery
-    service={selected}
-    {range}
-    {queries}
-    {revision}
-    {selectedAttribute}
-    selectedValue={selectedValue?.identity}
-    onSelectAttribute={selectAttribute}
-  />
-{/snippet}
-{#snippet value()}
-  <DetailBubble label="Value" disabled={!selectedValue}>
-    {#if selectedAttribute && selectedValue}
-      {#key selectedValue.identity}
-        <table
-          class="detail-fields w-full"
-          aria-label="Selected attribute value"
-        >
-          <tbody>
-            <DetailProperty
-              fieldName={selectedAttribute.key}
-              fieldType={selectedValue.value.kind}
-              typedValue={selectedValue.value}
-              fieldKind="attribute"
-              fieldSource={selectedAttribute.ownerType}
-              origin={selectedAttribute.ownerType}
-            />
-          </tbody>
-        </table>
-        <p class="px-3 pb-3 text-rp-subtle">
-          {coverageCounts(selectedValue.counts)} [{(
-            selectedValue.relativeFrequency * 100
-          ).toLocaleString(undefined, { maximumFractionDigits: 1 })}%]<br />Of {selectedValue.denominator.toLocaleString()}
-          records carrying this attribute.
-        </p>
-      {/key}
-    {/if}
+  <DetailBubble label="Attributes" disabled={!selected}>
+    <AttributeDiscovery
+      service={selected}
+      {range}
+      {queries}
+      {revision}
+      {selectedAttribute}
+      selectedValue={selectedValue?.identity}
+      onSelectAttribute={selectAttribute}
+    />
   </DetailBubble>
 {/snippet}
 {#snippet foundOn()}
-  <DetailBubble label="Found on">
-    {#if selectedAttribute && selected}
+  <DetailBubble
+    label={selectedAttribute?.key ?? 'Telemetry'}
+    layoutKey="attribute-telemetry"
+    disabled={!selected}
+  >
+    {#snippet labelSuffix()}
+      {#if selectedAttribute}
+        <span class="text-rp-subtle" aria-hidden="true">·</span>
+        <span class="text-secondary">{selectedAttribute.kind}</span>
+        <span class="text-rp-subtle" aria-hidden="true">·</span>
+        <span class="text-base-content">{selectedAttribute.ownerType}</span>
+      {/if}
+    {/snippet}
+    {#if selected}
       <AttributeTelemetry
         attribute={selectedAttribute}
         valueIdentity={selectedValue?.identity}
@@ -315,9 +295,7 @@
         options={{ ...range, queries }}
         {revision}
       />
-    {:else}<p class="p-3 text-rp-subtle">
-        Select an attribute or value to see the telemetry that carries it.
-      </p>{/if}
+    {/if}
   </DetailBubble>
 {/snippet}
 {#snippet storage()}
@@ -361,29 +339,23 @@
 {#snippet issues()}
   <DetailBubble
     label="Ingestion issues"
+    count={issueCount}
     initialOpen={window.location.hash === `#${INGESTION_ISSUES_ID}`}
   >
-    {#snippet trailing()}<span class="text-rp-subtle"
-        >[{issueCount.toLocaleString()}]</span
-      >{/snippet}
-    {#if issueCount > 0}<IngestionIssues
-        {rejections}
-        {importFailures}
-        {rejectionLabel}
-        formatRelativeTime={relative}
-      />
-    {:else}<p class="p-3 text-rp-subtle">
-        {stats
-          ? 'No rejected records or failed file imports in this reading.'
-          : 'Ingestion status unavailable.'}
-      </p>{/if}
+    <IngestionIssues
+      {rejections}
+      {importFailures}
+      {rejectionLabel}
+      formatRelativeTime={relative}
+    />
   </DetailBubble>
 {/snippet}
 
 <PageLayout
-  mainTitle="Attributes"
+  mainTitle="Services"
   items={[]}
   emptyDrawer
+  hideDrawer
   selectedID={null}
   drawerID="signal-drawer"
   drawerLabel="Services"
@@ -426,14 +398,14 @@
   {#snippet pageBanner()}<div hidden>
       <GettingStarted {importContent} />
     </div>{/snippet}
-  {#snippet drawerContent()}
-    <PaneHeader mode="title" pill title="Services" ariaLabel="Services">
+  {#snippet main()}
+    <WorkspaceHeader mode="title" pill title="Services" ariaLabel="Services">
       {#snippet right()}<span class="text-rp-subtle"
           >{loaded
             ? `[${totalServices ?? `${offset + services.length}${more ? '+' : ''}`}]`
             : '[—]'}</span
         >{/snippet}
-    </PaneHeader>
+    </WorkspaceHeader>
     <div class="service-scroll" aria-busy={loading}>
       {#if error}<p role="alert" class="p-3">
           {error}{loaded ? ' · Showing the last successful reading.' : ''}
@@ -450,70 +422,39 @@
         {#each services as service (serviceIdentity(service))}
           <ServiceCard
             {service}
-            {range}
-            {queries}
             selected={selected !== null &&
               serviceIdentity(selected) === serviceIdentity(service)}
-            onSelect={() => (selected = service)}
+            onSelect={() => {
+              selected = service
+              selectedAttribute = null
+              selectedValue = undefined
+              detailPanel.setOpen(true)
+            }}
           />
         {/each}
       </div>
-    </div>
-  {/snippet}
-  {#snippet main()}
-    <WorkspaceHeader
-      mode="title"
-      pill
-      title="Attributes"
-      subtitle={selected
-        ? selected.serviceName || 'Unnamed service'
-        : undefined}
-    />
-    <div class="attribute-scroll">{@render attributes()}</div>
-  {/snippet}
-  {#snippet pageFooter()}
-    <SignalFooter label="services">
-      {#snippet leading()}
-        <span class="text-rp-subtle">
-          {range.startTime == null
-            ? 'All stored telemetry'
-            : 'Selected time range'}
-        </span>
-      {/snippet}
-      {#snippet trailing()}
-        <SignalDate label="Refreshed" timestamp={refreshedAt} />
-      {/snippet}
-      {#snippet navigation()}
-        <div class="flex gap-2">
-          {#if offset > 0 || more}
-            <button
-              class="btn btn-ghost btn-sm"
-              disabled={loading || offset === 0}
-              onclick={() => load(offset - 100)}>Previous</button
-            ><button
-              class="btn btn-ghost btn-sm"
-              disabled={loading || !more}
-              onclick={() => load(offset + 100)}>Next</button
-            >
-          {/if}
+      {#if offset > 0 || more}
+        <div class="flex gap-2 py-2">
+          <button
+            class="btn btn-ghost btn-sm"
+            disabled={loading || offset === 0}
+            onclick={() => load(offset - 100)}>Previous</button
+          ><button
+            class="btn btn-ghost btn-sm"
+            disabled={loading || !more}
+            onclick={() => load(offset + 100)}>Next</button
+          >
         </div>
-      {/snippet}
-    </SignalFooter>
+      {/if}
+    </div>
   {/snippet}
   {#snippet detail()}
     <DetailStack
       label="Home details"
       storageKey="home-details"
       sections={[
-        ...(selectedValue
-          ? [
-              { id: 'value', content: value },
-              { id: 'found-on', content: foundOn },
-            ]
-          : [
-              { id: 'found-on', content: foundOn },
-              { id: 'value', content: value },
-            ]),
+        { id: 'found-on', content: foundOn },
+        { id: 'attributes', content: attributes },
         { id: 'storage', content: storage },
         { id: 'issues', content: issues },
       ]}
@@ -527,12 +468,9 @@
     @apply min-h-0 flex-1 overflow-y-auto p-3;
   }
   .service-grid {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, min(100%, 24rem));
     gap: var(--header-gap);
     align-items: start;
-  }
-  .attribute-scroll {
-    @apply flex min-h-0 flex-1 flex-col;
   }
 </style>

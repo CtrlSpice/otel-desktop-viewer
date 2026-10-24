@@ -51,7 +51,6 @@ it('weights shared resource values by the records carrying them, keeping native 
     relativeFrequency: 0.1,
     counts: { traces: 9, logs: 1, metrics: 0 },
   })
-  expect(coverage.overlapping).toBe(false)
   expect(
     mergeAttributeKeys([
       {
@@ -89,7 +88,6 @@ it('retains independent percentages when values share a record instead of normal
       values: [frequency('first', 3, 4), frequency('second', 3, 4)],
     },
   ])
-  expect(coverage.overlapping).toBe(true)
   expect(coverage.values.map(item => item.relativeFrequency)).toEqual([
     0.75, 0.75,
   ])

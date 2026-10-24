@@ -75,7 +75,7 @@
   @reference "../../../app.css";
 
   .workspace-toolbar {
-    --workspace-toolbar-edge-width: 3rem;
+    --workspace-toolbar-edge-width: 9.5rem;
     @apply grid w-full min-w-0 items-center gap-x-4 gap-y-2;
     grid-template-columns:
       var(--workspace-toolbar-edge-width) minmax(0, 1fr)
@@ -83,7 +83,7 @@
   }
 
   .workspace-toolbar--details {
-    --workspace-toolbar-edge-width: 5.5rem;
+    --workspace-toolbar-edge-width: 12rem;
   }
 
   .workspace-toolbar__leading,

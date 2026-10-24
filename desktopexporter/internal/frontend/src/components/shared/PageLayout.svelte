@@ -1,11 +1,11 @@
 <script lang="ts" generics="T">
   import { getAllContexts, onDestroy } from 'svelte'
-  import WorkspaceShell, { type WorkspaceProps } from './WorkspaceShell.svelte'
+  import WorkspaceShell, { type LayoutOptions } from './WorkspaceShell.svelte'
   import WorkspaceContent from './WorkspaceContent.svelte'
   import { getWorkspaceContext } from '@/contexts/workspace-context.svelte'
   import { createWorkspaceHeader } from '@/contexts/workspace-header.svelte'
 
-  const props: WorkspaceProps<T> = $props()
+  const props: LayoutOptions<T> = $props()
   const workspace = getWorkspaceContext()
   const header = createWorkspaceHeader(() => ({
     mode: 'title',

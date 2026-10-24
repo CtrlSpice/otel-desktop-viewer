@@ -1080,12 +1080,17 @@
                       xDate != null ? nearestValueAt(s.data, xDate) : undefined}
                     {#if value !== undefined}
                       <Tooltip.Item
-                        label={s.label}
                         {value}
                         color={s.color}
                         format={formatMetricHoverValue}
                         valueAlign="right"
-                      />
+                      >
+                        {#snippet label()}
+                          <span class="chart-series-label" title={s.label}
+                            >{s.label}</span
+                          >
+                        {/snippet}
+                      </Tooltip.Item>
                     {/if}
                   {/each}
                   {#if aggItems.length > 0 && xDate != null}

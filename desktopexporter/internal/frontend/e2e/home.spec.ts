@@ -101,6 +101,7 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   )
   await page.addInitScript(() => {
     localStorage.setItem('signal-drawer:open', 'true')
+    localStorage.setItem('signal-detail:open', 'true')
   })
   await page.setViewportSize({ width: 1600, height: 1000 })
   await page.goto('/?time=all')
@@ -122,14 +123,15 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   }
   for (const width of [1600, 2400, 3200]) {
     await page.setViewportSize({ width, height: 1000 })
-    await expect(page.locator('.service-grid')).toHaveCSS(
-      'flex-direction',
-      'column'
-    )
+    await expect(page.locator('.service-grid')).toHaveCSS('display', 'grid')
+    for (const service of await page.locator('.service-grid article').all()) {
+      expect((await service.boundingBox())!.width).toBeLessThanOrEqual(384)
+    }
   }
   for (const row of await page.locator('.service-summary__row').all())
     await expect(row).toHaveCSS('border-width', '0px')
-  const table = page.getByRole('table', { name: 'Attributes', exact: true })
+  const details = page.getByRole('region', { name: 'Home details' })
+  const table = details.getByRole('table', { name: 'Attributes', exact: true })
   const attribute = table.locator(
     'tr[data-attribute-heading="exact.number"][data-attribute-source="resource"]'
   )
@@ -138,13 +140,7 @@ test('Home reflows services, discovers exact values, and keeps incoming imports 
   )
   await expect(attribute).toHaveCount(1)
   await expect(values.first()).toBeHidden()
-  await attribute
-    .getByRole('img', { name: /^9007199254740993: 6 records/ })
-    .hover()
-  await expect(
-    attribute.getByRole('tooltip', { includeHidden: false })
-  ).toContainText('[66.7%]')
-  await expect(values.first()).toBeHidden()
+  await expect(details.locator('.breakdown-segment')).toHaveCount(0)
   await attribute
     .getByRole('button', { name: 'Expand exact.number · resource values' })
     .click()

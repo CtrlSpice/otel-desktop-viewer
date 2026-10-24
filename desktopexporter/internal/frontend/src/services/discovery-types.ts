@@ -1,7 +1,8 @@
 import type { AttributeValue } from '@/types/api-types'
 import type { HomeQueries } from '@/components/home/home-search'
 
-export type DiscoverySignal = 'traces' | 'logs' | 'metrics'
+export const SIGNAL_ORDER = ['traces', 'metrics', 'logs'] as const
+export type DiscoverySignal = (typeof SIGNAL_ORDER)[number]
 export type DiscoveryOwner =
   | 'resource'
   | 'scope'

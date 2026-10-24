@@ -650,6 +650,7 @@
               >
                 {#if sort}<TableSortButton
                     label={column.key}
+                    inlineDirection
                     direction={sortColumn === sort ? sortDirection : undefined}
                     onclick={() =>
                       onSort(

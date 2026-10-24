@@ -119,6 +119,7 @@
   }
   code {
     @apply font-mono text-sm;
+    color: var(--color-code-wakaba);
   }
   pre {
     @apply bg-base-100 p-2;

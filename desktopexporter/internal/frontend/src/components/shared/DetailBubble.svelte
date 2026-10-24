@@ -82,8 +82,8 @@
         return layoutKey
       },
       element,
-      available: () => !disabled && count !== 0,
-      expanded: () => !disabled && count !== 0 && expanded,
+      available: () => !unavailable,
+      expanded: () => !unavailable && expanded,
       setExpanded,
     })
     return { destroy: () => unregister?.() }
@@ -115,10 +115,10 @@
     initialOpen?: boolean
     disabled?: boolean
   } = $props()
+  const unavailable = $derived(disabled || count === 0)
   let expanded = $state(untrack(() => initialOpen))
   let resizable = $derived(
-    !disabled &&
-      count !== 0 &&
+    !unavailable &&
       expanded &&
       previousSection &&
       stack?.enabled(previousSection.id)
@@ -141,23 +141,25 @@
   <span>{label}</span>
   {@render labelSuffix?.()}
   {#if count !== undefined}
-    <span class="badge-count ml-auto shrink-0">{count} {countLabel}</span>
+    <span
+      class="badge-count ml-auto shrink-0"
+      aria-label={`${count.toLocaleString()} ${countLabel}`}
+      >[{count.toLocaleString()}]</span
+    >
   {/if}
   {#if trailing}<span class="ml-auto shrink-0">{@render trailing()}</span>{/if}
 {/snippet}
 
 {#snippet bubble()}
-  {#if disabled || count === 0}
+  {#if unavailable}
     <section
       class="collapse collapse-close detail-bubble--unavailable min-h-0 bg-transparent"
       aria-label={label}
     >
       <div
-        role={disabled ? 'button' : undefined}
-        aria-disabled={disabled || undefined}
-        class="collapse-title detail-bubble__heading"
-        class:detail-bubble__heading--action={Boolean(action)}
-        class:detail-bubble__heading--disabled={disabled || count === 0}
+        role="button"
+        aria-disabled="true"
+        class="collapse-title detail-bubble__heading detail-bubble__heading--disabled"
       >
         {@render heading()}
       </div>
@@ -212,13 +214,9 @@
     id={sectionID}
     class="detail-bubble"
     class:detail-bubble--resizable={Boolean(stack)}
-    class:detail-bubble--unavailable={disabled || count === 0}
+    class:detail-bubble--unavailable={unavailable}
     data-detail-section={stackID}
-    data-detail-group={disabled || count === 0
-      ? 'inactive'
-      : expanded
-        ? 'open'
-        : 'closed'}
+    data-detail-group={unavailable ? 'inactive' : expanded ? 'open' : 'closed'}
     style:flex={stack?.flex(stackID)}
     style:--detail-action-width={actionWidth ? `${actionWidth}px` : undefined}
     use:register
@@ -229,7 +227,7 @@
         increases the step. Home and End shrink either side; the top stays open.
         Press 0 to reset sizes.</span
       >{/if}
-    {#if action && !disabled}<div
+    {#if action && !unavailable}<div
         class="detail-bubble__action"
         bind:clientWidth={actionWidth}
       >

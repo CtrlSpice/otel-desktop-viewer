@@ -12,10 +12,12 @@
     count = 0,
     custom = false,
     compact = false,
+    triggerClass,
+    focusSelected = false,
     showCount = false,
     icon,
     onClear,
-    clearable = count > 0,
+    clearable = !!onClear && count > 0,
     onOpenChange,
     footer,
     children,
@@ -24,13 +26,15 @@
     count?: number
     custom?: boolean
     compact?: boolean
+    triggerClass?: string
+    focusSelected?: boolean
     showCount?: boolean
     icon?: Snippet
-    onClear: () => void
+    onClear?: () => void
     clearable?: boolean
     onOpenChange?: (open: boolean) => void
     footer?: Snippet<[close: () => void]>
-    children: Snippet
+    children: Snippet<[close: () => void]>
   } = $props()
 
   const id = createPopoverID('toolbar-filter')
@@ -45,6 +49,11 @@
       anchor: 'below-end',
       onOpenChange: value => {
         open = value
+        if (value && focusSelected) {
+          popover
+            ?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')
+            ?.focus({ preventScroll: true })
+        }
         onOpenChange?.(value)
       },
     })
@@ -52,16 +61,17 @@
 
   function close() {
     popover?.hidePopover()
-    trigger?.focus()
+    trigger?.focus({ preventScroll: true })
   }
 </script>
 
 <button
   bind:this={trigger}
   type="button"
-  class={compact
-    ? 'btn btn-xs chart-header-control tooltip tooltip-left'
-    : 'btn btn-ghost btn-sm rounded-full text-sm font-normal'}
+  class={triggerClass ??
+    (compact
+      ? 'btn btn-xs chart-header-control tooltip tooltip-left'
+      : 'btn btn-ghost btn-sm rounded-full text-sm font-normal')}
   class:text-primary={count > 0 || custom}
   aria-label={compact ? label : `${label} filter`}
   data-tip={compact ? label : undefined}
@@ -110,7 +120,7 @@
         /></button
       >{/if}
   </div>
-  {@render children()}
+  {@render children(close)}
   {#if footer}<div class="filter-popover__footer">
       {@render footer(close)}
     </div>{/if}

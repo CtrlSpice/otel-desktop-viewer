@@ -1,4 +1,5 @@
-import { heatmapSwatches } from '@/utils/chart-palette'
+import { countSwatches } from '@/utils/chart-palette'
+import type { CountPaletteId } from '@/themes/count-palettes'
 import type { HistogramChartDataPoint } from './histogram-aggregation'
 import { formatMetricCount } from './format-metric-value'
 
@@ -68,6 +69,7 @@ export function computeHeatmapColorScale(opts: {
   maxCount: number
   distinctNonZeroCount: number
   theme?: string
+  palette?: CountPaletteId
   emptySwatch?: string
 }): HeatmapColorScale {
   const emptySwatch = opts.emptySwatch ?? 'var(--color-base-200)'
@@ -87,7 +89,7 @@ export function computeHeatmapColorScale(opts: {
   )
   const thresholds = heatmapCountThresholds(opts.maxCount, targetSteps)
   const swatchSteps = thresholds.length
-  const swatches = heatmapSwatches(swatchSteps, opts.theme)
+  const swatches = countSwatches(swatchSteps, opts.theme, opts.palette)
   const range = [emptySwatch, ...swatches]
 
   const legendEntries: HeatmapLegendEntry[] = []
@@ -106,7 +108,8 @@ export function computeHeatmapColorScale(opts: {
 /** One count scale shared by distribution bars and their legend. */
 export function computeHistogramBarColorScale(
   datapoint: HistogramChartDataPoint,
-  theme: string
+  theme: string,
+  palette?: CountPaletteId
 ): HeatmapColorScale {
   const counts =
     datapoint.metricType === 'Histogram'
@@ -120,5 +123,6 @@ export function computeHistogramBarColorScale(
     maxCount: counts.reduce((max, count) => Math.max(max, count), 0),
     distinctNonZeroCount: new Set(counts.filter(count => count > 0)).size,
     theme,
+    palette,
   })
 }

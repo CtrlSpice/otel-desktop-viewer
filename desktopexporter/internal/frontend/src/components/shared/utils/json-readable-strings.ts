@@ -1,5 +1,6 @@
 import { syntaxTree } from '@codemirror/language'
 import { Facet } from '@codemirror/state'
+import { editorColors } from './editor-colors'
 import {
   Decoration,
   EditorView,
@@ -92,7 +93,7 @@ export const jsonReadableStrings = [
   ),
   EditorView.theme({
     '.json-decoded-escape': {
-      color: 'var(--color-base-content)',
+      color: editorColors.string,
       whiteSpace: 'pre-wrap',
     },
   }),

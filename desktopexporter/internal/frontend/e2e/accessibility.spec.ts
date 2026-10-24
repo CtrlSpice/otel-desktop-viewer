@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
+import { THEMES, themeRgb } from './theme-colours'
 
 type RpcRequest = {
   id: number
@@ -27,26 +28,12 @@ const EMPTY_ATTRIBUTE_METHODS = new Set([
   'getMetricAttributeDefinitions',
 ])
 
-const HIGHLIGHT_THEMES = [
-  {
-    theme: 'rose-pine',
-    low: 'rgb(33, 32, 46)',
-    selected: 'rgb(64, 61, 82)',
-    high: '#524f67',
-  },
-  {
-    theme: 'rose-pine-moon',
-    low: 'rgb(42, 40, 62)',
-    selected: 'rgb(68, 65, 90)',
-    high: '#56526e',
-  },
-  {
-    theme: 'rose-pine-dawn',
-    low: 'rgb(244, 237, 232)',
-    selected: 'rgb(223, 218, 217)',
-    high: '#cecacd',
-  },
-] as const
+const HIGHLIGHT_THEMES = THEMES.map(theme => ({
+  theme: theme.id,
+  low: themeRgb(theme.id, 'highlightLow'),
+  selected: themeRgb(theme.id, 'highlightMedium'),
+  high: theme.colors.highlightHigh,
+}))
 
 async function interceptRpc(page: Page): Promise<void> {
   await page.route('**/api/features', route =>
@@ -139,7 +126,7 @@ async function showMetadataExamples(page: Page, theme: string) {
   })
 }
 
-for (const theme of ['rose-pine', 'rose-pine-moon', 'rose-pine-dawn']) {
+for (const { id: theme } of THEMES) {
   test(`plain metadata preserves the approved styling in ${theme}`, async ({
     page,
   }) => {
@@ -432,8 +419,7 @@ for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
     await page.goto('/traces')
     const trigger = page.getByRole('button', { name: /^Sort by:/ })
     await expect(trigger).toHaveAccessibleName('Sort by: Start Time')
-    const textColor =
-      theme === 'rose-pine-dawn' ? 'rgb(87, 82, 121)' : 'rgb(224, 222, 244)'
+    const textColor = themeRgb(theme, 'text')
     await expect(trigger.getByText('Start Time', { exact: true })).toHaveCSS(
       'color',
       textColor
@@ -459,8 +445,7 @@ for (const { theme, low, selected: selectedColor } of HIGHLIGHT_THEMES) {
       theme
     )
     await page.goto('/')
-    const textColor =
-      theme === 'rose-pine-dawn' ? 'rgb(87, 82, 121)' : 'rgb(224, 222, 244)'
+    const textColor = themeRgb(theme, 'text')
     const navigation = page.getByRole('navigation', { name: 'Primary' })
     const inactive = navigation.locator('.tab:not(.tab-active)')
     await expect(inactive).toHaveCount(3)
@@ -566,36 +551,40 @@ test.describe('home page accessibility', () => {
     expect(scan.violations).toEqual([])
   })
 
-  test('preserves the approved Rosé Pine Dawn palette', async ({ page }) => {
-    await page.evaluate(() => localStorage.setItem('theme', 'rose-pine-dawn'))
+  test('uses the approved 20% Winter Day surfaces and mapped foregrounds', async ({
+    page,
+  }) => {
+    await page.evaluate(() =>
+      localStorage.setItem('theme', 'madoromi-fuyu-hiru')
+    )
     await page.reload()
     await expect(page.locator('html')).toHaveAttribute(
       'data-theme',
-      'rose-pine-dawn'
+      'madoromi-fuyu-hiru'
     )
-    // Approved viewer palette, including the cream canvas and subtle labels.
+    // Frozen 20% surfaces and readable shared foregrounds.
     const expected = {
-      '--color-base-100': '#fffaf3',
-      '--color-base-200': '#faf4ed',
-      '--color-base-300': '#f2e9e1',
-      '--color-highlight-low': '#f4ede8',
-      '--color-highlight-med': '#dfdad9',
-      '--color-highlight-high': '#cecacd',
-      '--color-base-content': '#575279',
-      '--color-on-light': '#575279',
-      '--color-on-dark': '#fffaf3',
-      '--color-muted': '#9893a5',
-      '--color-subtle': '#625d7a',
-      '--color-rose': '#d7827e',
-      '--color-primary': '#6d5784',
-      '--color-secondary': '#266781',
-      '--color-accent': '#296974',
-      '--color-neutral': '#9893a5',
-      '--color-neutral-content': '#575279',
-      '--color-info': '#296974',
-      '--color-success': '#266781',
-      '--color-warning': '#ea9d34',
-      '--color-error': '#b4637a',
+      '--color-base-100': '#f1f2f3',
+      '--color-base-200': '#e7e8ea',
+      '--color-base-300': '#dddee0',
+      '--color-highlight-low': '#d0d1d5',
+      '--color-highlight-med': '#c9cacd',
+      '--color-highlight-high': '#c0c1c5',
+      '--color-base-content': '#4a4e63',
+      '--color-on-light': '#4a4e63',
+      '--color-on-dark': '#f1f2f3',
+      '--color-muted': '#8d91a4',
+      '--color-subtle': '#505469',
+      '--color-rose': '#aa6e89',
+      '--color-primary': '#5e21b0',
+      '--color-secondary': '#0f5894',
+      '--color-accent': '#006156',
+      '--color-neutral': '#8d91a4',
+      '--color-neutral-content': '#4a4e63',
+      '--color-info': '#005a8d',
+      '--color-success': '#3a5f00',
+      '--color-warning': '#e3940b',
+      '--color-error': '#cf042e',
     }
     const actual = await page.evaluate(tokens => {
       const style = getComputedStyle(document.documentElement)
@@ -606,10 +595,9 @@ test.describe('home page accessibility', () => {
     expect(actual).toEqual(expected)
   })
 
-  for (const [theme, canvas, panel] of [
-    ['rose-pine', 'rgb(25, 23, 36)', 'rgb(31, 29, 46)'],
-    ['rose-pine-moon', 'rgb(35, 33, 54)', 'rgb(42, 39, 63)'],
-  ]) {
+  for (const { id: theme } of THEMES.filter(theme => theme.scheme === 'dark')) {
+    const canvas = themeRgb(theme, 'canvas')
+    const panel = themeRgb(theme, 'panel')
     test(`preserves ${theme} surfaces after CSS cleanup`, async ({ page }) => {
       await page.evaluate(theme => localStorage.setItem('theme', theme), theme)
       await page.goto('/traces')
@@ -648,30 +636,32 @@ test.describe('home page accessibility', () => {
     })
   }
 
-  test('preserves approved Dawn surfaces and independent highlights', async ({
+  test('preserves Winter Day surfaces and independent highlights', async ({
     page,
   }) => {
-    await page.evaluate(() => localStorage.setItem('theme', 'rose-pine-dawn'))
+    await page.evaluate(() =>
+      localStorage.setItem('theme', 'madoromi-fuyu-hiru')
+    )
     await page.goto('/traces')
     await expect(page.getByRole('main')).toHaveCSS(
       'background-color',
-      'rgb(255, 250, 243)'
+      'rgb(241, 242, 243)'
     )
     await expect(page.locator('.signal-drawer__panel')).toHaveCSS(
       'background-color',
-      'rgb(255, 250, 243)'
+      'rgb(241, 242, 243)'
     )
     await expect(page.locator('.search-bar')).toHaveCSS(
       'background-color',
-      'rgb(255, 250, 243)'
+      'rgb(241, 242, 243)'
     )
     await expect(page.locator('.signal-drawer__controls')).toHaveCSS(
       'background-color',
-      'rgb(250, 244, 237)'
+      'rgb(231, 232, 234)'
     )
     await expect(page.locator('.page-layout__main-chrome')).toHaveCSS(
       'background-color',
-      'rgb(255, 250, 243)'
+      'rgb(241, 242, 243)'
     )
 
     await page.route('**/api/features', route =>
@@ -680,14 +670,14 @@ test.describe('home page accessibility', () => {
     await page.goto('/evals?preview=examples')
     await expect(page.locator('.signal-row--selected')).toHaveCSS(
       'background-color',
-      'rgb(223, 218, 217)'
+      'rgb(201, 202, 205)'
     )
     await expect(
       page.locator('.signal-row:not(.signal-row--selected)').first()
     ).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
     await expect(page.locator('.detail-bubble__heading').first()).toHaveCSS(
       'background-color',
-      'rgb(250, 244, 237)'
+      'rgb(231, 232, 234)'
     )
     await expect(page.locator('.signal-row--selected')).toHaveCSS(
       'outline-style',
@@ -696,12 +686,12 @@ test.describe('home page accessibility', () => {
     await page.locator('.signal-row--selected .signal-row__header').hover()
     await expect(page.locator('.signal-row--selected')).toHaveCSS(
       'background-color',
-      'rgb(244, 237, 232)'
+      'rgb(208, 209, 213)'
     )
     await page.mouse.move(0, 0)
     await expect(page.locator('.signal-row--selected')).toHaveCSS(
       'background-color',
-      'rgb(223, 218, 217)'
+      'rgb(201, 202, 205)'
     )
   })
 
@@ -804,7 +794,7 @@ test.describe('home page accessibility', () => {
       await expect(idleOption).toBeFocused()
       await expect(idleOption).toHaveCSS(
         'outline-color',
-        theme === 'rose-pine-dawn' ? 'rgb(109, 87, 132)' : 'rgb(196, 167, 231)'
+        themeRgb(theme, 'primary')
       )
       await page.keyboard.press('Escape')
       await page.getByRole('button', { name: /Change time range/i }).click()

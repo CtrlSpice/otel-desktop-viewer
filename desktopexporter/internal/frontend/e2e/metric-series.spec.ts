@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
+import { THEMES, themeRgb } from './theme-colours'
 import type {
   JsonAggregateBucket,
   JsonDataPoint,
@@ -150,7 +151,7 @@ test('time-series axes use the shared rounded Muted border', async ({
   )
   await page.goto(`/metrics/${metric.metricRef}`)
   await expect(page.locator('.metric-time-series-chart')).toBeVisible()
-  await expectRoundedAxes(page, 'rgb(110, 106, 134)')
+  await expectRoundedAxes(page, themeRgb('madoromi-fuyu-yoru', 'muted'))
 })
 
 test.describe('independent histogram aggregate loading', () => {
@@ -489,11 +490,8 @@ test.describe('independent histogram aggregate loading', () => {
     expect(await paths()).toEqual(originalPaths)
   })
 
-  for (const [theme, colour] of [
-    ['rose-pine', 'rgb(110, 106, 134)'],
-    ['rose-pine-moon', 'rgb(110, 106, 134)'],
-    ['rose-pine-dawn', 'rgb(152, 147, 165)'],
-  ]) {
+  for (const { id: theme } of THEMES) {
+    const colour = themeRgb(theme, 'muted')
     test(`rounded axes and header count legends stay legible in ${theme}`, async ({
       page,
     }) => {
@@ -939,21 +937,10 @@ test.describe('independent histogram aggregate loading', () => {
   }
 })
 
-for (const [theme, hoverColour, selectedColour, focusColour] of [
-  ['rose-pine', 'rgb(33, 32, 46)', 'rgb(64, 61, 82)', 'rgb(196, 167, 231)'],
-  [
-    'rose-pine-moon',
-    'rgb(42, 40, 62)',
-    'rgb(68, 65, 90)',
-    'rgb(196, 167, 231)',
-  ],
-  [
-    'rose-pine-dawn',
-    'rgb(244, 237, 232)',
-    'rgb(223, 218, 217)',
-    'rgb(109, 87, 132)',
-  ],
-]) {
+for (const { id: theme } of THEMES) {
+  const hoverColour = themeRgb(theme, 'highlightLow')
+  const selectedColour = themeRgb(theme, 'highlightMedium')
+  const focusColour = themeRgb(theme, 'primary')
   for (const metricType of ['Histogram', 'ExponentialHistogram'] as const) {
     test(`${metricType} graph highlights use rounded neutral interaction roles in ${theme}`, async ({
       page,
@@ -1297,16 +1284,11 @@ for (const [theme, hoverColour, selectedColour, focusColour] of [
         const quantileLines = page.locator(
           tab === 'heatmap' ? '.heatmap-quantile-line' : '.quantile-line'
         )
-        const quantileColours =
-          theme === 'rose-pine-dawn'
-            ? ['rgb(38, 103, 129)', 'rgb(234, 157, 52)', 'rgb(180, 99, 122)']
-            : [
-                theme === 'rose-pine'
-                  ? 'rgb(112, 179, 207)'
-                  : 'rgb(107, 186, 220)',
-                'rgb(246, 193, 119)',
-                'rgb(235, 111, 146)',
-              ]
+        const quantileColours = [
+          themeRgb(theme, 'secondary'),
+          themeRgb(theme, 'warning'),
+          themeRgb(theme, 'error'),
+        ]
         await expect(quantileLines).toHaveCount(3)
         for (const [index, line] of (await quantileLines.all()).entries()) {
           await expect(line).toHaveCSS('stroke', quantileColours[index]!)
@@ -1445,7 +1427,7 @@ for (const [theme, hoverColour, selectedColour, focusColour] of [
       ).toHaveAttribute('aria-selected', 'true')
       await expect(page.locator('.heatmap-quantile-line')).toHaveCount(3)
       expect(new URL(page.url()).searchParams.get('dp')).toBe('hist-0')
-      if (theme === 'rose-pine-moon' && metricType === 'Histogram') {
+      if (theme === 'madoromi-fuyu-yoru' && metricType === 'Histogram') {
         await page
           .getByRole('button', { name: 'Collapse sidebar', exact: true })
           .click()
@@ -1587,7 +1569,7 @@ test('extrema use the series colour and the backed average stays behind the seri
     averageAboveSeries: false,
     averageHasOwnColour: true,
     averageLabelMatches: true,
-    averageColour: 'rgb(109, 87, 132)',
+    averageColour: themeRgb('madoromi-fuyu-hiru', 'primary'),
     averageLabelAtRight: true,
   })
   const emphasis = averageLabel.getByRole('button', {
@@ -1825,7 +1807,7 @@ test('Rate clicks pin the exact bucket and put slope at the right edge', async (
   expect(slopeDrawing.distanceFromPoint).toBeLessThan(0.01)
   expect(slopeDrawing.distanceFromEnd).toBeLessThan(0.01)
   expect(slopeDrawing.colour).toBe(slopeDrawing.cardColour)
-  expect(slopeDrawing.colour).toBe('rgb(109, 87, 132)')
+  expect(slopeDrawing.colour).toBe(themeRgb('madoromi-fuyu-hiru', 'primary'))
   const slopeEmphasis = slopeLabel.getByRole('button', {
     name: 'Emphasize slope overlay',
   })

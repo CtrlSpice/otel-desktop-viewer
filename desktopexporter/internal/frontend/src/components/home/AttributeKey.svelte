@@ -1,11 +1,8 @@
 <script lang="ts">
   import AttributeValues from './AttributeValues.svelte'
   import TableValueCell from '@/components/shared/TableValueCell.svelte'
-  import type { CoverageValue } from './attribute-coverage'
-  import type {
-    AttributeKey,
-    DiscoveryOptions,
-  } from '@/services/discovery-types'
+  import type { CoverageValue, DiscoveredAttribute } from './attribute-coverage'
+  import type { DiscoveryOptions } from '@/services/discovery-types'
   let {
     entry,
     options,
@@ -16,8 +13,9 @@
     onSelect,
     selectedValue,
     onSelectValue,
+    onCount,
   }: {
-    entry: AttributeKey
+    entry: DiscoveredAttribute
     options: Omit<DiscoveryOptions, 'kind'>
     sortBy: 'name' | 'frequency'
     sortDirection: 'asc' | 'desc'
@@ -26,11 +24,13 @@
     onSelect: () => void
     selectedValue?: string
     onSelectValue: (value: CoverageValue) => void
+    onCount: (count: number) => void
   } = $props()
+  const valueOptions = $derived({ ...options, ownerType: entry.ownerType })
 </script>
 
 <AttributeValues
-  {options}
+  options={valueOptions}
   name={entry.key}
   kind={entry.kind}
   {sortBy}
@@ -39,24 +39,22 @@
   {selected}
   {selectedValue}
   {onSelectValue}
+  {onCount}
 >
   {#snippet heading()}
     <div class="min-w-0 flex-1">
       <TableValueCell
-        label={`${entry.key} · ${entry.kind} · ${options.ownerType}`}
-        text={`${entry.key} · ${entry.kind} · ${options.ownerType}`}
+        label={`${entry.key} · ${entry.kind} · ${entry.ownerType}`}
+        text={`${entry.key} · ${entry.kind} · ${entry.ownerType}`}
         inset={false}
         onInspect={onSelect}
       >
         <span
           class="min-w-0 truncate"
-          title={`${entry.key} · ${entry.kind} · ${options.ownerType}`}
+          title={`${entry.key} · ${entry.kind} · ${entry.ownerType}`}
           >{entry.key}<span class="text-rp-subtle" aria-hidden="true"
             >{' · '}</span
-          ><span class="text-secondary">{entry.kind}</span><span
-            class="text-rp-subtle"
-            aria-hidden="true">{' · '}</span
-          ><span class="text-secondary">{options.ownerType}</span></span
+          ><span class="text-secondary">{entry.kind}</span></span
         >
       </TableValueCell>
     </div>

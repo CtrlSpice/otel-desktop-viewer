@@ -7,11 +7,14 @@
     label,
     itemKey,
     children,
+    alignedColumns,
   }: {
     items: T[]
     label: string
     itemKey: (item: T) => string
     children: Snippet<[T]>
+    /** Maximum columns in a compact, right-aligned grid. */
+    alignedColumns?: number
   } = $props()
   let availableWidth = $state(0)
   let entryWidths = $state<Record<string, number>>({})
@@ -63,16 +66,31 @@
       if (frame !== undefined) cancelAnimationFrame(frame)
     }
   })
+  const widths = $derived(items.map(item => entryWidths[itemKey(item)] ?? 0))
+  const columnWidth = $derived(Math.max(0, ...widths))
   const rowEnds = $derived(
     legendRowEnds(
-      items.map(item => entryWidths[itemKey(item)] ?? 0),
-      availableWidth,
+      alignedColumns ? widths.map(() => columnWidth) : widths,
+      alignedColumns
+        ? Math.min(
+            availableWidth,
+            alignedColumns * columnWidth + (alignedColumns - 1) * gapWidth
+          )
+        : availableWidth,
       gapWidth
     )
   )
 </script>
 
-<div class="legend-rows" bind:this={element} role="list" aria-label={label}>
+<div
+  class="legend-rows"
+  class:legend-rows--columns={!!alignedColumns}
+  style:--legend-columns={alignedColumns ? rowEnds[0] : undefined}
+  style:--legend-column-width={alignedColumns ? `${columnWidth}px` : undefined}
+  bind:this={element}
+  role="list"
+  aria-label={label}
+>
   {#each rowEnds as end, row}
     {@const start = row === 0 ? 0 : rowEnds[row - 1]!}
     <div class="legend-rows__row" role="presentation">
@@ -103,5 +121,18 @@
   .legend-rows__entry {
     @apply inline-flex shrink-0 items-center gap-2 whitespace-nowrap tabular-nums;
     min-height: var(--legend-entry-height, var(--signal-card-row-h));
+  }
+
+  .legend-rows--columns {
+    @apply items-end;
+  }
+
+  .legend-rows--columns .legend-rows__row {
+    display: grid;
+    grid-template-columns: repeat(var(--legend-columns), var(--legend-column-width));
+  }
+
+  .legend-rows--columns .legend-rows__entry {
+    @apply justify-self-start;
   }
 </style>

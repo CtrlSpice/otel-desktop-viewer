@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 
 const command = `# recorded command\nprintf "%s\\n" "$HOME" | head -1\n./bin/otel-desktop-viewer query --endpoint http://127.0.0.1:8000 --limit 200 "SELECT '${'long value '.repeat(12)}'"`
 
-test('Home keeps services, attributes, and storage in their workspaces with exact attribute values', async ({
+test('Home keeps service cards in Main and collapsible attributes in Details without bars', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1800, height: 1100 })
@@ -42,6 +42,12 @@ test('Home keeps services, attributes, and storage in their workspaces with exac
         }
       if (method === 'discoverTelemetry') {
         const options = params.options
+        const values =
+          options.key === 'payload'
+            ? ['{"resourceSpans":[{"name":"exact"}]}']
+            : options.key === 'many_values'
+              ? Array.from({ length: 100 }, (_, index) => `value-${index}`)
+              : [command, 'echo done', 'echo three', 'echo four']
         const items =
           options.kind === 'services'
             ? [
@@ -61,24 +67,28 @@ test('Home keeps services, attributes, and storage in their workspaces with exac
                 },
               ]
             : options.kind === 'keys' && options.ownerType === 'event'
-              ? [
-                  {
-                    key: 'bash_command',
-                    kind: 'string',
-                    foundOn: [{ signal: 'traces', ownerType: 'event' }],
-                  },
-                ]
+              ? ['bash_command', 'payload', 'many_values'].map(key => ({
+                  key,
+                  kind: 'string',
+                  foundOn: [{ signal: 'traces', ownerType: 'event' }],
+                }))
               : options.kind === 'values'
-                ? [command, 'echo done', 'echo three', 'echo four'].map(
-                    (text, index) => ({
-                      identity: `${index}`,
-                      value: { kind: 'string', value: text },
-                      foundOn: [{ signal: 'traces', ownerType: 'event' }],
-                      count: [75, 75, 5, 1][index],
-                      denominator: 100,
-                      relativeFrequency: [0.75, 0.75, 0.05, 0.01][index],
-                    })
-                  )
+                ? values.map((text, index) => ({
+                    identity: `${index}`,
+                    value: { kind: 'string', value: text },
+                    foundOn: [{ signal: 'traces', ownerType: 'event' }],
+                    count:
+                      options.key === 'bash_command'
+                        ? [75, 75, 5, 1][index]
+                        : 1,
+                    denominator: options.key === 'payload' ? 1 : 100,
+                    relativeFrequency:
+                      options.key === 'bash_command'
+                        ? [0.75, 0.75, 0.05, 0.01][index]
+                        : options.key === 'payload'
+                          ? 1
+                          : 0.01,
+                  }))
                 : []
         return { rows: items.map(item => [item]), truncated: false }
       }
@@ -97,20 +107,23 @@ test('Home keeps services, attributes, and storage in their workspaces with exac
     const rect = (selector: string) =>
       document.querySelector(selector)!.getBoundingClientRect().toJSON()
     return {
-      list: rect('#signal-drawer-panel'),
-      servicesHeader: rect('#signal-drawer-panel .pane-header'),
+      servicesHeader: rect('.page-layout__main-chrome .pane-header'),
       main: rect('.page-layout__main-chrome'),
       details: rect('#signal-drawer-detail'),
     }
   })
   await expect(page.locator('.getting-started')).toBeHidden()
-  expect(layout.main.x).toBeGreaterThanOrEqual(layout.list.right)
   expect(layout.servicesHeader.y).toBeCloseTo(layout.main.y, 0)
   expect(layout.details.y).toBeCloseTo(layout.main.y, 0)
   expect(layout.details.x).toBeGreaterThan(layout.main.x)
   await expect(
-    page.locator('#signal-drawer-panel').getByRole('article')
+    page.locator('.page-layout__main-chrome').getByRole('article')
   ).toHaveCount(1)
+  await expect(page.locator('#signal-drawer-panel')).toBeHidden()
+  await expect(
+    page.locator('.page-layout__main-chrome').getByRole('table')
+  ).toHaveCount(0)
+  await expect(page.locator('.page-layout__footer')).toHaveCount(0)
   await expect(
     page
       .locator('.page-layout__main-chrome')
@@ -127,9 +140,11 @@ test('Home keeps services, attributes, and storage in their workspaces with exac
       .locator('.getting-started')
       .getByRole('button', { name: 'Import files', includeHidden: true })
   ).toBeAttached()
-  const table = page.getByRole('table', { name: 'Attributes', exact: true })
+  const details = page.getByRole('region', { name: 'Home details' })
+  const table = details.getByRole('table', { name: 'Attributes', exact: true })
   await expect(table).toHaveCount(1)
   await expect(table.getByRole('columnheader')).toHaveCount(4)
+  await expect(table.getByRole('columnheader').nth(1)).toHaveText('Cnt')
   const tableHandle = await table.elementHandle()
   const rows = table.locator(
     'tr[data-attribute-key="bash_command"][data-attribute-source="event"]'
@@ -137,7 +152,7 @@ test('Home keeps services, attributes, and storage in their workspaces with exac
   await expect(rows).toHaveCount(4)
   await expect(rows.first()).toBeHidden()
   await expect(rows.last()).toBeHidden()
-  await expect(table.getByText('Overlapping values')).toBeVisible()
+  await expect(details.locator('.breakdown-segment')).toHaveCount(0)
   await table
     .getByRole('button', {
       name: 'Expand bash_command · event values',
@@ -145,35 +160,18 @@ test('Home keeps services, attributes, and storage in their workspaces with exac
     })
     .click()
   await expect(rows.last()).toBeVisible()
+  await expect(rows.locator('td:nth-child(2)')).toHaveText([
+    '75',
+    '75',
+    '5',
+    '1',
+  ])
   await expect(rows.locator('td:nth-child(3)')).toHaveText([
     '[75%]',
     '[75%]',
     '[5%]',
     '[1%]',
   ])
-  const markerSizes = await rows
-    .locator('.breakdown-segment__fill')
-    .evaluateAll(elements =>
-      elements.slice(0, 3).map(element => {
-        const cell = element.closest('td')!
-        const style = getComputedStyle(cell)
-        return {
-          width: element.getBoundingClientRect().width,
-          height: element.getBoundingClientRect().height,
-          available:
-            cell.getBoundingClientRect().width -
-            Number.parseFloat(style.paddingLeft) -
-            Number.parseFloat(style.paddingRight),
-        }
-      })
-    )
-  for (const [index, marker] of markerSizes.entries()) {
-    expect(marker.height).toBe(8)
-    expect(marker.width).toBeCloseTo(
-      Math.max(8, marker.available * [0.75, 0.75, 0.05][index]),
-      1
-    )
-  }
   const value = rows.first().locator('.table-value-cell__inspect')
   expect(await value.textContent()).toContain(command)
   const clipping = await value.evaluate(element => ({
@@ -192,19 +190,13 @@ test('Home keeps services, attributes, and storage in their workspaces with exac
     .locator('span[title="bash_command · string · event"]')
     .boundingBox()
   const valueText = await value.boundingBox()
-  const marker = await rows
-    .first()
-    .locator('.breakdown-segment__fill')
-    .boundingBox()
   expect(valueText!.x).toBeCloseTo(headingText!.x, 0)
   expect(valueText!.y).toBeGreaterThan(headingText!.y + headingText!.height)
-  expect(marker!.x).toBeGreaterThan(valueText!.x + valueText!.width)
-  const dot = await rows
-    .last()
-    .locator('.breakdown-segment__fill')
-    .boundingBox()
-  expect(dot!.width).toBe(8)
-  expect(dot!.height).toBe(8)
+  await table
+    .getByRole('button', { name: 'Expand payload · event values', exact: true })
+    .click()
+  const payload = table.locator('tr[data-attribute-key="payload"]')
+  await expect(payload).toBeVisible()
   const collapse = table.getByRole('button', {
     name: 'Collapse bash_command · event values',
     exact: true,
@@ -213,6 +205,7 @@ test('Home keeps services, attributes, and storage in their workspaces with exac
   await collapse.press('Enter')
   await expect(rows.nth(2)).toBeHidden()
   await expect(rows.last()).toBeHidden()
+  await expect(payload).toBeVisible()
   expect(await tableHandle!.evaluate(element => element.isConnected)).toBe(true)
   const sortArrow = table.getByRole('button', { name: 'Sort by percentage' })
   const gap = await sortArrow.evaluate(element => {
@@ -241,5 +234,7 @@ test('Home keeps services, attributes, and storage in their workspaces with exac
       () => (window as Window & { copiedValue?: string }).copiedValue
     )
   ).toBe(command)
+  await page.setViewportSize({ width: 3200, height: 1100 })
+  await expect(details.locator('.breakdown-segment')).toHaveCount(0)
   expect(errors).toEqual([])
 })

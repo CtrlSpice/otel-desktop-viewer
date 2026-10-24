@@ -4,7 +4,7 @@
   import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
   import TreeToggle from '@/components/shared/TreeToggle.svelte'
   import TableValueCell from '@/components/shared/TableValueCell.svelte'
-  import BreakdownSegment from '@/components/shared/BreakdownSegment.svelte'
+  import DetailNav from '@/components/shared/DetailNav.svelte'
   import type { DiscoveryOptions } from '@/services/discovery-types'
   import {
     coverageCounts,
@@ -13,8 +13,6 @@
     type AttributeCoverage,
     type CoverageValue,
   } from './attribute-coverage'
-  import AttributeCoverageBar from './AttributeCoverageBar.svelte'
-  import { traceSpanPalette } from '@/utils/chart-palette'
   import ShellSyntax from '@/components/shared/ShellSyntax.svelte'
   import ValueSyntax from '@/components/shared/ValueSyntax.svelte'
   import ValueCopyButton from '@/components/shared/ValueCopyButton.svelte'
@@ -38,6 +36,7 @@
     selected,
     selectedValue,
     onSelectValue,
+    onCount,
   }: {
     options: Omit<DiscoveryOptions, 'kind'>
     name: string
@@ -49,8 +48,10 @@
     selected: boolean
     selectedValue?: string
     onSelectValue: (value: CoverageValue) => void
+    onCount: (count: number) => void
   } = $props()
   let coverage = $state<AttributeCoverage>()
+  const PAGE_SIZE = 25
   let offset = $state(0)
   const values = $derived(
     sortCoverageValues(
@@ -59,19 +60,14 @@
       sortDirection
     )
   )
-  const page = $derived(values.slice(offset, offset + 25))
+  const page = $derived(values.slice(offset, offset + PAGE_SIZE))
+  const pageIndex = $derived(Math.floor(offset / PAGE_SIZE))
+  const pageCount = $derived(Math.max(1, Math.ceil(values.length / PAGE_SIZE)))
   const presentationKey = $derived(
     valuePresentationKey(options.ownerType ?? '', 'attribute', name)
   )
   let loading = $state(false)
   let error = $state('')
-  const valueColors = $derived.by(() => {
-    const identities = coverage?.values.map(item => item.identity).sort() ?? []
-    const palette = traceSpanPalette(identities.length)
-    return Object.fromEntries(
-      identities.map((identity, index) => [identity, palette[index]])
-    )
-  })
   const headingID = $props.id()
   let expanded = $state(false)
   const canExpand = $derived(values.length > 0)
@@ -92,6 +88,7 @@
       .then(result => {
         if (controller.signal.aborted) return
         coverage = result
+        onCount(result.denominator)
       })
       .catch(reason => {
         if (!controller.signal.aborted) error = String(reason)
@@ -137,13 +134,13 @@
   >
     {@render heading()}
   </th>
-  <td class="table-cell" colspan="3">
-    {#if coverage && values.length}<AttributeCoverageBar
-        {coverage}
-        {kind}
-        colors={valueColors}
-      />{/if}
+  <td class="table-cell text-right tabular-nums">
+    <span title={coverage ? coverageCounts(coverage.denominators) : undefined}
+      >{coverage ? coverage.denominator.toLocaleString() : '—'}</span
+    >
   </td>
+  <td class="table-cell text-right"></td>
+  <td class="table-cell"></td>
 </tr>
 
 {#if error || values.length === 0}
@@ -201,23 +198,10 @@
             >{/if}
         </div>
       </td>
-      <td class="table-cell">
-        <div
-          class="flex h-2"
-          style:width={`max(0.5rem, ${item.relativeFrequency * 100}%)`}
+      <td class="table-cell text-right tabular-nums">
+        <span title={coverageCounts(item.counts)}
+          >{item.count.toLocaleString()}</span
         >
-          <BreakdownSegment
-            part={{
-              key: item.identity,
-              label: text,
-              count: item.count,
-              color: valueColors[item.identity],
-            }}
-            unit="record"
-            relativeFrequency={item.relativeFrequency}
-            detail={coverageCounts(item.counts, coverage?.denominators)}
-          />
-        </div>
       </td>
       <td class="table-cell text-right text-rp-subtle tabular-nums">
         <span
@@ -234,20 +218,19 @@
       </td>
     </tr>
   {/each}
-  {#if offset > 0 || values.length > offset + 25}
+  {#if pageCount > 1}
     <tr hidden={!expanded}>
       <td class="table-cell" colspan="4">
-        <div class="flex items-center justify-between gap-2 pl-6">
-          <button
-            class="btn btn-ghost btn-sm"
-            disabled={loading || offset === 0}
-            onclick={() => (offset -= 25)}>Previous values</button
-          >
-          <button
-            class="btn btn-ghost btn-sm"
-            disabled={loading || values.length <= offset + 25}
-            onclick={() => (offset += 25)}>Next values</button
-          >
+        <div class="flex justify-center">
+          <DetailNav
+            index={pageIndex}
+            total={pageCount}
+            label="page"
+            onFirst={() => (offset = 0)}
+            onPrev={() => (offset -= PAGE_SIZE)}
+            onNext={() => (offset += PAGE_SIZE)}
+            onLast={() => (offset = (pageCount - 1) * PAGE_SIZE)}
+          />
         </div>
       </td>
     </tr>

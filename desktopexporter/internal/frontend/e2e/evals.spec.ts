@@ -1244,8 +1244,8 @@ test('case branches stay connected to aligned repetitions through sorting and re
     }
   })
   expect(palette).toEqual({
-    uncorrelated: 'rgb(196, 167, 231)',
-    success: 'rgb(156, 207, 216)',
+    uncorrelated: 'rgb(187, 184, 255)',
+    success: 'rgb(94, 204, 197)',
   })
 
   async function checkGeometry() {

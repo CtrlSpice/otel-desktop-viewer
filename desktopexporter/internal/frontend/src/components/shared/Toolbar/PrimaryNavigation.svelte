@@ -9,6 +9,7 @@
   } from '@hugeicons/core-free-icons'
   import { LogIcon } from '@/icons'
   import type { SignalName } from '@/route'
+  import { SIGNAL_ORDER } from '@/services/discovery-types'
 
   type NavItemID = 'home' | 'evals' | SignalName
 
@@ -40,29 +41,30 @@
     icon: Home12Icon,
   }
 
-  export const NAV_ITEMS: NavItem<SignalName>[] = [
-    {
+  const SIGNAL_NAV: Record<SignalName, NavItem<SignalName>> = {
+    traces: {
       id: 'traces',
       label: 'Traces',
       path: '/traces',
       iconType: 'hugeicon',
       icon: BarChartHorizontalIcon,
     },
-    {
+    metrics: {
       id: 'metrics',
       label: 'Metrics',
       path: '/metrics',
       iconType: 'hugeicon',
       icon: ChartHistogramIcon,
     },
-    {
+    logs: {
       id: 'logs',
       label: 'Logs',
       path: '/logs',
       iconType: 'component',
       icon: LogIcon,
     },
-  ]
+  }
+  export const NAV_ITEMS = SIGNAL_ORDER.map(signal => SIGNAL_NAV[signal])
 
   const ACTIVE_RULES = {
     home: (path: string) => path === '/',

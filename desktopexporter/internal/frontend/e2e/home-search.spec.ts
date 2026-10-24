@@ -184,9 +184,7 @@ test('Home counts, attributes and enabled links share the submitted cross-signal
   await expect(
     page.getByRole('link', { name: 'Home', exact: true })
   ).toHaveAccessibleDescription('Matching services: [0]')
-  await expect(
-    page.getByText('Select a service to discover its attributes.')
-  ).toBeVisible()
+  await expect(page.getByText('No services match this search.')).toBeVisible()
   // A fresh metric URL submits before reactive parent notifications can run.
   const metricQuery = `serviceIdentity = ${JSON.stringify(service.serviceIdentity)}`
   await page.goto(`/metrics?time=all&q=${encodeURIComponent(metricQuery)}`)

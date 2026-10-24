@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-test('unified attribute coverage opens exact matching summary cards and a formatted value above Storage', async ({
+test('collapsible attributes in Details open exact matching summary cards without bars or a Value section', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1920, height: 1100 })
@@ -177,15 +177,13 @@ test('unified attribute coverage opens exact matching summary cards and a format
     await route.fulfill({ json: { jsonrpc: '2.0', id, result } })
   })
   await page.goto('/?time=all&q=needle')
-  const table = page.getByRole('table', { name: 'Attributes', exact: true })
+  const details = page.getByRole('region', { name: 'Home details' })
+  const table = details.getByRole('table', { name: 'Attributes', exact: true })
   const heading = table.locator('tr[data-attribute-heading="payload"]')
   await expect(heading).toHaveCount(1)
-  await expect(
-    heading.getByRole('group', { name: 'Attribute value coverage' })
-  ).toBeVisible()
+  await expect(details.locator('.breakdown-segment')).toHaveCount(0)
   const rows = table.locator('tr[data-attribute-key="payload"]')
   await expect(rows.first()).toBeHidden()
-  const details = page.getByRole('region', { name: 'Home details' })
   const foundOn = details.locator('[data-detail-section="found-on"]')
   const storage = details.locator('[data-detail-section="storage"]')
   await heading
@@ -193,6 +191,10 @@ test('unified attribute coverage opens exact matching summary cards and a format
       name: 'Show payload · string · resource in details',
     })
     .click()
+  await expect(foundOn.locator('summary')).toContainText('payload')
+  await expect(foundOn.locator('summary')).toContainText('string')
+  await expect(foundOn.locator('summary')).toContainText('resource')
+  await expect(foundOn.getByText('Found on', { exact: true })).toHaveCount(0)
   await expect(
     foundOn.getByRole('region', { name: 'Matching traces' }).getByRole('link')
   ).toHaveCount(1)
@@ -218,6 +220,7 @@ test('unified attribute coverage opens exact matching summary cards and a format
   await heading
     .getByRole('button', { name: 'Expand payload · resource values' })
     .click()
+  await expect(rows.first().locator('td:nth-child(2)')).toHaveText('100')
   await expect(rows.first().locator('td:nth-child(3)')).toHaveText('[50%]')
   await expect(rows.last()).toContainText('rare')
   await rows
@@ -226,24 +229,24 @@ test('unified attribute coverage opens exact matching summary cards and a format
       name: 'Show resource attribute: payload in details',
     })
     .click()
-  const valuePane = details.locator('[data-detail-section="value"]')
-  await expect(valuePane.getByLabel('JSON value of payload')).toBeVisible()
-  await expect(valuePane).toContainText('90 spans · 1 logs · 9 datapoints')
+  await expect(details.locator('[data-detail-section="value"]')).toHaveCount(0)
   await expect(
     foundOn.getByRole('region', { name: 'Matching logs' }).getByRole('link')
   ).toHaveCount(1)
   await expect(foundOn).toContainText('1 matching span')
   await expect(foundOn).toContainText('9 matching datapoints')
-  expect((await valuePane.boundingBox())!.y).toBeLessThan(
-    (await foundOn.boundingBox())!.y
-  )
   expect((await foundOn.boundingBox())!.y).toBeLessThan(
     (await storage.boundingBox())!.y
   )
-  await valuePane.getByRole('group', { name: 'payload', exact: true }).hover()
-  await valuePane
-    .getByRole('button', { name: 'Copy payload (resource)' })
-    .click()
+  await expect(details.locator('[data-detail-section]')).toHaveCount(4)
+  expect(
+    await details
+      .locator('[data-detail-section]')
+      .evaluateAll(elements =>
+        elements.map(element => element.getAttribute('data-detail-section'))
+      )
+  ).toEqual(['attributes', 'found-on', 'storage', 'issues'])
+  await rows.first().getByRole('button', { name: 'Copy payload value' }).click()
   expect(
     await page.evaluate(
       () => (window as Window & { copiedValue?: string }).copiedValue

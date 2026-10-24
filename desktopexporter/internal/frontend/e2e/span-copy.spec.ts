@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
+import { THEMES, themeRgb } from './theme-colours'
 import type { JsonTraceData } from '../src/types/wire-types'
 
 const traceID = '12345678901234567890123456789012'
@@ -259,11 +260,8 @@ test('full gutter toggles its row with pointer and keyboard without selecting it
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
 })
 
-for (const [theme, errorColour] of [
-  ['rose-pine', 'rgb(235, 111, 146)'],
-  ['rose-pine-moon', 'rgb(235, 111, 146)'],
-  ['rose-pine-dawn', 'rgb(180, 99, 122)'],
-]) {
+for (const { id: theme } of THEMES) {
+  const errorColour = themeRgb(theme, 'error')
   test(`span status values use neutral text and an error dot only for code 2 in ${theme}`, async ({
     page,
   }) => {
@@ -871,7 +869,13 @@ test('Copy span sits opposite the span icon and copies only the selected span wi
     const probe = document.createElement('span')
     document.body.append(probe)
     const colors = Object.fromEntries(
-      ['base-content', 'secondary', 'primary', 'highlight-low'].map(token => {
+      [
+        'base-content',
+        'secondary',
+        'code-wakaba',
+        'code-literal',
+        'highlight-low',
+      ].map(token => {
         probe.style.color = `var(--color-${token})`
         return [token, getComputedStyle(probe).color]
       })
@@ -929,15 +933,15 @@ test('Copy span sits opposite the span icon and copies only the selected span wi
   await expect(json).toHaveAttribute('contenteditable', 'false')
   await expect(json.getByText('example', { exact: true })).toHaveCSS(
     'color',
-    palette['base-content']!
+    palette['code-wakaba']!
   )
   await expect(json.getByText('42', { exact: true })).toHaveCSS(
     'color',
-    palette.primary!
+    palette['code-literal']!
   )
   await expect(json.getByText('false', { exact: true })).toHaveCSS(
     'color',
-    palette.primary!
+    palette['code-literal']!
   )
   expect(await copy.evaluate(element => element.closest('summary'))).toBeNull()
   await copy.click()
@@ -1000,12 +1004,12 @@ test('Copy span sits opposite the span icon and copies only the selected span wi
   const match = page.locator('.waterfall-row--matched[aria-selected="false"]')
   await expect(match.locator('td').first()).toHaveCSS(
     'background-color',
-    'rgb(86, 82, 110)'
+    themeRgb('madoromi-fuyu-yoru', 'highlightHigh')
   )
   const selected = page.locator('.waterfall-row[aria-selected="true"]')
   await expect(selected.locator('td').first()).toHaveCSS(
     'background-color',
-    'rgb(68, 65, 90)'
+    themeRgb('madoromi-fuyu-yoru', 'highlightMedium')
   )
   await selected.hover()
   await expect(selected.locator('td').first()).toHaveCSS(

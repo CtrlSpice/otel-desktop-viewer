@@ -3,6 +3,7 @@
   import TraceCard from '@/components/traces/TraceCard.svelte'
   import LogCard from '@/components/logs/LogCard.svelte'
   import MetricCard from '@/components/metrics/MetricCard.svelte'
+  import FieldGroup from '@/components/shared/FieldGroup.svelte'
   import { itemHref } from '@/route'
   import type {
     DiscoveryOptions,
@@ -26,7 +27,7 @@
     options,
     revision,
   }: {
-    attribute: DiscoveredAttribute
+    attribute: DiscoveredAttribute | null
     valueIdentity?: string
     service: ServiceSummary
     options: Pick<DiscoveryOptions, 'queries' | 'startTime' | 'endTime'>
@@ -50,7 +51,8 @@
     groups = discoverySignals
       .filter(
         signal =>
-          attributeOwners[signal].includes(attribute.ownerType) &&
+          (!attribute ||
+            attributeOwners[signal].includes(attribute.ownerType)) &&
           options.queries?.[signal] !== false
       )
       .map(signal => ({
@@ -93,53 +95,52 @@
 </script>
 
 <div class="p-3" aria-busy={groups.some(group => group.loading)}>
-  <p class="mb-2 break-words text-rp-subtle">
-    {attribute.key}<span aria-hidden="true"> · </span><span
-      class="text-secondary">{attribute.kind} · {attribute.ownerType}</span
-    >
-  </p>
   {#each groups as group (group.signal)}
     {#if group.loading || group.error || group.cards.length}
       <section aria-label={`Matching ${group.signal}`}>
-        <h3 class="py-2 text-sm font-normal text-rp-subtle">
-          {labels[group.signal]}{#if !group.loading && !group.error}
-            [{group.cards.length.toLocaleString()}]{/if}
-        </h3>
-        {#if group.loading}<p role="status" class="text-rp-subtle">
-            Loading matching {group.signal}…
-          </p>
-        {:else if group.error}<p role="alert">{group.error}</p>
-          <button class="btn btn-ghost btn-sm" onclick={() => retry++}
-            >Retry</button
-          >
-        {:else}
-          {#each group.cards.slice(0, group.shown) as card (cardID(card))}
-            {#if card.signal === 'traces'}
-              <TraceCard
-                trace={card.trace}
-                matchingSpanCount={card.count}
-                href={itemHref('traces', card.trace.traceID, {
-                  span: card.trace.matchedSpans?.[0]?.spanID,
-                })}
-              />
-            {:else if card.signal === 'logs'}
-              <LogCard
-                log={card.log}
-                href={itemHref('logs', card.log.logRef)}
-              />
-            {:else}
-              <MetricCard
-                metric={card.metric}
-                matchingPointCount={card.count}
-                href={itemHref('metrics', card.metric.metricRef)}
-              />
-            {/if}
-          {/each}
-          {#if group.shown < group.cards.length}<button
-              class="btn btn-ghost btn-sm"
-              onclick={() => (group.shown += 25)}>More {group.signal}</button
-            >{/if}
-        {/if}
+        <FieldGroup label={labels[group.signal]} detail bare>
+          {#snippet heading()}
+            <h3 class="text-sm font-normal text-rp-subtle">
+              {labels[group.signal]}{#if !group.loading && !group.error}
+                {' '}[{group.cards.length.toLocaleString()}]{/if}
+            </h3>
+          {/snippet}
+          {#if group.loading}<p role="status" class="text-rp-subtle">
+              Loading matching {group.signal}…
+            </p>
+          {:else if group.error}<p role="alert">{group.error}</p>
+            <button class="btn btn-ghost btn-sm" onclick={() => retry++}
+              >Retry</button
+            >
+          {:else}
+            {#each group.cards.slice(0, group.shown) as card (cardID(card))}
+              {#if card.signal === 'traces'}
+                <TraceCard
+                  trace={card.trace}
+                  matchingSpanCount={card.count}
+                  href={itemHref('traces', card.trace.traceID, {
+                    span: card.trace.matchedSpans?.[0]?.spanID,
+                  })}
+                />
+              {:else if card.signal === 'logs'}
+                <LogCard
+                  log={card.log}
+                  href={itemHref('logs', card.log.logRef)}
+                />
+              {:else}
+                <MetricCard
+                  metric={card.metric}
+                  matchingPointCount={card.count}
+                  href={itemHref('metrics', card.metric.metricRef)}
+                />
+              {/if}
+            {/each}
+            {#if group.shown < group.cards.length}<button
+                class="btn btn-ghost btn-sm"
+                onclick={() => (group.shown += 25)}>More {group.signal}</button
+              >{/if}
+          {/if}
+        </FieldGroup>
       </section>
     {/if}
   {/each}

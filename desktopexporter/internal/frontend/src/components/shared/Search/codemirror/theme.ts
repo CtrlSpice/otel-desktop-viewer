@@ -1,6 +1,7 @@
 import { EditorView } from '@codemirror/view'
 import { syntaxHighlighting } from '@codemirror/language'
 import { editorHighlightStyle } from '@/components/shared/utils/editor-highlighting'
+import { stringEscapeHighlighting } from '@/components/shared/utils/string-escape-highlighting'
 
 // Tooltip styles injected as a global <style> because:
 //   1. tooltips render in document.body (to escape backdrop-blur containment)
@@ -8,7 +9,7 @@ import { editorHighlightStyle } from '@/components/shared/utils/editor-highlight
 //   3. Tailwind tree-shakes unknown selectors from app.css
 //
 // Selectors use html[data-theme] to beat CM's baseTheme `&light`/`&dark` rules
-// and follow the active Rosé Pine palette automatically.
+// and follow the active seasonal palette automatically.
 let tooltipStylesInjected = false
 function ensureTooltipStyles() {
   if (tooltipStylesInjected) return
@@ -75,11 +76,11 @@ export const queryEditorTheme = EditorView.theme({
     color: qc.text,
   },
   '.cm-content': {
-    caretColor: qc.iris,
+    caretColor: qc.cursor,
     padding: '0',
   },
   '.cm-cursor, .cm-dropCursor': {
-    borderLeftColor: qc.iris,
+    borderLeftColor: qc.cursor,
   },
   '&.cm-focused': {
     outline: 'none',
@@ -99,14 +100,14 @@ export const queryEditorTheme = EditorView.theme({
   },
   // Lint diagnostics (render inline in .cm-editor, so EditorView.theme works)
   '.cm-diagnostic-error': {
-    borderLeft: `3px solid ${qc.love}`,
+    borderLeft: `3px solid ${qc.error}`,
     backgroundColor: 'color-mix(in oklab, var(--color-error) 12%, transparent)',
     padding: '4px 8px',
     marginLeft: '4px',
   },
   '.cm-lintRange-error': {
     backgroundImage: 'none',
-    textDecoration: `underline wavy ${qc.love}`,
+    textDecoration: `underline wavy ${qc.error}`,
     textUnderlineOffset: '3px',
   },
 })
@@ -116,4 +117,5 @@ export { ensureTooltipStyles }
 export const queryTheme = [
   queryEditorTheme,
   syntaxHighlighting(editorHighlightStyle),
+  stringEscapeHighlighting,
 ]

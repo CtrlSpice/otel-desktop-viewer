@@ -31,7 +31,7 @@
       backgroundColor: `${c.highlightMed} !important`,
     },
     '.cm-activeLine': {
-      backgroundColor: c.highlightLow,
+      backgroundColor: c.activeLine,
     },
     '.cm-gutters': {
       display: 'none',

@@ -1,19 +1,19 @@
 import { getContext, setContext } from 'svelte'
-import type { WorkspaceProps } from '@/components/shared/WorkspaceShell.svelte'
+import type { LayoutOptions } from '@/components/shared/WorkspaceShell.svelte'
 
 const key = Symbol('workspace')
 
 export function createWorkspaceContext() {
-  let current = $state<(() => WorkspaceProps<unknown>) | null>(null)
+  let current = $state<(() => LayoutOptions<unknown>) | null>(null)
   let owner: object | null = null
   const workspace = {
     get props() {
       return current?.() ?? null
     },
-    register<T>(read: () => WorkspaceProps<T>) {
+    register<T>(read: () => LayoutOptions<T>) {
       // SAFETY: Erase only the list's item type. Its items, key function and renderer
       // always travel together; the shell never supplies an item of its own.
-      const registration = read as () => WorkspaceProps<unknown>
+      const registration = read as () => LayoutOptions<unknown>
       const token = {}
       owner = token
       current = registration

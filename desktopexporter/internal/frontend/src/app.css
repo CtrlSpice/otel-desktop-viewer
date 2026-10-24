@@ -45,7 +45,7 @@
   min-height: 2rem;
 }
 
-/* Shared DaisyUI chrome — identical across all three Rosé Pine variants */
+/* Shared DaisyUI chrome across all seasonal day/night variants. */
 :root {
   --radius-selector: 0.5rem;
   --radius-field: 0.5rem;
@@ -401,7 +401,12 @@
 }
 
 .chart-hover-card :where(.lc-tooltip-item-label) {
+  min-width: 0;
   color: var(--color-subtle);
+}
+
+.chart-hover-card :where(.lc-tooltip-item-color) {
+  flex-shrink: 0;
 }
 
 .chart-hover-card :where(.lc-tooltip-item-value) {
@@ -430,33 +435,27 @@
 }
 
 .metric-chart-view
-  :where(.chart-selection-legend--stat .chart-selection-legend__label) {
-  overflow: visible;
-  text-overflow: clip;
-}
-
-.metric-chart-view
   :where(.chart-selection-legend--stat .chart-selection-legend__value) {
   min-width: max-content;
 }
 
-html[data-theme='rose-pine-dawn']
+html[data-color-scheme='light']
   .metric-chart-view
   :where(.lc-rule-x-line, .lc-rule-y-line) {
   --stroke-color: var(--color-neutral);
 }
 
-html[data-theme='rose-pine-dawn']
+html[data-color-scheme='light']
   .metric-chart-view
   :where(.chart-selection-legend, .chart-selection-legend--stat),
-html[data-theme='rose-pine-dawn'] .chart-hover-card {
+html[data-color-scheme='light'] .chart-hover-card {
   border-color: var(--color-neutral);
 }
 
-html[data-theme='rose-pine-dawn']
+html[data-color-scheme='light']
   .metric-chart-view
   :where(.chart-selection-legend),
-html[data-theme='rose-pine-dawn'] .chart-hover-card {
+html[data-color-scheme='light'] .chart-hover-card {
   background-color: var(--color-base-300);
 }
 
@@ -490,7 +489,7 @@ html[data-theme='rose-pine-dawn'] .chart-hover-card {
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   column-gap: 0.4rem;
   row-gap: 0.18rem;
   align-items: baseline;
@@ -525,7 +524,11 @@ html[data-theme='rose-pine-dawn'] .chart-hover-card {
   margin-right: 0.25rem;
 }
 
-.metric-chart-view :where(.chart-selection-legend__label) {
+.metric-chart-view :where(.chart-selection-legend__label),
+.chart-hover-card :where(.chart-series-label) {
+  display: block;
+  min-width: 0;
+  max-width: min(24rem, calc(100vw - 8rem));
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1380,19 +1383,22 @@ tr:is(.item-state, .table-row) > :is(td, th):last-child {
   @apply text-base-content;
 }
 
-/* Compact JSON previews follow the same Rosé Pine syntax roles as editors. */
+/* Compact JSON previews share Madoromi's native editor syntax roles. */
 .value-syntax .detail-code--key {
-  color: var(--color-secondary);
+  color: var(--color-code-ruri);
 }
 .value-syntax .detail-code--punctuation {
-  color: var(--color-subtle);
+  color: var(--color-code-usuzumi0);
 }
 .value-syntax .detail-code--string {
-  color: var(--color-base-content);
+  color: var(--color-code-wakaba);
 }
 .value-syntax .detail-code--number,
 .value-syntax .detail-code--literal {
   color: var(--color-code-literal);
+}
+.value-syntax .detail-code--escape {
+  color: var(--color-code-botan);
 }
 
 .detail-cell__stacked-value {

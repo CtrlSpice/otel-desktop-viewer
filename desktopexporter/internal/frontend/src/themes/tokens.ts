@@ -15,7 +15,13 @@ export function themeTokens(theme: Theme) {
     '--color-subtle': c.subtle,
     '--color-muted': c.muted,
     '--color-rose': c.rose,
-    '--color-code-literal': 'var(--color-primary)',
+    ...Object.fromEntries(
+      Object.entries(theme.syntax).map(([name, color]) => [
+        `--color-code-${name}`,
+        color,
+      ])
+    ),
+    '--color-code-literal': 'var(--color-code-kaki)',
     '--color-highlight-low': c.highlightLow,
     '--color-highlight-med': c.highlightMedium,
     '--color-highlight-high': c.highlightHigh,
@@ -27,9 +33,9 @@ export function themeTokens(theme: Theme) {
     '--color-accent-content': inverseContent,
     '--color-neutral': 'var(--color-muted)',
     '--color-neutral-content': 'var(--color-base-content)',
-    '--color-info': 'var(--color-accent)',
+    '--color-info': c.info,
     '--color-info-content': 'var(--color-accent-content)',
-    '--color-success': 'var(--color-secondary)',
+    '--color-success': c.success,
     '--color-success-content': 'var(--color-secondary-content)',
     '--color-warning': c.warning,
     '--color-warning-content': inverseContent,
@@ -37,9 +43,7 @@ export function themeTokens(theme: Theme) {
     '--color-error-content': inverseContent,
     '--color-on-light': light
       ? 'var(--color-base-content)'
-      : theme.id === 'rose-pine'
-        ? 'var(--color-base-200)'
-        : 'var(--color-base-100)',
+      : 'var(--color-base-100)',
     '--color-on-dark': light
       ? 'var(--color-base-100)'
       : 'var(--color-base-content)',

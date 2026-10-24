@@ -137,7 +137,7 @@
       selectedID: null,
       drawerID: 'signal-drawer',
       drawerLabel: '',
-      hideDrawer: Page === LogsPage,
+      hideDrawer: Page === LogsPage || Page === HomePage,
       mainSurface: 'base',
       main: emptyPane,
       detail: emptyPane,

@@ -2,7 +2,7 @@
   import type { Snippet } from 'svelte'
   import type { WorkspaceHeaderState } from '@/contexts/workspace-header.svelte'
 
-  export type WorkspaceProps<T> = {
+  export type LayoutOptions<T> = {
     mainTitle?: string
     mainHeaderRows?: 1 | 2
     mainHeaderInert?: boolean
@@ -97,7 +97,7 @@
     detail,
     pageFooter,
     mainSurface = 'panel',
-  }: WorkspaceProps<T> = $props()
+  }: LayoutOptions<T> = $props()
 
   const detailPanelID = $derived(`${drawerID}-detail`)
   const routeContext = getRouteContext()

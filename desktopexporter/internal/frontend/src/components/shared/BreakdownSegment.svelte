@@ -6,21 +6,12 @@
     part,
     unit,
     single = false,
-    relativeFrequency,
-    detail,
   }: {
     part: BubbleBreakdownPart
     unit: string
     single?: boolean
-    relativeFrequency?: number
-    detail?: string
   } = $props()
   const tooltipID = $props.id()
-  const tooltipValue = $derived(
-    relativeFrequency === undefined
-      ? part.count.toLocaleString()
-      : `${(relativeFrequency * 100).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
-  )
   let trigger = $state<HTMLSpanElement>()
   let tooltip = $state<HTMLDivElement>()
   let open = $state(false)
@@ -64,7 +55,7 @@
   style:flex={part.count}
   style:--part-color={part.color}
   role="img"
-  aria-label={`${part.label}: ${part.count.toLocaleString()} ${unit}${part.count === 1 ? '' : 's'}${relativeFrequency === undefined ? '' : ` [${tooltipValue}]`}${detail ? ` · ${detail}` : ''}`}
+  aria-label={`${part.label}: ${part.count.toLocaleString()} ${unit}${part.count === 1 ? '' : 's'}`}
   aria-describedby={open ? tooltipID : undefined}
   onpointerenter={show}
   onpointerleave={scheduleClose}
@@ -91,9 +82,10 @@
       aria-hidden="true"
     ></span>
     <span class="breakdown-tooltip__label">{part.label}</span>
-    <span class="shrink-0 text-rp-subtle tabular-nums">[{tooltipValue}]</span>
+    <span class="shrink-0 text-rp-subtle tabular-nums"
+      >[{part.count.toLocaleString()}]</span
+    >
   </span>
-  {#if detail}<div class="text-rp-subtle">{detail}</div>{/if}
 </div>
 
 <style lang="postcss">
@@ -119,7 +111,7 @@
     overscroll-behavior: contain;
   }
   .breakdown-tooltip__label {
-    @apply min-w-0 truncate;
-    max-width: 40ch;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 </style>
