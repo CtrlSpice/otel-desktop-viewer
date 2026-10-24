@@ -44,6 +44,10 @@
   Bars are 8px high with round ends and a minimum 8px dot, using stable
   typed-value hashes into official shades 3–5 across the 32 graph inks. Keep
   parent attribute rows plain and preserve Name, Count, %, exact Copy and disclosures.
+  Home Telemetry uses independent 25-card pages for Traces, Metrics and Logs,
+  with the shared first/previous/next/last page controls. Reset pages when the
+  service, attribute/value, search, time range or refreshed results change.
+  Keep each signal's disclosure independent of its current page.
   Categorical graph colours use the official first seven swatches of the same
   32 Madoromi inks: 224 fixed shades across Day/Night and seasons. UI shades are
   allowed. The palest, eighth swatch is omitted from automatic assignments and

@@ -4,6 +4,7 @@
   import LogCard from '@/components/logs/LogCard.svelte'
   import MetricCard from '@/components/metrics/MetricCard.svelte'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
+  import DetailNav from '@/components/shared/DetailNav.svelte'
   import { itemHref } from '@/route'
   import type {
     DiscoveryOptions,
@@ -38,8 +39,9 @@
     cards: AttributeTelemetryCard[]
     loading: boolean
     error: string
-    shown: number
+    pageIndex: number
   }
+  const PAGE_SIZE = 25
   let groups = $state<Group[]>([])
   let retry = $state(0)
   const labels = { traces: 'Traces', logs: 'Logs', metrics: 'Metrics' }
@@ -60,7 +62,7 @@
         cards: [],
         loading: true,
         error: '',
-        shown: 25,
+        pageIndex: 0,
       }))
     untrack(() => {
       for (const group of groups) {
@@ -113,7 +115,9 @@
               >Retry</button
             >
           {:else}
-            {#each group.cards.slice(0, group.shown) as card (cardID(card))}
+            {@const pageCount = Math.ceil(group.cards.length / PAGE_SIZE)}
+            {@const pageStart = group.pageIndex * PAGE_SIZE}
+            {#each group.cards.slice(pageStart, pageStart + PAGE_SIZE) as card (cardID(card))}
               {#if card.signal === 'traces'}
                 <TraceCard
                   trace={card.trace}
@@ -135,10 +139,19 @@
                 />
               {/if}
             {/each}
-            {#if group.shown < group.cards.length}<button
-                class="btn btn-ghost btn-sm"
-                onclick={() => (group.shown += 25)}>More {group.signal}</button
-              >{/if}
+            {#if pageCount > 1}
+              <div class="flex justify-center py-2">
+                <DetailNav
+                  index={group.pageIndex}
+                  total={pageCount}
+                  label="page"
+                  onFirst={() => (group.pageIndex = 0)}
+                  onPrev={() => group.pageIndex--}
+                  onNext={() => group.pageIndex++}
+                  onLast={() => (group.pageIndex = pageCount - 1)}
+                />
+              </div>
+            {/if}
           {/if}
         </FieldGroup>
       </section>
