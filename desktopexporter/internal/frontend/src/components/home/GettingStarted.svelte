@@ -66,7 +66,7 @@
     <img
       src={lulu}
       alt="Lulu the axolotl with her telescope"
-      class="aspect-square w-1/2 max-w-48 shrink-0 object-contain"
+      class="aspect-square w-2/5 max-w-40 shrink-0 object-contain"
     />
     <div class="flex min-w-0 flex-col gap-3">
       <h2
