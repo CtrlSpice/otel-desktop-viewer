@@ -54,9 +54,11 @@
   column fills the remaining table width. Retain sorting and far-right Copy.
   Home's left pane contains Lulu and Getting Started, with setup instructions
   scrolling below the welcome. Use the shared sidebar toggle and saved width.
-  The welcome app name uses 28px regular Atkinson Mono in Primary, with a 1.25
+  The welcome app name uses 22px regular Atkinson Mono in Primary, with a 1.25
   line-height and natural wrapping, as a display-title exception to the 16px
   pane headings. Let Lulu shrink with the pane so the name fits beside her.
+  Prefix the name with a decorative `>` in the Madoromi Sora operator role.
+  Hide the prompt from assistive technology and text selection.
   Exporter help sits beside Copy in the terminal header and describes the
   selected HTTP or gRPC protocol, including default-port guidance when needed.
   Home Telemetry uses counted Traces, Metrics and Logs header tabs, with

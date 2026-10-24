@@ -69,8 +69,13 @@
       class="aspect-square w-1/2 max-w-48 shrink-0 object-contain"
     />
     <div class="flex min-w-0 flex-col gap-3">
-      <h2 class="welcome-title font-mono font-normal text-balance text-primary">
-        otel-desktop-viewer
+      <h2
+        class="welcome-title flex items-baseline gap-2 font-mono font-normal text-primary"
+      >
+        <span class="welcome-prompt shrink-0 select-none" aria-hidden="true"
+          >&gt;</span
+        >
+        <span class="min-w-0 text-balance">otel-desktop-viewer</span>
       </h2>
       <p class="text-pretty text-rp-subtle">{tagline}</p>
     </div>
@@ -194,8 +199,11 @@
     @apply flex h-full min-h-0 min-w-0 flex-col pt-3;
   }
   .welcome-title {
-    font-size: 1.75rem;
+    font-size: 1.375rem;
     line-height: 1.25;
+  }
+  .welcome-prompt {
+    color: var(--color-code-sora);
   }
   .guide-scroll {
     @apply flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto p-3 text-sm;
