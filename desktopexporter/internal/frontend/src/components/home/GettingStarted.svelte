@@ -19,13 +19,13 @@
     "I'm not changing the name, buddy.",
     'Now with “a lot more functionality”™',
     "I have splintered the ecosystem. Pray I don't splinter it any further.",
-    // Nowoshilow et al., Nature (2018): https://doi.org/10.1038/nature25458
+    // [1] README.md references: https://doi.org/10.1038/nature25458
     'An axolotl’s genome is about ten times the size of a human’s.',
-    // Godwin et al., PNAS (2013): https://doi.org/10.1073/pnas.1300290110
+    // [2] README.md references: https://doi.org/10.1073/pnas.1300290110
     'Axolotls need immune cells called macrophages to regrow a limb.',
-    // Lust et al., Science (2022): https://doi.org/10.1126/science.abp9262
+    // [3] README.md references: https://doi.org/10.1126/science.abp9262
     'Axolotls can replace lost neurons and rebuild connections in parts of their forebrain.',
-    // Suetsugu-Maki et al., BMC Biology (2012): https://doi.org/10.1186/1741-7007-10-103
+    // [4] README.md references: https://doi.org/10.1186/1741-7007-10-103
     'Axolotls lose the ability to regrow an eye lens about two weeks after hatching.',
   ]
   const tagline = taglines[Math.floor(Math.random() * taglines.length)]
