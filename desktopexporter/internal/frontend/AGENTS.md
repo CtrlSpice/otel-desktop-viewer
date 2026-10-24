@@ -50,7 +50,8 @@
   navigation and selected-shade focus. Preserve native Escape/light dismissal.
   Home service controls replace the name's colour dot with a DaisyUI
   `btn btn-circle btn-sm` (32px)
-  filled with that service's colour and a readable 16px brush icon. Keep it before
+  filled with that service's colour and a readable 16px brush icon. Keep the
+  swatch flat, without borders or shadows, and retain its keyboard focus ring. Keep it before
   the name and outside the whole-card button. Centre the service summary icons
   under the brush button, with their labels aligned under the service name.
   Align Last seen beneath the left edge of the log icon. Gauge/Sum series

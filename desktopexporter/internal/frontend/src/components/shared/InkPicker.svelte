@@ -138,7 +138,7 @@
   {label}
   compact
   triggerClass={triggerColor
-    ? 'btn btn-circle btn-sm font-normal tooltip tooltip-right'
+    ? 'btn btn-circle btn-sm border-0 shadow-none font-normal tooltip tooltip-right'
     : 'header-icon-button tooltip tooltip-left'}
   triggerStyle={triggerColor
     ? `--btn-color: ${triggerColor}; --btn-fg: ${readableTextColor(triggerColor)}`
