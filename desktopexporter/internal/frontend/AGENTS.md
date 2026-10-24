@@ -31,7 +31,8 @@
   link in the footer, with a decorative 16px Hugeicons heart in theme Sakura pink.
   Preview each ink with five aligned 8px dots, evenly sampled across its full
   ramp, with 8px gaps and no outlines. Retain exact Day/Night reversal.
-  The shared picker is searchable, alphabetically ordered and scrollable; focus
+  The shared picker is searchable, ordered by Madoromi's pinned full-ramp colour
+  sequence and scrollable; retain that order in search results. Focus
   and reveal the saved choice on opening without moving the page. Exclude the
   four seasonal neutral inks (Kiri-same, Fukagawa-nezu, Yama-guri, Fuyu-syogun),
   plus Take-sumi, Hoteison, Syun-gyo and Tsukushi. Preserve existing saved choices.

@@ -7,7 +7,7 @@ const upstream = new URL('../../../third_party/madoromi/', frontend)
 const palette = JSON.parse(
   await readFile(new URL('palette.json', upstream), 'utf8')
 )
-const { inks } = JSON.parse(
+const { inks, order: inkOrder } = JSON.parse(
   await readFile(new URL('ink-curves.json', upstream), 'utf8')
 )
 const { english: inkNames } = JSON.parse(
@@ -192,7 +192,7 @@ const neutralInks = new Set([
   'syun-gyo',
   'tsukushi',
 ])
-const countInks = Object.keys(inks).filter(id => !neutralInks.has(id)).sort()
+const countInks = inkOrder.filter(id => !neutralInks.has(id))
 const countRamps = Object.fromEntries(
   countInks.map(id => {
     const lab = inks[id]

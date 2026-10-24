@@ -3,7 +3,7 @@ import englishNames from './count-palette-names.json'
 
 export type CountPaletteId = keyof typeof ramps
 export const DEFAULT_COUNT_PALETTE: CountPaletteId = 'rikka'
-// The generated ramp keys are the catalogue, in alphabetical ink-name order.
+// The generated ramp keys retain the pinned Madoromi full-ramp colour order.
 export const COUNT_PALETTES = (Object.keys(ramps) as CountPaletteId[]).map(id => ({
   id,
   name: id[0]!.toUpperCase() + id.slice(1),

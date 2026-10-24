@@ -172,9 +172,11 @@ identity allocation changes are introduced by the seasonal interface.
 
 Histogram and exponential-histogram heatmaps, distribution bars and count
 legends share one app-wide ink choice. The paintbrush in the selected metric
-header opens one searchable ink picker with 32 colourful ramps, in alphabetical
-ink-name order. It excludes the four seasonal neutral sources (Kiri-same,
-Fukagawa-nezu, Yama-guri and Fuyu-syogun), plus Take-sumi, Hoteison, Syun-gyo and
+header opens one searchable ink picker with 32 colourful ramps, in Madoromi's
+pinned colour order. This preserves the source's full-ramp similarity sequence
+after omitting excluded inks; search retains that order. It excludes the four
+seasonal neutral sources (Kiri-same, Fukagawa-nezu, Yama-guri and Fuyu-syogun),
+plus Take-sumi, Hoteison, Syun-gyo and
 Tsukushi. These are the grey, black, muted-green and brown-dominant families.
 Each original ink name is followed by Madoromi's English name in Subtle
 parentheses, such as `Ajisai (hydrangea)`. Search matches either name.

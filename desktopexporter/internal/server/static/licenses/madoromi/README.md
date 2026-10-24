@@ -9,7 +9,9 @@ Its code and themes are licensed under the Mozilla Public License 2.0; the
 complete licence is in `LICENSE`. `palette.json` and `color.ts` are unmodified
 files from that revision (`palettes/madoromi.json` and `src/core/color.ts`).
 `ink-curves.json` extracts all 40 unmodified 96-point OKLab ink curves from
-`public/precomputed/summary.json` at the same revision.
+`public/precomputed/summary.json` at the same revision, together with its ink
+`order`. The picker preserves that full-ramp colour-similarity order after
+omitting the excluded ink families.
 `ink-names.json` extracts the English names from `LINEUP` in `src/inks.ts` at
 that revision, preserving upstream wording. The picker places each English name
 in parentheses after the original ink name.
