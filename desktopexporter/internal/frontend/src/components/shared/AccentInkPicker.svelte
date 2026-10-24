@@ -1,6 +1,6 @@
 <script lang="ts">
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import { PaintBrush01Icon } from '@hugeicons/core-free-icons'
+  import { ComputerTerminal02Icon } from '@hugeicons/core-free-icons'
   import InkPicker from './InkPicker.svelte'
   import { ACCENT_INKS, restoreAccentInk } from '@/themes/accent-inks'
   import { accentInk } from '@/state/accent-ink.svelte'
@@ -20,7 +20,7 @@
 >
   {#snippet triggerContent()}
     <HugeiconsIcon
-      icon={PaintBrush01Icon}
+      icon={ComputerTerminal02Icon}
       size={16}
       strokeWidth={1.5}
       class="shrink-0"

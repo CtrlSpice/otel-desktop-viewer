@@ -61,11 +61,16 @@ variants. Surface roles follow Madoromi's pinned
 [paper guide](https://github.com/the-moonwitch/madoromi/blob/f8bcc5aa1ec3f731fcba9471be7caa5df1ab5695/palettes/style-guide.md#paper-紙)
 in both Day and Night:
 
-| Viewer role                     | Day             | Night           |
-| ------------------------------- | --------------- | --------------- |
-| Canvas / bg-100 / code / search | Kami, brightest | Kami, brightest |
-| Panel / bg-200                  | Hyoshi          | Hyoshi          |
-| Chrome / bg-300                 | Chitsu, darkest | Chitsu, darkest |
+| Viewer role            | Day             | Night           |
+| ---------------------- | --------------- | --------------- |
+| Canvas / bg-100 / code | Kami, brightest | Kami, brightest |
+| Panel / bg-200         | Hyoshi          | Hyoshi          |
+| Chrome / bg-300        | Chitsu, darkest | Chitsu, darkest |
+
+Search and filter inputs use tinted Nijimi 0 for their fill and Nijimi 1 for
+their border through `--color-input` and `--color-input-border`. This includes
+query entry, picker filters and editor Find fields. Query editors inside the
+shared search bar remain transparent so the input surface stays continuous.
 
 Hover uses tinted nijimi 0. Persistent selection uses tinted nijimi 2 at 45%
 over the panel, blended in sRGB. Stronger reveal highlights use tinted
@@ -114,9 +119,9 @@ names stay visible and searchable; seven preview dots show that named ink's
 official shades 1–7, matching the graph colour picker across seasons and modes.
 The analogous family applies when the seed is selected; mixed syntax-role
 colours do not replace the named ink's preview.
-The top-bar control shows a brush, the selected ink's original name, then three
-8px dots in its official shades 1, 4 and 7. Its tooltip puts the parenthesised
-English name on a separate second line.
+The top-bar control shows a terminal window, the selected ink's original name,
+then three 8px dots in its official shades 1, 4 and 7. Its tooltip puts the
+parenthesised English name on a separate second line.
 
 The choice supplies interface Primary, Secondary and Accent, plus the fourteen
 syntax accent slots below. Season supplies the softened paper, neutral text,

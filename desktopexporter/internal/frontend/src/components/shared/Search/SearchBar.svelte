@@ -25,7 +25,7 @@
 
 <div
   class="search-bar flex w-full min-w-0 items-center gap-1 rounded-full text-sm text-base-content {search
-    ? 'border border-base-300 bg-base-100'
+    ? 'border border-(--color-input-border) bg-(--color-input)'
     : ''}"
   role={search ? 'search' : undefined}
   aria-label={search ? 'Workspace search' : undefined}
@@ -39,7 +39,7 @@
       <button
         type="button"
         class="search-bar__refresh btn btn-circle btn-ghost btn-sm shrink-0 text-sm text-base-content tooltip tooltip-bottom"
-        class:bg-base-100={refreshPulse}
+        class:search-bar__refresh--fresh={refreshPulse}
         aria-label={refreshLabel}
         data-tip={refreshLabel}
         disabled={!onRefresh}
@@ -72,6 +72,10 @@
 
 <style lang="postcss">
   @reference "../../../app.css";
+
+  .search-bar__refresh--fresh {
+    background-color: var(--color-input);
+  }
 
   .search-bar__freshness {
     --aura-radius: 9999px;

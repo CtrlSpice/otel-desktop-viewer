@@ -1031,7 +1031,7 @@ test.describe('home page accessibility', () => {
       await expect(page.getByRole('main')).toHaveCSS('background-color', canvas)
       await expect(page.locator('.search-bar')).toHaveCSS(
         'background-color',
-        canvas
+        themeRgb(theme, 'highlightLow')
       )
       await expect(page.locator('.signal-drawer__controls')).toHaveCSS(
         'background-color',
@@ -1077,7 +1077,7 @@ test.describe('home page accessibility', () => {
     )
     await expect(page.locator('.search-bar')).toHaveCSS(
       'background-color',
-      'rgb(241, 242, 243)'
+      'rgb(208, 209, 213)'
     )
     await expect(page.locator('.signal-drawer__controls')).toHaveCSS(
       'background-color',

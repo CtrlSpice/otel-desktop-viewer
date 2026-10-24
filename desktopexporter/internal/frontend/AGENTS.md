@@ -43,8 +43,8 @@
   Keep ink-family names visible in every picker.
   Accent-ink previews show the named seed's exact official shades 1–7, matching
   the graph ink catalogue. Do not use mixed syntax-role colours as ink previews.
-  The top-bar ink control shows a 16px brush, the selected ink's original name,
-  then three 8px dots using official shades 1, 4 and 7. Keep the English name in
+  The top-bar ink control shows a 16px terminal window, the selected ink's
+  original name, then three 8px dots using official shades 1, 4 and 7. Keep the English name in
   its tooltip and picker rows. Put the parenthesised English name on a separate
   line in the top-bar tooltip, using the standard tooltip style.
   Left-align top navigation beside the leading pane control. Let search fill
@@ -264,9 +264,11 @@
   italic; punctuation uses readable Usuzumi 0. Generate syntax foreground
   corrections theme-wide with the same shared readability target. JSON quote and
   escape accents are display decorations over the intact document; decoded
-  Properties values use neutral Text. Code surfaces and all search inputs use
-  bg-base-100: Madoromi's Kami background in both Day and Night. Apply this to JSON,
-  shell examples, code snippets, compact JSON, query inputs and filter searches.
+  Properties values use neutral Text. Code surfaces use bg-base-100: Madoromi's
+  Kami background in both Day and Night. Apply this to JSON, shell examples,
+  code snippets and compact JSON. Search and filter inputs, including editor
+  Find fields, use the shared input tokens: tinted Nijimi 0 fill and Nijimi 1
+  border. Preserve transparent query editors inside the shared search bar.
   JSON inside a Details field card uses a transparent editor background so the
   card's shared hover, reveal and selection highlights remain continuous.
   Properties presents ordinary string values as decoded text without their outer

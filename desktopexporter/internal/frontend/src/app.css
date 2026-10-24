@@ -1040,13 +1040,14 @@ svg {
 }
 
 .input {
-  border-color: var(--color-base-300);
+  border-color: var(--color-input-border);
 }
 
 /* Monospace query-entry controls. Use typed-field--pill for rounded ends. */
 .typed-field {
-  @apply min-h-0 border border-base-300 px-4 py-0 text-left text-sm font-mono tracking-tight shadow-none;
-  background-color: var(--typed-field-bg, var(--color-base-100));
+  @apply min-h-0 border px-4 py-0 text-left text-sm font-mono tracking-tight shadow-none;
+  border-color: var(--color-input-border);
+  background-color: var(--typed-field-bg, var(--color-input));
   height: calc(var(--table-row-h) + 0.5rem);
   min-height: calc(var(--table-row-h) + 0.5rem);
 }
