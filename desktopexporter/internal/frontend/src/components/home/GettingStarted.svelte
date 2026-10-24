@@ -66,10 +66,10 @@
     <img
       src={lulu}
       alt="Lulu the axolotl with her telescope"
-      class="size-48 shrink-0 object-contain"
+      class="aspect-square w-1/2 max-w-48 shrink-0 object-contain"
     />
-    <div class="flex min-w-0 flex-col gap-2">
-      <h2 class="text-lg font-normal text-balance text-base-content">
+    <div class="flex min-w-0 flex-col gap-3">
+      <h2 class="welcome-title font-mono font-normal text-balance text-primary">
         otel-desktop-viewer
       </h2>
       <p class="text-pretty text-rp-subtle">{tagline}</p>
@@ -79,45 +79,12 @@
     {@render importContent?.()}
     <section class="guide-section">
       <div class="flex flex-col gap-1">
-        <div class="flex items-center gap-2">
-          <h2 class="text-lg font-normal text-balance text-base-content">
-            Connect an exporter
-          </h2>
-          <button
-            type="button"
-            class="header-icon-button"
-            bind:this={helpButton}
-            popovertarget={helpID}
-            aria-label="Exporter connection help"
-            ><QuestionMarkIcon
-              width={16}
-              height={16}
-              aria-hidden="true"
-            /></button
-          >
-        </div>
+        <h2 class="text-lg font-normal text-balance text-base-content">
+          Connect an exporter
+        </h2>
         <p class="text-pretty text-rp-subtle">
           Run these commands, then start your app.
         </p>
-        <div
-          id={helpID}
-          bind:this={helpPopover}
-          popover="auto"
-          role="note"
-          class="anchor-popover anchor-popover--anchored connection-help p-3 text-sm"
-        >
-          <p>
-            Run these commands in your terminal, then start your app with
-            OpenTelemetry enabled. If your app runs on another machine, replace <code
-              >localhost</code
-            >
-            with this viewer’s hostname or IP address.
-            {#if protocol === 'grpc' || httpPort === null}
-              Replace port {protocol === 'grpc' ? 4317 : 4318} if your viewer uses a
-              different port.
-            {/if}
-          </p>
-        </div>
       </div>
       <div class="terminal">
         <div class="flex items-center justify-between gap-2 px-3 py-2">
@@ -130,11 +97,46 @@
             ariaLabel="OTLP endpoint protocol"
             tabPanelID="home-otlp"
           />
-          <ValueCopyButton
-            text={code}
-            label="OTLP environment variables"
-            tooltip="Copy"
-          />
+          <div class="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              class="header-icon-button"
+              bind:this={helpButton}
+              popovertarget={helpID}
+              aria-label="Exporter connection help"
+              ><QuestionMarkIcon
+                width={16}
+                height={16}
+                aria-hidden="true"
+              /></button
+            >
+            <ValueCopyButton
+              text={code}
+              label="OTLP environment variables"
+              tooltip="Copy"
+            />
+          </div>
+        </div>
+        <div
+          id={helpID}
+          bind:this={helpPopover}
+          popover="auto"
+          role="note"
+          class="anchor-popover anchor-popover--anchored connection-help p-3 text-sm"
+        >
+          <p>
+            These variables configure OTLP over {protocol === 'grpc'
+              ? 'gRPC'
+              : 'HTTP with protobuf'}. Set them in the same terminal that starts
+            your OpenTelemetry-instrumented app. If the viewer runs on another
+            machine, replace <code>localhost</code> with its hostname or IP address.
+            {#if protocol === 'grpc' || httpPort === null}
+              Port {protocol === 'grpc' ? 4317 : 4318} is the default {protocol ===
+              'grpc'
+                ? 'gRPC'
+                : 'HTTP'} port; use the viewer’s configured port if different.
+            {/if}
+          </p>
         </div>
         <div
           id="home-otlp"
@@ -190,6 +192,10 @@
   @reference '../../app.css';
   .getting-started {
     @apply flex h-full min-h-0 min-w-0 flex-col pt-3;
+  }
+  .welcome-title {
+    font-size: 1.75rem;
+    line-height: 1.25;
   }
   .guide-scroll {
     @apply flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto p-3 text-sm;
