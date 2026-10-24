@@ -13,6 +13,7 @@
     custom = false,
     compact = false,
     triggerClass,
+    popoverClass = '',
     focusSelected = false,
     showHeader = true,
     showCount = false,
@@ -28,6 +29,7 @@
     custom?: boolean
     compact?: boolean
     triggerClass?: string
+    popoverClass?: string
     focusSelected?: boolean
     showHeader?: boolean
     showCount?: boolean
@@ -104,24 +106,24 @@
   popover="auto"
   role="group"
   aria-label={`${label} options`}
-  class="anchor-popover anchor-popover--anchored anchor-popover--form filter-popover"
+  class="anchor-popover anchor-popover--anchored anchor-popover--form filter-popover {popoverClass}"
 >
   {#if showHeader || clearable}<div class="filter-popover__header">
-    <span class="font-normal">{label}</span>
-    {#if clearable}<button
-        type="button"
-        class="btn btn-ghost btn-circle btn-sm tooltip tooltip-bottom"
-        aria-label={`Clear ${label.toLowerCase()} filter`}
-        data-tip={`Clear ${label.toLowerCase()}`}
-        onclick={onClear}
-        ><HugeiconsIcon
-          icon={Cancel01Icon}
-          size={16}
-          strokeWidth={1.5}
-          aria-hidden="true"
-        /></button
-      >{/if}
-  </div>{/if}
+      <span class="font-normal">{label}</span>
+      {#if clearable}<button
+          type="button"
+          class="btn btn-ghost btn-circle btn-sm tooltip tooltip-bottom"
+          aria-label={`Clear ${label.toLowerCase()} filter`}
+          data-tip={`Clear ${label.toLowerCase()}`}
+          onclick={onClear}
+          ><HugeiconsIcon
+            icon={Cancel01Icon}
+            size={16}
+            strokeWidth={1.5}
+            aria-hidden="true"
+          /></button
+        >{/if}
+    </div>{/if}
   {@render children(close)}
   {#if footer}<div class="filter-popover__footer">
       {@render footer(close)}

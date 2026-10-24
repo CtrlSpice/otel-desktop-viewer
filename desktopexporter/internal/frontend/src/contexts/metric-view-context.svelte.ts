@@ -76,6 +76,7 @@ import {
 } from '@/utils/chart-palette'
 import { themeSignal } from '@/state/theme.svelte'
 import { SERIES_COLOR_COUNT } from '@/themes'
+import { graphColorOverrides } from '@/state/graph-color-overrides.svelte'
 import { detailPanel } from '@/state/detail-panel.svelte'
 import {
   DEFAULT_VISIBLE_TIMESERIES,
@@ -1323,7 +1324,7 @@ export function createMetricViewContext(
     for (const ts of quantileChartTimeseries) {
       const parsed = parseQuantileSeriesKey(ts.key)
       if (!parsed) continue
-      const color = view.timeseriesColorByKey.get(parsed.seriesKey)
+      const color = resolvedTimeseriesColors.get(parsed.seriesKey)
       if (color) map.set(ts.key, color)
     }
     return map
@@ -1350,6 +1351,16 @@ export function createMetricViewContext(
   const timeseriesChartColors = $derived(
     metricSeriesPalette(SERIES_COLOR_COUNT, themeSignal.value)
   )
+
+  const resolvedTimeseriesColors = $derived.by((): TimeseriesColorByKey => {
+    const scope = colorScope()
+    return new Map(
+      [...view.timeseriesColorByKey].map(([key, color]) => [
+        key,
+        graphColorOverrides.get(scope, key)?.color ?? color,
+      ])
+    )
+  })
 
   const legendFilterActive = $derived(visibleDpCanonicalKeys !== null)
 
@@ -2012,8 +2023,8 @@ export function createMetricViewContext(
       return filteredTimeseries
     },
     get timeseriesColorByKey() {
-      if (view.aggregationView === 'raw') return view.timeseriesColorByKey
-      const merged = new Map(view.timeseriesColorByKey)
+      if (view.aggregationView === 'raw') return resolvedTimeseriesColors
+      const merged = new Map(resolvedTimeseriesColors)
       merged.set(AGG_KEY_SELECTED, AGG_COLOR_SELECTED)
       merged.set(AGG_KEY_ALL, AGG_COLOR_ALL)
       merged.set(AGG_KEY_TOTAL, AGG_COLOR_SELECTED)

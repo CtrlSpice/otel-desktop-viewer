@@ -15,6 +15,7 @@
   import { MAX_VISIBLE_TIMESERIES } from '@/components/metrics/utils/metric-timeseries-visible'
   import { chartNeutral, readableTextColor } from '@/utils/chart-palette'
   import FieldGroup from '@/components/shared/FieldGroup.svelte'
+  import GraphColorPicker from '@/components/shared/GraphColorPicker.svelte'
   import SeriesDatapointList from '@/components/metrics/Detail/SeriesDatapointList.svelte'
   import Sparkline from '@/components/metrics/Charts/Sparkline.svelte'
   import { dedupeAttributes } from '@/components/metrics/utils/dedupe-attributes'
@@ -156,7 +157,7 @@
       onOpenChange={open => setTimeseriesOpen(ts.key, open)}
     >
       {#snippet headerAction()}
-        <span
+        <div
           class="ts-row__title-row"
           class:ts-row__title-row--preview={showSparkline}
         >
@@ -186,26 +187,36 @@
               />
             </span>
           {/if}
-          <label
-            class="ts-row__check-label"
-            class:ts-row__check-label--disabled={checkboxDisabled}
-            title={tooltip}
-          >
-            <input
-              type="checkbox"
-              class="checkbox checkbox-xs rounded-full ts-row__checkbox"
-              class:ts-row__checkbox--histogram={ctx.isHistogramKind}
-              style:--input-color={color}
-              style:color={ctx.isHistogramKind
-                ? 'var(--color-base-content)'
-                : fg}
-              {checked}
-              disabled={checkboxDisabled}
-              aria-label={`Show ${headerLabel} in chart`}
-              onchange={e => toggle(ts.key, e.currentTarget.checked)}
-            />
-          </label>
-        </span>
+          <div class="flex shrink-0 items-center gap-2">
+            {#if !ctx.isHistogramKind && ctx.metric}
+              <GraphColorPicker
+                scope={`metric:${ctx.metric.metricRef}`}
+                identity={ts.key}
+                label={`Colour for ${headerLabel}`}
+                color={seriesColor}
+              />
+            {/if}
+            <label
+              class="ts-row__check-label"
+              class:ts-row__check-label--disabled={checkboxDisabled}
+              title={tooltip}
+            >
+              <input
+                type="checkbox"
+                class="checkbox checkbox-xs rounded-full ts-row__checkbox"
+                class:ts-row__checkbox--histogram={ctx.isHistogramKind}
+                style:--input-color={color}
+                style:color={ctx.isHistogramKind
+                  ? 'var(--color-base-content)'
+                  : fg}
+                {checked}
+                disabled={checkboxDisabled}
+                aria-label={`Show ${headerLabel} in chart`}
+                onchange={e => toggle(ts.key, e.currentTarget.checked)}
+              />
+            </label>
+          </div>
+        </div>
       {/snippet}
 
       {#if metricTs}

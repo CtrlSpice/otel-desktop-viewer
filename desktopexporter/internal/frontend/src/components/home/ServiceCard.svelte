@@ -7,6 +7,7 @@
   import { LogIcon } from '@/icons'
   import SignalCard from '@/components/shared/SignalCard.svelte'
   import SignalDate from '@/components/shared/SignalDate.svelte'
+  import GraphColorPicker from '@/components/shared/GraphColorPicker.svelte'
   import {
     SIGNAL_ORDER,
     serviceIdentity,
@@ -24,6 +25,9 @@
     selected: boolean
     onSelect: () => void
   } = $props()
+  const serviceColor = $derived(
+    traceServiceColor(service.serviceName, themeSignal.value)
+  )
   const signals = $derived.by(() => {
     const bySignal = {
       traces: {
@@ -68,14 +72,19 @@
   onclick={onSelect}
   wrapTitle
 >
+  {#snippet action()}
+    <GraphColorPicker
+      scope="services"
+      identity={service.serviceName}
+      label={`Colour for ${service.serviceName || 'Unnamed service'}`}
+      color={serviceColor}
+    />
+  {/snippet}
   {#snippet titleContent()}
     <span class="flex min-w-0 items-center gap-2 text-left font-normal">
       <span
         class="inline-block size-2 shrink-0 rounded-full"
-        style:background-color={traceServiceColor(
-          service.serviceName,
-          themeSignal.value
-        )}
+        style:background-color={serviceColor}
         aria-hidden="true"
       ></span>
       <span

@@ -73,6 +73,32 @@ describe('saved colour slots', () => {
     vi.resetModules()
   })
 
+  it('migrates saved Bloom owners through the fixed one-to-one ink mapping', async () => {
+    const { LEGACY_GRAPH_PALETTE } = await import('@/themes/graph-inks')
+    localStorage.setItem(
+      'graph-colour-slots:rose-pine-bloom-v2:32:services',
+      JSON.stringify([
+        ['kept', 7],
+        ['other', 2],
+      ])
+    )
+    const { identityColorSlot } = await import('./color-slots')
+    expect(identityColorSlot('kept', 'services')).toBe(
+      LEGACY_GRAPH_PALETTE.slots[7]
+    )
+    expect(identityColorSlot('other', 'services')).toBe(
+      LEGACY_GRAPH_PALETTE.slots[2]
+    )
+    expect(new Set(LEGACY_GRAPH_PALETTE.slots).size).toBe(32)
+    expect(
+      JSON.parse(
+        localStorage.getItem(
+          `graph-colour-slots:${SERIES_PALETTE_VERSION}:${SIZE}:services`
+        )!
+      )
+    ).toHaveLength(2)
+  })
+
   it('survives module reloads and separates services from metric scopes', async () => {
     const first = await import('./color-slots')
     const slot = first.identityColorSlot('worker', 'services')

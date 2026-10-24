@@ -46,12 +46,12 @@ function repeatPalette(count: number, pool: readonly string[]): string[] {
   return out
 }
 
-/** Approved per-theme Bloom identities; actual errors still use Love. */
+/** Official Madoromi ink identities; actual errors retain the Error role. */
 export function traceSpanPalette(count: number, theme: string = ''): string[] {
   return repeatPalette(count, getSeriesPalette(theme))
 }
 
-/** The same 32 logical slots for every metric shape. */
+/** The same 224 logical slots for every metric shape. */
 export function metricSeriesPalette(
   count: number,
   theme: string = ''

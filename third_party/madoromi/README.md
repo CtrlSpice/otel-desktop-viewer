@@ -15,6 +15,8 @@ omitting the excluded ink families.
 `ink-names.json` extracts the English names from `LINEUP` in `src/inks.ts` at
 that revision, preserving upstream wording. The picker places each English name
 in parentheses after the original ink name.
+`ink-ramps.json` extracts each ink's eight official `ramp` swatches from the
+same pinned summary. These preserve the source's curve-specific sampling.
 
 The viewer's adapted theme data remains covered by MPL-2.0. The project's
 Apache-2.0 licence is unchanged.
@@ -22,7 +24,8 @@ Apache-2.0 licence is unchanged.
 ## Viewer adaptation
 
 `desktopexporter/internal/frontend/scripts/generate-madoromi.mjs` generates
-`src/themes/madoromi.json` and `src/themes/count-palettes.json` from these files.
+`src/themes/madoromi.json`, `src/themes/count-palettes.json`,
+`src/themes/count-palette-names.json` and `src/themes/graph-inks.json` from these files.
 Run it with Node from the frontend directory after installing its existing dependencies:
 
 ```sh
@@ -65,8 +68,18 @@ the pinned `oklabToHex` conversion. Night orders shades dark to light; Day uses
 the exact same shades reversed. A one-step ramp uses the high-count endpoint
 for its mode (lightest at Night, darkest by Day). Seasons do not change the ink.
 
+Categorical graphs and their per-service/per-series override picker use the
+first seven official swatches from each of those 32 inks. Their 224 colours keep
+the original hex values across themes. The palest eighth swatch is omitted;
+shades also used by the UI are permitted. The searchable seven-dot picker keeps
+the ink's original name and English name, and visibly links to Madoromi.
+
+The generator also builds a fixed one-to-one migration from the legacy Bloom
+slots, using nearest OKLab colour distance to both their Day and Night values.
+`legacy-series-palette.json` is that MIT-licensed input with its original source
+and copyright metadata; its full licence is at `/licenses/rose-pine-bloom.txt`.
+
 The frontend distributes the full licence, these inputs, the generator and the
 adapted JSON at `/licenses/madoromi/`. Those files are the source form of the
 theme adaptation. The unmodified conversion source is served as `color.ts.txt`
-for download; its repository filename is `color.ts`. Categorical graph palettes
-are managed separately.
+for download; its repository filename is `color.ts`.

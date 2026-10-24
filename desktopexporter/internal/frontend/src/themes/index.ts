@@ -1,6 +1,5 @@
 import definitions from './madoromi.json'
-import graphDefinitions from './rose-pine.json'
-import seriesPalette from './series-palette.json'
+import { GRAPH_COLORS, GRAPH_PALETTE_VERSION } from './graph-inks'
 
 export type ThemeName = keyof typeof definitions
 export const DEFAULT_THEME: ThemeName = 'madoromi-fuyu-yoru'
@@ -13,8 +12,8 @@ export const SEASONS = [
 export type Season = (typeof SEASONS)[number]['id']
 export type ColorScheme = 'light' | 'dark'
 
-export const SERIES_PALETTE_VERSION = seriesPalette.version
-export const SERIES_COLOR_COUNT = seriesPalette.slots.length
+export const SERIES_PALETTE_VERSION = GRAPH_PALETTE_VERSION
+export const SERIES_COLOR_COUNT = GRAPH_COLORS.length
 export function themeName(season: Season, scheme: ColorScheme): ThemeName {
   return `madoromi-${season}-${scheme === 'light' ? 'hiru' : 'yoru'}`
 }
@@ -40,26 +39,9 @@ export function getTheme(name: string = ''): Theme {
   return byName.get(legacy.get(name) ?? name) ?? byName.get(DEFAULT_THEME)!
 }
 
-/** Retained chart palettes during the interface-only Madoromi migration. */
-export const GRAPH_THEMES = (
-  ['rose-pine-dawn', 'rose-pine-moon', 'rose-pine'] as const
-).map(id => ({ id, ...graphDefinitions[id] }))
-const graphByName = new Map(
-  GRAPH_THEMES.map(theme => [theme.id as string, theme])
-)
-
-export function getGraphTheme(name: string = '') {
-  return (
-    graphByName.get(name) ??
-    graphByName.get(
-      getTheme(name).scheme === 'light' ? 'rose-pine-dawn' : 'rose-pine-moon'
-    )!
-  )
-}
-
-/** Same frozen Bloom slots and storage namespace across the new seasons. */
-export function getSeriesPalette(name: string = ''): readonly string[] {
-  return seriesPalette.themes[getGraphTheme(name).id]
+/** Official ink shades retain their identity across seasons and Day/Night. */
+export function getSeriesPalette(_name: string = ''): readonly string[] {
+  return GRAPH_COLORS
 }
 
 export function restoreTheme(

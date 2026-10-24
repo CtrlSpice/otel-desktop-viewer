@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import {
-  getSeriesPalette,
-  SERIES_COLOR_COUNT,
-  THEMES,
-  GRAPH_THEMES,
-} from '@/themes'
-import frozenPalette from '@/themes/series-palette.json'
+import { getSeriesPalette, SERIES_COLOR_COUNT, THEMES } from '@/themes'
+import { GRAPH_INKS, GRAPH_SWATCHES } from '@/themes/graph-inks'
+import graphInks from '@/themes/graph-inks.json'
 import { COUNT_PALETTES } from '@/themes/count-palettes'
 import {
   countSwatches,
@@ -59,25 +55,20 @@ describe('countSwatches', () => {
 })
 
 describe.each([
-  ['metric', metricSeriesPalette, 32],
-  ['trace', traceSpanPalette, 32],
+  ['metric', metricSeriesPalette, SERIES_COLOR_COUNT],
+  ['trace', traceSpanPalette, SERIES_COLOR_COUNT],
 ] as const)('%s series colours', (_, palette, size) => {
-  it.each(THEMES)(
-    'uses the distinct, frozen $name slots without Love',
-    theme => {
-      const pool = palette(size, theme.id)
-      expect(pool).toEqual(getSeriesPalette(theme.id))
-      expect(new Set(pool).size).toBe(size)
-      for (const reserved of ['#ff8000', theme.colors.error]) {
-        expect(pool).not.toContain(reserved)
-      }
-    }
-  )
+  it.each(THEMES)('uses the distinct official ink slots in $name', theme => {
+    const pool = palette(size, theme.id)
+    expect(pool).toEqual(getSeriesPalette(theme.id))
+    expect(new Set(pool).size).toBe(size)
+  })
 
-  it('keeps slot prefixes stable while resolving each theme separately', () => {
+  it('keeps slot prefixes and exact shades stable across all themes', () => {
     const pool = palette(size)
     for (const theme of THEMES) {
       const themed = palette(size, theme.id)
+      expect(themed).toEqual(pool)
       expect(palette(6, theme.id)).toEqual(themed.slice(0, 6))
       expect(palette(size + 3, theme.id).slice(size)).toEqual(
         themed.slice(0, 3)
@@ -85,7 +76,7 @@ describe.each([
     }
     expect(palette(size, 'unknown')).toEqual(pool)
     expect(palette(size, 'constructor')).toEqual(pool)
-    expect(palette(size, 'rose-pine-dawn')).not.toEqual(pool)
+    expect(palette(size, 'rose-pine-dawn')).toEqual(pool)
   })
 
   it('validates requested counts', () => {
@@ -98,33 +89,26 @@ describe.each([
   })
 })
 
-it('keeps the Gold 100 to Foam 50 replacement after removing Rose', () => {
-  expect(SERIES_COLOR_COUNT).toBe(32)
-  expect(frozenPalette.slots.every(slot => !slot.startsWith('rose:'))).toBe(
-    true
+it('uses seven official shades per ink, excluding only each palest band', () => {
+  expect(SERIES_COLOR_COUNT).toBe(224)
+  expect(GRAPH_INKS.map(ink => ink.id)).toEqual(
+    COUNT_PALETTES.map(ink => ink.id)
   )
-  for (const theme of GRAPH_THEMES) {
-    const pool = getSeriesPalette(theme.id)
-    const dawn = theme.id === 'rose-pine-dawn'
-    expect(pool[13]).toBe(dawn ? '#32565d' : '#235058')
-    expect(pool).not.toContain(dawn ? '#8f5a0f' : '#905809')
-    expect(traceSpanPalette(32, theme.id)).toEqual(
-      metricSeriesPalette(32, theme.id)
+  const pool = getSeriesPalette()
+  for (const ink of GRAPH_INKS) {
+    expect(ink.swatches.map(swatch => swatch.color)).toEqual(
+      graphInks.inks[ink.id].slice(0, 7)
     )
+    expect(pool).not.toContain(graphInks.inks[ink.id][7])
   }
+  expect(traceSpanPalette(224)).toEqual(metricSeriesPalette(224))
+  expect(new Set(GRAPH_SWATCHES.map(swatch => swatch.id)).size).toBe(224)
 })
 
-it('excludes only the selected theme’s canonical bases from its own table', () => {
-  const bases = {
-    'rose-pine': ['#c4a7e7', '#31748f', '#9ccfd8', '#f6c177', '#ebbcba'],
-    'rose-pine-moon': ['#c4a7e7', '#3e8fb0', '#9ccfd8', '#f6c177', '#ea9a97'],
-    'rose-pine-dawn': ['#907aa9', '#286983', '#56949f', '#ea9d34', '#d7827e'],
-  }
-  for (const theme of GRAPH_THEMES) {
-    for (const base of bases[theme.id]) {
-      expect(getSeriesPalette(theme.id)).not.toContain(base)
-    }
-  }
+it('allows official shades shared with UI and code roles', () => {
+  expect(getSeriesPalette()).toEqual(
+    expect.arrayContaining(['#ddb3ff', '#8ac3ff', '#384cac'])
+  )
 })
 
 describe('readableTextColor', () => {

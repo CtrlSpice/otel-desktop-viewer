@@ -32,9 +32,11 @@ Font families, sizes, weights and layout use the existing shared tokens.
 - `count-palettes.ts`: ordered count-palette catalogue and default Rikka ink.
 - `index.ts`: catalogue, seasonal selection, legacy migration and graph lookup.
 - `tokens.ts` / `plugin.ts`: shared DaisyUI, chart and editor CSS adapter.
-- `rose-pine.json`: retained Rosé Pine colour definitions for categorical graphs.
-- `series-palette.json`: frozen 32-slot Bloom graph tables and provenance.
+- `graph-inks.json`: official ink swatches, 224 categorical slots and legacy migration.
+- `graph-inks.ts`: shared seven-shade catalogue and stable ink/shade identities.
+- `series-palette.json`: legacy Bloom tables retained as a migration input.
 - `utils/color-slots.ts`: saved service/series identity allocation.
+- `state/graph-color-overrides.svelte.ts`: persisted, reactive per-identity overrides.
 
 The Madoromi source is pinned to
 [`f8bcc5aa1ec3f731fcba9471be7caa5df1ab5695`](https://github.com/the-moonwitch/madoromi/tree/f8bcc5aa1ec3f731fcba9471be7caa5df1ab5695).
@@ -147,16 +149,22 @@ shared 14px working size.
 
 ## Graph palettes
 
-Every seasonal Day variant uses the Dawn Bloom table; every Night variant uses
-the Moon Bloom table. The explicit legacy Pine lookup remains available.
-Changing season within a mode does not recolour graph data.
+Services and metric series use the first seven official swatches from the same
+32 colourful Madoromi inks: 224 distinct colours. The original eighth (palest)
+shade remains in the distributed source but is omitted from the automatic pool
+and seven-dot override picker. UI and syntax shades are allowed. These are the
+upstream eight-step ramp's original colour values, not lightness-resampled count
+bands. Each colour retains its exact hex value across seasons and Day/Night.
 
-Services and metric series share 32 logical Bloom slots. Entire Love and Rose
-families, canonical bases and shade 50 are excluded, except Foam 50 replaces Gold
-100 in slot 14. Remaining slots retain their frozen relative order. The source
-revision, ordering recipe and MIT attribution are recorded in the palette and
-`third_party/rose-pine-bloom/`; the complete MIT licence is distributed at
-`/licenses/rose-pine-bloom.txt`.
+Slot order visits every ink in Madoromi's pinned colour order at shade 1, then
+at shade 2, through shade 7. Ink/shade IDs, such as `rikka:4`, identify overrides.
+The `madoromi-inks-v1` allocation namespace replaces Bloom. On first use of a
+scope, existing Bloom owners migrate through a generated one-to-one mapping to
+the closest available Madoromi shades, comparing both old Day and Night colours
+in OKLab. The old records remain intact. Migration retains ownership and shared
+slots, including any existing exhaustion collisions; subsequent loads use the
+saved Madoromi assignments. The legacy input and MIT attribution are distributed
+alongside the generator; the full MIT licence remains at `/licenses/rose-pine-bloom.txt`.
 
 Exact identities use FNV-1a with a 32-bit avalanche, then next-free-slot probing.
 Assignments are saved under the palette version, with one viewer-wide service
@@ -167,8 +175,29 @@ order. Blocked/full storage falls back to in-memory stability.
 After all slots are occupied, new identities reuse their hashed slot without
 moving previous owners. `colorSlotReuses()` exposes read-only diagnostics and one
 console warning is emitted per exhausted scope. The scalar chart's 22-visible-
-series cap is independent of the 32-colour capacity. No storage namespace or
-identity allocation changes are introduced by the seasonal interface.
+series cap is independent of the 224-colour capacity.
+
+The paintbrush on each Home service card opens the shared ink picker. It is a
+sibling of the card button, so changing colour does not select the card. Gauge
+and Sum series have the same control in their metric Details row; it does not
+toggle visibility or disclosure. Seven official shades per ink have 32px click
+targets around their 8px dots. Arrow keys move between shades and ink rows;
+Home/End move to the ends of a row (Control+Home/End reaches the entire list's
+ends). Enter/Space selects. Opening focuses and reveals the current shade;
+selection and Escape return focus to the trigger without moving the page.
+Both pickers measure the widest full ink name at the current font size and add
+room for their dots and controls. Filtering does not change that width. The
+viewport caps the width; on narrow screens shade buttons move below the name,
+while count-picker names wrap beside their seven aligned dots.
+
+Overrides are saved under `graph-colour-overrides:madoromi-inks-v1:<scope>` as
+identity/ink-shade pairs. Services share the `services` scope, while series use
+`metric:<native metric reference>`. Changes propagate to chart lines, sparklines,
+service dots and non-error waterfall bars, including across open tabs. Explicit
+overrides can reuse a chosen shade; new automatic assignments avoid overridden
+shades as well as occupied automatic slots. Automatic retains the owner's saved
+base slot, so resetting never reallocates another identity. Blocked storage keeps
+overrides in memory. Actual error bars retain the semantic Error colour.
 
 Histogram and exponential-histogram heatmaps, distribution bars and count
 legends share one app-wide ink choice. The paintbrush in the selected metric
@@ -180,7 +209,7 @@ plus Take-sumi, Hoteison, Syun-gyo and
 Tsukushi. These are the grey, black, muted-green and brown-dominant families.
 Each original ink name is followed by Madoromi's English name in Subtle
 parentheses, such as `Ajisai (hydrangea)`. Search matches either name.
-The five-dot previews show each full ramp in the current mode. Its footer links
+The seven-dot previews show each full ramp in the current mode. Its footer links
 to Madoromi with visible ink attribution. Rikka is the default. The choice is saved
 in localStorage under `graph-count-palette`; invalid saved values fall back
 to Rikka, and blocked storage retains the choice for the current page. Existing
@@ -192,14 +221,15 @@ lightness values, including its endpoints, interpolates a/b at that lightness,
 then uses upstream `oklabToHex`. Every adaptive ramp size from 1–12 is generated
 separately. Night uses dark-to-light count order; Day uses the exact same shades
 reversed. A singleton uses its mode's high-count endpoint. Season changes do
-not change the chosen ink. Dropdown previews use five evenly sampled shades from
+not change the chosen ink. Dropdown previews use seven evenly sampled shades from
 the full curve, with the same Day/Night reversal.
 
 These controls are independent of metric context: `themes/count-palettes.ts`
 owns the catalogue, `utils/chart-palette.ts` exposes the pure
 `countSwatches(steps, theme, palette)` sampler, and `state/count-palette.svelte.ts`
 owns the shared saved preference. `components/shared/CountPalettePicker.svelte`
-reuses `FilterPopover` and accepts an optional accessible label. Charts pass
+uses `InkPicker` with whole-ink selection; `GraphColorPicker` uses the same
+search, attribution and popover with individually selectable shades. Charts pass
 `countPalette.value` into their scale helpers; the metric header only mounts
 the picker for histogram kinds.
 

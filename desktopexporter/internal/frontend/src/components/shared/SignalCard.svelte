@@ -41,6 +41,8 @@
     /** Secondary line under header (custom content; prefer description). */
     lead?: Snippet
     meta?: Snippet
+    /** Independent control beside the card's first heading, outside its button/link. */
+    action?: Snippet
     onclick?: (id: string) => void
     /** Navigation cards retain native link and open-in-new-tab behaviour. */
     href?: string
@@ -73,6 +75,7 @@
     descriptionIsID = false,
     lead,
     meta,
+    action,
     onclick,
     href,
     disabled = false,
@@ -97,6 +100,7 @@
           {@render badge()}
         </span>
       {/if}
+      {#if action}<span class="size-8 shrink-0" aria-hidden="true"></span>{/if}
     </div>
 
     {#if subtitleContent}
@@ -193,31 +197,59 @@
   </div>
 {/snippet}
 
-{#if href}
-  <a
-    href={disabled ? undefined : href}
-    role={disabled ? 'link' : undefined}
-    aria-disabled={disabled || undefined}
-    tabindex={disabled ? -1 : undefined}
-    class="signal-row {selected ? 'signal-row--selected' : ''}"
-    data-selected={selected || undefined}
-    class:item-state={!disabled}>{@render cardContent()}</a
-  >
+{#snippet selectableCard()}
+  {#if href}
+    <a
+      href={disabled ? undefined : href}
+      role={disabled ? 'link' : undefined}
+      aria-disabled={disabled || undefined}
+      tabindex={disabled ? -1 : undefined}
+      class="signal-row {selected ? 'signal-row--selected' : ''}"
+      data-selected={selected || undefined}
+      class:item-state={!disabled}>{@render cardContent()}</a
+    >
+  {:else}
+    <button
+      type="button"
+      {disabled}
+      class="signal-row item-state {selected ? 'signal-row--selected' : ''}"
+      data-selected={selected || undefined}
+      onclick={() => onclick?.(id)}
+      aria-pressed={expanded === undefined ? selected : undefined}
+      aria-expanded={expanded}
+      aria-controls={controls}>{@render cardContent()}</button
+    >
+  {/if}
+{/snippet}
+
+{#if action}
+  <div class="signal-card-with-action">
+    {@render selectableCard()}
+    <div class="signal-card__action">{@render action()}</div>
+  </div>
 {:else}
-  <button
-    type="button"
-    {disabled}
-    class="signal-row item-state {selected ? 'signal-row--selected' : ''}"
-    data-selected={selected || undefined}
-    onclick={() => onclick?.(id)}
-    aria-pressed={expanded === undefined ? selected : undefined}
-    aria-expanded={expanded}
-    aria-controls={controls}>{@render cardContent()}</button
-  >
+  {@render selectableCard()}
 {/if}
 
 <style lang="postcss">
   @reference "../../app.css";
+
+  .signal-card-with-action {
+    display: grid;
+    min-width: 0;
+  }
+  .signal-card-with-action > .signal-row {
+    grid-area: 1 / 1;
+  }
+  .signal-card__action {
+    grid-area: 1 / 1;
+    justify-self: end;
+    align-self: start;
+    margin: 0.375rem 0.5rem 0 0;
+  }
+  .signal-card-with-action:hover > .signal-row:not(:disabled) {
+    background-color: var(--color-highlight-low);
+  }
 
   .signal-row[aria-disabled='true'] {
     cursor: default;

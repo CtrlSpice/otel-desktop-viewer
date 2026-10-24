@@ -1,4 +1,6 @@
 import { SERIES_COLOR_COUNT, SERIES_PALETTE_VERSION } from '@/themes'
+import { LEGACY_GRAPH_PALETTE } from '@/themes/graph-inks'
+import { graphColorOverrides } from '@/state/graph-color-overrides.svelte'
 
 export type ColorSlotReuse = { slot: number; identities: string[] }
 
@@ -43,14 +45,14 @@ export class ColorSlotAllocator {
     return this.assigned.has(identity)
   }
 
-  assign(identity: string): number {
+  assign(identity: string, reserved: ReadonlySet<number> = new Set()): number {
     const existing = this.assigned.get(identity)
     if (existing !== undefined) return existing
     const start = colorIdentityHash(identity) % this.size
     let slot = start
     for (let offset = 0; offset < this.size; offset++) {
       const candidate = (start + offset) % this.size
-      if (!this.occupied.has(candidate)) {
+      if (!this.occupied.has(candidate) && !reserved.has(candidate)) {
         slot = candidate
         break
       }
@@ -118,7 +120,25 @@ function allocatorFor(scope: string, size: number): ColorSlotAllocator {
   const key = storageKey(scope, size)
   let allocator = allocators.get(key)
   if (!allocator) {
-    allocator = new ColorSlotAllocator(size, loadSlots(key, size))
+    let saved = loadSlots(key, size)
+    if (saved.length === 0 && size === SERIES_COLOR_COUNT) {
+      const legacy = LEGACY_GRAPH_PALETTE
+      saved = loadSlots(
+        `graph-colour-slots:${legacy.version}:${legacy.slots.length}:${scope}`,
+        legacy.slots.length
+      ).map(
+        ([identity, slot]) =>
+          [identity, legacy.slots[slot]!] as [string, number]
+      )
+      if (saved.length > 0) {
+        try {
+          localStorage.setItem(key, JSON.stringify(saved))
+        } catch {
+          // Migration still preserves the owners in memory when storage is blocked.
+        }
+      }
+    }
+    allocator = new ColorSlotAllocator(size, saved)
     allocators.set(key, allocator)
   }
   return allocator
@@ -136,7 +156,12 @@ export function identityColorSlot(
   // Another tab may have assigned new identities since this registry was read.
   allocator.restore(loadSlots(key, size))
   if (allocator.has(identity)) return allocator.assign(identity)
-  const slot = allocator.assign(identity)
+  const slot = allocator.assign(
+    identity,
+    size === SERIES_COLOR_COUNT
+      ? graphColorOverrides.reservedSlots(scope)
+      : undefined
+  )
   try {
     localStorage.setItem(key, JSON.stringify(allocator.snapshot()))
   } catch {

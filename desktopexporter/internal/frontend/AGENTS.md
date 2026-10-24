@@ -21,15 +21,19 @@
   4.5:1 on canvas, panel, chrome, hover and selection. Subtle and Muted retain
   their original source shades without contrast adjustments. Text uses Sumi,
   Subtle uses Usuzumi 1, Primary uses Fuji and Secondary uses Ruri. Preserve the
-  existing 32-slot Bloom graph palettes and saved assignments during this
-  UI-only migration: seasonal Day uses Dawn, Night uses Moon. Histogram and
+  service/series ownership and saved assignments when changing graph palettes.
+  Categorical graph colours use the official first seven swatches of the same
+  32 Madoromi inks: 224 fixed shades across Day/Night and seasons. UI shades are
+  allowed. The palest, eighth swatch is omitted from automatic assignments and
+  the seven-dot override picker. Migrate old Bloom owners through the generated
+  one-to-one nearest-colour slot mapping. Histogram and
   heatmap count ramps use 32 colourful Madoromi inks, default Rikka, with one
   app-wide saved choice. Generate each adaptive size 1–12 from the full pinned
   curve; Day reverses Night's exact shades, and seasons do not change the ink.
   The count-palette picker omits its redundant visible heading; retain its
   accessible name and selected-option focus. Centre the Madoromi attribution
   link in the footer, with a decorative 16px Hugeicons heart in theme Sakura pink.
-  Preview each ink with five aligned 8px dots, evenly sampled across its full
+  Preview each histogram ink with seven aligned 8px dots, evenly sampled across its full
   ramp, with 8px gaps and no outlines. Retain exact Day/Night reversal.
   The shared picker is searchable, ordered by Madoromi's pinned full-ramp colour
   sequence and scrollable; retain that order in search results. Focus
@@ -38,7 +42,17 @@
   plus Take-sumi, Hoteison, Syun-gyo and Tsukushi. Preserve existing saved choices.
   Keep the original ink name first, followed by the pinned Madoromi English name
   in Subtle parentheses. Search matches both names; allow the label to wrap at
-  the regular text size while keeping the five preview dots aligned.
+  the regular text size while keeping the seven preview dots aligned.
+  Size both pickers from the widest full ink label plus their dots and controls,
+  capped by the viewport. Keep that width stable when search filters the list.
+  Both ink pickers share InkPicker. Graph overrides use seven individually
+  clickable official shades, with 32px targets around 8px dots, arrow-key
+  navigation and selected-shade focus. Preserve native Escape/light dismissal.
+  Home service controls sit outside the whole-card button. Gauge/Sum series
+  overrides live in metric Details, independently of visibility and disclosure.
+  Persist overrides by service name or metric reference + native series identity;
+  Automatic restores the saved automatic assignment. New automatic assignments
+  probe past occupied slots and explicit overrides without moving existing owners.
   Error uses Momiji sampled at each variant's original Beni lightness; generate
   it from the pinned ink curve. Warning fills use original Yamabuki. Warning
   text uses neutral Text. Do not add separate darkened error text colours.

@@ -13,6 +13,9 @@ const { inks, order: inkOrder } = JSON.parse(
 const { english: inkNames } = JSON.parse(
   await readFile(new URL('ink-names.json', upstream), 'utf8')
 )
+const { ramps: officialRamps } = JSON.parse(
+  await readFile(new URL('ink-ramps.json', upstream), 'utf8')
+)
 const source = await readFile(new URL('color.ts', upstream), 'utf8')
 const javascript = ts.transpileModule(source, {
   compilerOptions: {
@@ -20,7 +23,7 @@ const javascript = ts.transpileModule(source, {
     module: ts.ModuleKind.ES2022,
   },
 }).outputText
-const { oklabToHex } = await import(
+const { oklabToHex, linearToOklab, srgb8ToLinear } = await import(
   `data:text/javascript;base64,${Buffer.from(javascript).toString('base64')}`
 )
 
@@ -204,34 +207,107 @@ const countRamps = Object.fromEntries(
         Array.from({ length: 12 }, (_, index) => {
           const steps = index + 1
           const night = Array.from({ length: steps }, (_, i) =>
-            inkAt(id, i === steps - 1 ? hi : lo + (hi - lo) * i / (steps - 1))
+            inkAt(id, i === steps - 1 ? hi : lo + ((hi - lo) * i) / (steps - 1))
           )
-          return [steps, {
-            night,
-            day: steps === 1 ? [inkAt(id, lo)] : [...night].reverse(),
-          }]
+          return [
+            steps,
+            {
+              night,
+              day: steps === 1 ? [inkAt(id, lo)] : [...night].reverse(),
+            },
+          ]
         })
       ),
     ]
   })
 )
 const countJson = JSON.stringify(countRamps, null, 2) + '\n'
-const countNamesJson = JSON.stringify(
-  Object.fromEntries(countInks.map(id => [id, inkNames[id]])), null, 2
-) + '\n'
+const countNamesJson =
+  JSON.stringify(
+    Object.fromEntries(countInks.map(id => [id, inkNames[id]])),
+    null,
+    2
+  ) + '\n'
 await writeFile(new URL('src/themes/count-palettes.json', frontend), countJson)
-await writeFile(new URL('src/themes/count-palette-names.json', frontend), countNamesJson)
+await writeFile(
+  new URL('src/themes/count-palette-names.json', frontend),
+  countNamesJson
+)
+
+// Categorical colours use the official swatches, not resampled count bands.
+// A slot walks the ink order at one shade before proceeding to the next shade.
+const graphInks = Object.fromEntries(
+  countInks.map(id => [id, officialRamps[id].map(oklabToHex)])
+)
+const graphSlots = Array.from({ length: 7 }, (_, shade) =>
+  countInks.map(id => `${id}:${shade + 1}`)
+).flat()
+const graphColors = Array.from({ length: 7 }, (_, shade) =>
+  countInks.map(id => graphInks[id][shade])
+).flat()
+const hexLab = hex =>
+  linearToOklab(
+    ...hex
+      .slice(1)
+      .match(/../g)
+      .map(channel => srgb8ToLinear(parseInt(channel, 16)))
+  )
+const deltaSquared = (a, b) =>
+  a.reduce((sum, value, i) => sum + (value - b[i]) ** 2, 0)
+const legacyPalette = JSON.parse(
+  await readFile(new URL('src/themes/series-palette.json', frontend), 'utf8')
+)
+const labs = graphColors.map(hexLab)
+const migrated = new Set()
+// Preserve each old owner through a fixed, one-to-one nearest-colour mapping.
+const legacySlots = legacyPalette.slots.map((_, index) => {
+  const day = hexLab(legacyPalette.themes['rose-pine-dawn'][index])
+  const night = hexLab(legacyPalette.themes['rose-pine-moon'][index])
+  let best = -1,
+    distance = Infinity
+  labs.forEach((lab, slot) => {
+    if (migrated.has(slot)) return
+    const next = deltaSquared(lab, day) + deltaSquared(lab, night)
+    if (next < distance) {
+      best = slot
+      distance = next
+    }
+  })
+  migrated.add(best)
+  return best
+})
+const graphJson =
+  JSON.stringify(
+    {
+      version: 'madoromi-inks-v1',
+      inks: graphInks,
+      slots: graphSlots,
+      legacy: { version: legacyPalette.version, slots: legacySlots },
+    },
+    null,
+    2
+  ) + '\n'
+await writeFile(new URL('src/themes/graph-inks.json', frontend), graphJson)
 // Ship the adapted source, its generator inputs and the complete upstream licence.
 const publicSource = new URL('public/licenses/madoromi/', frontend)
 await mkdir(publicSource, { recursive: true })
 await writeFile(new URL('themes.json', publicSource), json)
 await writeFile(new URL('count-palettes.json', publicSource), countJson)
-await writeFile(new URL('count-palette-names.json', publicSource), countNamesJson)
+await writeFile(
+  new URL('count-palette-names.json', publicSource),
+  countNamesJson
+)
+await writeFile(new URL('graph-inks.json', publicSource), graphJson)
+await writeFile(
+  new URL('legacy-series-palette.json', publicSource),
+  JSON.stringify(legacyPalette, null, 2) + '\n'
+)
 for (const file of [
   'LICENSE',
   'palette.json',
   'ink-curves.json',
   'ink-names.json',
+  'ink-ramps.json',
   'color.ts',
   'README.md',
 ]) {
