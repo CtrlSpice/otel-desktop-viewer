@@ -108,19 +108,21 @@
           <span
             class="service-summary__label inline-flex items-center gap-2 text-rp-subtle"
           >
-            {#if signal.id === 'logs'}
-              <LogIcon class="size-4 shrink-0" aria-hidden="true" />
-            {:else}
-              <HugeiconsIcon
-                icon={signal.id === 'traces'
-                  ? BarChartHorizontalIcon
-                  : ChartHistogramIcon}
-                size={16}
-                strokeWidth={1.5}
-                class="shrink-0"
-                aria-hidden="true"
-              />
-            {/if}
+            <span class="service-summary__icon">
+              {#if signal.id === 'logs'}
+                <LogIcon class="size-4 shrink-0" aria-hidden="true" />
+              {:else}
+                <HugeiconsIcon
+                  icon={signal.id === 'traces'
+                    ? BarChartHorizontalIcon
+                    : ChartHistogramIcon}
+                  size={16}
+                  strokeWidth={1.5}
+                  class="shrink-0"
+                  aria-hidden="true"
+                />
+              {/if}
+            </span>
             <span>{signal.title}:</span>
           </span>
           <span class="service-summary__counts">
@@ -178,5 +180,8 @@
   }
   .service-summary__counts {
     @apply flex items-center gap-2 whitespace-nowrap;
+  }
+  .service-summary__icon {
+    @apply inline-flex w-8 shrink-0 items-center justify-center;
   }
 </style>
