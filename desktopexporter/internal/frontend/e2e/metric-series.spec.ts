@@ -294,13 +294,16 @@ for (const { id: theme } of THEMES) {
     })
     await second.uncheck()
     await trigger.click()
-    expect(
-      await picker
-        .locator('[data-ink-choice]:disabled')
-        .evaluateAll(buttons =>
-          buttons.map(button => button.getAttribute('data-ink-choice'))
-        )
-    ).toEqual(reserved)
+    await expect(picker).toBeVisible()
+    await expect
+      .poll(() =>
+        picker
+          .locator('[data-ink-choice]:disabled')
+          .evaluateAll(buttons =>
+            buttons.map(button => button.getAttribute('data-ink-choice'))
+          )
+      )
+      .toEqual(reserved)
     await page.keyboard.press('Escape')
     await second.check()
     await expect(lines).toHaveCount(2)
