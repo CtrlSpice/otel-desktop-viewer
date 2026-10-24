@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createFileImporter, importOTLPFile } from './import-service'
 import { telemetryAPI } from './telemetry-service'
+import { evalAPI } from './eval-service'
 import { OTLP_REQUEST_BYTES } from './otlp-file'
 
 afterEach(() => {
@@ -38,35 +39,61 @@ describe('OTLP file sender', () => {
           })
         )
     )
-    expect(await telemetryAPI.ingestEvalFile(file)).toEqual([])
+    expect(await evalAPI.ingestEvalFile(file)).toEqual([])
     expect(send.mock.calls[0][1]?.body).toBe(file)
     send.mockResolvedValueOnce(new Response('{}'))
-    await expect(telemetryAPI.ingestEvalFile(file)).rejects.toThrow(
+    await expect(evalAPI.ingestEvalFile(file)).rejects.toThrow(
       'did not confirm'
     )
   })
-  it('uses the shared queue for evals and reports the feature gate without receiver discovery', async () => {
-    const send = receiver(
-      async () => new Response('Evaluation import is disabled', { status: 403 })
-    )
-    const failure = vi.fn()
-    const importer = createFileImporter('https://viewer.example/evals', failure)
-    const file = new File(
-      ['{"evalId":"run","config":{},"results":{"version":3,"results":[]}}'],
-      'data.bin'
-    )
-    await importer.enqueue([file])
-    expect(telemetryAPI.getImportConfig).not.toHaveBeenCalled()
-    expect(send).toHaveBeenCalledWith(
-      '/api/evals/ingest?name=data.bin',
-      expect.objectContaining({ body: file, method: 'POST' })
-    )
-    expect(failure).toHaveBeenCalledWith(
-      expect.objectContaining({
-        reason: expect.stringContaining('evals.enabled'),
-      })
-    )
-  })
+  it.skipIf(!__EVALS_BUILT__)(
+    'uses the shared queue for evals and reports the feature gate without receiver discovery',
+    async () => {
+      const send = receiver(
+        async () =>
+          new Response('Evaluation import is disabled', { status: 403 })
+      )
+      const failure = vi.fn()
+      const importer = createFileImporter(
+        'https://viewer.example/evals',
+        failure
+      )
+      const file = new File(
+        ['{"evalId":"run","config":{},"results":{"version":3,"results":[]}}'],
+        'data.bin'
+      )
+      await importer.enqueue([file])
+      expect(telemetryAPI.getImportConfig).not.toHaveBeenCalled()
+      expect(send).toHaveBeenCalledWith(
+        '/api/evals/ingest?name=data.bin',
+        expect.objectContaining({ body: file, method: 'POST' })
+      )
+      expect(failure).toHaveBeenCalledWith(
+        expect.objectContaining({
+          reason: expect.stringContaining('evals.enabled'),
+        })
+      )
+    }
+  )
+  it.skipIf(__EVALS_BUILT__)(
+    'rejects eval files without making requests in a public build',
+    async () => {
+      const send = receiver()
+      const failure = vi.fn()
+      const importer = createFileImporter('http://viewer.example/', failure)
+      await importer.enqueue([
+        new File(
+          ['{"evalId":"run","config":{},"results":{"version":3,"results":[]}}'],
+          'eval.json'
+        ),
+      ])
+      expect(send).not.toHaveBeenCalled()
+      expect(telemetryAPI.getImportConfig).not.toHaveBeenCalled()
+      expect(failure).toHaveBeenCalledWith(
+        expect.objectContaining({ fileName: 'eval.json' })
+      )
+    }
+  )
   it('uses the configured port, viewer hostname and standard signal paths with unchanged values', async () => {
     const send = receiver()
     const file = new File(

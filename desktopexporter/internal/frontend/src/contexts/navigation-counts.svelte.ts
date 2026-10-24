@@ -2,6 +2,7 @@ import { getContext, onDestroy, onMount, setContext } from 'svelte'
 import { get } from 'svelte/store'
 import { evalsEnabled } from '@/state/features'
 import { telemetryAPI } from '@/services/telemetry-service'
+import { evalAPI } from '@/services/eval-service'
 
 export type NavigationCounts = Partial<
   Record<'home' | 'traces' | 'metrics' | 'logs' | 'evals', number>
@@ -36,8 +37,8 @@ export function createNavigationCounts() {
     const results = await Promise.allSettled([
       telemetryAPI.getStats(),
       serviceCount(controller.signal),
-      get(evalsEnabled)
-        ? telemetryAPI.searchEvalExperiments({ limit: 1 }, controller.signal)
+      __EVALS_BUILT__ && get(evalsEnabled)
+        ? evalAPI.searchEvalExperiments({ limit: 1 }, controller.signal)
         : Promise.resolve(undefined),
     ])
     if (current !== generation || controller.signal.aborted) return

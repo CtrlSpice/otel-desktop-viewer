@@ -1,5 +1,11 @@
 # Frontend checks
 
+- Feature inclusion is a build-time choice. `EVALS=0` is the public default;
+  `EVALS=1` includes the Evals frontend and selects the Go `evals` build tag.
+  Runtime flags cannot enable a feature omitted from the build. Keep enabled
+  assets in ignored `dist-evals`/`server/static-evals`, separately from the
+  committed public assets. Keep the shared database schema in both builds.
+
 - During interactive frontend work, always use Vite with hot reload against the
   existing backend (`VIEWER_PROXY_TARGET`). Keep the user's preview on that dev
   server. Do not rebuild/restart the Go binary for each UI edit. Build embedded

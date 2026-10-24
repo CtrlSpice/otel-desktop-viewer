@@ -2,6 +2,7 @@ import { readable } from 'svelte/store'
 
 // The server is the authority; failures and missing flags close the feature.
 export const evalsEnabled = readable(false, set => {
+  if (!__EVALS_BUILT__) return
   let controller: AbortController | undefined
   async function refresh() {
     controller?.abort()

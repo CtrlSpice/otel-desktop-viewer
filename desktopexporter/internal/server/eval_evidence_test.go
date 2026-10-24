@@ -1,3 +1,5 @@
+//go:build evals
+
 package server
 
 import (
@@ -305,7 +307,7 @@ func TestEvalForwardingRejectsPartialAndMalformedAcknowledgements(t *testing.T) 
 				_, _ = w.Write(tc.body)
 			}))
 			defer receiver.Close()
-			s := &Server{evalReceiverURL: receiver.URL, evalReceiverClient: newEvalReceiverClient()}
+			s := &Server{evalServer: evalServer{evalReceiverURL: receiver.URL, evalReceiverClient: newEvalReceiverClient()}}
 			t.Cleanup(s.evalReceiverClient.CloseIdleConnections)
 			err := s.forwardEvalPart(t.Context(), strings.Repeat("a", 64), evaldecode.IngestPart{Payload: json.RawMessage(`{"value":1}`)})
 			require.Error(t, err)

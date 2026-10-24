@@ -115,7 +115,7 @@
         })
   }
   const items = $derived(
-    $evalsEnabled
+    __EVALS_BUILT__ && $evalsEnabled
       ? [HOME_NAV, ...NAV_ITEMS, EVALS_NAV]
       : [HOME_NAV, ...NAV_ITEMS]
   )

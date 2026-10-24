@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { evalAPI } from '@/services/eval-service'
   import { onDestroy, onMount } from 'svelte'
   import { HugeiconsIcon } from '@hugeicons/svelte'
   import { Cancel01Icon } from '@hugeicons/core-free-icons'
@@ -317,7 +318,7 @@
       try {
         let page: EvalExperimentSearchPage
         do {
-          page = await telemetryAPI.searchEvalExperiments(
+          page = await evalAPI.searchEvalExperiments(
             {
               query: text,
               outcomes,
@@ -367,7 +368,7 @@
         const pages: EvalExperimentSourcePage[] = []
         let after = -1
         while (true) {
-          const page = await telemetryAPI.getEvalExperimentPage(
+          const page = await evalAPI.getEvalExperimentPage(
             id,
             after,
             100,
@@ -476,7 +477,7 @@
     experimentListLoadingMore = true
     experimentListError = ''
     try {
-      const page = await telemetryAPI.searchEvalExperiments({
+      const page = await evalAPI.searchEvalExperiments({
         query: query.q,
         outcomes: requestedOutcomes(query.outcomes),
         sort: experimentSort,

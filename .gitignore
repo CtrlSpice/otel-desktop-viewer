@@ -21,6 +21,8 @@ dist/
 # one outside the frontend directory)
 node_modules/
 desktopexporter/internal/frontend/dist/
+desktopexporter/internal/frontend/dist-evals/
+desktopexporter/internal/server/static-evals/
 desktopexporter/internal/frontend/.vite/
 desktopexporter/internal/frontend/*.local
 desktopexporter/internal/frontend/playwright-report/

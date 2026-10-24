@@ -75,7 +75,7 @@ func newRootCommand(
 	root.Flags().BoolVar(&openBrowser, "open-browser", openBrowser, "Open viewer after startup")
 	root.Flags().StringVar(&options.db, "db", "", "DuckDB file; omit for memory")
 	root.Flags().StringVar(&options.dbMaxSize, "db-max-size", "", "Maximum telemetry-store size (defaults to 512MB in memory or 2GB with --db; 0 disables pruning)")
-	root.Flags().StringVar(&options.featureFlagsFile, "feature-flags-file", "", "Local flagd JSON file; opted-in features are experimental and unsupported")
+	root.Flags().StringVar(&options.featureFlagsFile, "feature-flags-file", "", "Local flagd JSON file; requires a build that includes experimental features")
 	root.Flags().StringVar(&options.selfTelemetryEndpoint, "self-telemetry-endpoint", "", "Export the viewer's own traces and metrics to this OTLP/gRPC endpoint")
 
 	commands := []*cobra.Command{
@@ -173,7 +173,7 @@ VIEWER FLAGS
       --db string            DuckDB file; omit for memory
       --db-max-size string   Maximum telemetry-store size (defaults to 512MB in memory or 2GB with --db; 0 disables pruning)
       --feature-flags-file string
-                            Local flagd JSON file; opted-in features are experimental and unsupported
+                            Local flagd JSON file; requires a build that includes experimental features
       --self-telemetry-endpoint string
                             Export the viewer's own traces and metrics to this OTLP/gRPC endpoint
 

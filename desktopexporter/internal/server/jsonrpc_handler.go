@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/features"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/attributes"
 	"github.com/CtrlSpice/otel-desktop-viewer/desktopexporter/internal/store/ingest"
@@ -28,7 +27,6 @@ type JSONRPCHandler struct {
 	store        *store.Store
 	logger       *zap.Logger
 	otlpHTTPPort int
-	features     *features.Flags
 }
 
 func NewJSONRPCHandler(store *store.Store, logger *zap.Logger) *JSONRPCHandler {

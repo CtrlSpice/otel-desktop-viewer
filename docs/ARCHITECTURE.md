@@ -483,12 +483,15 @@ from responses with different baselines.
 ## Development
 
 ```text
-Terminal 1: make dev-go
+Terminal 1: make run-go
 Terminal 2: make dev-ts
 Browser:    http://localhost:3001
 ```
 
 Use `make build && ./otel-desktop-viewer` for an embedded production build.
+Public builds exclude Evals. `make build EVALS=1` selects its Go implementation
+and separate frontend assets; both variants retain the same database schema and
+shared telemetry functionality. See [Experimental features](experimental-features.md).
 
 ## Related files
 

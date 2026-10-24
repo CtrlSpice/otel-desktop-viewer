@@ -1,4 +1,6 @@
-// Package features owns local, opt-in experiments. Its OpenFeature API is
+//go:build evals
+
+// Package features owns build-selected experiments. Its OpenFeature API is
 // isolated from other components in the Collector process.
 package features
 
@@ -11,8 +13,7 @@ import (
 	"github.com/open-feature/go-sdk/openfeature/isolated"
 )
 
-const Evals = "evals.enabled"
-const ExperimentalLabel = "Experimental and unsupported"
+const EvalsBuilt = true
 
 type Flags struct {
 	api    *openfeature.EvaluationAPI

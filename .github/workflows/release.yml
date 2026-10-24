@@ -10,6 +10,8 @@ permissions:
   id-token: write
   packages: write
   actions: write
+env:
+  EVALS: '0'
 jobs:
   build-frontend:
     runs-on: ubuntu-24.04
@@ -26,7 +28,7 @@ jobs:
         run: npm ci
         working-directory: desktopexporter/internal/frontend
       - name: Build embedded frontend
-        run: make build-ts
+        run: make build-ts EVALS=0
       - name: Upload embedded frontend
         uses: actions/upload-artifact@v7
         with:

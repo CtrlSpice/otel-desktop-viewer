@@ -1,5 +1,25 @@
 .DEFAULT_GOAL := help
 
+EVALS ?= 0
+ifneq ($(EVALS),0)
+ifneq ($(EVALS),1)
+$(error EVALS must be 0 or 1)
+endif
+endif
+export EVALS
+
+FRONTEND := desktopexporter/internal/frontend
+FRONTEND_DIST := $(FRONTEND)/dist
+STATIC := desktopexporter/internal/server/static
+GO_TAGS := -tags=
+ifeq ($(EVALS),1)
+FRONTEND_DIST := $(FRONTEND)/dist-evals
+STATIC := desktopexporter/internal/server/static-evals
+GO_TAGS := -tags=evals
+# The enabled embed directory is generated, not committed.
+test-go run-go run-go-persist: build-ts
+endif
+
 .PHONY: install
 install:
 	cd desktopexporter/internal/frontend && npm install
@@ -7,12 +27,12 @@ install:
 
 .PHONY: install-clean
 install-clean:
-	cd desktopexporter/internal/frontend && rm -rf node_modules package-lock.json && npm install
+	cd desktopexporter/internal/frontend && npm ci
 	cd desktopexporter/internal/frontend && npx playwright install chromium
 
 .PHONY: build-go
-build-go:
-	go build -o otel-desktop-viewer
+build-go: build-ts
+	go build $(GO_TAGS) -o otel-desktop-viewer
 
 .PHONY: format-go
 format-go:
@@ -36,11 +56,11 @@ refresh-macros:
 
 .PHONY: test-go
 test-go:
-	go test ./...
+	go test $(GO_TAGS) ./...
 
 .PHONY: run-go
 run-go:
-	go run . --browser-port 8000
+	go run $(GO_TAGS) . --browser-port 8000
 
 .PHONY: dev-ts
 dev-ts:
@@ -51,7 +71,7 @@ dev-ts:
 
 .PHONY: run-go-persist
 run-go-persist:
-	go run . --db duck.db
+	go run $(GO_TAGS) . --db duck.db
 
 OTLP_DATASET ?= $(CURDIR)/testdata/otlp/small
 OTLP_ENDPOINT ?= http://localhost:4318
@@ -68,38 +88,26 @@ populate-traces populate-logs populate-metrics:
 		printf '\nLoaded %s\n' "$$file"; \
 	done
 
-.PHONY: dev-go
-dev-go: kill-port
-	@go run . --browser-port 8000 & \
-	PID=$$!; \
-	echo "Waiting for server (pid $$PID) to start..."; \
-	for i in $$(seq 1 30); do \
-		if curl -s http://localhost:8000 > /dev/null 2>&1; then \
-			echo "Server is up."; \
-			break; \
-		fi; \
-		sleep 1; \
-	done; \
-	$(MAKE) populate-traces; \
-	$(MAKE) populate-logs; \
-	$(MAKE) populate-metrics; \
-	echo "Server running (pid $$PID). Press Ctrl-C to stop."; \
-	wait $$PID
+.PHONY: frontend-build build-ts
+frontend-build:
+	cd $(FRONTEND) && npm run build
 
-.PHONY: build-ts
-build-ts:
-	cd desktopexporter/internal/frontend && npm run build && rm -rf ../../internal/server/static/* && cp -r dist/* ../../internal/server/static/
+build-ts: frontend-build
+	rm -rf $(STATIC)/*
+	mkdir -p $(STATIC)
+	cp -R $(FRONTEND_DIST)/. $(STATIC)/
 
-# Verify that the committed bundle matches the frontend sources and lockfile.
+# Only the public bundle is committed; enabled builds verify compilation only.
 .PHONY: build-ts-check
-build-ts-check:
-	cd desktopexporter/internal/frontend && npm run build
+build-ts-check: frontend-build
+ifeq ($(EVALS),0)
 	@diff -r --exclude=.gitkeep \
-		desktopexporter/internal/frontend/dist \
-		desktopexporter/internal/server/static \
+		$(FRONTEND_DIST) \
+		$(STATIC) \
 		|| (echo ""; \
-		    echo "internal/server/static is stale. Run 'make build-ts' and commit the result."; \
+		    echo "$(STATIC) is stale. Run 'make build-ts EVALS=0' and commit the result."; \
 		    exit 1)
+endif
 
 .PHONY: format-ts
 format-ts:
@@ -130,11 +138,11 @@ test-a11y:
 	cd desktopexporter/internal/frontend && npm run test:a11y
 
 .PHONY: build
-build: build-ts build-go
+build: build-go
 
 .PHONY: run
 run: build-ts
-	go run . --browser-port 8000
+	go run $(GO_TAGS) . --browser-port 8000
 
 # Run cheap formatting checks before the test suites.
 .PHONY: test
@@ -144,26 +152,16 @@ test: format-go-check format-ts-check lint-ts validate-ts validate-playwright bu
 release-dry-run:
 	gh workflow run "Release" --ref $$(git branch --show-current)
 
-.PHONY: kill-port
-kill-port:
-	@echo "Killing processes on ports 8000, 4317, 4318..."
-	@lsof -ti:8000,4317,4318 | xargs kill -9 2>/dev/null || echo "No process found on ports 8000, 4317, 4318"
-
-.PHONY: stop
-stop:
-	@echo "Stopping Go server (port 8000) and Vite dev server (port 3001)..."
-	@lsof -ti:8000 | xargs kill -9 2>/dev/null || true
-	@lsof -ti:3001 | xargs kill -9 2>/dev/null || true
-	@echo "done"
-
 .PHONY: help
 help:
 	@echo "Available targets:"
+	@echo "  EVALS=0 (default): public build; EVALS=1: include Evals"
 	@echo ""
 	@echo "Frontend:"
 	@echo "  install           - Install frontend dependencies and Playwright Chromium"
-	@echo "  install-clean     - Clean install, including Playwright Chromium"
-	@echo "  build-ts          - Build frontend"
+	@echo "  install-clean     - Install locked frontend dependencies and Playwright Chromium"
+	@echo "  build-ts          - Build frontend and copy selected embedded assets"
+	@echo "  build-ts-check    - Build frontend; check committed public bundle when EVALS=0"
 	@echo "  format-ts         - Format frontend code (Prettier)"
 	@echo "  format-ts-check   - Fail if any frontend file needs Prettier"
 	@echo "  lint-ts           - Lint frontend code (Oxlint and zero-debt policy rules)"
@@ -174,7 +172,7 @@ help:
 	@echo "  dev-ts            - Start frontend dev server (Vite)"
 	@echo ""
 	@echo "Server:"
-	@echo "  build-go          - Build Go binary"
+	@echo "  build-go          - Build selected embedded assets, then Go binary"
 	@echo "  format-go         - Format Go code (gofmt)"
 	@echo "  format-go-check   - Fail if any Go file needs gofmt"
 	@echo "  refresh-macros    - Reapply macro DDL to a .db file (DB=path)"
@@ -182,16 +180,13 @@ help:
 	@echo "  run-go            - Run server (in-memory, data lost on exit)"
 	@echo "  run-go-persist    - Run server with persistent DB file (data retained)"
 	@echo "  populate-traces   - POST sample traces to OTLP HTTP (default localhost:4318)"
-	@echo "  populate-logs     - POST sample logs to OTLP HTTP (run after populate-traces to link logs to real traces)"
+	@echo "  populate-logs     - POST sample logs to OTLP HTTP (default localhost:4318)"
 	@echo "  populate-metrics  - POST sample metrics to OTLP HTTP (default localhost:4318)"
 	@echo ""
 	@echo "Convenience:"
 	@echo "  build             - Build frontend and Go binary"
 	@echo "  run               - Build frontend, then run server (in-memory)"
 	@echo "  test              - Run the primary local formatting, build, and test gate"
-	@echo "  dev-go            - Kill port, start server, seed traces + logs + metrics"
 	@echo ""
 	@echo "Other:"
-	@echo "  release-dry-run      - Trigger release workflow (dry run)"
-	@echo "  kill-port            - Kill processes on ports 8000, 4317, 4318"
-	@echo "  stop              - Stop Go server and Vite dev server"
+	@echo "  release-dry-run   - Trigger release workflow (snapshot)"

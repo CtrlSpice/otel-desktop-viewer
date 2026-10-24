@@ -185,38 +185,46 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     await assertShell()
     expect((await main.boundingBox())!.width).toBe(logsBounds.width)
 
-    let releaseModule!: () => void
-    const moduleGate = new Promise<void>(resolve => {
-      releaseModule = resolve
-    })
-    await page.route('**/src/pages/EvalsWorkspace.svelte*', async route => {
-      await moduleGate
-      await route.continue()
-    })
-    await nav
-      .getByRole('link', { name: 'Experimental Evals', exact: true })
-      .click()
-    await expect(page.getByText('Opening Evals…')).toBeVisible()
-    await assertShell()
-    await expect
-      .poll(async () => (await main.boundingBox())?.width)
-      .toBe(homeBounds.width)
-    releaseModule()
-    await expect(page.getByText('Opening Evals…')).toHaveCount(0)
-    await assertShell()
+    if (process.env.EVALS === '1') {
+      let releaseModule!: () => void
+      const moduleGate = new Promise<void>(resolve => {
+        releaseModule = resolve
+      })
+      await page.route('**/src/pages/EvalsWorkspace.svelte*', async route => {
+        await moduleGate
+        await route.continue()
+      })
+      await nav
+        .getByRole('link', { name: 'Experimental Evals', exact: true })
+        .click()
+      await expect(page.getByText('Opening Evals…')).toBeVisible()
+      await assertShell()
+      await expect
+        .poll(async () => (await main.boundingBox())?.width)
+        .toBe(homeBounds.width)
+      releaseModule()
+      await expect(page.getByText('Opening Evals…')).toHaveCount(0)
+      await assertShell()
 
-    // A destination without Details gives its space to Main and retains
-    // both the Details node and its saved open/width preferences.
-    evalsEnabled = false
-    await expect(page.getByText('Evals is not enabled')).toBeVisible({
-      timeout: 10000,
-    })
-    await expect(details).toHaveAttribute('aria-hidden', 'true')
-    await assertShell()
-    expect((await main.boundingBox())!.width).toBeGreaterThan(homeBounds.width)
-    expect(
-      await page.evaluate(() => localStorage.getItem('signal-detail:open'))
-    ).toBe('true')
+      // A destination without Details gives its space to Main and retains
+      // both the Details node and its saved open/width preferences.
+      evalsEnabled = false
+      await expect(page.getByText('Evals is not enabled')).toBeVisible({
+        timeout: 10000,
+      })
+      await expect(details).toHaveAttribute('aria-hidden', 'true')
+      await assertShell()
+      expect((await main.boundingBox())!.width).toBeGreaterThan(
+        homeBounds.width
+      )
+      expect(
+        await page.evaluate(() => localStorage.getItem('signal-detail:open'))
+      ).toBe('true')
+    } else {
+      await expect(
+        nav.getByRole('link', { name: 'Experimental Evals', exact: true })
+      ).toHaveCount(0)
+    }
 
     await nav.getByRole('link', { name: 'Home', exact: true }).click()
     await expect(

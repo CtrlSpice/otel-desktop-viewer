@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"embed"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -13,7 +12,6 @@ import (
 	"net"
 	"net/http"
 	"path"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -29,9 +27,6 @@ import (
 	"golang.org/x/exp/jsonrpc2"
 )
 
-//go:embed static
-var assets embed.FS
-
 // maxRPCRequestBodyBytes caps how much of an /rpc request body we will read.
 // JSON-RPC requests in this app are small (a method name and a few params), so
 // 1 MB is generous headroom while preventing a buggy or malicious client from
@@ -39,6 +34,7 @@ var assets embed.FS
 const maxRPCRequestBodyBytes = 1 << 20 // 1 MB
 
 type Server struct {
+	evalServer
 	server         http.Server
 	store          *store.Store
 	jsonrpcHandler *JSONRPCHandler
@@ -46,12 +42,8 @@ type Server struct {
 	tel            *telemetry.Telemetry
 	features       *features.Flags
 
-	serveDone          chan struct{}
-	startMu            sync.Mutex
-	evalImports        sync.Map
-	evalEvidenceLock   chan struct{}
-	evalReceiverURL    string
-	evalReceiverClient *http.Client
+	serveDone chan struct{}
+	startMu   sync.Mutex
 }
 
 func NewServer(endpoint string, otlpHTTPPort int, store *store.Store, logger *zap.Logger, tel *telemetry.Telemetry, options ...Option) (*Server, error) {
@@ -59,8 +51,6 @@ func NewServer(endpoint string, otlpHTTPPort int, store *store.Store, logger *za
 		tel = telemetry.Disabled()
 	}
 	s := Server{
-		evalReceiverClient: newEvalReceiverClient(),
-		evalEvidenceLock:   make(chan struct{}, 1),
 		server: http.Server{
 			Addr: endpoint,
 
@@ -96,13 +86,12 @@ func NewServer(endpoint string, otlpHTTPPort int, store *store.Store, logger *za
 	if host == "::" {
 		host = "::1"
 	}
-	s.evalReceiverURL = "http://" + net.JoinHostPort(host, strconv.Itoa(otlpHTTPPort)) + "/v1/logs"
+	s.evalServer = newEvalServer(host, otlpHTTPPort)
 
 	for _, option := range options {
 		option(&s)
 	}
 	s.jsonrpcHandler.otlpHTTPPort = otlpHTTPPort
-	s.jsonrpcHandler.features = s.features
 	if err := s.initHandler(); err != nil {
 		return nil, fmt.Errorf("could not initialize desktop exporter server: %w", err)
 	}
@@ -139,7 +128,7 @@ func (s *Server) Start() error {
 
 // Shutdown drains in-flight requests and waits for the serve goroutine to exit.
 func (s *Server) Shutdown(ctx context.Context) error {
-	defer s.evalReceiverClient.CloseIdleConnections()
+	defer s.closeEvals()
 	s.startMu.Lock()
 	done := s.serveDone
 	s.startMu.Unlock()
@@ -175,14 +164,7 @@ func (s *Server) initHandler() error {
 	}
 	spa := spaHandler(fsys, s.logger)
 	mux.Handle("/", spa)
-	mux.Handle("/evals", s.requireEvals(spa))
-	mux.Handle("/evals/", s.requireEvals(spa))
-	// Unknown Evals actions remain 404 under the same feature gate.
-	mux.Handle("/api/evals", s.requireEvals(http.NotFoundHandler()))
-	mux.Handle("/api/evals/", s.requireEvals(http.NotFoundHandler()))
-	mux.HandleFunc("POST /api/evals/ingest", s.ingestEvals)
-	mux.Handle("GET /api/evals/experiments", s.requireEvals(http.HandlerFunc(s.searchEvalExperiments)))
-	mux.Handle("GET /api/evals/experiments/{id}/rows", s.requireEvals(http.HandlerFunc(s.getEvalExperimentPage)))
+	s.registerEvals(mux, spa)
 
 	// CORS for the Vite frontend
 	c := cors.New(cors.Options{
@@ -205,10 +187,6 @@ func llmsTextHandler() http.Handler {
 		writer.Header().Set("ETag", etag)
 		http.ServeContent(writer, request, "llms.txt", time.Time{}, strings.NewReader(guide))
 	})
-}
-
-func staticFS() (fs.FS, error) {
-	return fs.Sub(assets, "static")
 }
 
 // spaHandler serves the single-page app. A GET/HEAD for an existing file is served

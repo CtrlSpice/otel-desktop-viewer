@@ -72,24 +72,27 @@ The app is a custom OpenTelemetry Collector binary with a Svelte 5 UI. See [ARCH
 ### Quick start with sample data
 
 ```bash
-make dev-go
+make run-go
 ```
 
-This starts the Go server on `:8000`, seeds traces, logs, and metrics, and opens the embedded UI.
+This runs the Go server on `:8000` in the foreground. In another terminal,
+use the seed commands below to load sample telemetry.
 
 ### Frontend development (recommended for UI work)
 
 Use two terminals:
 
 ```bash
-# Terminal 1 — backend + sample telemetry
-make dev-go
+# Terminal 1 — backend, if one is not already running
+make run-go
 
 # Terminal 2 — Vite with hot reload
 make dev-ts
 ```
 
 Open **http://localhost:3001**. Vite proxies `/rpc` to the Go server on `:8000`.
+For an existing backend on another address, use
+`VIEWER_PROXY_TARGET=http://localhost:8001 make dev-ts`.
 
 ### Production-like run
 
@@ -99,6 +102,21 @@ make build
 ```
 
 `make build-ts` copies the frontend into `desktopexporter/internal/server/static/` for embedding. Run it before testing frontend changes through the standalone binary.
+
+Builds default to `EVALS=0`, which excludes the Evals UI and backend handlers.
+Use `make build EVALS=1` to include Evals; its frontend goes to `dist-evals` and
+its embedded assets to the ignored `internal/server/static-evals` directory.
+Both variants retain the same database schema. See
+[Experimental features](experimental-features.md) for activation within that build.
+
+The same `EVALS` selection applies to development and tests:
+`make dev-ts EVALS=1`, `make test EVALS=1`. Use matching frontend and backend
+builds. `make build-go` prepares the selected frontend before compiling Go;
+plain `go build` uses the committed public assets without requiring Node.
+`make build-ts-check` checks public asset freshness; with `EVALS=1` it checks
+frontend compilation because enabled assets are generated rather than committed.
+Playwright starts its own server on `:3002` (`EVALS=0`) or `:3003` (`EVALS=1`),
+using a separate Vite cache from the development preview.
 
 ### Seed scripts
 
@@ -132,9 +150,8 @@ Dataset contents and counts are documented in [`testdata/otlp/README.md`](../tes
 
 ### Stop dev servers
 
-```bash
-make stop
-```
+Press Ctrl-C in the terminal that owns each foreground server. Stop only the
+processes you started; the Makefile does not terminate processes by port number.
 
 ## Architecture and project layout
 

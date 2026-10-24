@@ -1,3 +1,5 @@
+//go:build evals
+
 package features
 
 import (

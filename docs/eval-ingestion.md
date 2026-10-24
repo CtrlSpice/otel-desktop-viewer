@@ -1,6 +1,7 @@
 # Evaluation data ingestion
 
-`evals.enabled` remains off by default. The global file drop/picker uses the
+Evals requires `make build EVALS=1`; public builds omit its UI and HTTP handlers.
+Within that build, `evals.enabled` remains off by default. The global file drop/picker uses the
 existing serial queue, cancellation and failure UI. No receiver or port is added.
 Input files are never modified, moved, or deleted.
 

@@ -1,5 +1,9 @@
 # Repository documentation
 
+- Features require build-time selection; runtime-only feature flags are not
+  supported. Public builds use `EVALS=0`; `EVALS=1` selects Evals in Go and the
+  frontend. Preserve shared viewer/database functionality in both builds.
+
 - `docs/` is live documentation for functionality on `main`. Describe current
   behavior, supported contracts, and usage. Do not put proposals, roadmaps,
   implementation plans, or private handoffs there.

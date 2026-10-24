@@ -6,6 +6,9 @@ on:
 permissions:
   contents: read
 
+env:
+  EVALS: '0'
+
 # Cancel superseded branch runs and serialize setup-go cache writes.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -95,6 +98,11 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        evals: ['0', '1']
+    env:
+      EVALS: ${{ matrix.evals }}
     defaults:
       run:
         working-directory: desktopexporter/internal/frontend
@@ -143,7 +151,7 @@ jobs:
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v7
       with:
-        name: playwright-accessibility-report
+        name: playwright-accessibility-report-evals-${{ matrix.evals }}
         path: |
           desktopexporter/internal/frontend/playwright-report/
           desktopexporter/internal/frontend/test-results/
@@ -154,3 +162,28 @@ jobs:
     - name: Built assets are current
       working-directory: ${{ github.workspace }}
       run: make build-ts-check
+
+  evals-backend:
+    runs-on: ubuntu-latest
+    env:
+      EVALS: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26'
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: desktopexporter/internal/frontend/package-lock.json
+      - run: npm ci
+        working-directory: desktopexporter/internal/frontend
+      - run: make test-go EVALS=1
+      - name: Public binary excludes Evals implementation
+        run: |
+          go list -deps . > public-dependencies.txt
+          if grep -E '/internal/(evaldecode|store/evals)$|github.com/open-feature/' public-dependencies.txt; then
+            echo 'Public build includes an Evals dependency'
+            exit 1
+          fi

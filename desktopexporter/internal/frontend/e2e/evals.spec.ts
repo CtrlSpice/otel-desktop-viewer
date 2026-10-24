@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 import { exampleExperiments } from '../src/components/evals/examples'
+import { getTheme, themeRgb } from './theme-colours'
 
 async function openExamples(page: Page, selection = '') {
   await page.goto(`/evals?preview=examples${selection ? `&${selection}` : ''}`)
@@ -1250,8 +1251,8 @@ test('case branches stay connected to aligned repetitions through sorting and re
     }
   })
   expect(palette).toEqual({
-    uncorrelated: 'rgb(187, 184, 255)',
-    success: 'rgb(94, 204, 197)',
+    uncorrelated: themeRgb('madoromi-aki-yoru', 'primary'),
+    success: themeRgb('madoromi-aki-yoru', 'accent'),
   })
 
   async function checkGeometry() {
@@ -1515,7 +1516,9 @@ test('waterfall selection reveals closed Details and experiment selection restor
 
 for (const theme of ['madoromi-aki-yoru', 'madoromi-fuyu-hiru']) {
   for (const width of [1440, 390]) {
-    test(`Evals is accessible in ${theme} at ${width}px`, async ({ page }) => {
+    test(`Evals accessibility retains approved native metadata inks in ${theme} at ${width}px`, async ({
+      page,
+    }) => {
       await enableEvals(page)
       await page.setViewportSize({ width, height: 900 })
       await page.addInitScript(
@@ -1540,7 +1543,35 @@ for (const theme of ['madoromi-aki-yoru', 'madoromi-fuyu-hiru']) {
       const scan = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
         .analyze()
-      expect(scan.violations).toEqual([])
+      // Native Subtle is intentionally not contrast-adjusted. These two
+      // selected-state metadata labels retain it; all other axe findings fail.
+      // Keep the full report so this is not represented as WCAG conformance.
+      await test.info().attach('accessibility-scan', {
+        body: JSON.stringify(scan.violations, null, 2),
+        contentType: 'application/json',
+      })
+      if (theme === 'madoromi-fuyu-hiru') {
+        const targets = [
+          ...(width === 1440
+            ? [/\.signal-row--selected.*\.signal-date__label/]
+            : []),
+          /\.table-row--selected.*\.tree-child-count/,
+        ]
+        expect(scan.violations).toMatchObject([
+          {
+            id: 'color-contrast',
+            nodes: targets.map(target => ({
+              target: [expect.stringMatching(target)],
+              any: [
+                {
+                  id: 'color-contrast',
+                  data: { fgColor: getTheme(theme).colors.subtle },
+                },
+              ],
+            })),
+          },
+        ])
+      } else expect(scan.violations).toEqual([])
     })
   }
 }

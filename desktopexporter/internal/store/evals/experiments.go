@@ -120,9 +120,13 @@ func SearchExperiments(ctx context.Context, db *sql.DB, query ExperimentSearch) 
 	if err := db.QueryRowContext(ctx, `select count(*) from (`+visibleExperiments+`) v where `+where, args...).Scan(&out.Total); err != nil {
 		return out, err
 	}
-	order := "name_key " + query.Direction + ", id asc"
+	direction := "asc"
+	if query.Direction == "desc" {
+		direction = "desc"
+	}
+	order := "name_key " + direction + ", id asc"
 	if query.Sort == "started" {
-		order = "started_sort " + query.Direction + " nulls last, name_key asc, id asc"
+		order = "started_sort " + direction + " nulls last, name_key asc, id asc"
 	}
 	rows, err := db.QueryContext(ctx, `select `+experimentColumns+` from (`+visibleExperiments+`) v where `+where+` order by `+order+` limit ? offset ?`, append(args, query.Limit, query.Offset)...)
 	if err != nil {

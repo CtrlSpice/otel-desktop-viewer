@@ -64,7 +64,7 @@ VIEWER FLAGS
       --db string            DuckDB file; omit for memory
       --db-max-size string   Maximum telemetry-store size (defaults to 512MB in memory or 2GB with --db; 0 disables pruning)
       --feature-flags-file string
-                            Local flagd JSON file; opted-in features are experimental and unsupported
+                            Local flagd JSON file; requires a build that includes experimental features
       --self-telemetry-endpoint string
                             Export the viewer's own traces and metrics to this OTLP/gRPC endpoint
 

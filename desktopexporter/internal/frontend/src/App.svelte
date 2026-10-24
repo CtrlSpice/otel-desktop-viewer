@@ -93,7 +93,7 @@
         ? MetricsPage
         : under('/logs')
           ? LogsPage
-          : under('/evals')
+          : __EVALS_BUILT__ && under('/evals')
             ? EvalsPage
             : HomePage
   )

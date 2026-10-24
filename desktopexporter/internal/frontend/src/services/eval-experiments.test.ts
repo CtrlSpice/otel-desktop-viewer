@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { telemetryAPI } from './telemetry-service'
+import { evalAPI } from './eval-service'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -19,7 +19,7 @@ it('retains exact source JSON through the typed experiment page response and pas
   )
   vi.stubGlobal('fetch', fetcher)
   const controller = new AbortController()
-  const page = await telemetryAPI.getEvalExperimentPage(
+  const page = await evalAPI.getEvalExperimentPage(
     'a'.repeat(64),
     4,
     1,
@@ -47,7 +47,7 @@ it('sends outcome choices as repeated server-side filters and preserves global t
       )
   )
   vi.stubGlobal('fetch', fetcher)
-  const page = await telemetryAPI.searchEvalExperiments({
+  const page = await evalAPI.searchEvalExperiments({
     query: 'Experiment 2',
     outcomes: ['success:Pass', 'error:Fail'],
     sort: 'name',
