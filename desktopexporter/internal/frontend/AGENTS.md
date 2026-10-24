@@ -22,8 +22,9 @@
   their original source shades without contrast adjustments. Text uses Sumi,
   Subtle uses Usuzumi 1, Primary uses Fuji and Secondary uses Ruri. Preserve the
   service/series ownership and saved assignments when changing graph palettes.
-  Group appearance controls as Ink, Season, Day/Night. Accent ink selects one of
-  the 32 named seed inks, with an analogous family from the pinned upstream
+  Group appearance controls as Ink, Season, Day/Night, with pill-rounded exterior
+  corners and flat internal joins. Accent ink selects one of the 32 named seed
+  inks, with an analogous family from the pinned upstream
   mixer; default to Ajisai. Persist it as `theme-accent-ink`. Use that family for
   Primary/Secondary/Accent and syntax accent slots. Season owns paper, neutral
   text and Nijimi highlights; retain semantic status colours and the Sakura

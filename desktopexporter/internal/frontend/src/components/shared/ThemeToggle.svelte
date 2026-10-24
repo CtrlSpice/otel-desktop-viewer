@@ -202,7 +202,7 @@
   @reference "../../app.css";
 
   .theme-controls {
-    @apply inline-flex shrink-0 items-center rounded-lg border border-base-300 bg-base-200;
+    @apply inline-flex shrink-0 items-center rounded-full border border-base-300 bg-base-200;
   }
 
   .theme-season {
@@ -211,11 +211,11 @@
   }
 
   .theme-controls :global(.theme-ink) {
-    @apply gap-2 rounded-l-lg rounded-r-none;
+    @apply gap-2 rounded-l-full rounded-r-none;
   }
 
   .theme-toggle {
-    @apply rounded-l-none rounded-r-lg;
+    @apply rounded-l-none rounded-r-full;
     border-left: 1px solid var(--color-base-300);
   }
 
