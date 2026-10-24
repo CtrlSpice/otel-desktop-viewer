@@ -135,7 +135,9 @@
               >
             {/if}
             {#if signal.extraCount > 0}
-              <span class="text-subtle" aria-hidden="true">·</span>
+              {#if !signal.marker}<span class="text-subtle" aria-hidden="true"
+                  >·</span
+                >{/if}
               <span class="inline-flex items-center gap-2">
                 {#if signal.marker}<span
                     class="size-2 shrink-0 rounded-full {signal.marker}"

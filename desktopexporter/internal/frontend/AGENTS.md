@@ -84,6 +84,7 @@
   and scroll positions. Only the active card list
   scrolls; keep tabs at the top and shared page controls in a stable bottom
   footer. Tab changes are immediate and support arrow/Home/End navigation.
+  Show the page size as `25 per page` beside the footer's page controls.
   Disable confirmed-empty or inapplicable signals, retaining loading/error
   access. Reset pages when service, attribute/value, search, time range or
   refreshed results change. Keep other Home section disclosures independent.
@@ -127,8 +128,11 @@
   swatch flat, without borders or shadows, and retain its keyboard focus ring. Keep it before
   the name and outside the whole-card button. Centre the service summary icons
   under the brush button, with their labels aligned under the service name.
-  Align Last seen beneath the left edge of the log icon. Gauge/Sum series
-  overrides live in metric Details, independently of visibility and disclosure.
+  Align Last seen beneath the left edge of the log icon.
+  Service summary counts omit the middle-dot separator immediately before a
+  coloured status dot; retain separators between unmarked counts.
+  Gauge/Sum series overrides live in metric Details, independently of visibility
+  and disclosure.
   Series visibility checkboxes sit between the disclosure caret and series text.
   Persist overrides by service name or metric reference + native series identity;
   Put an icon-only reset to the right of the ink search field; it restores the

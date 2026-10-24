@@ -240,6 +240,9 @@
           </p>{/if}
       </div>
       <SignalFooter label="page">
+        {#snippet leading()}
+          <span class="text-subtle">{PAGE_SIZE} per page</span>
+        {/snippet}
         {#snippet navigation()}
           <div class:invisible={active?.loading || !!active?.error}>
             <DetailNav
