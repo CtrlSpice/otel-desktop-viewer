@@ -9,7 +9,6 @@
     loadText,
     label,
     tooltip = 'Copy value',
-    tooltipSide = 'left',
     contextual = false,
     grouped = false,
   }: {
@@ -18,7 +17,6 @@
     loadText?: (signal: AbortSignal) => Promise<string>
     label: string
     tooltip?: string
-    tooltipSide?: 'left' | 'right'
     contextual?: boolean
     /** Match the compact joined inspector tabs when used in their header. */
     grouped?: boolean
@@ -105,9 +103,7 @@
   type="button"
   class="{grouped
     ? 'btn btn-xs btn-square chart-header-control value-copy--grouped'
-    : 'header-icon-button'} value-copy tooltip"
-  class:tooltip-left={tooltipSide === 'left'}
-  class:tooltip-right={tooltipSide === 'right'}
+    : 'header-icon-button'} value-copy tooltip tooltip-left"
   class:value-copy--copied={copied}
   class:value-copy--failed={failed}
   class:value-copy--contextual={contextual}

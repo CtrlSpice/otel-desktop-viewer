@@ -38,9 +38,8 @@
   Left-align top navigation beside the leading pane control. Let search fill
   the remaining desktop width, with appearance controls grouped at the right.
   Use additional rows on narrow screens so search and appearance do not overlap.
-  Expanded Home attribute values use one row: Copy, value, bar, count, %.
-  Centre Copy under the parent's disclosure caret, within the Name cell's
-  existing gutter. Its tooltip opens right; omit a separate trailing Copy column.
+  Expanded Home attribute values use one row: value, bar, count, %, Copy.
+  Keep Copy in its own far-right column, with its tooltip opening left.
   Bars are 8px high with round ends and a minimum 8px dot, using stable
   typed-value hashes into official shades 3–5 across the 32 graph inks. Keep
   parent attribute rows plain and preserve Name, Count, %, exact Copy and disclosures.

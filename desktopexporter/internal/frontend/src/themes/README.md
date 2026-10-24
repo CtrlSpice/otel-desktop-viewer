@@ -176,9 +176,8 @@ shared 14px working size.
 
 ## Graph palettes
 
-Expanded Home attribute-value rows order Copy, value, bar, count, % on one line.
-Copy sits in the Name cell's gutter, centred beneath the parent's disclosure
-caret, with its tooltip opening right.
+Expanded Home attribute-value rows order value, bar, count, %, Copy on one line.
+Copy has its own far-right column, with its tooltip opening left.
 The percentage bar is 8px high in a 96px slot after the value. Short bars stop at
 the canonical 8px dot. Colours use
 official middle-strength shades 3–5 across the 32 graph inks, chosen by a stable

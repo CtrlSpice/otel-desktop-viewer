@@ -148,11 +148,12 @@
     >
   </td>
   <td class="table-cell text-right"></td>
+  <td class="table-cell"></td>
 </tr>
 
 {#if error || values.length === 0}
   <tr>
-    <td class="table-cell" colspan="3">
+    <td class="table-cell" colspan="4">
       <div class="pl-6">
         {#if error}<span role="alert">{error}</span>
         {:else}<span class="text-rp-subtle" role="status"
@@ -190,15 +191,7 @@
         class:table-cell--pinned={pinnedLeft !== undefined}
         style:left={pinnedLeft === undefined ? undefined : `${pinnedLeft}px`}
       >
-        <div class="flex min-w-0 items-center gap-2">
-          <span class="flex w-4 shrink-0 items-center justify-center">
-            <ValueCopyButton
-              {text}
-              label={`${name} value`}
-              tooltip="Copy"
-              tooltipSide="right"
-            />
-          </span>
+        <div class="flex min-w-0 items-center gap-2 pl-6">
           <div class="min-w-0 flex-1">
             <TableValueCell
               label={`${options.ownerType} attribute: ${name}`}
@@ -240,11 +233,14 @@
           })}%]
         </span>
       </td>
+      <td class="table-cell text-right">
+        <ValueCopyButton {text} label={`${name} value`} tooltip="Copy" />
+      </td>
     </tr>
   {/each}
   {#if pageCount > 1}
     <tr hidden={!expanded}>
-      <td class="table-cell" colspan="3">
+      <td class="table-cell" colspan="4">
         <div class="flex justify-center">
           <DetailNav
             index={pageIndex}
