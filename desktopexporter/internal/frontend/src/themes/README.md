@@ -118,8 +118,10 @@ generator writes these overrides to `accent-inks.json` with the source family.
 
 `theme-accent-ink` persists the seed independently of `theme`; invalid or absent
 values use Ajisai. Changes propagate across tabs, and blocked storage retains
-the selection in memory. Service/series assignments and histogram/count inks
-remain independently selected. Navigation stays left-aligned; search fills the
+the selection in memory. Selecting an accent ink also applies that ink to the
+histogram/heatmap count palette and its legend. The chart's count picker can then
+select a different ink; reloading restores both saved choices. Service/series
+assignments remain independent. Navigation stays left-aligned; search fills the
 available desktop space and appearance controls stay together at the right.
 Narrow screens place navigation above search and appearance controls; the
 smallest screens give search a full-width row.
@@ -179,6 +181,7 @@ shared 14px working size.
 
 Expanded Home attribute-value rows order value, bar, count, %, Copy on one line.
 Copy has its own far-right column, with its tooltip opening left.
+Count and % columns are fixed-width and right-aligned, with sortable headings.
 The value column takes one third of the available row width, capped at 12rem.
 Long values use an ellipsis, with the full value available on hover and through Copy.
 The 8px-high percentage bar uses an aligned track that fills the remaining width.
@@ -275,7 +278,8 @@ The seven-dot previews show each full ramp in the current mode. Its footer links
 to Madoromi with visible ink attribution. Rikka is the default. The choice is saved
 in localStorage under `graph-count-palette`; invalid saved values fall back
 to Rikka, and blocked storage retains the choice for the current page. Existing
-saved choices retain their ink and shades. Opening the picker focuses and reveals
+saved choices retain their ink and shades. Palette changes propagate across tabs.
+Opening the picker focuses and reveals
 the saved choice inside its scrollable list; searching does not change the choice.
 
 The generator samples each full pinned measured curve at equally spaced OKLab

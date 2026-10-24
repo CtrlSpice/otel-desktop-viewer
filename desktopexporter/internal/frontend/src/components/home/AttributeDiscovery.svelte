@@ -70,8 +70,8 @@
   })
   const columns = [
     { id: 'name', label: 'Name', min: 240, width: 400 },
-    { id: 'count', label: 'Count', min: 80, width: 88 },
-    { id: 'frequency', label: '%', min: 80, width: 88 },
+    { id: 'count', label: 'Count', min: 80, width: 88, fixed: true },
+    { id: 'frequency', label: '%', min: 80, width: 88, fixed: true },
     { id: 'copy', label: 'Copy', min: 64, width: 64, fixed: true },
   ]
   function sort(column: SortColumn) {
@@ -175,6 +175,7 @@
         caption="Attributes"
         fillColumn="name"
         pinnedCount={1}
+        constrainToViewport
       >
         {#snippet header(layout)}
           <tr>

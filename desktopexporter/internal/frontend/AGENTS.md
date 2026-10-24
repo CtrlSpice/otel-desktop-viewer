@@ -29,8 +29,10 @@
   Primary/Secondary/Accent and syntax accent slots. Season owns paper, neutral
   text and Nijimi highlights; retain semantic status colours and the Sakura
   attribution heart. Generate readable strengths against all five UI surfaces.
-  Keep global accent choice independent of saved service/series colours and the
-  shared count palette. Keep ink-family names visible in every picker.
+  Changing the global ink also selects that ink for histogram/heatmap counts
+  and their legends. The chart picker can subsequently choose a different count
+  ink. Retain saved choices on load and keep service/series colours independent.
+  Keep ink-family names visible in every picker.
   Accent-ink previews show the named seed's exact official shades 1–7, matching
   the graph ink catalogue. Do not use mixed syntax-role colours as ink previews.
   The top-bar ink control shows a 16px brush, the selected ink's original name,
@@ -48,6 +50,10 @@
   Value columns use one third of the available row width, capped at 12rem;
   truncate long values with an ellipsis and retain the full value on hover.
   Aligned bar tracks fill the remaining width and keep their percentage scale.
+  Home Count and % columns stay fixed-width and right-aligned; the value/bar
+  column fills the remaining table width. Retain sorting and far-right Copy.
+  Home's left pane contains Lulu and Getting Started, with setup instructions
+  scrolling below the welcome. Use the shared sidebar toggle and saved width.
   Home Telemetry uses counted Traces, Metrics and Logs header tabs, with
   independent 25-card pages and scroll positions. Only the active card list
   scrolls; keep tabs at the top and shared page controls in a stable bottom

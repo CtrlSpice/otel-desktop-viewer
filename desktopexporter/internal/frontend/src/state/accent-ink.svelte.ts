@@ -3,6 +3,7 @@ import {
   DEFAULT_ACCENT_INK,
   type AccentInkId,
 } from '@/themes/accent-inks'
+import { countPalette } from './count-palette.svelte'
 
 const STORAGE_KEY = 'theme-accent-ink'
 
@@ -28,6 +29,7 @@ export const accentInk = {
   },
   set(next: AccentInkId) {
     apply(next)
+    countPalette.set(next)
     try {
       localStorage.setItem(STORAGE_KEY, next)
     } catch {

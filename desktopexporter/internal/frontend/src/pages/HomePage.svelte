@@ -356,10 +356,9 @@
   mainTitle="Services"
   items={[]}
   emptyDrawer
-  hideDrawer
   selectedID={null}
   drawerID="signal-drawer"
-  drawerLabel="Services"
+  drawerLabel="Getting started"
   mainSurface="base"
   onRefresh={submit}
   {loading}
@@ -396,9 +395,9 @@
       >
     </form>
   {/snippet}
-  {#snippet pageBanner()}<div hidden>
-      <GettingStarted {importContent} />
-    </div>{/snippet}
+  {#snippet drawerContent()}
+    <GettingStarted {importContent} />
+  {/snippet}
   {#snippet main()}
     <WorkspaceHeader mode="title" pill title="Services" ariaLabel="Services">
       {#snippet right()}<span class="text-rp-subtle"

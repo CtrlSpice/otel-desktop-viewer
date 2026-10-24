@@ -675,6 +675,7 @@
 
   .signal-drawer__panel {
     @apply relative bg-base-100;
+    max-width: calc(100vw - var(--layout-gap));
     transition: width var(--panel-motion-duration) var(--panel-motion-easing);
   }
 
