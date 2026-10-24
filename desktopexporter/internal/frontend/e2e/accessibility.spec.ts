@@ -3,6 +3,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { THEMES, themeRgb } from './theme-colours'
 import type { JsonTraceData } from '../src/types/wire-types'
 import { ACCENT_INKS } from '../src/themes/accent-inks'
+import { SEASONS } from '../src/themes'
 
 type RpcRequest = {
   id: number
@@ -355,7 +356,7 @@ for (const colorScheme of ['light', 'dark'] as const) {
     )
     await expect(page.getByRole('button', { name: /^Season:/ })).toHaveCount(0)
     await expect(
-      page.getByRole('button', { name: 'Accent ink: To-ro (warm lantern)' })
+      page.getByRole('button', { name: 'Theme: To-ro (warm lantern)' })
     ).toBeVisible()
     await expect(page.getByRole('link', { name: /Evals/ })).toHaveCount(0)
   })
@@ -380,7 +381,7 @@ for (const { id: theme, scheme, name } of THEMES) {
       name: 'Appearance',
       exact: true,
     })
-    const ink = appearance.getByRole('button', { name: /^Accent ink:/ })
+    const ink = appearance.getByRole('button', { name: /^Theme:/ })
     const mode = appearance.getByRole('button', {
       name: `${name} theme active`,
     })
@@ -413,11 +414,11 @@ for (const { id: theme, scheme, name } of THEMES) {
         height: '8px',
       }))
     )
-    await expect(ink.locator('svg')).toHaveCSS('width', '16px')
+    await expect(ink.locator('svg')).toHaveCSS('width', '18px')
     await expect(ink).toHaveText('')
     await expect(ink).toHaveAttribute(
       'data-tip',
-      'Accent ink: To-ro\n(warm lantern)'
+      'Theme: To-ro\n(warm lantern)'
     )
     const geometry = await appearance.evaluate(element => {
       const buttons = [...element.children].filter(
@@ -450,15 +451,29 @@ for (const { id: theme, scheme, name } of THEMES) {
     )
     expect(await ink.boundingBox()).toEqual(resting)
     await page.keyboard.up('Space')
-    const seasons = page.getByRole('group', { name: 'Seasons', exact: true })
+    const seasons = page.getByRole('group', { name: 'Background', exact: true })
     await expect(seasons).toBeVisible()
-    await expect(seasons.getByRole('button', { pressed: true })).toHaveText(
-      name.split(' ')[0]
+    const selectedSeason = SEASONS.find(
+      season => season.name === name.split(' ')[0]
+    )!
+    await expect(
+      seasons.getByRole('button', { pressed: true })
+    ).toHaveAccessibleName(
+      `${selectedSeason.japanese} (${selectedSeason.name}) background`
     )
     await expect(seasons.getByRole('button')).toHaveCount(4)
     for (const choice of await seasons.getByRole('button').all()) {
       await expect(choice.locator('svg')).toHaveCount(1)
+      await expect(choice).toHaveText('')
     }
+    const themePicker = page.locator('.theme-picker-popover:popover-open')
+    await expect(themePicker.getByRole('searchbox')).toHaveCount(0)
+    await expect(themePicker.locator('[data-ink-choice]')).toHaveCount(32)
+    const toRoChoice = themePicker.locator('[data-ink-choice="to-ro"]')
+    await expect(toRoChoice).toHaveText('To-ro')
+    await expect(
+      toRoChoice.locator('span[aria-hidden="true"] > span')
+    ).toHaveCount(3)
     await page.keyboard.press('Escape')
     await expect(ink).toBeFocused()
     await expect(ink).toHaveAttribute('aria-expanded', 'false')
@@ -524,6 +539,78 @@ for (const { id: theme, scheme, name } of THEMES) {
   })
 }
 
+test('theme picker keeps icon-only seasons and three-dot ink choices compact', async ({
+  page,
+}) => {
+  await interceptRpc(page)
+  await page.addInitScript(() =>
+    localStorage.setItem('theme', 'madoromi-aki-yoru')
+  )
+  const rgb = (color: string) =>
+    `rgb(${color
+      .slice(1)
+      .match(/../g)!
+      .map(hex => parseInt(hex, 16))
+      .join(', ')})`
+  for (const viewport of [
+    { width: 320, height: 568 },
+    { width: 390, height: 800 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await page.goto('/')
+    const trigger = page.getByRole('button', { name: /^Theme:/ })
+    const dots = (await trigger
+      .locator('span[aria-hidden="true"]')
+      .boundingBox())!
+    const monitor = (await trigger.locator('svg').boundingBox())!
+    expect(dots.x + dots.width).toBeLessThan(monitor.x)
+    await trigger.click()
+    const picker = page.locator('.theme-picker-popover:popover-open')
+    await expect(picker.getByRole('searchbox')).toHaveCount(0)
+    const seasons = picker.getByRole('group', {
+      name: 'Background',
+      exact: true,
+    })
+    await expect(seasons.getByRole('button')).toHaveCount(4)
+    await expect(seasons.locator('svg')).toHaveCount(4)
+    const choices = picker.locator('[data-ink-choice]')
+    expect(
+      await choices.evaluateAll(buttons =>
+        buttons.map(button => ({
+          id: button.getAttribute('data-ink-choice'),
+          text: button.textContent!.trim(),
+          dots: [...button.querySelectorAll<HTMLElement>('span[style]')].map(
+            dot => dot.style.backgroundColor
+          ),
+          overflow: button.scrollWidth > button.clientWidth,
+        }))
+      )
+    ).toEqual(
+      ACCENT_INKS.map(ink => ({
+        id: ink.id,
+        text: ink.name,
+        dots: [0, 3, 6].map(index => rgb(ink.swatches[index]!.color)),
+        overflow: false,
+      }))
+    )
+    const selected = picker.locator('[data-ink-choice="to-ro"]')
+    await expect(selected).toBeFocused()
+    const selectedBox = (await selected.boundingBox())!
+    const listBox = (await picker.locator('.theme-picker__inks').boundingBox())!
+    expect(selectedBox.y).toBeGreaterThanOrEqual(listBox.y)
+    expect(selectedBox.y + selectedBox.height).toBeLessThanOrEqual(
+      listBox.y + listBox.height
+    )
+    const box = (await picker.boundingBox())!
+    expect(box.x).toBeGreaterThanOrEqual(8)
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width - 8)
+    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height - 8)
+    await page.keyboard.press('Escape')
+    await expect(trigger).toBeFocused()
+  }
+})
+
 test('persists the chosen ink independently of season and Day/Night', async ({
   page,
 }) => {
@@ -531,7 +618,7 @@ test('persists the chosen ink independently of season and Day/Night', async ({
   await page.setViewportSize({ width: 390, height: 800 })
   await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })
   await page.goto('/')
-  const ink = page.getByRole('button', { name: /^Accent ink:/ })
+  const ink = page.getByRole('button', { name: /^Theme:/ })
   await ink.click()
   const rikka = page.locator('[data-ink-choice="rikka"]')
   await rikka.focus()
@@ -540,8 +627,8 @@ test('persists the chosen ink independently of season and Day/Night', async ({
   await expect(page.locator('html')).toHaveAttribute('data-accent-ink', 'rikka')
   await ink.click()
   const winter = page
-    .getByRole('group', { name: 'Seasons', exact: true })
-    .getByRole('button', { name: 'Winter', exact: true })
+    .getByRole('group', { name: 'Background', exact: true })
+    .getByRole('button', { name: 'Fuyu (Winter) background', exact: true })
   await winter.focus()
   await page.keyboard.press('Enter')
   await expect(ink).toBeFocused()
@@ -1930,7 +2017,7 @@ test.describe('home page accessibility', () => {
         { name: /^(Open|Collapse) sidebar$/, direction: 'right' },
         { name: /^(Open|Collapse) details$/, direction: 'left' },
         {
-          name: /^Accent ink:/,
+          name: /^Theme:/,
           direction: width < 768 ? 'bottom' : 'left',
           multiline: true,
         },
@@ -2029,7 +2116,7 @@ test.describe('home page accessibility', () => {
         if (multiline) {
           await expect(button).toHaveAttribute(
             'data-tip',
-            'Accent ink: To-ro\n(warm lantern)'
+            'Theme: To-ro\n(warm lantern)'
           )
           expect(bounds.whiteSpace).toBe('pre-line')
         }

@@ -28,9 +28,13 @@
   their original source shades without contrast adjustments. Text uses Sumi,
   Subtle uses Usuzumi 1, Primary uses Fuji and Secondary uses Ruri. Preserve the
   service/series ownership and saved assignments when changing graph palettes.
-  Group appearance controls as the terminal/theme picker and Day/Night, with
-  pill-rounded exterior corners and flat internal joins. Put the four labelled
-  season choices with their icons inside the theme picker above the ink search.
+  Group appearance controls as the theme picker and Day/Night, with
+  pill-rounded exterior corners and flat internal joins. The theme picker has
+  four icon-only season choices across the top, followed by compact two-column
+  ink choices: three 8px colour dots followed by the Japanese name. Keep section
+  names accessible but visually hidden. Omit its filter field and checkmark column.
+  Keep English meanings in accessible names and on hover. Ink controls interface and syntax accents;
+  season controls the background. Preserve selected-ink focus and scrolling.
   Accent ink selects one of the 32 named seed
   inks, with an analogous family from the pinned upstream
   mixer; default to To-ro (warm lantern) with Autumn and the system's Day/Night
@@ -42,11 +46,12 @@
   and their legends. The chart picker can subsequently choose a different count
   ink. Retain saved choices on load and keep service/series colours independent.
   Keep ink-family names visible in every picker.
-  Accent-ink previews show the named seed's exact official shades 1–7, matching
-  the graph ink catalogue. Do not use mixed syntax-role colours as ink previews.
-  The top-bar ink control shows a 16px terminal window and three 8px dots using
-  official shades 1, 4 and 7. Keep the ink's original and English names in its
-  accessible name, tooltip and picker rows. Put the parenthesised English name
+  Accent-ink previews show the named seed's exact official shades 1, 4 and 7,
+  from the graph ink catalogue. Do not use mixed syntax-role colours as ink previews.
+  The top-bar theme control shows three 8px dots using official shades 1, 4
+  and 7, followed by a simple 18px monitor. Keep the ink's original and English names in its
+  accessible name and tooltip. Picker rows show only the Japanese name, with
+  English available to assistive technology and on hover. Put the parenthesised English name
   on a separate line in the top-bar tooltip, using the standard tooltip style.
   Left-align top navigation beside the leading pane control. Let search fill
   the remaining desktop width, with appearance controls grouped at the right.

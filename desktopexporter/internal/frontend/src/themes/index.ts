@@ -4,10 +4,10 @@ import { GRAPH_COLORS, GRAPH_PALETTE_VERSION } from './graph-inks'
 export type ThemeName = keyof typeof definitions
 export const DEFAULT_THEME: ThemeName = 'madoromi-aki-yoru'
 export const SEASONS = [
-  { id: 'haru', name: 'Spring' },
-  { id: 'natsu', name: 'Summer' },
-  { id: 'aki', name: 'Autumn' },
-  { id: 'fuyu', name: 'Winter' },
+  { id: 'haru', name: 'Spring', japanese: 'Haru' },
+  { id: 'natsu', name: 'Summer', japanese: 'Natsu' },
+  { id: 'aki', name: 'Autumn', japanese: 'Aki' },
+  { id: 'fuyu', name: 'Winter', japanese: 'Fuyu' },
 ] as const
 export type Season = (typeof SEASONS)[number]['id']
 export type ColorScheme = 'light' | 'dark'

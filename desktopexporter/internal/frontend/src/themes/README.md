@@ -11,10 +11,12 @@ The interface uses Madoromi's four seasons, each in Day and Night:
 | Autumn | `madoromi-aki-hiru`   | `madoromi-aki-yoru`   |
 | Winter | `madoromi-fuyu-hiru`  | `madoromi-fuyu-yoru`  |
 
-The terminal/theme picker and day/night button share one compact control group.
-The four season choices are inside the theme picker, above the ink search.
-Hugeicons identify Spring (flower), Summer (sun), Autumn (leaf) and Winter
-(snowflake) beside their labels. Changing
+The theme picker and day/night button share one compact control group.
+The theme picker has four icon-only season choices across the top, followed by
+compact ink choices with three colour dots and the Japanese name. Section names
+remain accessible but visually hidden; there is no filter field. Flower, sun,
+leaf and snowflake icons select Haru (Spring), Natsu (Summer), Aki (Autumn) and
+Fuyu (Winter). Changing
 season retains the current mode; changing mode retains the season. The complete
 theme ID is saved in localStorage under `theme`. A valid saved choice takes
 precedence over the operating system's mode. Otherwise, Autumn uses the system
@@ -113,16 +115,17 @@ Papaya (`#ff8000`) continues to identify internal faults rather than span errors
 ## Editor roles
 
 The top-bar appearance group contains **Theme · Day/Night**. The theme picker
-contains season choices and ink selection. Ink chooses
+contains background-season choices and ink selection. Ink chooses
 one of the 32 named seed inks, defaulting to To-ro (warm lantern). The pinned
 Madoromi mixer supplies its analogous family: the seed and neighbouring hues.
-To-ro's family is To-ro, Fuyu-gaki and Daikokuten. Original names and English
-names stay visible and searchable; seven preview dots show that named ink's
-official shades 1–7, matching the graph colour picker across seasons and modes.
+To-ro's family is To-ro, Fuyu-gaki and Daikokuten. Compact two-column choices
+show three dots in each named ink's official shades 1, 4 and 7, followed by its
+Japanese name. English names remain in accessible labels and on hover. The
+selected ink is focused and revealed when the picker opens; the ink list scrolls.
 The analogous family applies when the seed is selected; mixed syntax-role
 colours do not replace the named ink's preview.
-The top-bar control shows a terminal window and three 8px dots in the selected
-ink's official shades 1, 4 and 7. The ink's original and English names remain in
+The top-bar control shows three 8px dots in the selected ink's official shades
+1, 4 and 7, followed by a simple monitor. The ink's original and English names remain in
 its accessible name and tooltip. The tooltip puts the parenthesised English
 name on a separate second line.
 

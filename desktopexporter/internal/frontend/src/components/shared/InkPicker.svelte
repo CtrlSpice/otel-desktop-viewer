@@ -33,9 +33,6 @@
     unavailable = new Set<string>(),
     shadeControls,
     onOpenChange,
-    triggerContent,
-    triggerClass,
-    controls,
   }: {
     label: string
     options: readonly InkPickerOption[]
@@ -48,9 +45,6 @@
     unavailable?: ReadonlySet<string>
     shadeControls?: Snippet<[option: InkPickerOption, close: () => void]>
     onOpenChange?: (open: boolean) => void
-    triggerContent?: Snippet
-    triggerClass?: string
-    controls?: Snippet<[close: () => void]>
   } = $props()
 
   let open = $state(false)
@@ -184,10 +178,9 @@
 <FilterPopover
   {label}
   compact
-  triggerClass={triggerClass ??
-    (triggerColor
-      ? 'btn btn-circle btn-sm ink-picker-trigger--filled border-0 shadow-none font-normal tooltip tooltip-right'
-      : 'header-icon-button tooltip tooltip-left')}
+  triggerClass={triggerColor
+    ? 'btn btn-circle btn-sm ink-picker-trigger--filled border-0 shadow-none font-normal tooltip tooltip-right'
+    : 'header-icon-button tooltip tooltip-left'}
   triggerStyle={triggerColor
     ? `--btn-color: ${triggerColor}; --btn-fg: ${readableTextColor(triggerColor, themeSignal.value)}`
     : undefined}
@@ -196,20 +189,15 @@
   onOpenChange={handleOpenChange}
 >
   {#snippet icon()}
-    {#if triggerContent}
-      {@render triggerContent()}
-    {:else}
-      <HugeiconsIcon
-        icon={PaintBrush01Icon}
-        size={16}
-        strokeWidth={1.5}
-        aria-hidden="true"
-      />
-    {/if}
+    <HugeiconsIcon
+      icon={PaintBrush01Icon}
+      size={16}
+      strokeWidth={1.5}
+      aria-hidden="true"
+    />
   {/snippet}
   {#snippet children(close)}
     {#if open}
-      {@render controls?.(close)}
       <div class="ink-picker__measure" aria-hidden="true">
         {#each options as option (option.id)}<span
             >{option.name} ({option.english})</span

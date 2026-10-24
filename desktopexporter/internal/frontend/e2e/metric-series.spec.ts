@@ -308,9 +308,9 @@ for (const { id: theme } of THEMES) {
     await second.check()
     await expect(lines).toHaveCount(2)
 
-    await page.getByRole('button', { name: /^Accent ink:/ }).click()
+    await page.getByRole('button', { name: /^Theme:/ }).click()
     await page
-      .locator('.ink-picker-popover:popover-open [data-ink-choice="ajisai"]')
+      .locator('.theme-picker-popover:popover-open [data-ink-choice="ajisai"]')
       .click()
     await expect(page.locator('html')).toHaveAttribute(
       'data-accent-ink',
@@ -579,9 +579,9 @@ test.describe('independent histogram aggregate loading', () => {
       'data-theme',
       'madoromi-aki-hiru'
     )
-    await page.getByRole('button', { name: /^Accent ink:/ }).click()
+    await page.getByRole('button', { name: /^Theme:/ }).click()
     await page
-      .locator('.ink-picker-popover:popover-open [data-ink-choice="ajisai"]')
+      .locator('.theme-picker-popover:popover-open [data-ink-choice="ajisai"]')
       .click()
     await assertCountInk('ajisai')
     await trigger.click()

@@ -2,17 +2,10 @@
   import { onMount } from 'svelte'
   import { fade } from 'svelte/transition'
   import { HugeiconsIcon } from '@hugeicons/svelte'
-  import {
-    FlowerIcon,
-    Leaf02Icon,
-    Moon02Icon,
-    SnowflakeIcon,
-    Sun03Icon,
-  } from '@hugeicons/core-free-icons'
-  import AccentInkPicker from './AccentInkPicker.svelte'
+  import { Moon02Icon, Sun03Icon } from '@hugeicons/core-free-icons'
+  import ThemePicker from './ThemePicker.svelte'
   import {
     DEFAULT_THEME,
-    SEASONS,
     getTheme,
     restoreTheme,
     themeName,
@@ -23,12 +16,7 @@
   let { class: className = '' }: { class?: string } = $props()
 
   let currentTheme = $state<ThemeName>(DEFAULT_THEME)
-  const seasonIcons = {
-    haru: FlowerIcon,
-    natsu: Sun03Icon,
-    aki: Leaf02Icon,
-    fuyu: SnowflakeIcon,
-  }
+
   function setTheme(theme: ThemeName) {
     currentTheme = theme
     document.documentElement.setAttribute('data-theme', theme)
@@ -87,35 +75,7 @@
   at once would stack a native tooltip under the styled one.
 -->
 <div class="theme-controls" role="group" aria-label="Appearance">
-  <AccentInkPicker>
-    {#snippet children(close)}
-      <div
-        class="mb-2 grid shrink-0 grid-cols-2 gap-1"
-        role="group"
-        aria-label="Seasons"
-      >
-        {#each SEASONS as season (season.id)}
-          <button
-            type="button"
-            aria-pressed={theme.season === season.id}
-            onclick={() => {
-              close()
-              changeSeason(season.id)
-            }}
-            class="item-state item-state--menu flex items-center gap-2 px-3 py-2 text-left text-sm font-normal"
-          >
-            <HugeiconsIcon
-              icon={seasonIcons[season.id]}
-              size={16}
-              strokeWidth={1.5}
-              aria-hidden="true"
-            />
-            {season.name}
-          </button>
-        {/each}
-      </div>
-    {/snippet}
-  </AccentInkPicker>
+  <ThemePicker {theme} onSeasonChange={changeSeason} />
   <button
     class="theme-toggle {className}"
     data-tip="Switch to {theme.scheme === 'light' ? 'night' : 'day'}"
